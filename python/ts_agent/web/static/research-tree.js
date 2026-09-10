@@ -33,17 +33,17 @@
     root.classList.add("research-tree");
     root.classList.toggle("compact", nodes.length <= 2);
     if (!nodes.length) {
-      root.append(element("div", "empty", "No ResearchNodes are recorded."));
+      root.append(element("div", "empty", tr("tree.noNodes", "No ResearchNodes are recorded.")));
       return emptyController();
     }
 
     const toolbar = element("div", "research-tree-toolbar");
     const phaseControl = element("div", "research-tree-phase-control");
-    const phaseLabel = element("label", "sr-only", "Research Phase");
+    const phaseLabel = element("label", "sr-only", tr("tree.phase", "Research Phase"));
     const phaseSelect = document.createElement("select");
     phaseSelect.className = "research-tree-phase-select";
-    phaseSelect.setAttribute("aria-label", "Focus Research Phase");
-    phaseSelect.append(new Option("All phases", ""));
+    phaseSelect.setAttribute("aria-label", tr("tree.focusPhase", "Focus Research Phase"));
+    phaseSelect.append(new Option(tr("tree.allPhases", "All phases"), ""));
     for (const phase of phases) {
       const phaseId = String(phase.phase_id || "");
       phaseSelect.append(new Option([phaseId, phase.title].filter(Boolean).join(" | "), phaseId));
@@ -54,21 +54,26 @@
     const stats = element(
       "div",
       "research-tree-stats",
-      highlightIds ? `${matches} matches | ${nodes.length} nodes | ${edges.length} links` : `${nodes.length} nodes | ${edges.length} links`,
+      highlightIds ? `${matches} ${tr("tree.matches", "matches")} | ${nodes.length} ${tr("tree.nodes", "nodes")} | ${edges.length} ${tr("tree.links", "links")}` : `${nodes.length} ${tr("tree.nodes", "nodes")} | ${edges.length} ${tr("tree.links", "links")}`,
     );
     const actions = element("div", "research-tree-actions");
-    const focusButton = iconButton("focus", "Focus current ResearchNode");
+    const focusButton = iconButton("focus", tr("tree.focus", "Focus current ResearchNode"));
     focusButton.disabled = focusIds.size === 0;
-    const zoomOutButton = iconButton("zoom-out", "Zoom out");
-    const zoomInButton = iconButton("zoom-in", "Zoom in");
-    const fitButton = iconButton("fit", "Fit Research Tree");
+    if (focusButton.disabled) {
+      const reason = tr("tree.noFocus", "No focused ResearchNode is recorded");
+      focusButton.title = reason;
+      focusButton.setAttribute("aria-label", reason);
+    }
+    const zoomOutButton = iconButton("zoom-out", tr("tree.zoomOut", "Zoom out"));
+    const zoomInButton = iconButton("zoom-in", tr("tree.zoomIn", "Zoom in"));
+    const fitButton = iconButton("fit", tr("tree.fit", "Fit Research Tree"));
     actions.append(stats, focusButton, zoomOutButton, zoomInButton, fitButton);
     toolbar.append(phaseControl, actions);
 
     const stage = element("div", "research-tree-stage");
     stage.tabIndex = 0;
     stage.setAttribute("role", "application");
-    stage.setAttribute("aria-label", "ResearchNode dependency tree");
+    stage.setAttribute("aria-label", tr("tree.aria", "ResearchNode dependency tree"));
     const canvas = element("div", "research-tree-canvas");
     canvas.style.width = `${layout.width}px`;
     canvas.style.height = `${layout.height}px`;
@@ -131,7 +136,7 @@
     stage.append(minimap);
 
     const outline = element("div", "research-tree-outline");
-    outline.setAttribute("aria-label", "ResearchNode dependency outline");
+    outline.setAttribute("aria-label", tr("tree.outlineAria", "ResearchNode dependency outline"));
     const orderedNodes = [...nodes].sort((left, right) => {
       const a = layout.positions[identifier(left)];
       const b = layout.positions[identifier(right)];
@@ -428,7 +433,7 @@
     targetDot.setAttribute("cy", String(y2));
     targetDot.setAttribute("r", "3.4");
     const title = svgElement("title", "");
-    title.textContent = `${edge.source} to ${edge.target}`;
+    title.textContent = `${edge.source} ${tr("tree.edgeTo", "to")} ${edge.target}`;
     group.append(path, sourceDot, targetDot, title);
     return group;
   }
@@ -447,19 +452,19 @@
       element("span", "research-tree-node-id", identifier(node)),
     );
     const status = element("span", "research-tree-node-status");
-    status.append(element("span", "research-tree-status-dot"), document.createTextNode(String(node.status || "unknown")));
+    status.append(element("span", "research-tree-status-dot"), document.createTextNode(trStatus(node.status || "unknown")));
     heading.append(identity, status);
     const title = element("div", "research-tree-node-title", String(node.title || node.objective || identifier(node)));
     const opening = object(node.opening_decision);
     const decision = element("div", "research-tree-node-copy");
-    decision.append(element("span", "research-tree-node-label", "Decision"), element("span", "research-tree-node-text", String(opening.rationale || node.objective || "No rationale recorded.")));
+    decision.append(element("span", "research-tree-node-label", tr("tree.decision", "Decision")), element("span", "research-tree-node-text", String(opening.rationale || node.objective || tr("tree.noRationale", "No rationale recorded."))));
     const result = object(node.result);
     const outcome = element("div", "research-tree-node-copy outcome");
-    outcome.append(element("span", "research-tree-node-label", "Outcome"), element("span", "research-tree-node-text", String(result.summary || "Pending")));
+    outcome.append(element("span", "research-tree-node-label", tr("tree.outcome", "Outcome")), element("span", "research-tree-node-text", String(result.summary || tr("tree.pending", "Pending"))));
     const attempts = records(node.attempts);
     const latest = attempts.at(-1);
-    const latestText = latest ? ` | ${latest.intent_id} ${attemptState(latest)}` : "";
-    const meta = element("div", "research-tree-node-meta", `${attempts.length} attempts${latestText}`);
+    const latestText = latest ? ` | ${latest.intent_id} ${trStatus(attemptState(latest))}` : "";
+    const meta = element("div", "research-tree-node-meta", `${attempts.length} ${tr(attempts.length === 1 ? "tree.attempt" : "tree.attempts", attempts.length === 1 ? "attempt" : "attempts")}${latestText}`);
     button.append(heading, title, decision, outcome, meta);
     button.title = [node.title, opening.rationale, result.summary].filter(Boolean).join("\n");
     return button;
@@ -475,17 +480,17 @@
     head.append(
       element("span", "research-tree-phase", String(phase?.phase_id || node.phase_ref || "phase")),
       element("span", "research-tree-node-id", identifier(node)),
-      element("span", "research-tree-outline-status", String(node.status || "unknown")),
+      element("span", "research-tree-outline-status", trStatus(node.status || "unknown")),
     );
     const title = element("div", "research-tree-outline-title", String(node.title || node.objective || identifier(node)));
     const dependencies = records(node.dependency_refs);
-    const lineage = element("div", "research-tree-outline-lineage", dependencies.length ? `from ${dependencies.join(", ")}` : "entry decision");
+    const lineage = element("div", "research-tree-outline-lineage", dependencies.length ? `${tr("tree.from", "from")} ${dependencies.join(", ")}` : tr("tree.entryDecision", "entry decision"));
     const attempts = records(node.attempts);
     const latest = attempts.at(-1);
     const attemptMeta = element(
       "div",
       "research-tree-outline-attempts",
-      latest ? `${attempts.length} attempts | ${latest.intent_id} ${attemptState(latest)}` : "No calculation attempts",
+      latest ? `${attempts.length} ${tr(attempts.length === 1 ? "tree.attempt" : "tree.attempts", attempts.length === 1 ? "attempt" : "attempts")} | ${latest.intent_id} ${trStatus(attemptState(latest))}` : tr("tree.noCalculationAttempts", "No calculation attempts"),
     );
     button.append(head, title, lineage, attemptMeta);
     return button;
@@ -521,6 +526,14 @@
     const programStatus = String(attempt?.program_status || "").toLowerCase();
     if (["completed", "normal_termination", "failed", "running"].includes(programStatus)) return programStatus;
     return String(attempt?.state || attempt?.program_status || "unknown");
+  }
+
+  function tr(key, fallback = key, variables = null) {
+    return global.TSExplorerI18n?.t(key, fallback, variables) || fallback;
+  }
+
+  function trStatus(value) {
+    return global.TSExplorerI18n?.status(value) || String(value || "unknown");
   }
 
   function traverse(adjacency, start) {

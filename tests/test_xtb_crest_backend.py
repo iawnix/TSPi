@@ -221,6 +221,9 @@ def test_xtb_opt_freq_parse_consumes_bound_artifact_set_and_advances_collected_r
         "job_id": "123.cluster",
         "intent_id": intent["intent_id"],
         "node_id": intent["node_id"],
+        "capability": intent["capability"],
+        "capability_version": intent["capability_version"],
+        "expected_output_roles": intent["expected_output_roles"],
         "state": "collected",
         "program_status": "completed",
         "exit_status": 0,
@@ -231,9 +234,11 @@ def test_xtb_opt_freq_parse_consumes_bound_artifact_set_and_advances_collected_r
         "parser_facts": {},
         "error_class": None,
         "provenance": {
-            "backend": "xtb",
             "intent_digest": sha256_json(intent),
-            "intent_schema": "ts-calculation-intent/5",
+            "capability": intent["capability"],
+            "capability_version": intent["capability_version"],
+            "capability_descriptor_digest": intent["capability_descriptor_digest"],
+            "intent_schema": intent["schema_version"],
             "attempt_kind": "primary",
             "recalculation_ref": None,
         },
@@ -593,15 +598,15 @@ def _intent(workspace: Path, backend: str, task_type: str) -> Path:
         control = by_path[f"inputs/{task_type}.inp"]
         input_artifacts.append({"input_role": "control", "artifact_id": control["artifact_id"]})
     created = create_calculation_intent(workspace, {
-        "schema_version": "ts-calculation-request/4",
+        "schema_version": "ts-calculation-request/5",
         "node_id": node_id,
         "purpose": f"Exercise deterministic {backend} {task_type} parsing.",
         "attempt_kind": "primary",
         "lineage": None,
-        "backend": backend,
-        "task_type": task_type,
+        "capability": f"{backend}.{task_type}",
+        "capability_version": "1",
         "input_artifacts": input_artifacts,
-        "settings": {},
+        "parameters": {},
         "execution_target": {"kind": "local"},
         "dry_run": True,
     })

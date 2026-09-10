@@ -246,15 +246,30 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
     (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
     payload_sha256 = _write_test_python_payload(package)
     runtime_probe = _runtime_probe(payload_sha256=payload_sha256)
-    base_prefix = Path(sys.base_prefix).resolve()
-    kernel_prefix = Path(sys.prefix).resolve()
+    # Keep this fixture valid on both Conda (where ``sys.prefix`` equals
+    # ``sys.base_prefix``) and venv interpreters.  The production contract
+    # deliberately requires distinct base and kernel prefixes, so model that
+    # layout with small synthetic files rather than weakening the validator.
+    base_prefix = tmp_path / "managed-base"
+    kernel_prefix = tmp_path / "managed-kernel"
+    base_python = base_prefix / "bin" / "python"
+    python = kernel_prefix / "bin" / "python"
+    numpy_origin = base_prefix / "lib" / "numpy.py"
+    rdkit_origin = base_prefix / "lib" / "rdkit.py"
+    for path in (base_python, python, numpy_origin, rdkit_origin):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# test runtime file\n", encoding="utf-8")
+    runtime_probe["python"]["executable"] = str(python)
+    runtime_probe["distribution"]["root"] = str(kernel_prefix)
+    runtime_probe["modules"]["numpy"]["origin"] = str(numpy_origin)
+    runtime_probe["modules"]["rdkit"]["origin"] = str(rdkit_origin)
     manifest_path = write_manifest(
         package,
         {
             "schema_version": "ts-agent-runtime/2",
-            "python_executable": sys.executable,
+            "python_executable": str(python),
             "env_prefix": str(base_prefix),
-            "base_python_executable": str(Path(sys._base_executable).resolve()),
+            "base_python_executable": str(base_python),
             "kernel_env_prefix": str(kernel_prefix),
             "spec_sha256": spec_sha256(package),
             "python_payload_sha256": payload_sha256,
@@ -263,7 +278,7 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
     )
 
     assert stat.S_IMODE(manifest_path.stat().st_mode) == 0o600
-    assert configured_python(package) == Path(sys.executable).resolve()
+    assert configured_python(package) == python.resolve()
 
 
 def test_seed_workspace_root_from_argv_sets_runtime_env(monkeypatch, tmp_path: Path) -> None:
@@ -353,7 +368,7 @@ def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) 
     probe["distribution"]["version"] = "0.10.0"
     write_manifest(package, {**base, "runtime_probe": probe})
     assert configured_python(package) is None
-    probe["distribution"]["version"] = "0.11.1"
+    probe["distribution"]["version"] = "0.12.0"
 
     external_rdkit = tmp_path / "user-site" / "rdkit.py"
     external_rdkit.parent.mkdir()
@@ -722,7 +737,7 @@ def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
         "distribution": {
             "name": "ts-agent-kernel",
             "installed": True,
-            "version": "0.11.1",
+            "version": "0.12.0",
             "root": str(kernel_prefix),
             "payload_sha256": payload_sha256 or python_payload_sha256(ROOT),
         },
@@ -743,7 +758,7 @@ def _write_test_python_payload(package: Path) -> str:
     source.mkdir(parents=True)
     (source / "__init__.py").write_text('"""test payload"""\n', encoding="utf-8")
     (package / "package.json").write_text(
-        '{"name":"@iawnix/ts-agent","version":"0.11.1"}\n',
+        '{"name":"@iawnix/ts-agent","version":"0.12.0"}\n',
         encoding="utf-8",
     )
     return python_payload_sha256(package)

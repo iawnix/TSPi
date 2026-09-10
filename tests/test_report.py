@@ -8,14 +8,16 @@ import pytest
 from tests.workspace_helpers import accept_research_claim
 from ts_agent.compute.artifacts import list_calculation_artifacts
 from ts_agent.report import build_final_report, build_report_package
+from ts_agent.report import builder as report_builder
 from ts_agent.report.context import collect_report_context
-from ts_agent.workspace.decision import draft_decision
-from ts_agent.workspace.engine import apply_decision, init_workspace
+from tests.kernel_helpers import compile_change
+from ts_agent.workspace.engine import init_workspace
+from tests.kernel_helpers import apply_compiled_change
 from ts_agent.io import read_json
 
 
 def _seed(root: Path) -> dict[str, str]:
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {
             "rationale": "Seed a reportable DAG.",
@@ -72,7 +74,7 @@ def _seed(root: Path) -> dict[str, str]:
             ],
         },
     )
-    apply_decision(root, drafted["decision"])
+    apply_compiled_change(root, drafted["decision"])
     return drafted["allocated_refs"]
 
 
@@ -150,6 +152,65 @@ def test_report_rejects_non_reports_output_path(tmp_path: Path) -> None:
         build_report_package(root, tmp_path / "outside")
 
 
+def test_report_does_not_ingest_symlinked_canonical_document(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "claims.json").write_text(
+        (root / "claims.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (root / "claims.json").unlink()
+    (root / "claims.json").symlink_to(outside / "claims.json")
+
+    with pytest.raises(ValueError, match="symbolic link|required file"):
+        collect_report_context(root)
+    with pytest.raises(ValueError, match="symbolic link|required file"):
+        build_report_package(root, root / "reports" / "linked-input")
+
+
+def test_report_rejects_symlinked_package_target(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    _seed(root)
+    external = tmp_path / "external-report"
+    external.mkdir()
+    target = root / "reports" / "linked-target"
+    target.symlink_to(external, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="symbolic link"):
+        build_report_package(root, target)
+
+
+def test_report_manifest_rejects_injected_symlink_entry(tmp_path: Path) -> None:
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "final_report.md").write_text("report\n", encoding="utf-8")
+    (package / "external.txt").symlink_to(tmp_path / "secret.txt")
+
+    with pytest.raises(ValueError, match="symbolic link"):
+        report_builder._package_manifest(package, "sha256:" + "0" * 64, "sha256:" + "1" * 64)
+
+
+def test_report_surfaces_operational_attempt_integrity_findings(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    refs = _seed(root)
+    attempts = root / "nodes" / refs["node"] / "attempts"
+    outside = tmp_path / "outside-attempts"
+    (outside / "calc_1").mkdir(parents=True)
+    attempts.mkdir(parents=True)
+    attempts.rmdir()
+    attempts.symlink_to(outside, target_is_directory=True)
+
+    context = collect_report_context(root)
+    text = build_final_report(root)
+
+    assert context["calculation_attempt_integrity_findings"][0]["scope"] == "attempt_parent"
+    assert "calculation Attempt integrity error(s) remain" in text
+
+
 def test_report_copies_logical_render_artifacts_into_manifested_assets(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
@@ -190,7 +251,7 @@ def test_report_uses_only_current_acceptance_for_executive_status(tmp_path: Path
     assert [item["acceptance_id"] for item in current["current_acceptances"]] == [refs["acceptance"]]
     assert "current, immutable acceptance snapshots" in build_final_report(root)
 
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {
             "rationale": "Record a later limitation without erasing acceptance history.",
@@ -208,7 +269,7 @@ def test_report_uses_only_current_acceptance_for_executive_status(tmp_path: Path
             ],
         },
     )
-    apply_decision(root, drafted["decision"])
+    apply_compiled_change(root, drafted["decision"])
 
     stale = collect_report_context(root)
     assert stale["current_acceptances"] == []

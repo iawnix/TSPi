@@ -21,20 +21,18 @@ from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_TOOLS = {
-    "ts_workspace_context",
-    "ts_workspace_decision_draft",
-    "ts_workspace_decision_validate",
-    "ts_workspace_decision_apply",
-    "ts_subagent_review",
-    "ts_review_disposition",
-    "ts_subagent_compute",
-    "ts_remote_inspect",
-    "ts_structure_seed",
-    "ts_structure_compare",
-    "ts_artifact_import",
+    "ts_state",
+    "ts_change",
+    "ts_review",
+    "ts_reply",
+    "ts_calc",
+    "ts_remote",
+    "ts_seed",
+    "ts_compare",
+    "ts_import",
     "ts_render",
     "ts_report",
-    "ts_notify_user",
+    "ts_notify",
 }
 
 

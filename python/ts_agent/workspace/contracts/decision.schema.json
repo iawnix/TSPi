@@ -11,7 +11,7 @@
         {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_research_node"}, "record": {"$ref": "research_node.schema.json"}}},
         {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_observation"}, "record": {"$ref": "observation.schema.json"}}},
         {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_finding"}, "record": {"$ref": "finding.schema.json"}}},
-        {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_validation_spec"}, "record": {"$ref": "validation_spec.schema.json"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_proof_spec"}, "record": {"$ref": "proof_spec.schema.json"}}},
         {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_validation_result"}, "record": {"$ref": "validation_result.schema.json"}}},
         {
           "type": "object", "additionalProperties": false,
@@ -70,7 +70,7 @@
     "base_revision", "allocations", "operations", "created_at"
   ],
   "properties": {
-    "schema_version": {"const": "ts-research-decision/2"},
+    "schema_version": {"const": "ts-research-decision/3"},
     "decision_id": {"$ref": "#/$defs/decision_id"},
     "rationale": {"type": "string", "minLength": 1, "maxLength": 12000},
     "basis_refs": {"type": "array", "uniqueItems": true, "maxItems": 256, "items": {"type": "string", "minLength": 1, "maxLength": 512}},
@@ -92,7 +92,7 @@
         "anyOf": [
           {"pattern": "^phase_[1-9][0-9]*$"},
           {"pattern": "^claim_[1-9][0-9]*$"},
-          {"pattern": "^(rel|obs|fnd|gsp|val|acc)_[1-9][0-9]*$"},
+          {"pattern": "^(rel|obs|fnd|proof|result|acc)_[1-9][0-9]*$"},
           {"pattern": "^node_[1-9][0-9]*$"}
         ]
       }

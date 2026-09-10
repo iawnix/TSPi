@@ -21,7 +21,7 @@ claims.json
 claim_relations.json
 research_nodes.json
 observations.json
-validation_specs.json
+proof_specs.json
 validation_results.json
 findings.json
 acceptances/<acceptance_id>.json
@@ -49,16 +49,16 @@ the existing layout does not satisfy the active contract.
 
 ## Write Boundary
 
-Only `ts_workspace_decision_apply` writes canonical state after bootstrap.
-Normal callers use:
+Only `ts_change` writes canonical state after bootstrap. Normal callers use:
 
 ```text
-context -> draft -> validate -> apply
+ts_state -> Root decision -> ts_change
 ```
 
-Do not edit canonical JSON, JSONL, acceptance files, or `.agents` identity by
-hand. Do not use Compute, Review, Report, UI, or remote tools as alternate
-writers.
+`ts_change` privately compiles the request, validates a complete copied
+post-state, and commits under the same lock. Do not edit canonical JSON, JSONL,
+acceptance files, or `.agents` identity by hand. Do not use Compute, Review,
+Report, UI, or remote tools as alternate writers.
 
 ## Identity And Paths
 
@@ -81,14 +81,15 @@ are execution mirrors and never become canonical local refs.
 - Activity request/status bindings, IDs, physical ownership, `node_refs`, and
   terminal status/result combinations are consistent.
 - A ResearchNode cannot complete with a non-terminal owned Compute run,
-  running/pending activities, or pending/unresolved compute controls. Failed
-  activities require a non-success Node outcome.
+  running/pending activities, pending/unresolved compute controls, or an owned
+  calculation Attempt awaiting submission resolution, execution, collection,
+  or parsing. Failed activities require a non-success Node outcome.
 - Every Observation and Finding is indexed by its producing/referenced Nodes.
 - Observation datatype matches its value and artifact digests match files.
-- Every GateSpec is content- and registry-digest bound.
-- Every ValidationResult recomputes exactly from its GateSpec and selected
+- Every ProofSpec is content- and registry-digest bound.
+- Every ValidationResult recomputes exactly from its ProofSpec and selected
   Observations.
-- Acceptance history snapshots a supported Claim, at least one GateSpec, the
+- Acceptance history snapshots a supported Claim, at least one ProofSpec, the
   latest passing results, and applicable Findings. A shared projection marks a
   record current only while those inputs still match canonical state.
 - Focus refs and acceptance indexes match existing canonical records.

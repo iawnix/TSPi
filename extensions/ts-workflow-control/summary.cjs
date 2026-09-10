@@ -11,7 +11,7 @@ const WORKSPACE_MARKERS = [
   "claim_relations.json",
   "research_nodes.json",
   "observations.json",
-  "validation_specs.json",
+  "proof_specs.json",
   "validation_results.json",
   "findings.json",
 ];
@@ -25,7 +25,7 @@ function isWorkspaceRoot(root) {
   if (!root || !WORKSPACE_MARKERS.every((name) => fs.existsSync(path.join(root, name)))) return false;
   try {
     const workspace = JSON.parse(fs.readFileSync(path.join(root, "workspace.json"), "utf8"));
-    return workspace.schema_version === "ts-workspace/5" && workspace.kernel_protocol === "ts-research-kernel/5";
+    return workspace.schema_version === "ts-workspace/6" && workspace.kernel_protocol === "ts-research-kernel/6";
   } catch (_error) {
     return false;
   }
@@ -73,7 +73,7 @@ function buildContextDetails(context) {
     claimRelations: arrayOfObjects(context.claim_relations),
     researchNodes: arrayOfObjects(context.research_nodes),
     observations: arrayOfObjects(context.observations),
-    validationSpecs: arrayOfObjects(context.validation_specs),
+    validationSpecs: arrayOfObjects(context.proof_specs),
     validationResults: arrayOfObjects(context.validation_results),
     findings: arrayOfObjects(context.findings),
     acceptances: arrayOfObjects(context.acceptances),
@@ -81,6 +81,9 @@ function buildContextDetails(context) {
     incompleteValidation: arrayOfObjects(context.incomplete_validation),
     pendingReviewDispositions: arrayOfObjects(context.pending_review_dispositions),
     unresolvedControls: arrayOfObjects(context.unresolved_controls),
+    calculationAttempts: arrayOfObjects(context.calculation_attempts),
+    calculationAttemptIntegrityFindings: arrayOfObjects(context.calculation_attempt_integrity_findings),
+    operationalIntegrityFindings: arrayOfObjects(context.operational_integrity_findings),
     recentDecisions: arrayOfObjects(context.recent_decisions),
     omitted: objectOrEmpty(context.omitted),
     retrieval: objectOrEmpty(context.retrieval),
@@ -95,6 +98,9 @@ function buildContextDetails(context) {
       reviewDispositionPendingCount: numberOrZero(operational.review_disposition_pending_count),
       controlUnresolvedCount: numberOrZero(operational.control_unresolved_count),
       ambiguousSubmissionCount: numberOrZero(operational.ambiguous_submission_count),
+      calculationAttemptCount: numberOrZero(operational.calculation_attempt_count),
+      calculationAttemptBlockingCount: numberOrZero(operational.calculation_attempt_blocking_count),
+      calculationAttemptIntegrityErrorCount: numberOrZero(operational.calculation_attempt_integrity_error_count),
     },
   };
 }
@@ -124,7 +130,7 @@ function buildContextSummary(context, options = {}) {
     `- open_nodes: ${openNodes.length ? openNodes.slice(0, maxItems).map(formatNode).join("; ") : "(none)"}`,
     `- claims: ${claims.length ? claims.slice(0, maxItems).map(formatClaim).join("; ") : "(none)"}`,
     `- graph: relations=${details.claimRelations.length}; observations=${details.observations.length}; specs=${details.validationSpecs.length}; results=${details.validationResults.length}; findings=${details.findings.length}`,
-    `- operations: calculations=${op.calculationFileCount}; activities=${op.activityCount}; activity_failures=${op.activityFailedCount}; agent_runs=${op.agentRunCount}; agent_failures=${op.agentRunFailedCount}; agent_pending=${op.agentRunPendingCount}; pending_review_responses=${op.reviewDispositionPendingCount}; unresolved_controls=${op.controlUnresolvedCount}; ambiguous_submissions=${op.ambiguousSubmissionCount}`,
+    `- operations: calculations=${op.calculationFileCount}; attempts=${op.calculationAttemptCount} (blocking=${op.calculationAttemptBlockingCount}, invalid=${op.calculationAttemptIntegrityErrorCount}); activities=${op.activityCount}; activity_failures=${op.activityFailedCount}; agent_runs=${op.agentRunCount}; agent_failures=${op.agentRunFailedCount}; agent_pending=${op.agentRunPendingCount}; pending_review_responses=${op.reviewDispositionPendingCount}; unresolved_controls=${op.controlUnresolvedCount}; ambiguous_submissions=${op.ambiguousSubmissionCount}`,
   ];
   if (validationGaps.length) {
     lines.push(`- incomplete_validation: ${validationGaps.slice(0, maxItems).map(formatValidationGap).join("; ")}`);
@@ -141,11 +147,17 @@ function buildContextSummary(context, options = {}) {
   if (details.validationFindings.length) {
     lines.push(`- workspace_findings: ${details.validationFindings.slice(0, maxItems).map((item) => `${item.code || "finding"}:${item.message || ""}`).join("; ")}`);
   }
+  if (details.calculationAttemptIntegrityFindings.length) {
+    lines.push(`- attempt_integrity: ${details.calculationAttemptIntegrityFindings.slice(0, maxItems).map((item) => `${item.scope || "attempt"}:${item.path || "?"} - ${item.message || ""}`).join("; ")}`);
+  }
+  if (details.operationalIntegrityFindings.length) {
+    lines.push(`- operational_integrity: ${details.operationalIntegrityFindings.slice(0, maxItems).map((item) => `${item.path || "?"} - ${item.message || ""}`).join("; ")}`);
+  }
   if (Object.values(details.omitted).some((value) => numberOrZero(value) > 0)) {
     lines.push(`- omitted: ${formatCounts(details.omitted)}; retrieve a claim, node, finding, validation, or bounded subgraph explicitly.`);
   }
   lines.push("- authority: the Root Agent chooses research strategy; Claims hold hypotheses and falsifiers; the kernel validates and atomically commits explicit operations.");
-  lines.push("- contract: draft, validate, and apply one ts-research-decision/2; never edit canonical registries directly.");
+  lines.push("- contract: draft, validate, and apply one ts-research-decision/3; never edit canonical registries directly.");
   return lines.join("\n");
 }
 
@@ -188,7 +200,17 @@ function formatNode(node) {
   const objective = truncateText(stringValue(node.objective), 180);
   const deliverable = truncateText(stringValue(node.deliverable), 180);
   const identity = `${node.node_id || "node"}@${node.phase_ref || "phase"}/${node.status || "?"}`;
-  return `${identity}: ${title || "Untitled Node"}; question=${objective || "(not recorded)"}; deliverable=${deliverable || "(not recorded)"}${rationale ? ` [decision=${rationale}]` : ""}`;
+  const attempts = arrayOfObjects(node.attempts);
+  const attemptText = attempts.length
+    ? `; attempts=${attempts.slice(0, 8).map(formatAttempt).join(",")}${attempts.length > 8 ? `(+${attempts.length - 8})` : ""}`
+    : "";
+  return `${identity}: ${title || "Untitled Node"}; question=${objective || "(not recorded)"}; deliverable=${deliverable || "(not recorded)"}${attemptText}${rationale ? ` [decision=${rationale}]` : ""}`;
+}
+
+function formatAttempt(attempt) {
+  const id = attempt.intent_id || "calc";
+  const state = attempt.state || attempt.program_status || "unknown";
+  return `${id}/${state}${attempt.blocks_completion ? "!" : ""}`;
 }
 
 function formatTrajectory(nodes, maxItems) {
@@ -210,7 +232,7 @@ function formatClaim(claim) {
 }
 
 function formatValidationGap(item) {
-  return `${item.spec_id || item.spec_ref || "spec"}:${item.dimension || item.status || "unevaluated"}`;
+  return `${item.proof_id || item.proof_ref || "spec"}:${item.dimension || item.status || "unevaluated"}`;
 }
 
 function formatFinding(item) {

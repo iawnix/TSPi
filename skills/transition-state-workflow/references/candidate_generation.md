@@ -19,7 +19,7 @@ rationale.
 
 Create a ResearchNode whose objective states what hypothesis the candidate tests.
 Bind all seeds through logical artifact IDs. Link every immutable compute intent
-and preserve method/settings. After collection, record candidate coordinates,
+and preserve method/parameters. After collection, record candidate coordinates,
 energies, constraints, and provenance as separate Observations when useful.
 
 Use Findings for distorted geometry, atom-map ambiguity, fragment collapse,
@@ -35,5 +35,5 @@ characterization. For a classical TS this normally separates:
 - bidirectional connectivity and endpoint identity;
 - additional state, robustness, stereochemical, or thermochemical checks.
 
-Freeze only the relevant GateSpecs. The DAG may branch across candidates or
+Freeze only the relevant ProofSpecs. The DAG may branch across candidates or
 methods; it does not rank them automatically.

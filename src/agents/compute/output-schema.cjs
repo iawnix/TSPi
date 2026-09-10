@@ -45,7 +45,10 @@ function buildComputeResult(submission, packet, actions) {
     artifact_refs: artifactRefs,
     program: programResult(primaryResult),
     payload: {
-      backend: task.inputs.backend,
+      capability: task.inputs.capability,
+      capability_version: task.inputs.capability_version,
+      capability_descriptor_digest: task.inputs.capability_descriptor_digest,
+      expected_output_roles: task.inputs.expected_output_roles,
       node_id: task.inputs.node_id,
       intent_id: task.inputs.intent_id,
       action_outcome: actionOutcome(normalizedActions),
@@ -156,6 +159,16 @@ function validateAction(value, task, expectedAction, index) {
   if (provenance.intent_digest && provenance.intent_digest !== task.inputs.intent_digest) {
     throw new Error(`Compute action ${index + 1} intent digest changed`);
   }
+  const actionCapability = provenance.capability || canonical.capability;
+  const actionCapabilityVersion = provenance.capability_version || canonical.capability_version;
+  const actionDescriptorDigest = provenance.capability_descriptor_digest || canonical.capability_descriptor_digest;
+  if (
+    actionCapability !== task.inputs.capability
+    || actionCapabilityVersion !== task.inputs.capability_version
+    || actionDescriptorDigest !== task.inputs.capability_descriptor_digest
+  ) {
+    throw new Error(`Compute action ${index + 1} capability binding changed`);
+  }
   return value;
 }
 
@@ -171,10 +184,17 @@ function validateSubmission(value) {
 function validatePayload(value, task, actions) {
   if (!isPlainObject(value)) throw new Error("Compute payload must be an object");
   rejectUnknownKeys(value, [
-    "backend", "node_id", "intent_id", "action_outcome", "completed_actions",
-    "reconciliation_required",
+    "capability", "capability_version", "capability_descriptor_digest", "expected_output_roles",
+    "node_id", "intent_id", "action_outcome", "completed_actions", "reconciliation_required",
   ], "Compute payload");
-  if (value.backend !== task.inputs.backend || value.node_id !== task.inputs.node_id || value.intent_id !== task.inputs.intent_id) {
+  if (
+    value.capability !== task.inputs.capability
+    || value.capability_version !== task.inputs.capability_version
+    || value.capability_descriptor_digest !== task.inputs.capability_descriptor_digest
+    || JSON.stringify(value.expected_output_roles) !== JSON.stringify(task.inputs.expected_output_roles)
+    || value.node_id !== task.inputs.node_id
+    || value.intent_id !== task.inputs.intent_id
+  ) {
     throw new Error("Compute payload does not match the bound task");
   }
   const expectedActions = actions.map((action) => actionName(action.tool));

@@ -6,17 +6,24 @@ from pathlib import Path
 
 import pytest
 
-from tests.workspace_helpers import accept_research_claim
+from tests.workspace_helpers import (
+    accept_research_claim,
+    calculation_prepared_fixture,
+    calculation_intent_fixture,
+    calculation_result_fixture,
+)
 from ts_agent.workspace.acceptance import project_acceptances
-from ts_agent.workspace.decision import draft_decision as _kernel_draft_decision, validate_decision
-from ts_agent.workspace.engine import apply_decision, init_workspace, validate_decision_dry_run
+from tests.kernel_helpers import compile_change as _kernel_compile_change
+from ts_agent.workspace.decision import validate_decision
+from ts_agent.workspace.engine import change_workspace, init_workspace
+from tests.kernel_helpers import apply_compiled_change, validate_compiled_change
 from ts_agent.workspace.errors import ContractError
 from ts_agent.io import read_json, write_json
 from ts_agent.workspace.state import RESEARCH_STATE_FILE, STATE_FILES
 from ts_agent.workspace.validator import validate_workspace
 
 
-def draft_decision(root: Path, request: dict, **kwargs: object) -> dict:
+def compile_change(root: Path, request: dict, **kwargs: object) -> dict:
     operations = [dict(operation) for operation in request.get("operations", [])]
     starts = [operation for operation in operations if operation.get("op") == "start_node"]
     if starts:
@@ -36,17 +43,17 @@ def draft_decision(root: Path, request: dict, **kwargs: object) -> dict:
             phase_ref = "$phase"
         for operation in starts:
             operation.setdefault("phaseRef", phase_ref)
-    return _kernel_draft_decision(root, {**request, "operations": operations}, **kwargs)
+    return _kernel_compile_change(root, {**request, "operations": operations}, **kwargs)
 
 
 def _apply(root: Path, operations: list[dict], *, rationale: str = "Exercise the research kernel.") -> tuple[dict, dict]:
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {"rationale": rationale, "basis_refs": [], "operations": operations},
     )
-    validation = validate_decision_dry_run(root, drafted["decision"])
+    validation = validate_compiled_change(root, drafted["decision"])
     assert validation["valid"] is True
-    result = apply_decision(root, drafted["decision"])
+    result = apply_compiled_change(root, drafted["decision"])
     return drafted, result
 
 
@@ -55,6 +62,91 @@ def _acceptance_projection(root: Path) -> list[dict]:
     return project_acceptances(root, documents[RESEARCH_STATE_FILE]["acceptance_refs"], documents)
 
 
+@pytest.mark.parametrize(
+    ("operation", "message"),
+    [
+        ({}, "'op' is a required property"),
+        ({"op": "not_a_kernel_operation"}, "unsupported change operation"),
+        (
+            {"op": "set_focus", **{f"extra_{index}": index for index in range(24)}},
+            "has too many properties",
+        ),
+    ],
+)
+def test_ts_change_rejects_malformed_or_oversized_operation_envelope(
+    tmp_path: Path,
+    operation: dict,
+    message: str,
+) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+
+    with pytest.raises(ContractError, match=message):
+        change_workspace(
+            root,
+            {
+                "schema_version": "ts-change-request/1",
+                "rationale": "Reject an invalid typed mutation envelope.",
+                "basis_refs": [],
+                "operations": [operation],
+            },
+        )
+
+
+def test_ts_change_is_atomic_when_post_state_validation_fails(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    before = {name: (root / name).read_bytes() for name in STATE_FILES}
+    request = {
+        "schema_version": "ts-change-request/1",
+        "rationale": "Reject a cyclic Claim graph without committing its partial proposal.",
+        "basis_refs": [],
+        "operations": [
+            {
+                "op": "create_claim",
+                "local_ref": "a",
+                "question": "Which Claim is first?",
+                "claimType": "test",
+                "statement": "Claim A.",
+                "scope": "The bounded fixture.",
+                "uncertainty": "The relation is unresolved.",
+                "predictions": ["A testable observation supports Claim A."],
+                "falsifiers": ["A testable observation contradicts Claim A."],
+            },
+            {
+                "op": "create_claim",
+                "local_ref": "b",
+                "question": "Which Claim is second?",
+                "claimType": "test",
+                "statement": "Claim B.",
+                "scope": "The bounded fixture.",
+                "uncertainty": "The relation is unresolved.",
+                "predictions": ["A testable observation supports Claim B."],
+                "falsifiers": ["A testable observation contradicts Claim B."],
+            },
+            {
+                "op": "relate_claims",
+                "local_ref": "ab",
+                "sourceClaimRef": "$a",
+                "targetClaimRef": "$b",
+                "relationType": "depends_on",
+                "rationale": "A depends on B.",
+            },
+            {
+                "op": "relate_claims",
+                "local_ref": "ba",
+                "sourceClaimRef": "$b",
+                "targetClaimRef": "$a",
+                "relationType": "depends_on",
+                "rationale": "B depends on A.",
+            },
+        ],
+    }
+
+    with pytest.raises(ContractError, match="cycle"):
+        change_workspace(root, request)
+
+    assert before == {name: (root / name).read_bytes() for name in STATE_FILES}
 def test_research_node_dag_supports_branch_merge_and_kernel_ids(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
@@ -125,7 +217,7 @@ def test_one_research_decision_cannot_open_or_close_multiple_roadmap_records(
     operations = [{"op": operation}, {"op": operation}]
 
     with pytest.raises(ContractError, match="each material research transition remains visible"):
-        _kernel_draft_decision(
+        _kernel_compile_change(
             root,
             {"rationale": "Reject an opaque multi-Node transition.", "basis_refs": [], "operations": operations},
         )
@@ -134,7 +226,7 @@ def test_one_research_decision_cannot_open_or_close_multiple_roadmap_records(
 def test_frozen_decision_cannot_bypass_the_single_node_transition_contract(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    drafted = _kernel_draft_decision(
+    drafted = _kernel_compile_change(
         root,
         {
             "rationale": "Open one visible research decision.",
@@ -186,6 +278,56 @@ def test_one_decision_may_close_a_node_and_open_its_successor(tmp_path: Path) ->
     assert nodes[successor_id]["dependency_refs"] == [first_id]
 
 
+def test_node_completion_rejects_a_queued_calculation_attempt(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    started, _ = _apply(root, [{
+        "op": "start_node",
+        "local_ref": "node",
+        "title": "Wait for calculation",
+        "objective": "Keep the research episode open until its calculation settles.",
+        "deliverable": "A terminal calculation outcome.",
+    }])
+    node_id = started["allocated_refs"]["node"]
+    attempt = root / "nodes" / node_id / "attempts" / "calc_1"
+    intent = calculation_intent_fixture(node_id, "calc_1")
+    write_json(attempt / "intent.json", intent)
+    write_json(attempt / "prepared.json", calculation_prepared_fixture(intent))
+    write_json(
+        attempt / "status.json",
+        calculation_result_fixture(
+            intent,
+            state="queued",
+            program_status="not_run",
+            job_id="208319.cluster.hpc",
+        ),
+    )
+
+    with pytest.raises(ContractError, match="calculation Attempt is still queued"):
+        _apply(root, [{
+            "op": "complete_node",
+            "nodeRef": node_id,
+            "outcome": "inconclusive",
+            "summary": "The calculation has not reached a terminal state.",
+        }])
+
+    write_json(
+        attempt / "outputs" / "calculation_result.json",
+        calculation_result_fixture(
+            intent,
+            state="parsed",
+            program_status="completed",
+            job_id="208319.cluster.hpc",
+        ),
+    )
+    _apply(root, [{
+        "op": "complete_node",
+        "nodeRef": node_id,
+        "outcome": "completed",
+        "summary": "The parsed calculation is now terminal.",
+    }])
+
+
 def test_one_decision_may_start_and_complete_the_same_node(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
@@ -227,7 +369,7 @@ def test_combined_close_and_open_requires_an_explicit_successor_edge(tmp_path: P
     }])
 
     with pytest.raises(ContractError, match="explicit dependency of its successor"):
-        _kernel_draft_decision(
+        _kernel_compile_change(
             root,
             {
                 "rationale": "Do not hide two unrelated research transitions.",
@@ -255,7 +397,7 @@ def test_research_node_requires_an_explicit_phase_reference(tmp_path: Path) -> N
     root = tmp_path / "workspace"
     init_workspace(root)
     with pytest.raises(ContractError, match="phaseRef"):
-        _kernel_draft_decision(
+        _kernel_compile_change(
             root,
             {
                 "rationale": "Reject an unscoped ResearchNode.",
@@ -311,7 +453,7 @@ def test_research_node_ids_are_monotonic_and_parallel_decision_collision_must_re
     )
     assert first["allocated_refs"]["first"] == "node_1"
 
-    left = draft_decision(
+    left = compile_change(
         root,
         {
             "rationale": "Draft one branch.",
@@ -319,7 +461,7 @@ def test_research_node_ids_are_monotonic_and_parallel_decision_collision_must_re
             "operations": [{"op": "start_node", "local_ref": "left", "title": "Bounded research node", "deliverable": "One bounded research result.", "objective": "Create the left branch."}],
         },
     )
-    right = draft_decision(
+    right = compile_change(
         root,
         {
             "rationale": "Draft another branch from the same revision.",
@@ -330,11 +472,11 @@ def test_research_node_ids_are_monotonic_and_parallel_decision_collision_must_re
     assert left["allocated_refs"]["left"] == "node_2"
     assert right["allocated_refs"]["right"] == "node_2"
 
-    apply_decision(root, left["decision"])
+    apply_compiled_change(root, left["decision"])
     with pytest.raises(ContractError, match="already exists with different content"):
-        apply_decision(root, right["decision"])
+        apply_compiled_change(root, right["decision"])
 
-    redrafted = draft_decision(
+    redrafted = compile_change(
         root,
         {
             "rationale": "Redraft the second branch against the current revision.",
@@ -348,7 +490,7 @@ def test_research_node_ids_are_monotonic_and_parallel_decision_collision_must_re
 def test_decision_ids_are_monotonic_and_parallel_drafts_conflict_before_redraft(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    left = draft_decision(
+    left = compile_change(
         root,
         {
             "rationale": "Draft the left branch.",
@@ -356,7 +498,7 @@ def test_decision_ids_are_monotonic_and_parallel_drafts_conflict_before_redraft(
             "operations": [{"op": "start_node", "local_ref": "left", "title": "Bounded research node", "deliverable": "One bounded research result.", "objective": "Create the left branch."}],
         },
     )
-    right = draft_decision(
+    right = compile_change(
         root,
         {
             "rationale": "Draft the right branch from the same revision.",
@@ -367,12 +509,12 @@ def test_decision_ids_are_monotonic_and_parallel_drafts_conflict_before_redraft(
     assert left["decision"]["decision_id"] == "dec_1"
     assert right["decision"]["decision_id"] == "dec_1"
 
-    applied = apply_decision(root, left["decision"])
-    assert apply_decision(root, left["decision"]) == applied
+    applied = apply_compiled_change(root, left["decision"])
+    assert apply_compiled_change(root, left["decision"]) == applied
     with pytest.raises(ContractError, match="already exists with different content"):
-        apply_decision(root, right["decision"])
+        apply_compiled_change(root, right["decision"])
 
-    redrafted = draft_decision(
+    redrafted = compile_change(
         root,
         {
             "rationale": "Redraft the right branch against the current revision.",
@@ -391,7 +533,7 @@ def test_recorded_aborted_decision_id_is_not_reused(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {
             "rationale": "Allocate after an aborted transaction.",
@@ -411,7 +553,7 @@ def test_claim_ids_are_monotonic_and_parallel_decision_collision_must_redraft(tm
     )
     assert first["allocated_refs"]["first"] == "claim_1"
 
-    left = draft_decision(
+    left = compile_change(
         root,
         {
             "rationale": "Draft one Claim.",
@@ -421,7 +563,7 @@ def test_claim_ids_are_monotonic_and_parallel_decision_collision_must_redraft(tm
             ],
         },
     )
-    right = draft_decision(
+    right = compile_change(
         root,
         {
             "rationale": "Draft another Claim from the same revision.",
@@ -434,11 +576,11 @@ def test_claim_ids_are_monotonic_and_parallel_decision_collision_must_redraft(tm
     assert left["allocated_refs"]["left"] == "claim_2"
     assert right["allocated_refs"]["right"] == "claim_2"
 
-    apply_decision(root, left["decision"])
+    apply_compiled_change(root, left["decision"])
     with pytest.raises(ContractError, match="already exists with different content"):
-        apply_decision(root, right["decision"])
+        apply_compiled_change(root, right["decision"])
 
-    redrafted = draft_decision(
+    redrafted = compile_change(
         root,
         {
             "rationale": "Redraft the second Claim against the current revision.",
@@ -457,10 +599,10 @@ def test_validation_record_ids_are_readable_workspace_ordinals(tmp_path: Path) -
 
     first = accept_research_claim(root)
     assert first["observation"] == "obs_1"
-    assert first["spec"] == "gsp_1"
-    assert first["result"] == "val_1"
+    assert first["spec"] == "proof_1"
+    assert first["result"] == "result_1"
 
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {
             "rationale": "Record and validate a second bounded observation.",
@@ -478,7 +620,7 @@ def test_validation_record_ids_are_readable_workspace_ordinals(tmp_path: Path) -
                     "provenance": {"producer": "test"},
                 },
                 {
-                    "op": "freeze_validation_spec",
+                    "op": "freeze_proof_spec",
                     "local_ref": "spec",
                     "nodeRef": first["node"],
                     "targetClaimRef": first["claim"],
@@ -503,10 +645,10 @@ def test_validation_record_ids_are_readable_workspace_ordinals(tmp_path: Path) -
                     },
                 },
                 {
-                    "op": "evaluate_validation",
+                    "op": "evaluate_proof",
                     "local_ref": "result",
                     "nodeRef": first["node"],
-                    "specRef": "$spec",
+                    "proofRef": "$spec",
                     "observationRefs": ["$observation"],
                 },
             ],
@@ -515,10 +657,10 @@ def test_validation_record_ids_are_readable_workspace_ordinals(tmp_path: Path) -
 
     assert drafted["allocated_refs"] == {
         "observation": "obs_2",
-        "spec": "gsp_2",
-        "result": "val_2",
+        "spec": "proof_2",
+        "result": "result_2",
     }
-    apply_decision(root, drafted["decision"])
+    apply_compiled_change(root, drafted["decision"])
     assert validate_workspace(root)["valid"] is True
 
 
@@ -554,7 +696,7 @@ def test_claim_relation_cycle_is_rejected_without_partial_state(tmp_path: Path) 
     a = drafted["allocated_refs"]["a"]
     b = drafted["allocated_refs"]["b"]
     before = read_json(root / "claim_relations.json")
-    reverse = draft_decision(
+    reverse = compile_change(
         root,
         {
             "rationale": "Attempt an invalid cycle.",
@@ -565,7 +707,7 @@ def test_claim_relation_cycle_is_rejected_without_partial_state(tmp_path: Path) 
         },
     )
     with pytest.raises(ContractError, match="cycle"):
-        validate_decision_dry_run(root, reverse["decision"])
+        validate_compiled_change(root, reverse["decision"])
     assert read_json(root / "claim_relations.json") == before
 
 
@@ -607,7 +749,7 @@ def test_declarative_specs_observations_and_acceptance_share_one_transaction(tmp
     operations.extend(
         [
             {
-                "op": "freeze_validation_spec",
+                "op": "freeze_proof_spec",
                 "local_ref": "stationary_spec",
                 "nodeRef": "$validate",
                 "targetClaimRef": "$ts",
@@ -616,7 +758,7 @@ def test_declarative_specs_observations_and_acceptance_share_one_transaction(tmp
                 "template": {"templateId": "classical-ts", "version": "1", "parameters": {"subject_ref": "calc_ts_001"}},
             },
             {
-                "op": "freeze_validation_spec",
+                "op": "freeze_proof_spec",
                 "local_ref": "mode_spec",
                 "nodeRef": "$validate",
                 "targetClaimRef": "$ts",
@@ -625,7 +767,7 @@ def test_declarative_specs_observations_and_acceptance_share_one_transaction(tmp
                 "template": {"templateId": "reaction-coordinate", "version": "1", "parameters": {"subject_ref": "calc_ts_001"}},
             },
             {
-                "op": "freeze_validation_spec",
+                "op": "freeze_proof_spec",
                 "local_ref": "connectivity_spec",
                 "nodeRef": "$validate",
                 "targetClaimRef": "$ts",
@@ -638,24 +780,24 @@ def test_declarative_specs_observations_and_acceptance_share_one_transaction(tmp
                 },
             },
             {
-                "op": "evaluate_validation",
+                "op": "evaluate_proof",
                 "local_ref": "stationary_result",
                 "nodeRef": "$validate",
-                "specRef": "$stationary_spec",
+                "proofRef": "$stationary_spec",
                 "observationRefs": ["$normal", "$stationary", "$converged", "$imaginary", "$method"],
             },
             {
-                "op": "evaluate_validation",
+                "op": "evaluate_proof",
                 "local_ref": "mode_result",
                 "nodeRef": "$validate",
-                "specRef": "$mode_spec",
+                "proofRef": "$mode_spec",
                 "observationRefs": ["$mode"],
             },
             {
-                "op": "evaluate_validation",
+                "op": "evaluate_proof",
                 "local_ref": "connectivity_result",
                 "nodeRef": "$validate",
-                "specRef": "$connectivity_spec",
+                "proofRef": "$connectivity_spec",
                 "observationRefs": ["$normal", "$path_complete", "$path_failures", "$reverse_endpoint", "$forward_endpoint"],
             },
             {
@@ -683,19 +825,19 @@ def test_declarative_specs_observations_and_acceptance_share_one_transaction(tmp
 
     drafted, result = _apply(root, operations)
     assert len(result["created_refs"]["observations"]) == 10
-    assert len(result["created_refs"]["validation_specs"]) == 3
+    assert len(result["created_refs"]["proof_specs"]) == 3
     assert len(result["created_refs"]["validation_results"]) == 3
     assert len(result["created_refs"]["acceptances"]) == 1
     assert drafted["allocated_refs"]["normal"] == "obs_1"
     assert drafted["allocated_refs"]["forward_endpoint"] == "obs_10"
-    assert drafted["allocated_refs"]["stationary_spec"] == "gsp_1"
-    assert drafted["allocated_refs"]["connectivity_spec"] == "gsp_3"
-    assert drafted["allocated_refs"]["stationary_result"] == "val_1"
-    assert drafted["allocated_refs"]["connectivity_result"] == "val_3"
+    assert drafted["allocated_refs"]["stationary_spec"] == "proof_1"
+    assert drafted["allocated_refs"]["connectivity_spec"] == "proof_3"
+    assert drafted["allocated_refs"]["stationary_result"] == "result_1"
+    assert drafted["allocated_refs"]["connectivity_result"] == "result_3"
     assert drafted["allocated_refs"]["accepted_ts"] == "acc_1"
     acceptance_id = drafted["allocated_refs"]["accepted_ts"]
     accepted = read_json(root / "acceptances" / f"{acceptance_id}.json")
-    assert accepted["schema_version"] == "ts-acceptance-record/2"
+    assert accepted["schema_version"] == "ts-acceptance-record/3"
     assert accepted["acceptance_digest"].startswith("sha256:")
     assert {read_json(root / "validation_results.json")["results"][index]["verdict"] for index in range(3)} == {"pass"}
     assert validate_workspace(root)["valid"] is True
@@ -714,17 +856,17 @@ def test_open_blocking_finding_prevents_acceptance(tmp_path: Path) -> None:
                 "datatype": "boolean", "summary": "Confirmed.", "provenance": {"producer": "test"}
             },
             {
-                "op": "freeze_validation_spec", "local_ref": "spec", "nodeRef": "$node", "targetClaimRef": "$claim", "dimension": "test", "title": "Test",
+                "op": "freeze_proof_spec", "local_ref": "spec", "nodeRef": "$node", "targetClaimRef": "$claim", "dimension": "test", "title": "Test",
                 "definition": {"checks": [{"check_id": "confirmed", "predicate": "observation.equals", "parameters": {"selector": {"concept_id": "test.confirmed", "subject_ref": "subject"}, "expected": True}, "blocking": True}], "success_policy": {"mode": "all_blocking"}}
             },
-            {"op": "evaluate_validation", "local_ref": "result", "nodeRef": "$node", "specRef": "$spec", "observationRefs": ["$obs"]},
+            {"op": "evaluate_proof", "local_ref": "result", "nodeRef": "$node", "proofRef": "$spec", "observationRefs": ["$obs"]},
             {"op": "record_finding", "local_ref": "risk", "findingType": "unexpected_state", "severity": "blocking", "statement": "An unresolved anomaly remains.", "claimRefs": ["$claim"], "nodeRefs": ["$node"]},
         ],
     )
     assert drafted["allocated_refs"]["risk"] == "fnd_1"
     claim = drafted["allocated_refs"]["claim"]
     with pytest.raises(ContractError, match="blocking Findings"):
-        draft_decision(
+        compile_change(
             root,
             {
                 "rationale": "Attempt acceptance while a blocker is open.",
@@ -734,19 +876,19 @@ def test_open_blocking_finding_prevents_acceptance(tmp_path: Path) -> None:
         )
 
 
-def test_acceptance_requires_at_least_one_attached_gate_spec(tmp_path: Path) -> None:
+def test_acceptance_requires_at_least_one_attached_proof_spec(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
 
-    with pytest.raises(ContractError, match="at least one attached GateSpec"):
-        draft_decision(
+    with pytest.raises(ContractError, match="at least one attached ProofSpec"):
+        compile_change(
             root,
             {
                 "rationale": "Do not accept an unvalidated Claim.",
                 "basis_refs": [],
                 "operations": [
                     {"op": "create_claim", "local_ref": "claim", "claimType": "research", "statement": "An unvalidated Claim."},
-                    {"op": "start_node", "local_ref": "node", "title": "Bounded research node", "deliverable": "One bounded research result.", "objective": "Observe one fact without a GateSpec.", "claimRefs": ["$claim"]},
+                    {"op": "start_node", "local_ref": "node", "title": "Bounded research node", "deliverable": "One bounded research result.", "objective": "Observe one fact without a ProofSpec.", "claimRefs": ["$claim"]},
                     {
                         "op": "record_observation",
                         "local_ref": "observation",
@@ -843,18 +985,18 @@ def test_acceptance_record_tampering_is_rejected(tmp_path: Path) -> None:
 def test_decision_replay_is_idempotent_but_conflicting_parallel_decision_is_rejected(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    first = draft_decision(
+    first = compile_change(
         root,
         {"rationale": "Create one Claim.", "basis_refs": [], "operations": [{"op": "create_claim", "local_ref": "claim", "claimType": "test", "statement": "One Claim."}]},
     )
-    stale = draft_decision(
+    stale = compile_change(
         root,
         {"rationale": "Create another Claim.", "basis_refs": [], "operations": [{"op": "create_claim", "local_ref": "claim", "claimType": "test", "statement": "Another Claim."}]},
     )
-    applied = apply_decision(root, first["decision"])
-    assert apply_decision(root, first["decision"]) == applied
+    applied = apply_compiled_change(root, first["decision"])
+    assert apply_compiled_change(root, first["decision"]) == applied
     with pytest.raises(ContractError, match="already exists with different content"):
-        apply_decision(root, stale["decision"])
+        apply_compiled_change(root, stale["decision"])
 
 
 def test_validator_rejects_unsupported_canonical_markers(tmp_path: Path) -> None:

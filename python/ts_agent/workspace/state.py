@@ -12,7 +12,7 @@ CLAIMS_FILE = "claims.json"
 CLAIM_RELATIONS_FILE = "claim_relations.json"
 RESEARCH_NODES_FILE = "research_nodes.json"
 OBSERVATIONS_FILE = "observations.json"
-VALIDATION_SPECS_FILE = "validation_specs.json"
+PROOF_SPECS_FILE = "proof_specs.json"
 VALIDATION_RESULTS_FILE = "validation_results.json"
 FINDINGS_FILE = "findings.json"
 
@@ -24,7 +24,7 @@ STATE_FILES = (
     CLAIM_RELATIONS_FILE,
     RESEARCH_NODES_FILE,
     OBSERVATIONS_FILE,
-    VALIDATION_SPECS_FILE,
+    PROOF_SPECS_FILE,
     VALIDATION_RESULTS_FILE,
     FINDINGS_FILE,
 )
@@ -42,25 +42,25 @@ UNSUPPORTED_MARKERS = frozenset({
 def initial_documents(workspace_id: str, created_at: str) -> dict[str, dict[str, Any]]:
     return {
         WORKSPACE_FILE: {
-            "schema_version": "ts-workspace/5",
+            "schema_version": "ts-workspace/6",
             "workspace_id": workspace_id,
-            "kernel_protocol": "ts-research-kernel/5",
+            "kernel_protocol": "ts-research-kernel/6",
             "created_at": created_at,
         },
         RESEARCH_STATE_FILE: {
-            "schema_version": "ts-research-state/5",
+            "schema_version": "ts-research-state/6",
             "focus_claim_refs": [],
             "focus_node_refs": [],
             "acceptance_refs": [],
             "created_at": created_at,
         },
         RESEARCH_PHASES_FILE: {"schema_version": "ts-research-phase-registry/1", "phases": []},
-        CLAIMS_FILE: {"schema_version": "ts-claim-registry/4", "claims": []},
+        CLAIMS_FILE: {"schema_version": "ts-claim-registry/5", "claims": []},
         CLAIM_RELATIONS_FILE: {"schema_version": "ts-claim-relation-registry/1", "relations": []},
-        RESEARCH_NODES_FILE: {"schema_version": "ts-research-node-registry/1", "nodes": []},
+        RESEARCH_NODES_FILE: {"schema_version": "ts-research-node-registry/2", "nodes": []},
         OBSERVATIONS_FILE: {"schema_version": "ts-observation-registry/2", "observations": []},
-        VALIDATION_SPECS_FILE: {"schema_version": "ts-validation-spec-registry/2", "specs": []},
-        VALIDATION_RESULTS_FILE: {"schema_version": "ts-validation-result-registry/2", "results": []},
+        PROOF_SPECS_FILE: {"schema_version": "ts-proof-spec-registry/1", "proofs": []},
+        VALIDATION_RESULTS_FILE: {"schema_version": "ts-validation-result-registry/3", "results": []},
         FINDINGS_FILE: {"schema_version": "ts-finding-registry/2", "findings": []},
     }
 
@@ -73,7 +73,7 @@ STATE_SCHEMAS = {
     CLAIM_RELATIONS_FILE: "claim_relation_registry.schema.json",
     RESEARCH_NODES_FILE: "research_node_registry.schema.json",
     OBSERVATIONS_FILE: "observation_registry.schema.json",
-    VALIDATION_SPECS_FILE: "validation_spec_registry.schema.json",
+    PROOF_SPECS_FILE: "proof_spec_registry.schema.json",
     VALIDATION_RESULTS_FILE: "validation_result_registry.schema.json",
     FINDINGS_FILE: "finding_registry.schema.json",
 }

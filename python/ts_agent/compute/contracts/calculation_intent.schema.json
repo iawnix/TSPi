@@ -1,33 +1,66 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "TS calculation intent",
+  "title": "TS immutable capability calculation intent",
   "type": "object",
-  "required": ["schema_version", "intent_id", "node_id", "purpose", "attempt_kind", "recalculation_ref", "backend", "task_type", "input_refs", "input_bindings", "settings", "expected_artifacts", "execution_target", "dry_run"],
+  "required": [
+    "schema_version", "intent_id", "node_id", "node_contract_digest",
+    "scientific_intent_digest", "purpose", "attempt_kind", "lineage",
+    "capability", "capability_version", "capability_descriptor_digest",
+    "expected_output_roles", "backend", "task_type", "input_refs",
+    "input_bindings", "parameters", "expected_artifacts", "execution_target",
+    "dry_run"
+  ],
   "properties": {
-    "schema_version": {"const": "ts-calculation-intent/5"},
+    "schema_version": {"const": "ts-calculation-intent/7"},
     "intent_id": {"type": "string", "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128},
     "node_id": {"type": "string", "pattern": "^node_[1-9][0-9]*$"},
+    "node_contract_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "scientific_intent_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "purpose": {"type": "string", "minLength": 1, "maxLength": 2000},
     "attempt_kind": {"enum": ["primary", "retry", "recalculation"]},
-    "recalculation_ref": {
+    "lineage": {
       "oneOf": [
         {"type": "null"},
         {
           "type": "object",
-          "required": ["source_node", "source_intent_id", "changed_settings", "purpose"],
+          "required": ["source_node", "source_intent_id", "relation", "reason", "changed_fields"],
           "properties": {
             "source_node": {"type": "string", "pattern": "^node_[1-9][0-9]*$"},
-            "source_intent_id": {"type": ["string", "null"], "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128},
-            "changed_settings": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
-            "purpose": {"enum": ["repair", "refinement", "method_robustness"]}
+            "source_intent_id": {"type": "string", "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128},
+            "relation": {"enum": ["retry", "recalculation"]},
+            "reason": {"type": "string", "minLength": 1, "maxLength": 1000},
+            "changed_fields": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1, "maxLength": 256}
+            }
           },
           "additionalProperties": false
         }
       ]
     },
+    "capability": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(?:[.][a-z][a-z0-9_]*)+$",
+      "maxLength": 128
+    },
+    "capability_version": {"type": "string", "pattern": "^[1-9][0-9]*$", "maxLength": 16},
+    "capability_descriptor_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "expected_output_roles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 64}
+    },
     "backend": {"enum": ["gaussian", "xtb", "crest", "ase_neb", "qbics_dmecp"]},
     "task_type": {"type": "string", "minLength": 1, "maxLength": 64},
-    "input_refs": {"type": "object", "minProperties": 1, "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_]*$"}, "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 4096}},
+    "input_refs": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+      "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 4096}
+    },
     "input_bindings": {
       "type": "array",
       "minItems": 1,
@@ -47,11 +80,33 @@
         "additionalProperties": false
       }
     },
-    "settings": {"type": "object", "additionalProperties": {"type": "string", "maxLength": 4096}},
-    "expected_artifacts": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 4096}},
+    "parameters": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+      "additionalProperties": {
+        "oneOf": [
+          {"type": "string", "maxLength": 4096},
+          {"type": "number"},
+          {"type": "boolean"}
+        ]
+      }
+    },
+    "expected_artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 4096}
+    },
     "execution_target": {
       "oneOf": [
-        {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "local"}}, "additionalProperties": false},
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {"kind": {"const": "local"}},
+          "additionalProperties": false
+        },
         {
           "type": "object",
           "required": ["kind", "authority", "profile", "workspace_id", "remote_dir", "resources"],
@@ -71,9 +126,31 @@
   },
   "allOf": [
     {
+      "if": {
+        "required": ["execution_target"],
+        "properties": {
+          "execution_target": {
+            "type": "object",
+            "properties": {"kind": {"const": "local"}}
+          }
+        }
+      },
+      "then": {
+        "properties": {"dry_run": {"const": true}}
+      }
+    },
+    {
+      "if": {"properties": {"attempt_kind": {"const": "primary"}}},
+      "then": {"properties": {"lineage": {"type": "null"}}},
+      "else": {"properties": {"lineage": {"type": "object"}}}
+    },
+    {
+      "if": {"properties": {"attempt_kind": {"const": "retry"}}},
+      "then": {"properties": {"lineage": {"properties": {"relation": {"const": "retry"}, "changed_fields": {"maxItems": 0}}}}}
+    },
+    {
       "if": {"properties": {"attempt_kind": {"const": "recalculation"}}},
-      "then": {"properties": {"recalculation_ref": {"type": "object"}}},
-      "else": {"properties": {"recalculation_ref": {"type": "null"}}}
+      "then": {"properties": {"lineage": {"properties": {"relation": {"const": "recalculation"}, "changed_fields": {"minItems": 1}}}}}
     }
   ],
   "$defs": {

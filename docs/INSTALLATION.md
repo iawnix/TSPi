@@ -14,6 +14,7 @@ paths.
 | Pi Agent `>=0.81.1 <1.0.0` | Root Agent host and TUI |
 | Python 3.11 or newer | release installer and runtime bootstrap |
 | Conda or Mamba | isolated scientific Python environment |
+| Android SDK build-tools with `apksigner` and `aapt` | independent APK verification during Package build and install |
 | npm | component release builds and maintainer validation only |
 
 Configure a working Pi model and authentication before starting TSPi. TSPi
@@ -26,9 +27,15 @@ Optional dependencies are:
 - Gaussian, xTB, or other software profiles on the remote execution system;
 - `xyzrender`, installed by `--with-render`, for visualization;
 - a configured ClawEmail installation for email notifications;
-- TS Phone activation and an Android device when `--phone` is used. The broker
-  and signed arm64 APK are bundled, but activation and device installation are
-  explicit operations.
+- an Android device for the Phone UI. The Host and signed arm64 APK are bundled,
+  but service activation and device installation are explicit operations.
+
+The default terminal client requires the configured Host to be running. It
+does not require an Android device. Native Pi remains available with
+`--standalone`.
+The installer prepares an empty private `workspaces/` root so Host can list
+projects before the first Worker runs. It does not bootstrap scientific state
+or activate services during installation.
 
 ## Installation Layout
 
@@ -50,6 +57,7 @@ Choose one physical, non-symlink installation root:
         phone/
           services/server/dist/      TS Phone server
           artifacts/*.apk            signed Android artifact
+          artifacts/*.attestation.json  source/build binding
         components/                  verified nested release archives
         components.json
       install-state.json
@@ -79,23 +87,37 @@ receiving a prebuilt Package archive and manifest can skip it.
 ```bash
 cd /path/to/ts-phone
 npm ci
+apps/mobile/tool/build_release_android.sh
 python3 deploy/build-component-release.py \
   --output-dir dist/component \
   --json
 
 cd /path/to/TSPi
+export TSPI_ANDROID_BUILD_TOOLS=/path/to/android-sdk/build-tools/<version>
 python3 scripts/build_package.py \
   --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
   --output-dir dist/package \
   --json
 ```
 
-The Phone builder runs server typecheck, tests, and build, verifies the arm64
-APK Signature Scheme 2 record, and writes `ts-phone-component-release/1`. The suite builder
-internally builds the Agent component and wheel, verifies both component
-manifests and archives, and writes `tspi-package-release/1`. Each build fails on
-a dirty source unless `--allow-dirty` is supplied. That option is only for local
-validation and must not be used for a distributed release.
+The Phone build runs from a private source capture and embeds its source
+snapshot into each signed Android artifact. The component builder runs server
+typecheck, tests, and build from the same capture, verifies the arm64
+APK Signature Scheme v2 record, pinned certificate, package metadata, build
+attestation, and writes `ts-phone-component-release/2`. Android artifacts are
+published as one content-addressed set behind `dist/android-current`. The suite
+builder independently repeats the Phone checks, builds the Agent component and wheel
+from one private Git-visible source capture,
+and writes `tspi-package-release/2`. Each build fails on a dirty source unless
+`--allow-dirty` is supplied. That option is only for local validation and must
+not be used for a distributed release.
+
+The complete Package contains the arm64 APK, not the store AAB. TS Phone checks
+the AAB signature, sole pinned signer, source identity, and attestation, but a
+pinned `bundletool` metadata check is still required before store upload. Its
+Android build also records source provenance rather than content identities for
+the Flutter, Android SDK, and JDK toolchain, so the current contract does not
+claim bit-for-bit reproducibility across build hosts.
 
 The final output contains:
 
@@ -106,8 +128,9 @@ dist/package/tspi-package-release.json
 
 Keep both files together. The suite manifest binds the exact Agent and Phone
 release IDs, nested archive paths, sizes and SHA-256 values, Agent wheel,
-protocol set, Phone server entry, signed APK, component source commits, and the
-outer archive identity. `build_release.py` and `install_release.py` remain
+protocol set, Phone server entry, signed APK, embedded source snapshot, mobile
+build attestation, component source identities, and the outer archive identity.
+`build_release.py` and `install_release.py` remain
 internal Agent-component tools; they do not produce or install a complete TSPi
 deployment.
 
@@ -124,14 +147,24 @@ python3 scripts/install_package.py \
   --json
 ```
 
+Set `TSPI_ANDROID_BUILD_TOOLS` to the Android SDK build-tools directory that
+contains `apksigner` and `aapt`. If it is unset, TSPi searches
+`ANDROID_SDK_ROOT`, `ANDROID_HOME`, and then `PATH`. Verification fails closed
+when the tools are unavailable. The installer rejects dirty-source components
+by default; `--allow-dirty` is an explicit local-validation override.
+
 The installer rejects symlinked roots, unsafe members in every archive,
 unexpected development files, component/protocol mismatches, size or digest
-mismatches, and writable release contents. It extracts into a private staging
-directory, validates the expanded Agent, Web, Phone server, and APK, and
-finalizes read-only permissions. Before activation it prepares the target
+mismatches, untrusted or misidentified APKs, and writable release contents. It
+captures the outer archive once into private staging, validates and extracts
+that same byte sequence, then validates the expanded Agent, Web, Phone server,
+APK, embedded source identity, and attestation before finalizing read-only
+permissions. Before activation it prepares the target
 release runtime and runs the NumPy/RDKit capability probe. Only a healthy
 runtime may publish its manifest and atomically switch the suite `current`.
-Activation failure restores the prior manifest, pointer, install state, and
+On reinstall, every expanded Phone file and its executable class is compared
+with the retained, digest-bound component archive. Activation failure restores
+the prior manifest, pointer, install state, and
 entrypoint links. Reinstalling identical content is idempotent and revalidates
 retained component archives and runtime entrypoints.
 
@@ -227,17 +260,17 @@ Keep SSH keys and authentication in OpenSSH configuration, not in
 `remote.toml`. A calculation request cannot override the host, remote root,
 scheduler commands, activation scripts, or arbitrary environment values.
 
-Check only SSH reachability:
+The launcher flag below is the command-line form of the same read-only
+connectivity check exposed in Pi as `/ts-remote status`:
 
 ```bash
 cd /path/to/TSPi-installation
 ./TSPi --check-remote
 ```
 
-Inside TSPi, `/ts-remote status` checks SSH, `doctor` checks SSH, scheduler,
-remote storage, and registered software, while `queues` and `nodes` return their
-bounded scheduler views. These commands are read-only. Ordinary startup does
-not run any remote probe.
+Use `/ts-remote doctor` for the full SSH, scheduler, storage, and registered
+software chain; `queues` and `nodes` return bounded scheduler views. All four
+diagnostics are read-only. Ordinary startup does not run a remote probe.
 
 ## Configure Notifications
 
@@ -262,7 +295,7 @@ change the recipient or credentials. Set `enabled=false` to disable delivery.
 Every attachment must be an unchanged member of a generated report package
 manifest. To attach a Render result, pass its logical artifact ID to
 `ts_report.assetArtifactIds`, then pass the returned `reports/.../assets/...`
-reference to `ts_notify_user`; do not attach `nodes/...` paths directly.
+reference to `ts_notify`; do not attach `nodes/...` paths directly.
 
 The installation configuration is persistent authorization for that one target.
 There is no per-message activation token. A mismatch between the user's
@@ -274,8 +307,8 @@ Ambiguous provider effects are never retried automatically.
 Phone mode is optional. The selected Package includes the compatible broker,
 control CLI, protocol schemas, and signed arm64 APK. It does not own the live
 service or its secrets. Copy the component's example environment into private
-installation state and edit its workspace, state, and socket paths for the
-installation:
+installation state. Paths are inferred by the installed entrypoints; uncomment
+only the overrides this installation needs:
 
 ```bash
 mkdir -p /path/to/TSPi-installation/.pi/ts-phone
@@ -284,8 +317,30 @@ cp /path/to/TSPi-installation/.pi/packages/tspi/current/phone/deploy/server.env.
 chmod 600 /path/to/TSPi-installation/.pi/ts-phone/server.env
 ```
 
+The installed terminal client, Host, and control CLI read this owner-only file
+as dotenv data, without executing it. Explicit environment variables take precedence. In a
+unified installation these bindings default to the invoked installation root:
+
+```dotenv
+TS_PHONE_TSPI=/path/to/TSPi-installation/TSPi
+TS_PHONE_WORKSPACES=/path/to/TSPi-installation/workspaces
+```
+
+`TS_PHONE_TSPI` must be an absolute executable path. Unified entrypoints reject
+bindings to another installation; the standalone Phone development server still
+requires an explicit launcher to activate sessions.
+The app's project and conversation names, model/access preferences, and
+active/archive/trash state live in owner-only
+`TS_PHONE_STATE_DIR/management.json`; scientific state and conversation text
+remain in their existing TSPi workspace and Pi JSONL owners.
+
 An operator may run `/path/to/TSPi-installation/TSPhoneServer` under a service
-manager or in a terminal after loading that environment. Service activation,
+manager or directly in a terminal; both load the same installation configuration.
+The Package installer creates `.pi/ts-phone/ts-phone.service` only if absent,
+using the configured paths and retaining the narrow sandbox. Existing templates
+and live service registrations are not overwritten. Inspect an updated template
+without starting anything with `TSPhoneServer --print-service`.
+Service activation,
 restart, FRP, HTTPS, and token handling remain explicit operational actions;
 the Package installer never performs them. `TSPhoneCtl` targets the configured
 state directory. The Android artifact is under the path recorded by
@@ -297,6 +352,27 @@ repository are standalone component-development tools. Do not combine their
 `/home/iaw/soft/ts-phone/current` selection with a suite-managed production
 installation.
 
+If the Host runs with `ProtectHome=read-only`, its service sandbox also applies
+to child TSPi Workers. Add narrowly scoped `ReadWritePaths` for the configured
+workspace root, `.pi/runtime-cache`, `.pi/session-host`, `.agents/runtime`, and `.agents/envs` under
+the TSPi installation. Keep the rest of Home read-only. A notification provider
+that refreshes credentials needs a separate drop-in for only its private state
+directory.
+
+Pi's selected agent directory must also be writable: credential and model-cache
+reads acquire filesystem locks. The standard profile is `~/.pi/agent` for the
+user running the Host. In a user service add `ReadWritePaths=-%h/.pi/agent`:
+systemd expands `%h` to that user's Home, but does not expand shell `~` or
+`$HOME` in this directive. A custom `PI_CODING_AGENT_DIR` needs an explicit
+matching absolute path instead; the environment variable does not change the
+service's filesystem allowlist. Preserve the same profile for TUI, Phone Workers
+and subagents,
+including OAuth write-back, rather than making per-workspace credential copies.
+Do not disable `ProtectHome` or grant access to all of Home. Managed Workers
+disable startup catalog/package downloads with `PI_OFFLINE=1`; this does not
+disable model requests. Verify model readiness under the actual Host service
+permissions: `/healthz` alone does not exercise Pi's storage or selected model.
+
 ## Start And Resume Workspaces
 
 Run from the installation root:
@@ -306,9 +382,12 @@ Run from the installation root:
 ./TSPi --workspace reaction-b
 ```
 
-The workspace name must contain 1 to 80 letters, digits, dots, underscores, or
-hyphens and begin with a letter or digit. The launcher creates the directory;
-the user does not create it manually.
+The terminal connects to the configured Host. An existing live Controller is
+selected first; otherwise choose a conversation. Opening history starts no
+Worker. An unknown workspace name prompts for project creation through Host;
+the user does not create directories manually. Names contain 1 to 80 letters,
+digits, dots, underscores, or hyphens, beginning with a letter or digit.
+Without `--workspace`, the project selector is the first screen.
 
 To resume the latest Pi conversation for the same workspace:
 
@@ -316,16 +395,67 @@ To resume the latest Pi conversation for the same workspace:
 ./TSPi --workspace reaction-a --continue
 ```
 
-Other Pi arguments may follow the workspace selection. `--phone` accepts no
-additional Pi arguments and always uses `--continue`:
+`--phone` aliases the shared terminal. Select an exact conversation or use
+explicit native Pi mode when native commands are needed:
 
 ```bash
 ./TSPi --workspace reaction-a --phone
+./TSPi --workspace reaction-a --phone --session-id <session-id>
+./TSPi --standalone --workspace reaction-a
+./TSPi --standalone --workspace reaction-a --phone --phone-access observer
 ```
 
-One process owns one workspace through a nonblocking lock. Starting a second
-Root Agent for the same workspace fails immediately; another workspace can run
-at the same time.
+The client reads `<installation>/.pi/ts-phone/server.env` as data, never as a
+shell script; exported `TS_PHONE_HOST`, `TS_PHONE_PORT`, and `TS_PHONE_STATE_DIR`
+override it. The default state directory is `${XDG_STATE_HOME:-~/.local/state}/ts-phone`.
+It accepts only loopback HTTP and a user-owned 0600 `auth.token`. This is the
+Host connection credential, not Pi's model authentication. Host unavailability
+is reported without falling back to a second Pi process. See [Terminal](TERMINAL.md)
+for client commands, limitations, and integration checks.
+
+The phone app can instead create a managed project/conversation and send a
+message. The Host persists the request, then starts or reuses the exact session
+when that workspace is idle. Host-only `--phone-worker`, `--lifecycle-preflight`, and
+`--lifecycle-guard`, `--session-host-capabilities`, and `--session-writer-check`
+syntax is not a supported manual interface. Worker mode
+binds an exact session ID and access mode; preflight is a read-only, fail-closed
+check. Guard mode excludes every session writer, including Observer, while the
+Host deletes data. Guard files are under installation `.pi/session-host/guards/`;
+allow this operational state path in the service sandbox, but never remove an
+occupied lock file to force access.
+
+Normal Phone and terminal conversations use the same workspace queue, without
+a Continue research or read-only-assistant choice. Several clients may read and
+submit messages; only one turn runs per workspace. The Host reuses the matching
+runtime or transfers an idle Host-owned runtime to the next queued session.
+Running, uncertain, or external CLI runtimes are not stopped. Compatibility activation
+is retained for standalone diagnostics and clients without queue support. Model authentication
+is configured on the TSPi host, separately from the phone connection token.
+
+The first install enabling the guard activation record requires old TSPi writers
+to exit after their turns finish, including Observer CLIs. Run the installer as
+the installation owner, not inside the Host sandbox. It verifies unguarded writers
+and holds affected workspace locks before publishing `session_guard_contract`
+in the existing install-state record. A failed check does not select the new
+release or mark the upgrade complete. Never create that record by hand.
+Later same-contract updates do not repeat global process inspection. Normal
+startup uses only the installation record and actual workspace/session locks;
+unrelated Pi processes with private `/proc` state do not block it.
+Downgrading to a suite without these guards requires stopping every affected
+writer first. It restores that suite's limited behavior, not the new guarantees.
+
+Native guarded TSPi supports a new conversation, `--continue`/`-c`, `--session-id`,
+and an existing workspace-local `--session` file. Interactive `--resume`,
+`--fork`, `--no-session`, session-directory overrides, and in-process new/fork/
+resume are rejected; exit and reopen the desired session instead. Raw Pi
+launches outside TSPi are not protected by this contract.
+
+One Worker owns a workspace through a nonblocking lock. Multiple terminal and
+Phone clients attach without acquiring locks. Terminal exit only detaches;
+`/abort` stops generation without canceling remote calculations. A second
+native Root Agent still fails immediately. An existing native Pi process
+cannot be adopted by PID: exit it normally before Host restores its exact
+conversation. Another workspace can run at the same time.
 
 ## Workspace Bootstrap
 
@@ -447,7 +577,7 @@ implement the workspace schemas it opens.
 | runtime manifest or interpreter unavailable | Reinstall the selected Package, or run its `install_env.py` as an explicit repair. |
 | managed runtime capability probe fails | Do not fall back to system Python. Refresh the shared base or recreate only the target overlay with `--force`, then inspect the NumPy/RDKit probe error. |
 | Python distribution payload mismatch | Reinstall the Package or recreate its payload-addressed overlay; do not edit managed site-packages or immutable release files in place. |
-| `another Root Agent already owns workspace` | Use another workspace or stop the existing process; do not delete the lock to bypass a live owner. |
+| `another Root Agent already owns workspace` | Attach with the default terminal instead of `--standalone`. A native/external owner must exit normally before Host can restore its session; never delete a live owner's lock. |
 | partial or invalid workspace | Preserve the directory, inspect validation findings, and recover through an explicitly designed repair; startup will not guess. |
 | unsupported workspace layout | Preserve the source directory and start a separate fresh workspace; startup never rewrites unsupported state. |
 | remote `status` fails | SSH readiness is unavailable; local research remains usable. |
@@ -457,6 +587,8 @@ implement the workspace schemas it opens.
 | notification attachment rejected | Build a report package containing the logical image artifact, then attach only unchanged paths listed by that package manifest. |
 | notification delivery state is `unknown` | Inspect the receipt and provider Sent folder; do not replay automatically. |
 | no API key for selected model | Repair Pi's model/auth configuration; TS workspaces do not own provider keys. |
+| Phone session cannot activate | Verify `TS_PHONE_TSPI`, service sandbox write paths, Bridge socket/secret ownership, and the selected model's Pi authentication. |
+| Phone project deletion is blocked | Finish or reconcile Workers, remote calculations, approvals, and unresolved remote effects. Do not bypass a failed lifecycle preflight. |
 | Review run remains pending after a crash | Inspect its journal and independent calculation controls; no automatic stale-run resolver exists. |
 
 ## Installation Verification
@@ -472,6 +604,6 @@ readlink -f /path/to/TSPi-installation/.pi/packages/tspi/current
 /path/to/TSPi-installation/TSPi --workspace smoke --continue
 ```
 
-Use `--check-remote` only when a remote profile is configured and a strict SSH
-probe is intended. Scientific validation and real program submission require
-separate, explicit tests.
+The remote check above is optional and only tests transport reachability;
+scientific validation and real program submission require separate, explicit
+tests.

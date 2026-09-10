@@ -118,8 +118,8 @@ function validateNodeRefs(root, nodeRefs) {
     throw new Error("ResearchNode registry does not exist");
   }
   const registry = JSON.parse(readFileSync(registryPath, "utf8"));
-  if (!isPlainObject(registry) || registry.schema_version !== "ts-research-node-registry/1") {
-    throw new Error("deterministic activities require ts-research-node-registry/1");
+  if (!isPlainObject(registry) || registry.schema_version !== "ts-research-node-registry/2") {
+    throw new Error("deterministic activities require ts-research-node-registry/2");
   }
   const known = new Set(
     Array.isArray(registry.nodes)

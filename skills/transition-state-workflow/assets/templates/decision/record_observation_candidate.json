@@ -1,0 +1,13 @@
+{
+  "op": "record_observation",
+  "local_ref": "observation",
+  "nodeRef": "${NODE_REF}",
+  "candidate": {
+    "artifactId": "${CANDIDATE_ARTIFACT_ID}",
+    "candidateId": "${CANDIDATE_ID}"
+  },
+  "conceptId": "${CONCEPT_ID}",
+  "subjectRef": "${SUBJECT_REF}",
+  "summary": "${OBSERVATION_SUMMARY}",
+  "qualifiers": {}
+}

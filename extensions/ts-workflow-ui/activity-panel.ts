@@ -93,7 +93,7 @@ function activityOwnerLabel(activity: TsActivity): string | undefined {
 }
 
 function activityActionLabel(activity: TsActivity): string {
-  if (activity.kind === "subagent") return subagentActionLabel({ ...activity.status, backend: activity.backend });
+  if (activity.kind === "subagent") return subagentActionLabel({ ...activity.status, capability: activity.capability });
   if (activity.kind === "remote") return compact([activity.mode, activity.detail]);
   return compact([humanizeToken(activity.operation), activity.detail]);
 }

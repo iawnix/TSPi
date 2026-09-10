@@ -8,29 +8,31 @@ import pytest
 
 from ts_agent.workspace import (
     ContractError,
-    apply_decision,
     compile_context,
-    draft_decision,
     init_workspace,
-    validate_decision,
     validate_workspace,
 )
+from ts_agent.workspace.decision import validate_decision
 from ts_agent.workspace.schema_validation import check_all_contract_schemas
+from tests.kernel_helpers import apply_compiled_change, compile_change
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_PACKAGE = ROOT / "python" / "ts_agent" / "workspace"
 SCHEMA_FILES = {
     "acceptance_record.schema.json",
+    "attempt_intent_projection.schema.json",
+    "attempt_result_projection.schema.json",
     "claim.schema.json",
     "claim_registry.schema.json",
     "claim_relation.schema.json",
     "claim_relation_registry.schema.json",
+    "change_request.schema.json",
     "decision.schema.json",
-    "decision_draft.schema.json",
     "finding.schema.json",
     "finding_registry.schema.json",
     "observation.schema.json",
+    "observation_candidates.schema.json",
     "observation_registry.schema.json",
     "research_phase.schema.json",
     "research_phase_registry.schema.json",
@@ -39,8 +41,8 @@ SCHEMA_FILES = {
     "research_state.schema.json",
     "validation_result.schema.json",
     "validation_result_registry.schema.json",
-    "validation_spec.schema.json",
-    "validation_spec_registry.schema.json",
+    "proof_spec.schema.json",
+    "proof_spec_registry.schema.json",
     "workspace.schema.json",
     "workspace_identity.schema.json",
 }
@@ -52,7 +54,7 @@ CANONICAL_JSON = {
     "claim_relations.json",
     "research_nodes.json",
     "observations.json",
-    "validation_specs.json",
+    "proof_specs.json",
     "validation_results.json",
     "findings.json",
 }
@@ -73,12 +75,12 @@ def test_contract_schemas_are_valid_draft_2020_12() -> None:
 def test_init_workspace_creates_only_canonical_state(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     result = init_workspace(workspace)
-    assert result["schema_version"] == "ts-workspace-init-result/5"
+    assert result["schema_version"] == "ts-workspace-init-result/6"
     assert {path.name for path in workspace.glob("*.json")} == CANONICAL_JSON
     assert {
         path.name for path in workspace.iterdir() if path.is_dir() and not path.name.startswith(".")
     } == {"acceptances", "nodes", "decisions", "inputs", "operations", "reports", "scratch"}
-    assert json.loads((workspace / "workspace.json").read_text(encoding="utf-8"))["kernel_protocol"] == "ts-research-kernel/5"
+    assert json.loads((workspace / "workspace.json").read_text(encoding="utf-8"))["kernel_protocol"] == "ts-research-kernel/6"
     assert validate_workspace(workspace)["valid"] is True
 
 
@@ -114,7 +116,7 @@ def test_init_refuses_to_overwrite_existing_canonical_state(tmp_path: Path) -> N
 def test_decision_snapshot_transaction_and_replay_are_bound(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     init_workspace(workspace)
-    drafted = draft_decision(
+    drafted = compile_change(
         workspace,
         {
             "rationale": "Create one explicit Claim.",
@@ -130,8 +132,8 @@ def test_decision_snapshot_transaction_and_replay_are_bound(tmp_path: Path) -> N
         },
         decision_id="dec_1",
     )
-    first = apply_decision(workspace, drafted["decision"])
-    second = apply_decision(workspace, drafted["decision"])
+    first = apply_compiled_change(workspace, drafted["decision"])
+    second = apply_compiled_change(workspace, drafted["decision"])
     assert first == second
     assert json.loads(
         (workspace / "decisions" / "dec_1.json").read_text(encoding="utf-8")
@@ -147,7 +149,7 @@ def test_explicit_decision_id_requires_canonical_numeric_ordinal(tmp_path: Path)
     workspace = tmp_path / "ws"
     init_workspace(workspace)
     with pytest.raises(ContractError, match="invalid Decision ID"):
-        draft_decision(
+        compile_change(
             workspace,
             {
                 "rationale": "Reject a non-canonical Decision ID.",
@@ -180,7 +182,7 @@ def test_context_and_validation_are_pure_reads(tmp_path: Path) -> None:
         for path in workspace.rglob("*")
         if path.is_file()
     }
-    assert projection["schema_version"] == "ts-context-projection/2"
+    assert projection["schema_version"] == "ts-context-projection/3"
     assert validation["valid"] is True
     assert before == after
 

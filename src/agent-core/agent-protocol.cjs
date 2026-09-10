@@ -105,11 +105,28 @@ function validateTaskInputs(value, role) {
 
 function validateComputeInputs(value) {
   const keys = [
-    "backend", "node_id", "intent_id", "intent_digest", "execution_kind",
+    "capability", "capability_version", "capability_descriptor_digest",
+    "capability_descriptor", "expected_output_roles", "node_id", "intent_id", "intent_digest", "execution_kind",
     "required_actions", "optional_actions", "tail", "collect_artifacts",
     "parse_artifact_ref",
   ];
   rejectUnknownKeys(value, keys, "compute inputs");
+  const capability = requirePattern(value.capability, "inputs.capability", /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/, 128);
+  const capabilityVersion = requirePattern(value.capability_version, "inputs.capability_version", /^[1-9][0-9]*$/, 16);
+  const descriptorDigest = requirePattern(
+    value.capability_descriptor_digest,
+    "inputs.capability_descriptor_digest",
+    /^sha256:[0-9a-f]{64}$/,
+    71,
+  );
+  const descriptor = validateCapabilityDescriptor(value.capability_descriptor);
+  if (descriptor.capability !== capability || descriptor.version !== capabilityVersion) {
+    throw new Error("inputs.capability_descriptor does not match the bound capability");
+  }
+  const outputRoles = uniqueStringArray(value.expected_output_roles, "inputs.expected_output_roles", 32, 64);
+  if (JSON.stringify(outputRoles) !== JSON.stringify(descriptor.output_roles)) {
+    throw new Error("inputs.expected_output_roles does not match the capability descriptor");
+  }
   const nodeId = requireString(value.node_id, "inputs.node_id", 128);
   if (!/^node_[1-9][0-9]*$/.test(nodeId)) throw new Error("inputs.node_id must be a ResearchNode ID");
   const intentId = requireString(value.intent_id, "inputs.intent_id", 128);
@@ -121,7 +138,11 @@ function validateComputeInputs(value) {
   }
   const tail = value.tail === null ? null : validateComputeTail(value.tail);
   return {
-    backend: requireString(value.backend, "inputs.backend", 64),
+    capability,
+    capability_version: capabilityVersion,
+    capability_descriptor_digest: descriptorDigest,
+    capability_descriptor: descriptor,
+    expected_output_roles: outputRoles,
     node_id: nodeId,
     intent_id: intentId,
     intent_digest: value.intent_digest,
@@ -131,6 +152,29 @@ function validateComputeInputs(value) {
     tail,
     collect_artifacts: uniqueStringArray(value.collect_artifacts, "inputs.collect_artifacts", 32, 255),
     parse_artifact_ref: nullableString(value.parse_artifact_ref, "inputs.parse_artifact_ref", 4096),
+  };
+}
+
+function validateCapabilityDescriptor(value) {
+  if (!isPlainObject(value)) throw new Error("inputs.capability_descriptor must be an object");
+  rejectUnknownKeys(
+    value,
+    ["capability", "version", "input_roles", "output_roles", "parsers"],
+    "inputs.capability_descriptor",
+  );
+  const capability = requirePattern(
+    value.capability,
+    "inputs.capability_descriptor.capability",
+    /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/,
+    128,
+  );
+  const version = requirePattern(value.version, "inputs.capability_descriptor.version", /^[1-9][0-9]*$/, 16);
+  return {
+    capability,
+    version,
+    input_roles: uniqueStringArray(value.input_roles, "inputs.capability_descriptor.input_roles", 32, 64),
+    output_roles: uniqueStringArray(value.output_roles, "inputs.capability_descriptor.output_roles", 32, 64),
+    parsers: uniqueStringArray(value.parsers, "inputs.capability_descriptor.parsers", 16, 128),
   };
 }
 
@@ -343,6 +387,12 @@ function requireString(value, label, maxLength) {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} must be a non-empty string`);
   const text = value.trim();
   if (text.length > maxLength) throw new Error(`${label} exceeds ${maxLength} characters`);
+  return text;
+}
+
+function requirePattern(value, label, pattern, maxLength) {
+  const text = requireString(value, label, maxLength);
+  if (!pattern.test(text)) throw new Error(`${label} has an invalid format`);
   return text;
 }
 

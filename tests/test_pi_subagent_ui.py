@@ -41,15 +41,15 @@ def test_activity_store_unifies_review_and_deterministic_tools_without_losing_id
 import {{ createTsActivityStore,reduceTsToolActivity,summarizeTsActivities,sortedTsActivities,pruneTsActivities }} from {json.dumps(STORE.as_uri())};
 const store=createTsActivityStore();
 const start=(id,name,args,now)=>reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId:id,toolName:name,args}},now);
-start("review","ts_subagent_review",{{targetClaimRef:"claim_1"}},1000);
-reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:1,tool_call_id:"review",task_id:"sub_1",role:"review",operation:"claim_review",state:"waiting",started_at:new Date(1000).toISOString(),updated_at:new Date(2000).toISOString(),node_refs:["node_1"],claim_refs:["claim_1"],wait_reason:"model_response"}}}}}},2000);
-start("compute","ts_subagent_compute",{{operation:"launch",backend:"gaussian",nodeId:"node_1"}},3000);
-start("structure","ts_structure_seed",{{operation:"generate",optimization:"uff",nodeId:"node_1"}},3250);
-start("analysis","ts_structure_compare",{{operation:"compare",nodeId:"node_1"}},3375);
-start("artifact","ts_artifact_import",{{operation:"import",format:"xyz_structure",nodeId:"node_1"}},3500);
+start("review","ts_review",{{targetClaimRef:"claim_1"}},1000);
+reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:1,tool_call_id:"review",task_id:"sub_1",role:"review",operation:"claim_review",state:"waiting",started_at:new Date(1000).toISOString(),updated_at:new Date(2000).toISOString(),node_refs:["node_1"],claim_refs:["claim_1"],wait_reason:"model_response"}}}}}},2000);
+start("compute","ts_calc",{{operation:"launch",capability:"gaussian",nodeId:"node_1"}},3000);
+start("structure","ts_seed",{{operation:"generate",optimization:"uff",nodeId:"node_1"}},3250);
+start("analysis","ts_compare",{{operation:"compare",nodeId:"node_1"}},3375);
+start("artifact","ts_import",{{operation:"import",format:"xyz_structure",nodeId:"node_1"}},3500);
 start("render","ts_render",{{operation:"compare",nodeId:"node_1",outputName:"compare.png"}},4000);
 reduceTsToolActivity(store,{{type:"tool_execution_end",toolCallId:"render",toolName:"ts_render",result:{{}},isError:false}},5000);
-const stale=reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:0,tool_call_id:"review",task_id:"sub_1",role:"review",operation:"claim_review",state:"running",started_at:new Date(1000).toISOString(),updated_at:new Date(6000).toISOString()}}}}}},6000);
+const stale=reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:0,tool_call_id:"review",task_id:"sub_1",role:"review",operation:"claim_review",state:"running",started_at:new Date(1000).toISOString(),updated_at:new Date(6000).toISOString()}}}}}},6000);
 const before=sortedTsActivities(store);const pruned=pruneTsActivities(store,20001);const after=sortedTsActivities(store);
 process.stdout.write(JSON.stringify({{before,after,summary:summarizeTsActivities(store),stale,pruned}}));
 """
@@ -57,7 +57,7 @@ process.stdout.write(JSON.stringify({{before,after,summary:summarizeTsActivities
     by_id = {item["id"]: item for item in result["before"]}
     assert by_id["subagent:review"]["status"]["node_refs"] == ["node_1"]
     assert by_id["subagent:compute"]["status"]["operation"] == "launch"
-    assert by_id["subagent:compute"]["backend"] == "gaussian"
+    assert by_id["subagent:compute"]["capability"] == "gaussian"
     assert by_id["tool:structure"]["detail"] == "SMILES · uff"
     assert by_id["tool:analysis"]["detail"] == "XYZ comparison"
     assert by_id["tool:artifact"]["detail"] == "xyz_structure"
@@ -74,11 +74,11 @@ import {{ createTsActivityStore,reduceTsToolActivity }} from {json.dumps(STORE.a
 import {{ renderTsActivityPanel }} from {json.dumps(PANEL.as_uri())};
 const store=createTsActivityStore();
 for (const [id,name,args,time] of [
- ["review","ts_subagent_review",{{targetClaimRef:"claim_1"}},1000],
- ["compute","ts_subagent_compute",{{operation:"launch",backend:"gaussian",nodeId:"node_1"}},2000],
+ ["review","ts_review",{{targetClaimRef:"claim_1"}},1000],
+ ["compute","ts_calc",{{operation:"launch",capability:"gaussian",nodeId:"node_1"}},2000],
  ["report","ts_report",{{operation:"build",packageName:"final"}},3000],
 ]) reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId:id,toolName:name,args}},time);
-reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:1,tool_call_id:"review",task_id:"sub_1",role:"review",operation:"claim_review",state:"waiting",started_at:new Date(1000).toISOString(),updated_at:new Date(3500).toISOString(),claim_refs:["claim_1"],target_ref:"claim_1",wait_reason:"model_response"}}}}}},3500);
+reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:1,tool_call_id:"review",task_id:"sub_1",role:"review",operation:"claim_review",state:"waiting",started_at:new Date(1000).toISOString(),updated_at:new Date(3500).toISOString(),claim_refs:["claim_1"],target_ref:"claim_1",wait_reason:"model_response"}}}}}},3500);
 reduceTsToolActivity(store,{{type:"tool_execution_end",toolCallId:"report",toolName:"ts_report",result:{{}},isError:true}},4000);
 const widths=[38,64,100].map((width)=>({{width,lines:renderTsActivityPanel(store,width,5000,4,"ascii")}}));
 process.stdout.write(JSON.stringify(widths));
@@ -106,10 +106,10 @@ import {{ createTsActivityStore,reduceTsToolActivity }} from {json.dumps(STORE.a
 import {{ collectTsSubagentRecords,renderTsSubagentDetails,subagentRunLabel,subagentSelectionLabel,subagentSelectionParts }} from {json.dumps(DETAILS.as_uri())};
 const store=createTsActivityStore();
 const toolCallId="call_028def15-cbb5-42b4-bbfc-cfbd256c4a0b";
-reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId,toolName:"ts_subagent_review",args:{{targetClaimRef:"claim_1"}}}},1000);
+reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId,toolName:"ts_review",args:{{targetClaimRef:"claim_1"}}}},1000);
 const report={{agent_runs:[
   {{task_id:"sub_1",role:"review",authority:"advisory",operation:"claim_review",status:"completed",result_outcome:"success",node_refs:["node_1"],claim_refs:["claim_2"],run_ref:"reviews/claim_2/runs/sub_1",summary:"Completed review.",started_at:"2026-08-16T00:00:00Z",finished_at:"2026-08-16T00:02:14Z"}},
-  {{task_id:"sub_2",role:"compute",authority:"operational",operation:"finalize",backend:"gaussian",intent_id:"calc_1",status:"completed",result_outcome:"success",node_refs:["node_2"],claim_refs:[],run_ref:"nodes/node_2/attempts/calc_1/runs/sub_2",summary:"Collected and parsed.",started_at:"2026-08-16T00:00:53Z",finished_at:"2026-08-16T00:01:00Z"}},
+  {{task_id:"sub_2",role:"compute",authority:"operational",operation:"finalize",capability:"gaussian",intent_id:"calc_1",status:"completed",result_outcome:"success",node_refs:["node_2"],claim_refs:[],run_ref:"nodes/node_2/attempts/calc_1/runs/sub_2",summary:"Collected and parsed.",started_at:"2026-08-16T00:00:53Z",finished_at:"2026-08-16T00:01:00Z"}},
 ]}};
 const records=collectTsSubagentRecords(store,report);
 const pending=records.find((record)=>record.task_id===toolCallId);
@@ -154,7 +154,7 @@ process.stdout.write(JSON.stringify({{pageSize:SUBAGENT_HISTORY_PAGE_SIZE,first,
 def test_subagent_details_prioritize_outcome_and_error_before_scope_and_audit() -> None:
     script = f"""
 import {{ renderTsSubagentDetails }} from {json.dumps(DETAILS.as_uri())};
-const record={{task_id:"sub_7",role:"compute",authority:"operational",operation:"finalize",backend:"gaussian",state:"failed",node_refs:["node_3"],claim_refs:[],target_ref:"calc_4",run_ref:"nodes/node_3/attempts/calc_4/runs/sub_7",started_at:"2026-08-26T07:42:00Z",finished_at:"2026-08-26T07:42:07Z",summary:"Collection stopped before parsing.",error_code:"PROGRAM_OUTPUT_MISSING",error_message:"gaussian.out was not created",live:false}};
+const record={{task_id:"sub_7",role:"compute",authority:"operational",operation:"finalize",capability:"gaussian",state:"failed",node_refs:["node_3"],claim_refs:[],target_ref:"calc_4",run_ref:"nodes/node_3/attempts/calc_4/runs/sub_7",started_at:"2026-08-26T07:42:00Z",finished_at:"2026-08-26T07:42:07Z",summary:"Collection stopped before parsing.",error_code:"PROGRAM_OUTPUT_MISSING",error_message:"gaussian.out was not created",live:false}};
 const documents={{result:{{summary:"Collection stopped before parsing.",artifact_refs:["art_0123456789abcdef01234567"]}},actions:{{actions:[{{tool:"collect",result:{{action_status:"failed"}}}}]}},run:{{error:{{code:"PROGRAM_OUTPUT_MISSING",message:"gaussian.out was not created"}},metadata:{{failure_stage:"collect"}}}}}};
 process.stdout.write(JSON.stringify(renderTsSubagentDetails(record,documents,80)));
 """
@@ -196,7 +196,7 @@ process.stdout.write(formatTsSubagentHistoryMarkdown([record]));
 def test_ui_tracks_current_tools_and_history_covers_compute_and_review() -> None:
     source = UI.read_text(encoding="utf-8")
     assert 'const WIDGET_KEY = "ts-activity"' in source
-    assert 'pi.registerCommand("ts-subagent-history"' in source
+    assert 'pi.registerCommand("ts-runs"' in source
     assert "TS Subagent History" in source
     assert "Compute and Review subagent runs" in source
     assert "ts-workspace-compute-operator-run" not in source

@@ -43,6 +43,7 @@ include = ["ts_agent*"]
   "static/*.css",
   "static/*.html",
   "static/*.js",
+  "static/*.svg",
 ]
 "ts_agent.workspace" = ["contracts/*.json"]
 

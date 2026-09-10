@@ -3,8 +3,8 @@ import { PACKAGE_SOURCE_READ_TOOLS } from "../shared/package-source-policy.ts";
 
 export const OBSERVER_ALLOWED_TOOLS = new Set<string>([
   ...PACKAGE_SOURCE_READ_TOOLS,
-  TS_PUBLIC_TOOL_NAMES.workspaceContext,
-  TS_PUBLIC_TOOL_NAMES.remoteInspect,
+  TS_PUBLIC_TOOL_NAMES.state,
+  TS_PUBLIC_TOOL_NAMES.remote,
 ]);
 
 export function authorizeTsPhoneTool(accessMode: "controller" | "observer", toolName: string) {

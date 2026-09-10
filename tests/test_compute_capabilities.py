@@ -1,12 +1,21 @@
 from __future__ import annotations
 
-from ts_agent.compute.capabilities import BACKEND_TASK_INPUT_ROLES, calculation_capabilities
+import pytest
+
+from ts_agent.compute.capabilities import (
+    BACKEND_TASK_INPUT_ROLES,
+    CapabilityGapError,
+    calculation_capabilities,
+    resolve_capability,
+    resolve_capability_result,
+    validate_capability_parameters,
+)
 
 
-def test_capability_catalog_keeps_adapter_support_separate_from_readiness() -> None:
+def test_capability_catalog_keeps_adapters_separate_from_readiness() -> None:
     catalog = calculation_capabilities()
 
-    assert catalog["schema_version"] == "ts-compute-capabilities/1"
+    assert catalog["schema_version"] == "ts-capability-catalog/1"
     assert catalog["readiness"]["state"] == "not_probed"
     assert "ts_remote diagnostics" in catalog["readiness"]["meaning"]
     assert set(BACKEND_TASK_INPUT_ROLES) == {
@@ -16,28 +25,64 @@ def test_capability_catalog_keeps_adapter_support_separate_from_readiness() -> N
         "ase_neb",
         "qbics_dmecp",
     }
+    assert all("backend" not in item and "task_type" not in item for item in catalog["capabilities"])
 
 
-def test_gaussian_is_an_explicit_candidate_generation_backend() -> None:
+def test_catalog_describes_executor_contracts_without_strategy_routing() -> None:
     catalog = calculation_capabilities()
-    gaussian = next(item for item in catalog["backends"] if item["backend"] == "gaussian")
-    tasks = {item["task_type"]: item for item in gaussian["tasks"]}
+    capabilities = {item["capability"]: item for item in catalog["capabilities"]}
 
-    assert {"relaxed_scan", "qst", "transition_state_optimization"} <= set(
-        tasks["opt"]["candidate_strategies"]
-    )
-    assert "candidate_ranking" in tasks["sp"]["candidate_strategies"]
-    assert tasks["irc"]["candidate_strategies"] == []
+    assert {
+        "gaussian.sp",
+        "gaussian.opt",
+        "gaussian.freq",
+        "gaussian.opt_freq",
+        "gaussian.irc",
+        "xtb.scan",
+        "crest.conformer_search",
+        "ase.neb",
+        "qbics.dmecp",
+    } <= set(capabilities)
+    assert capabilities["gaussian.opt_freq"]["input_roles"] == ["gjf"]
+    assert capabilities["gaussian.opt_freq"]["output_roles"] == [
+        "program_output",
+        "optimized_geometry",
+        "frequencies",
+    ]
+    assert all("candidate_strategies" not in item for item in capabilities.values())
 
 
-def test_low_cost_and_path_backends_remain_candidate_options() -> None:
-    catalog = calculation_capabilities()
-    tasks = {
-        (backend["backend"], task["task_type"]): task
-        for backend in catalog["backends"]
-        for task in backend["tasks"]
+def test_capability_effects_separate_local_preparation_from_remote_execution() -> None:
+    descriptor = resolve_capability("gaussian.opt_freq", "1").public()
+
+    assert set(descriptor["effects"]) == {
+        "local_prepare",
+        "local_parse",
+        "remote_compute",
     }
+    # The effect declaration describes what the adapter can do; it is not a
+    # readiness assertion.  Live transport/scheduler state stays separate.
+    assert calculation_capabilities()["readiness"]["state"] == "not_probed"
 
-    assert tasks[("xtb", "scan")]["candidate_strategies"] == ["relaxed_scan"]
-    assert tasks[("crest", "conformer_search")]["candidate_strategies"] == ["conformer_search"]
-    assert tasks[("ase_neb", "neb")]["candidate_strategies"] == ["path_search"]
+
+def test_capability_parameters_are_descriptor_bound() -> None:
+    descriptor = resolve_capability("ase.neb", "1")
+    assert validate_capability_parameters(descriptor, {"images": 7}) == {"images": 7}
+    with pytest.raises(ValueError, match="Additional properties"):
+        validate_capability_parameters(descriptor, {"method": "invented"})
+
+
+def test_unknown_capability_is_a_structured_nonretryable_gap() -> None:
+    result = resolve_capability_result("photochemistry.surface_hop", "1")
+    assert result == {
+        "schema_version": "ts-capability-gap/1",
+        "ok": False,
+        "status": "rejected",
+        "reason": "capability_unavailable",
+        "requested": "photochemistry.surface_hop@1",
+        "missing_capability": "photochemistry.surface_hop",
+        "requested_version": "1",
+        "retryable": False,
+    }
+    with pytest.raises(CapabilityGapError):
+        resolve_capability("photochemistry.surface_hop", "1")

@@ -26,7 +26,8 @@ export interface TsSubagentRecord {
   role: "review" | "compute";
   authority: "advisory" | "operational";
   operation: string;
-  backend?: string;
+  capability?: string;
+  capability_version?: string;
   state: TsSubagentState;
   node_refs: string[];
   claim_refs: string[];
@@ -68,7 +69,8 @@ export function collectTsSubagentRecords(
       role: subagentRole(value.role),
       authority: value.role === "compute" ? "operational" : "advisory",
       operation: stringValue(value.operation) || "operation",
-      backend: stringValue(value.backend),
+      capability: stringValue(value.capability),
+      capability_version: stringValue(value.capability_version),
       state: durableState(value.status, value.result_outcome),
       node_refs: stringArray(value.node_refs),
       claim_refs: stringArray(value.claim_refs),
@@ -94,7 +96,8 @@ export function collectTsSubagentRecords(
       role: status.role,
       authority: status.role === "compute" ? "operational" : "advisory",
       operation: status.operation,
-      backend: activity.backend || previous?.backend,
+      capability: activity.capability || previous?.capability,
+      capability_version: previous?.capability_version,
       state: status.state,
       node_refs: status.node_refs || previous?.node_refs || [],
       claim_refs: status.claim_refs || previous?.claim_refs || [],

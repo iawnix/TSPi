@@ -94,7 +94,7 @@ export default function (pi: ExtensionAPI) {
   const notificationTarget = configuredNotificationTarget();
 
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.structureSeed,
+    name: TS_PUBLIC_TOOL_NAMES.seed,
     label: "TS Structure Seed",
     description: "Generate a Node-owned RDKit XYZ seed.",
     promptSnippet: "Generate a 3D seed",
@@ -165,7 +165,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.structureCompare,
+    name: TS_PUBLIC_TOOL_NAMES.compare,
     label: "TS Structure Compare",
     description: "Compare two registered XYZ artifacts.",
     promptSnippet: "Compare molecular structures",
@@ -231,7 +231,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.artifactImport,
+    name: TS_PUBLIC_TOOL_NAMES.importArtifact,
     label: "TS Artifact Import",
     description: "Import one validated Node-owned calculation input.",
     promptSnippet: "Import a calculation input",
@@ -470,7 +470,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.notifyUser,
+    name: TS_PUBLIC_TOOL_NAMES.notify,
     label: "TS Notify User",
     description: `Notify the configured target: ${notificationTarget}.`,
     promptSnippet: "Send a research update",

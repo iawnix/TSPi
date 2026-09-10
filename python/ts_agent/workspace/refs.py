@@ -26,9 +26,9 @@ OBSERVATION_ID_PATTERN = r"^obs_[1-9][0-9]*$"
 OBSERVATION_ID = re.compile(OBSERVATION_ID_PATTERN)
 FINDING_ID_PATTERN = r"^fnd_[1-9][0-9]*$"
 FINDING_ID = re.compile(FINDING_ID_PATTERN)
-VALIDATION_SPEC_ID_PATTERN = r"^gsp_[1-9][0-9]*$"
-VALIDATION_SPEC_ID = re.compile(VALIDATION_SPEC_ID_PATTERN)
-VALIDATION_RESULT_ID_PATTERN = r"^val_[1-9][0-9]*$"
+PROOF_SPEC_ID_PATTERN = r"^proof_[1-9][0-9]*$"
+PROOF_SPEC_ID = re.compile(PROOF_SPEC_ID_PATTERN)
+VALIDATION_RESULT_ID_PATTERN = r"^result_[1-9][0-9]*$"
 VALIDATION_RESULT_ID = re.compile(VALIDATION_RESULT_ID_PATTERN)
 ACCEPTANCE_ID_PATTERN = r"^acc_[1-9][0-9]*$"
 ACCEPTANCE_ID = re.compile(ACCEPTANCE_ID_PATTERN)
@@ -165,28 +165,28 @@ def finding_sort_key(value: str) -> tuple[int, str]:
     return _sort_key(value, finding_ordinal)
 
 
-def validation_spec_ordinal(value: str) -> int:
-    """Return the workspace-local ordinal encoded by one GateSpec ID."""
+def proof_spec_ordinal(value: str) -> int:
+    """Return the workspace-local ordinal encoded by one ProofSpec ID."""
 
-    return _ordinal(value, pattern=VALIDATION_SPEC_ID, prefix="gsp_", label="GateSpec")
-
-
-def next_validation_spec_ordinal(values: Any) -> int:
-    """Allocate after the highest existing GateSpec ordinal."""
-
-    return _next_ordinal(values, validation_spec_ordinal)
+    return _ordinal(value, pattern=PROOF_SPEC_ID, prefix="proof_", label="ProofSpec")
 
 
-def validation_spec_sort_key(value: str) -> tuple[int, str]:
-    """Sort canonical GateSpec IDs numerically while remaining defensive."""
+def next_proof_spec_ordinal(values: Any) -> int:
+    """Allocate after the highest existing ProofSpec ordinal."""
 
-    return _sort_key(value, validation_spec_ordinal)
+    return _next_ordinal(values, proof_spec_ordinal)
+
+
+def proof_spec_sort_key(value: str) -> tuple[int, str]:
+    """Sort canonical ProofSpec IDs numerically while remaining defensive."""
+
+    return _sort_key(value, proof_spec_ordinal)
 
 
 def validation_result_ordinal(value: str) -> int:
     """Return the workspace-local ordinal encoded by one ValidationResult ID."""
 
-    return _ordinal(value, pattern=VALIDATION_RESULT_ID, prefix="val_", label="ValidationResult")
+    return _ordinal(value, pattern=VALIDATION_RESULT_ID, prefix="result_", label="ValidationResult")
 
 
 def next_validation_result_ordinal(values: Any) -> int:

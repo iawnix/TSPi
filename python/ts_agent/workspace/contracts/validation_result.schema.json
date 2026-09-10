@@ -2,21 +2,21 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "validation_result.schema.json",
   "$defs": {
-    "result_id": {"type": "string", "pattern": "^val_[1-9][0-9]*$"},
+    "result_id": {"type": "string", "pattern": "^result_[1-9][0-9]*$"},
     "verdict": {"enum": ["pass", "fail", "inconclusive", "error"]}
   },
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "result_id", "spec_ref", "spec_digest", "target_claim_ref", "dimension",
+    "schema_version", "result_id", "proof_ref", "proof_digest", "target_claim_ref", "dimension",
     "verdict", "observation_refs", "observation_digests", "check_results", "evaluated_by_node",
     "evaluated_by_decision", "evaluated_at", "result_digest"
   ],
   "properties": {
-    "schema_version": {"const": "ts-validation-result/2"},
+    "schema_version": {"const": "ts-validation-result/3"},
     "result_id": {"$ref": "#/$defs/result_id"},
-    "spec_ref": {"$ref": "validation_spec.schema.json#/$defs/spec_id"},
-    "spec_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "proof_ref": {"$ref": "proof_spec.schema.json#/$defs/proof_id"},
+    "proof_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "target_claim_ref": {"$ref": "claim.schema.json#/$defs/claim_id"},
     "dimension": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$", "maxLength": 128},
     "verdict": {"$ref": "#/$defs/verdict"},

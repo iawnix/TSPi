@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { requireRuntimeModel } from "../../../extensions/shared/model-readiness.ts";
 
 const require = createRequire(import.meta.url);
 const { promptWithDeadline, withDisposableSession } = require("../../agent-core/session-lifecycle.cjs");
@@ -22,6 +23,7 @@ const {
   headerValue,
 } = require("../../agent-core/provider-turn.cjs");
 const { validateReviewTaskBundle } = require("./task-packet.cjs");
+const { loadReviewerRole } = require("./roles.cjs");
 import {
   createReviewResultCapture,
   createReviewResultTool,
@@ -46,7 +48,7 @@ const MAX_RESULT_ATTEMPTS = 2;
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
-let activeRun = false;
+const activeRunIds = new Set<string>();
 
 interface ReviewRunOptions {
   workspaceRoot: string;
@@ -87,6 +89,7 @@ export interface ReviewRunResult {
     duration_ms: number;
     result_attempts: number;
     artifact_read_count: number;
+    reviewer_role: string;
   };
   invalidOutputs: InvalidReviewOutput[];
 }
@@ -104,10 +107,14 @@ interface ProviderResponseObservation {
 }
 
 export async function runScientificReview(options: ReviewRunOptions): Promise<ReviewRunResult> {
-  if (activeRun) {
-    throw new Error("A TS workspace subagent review is already running");
+  const taskId = options.packet && typeof options.packet.task_id === "string"
+    ? options.packet.task_id
+    : "unbound";
+  const runIdentity = `${options.workspaceRoot}:${taskId}`;
+  if (activeRunIds.has(runIdentity)) {
+    throw new Error(`A TS workspace subagent review is already running for ${taskId}`);
   }
-  activeRun = true;
+  activeRunIds.add(runIdentity);
   const startedAt = Date.now();
   const invalidOutputs: InvalidReviewOutput[] = [];
   const artifactReadCapture = createReviewArtifactReadCapture();
@@ -121,24 +128,19 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
     options.packet = bundle.task;
     options.reviewSnapshot = bundle.documents.review_snapshot;
     options.providerInput = bundle.documents.provider_input;
-    const systemPrompt = loadSystemPrompt(String(options.packet.operation || ""));
+    const reviewerRoleBinding = (options.reviewSnapshot as { reviewer_role?: { role_id?: string } }).reviewer_role;
+    const reviewerRole = loadReviewerRole(reviewerRoleBinding?.role_id || "general");
+    const systemPrompt = loadSystemPrompt(String(options.packet.operation || ""), reviewerRole);
     const agentDir = getAgentDir();
     const modelRuntime = await ModelRuntime.create({
       authPath: join(agentDir, "auth.json"),
       modelsPath: join(agentDir, "models.json"),
+      allowModelNetwork: false,
     });
     if (options.parentApiKey) {
       await modelRuntime.setRuntimeApiKey(options.parentModel.provider, options.parentApiKey, { allowNetwork: false });
     }
-    const model = modelRuntime.getModel(options.parentModel.provider, options.parentModel.id);
-    if (!model) {
-      throw new Error(
-        `Parent model is unavailable in child ModelRuntime: ${options.parentModel.provider}/${options.parentModel.id}`,
-      );
-    }
-    if (!modelRuntime.hasConfiguredAuth(model.provider)) {
-      throw new Error(`Child ModelRuntime has no configured auth for provider: ${model.provider}`);
-    }
+    const model = requireRuntimeModel(modelRuntime, options.parentModel);
 
     const settingsManager = SettingsManager.inMemory({
       compaction: { enabled: false },
@@ -273,6 +275,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
             duration_ms: Date.now() - startedAt,
             result_attempts: capture.attemptCount + invalidOutputs.filter((item) => item.validation_stage === "missing_tool_call").length,
             artifact_read_count: artifactReadCapture.actions.length,
+            reviewer_role: reviewerRole.role_id,
           },
           invalidOutputs,
         };
@@ -288,7 +291,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
     }
     throw error;
   } finally {
-    activeRun = false;
+    activeRunIds.delete(runIdentity);
   }
 }
 
@@ -338,14 +341,14 @@ export function forceReviewResultToolChoice(payload: unknown): unknown {
   return forceNamedToolChoice(payload, REVIEW_RESULT_TOOL_NAME);
 }
 
-function loadSystemPrompt(operation: string): string {
+function loadSystemPrompt(operation: string, reviewerRole: { role_id: string; title: string; specialty: string; description: string; prompt_revision: string }): string {
   const roleFile = REVIEW_PROMPTS[operation as keyof typeof REVIEW_PROMPTS];
   if (!roleFile) {
     throw new Error(`Unsupported TS Review operation: ${operation}`);
   }
   const core = readFileSync(resolve(PROMPT_DIR, "core.md"), "utf8").trim();
   const role = readFileSync(resolve(PROMPT_DIR, roleFile), "utf8").trim();
-  return `${core}\n\nReview mode instructions:\n${role}`;
+  return `${core}\n\nReviewer role (${reviewerRole.role_id}, revision ${reviewerRole.prompt_revision}): ${reviewerRole.title}.\nSpecialty: ${reviewerRole.specialty}.\nRole boundary: ${reviewerRole.description}\n\nReview mode instructions:\n${role}`;
 }
 
 function buildTaskPrompt(providerInput: Record<string, unknown>, hasArtifacts: boolean): string {

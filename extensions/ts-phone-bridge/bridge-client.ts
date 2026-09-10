@@ -23,6 +23,7 @@ export interface BridgeClientOptions {
   workspaceId: string;
   workspaceRoot: string;
   accessMode: "controller" | "observer";
+  launchId?: string;
   socketPath: string;
   secretPath: string;
   getSessionId(): string;
@@ -122,6 +123,7 @@ export class TsPhoneBridgeClient {
         sessionId: this.#options.getSessionId(),
         workspaceRoot: this.#options.workspaceRoot,
         accessMode: this.#options.accessMode,
+        ...(this.#options.launchId ? { launchId: this.#options.launchId } : {}),
         instanceEpoch: this.instanceEpoch,
         sessionGeneration: this.#options.getSessionGeneration(),
         secret,

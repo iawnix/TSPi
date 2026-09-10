@@ -159,14 +159,17 @@ def test_compute_task_and_result_are_bound_to_typed_actions(tmp_path: Path) -> N
     script = f"""
 const taskHelper=require({json.dumps(str(COMPUTE_TASK_PACKET))});
 const resultHelper=require({json.dumps(str(COMPUTE_OUTPUT_SCHEMA))});
+const descriptor={{capability:"gaussian.opt_freq",version:"1",input_roles:["gjf"],output_roles:["program_output","optimized_geometry","frequencies"],parsers:["gaussian.log/1"]}};
+const descriptorDigest="sha256:"+"c".repeat(64);
 const task=taskHelper.buildComputeTask({{
-  runId:"sub_1",workspaceRoot:process.argv[1],operation:"launch",backend:"gaussian",nodeId:"node_1",
-  binding:{{intentId:"calc_1",intentDigest:"sha256:"+"a".repeat(64),executionKind:"remote"}},
+  runId:"sub_1",workspaceRoot:process.argv[1],operation:"launch",capability:"gaussian.opt_freq",capabilityVersion:"1",capabilityDescriptor:descriptor,nodeId:"node_1",
+  binding:{{intentId:"calc_1",intentDigest:"sha256:"+"a".repeat(64),executionKind:"remote",capabilityDescriptorDigest:descriptorDigest}},
 }});
 const canonical=(state,control={{effect_outcome:"succeeded",reconciliation_required:false}})=>({{
   schema_version:"ts-calculation-result/2",intent_id:"calc_1",node_id:"node_1",state,
-  program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],control,
-  provenance:{{intent_digest:"sha256:"+"a".repeat(64)}},
+  capability:"gaussian.opt_freq",capability_version:"1",expected_output_roles:descriptor.output_roles,
+  program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],parser_facts:{{}},control,
+  provenance:{{intent_digest:"sha256:"+"a".repeat(64),capability:"gaussian.opt_freq",capability_version:"1",capability_descriptor_digest:descriptorDigest}},
 }});
 const successActions=[
   {{tool:"ts_workspace_compute_prepare",result:{{action_status:"completed",result:canonical("prepared")}}}},
@@ -206,11 +209,13 @@ import {{ shouldForceComputeResult }} from {json.dumps(COMPUTE_RUNTIME.as_uri())
 import {{ createRequire }} from "node:module";
 const require=createRequire(import.meta.url);
 const taskHelper=require({json.dumps(str(COMPUTE_TASK_PACKET))});
+const descriptor={{capability:"gaussian.opt_freq",version:"1",input_roles:["gjf"],output_roles:["program_output","optimized_geometry","frequencies"],parsers:["gaussian.log/1"]}};
+const descriptorDigest="sha256:"+"c".repeat(64);
 const task=taskHelper.buildComputeTask({{
-  runId:"sub_2",workspaceRoot:process.argv[1],operation:"inspect",backend:"gaussian",nodeId:"node_1",
-  binding:{{intentId:"calc_1",intentDigest:"sha256:"+"b".repeat(64),executionKind:"remote"}},tailLines:80,
+  runId:"sub_2",workspaceRoot:process.argv[1],operation:"inspect",capability:"gaussian.opt_freq",capabilityVersion:"1",capabilityDescriptor:descriptor,nodeId:"node_1",
+  binding:{{intentId:"calc_1",intentDigest:"sha256:"+"b".repeat(64),executionKind:"remote",capabilityDescriptorDigest:descriptorDigest}},tailLines:80,
 }});
-const result={{schema_version:"ts-calculation-result/2",intent_id:"calc_1",node_id:"node_1",state:"running",program_status:"running",error_class:null,exit_status:null,artifact_refs:[],provenance:{{intent_digest:"sha256:"+"b".repeat(64)}}}};
+const result={{schema_version:"ts-calculation-result/2",intent_id:"calc_1",node_id:"node_1",capability:"gaussian.opt_freq",capability_version:"1",expected_output_roles:descriptor.output_roles,state:"running",program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],parser_facts:{{}},provenance:{{intent_digest:"sha256:"+"b".repeat(64),capability:"gaussian.opt_freq",capability_version:"1",capability_descriptor_digest:descriptorDigest}}}};
 const status={{tool:"ts_workspace_compute_status",result:{{action_status:"completed",result}}}};
 const tail={{tool:"ts_workspace_compute_tail",result:{{action_status:"completed",result:{{...result,schema_version:"ts-calculation-tail/1"}}}}}};
 const actions=[];

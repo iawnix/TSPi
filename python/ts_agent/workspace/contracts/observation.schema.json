@@ -21,6 +21,16 @@
     "qualifiers": {"type": "object", "maxProperties": 32},
     "summary": {"type": "string", "minLength": 1, "maxLength": 4000},
     "artifact_refs": {"type": "array", "uniqueItems": true, "maxItems": 64, "items": {"type": "string", "pattern": "^art_[0-9a-f]{24}$"}},
+    "candidate_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "artifact_sha256", "candidate_id"],
+      "properties": {
+        "artifact_id": {"type": "string", "pattern": "^art_[0-9a-f]{24}$"},
+        "artifact_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "candidate_id": {"type": "string", "pattern": "^candidate_[1-9][0-9]*$"}
+      }
+    },
     "provenance": {
       "type": "object",
       "additionalProperties": false,

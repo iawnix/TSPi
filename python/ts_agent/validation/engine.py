@@ -1,4 +1,4 @@
-"""Execute frozen GateSpecs against an explicit Observation snapshot."""
+"""Execute frozen ProofSpecs against an explicit Observation snapshot."""
 
 from __future__ import annotations
 
@@ -10,10 +10,10 @@ from .registry import PredicateRegistry, RegistryError
 
 
 class ValidationEngineError(ValueError):
-    """Raised when a frozen GateSpec or Observation snapshot is inconsistent."""
+    """Raised when a frozen ProofSpec or Observation snapshot is inconsistent."""
 
 
-def evaluate_gate_spec(
+def evaluate_proof_spec(
     spec: dict[str, Any],
     observations: list[dict[str, Any]],
     *,
@@ -50,10 +50,10 @@ def evaluate_gate_spec(
         for item in selected
     }
     result = {
-        "schema_version": "ts-validation-result/2",
+        "schema_version": "ts-validation-result/3",
         "result_id": result_id,
-        "spec_ref": spec["spec_id"],
-        "spec_digest": spec["spec_digest"],
+        "proof_ref": spec["proof_id"],
+        "proof_digest": spec["proof_digest"],
         "target_claim_ref": spec["target_claim_ref"],
         "dimension": spec["dimension"],
         "verdict": verdict,
@@ -69,26 +69,26 @@ def evaluate_gate_spec(
 
 
 def _validate_spec_binding(spec: dict[str, Any], registry: PredicateRegistry) -> None:
-    if not isinstance(spec, dict) or spec.get("schema_version") != "ts-gate-spec/2":
-        raise ValidationEngineError("unsupported or malformed GateSpec")
+    if not isinstance(spec, dict) or spec.get("schema_version") != "ts-proof-spec/1":
+        raise ValidationEngineError("unsupported or malformed ProofSpec")
     expected = dict(spec)
-    digest = expected.pop("spec_digest", None)
+    digest = expected.pop("proof_digest", None)
     if not isinstance(digest, str) or digest != sha256_json(expected):
-        raise ValidationEngineError("GateSpec digest does not match its content")
+        raise ValidationEngineError("ProofSpec digest does not match its content")
     if spec.get("predicate_registry_digest") != registry.digest:
-        raise ValidationEngineError("GateSpec predicate registry digest is not active")
+        raise ValidationEngineError("ProofSpec predicate registry digest is not active")
     checks = spec.get("checks")
     if not isinstance(checks, list) or not checks:
-        raise ValidationEngineError("GateSpec contains no checks")
+        raise ValidationEngineError("ProofSpec contains no checks")
     for check in checks:
         if not isinstance(check, dict):
-            raise ValidationEngineError("GateSpec check is malformed")
+            raise ValidationEngineError("ProofSpec check is malformed")
         try:
             registration = registry.get(str(check.get("predicate") or ""))
         except RegistryError as exc:
             raise ValidationEngineError(str(exc)) from exc
         if check.get("predicate_version") != registration.version:
-            raise ValidationEngineError(f"GateSpec predicate version is not active: {registration.name}")
+            raise ValidationEngineError(f"ProofSpec predicate version is not active: {registration.name}")
 
 
 def _validate_observations(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -45,15 +45,15 @@ def _request(
     execution_target: dict | None = None,
 ) -> dict:
     return {
-        "schema_version": "ts-calculation-request/4",
+        "schema_version": "ts-calculation-request/5",
         "node_id": node_id,
         "purpose": "Exercise deterministic calculation artifact binding.",
         "attempt_kind": "primary",
         "lineage": None,
-        "backend": "gaussian",
-        "task_type": "sp",
+        "capability": "gaussian.sp",
+        "capability_version": "1",
         "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact_id}],
-        "settings": {},
+        "parameters": {},
         "execution_target": execution_target or {"kind": "local"},
         "dry_run": dry_run,
     }
@@ -420,6 +420,36 @@ def test_catalog_uses_workspace_and_research_node_ownership(tmp_path: Path) -> N
     assert list_calculation_artifacts(workspace, node_id=node_id)["artifacts"] == [owned]
 
 
+@pytest.mark.parametrize(
+    "nodes_value, message",
+    [
+        ({"schema_version": "ts-research-node-registry/2", "nodes": {}}, "nodes must be an array"),
+        ({"schema_version": "ts-research-node-registry/2", "nodes": ["node_1"]}, "invalid node record"),
+        ({"schema_version": "ts-research-node-registry/2", "nodes": [{"node_id": 1}]}, "invalid node record"),
+        (
+            {
+                "schema_version": "ts-research-node-registry/2",
+                "nodes": [{"node_id": "node_1"}, {"node_id": "node_1"}],
+            },
+            "duplicate node_id",
+        ),
+    ],
+)
+def test_catalog_rejects_malformed_research_node_registry_without_type_errors(
+    tmp_path: Path,
+    nodes_value: dict[str, object],
+    message: str,
+) -> None:
+    workspace, _node_id = _workspace(tmp_path)
+    (workspace / "research_nodes.json").write_text(
+        json.dumps(nodes_value) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ComputeContractError, match=message):
+        list_calculation_artifacts(workspace)
+
+
 def test_binding_rejects_unknown_incompatible_and_incomplete_roles(tmp_path: Path) -> None:
     workspace, node_id = _workspace(tmp_path)
     gjf = workspace / "inputs" / "source.gjf"
@@ -436,8 +466,7 @@ def test_binding_rejects_unknown_incompatible_and_incomplete_roles(tmp_path: Pat
         create_calculation_intent(workspace, _request(node_id, xyz_artifact["artifact_id"]))
 
     incomplete = _request(node_id, xyz_artifact["artifact_id"])
-    incomplete["backend"] = "ase_neb"
-    incomplete["task_type"] = "neb"
+    incomplete["capability"] = "ase.neb"
     incomplete["input_artifacts"] = [
         {"input_role": "reactant", "artifact_id": xyz_artifact["artifact_id"]}
     ]
@@ -461,10 +490,11 @@ def test_open_research_node_can_run_any_supported_root_selected_task(tmp_path: P
     source.write_text("# HF/STO-3G opt\n\nOpt\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
     artifact = _artifact(list_calculation_artifacts(workspace), "inputs/source.gjf")
     request = _request(node_id, artifact["artifact_id"])
-    request["task_type"] = "opt"
+    request["capability"] = "gaussian.opt"
 
     created = create_calculation_intent(workspace, request)
     assert created["node_id"] == node_id
+    assert created["intent"]["capability"] == "gaussian.opt"
     assert created["intent"]["backend"] == "gaussian"
     assert created["intent"]["task_type"] == "opt"
     assert created["intent_ref"].startswith(f"nodes/{node_id}/attempts/")
@@ -627,6 +657,31 @@ def test_compute_cli_serializes_remote_errors(
     output = capsys.readouterr()
     assert output.out == ""
     assert json.loads(output.err) == {"ok": False, "error": "remote status unavailable"}
+
+
+def test_compute_cli_preserves_structured_capability_gap_after_api_normalization(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    source = workspace / "inputs" / "source.gjf"
+    source.write_text("# HF/STO-3G sp\n\nSP\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
+    artifact_id = _artifact(list_calculation_artifacts(workspace), "inputs/source.gjf")["artifact_id"]
+    request = _request(node_id, artifact_id)
+    request["capability"] = "photochemistry.surface_hop"
+
+    assert compute_cli_main([
+        "create-intent",
+        "--root",
+        str(workspace),
+        "--request-json",
+        json.dumps(request),
+    ]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["schema_version"] == "ts-capability-gap/1"
+    assert result["reason"] == "capability_unavailable"
+    assert result["retryable"] is False
+    assert not (workspace / "nodes" / node_id / "attempts").exists()
 
 
 def test_prepare_and_submit_reject_stale_input_binding(

@@ -21,17 +21,17 @@ install(pi);
 process.stdout.write(JSON.stringify({{tools:tools.map((tool)=>tool.name),commands}}));
 """
     result = _node_json(script)
-    assert result == {"tools": ["ts_remote_inspect", "ts_subagent_compute"], "commands": ["ts-remote"]}
+    assert result == {"tools": ["ts_remote", "ts_calc"], "commands": ["ts-remote"]}
 
 
 def test_compact_compute_schema_uses_logical_artifacts_and_host_enforces_operation_fields() -> None:
     script = f"""
 import install from {json.dumps(COMPUTE.as_uri())};
 import {{ Compile }} from "typebox/compile";
-let compute;const pi={{registerTool:(tool)=>{{if(tool.name==="ts_subagent_compute")compute=tool}},registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{emit:()=>{{}}}}}};
+let compute;const pi={{registerTool:(tool)=>{{if(tool.name==="ts_calc")compute=tool}},registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{emit:()=>{{}}}}}};
 install(pi);const check=Compile(compute.parameters);
-const base={{backend:"gaussian",nodeId:"node_1"}};
-const launch={{...base,operation:"launch",purpose:"Single point",taskType:"sp",attemptKind:"primary",inputArtifacts:[{{inputRole:"gjf",artifactId:"art_"+"b".repeat(24)}}],executionTarget:{{kind:"remote",profile:"cluster_1w",resources:{{queue:"batch",nodes:1,ncpus:8,memory:"16gb",walltime:"01:00:00",ngpus:0}}}}}};
+const base={{nodeId:"node_1"}};
+const launch={{...base,operation:"launch",purpose:"Single point",capability:"gaussian.sp",capabilityVersion:"1",attemptKind:"primary",inputArtifacts:[{{inputRole:"gjf",artifactId:"art_"+"b".repeat(24)}}],executionTarget:{{kind:"remote",profile:"cluster_1w",resources:{{queue:"batch",nodes:1,ncpus:8,memory:"16gb",walltime:"01:00:00",ngpus:0}}}}}};
 const invalidInspect={{...base,operation:"inspect",intentId:"calc_1",purpose:"bad"}};
 let hostError="";
 try {{ await compute.execute("call-1",invalidInspect,undefined,()=>{{}},{{cwd:"/tmp"}}); }} catch(error) {{ hostError=error.message; }}
@@ -71,7 +71,7 @@ def test_compute_extension_delegates_fixed_plan_with_one_run_journal_owner() -> 
     assert '"compute_result_delivery_failed"' in source
     assert 'onStage?.("intent_creation")' in source
     assert 'onStage?.("preflight")' in source
-    assert "ts_workspace_decision_apply" not in source
+    assert "ts_change" not in source
     assert "append_observation" not in source
     assert "accept_claim" not in source
 
@@ -98,6 +98,9 @@ def test_untyped_control_exception_requires_reconciliation_and_stays_schema_vali
         "const actions=[];const action=helper.reserveAction(actions,'ts_workspace_compute_submit');"
         "const result=helper.failAction(action,new Error('connection lost'),{"
         "intentId:'calc_1',nodeId:'node_1',backend:'gaussian',"
+        "capability:'gaussian.opt_freq',capabilityVersion:'1',"
+        "capabilityDescriptorDigest:'sha256:'+'b'.repeat(64),"
+        "outputRoles:['program_output','optimized_geometry','frequencies'],"
         "intentDigest:'sha256:'+'a'.repeat(64)});"
         "process.stdout.write(JSON.stringify({action,result}));"
     )

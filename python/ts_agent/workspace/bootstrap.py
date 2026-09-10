@@ -12,9 +12,10 @@ from .engine import init_workspace
 from .identity import IDENTITY_REF, read_workspace_identity
 from .state import OPTIONAL_DIRS, REQUIRED_DIRS, REQUIRED_FILES, UNSUPPORTED_MARKERS, WORKSPACE_FILE
 from .validator import validate_workspace
+from .path_safety import lexical_path, path_has_symlink
 
 
-BOOTSTRAP_SCHEMA = "ts-workspace-bootstrap/3"
+BOOTSTRAP_SCHEMA = "ts-workspace-bootstrap/4"
 
 
 class WorkspaceBootstrapState(str, Enum):
@@ -41,12 +42,12 @@ class WorkspaceBootstrapError(ValueError):
 
 
 def classify_workspace(root: str | Path) -> WorkspaceClassification:
-    requested = Path(root).expanduser()
-    if requested.is_symlink():
+    requested = lexical_path(root)
+    if path_has_symlink(requested):
         return WorkspaceClassification(requested.absolute(), WorkspaceBootstrapState.INVALID, ("workspace root is a symbolic link",))
     if requested.exists() and not requested.is_dir():
         return WorkspaceClassification(requested.absolute(), WorkspaceBootstrapState.INVALID, ("workspace root is not a directory",))
-    root_path = requested.resolve()
+    root_path = requested
     if not root_path.exists():
         return WorkspaceClassification(root_path, WorkspaceBootstrapState.FRESH)
 
@@ -146,8 +147,8 @@ def _unsafe_workspace_paths(root: Path) -> list[str]:
 def _unsupported_layout_details(root: Path) -> list[str]:
     details = [f"unsupported marker exists: {name}" for name in sorted(UNSUPPORTED_MARKERS) if (root / name).exists()]
     expected_schemas = {
-        WORKSPACE_FILE: "ts-workspace/5",
-        "research_state.json": "ts-research-state/5",
+        WORKSPACE_FILE: "ts-workspace/6",
+        "research_state.json": "ts-research-state/6",
     }
     for name in (WORKSPACE_FILE, "research_state.json"):
         path = root / name

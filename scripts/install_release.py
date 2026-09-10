@@ -34,59 +34,20 @@ except ImportError:
         validate_descriptor_match,
     )
 
+try:
+    from .package_inventory import REQUIRED_RUNTIME_FILES
+except ImportError:
+    from package_inventory import REQUIRED_RUNTIME_FILES
+
 
 SCHEMA_VERSION = RELEASE_SCHEMA_VERSION
 INSTALL_SCHEMA_VERSION = "ts-agent-install/1"
 PACKAGE_NAME = "@iawnix/ts-agent"
 RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
-REQUIRED_RUNTIME_FILES = {
-    "package.json",
-    "pyproject.toml",
-    "TSPi",
-    "docs/ARCHITECTURE.md",
-    "docs/INSTALLATION.md",
-    "docs/MAINTAINER_GUIDE.md",
-    "environment.yml",
-    "scripts/install_env.py",
-    "scripts/install_package.py",
-    "scripts/install_release.py",
-    "scripts/_bootstrap.py",
-    "scripts/_runtime_install.py",
-    "scripts/_suite.py",
-    "scripts/_wheel.py",
-    "scripts/tspi_host.py",
-    "scripts/ts_compute.py",
-    "scripts/ts_web.py",
-    "skills/transition-state-workflow/SKILL.md",
-    "themes/ts-theme.json",
-    "extensions/ts-workflow-control/index.ts",
-    "extensions/ts-workflow-ui/index.ts",
-    "extensions/ts-workflow-review/index.ts",
-    "extensions/ts-workflow-compute/index.ts",
-    "extensions/ts-workflow-artifacts/index.ts",
-    "python/ts_agent/workspace/engine.py",
-    "python/ts_agent/workspace/context.py",
-    "python/ts_agent/workspace/bootstrap.py",
-    "python/ts_agent/workspace/contracts/research_phase.schema.json",
-    "python/ts_agent/workspace/contracts/research_node.schema.json",
-    "python/ts_agent/validation/engine.py",
-    "python/ts_agent/runtime/launcher.py",
-    "python/ts_agent/web/normalize.py",
-    "python/ts_agent/web/research_map.py",
-    "python/ts_agent/web/reloader.py",
-    "python/ts_agent/web/server.py",
-    "python/ts_agent/web/static/index.html",
-    "python/ts_agent/web/static/app.css",
-    "python/ts_agent/web/static/app.js",
-    "python/ts_agent/web/static/attempt-timeline.js",
-    "python/ts_agent/web/static/claim-map.js",
-    "python/ts_agent/web/static/research-tree.js",
-    "python/ts_agent/web/static/research-map.js",
-    "docs/adr/0001-phase-node-research-kernel.md",
-}
 FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "build", "node_modules", "tests"}
 FORBIDDEN_RUNTIME_FILES = {
+    "scripts/_source_capture.py",
     "scripts/build_package.py",
     "scripts/build_release.py",
     "scripts/check_package.py",

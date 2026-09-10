@@ -1,6 +1,6 @@
 export const TS_PACKAGE_PROFILE = Object.freeze({
   displayName: "TSPi",
-  version: "0.11.1",
+  version: "0.15.0",
   title: "Transition-state workflow",
   description: "Phase-guided TS research with a ResearchNode DAG and deterministic validation.",
   skill: Object.freeze({
@@ -15,5 +15,5 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
     Object.freeze({ name: "artifacts", path: "./extensions/ts-workflow-artifacts/index.ts" }),
   ]),
   theme: Object.freeze({ name: "ts-theme", path: "./themes/ts-theme.json" }),
-  commands: Object.freeze(["/ts-context", "/ts-validate", "/ts-remote", "/ts-subagent-history"]),
+  commands: Object.freeze(["/ts", "/ts-check", "/ts-remote", "/ts-runs"]),
 });

@@ -10,12 +10,13 @@ from typing import Any, Iterable, Mapping
 from ts_agent.validation.registry import load_acceptance_profile
 
 from ts_agent.io import read_json, sha256_json
-from .refs import finding_sort_key, validation_spec_sort_key
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
+from .refs import finding_sort_key, proof_spec_sort_key
 from .state import (
     CLAIMS_FILE,
     FINDINGS_FILE,
     VALIDATION_RESULTS_FILE,
-    VALIDATION_SPECS_FILE,
+    PROOF_SPECS_FILE,
 )
 
 
@@ -40,14 +41,14 @@ def acceptance_policy_violations(
     if claim_snapshot.get("status") != "supported":
         violations.append(("acceptance_claim_not_supported", "acceptance requires a supported Claim snapshot"))
     if not selected_specs:
-        violations.append(("acceptance_missing_spec", "acceptance requires at least one attached GateSpec"))
+        violations.append(("acceptance_missing_spec", "acceptance requires at least one attached ProofSpec"))
 
-    spec_refs = {str(spec.get("spec_id")) for spec in selected_specs}
+    proof_refs = {str(spec.get("proof_id")) for spec in selected_specs}
     result_by_spec: dict[str, list[dict[str, Any]]] = {}
     for result in selected_results:
-        result_by_spec.setdefault(str(result.get("spec_ref")), []).append(result)
-    if set(result_by_spec) != spec_refs or any(len(values) != 1 for values in result_by_spec.values()):
-        violations.append(("acceptance_result_coverage", "acceptance requires exactly one result per GateSpec"))
+        result_by_spec.setdefault(str(result.get("proof_ref")), []).append(result)
+    if set(result_by_spec) != proof_refs or any(len(values) != 1 for values in result_by_spec.values()):
+        violations.append(("acceptance_result_coverage", "acceptance requires exactly one result per ProofSpec"))
     if any(result.get("verdict") != "pass" for result in selected_results):
         violations.append(("acceptance_nonpassing_result", "acceptance contains a non-passing ValidationResult"))
 
@@ -81,23 +82,23 @@ def acceptance_policy_violations(
 
 
 def latest_results_for_specs(
-    spec_refs: Iterable[str],
+    proof_refs: Iterable[str],
     results: Mapping[str, dict[str, Any]] | Iterable[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Return the last registered ValidationResult for every requested GateSpec."""
+    """Return the last registered ValidationResult for every requested ProofSpec."""
 
     ordered_results = list(results.values()) if isinstance(results, Mapping) else list(results)
     latest: dict[str, dict[str, Any]] = {}
-    requested = list(spec_refs)
+    requested = list(proof_refs)
     requested_set = set(requested)
     for result in ordered_results:
-        spec_ref = result.get("spec_ref") if isinstance(result, dict) else None
-        if spec_ref in requested_set:
-            latest[str(spec_ref)] = result
-    missing = [spec_ref for spec_ref in requested if spec_ref not in latest]
+        proof_ref = result.get("proof_ref") if isinstance(result, dict) else None
+        if proof_ref in requested_set:
+            latest[str(proof_ref)] = result
+    missing = [proof_ref for proof_ref in requested if proof_ref not in latest]
     if missing:
-        raise AcceptanceError("no ValidationResult for GateSpec: " + ", ".join(missing))
-    return [latest[spec_ref] for spec_ref in requested]
+        raise AcceptanceError("no ValidationResult for ProofSpec: " + ", ".join(missing))
+    return [latest[proof_ref] for proof_ref in requested]
 
 
 def relevant_findings(
@@ -152,26 +153,26 @@ def acceptance_currentness(
             if record.get("profile_digest") != sha256_json(profile):
                 reasons.append("profile_digest_changed")
 
-    selected_spec_refs = _string_list(record.get("validation_spec_refs"))
-    attached_spec_refs = sorted(
-        (spec_id for spec_id, spec in specs.items() if spec.get("target_claim_ref") == claim_ref),
-        key=validation_spec_sort_key,
+    selected_proof_refs = _string_list(record.get("proof_spec_refs"))
+    attached_proof_refs = sorted(
+        (proof_id for proof_id, spec in specs.items() if spec.get("target_claim_ref") == claim_ref),
+        key=proof_spec_sort_key,
     )
     if profile is not None and profile.get("require_all_attached_specs") is True:
-        if selected_spec_refs != attached_spec_refs:
+        if selected_proof_refs != attached_proof_refs:
             reasons.append("attached_specs_changed")
-    elif any(spec_ref not in attached_spec_refs for spec_ref in selected_spec_refs):
+    elif any(proof_ref not in attached_proof_refs for proof_ref in selected_proof_refs):
         reasons.append("attached_specs_changed")
 
-    spec_digests = record.get("validation_spec_digests")
-    if not isinstance(spec_digests, dict) or any(
-        spec_ref not in specs or spec_digests.get(spec_ref) != sha256_json(specs[spec_ref])
-        for spec_ref in selected_spec_refs
+    proof_digests = record.get("proof_spec_digests")
+    if not isinstance(proof_digests, dict) or any(
+        proof_ref not in specs or proof_digests.get(proof_ref) != sha256_json(specs[proof_ref])
+        for proof_ref in selected_proof_refs
     ):
-        reasons.append("validation_spec_changed")
+        reasons.append("proof_spec_changed")
 
     try:
-        latest_results = latest_results_for_specs(selected_spec_refs, results)
+        latest_results = latest_results_for_specs(selected_proof_refs, results)
     except AcceptanceError:
         latest_results = []
         reasons.append("latest_results_changed")
@@ -203,9 +204,11 @@ def project_acceptances(
 ) -> list[dict[str, Any]]:
     """Read acceptance history and attach derived currentness without mutating it."""
 
-    root_path = Path(root).expanduser().resolve()
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise AcceptanceError("workspace root contains a symbolic link")
     claims = _record_map(documents[CLAIMS_FILE].get("claims"), "claim_id")
-    specs = _record_map(documents[VALIDATION_SPECS_FILE].get("specs"), "spec_id")
+    specs = _record_map(documents[PROOF_SPECS_FILE].get("proofs"), "proof_id")
     result_rows = _records(documents[VALIDATION_RESULTS_FILE].get("results"))
     results = _record_map(result_rows, "result_id")
     findings = _record_map(documents[FINDINGS_FILE].get("findings"), "finding_id")
@@ -232,7 +235,7 @@ def project_acceptances(
                     "acceptance_id",
                     "claim_ref",
                     "profile_ref",
-                    "validation_spec_refs",
+                    "proof_spec_refs",
                     "validation_result_refs",
                     "summary",
                     "decision_id",
@@ -254,14 +257,20 @@ def acceptance_path(root: Path, ref: Any) -> Path:
 
     if not isinstance(ref, str) or re.fullmatch(r"acceptances/acc_[1-9][0-9]*\.json", ref) is None:
         raise AcceptanceError(f"invalid acceptance ref: {ref!r}")
+    root = lexical_path(root)
     expected_parent = root / "acceptances"
     candidate = root / ref
-    if expected_parent.is_symlink() or candidate.is_symlink() or not candidate.is_file():
+    if (
+        path_has_symlink(root)
+        or has_symlink_component(root, expected_parent)
+        or has_symlink_component(root, candidate)
+        or candidate.is_symlink()
+        or not candidate.is_file()
+    ):
         raise AcceptanceError(f"invalid acceptance artifact: {ref}")
-    path = candidate.resolve()
-    if path.parent != expected_parent.resolve():
+    if candidate.parent != expected_parent:
         raise AcceptanceError(f"invalid acceptance artifact: {ref}")
-    return path
+    return candidate
 
 
 def _record_map(value: Any, key: str) -> dict[str, dict[str, Any]]:

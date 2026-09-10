@@ -6,8 +6,9 @@ from pathlib import Path
 
 from ts_agent.compute.artifacts import list_calculation_artifacts
 from ts_agent.workspace.context import build_review_snapshot
-from ts_agent.workspace.decision import draft_decision
-from ts_agent.workspace.engine import apply_decision, init_workspace
+from tests.kernel_helpers import compile_change
+from ts_agent.workspace.engine import init_workspace
+from tests.kernel_helpers import apply_compiled_change
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -15,8 +16,8 @@ OUTPUT_SCHEMA = REPO / "src" / "agents" / "review" / "output-schema.cjs"
 
 
 def _apply(root: Path, operations: list[dict]) -> dict[str, str]:
-    drafted = draft_decision(root, {"rationale": "Seed Review context.", "basis_refs": [], "operations": operations})
-    apply_decision(root, drafted["decision"])
+    drafted = compile_change(root, {"rationale": "Seed Review context.", "basis_refs": [], "operations": operations})
+    apply_compiled_change(root, drafted["decision"])
     return drafted["allocated_refs"]
 
 
@@ -100,7 +101,20 @@ def test_review_bundle_uses_dag_objects_and_logical_artifact_ids(tmp_path: Path)
     assert '"act_id"' not in serialized
     assert '"hypothesis"' not in serialized
     assert "gate_results" not in serialized
-    assert "evidence" not in serialized
+
+    # Scientific prose may legitimately contain the word "evidence".  The
+    # contract boundary is about retired field names, not substring filtering
+    # of user-authored Claim text.
+    def keys(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                yield key
+                yield from keys(child)
+        elif isinstance(value, list):
+            for child in value:
+                yield from keys(child)
+
+    assert "evidence" not in set(keys(bundle["documents"]["provider_input"]))
 
     result = {
         "schema_version": "ts-agent-result/1",

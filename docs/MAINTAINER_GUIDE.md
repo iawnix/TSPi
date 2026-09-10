@@ -7,8 +7,10 @@ place.
 
 Read [Architecture](ARCHITECTURE.md) before changing a cross-module contract,
 [Installation and Operations](INSTALLATION.md) before changing lifecycle or
-configuration, and [ADR 0001](adr/0001-phase-node-research-kernel.md)
-before changing the research graph or validation architecture.
+configuration, [ADR 0001](adr/0001-phase-node-research-kernel.md) before
+changing the research graph or validation architecture, and [ADR 0002](adr/0002-repository-and-component-boundaries.md)
+before changing repository ownership, optional components, public protocols,
+or the source/package layout.
 
 ## Non-Negotiable Boundary
 
@@ -22,7 +24,7 @@ Tool plane       deterministic compute kernel, artifacts, remote, and delivery e
 UI/web           read-only projection
 ```
 
-Only `ts_workspace_decision_apply` writes canonical scientific state. Compute
+Only `ts_change` writes canonical scientific state. Compute
 and Review are the only child models. Compute may orchestrate only its closed,
 host-bound lifecycle; it cannot choose chemistry, arguments, paths, outcome, or
 provenance. Render and Report remain direct deterministic tools.
@@ -38,7 +40,7 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 | Path | Owner and purpose |
 | --- | --- |
 | `skills/transition-state-workflow/` | public Root Skill, focused references, and examples |
-| `extensions/ts-workflow-control/` | context, Decision draft/validate/apply, package-source guard |
+| `extensions/ts-workflow-control/` | bounded state projection, atomic `ts_change`, package-source guard |
 | `extensions/ts-workflow-review/` | advisory Review entrypoint and Root disposition |
 | `extensions/ts-workflow-compute/` | Compute subagent entrypoint, bound action tools, and remote diagnostics |
 | `extensions/ts-workflow-artifacts/` | deterministic structure seed/comparison, input import, Render, Report, and notification tools |
@@ -54,7 +56,7 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 | `scripts/install_env.py` | thin command-line entrypoint for the managed runtime mechanism |
 | `python/ts_agent/` | the single import namespace for all deterministic Python code |
 | `python/ts_agent/workspace/` | graph state, bootstrap, Decisions, context, validation, transactions |
-| `python/ts_agent/validation/` | GateSpec compiler, predicate registry, templates, acceptance profiles |
+| `python/ts_agent/validation/` | ProofSpec compiler, predicate registry, templates, acceptance profiles |
 | `python/ts_agent/compute/` | capabilities, artifact catalog, immutable intents, control, collection |
 | `python/ts_agent/backends/` | deterministic program preparation and parsing |
 | `python/ts_agent/remote/` | OpenSSH/SCP, Torque, transfer, diagnostics, guards, and receipts |
@@ -70,6 +72,23 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 selection, config, runtime resolution, bootstrap, locking, or Pi arguments into
 shell.
 
+### Entrypoints And Tools
+
+`scripts/` is a compatibility directory during the staged layout change.
+Its files have three distinct responsibilities:
+
+| Category | Current members | Boundary |
+| --- | --- | --- |
+| User and Pi entrypoints | `TSPi`, `scripts/tspi_host.py`, `scripts/ts_backend.py`, `scripts/ts_compute.py`, `scripts/ts_email.py`, `scripts/ts_render.py`, `scripts/ts_report.py`, `scripts/ts_runtime.py`, `scripts/ts_web.py`, `scripts/ts_workspace.py`, `scripts/pi-loader.mjs` | Parse launch arguments and delegate to `python/ts_agent/`, `src/`, or Pi integration code. Keep these names stable for installed releases. |
+| Release and runtime mechanisms | `scripts/build_package.py`, `scripts/build_release.py`, `scripts/install_env.py`, `scripts/install_package.py`, `scripts/install_release.py`, `scripts/_bootstrap.py`, `scripts/_runtime_install.py`, `scripts/_suite.py`, `scripts/_wheel.py`, `scripts/package_inventory.py` | Own packaging, runtime preparation, archive validation, and installation mechanics. They are not scientific libraries or public Skills. |
+| Developer checks | `scripts/check_package.py`, `scripts/test_fast.py`, `scripts/test_source.py`, `tools/lint_public_surface.py`, `tools/contracts/sync_ts_phone.py` | Validate authored or component boundaries. They are not production runtime entrypoints; package membership is explicit in the release inventory. |
+
+Reusable behavior belongs in `python/ts_agent/`, `src/`, or `extensions/` and
+must be imported by an entrypoint rather than copied into a second script.
+New build, test, transition, or contract tooling goes under `tools/` when it is
+not a stable installed command. Move one responsibility at a time and retain
+the existing wrapper while callers migrate.
+
 ## Public Package Surface
 
 `package.json` registers exactly:
@@ -78,18 +97,19 @@ shell.
 - five normal extensions: control, UI, Review, compute, and artifacts;
 - one theme: `themes/ts-theme.json`.
 
-`ts-phone-bridge` is packaged but loaded only by `TSPi --phone`. Files under
+`ts-phone-bridge` is packaged but loaded only by `TSPi --phone` or a Host-owned
+Phone Worker. Files under
 `src/agents/compute/` and `src/agents/review/` are private child-runtime
 material, not discoverable Skills.
 
 Public names describe authority:
 
-- `ts_workspace_*`: deterministic context and canonical Decision pipeline;
-- `ts_subagent_compute`, `ts_subagent_review`: bounded child-model entrypoints;
-- `ts_structure_seed`, `ts_structure_compare`, `ts_artifact_import`, `ts_render`, `ts_report`: deterministic execution;
-- `ts_remote_inspect`: deterministic read-only infrastructure diagnostics;
-- `ts_review_disposition`: deterministic operational response;
-- `ts_notify_user`: deterministic fixed-target external delivery.
+- `ts_state`, `ts_change`: bounded context and the atomic canonical mutation boundary;
+- `ts_calc`, `ts_review`: bounded child-model entrypoints;
+- `ts_seed`, `ts_compare`, `ts_import`, `ts_render`, `ts_report`: deterministic execution;
+- `ts_remote`: deterministic read-only infrastructure diagnostics;
+- `ts_reply`: deterministic operational response;
+- `ts_notify`: deterministic fixed-target external delivery.
 
 Do not add alternate field readers, dual schemas, implicit state conversion, or
 output shims. The package implements one explicit workspace contract.
@@ -116,7 +136,7 @@ The stable concepts and their owners are:
 - **Observation**: immutable typed semantic value with exact artifact digests
   and provenance.
 - **Finding**: explicit anomaly, limitation, conflict, or open question.
-- **GateSpec**: frozen expanded validation policy with registry and content
+- **ProofSpec**: frozen expanded validation policy with registry and content
   digests.
 - **ValidationResult**: deterministic predicate outcomes over selected,
   digest-bound Observations.
@@ -129,14 +149,26 @@ reasoning and focused documentation, not a Kernel enum.
 
 ## Mutation Invariants
 
-- New canonical state uses `ts-workspace/5` and
-  `ts-research-kernel/5` only.
+- New canonical state uses `ts-workspace/6` and
+  `ts-research-kernel/6` only.
 - Bootstrap initializes fresh state once and otherwise validates without
   canonical rewrites.
 - The Decision draft accepts high-level research operations and local aliases; the
-  Kernel allocates all `dec_`, `claim_`, `rel_`, `node_`, `obs_`, `fnd_`, `gsp_`,
-  `val_`, and `acc_` identifiers.
+  Kernel allocates all `dec_`, `claim_`, `rel_`, `node_`, `obs_`, `fnd_`, `proof_`,
+  `result_`, and `acc_` identifiers.
 - A draft binds the current frontier projection and workspace revision.
+- Public operation field lists have one owner in
+  `workspace/operation_registry.py`; update compiler behavior, the on-demand
+  `change_contract` projection, templates, and tests together.
+- Attempt lifecycle status is owned by `workspace/operational.py` and its
+  dependency-neutral binding checks in `calculation_contracts.py`; Web and
+  Research Files projections must consume that index rather than reading
+  `intent.json`/`status.json` independently.
+- `calculation_attempt_index()` requires a valid `prepared.json` binding for
+  every status, result, control, Compute-run, or output record. An unsafe
+  `attempts/` parent is emitted as a bounded `attempt_parent` integrity finding,
+  never as a fabricated `calc_*` row. Keep these diagnostics operational and
+  out of scientific context digests.
 - Dry-run validation applies the full Decision to an isolated post-state.
 - Apply repeats binding and post-state validation under the lock.
 - All canonical research record IDs are readable workspace-local monotonic
@@ -169,12 +201,12 @@ Keep reusable mechanism in the engine and scientific policy in data:
 - templates are versioned parameterized prototypes;
 - compilation fully expands a template and freezes its digest;
 - predicates are registered deterministic code with one registry digest;
-- a GateSpec may use a template or an explicit declarative check list;
+- a ProofSpec may use a template or an explicit declarative check list;
 - Agent-supplied executable code, shell, imports, and expressions are rejected;
 - evaluation selects explicit Observation refs and binds their digests;
 - predicate output refs must be a subset of that selected Observation snapshot;
 - acceptance profiles declare required dimensions and coverage rules;
-- acceptance requires a supported Claim and at least one passing GateSpec;
+- acceptance requires a supported Claim and at least one passing ProofSpec;
 - open blocking Findings prevent acceptance;
 - historical acceptance remains immutable, while currentness is one shared
   derived projection used by Context, Report, and Web.
@@ -185,7 +217,7 @@ check. Add a template when a reusable scientific policy exists. Add or revise
 an acceptance profile only when the acceptance standard changes.
 
 Templates must be frozen before evaluating the selected data. Never lower a
-GateSpec after seeing a result; create a new specification and preserve the
+ProofSpec after seeing a result; create a new specification and preserve the
 previous result.
 
 ## Agent Contracts
@@ -199,7 +231,7 @@ validators own their distinct input, capability, action, and result rules.
 
 Every Review uses `ts-agent-task/2` and returns `ts-agent-result/1`. Its scope is
 one target Claim and a bounded graph snapshot. It cannot set Claim status,
-create Observations, evaluate a GateSpec, accept a Claim, perform compute, or
+create Observations, evaluate a ProofSpec, accept a Claim, perform compute, or
 write canonical state.
 
 The runtime must preserve these invariants:
@@ -227,7 +259,8 @@ explicit refs, not role or layer taxonomies.
 
 ### Compute
 
-The Compute task binds one Node, backend, intent ID/digest, remote execution, and
+The Compute task binds one Node, capability, intent ID/digest, and an execution
+target (local preparation/parsing or remote lifecycle),
 one exact plan: `launch`, `inspect`, `finalize`, or `cancel`. The child must have
 only the zero-argument action tools for that plan plus `ts_compute_result`.
 Dependent actions require a completed prerequisite, every action is single-use,
@@ -244,16 +277,18 @@ disabled; local TypeBox and semantic validators are authoritative.
 
 ### Compute
 
-The Root selects purpose, Node, backend, task, settings, execution target, and
-logical input artifacts when invoking `ts_subagent_compute`. The host owns
+The Root selects purpose, Node, capability, parameters, execution target, and
+logical input artifacts when invoking `ts_calc`. The host owns
 generated paths, filenames, intent ID, expected artifacts, remote root,
 command, submission binding, action tools, and final structured outcome.
 
 Preparation resolves `artifactId` and `inputRole`, verifies SHA-256, and writes
-`ts-calculation-intent/6` for new launches. The intent carries stable Node and
-scientific-input digests plus same-Node Attempt lineage. Keep
-`ts-calculation-intent/5` reading covered for existing workspaces, but emit only
-`ts-calculation-intent/6`. Subsequent operations cite only the bound `intentId`.
+`ts-calculation-intent/7` for every launch. The intent carries stable Node and
+scientific-input digests plus same-Node Attempt lineage. Older intent schemas are
+unsupported and are not converted. A local target is valid only with
+`dry_run=true` and is limited to preparation or parsing an existing output;
+submit, status, tail, collect, and cancel require a configured remote target.
+Subsequent operations cite only the bound `intentId`.
 Backends prepare and parse program artifacts but
 never update Claims or produce ValidationResults.
 
@@ -271,8 +306,8 @@ JSON.
 
 ### Structure seed, comparison, and artifact import
 
-The first input in a fresh workspace enters through `ts_structure_seed` or
-`ts_artifact_import`. Structure seeding owns fixed ETKDG parameters, one
+The first input in a fresh workspace enters through `ts_seed` or
+`ts_import`. Structure seeding owns fixed ETKDG parameters, one
 connected SMILES, chemical metadata checks, content-addressed XYZ/provenance,
 and the explicit rule that a generated geometry is not evidence. Import remains
 bounded inline UTF-8 in registered formats. Both require one open Node, mode-0600
@@ -324,7 +359,7 @@ payloads rather than returning a second full graph-shaped Node payload.
 
 Calculation Attempts remain Node-owned operational records. Project their
 purpose, family, retry/recalculation lineage, derived scientific changes,
-bounded settings, execution request, timing, state, and Compute runs from the
+bounded parameters, execution request, timing, state, and Compute runs from the
 immutable calculation intent and journals in
 `ts_agent.web.normalize`; browser code may format or collapse that projection but
 must not parse program outputs, infer scientific meaning, or turn Attempts into
@@ -363,12 +398,17 @@ Do not document stronger durability than the implementation provides:
 - `TS Activity` is transient and cleared with the Pi session;
 - its normal row contract is kind, semantic owner, action, state, and elapsed
   time, without run IDs or audit paths;
-- `/ts-subagent-history` reads durable Compute and Review summaries on demand,
+- `/ts-runs` reads durable Compute and Review summaries on demand,
   lists canonical `sub_n` IDs, and orders details as outcome/error, scope,
   actions/artifacts, then audit metadata.
 
 Remote controls are authoritative for scheduler recovery. Activity or agent
 journal state cannot prove that a remote side effect did or did not happen.
+Node completion also reads the durable Attempt intent/status/result contract:
+remote `completed` is not settled until collection and parsing finish. Keep this
+lifecycle policy in the operational kernel and expose only its projection to
+clients; Web and extensions must not independently decide whether a Node may
+close.
 
 ## Documentation Ownership
 
@@ -407,6 +447,8 @@ tests are maintenance material and are blocked by the package-source guard.
 | Remote behavior | config/model, lifecycle/transfer, compute mapping, installation/remote docs, recovery tests |
 | Release contents | `package.json.files`, package checker, installer allow/deny lists, tests, installation docs |
 | Startup behavior | Python host, launcher tests, installation docs, architecture lifecycle, launch smoke |
+| Phone-managed project/session lifecycle | Python private Worker/preflight contract, Bridge policy, TS Phone API/schema/UI, deletion compensation tests, security/recovery/deployment docs |
+| Session Host activation | Exact-session pre-open guards, one-time installer enrollment, no daily global Pi inspection, PID/launch fences, shared entrypoint configuration, queued-input conflicts, mobile state and draft retention, API/events/Bridge schema checks |
 
 Documentation tests should assert entrypoints and architectural invariants, not
 freeze cosmetic wording.
@@ -417,6 +459,7 @@ From the authored checkout:
 
 ```bash
 npm ci
+npm run test:fast -- tests/test_readme_contract.py tests/test_report_template_contract.py
 python3 scripts/test_source.py \
   --conda-root /path/to/miniforge3 \
   --with-render \
@@ -427,6 +470,12 @@ The test entrypoint creates or reuses the spec-addressed scientific base,
 builds the current source wheel, installs it into a temporary overlay, clears
 ambient Python path and user-site state, and runs pytest against that installed
 wheel. Its machine-readable record is written under `.runtime/test-results/`.
+For ordinary source feedback, use `npm run test:fast`. It runs pytest directly
+with the authored `python/` source root, using the current interpreter or an
+existing spec-addressed managed base. It does not build a wheel, create an
+overlay, solve an environment, or write a result record unless
+`--result-path` is supplied. The managed command remains the Candidate and
+Release validation boundary.
 Use the standalone installer only to prepare a persistent development runtime:
 
 ```bash
@@ -434,9 +483,10 @@ python3 scripts/install_env.py --package-root . --conda-root /path/to/miniforge3
 python3 scripts/build_release.py --allow-dirty --output-dir /tmp/ts-agent-release --json
 ```
 
-This is an Agent-component development probe. The builder creates the wheel
-from a temporary source copy, then adds
-it to the final npm archive under `python-dist/`. Do not use the immutable
+This is an Agent-component development probe. The builder first captures one
+Git-visible source tree in private staging, then runs package validation, wheel
+creation, source hashing, and npm packing only against that capture. It adds the
+wheel to the final npm archive under `python-dist/`. Do not use the immutable
 release directory itself as a PEP 517 build source; setuptools needs writable
 build-metadata space. The runtime installer consumes the bundled wheel and
 never writes build metadata into authored or installed package roots.
@@ -451,6 +501,16 @@ source.
 
 Run the narrowest relevant check first, then all shared checks for public or
 cross-module changes.
+
+### Fast source feedback
+
+```bash
+npm run test:fast -- tests/test_readme_contract.py tests/test_decision_templates.py
+```
+
+Use this for ordinary Python edits and focused contract checks. It uses the
+current interpreter and installed dependencies, so it does not prove that a
+wheel or clean managed runtime can load the package.
 
 ### Documentation or Skill
 
@@ -477,17 +537,40 @@ The recording-provider suite covers public inventory, Review isolation,
 provider failure propagation, result repair, journals, and UI lifecycle without
 contacting a production model endpoint.
 
+### Session Host and entrypoints
+
+```bash
+python3 scripts/test_source.py --conda-root /path/to/miniforge3 -- -q tests/test_session_host_guard.py tests/test_phone_entrypoints.py tests/test_terminal_launcher.py tests/test_suite_release.py
+npm run test:terminal
+TS_PHONE_SOURCE=/path/to/ts-phone npm run test:terminal-host
+```
+
+Run the paired Phone server tests and mobile API/conversation tests as well.
+On Linux with a user systemd manager, explicitly enable the sandbox regression:
+
+```bash
+TSPI_TEST_SYSTEMD=1 python3 scripts/test_source.py --conda-root /path/to/miniforge3 -- -q tests/test_session_guard_systemd.py
+```
+
+This test uses a disposable unit and fake Pi executable. It checks an unreadable
+unrelated process, real writer flocks, duplicate rejection, concurrent workspaces,
+and exact history reopening. It does not call a model, use research workspaces,
+or restart installed services. The entrypoint suite also checks the generated
+service syntax with `systemd-analyze` when available.
+
 ### Package and release
 
 ```bash
 # TS Phone repository
 npm run test:release
-# Run Flutter format/analyze/test and build the signed APK first.
+# Run Flutter format/analyze/test, then build the signed APK and attestation.
+apps/mobile/tool/build_release_android.sh
 python3 deploy/build-component-release.py --output-dir dist/component --json
 
 # TSPi repository
 python3 scripts/test_source.py --conda-root /path/to/miniforge3 --with-render -- -q
 npm run typecheck
+export TSPI_ANDROID_BUILD_TOOLS=/path/to/android-sdk/build-tools/<version>
 python3 scripts/build_package.py \
   --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
   --output-dir dist/package \
@@ -495,12 +578,20 @@ python3 scripts/build_package.py \
 ```
 
 Inspect `tspi-package-release.json`. Confirm that its Agent descriptor matches
-the sole nested wheel, its Phone descriptor matches the server and signed APK,
-its protocol set is exact, and its nested archive paths and digests match the
-outer archive. One suite release ID must select the entire component set.
+the sole nested wheel, its Phone descriptor matches the server, signed APK,
+source snapshot, and build attestation, its protocol set is exact, and its
+nested archive paths and digests match the outer archive. Package assembly and
+installation both require `apksigner` and `aapt` so neither boundary trusts
+producer-declared APK identity. Assembly parses the shipped protocol documents
+and verifies their version identities, closed lifecycle payloads, event
+bindings, running snapshot identity, and fenced Abort contract. It also applies
+the same Phone metadata and entrypoint checks used at install time; reinstall
+compares the complete expanded Phone tree with its retained archive.
+One suite release ID must select the entire
+component set.
 
-Both component builds require clean checkouts. `--allow-dirty` is only for
-local smoke validation and must not be distributed.
+Both component builds and normal installation require clean source identities.
+`--allow-dirty` is only for local smoke validation and must not be distributed.
 
 ## Version Changes
 
@@ -508,10 +599,13 @@ Package version metadata currently appears in multiple maintained surfaces. A
 version bump must update and test at least:
 
 - `package.json` and `package-lock.json`;
-- `pyproject.toml` and `python/ts_agent/_version.py`;
+- `python/ts_agent/_version.py` (`pyproject.toml` reads this version dynamically);
 - `extensions/shared/package-profile.ts`;
-- `scripts/check_package.py`;
 - contract-specific tests and release fixtures.
+
+`scripts/check_package.py` reads the expected version from `package.json` and
+checks the Python version, lockfile, and package profile. Tests should compare
+these maintained surfaces rather than duplicate a release-number literal.
 
 Schema versions change only when data contracts change, not whenever the
 package version changes. Validation template/profile versions are independent

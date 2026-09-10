@@ -23,7 +23,7 @@ def test_bootstrap_initializes_fresh_workspace_and_preserves_inputs(tmp_path: Pa
 
     result = bootstrap_workspace(workspace)
 
-    assert result["schema_version"] == "ts-workspace-bootstrap/3"
+    assert result["schema_version"] == "ts-workspace-bootstrap/4"
     assert result["state"] == "initialized"
     assert result["created"] is True
     assert result["validation"]["valid"] is True
@@ -55,7 +55,7 @@ def test_bootstrap_rejects_partial_workspace_without_filling_missing_files(tmp_p
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     partial = workspace / "research_state.json"
-    partial.write_text('{"schema_version":"ts-research-state/5"}\n', encoding="utf-8")
+    partial.write_text('{"schema_version":"ts-research-state/6"}\n', encoding="utf-8")
 
     with pytest.raises(WorkspaceBootstrapError, match="partial workspace") as caught:
         bootstrap_workspace(workspace)

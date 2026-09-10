@@ -17,7 +17,7 @@ def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> P
     manifest_path.write_text(
         json.dumps(
             {
-                "schema_version": "tspi-package-release/1",
+                "schema_version": "tspi-package-release/2",
                 "release_id": release_id,
                 "package": {"name": "@iawnix/tspi", "version": version},
                 "components": {
@@ -32,6 +32,12 @@ def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> P
         + "\n",
         encoding="utf-8",
     )
+    state_path = suite_root.parent.parent / "install-state.json"
+    state_path.write_text(json.dumps({
+        "schema_version": "tspi-package-install/1", "current_release_id": release_id,
+        "package_root": str(suite_root), "session_guard_contract": "tspi-session-guard/1",
+    }) + "\n")
+    state_path.chmod(0o600)
     return manifest_path
 
 

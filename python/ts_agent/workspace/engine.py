@@ -8,14 +8,16 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from ts_agent.validation import builtin_predicate_registry, evaluate_gate_spec
+from ts_agent.validation import builtin_predicate_registry, evaluate_proof_spec
 
 from .acceptance import project_acceptances
-from .decision import validate_decision, validate_decision_binding
+from .claims import claim_is_testable, claim_preregistration_digest
+from .decision import _compile_change, validate_decision, validate_decision_binding
 from .errors import ContractError
 from .identity import WorkspaceIdentityError, ensure_workspace_identity
 from ts_agent.io import now_iso, read_json, write_json
 from .operational import node_completion_blockers, operational_snapshot
+from .revision import workspace_revision
 from .state import (
     CLAIMS_FILE,
     CLAIM_RELATIONS_FILE,
@@ -29,7 +31,7 @@ from .state import (
     REQUIRED_FILES,
     STATE_FILES,
     VALIDATION_RESULTS_FILE,
-    VALIDATION_SPECS_FILE,
+    PROOF_SPECS_FILE,
     WORKSPACE_FILE,
     initial_documents,
 )
@@ -42,6 +44,7 @@ from .transactions import (
     workspace_lock,
 )
 from .validator import validate_workspace
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 DRY_RUN_EXCLUDED_DIRS = frozenset({
@@ -58,9 +61,13 @@ DRY_RUN_EXCLUDED_DIRS = frozenset({
 
 
 def init_workspace(root: str | Path) -> dict[str, Any]:
-    root_path = Path(root).expanduser().resolve()
-    if root_path.is_symlink():
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
         raise ContractError("workspace root cannot be a symbolic link")
+    for name in REQUIRED_FILES | REQUIRED_DIRS:
+        path = root_path / name
+        if has_symlink_component(root_path, path) or path.is_symlink():
+            raise ContractError(f"workspace path contains a symbolic link: {name}")
     existing = [name for name in REQUIRED_FILES if (root_path / name).exists()]
     if existing:
         raise ContractError("workspace already contains canonical state: " + ", ".join(sorted(existing)))
@@ -80,7 +87,7 @@ def init_workspace(root: str | Path) -> dict[str, Any]:
     if not validation["valid"]:
         raise ContractError("fresh workspace failed validation: " + _error_messages(validation))
     return {
-        "schema_version": "ts-workspace-init-result/5",
+        "schema_version": "ts-workspace-init-result/6",
         "root": str(root_path),
         "workspace_id": identity["workspace_id"],
         "created": True,
@@ -88,8 +95,10 @@ def init_workspace(root: str | Path) -> dict[str, Any]:
     }
 
 
-def apply_decision(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
-    root_path = Path(root).expanduser().resolve()
+def _apply_decision(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ContractError("workspace root cannot contain a symbolic link")
     validate_decision(decision)
     with workspace_lock(root_path):
         recover_incomplete_transactions(root_path)
@@ -101,8 +110,42 @@ def apply_decision(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]
         return _apply_once(root_path, decision)
 
 
-def validate_decision_dry_run(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
-    root_path = Path(root).expanduser().resolve()
+def change_workspace(
+    root: str | Path,
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    """Compile, validate, and atomically apply one Root change.
+
+    Callers never receive a compiled Decision that they must copy between
+    mutation tools.  Compilation and the complete dry-run occur under the
+    same workspace lock as the final commit, so the revision checked by the
+    kernel is the revision that is changed.
+    """
+
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ContractError("workspace root cannot contain a symbolic link")
+    with workspace_lock(root_path):
+        recover_incomplete_transactions(root_path)
+        compiled = _compile_change(root_path, request)
+        decision = compiled["decision"]
+        _validate_decision_dry_run_bound(root_path, decision)
+        result = _apply_once(root_path, decision)
+        return {
+            "schema_version": "ts-change-result/1",
+            "change_id": decision["decision_id"],
+            "allocated_refs": compiled["allocated_refs"],
+            "operation_count": result["operation_count"],
+            "created_refs": result["created_refs"],
+            "workspace_revision": workspace_revision(root_path),
+            "mutation_applied": True,
+        }
+
+
+def _validate_decision_dry_run(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ContractError("workspace root cannot contain a symbolic link")
     validate_decision_binding(root_path, decision)
     return _validate_decision_dry_run_bound(root_path, decision)
 
@@ -140,13 +183,24 @@ def _validate_decision_dry_run_bound(root: Path, decision: dict[str, Any]) -> di
 
 
 def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
-    documents = {name: deepcopy(read_json(root / name)) for name in STATE_FILES}
+    documents: dict[str, dict[str, Any]] = {}
+    for name in STATE_FILES:
+        path = root / name
+        if has_symlink_component(root, path) or path.is_symlink():
+            raise ContractError(f"workspace file contains a symbolic link: {name}")
+        try:
+            value = read_json(path)
+        except (OSError, ValueError) as exc:
+            raise ContractError(f"cannot read workspace file {name}: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ContractError(f"workspace file is not an object: {name}")
+        documents[name] = deepcopy(value)
     phases = _map(documents[RESEARCH_PHASES_FILE]["phases"], "phase_id")
     claims = _map(documents[CLAIMS_FILE]["claims"], "claim_id")
     relations = _map(documents[CLAIM_RELATIONS_FILE]["relations"], "relation_id")
     nodes = _map(documents[RESEARCH_NODES_FILE]["nodes"], "node_id")
     observations = _map(documents[OBSERVATIONS_FILE]["observations"], "observation_id")
-    specs = _map(documents[VALIDATION_SPECS_FILE]["specs"], "spec_id")
+    specs = _map(documents[PROOF_SPECS_FILE]["proofs"], "proof_id")
     results = _map(documents[VALIDATION_RESULTS_FILE]["results"], "result_id")
     findings = _map(documents[FINDINGS_FILE]["findings"], "finding_id")
     operational = operational_snapshot(root)
@@ -158,7 +212,7 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
         "nodes": [],
         "observations": [],
         "findings": [],
-        "validation_specs": [],
+        "proof_specs": [],
         "validation_results": [],
         "acceptances": [],
     }
@@ -174,6 +228,8 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
         elif name == "append_claim":
             record = deepcopy(operation["record"])
             _require_new(record["claim_id"], claims, "Claim")
+            if record.get("preregistration_digest") != claim_preregistration_digest(record):
+                raise ContractError(f"Claim pre-registration digest mismatch: {record['claim_id']}")
             if record["created_by_node"] is not None:
                 _require_known([record["created_by_node"]], nodes, "Claim created_by_node")
             claims[record["claim_id"]] = record
@@ -201,6 +257,10 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             record = deepcopy(operation["record"])
             _require_new(record["observation_id"], observations, "Observation")
             node = _require_open_node(nodes, record["created_by_node"], "Observation")
+            if record.get("candidate_ref") is not None:
+                from .candidates import validate_promoted_candidate
+
+                validate_promoted_candidate(root, record)
             observations[record["observation_id"]] = record
             documents[OBSERVATIONS_FILE]["observations"].append(record)
             _append_unique(node["observation_refs"], record["observation_id"])
@@ -216,32 +276,38 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             for node_ref in record["node_refs"]:
                 _append_unique(nodes[node_ref]["finding_refs"], record["finding_id"])
             created_refs["findings"].append(record["finding_id"])
-        elif name == "append_validation_spec":
+        elif name == "append_proof_spec":
             record = deepcopy(operation["record"])
-            _require_new(record["spec_id"], specs, "GateSpec")
+            _require_new(record["proof_id"], specs, "ProofSpec")
             claim = _require_claim(claims, record["target_claim_ref"])
-            node = _require_open_node(nodes, record["created_by_node"], "GateSpec")
+            if not claim_is_testable(claim):
+                raise ContractError("ProofSpec requires a Claim with pre-registered predictions and falsifiers")
+            if record.get("claim_preregistration_digest") != claim.get("preregistration_digest"):
+                raise ContractError(
+                    f"ProofSpec Claim pre-registration binding mismatch: {record['proof_id']}"
+                )
+            node = _require_open_node(nodes, record["created_by_node"], "ProofSpec")
             expected = dict(record)
-            digest = expected.pop("spec_digest")
+            digest = expected.pop("proof_digest")
             from ts_agent.io import sha256_json
 
             if digest != sha256_json(expected):
-                raise ContractError(f"GateSpec digest mismatch: {record['spec_id']}")
-            specs[record["spec_id"]] = record
-            documents[VALIDATION_SPECS_FILE]["specs"].append(record)
-            _append_unique(claim["validation_spec_refs"], record["spec_id"])
-            _append_unique(node["validation_spec_refs"], record["spec_id"])
-            created_refs["validation_specs"].append(record["spec_id"])
+                raise ContractError(f"ProofSpec digest mismatch: {record['proof_id']}")
+            specs[record["proof_id"]] = record
+            documents[PROOF_SPECS_FILE]["proofs"].append(record)
+            _append_unique(claim["proof_spec_refs"], record["proof_id"])
+            _append_unique(node["proof_spec_refs"], record["proof_id"])
+            created_refs["proof_specs"].append(record["proof_id"])
         elif name == "append_validation_result":
             record = deepcopy(operation["record"])
             _require_new(record["result_id"], results, "ValidationResult")
-            spec = specs.get(record["spec_ref"])
+            spec = specs.get(record["proof_ref"])
             if spec is None:
-                raise ContractError(f"ValidationResult references unknown GateSpec: {record['spec_ref']}")
+                raise ContractError(f"ValidationResult references unknown ProofSpec: {record['proof_ref']}")
             node = _require_open_node(nodes, record["evaluated_by_node"], "ValidationResult")
             claim = _require_claim(claims, record["target_claim_ref"])
             _require_known(record["observation_refs"], observations, "ValidationResult observation_refs")
-            expected = evaluate_gate_spec(
+            expected = evaluate_proof_spec(
                 spec,
                 [observations[ref] for ref in record["observation_refs"]],
                 result_id=record["result_id"],
@@ -266,6 +332,10 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
                     raise ContractError(f"Claim update cites a ValidationResult for another Claim: {result_ref}")
             if operation["status"] == "supported" and not (operation["observation_refs"] or operation["validation_result_refs"]):
                 raise ContractError("supported Claim update requires cited Observations or ValidationResults")
+            if operation["status"] in {"supported", "contradicted", "inconclusive"} and not claim_is_testable(claim):
+                raise ContractError(
+                    f"{operation['status']} Claim update requires pre-registered predictions and falsifiers"
+                )
             claim["status"] = operation["status"]
             for ref in operation["observation_refs"]:
                 _append_unique(claim["observation_refs"], ref)

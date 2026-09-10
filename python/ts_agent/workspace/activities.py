@@ -13,6 +13,7 @@ from typing import Any, Iterable
 
 from ts_agent.io import read_json
 from .refs import NODE_ID, ACTIVITY_ID
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 UNSUPPORTED_UUID_ACTIVITY_ID = re.compile(
@@ -52,9 +53,24 @@ def build_activity_index(
 ) -> dict[str, Any]:
     """Return validated activities, integrity findings, and per-Node summaries."""
 
-    root_path = Path(root).expanduser().resolve()
+    root_path = lexical_path(root)
     findings: list[dict[str, Any]] = []
     excluded = _normalize_exclusions(exclude_activity_refs)
+    if path_has_symlink(root_path):
+        _finding(
+            findings,
+            "activity_path_symlink",
+            "workspace root contains a symbolic-link component",
+            ".",
+            [],
+        )
+        return {
+            "schema_version": "ts-activity-index/1",
+            "activities": [],
+            "activity_summaries": [],
+            "integrity_findings": findings,
+            "excluded_activity_refs": sorted(excluded),
+        }
     activity_dirs = _activity_directories(root_path, findings, excluded)
     known = set(known_node_ids) if known_node_ids is not None else _load_known_nodes(root_path, findings, bool(activity_dirs))
     rows = [
@@ -418,6 +434,9 @@ def _read_optional_document(
     node_refs: list[str],
 ) -> tuple[dict[str, Any], bool]:
     ref = path.relative_to(root).as_posix()
+    if has_symlink_component(root, path):
+        _finding(findings, "activity_document_symlink", f"activity document is a symbolic link: {path.name}", ref, node_refs)
+        return {}, True
     if not path.exists() and not path.is_symlink():
         return {}, False
     if path.is_symlink():
@@ -441,7 +460,7 @@ def _read_optional_document(
 
 def _load_known_nodes(root: Path, findings: list[dict[str, Any]], required: bool) -> set[str]:
     registry_path = root / "research_nodes.json"
-    if not registry_path.is_file() or registry_path.is_symlink():
+    if has_symlink_component(root, registry_path) or not registry_path.is_file() or registry_path.is_symlink():
         if required:
             _finding(findings, "activity_registry_unavailable", "ResearchNode registry is unavailable for activity validation", "research_nodes.json", [])
         return set()
@@ -451,9 +470,9 @@ def _load_known_nodes(root: Path, findings: list[dict[str, Any]], required: bool
         if required:
             _finding(findings, "activity_registry_unavailable", "ResearchNode registry is not valid JSON", "research_nodes.json", [])
         return set()
-    if not isinstance(registry, dict) or registry.get("schema_version") != "ts-research-node-registry/1":
+    if not isinstance(registry, dict) or registry.get("schema_version") != "ts-research-node-registry/2":
         if required:
-            _finding(findings, "activity_registry_unavailable", "ResearchNode registry does not use ts-research-node-registry/1", "research_nodes.json", [])
+            _finding(findings, "activity_registry_unavailable", "ResearchNode registry does not use ts-research-node-registry/2", "research_nodes.json", [])
         return set()
     return {
         str(row["node_id"])

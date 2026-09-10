@@ -1,18 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "validation_spec.schema.json",
-  "$defs": {"spec_id": {"type": "string", "pattern": "^gsp_[1-9][0-9]*$"}},
+  "$id": "proof_spec.schema.json",
+  "$defs": {"proof_id": {"type": "string", "pattern": "^proof_[1-9][0-9]*$"}},
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "spec_id", "target_claim_ref", "dimension", "title", "template_ref",
+    "schema_version", "proof_id", "target_claim_ref", "claim_preregistration_digest", "dimension", "title", "template_ref",
     "template_digest", "predicate_registry_digest", "checks", "success_policy", "created_by_node",
-    "created_by_decision", "frozen_at", "spec_digest"
+    "created_by_decision", "frozen_at", "proof_digest"
   ],
   "properties": {
-    "schema_version": {"const": "ts-gate-spec/2"},
-    "spec_id": {"$ref": "#/$defs/spec_id"},
+    "schema_version": {"const": "ts-proof-spec/1"},
+    "proof_id": {"$ref": "#/$defs/proof_id"},
     "target_claim_ref": {"$ref": "claim.schema.json#/$defs/claim_id"},
+    "claim_preregistration_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "dimension": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$", "maxLength": 128},
     "title": {"type": "string", "minLength": 1, "maxLength": 300},
     "template_ref": {
@@ -57,6 +58,6 @@
     "created_by_node": {"$ref": "research_node.schema.json#/$defs/node_id"},
     "created_by_decision": {"$ref": "decision.schema.json#/$defs/decision_id"},
     "frozen_at": {"type": "string", "minLength": 1, "maxLength": 64},
-    "spec_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+    "proof_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
   }
 }

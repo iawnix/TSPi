@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "focus_claim_refs", "focus_node_refs", "acceptance_refs", "created_at"],
   "properties": {
-    "schema_version": {"const": "ts-research-state/5"},
+    "schema_version": {"const": "ts-research-state/6"},
     "focus_claim_refs": {"type": "array", "uniqueItems": true, "maxItems": 32, "items": {"$ref": "claim.schema.json#/$defs/claim_id"}},
     "focus_node_refs": {"type": "array", "uniqueItems": true, "maxItems": 32, "items": {"$ref": "research_node.schema.json#/$defs/node_id"}},
     "acceptance_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^acceptances/acc_[1-9][0-9]*\\.json$"}},

@@ -1,5 +1,5 @@
 {
-  "schema_version": "ts-gate-template/1",
+  "schema_version": "ts-proof-template/1",
   "template_id": "connectivity",
   "version": "1",
   "title": "Bidirectional reaction-path connectivity",

@@ -27,17 +27,17 @@ produce a blocking Finding.
 
 ## Deterministic Evaluation
 
-Freeze the connectivity GateSpec against the target Claim and declared
+Freeze the connectivity ProofSpec against the target Claim and declared
 reactant/product refs before evaluation. Select exact Observation refs. Missing
 direction, missing endpoint, conflicting assignments, or incomplete path must
 not be converted into pass.
 
 Add identity, stereochemistry, state-character, or electronic-structure
-GateSpecs when the Claim needs them. They are additional dimensions under the
+ProofSpecs when the Claim needs them. They are additional dimensions under the
 same engine, not workflow branches.
 
 ## Acceptance
 
 The built-in `accepted-ts@3` profile requires stationary-point,
 reaction-coordinate, and connectivity dimensions. Acceptance also covers every
-other GateSpec attached to the Claim and rejects open blocking Findings.
+other ProofSpec attached to the Claim and rejects open blocking Findings.

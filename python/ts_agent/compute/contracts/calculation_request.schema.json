@@ -1,26 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "TS semantic calculation request",
+  "title": "TS capability calculation request",
   "type": "object",
   "required": [
-    "schema_version",
-    "node_id",
-    "purpose",
-    "attempt_kind",
-    "lineage",
-    "backend",
-    "task_type",
-    "input_artifacts",
-    "settings",
-    "execution_target",
-    "dry_run"
+    "schema_version", "node_id", "purpose", "attempt_kind", "lineage",
+    "capability", "capability_version", "input_artifacts", "parameters",
+    "execution_target", "dry_run"
   ],
   "properties": {
-    "schema_version": {"const": "ts-calculation-request/4"},
-    "node_id": {
-      "type": "string",
-      "pattern": "^node_[1-9][0-9]*$"
-    },
+    "schema_version": {"const": "ts-calculation-request/5"},
+    "node_id": {"type": "string", "pattern": "^node_[1-9][0-9]*$"},
     "purpose": {"type": "string", "minLength": 1, "maxLength": 2000},
     "attempt_kind": {"enum": ["primary", "retry", "recalculation"]},
     "lineage": {
@@ -39,12 +28,12 @@
         }
       ]
     },
-    "backend": {"enum": ["gaussian", "xtb", "crest", "ase_neb", "qbics_dmecp"]},
-    "task_type": {
+    "capability": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
-      "maxLength": 64
+      "pattern": "^[a-z][a-z0-9_]*(?:[.][a-z][a-z0-9_]*)+$",
+      "maxLength": 128
     },
+    "capability_version": {"type": "string", "pattern": "^[1-9][0-9]*$", "maxLength": 16},
     "input_artifacts": {
       "type": "array",
       "minItems": 1,
@@ -60,10 +49,17 @@
         "additionalProperties": false
       }
     },
-    "settings": {
+    "parameters": {
       "type": "object",
+      "maxProperties": 32,
       "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
-      "additionalProperties": {"type": "string", "maxLength": 4096}
+      "additionalProperties": {
+        "oneOf": [
+          {"type": "string", "maxLength": 4096},
+          {"type": "number"},
+          {"type": "boolean"}
+        ]
+      }
     },
     "execution_target": {
       "oneOf": [
@@ -79,7 +75,7 @@
           "properties": {
             "kind": {"const": "remote"},
             "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
-            "resources": {"$ref": "calculation_intent_v6.schema.json#/$defs/remote_resources"}
+            "resources": {"$ref": "calculation_intent.schema.json#/$defs/remote_resources"}
           },
           "additionalProperties": false
         }
@@ -88,6 +84,20 @@
     "dry_run": {"type": "boolean"}
   },
   "allOf": [
+    {
+      "if": {
+        "required": ["execution_target"],
+        "properties": {
+          "execution_target": {
+            "type": "object",
+            "properties": {"kind": {"const": "local"}}
+          }
+        }
+      },
+      "then": {
+        "properties": {"dry_run": {"const": true}}
+      }
+    },
     {
       "if": {"properties": {"attempt_kind": {"const": "primary"}}},
       "then": {"properties": {"lineage": {"type": "null"}}},

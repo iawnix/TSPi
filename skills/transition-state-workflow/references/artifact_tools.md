@@ -72,7 +72,7 @@ under `nodes/<node_id>/outputs/analysis/`. The document includes the expanded
 parameters, verdict, uncertainty, RMSD/internal-coordinate/stereochemical
 metrics, diagnostics, and provenance.
 
-This result is operational. Register any value used in a Claim or GateSpec as a
+This result is operational. Register any value used in a Claim or ProofSpec as a
 semantic Observation through a Decision; do not cite the activity itself as
 scientific evidence.
 
@@ -100,11 +100,11 @@ replay is idempotent. The activity journal stores hashes and metadata, never
 the input body. QST2/QST3 imports also require every structure to use the same
 declared charge/multiplicity, atom count, and atom order. Multi-job `--Link1--`
 inputs and Link 0 filesystem paths are rejected. Resolve the result with
-`ts_workspace_context mode=artifacts` before Compute.
+`ts_state mode=artifacts` before Compute.
 
 ## Render
 
-Discover logical inputs with `ts_workspace_context mode=artifacts`, then call:
+Discover logical inputs with `ts_state mode=artifacts`, then call:
 
 ```json
 {

@@ -14,6 +14,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { requireRuntimeModel } from "../../../extensions/shared/model-readiness.ts";
 import {
   createComputeResultCapture,
   createComputeResultTool,
@@ -64,7 +65,9 @@ export interface ComputeRunResult {
     run_id: string;
     role: "compute";
     operation: string;
-    backend: string;
+    capability: string;
+    capability_version: string;
+    expected_output_roles: string[];
     intent_id: string;
     node_refs: string[];
     action_names: string[];
@@ -103,17 +106,12 @@ export async function runComputeOperator(options: ComputeRunOptions): Promise<Co
     const modelRuntime = await ModelRuntime.create({
       authPath: join(agentDir, "auth.json"),
       modelsPath: join(agentDir, "models.json"),
+      allowModelNetwork: false,
     });
     if (options.parentApiKey) {
       await modelRuntime.setRuntimeApiKey(options.parentModel.provider, options.parentApiKey, { allowNetwork: false });
     }
-    const model = modelRuntime.getModel(options.parentModel.provider, options.parentModel.id);
-    if (!model) {
-      throw new Error(`Parent model is unavailable in child ModelRuntime: ${options.parentModel.provider}/${options.parentModel.id}`);
-    }
-    if (!modelRuntime.hasConfiguredAuth(model.provider)) {
-      throw new Error(`Child ModelRuntime has no configured auth for provider: ${model.provider}`);
-    }
+    const model = requireRuntimeModel(modelRuntime, options.parentModel);
 
     const settingsManager = SettingsManager.inMemory({
       compaction: { enabled: false },
@@ -196,7 +194,11 @@ export async function runComputeOperator(options: ComputeRunOptions): Promise<Co
             run_id: String(packet.task_id),
             role: "compute",
             operation: String(packet.operation),
-            backend: String(inputs.backend),
+            capability: String(inputs.capability),
+            capability_version: String(inputs.capability_version),
+            expected_output_roles: Array.isArray(inputs.expected_output_roles)
+              ? inputs.expected_output_roles.map(String)
+              : [],
             intent_id: String(inputs.intent_id),
             node_refs: Array.isArray(scope.node_refs) ? scope.node_refs.map(String) : [],
             action_names: options.actions.map((action) => action.tool),

@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import hashlib
+import errno
 import json
 import os
 import re
 import shutil
+import stat
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
 from ts_agent.workspace.associations import derive_claim_node_links
 from ts_agent.workspace.refs import node_sort_key, claim_sort_key
-from ts_agent.compute.artifacts import resolve_artifact_ids
+from ts_agent.workspace.artifacts import resolve_workspace_artifact_ids
+from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.io import write_json as write_json_atomic, write_text_atomic
 
 from .context import collect_report_context
 
@@ -29,15 +33,23 @@ def build_report_package(
     exclude_activity_refs: Iterable[str] = (),
     asset_artifact_ids: Iterable[str] = (),
 ) -> dict[str, Any]:
-    root_path = Path(root).expanduser().resolve()
-    package_dir = Path(output_dir).expanduser().resolve() if output_dir is not None else root_path / "reports" / "final-report"
-    if package_dir.parent != (root_path / "reports").resolve():
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ValueError(f"workspace root contains a symbolic link: {root_path}")
+    package_dir = lexical_path(output_dir) if output_dir is not None else root_path / "reports" / "final-report"
+    reports_root = root_path / "reports"
+    if package_dir.parent != reports_root:
         raise ValueError("report package must be a direct child of workspace reports/")
+    if path_has_symlink(reports_root) or path_has_symlink(package_dir):
+        raise ValueError("report package path cannot contain a symbolic link")
+    if reports_root.exists() and not reports_root.is_dir():
+        raise ValueError("workspace reports path is not a directory")
     context = collect_report_context(root_path, exclude_activity_refs=exclude_activity_refs)
     if package_dir.exists():
         raise ValueError(f"report package already exists: {package_dir}")
     package_dir.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{package_dir.name}.tmp-", dir=package_dir.parent))
+    _assert_report_physical_path(staging, "report staging directory")
     try:
         (staging / "assets").mkdir()
         asset_records = _copy_report_assets(root_path, staging / "assets", asset_artifact_ids)
@@ -55,11 +67,15 @@ def build_report_package(
             "activities": context["deterministic_activities"],
             "activity_summaries": context["activity_summaries"],
             "activity_integrity_findings": context["activity_integrity_findings"],
+            "operational_integrity_findings": context.get("operational_integrity_findings", []),
+            "calculation_attempt_integrity_findings": context.get(
+                "calculation_attempt_integrity_findings", []
+            ),
             "excluded_activity_refs": context["excluded_activity_refs"],
         })
         _write_json(staging / "observation_index.json", {"observations": context["observations"]})
         _write_json(staging / "validation.json", {
-            "specs": context["validation_specs"],
+            "specs": context["proof_specs"],
             "results": context["validation_results"],
         })
         _write_json(staging / "findings.json", {"findings": context["findings"]})
@@ -67,8 +83,8 @@ def build_report_package(
             "acceptances": context["acceptances"],
             "current_acceptance_refs": context["acceptance_summary"]["current_refs"],
         })
-        (staging / "final_report.md").write_text(render_final_report(context), encoding="utf-8")
-        (staging / "email_summary.md").write_text(render_email_summary(context), encoding="utf-8")
+        write_text_atomic(staging / "final_report.md", render_final_report(context))
+        write_text_atomic(staging / "email_summary.md", render_email_summary(context))
         manifest = _package_manifest(
             staging,
             context["workspace_revision"],
@@ -76,9 +92,13 @@ def build_report_package(
         )
         _write_json(staging / "package_manifest.json", manifest)
         manifest_digest = _sha256_file(staging / "package_manifest.json")
+        _assert_report_physical_path(staging, "report staging directory")
+        if path_has_symlink(reports_root) or path_has_symlink(package_dir):
+            raise ValueError("report package path changed to a symbolic link during build")
         os.rename(staging, package_dir)
     except Exception:
-        shutil.rmtree(staging, ignore_errors=True)
+        if not staging.is_symlink():
+            shutil.rmtree(staging, ignore_errors=True)
         raise
     return {
         "package_dir": str(package_dir),
@@ -105,7 +125,7 @@ def _copy_report_assets(
         raise ValueError("report asset_artifact_ids must contain at most 8 unique IDs")
     if not requested:
         return []
-    resolved = resolve_artifact_ids(root, requested)
+    resolved = resolve_workspace_artifact_ids(root, requested)
     records: list[dict[str, Any]] = []
     total_bytes = 0
     for index, artifact in enumerate(resolved, start=1):
@@ -113,12 +133,12 @@ def _copy_report_assets(
         suffix = source.suffix.lower()
         if suffix not in {".gif", ".png"}:
             raise ValueError(f"report asset must be a .png or .gif artifact: {artifact['artifact_id']}")
-        if source.is_symlink() or not source.is_file():
+        if has_symlink_component(root, source) or source.is_symlink() or not source.is_file():
             raise ValueError(f"report asset is not a regular file: {artifact['artifact_id']}")
-        size = source.stat().st_size
-        if size < 1 or size > 16 * 1024 * 1024:
+        source_size = _regular_file_size(source)
+        if source_size < 1 or source_size > 16 * 1024 * 1024:
             raise ValueError(f"report asset size is outside the 1 byte to 16 MiB limit: {artifact['artifact_id']}")
-        total_bytes += size
+        total_bytes += source_size
         if total_bytes > 64 * 1024 * 1024:
             raise ValueError("report assets exceed the 64 MiB package limit")
         safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", source.name)[:120]
@@ -126,16 +146,17 @@ def _copy_report_assets(
             safe_name = f"asset{suffix}"
         target_name = f"{index:02d}-{safe_name}"
         target = assets_dir / target_name
-        shutil.copyfile(source, target)
-        copied_digest = _sha256_file(target)
-        if copied_digest != artifact["sha256"] or target.stat().st_size != size:
+        _assert_report_physical_path(target, "report asset target")
+        copied_size, copied_digest = _copy_regular_file(source, target)
+        _assert_report_physical_path(target, "report asset target")
+        if copied_digest != artifact["sha256"] or copied_size != source_size:
             raise ValueError(f"report asset changed while being copied: {artifact['artifact_id']}")
         records.append({
             "artifact_id": artifact["artifact_id"],
             "source_ref": artifact["path"],
             "ref": f"assets/{target_name}",
             "sha256": copied_digest,
-            "size_bytes": size,
+            "size_bytes": copied_size,
         })
     return records
 
@@ -258,7 +279,7 @@ def render_final_report(context: dict[str, Any]) -> str:
             f"{activity.get('completed_count', 0)} completed, {activity.get('failed_count', 0)} failed, "
             f"{activity.get('running_count', 0)} running, {activity.get('pending_count', 0)} pending.",
             f"- Scientific records: {len(node['observation_refs'])} Observations, "
-            f"{len(node['finding_refs'])} Findings, {len(node['validation_spec_refs'])} GateSpecs, "
+            f"{len(node['finding_refs'])} Findings, {len(node['proof_spec_refs'])} ProofSpecs, "
             f"{len(node['validation_result_refs'])} ValidationResults.",
             "",
         ])
@@ -272,15 +293,15 @@ def render_final_report(context: dict[str, Any]) -> str:
             f"`{', '.join(observation['artifact_refs']) or 'none'}` |"
         )
 
-    lines.extend(["", "## Frozen Validation", "", "| GateSpec | Dimension | Target Claim | Checks | Latest Verdict |", "| --- | --- | --- | --- | --- |"])
+    lines.extend(["", "## Frozen Validation", "", "| ProofSpec | Dimension | Target Claim | Checks | Latest Verdict |", "| --- | --- | --- | --- | --- |"])
     results_by_spec: dict[str, list[dict[str, Any]]] = {}
     for result in context["validation_results"]:
-        results_by_spec.setdefault(result["spec_ref"], []).append(result)
-    for spec in context["validation_specs"]:
-        rows = results_by_spec.get(spec["spec_id"], [])
+        results_by_spec.setdefault(result["proof_ref"], []).append(result)
+    for spec in context["proof_specs"]:
+        rows = results_by_spec.get(spec["proof_id"], [])
         latest = rows[-1]["verdict"] if rows else "not evaluated"
         lines.append(
-            f"| `{spec['spec_id']}` | `{spec['dimension']}` | `{spec['target_claim_ref']}` | "
+            f"| `{spec['proof_id']}` | `{spec['dimension']}` | `{spec['target_claim_ref']}` | "
             f"{len(spec['checks'])} | `{latest}` |"
         )
 
@@ -316,9 +337,24 @@ def render_final_report(context: dict[str, Any]) -> str:
         lines.append(f"- {len(context['pending_review_dispositions'])} advisory Review response(s) remain pending.")
     if context["activity_integrity_findings"]:
         lines.append(f"- {len(context['activity_integrity_findings'])} deterministic activity integrity error(s) remain.")
+    if context.get("operational_integrity_findings"):
+        lines.append(
+            f"- {len(context['operational_integrity_findings'])} operational path integrity error(s) remain."
+        )
+    if context.get("calculation_attempt_integrity_findings"):
+        lines.append(
+            f"- {len(context['calculation_attempt_integrity_findings'])} calculation Attempt integrity error(s) remain."
+        )
     open_findings = [item for item in context["findings"] if item["status"] == "open"]
     lines.extend(f"- Open Finding `{item['finding_id']}`: {_escape(item['statement'])}" for item in open_findings)
-    if not context["unresolved_controls"] and not context["pending_review_dispositions"] and not context["activity_integrity_findings"] and not open_findings:
+    if (
+        not context["unresolved_controls"]
+        and not context["pending_review_dispositions"]
+        and not context["activity_integrity_findings"]
+        and not context.get("operational_integrity_findings")
+        and not context.get("calculation_attempt_integrity_findings")
+        and not open_findings
+    ):
         lines.append("- No unresolved operational control, Review response, or open Finding is recorded.")
     lines.extend([
         "",
@@ -360,7 +396,13 @@ def _executive_sentence(claims: list[dict[str, Any]], focus: set[str], accepted:
 def _package_manifest(package_dir: Path, revision: str, operational_revision: str) -> dict[str, Any]:
     files = []
     for path in sorted(package_dir.rglob("*")):
-        if not path.is_file() or path.is_symlink() or path.name == "package_manifest.json":
+        if has_symlink_component(package_dir, path) or path.is_symlink():
+            raise ValueError(f"report package contains a symbolic link: {path}")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise ValueError(f"report package contains a non-file entry: {path}")
+        if path.name == "package_manifest.json":
             continue
         files.append({
             "ref": path.relative_to(package_dir).as_posix(),
@@ -376,15 +418,78 @@ def _package_manifest(package_dir: Path, revision: str, operational_revision: st
 
 
 def _write_json(path: Path, value: Any) -> None:
-    path.write_text(json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+    _assert_report_physical_path(path, "report package file")
+    write_json_atomic(path, value)
+
+
+def _assert_report_physical_path(path: Path, label: str) -> None:
+    """Reject symlinked staging paths before report writes or reads."""
+
+    if path_has_symlink(path) or path.is_symlink():
+        raise ValueError(f"{label} contains a symbolic link: {path}")
 
 
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError(errno.EISDIR, "path must be a regular file", os.fspath(path))
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
             digest.update(chunk)
+    finally:
+        os.close(descriptor)
     return "sha256:" + digest.hexdigest()
+
+
+def _regular_file_size(path: Path) -> int:
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise OSError(errno.EISDIR, "path must be a regular file", os.fspath(path))
+        return metadata.st_size
+    finally:
+        os.close(descriptor)
+
+
+def _copy_regular_file(source: Path, target: Path) -> tuple[int, str]:
+    """Copy one report asset through no-follow descriptors."""
+
+    source_fd = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    target_fd = -1
+    try:
+        if not stat.S_ISREG(os.fstat(source_fd).st_mode):
+            raise OSError(errno.EISDIR, "report asset source must be a regular file", os.fspath(source))
+        target_fd = os.open(
+            target,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        digest = hashlib.sha256()
+        size = 0
+        while True:
+            chunk = os.read(source_fd, 1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            digest.update(chunk)
+            view = memoryview(chunk)
+            while view:
+                written = os.write(target_fd, view)
+                view = view[written:]
+        os.fsync(target_fd)
+        return size, "sha256:" + digest.hexdigest()
+    finally:
+        os.close(source_fd)
+        if target_fd >= 0:
+            os.close(target_fd)
 
 
 def _escape(value: str) -> str:

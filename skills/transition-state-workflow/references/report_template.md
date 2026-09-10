@@ -19,7 +19,7 @@ files:
 5. computational protocols and primary artifact refs;
 6. semantic Observations with values, units, qualifiers, provenance, and
    digests;
-7. frozen GateSpecs and deterministic ValidationResults;
+7. frozen ProofSpecs and deterministic ValidationResults;
 8. Findings, including resolved and open blocking items;
 9. immutable acceptance history, profile versions, and explicit current/stale
    status;
@@ -31,7 +31,7 @@ files:
 
 Do not describe a candidate as accepted from normal termination, convergence,
 one imaginary frequency, a Review opinion, or a Claim status. Cite the actual
-current acceptance record and its profile, GateSpecs, passing ValidationResults,
+current acceptance record and its profile, ProofSpecs, passing ValidationResults,
 and Finding snapshot. A historical record whose inputs have
 changed must be labeled stale, not used as a current accepted verdict.
 

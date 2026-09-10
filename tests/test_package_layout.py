@@ -28,6 +28,11 @@ TEXT_SUFFIXES = frozenset({".cjs", ".html", ".js", ".json", ".md", ".py", ".toml
 ALLOWED_CONTRACT_OR_THIRD_PARTY_LABELS = (
     "etkdg=" + "v" + "3",
     "ts-" + "leg" + "acy-notification-state-archive/1",
+    "APK Signature Scheme " + "v" + "2",
+    "Verified using " + "v" + "2" + " scheme",
+    "https://tsphone.iawnix.xyz/schema/bridge-" + "v" + "3.json",
+    "https://tsphone.iawnix.xyz/schema/events-" + "v" + "3.json",
+    "/api/" + "v" + "4/version",
 )
 
 
@@ -79,7 +84,7 @@ def _run_tspi(
     input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [str(launcher), *args],
+        [str(launcher), "--standalone", *args],
         cwd=launcher.parent,
         env={**os.environ, "PI_BIN": str(pi_bin), **(env or {})},
         input=input_text,
@@ -437,7 +442,7 @@ print(json.dumps({
     assert result["argv"][session_index + 1] == str(workspace / ".pi" / "sessions")
     assert (workspace / ".pi" / "root-agent.lock").is_file()
     assert json.loads((workspace / ".pi" / "settings.json").read_text(encoding="utf-8")) == {"quietStartup": True}
-    assert json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))["schema_version"] == "ts-research-state/5"
+    assert json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))["schema_version"] == "ts-research-state/6"
     assert (workspace / ".agents" / "workspace-identity.json").is_file()
 
 
@@ -534,7 +539,7 @@ def test_tspi_root_lock_rejects_a_second_writer(tmp_path: Path) -> None:
         tmp_path / "blocking-pi.py",
         "print('ready', flush=True)\ninput()\n",
     )
-    command = [str(launcher), "--workspace", "lock-test"]
+    command = [str(launcher), "--standalone", "--workspace", "lock-test"]
     env = {**os.environ, "PI_BIN": str(blocking_pi)}
     holder = subprocess.Popen(
         command,
@@ -561,7 +566,7 @@ def test_tspi_root_lock_rejects_a_second_writer(tmp_path: Path) -> None:
         assert contender.returncode == 1
         assert "another Root Agent already owns workspace" in contender.stderr
         independent = subprocess.run(
-            [str(launcher), "--workspace", "independent-test"],
+            [str(launcher), "--standalone", "--workspace", "independent-test"],
             cwd=install_root,
             env=env,
             input="release\n",

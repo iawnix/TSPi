@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -12,10 +13,15 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+try:
+    from .package_inventory import PACKAGE_FILES, REQUIRED_TARBALL_FILES
+except ImportError:
+    from package_inventory import PACKAGE_FILES, REQUIRED_TARBALL_FILES
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "@iawnix/ts-agent"
-PACKAGE_VERSION = "0.11.1"
+PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 SKILL_ENTRY = "./skills/transition-state-workflow"
 THEME_ENTRIES = ["./themes/ts-theme.json"]
 EXTENSION_ENTRIES = [
@@ -25,143 +31,6 @@ EXTENSION_ENTRIES = [
     "./extensions/ts-workflow-compute/index.ts",
     "./extensions/ts-workflow-artifacts/index.ts",
 ]
-PACKAGE_FILES = [
-    "TSPi",
-    "README.md",
-    "pyproject.toml",
-    "docs/*.md",
-    "docs/adr/*.md",
-    "environment.yml",
-    "extensions/shared/*.ts",
-    "extensions/ts-phone-bridge/*.ts",
-    "extensions/ts-workflow-artifacts/*.ts",
-    "extensions/ts-workflow-compute/*.ts",
-    "extensions/ts-workflow-compute/*.cjs",
-    "extensions/ts-workflow-control/*.ts",
-    "extensions/ts-workflow-control/*.cjs",
-    "extensions/ts-workflow-review/*.ts",
-    "extensions/ts-workflow-ui/*.ts",
-    "scripts/install_env.py",
-    "scripts/install_package.py",
-    "scripts/install_release.py",
-    "scripts/_bootstrap.py",
-    "scripts/_runtime_install.py",
-    "scripts/_suite.py",
-    "scripts/_wheel.py",
-    "scripts/tspi_host.py",
-    "scripts/ts_backend.py",
-    "scripts/ts_compute.py",
-    "scripts/ts_email.py",
-    "scripts/ts_render.py",
-    "scripts/ts_report.py",
-    "scripts/ts_runtime.py",
-    "scripts/ts_web.py",
-    "scripts/ts_workspace.py",
-    "skills/",
-    "themes/*.json",
-    "src/agent-core/*.cjs",
-    "src/agents/compute/*.ts",
-    "src/agents/compute/*.cjs",
-    "src/agents/compute/prompts/*.md",
-    "src/agents/review/*.ts",
-    "src/agents/review/*.cjs",
-    "src/agents/review/prompts/*.md",
-    "src/artifacts/*.cjs",
-    "python/ts_agent/*.py",
-    "python/ts_agent/backends/*.py",
-    "python/ts_agent/compute/*.py",
-    "python/ts_agent/compute/contracts/*.json",
-    "python/ts_agent/email/*.py",
-    "python/ts_agent/remote/*.py",
-    "python/ts_agent/remote/*.toml",
-    "python/ts_agent/render/*.py",
-    "python/ts_agent/report/*.py",
-    "python/ts_agent/runtime/*.py",
-    "python/ts_agent/structures/*.py",
-    "python/ts_agent/validation/*.py",
-    "python/ts_agent/validation/predicates/*.py",
-    "python/ts_agent/validation/templates/builtin/*.json",
-    "python/ts_agent/validation/acceptance_profiles/*.json",
-    "python/ts_agent/web/*.py",
-    "python/ts_agent/web/static/*.html",
-    "python/ts_agent/web/static/*.css",
-    "python/ts_agent/web/static/*.js",
-    "python/ts_agent/workspace/*.py",
-    "python/ts_agent/workspace/contracts/*.json",
-    "python-dist/*.whl",
-]
-REQUIRED_TARBALL_FILES = {
-    "package.json",
-    "pyproject.toml",
-    "TSPi",
-    "docs/ARCHITECTURE.md",
-    "docs/INSTALLATION.md",
-    "docs/MAINTAINER_GUIDE.md",
-    "environment.yml",
-    "scripts/install_env.py",
-    "scripts/install_package.py",
-    "scripts/install_release.py",
-    "scripts/_bootstrap.py",
-    "scripts/_runtime_install.py",
-    "scripts/_suite.py",
-    "scripts/_wheel.py",
-    "scripts/tspi_host.py",
-    "skills/transition-state-workflow/SKILL.md",
-    "themes/ts-theme.json",
-    "extensions/shared/tool-catalog.ts",
-    "extensions/shared/subagent-status.ts",
-    "extensions/shared/activity-events.ts",
-    "extensions/shared/icons.ts",
-    "extensions/shared/review-tool-presentation.ts",
-    "extensions/ts-phone-bridge/index.ts",
-    "extensions/ts-phone-bridge/bridge-client.ts",
-    "extensions/ts-phone-bridge/policy.ts",
-    "extensions/ts-phone-bridge/protocol.ts",
-    "extensions/ts-workflow-control/index.ts",
-    "extensions/ts-workflow-ui/index.ts",
-    "extensions/ts-workflow-ui/activity-panel.ts",
-    "extensions/ts-workflow-ui/activity-store.ts",
-    "extensions/ts-workflow-review/index.ts",
-    "extensions/ts-workflow-compute/index.ts",
-    "extensions/ts-workflow-artifacts/index.ts",
-    "src/agent-core/agent-protocol.cjs",
-    "src/agent-core/fact-kinds.cjs",
-    "src/agent-core/failure-taxonomy.cjs",
-    "src/agent-core/activity-journal.cjs",
-    "src/agent-core/provider-turn.cjs",
-    "src/agents/compute/runtime.ts",
-    "src/agents/compute/task-packet.cjs",
-    "src/agents/compute/output-schema.cjs",
-    "src/agents/compute/result-tool.ts",
-    "src/agents/compute/prompts/core.md",
-    "src/agents/review/runtime.ts",
-    "src/agents/review/prompts/core.md",
-    "src/artifacts/request-contract.cjs",
-    "python/ts_agent/compute/artifacts.py",
-    "python/ts_agent/email/delivery.py",
-    "python/ts_agent/runtime/probe.py",
-    "python/ts_agent/structures/api.py",
-    "python/ts_agent/structures/seed.py",
-    "python/ts_agent/workspace/engine.py",
-    "python/ts_agent/workspace/context.py",
-    "python/ts_agent/workspace/bootstrap.py",
-    "python/ts_agent/workspace/contracts/research_phase.schema.json",
-    "python/ts_agent/workspace/contracts/research_phase_registry.schema.json",
-    "python/ts_agent/workspace/contracts/research_node.schema.json",
-    "python/ts_agent/validation/engine.py",
-    "python/ts_agent/validation/templates/builtin/classical-ts__1.json",
-    "python/ts_agent/validation/acceptance_profiles/accepted-ts__3.json",
-    "python/ts_agent/web/static/index.html",
-    "python/ts_agent/web/static/app.css",
-    "python/ts_agent/web/static/app.js",
-    "python/ts_agent/web/static/attempt-timeline.js",
-    "python/ts_agent/web/static/claim-map.js",
-    "python/ts_agent/web/static/research-tree.js",
-    "python/ts_agent/web/static/research-map.js",
-    "python/ts_agent/web/research_map.py",
-    "python/ts_agent/web/reloader.py",
-    "docs/adr/0001-phase-node-research-kernel.md",
-}
 REMOVED_PREFIXES = (
     "agent-core/",
     "agent-skills/",
@@ -194,6 +63,7 @@ FORBIDDEN_PARTS = {
 }
 FORBIDDEN_BASENAMES = {".env", "auth.json", "auth.toml", "config.toml", "models.json"}
 FORBIDDEN_RUNTIME_FILES = {
+    "scripts/_source_capture.py",
     "scripts/build_package.py",
     "scripts/build_release.py",
     "scripts/check_package.py",
@@ -216,6 +86,10 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         errors.append(f"package name must be {PACKAGE_NAME}")
     if manifest.get("version") != PACKAGE_VERSION:
         errors.append(f"package version must be {PACKAGE_VERSION}")
+    if not isinstance(manifest.get("version"), str) or not re.fullmatch(
+        r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", manifest["version"]
+    ):
+        errors.append("package version must be a numeric major.minor.patch release")
     if manifest.get("private") is not True:
         errors.append("package must remain private until release is explicitly authorized")
     if manifest.get("files") != PACKAGE_FILES:
@@ -273,6 +147,26 @@ def validate_python_project() -> None:
         expected = f'__version__ = "{PACKAGE_VERSION}"'
         if expected not in version_source.read_text(encoding="utf-8"):
             errors.append("Python distribution version does not match package.json")
+    if errors:
+        raise PackageCheckError("\n".join(errors))
+
+
+def validate_version_surfaces() -> None:
+    lock = json.loads((ROOT / "package-lock.json").read_text(encoding="utf-8"))
+    profile_text = (ROOT / "extensions" / "shared" / "package-profile.ts").read_text(
+        encoding="utf-8"
+    )
+    profile_match = re.search(r'(?m)^\s*version:\s*"([^"]+)",\s*$', profile_text)
+    errors: list[str] = []
+    if lock.get("version") != PACKAGE_VERSION:
+        errors.append("package-lock version does not match the package release")
+    packages = lock.get("packages")
+    if not isinstance(packages, dict) or not isinstance(packages.get(""), dict):
+        errors.append("package-lock root package metadata is missing")
+    elif packages[""].get("version") != PACKAGE_VERSION:
+        errors.append("package-lock root package version does not match the package release")
+    if profile_match is None or profile_match.group(1) != PACKAGE_VERSION:
+        errors.append("package profile version does not match the package release")
     if errors:
         raise PackageCheckError("\n".join(errors))
 
@@ -372,6 +266,7 @@ def main() -> int:
     try:
         validate_manifest(load_manifest())
         validate_python_project()
+        validate_version_surfaces()
         validate_runtime_entrypoints()
         files = npm_pack_files()
         validate_tarball(files)

@@ -33,11 +33,11 @@ Keep failure domains separate before deciding scientific meaning.
 ## Retry Versus New Work
 
 Retry only an unchanged intent with proven retry safety. Recalculation preserves
-the source Node/intent and states changed settings and purpose. Start a new Node
+the source Node/intent and states changed parameters and purpose. Start a new Node
 when the scientific objective, hypothesis, method rationale, or branch changes.
 
 Program failure is normally an operational fact. It contradicts a Claim only
-when a frozen GateSpec deliberately treats the verified observation as a
+when a frozen ProofSpec deliberately treats the verified observation as a
 scientific failure condition.
 
 Record durable summaries through the existing calculation record, Finding, and

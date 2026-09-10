@@ -11,6 +11,7 @@ from typing import Any
 
 from ts_agent.io import now_iso
 from .schema_validation import SchemaValidationError, validate_contract
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 IDENTITY_REF = ".agents/workspace-identity.json"
@@ -23,12 +24,13 @@ class WorkspaceIdentityError(ValueError):
 
 
 def workspace_identity_path(root: str | Path) -> Path:
-    return Path(root).expanduser().resolve() / IDENTITY_REF
+    return lexical_path(root) / IDENTITY_REF
 
 
 def read_workspace_identity(root: str | Path) -> dict[str, str]:
-    path = workspace_identity_path(root)
-    if path.parent.is_symlink() or path.is_symlink():
+    root_path = lexical_path(root)
+    path = root_path / IDENTITY_REF
+    if path_has_symlink(root_path) or has_symlink_component(root_path, path):
         raise WorkspaceIdentityError(f"workspace identity path cannot contain a symbolic link: {path}")
     if not path.is_file():
         raise WorkspaceIdentityError(f"workspace identity does not exist: {path}")
@@ -44,11 +46,14 @@ def read_workspace_identity(root: str | Path) -> dict[str, str]:
 def ensure_workspace_identity(root: str | Path) -> dict[str, str]:
     """Read or atomically create the immutable identity for one workspace."""
 
-    path = workspace_identity_path(root)
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise WorkspaceIdentityError(f"workspace root cannot contain a symbolic link: {root_path}")
+    path = root_path / IDENTITY_REF
     if path.exists() or path.is_symlink():
         return read_workspace_identity(root)
 
-    if path.parent.is_symlink():
+    if has_symlink_component(root_path, path.parent):
         raise WorkspaceIdentityError(f"workspace identity path cannot contain a symbolic link: {path}")
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     record: dict[str, Any] = {

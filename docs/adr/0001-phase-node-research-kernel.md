@@ -66,7 +66,7 @@ without copied scientific state.
 ### Claim And Validation
 
 Claims remain independent of execution. Observations are immutable semantic
-records with artifact provenance. GateSpecs are fully expanded and frozen
+records with artifact provenance. ProofSpecs are fully expanded and frozen
 before deterministic evaluation. Validation does not select the next Node, and
 acceptance remains a revision-bound assessment separate from Claim status.
 
@@ -122,7 +122,7 @@ can summarize Phases and focused Nodes instead of serializing every record.
 The cost is an additional canonical Phase registry and a required `phaseRef`
 when starting a Node. This is accepted because Phase has a deliberately narrow
 schema and no behavioral semantics. New scientific domains still extend Claims,
-Observations, declarative GateSpecs, and maintained predicates rather than
+Observations, declarative ProofSpecs, and maintained predicates rather than
 adding hard-coded workflow branches.
 
 ## Validation

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import re
 import subprocess
 import threading
 from importlib.resources import files
@@ -9,7 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.workspace_helpers import accept_research_claim
+from tests.workspace_helpers import (
+    accept_research_claim,
+    calculation_prepared_fixture,
+    calculation_result_fixture,
+)
 from ts_agent.web import normalize_workspace, register_workspace
 from ts_agent.web import server as ts_web_server
 from ts_agent.web.file_preview import MAX_TEXT_BYTES, preview_capability, read_text_preview
@@ -29,8 +34,9 @@ from ts_agent.web.registry import (
     workspace_discovery_roots,
 )
 from ts_agent.web.server import create_server
-from ts_agent.workspace.decision import draft_decision
-from ts_agent.workspace.engine import apply_decision, init_workspace
+from tests.kernel_helpers import compile_change
+from ts_agent.workspace.engine import init_workspace
+from tests.kernel_helpers import apply_compiled_change
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,9 +47,15 @@ def _write(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
+def _assert_public_payload(payload: object, private_root: Path) -> None:
+    rendered = json.dumps(payload, ensure_ascii=False)
+    assert "source_root" not in rendered
+    assert str(private_root) not in rendered
+
+
 def _make_workspace(root: Path) -> dict[str, str]:
     init_workspace(root)
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {
             "rationale": "Create a small Claim graph and ResearchNode DAG for the explorer.",
@@ -99,7 +111,7 @@ def _make_workspace(root: Path) -> dict[str, str]:
                     "provenance": {"producer": "test-parser"},
                 },
                 {
-                    "op": "freeze_validation_spec",
+                    "op": "freeze_proof_spec",
                     "local_ref": "spec",
                     "nodeRef": "$search",
                     "targetClaimRef": "$concerted",
@@ -124,10 +136,10 @@ def _make_workspace(root: Path) -> dict[str, str]:
                     },
                 },
                 {
-                    "op": "evaluate_validation",
+                    "op": "evaluate_proof",
                     "local_ref": "result",
                     "nodeRef": "$search",
-                    "specRef": "$spec",
+                    "proofRef": "$spec",
                     "observationRefs": ["$normal"],
                 },
                 {
@@ -159,9 +171,9 @@ def _make_workspace(root: Path) -> dict[str, str]:
             ],
         },
     )
-    apply_decision(root, drafted["decision"])
+    apply_compiled_change(root, drafted["decision"])
     refs = dict(drafted["allocated_refs"])
-    connectivity = draft_decision(
+    connectivity = compile_change(
         root,
         {
             "rationale": "The candidate probe is complete but endpoint identity remains unresolved, so connectivity becomes the next research decision.",
@@ -183,54 +195,99 @@ def _make_workspace(root: Path) -> dict[str, str]:
             ],
         },
     )
-    apply_decision(root, connectivity["decision"])
+    apply_compiled_change(root, connectivity["decision"])
     refs.update(connectivity["allocated_refs"])
     node_id = refs["connectivity"]
     artifact = root / "nodes" / node_id / "outputs" / "probe.json"
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_text("{}\n", encoding="utf-8")
+    workspace_identity = json.loads(
+        (root / ".agents" / "workspace-identity.json").read_text(encoding="utf-8")
+    )["workspace_id"]
     _write(
         root / "nodes" / node_id / "attempts" / "calc_1" / "intent.json",
         {
+            "schema_version": "ts-calculation-intent/7",
             "intent_id": "calc_1",
             "node_id": node_id,
+            "node_contract_digest": "sha256:" + "a" * 64,
+            "scientific_intent_digest": "sha256:" + "b" * 64,
+            "capability": "gaussian.irc",
+            "capability_version": "1",
+            "capability_descriptor_digest": "sha256:" + "c" * 64,
+            "expected_output_roles": ["program_output", "reaction_path"],
             "backend": "gaussian",
             "task_type": "irc",
             "purpose": "Trace both directions from the selected transition-state candidate.",
             "attempt_kind": "primary",
             "lineage": None,
-            "settings": {
+            "input_refs": {"gjf": f"nodes/{node_id}/inputs/candidate.gjf"},
+            "input_bindings": [
+                {
+                    "input_role": "gjf",
+                    "artifact_id": "art_" + "0" * 24,
+                    "path": f"nodes/{node_id}/inputs/candidate.gjf",
+                    "sha256": "sha256:" + "d" * 64,
+                    "owner_node": node_id,
+                    "source_intent_id": None,
+                }
+            ],
+            "parameters": {
                 "method": "M062X",
                 "basis": "6-31+G(d,p)",
                 "candidateStrategy": "bidirectional_irc",
             },
-            "input_bindings": [
-                {"input_role": "gjf", "artifact_id": "art_test", "source_intent_id": None}
-            ],
             "expected_artifacts": [f"nodes/{node_id}/attempts/calc_1/outputs/gaussian.out"],
             "execution_target": {
                 "kind": "remote",
+                "authority": "execution_mirror",
                 "profile": "cluster_1w",
-                "resources": {"queue": "batch", "ncpus": 8},
-            },
-        },
-    )
-    _write(
-        root / "nodes" / node_id / "attempts" / "calc_1" / "status.json",
-        {
-            "intent_id": "calc_1",
-            "job_id": "123.cluster",
-            "state": "completed",
-            "program_status": "normal_termination",
-            "provenance": {
-                "observed_at": "2026-08-16T00:04:00+00:00",
-                "program_record": {
-                    "started_at": "2026-08-16T00:02:00+00:00",
-                    "finished_at": "2026-08-16T00:03:30+00:00",
+                "workspace_id": workspace_identity,
+                "remote_dir": f"/remote/ts/workspaces/{workspace_identity}/runs/{node_id}/calc_1",
+                "resources": {
+                    "queue": "batch",
+                    "nodes": 1,
+                    "ncpus": 8,
+                    "memory": "1gb",
+                    "walltime": "01:00:00",
+                    "ngpus": 0,
+                    "mpiprocs": None,
+                    "ompthreads": None,
                 },
             },
+            "dry_run": False,
         },
     )
+    status = calculation_result_fixture(
+        json.loads(
+            (root / "nodes" / node_id / "attempts" / "calc_1" / "intent.json").read_text(
+                encoding="utf-8"
+            )
+        ),
+        state="completed",
+        program_status="completed",
+        job_id="123.cluster",
+    )
+    status["provenance"].update(
+        {
+            "observed_at": "2026-08-16T00:04:00+00:00",
+            "program_record": {
+                "started_at": "2026-08-16T00:02:00+00:00",
+                "finished_at": "2026-08-16T00:03:30+00:00",
+            },
+        }
+    )
+    _write(
+        root / "nodes" / node_id / "attempts" / "calc_1" / "prepared.json",
+        calculation_prepared_fixture(
+            json.loads(
+                (root / "nodes" / node_id / "attempts" / "calc_1" / "intent.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        ),
+    )
+    _write(root / "nodes" / node_id / "attempts" / "calc_1" / "status.json", status)
     _write(
         root / "nodes" / node_id / "activities" / "op_1" / "request.json",
         {
@@ -320,7 +377,7 @@ def test_normalize_workspace_projects_phase_node_and_operational_state(tmp_path:
     view = normalize_workspace(workspace)
 
     assert view["schema_version"] == "ts-web-workspace/6"
-    assert view["workspace"]["kernel_protocol"] == "ts-research-kernel/5"
+    assert view["workspace"]["kernel_protocol"] == "ts-research-kernel/6"
     assert view["research_phases"][0]["phase_id"] == refs["mechanism"]
     assert view["research_phases"][0]["node_refs"] == [refs["search"], refs["connectivity"]]
     assert view["focus"]["phase_refs"] == [refs["mechanism"]]
@@ -400,14 +457,14 @@ def test_workspace_snapshot_normalizes_once(tmp_path: Path, monkeypatch: pytest.
     _make_workspace(workspace)
     row = {"workspace_id": "ws_test", "source_root": str(workspace), "label": "test"}
     calls = 0
-    original = ts_web_server.normalize_workspace
+    original = ts_web_server.projection.normalize_workspace
 
     def counted(source_root, *, label=None):
         nonlocal calls
         calls += 1
         return original(source_root, label=label)
 
-    monkeypatch.setattr("ts_agent.web.normalize.normalize_workspace", counted)
+    monkeypatch.setattr("ts_agent.projection.normalize.normalize_workspace", counted)
     workspace_snapshot(row)
     assert calls == 1
 
@@ -506,14 +563,19 @@ def test_web_projects_current_attempt_family_and_lineage(tmp_path: Path) -> None
     workspace = tmp_path / "workspace"
     refs = _make_workspace(workspace)
     node_id = refs["connectivity"]
-    _write(
-        workspace / "nodes" / node_id / "attempts" / "calc_2" / "intent.json",
+    primary_intent = json.loads(
+        (
+            workspace
+            / "nodes"
+            / node_id
+            / "attempts"
+            / "calc_1"
+            / "intent.json"
+        ).read_text(encoding="utf-8")
+    )
+    primary_intent.update(
         {
-            "schema_version": "ts-calculation-intent/6",
             "intent_id": "calc_2",
-            "node_id": node_id,
-            "backend": "gaussian",
-            "task_type": "irc",
             "purpose": "Repeat the IRC with a smaller integration step after calc_1 stalled.",
             "attempt_kind": "recalculation",
             "lineage": {
@@ -521,17 +583,23 @@ def test_web_projects_current_attempt_family_and_lineage(tmp_path: Path) -> None
                 "source_intent_id": "calc_1",
                 "relation": "recalculation",
                 "reason": "Resolve an integration-step sensitivity.",
-                "changed_fields": ["settings.stepSize"],
+                "changed_fields": ["parameters.stepSize"],
             },
-            "node_contract_digest": "sha256:" + "a" * 64,
-            "scientific_intent_digest": "sha256:" + "b" * 64,
-            "settings": {
+            "scientific_intent_digest": "sha256:" + "e" * 64,
+            "parameters": {
                 "method": "M062X",
                 "basis": "6-31+G(d,p)",
                 "candidateStrategy": "bidirectional_irc",
                 "stepSize": 5,
             },
-        },
+            "expected_artifacts": [
+                f"nodes/{node_id}/attempts/calc_2/outputs/gaussian.out"
+            ],
+        }
+    )
+    _write(
+        workspace / "nodes" / node_id / "attempts" / "calc_2" / "intent.json",
+        primary_intent,
     )
 
     attempts = node_payload(workspace, node_id)["research_node"]["attempts"]
@@ -544,12 +612,129 @@ def test_web_projects_current_attempt_family_and_lineage(tmp_path: Path) -> None
         "source_intent_id": "calc_1",
         "relation": "recalculation",
         "reason": "Resolve an integration-step sensitivity.",
-        "changed_fields": ["settings.stepSize"],
+        "changed_fields": ["parameters.stepSize"],
     }
     assert recalculation["family_root_id"] == "calc_1"
     assert recalculation["family_index"] == 1
     assert recalculation["lineage_depth"] == 1
-    assert recalculation["candidate_strategy"] == "bidirectional_irc"
+    assert recalculation["parameters"]["candidateStrategy"] == "bidirectional_irc"
+
+
+def test_web_marks_retired_or_incomplete_intents_without_aliasing_fields(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    node_id = refs["connectivity"]
+    attempts_root = workspace / "nodes" / node_id / "attempts"
+
+    _write(
+        attempts_root / "calc_3" / "intent.json",
+        {
+            "schema_version": "ts-calculation-intent/6",
+            "intent_id": "calc_3",
+            "node_id": node_id,
+            "backend": "gaussian",
+            "task_type": "irc",
+            "settings": {"method": "retired-method"},
+            "recalculation_ref": {
+                "source_node": node_id,
+                "source_intent_id": "calc_1",
+                "purpose": "retired lineage",
+                "changed_settings": ["settings.stepSize"],
+            },
+        },
+    )
+    _write(
+        attempts_root / "calc_3" / "status.json",
+        {"state": "completed", "program_status": "normal_termination"},
+    )
+
+    incomplete = json.loads(
+        (
+            attempts_root / "calc_1" / "intent.json"
+        ).read_text(encoding="utf-8")
+    )
+    incomplete.pop("parameters")
+    _write(attempts_root / "calc_4" / "intent.json", incomplete)
+
+    attempts = node_payload(workspace, node_id)["research_node"]["attempts"]
+    retired = next(row for row in attempts if row["intent_id"] == "calc_3")
+    malformed = next(row for row in attempts if row["intent_id"] == "calc_4")
+
+    assert retired["intent_status"] == "unsupported"
+    assert retired["display_state"] == "unsupported"
+    assert retired["parameters"] == {}
+    assert retired["lineage"] is None
+    assert "ts-calculation-intent/7" in retired["intent_error"]
+    assert malformed["intent_status"] == "invalid"
+    assert malformed["display_state"] == "invalid"
+    assert malformed["parameters"] == {}
+    assert "parameters" in malformed["intent_error"]
+
+
+def test_web_attempt_projection_reuses_fail_closed_index_for_symlinked_outputs(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    node_id = refs["connectivity"]
+    attempt = workspace / "nodes" / node_id / "attempts" / "calc_1"
+    outside = tmp_path / "outside-outputs"
+    intent = json.loads((attempt / "intent.json").read_text(encoding="utf-8"))
+    _write(
+        outside / "calculation_result.json",
+        calculation_result_fixture(
+            intent,
+            state="parsed",
+            program_status="completed",
+            job_id="outside.job",
+        ),
+    )
+    (attempt / "outputs").symlink_to(outside, target_is_directory=True)
+
+    projected = next(
+        row
+        for row in node_payload(workspace, node_id)["research_node"]["attempts"]
+        if row["intent_id"] == "calc_1"
+    )
+
+    assert projected["integrity_error"] == "symbolic link is not allowed"
+    assert projected["display_state"] == "invalid"
+    assert projected["job_id"] == "123.cluster"
+    assert projected.get("observation_candidates") is None
+
+
+def test_web_attempt_projection_does_not_traverse_symlinked_attempt_parent(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    node_id = refs["connectivity"]
+    attempts = workspace / "nodes" / node_id / "attempts"
+    outside = tmp_path / "outside-attempts"
+    intent = json.loads(
+        (attempts / "calc_1" / "intent.json").read_text(encoding="utf-8")
+    )
+    _write(outside / "calc_2" / "intent.json", {**intent, "intent_id": "calc_2"})
+    attempts.rename(workspace / "nodes" / node_id / "attempts-real")
+    attempts.symlink_to(outside, target_is_directory=True)
+
+    payload = node_payload(workspace, node_id)
+    projected = [
+        row
+        for row in payload["research_node"]["attempts"]
+        if row["intent_id"] == "calc_2"
+    ]
+
+    # A symlinked parent is never enumerated, so an outside calc directory
+    # cannot be mistaken for a workspace Attempt.  The parent-level finding is
+    # still visible in the Node detail projection.
+    assert projected == []
+    assert payload["calculation_attempt_integrity_findings"] == [{
+        "code": "calculation_attempt_integrity",
+        "scope": "attempt_parent",
+        "path": f"nodes/{node_id}/attempts",
+        "node_refs": [node_id],
+        "message": "Attempt parent path contains a symbolic-link component",
+    }]
+    assert payload["research_node"]["attempt_integrity_findings"] == payload[
+        "calculation_attempt_integrity_findings"
+    ]
 
 
 def test_node_files_publish_the_same_bounded_text_preview_capability(tmp_path: Path) -> None:
@@ -733,14 +918,14 @@ def test_claim_and_node_details_follow_graph_references(tmp_path: Path) -> None:
     assert attempt["job_id"] == "123.cluster"
     assert attempt["duration_seconds"] == 90
     assert attempt["run_count"] == 1
-    assert attempt["settings"]["candidateStrategy"] == "bidirectional_irc"
+    assert attempt["parameters"]["candidateStrategy"] == "bidirectional_irc"
     assert attempt["execution_target"]["profile"] == "cluster_1w"
     assert attempt["runs"][0]["task_id"] == "sub_1"
     assert completed["dependents"][0]["node_id"] == refs["connectivity"]
     assert completed["phase"]["phase_id"] == refs["mechanism"]
     assert completed["history"][0]["decision_id"] == completed["research_node"]["created_by_decision"]
     assert {row["claim_id"] for row in completed["claims"]} == {refs["concerted"], refs["stepwise"]}
-    assert completed["validation_specs"][0]["title"] == "Program completion probe"
+    assert completed["proof_specs"][0]["title"] == "Program completion probe"
     assert f"nodes/{refs['connectivity']}/outputs/probe.json" in {
         row["path"] for row in active["files"]["files"]
     }
@@ -749,7 +934,7 @@ def test_claim_and_node_details_follow_graph_references(tmp_path: Path) -> None:
 def test_web_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     init_workspace(workspace)
-    node_draft = draft_decision(
+    node_draft = compile_change(
         workspace,
         {
             "rationale": "Start an exploratory Node before it discovers a Claim.",
@@ -760,9 +945,9 @@ def test_web_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> 
             ],
         },
     )
-    apply_decision(workspace, node_draft["decision"])
+    apply_compiled_change(workspace, node_draft["decision"])
     node_id = node_draft["allocated_refs"]["exploration"]
-    claim_draft = draft_decision(
+    claim_draft = compile_change(
         workspace,
         {
             "rationale": "Record the alternative Claim discovered by the Node.",
@@ -778,7 +963,7 @@ def test_web_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> 
             ],
         },
     )
-    apply_decision(workspace, claim_draft["decision"])
+    apply_compiled_change(workspace, claim_draft["decision"])
     claim_id = claim_draft["allocated_refs"]["alternative"]
 
     view = normalize_workspace(workspace)
@@ -807,6 +992,9 @@ def test_static_ui_exposes_research_map_dependency_dag_and_node_details() -> Non
     assert "Research Files" in html
     assert "Advanced Graphs" not in html + script
     assert "app.css" in html
+    assert "i18n.js" in html
+    assert "/logo.svg" in html
+    assert "/favicon.svg" in html
     assert "app.js" in html
     assert "claim-map.js" in html
     assert "research-tree.js" in html
@@ -852,7 +1040,7 @@ def test_static_ui_exposes_research_map_dependency_dag_and_node_details() -> Non
     assert 'icon("external")' not in script
     assert 'id="icon-eye"' in html
     assert ".attempt-filter { grid-column: 2; }" in css
-    assert "${latest.intent_id} ${attemptState(latest)}" in tree
+    assert "${latest.intent_id} ${trStatus(attemptState(latest))}" in tree
     assert "...array(state.view.retryable_controls)" in script
     assert "intentIds[0]" in script
     assert "Fix remote configuration, then retry" in script
@@ -860,6 +1048,24 @@ def test_static_ui_exposes_research_map_dependency_dag_and_node_details() -> Non
     assert "/api/node" not in html + script
     assert "/api/gates" not in html + script
     assert "/api/evidence" not in html + script
+
+
+def test_static_i18n_catalogs_match_and_cover_literal_ui_references() -> None:
+    static = ROOT / "python" / "ts_agent" / "web" / "static"
+    catalog = (static / "i18n.js").read_text(encoding="utf-8")
+    english, chinese = catalog.split("    zh: {", maxsplit=1)
+    key_pattern = re.compile(r'^      "([^"]+)":', re.MULTILINE)
+    english_keys = set(key_pattern.findall(english))
+    chinese_keys = set(key_pattern.findall(chinese))
+
+    sources = "\n".join(path.read_text(encoding="utf-8") for path in static.glob("*.js"))
+    sources += "\n" + (static / "index.html").read_text(encoding="utf-8")
+    literal_references = set(re.findall(r'\btr\(\s*"([^"]+)"', sources))
+    literal_references.update(re.findall(r'data-i18n(?:-aria-label|-title)?="([^"]+)"', sources))
+
+    assert english_keys == chinese_keys
+    assert literal_references <= english_keys
+    assert len(english_keys) >= 400
 
 
 def test_attempt_timeline_filters_and_paginates_families() -> None:
@@ -1013,16 +1219,16 @@ def test_static_ui_refreshes_registry_and_persists_theme() -> None:
     assert "async function loadWorkspaceCatalog()" in script
     assert 'const payload = await api("/api/workspaces")' in script
     assert 'refreshButton.addEventListener("click", refreshExplorer)' in script
-    assert 'refreshStatus.textContent = "Refreshing workspace"' in script
-    assert 'showToast("Workspace refreshed")' in script
+    assert 'tr("action.refreshing", "Refreshing workspace")' in script
+    assert 'showToast(tr("action.refreshed", "Workspace refreshed"))' in script
     assert "const liveRefreshIntervalMs = 5000" in script
     assert "async function pollLiveRefresh()" in script
     assert 'document.addEventListener("visibilitychange"' in script
-    assert 'setHealth("stale", "Stale")' in script
+    assert 'setHealth("stale", tr("health.stale", "Stale"))' in script
     assert "/snapshot?${query}" in script
     assert "renderUnavailableWorkspace(catalogRow)" in script
-    assert 'row.available === false ? " (incompatible)" : ""' in script
-    assert 'textContent = view.workspace.kernel_protocol || "Research workspace"' in script
+    assert 'tr("workspace.incompatibleSuffix", "incompatible")' in script
+    assert 'textContent = view.workspace.kernel_protocol || tr("workspace.fallback", "Research workspace")' in script
     assert "escapeHtml(view.workspace.workspace_id)" not in script
     assert "shortDigest(view.workspace_revision)" not in script
 
@@ -1042,7 +1248,7 @@ def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path
 
 
 def test_static_asset_resolves_from_current_package() -> None:
-    for name in ("index.html", "app.css", "app.js", "attempt-timeline.js", "claim-map.js", "research-map.js", "research-tree.js"):
+    for name in ("index.html", "app.css", "app.js", "i18n.js", "logo.svg", "favicon.svg", "attempt-timeline.js", "claim-map.js", "research-map.js", "research-tree.js"):
         expected = files("ts_agent.web").joinpath("static", name).read_bytes()
         assert ts_web_server._static_asset(name).read_bytes() == expected
 
@@ -1056,7 +1262,7 @@ def test_web_distinguishes_current_from_historical_acceptance(tmp_path: Path) ->
     assert current["current_acceptances"][0]["acceptance_id"] == refs["acceptance"]
     assert graph_payload_from_view(current)["claim_graph"]["nodes"][0]["acceptance_state"] == "current"
 
-    drafted = draft_decision(
+    drafted = compile_change(
         workspace,
         {
             "rationale": "Add a later limitation that requires reassessment.",
@@ -1074,7 +1280,7 @@ def test_web_distinguishes_current_from_historical_acceptance(tmp_path: Path) ->
             ],
         },
     )
-    apply_decision(workspace, drafted["decision"])
+    apply_compiled_change(workspace, drafted["decision"])
 
     historical = normalize_workspace(workspace)
     assert historical["valid"] is True
@@ -1211,6 +1417,7 @@ def test_web_catalog_isolates_incompatible_registered_workspace(tmp_path: Path) 
         assert summaries[old_row["workspace_id"]]["available"] is False
         assert summaries[old_row["workspace_id"]]["valid"] is False
         assert "cannot read workspace file" in summaries[old_row["workspace_id"]]["load_error"]
+        _assert_public_payload(payload, incompatible)
         assert _get_text(host, port, f"/api/workspace/{old_row['workspace_id']}")[0] == 400
     finally:
         server.shutdown()
@@ -1249,7 +1456,7 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
     try:
         host, port = server.server_address
         health = _get_json(host, port, "/api/health")
-        assert health == {"ok": True, "protocol": "ts-research-kernel/5", "read_only": True}
+        assert health == {"ok": True, "protocol": "ts-research-kernel/6", "read_only": True}
         workspaces = _get_json(host, port, "/api/workspaces")
         assert workspaces["default_workspace"] == row["workspace_id"]
         base = f"/api/workspace/{row['workspace_id']}"
@@ -1266,8 +1473,8 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
         assert "graph" not in unchanged
         assert _get_json(host, port, f"{base}/graph")["schema_version"] == "ts-explorer-graph/6"
         assert _get_json(host, port, f"{base}/phases")["research_phases"][0]["phase_id"] == refs["mechanism"]
-        assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/3"
-        assert _get_json(host, port, f"{base}/nodes")["research_nodes"][0]["schema_version"] == "ts-research-node/1"
+        assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/4"
+        assert _get_json(host, port, f"{base}/nodes")["research_nodes"][0]["schema_version"] == "ts-research-node/2"
         assert _get_json(host, port, f"{base}/observations")["observations"][0]["schema_version"] == "ts-observation/2"
         assert _get_json(host, port, f"{base}/validation")["validation_results"][0]["verdict"] == "pass"
         assert _get_json(host, port, f"{base}/findings")["findings"][0]["status"] == "open"
@@ -1302,11 +1509,16 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
         )
         assert large_status == 400
         assert "1 mb" in large_body.lower()
+        assert "source_root" not in binary_body + large_body
+        assert str(source) not in binary_body + large_body
         assert _get_text(host, port, f"{base}/file?path=workspace.json")[0] == 400
         html = _get_text(host, port, "/")[1]
         assert "TS Research Explorer" in html
         assert _get_text(host, port, "/app.css")[0] == 200
         assert _get_text(host, port, "/app.js")[0] == 200
+        assert _get_text(host, port, "/i18n.js")[0] == 200
+        assert _get_text(host, port, "/logo.svg")[0] == 200
+        assert _get_text(host, port, "/favicon.svg")[0] == 200
         assert _get_text(host, port, "/attempt-timeline.js")[0] == 200
         assert _get_text(host, port, "/claim-map.js")[0] == 200
         assert _get_text(host, port, "/research-map.js")[0] == 200
@@ -1314,11 +1526,114 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
         for removed_route in (f"{base}/tree", f"{base}/gates", f"{base}/evidence", "/api/node/n000"):
             assert _get_text(host, port, removed_route)[0] == 404
         assert _get_text(host, port, f"{base}/node/n000")[0] == 400
+        for route in (
+            "/api/workspaces",
+            f"{base}/snapshot",
+            f"{base}/graph",
+            f"{base}/phases",
+            f"{base}/claims",
+            f"{base}/nodes",
+            f"{base}/observations",
+            f"{base}/validation",
+            f"{base}/findings",
+            f"{base}/files",
+            f"{base}/activity",
+            f"{base}/claim/{refs['concerted']}",
+            f"{base}/node/{refs['connectivity']}",
+            f"{base}/file?path=nodes/{refs['connectivity']}/outputs/probe.json",
+        ):
+            _assert_public_payload(_get_json(host, port, route), source)
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
     assert _relative_files(source) == before
+
+
+def test_web_file_preview_never_follows_external_symlink_paths(tmp_path: Path) -> None:
+    """The HTTP file endpoint must share the same physical boundary as the index."""
+
+    source = tmp_path / "workspace"
+    refs = _make_workspace(source)
+    output = source / "nodes" / refs["connectivity"] / "outputs"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    secret = outside / "secret.txt"
+    secret.write_text("this must stay outside the workspace\n", encoding="utf-8")
+
+    linked_file = output / "linked.txt"
+    linked_file.symlink_to(secret)
+    linked_dir = output / "linked-dir"
+    linked_dir.symlink_to(outside, target_is_directory=True)
+
+    state = tmp_path / "web-state"
+    row = register_workspace(source, state, "workspace")
+    server = create_server("127.0.0.1", 0, state)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        base = f"/api/workspace/{row['workspace_id']}/file"
+        status, body = _get_text(
+            host,
+            port,
+            f"{base}?path=nodes/{refs['connectivity']}/outputs/linked.txt",
+        )
+        assert status == 400
+        assert "symbolic link" in body.lower()
+        assert "this must stay outside" not in body
+
+        status, body = _get_text(
+            host,
+            port,
+            f"{base}?path=nodes/{refs['connectivity']}/outputs/linked-dir/secret.txt",
+        )
+        assert status == 400
+        assert "symbolic link" in body.lower()
+        assert "this must stay outside" not in body
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_web_registry_rejects_symlinked_source_and_state_roots(tmp_path: Path) -> None:
+    physical = tmp_path / "workspace"
+    _make_workspace(physical)
+    source_link = tmp_path / "workspace-link"
+    source_link.symlink_to(physical, target_is_directory=True)
+    state = tmp_path / "web-state"
+
+    with pytest.raises(ValueError, match="symbolic link"):
+        register_workspace(source_link, state)
+
+    real_state = tmp_path / "real-state"
+    real_state.mkdir()
+    state_link = tmp_path / "state-link"
+    state_link.symlink_to(real_state, target_is_directory=True)
+    with pytest.raises(ValueError, match="symbolic link"):
+        register_workspace(physical, state_link)
+
+
+def test_web_normalizer_does_not_ingest_symlinked_canonical_documents(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    _make_workspace(workspace)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    # This is deliberately shaped like a canonical document so a plain
+    # ``read_json`` would silently import it into the Web projection.
+    (outside / "claims.json").write_text(
+        json.dumps({
+            "schema_version": "ts-claim-registry/4",
+            "claims": [{"claim_id": "claim_external", "statement": "secret"}],
+        }),
+        encoding="utf-8",
+    )
+    (workspace / "claims.json").unlink()
+    (workspace / "claims.json").symlink_to(outside / "claims.json")
+
+    with pytest.raises(ValueError, match="symbolic link"):
+        normalize_workspace(workspace)
 
 
 def _relative_files(root: Path) -> set[str]:

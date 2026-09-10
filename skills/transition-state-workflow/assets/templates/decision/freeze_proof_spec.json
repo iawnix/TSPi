@@ -1,6 +1,6 @@
 {
-  "op": "freeze_validation_spec",
-  "local_ref": "validation_spec",
+  "op": "freeze_proof_spec",
+  "local_ref": "proof_spec",
   "nodeRef": "${NODE_REF}",
   "targetClaimRef": "${CLAIM_REF}",
   "dimension": "${VALIDATION_DIMENSION}",

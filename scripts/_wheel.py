@@ -18,7 +18,7 @@ from typing import Any
 PYTHON_DISTRIBUTION = "ts-agent-kernel"
 PI_PACKAGE = "@iawnix/ts-agent"
 PYTHON_PACKAGE_NAME = "ts_agent"
-PYTHON_PAYLOAD_SUFFIXES = frozenset({".css", ".html", ".js", ".json", ".py", ".toml"})
+PYTHON_PAYLOAD_SUFFIXES = frozenset({".css", ".html", ".js", ".json", ".py", ".svg", ".toml"})
 RELEASE_MANIFEST = ".ts-agent-release.json"
 RELEASE_SCHEMA_VERSION = "ts-agent-release/2"
 WHEEL_DIRECTORY = "python-dist"

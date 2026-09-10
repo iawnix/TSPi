@@ -13,6 +13,7 @@ const {
   validateArtifactManifest,
   validateArtifactManifestOwnership,
 } = require("./artifact-access.cjs");
+const { loadReviewerRole, validateReviewerRole } = require("./roles.cjs");
 
 const REVIEW_OPERATION = "claim_review";
 const LIMITS = Object.freeze({
@@ -23,12 +24,13 @@ const LIMITS = Object.freeze({
 
 function validateSubagentRequest(request) {
   if (!isPlainObject(request)) throw new Error("Review request must be an object");
-  rejectUnknownKeys(request, ["targetClaimRef", "question", "root", "artifactIds"], "Review request");
+  rejectUnknownKeys(request, ["targetClaimRef", "question", "root", "artifactIds", "reviewerRole"], "Review request");
   return {
     targetClaimRef: requireId(request.targetClaimRef, "targetClaimRef", /^claim_[1-9][0-9]*$/),
     question: requireString(request.question, "question", LIMITS.maxQuestionChars),
     root: typeof request.root === "string" ? request.root : undefined,
     artifactIds: uniqueIds(request.artifactIds || [], "artifactIds", LIMITS.maxArtifactIds, /^art_[0-9a-f]{24}$/),
+    reviewerRole: request.reviewerRole === undefined ? "general" : requireRoleId(request.reviewerRole),
   };
 }
 
@@ -36,6 +38,7 @@ function buildReviewTaskBundle({ runId, workspaceRoot, request, reviewSnapshot, 
   const normalized = validateSubagentRequest(request);
   const root = requireWorkspaceRoot(workspaceRoot);
   const snapshot = validateKernelSnapshot(reviewSnapshot, normalized.targetClaimRef);
+  const reviewerRole = loadReviewerRole(normalized.reviewerRole);
   const artifactManifest = buildArtifactManifest({
     workspaceRoot: root,
     artifactIds: normalized.artifactIds,
@@ -65,7 +68,7 @@ function buildReviewTaskBundle({ runId, workspaceRoot, request, reviewSnapshot, 
     claim_relations: snapshot.claim_relations,
     research_nodes: snapshot.research_nodes,
     observations: snapshot.observations,
-    validation_specs: snapshot.validation_specs,
+    proof_specs: snapshot.proof_specs,
     validation_results: snapshot.validation_results,
     findings: snapshot.findings,
     acceptances: snapshot.acceptances,
@@ -73,11 +76,13 @@ function buildReviewTaskBundle({ runId, workspaceRoot, request, reviewSnapshot, 
     artifact_manifest: artifactManifest,
     basis_allowlist: basisAllowlist,
     omitted: isPlainObject(snapshot.omitted) ? snapshot.omitted : {},
+    reviewer_role: reviewerRole,
   };
   const providerInput = buildProviderTaskPacket({
     task_id: taskSnapshot.task_id,
     objective: normalized.question,
     review_snapshot: taskSnapshot,
+    reviewer_role: reviewerRole,
   });
   const task = {
     schema_version: "ts-agent-task/2",
@@ -118,7 +123,7 @@ function validateKernelSnapshot(value, targetClaimRef) {
   if (!isPlainObject(value) || value.schema_version !== "ts-review-snapshot/4") {
     throw new Error("Review requires a ts-review-snapshot/4 Kernel projection");
   }
-  const arrays = ["research_phases", "claims", "claim_relations", "research_nodes", "observations", "validation_specs", "validation_results", "findings", "acceptances"];
+  const arrays = ["research_phases", "claims", "claim_relations", "research_nodes", "observations", "proof_specs", "validation_results", "findings", "acceptances"];
   for (const key of arrays) if (!Array.isArray(value[key])) throw new Error(`Review Kernel snapshot ${key} must be an array`);
   if (value.target_claim_ref !== targetClaimRef) throw new Error("Review target Claim does not match the Kernel snapshot");
   const refs = normalizeDependencyRefs(value.dependency_refs);
@@ -156,15 +161,17 @@ function validateTaskSnapshot(value, task) {
   rejectUnknownKeys(value, [
     "schema_version", "task_id", "operation", "scope", "workspace_revision",
     "projection_id", "target_claim_ref", "research_phases", "claims", "claim_relations",
-    "research_nodes", "observations", "validation_specs", "validation_results",
+    "research_nodes", "observations", "proof_specs", "validation_results",
     "findings", "acceptances", "dependency_refs", "artifact_manifest",
-    "basis_allowlist", "omitted",
+    "basis_allowlist", "omitted", "reviewer_role",
   ], "Review task snapshot");
   if (value.schema_version !== "ts-review-task-snapshot/3") throw new Error("invalid Review task snapshot schema_version");
+  const reviewerRole = validateReviewerRole(value.reviewer_role);
+  if (reviewerRole.role_id !== value.reviewer_role.role_id) throw new Error("Review reviewer role is invalid");
   if (value.task_id !== task.task_id || value.operation !== task.operation) throw new Error("Review task snapshot identity mismatch");
   if (JSON.stringify(value.scope) !== JSON.stringify(task.scope)) throw new Error("Review task snapshot scope mismatch");
   if (value.workspace_revision !== task.workspace.revision) throw new Error("Review task snapshot revision mismatch");
-  const arrays = ["research_phases", "claims", "claim_relations", "research_nodes", "observations", "validation_specs", "validation_results", "findings", "acceptances", "artifact_manifest", "basis_allowlist"];
+  const arrays = ["research_phases", "claims", "claim_relations", "research_nodes", "observations", "proof_specs", "validation_results", "findings", "acceptances", "artifact_manifest", "basis_allowlist"];
   for (const key of arrays) if (!Array.isArray(value[key])) throw new Error(`Review task snapshot ${key} must be an array`);
   const artifactManifest = validateArtifactManifest(value.artifact_manifest);
   if (JSON.stringify(artifactManifest) !== JSON.stringify(value.artifact_manifest)) {
@@ -189,6 +196,9 @@ function validateTaskSnapshot(value, task) {
 function buildProviderTaskPacket(value) {
   if (!isPlainObject(value) || !isPlainObject(value.review_snapshot)) throw new Error("provider Review input requires a task snapshot");
   const snapshot = value.review_snapshot;
+  const reviewerRole = validateReviewerRole(
+    value.reviewer_role || snapshot.reviewer_role || loadReviewerRole("general"),
+  );
   const targetClaim = snapshot.claims.find((claim) => claim?.claim_id === snapshot.target_claim_ref);
   if (!targetClaim) throw new Error("provider Review input target Claim is missing");
   const packet = {
@@ -199,6 +209,7 @@ function buildProviderTaskPacket(value) {
     scope: snapshot.scope,
     workspace_revision: snapshot.workspace_revision,
     target_claim_ref: snapshot.target_claim_ref,
+    reviewer_role: reviewerRole,
     dossier: {
       target_claim: compactClaim(targetClaim),
       related_claims: snapshot.claims.filter((claim) => claim !== targetClaim).map(compactClaim),
@@ -206,7 +217,7 @@ function buildProviderTaskPacket(value) {
       phases: snapshot.research_phases.map(compactPhase),
       nodes: snapshot.research_nodes.map(compactNode),
       observations: snapshot.observations.map(compactObservation),
-      validation_specs: snapshot.validation_specs.map(compactSpec),
+      proof_specs: snapshot.proof_specs.map(compactSpec),
       validation_results: snapshot.validation_results.map(compactResult),
       findings: snapshot.findings.map(compactFinding),
       acceptances: snapshot.acceptances.map(compactAcceptance),
@@ -227,17 +238,24 @@ function validateProviderTaskPacket(value, task, snapshot) {
   return value;
 }
 
+function requireRoleId(value) {
+  if (typeof value !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(value)) {
+    throw new Error("reviewerRole is invalid");
+  }
+  return value;
+}
+
 function compactClaim(value) {
-  return pick(value, ["claim_id", "claim_type", "statement", "status", "assumptions", "falsifiers", "observation_refs", "validation_spec_refs", "validation_result_refs"]);
+  return pick(value, ["claim_id", "claim_type", "statement", "status", "assumptions", "falsifiers", "observation_refs", "proof_spec_refs", "validation_result_refs"]);
 }
 function compactRelation(value) { return pick(value, ["relation_id", "source_claim_ref", "target_claim_ref", "relation_type", "rationale"]); }
 function compactPhase(value) { return pick(value, ["phase_id", "title", "objective"]); }
-function compactNode(value) { return pick(value, ["node_id", "phase_ref", "title", "objective", "deliverable", "status", "dependency_refs", "primary_claim_ref", "claim_refs", "related_claim_refs", "observation_refs", "finding_refs", "validation_spec_refs", "validation_result_refs", "result"]); }
+function compactNode(value) { return pick(value, ["node_id", "phase_ref", "title", "objective", "deliverable", "status", "dependency_refs", "primary_claim_ref", "claim_refs", "related_claim_refs", "observation_refs", "finding_refs", "proof_spec_refs", "validation_result_refs", "result"]); }
 function compactObservation(value) { return pick(value, ["observation_id", "created_by_node", "concept_id", "subject_ref", "value", "datatype", "unit", "qualifiers", "summary", "artifact_refs"]); }
-function compactSpec(value) { return pick(value, ["spec_id", "target_claim_ref", "dimension", "title", "template_ref", "checks", "success_policy", "spec_digest"]); }
-function compactResult(value) { return pick(value, ["result_id", "spec_ref", "target_claim_ref", "dimension", "verdict", "observation_refs", "check_results", "result_digest"]); }
+function compactSpec(value) { return pick(value, ["proof_id", "target_claim_ref", "dimension", "title", "template_ref", "checks", "success_policy", "proof_digest"]); }
+function compactResult(value) { return pick(value, ["result_id", "proof_ref", "target_claim_ref", "dimension", "verdict", "observation_refs", "check_results", "result_digest"]); }
 function compactFinding(value) { return pick(value, ["finding_id", "finding_type", "severity", "status", "statement", "claim_refs", "node_refs", "basis_observation_refs", "resolution"]); }
-function compactAcceptance(value) { return pick(value, ["acceptance_id", "claim_ref", "profile_ref", "validation_spec_refs", "validation_result_refs", "finding_refs", "summary", "accepted_at", "current", "stale_reasons"]); }
+function compactAcceptance(value) { return pick(value, ["acceptance_id", "claim_ref", "profile_ref", "proof_spec_refs", "validation_result_refs", "finding_refs", "summary", "accepted_at", "current", "stale_reasons"]); }
 
 function dependencyRefsForSnapshot(value) {
   return {
@@ -246,7 +264,7 @@ function dependencyRefsForSnapshot(value) {
     relation_refs: ids(value.claim_relations, "relation_id"),
     node_refs: ids(value.research_nodes, "node_id"),
     observation_refs: ids(value.observations, "observation_id"),
-    validation_spec_refs: ids(value.validation_specs, "spec_id"),
+    proof_spec_refs: ids(value.proof_specs, "proof_id"),
     validation_result_refs: ids(value.validation_results, "result_id"),
     finding_refs: ids(value.findings, "finding_id"),
     acceptance_refs: ids(value.acceptances, "acceptance_id"),
@@ -255,7 +273,7 @@ function dependencyRefsForSnapshot(value) {
 
 function normalizeDependencyRefs(value) {
   if (!isPlainObject(value)) throw new Error("Review dependency_refs must be an object");
-  const keys = ["phase_refs", "claim_refs", "relation_refs", "node_refs", "observation_refs", "validation_spec_refs", "validation_result_refs", "finding_refs", "acceptance_refs"];
+  const keys = ["phase_refs", "claim_refs", "relation_refs", "node_refs", "observation_refs", "proof_spec_refs", "validation_result_refs", "finding_refs", "acceptance_refs"];
   rejectUnknownKeys(value, keys, "Review dependency_refs");
   return Object.fromEntries(keys.map((key) => [key, canonicalStringSet((value[key] || []).map((item) => requireString(item, key, 128)))]));
 }
@@ -280,7 +298,7 @@ function requireWorkspaceRoot(value) {
   if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error("workspace root must be absolute");
   const root = fs.realpathSync(value);
   const workspace = JSON.parse(fs.readFileSync(path.resolve(root, "workspace.json"), "utf8"));
-  if (workspace.schema_version !== "ts-workspace/5") throw new Error("Review requires a supported workspace");
+  if (workspace.schema_version !== "ts-workspace/6") throw new Error("Review requires a supported workspace");
   return root;
 }
 

@@ -1,0 +1,427 @@
+# ADR 0002: Repository And Component Boundaries
+
+- Status: proposed
+- Date: 2026-09-10
+- Scope: TSPi, `ts-phone`, and the future `ts-web` component
+- Related: [Architecture](../ARCHITECTURE.md), [Maintainer Guide](../MAINTAINER_GUIDE.md), [Hypothesis-Proof Loop Plan](../PLAN_HYPOTHESIS_PROOF_LOOP.md)
+
+## Context
+
+TSPi is currently both a product name and a repository/package boundary. The
+repository contains the Root Skill, Pi extensions, the Python research kernel,
+deterministic compute and report services, the Web implementation, Phone
+integration, release tooling, and user entrypoints. This is workable for one
+release line, but it makes ownership and change cost difficult to see.
+
+The current problems are:
+
+1. Source libraries, user entrypoints, build tools, release artifacts, and
+   runtime registration are spread across `python/`, `src/`, `extensions/`,
+   `scripts/`, `build/`, and `dist/`.
+2. `ts-phone` is already an independent repository, but the relationship
+   between the TSPi product, the required core, and optional clients is not
+   expressed as a simple installation contract.
+3. `ts-web` is currently embedded under `python/ts_agent/web/` and imports
+   private TSPi workspace and operational modules directly. It is therefore
+   not independently releasable.
+4. The Phone bridge protocol is represented in more than one source tree.
+5. `cluster_mcp` is an obsolete working-tree residue rather than a current
+   component.
+6. Public Skill terminology and internal implementation terminology are not
+   governed by one vocabulary policy.
+7. The Review runtime has good isolation, but `ts-reviewers` is not yet a
+   role-based reviewer system. The source test entrypoint also performs a
+   relatively expensive wheel and runtime preparation for ordinary Python
+   feedback.
+
+These are architecture and change-control problems. They should not be solved
+by a broad directory move or a global terminology replacement before the
+contracts are explicit.
+
+## Confirmed Current State
+
+| Area | Current fact | Consequence |
+| --- | --- | --- |
+| TSPi | Owns the kernel, Pi package, Web implementation, release assembly, and installation boundary | It is the natural required core repository and product release owner |
+| `ts-phone` | Independent repository with API, events, bridge schemas, broker, mobile client, and component release tooling | It can remain independently developed and become an optional installed component |
+| `ts-web` | Python server and static UI under `python/ts_agent/web/`; projection code imports `ts_agent.workspace` and operational modules | Extraction requires a versioned projection boundary first |
+| Phone protocol | `ts-phone` publishes `ts-phone-api/4`, `ts-phone-events/3`, and `ts-phone-bridge/3`; TSPi also contains a hand-written Bridge type/parser | The wire contract currently has duplicate ownership |
+| Release boundary | TSPi already validates `tspi-package-release/2` and a Phone component manifest | The existing release model can be extended before inventing another installer |
+| `cluster_mcp` | No tracked files and no effective source reference were found; only ignored cache residue exists locally | Deletion is cleanup, not an architectural dependency, but remains a destructive action |
+| Review | One isolated advisory Review runtime exists; no reviewer pool, role selection, aggregation, or conflict protocol exists | Improve the contract before adding more reviewer prompts or agents |
+| Testing | `scripts/test_source.py` builds a wheel and temporary overlay before running Python tests | Fast edit feedback and release-backed validation need separate commands |
+
+## Decision
+
+### 1. Product and repository identity
+
+**TSPi** remains the product and the name of the required core repository.
+The TSPi repository owns:
+
+- the Root Agent integration and public Root Skill;
+- the deterministic Research Kernel and canonical workspace contract;
+- deterministic compute, artifact, report, remote, and notification mechanisms;
+- the TSPi projection provider for canonical workspace data;
+- core Pi extensions and lifecycle entrypoints;
+- component compatibility checks, suite assembly, and installation.
+
+`ts-phone` remains a separate repository and an optional TSPi component. It
+owns the Phone broker, mobile applications, Phone-specific persistence,
+deployment, signing, release artifacts, and Phone wire schemas.
+
+`ts-web` is the target name for a separate optional component. Its future
+repository owns the browser UI and a thin projection client. It must not import
+private TSPi Python modules. Until the projection contract is stable, the
+current Web source stays in TSPi as a staged implementation.
+
+This distinction is deliberate:
+
+```text
+TSPi product
+|
++-- TSPi Core repository             required
+|     kernel, Root runtime, provider, suite installer
+|
++-- ts-phone repository              optional component
+|     broker, mobile client, Phone protocols
+|
+`-- ts-web repository                optional component (target)
+      projection client and browser UI
+```
+
+The product may ship one assembled release containing selected components.
+Source repositories and runtime components do not need to have the same
+boundary.
+
+### 2. Component contracts
+
+Every optional component is selected by an explicit component descriptor in
+the TSPi suite manifest. The descriptor must bind, directly or through a
+validated nested manifest:
+
+```text
+component_id
+component_version
+required_tspi_version_range
+protocols
+theme_or_brand_revision
+capabilities
+entrypoints
+artifacts: path, size, digest, permissions
+```
+
+The existing `tspi-package-release/2` and component manifest contracts are the
+starting point. Do not introduce a second installer authority unless an audit
+shows that the existing manifest cannot represent optional components.
+
+Compatibility rules:
+
+- component semantic version, TSPi package version, and wire protocol version
+  are separate values;
+- a protocol major mismatch fails closed during assembly and installation;
+- compatible minor and patch changes must be defined by the protocol contract,
+  not guessed from package versions;
+- capabilities are descriptive and cannot grant scientific mutation authority;
+- an omitted Phone or Web descriptor means the component is unavailable, not
+  silently embedded from a source path;
+- installation selects content only. Component service activation remains an
+  explicit lifecycle operation.
+
+The visual relationship between components is also versioned, but separately
+from transport. TSPi owns the semantic brand/theme token contract and asset
+identity. `ts-phone` and `ts-web` consume the selected theme revision or
+declare a compatible fallback. A UI theme must never be encoded into a
+scientific or control protocol.
+
+### 3. Protocol ownership
+
+The Phone repository is the canonical source for:
+
+- `ts-phone-api`;
+- `ts-phone-events`;
+- `ts-phone-bridge`;
+- their JSON Schemas, OpenAPI document, version set, and generated client
+  bindings where applicable.
+
+TSPi owns the adapter policy that maps a valid Phone command to TSPi authority,
+session, and workspace behavior. TSPi may retain a generated or vendored
+consumer artifact for local typechecking, but it must not hand-maintain a
+second semantic definition of the same record.
+
+TSPi owns the semantic source for the read-only workspace projection consumed
+by Web. The projection is a public, versioned, JSON boundary. The current
+`ts-web-workspace/6` contract can be retained as the compatibility baseline;
+its name or major version should change only through an intentional protocol
+decision.
+
+The minimum Web boundary is:
+
+```text
+TSPi projection provider
+    -> versioned snapshot/request contract
+    -> ts-web projection client and UI
+```
+
+The contract must include protocol version, workspace identity, scientific and
+operational revision identities, bounded view data, graph data, and explicit
+error/stale semantics. It must not expose physical paths or provide mutation
+routes merely because the current server has local filesystem access.
+
+Compatibility tests should run against a checked-in fixture or a released
+component manifest. They must not require the two repositories to share source
+imports.
+
+### 4. Repository topology
+
+The target topology is based on responsibility, not on flattening all
+languages into one directory:
+
+```text
+TSPi/
+  contracts/          versioned public schemas and compatibility fixtures
+  packages/           reusable kernel/runtime libraries
+  apps/               user-facing launchers and host entrypoints
+  extensions/         Pi extension implementations
+  skills/             public model-facing instructions
+  tools/              build, test, release, and transition mechanisms
+  docs/               architecture, operations, ADRs, and maintainer material
+  dist/               generated release output, ignored by source control
+```
+
+The exact package names can follow the existing Python and TypeScript build
+systems. The important rules are:
+
+- library code is not hidden in a user-facing script;
+- a user entrypoint is a thin wrapper around a library or runtime;
+- build and release mechanisms live under `tools/` or an explicitly named
+  release package;
+- generated `build/`, `dist/`, caches, runtime state, and package metadata do
+  not look like source directories;
+- public contracts live in one discoverable place and are consumed by
+  validators, installers, and tests;
+- `scripts/` is retained only for stable compatibility wrappers or is split
+  into clearly named `apps/`, `tools/build/`, `tools/test/`, and
+  `tools/release/` responsibilities.
+
+This is a staged target, not an instruction to move the whole repository now.
+The first implementation should classify and document current paths, then
+move one boundary at a time while retaining stable entrypoint shims.
+
+In particular, `python/` and `src/` are not defects merely because they have
+generic names. The defect is ambiguous ownership and duplicated release
+knowledge. A large rename without contract reduction would increase risk
+without improving the architecture.
+
+### 5. Release and package metadata
+
+The release manifest is the source of truth for a release payload. Package
+manager file lists, package checks, and installers must derive from or verify
+against that source rather than maintain unrelated copies of the same list.
+
+The transition should:
+
+1. identify required, optional, generated, and forbidden members in one
+   declarative inventory;
+2. make package assembly produce that inventory;
+3. make package checking validate the inventory;
+4. make installation consume the validated manifest;
+5. keep development-only test and build files outside production archives.
+
+The current `package.json`, `scripts/check_package.py`, and
+`scripts/install_release.py` overlap in release knowledge. They should be
+reduced incrementally, with a contract test that fails when their effective
+payload sets diverge.
+
+### 6. Skill terminology
+
+The Skill vocabulary is governed by a small public glossary. Public prompts
+should use the following concepts:
+
+| Use | Meaning |
+| --- | --- |
+| ResearchPhase | human navigation grouping only |
+| ResearchNode | one bounded research decision episode |
+| Claim | scientific statement, assumptions, and falsifiers |
+| Observation | immutable semantic record with provenance |
+| Finding | anomaly, limitation, conflict, or unresolved question |
+| ProofSpec | frozen declarative validation definition |
+| ValidationResult | deterministic result over selected Observations |
+| Decision | the canonical mutation transaction |
+| Review | bounded advisory assessment |
+| Compute | bounded operational execution |
+
+The following are implementation terms and should not become public scientific
+routing concepts:
+
+- `stage` for a private execution or failure location;
+- `transaction prepare/commit` for Kernel internals;
+- `gate_results` and `required_gates` as retired compatibility fields;
+- `Evidence layer` or `Evidence role` when the actual owner is an Artifact,
+  Observation, Finding, or ValidationResult;
+- a fixed workflow stage table or a central next-action router.
+
+This is not a global search-and-replace task. Each occurrence must be
+classified as public vocabulary, private mechanism, historical compatibility,
+test fixture, or documentation that intentionally describes a retired field.
+Add a terminology contract test for public Skill and README surfaces before
+removing compatibility fixtures.
+
+### 7. Reviewers and subagent evolution
+
+`src/agents/review/` remains the implementation location for the current
+isolated advisory runtime. The next boundary is a contract, not a collection
+of additional prompts.
+
+The future `ts-reviewers` subsystem should have:
+
+- a versioned reviewer role descriptor;
+- explicit specialty, prompt revision, model policy, token/artifact budget,
+  and authority declaration;
+- deterministic task projection per role;
+- bounded parallel execution with durable per-run journals;
+- a deterministic aggregator that preserves each review and reports
+  disagreement rather than hiding it;
+- one explicit Root disposition before canonical scientific mutation;
+- failure classification that distinguishes provider failure, invalid output,
+  unavailable evidence, and reviewer disagreement.
+
+The initial role may remain `general`. Adding role descriptors must not imply
+that independent models or providers are available; model selection is a
+runtime configuration and must be recorded when it differs from the parent
+model.
+
+The following remain prohibited:
+
+- reviewer output directly mutating canonical science;
+- reviewer-selected calculation or branch execution;
+- implicit consensus treated as acceptance;
+- recursive reviewers or unrestricted artifact browsing;
+- a process-global lock used as the only concurrency model once multiple
+  reviewer roles are introduced.
+
+### 8. Test and iteration tiers
+
+The project adopts four feedback tiers:
+
+| Tier | Purpose | Required behavior |
+| --- | --- | --- |
+| Fast | ordinary source edits | runs direct source/unit/contract checks without building a wheel or solving a runtime |
+| Component | shared boundary changes | checks Python/TypeScript contracts, projection fixtures, Phone/Web compatibility, and Pi adapter behavior |
+| Candidate | release-shaped validation | builds the relevant component and runs managed runtime/package tests |
+| Release | delivery validation | assembles the selected suite, verifies digests/permissions, and runs end-to-end smoke checks |
+
+Change selection should be path-aware:
+
+- Web-only changes start with Web projection and UI checks;
+- Skill-only changes start with terminology, README, and Skill contract checks;
+- Review changes start with Review isolation, task/result, journal, and
+  provider-recording checks;
+- package or protocol changes immediately broaden to component checks;
+- release and installer changes require candidate validation before delivery.
+
+The full managed suite remains available. It is not the default command for
+every edit. This preserves release confidence while reducing feedback latency
+for local changes.
+
+## Implementation Sequence
+
+### Phase 0: freeze the boundary
+
+- keep TSPi as the required core repository;
+- keep `ts-phone` independent;
+- record this ADR and link it from maintainer documentation;
+- stop adding new direct Web imports of private TSPi modules;
+- do not delete or move obsolete directories in this phase.
+
+### Phase 1: establish contracts and fast feedback
+
+- inventory public protocols, component manifests, entrypoints, and package
+  members;
+- add a direct fast test entrypoint;
+- add manifest consistency checks;
+- publish the terminology glossary and public-surface lint;
+- add Phone compatibility fixtures generated from the canonical Phone source.
+
+### Phase 2: extract the Web boundary
+
+- isolate the TSPi projection provider behind a versioned request/response
+  contract;
+- make the current Web client consume only that contract;
+- add fixture-backed tests proving the client has no `ts_agent` imports;
+- package the Web UI as an optional component only after this passes.
+
+### Phase 3: make optional installation explicit
+
+- extend the existing suite manifest for optional Web and Phone descriptors;
+- verify protocol, TSPi version, theme revision, capabilities, digests, and
+  entrypoints during assembly and installation;
+- prove that core installation works with neither optional client;
+- prove that selected components can be omitted without stale symlink or
+  service state.
+
+### Phase 4: reduce directory ambiguity
+
+- move only one responsibility at a time from `scripts/` into named tool or
+  app locations;
+- retain stable wrapper commands during the transition;
+- move reusable code before moving its entrypoint;
+- remove duplicated release lists after the manifest check is authoritative;
+- keep generated artifacts out of source packages.
+
+### Phase 5: formalize reviewer roles
+
+- write and validate the role descriptor;
+- implement one role through the existing isolated runtime;
+- add bounded parallel execution and aggregation only after single-role
+  journals and failure semantics are stable;
+- add role disagreement fixtures and explicit Root disposition tests.
+
+### Phase 6: cleanup
+
+After a fresh reference scan and user authorization, remove the untracked
+`cluster_mcp` residue and any other confirmed obsolete generated files. Cleanup
+must be a separate change from protocol and source moves so rollback remains
+simple.
+
+## Non-Goals
+
+- This ADR does not immediately split the Git repositories.
+- It does not prescribe a complete rewrite of the Python kernel or Pi runtime.
+- It does not make Web or Phone a second scientific state owner.
+- It does not replace open scientific vocabulary with closed enums.
+- It does not rename every internal `stage` field or historical fixture.
+- It does not add multiple model providers merely to create the appearance of
+  reviewer independence.
+- It does not delete `cluster_mcp` without explicit authorization.
+
+## Acceptance Criteria
+
+The restructuring is ready for implementation completion only when:
+
+- TSPi core starts and tests without `ts-phone` and `ts-web`;
+- optional components are selected through a validated manifest, not source
+  path discovery;
+- Phone schemas have one canonical source and TSPi has compatibility tests;
+- Web communicates through a versioned read-only projection and has no private
+  `ts_agent` imports;
+- protocol, component, and theme revisions are visible in diagnostics and
+  checked during assembly;
+- release membership is derived from one inventory;
+- public Skill terminology passes a dedicated contract test;
+- a reviewer role can run, fail, disagree, and report without mutating
+  canonical science;
+- fast checks avoid wheel/runtime preparation while candidate and release checks
+  retain the managed runtime boundary;
+- obsolete residue is removed only in a separately authorized cleanup change.
+
+## Consequences
+
+This decision adds explicit component manifests, projection contracts, and
+compatibility tests. It also requires maintainers to distinguish source
+ownership from release assembly and public terminology from private mechanics.
+
+The benefit is that TSPi can remain one coherent product while its Phone and
+Web clients evolve independently. A component can be omitted, upgraded, or
+rejected for incompatibility without changing scientific state ownership. The
+cost is an initial contract and transition phase before directory cleanup
+produces visible results.
