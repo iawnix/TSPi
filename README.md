@@ -148,21 +148,20 @@ the Web component calls it through the versioned provider protocol.
 
 ## Quick Install
 
-Build and install the required Agent with the default Web component from a
-clean TSPi checkout:
+Production installation starts from a fixed GitHub tag or commit and records
+the source provenance before activation:
 
 ```bash
-cd /path/to/TSPi
-python3 scripts/build_package.py \
-  --output-dir dist/package \
-  --json
-python3 scripts/install_package.py \
-  --manifest dist/package/tspi-package-release.json \
+python3 scripts/install_from_github.py \
+  --repo https://github.com/iawnix/TSPi.git \
+  --ref v0.17.0 \
   --install-root /path/to/TSPi-installation \
-  --conda-root /path/to/miniforge3 \
   --with-render \
   --json
 ```
+
+The checkout based `scripts/build_package.py` and `scripts/install_package.py` commands below
+remain available for offline assembly and internal validation.
 
 To add the optional Phone component, first build a validated release from the
 independent `ts-phone` checkout, then pass its manifest to the TSPi assembler:
