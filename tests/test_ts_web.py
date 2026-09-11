@@ -4,42 +4,45 @@ import http.client
 import json
 import re
 import subprocess
+import sys
 import threading
 from importlib.resources import files
 from pathlib import Path
 
 import pytest
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "components" / "ts-web"))
+
 from tests.workspace_helpers import (
     accept_research_claim,
     calculation_prepared_fixture,
     calculation_result_fixture,
 )
-from ts_agent.web import normalize_workspace, register_workspace
-from ts_agent.web import server as ts_web_server
-from ts_agent.web.file_preview import MAX_TEXT_BYTES, preview_capability, read_text_preview
-from ts_agent.web.normalize import (
-    claim_payload,
+from ts_agent.projection.normalize import (
+    normalize_workspace,
+    workspace_snapshot,
     graph_payload_from_view,
-    list_node_files,
+    claim_payload,
     node_payload,
     research_files_payload,
-    workspace_snapshot,
+    list_node_files,
 )
-from ts_agent.web.research_map import project_research_map
-from ts_agent.web.registry import (
+from ts_agent.projection.registry import register_workspace
+from ts_web import server as ts_web_server
+from ts_web.provider import ProviderClient
+from ts_web.registry import (
     list_workspaces,
     reconcile_workspace_registry,
     register_workspaces,
     workspace_discovery_roots,
 )
-from ts_agent.web.server import create_server
+from ts_web.server import create_server
 from tests.kernel_helpers import compile_change
 from ts_agent.workspace.engine import init_workspace
 from tests.kernel_helpers import apply_compiled_change
 
 
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def _write(path: Path, value: dict) -> None:
@@ -457,14 +460,16 @@ def test_workspace_snapshot_normalizes_once(tmp_path: Path, monkeypatch: pytest.
     _make_workspace(workspace)
     row = {"workspace_id": "ws_test", "source_root": str(workspace), "label": "test"}
     calls = 0
-    original = ts_web_server.projection.normalize_workspace
+    from ts_agent.projection import normalize as projection
+
+    original = projection.normalize_workspace
 
     def counted(source_root, *, label=None):
         nonlocal calls
         calls += 1
         return original(source_root, label=label)
 
-    monkeypatch.setattr("ts_agent.projection.normalize.normalize_workspace", counted)
+    monkeypatch.setattr(projection, "normalize_workspace", counted)
     workspace_snapshot(row)
     assert calls == 1
 
@@ -1249,7 +1254,7 @@ def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path
 
 def test_static_asset_resolves_from_current_package() -> None:
     for name in ("index.html", "app.css", "app.js", "i18n.js", "logo.svg", "favicon.svg", "attempt-timeline.js", "claim-map.js", "research-map.js", "research-tree.js"):
-        expected = files("ts_agent.web").joinpath("static", name).read_bytes()
+        expected = files("ts_web").joinpath("static", name).read_bytes()
         assert ts_web_server._static_asset(name).read_bytes() == expected
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import ipaddress
 import sys
 from pathlib import Path
 
@@ -24,7 +25,12 @@ def main(argv: list[str] | None = None) -> int:
 
     serve_cmd = sub.add_parser("serve")
     serve_cmd.add_argument("--state-dir", required=True)
-    serve_cmd.add_argument("--host", default="0.0.0.0")
+    serve_cmd.add_argument("--host", default="127.0.0.1")
+    serve_cmd.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="Allow binding a non-loopback address (authentication remains the operator's responsibility).",
+    )
     serve_cmd.add_argument("--port", type=int, default=8766)
     serve_cmd.add_argument("--source-root", action="append", default=[])
     serve_cmd.add_argument("--label", action="append", default=[])
@@ -54,6 +60,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if len(args.label) > len(args.source_root):
         parser.error("more labels than source roots")
+    if not _is_loopback(args.host) and not args.allow_remote:
+        parser.error("non-loopback --host requires --allow-remote")
     if args.source_root:
         client.register(args.source_root, args.label)
     restart = serve(
@@ -87,3 +95,12 @@ def _provider(value: str | None) -> str:
 
 def _entrypoint() -> Path:
     return Path(os.path.abspath(sys.argv[0]))
+
+
+def _is_loopback(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False

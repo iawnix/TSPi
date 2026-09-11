@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-render = ["xyzrender>=0.2.1"]
+render = ["xyzrender>=0.2.1", "matplotlib>=3.9,<4"]
 test = ["pytest>=8,<10"]
 
 [tool.setuptools]

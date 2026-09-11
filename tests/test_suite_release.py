@@ -18,7 +18,6 @@ import pytest
 
 from scripts._suite import (
     EXPECTED_PHONE_PROTOCOLS,
-    COMPAT_WEB_COMPONENT,
     MAX_ARCHIVE_MEMBER_BYTES,
     MAX_COMPONENT_ARCHIVE_BYTES,
     PHONE_ANDROID_CERTIFICATE_SHA256,
@@ -27,8 +26,6 @@ from scripts._suite import (
     PHONE_MOBILE_ATTESTATION_SCHEMA_VERSION,
     PHONE_REQUIRED_FILES,
     PHONE_SOURCE_SCHEMA_VERSION,
-    SUITE_COMPAT_COMPONENTS_SCHEMA_VERSION,
-    SUITE_COMPAT_SCHEMA_VERSION,
     SuiteReleaseError,
     canonical_object_sha256,
     load_phone_manifest,
@@ -39,7 +36,6 @@ from scripts._suite import (
     validate_suite_manifest,
     write_deterministic_archive,
 )
-from scripts.package_inventory import REQUIRED_COMPAT_RUNTIME_FILES
 import scripts.build_package as build_package_module
 from scripts.build_package import build_package
 import scripts.install_package as install_package_module
@@ -119,75 +115,6 @@ fi
     monkeypatch.setattr(install_package_module, "publish_runtime", publish)
 
 
-def _synthetic_compat_suite(root: Path) -> Path:
-    """Build the historical /3 shape for compatibility and rollback tests."""
-
-    agent_manifest_path, _ = _synthetic_release(
-        root / "agent",
-        marker="historical-suite",
-        extra_files={"scripts/ts_web.py": b"#!/usr/bin/env python3\n"},
-        required_files=REQUIRED_COMPAT_RUNTIME_FILES,
-    )
-    agent_manifest = json.loads(agent_manifest_path.read_text(encoding="utf-8"))
-    agent_archive = agent_manifest_path.parent / agent_manifest["archive"]["filename"]
-    agent = {
-        "release_id": agent_manifest["release_id"],
-        "version": agent_manifest["package"]["version"],
-        "archive": {
-            "path": f"components/agent/{agent_archive.name}",
-            "sha256": agent_manifest["archive"]["sha256"],
-            "size_bytes": agent_manifest["archive"]["size_bytes"],
-        },
-        "python_distribution": agent_manifest["python_distribution"],
-        "source": agent_manifest["source"],
-    }
-    components = {"agent": agent, "web": dict(COMPAT_WEB_COMPONENT)}
-    archive_tmp = root / "package.tgz"
-    archive_tmp.parent.mkdir(parents=True, exist_ok=True)
-    write_deterministic_archive(
-        archive_tmp,
-        "package",
-        [
-            (
-                PurePosixPath("components.json"),
-                json.dumps(
-                    {
-                        "schema_version": SUITE_COMPAT_COMPONENTS_SCHEMA_VERSION,
-                        "components": components,
-                    },
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode()
-                + b"\n",
-                0o644,
-            ),
-            (PurePosixPath(agent["archive"]["path"]), agent_archive.read_bytes(), 0o644),
-        ],
-    )
-    digest = sha256_file(archive_tmp)
-    version = agent["version"]
-    release_id = f"{version}-sha256-{digest[:16]}"
-    archive_name = f"tspi-package-{release_id}.tgz"
-    archive_path = root / archive_name
-    archive_tmp.rename(archive_path)
-    manifest = {
-        "schema_version": SUITE_COMPAT_SCHEMA_VERSION,
-        "release_id": release_id,
-        "package": {"name": "@iawnix/tspi", "version": version},
-        "components": components,
-        "archive": {
-            "filename": archive_name,
-            "sha256": digest,
-            "size_bytes": archive_path.stat().st_size,
-        },
-        "created_at_utc": "2026-09-11T00:00:00+00:00",
-    }
-    validate_suite_manifest(manifest)
-    manifest_path = root / "tspi-package-release.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    return manifest_path
-
-
 def test_suite_build_is_deterministic_and_installs_one_component_set(tmp_path: Path) -> None:
     agent_manifest, _agent_release = _synthetic_release(tmp_path / "agent", marker="suite-agent")
     phone_manifest = _synthetic_phone_release(tmp_path / "phone", marker="suite-phone")
@@ -259,49 +186,6 @@ def test_suite_build_is_deterministic_and_installs_one_component_set(tmp_path: P
     assert state["session_guard_contract"] == "tspi-session-guard/1"
     assert stat.S_IMODE(release_root.stat().st_mode) == 0o500
     assert all(stat.S_IMODE(path.stat().st_mode) & 0o222 == 0 for path in release_root.rglob("*"))
-
-
-def test_compat_suite_reinstalls_and_targets_embedded_web(tmp_path: Path) -> None:
-    manifest = _synthetic_compat_suite(tmp_path / "historical")
-    install_root = tmp_path / "install"
-
-    first = install_package(manifest, None, install_root)
-    repeated = install_package(manifest, None, install_root)
-
-    release_root = Path(first["package_root"])
-    assert first["created"] is True
-    assert repeated["created"] is False
-    assert json.loads((release_root / "components.json").read_text())["schema_version"] == (
-        SUITE_COMPAT_COMPONENTS_SCHEMA_VERSION
-    )
-    assert not (release_root / "web").exists()
-    assert (release_root / "agent" / "scripts" / "ts_web.py").is_file()
-    assert Path(first["launchers"]["TSWeb"]).resolve() == release_root / "agent" / "scripts" / "ts_web.py"
-
-
-def test_compat_suite_restores_selection_after_current_release(tmp_path: Path) -> None:
-    current_agent, _ = _synthetic_release(tmp_path / "current-agent", marker="current-release")
-    current = build_package(
-        phone_manifest_path=None,
-        output_dir=tmp_path / "current-package",
-        agent_manifest_path=current_agent,
-        allow_dirty=True,
-    )
-    install_root = tmp_path / "install"
-    current_install = install_package(Path(current["manifest"]), None, install_root, allow_dirty=True)
-    assert json.loads(Path(current["manifest"]).read_text())["schema_version"] == "tspi-package-release/4"
-    assert Path(current_install["launchers"]["TSWeb"]).resolve() == (
-        Path(current_install["package_root"]) / "web" / "bin" / "ts-web"
-    )
-
-    compat_manifest = _synthetic_compat_suite(tmp_path / "historical")
-    restored = install_package(compat_manifest, None, install_root)
-
-    restored_root = Path(restored["package_root"])
-    assert json.loads(compat_manifest.read_text())["schema_version"] == SUITE_COMPAT_SCHEMA_VERSION
-    assert (install_root / ".pi" / "packages" / "tspi" / "current").resolve() == restored_root
-    assert Path(restored["launchers"]["TSWeb"]).resolve() == restored_root / "agent" / "scripts" / "ts_web.py"
-    assert (Path(current_install["package_root"]) / "web" / "bin" / "ts-web").is_file()
 
 
 @pytest.mark.parametrize("include_web", [False, True])

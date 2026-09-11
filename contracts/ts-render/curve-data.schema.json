@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tspi.iawnix.xyz/schema/curve-data-v1.json",
+  "title": "TSPi curve data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "series"],
+  "properties": {
+    "schema_version": { "const": "ts-curve-data/1" },
+    "title": { "type": "string", "maxLength": 256 },
+    "x_label": { "type": "string", "maxLength": 128 },
+    "y_label": { "type": "string", "maxLength": 128 },
+    "x_unit": { "type": "string", "maxLength": 64 },
+    "y_unit": { "type": "string", "maxLength": 64 },
+    "series": {
+      "type": "array", "minItems": 1, "maxItems": 16,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["x", "y"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 128 },
+          "x": { "type": "array", "minItems": 1, "maxItems": 100000, "items": { "type": "number" } },
+          "y": { "type": "array", "minItems": 1, "maxItems": 100000, "items": { "type": "number" } }
+        }
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # ADR 0002: Repository And Component Boundaries
 
-- Status: accepted, staged implementation (Web boundary extracted)
+- Status: accepted, implemented (Web boundary extracted; Suite `/3` retired)
 - Date: 2026-09-10
 - Scope: TSPi, `ts-phone`, and the optional `ts-web` component
 - Related: [Architecture](../ARCHITECTURE.md), [Maintainer Guide](../MAINTAINER_GUIDE.md), [Hypothesis-Proof Loop Plan](../PLAN_HYPOTHESIS_PROOF_LOOP.md)
@@ -45,7 +45,7 @@ contracts are explicit.
 | `ts-phone` | Independent repository with API, events, bridge schemas, broker, mobile client, and component release tooling | It can remain independently developed and become an optional installed component |
 | `ts-web` | Client, registry, server, and static UI under `components/ts-web/`; it consumes the TSPi provider through `ts-web-provider/1` | The component can be archived and installed independently from Agent |
 | Phone protocol | `ts-phone` publishes `ts-phone-api/4`, `ts-phone-events/3`, and `ts-phone-bridge/3`; TSPi also contains a hand-written Bridge type/parser | The wire contract currently has duplicate ownership |
-| Release boundary | TSPi emits `tspi-package-release/4` with required Agent and optional independent Web or Phone descriptors, while reading `/3` for compatibility | The schema bump separates the new Web archive contract from the historical Agent-embedded layout |
+| Release boundary | TSPi emits `tspi-package-release/4` with required Agent and optional independent Web or Phone descriptors | The schema bump separates the Web archive contract from the Agent payload |
 | `cluster_mcp` | No tracked files, source, or cache residue remains after cleanup | It is not an architectural dependency and must stay absent |
 | Review | One isolated advisory Review runtime exists; no reviewer pool, role selection, aggregation, or conflict protocol exists | Improve the contract before adding more reviewer prompts or agents |
 | Testing | `scripts/test_source.py` builds a wheel and temporary overlay before running Python tests | Fast edit feedback and release-backed validation need separate commands |
@@ -109,13 +109,12 @@ entrypoints
 artifacts: path, size, digest, permissions
 ```
 
-The existing `tspi-package-release/3` and component manifest contracts are the
+The existing `tspi-package-release/3` and component manifest contracts were the
 compatibility starting point. `tspi-package-release/4` and
 `tspi-package-components/4` are the authored output contracts because the Web
-descriptor now names its own archive, version, protocols, and entrypoint. The
-installer reads `/3` without rewriting it, so a previous release can still be
-reinstalled or selected during rollback. Do not introduce a second installer
-authority.
+descriptor now names its own archive, version, protocols, and entrypoint.
+The installer accepts Suite `/4` only. Previous `/3` packages must be rebuilt
+from source before installation; rollback uses retained `/4` releases.
 
 Compatibility rules:
 
@@ -126,8 +125,7 @@ Compatibility rules:
   not guessed from package versions;
 - capabilities are descriptive and cannot grant scientific mutation authority;
 - an omitted Phone or Web descriptor means the component is unavailable, not
-  silently embedded from a source path; the historical `/3` Web descriptor is
-  the sole compatibility exception and must remain Agent-embedded;
+  silently embedded from a source path;
 - installation selects content only. Component service activation remains an
   explicit lifecycle operation.
 
@@ -364,8 +362,7 @@ for local changes.
   entrypoints during assembly and installation;
 - prove that core installation works with neither optional client;
 - prove that selected components can be omitted without stale symlink or
-  service state. `/4` Web installs under `current/web/`, while `/3` retains
-  `agent/scripts/ts_web.py` and its old component manifest.
+  service state. `/4` Web installs under `current/web/`.
 
 ### Phase 4: reduce directory ambiguity
 

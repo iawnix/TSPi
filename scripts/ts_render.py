@@ -14,6 +14,7 @@ from _bootstrap import bootstrap_python_package
 bootstrap_python_package(ROOT)
 
 from ts_agent.render import EnvironmentChecker, MolVisualizer  # noqa: E402
+from ts_agent.render.curves import CURVE_KINDS  # noqa: E402
 from ts_agent.render.config import CAMERA_PATHS, COLOR_SCHEMES, ENGINES, LAYOUTS, STYLES, parse_resolution  # noqa: E402
 
 
@@ -56,6 +57,14 @@ def main() -> int:
     mechanism.add_argument("--no-arrow", action="store_true")
     mechanism.add_argument("--json", action="store_true")
 
+    for curve_kind in CURVE_KINDS:
+        curve = sub.add_parser(curve_kind, help=f"Render a {curve_kind} curve.")
+        curve.add_argument("input")
+        curve.add_argument("-o", "--output", required=True)
+        curve.add_argument("--resolution", default="1024x768")
+        curve.add_argument("--background", default="white")
+        curve.add_argument("--json", action="store_true")
+
     args = parser.parse_args()
     if args.command == "diagnostic":
         payload = EnvironmentChecker(ROOT).run_diagnostic()
@@ -72,10 +81,10 @@ def main() -> int:
         return 2
 
     visualizer = MolVisualizer(
-        engine=args.engine,
-        style=args.style,
-        color_scheme=args.color_scheme,
-        background=args.background,
+        engine=getattr(args, "engine", "xyzrender"),
+        style=getattr(args, "style", "ball_and_stick"),
+        color_scheme=getattr(args, "color_scheme", "cpk"),
+        background=getattr(args, "background", "white"),
         resolution=resolution,
     )
 
@@ -88,6 +97,8 @@ def main() -> int:
     elif args.command == "mechanism":
         labels = args.label or _default_mechanism_labels(len(args.inputs))
         result = visualizer.render_reaction_mechanism(args.inputs, labels, args.output, layout=args.layout, show_arrow=not args.no_arrow)
+    elif args.command in CURVE_KINDS:
+        result = visualizer.render_curve(args.input, args.output, kind=args.command, resolution=resolution)
     else:
         raise AssertionError(args.command)
 
@@ -111,7 +122,7 @@ def _add_common_render_args(parser: argparse.ArgumentParser, default_resolution:
 def _print_diagnostic(payload: dict) -> None:
     print(f"python: {payload['python']['executable']}")
     print(f"runtime_env: {payload['runtime'].get('env_prefix') or 'not configured'}")
-    for key in ["xyzrender"]:
+    for key in ["xyzrender", "matplotlib"]:
         item = payload[key]
         status = "ok" if item.get("available") else "missing"
         print(f"{key}: {status} {item.get('path') or ''}".rstrip())

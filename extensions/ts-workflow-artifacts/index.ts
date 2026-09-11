@@ -38,7 +38,7 @@ type ResolvedArtifact = {
 };
 
 type RenderRequest = {
-  operation: "render" | "compare" | "animate" | "mechanism";
+  operation: "render" | "compare" | "animate" | "mechanism" | "curve" | "energy" | "scan" | "convergence";
   nodeId: string;
   artifacts: Array<{ artifactId: string; ref: string; path: string; sha256: string }>;
   outputName: string;
@@ -302,8 +302,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.render,
     label: "TS Render",
-    description: "Render registered molecular artifacts.",
-    promptSnippet: "Render a workspace visualization",
+    description: "Render registered molecular, reaction-path, or scientific-curve artifacts.",
+    promptSnippet: "Render a workspace visualization or curve",
     promptGuidelines: [
       "Use art_* IDs and a Node-owned output name; images are presentation artifacts, not Observations.",
     ],

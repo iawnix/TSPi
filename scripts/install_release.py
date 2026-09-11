@@ -301,8 +301,6 @@ def extract_archive(
 def validate_extracted_package(
     root: Path,
     manifest: dict[str, Any],
-    *,
-    allow_legacy_web: bool = False,
 ) -> None:
     package_path = root / "package.json"
     package = json.loads(package_path.read_text(encoding="utf-8"))
@@ -314,7 +312,7 @@ def validate_extracted_package(
         raise ReleaseInstallError("extracted TSPi launcher is not executable")
     expected_distribution = manifest["python_distribution"]
     wheel = root.joinpath(*PurePosixPath(expected_distribution["path"]).parts)
-    actual_distribution = inspect_wheel(wheel, allow_legacy_web=allow_legacy_web)
+    actual_distribution = inspect_wheel(wheel)
     validate_descriptor_match(expected_distribution, actual_distribution)
 
 

@@ -6,14 +6,42 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from ts_agent.render import MolVisualizer
 from ts_agent.render.config import ENGINES
+from ts_agent.render.curves import render_curve
 
 
 def test_ts_render_exposes_only_xyzrender_engine() -> None:
     assert ENGINES == ("xyzrender",)
+
+
+def test_curve_render_validates_schema_and_writes_png(tmp_path: Path) -> None:
+    pytest.importorskip("matplotlib")
+    source = tmp_path / "energy.json"
+    source.write_text(json.dumps({
+        "schema_version": "ts-curve-data/1",
+        "title": "Energy",
+        "series": [{"name": "path", "x": [0, 1, 2], "y": [0, 4, 1]}],
+    }), encoding="utf-8")
+    output = tmp_path / "energy.png"
+    result = render_curve(source, output, kind="energy", resolution=(320, 240))
+    assert result.ok is True
+    with Image.open(output) as image:
+        assert image.size == (320, 240)
+
+
+def test_curve_render_rejects_mismatched_series(tmp_path: Path) -> None:
+    source = tmp_path / "invalid.json"
+    source.write_text(json.dumps({
+        "schema_version": "ts-curve-data/1",
+        "series": [{"x": [0, 1], "y": [0]}],
+    }), encoding="utf-8")
+    result = render_curve(source, tmp_path / "out.png")
+    assert result.ok is False
+    assert result.failure_stage == "request"
 
 ROOT = Path(__file__).resolve().parents[1]
 

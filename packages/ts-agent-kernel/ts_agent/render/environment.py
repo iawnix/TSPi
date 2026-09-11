@@ -56,6 +56,13 @@ class EnvironmentChecker:
             "stderr": completed.stderr[:500],
         }
 
+    def check_matplotlib(self) -> dict[str, Any]:
+        try:
+            import matplotlib
+            return {"available": True, "version": getattr(matplotlib, "__version__", None)}
+        except Exception as error:  # pragma: no cover - depends on optional environment
+            return {"available": False, "version": None, "error": str(error)[:500]}
+
     def run_diagnostic(self) -> dict[str, Any]:
         manifest = load_manifest(self.package_root)
         return {
@@ -69,6 +76,7 @@ class EnvironmentChecker:
                 "python_executable": manifest.get("python_executable") if manifest else None,
             },
             "xyzrender": self.check_command("xyzrender"),
+            "matplotlib": self.check_matplotlib(),
         }
 
     def list_available_engines(self) -> list[str]:

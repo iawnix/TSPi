@@ -126,9 +126,6 @@ builder independently repeats the Phone checks, builds the Agent component and w
 from one private Git-visible source capture,
 and writes `tspi-package-release/4`. Phone is absent from the package when
 `--phone-manifest` is omitted, and Web is absent when `--without-web` is used.
-The installer also reads `tspi-package-release/3` packages for rollback and
-reinstallation; their Web descriptor is the historical Agent-embedded form,
-and `TSWeb` points to `agent/scripts/ts_web.py` for that release only.
 Each build fails on a dirty source unless
 `--allow-dirty` is supplied. That option is only for local validation and must
 not be used for a distributed release.
@@ -153,6 +150,19 @@ the selected Web and Phone descriptors, nested archive paths, sizes and
 SHA-256 values, Agent wheel, protocol sets, Phone server entry, signed APK,
 embedded source snapshot, mobile build attestation, component source
 identities, and the outer archive identity.
+
+For production, use the source-first installer so the checkout, commit, and
+tree digest are recorded before activation:
+
+```bash
+python3 scripts/install_from_github.py \
+  --repo https://github.com/iawnix/TSPi.git --ref v0.17.0 \
+  --install-root /srv/tspi --with-web --with-render
+```
+
+`--ref` accepts a tag or full commit SHA. TS Phone is supplied independently
+with `--phone-repo` and `--phone-ref`; a local `../ts-phone` checkout is never
+used implicitly.
 `build_release.py` and `install_release.py` remain
 internal Agent-component tools; they do not produce or install a complete TSPi
 deployment.
@@ -589,9 +599,8 @@ overlays are retained for inspection, but retention alone is not a substitute
 for preserving the validated manifest and archive. Do not edit an installed
 release or manually replace files under `current`.
 
-Both `/4` packages and historical `/3` packages are valid rollback inputs. A
-`/3` package is not converted in place: its Agent-embedded Web entrypoint and
-component manifest remain unchanged while that release is selected.
+Rollback accepts retained `/4` packages only. Historical `/3` packages must be
+rebuilt from their pinned source revision before they can be installed.
 
 Rollback changes package/runtime code only. It does not rewrite a workspace or
 reverse already committed scientific Decisions. The selected release must

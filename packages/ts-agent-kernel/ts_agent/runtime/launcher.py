@@ -39,7 +39,7 @@ from .session_guard import (
 
 PACKAGE_NAME = "@iawnix/ts-agent"
 SUITE_PACKAGE_NAME = "@iawnix/tspi"
-SUITE_SCHEMA_VERSIONS = ("tspi-package-release/3", "tspi-package-release/4")
+SUITE_SCHEMA_VERSIONS = ("tspi-package-release/4",)
 WORKSPACE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 SESSION_ID = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,158}[A-Za-z0-9])?$")
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")

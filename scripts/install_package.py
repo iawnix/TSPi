@@ -17,9 +17,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
 try:
-    from .package_inventory import REQUIRED_COMPAT_RUNTIME_FILES
     from ._suite import (
-        SUITE_COMPAT_SCHEMA_VERSION,
         SUITE_INSTALL_SCHEMA_VERSION,
         WEB_COMPONENT_FILES,
         SuiteReleaseError,
@@ -71,9 +69,7 @@ try:
         publish_runtime,
     )
 except ImportError:
-    from package_inventory import REQUIRED_COMPAT_RUNTIME_FILES
     from _suite import (
-        SUITE_COMPAT_SCHEMA_VERSION,
         SUITE_INSTALL_SCHEMA_VERSION,
         WEB_COMPONENT_FILES,
         SuiteReleaseError,
@@ -271,7 +267,7 @@ def _install_captured_package(
         "components.json",
         manifest["components"]["agent"]["archive"]["path"],
     }
-    if "web" in manifest["components"] and manifest["schema_version"] != SUITE_COMPAT_SCHEMA_VERSION:
+    if "web" in manifest["components"]:
         expected_suite_files.add(manifest["components"]["web"]["archive"]["path"])
     if "phone" in manifest["components"]:
         expected_suite_files.add(manifest["components"]["phone"]["archive"]["path"])
@@ -410,7 +406,6 @@ def _activate_release(
             install_root,
             package_home,
             components,
-            schema_version=schema_version,
         )
         published = publisher(prepared_runtime)
         if published != prepared_runtime.manifest_path:
@@ -495,24 +490,15 @@ def validate_extracted_suite(root: Path, manifest: dict[str, Any]) -> None:
     agent_archive, agent_members = inspect_embedded_agent(
         root,
         agent_descriptor,
-        schema_version=manifest["schema_version"],
     )
     agent_root = root / "agent"
     agent_root.mkdir(mode=0o700)
     extract_archive(agent_archive, agent_members, agent_root)
     agent_manifest = agent_release_manifest(agent_descriptor, manifest["created_at_utc"])
-    validate_agent_runtime(
-        agent_root,
-        agent_manifest,
-        allow_legacy_web=manifest["schema_version"] == SUITE_COMPAT_SCHEMA_VERSION,
-    )
+    validate_agent_runtime(agent_root, agent_manifest)
     atomic_write_json(agent_root / RELEASE_MANIFEST, agent_manifest)
-    validate_agent_release_contract(
-        agent_root,
-        agent_manifest,
-        allow_legacy_web=manifest["schema_version"] == SUITE_COMPAT_SCHEMA_VERSION,
-    )
-    if "web" in components and manifest["schema_version"] != SUITE_COMPAT_SCHEMA_VERSION:
+    validate_agent_release_contract(agent_root, agent_manifest)
+    if "web" in components:
         web_descriptor = components["web"]
         web_archive, web_members = inspect_embedded_web(root, web_descriptor)
         web_root = root / "web"
@@ -524,9 +510,6 @@ def validate_extracted_suite(root: Path, manifest: dict[str, Any]) -> None:
             "entrypoint": web_descriptor["entrypoint"],
             "protocols": web_descriptor["protocols"],
         })
-    elif "web" in components:
-        validate_legacy_web_runtime(agent_root)
-
     if "phone" in components:
         phone_descriptor = components["phone"]
         phone_archive, phone_members = inspect_embedded_phone(root, phone_descriptor)
@@ -558,24 +541,13 @@ def validate_installed_suite(root: Path, manifest: dict[str, Any]) -> None:
     inspect_embedded_agent(
         root,
         manifest["components"]["agent"],
-        schema_version=manifest["schema_version"],
     )
     agent_manifest = agent_release_manifest(manifest["components"]["agent"], manifest["created_at_utc"])
-    validate_agent_runtime(
-        root / "agent",
-        agent_manifest,
-        allow_legacy_web=manifest["schema_version"] == SUITE_COMPAT_SCHEMA_VERSION,
-    )
-    validate_agent_release_contract(
-        root / "agent",
-        agent_manifest,
-        allow_legacy_web=manifest["schema_version"] == SUITE_COMPAT_SCHEMA_VERSION,
-    )
-    if "web" in manifest["components"] and manifest["schema_version"] != SUITE_COMPAT_SCHEMA_VERSION:
+    validate_agent_runtime(root / "agent", agent_manifest)
+    validate_agent_release_contract(root / "agent", agent_manifest)
+    if "web" in manifest["components"]:
         inspect_embedded_web(root, manifest["components"]["web"])
         validate_web_runtime(root / "web", manifest["components"]["web"])
-    elif "web" in manifest["components"]:
-        validate_legacy_web_runtime(root / "agent")
     if "phone" in manifest["components"]:
         phone_archive, phone_members = inspect_embedded_phone(root, manifest["components"]["phone"])
         validate_phone_runtime(root / "phone", manifest["components"]["phone"])
@@ -585,8 +557,6 @@ def validate_installed_suite(root: Path, manifest: dict[str, Any]) -> None:
 def inspect_embedded_agent(
     root: Path,
     descriptor: dict[str, Any],
-    *,
-    schema_version: str,
 ) -> tuple[Path, list[tuple[tarfile.TarInfo, PurePosixPath]]]:
     archive = verify_archive_descriptor(
         root.joinpath(*PurePosixPath(descriptor["archive"]["path"]).parts),
@@ -597,11 +567,9 @@ def inspect_embedded_agent(
         members, files = inspect_archive(archive)
     except ReleaseInstallError as error:
         raise SuiteReleaseError(f"embedded Agent archive is invalid: {error}") from error
-    required_files = (
-        REQUIRED_COMPAT_RUNTIME_FILES
-        if schema_version == SUITE_COMPAT_SCHEMA_VERSION
-        else REQUIRED_RUNTIME_FILES
-    )
+    if schema_version != "tspi-package-release/4":
+        raise SuiteReleaseError("only tspi-package-release/4 is supported")
+    required_files = REQUIRED_RUNTIME_FILES
     missing = sorted(required_files - files)
     if missing:
         raise SuiteReleaseError(f"Agent archive is missing runtime files: {', '.join(missing)}")
@@ -656,21 +624,12 @@ def validate_web_runtime(root: Path, descriptor: dict[str, Any]) -> None:
         raise SuiteReleaseError("installed TS Web entrypoint is not executable")
 
 
-def validate_legacy_web_runtime(root: Path) -> None:
-    entrypoint = root / "scripts" / "ts_web.py"
-    require_regular_file(entrypoint)
-    if not os.access(entrypoint, os.X_OK):
-        raise SuiteReleaseError("installed historical TS Web entrypoint is not executable")
-
-
 def validate_agent_runtime(
     root: Path,
     manifest: dict[str, Any],
-    *,
-    allow_legacy_web: bool = False,
 ) -> None:
     try:
-        validate_extracted_package(root, manifest, allow_legacy_web=allow_legacy_web)
+        validate_extracted_package(root, manifest)
     except (ReleaseInstallError, WheelContractError) as error:
         raise SuiteReleaseError(f"installed Agent component is invalid: {error}") from error
 
@@ -695,14 +654,12 @@ def agent_release_manifest(descriptor: dict[str, Any], created_at_utc: str) -> d
 def validate_agent_release_contract(
     root: Path,
     expected: dict[str, Any],
-    *,
-    allow_legacy_web: bool = False,
 ) -> None:
     try:
         installed = load_agent_manifest(root / RELEASE_MANIFEST)
         if release_identity(installed) != release_identity(expected):
             raise SuiteReleaseError("installed Agent release manifest does not match the suite component")
-        bundled = release_wheel(root, allow_legacy_web=allow_legacy_web)
+        bundled = release_wheel(root)
     except (ReleaseInstallError, WheelContractError) as error:
         raise SuiteReleaseError(f"installed Agent wheel contract is invalid: {error}") from error
     if bundled is None:
@@ -713,12 +670,8 @@ def install_launchers(
     install_root: Path,
     package_home: Path,
     components: dict[str, Any],
-    *,
-    schema_version: str = "",
 ) -> dict[str, str]:
     paths = dict(LAUNCHER_PATHS)
-    if schema_version == SUITE_COMPAT_SCHEMA_VERSION:
-        paths["TSWeb"] = ("agent", "scripts", "ts_web.py")
     targets = {
         name: package_home / "current" / Path(*relative)
         for name, relative in paths.items()

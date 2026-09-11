@@ -102,9 +102,9 @@ def test_default_env_store_is_package_relative_without_override(tmp_path: Path, 
 
 def test_installed_current_entrypoint_seeds_installation_owned_runtime_paths(tmp_path: Path) -> None:
     installation = tmp_path / "tspi"
-    package_home = installation / ".pi" / "packages" / "ts-agent"
+    package_home = installation / ".pi" / "packages" / "tspi"
     release = package_home / "releases" / "release-a"
-    script = release / "scripts" / "ts_web.py"
+    script = release / "web" / "bin" / "ts-web"
     script.parent.mkdir(parents=True)
     script.write_text("# probe\n", encoding="utf-8")
     current = package_home / "current"
@@ -112,7 +112,7 @@ def test_installed_current_entrypoint_seeds_installation_owned_runtime_paths(tmp
     environment: dict[str, str] = {}
 
     resolved = seed_installation_runtime_from_entrypoint(
-        current / "scripts" / "ts_web.py",
+        current / "web" / "bin" / "ts-web",
         environ=environment,
     )
 
@@ -183,19 +183,19 @@ def test_unified_suite_entrypoint_rejects_target_outside_managed_releases(
     assert environment == {}
 
 
-def test_legacy_suite_web_launcher_seeds_installation_owned_runtime_paths(
+def test_suite_web_launcher_seeds_installation_owned_runtime_paths(
     tmp_path: Path,
 ) -> None:
     installation = tmp_path / "tspi"
     package_home = installation / ".pi" / "packages" / "tspi"
     release = package_home / "releases" / "release-a"
-    script = release / "agent" / "scripts" / "ts_web.py"
+    script = release / "web" / "bin" / "ts-web"
     script.parent.mkdir(parents=True)
     script.write_text("# historical probe\n", encoding="utf-8")
     current = package_home / "current"
     current.symlink_to("releases/release-a", target_is_directory=True)
     launcher = installation / "TSWeb"
-    launcher.symlink_to(".pi/packages/tspi/current/agent/scripts/ts_web.py")
+    launcher.symlink_to(".pi/packages/tspi/current/web/bin/ts-web")
     environment: dict[str, str] = {}
 
     resolved = seed_installation_runtime_from_entrypoint(
@@ -220,7 +220,12 @@ def test_runtime_path_seed_preserves_explicit_configuration_and_ignores_authored
         "TS_AGENT_RUNTIME_MANIFEST": "/configured/env.json",
         "TS_AGENT_ENV_ROOT": "/configured/envs",
     }
-    stable = tmp_path / ".pi" / "packages" / "ts-agent" / "current" / "scripts" / "ts_web.py"
+    stable = tmp_path / ".pi" / "packages" / "tspi" / "current" / "web" / "bin" / "ts-web"
+    release = tmp_path / ".pi" / "packages" / "tspi" / "releases" / "release-a" / "web" / "bin"
+    release.mkdir(parents=True)
+    (release / "ts-web").write_text("#!/bin/sh\n", encoding="utf-8")
+    current = tmp_path / ".pi" / "packages" / "tspi" / "current"
+    current.symlink_to("releases/release-a", target_is_directory=True)
 
     assert seed_installation_runtime_from_entrypoint(stable, environ=explicit) == tmp_path
     assert explicit == {
@@ -230,7 +235,7 @@ def test_runtime_path_seed_preserves_explicit_configuration_and_ignores_authored
     }
 
     authored_environment: dict[str, str] = {}
-    authored = tmp_path / "checkout" / "scripts" / "ts_web.py"
+    authored = tmp_path / "checkout" / "components" / "ts-web" / "bin" / "ts-web"
     assert seed_installation_runtime_from_entrypoint(
         authored,
         environ=authored_environment,

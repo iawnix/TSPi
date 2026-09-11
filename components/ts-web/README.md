@@ -12,3 +12,6 @@ workspace data only.
 The component is released as a self-contained archive with a manifest. A TSPi
 Package may omit it; when selected, the installer places it under
 `current/web/` and creates the `TSWeb` launcher.
+The server binds to `127.0.0.1` by default. Binding a LAN or public address
+requires the explicit `--allow-remote` flag and operator-managed
+authentication/TLS.

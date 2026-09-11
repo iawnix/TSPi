@@ -7,12 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from ts_agent.web import reloader
-from ts_agent.web.reloader import ReleaseWatcher, exec_selected_release
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "components" / "ts-web"))
+from ts_web import reloader
+from ts_web.reloader import ReleaseWatcher, exec_selected_release
 
 
 def _release(root: Path, name: str) -> Path:
-    script = root / "releases" / name / "scripts" / "ts_web.py"
+    script = root / "releases" / name / "components" / "ts-web" / "bin" / "ts-web"
     script.parent.mkdir(parents=True)
     script.write_text(f"# {name}\n", encoding="utf-8")
     return script
@@ -23,7 +25,7 @@ def test_release_watcher_detects_atomic_stable_entrypoint_switch(tmp_path: Path)
     second = _release(tmp_path, "release-b")
     current = tmp_path / "current"
     current.symlink_to("releases/release-a", target_is_directory=True)
-    stable_entrypoint = current / "scripts" / "ts_web.py"
+    stable_entrypoint = current / "components" / "ts-web" / "bin" / "ts-web"
     changed = threading.Event()
     watcher = ReleaseWatcher(
         stable_entrypoint,
@@ -50,7 +52,7 @@ def test_release_watcher_ignores_transient_missing_target(tmp_path: Path) -> Non
     current.symlink_to("releases/release-a", target_is_directory=True)
     changed = threading.Event()
     watcher = ReleaseWatcher(
-        current / "scripts" / "ts_web.py",
+        current / "components" / "ts-web" / "bin" / "ts-web",
         loaded_entrypoint=first,
         poll_interval=0.01,
     )
@@ -74,7 +76,7 @@ def test_release_watcher_waits_until_selected_runtime_is_ready(tmp_path: Path) -
     changed = threading.Event()
     ready = threading.Event()
     watcher = ReleaseWatcher(
-        current / "scripts" / "ts_web.py",
+        current / "components" / "ts-web" / "bin" / "ts-web",
         loaded_entrypoint=first,
         poll_interval=0.01,
         ready=lambda selected: selected == second.resolve() and ready.is_set(),
@@ -100,7 +102,7 @@ def test_exec_selected_release_preserves_stable_path_and_arguments(
     _release(tmp_path, "release-a")
     current = tmp_path / "current"
     current.symlink_to("releases/release-a", target_is_directory=True)
-    stable_entrypoint = current / "scripts" / "ts_web.py"
+    stable_entrypoint = current / "components" / "ts-web" / "bin" / "ts-web"
     captured = {}
 
     def fake_execv(executable: str, arguments: list[str]) -> None:

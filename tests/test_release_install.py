@@ -15,7 +15,6 @@ from pathlib import Path
 import pytest
 
 from scripts.install_release import REQUIRED_RUNTIME_FILES
-from scripts.package_inventory import REQUIRED_COMPAT_RUNTIME_FILES
 from scripts._wheel import inspect_wheel
 from tests.runtime_helpers import write_test_runtime_manifest
 
@@ -382,7 +381,6 @@ def _synthetic_release(
     wheel = _synthetic_wheel(root, version=version, package_files=python_payload)
     wheel_descriptor = inspect_wheel(
         wheel,
-        allow_legacy_web="scripts/ts_web.py" in required_files,
     )
     distribution = {
         "name": wheel_descriptor["name"],
@@ -401,7 +399,7 @@ def _synthetic_release(
         for name, content in sorted(files.items()):
             info = tarfile.TarInfo(name if name.startswith("package/") else f"package/{name}")
             info.size = len(content)
-            info.mode = 0o755 if name in {"TSPi", "scripts/ts_web.py", "scripts/ts_web_provider.py"} else 0o644
+            info.mode = 0o755 if name in {"TSPi", "scripts/ts_web_provider.py"} else 0o644
             archive.addfile(info, io.BytesIO(content))
     digest = hashlib.sha256(temporary_archive.read_bytes()).hexdigest()
     release_id = f"{version}-sha256-{digest[:16]}"

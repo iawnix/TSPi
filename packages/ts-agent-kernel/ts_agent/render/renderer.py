@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .config import DEFAULT_RESOLUTION
+from .curves import render_curve
 from .environment import EnvironmentChecker
 from .panels import compose_panels
 from .results import RenderResult
@@ -122,6 +123,22 @@ class MolVisualizer:
             show_arrows=show_arrow,
             styles=[],
             resolution=self.resolution,
+        )
+
+    def render_curve(
+        self,
+        data_file: str | Path,
+        output_file: str | Path,
+        *,
+        kind: str = "curve",
+        resolution: tuple[int, int] | None = None,
+    ) -> RenderResult:
+        return render_curve(
+            data_file,
+            output_file,
+            kind=kind,
+            resolution=resolution or self.resolution,
+            background=self.background,
         )
 
     def _render_panel_set(

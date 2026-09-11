@@ -9,6 +9,7 @@ from __future__ import annotations
 
 
 CONTRACT_FILES = [
+    "contracts/ts-render/curve-data.schema.json",
     "contracts/ts-phone/README.md",
     "contracts/ts-phone/bridge.schema.json",
     "contracts/ts-phone/events.schema.json",
@@ -66,6 +67,7 @@ PACKAGE_FILES = [
     "extensions/ts-workflow-ui/*.ts",
     "scripts/install_env.py",
     "scripts/install_package.py",
+    "scripts/install_from_github.py",
     "scripts/install_release.py",
     "scripts/_bootstrap.py",
     "scripts/_runtime_install.py",
@@ -130,6 +132,7 @@ REQUIRED_TARBALL_FILES = frozenset(
         "environment.yml",
         "scripts/install_env.py",
         "scripts/install_package.py",
+        "scripts/install_from_github.py",
         "scripts/install_release.py",
         "scripts/_bootstrap.py",
         "scripts/_runtime_install.py",
@@ -240,6 +243,7 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "environment.yml",
         "scripts/install_env.py",
         "scripts/install_package.py",
+        "scripts/install_from_github.py",
         "scripts/install_release.py",
         "scripts/_bootstrap.py",
         "scripts/_runtime_install.py",
@@ -335,40 +339,4 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "contracts/ts-web/workspace-snapshot.fixture.json",
         "docs/adr/0001-phase-node-research-kernel.md",
     }
-)
-
-
-# The /3 suite embedded Web in the Agent component. Keep its exact runtime
-# boundary available so old suite releases can still be revalidated in place.
-LEGACY_WEB_RUNTIME_FILES = frozenset(
-    {
-        "scripts/ts_web.py",
-        "packages/ts-agent-kernel/ts_agent/web/normalize.py",
-        "packages/ts-agent-kernel/ts_agent/web/research_map.py",
-        "packages/ts-agent-kernel/ts_agent/web/reloader.py",
-        "packages/ts-agent-kernel/ts_agent/web/server.py",
-        "packages/ts-agent-kernel/ts_agent/web/static/index.html",
-        "packages/ts-agent-kernel/ts_agent/web/static/app.css",
-        "packages/ts-agent-kernel/ts_agent/web/static/app.js",
-        "packages/ts-agent-kernel/ts_agent/web/static/i18n.js",
-        "packages/ts-agent-kernel/ts_agent/web/static/logo.svg",
-        "packages/ts-agent-kernel/ts_agent/web/static/favicon.svg",
-        "packages/ts-agent-kernel/ts_agent/web/static/attempt-timeline.js",
-        "packages/ts-agent-kernel/ts_agent/web/static/claim-map.js",
-        "packages/ts-agent-kernel/ts_agent/web/static/research-tree.js",
-        "packages/ts-agent-kernel/ts_agent/web/static/research-map.js",
-    }
-)
-CURRENT_WEB_RUNTIME_FILES = frozenset(
-    {
-        "contracts/ts-web/component-manifest.schema.json",
-        "contracts/ts-web/provider-request.schema.json",
-        "contracts/ts-web/provider-response.schema.json",
-        "packages/ts-agent-kernel/ts_agent/projection/provider.py",
-        "packages/ts-agent-kernel/ts_agent/projection/registry.py",
-        "scripts/ts_web_provider.py",
-    }
-)
-REQUIRED_COMPAT_RUNTIME_FILES = frozenset(
-    (REQUIRED_RUNTIME_FILES - CURRENT_WEB_RUNTIME_FILES) | LEGACY_WEB_RUNTIME_FILES
 )

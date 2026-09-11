@@ -11,7 +11,7 @@ const {
 const { createHash } = require("node:crypto");
 const { isAbsolute, relative, resolve, sep } = require("node:path");
 
-const RENDER_OPERATIONS = Object.freeze(["render", "compare", "animate", "mechanism"]);
+const RENDER_OPERATIONS = Object.freeze(["render", "compare", "animate", "mechanism", "curve", "energy", "scan", "convergence"]);
 const NODE_ID = /^node_[1-9][0-9]*$/;
 const ARTIFACT_ID = /^art_[0-9a-f]{24}$/;
 const OUTPUT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -23,7 +23,7 @@ function validateRenderRequest(rootValue, input, resolvedArtifacts) {
   const operation = requireEnum(input.operation, "render operation", RENDER_OPERATIONS);
   const nodeId = requireAct(root, input.nodeId);
   const inputArtifactIds = uniqueStrings(input.inputArtifactIds, "inputArtifactIds", 8, ARTIFACT_ID);
-  if ((operation === "render" || operation === "animate") && inputArtifactIds.length !== 1) {
+  if ((operation === "render" || operation === "animate" || operation === "curve" || operation === "energy" || operation === "scan" || operation === "convergence") && inputArtifactIds.length !== 1) {
     throw new Error(`${operation} requires exactly one input artifact`);
   }
   if (operation === "compare" && inputArtifactIds.length < 2) {
@@ -48,6 +48,9 @@ function validateRenderRequest(rootValue, input, resolvedArtifacts) {
     if (!existsSync(path) || !statSync(path).isFile()) throw new Error(`render input does not exist: ${artifactId}`);
     return { artifactId, ref, path, sha256: requireDigest(artifact.sha256, "artifact sha256") };
   });
+  if (["curve", "energy", "scan", "convergence"].includes(operation)) {
+    if (!/\.json$/i.test(artifacts[0].ref)) throw new Error(`${operation} input artifact must be a .json file`);
+  }
   const outputName = requireString(input.outputName, "outputName", 128);
   if (!OUTPUT_NAME.test(outputName) || !/\.(?:gif|png)$/i.test(outputName)) {
     throw new Error("outputName must be a safe .png or .gif filename");
