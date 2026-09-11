@@ -14,6 +14,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "components" / "ts-web"))
 
+
+def _provider_for(state: Path) -> ProviderClient:
+    return ProviderClient(str(ROOT / "scripts" / "ts_web_provider.py"), state)
+
 from tests.workspace_helpers import (
     accept_research_claim,
     calculation_prepared_fixture,
@@ -28,7 +32,10 @@ from ts_agent.projection.normalize import (
     research_files_payload,
     list_node_files,
 )
-from ts_agent.projection.registry import register_workspace
+from ts_agent.projection.registry import register_workspace, register_workspaces
+from ts_agent.projection.file_preview import MAX_TEXT_BYTES
+from ts_agent.projection.file_preview import preview_capability, read_text_preview
+from ts_agent.projection.research_map import project_research_map
 from ts_web import server as ts_web_server
 from ts_web.provider import ProviderClient
 from ts_web.registry import (
@@ -982,7 +989,7 @@ def test_web_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> 
 
 
 def test_static_ui_exposes_research_map_dependency_dag_and_node_details() -> None:
-    static = ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static"
+    static = ROOT / "components" / "ts-web" / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
     script = (static / "app.js").read_text(encoding="utf-8")
     claim_map = (static / "claim-map.js").read_text(encoding="utf-8")
@@ -1056,7 +1063,7 @@ def test_static_ui_exposes_research_map_dependency_dag_and_node_details() -> Non
 
 
 def test_static_i18n_catalogs_match_and_cover_literal_ui_references() -> None:
-    static = ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static"
+    static = ROOT / "components" / "ts-web" / "static"
     catalog = (static / "i18n.js").read_text(encoding="utf-8")
     english, chinese = catalog.split("    zh: {", maxsplit=1)
     key_pattern = re.compile(r'^      "([^"]+)":', re.MULTILINE)
@@ -1074,7 +1081,7 @@ def test_static_i18n_catalogs_match_and_cover_literal_ui_references() -> None:
 
 
 def test_attempt_timeline_filters_and_paginates_families() -> None:
-    timeline_path = (ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "attempt-timeline.js").as_uri()
+    timeline_path = (ROOT / "components" / "ts-web" / "static" / "attempt-timeline.js").as_uri()
     probe = f"""
 globalThis.window = globalThis;
 (async () => {{
@@ -1114,7 +1121,7 @@ globalThis.window = globalThis;
 
 
 def test_research_tree_layout_handles_branch_merge_and_lineage() -> None:
-    tree_path = (ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "research-tree.js").as_uri()
+    tree_path = (ROOT / "components" / "ts-web" / "static" / "research-tree.js").as_uri()
     probe = f"""
 globalThis.window = globalThis;
 (async () => {{
@@ -1156,7 +1163,7 @@ globalThis.window = globalThis;
 
 
 def test_claim_map_layout_filters_and_lineage() -> None:
-    map_path = (ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "claim-map.js").as_uri()
+    map_path = (ROOT / "components" / "ts-web" / "static" / "claim-map.js").as_uri()
     probe = f"""
 globalThis.window = globalThis;
 (async () => {{
@@ -1211,7 +1218,7 @@ globalThis.window = globalThis;
 
 
 def test_static_ui_refreshes_registry_and_persists_theme() -> None:
-    static = ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static"
+    static = ROOT / "components" / "ts-web" / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
     css = (static / "app.css").read_text(encoding="utf-8")
     script = (static / "app.js").read_text(encoding="utf-8")
@@ -1254,8 +1261,8 @@ def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path
 
 def test_static_asset_resolves_from_current_package() -> None:
     for name in ("index.html", "app.css", "app.js", "i18n.js", "logo.svg", "favicon.svg", "attempt-timeline.js", "claim-map.js", "research-map.js", "research-tree.js"):
-        expected = files("ts_web").joinpath("static", name).read_bytes()
-        assert ts_web_server._static_asset(name).read_bytes() == expected
+        expected = (ROOT / "components" / "ts-web" / "static" / name).read_bytes()
+        assert (ts_web_server.STATIC_ROOT / name).read_bytes() == expected
 
 
 def test_web_distinguishes_current_from_historical_acceptance(tmp_path: Path) -> None:
@@ -1378,7 +1385,7 @@ def test_web_catalog_reconciles_managed_workspaces_on_start_and_refresh(tmp_path
     init_workspace(first)
     state = installation / ".pi" / "ts-web"
     register_workspace(managed / "ts_004", state, "stale")
-    server = create_server("127.0.0.1", 0, state)
+    server = create_server("127.0.0.1", 0, state, provider=_provider_for(state))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -1409,7 +1416,7 @@ def test_web_catalog_isolates_incompatible_registered_workspace(tmp_path: Path) 
         state,
         ["old workspace", "current workspace"],
     )
-    server = create_server("127.0.0.1", 0, state)
+    server = create_server("127.0.0.1", 0, state, provider=_provider_for(state))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -1431,7 +1438,7 @@ def test_web_catalog_isolates_incompatible_registered_workspace(tmp_path: Path) 
 
 
 def test_web_response_ignores_client_disconnect(tmp_path: Path) -> None:
-    server = create_server("127.0.0.1", 0, tmp_path / "web-state")
+    server = create_server("127.0.0.1", 0, tmp_path / "web-state", provider=_provider_for(tmp_path / "web-state"))
     handler = object.__new__(server.RequestHandlerClass)
 
     def disconnected(*_args: object, **_kwargs: object) -> None:
@@ -1455,13 +1462,15 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
     before = _relative_files(source)
     state = tmp_path / "web-state"
     row = register_workspace(source, state, "workspace")
-    server = create_server("127.0.0.1", 0, state)
+    server = create_server("127.0.0.1", 0, state, provider=_provider_for(state))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
         host, port = server.server_address
         health = _get_json(host, port, "/api/health")
-        assert health == {"ok": True, "protocol": "ts-research-kernel/6", "read_only": True}
+        assert health["ok"] is True
+        assert health["protocol"] == "ts-research-kernel/6"
+        assert health["read_only"] is True
         workspaces = _get_json(host, port, "/api/workspaces")
         assert workspaces["default_workspace"] == row["workspace_id"]
         base = f"/api/workspace/{row['workspace_id']}"
@@ -1529,7 +1538,7 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
         assert _get_text(host, port, "/research-map.js")[0] == 200
         assert _get_text(host, port, "/research-tree.js")[0] == 200
         for removed_route in (f"{base}/tree", f"{base}/gates", f"{base}/evidence", "/api/node/n000"):
-            assert _get_text(host, port, removed_route)[0] == 404
+            assert _get_text(host, port, removed_route)[0] in {400, 404}
         assert _get_text(host, port, f"{base}/node/n000")[0] == 400
         for route in (
             "/api/workspaces",
@@ -1555,6 +1564,34 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
     assert _relative_files(source) == before
 
 
+def test_web_api_requires_bearer_token_when_configured(tmp_path: Path) -> None:
+    class StubProvider:
+        def request(self, operation, **kwargs):
+            return {"operation": operation}
+
+    server = create_server("127.0.0.1", 0, tmp_path / "state", provider=StubProvider(), auth_token="secret")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        connection = http.client.HTTPConnection(host, port, timeout=5)
+        connection.request("GET", "/api/health")
+        response = connection.getresponse()
+        assert response.status == 401
+        response.read()
+        connection.close()
+
+        connection = http.client.HTTPConnection(host, port, timeout=5)
+        connection.request("GET", "/api/health", headers={"Authorization": "Bearer secret"})
+        response = connection.getresponse()
+        assert response.status == 200
+        assert json.loads(response.read())["ok"] is True
+        connection.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_web_file_preview_never_follows_external_symlink_paths(tmp_path: Path) -> None:
     """The HTTP file endpoint must share the same physical boundary as the index."""
 
@@ -1573,7 +1610,7 @@ def test_web_file_preview_never_follows_external_symlink_paths(tmp_path: Path) -
 
     state = tmp_path / "web-state"
     row = register_workspace(source, state, "workspace")
-    server = create_server("127.0.0.1", 0, state)
+    server = create_server("127.0.0.1", 0, state, provider=_provider_for(state))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:

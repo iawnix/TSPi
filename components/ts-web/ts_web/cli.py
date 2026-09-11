@@ -31,6 +31,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Allow binding a non-loopback address (authentication remains the operator's responsibility).",
     )
+    serve_cmd.add_argument("--auth-token", default=os.environ.get("TSPI_WEB_AUTH_TOKEN"))
     serve_cmd.add_argument("--port", type=int, default=8766)
     serve_cmd.add_argument("--source-root", action="append", default=[])
     serve_cmd.add_argument("--label", action="append", default=[])
@@ -62,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("more labels than source roots")
     if not _is_loopback(args.host) and not args.allow_remote:
         parser.error("non-loopback --host requires --allow-remote")
+    if not _is_loopback(args.host) and not args.auth_token:
+        parser.error("non-loopback --host requires --auth-token or TSPI_WEB_AUTH_TOKEN")
     if args.source_root:
         client.register(args.source_root, args.label)
     restart = serve(
@@ -72,6 +75,7 @@ def main(argv: list[str] | None = None) -> int:
         workspace_roots=args.workspace_root,
         release_entrypoint=None if args.no_watch_release else _entrypoint(),
         loaded_entrypoint=_entrypoint(),
+        auth_token=args.auth_token,
     )
     return 75 if restart else 0
 

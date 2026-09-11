@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -38,9 +39,10 @@ def serve(
     release_entrypoint: str | Path | None = None,
     loaded_entrypoint: str | Path | None = None,
     release_poll_interval: float = 1.0,
+    auth_token: str | None = None,
 ) -> bool:
     client = ProviderClient(provider_command, state_dir, workspace_roots=workspace_roots)
-    server = create_server(host, port, state_dir, provider=client)
+    server = create_server(host, port, state_dir, provider=client, auth_token=auth_token)
     watcher = None
     if release_entrypoint is not None:
         watcher = ReleaseWatcher(
@@ -64,19 +66,26 @@ def create_server(
     state_dir: str | Path,
     *,
     provider: ProviderClient,
+    auth_token: str | None = None,
 ) -> ThreadingHTTPServer:
     # The provider owns state directory validation and all workspace locations.
     client = provider
-    return ThreadingHTTPServer((host, port), _make_handler(client))
+    return ThreadingHTTPServer((host, port), _make_handler(client, auth_token=auth_token))
 
 
-def _make_handler(provider: ProviderClient):
+def _make_handler(provider: ProviderClient, *, auth_token: str | None = None):
     class ExplorerHandler(BaseHTTPRequestHandler):
         server_version = "TSWeb/1.0"
 
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             try:
+                if auth_token and parsed.path.startswith("/api/"):
+                    authorization = self.headers.get("Authorization", "")
+                    expected = f"Bearer {auth_token}"
+                    if not secrets.compare_digest(authorization, expected):
+                        self._send_error("authentication required", status=HTTPStatus.UNAUTHORIZED)
+                        return
                 if parsed.path in {"/", "/index.html"}:
                     self._send_static("index.html")
                     return
