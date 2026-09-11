@@ -4,6 +4,7 @@ import json
 import os
 import select
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,8 @@ def test_daily_launcher_does_not_inspect_global_processes(tmp_path: Path, monkey
     installation, executable = _copy_launcher(tmp_path)
     package = executable.resolve().parent
     monkeypatch.setattr(os, "environ", os.environ.copy())
+    monkeypatch.setattr(host, "ensure_runtime_python", lambda *_args, **_kwargs: Path(sys.executable))
+    monkeypatch.setattr(host, "_resolve_pi_binary", lambda: Path(sys.executable))
     monkeypatch.setattr(session_guard, "_PROC_ROOT", tmp_path / "unreadable-proc")
     launched = []
 
@@ -113,6 +116,7 @@ def test_guard_corruption_is_not_reported_as_an_active_writer(
 
     installation, executable = _copy_launcher(tmp_path)
     monkeypatch.setattr(os, "environ", os.environ.copy())
+    monkeypatch.setattr(host, "ensure_runtime_python", lambda *_args, **_kwargs: Path(sys.executable))
     workspace = installation / "workspaces/ts_001"
     workspace.mkdir(parents=True)
     descriptor = acquire_directory_guard(installation, workspace)
