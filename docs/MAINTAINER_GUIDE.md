@@ -484,6 +484,13 @@ The install mode runs `npm ci` and updates the `ts-agent-skill` environment
 from `environment.yml`. It reports the actual Node, TypeScript, Python and
 Conda paths used by the checkout.
 
+For the pinned Linux package set, create an isolated environment from the
+explicit lock file:
+
+```bash
+conda create --name ts-agent-skill-lock --file environment.lock.txt
+```
+
 From the authored checkout:
 
 ```bash

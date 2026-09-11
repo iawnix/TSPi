@@ -154,7 +154,7 @@ TSPi 只校验 Phone 的版本范围、协议版本、归档 digest、入口、A
 ## 第四阶段：开发环境和持续集成
 
 当前仓库在没有预先准备依赖的机器上无法执行 `typecheck` 和 `test:fast`。
-应增加一个明确的开发初始化入口，例如 `scripts/bootstrap_dev.py`，或者提供
+已增加明确的开发初始化入口 `tools/bootstrap_dev.py`，并提供
 等价的 `Makefile`/文档命令，完成：
 
 1. `npm ci`，安装锁定的 TypeScript/Pi 开发依赖。
@@ -163,7 +163,7 @@ TSPi 只校验 Phone 的版本范围、协议版本、归档 digest、入口、A
 4. 输出实际 Python、Node、RDKit、NumPy、Pi 版本。
 5. 运行一个最小 smoke test。
 
-科学依赖应增加 Conda lock 或等价的环境锁定文件。`environment.yml` 可以继续
+科学依赖已增加 Linux Conda explicit lock 文件。`environment.yml` 可以继续
 作为人类可读入口，但不能作为唯一的可复现依据。
 
 建议 CI 分为四个 job：

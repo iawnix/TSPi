@@ -55,6 +55,7 @@
     "contracts/ts-web/workspace-snapshot.fixture.json",
     "contracts/ts-web/workspace-snapshot.schema.json",
     "environment.yml",
+    "environment.lock.txt",
     "extensions/shared/*.ts",
     "extensions/ts-phone-bridge/*.ts",
     "extensions/ts-phone-bridge/*.mjs",
