@@ -20,6 +20,7 @@ try:
     from ._suite import (
         SUITE_COMPONENTS_SCHEMA_VERSION,
         SUITE_INSTALL_SCHEMA_VERSION,
+        WEB_COMPONENT_FILES,
         SuiteReleaseError,
         atomic_write_json,
         canonical_json,
@@ -27,11 +28,14 @@ try:
         extract_rooted_archive,
         inspect_rooted_archive,
         read_json_object,
+        require_regular_file,
         sha256_file,
         validate_components,
         validate_extracted_phone_matches_archive,
         validate_phone_archive_files,
         validate_phone_runtime,
+        validate_web_archive_files,
+        validate_web_component_archive,
         validate_suite_manifest,
         verify_archive_descriptor,
     )
@@ -68,6 +72,7 @@ except ImportError:
     from _suite import (
         SUITE_COMPONENTS_SCHEMA_VERSION,
         SUITE_INSTALL_SCHEMA_VERSION,
+        WEB_COMPONENT_FILES,
         SuiteReleaseError,
         atomic_write_json,
         canonical_json,
@@ -75,11 +80,14 @@ except ImportError:
         extract_rooted_archive,
         inspect_rooted_archive,
         read_json_object,
+        require_regular_file,
         sha256_file,
         validate_components,
         validate_extracted_phone_matches_archive,
         validate_phone_archive_files,
         validate_phone_runtime,
+        validate_web_archive_files,
+        validate_web_component_archive,
         validate_suite_manifest,
         verify_archive_descriptor,
     )
@@ -117,7 +125,7 @@ except ImportError:
 INSTALLED_MANIFEST = ".tspi-package-release.json"
 LAUNCHER_PATHS = {
     "TSPi": ("agent", "TSPi"),
-    "TSWeb": ("agent", "scripts", "ts_web.py"),
+    "TSWeb": ("web", "bin", "ts-web"),
     "TSPhoneCtl": ("agent", "TSPi"),
     "TSPhoneServer": ("agent", "TSPi"),
 }
@@ -204,7 +212,7 @@ def install_package(
             label
             for label, component in (
                 (label, manifest["components"][key])
-                for label, key in (("Agent", "agent"), ("Phone", "phone"))
+                for label, key in (("Agent", "agent"), ("Web", "web"), ("Phone", "phone"))
                 if key in manifest["components"]
             )
             if component["source"]["dirty"]
@@ -259,6 +267,8 @@ def _install_captured_package(
         "components.json",
         manifest["components"]["agent"]["archive"]["path"],
     }
+    if "web" in manifest["components"]:
+        expected_suite_files.add(manifest["components"]["web"]["archive"]["path"])
     if "phone" in manifest["components"]:
         expected_suite_files.add(manifest["components"]["phone"]["archive"]["path"])
     if suite_files != expected_suite_files:
@@ -475,8 +485,18 @@ def validate_extracted_suite(root: Path, manifest: dict[str, Any]) -> None:
     validate_agent_runtime(agent_root, agent_manifest)
     atomic_write_json(agent_root / RELEASE_MANIFEST, agent_manifest)
     validate_agent_release_contract(agent_root, agent_manifest)
-    if "web" in components and not os.access(agent_root / "scripts" / "ts_web.py", os.X_OK):
-        raise SuiteReleaseError("installed TS Web entrypoint is not executable")
+    if "web" in components:
+        web_descriptor = components["web"]
+        web_archive, web_members = inspect_embedded_web(root, web_descriptor)
+        web_root = root / "web"
+        web_root.mkdir(mode=0o700)
+        extract_rooted_archive(web_archive, web_members, web_root)
+        validate_web_runtime(web_root, web_descriptor)
+        validate_web_component_archive(web_archive.read_bytes(), {
+            "component": {"name": "ts-web", "version": web_descriptor["version"]},
+            "entrypoint": web_descriptor["entrypoint"],
+            "protocols": web_descriptor["protocols"],
+        })
 
     if "phone" in components:
         phone_descriptor = components["phone"]
@@ -509,8 +529,9 @@ def validate_installed_suite(root: Path, manifest: dict[str, Any]) -> None:
     agent_manifest = agent_release_manifest(manifest["components"]["agent"], manifest["created_at_utc"])
     validate_agent_runtime(root / "agent", agent_manifest)
     validate_agent_release_contract(root / "agent", agent_manifest)
-    if "web" in manifest["components"] and not os.access(root / "agent" / "scripts" / "ts_web.py", os.X_OK):
-        raise SuiteReleaseError("installed TS Web entrypoint is not executable")
+    if "web" in manifest["components"]:
+        inspect_embedded_web(root, manifest["components"]["web"])
+        validate_web_runtime(root / "web", manifest["components"]["web"])
     if "phone" in manifest["components"]:
         phone_archive, phone_members = inspect_embedded_phone(root, manifest["components"]["phone"])
         validate_phone_runtime(root / "phone", manifest["components"]["phone"])
@@ -552,6 +573,36 @@ def inspect_embedded_phone(
     members, files = inspect_rooted_archive(archive, "component")
     validate_phone_archive_files(files, descriptor)
     return archive, members
+
+
+def inspect_embedded_web(
+    root: Path,
+    descriptor: dict[str, Any],
+) -> tuple[Path, list[tuple[tarfile.TarInfo, PurePosixPath]]]:
+    archive = verify_archive_descriptor(
+        root.joinpath(*PurePosixPath(descriptor["archive"]["path"]).parts),
+        descriptor["archive"],
+        "embedded TS Web archive",
+    )
+    members, files = inspect_rooted_archive(archive, "component")
+    validate_web_archive_files(files)
+    return archive, members
+
+
+def validate_web_runtime(root: Path, descriptor: dict[str, Any]) -> None:
+    for relative in WEB_COMPONENT_FILES:
+        require_regular_file(root / relative)
+    try:
+        package = json.loads((root / "package.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SuiteReleaseError("installed TS Web package metadata is invalid") from error
+    if package.get("name") != "@iawnix/ts-web" or package.get("version") != descriptor["version"]:
+        raise SuiteReleaseError("installed TS Web package identity does not match the suite manifest")
+    if package.get("protocols") != descriptor["protocols"]:
+        raise SuiteReleaseError("installed TS Web protocols do not match the suite manifest")
+    entrypoint = root / descriptor["entrypoint"]["path"]
+    if not os.access(entrypoint, os.X_OK):
+        raise SuiteReleaseError("installed TS Web entrypoint is not executable")
 
 
 def validate_agent_runtime(root: Path, manifest: dict[str, Any]) -> None:

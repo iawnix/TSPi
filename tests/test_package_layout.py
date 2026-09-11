@@ -200,8 +200,7 @@ def test_package_manifest_exposes_the_public_skill_family_and_allowlisted_runtim
     assert manifest["private"] is True
     assert "tests/" not in manifest["files"]
     assert "docs/*.md" in manifest["files"]
-    assert "packages/ts-agent-kernel/ts_agent/web/static/*.css" in manifest["files"]
-    assert "packages/ts-agent-kernel/ts_agent/web/static/*.js" in manifest["files"]
+    assert "packages/ts-agent-kernel/ts_agent/projection/*.py" in manifest["files"]
     assert "python-dist/*.whl" in manifest["files"]
     assert "scripts/_runtime_install.py" in manifest["files"]
     assert "scripts/_wheel.py" in manifest["files"]
@@ -234,7 +233,7 @@ def test_tspi_shell_is_a_thin_executable_shim() -> None:
     source = TSPI_LAUNCHER.read_text(encoding="utf-8")
     assert completed.returncode == 0, completed.stderr
     assert TSPI_LAUNCHER.stat().st_mode & 0o111
-    assert (ROOT / "scripts" / "ts_web.py").stat().st_mode & 0o111
+    assert (ROOT / "scripts" / "ts_web_provider.py").stat().st_mode & 0o111
     assert len(source.splitlines()) <= 20
     assert "scripts/tspi_host.py" in source
     assert "TS_AGENT_INSTALL_ROOT" in source

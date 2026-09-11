@@ -21,6 +21,7 @@ try:
         atomic_write_json,
         load_agent_manifest,
         load_phone_manifest,
+        load_web_manifest,
         sha256_file,
         suite_components,
         validate_suite_manifest,
@@ -36,6 +37,7 @@ except ImportError:
         atomic_write_json,
         load_agent_manifest,
         load_phone_manifest,
+        load_web_manifest,
         sha256_file,
         suite_components,
         validate_suite_manifest,
@@ -46,12 +48,14 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_AGENT = ROOT / "scripts" / "build_release.py"
+BUILD_WEB = ROOT / "scripts" / "build_web.py"
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build a TSPi Core Package with optional Web and Phone components.")
     parser.add_argument("--phone-manifest", help="Validated ts-phone-component-release.json.")
-    parser.add_argument("--without-web", action="store_true", help="Omit the optional TS Web client descriptor and launcher.")
+    parser.add_argument("--without-web", action="store_true", help="Omit the optional TS Web component.")
+    parser.add_argument("--web-manifest", help="Existing validated ts-web-component-release.json.")
     parser.add_argument("--agent-manifest", help="Existing Agent component manifest; otherwise build from this checkout.")
     parser.add_argument("--output-dir", default="dist/package", help="Directory for the suite archive and manifest.")
     parser.add_argument("--allow-dirty", action="store_true", help="Allow dirty component sources for local validation only.")
@@ -65,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
             phone_manifest_path=(Path(args.phone_manifest).expanduser().resolve() if args.phone_manifest else None),
             output_dir=output_dir.resolve(),
             agent_manifest_path=(Path(args.agent_manifest).expanduser().resolve() if args.agent_manifest else None),
+            web_manifest_path=(Path(args.web_manifest).expanduser().resolve() if args.web_manifest else None),
             allow_dirty=args.allow_dirty,
             include_web=not args.without_web,
         )
@@ -85,6 +90,7 @@ def build_package(
     phone_manifest_path: Path | None,
     output_dir: Path,
     agent_manifest_path: Path | None,
+    web_manifest_path: Path | None = None,
     allow_dirty: bool,
     include_web: bool = True,
 ) -> dict[str, object]:
@@ -116,9 +122,31 @@ def build_package(
 
         agent_manifest = load_agent_manifest(agent_manifest_path)
         phone_manifest = load_phone_manifest(phone_manifest_path) if phone_manifest_path is not None else None
+        if include_web:
+            if web_manifest_path is None:
+                web_output = temporary_root / "web"
+                command = [sys.executable, str(BUILD_WEB), "--output-dir", str(web_output), "--json"]
+                if allow_dirty:
+                    command.append("--allow-dirty")
+                completed = subprocess.run(
+                    command,
+                    cwd=ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                if completed.returncode != 0:
+                    raise SuiteReleaseError(completed.stderr.strip() or "Web component build failed")
+                web_manifest_path = Path(json.loads(completed.stdout)["manifest"])
+            web_manifest = load_web_manifest(web_manifest_path)
+        else:
+            web_manifest = None
         sources = [("Agent", agent_manifest["source"])]
         if phone_manifest is not None:
             sources.append(("Phone", phone_manifest["source"]))
+        if web_manifest is not None:
+            sources.append(("Web", web_manifest["source"]))
         for label, source in sources:
             if source["dirty"] and not allow_dirty:
                 raise SuiteReleaseError(f"{label} component was built from a dirty source checkout")
@@ -135,10 +163,19 @@ def build_package(
                 phone_manifest["archive"],
                 "Phone component archive",
             )
-        components = suite_components(agent_manifest, phone_manifest, include_web=include_web)
+        web_archive = None
+        if web_manifest is not None:
+            web_archive = verify_archive_descriptor(
+                web_manifest_path.parent / web_manifest["archive"]["filename"],
+                web_manifest["archive"],
+                "TS Web component archive",
+            )
+            if web_manifest["component"]["version"] != agent_manifest["package"]["version"]:
+                raise SuiteReleaseError("Web component version must match the Agent component version")
+        components = suite_components(agent_manifest, phone_manifest, include_web=include_web, web=web_manifest)
         output_dir.mkdir(parents=True, exist_ok=True)
         temporary_archive = temporary_root / "tspi-package.tgz"
-        write_suite_archive(temporary_archive, components, agent_archive, phone_archive)
+        write_suite_archive(temporary_archive, components, agent_archive, phone_archive, web_archive)
         archive_sha256 = sha256_file(temporary_archive)
         version = agent_manifest["package"]["version"]
         release_id = f"{version}-sha256-{archive_sha256[:16]}"

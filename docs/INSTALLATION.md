@@ -55,6 +55,10 @@ Choose one physical, non-symlink installation root:
         agent/
           packages/ts-agent-kernel/ts_agent/           auditable Python source
           python-dist/*.whl          manifest-bound runtime artifact
+        web/                      present only when Web is selected
+          bin/ts-web              independent Web entrypoint
+          ts_web/                 provider client and HTTP server
+          static/                 browser assets
         phone/                    present only when Phone is selected
           services/server/dist/      TS Phone server
           artifacts/*.apk            signed Android artifact
@@ -85,7 +89,7 @@ outside the release.
 ## Build A Release
 
 Run this section with a clean TSPi source checkout. Build the required Agent and
-embedded Web component without Phone as follows:
+independent Web component without Phone as follows:
 
 ```bash
 cd /path/to/TSPi

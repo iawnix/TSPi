@@ -73,7 +73,7 @@ FORBIDDEN_RUNTIME_FILES = {
     "scripts/check_package.py",
     "scripts/test_source.py",
 }
-REQUIRED_EXECUTABLE_FILES = {"TSPi", "scripts/ts_web.py"}
+REQUIRED_EXECUTABLE_FILES = {"TSPi", "scripts/ts_web_provider.py"}
 
 
 class PackageCheckError(RuntimeError):

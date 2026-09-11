@@ -39,10 +39,8 @@ def test_python_payload_digest_covers_code_and_runtime_data() -> None:
         "packages/ts-agent-kernel/ts_agent/compute/contracts/calculation_request.schema.json",
         "packages/ts-agent-kernel/ts_agent/path_safety.py",
         "packages/ts-agent-kernel/ts_agent/validation/templates/builtin/classical-ts__1.json",
-        "packages/ts-agent-kernel/ts_agent/web/static/app.js",
-        "packages/ts-agent-kernel/ts_agent/web/static/attempt-timeline.js",
-        "packages/ts-agent-kernel/ts_agent/web/static/claim-map.js",
-        "packages/ts-agent-kernel/ts_agent/web/static/research-map.js",
+        "packages/ts-agent-kernel/ts_agent/projection/provider.py",
+        "packages/ts-agent-kernel/ts_agent/projection/registry.py",
         "packages/ts-agent-kernel/ts_agent/workspace/artifacts.py",
         "packages/ts-agent-kernel/ts_agent/workspace/candidates.py",
         "packages/ts-agent-kernel/ts_agent/workspace/claims.py",
@@ -113,6 +111,7 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
                 "'schema': (root/'compute/contracts/calculation_request.schema.json').is_file(), "
                 "'candidate_schema': (root/'workspace/contracts/observation_candidates.schema.json').is_file(), "
                 "'candidate_module': (root/'workspace/candidates.py').is_file(), "
+                "'projection_provider': (root/'projection/provider.py').is_file(), "
                 "'web': (root/'web/static/app.js').is_file()}))"
             ),
         ],
@@ -129,5 +128,6 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
         "schema": True,
         "candidate_schema": True,
         "candidate_module": True,
-        "web": True,
+        "projection_provider": True,
+        "web": False,
     }

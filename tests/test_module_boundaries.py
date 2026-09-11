@@ -11,7 +11,8 @@ from ts_agent.backends.base import Backend, BackendTask
 from ts_agent.backends.gaussian import GaussianBackend, prepare_gaussian
 from ts_agent.render import MolVisualizer
 from ts_agent.structures import compare_structures
-from ts_agent.web import normalize_workspace, register_workspace
+from ts_agent.projection import normalize_workspace
+from ts_agent.projection.registry import register_workspace
 from ts_agent.workspace.state import STATE_FILES
 
 

@@ -75,7 +75,8 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 | `packages/ts-agent-kernel/ts_agent/runtime/` | runtime resolution, capability probe, and TSPi lifecycle host |
 | `packages/ts-agent-kernel/ts_agent/render/`, `packages/ts-agent-kernel/ts_agent/report/`, `packages/ts-agent-kernel/ts_agent/email/` | deterministic artifact and delivery services |
 | `packages/ts-agent-kernel/ts_agent/structures/` | molecular comparison plus deterministic RDKit seed generation |
-| `packages/ts-agent-kernel/ts_agent/web/` | read-only workspace projection and external UI registry |
+| `packages/ts-agent-kernel/ts_agent/projection/` | TSPi-owned read-only projection and provider boundary |
+| `components/ts-web/` | independent Web client, HTTP server, registry client, and static UI |
 | `docs/` | installation, architecture, maintenance, and ADRs |
 | `tests/` | unit, contract, package, and recording-provider regressions |
 
@@ -91,7 +92,7 @@ Its files have three distinct responsibilities:
 
 | Category | Current members | Boundary |
 | --- | --- | --- |
-| User and Pi entrypoints | `TSPi`, `scripts/tspi_host.py`, `scripts/ts_backend.py`, `scripts/ts_compute.py`, `scripts/ts_email.py`, `scripts/ts_render.py`, `scripts/ts_report.py`, `scripts/ts_runtime.py`, `scripts/ts_web.py`, `scripts/ts_workspace.py`, `scripts/pi-loader.mjs` | Parse launch arguments and delegate to `packages/ts-agent-kernel/ts_agent/`, `packages/ts-agent-runtime/`, `apps/`, or Pi integration code. Keep these names stable for installed releases. |
+| User and Pi entrypoints | `TSPi`, `scripts/tspi_host.py`, `scripts/ts_backend.py`, `scripts/ts_compute.py`, `scripts/ts_email.py`, `scripts/ts_render.py`, `scripts/ts_report.py`, `scripts/ts_runtime.py`, `scripts/ts_workspace.py`, `scripts/pi-loader.mjs` | Parse launch arguments and delegate to `packages/ts-agent-kernel/ts_agent/`, `packages/ts-agent-runtime/`, `apps/`, or Pi integration code. Keep these names stable for installed releases. `scripts/ts_web.py` remains a development checkout compatibility wrapper; installed Web uses `components/ts-web/bin/ts-web`. |
 | Release and runtime mechanisms | `scripts/build_package.py`, `scripts/build_release.py`, `scripts/install_env.py`, `scripts/install_package.py`, `scripts/install_release.py`, `scripts/_bootstrap.py`, `scripts/_runtime_install.py`, `scripts/_suite.py`, `scripts/_wheel.py`, `scripts/package_inventory.py` | Own packaging, runtime preparation, archive validation, and installation mechanics. They are not scientific libraries or public Skills. |
 | Developer checks | `scripts/check_package.py`, `scripts/test_fast.py`, `scripts/test_source.py`, `tools/lint_public_surface.py`, `tools/contracts/sync_ts_phone.py` | Validate authored or component boundaries. They are not production runtime entrypoints; package membership is explicit in the release inventory. |
 
@@ -378,7 +379,7 @@ Calculation Attempts remain Node-owned operational records. Project their
 purpose, family, retry/recalculation lineage, derived scientific changes,
 bounded parameters, execution request, timing, state, and Compute runs from the
 immutable calculation intent and journals in
-`ts_agent.web.normalize`; browser code may format or collapse that projection but
+`ts_agent.projection.normalize`; browser code may format or collapse that projection but
 must not parse program outputs, infer scientific meaning, or turn Attempts into
 ResearchNode DAG vertices.
 
@@ -387,7 +388,7 @@ workspace. Do not add write routes, implicit workspace repair, cached canonical
 indexes, or arbitrary workspace file reads. New static assets must be added to
 both `package.json.files` and the package/installer runtime checks.
 
-Keep managed workspace discovery in `ts_agent.web.registry`, not the HTTP handler or
+Keep managed workspace discovery in the TSPi provider registry, not the HTTP handler or
 browser. Reconciliation may update only the external registry: discover direct
 workspace children, prune missing entries only when the managed root was readable, and
 preserve manual registrations outside managed roots. Tests must cover discovery,

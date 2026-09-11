@@ -50,9 +50,11 @@ There are three forms of execution:
 
 Source ownership and release ownership are deliberately different. TSPi and TS
 Phone remain separate Git repositories with independent tests and maintainers.
-`ts_web` remains inside the TSPi repository because it projects the Agent
-kernel's workspace contract. TS Phone produces a deterministic component
-archive; it does not select the installed TSPi version.
+The Web source is an independent component boundary under
+`components/ts-web/`; its provider client and browser UI do not import the
+Agent kernel. TSPi owns the projection provider and the suite assembly. TS
+Phone produces a deterministic component archive; it does not select the
+installed TSPi version.
 
 The TSPi suite assembler consumes zero or one validated Phone component
 manifest, builds or consumes one Agent component, checks the selected protocol
@@ -63,7 +65,8 @@ snapshot, and a manifest-bound attestation binds that snapshot to the APK
 digest, version, build, ABI, and pinned signer. TSPi independently verifies
 those facts during assembly and installation. The outer Package contains the
 required Agent archive and the selected optional component archives, and records
-Web as embedded in Agent when selected. `install_package.py` first captures the
+The selected Web archive is extracted under `current/web/`, separate from
+Agent. `install_package.py` first captures the
 caller-supplied Package archive
 into private staging so hashing, inspection, and extraction consume the same
 bytes. It then verifies every layer, prepares and probes the
@@ -944,7 +947,8 @@ behind the detail view's Audit section.
 | Artifact import/catalog/structure-analysis contract | `packages/ts-agent-kernel/ts_agent/compute/artifacts.py`, `packages/ts-agent-kernel/ts_agent/compute/cli.py`, `packages/ts-agent-kernel/ts_agent/structures/` |
 | Render/report request/path contract | `packages/ts-agent-runtime/artifacts/request-contract.cjs` |
 | Report projection | `packages/ts-agent-kernel/ts_agent/report/` |
-| Read-only Web projection and UI | `packages/ts-agent-kernel/ts_agent/web/normalize.py`, `packages/ts-agent-kernel/ts_agent/web/research_map.py`, `packages/ts-agent-kernel/ts_agent/web/server.py`, `packages/ts-agent-kernel/ts_agent/web/static/` |
+| Read-only Web projection provider | `packages/ts-agent-kernel/ts_agent/projection/normalize.py`, `packages/ts-agent-kernel/ts_agent/projection/research_map.py`, `packages/ts-agent-kernel/ts_agent/projection/provider.py`, `scripts/ts_web_provider.py` |
+| Independent Web client and UI | `components/ts-web/ts_web/`, `components/ts-web/static/`, `components/ts-web/bin/ts-web` |
 | Generic atomic file IO | `packages/ts-agent-kernel/ts_agent/io.py` |
 | Python distribution boundary | `pyproject.toml`, `packages/ts-agent-kernel/ts_agent/`, `scripts/_wheel.py`, release and runtime payload digests |
 | Pi package/release boundary | `package.json`, `scripts/check_package.py`, installer tests |

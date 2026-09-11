@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tspi.iawnix.xyz/schema/ts-web-component-manifest-v1.json",
+  "title": "TS Web component release manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "release_id", "component", "protocols", "entrypoint", "archive", "source", "created_at_utc"],
+  "properties": {
+    "schema_version": { "const": "ts-web-component-release/1" },
+    "release_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$" },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "ts-web" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+      }
+    },
+    "protocols": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "projection", "graph", "theme"],
+      "properties": {
+        "provider": { "const": "ts-web-provider/1" },
+        "projection": { "const": "ts-web-workspace/6" },
+        "graph": { "const": "ts-explorer-graph/6" },
+        "theme": { "const": "ts-theme/1" }
+      }
+    },
+    "entrypoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": { "path": { "const": "bin/ts-web" } }
+    },
+    "archive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "sha256", "size_bytes"],
+      "properties": {
+        "filename": { "type": "string", "pattern": "^ts-web-component-[A-Za-z0-9][A-Za-z0-9._-]{0,159}\\.tgz$" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "size_bytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git_commit", "dirty"],
+      "properties": {
+        "git_commit": { "type": ["string", "null"] },
+        "dirty": { "type": "boolean" }
+      }
+    },
+    "created_at_utc": { "type": "string", "minLength": 1 }
+  }
+}

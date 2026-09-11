@@ -16,7 +16,7 @@ from ts_agent.compute import (
 from ts_agent.io import read_json, write_json
 from ts_agent.report import build_report_package
 from ts_agent.report.context import collect_report_context
-from ts_agent.web.normalize import node_payload
+from ts_agent.projection.normalize import node_payload
 from ts_agent.workspace import ContractError, validate_workspace
 
 

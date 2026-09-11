@@ -134,7 +134,7 @@ def test_suite_build_is_deterministic_and_installs_one_component_set(tmp_path: P
     assert first["release_id"] == second["release_id"]
     assert first["sha256"] == second["sha256"]
     assert Path(first["archive"]).read_bytes() == Path(second["archive"]).read_bytes()
-    assert first["components"]["web"]["embedded_in"] == "agent"
+    assert first["components"]["web"]["entrypoint"] == {"path": "bin/ts-web"}
     assert first["components"]["phone"]["protocols"] == EXPECTED_PHONE_PROTOCOLS
 
     install_root = tmp_path / "install"
@@ -162,7 +162,9 @@ def test_suite_build_is_deterministic_and_installs_one_component_set(tmp_path: P
     assert bundled is not None
     assert bundled[1]["source"] == "bundled-release-wheel"
     assert bundled[1]["sha256"] == first["components"]["agent"]["python_distribution"]["sha256"]
-    assert (release_root / "agent" / "scripts" / "ts_web.py").is_file()
+    assert (release_root / "agent" / "scripts" / "ts_web_provider.py").is_file()
+    assert not (release_root / "agent" / "scripts" / "ts_web.py").exists()
+    assert (release_root / "web" / "bin" / "ts-web").is_file()
     assert (release_root / "phone" / "bin" / "ts-phone-server").is_file()
     assert (release_root / "phone" / "artifacts" / "ts-phone-v0.8.5-build27-arm64-v8a-release.apk").is_file()
     assert (
@@ -173,7 +175,7 @@ def test_suite_build_is_deterministic_and_installs_one_component_set(tmp_path: P
     ).is_file()
     assert not (release_root / "phone" / "deploy" / "systemd" / "ts-phone.service").exists()
     assert Path(installed["launchers"]["TSPi"]).resolve() == release_root / "agent" / "TSPi"
-    assert Path(installed["launchers"]["TSWeb"]).resolve() == release_root / "agent" / "scripts" / "ts_web.py"
+    assert Path(installed["launchers"]["TSWeb"]).resolve() == release_root / "web" / "bin" / "ts-web"
     assert Path(installed["launchers"]["TSPhoneServer"]).resolve() == release_root / "agent" / "TSPi"
     assert Path(installed["launchers"]["TSPhoneCtl"]).resolve() == release_root / "agent" / "TSPi"
     service = Path(installed["phone_service_template"]).read_text()
@@ -506,7 +508,7 @@ def test_reinstall_revalidates_ts_web_entrypoint(tmp_path: Path) -> None:
     )
     install_root = tmp_path / "install"
     installed = install_package(Path(built["manifest"]), None, install_root)
-    web = Path(installed["package_root"]) / "agent" / "scripts" / "ts_web.py"
+    web = Path(installed["package_root"]) / "web" / "bin" / "ts-web"
     web.chmod(0o400)
 
     with pytest.raises(SuiteReleaseError, match="TS Web entrypoint"):

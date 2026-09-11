@@ -268,6 +268,7 @@ def is_python_payload_path(path: PurePosixPath) -> bool:
     return (
         bool(path.parts)
         and path.parts[0] == PYTHON_PACKAGE_NAME
+        and (len(path.parts) < 2 or path.parts[1] != "web")
         and "__pycache__" not in path.parts
         and not any(part.endswith(".egg-info") for part in path.parts)
         and path.suffix in PYTHON_PAYLOAD_SUFFIXES

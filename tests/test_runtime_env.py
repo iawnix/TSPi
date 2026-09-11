@@ -135,17 +135,17 @@ def test_unified_suite_entrypoint_seeds_installation_owned_runtime_paths(
     installation = tmp_path / "tspi"
     package_home = installation / ".pi" / "packages" / "tspi"
     release = package_home / "releases" / "release-a"
-    script = release / "agent" / "scripts" / "ts_web.py"
+    script = release / "web" / "bin" / "ts-web"
     script.parent.mkdir(parents=True)
     script.write_text("# probe\n", encoding="utf-8")
     current = package_home / "current"
     current.symlink_to("releases/release-a", target_is_directory=True)
     launcher = installation / "TSWeb"
-    launcher.symlink_to(".pi/packages/tspi/current/agent/scripts/ts_web.py")
+    launcher.symlink_to(".pi/packages/tspi/current/web/bin/ts-web")
     entrypoint = (
         launcher
         if entrypoint_kind == "launcher"
-        else current / "agent" / "scripts" / "ts_web.py"
+        else current / "web" / "bin" / "ts-web"
     )
     environment: dict[str, str] = {}
 
@@ -169,11 +169,11 @@ def test_unified_suite_entrypoint_rejects_target_outside_managed_releases(
     tmp_path: Path,
 ) -> None:
     installation = tmp_path / "tspi"
-    authored = installation / "checkout" / "scripts" / "ts_web.py"
+    authored = installation / "checkout" / "bin" / "ts-web"
     authored.parent.mkdir(parents=True)
     authored.write_text("# authored\n", encoding="utf-8")
     launcher = installation / "TSWeb"
-    launcher.symlink_to("checkout/scripts/ts_web.py")
+    launcher.symlink_to("checkout/bin/ts-web")
     environment: dict[str, str] = {}
 
     assert seed_installation_runtime_from_entrypoint(

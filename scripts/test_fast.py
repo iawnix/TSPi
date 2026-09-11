@@ -51,6 +51,7 @@ DEFAULT_TEST_PATHS = (
     "tests/test_ts_structures_alignment.py",
     "tests/test_ts_structures_stereo.py",
     "tests/test_ts_web.py",
+    "tests/test_ts_web_component.py",
     "tests/test_validation_engine.py",
     "tests/test_workspace_bootstrap.py",
     "tests/test_workspace_engine.py",

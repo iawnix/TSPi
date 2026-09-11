@@ -115,7 +115,7 @@ def _legacy_installation_root(stable: Path) -> Path | None:
 
 
 def _suite_installation_root(stable: Path) -> Path | None:
-    """Recognize a validated unified-suite ``TSWeb`` entrypoint."""
+    """Recognize a validated unified-suite Web or provider entrypoint."""
 
     if stable.name == "TSWeb":
         installation_root = stable.parent
@@ -125,9 +125,9 @@ def _suite_installation_root(stable: Path) -> Path | None:
             / "packages"
             / "tspi"
             / "current"
-            / "agent"
-            / "scripts"
-            / "ts_web.py"
+            / "web"
+            / "bin"
+            / "ts-web"
         )
         try:
             if stable.resolve(strict=True) != selected.resolve(strict=True):
@@ -136,15 +136,15 @@ def _suite_installation_root(stable: Path) -> Path | None:
             return None
     else:
         scripts = stable.parent
-        agent = scripts.parent
-        selected_release = agent.parent
+        owner = scripts.parent
+        selected_release = owner.parent
         package_home = selected_release.parent
         packages_root = package_home.parent
         pi_root = packages_root.parent
         if (
-            stable.name != "ts_web.py"
-            or scripts.name != "scripts"
-            or agent.name != "agent"
+            stable.name not in {"ts_web.py", "ts_web_provider.py", "ts-web"}
+            or scripts.name not in {"scripts", "bin"}
+            or owner.name not in {"agent", "web"}
             or selected_release.name != "current"
             or package_home.name != "tspi"
             or packages_root.name != "packages"
@@ -162,11 +162,11 @@ def _suite_installation_root(stable: Path) -> Path | None:
         relative = resolved.relative_to(releases_root)
     except ValueError:
         return None
-    if len(relative.parts) != 4 or relative.parts[1:] != (
-        "agent",
-        "scripts",
-        "ts_web.py",
-    ):
+    if len(relative.parts) != 4 or tuple(relative.parts[1:]) not in {
+        ("agent", "scripts", "ts_web.py"),
+        ("agent", "scripts", "ts_web_provider.py"),
+        ("web", "bin", "ts-web"),
+    }:
         return None
     return installation_root
 
@@ -227,6 +227,7 @@ def _is_python_payload_path(path: PurePosixPath) -> bool:
     return (
         bool(path.parts)
         and path.parts[0] == PYTHON_PACKAGE_NAME
+        and (len(path.parts) < 2 or path.parts[1] != "web")
         and "__pycache__" not in path.parts
         and not any(part.endswith(".egg-info") for part in path.parts)
         and path.suffix in PYTHON_PAYLOAD_SUFFIXES

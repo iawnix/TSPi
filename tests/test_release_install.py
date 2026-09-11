@@ -22,6 +22,7 @@ from tests.runtime_helpers import write_test_runtime_manifest
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_RELEASE = ROOT / "scripts" / "build_release.py"
 INSTALL_RELEASE = ROOT / "scripts" / "install_release.py"
+PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 
 
 def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path) -> None:
@@ -54,10 +55,8 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "docs/ARCHITECTURE.md" in names
     assert "docs/INSTALLATION.md" in names
     assert "docs/MAINTAINER_GUIDE.md" in names
-    assert "packages/ts-agent-kernel/ts_agent/web/static/claim-map.js" in names
-    assert "packages/ts-agent-kernel/ts_agent/web/static/research-map.js" in names
-    assert "packages/ts-agent-kernel/ts_agent/web/static/research-tree.js" in names
-    assert "packages/ts-agent-kernel/ts_agent/web/static/attempt-timeline.js" in names
+    assert "packages/ts-agent-kernel/ts_agent/projection/provider.py" in names
+    assert not any(name.startswith("packages/ts-agent-kernel/ts_agent/web/") for name in names)
     assert "packages/ts-agent-kernel/ts_agent/workspace/artifacts.py" in names
     assert "packages/ts-agent-kernel/ts_agent/workspace/candidates.py" in names
     assert "packages/ts-agent-kernel/ts_agent/workspace/claims.py" in names
@@ -90,10 +89,8 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "docs" / "ARCHITECTURE.md").is_file()
     assert (package_root / "docs" / "INSTALLATION.md").is_file()
     assert (package_root / "docs" / "MAINTAINER_GUIDE.md").is_file()
-    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "claim-map.js").is_file()
-    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "research-map.js").is_file()
-    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "research-tree.js").is_file()
-    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "attempt-timeline.js").is_file()
+    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "projection" / "provider.py").is_file()
+    assert not (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web").exists()
     assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "artifacts.py").is_file()
     assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "candidates.py").is_file()
     assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "claims.py").is_file()
@@ -271,7 +268,7 @@ def test_release_install_rejects_a_modified_archive_before_creating_state(tmp_pa
 def test_release_install_rejects_a_release_id_not_bound_to_the_archive(tmp_path: Path) -> None:
     manifest_path, _ = _synthetic_release(tmp_path / "release", marker="identity")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["release_id"] = "0.5.0-sha256-0000000000000000"
+    manifest["release_id"] = f"{manifest['package']['version']}-sha256-0000000000000000"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     install_root = tmp_path / "install"
 
@@ -360,6 +357,7 @@ def _synthetic_release(
     root: Path,
     *,
     marker: str,
+    version: str = PACKAGE_VERSION,
     extra_files: dict[str, bytes] | None = None,
 ) -> tuple[Path, str]:
     root.mkdir(parents=True)
@@ -367,7 +365,10 @@ def _synthetic_release(
     files = {name: b"\n" for name in REQUIRED_RUNTIME_FILES}
     for name in ("apps/host/environment.mjs", "apps/host/service.mjs"):
         files[name] = (ROOT / name).read_bytes()
-    files["package.json"] = b'{"name":"@iawnix/ts-agent","version":"0.5.0"}\n'
+    files["package.json"] = json.dumps(
+        {"name": "@iawnix/ts-agent", "version": version},
+        separators=(",", ":"),
+    ).encode() + b"\n"
     files["TSPi"] = b"#!/usr/bin/env bash\nexit 0\n"
     files["README.md"] = f"release {marker}\n".encode()
     files.update(extra_files or {})
@@ -376,7 +377,7 @@ def _synthetic_release(
         for name, content in files.items()
         if (normalized := name.removeprefix("package/")).startswith("packages/ts-agent-kernel/ts_agent/")
     }
-    wheel = _synthetic_wheel(root, version="0.5.0", package_files=python_payload)
+    wheel = _synthetic_wheel(root, version=version, package_files=python_payload)
     wheel_descriptor = inspect_wheel(wheel)
     distribution = {
         "name": wheel_descriptor["name"],
@@ -395,17 +396,17 @@ def _synthetic_release(
         for name, content in sorted(files.items()):
             info = tarfile.TarInfo(name if name.startswith("package/") else f"package/{name}")
             info.size = len(content)
-            info.mode = 0o755 if name in {"TSPi", "scripts/ts_web.py"} else 0o644
+            info.mode = 0o755 if name in {"TSPi", "scripts/ts_web_provider.py"} else 0o644
             archive.addfile(info, io.BytesIO(content))
     digest = hashlib.sha256(temporary_archive.read_bytes()).hexdigest()
-    release_id = f"0.5.0-sha256-{digest[:16]}"
+    release_id = f"{version}-sha256-{digest[:16]}"
     archive_name = f"ts-agent-{release_id}.tgz"
     archive_path = root / archive_name
     temporary_archive.rename(archive_path)
     manifest = {
         "schema_version": "ts-agent-release/2",
         "release_id": release_id,
-        "package": {"name": "@iawnix/ts-agent", "version": "0.5.0"},
+        "package": {"name": "@iawnix/ts-agent", "version": version},
         "python_distribution": distribution,
         "archive": {
             "filename": archive_name,

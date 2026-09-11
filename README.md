@@ -2,11 +2,11 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-This repository owns the required `@iawnix/ts-agent` component, the staged
-read-only Web implementation, and the assembler for TSPi Packages. TS Phone
-remains an independently maintained source repository. Each distributed
-release binds the required Agent and any selected Web or Phone component into
-one content-addressed component set with one `current` pointer.
+This repository owns the required `@iawnix/ts-agent` component, the
+independently packaged read-only Web component, and the assembler for TSPi
+Packages. TS Phone remains an independently maintained source repository. Each
+distributed release binds the required Agent and any selected Web or Phone
+component into one content-addressed component set with one `current` pointer.
 
 The Agent combines one strategy-owning Root Agent with a deterministic research kernel,
 typed SSH/Torque calculations with deterministic local preparation and parsing,
@@ -131,6 +131,7 @@ The source tree follows ownership boundaries rather than language names:
 | `contracts/` | Versioned Phone, Web, and component-release contracts |
 | `packages/ts-agent-kernel/ts_agent/` | Python Research Kernel and deterministic scientific services |
 | `packages/ts-agent-runtime/` | Reusable Agent, Compute, Review, and artifact runtime modules |
+| `components/ts-web/` | Independent optional Web client, provider client, server, and static UI |
 | `apps/` | Host and Terminal process entrypoints |
 | `extensions/` | Pi extensions and Phone adapter policy |
 | `skills/` | Public model-facing Skill and focused references |
@@ -142,6 +143,8 @@ The source tree follows ownership boundaries rather than language names:
 `.runtime/`, and other caches are generated locally and excluded from source
 and release boundaries. The Python import namespace remains `ts_agent` even
 though its authored source now lives under the named kernel package directory.
+The Agent-side `scripts/ts_web_provider.py` is the TSPi-owned provider entrypoint;
+the Web component calls it through the versioned provider protocol.
 
 ## Quick Install
 
@@ -197,7 +200,7 @@ selected components:
 
 ```text
 <installation>/TSPi          -> .pi/packages/tspi/current/agent/TSPi       (always)
-<installation>/TSWeb         -> .pi/packages/tspi/current/agent/scripts/ts_web.py (Web)
+<installation>/TSWeb         -> .pi/packages/tspi/current/web/bin/ts-web     (Web)
 <installation>/TSPhoneCtl    -> .pi/packages/tspi/current/agent/TSPi       (Phone)
 <installation>/TSPhoneServer -> .pi/packages/tspi/current/agent/TSPi       (Phone)
 ```

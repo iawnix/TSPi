@@ -46,7 +46,7 @@ def test_readme_routes_each_reader_to_the_public_contracts() -> None:
         "TSPhoneServer",
         "./TSPi --workspace reaction-a",
         "./TSPi --workspace reaction-a --continue",
-        "scripts/ts_web.py",
+        "scripts/ts_web_provider.py",
         "ResearchPhase roadmap",
         "/ts-runs",
         "ts_state",

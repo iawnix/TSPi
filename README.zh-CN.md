@@ -34,6 +34,7 @@ Research Kernel
 | --- | --- |
 | `contracts/` | Phone、Web 和组件清单的版本化协议与 fixture |
 | `packages/ts-agent-kernel/ts_agent/` | TSPi 的 Python 研究内核和确定性服务 |
+| `components/ts-web/` | 独立的可选 Web 客户端、provider、server 和静态界面 |
 | `apps/` | Host 和 Terminal 进程入口 |
 | `extensions/` | Pi 扩展和 Phone 适配策略 |
 | `skills/` | 面向模型的公开 Skill 与参考资料 |

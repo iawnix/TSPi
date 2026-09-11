@@ -1,8 +1,8 @@
 # ADR 0002: Repository And Component Boundaries
 
-- Status: accepted, staged implementation
+- Status: accepted, staged implementation (Web boundary extracted)
 - Date: 2026-09-10
-- Scope: TSPi, `ts-phone`, and the future `ts-web` component
+- Scope: TSPi, `ts-phone`, and the optional `ts-web` component
 - Related: [Architecture](../ARCHITECTURE.md), [Maintainer Guide](../MAINTAINER_GUIDE.md), [Hypothesis-Proof Loop Plan](../PLAN_HYPOTHESIS_PROOF_LOOP.md)
 
 ## Context
@@ -21,9 +21,8 @@ The current problems are:
 2. `ts-phone` is already an independent repository, but the relationship
    between the TSPi product, the required core, and optional clients is not
    expressed as a simple installation contract.
-3. `ts-web` is currently embedded under `packages/ts-agent-kernel/ts_agent/web/` and imports
-   private TSPi workspace and operational modules directly. It is therefore
-   not independently releasable.
+3. The Web client needs an independent source and release boundary while the
+   TSPi provider retains ownership of private workspace and operational data.
 4. The Phone bridge protocol is represented in more than one source tree.
 5. `cluster_mcp` is an obsolete working-tree residue rather than a current
    component.
@@ -44,7 +43,7 @@ contracts are explicit.
 | --- | --- | --- |
 | TSPi | Owns the kernel, Pi package, Web implementation, release assembly, and installation boundary | It is the natural required core repository and product release owner |
 | `ts-phone` | Independent repository with API, events, bridge schemas, broker, mobile client, and component release tooling | It can remain independently developed and become an optional installed component |
-| `ts-web` | Python server and static UI under `packages/ts-agent-kernel/ts_agent/web/`; projection code imports `ts_agent.workspace` and operational modules | Extraction requires a versioned projection boundary first |
+| `ts-web` | Client, registry, server, and static UI under `components/ts-web/`; it consumes the TSPi provider through `ts-web-provider/1` | The component can be archived and installed independently from Agent |
 | Phone protocol | `ts-phone` publishes `ts-phone-api/4`, `ts-phone-events/3`, and `ts-phone-bridge/3`; TSPi also contains a hand-written Bridge type/parser | The wire contract currently has duplicate ownership |
 | Release boundary | TSPi validates `tspi-package-release/3` with required Agent and optional Web or Phone descriptors | The existing release model can express selectable components without another installer |
 | `cluster_mcp` | No tracked files, source, or cache residue remains after cleanup | It is not an architectural dependency and must stay absent |
@@ -69,10 +68,10 @@ The TSPi repository owns:
 owns the Phone broker, mobile applications, Phone-specific persistence,
 deployment, signing, release artifacts, and Phone wire schemas.
 
-`ts-web` is the target name for a separate optional component. Its future
-repository owns the browser UI and a thin projection client. It must not import
-private TSPi Python modules. Until the projection contract is stable, the
-current Web source stays in TSPi as a staged implementation.
+`ts-web` is an optional component with its own source boundary under
+`components/ts-web/`. It owns the browser UI, HTTP transport, registry client,
+and thin provider client. It must not import private TSPi Python modules. TSPi
+owns the projection provider, workspace paths, and provider protocol.
 
 This distinction is deliberate:
 
@@ -85,7 +84,7 @@ TSPi product
 +-- ts-phone repository              optional component
 |     broker, mobile client, Phone protocols
 |
-`-- ts-web repository                optional component (target)
+`-- components/ts-web/                 optional component source
       projection client and browser UI
 ```
 
@@ -180,6 +179,7 @@ languages into one directory:
 TSPi/
   contracts/          versioned public schemas and compatibility fixtures
   packages/           reusable kernel/runtime libraries
+  components/         independently packaged optional clients
   apps/               user-facing launchers and host entrypoints
   extensions/         Pi extension implementations
   skills/             public model-facing instructions
@@ -344,22 +344,23 @@ for local changes.
 - publish the terminology glossary and public-surface lint;
 - add Phone compatibility fixtures generated from the canonical Phone source.
 
-### Phase 2: extract the Web boundary
+### Phase 2: extract the Web boundary (completed)
 
-- isolate the TSPi projection provider behind a versioned request/response
-  contract;
-- make the current Web client consume only that contract;
-- add fixture-backed tests proving the client has no `ts_agent` imports;
-- package the Web UI as an optional component only after this passes.
+- isolate the TSPi projection provider behind the versioned
+  `ts-web-provider/1` request/response contract;
+- make the Web client under `components/ts-web/` consume only that contract;
+- add archive and source tests proving the client has no `ts_agent` imports;
+- package the Web UI as an independently validated optional component.
 
-### Phase 3: make optional installation explicit
+### Phase 3: make optional installation explicit (completed)
 
 - extend the existing suite manifest for optional Web and Phone descriptors;
 - verify protocol, TSPi version, theme revision, capabilities, digests, and
   entrypoints during assembly and installation;
 - prove that core installation works with neither optional client;
 - prove that selected components can be omitted without stale symlink or
-  service state.
+  service state. Web now installs under `current/web/`, while Agent contains
+  only the provider and projection code.
 
 ### Phase 4: reduce directory ambiguity
 
@@ -393,8 +394,8 @@ it has been removed and is now explicitly ignored.
 - It does not rename every internal `stage` field or historical fixture.
 - It does not add multiple model providers merely to create the appearance of
   reviewer independence.
-- It does not split the TSPi, `ts-phone`, and future `ts-web` repositories in
-  this staged implementation.
+- It does not create a separate Git repository for `ts-web`; the component
+  source boundary is currently maintained in `components/ts-web/`.
 
 ## Acceptance Criteria
 

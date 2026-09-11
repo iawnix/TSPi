@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ts_agent.web.file_preview import preview_capability, read_text_preview
+from ts_agent.projection.file_preview import preview_capability, read_text_preview
 
 
 def test_preview_rejects_symbolic_link_source(tmp_path: Path) -> None:

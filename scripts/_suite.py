@@ -31,6 +31,12 @@ SUITE_INSTALL_SCHEMA_VERSION = "tspi-package-install/1"
 PHONE_SCHEMA_VERSION = "ts-phone-component-release/2"
 PHONE_SOURCE_SCHEMA_VERSION = "ts-phone-source-snapshot/1"
 PHONE_MOBILE_ATTESTATION_SCHEMA_VERSION = "ts-phone-mobile-build-attestation/1"
+WEB_SCHEMA_VERSION = "ts-web-component-release/1"
+WEB_COMPONENT_PACKAGE_NAME = "@iawnix/ts-web"
+WEB_PROVIDER_PROTOCOL = "ts-web-provider/1"
+WEB_PROJECTION_PROTOCOL = "ts-web-workspace/6"
+WEB_GRAPH_PROTOCOL = "ts-explorer-graph/6"
+WEB_THEME_PROTOCOL = "ts-theme/1"
 SUITE_MANIFEST_NAME = "tspi-package-release.json"
 SUITE_PACKAGE_NAME = "@iawnix/tspi"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -73,11 +79,35 @@ PHONE_EVENT_ENVELOPE_FIELDS = frozenset(
 PHONE_BRIDGE_ENVELOPE_FIELDS = frozenset(
     {"protocolVersion", "type", "workspaceId", "sessionId", "instanceEpoch"}
 )
-WEB_COMPONENT = {
-    "embedded_in": "agent",
-    "kernel_protocol": "ts-research-kernel/6",
-    "projection_protocol": "ts-web-workspace/6",
-    "graph_protocol": "ts-explorer-graph/6",
+WEB_COMPONENT_FILES = frozenset(
+    {
+        "README.md",
+        "README.zh-CN.md",
+        "package.json",
+        "bin/ts-web",
+        "ts_web/__init__.py",
+        "ts_web/cli.py",
+        "ts_web/provider.py",
+        "ts_web/registry.py",
+        "ts_web/reloader.py",
+        "ts_web/server.py",
+        "static/index.html",
+        "static/app.css",
+        "static/app.js",
+        "static/i18n.js",
+        "static/logo.svg",
+        "static/favicon.svg",
+        "static/research-tree.js",
+        "static/research-map.js",
+        "static/claim-map.js",
+        "static/attempt-timeline.js",
+    }
+)
+WEB_PROTOCOLS = {
+    "provider": WEB_PROVIDER_PROTOCOL,
+    "projection": WEB_PROJECTION_PROTOCOL,
+    "graph": WEB_GRAPH_PROTOCOL,
+    "theme": WEB_THEME_PROTOCOL,
 }
 PHONE_REQUIRED_FILES = {
     "VERSION",
@@ -140,6 +170,51 @@ def load_phone_manifest(path: Path) -> dict[str, Any]:
         max_bytes=MAX_COMPONENT_ARCHIVE_BYTES,
     )
     validate_phone_component_archive(content, manifest)
+    return manifest
+
+
+def load_web_manifest(path: Path) -> dict[str, Any]:
+    manifest = validate_web_manifest(read_json_object(path, "TS Web component manifest"))
+    archive = path.parent / manifest["archive"]["filename"]
+    content = read_verified_file_snapshot(
+        archive,
+        manifest["archive"],
+        "TS Web component archive",
+        max_bytes=MAX_COMPONENT_ARCHIVE_BYTES,
+    )
+    validate_web_component_archive(content, manifest)
+    return manifest
+
+
+def validate_web_manifest(value: object) -> dict[str, Any]:
+    manifest = exact_object(
+        value,
+        "TS Web component manifest",
+        {"schema_version", "release_id", "component", "protocols", "entrypoint", "archive", "source", "created_at_utc"},
+    )
+    if manifest.get("schema_version") != WEB_SCHEMA_VERSION:
+        raise SuiteReleaseError("unsupported TS Web component manifest schema")
+    release_id = require_release_id(manifest.get("release_id"), "web release_id")
+    component = exact_object(manifest.get("component"), "web component", {"name", "version"})
+    if component.get("name") != "ts-web":
+        raise SuiteReleaseError("Web component name must be ts-web")
+    version = require_string(component.get("version"), "web component.version")
+    if not SEMANTIC_VERSION.fullmatch(version):
+        raise SuiteReleaseError("web component.version must use semantic x.y.z form")
+    protocols = exact_object(manifest.get("protocols"), "web protocols", set(WEB_PROTOCOLS))
+    if protocols != WEB_PROTOCOLS:
+        raise SuiteReleaseError("Web component protocols are incompatible with this TSPi Package")
+    entrypoint = exact_object(manifest.get("entrypoint"), "web entrypoint", {"path"})
+    if not isinstance(entrypoint.get("path"), str) or entrypoint["path"] != "bin/ts-web":
+        raise SuiteReleaseError("Web component entrypoint path is invalid")
+    archive = validate_file_descriptor(manifest.get("archive"), "web archive", key="filename")
+    source = validate_source(manifest.get("source"), "web source")
+    expected_release_id = f"{version}-sha256-{archive['sha256'][:16]}"
+    if release_id != expected_release_id:
+        raise SuiteReleaseError("web release_id does not match component version and archive digest")
+    if archive["filename"] != f"ts-web-component-{release_id}.tgz":
+        raise SuiteReleaseError("Web archive filename does not match release_id")
+    require_string(manifest.get("created_at_utc"), "web created_at_utc")
     return manifest
 
 
@@ -228,6 +303,7 @@ def suite_components(
     phone: dict[str, Any] | None = None,
     *,
     include_web: bool = True,
+    web: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     agent_archive = agent["archive"]
     components: dict[str, Any] = {
@@ -244,7 +320,20 @@ def suite_components(
         },
     }
     if include_web:
-        components["web"] = dict(WEB_COMPONENT)
+        if web is None:
+            raise SuiteReleaseError("TS Web component manifest is required when Web is selected")
+        components["web"] = {
+            "release_id": web["release_id"],
+            "version": web["component"]["version"],
+            "protocols": web["protocols"],
+            "entrypoint": web["entrypoint"],
+            "archive": {
+                "path": f"components/web/{web['archive']['filename']}",
+                "sha256": web["archive"]["sha256"],
+                "size_bytes": web["archive"]["size_bytes"],
+            },
+            "source": web["source"],
+        }
     if phone is not None:
         phone_archive = phone["archive"]
         components["phone"] = {
@@ -293,12 +382,35 @@ def validate_components(value: object) -> dict[str, Any]:
         raise SuiteReleaseError("suite Agent Python distribution version does not match the component version")
     validate_source(agent.get("source"), "suite agent source")
     if "web" in components:
-        web = exact_object(components.get("web"), "suite web component", set(WEB_COMPONENT))
-        if web != WEB_COMPONENT:
-            raise SuiteReleaseError("suite Web component contract is incompatible")
+        _validate_suite_web_component(components["web"])
     if "phone" in components:
         _validate_suite_phone_component(components["phone"])
     return components
+
+
+def _validate_suite_web_component(value: object) -> None:
+    web = exact_object(
+        value,
+        "suite web component",
+        {"release_id", "version", "protocols", "entrypoint", "archive", "source"},
+    )
+    release_id = require_release_id(web.get("release_id"), "suite web release_id")
+    version = require_string(web.get("version"), "suite web version")
+    if not SEMANTIC_VERSION.fullmatch(version):
+        raise SuiteReleaseError("suite Web version must use semantic x.y.z form")
+    if exact_object(web.get("protocols"), "suite web protocols", set(WEB_PROTOCOLS)) != WEB_PROTOCOLS:
+        raise SuiteReleaseError("suite Web protocols are incompatible")
+    entrypoint = exact_object(web.get("entrypoint"), "suite web entrypoint", {"path"})
+    if not isinstance(entrypoint.get("path"), str) or entrypoint["path"] != "bin/ts-web":
+        raise SuiteReleaseError("suite Web entrypoint path is invalid")
+    archive = validate_file_descriptor(web.get("archive"), "suite web archive", key="path")
+    expected_archive = f"components/web/ts-web-component-{release_id}.tgz"
+    if archive["path"] != expected_archive:
+        raise SuiteReleaseError(f"suite Web archive path must be {expected_archive}")
+    expected_release_id = f"{version}-sha256-{archive['sha256'][:16]}"
+    if release_id != expected_release_id:
+        raise SuiteReleaseError("suite Web release_id does not match version and archive digest")
+    validate_source(web.get("source"), "suite web source")
 
 
 def _validate_suite_phone_component(value: object) -> None:
@@ -407,6 +519,7 @@ def write_suite_archive(
     components: dict[str, Any],
     agent_archive: Path,
     phone_archive: Path | None = None,
+    web_archive: Path | None = None,
 ) -> None:
     records = [
         (PurePosixPath("components.json"), canonical_json({"schema_version": SUITE_COMPONENTS_SCHEMA_VERSION, "components": components}) + b"\n", 0o644),
@@ -421,6 +534,21 @@ def write_suite_archive(
             0o644,
         ),
     ]
+    if "web" in components:
+        if web_archive is None:
+            raise SuiteReleaseError("Web component archive is required when Web is selected")
+        records.append(
+            (
+                PurePosixPath(components["web"]["archive"]["path"]),
+                read_verified_file_snapshot(
+                    web_archive,
+                    components["web"]["archive"],
+                    "TS Web component archive",
+                    max_bytes=MAX_COMPONENT_ARCHIVE_BYTES,
+                ),
+                0o644,
+            )
+        )
     if "phone" in components:
         if phone_archive is None:
             raise SuiteReleaseError("Phone component archive is required when Phone is selected")
@@ -977,6 +1105,64 @@ def validate_phone_archive_files(files: set[str], descriptor: dict[str, Any]) ->
             raise SuiteReleaseError(f"Phone component archive contains development-only content: {name}")
         if relative.name.startswith(".env") or relative.suffix in {".jks", ".keystore", ".p12", ".pyc", ".pyo"}:
             raise SuiteReleaseError(f"Phone component archive contains forbidden runtime content: {name}")
+
+
+def validate_web_archive_files(files: set[str]) -> None:
+    missing = sorted(WEB_COMPONENT_FILES - files)
+    if missing:
+        raise SuiteReleaseError(f"TS Web component archive is missing runtime files: {', '.join(missing)}")
+    forbidden = sorted(
+        name
+        for name in files
+        if set(PurePosixPath(name).parts) & {".git", "__pycache__", "build", "dist", "node_modules", "tests"}
+        or name.endswith((".pyc", ".pyo"))
+        or name.startswith(("ts_agent/", "packages/", "source/"))
+    )
+    if forbidden:
+        raise SuiteReleaseError(f"TS Web component archive contains forbidden runtime content: {', '.join(forbidden)}")
+
+
+def validate_web_component_archive(content: bytes, manifest: dict[str, Any]) -> None:
+    """Validate Web bytes before they enter a suite or an installation."""
+
+    try:
+        with tarfile.open(fileobj=io.BytesIO(content), mode="r:gz") as archive:
+            inspected, files = inspect_rooted_archive_members(archive, "component")
+            validate_web_archive_files(files)
+            members = {relative.as_posix(): member for member, relative in inspected if member.isreg()}
+
+            def read_member(name: str) -> bytes:
+                member = members.get(name)
+                if member is None:
+                    raise SuiteReleaseError(f"TS Web component archive is missing {name}")
+                handle = archive.extractfile(member)
+                if handle is None:
+                    raise SuiteReleaseError(f"TS Web component archive cannot read {name}")
+                with handle:
+                    return handle.read(MAX_ARCHIVE_MEMBER_BYTES + 1)
+
+            try:
+                package = json.loads(read_member("package.json"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                raise SuiteReleaseError("TS Web component package metadata is invalid") from error
+            component = manifest.get("component")
+            expected_version = component.get("version") if isinstance(component, dict) else manifest.get("version")
+            if not isinstance(package, dict) or package.get("name") != WEB_COMPONENT_PACKAGE_NAME:
+                raise SuiteReleaseError("TS Web component package name is invalid")
+            if package.get("version") != expected_version:
+                raise SuiteReleaseError("TS Web component package version does not match its manifest")
+            if package.get("protocols") != manifest.get("protocols"):
+                raise SuiteReleaseError("TS Web component package protocols do not match its manifest")
+            entrypoint = manifest.get("entrypoint")
+            entrypoint_path = entrypoint.get("path") if isinstance(entrypoint, dict) else None
+            entrypoint_member = members.get(entrypoint_path)
+            if entrypoint_member is None or not entrypoint_member.mode & 0o111:
+                raise SuiteReleaseError("TS Web component entrypoint is not executable")
+            for name in files:
+                if name.endswith(".py") and b"ts_agent" in read_member(name):
+                    raise SuiteReleaseError(f"TS Web component imports private TSPi module: {name}")
+    except (OSError, tarfile.TarError) as error:
+        raise SuiteReleaseError(f"could not validate TS Web component archive: {error}") from error
 
 
 def validate_runtime_file(root: Path, descriptor: dict[str, Any], label: str) -> None:

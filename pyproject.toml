@@ -31,6 +31,7 @@ version = {attr = "ts_agent._version.__version__"}
 [tool.setuptools.packages.find]
 where = ["packages/ts-agent-kernel"]
 include = ["ts_agent*"]
+exclude = ["ts_agent.web", "ts_agent.web.*"]
 
 [tool.setuptools.package-data]
 "ts_agent.compute" = ["contracts/*.json"]
@@ -38,12 +39,6 @@ include = ["ts_agent*"]
 "ts_agent.validation" = [
   "acceptance_profiles/*.json",
   "templates/builtin/*.json",
-]
-"ts_agent.web" = [
-  "static/*.css",
-  "static/*.html",
-  "static/*.js",
-  "static/*.svg",
 ]
 "ts_agent.workspace" = ["contracts/*.json"]
 
