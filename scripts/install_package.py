@@ -567,8 +567,10 @@ def inspect_embedded_agent(
         members, files = inspect_archive(archive)
     except ReleaseInstallError as error:
         raise SuiteReleaseError(f"embedded Agent archive is invalid: {error}") from error
-    if schema_version != "tspi-package-release/4":
-        raise SuiteReleaseError("only tspi-package-release/4 is supported")
+    # The embedded archive is an Agent release; its manifest contract is
+    # represented by the shared wheel/release schema constant.
+    if RELEASE_SCHEMA_VERSION != "ts-agent-release/2":
+        raise SuiteReleaseError("only ts-agent-release/2 is supported")
     required_files = REQUIRED_RUNTIME_FILES
     missing = sorted(required_files - files)
     if missing:
