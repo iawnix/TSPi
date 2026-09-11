@@ -58,15 +58,17 @@ installed TSPi version.
 
 The TSPi suite assembler consumes zero or one validated Phone component
 manifest, builds or consumes one Agent component, checks the selected protocol
-and artifact contracts, and writes `tspi-package-release/3`. Web is selected by
-the assembler unless `--without-web` is supplied. The Phone boundary
+and artifact contracts, and writes `tspi-package-release/4`. Web is selected by
+the assembler unless `--without-web` is supplied. The installer continues to
+read `tspi-package-release/3` packages for rollback and reinstallation; those
+packages retain the historical Web-in-Agent layout. The Phone boundary
 requires `ts-phone-component-release/2`: its signed APK embeds a source
 snapshot, and a manifest-bound attestation binds that snapshot to the APK
 digest, version, build, ABI, and pinned signer. TSPi independently verifies
 those facts during assembly and installation. The outer Package contains the
 required Agent archive and the selected optional component archives, and records
-The selected Web archive is extracted under `current/web/`, separate from
-Agent. `install_package.py` first captures the
+their schema and protocol identities. In `/4`, the selected Web archive is
+extracted under `current/web/`, separate from Agent. `install_package.py` first captures the
 caller-supplied Package archive
 into private staging so hashing, inspection, and extraction consume the same
 bytes. It then verifies every layer, prepares and probes the

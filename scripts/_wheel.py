@@ -106,7 +106,7 @@ def build_wheel(
     return descriptor
 
 
-def inspect_wheel(path: str | Path) -> dict[str, Any]:
+def inspect_wheel(path: str | Path, *, allow_legacy_web: bool = False) -> dict[str, Any]:
     """Return the identity and deterministic payload digest of one wheel."""
 
     wheel = Path(path).expanduser().resolve()
@@ -134,7 +134,7 @@ def inspect_wheel(path: str | Path) -> dict[str, Any]:
                 if relative.name == "METADATA" and relative.parent.name.endswith(".dist-info"):
                     metadata_documents.append(content)
                 if relative.parts[0] == PYTHON_PACKAGE_NAME:
-                    if not is_python_payload_path(relative):
+                    if not is_python_payload_path(relative, allow_legacy_web=allow_legacy_web):
                         raise WheelContractError(f"wheel contains unsupported package payload: {name}")
                     records.append((relative.as_posix(), content))
                 elif not relative.parts[0].endswith(".dist-info"):
@@ -161,10 +161,16 @@ def inspect_wheel(path: str | Path) -> dict[str, Any]:
     }
 
 
-def release_wheel(package_root: str | Path) -> tuple[Path, dict[str, Any]] | None:
+def release_wheel(
+    package_root: str | Path,
+    *,
+    allow_legacy_web: bool | None = None,
+) -> tuple[Path, dict[str, Any]] | None:
     """Resolve and revalidate the wheel bound to an installed release."""
 
     root = Path(package_root).expanduser().resolve()
+    if allow_legacy_web is None:
+        allow_legacy_web = _has_legacy_web_payload(root)
     manifest_path = root / RELEASE_MANIFEST
     if not manifest_path.exists():
         return None
@@ -184,9 +190,9 @@ def release_wheel(package_root: str | Path) -> tuple[Path, dict[str, Any]] | Non
         raise WheelContractError("bundled wheel version does not match the release package")
     relative = PurePosixPath(str(expected["path"]))
     wheel = root.joinpath(*relative.parts)
-    actual = inspect_wheel(wheel)
+    actual = inspect_wheel(wheel, allow_legacy_web=allow_legacy_web)
     validate_descriptor_match(expected, actual)
-    source_digest = source_payload_sha256(root)
+    source_digest = source_payload_sha256(root, allow_legacy_web=allow_legacy_web)
     if actual["payload_sha256"] != source_digest:
         raise WheelContractError("bundled wheel payload does not match the release source payload")
     return wheel, {**actual, "path": relative.as_posix(), "source": "bundled-release-wheel"}
@@ -232,8 +238,15 @@ def validate_descriptor_match(expected: dict[str, Any], actual: dict[str, Any]) 
         raise WheelContractError("Python wheel filename does not match the release manifest")
 
 
-def source_payload_sha256(package_root: str | Path) -> str:
-    root = Path(package_root).expanduser().resolve() / "packages" / "ts-agent-kernel"
+def source_payload_sha256(
+    package_root: str | Path,
+    *,
+    allow_legacy_web: bool | None = None,
+) -> str:
+    package_root = Path(package_root).expanduser().resolve()
+    if allow_legacy_web is None:
+        allow_legacy_web = _has_legacy_web_payload(package_root)
+    root = package_root / "packages" / "ts-agent-kernel"
     if not root.is_dir():
         raise WheelContractError(f"Python source root is missing: {root}")
     records: list[tuple[str, bytes]] = []
@@ -241,7 +254,7 @@ def source_payload_sha256(package_root: str | Path) -> str:
         if not path.is_file() or path.is_symlink():
             continue
         relative = PurePosixPath(path.relative_to(root).as_posix())
-        if is_python_payload_path(relative):
+        if is_python_payload_path(relative, allow_legacy_web=allow_legacy_web):
             records.append((relative.as_posix(), path.read_bytes()))
     if not records:
         raise WheelContractError(f"Python source payload is empty: {root}")
@@ -264,15 +277,20 @@ def package_identity(package_root: str | Path) -> dict[str, str]:
     return {"name": PI_PACKAGE, "version": version}
 
 
-def is_python_payload_path(path: PurePosixPath) -> bool:
+def is_python_payload_path(path: PurePosixPath, *, allow_legacy_web: bool = False) -> bool:
     return (
         bool(path.parts)
         and path.parts[0] == PYTHON_PACKAGE_NAME
-        and (len(path.parts) < 2 or path.parts[1] != "web")
+        and (allow_legacy_web or len(path.parts) < 2 or path.parts[1] != "web")
         and "__pycache__" not in path.parts
         and not any(part.endswith(".egg-info") for part in path.parts)
         and path.suffix in PYTHON_PAYLOAD_SUFFIXES
     )
+
+
+def _has_legacy_web_payload(package_root: Path) -> bool:
+    source = package_root / "packages" / "ts-agent-kernel" / PYTHON_PACKAGE_NAME
+    return (source / "web").is_dir() and not (source / "projection" / "provider.py").is_file()
 
 
 def payload_records_sha256(records: list[tuple[str, bytes]]) -> str:

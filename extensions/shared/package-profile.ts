@@ -1,6 +1,6 @@
 export const TS_PACKAGE_PROFILE = Object.freeze({
   displayName: "TSPi",
-  version: "0.16.0",
+  version: "0.17.0",
   title: "TSPi research orchestration",
   description: "Phase-guided TS research with a ResearchNode DAG and deterministic validation.",
   skills: Object.freeze([

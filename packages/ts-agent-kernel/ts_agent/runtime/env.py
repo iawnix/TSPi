@@ -119,20 +119,22 @@ def _suite_installation_root(stable: Path) -> Path | None:
 
     if stable.name == "TSWeb":
         installation_root = stable.parent
-        selected = (
-            installation_root
-            / ".pi"
-            / "packages"
-            / "tspi"
-            / "current"
-            / "web"
-            / "bin"
-            / "ts-web"
+        selected_root = installation_root / ".pi" / "packages" / "tspi" / "current"
+        selected_paths = (
+            selected_root / "web" / "bin" / "ts-web",
+            selected_root / "agent" / "scripts" / "ts_web.py",
         )
         try:
-            if stable.resolve(strict=True) != selected.resolve(strict=True):
-                return None
+            resolved_stable = stable.resolve(strict=True)
         except OSError:
+            return None
+        for selected in selected_paths:
+            try:
+                if resolved_stable == selected.resolve(strict=True):
+                    break
+            except OSError:
+                continue
+        else:
             return None
     else:
         scripts = stable.parent
@@ -193,10 +195,17 @@ def package_version(package_root: str | Path | None = None) -> str:
     return version
 
 
-def python_payload_sha256(package_root: str | Path | None = None) -> str:
+def python_payload_sha256(
+    package_root: str | Path | None = None,
+    *,
+    include_legacy_web: bool | None = None,
+) -> str:
     """Hash the source files that are installed into the Python distribution."""
 
-    root = resolve_package_root(package_root) / PYTHON_SOURCE_ROOT
+    package = resolve_package_root(package_root)
+    if include_legacy_web is None:
+        include_legacy_web = _has_legacy_web_payload(package)
+    root = package / PYTHON_SOURCE_ROOT
     if not root.is_dir():
         raise RuntimeEnvironmentError(f"Python source root is missing: {root}")
     records = []
@@ -204,7 +213,7 @@ def python_payload_sha256(package_root: str | Path | None = None) -> str:
         if not path.is_file() or path.is_symlink():
             continue
         relative = PurePosixPath(path.relative_to(root).as_posix())
-        if not _is_python_payload_path(relative):
+        if not _is_python_payload_path(relative, include_legacy_web=include_legacy_web):
             continue
         records.append((relative.as_posix(), path.read_bytes()))
     if not records:
@@ -223,15 +232,20 @@ def payload_records_sha256(records: list[tuple[str, bytes]]) -> str:
     return digest.hexdigest()
 
 
-def _is_python_payload_path(path: PurePosixPath) -> bool:
+def _is_python_payload_path(path: PurePosixPath, *, include_legacy_web: bool = False) -> bool:
     return (
         bool(path.parts)
         and path.parts[0] == PYTHON_PACKAGE_NAME
-        and (len(path.parts) < 2 or path.parts[1] != "web")
+        and (include_legacy_web or len(path.parts) < 2 or path.parts[1] != "web")
         and "__pycache__" not in path.parts
         and not any(part.endswith(".egg-info") for part in path.parts)
         and path.suffix in PYTHON_PAYLOAD_SUFFIXES
     )
+
+
+def _has_legacy_web_payload(package_root: Path) -> bool:
+    source = package_root / PYTHON_SOURCE_ROOT / PYTHON_PACKAGE_NAME
+    return (source / "web").is_dir() and not (source / "projection" / "provider.py").is_file()
 
 
 def resolve_package_root(package_root: str | Path | None = None) -> Path:

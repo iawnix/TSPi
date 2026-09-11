@@ -79,9 +79,13 @@ def _probe_distribution(*, required: bool) -> dict[str, Any]:
     if files is None:
         raise RuntimeError(f"Python distribution {PYTHON_DISTRIBUTION!r} has no file manifest")
     records: list[tuple[str, bytes]] = []
+    include_legacy_web = any(
+        PurePosixPath(str(item)).parts[:2] == ("ts_agent", "web")
+        for item in files
+    )
     for item in files:
         relative = PurePosixPath(str(item))
-        if not _is_python_payload_path(relative):
+        if not _is_python_payload_path(relative, include_legacy_web=include_legacy_web):
             continue
         path = Path(distribution.locate_file(item)).resolve()
         if not path.is_file():

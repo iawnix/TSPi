@@ -298,7 +298,12 @@ def extract_archive(
             target.chmod(0o700 if member.mode & 0o111 else 0o600)
 
 
-def validate_extracted_package(root: Path, manifest: dict[str, Any]) -> None:
+def validate_extracted_package(
+    root: Path,
+    manifest: dict[str, Any],
+    *,
+    allow_legacy_web: bool = False,
+) -> None:
     package_path = root / "package.json"
     package = json.loads(package_path.read_text(encoding="utf-8"))
     expected = manifest["package"]
@@ -309,7 +314,7 @@ def validate_extracted_package(root: Path, manifest: dict[str, Any]) -> None:
         raise ReleaseInstallError("extracted TSPi launcher is not executable")
     expected_distribution = manifest["python_distribution"]
     wheel = root.joinpath(*PurePosixPath(expected_distribution["path"]).parts)
-    actual_distribution = inspect_wheel(wheel)
+    actual_distribution = inspect_wheel(wheel, allow_legacy_web=allow_legacy_web)
     validate_descriptor_match(expected_distribution, actual_distribution)
 
 

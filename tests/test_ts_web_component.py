@@ -29,7 +29,7 @@ def test_web_component_archive_is_complete_and_validated(tmp_path: Path) -> None
     manifest_path = Path(result["manifest"])
     manifest = load_web_manifest(manifest_path)
 
-    assert manifest["component"] == {"name": "ts-web", "version": "0.16.0"}
+    assert manifest["component"] == {"name": "ts-web", "version": "0.17.0"}
     assert manifest["entrypoint"] == {"path": "bin/ts-web"}
     with tarfile.open(Path(result["archive"]), "r:gz") as archive:
         files = {
@@ -72,8 +72,8 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
     Draft202012Validator(component_schema).validate(
         {
             "schema_version": "ts-web-component-release/1",
-            "release_id": "0.16.0-sha256-0123456789abcdef",
-            "component": {"name": "ts-web", "version": "0.16.0"},
+            "release_id": "0.17.0-sha256-0123456789abcdef",
+            "component": {"name": "ts-web", "version": "0.17.0"},
             "protocols": {
                 "provider": "ts-web-provider/1",
                 "projection": "ts-web-workspace/6",
@@ -82,7 +82,7 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
             },
             "entrypoint": {"path": "bin/ts-web"},
             "archive": {
-                "filename": "ts-web-component-0.16.0-sha256-0123456789abcdef.tgz",
+                "filename": "ts-web-component-0.17.0-sha256-0123456789abcdef.tgz",
                 "sha256": "0" * 64,
                 "size_bytes": 1,
             },

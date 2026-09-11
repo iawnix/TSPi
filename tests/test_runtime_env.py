@@ -183,6 +183,35 @@ def test_unified_suite_entrypoint_rejects_target_outside_managed_releases(
     assert environment == {}
 
 
+def test_legacy_suite_web_launcher_seeds_installation_owned_runtime_paths(
+    tmp_path: Path,
+) -> None:
+    installation = tmp_path / "tspi"
+    package_home = installation / ".pi" / "packages" / "tspi"
+    release = package_home / "releases" / "release-a"
+    script = release / "agent" / "scripts" / "ts_web.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("# historical probe\n", encoding="utf-8")
+    current = package_home / "current"
+    current.symlink_to("releases/release-a", target_is_directory=True)
+    launcher = installation / "TSWeb"
+    launcher.symlink_to(".pi/packages/tspi/current/agent/scripts/ts_web.py")
+    environment: dict[str, str] = {}
+
+    resolved = seed_installation_runtime_from_entrypoint(
+        launcher,
+        environ=environment,
+    )
+
+    runtime_home = installation / ".agents" / "runtime" / "tspi"
+    assert resolved == installation
+    assert environment == {
+        "TS_AGENT_RUNTIME_HOME": str(runtime_home),
+        "TS_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "TS_AGENT_ENV_ROOT": str(installation / ".agents" / "envs" / "tspi"),
+    }
+
+
 def test_runtime_path_seed_preserves_explicit_configuration_and_ignores_authored_path(
     tmp_path: Path,
 ) -> None:

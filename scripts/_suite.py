@@ -25,8 +25,10 @@ except ImportError:
     from install_release import ReleaseInstallError, load_manifest as _load_agent_manifest
 
 
-SUITE_SCHEMA_VERSION = "tspi-package-release/3"
-SUITE_COMPONENTS_SCHEMA_VERSION = "tspi-package-components/3"
+SUITE_SCHEMA_VERSION = "tspi-package-release/4"
+SUITE_COMPONENTS_SCHEMA_VERSION = "tspi-package-components/4"
+SUITE_COMPAT_SCHEMA_VERSION = "tspi-package-release/3"
+SUITE_COMPAT_COMPONENTS_SCHEMA_VERSION = "tspi-package-components/3"
 SUITE_INSTALL_SCHEMA_VERSION = "tspi-package-install/1"
 PHONE_SCHEMA_VERSION = "ts-phone-component-release/2"
 PHONE_SOURCE_SCHEMA_VERSION = "ts-phone-source-snapshot/1"
@@ -108,6 +110,12 @@ WEB_PROTOCOLS = {
     "projection": WEB_PROJECTION_PROTOCOL,
     "graph": WEB_GRAPH_PROTOCOL,
     "theme": WEB_THEME_PROTOCOL,
+}
+COMPAT_WEB_COMPONENT = {
+    "embedded_in": "agent",
+    "kernel_protocol": "ts-research-kernel/6",
+    "projection_protocol": "ts-web-workspace/6",
+    "graph_protocol": "ts-explorer-graph/6",
 }
 PHONE_REQUIRED_FILES = {
     "VERSION",
@@ -355,7 +363,24 @@ def suite_components(
     return components
 
 
-def validate_components(value: object) -> dict[str, Any]:
+def suite_components_schema_version(schema_version: str) -> str:
+    if schema_version == SUITE_SCHEMA_VERSION:
+        return SUITE_COMPONENTS_SCHEMA_VERSION
+    if schema_version == SUITE_COMPAT_SCHEMA_VERSION:
+        return SUITE_COMPAT_COMPONENTS_SCHEMA_VERSION
+    raise SuiteReleaseError("unsupported TSPi Package manifest schema")
+
+
+def validate_components(
+    value: object,
+    *,
+    schema_version: str = SUITE_COMPONENTS_SCHEMA_VERSION,
+) -> dict[str, Any]:
+    if schema_version not in (
+        SUITE_COMPONENTS_SCHEMA_VERSION,
+        SUITE_COMPAT_COMPONENTS_SCHEMA_VERSION,
+    ):
+        raise SuiteReleaseError("unsupported TSPi Package components schema")
     if (
         not isinstance(value, dict)
         or "agent" not in value
@@ -382,10 +407,21 @@ def validate_components(value: object) -> dict[str, Any]:
         raise SuiteReleaseError("suite Agent Python distribution version does not match the component version")
     validate_source(agent.get("source"), "suite agent source")
     if "web" in components:
-        _validate_suite_web_component(components["web"])
+        if schema_version == SUITE_COMPAT_COMPONENTS_SCHEMA_VERSION:
+            _validate_compat_suite_web_component(components["web"])
+        elif schema_version == SUITE_COMPONENTS_SCHEMA_VERSION:
+            _validate_suite_web_component(components["web"])
+        else:
+            raise SuiteReleaseError("unsupported TSPi Package components schema")
     if "phone" in components:
         _validate_suite_phone_component(components["phone"])
     return components
+
+
+def _validate_compat_suite_web_component(value: object) -> None:
+    web = exact_object(value, "historical suite web component", set(COMPAT_WEB_COMPONENT))
+    if web != COMPAT_WEB_COMPONENT:
+        raise SuiteReleaseError("historical suite Web component contract is incompatible")
 
 
 def _validate_suite_web_component(value: object) -> None:
@@ -494,14 +530,18 @@ def validate_suite_manifest(value: object) -> dict[str, Any]:
         "TSPi Package manifest",
         {"schema_version", "release_id", "package", "components", "archive", "created_at_utc"},
     )
-    if manifest.get("schema_version") != SUITE_SCHEMA_VERSION:
+    schema_version = manifest.get("schema_version")
+    if schema_version not in (SUITE_SCHEMA_VERSION, SUITE_COMPAT_SCHEMA_VERSION):
         raise SuiteReleaseError("unsupported TSPi Package manifest schema")
     release_id = require_release_id(manifest.get("release_id"), "suite release_id")
     package = exact_object(manifest.get("package"), "suite package", {"name", "version"})
     if package.get("name") != SUITE_PACKAGE_NAME:
         raise SuiteReleaseError(f"suite package name must be {SUITE_PACKAGE_NAME}")
     version = require_string(package.get("version"), "suite package.version")
-    components = validate_components(manifest.get("components"))
+    components = validate_components(
+        manifest.get("components"),
+        schema_version=suite_components_schema_version(schema_version),
+    )
     if components["agent"]["version"] != version:
         raise SuiteReleaseError("suite package version must match the Agent component version")
     archive = validate_file_descriptor(manifest.get("archive"), "suite archive", key="filename")

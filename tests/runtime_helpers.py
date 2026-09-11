@@ -18,7 +18,7 @@ def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> P
     manifest_path.write_text(
         json.dumps(
             {
-                "schema_version": "tspi-package-release/3",
+                "schema_version": "tspi-package-release/4",
                 "release_id": release_id,
                 "package": {"name": "@iawnix/tspi", "version": version},
                 "components": {

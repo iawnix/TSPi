@@ -16,6 +16,7 @@ def test_release_inventory_is_shared_by_checker_and_installer() -> None:
     assert check_package.PACKAGE_FILES is package_inventory.PACKAGE_FILES
     assert check_package.REQUIRED_TARBALL_FILES is package_inventory.REQUIRED_TARBALL_FILES
     assert install_release.REQUIRED_RUNTIME_FILES is package_inventory.REQUIRED_RUNTIME_FILES
+    assert package_inventory.REQUIRED_COMPAT_RUNTIME_FILES is not package_inventory.REQUIRED_RUNTIME_FILES
 
 
 def test_required_release_members_are_in_the_npm_allowlist() -> None:
@@ -30,3 +31,10 @@ def test_required_release_members_are_in_the_npm_allowlist() -> None:
     assert "contracts/ts-web/provider-request.schema.json" in package_inventory.REQUIRED_TARBALL_FILES
     assert "contracts/ts-web/provider-response.schema.json" in package_inventory.REQUIRED_RUNTIME_FILES
     assert "contracts/ts-web/workspace-snapshot.schema.json" in package_inventory.REQUIRED_TARBALL_FILES
+
+
+def test_compat_runtime_inventory_tracks_the_historical_web_boundary() -> None:
+    assert "scripts/ts_web.py" in package_inventory.REQUIRED_COMPAT_RUNTIME_FILES
+    assert "packages/ts-agent-kernel/ts_agent/web/server.py" in package_inventory.REQUIRED_COMPAT_RUNTIME_FILES
+    assert "scripts/ts_web_provider.py" not in package_inventory.REQUIRED_COMPAT_RUNTIME_FILES
+    assert "packages/ts-agent-kernel/ts_agent/projection/provider.py" not in package_inventory.REQUIRED_COMPAT_RUNTIME_FILES

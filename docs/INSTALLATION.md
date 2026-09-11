@@ -124,8 +124,11 @@ attestation, and writes `ts-phone-component-release/2`. Android artifacts are
 published as one content-addressed set behind `dist/android-current`. The suite
 builder independently repeats the Phone checks, builds the Agent component and wheel
 from one private Git-visible source capture,
-and writes `tspi-package-release/3`. Phone is absent from the package when
+and writes `tspi-package-release/4`. Phone is absent from the package when
 `--phone-manifest` is omitted, and Web is absent when `--without-web` is used.
+The installer also reads `tspi-package-release/3` packages for rollback and
+reinstallation; their Web descriptor is the historical Agent-embedded form,
+and `TSWeb` points to `agent/scripts/ts_web.py` for that release only.
 Each build fails on a dirty source unless
 `--allow-dirty` is supplied. That option is only for local validation and must
 not be used for a distributed release.
@@ -585,6 +588,10 @@ probe, then selects the previous release. Existing release directories and
 overlays are retained for inspection, but retention alone is not a substitute
 for preserving the validated manifest and archive. Do not edit an installed
 release or manually replace files under `current`.
+
+Both `/4` packages and historical `/3` packages are valid rollback inputs. A
+`/3` package is not converted in place: its Agent-embedded Web entrypoint and
+component manifest remain unchanged while that release is selected.
 
 Rollback changes package/runtime code only. It does not rewrite a workspace or
 reverse already committed scientific Decisions. The selected release must

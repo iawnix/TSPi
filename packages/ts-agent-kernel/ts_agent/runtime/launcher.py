@@ -39,6 +39,7 @@ from .session_guard import (
 
 PACKAGE_NAME = "@iawnix/ts-agent"
 SUITE_PACKAGE_NAME = "@iawnix/tspi"
+SUITE_SCHEMA_VERSIONS = ("tspi-package-release/3", "tspi-package-release/4")
 WORKSPACE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 SESSION_ID = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,158}[A-Za-z0-9])?$")
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")
@@ -248,7 +249,7 @@ def _validate_suite_identity(suite_root: Path, agent_root: Path) -> None:
         not isinstance(manifest, dict)
         or set(manifest)
         != {"schema_version", "release_id", "package", "components", "archive", "created_at_utc"}
-        or manifest.get("schema_version") != "tspi-package-release/3"
+        or manifest.get("schema_version") not in SUITE_SCHEMA_VERSIONS
         or manifest.get("release_id") != suite_root.name
         or not isinstance(suite_package, dict)
         or suite_package.get("name") != SUITE_PACKAGE_NAME
