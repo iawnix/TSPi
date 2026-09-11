@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  typescript-and-package:
+    name: TypeScript and package contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:package
+      - run: npm run test:terminal
+
+  python-fast:
+    name: Python fast tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          activate-environment: ts-agent-skill
+          environment-file: environment.yml
+          auto-activate-base: false
+          channels: conda-forge
+          channel-priority: strict
+      - shell: bash -el {0}
+        run: python scripts/test_fast.py -- -q
+      - shell: bash -el {0}
+        run: python3 tools/lint_public_surface.py
