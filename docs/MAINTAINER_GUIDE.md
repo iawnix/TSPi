@@ -473,6 +473,17 @@ freeze cosmetic wording.
 
 ## Development Setup
 
+To diagnose or prepare the complete development toolchain:
+
+```bash
+python3 tools/bootstrap_dev.py --json
+python3 tools/bootstrap_dev.py --install --json
+```
+
+The install mode runs `npm ci` and updates the `ts-agent-skill` environment
+from `environment.yml`. It reports the actual Node, TypeScript, Python and
+Conda paths used by the checkout.
+
 From the authored checkout:
 
 ```bash
