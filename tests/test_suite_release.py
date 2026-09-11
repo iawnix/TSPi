@@ -185,6 +185,71 @@ def test_suite_build_is_deterministic_and_installs_one_component_set(tmp_path: P
     assert all(stat.S_IMODE(path.stat().st_mode) & 0o222 == 0 for path in release_root.rglob("*"))
 
 
+@pytest.mark.parametrize("include_web", [False, True])
+def test_suite_build_and_install_supports_core_only_and_web_only_profiles(
+    tmp_path: Path,
+    include_web: bool,
+) -> None:
+    agent_manifest, _ = _synthetic_release(tmp_path / "agent", marker=f"optional-web-{include_web}")
+    built = build_package(
+        phone_manifest_path=None,
+        output_dir=tmp_path / "package",
+        agent_manifest_path=agent_manifest,
+        allow_dirty=False,
+        include_web=include_web,
+    )
+
+    expected_components = {"agent", "web"} if include_web else {"agent"}
+    assert set(built["components"]) == expected_components
+    install_root = tmp_path / "install"
+    installed = install_package(Path(built["manifest"]), None, install_root)
+    assert set(installed["launchers"]) == ({"TSPi", "TSWeb"} if include_web else {"TSPi"})
+    assert installed["phone_service_template"] is None
+    assert not (install_root / "TSPhoneCtl").exists()
+    assert not (install_root / "TSPhoneServer").exists()
+    assert not (Path(installed["package_root"]) / "phone").exists()
+    if include_web:
+        assert (install_root / "TSWeb").is_symlink()
+    else:
+        assert not (install_root / "TSWeb").exists()
+
+
+def test_core_only_install_rejects_stale_optional_entrypoint(tmp_path: Path) -> None:
+    agent_manifest, _ = _synthetic_release(tmp_path / "agent", marker="stale-optional-entrypoint")
+    built = build_package(
+        phone_manifest_path=None,
+        output_dir=tmp_path / "package",
+        agent_manifest_path=agent_manifest,
+        allow_dirty=False,
+        include_web=False,
+    )
+    install_root = tmp_path / "install"
+    install_root.mkdir()
+    (install_root / "TSWeb").symlink_to("missing-web-entrypoint")
+
+    with pytest.raises(SuiteReleaseError, match="stale optional component entrypoints"):
+        install_package(Path(built["manifest"]), None, install_root)
+
+
+def test_core_only_install_rejects_stale_phone_service_state(tmp_path: Path) -> None:
+    agent_manifest, _ = _synthetic_release(tmp_path / "agent", marker="stale-phone-service")
+    built = build_package(
+        phone_manifest_path=None,
+        output_dir=tmp_path / "package",
+        agent_manifest_path=agent_manifest,
+        allow_dirty=False,
+        include_web=False,
+    )
+    install_root = tmp_path / "install"
+    service = install_root / ".pi" / "ts-phone" / "ts-phone.service"
+    service.parent.mkdir(parents=True)
+    service.write_text("[Unit]\n", encoding="utf-8")
+    service.chmod(0o600)
+
+    with pytest.raises(SuiteReleaseError, match="stale Phone service state"):
+        install_package(Path(built["manifest"]), None, install_root)
+
+
 def test_suite_install_rejects_modified_outer_archive_before_state_creation(tmp_path: Path) -> None:
     agent_manifest, _ = _synthetic_release(tmp_path / "agent", marker="tamper-agent")
     phone_manifest = _synthetic_phone_release(tmp_path / "phone", marker="tamper-phone")

@@ -2,11 +2,11 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-This repository owns the `@iawnix/ts-agent` component, its embedded read-only
-Web explorer, and the assembler for the complete TSPi Package. TS Phone remains
-an independently maintained source repository, but distributed releases bind
-Agent, Web, Phone server, and the signed Android artifact into one
-content-addressed component set with one `current` pointer.
+This repository owns the required `@iawnix/ts-agent` component, the staged
+read-only Web implementation, and the assembler for TSPi Packages. TS Phone
+remains an independently maintained source repository. Each distributed
+release binds the required Agent and any selected Web or Phone component into
+one content-addressed component set with one `current` pointer.
 
 The Agent combines one strategy-owning Root Agent with a deterministic research kernel,
 typed SSH/Torque calculations with deterministic local preparation and parsing,
@@ -145,8 +145,24 @@ though its authored source now lives under the named kernel package directory.
 
 ## Quick Install
 
-Build a validated TS Phone component first, then assemble and install one
-content-addressed Package from clean authored checkouts:
+Build and install the required Agent with the default Web component from a
+clean TSPi checkout:
+
+```bash
+cd /path/to/TSPi
+python3 scripts/build_package.py \
+  --output-dir dist/package \
+  --json
+python3 scripts/install_package.py \
+  --manifest dist/package/tspi-package-release.json \
+  --install-root /path/to/TSPi-installation \
+  --conda-root /path/to/miniforge3 \
+  --with-render \
+  --json
+```
+
+To add the optional Phone component, first build a validated release from the
+independent `ts-phone` checkout, then pass its manifest to the TSPi assembler:
 
 ```bash
 cd /path/to/ts-phone
@@ -162,30 +178,28 @@ python3 scripts/build_package.py \
   --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
   --output-dir dist/package \
   --json
-python3 scripts/install_package.py \
-  --manifest dist/package/tspi-package-release.json \
-  --install-root /path/to/TSPi-installation \
-  --conda-root /path/to/miniforge3 \
-  --with-render \
-  --json
 ```
 
+Pass `--without-web` when a Core-only Package is required. End users receiving
+a prebuilt Package archive and manifest can skip the component build steps.
+
 The suite builder internally creates the Agent component and its
-`ts-agent-kernel` wheel, then binds that archive to the validated TS Phone
-component. The builder and installer independently verify the pinned APK
-signer, package metadata, embedded source snapshot, and build attestation.
-They also verify the outer Package, both nested archives, protocol
-compatibility, wheel descriptors, safe members, required files, and immutable
-permissions. The installer then prepares and probes the target release's
-Python runtime before atomically selecting
-`.pi/packages/tspi/current`. An invalid runtime cannot activate a release. The
-installer creates four stable entrypoints into the same release:
+`ts-agent-kernel` wheel, then binds any selected optional components to that
+archive. The builder and installer independently verify each selected
+component's contracts, including the Phone APK signer, package metadata,
+embedded source snapshot, and build attestation. They also verify the outer
+Package, every declared nested archive, protocol compatibility, wheel
+descriptors, safe members, required files, and immutable permissions. The
+installer then prepares and probes the target release's Python runtime before
+atomically selecting `.pi/packages/tspi/current`. An invalid runtime cannot
+activate a release. The installer creates stable entrypoints only for the
+selected components:
 
 ```text
-<installation>/TSPi          -> .pi/packages/tspi/current/agent/TSPi
-<installation>/TSWeb         -> .pi/packages/tspi/current/agent/scripts/ts_web.py
-<installation>/TSPhoneCtl    -> .pi/packages/tspi/current/agent/TSPi (control CLI)
-<installation>/TSPhoneServer -> .pi/packages/tspi/current/agent/TSPi (Host)
+<installation>/TSPi          -> .pi/packages/tspi/current/agent/TSPi       (always)
+<installation>/TSWeb         -> .pi/packages/tspi/current/agent/scripts/ts_web.py (Web)
+<installation>/TSPhoneCtl    -> .pi/packages/tspi/current/agent/TSPi       (Phone)
+<installation>/TSPhoneServer -> .pi/packages/tspi/current/agent/TSPi       (Phone)
 ```
 
 Installation selects content only. It does not start or restart TS Phone and

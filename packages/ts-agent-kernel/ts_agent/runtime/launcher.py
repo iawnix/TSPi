@@ -248,7 +248,7 @@ def _validate_suite_identity(suite_root: Path, agent_root: Path) -> None:
         not isinstance(manifest, dict)
         or set(manifest)
         != {"schema_version", "release_id", "package", "components", "archive", "created_at_utc"}
-        or manifest.get("schema_version") != "tspi-package-release/2"
+        or manifest.get("schema_version") != "tspi-package-release/3"
         or manifest.get("release_id") != suite_root.name
         or not isinstance(suite_package, dict)
         or suite_package.get("name") != SUITE_PACKAGE_NAME
@@ -718,7 +718,7 @@ def launch_terminal(installation: Installation, request: LaunchRequest) -> NoRet
         raise TSPiHostError("--session-id requires a workspace and a valid session identity", exit_code=2)
     entry = installation.package_root / "apps" / "terminal" / "index.mjs"
     if not entry.is_file():
-        raise TSPiHostError("selected Package has no terminal client; reinstall the complete TSPi Package")
+        raise TSPiHostError("selected Package has no terminal client; reinstall the selected TSPi Package")
     command = [*_node_runtime_command(installation.package_root, entry), "--install-root", str(installation.root)]
     if request.workspace_name:
         command.extend(["--workspace", request.workspace_name])

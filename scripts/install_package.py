@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install one validated Agent, Web, and Phone TSPi Package release."""
+"""Install one validated TSPi Core Package and its selected optional components."""
 
 from __future__ import annotations
 
@@ -132,7 +132,7 @@ from ts_agent.runtime.session_guard import CONTRACT, SessionGuardError, guard_in
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Install one complete TSPi Package release.")
+    parser = argparse.ArgumentParser(description="Install one validated TSPi Package release.")
     parser.add_argument("--manifest", required=True, help="Path to tspi-package-release.json.")
     parser.add_argument("--archive", help="Package archive; defaults to the manifest archive filename.")
     parser.add_argument("--install-root", required=True, help="TSPi installation root.")
@@ -203,8 +203,9 @@ def install_package(
         dirty_components = [
             label
             for label, component in (
-                ("Agent", manifest["components"]["agent"]),
-                ("Phone", manifest["components"]["phone"]),
+                (label, manifest["components"][key])
+                for label, key in (("Agent", "agent"), ("Phone", "phone"))
+                if key in manifest["components"]
             )
             if component["source"]["dirty"]
         ]
@@ -257,13 +258,18 @@ def _install_captured_package(
     expected_suite_files = {
         "components.json",
         manifest["components"]["agent"]["archive"]["path"],
-        manifest["components"]["phone"]["archive"]["path"],
     }
+    if "phone" in manifest["components"]:
+        expected_suite_files.add(manifest["components"]["phone"]["archive"]["path"])
     if suite_files != expected_suite_files:
         raise SuiteReleaseError("TSPi Package archive does not contain the exact declared component set")
 
     install_root = prepare_install_root(install_root)
-    validate_launcher_slots(install_root)
+    validate_launcher_slots(install_root, manifest["components"])
+    if "phone" not in manifest["components"]:
+        service_path = install_root / ".pi" / "ts-phone" / "ts-phone.service"
+        if service_path.exists() or service_path.is_symlink():
+            raise SuiteReleaseError("stale Phone service state exists but Phone is not selected")
     package_home = ensure_private_directory(install_root / ".pi" / "packages" / "tspi")
     releases_root = ensure_private_directory(package_home / "releases")
     target = releases_root / manifest["release_id"]
@@ -299,7 +305,11 @@ def _install_captured_package(
     # Host browsing precedes the first Worker and must work on a fresh install.
     ensure_private_directory(install_root / "workspaces")
     installed_manifest = read_json_object(target / INSTALLED_MANIFEST, "installed TSPi Package manifest")
-    service_template = prepare_phone_service(install_root, target)
+    service_template = (
+        prepare_phone_service(install_root, target)
+        if "phone" in manifest["components"]
+        else None
+    )
     state = {
         "schema_version": SUITE_INSTALL_SCHEMA_VERSION,
         "current_release_id": manifest["release_id"],
@@ -319,6 +329,7 @@ def _install_captured_package(
             prepared_runtime,
             state,
             publish,
+            manifest["components"],
         )
     return {
         "ok": True,
@@ -331,7 +342,7 @@ def _install_captured_package(
         "runtime": dict(prepared_runtime.result),
         "services_activated": False,
         "archived_retired_notification_state": archived_notification_state,
-        "phone_service_template": str(service_template),
+        "phone_service_template": str(service_template) if service_template is not None else None,
     }
 
 
@@ -365,6 +376,7 @@ def _activate_release(
     prepared_runtime: PreparedRuntime,
     state: dict[str, Any],
     publisher: Callable[[PreparedRuntime], Path],
+    components: dict[str, Any],
 ) -> dict[str, str]:
     """Publish runtime and content selection as one recoverable activation step."""
 
@@ -378,7 +390,7 @@ def _activate_release(
     manifest_before = _snapshot_json(prepared_runtime.manifest_path, "runtime manifest")
     state_before = _snapshot_json(state_path, "package install state")
     try:
-        launchers = install_launchers(install_root, package_home)
+        launchers = install_launchers(install_root, package_home, components)
         published = publisher(prepared_runtime)
         if published != prepared_runtime.manifest_path:
             raise SuiteReleaseError("runtime publisher returned an unexpected manifest path")
@@ -463,16 +475,17 @@ def validate_extracted_suite(root: Path, manifest: dict[str, Any]) -> None:
     validate_agent_runtime(agent_root, agent_manifest)
     atomic_write_json(agent_root / RELEASE_MANIFEST, agent_manifest)
     validate_agent_release_contract(agent_root, agent_manifest)
-    if not os.access(agent_root / "scripts" / "ts_web.py", os.X_OK):
+    if "web" in components and not os.access(agent_root / "scripts" / "ts_web.py", os.X_OK):
         raise SuiteReleaseError("installed TS Web entrypoint is not executable")
 
-    phone_descriptor = components["phone"]
-    phone_archive, phone_members = inspect_embedded_phone(root, phone_descriptor)
-    phone_root = root / "phone"
-    phone_root.mkdir(mode=0o700)
-    extract_rooted_archive(phone_archive, phone_members, phone_root)
-    validate_phone_runtime(phone_root, phone_descriptor)
-    validate_extracted_phone_matches_archive(phone_root, phone_archive, phone_members)
+    if "phone" in components:
+        phone_descriptor = components["phone"]
+        phone_archive, phone_members = inspect_embedded_phone(root, phone_descriptor)
+        phone_root = root / "phone"
+        phone_root.mkdir(mode=0o700)
+        extract_rooted_archive(phone_archive, phone_members, phone_root)
+        validate_phone_runtime(phone_root, phone_descriptor)
+        validate_extracted_phone_matches_archive(phone_root, phone_archive, phone_members)
 
 
 def validate_existing_suite(target: Path, manifest: dict[str, Any]) -> None:
@@ -493,14 +506,15 @@ def validate_installed_suite(root: Path, manifest: dict[str, Any]) -> None:
     }:
         raise SuiteReleaseError("installed suite components do not match the release manifest")
     inspect_embedded_agent(root, manifest["components"]["agent"])
-    phone_archive, phone_members = inspect_embedded_phone(root, manifest["components"]["phone"])
     agent_manifest = agent_release_manifest(manifest["components"]["agent"], manifest["created_at_utc"])
     validate_agent_runtime(root / "agent", agent_manifest)
     validate_agent_release_contract(root / "agent", agent_manifest)
-    if not os.access(root / "agent" / "scripts" / "ts_web.py", os.X_OK):
+    if "web" in manifest["components"] and not os.access(root / "agent" / "scripts" / "ts_web.py", os.X_OK):
         raise SuiteReleaseError("installed TS Web entrypoint is not executable")
-    validate_phone_runtime(root / "phone", manifest["components"]["phone"])
-    validate_extracted_phone_matches_archive(root / "phone", phone_archive, phone_members)
+    if "phone" in manifest["components"]:
+        phone_archive, phone_members = inspect_embedded_phone(root, manifest["components"]["phone"])
+        validate_phone_runtime(root / "phone", manifest["components"]["phone"])
+        validate_extracted_phone_matches_archive(root / "phone", phone_archive, phone_members)
 
 
 def inspect_embedded_agent(
@@ -576,17 +590,29 @@ def validate_agent_release_contract(root: Path, expected: dict[str, Any]) -> Non
         raise SuiteReleaseError("installed Agent release has no trusted wheel contract")
 
 
-def install_launchers(install_root: Path, package_home: Path) -> dict[str, str]:
+def install_launchers(install_root: Path, package_home: Path, components: dict[str, Any]) -> dict[str, str]:
     targets = {
         name: package_home / "current" / Path(*relative)
         for name, relative in LAUNCHER_PATHS.items()
     }
+    enabled = {"TSPi"}
+    if "web" in components:
+        enabled.add("TSWeb")
+    if "phone" in components:
+        enabled.update({"TSPhoneCtl", "TSPhoneServer"})
     for name, target in targets.items():
+        if name not in enabled:
+            continue
         install_symlink(install_root / name, target)
-    return {name: str(install_root / name) for name in targets}
+    return {name: str(install_root / name) for name in enabled}
 
 
-def validate_launcher_slots(install_root: Path) -> None:
+def validate_launcher_slots(install_root: Path, components: dict[str, Any]) -> None:
+    enabled = {"TSPi"}
+    if "web" in components:
+        enabled.add("TSWeb")
+    if "phone" in components:
+        enabled.update({"TSPhoneCtl", "TSPhoneServer"})
     conflicts = [
         str(install_root / name)
         for name in LAUNCHER_PATHS
@@ -596,6 +622,13 @@ def validate_launcher_slots(install_root: Path) -> None:
         raise SuiteReleaseError(
             "refusing to replace non-symlink package entrypoints: " + ", ".join(conflicts)
         )
+    stale = [
+        str(install_root / name)
+        for name in LAUNCHER_PATHS
+        if name not in enabled and (install_root / name).is_symlink()
+    ]
+    if stale:
+        raise SuiteReleaseError("stale optional component entrypoints exist: " + ", ".join(stale))
 
 
 def install_symlink(link: Path, target: Path) -> None:

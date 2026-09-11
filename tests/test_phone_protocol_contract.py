@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
+import pytest
 from jsonschema import Draft202012Validator
 
 
@@ -27,10 +29,13 @@ def test_vendored_phone_protocol_fixture_is_self_consistent() -> None:
     ).read_text(encoding="utf-8")
 
 
-def test_phone_fixture_matches_the_canonical_checkout_when_available() -> None:
-    canonical = Path("/home/iaw/Codex/Project/2026-08-14/ts-phone/packages/protocol")
+def test_phone_fixture_matches_the_canonical_checkout_when_configured() -> None:
+    configured = os.environ.get("TSPI_TS_PHONE_PROTOCOL_SOURCE")
+    if not configured:
+        pytest.skip("set TSPI_TS_PHONE_PROTOCOL_SOURCE to check a canonical ts-phone checkout")
+    canonical = Path(configured).expanduser().resolve()
     if not canonical.is_dir():
-        return
+        pytest.fail(f"TSPI_TS_PHONE_PROTOCOL_SOURCE is not a directory: {canonical}")
     completed = subprocess.run(
         ["python3", str(SYNC), "--check", "--source", str(canonical)], cwd=ROOT,
         text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,

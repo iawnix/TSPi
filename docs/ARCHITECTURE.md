@@ -1,7 +1,7 @@
 # TSPi Package Architecture
 
 This document defines component ownership and runtime boundaries for
-the complete TSPi Package and its `@iawnix/ts-agent` component. JSON and TypeBox schemas are authoritative for
+the TSPi Package and its `@iawnix/ts-agent` component. JSON and TypeBox schemas are authoritative for
 field-level call shapes. `tspi-orchestration` is authoritative for task and
 contract behavior; focused Skills provide scientific-method and output/delivery guidance. [ADR 0001](adr/0001-phase-node-research-kernel.md) records the
 Phase + ResearchNode design.
@@ -11,7 +11,7 @@ Phase + ResearchNode design.
 ```text
 Installation root
   one selected TSPi Package release
-    Agent + embedded Web + Phone server + signed mobile artifact
+    Agent + selected optional Web and Phone components
   TSPi shell shim
     -> Python lifecycle host
        -> immutable selected release and isolated Python runtime
@@ -54,15 +54,17 @@ Phone remain separate Git repositories with independent tests and maintainers.
 kernel's workspace contract. TS Phone produces a deterministic component
 archive; it does not select the installed TSPi version.
 
-The TSPi suite assembler consumes one validated Phone component
-manifest, builds or consumes one Agent component, checks their protocol and
-artifact contracts, and writes `tspi-package-release/2`. The Phone boundary
+The TSPi suite assembler consumes zero or one validated Phone component
+manifest, builds or consumes one Agent component, checks the selected protocol
+and artifact contracts, and writes `tspi-package-release/3`. Web is selected by
+the assembler unless `--without-web` is supplied. The Phone boundary
 requires `ts-phone-component-release/2`: its signed APK embeds a source
 snapshot, and a manifest-bound attestation binds that snapshot to the APK
 digest, version, build, ABI, and pinned signer. TSPi independently verifies
-those facts during assembly and installation. The outer Package
-contains the two immutable component archives and records Web as embedded in
-Agent. `install_package.py` first captures the caller-supplied Package archive
+those facts during assembly and installation. The outer Package contains the
+required Agent archive and the selected optional component archives, and records
+Web as embedded in Agent when selected. `install_package.py` first captures the
+caller-supplied Package archive
 into private staging so hashing, inspection, and extraction consume the same
 bytes. It then verifies every layer, prepares and probes the
 release-bound Python runtime, and only then selects exactly one set at:
@@ -95,7 +97,7 @@ operator entrypoints; they do not own domain behavior.
 from a temporary writable source copy and embeds it under `python-dist/`.
 Component manifest `ts-agent-release/2` binds the wheel name, version, path,
 size, SHA-256, and expanded package-payload digest to the Agent archive.
-`build_package.py` binds that component into the complete Package;
+`build_package.py` binds that component into the selected Package;
 `install_package.py` is the public installation boundary. `install_release.py`
 remains available for Agent-component development tests, not full deployments.
 

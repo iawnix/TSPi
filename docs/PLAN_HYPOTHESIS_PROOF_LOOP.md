@@ -618,7 +618,7 @@ old schema or public name while the new contract is being defined.
 ### Milestone G: package and release
 
 - make the TSPi suite manifest the only production release authority;
-- build Agent, Web, Phone server, and APK from clean component sources;
+- build Agent and any selected Web or Phone component from clean component sources;
 - verify nested digests, protocol compatibility, permissions, and launchers;
 - run source, package, runtime, Web, Phone, and end-to-end loop tests;
 - document install, configuration, rollback, and component development paths.
@@ -644,7 +644,7 @@ The redesign is complete only when all of the following are demonstrated:
   Phone projections;
 - TS Web and TS Phone render the same authoritative loop without becoming state
   owners;
-- one TSPi package installs a version-compatible Agent/Web/Phone set and can
+- one TSPi package installs a version-compatible Agent and selected Web/Phone components and can
   be rolled back atomically.
 
 ## 14. Risks And Deliberate Controls

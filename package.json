@@ -28,7 +28,8 @@
     "test:terminal": "node tests/terminal.test.mjs",
     "test:terminal-host": "node tests/terminal-host.test.mjs",
     "release:agent": "python3 scripts/build_release.py --output-dir dist/agent --json",
-    "release:build": "python3 scripts/build_package.py --phone-manifest \"${TS_PHONE_COMPONENT_MANIFEST:?set TS_PHONE_COMPONENT_MANIFEST to ts-phone-component-release.json}\" --output-dir dist/package --json",
+    "release:build": "python3 scripts/build_package.py --output-dir dist/package --json",
+    "release:build:phone": "python3 scripts/build_package.py --phone-manifest \"${TS_PHONE_COMPONENT_MANIFEST:?set TS_PHONE_COMPONENT_MANIFEST to ts-phone-component-release.json}\" --output-dir dist/package --json",
     "typecheck": "tsc --noEmit"
   },
   "files": [

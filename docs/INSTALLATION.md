@@ -1,7 +1,7 @@
 # Installation And Operations
 
-This guide builds and installs one validated TSPi Package containing the Agent,
-embedded Web explorer, TS Phone server, and signed Android artifact. It also
+This guide builds and installs one validated TSPi Package containing the required
+Agent and any selected Web or TS Phone components. It also
 covers workspace startup, configuration, upgrade, rollback, and common recovery
 paths.
 
@@ -27,8 +27,9 @@ Optional dependencies are:
 - Gaussian, xTB, or other software profiles on the remote execution system;
 - `xyzrender`, installed by `--with-render`, for visualization;
 - a configured ClawEmail installation for email notifications;
-- an Android device for the Phone UI. The Host and signed arm64 APK are bundled,
-  but service activation and device installation are explicit operations.
+- an Android device for the Phone UI when the Phone component is selected. Its
+  signed arm64 APK is bundled only in that profile; service activation and
+  device installation are explicit operations.
 
 The default terminal client requires the configured Host to be running. It
 does not require an Android device. Native Pi remains available with
@@ -44,9 +45,9 @@ Choose one physical, non-symlink installation root:
 ```text
 <installation>/
   TSPi
-  TSWeb
-  TSPhoneCtl
-  TSPhoneServer
+  TSWeb                         optional Web component
+  TSPhoneCtl                    optional Phone component
+  TSPhoneServer                 optional Phone component
   .pi/
     packages/tspi/
       current -> releases/<suite-release-id>
@@ -54,7 +55,7 @@ Choose one physical, non-symlink installation root:
         agent/
           packages/ts-agent-kernel/ts_agent/           auditable Python source
           python-dist/*.whl          manifest-bound runtime artifact
-        phone/
+        phone/                    present only when Phone is selected
           services/server/dist/      TS Phone server
           artifacts/*.apk            signed Android artifact
           artifacts/*.attestation.json  source/build binding
@@ -73,16 +74,27 @@ Choose one physical, non-symlink installation root:
     <workspace-name>/
 ```
 
-The four top-level entrypoints resolve through the same suite `current` pointer.
-Releases are immutable and shared. Workspaces keep separate Pi sessions,
+The selected top-level entrypoints resolve through the same suite `current`
+pointer: `TSPi` is always present; `TSWeb` is present when Web is selected;
+`TSPhoneCtl` and `TSPhoneServer` are present when Phone is selected. Releases
+are immutable and shared. Workspaces keep separate Pi sessions,
 canonical state, calculation controls, reports, and Root locks. Phone tokens,
 service configuration, model credentials, and other runtime state remain
 outside the release.
 
 ## Build A Release
 
-Run this section with clean TS Phone and TSPi source checkouts. End users
-receiving a prebuilt Package archive and manifest can skip it.
+Run this section with a clean TSPi source checkout. Build the required Agent and
+embedded Web component without Phone as follows:
+
+```bash
+cd /path/to/TSPi
+python3 scripts/build_package.py \
+  --output-dir dist/package \
+  --json
+```
+
+To include Phone, first build a clean TS Phone component and pass its manifest:
 
 ```bash
 cd /path/to/ts-phone
@@ -108,11 +120,14 @@ attestation, and writes `ts-phone-component-release/2`. Android artifacts are
 published as one content-addressed set behind `dist/android-current`. The suite
 builder independently repeats the Phone checks, builds the Agent component and wheel
 from one private Git-visible source capture,
-and writes `tspi-package-release/2`. Each build fails on a dirty source unless
+and writes `tspi-package-release/3`. Phone is absent from the package when
+`--phone-manifest` is omitted, and Web is absent when `--without-web` is used.
+Each build fails on a dirty source unless
 `--allow-dirty` is supplied. That option is only for local validation and must
 not be used for a distributed release.
 
-The complete Package contains the arm64 APK, not the store AAB. TS Phone checks
+When Phone is selected, the Package contains its arm64 APK, not the store AAB.
+TS Phone checks
 the AAB signature, sole pinned signer, source identity, and attestation, but a
 pinned `bundletool` metadata check is still required before store upload. Its
 Android build also records source provenance rather than content identities for
@@ -126,10 +141,11 @@ dist/package/tspi-package-<version>-sha256-<digest>.tgz
 dist/package/tspi-package-release.json
 ```
 
-Keep both files together. The suite manifest binds the exact Agent and Phone
-release IDs, nested archive paths, sizes and SHA-256 values, Agent wheel,
-protocol set, Phone server entry, signed APK, embedded source snapshot, mobile
-build attestation, component source identities, and the outer archive identity.
+Keep both files together. The suite manifest binds the exact Agent release and
+the selected Web and Phone descriptors, nested archive paths, sizes and
+SHA-256 values, Agent wheel, protocol sets, Phone server entry, signed APK,
+embedded source snapshot, mobile build attestation, component source
+identities, and the outer archive identity.
 `build_release.py` and `install_release.py` remain
 internal Agent-component tools; they do not produce or install a complete TSPi
 deployment.
@@ -157,9 +173,10 @@ The installer rejects symlinked roots, unsafe members in every archive,
 unexpected development files, component/protocol mismatches, size or digest
 mismatches, untrusted or misidentified APKs, and writable release contents. It
 captures the outer archive once into private staging, validates and extracts
-that same byte sequence, then validates the expanded Agent, Web, Phone server,
-APK, embedded source identity, and attestation before finalizing read-only
-permissions. Before activation it prepares the target
+that same byte sequence, then validates the expanded Agent and each selected
+optional component, including the Phone server, APK, embedded source identity,
+and attestation when Phone is selected, before finalizing read-only permissions.
+Before activation it prepares the target
 release runtime and runs the NumPy/RDKit capability probe. Only a healthy
 runtime may publish its manifest and atomically switch the suite `current`.
 On reinstall, every expanded Phone file and its executable class is compared
@@ -304,7 +321,7 @@ Ambiguous provider effects are never retried automatically.
 
 ## Configure TS Phone
 
-Phone mode is optional. The selected Package includes the compatible broker,
+Phone mode is available only when Phone was selected. That Package includes the compatible broker,
 control CLI, protocol schemas, and signed arm64 APK. It does not own the live
 service or its secrets. Copy the component's example environment into private
 installation state. Paths are inferred by the installed entrypoints; uncomment
@@ -472,7 +489,7 @@ existing layout is unsupported.
 
 ## Run The Research Explorer
 
-`ts_web` is an optional read-only process. Keep its registry outside all source
+`ts_web` is available only when Web was selected and is a read-only process. Keep its registry outside all source
 workspaces and register one or more studies while starting the server:
 
 ```bash
@@ -525,7 +542,7 @@ can inspect the registered research data.
 
 ## Upgrade
 
-1. Validate and build clean Phone and Agent components into a new Package.
+1. Validate and build clean Agent and any selected optional components into a new Package.
 2. Preserve its archive and manifest.
 3. Run `install_package.py` against the same installation root and Conda root;
    it prepares and probes the target runtime before selecting the release.

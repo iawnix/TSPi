@@ -46,7 +46,7 @@ contracts are explicit.
 | `ts-phone` | Independent repository with API, events, bridge schemas, broker, mobile client, and component release tooling | It can remain independently developed and become an optional installed component |
 | `ts-web` | Python server and static UI under `packages/ts-agent-kernel/ts_agent/web/`; projection code imports `ts_agent.workspace` and operational modules | Extraction requires a versioned projection boundary first |
 | Phone protocol | `ts-phone` publishes `ts-phone-api/4`, `ts-phone-events/3`, and `ts-phone-bridge/3`; TSPi also contains a hand-written Bridge type/parser | The wire contract currently has duplicate ownership |
-| Release boundary | TSPi already validates `tspi-package-release/2` and a Phone component manifest | The existing release model can be extended before inventing another installer |
+| Release boundary | TSPi validates `tspi-package-release/3` with required Agent and optional Web or Phone descriptors | The existing release model can express selectable components without another installer |
 | `cluster_mcp` | No tracked files, source, or cache residue remains after cleanup | It is not an architectural dependency and must stay absent |
 | Review | One isolated advisory Review runtime exists; no reviewer pool, role selection, aggregation, or conflict protocol exists | Improve the contract before adding more reviewer prompts or agents |
 | Testing | `scripts/test_source.py` builds a wheel and temporary overlay before running Python tests | Fast edit feedback and release-backed validation need separate commands |
@@ -110,7 +110,7 @@ entrypoints
 artifacts: path, size, digest, permissions
 ```
 
-The existing `tspi-package-release/2` and component manifest contracts are the
+The existing `tspi-package-release/3` and component manifest contracts are the
 starting point. Do not introduce a second installer authority unless an audit
 shows that the existing manifest cannot represent optional components.
 

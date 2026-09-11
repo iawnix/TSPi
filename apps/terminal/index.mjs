@@ -14,7 +14,7 @@ async function main() {
   const client = new HostClient(await hostConnection(values["install-root"]));
   const version = await client.request("/version");
   if (!version.capabilities?.includes("terminal.attach")) {
-    throw new Error("This Host does not support terminal attachment. Synchronize the complete TSPi package and restart Host.");
+    throw new Error("This Host does not support terminal attachment. Synchronize the selected TSPi package and restart Host.");
   }
   const terminal = new PiTui.ProcessTerminal();
   // Pi 0.85 names the existing main-screen renderer TuiMainScreen.

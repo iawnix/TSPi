@@ -71,7 +71,23 @@ package 内包含一个编排 Skill、五个科学方法 Skill 和三个输出/�
 
 ## 安装
 
-先从独立的 `ts-phone` 仓库构建并校验 Phone 组件，再由 TSPi 组装所选组件：
+从干净的 TSPi 源码仓库构建并安装必选 Agent 和默认的 Web 组件：
+
+```bash
+cd /path/to/TSPi
+python3 scripts/build_package.py \
+  --output-dir dist/package \
+  --json
+python3 scripts/install_package.py \
+  --manifest dist/package/tspi-package-release.json \
+  --install-root /path/to/TSPi-installation \
+  --conda-root /path/to/miniforge3 \
+  --with-render \
+  --json
+```
+
+如需加入可选 Phone 组件，先从独立的 `ts-phone` 仓库构建并校验组件清单，
+再传给 TSPi 组装器：
 
 ```bash
 cd /path/to/ts-phone
@@ -84,13 +100,10 @@ python3 scripts/build_package.py \
   --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
   --output-dir dist/package \
   --json
-python3 scripts/install_package.py \
-  --manifest dist/package/tspi-package-release.json \
-  --install-root /path/to/TSPi-installation \
-  --conda-root /path/to/miniforge3 \
-  --with-render \
-  --json
 ```
+
+需要只有 Core 时传入 `--without-web`。如果收到预构建的 Package 归档和清单，
+可以跳过组件构建步骤。
 
 安装器使用一个经过校验的 TSPi Package，按组件版本、协议版本、文件大小、
 SHA-256 和构建证明绑定发布内容。安装只选择内容，不自动启动 Phone 服务，

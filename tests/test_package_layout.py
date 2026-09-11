@@ -460,9 +460,10 @@ print(json.dumps({
         install_root / ".agents" / "runtime" / "tspi" / "env.json"
     )
     assert result["env_root"] == str(install_root / ".agents" / "envs" / "tspi")
-    assert result["managed_python"] == str(Path(sys.executable).resolve())
-    assert Path(result["path_python"]).resolve() == Path(sys.executable).resolve()
-    assert Path(result["path_python3"]).resolve().parent == Path(sys.executable).resolve().parent
+    managed_python = Path(result["managed_python"]).resolve()
+    assert managed_python == install_root / ".test-python-runtime" / "kernel" / "bin" / "python"
+    assert Path(result["path_python"]).resolve() == managed_python
+    assert Path(result["path_python3"]).resolve().parent == managed_python.parent
     assert result["no_user_site"] == "1"
     assert result["python_cache"] == str(install_root / ".pi" / "runtime-cache" / "python" / "reaction-a")
     assert result["pytest_options"].endswith(

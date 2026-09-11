@@ -49,8 +49,9 @@ BUILD_AGENT = ROOT / "scripts" / "build_release.py"
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Build a complete Agent, Web, and Phone TSPi Package.")
-    parser.add_argument("--phone-manifest", required=True, help="Validated ts-phone-component-release.json.")
+    parser = argparse.ArgumentParser(description="Build a TSPi Core Package with optional Web and Phone components.")
+    parser.add_argument("--phone-manifest", help="Validated ts-phone-component-release.json.")
+    parser.add_argument("--without-web", action="store_true", help="Omit the optional TS Web client descriptor and launcher.")
     parser.add_argument("--agent-manifest", help="Existing Agent component manifest; otherwise build from this checkout.")
     parser.add_argument("--output-dir", default="dist/package", help="Directory for the suite archive and manifest.")
     parser.add_argument("--allow-dirty", action="store_true", help="Allow dirty component sources for local validation only.")
@@ -61,10 +62,11 @@ def main(argv: list[str] | None = None) -> int:
         output_dir = ROOT / output_dir
     try:
         result = build_package(
-            phone_manifest_path=Path(args.phone_manifest).expanduser().resolve(),
+            phone_manifest_path=(Path(args.phone_manifest).expanduser().resolve() if args.phone_manifest else None),
             output_dir=output_dir.resolve(),
             agent_manifest_path=(Path(args.agent_manifest).expanduser().resolve() if args.agent_manifest else None),
             allow_dirty=args.allow_dirty,
+            include_web=not args.without_web,
         )
     except (SuiteReleaseError, json.JSONDecodeError, OSError, ValueError) as error:
         print(f"TSPi Package build failed: {error}", file=sys.stderr)
@@ -80,10 +82,11 @@ def main(argv: list[str] | None = None) -> int:
 
 def build_package(
     *,
-    phone_manifest_path: Path,
+    phone_manifest_path: Path | None,
     output_dir: Path,
     agent_manifest_path: Path | None,
     allow_dirty: bool,
+    include_web: bool = True,
 ) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="tspi-package-build-") as temporary:
         temporary_root = Path(temporary)
@@ -112,8 +115,11 @@ def build_package(
             agent_manifest_path = Path(built["manifest"])
 
         agent_manifest = load_agent_manifest(agent_manifest_path)
-        phone_manifest = load_phone_manifest(phone_manifest_path)
-        for label, source in (("Agent", agent_manifest["source"]), ("Phone", phone_manifest["source"])):
+        phone_manifest = load_phone_manifest(phone_manifest_path) if phone_manifest_path is not None else None
+        sources = [("Agent", agent_manifest["source"])]
+        if phone_manifest is not None:
+            sources.append(("Phone", phone_manifest["source"]))
+        for label, source in sources:
             if source["dirty"] and not allow_dirty:
                 raise SuiteReleaseError(f"{label} component was built from a dirty source checkout")
 
@@ -122,12 +128,14 @@ def build_package(
             agent_manifest["archive"],
             "Agent component archive",
         )
-        phone_archive = verify_archive_descriptor(
-            phone_manifest_path.parent / phone_manifest["archive"]["filename"],
-            phone_manifest["archive"],
-            "Phone component archive",
-        )
-        components = suite_components(agent_manifest, phone_manifest)
+        phone_archive = None
+        if phone_manifest is not None:
+            phone_archive = verify_archive_descriptor(
+                phone_manifest_path.parent / phone_manifest["archive"]["filename"],
+                phone_manifest["archive"],
+                "Phone component archive",
+            )
+        components = suite_components(agent_manifest, phone_manifest, include_web=include_web)
         output_dir.mkdir(parents=True, exist_ok=True)
         temporary_archive = temporary_root / "tspi-package.tgz"
         write_suite_archive(temporary_archive, components, agent_archive, phone_archive)

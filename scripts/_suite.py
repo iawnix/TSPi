@@ -1,4 +1,4 @@
-"""Contracts and archive helpers for the complete TSPi Package release."""
+"""Contracts and archive helpers for a selected TSPi Package release."""
 
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ except ImportError:
     from install_release import ReleaseInstallError, load_manifest as _load_agent_manifest
 
 
-SUITE_SCHEMA_VERSION = "tspi-package-release/2"
-SUITE_COMPONENTS_SCHEMA_VERSION = "tspi-package-components/2"
+SUITE_SCHEMA_VERSION = "tspi-package-release/3"
+SUITE_COMPONENTS_SCHEMA_VERSION = "tspi-package-components/3"
 SUITE_INSTALL_SCHEMA_VERSION = "tspi-package-install/1"
 PHONE_SCHEMA_VERSION = "ts-phone-component-release/2"
 PHONE_SOURCE_SCHEMA_VERSION = "ts-phone-source-snapshot/1"
@@ -223,10 +223,14 @@ def validate_phone_manifest(value: object) -> dict[str, Any]:
     return manifest
 
 
-def suite_components(agent: dict[str, Any], phone: dict[str, Any]) -> dict[str, Any]:
+def suite_components(
+    agent: dict[str, Any],
+    phone: dict[str, Any] | None = None,
+    *,
+    include_web: bool = True,
+) -> dict[str, Any]:
     agent_archive = agent["archive"]
-    phone_archive = phone["archive"]
-    return {
+    components: dict[str, Any] = {
         "agent": {
             "release_id": agent["release_id"],
             "version": agent["package"]["version"],
@@ -238,8 +242,12 @@ def suite_components(agent: dict[str, Any], phone: dict[str, Any]) -> dict[str, 
             "python_distribution": agent["python_distribution"],
             "source": agent["source"],
         },
-        "web": dict(WEB_COMPONENT),
-        "phone": {
+    }
+    if include_web:
+        components["web"] = dict(WEB_COMPONENT)
+    if phone is not None:
+        phone_archive = phone["archive"]
+        components["phone"] = {
             "release_id": phone["release_id"],
             "server_version": phone["component"]["server_version"],
             "mobile_version": phone["component"]["mobile_version"],
@@ -254,12 +262,18 @@ def suite_components(agent: dict[str, Any], phone: dict[str, Any]) -> dict[str, 
             "mobile_artifact": phone["mobile_artifact"],
             "mobile_build_attestation": phone["mobile_build_attestation"],
             "source": phone["source"],
-        },
-    }
+        }
+    return components
 
 
 def validate_components(value: object) -> dict[str, Any]:
-    components = exact_object(value, "suite components", {"agent", "web", "phone"})
+    if (
+        not isinstance(value, dict)
+        or "agent" not in value
+        or not set(value).issubset({"agent", "web", "phone"})
+    ):
+        raise SuiteReleaseError("suite components must contain Agent and only optional Web or Phone components")
+    components = value
     agent = exact_object(
         components.get("agent"),
         "suite agent component",
@@ -278,11 +292,18 @@ def validate_components(value: object) -> dict[str, Any]:
     if distribution["version"] != agent_version:
         raise SuiteReleaseError("suite Agent Python distribution version does not match the component version")
     validate_source(agent.get("source"), "suite agent source")
-    web = exact_object(components.get("web"), "suite web component", set(WEB_COMPONENT))
-    if web != WEB_COMPONENT:
-        raise SuiteReleaseError("suite Web component contract is incompatible")
+    if "web" in components:
+        web = exact_object(components.get("web"), "suite web component", set(WEB_COMPONENT))
+        if web != WEB_COMPONENT:
+            raise SuiteReleaseError("suite Web component contract is incompatible")
+    if "phone" in components:
+        _validate_suite_phone_component(components["phone"])
+    return components
+
+
+def _validate_suite_phone_component(value: object) -> None:
     phone = exact_object(
-        components.get("phone"),
+        value,
         "suite phone component",
         {
             "release_id",
@@ -302,7 +323,11 @@ def validate_components(value: object) -> dict[str, Any]:
         version = require_string(phone.get(key), f"suite phone {key}")
         if not SEMANTIC_VERSION.fullmatch(version):
             raise SuiteReleaseError(f"suite phone {key} must use semantic x.y.z form")
-    if not isinstance(phone.get("mobile_build"), int) or isinstance(phone["mobile_build"], bool) or phone["mobile_build"] <= 0:
+    if (
+        not isinstance(phone.get("mobile_build"), int)
+        or isinstance(phone["mobile_build"], bool)
+        or phone["mobile_build"] <= 0
+    ):
         raise SuiteReleaseError("suite phone mobile_build must be a positive integer")
     if exact_object(phone.get("protocols"), "suite phone protocols", set(EXPECTED_PHONE_PROTOCOLS)) != EXPECTED_PHONE_PROTOCOLS:
         raise SuiteReleaseError("suite phone protocols are incompatible")
@@ -318,7 +343,11 @@ def validate_components(value: object) -> dict[str, Any]:
         "suite phone mobile_artifact",
         {"path", "sha256", "size_bytes", "abi", "certificate_sha256"},
     )
-    validate_file_descriptor({key: mobile[key] for key in ("path", "sha256", "size_bytes")}, "suite phone mobile artifact", key="path")
+    validate_file_descriptor(
+        {key: mobile[key] for key in ("path", "sha256", "size_bytes")},
+        "suite phone mobile artifact",
+        key="path",
+    )
     if mobile.get("abi") != PHONE_ANDROID_ABI:
         raise SuiteReleaseError("suite phone mobile artifact ABI is incompatible")
     expected_mobile_path = (
@@ -345,7 +374,6 @@ def validate_components(value: object) -> dict[str, Any]:
     )
     if phone_release_id != expected_phone_release:
         raise SuiteReleaseError("suite phone release_id does not match its source and archive")
-    return components
 
 
 def validate_suite_manifest(value: object) -> dict[str, Any]:
@@ -378,7 +406,7 @@ def write_suite_archive(
     destination: Path,
     components: dict[str, Any],
     agent_archive: Path,
-    phone_archive: Path,
+    phone_archive: Path | None = None,
 ) -> None:
     records = [
         (PurePosixPath("components.json"), canonical_json({"schema_version": SUITE_COMPONENTS_SCHEMA_VERSION, "components": components}) + b"\n", 0o644),
@@ -392,17 +420,22 @@ def write_suite_archive(
             ),
             0o644,
         ),
-        (
-            PurePosixPath(components["phone"]["archive"]["path"]),
-            read_verified_file_snapshot(
-                phone_archive,
-                components["phone"]["archive"],
-                "Phone component archive",
-                max_bytes=MAX_COMPONENT_ARCHIVE_BYTES,
-            ),
-            0o644,
-        ),
     ]
+    if "phone" in components:
+        if phone_archive is None:
+            raise SuiteReleaseError("Phone component archive is required when Phone is selected")
+        records.append(
+            (
+                PurePosixPath(components["phone"]["archive"]["path"]),
+                read_verified_file_snapshot(
+                    phone_archive,
+                    components["phone"]["archive"],
+                    "Phone component archive",
+                    max_bytes=MAX_COMPONENT_ARCHIVE_BYTES,
+                ),
+                0o644,
+            )
+        )
     write_deterministic_archive(destination, "package", records)
 
 

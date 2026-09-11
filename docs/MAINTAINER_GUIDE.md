@@ -637,9 +637,8 @@ policy versions and must be bumped when their expanded meaning changes.
 3. Confirm docs, examples, CLI help, schemas, and registered tools describe one
    workspace contract.
 4. Commit only intended source changes in their owning repositories.
-5. Build the Phone component and complete Package from clean commits. Record
-   both source commits, component IDs, suite release ID, archive size, and
-   SHA-256.
+5. Build the selected components and Package from clean commits. Record their
+   source commits, component IDs, suite release ID, archive size, and SHA-256.
 6. Install into staging or the authorized TSPi root with `install_package.py`;
    the installer must prepare and probe the target runtime before activation.
 7. Verify `TSPi --help`, `TSWeb --help`, `TSPhoneCtl --help`,
