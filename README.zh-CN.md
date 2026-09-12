@@ -68,6 +68,16 @@ package 内包含一个编排 Skill、五个科学方法 Skill 和三个输出/�
 
 ## 安装
 
+从 GitHub 进行交互式安装时，建议固定安装器的 release commit：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/<commit>/install.sh | bash
+```
+
+向导会依次选择 TSPi、TS Web、独立的 TS Phone checkout、安装目录、Python
+runtime 和可选的 systemd 服务。自动化部署可以使用同一个脚本的
+`--non-interactive` 参数；生产安装应使用完整 commit SHA。
+
 生产安装应从固定的 GitHub tag 或 commit 开始，并在激活前记录源码 provenance：
 
 ```bash

@@ -146,6 +146,18 @@ the Web component calls it through the versioned provider protocol.
 
 ## Quick Install
 
+For an interactive installation from GitHub, pin the installer to a release
+commit and run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/<commit>/install.sh | bash
+```
+
+The wizard selects TSPi, TS Web, an external TS Phone checkout, the install
+root, the managed Python runtime, and optional systemd services. Automation can
+pass the same choices explicitly with `--non-interactive`; use a full commit
+SHA for production installations.
+
 Production installation starts from a fixed GitHub tag or commit and records
 the source provenance before activation:
 

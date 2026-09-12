@@ -5,6 +5,24 @@ Agent and any selected Web or TS Phone components. It also
 covers workspace startup, configuration, upgrade, rollback, and common recovery
 paths.
 
+## Interactive Installer
+
+The repository provides a thin GitHub bootstrap for first-time setup:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/<commit>/install.sh | bash
+```
+
+The wizard asks for the TSPi revision, optional TS Web and TS Phone components,
+the installation root, Conda root, and whether to generate and start systemd
+services. Pin `<commit>` to a full Git SHA for a reproducible installation.
+The same entrypoint accepts `--non-interactive` plus explicit flags for CI and
+fleet provisioning. Existing configuration and credentials remain untouched.
+
+The default service scope is the current user's systemd manager. Select the
+system scope only when running as root. TSPi itself remains an interactive
+launcher; the wizard creates services for TS Phone and optional TS Web.
+
 ## Prerequisites
 
 | Requirement | Purpose |
