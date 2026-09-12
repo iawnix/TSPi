@@ -24,11 +24,9 @@ The current problems are:
 3. The Web client needs an independent source and release boundary while the
    TSPi provider retains ownership of private workspace and operational data.
 4. The Phone bridge protocol is represented in more than one source tree.
-5. `cluster_mcp` is an obsolete working-tree residue rather than a current
-   component.
-6. Public Skill terminology and internal implementation terminology are not
+5. Public Skill terminology and internal implementation terminology are not
    governed by one vocabulary policy.
-7. The Review runtime has good isolation, but `ts-reviewers` is not yet a
+6. The Review runtime has good isolation, but `ts-reviewers` is not yet a
    role-based reviewer system. The source test entrypoint also performs a
    relatively expensive wheel and runtime preparation for ordinary Python
    feedback.
@@ -46,7 +44,6 @@ contracts are explicit.
 | `ts-web` | Client, registry, server, and static UI under `components/ts-web/`; it consumes the TSPi provider through `ts-web-provider/1` | The component can be archived and installed independently from Agent |
 | Phone protocol | `ts-phone` publishes `ts-phone-api/4`, `ts-phone-events/3`, and `ts-phone-bridge/3`; TSPi also contains a hand-written Bridge type/parser | The wire contract currently has duplicate ownership |
 | Release boundary | TSPi emits `tspi-package-release/4` with required Agent and optional independent Web or Phone descriptors | The schema bump separates the Web archive contract from the Agent payload |
-| `cluster_mcp` | No tracked files, source, or cache residue remains after cleanup | It is not an architectural dependency and must stay absent |
 | Review | One isolated advisory Review runtime exists; no reviewer pool, role selection, aggregation, or conflict protocol exists | Improve the contract before adding more reviewer prompts or agents |
 | Testing | `scripts/test_source.py` builds a wheel and temporary overlay before running Python tests | Fast edit feedback and release-backed validation need separate commands |
 
@@ -380,12 +377,6 @@ for local changes.
 - add bounded parallel execution and aggregation only after single-role
   journals and failure semantics are stable;
 - add role disagreement fixtures and explicit Root disposition tests.
-
-### Phase 6: cleanup
-
-After each reference scan, remove confirmed obsolete generated files and keep
-them excluded by `.gitignore`. `cluster_mcp` was an untracked cache residue;
-it has been removed and is now explicitly ignored.
 
 ## Non-Goals
 

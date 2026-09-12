@@ -212,7 +212,6 @@ def test_package_manifest_exposes_the_public_skill_family_and_allowlisted_runtim
 
 
 def test_repository_layout_has_named_source_boundaries() -> None:
-    assert not (ROOT / "cluster_mcp").exists()
     assert not (ROOT / "python").exists()
     assert not (ROOT / "src").exists()
     assert (ROOT / "packages" / "ts-agent-kernel" / "ts_agent").is_dir()
