@@ -27,9 +27,15 @@ launcher; the wizard creates services for TS Phone and optional TS Web.
 
 Uninstallation is a separate, confirmation-based operation:
 
+The installation places a self-contained `uninstall.sh` at its root, so normal
+removal does not require another network request:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/<commit>/uninstall.sh | bash
+/path/to/TSPi-installation/uninstall.sh
 ```
+
+The repository-level `uninstall.sh` remains available only as a recovery entry
+point when an installation's local copy has been removed.
 
 By default it disables services belonging to the selected installation, removes
 the selected release and managed runtime links, and keeps workspaces, Pi

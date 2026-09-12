@@ -8,6 +8,9 @@ readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 if [[ -f "${SCRIPT_DIR}/scripts/uninstall.py" && -f "${SCRIPT_DIR}/package.json" ]]; then
   exec python3 "${SCRIPT_DIR}/scripts/uninstall.py" "$@"
 fi
+if [[ -f "${SCRIPT_DIR}/.pi/tspi/uninstall.py" ]]; then
+  exec python3 "${SCRIPT_DIR}/.pi/tspi/uninstall.py" "$@"
+fi
 
 command -v git >/dev/null 2>&1 || { echo "TSPi uninstaller requires Git." >&2; exit 127; }
 command -v python3 >/dev/null 2>&1 || { echo "TSPi uninstaller requires Python 3." >&2; exit 127; }

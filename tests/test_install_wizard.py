@@ -4,6 +4,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from scripts.install_wizard import configure_phone, phone_unit, validate_options
+from scripts.install_from_github import install_uninstaller
 
 
 def _options(tmp_path: Path, *, phone_root: str | None = None) -> Namespace:
@@ -47,3 +48,18 @@ def test_phone_unit_uses_external_checkout(tmp_path: Path) -> None:
     assert f"WorkingDirectory={phone}" in unit
     assert f"ExecStart={phone / 'bin/ts-phone-server'}" in unit
     assert "ProtectHome=read-only" in unit
+
+
+def test_install_places_local_uninstaller_in_installation(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    (source / "scripts").mkdir(parents=True)
+    (source / "uninstall.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (source / "scripts/uninstall.py").write_text("print('ok')\n", encoding="utf-8")
+    destination = tmp_path / "install"
+
+    uninstaller = install_uninstaller(destination, source)
+
+    assert uninstaller == destination / "uninstall.sh"
+    assert uninstaller.is_file()
+    assert (destination / ".pi/tspi/uninstall.py").is_file()
+    assert uninstaller.stat().st_mode & 0o111

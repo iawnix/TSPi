@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -47,6 +48,18 @@ def tree_digest(root: Path) -> str:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         entries.append(f"{path.relative_to(root).as_posix()}\0{digest}")
     return "sha256:" + hashlib.sha256("\n".join(entries).encode()).hexdigest()
+
+
+def install_uninstaller(install_root: Path, source_root: Path) -> Path:
+    destination = install_root.expanduser().resolve()
+    private = destination / ".pi" / "tspi"
+    private.mkdir(mode=0o700, parents=True, exist_ok=True)
+    uninstaller = destination / "uninstall.sh"
+    shutil.copy2(source_root / "uninstall.sh", uninstaller)
+    shutil.copy2(source_root / "scripts" / "uninstall.py", private / "uninstall.py")
+    uninstaller.chmod(0o755)
+    (private / "uninstall.py").chmod(0o700)
+    return uninstaller
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -107,10 +120,11 @@ def main(argv: list[str] | None = None) -> int:
             if args.conda_root:
                 install.extend(["--conda-root", args.conda_root])
             installed = json.loads(run(install, cwd=checkout))
+            uninstaller = install_uninstaller(Path(args.install_root), checkout)
             provenance = Path(args.install_root).expanduser().resolve() / ".pi" / "packages" / "tspi" / "source-provenance.json"
             provenance.parent.mkdir(parents=True, exist_ok=True)
             provenance.write_text(json.dumps({"schema_version": "tspi-source-provenance/1", "repo": args.repo, "ref": args.ref, "commit": commit, "tree_digest": digest, "phone_repo": args.phone_repo, "phone_ref": args.phone_ref, "phone_commit": phone_commit, "installed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            result = {"commit": commit, "tree_digest": digest, "phone_commit": phone_commit, "manifest": built["manifest"], "release_id": installed.get("release_id"), "provenance": str(provenance)}
+            result = {"commit": commit, "tree_digest": digest, "phone_commit": phone_commit, "manifest": built["manifest"], "release_id": installed.get("release_id"), "provenance": str(provenance), "uninstaller": str(uninstaller)}
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
