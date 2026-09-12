@@ -23,6 +23,29 @@ The default service scope is the current user's systemd manager. Select the
 system scope only when running as root. TSPi itself remains an interactive
 launcher; the wizard creates services for TS Phone and optional TS Web.
 
+## Uninstall
+
+Uninstallation is a separate, confirmation-based operation:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/<commit>/uninstall.sh | bash
+```
+
+By default it disables services belonging to the selected installation, removes
+the selected release and managed runtime links, and keeps workspaces, Pi
+sessions, Phone tokens, bridge secrets, and installation configuration. The
+interactive wizard can separately purge workspaces, configuration, managed
+runtime state, or the empty installation root. Automation must opt into every
+destructive scope explicitly:
+
+```bash
+./uninstall.sh --non-interactive --yes \
+  --install-root /path/to/TSPi-installation \
+  --purge-workspaces --purge-config --purge-runtime --remove-root
+```
+
+Global Pi credentials under `~/.pi/agent` are never removed by this uninstaller.
+
 ## Prerequisites
 
 | Requirement | Purpose |

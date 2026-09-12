@@ -91,6 +91,13 @@ python3 scripts/install_from_github.py \
 
 下面的 `build_package.py` 和 `install_package.py` 仍可用于离线组装和内部校验。
 
+卸载使用独立脚本。它只停止属于所选安装的服务，默认保留工作区、会话和凭据；
+只有明确选择 purge 选项时才会删除这些数据：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/<commit>/uninstall.sh | bash
+```
+
 如需加入可选 Phone 组件，先从独立的 `ts-phone` 仓库构建并校验组件清单，
 再传给 TSPi 组装器：
 

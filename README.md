@@ -173,6 +173,14 @@ python3 scripts/install_from_github.py \
 The checkout based `scripts/build_package.py` and `scripts/install_package.py` commands below
 remain available for offline assembly and internal validation.
 
+To remove an installation, use the separate uninstaller. It stops only services
+belonging to the selected installation and preserves workspaces and credentials
+unless you explicitly select purge options:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/<commit>/uninstall.sh | bash
+```
+
 To add the optional Phone component, first build a validated release from the
 independent `ts-phone` checkout, then pass its manifest to the TSPi assembler:
 
