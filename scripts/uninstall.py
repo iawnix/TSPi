@@ -182,6 +182,8 @@ def uninstall(args: argparse.Namespace) -> dict[str, object]:
         managed.extend([root / ".agents/runtime/tspi", root / ".agents/envs/tspi"])
     if args.purge_workspaces:
         managed.append(root / "workspaces")
+    if args.purge_all:
+        managed.append(root / "ts-phone")
     removed.extend(remove_paths(managed))
     prune_empty_parents(root)
     if args.remove_root:
