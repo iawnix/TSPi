@@ -44,6 +44,18 @@ def test_daily_launcher_does_not_inspect_global_processes(tmp_path: Path, monkey
         package_root=package, install_root=installation) == 0
 
 
+def test_pi_resolution_uses_pi_on_path_when_pi_bin_is_unset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ts_agent.runtime import launcher as host
+
+    pi = tmp_path / "pi"
+    pi.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    pi.chmod(0o755)
+    monkeypatch.delenv("PI_BIN", raising=False)
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    assert host._resolve_pi_binary() == pi
+
+
 def test_guard_upgrade_requires_a_private_record_and_does_not_run_during_startup(tmp_path: Path) -> None:
     installation, executable = _copy_launcher(tmp_path)
     state = installation / ".pi/packages/tspi/install-state.json"

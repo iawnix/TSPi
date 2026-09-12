@@ -627,13 +627,18 @@ def _local_timestamp() -> str:
 
 
 def _resolve_pi_binary() -> Path:
-    requested = os.environ.get("PI_BIN", str(Path.home() / ".npm-global/bin/pi"))
-    candidate = shutil.which(requested) if not Path(requested).is_absolute() else requested
+    requested = os.environ.get("PI_BIN", "").strip()
+    if requested:
+        candidate = shutil.which(requested) if not Path(requested).is_absolute() else requested
+        display = requested
+    else:
+        candidate = shutil.which("pi")
+        display = "pi"
     if not candidate:
-        raise TSPiHostError(f"Pi executable not found: {requested}", exit_code=127)
+        raise TSPiHostError(f"Pi executable not found: {display}", exit_code=127)
     path = Path(candidate).expanduser().resolve()
     if not path.is_file() or not os.access(path, os.X_OK):
-        raise TSPiHostError(f"Pi executable not found: {requested}", exit_code=127)
+        raise TSPiHostError(f"Pi executable not found: {display}", exit_code=127)
     return path
 
 

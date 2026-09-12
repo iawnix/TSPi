@@ -258,8 +258,9 @@ research workspace.
 
 ## Select The Pi Executable
 
-The launcher uses `PI_BIN` when set. Otherwise it uses its configured default
-path. Set an explicit executable for portable installations:
+The launcher uses `PI_BIN` when set. Otherwise it resolves `pi` from `PATH`,
+which follows the active user's installation and shell configuration. Set an
+explicit executable for portable installations:
 
 ```bash
 export PI_BIN=/absolute/path/to/pi
