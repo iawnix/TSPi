@@ -185,7 +185,6 @@ TSPi/
   skills/             public model-facing instructions
   tools/              build, test, release, and transition mechanisms
   docs/               architecture, operations, ADRs, and maintainer material
-  dist/               generated release output, ignored by source control
 ```
 
 The exact package names can follow the existing Python and TypeScript build
@@ -195,8 +194,6 @@ systems. The important rules are:
 - a user entrypoint is a thin wrapper around a library or runtime;
 - build and release mechanisms live under `tools/` or an explicitly named
   release package;
-- generated `build/`, `dist/`, caches, runtime state, and package metadata do
-  not look like source directories;
 - public contracts live in one discoverable place and are consumed by
   validators, installers, and tests;
 - `scripts/` is retained only for stable compatibility wrappers or is split

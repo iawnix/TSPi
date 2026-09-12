@@ -124,8 +124,8 @@ attestation, and writes `ts-phone-component-release/2`. Android artifacts are
 published as one content-addressed set behind `dist/android-current`. The suite
 builder independently repeats the Phone checks, builds the Agent component and wheel
 from one private Git-visible source capture,
-and writes `tspi-package-release/4`. Phone is absent from the package when
-`--phone-manifest` is omitted, and Web is absent when `--without-web` is used.
+and writes `tspi-package-release/4`. The package manifest selects the optional
+Phone and Web component set for each installation.
 Each build fails on a dirty source unless
 `--allow-dirty` is supplied. That option is only for local validation and must
 not be used for a distributed release.

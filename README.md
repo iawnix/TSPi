@@ -139,9 +139,8 @@ The source tree follows ownership boundaries rather than language names:
 | `tools/` | Contract synchronization, checks, and developer tooling |
 | `docs/` | Architecture, operations, maintenance, and ADRs |
 
-`build/`, `dist/`, `.runtime/`, and other caches are generated locally and
-excluded from source and release boundaries. The Python import namespace remains `ts_agent` even
-though its authored source now lives under the named kernel package directory.
+The Python import namespace remains `ts_agent` even though its authored source
+now lives under the named kernel package directory.
 The Agent-side `scripts/ts_web_provider.py` is the TSPi-owned provider entrypoint;
 the Web component calls it through the versioned provider protocol.
 

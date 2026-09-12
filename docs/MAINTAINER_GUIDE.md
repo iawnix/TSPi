@@ -133,9 +133,8 @@ Do not add alternate field readers, dual schemas, implicit state conversion, or
 output shims. The package implements one explicit workspace contract.
 
 The release ships runtime code, public docs, Root Skill, references, schemas,
-templates, theme, and configuration examples. It excludes tests, build/check
-scripts, Git metadata, dependency trees, caches, credentials, conversations,
-workspaces, and generated reports.
+templates, theme, and configuration examples as the installable product
+surface.
 
 ## Scientific Model
 
