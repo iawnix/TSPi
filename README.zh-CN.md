@@ -43,9 +43,6 @@ Research Kernel
 | `docs/` | 架构、安装、维护和 ADR 文档 |
 | `build/`、`dist/`、`.runtime/` | 本地生成物，已从 Git 和发布边界排除 |
 
-`cluster_mcp` 已废弃，不是当前组件，也没有被 Git 跟踪。运行缓存清理后，
-仓库中不应再出现该目录。
-
 Python 包的源码目录和 Python 导入命名空间是两个概念：源码位于
 `packages/ts-agent-kernel/`，导入仍使用 `ts_agent`。这样既能表达包的责任，
 也不会破坏 Python API。

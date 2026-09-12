@@ -1,5 +1,4 @@
 __pycache__/
-/cluster_mcp/
 *.egg-info/
 build/
 /python-dist/
