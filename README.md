@@ -86,7 +86,7 @@ reproducible:
 
 - [Installation and Operations](docs/INSTALLATION.md): release installation,
   runtime configuration, workspace startup, upgrade, rollback, and recovery.
-- [Architecture](docs/ARCHITECTURE.md): component ownership, state model,
+- [Architecture](docs/ARCHITECTURE.md) / [中文架构](docs/ARCHITECTURE.zh-CN.md): component ownership, state model,
   lifecycle, persistence, validation, context, and result delivery.
 - [Maintainer Guide](docs/MAINTAINER_GUIDE.md): source layout, contract-change
   rules, tests, release discipline, and documentation ownership.

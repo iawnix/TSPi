@@ -175,6 +175,6 @@ npm run test:pi-adapter
 python3 scripts/test_source.py --base-prefix /path/to/conda/env --conda-root /path/to/miniforge3 -- -q
 ```
 
-架构和维护规则见 [Architecture](docs/ARCHITECTURE.md)、
+架构和维护规则见 [中文架构](docs/ARCHITECTURE.zh-CN.md) / [Architecture](docs/ARCHITECTURE.md)、
 [Installation](docs/INSTALLATION.md)、[Maintainer Guide](docs/MAINTAINER_GUIDE.md)
 以及 [ADR 0002](docs/adr/0002-repository-and-component-boundaries.md)。
