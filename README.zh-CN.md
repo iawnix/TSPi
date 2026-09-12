@@ -150,18 +150,33 @@ ResearchNode、Claim、Attempt、Finding 和验证结果，不直接导入 Web �
 
 ## 开发验证
 
+验证应从源码 checkout 执行，而不是从已安装 release 执行。`tsc` 只检查
+TypeScript 类型；快速 Python 测试覆盖当前环境中的内核；package 和 terminal
+测试覆盖发布边界。完整源码测试会先构建 Python wheel，再在科学环境之上创建
+临时 managed overlay，并运行全部 pytest。GitHub CI 会在每次 push 和 pull request
+执行这些层次。
+
 ```bash
 npm run typecheck
 npm run test:fast
 npm run test:package
-npm run lint:public
 npm run test:terminal
+npm run lint:public
+python3 scripts/test_source.py --conda-root /path/to/miniforge3 --with-render -- -q
+git diff --check
 ```
 
-需要发布级 Python 环境时运行完整源码测试：
+修改 Pi adapter 或 subagent 时，可先运行较短的集成子集：
 
 ```bash
-python3 scripts/test_source.py --conda-root /path/to/miniforge3 --with-render -- -q
+npm run test:pi-adapter
+```
+
+完整源码测试需要 Python、Node 和 `environment.yml` 中锁定的科学环境；如果已有
+可复用的 Conda 环境，可以传入 `--base-prefix`：
+
+```bash
+python3 scripts/test_source.py --base-prefix /path/to/conda/env --conda-root /path/to/miniforge3 -- -q
 ```
 
 架构和维护规则见 [Architecture](docs/ARCHITECTURE.md)、

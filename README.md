@@ -488,15 +488,27 @@ Review advice and Compute or deterministic tool results become scientific
 support only after the Root Agent verifies primary artifacts and records normal
 Observations through a Decision.
 
-## Validation
+## Validation And CI
 
-Run validation from the authored checkout, not an installed release:
+Run validation from the authored checkout, not an installed release. The
+TypeScript check only verifies static types; the fast Python suite exercises
+the kernel against the current environment; package and terminal checks cover
+the release surface. The managed source suite builds the Python wheel, creates
+a temporary overlay on top of the scientific base, and runs the complete
+pytest collection. GitHub CI runs these same layers on every push and pull
+request.
 
 ```bash
-python3 scripts/test_source.py --conda-root /path/to/miniforge3 --with-render -- -q
 npm run typecheck
-npm run test:pi-adapter
-python3 scripts/check_package.py
-NPM_CONFIG_CACHE=/tmp/ts-agent-npm-cache npm pack --dry-run --json
+npm run test:fast
+npm run test:package
+npm run test:terminal
+npm run lint:public
+python3 scripts/test_source.py --conda-root /path/to/miniforge3 --with-render -- -q
 git diff --check
 ```
+
+Use `npm run test:pi-adapter` for the shorter Pi integration subset while
+iterating on adapter or subagent changes. The source suite requires Python,
+Node, and the pinned scientific environment from `environment.yml`; provide
+`--base-prefix` when an existing Conda environment is available.
