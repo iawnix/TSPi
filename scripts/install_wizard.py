@@ -205,9 +205,11 @@ def prepare_runtime_dirs(root: Path) -> None:
 
 def phone_unit(args: argparse.Namespace) -> str:
     root = Path(args.install_root)
-    renderer = root / ".pi/packages/tspi/current/agent/apps/host/service.mjs"
+    renderer = (root / ".pi/packages/tspi/current/agent/apps/host/service.mjs").resolve()
     result = subprocess.run([shutil.which("node") or "node", str(renderer), "--install-root", str(root)],
                             text=True, capture_output=True, check=True)
+    if "[Service]\n" not in result.stdout or "ExecStart=" not in result.stdout:
+        raise RuntimeError("Phone service renderer did not produce a service unit")
     search_path = os.environ.get("PATH", os.defpath)
     if any(ord(char) < 32 for char in search_path):
         raise ValueError("PATH cannot contain control characters")

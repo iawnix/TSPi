@@ -34,10 +34,15 @@ def test_phone_configuration_is_private_and_bound_to_installation(tmp_path: Path
     assert config.read_text(encoding="utf-8") == 'TS_PHONE_PORT=23000\nCUSTOM_SETTING=preserved\n'
 
 
-def test_phone_unit_uses_installed_launcher_and_toolchain_path(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize("linked_release", [False, True])
+def test_phone_unit_uses_installed_launcher_and_toolchain_path(tmp_path: Path, monkeypatch, linked_release) -> None:
     args = _options(tmp_path)
     root = Path(args.install_root)
-    shutil.copytree(ROOT / "apps/host", root / ".pi/packages/tspi/current/agent/apps/host")
+    package_home = root / ".pi/packages/tspi"
+    release = package_home / "releases/test" if linked_release else package_home / "current"
+    shutil.copytree(ROOT / "apps/host", release / "agent/apps/host")
+    if linked_release:
+        (package_home / "current").symlink_to("releases/test", target_is_directory=True)
     for key in tuple(wizard.os.environ):
         if key.startswith("TS_PHONE_"):
             monkeypatch.delenv(key)
@@ -47,6 +52,14 @@ def test_phone_unit_uses_installed_launcher_and_toolchain_path(tmp_path: Path, m
     assert f'ExecStart="{root / "TSPhoneServer"}"' in unit
     assert 'Environment="PATH=' in unit
     assert "ProtectHome=read-only" in unit
+
+
+def test_phone_unit_requires_renderer_output(tmp_path: Path, monkeypatch) -> None:
+    args = _options(tmp_path)
+    monkeypatch.setattr(wizard.subprocess, "run", lambda command, **kwargs:
+                        subprocess.CompletedProcess(command, 0, "", ""))
+    with pytest.raises(RuntimeError, match="did not produce a service unit"):
+        phone_unit(args)
 
 
 def test_phone_configuration_supports_unicode_and_spaces(tmp_path: Path) -> None:
