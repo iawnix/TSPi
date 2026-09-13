@@ -39,6 +39,13 @@ TSPi、`ts-phone` 是独立 Git 仓库，`ts-web` 在 `components/ts-web/` 下�
 `current` 指针。TSPi、TSWeb、TSPhoneCtl、TSPhoneServer 都通过该指针；安装不会
 启动服务或安装 Android APK。配置、凭据、workspace、会话和服务状态位于 release 外部。
 
+GitHub 安装向导也可以将 Phone 服务安装为 TSPi 扩展组件。
+`scripts/install_phone.py` 拉取源码并构建服务，将提交、协议和运行文件哈希记录在
+`.pi/ts-phone/releases/<commit>/installation.json`，通过 `.pi/ts-phone/current`
+选择版本。安装器在激活 TSPi 前检查两者的协议兼容性；共享 Phone 入口会验证并加载
+所选服务。向导按用户选择配置和启动 systemd 服务，升级时保留配置、凭据和会话。
+包含 Android 安装包的组件仍通过 APK 发布构建流程组装。
+
 ## Python 分发边界
 
 Pi package 与 Python distribution 是两个协同边界。`build_release.py` 从临时可写副本

@@ -10,14 +10,35 @@ paths.
 The repository provides a thin GitHub bootstrap for first-time setup:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/<commit>/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/main/install.sh | bash
 ```
 
-The wizard asks for the TSPi revision, optional TS Web and TS Phone components,
-the installation root, Conda root, and whether to generate and start systemd
-services. Pin `<commit>` to a full Git SHA for a reproducible installation.
-The same entrypoint accepts `--non-interactive` plus explicit flags for CI and
-fleet provisioning. Existing configuration and credentials remain untouched.
+The wizard asks for the installation directory, TSPi and TS Phone revisions,
+optional TS Web, the Phone port, Conda location, and systemd services. Selecting
+TS Phone fetches its GitHub source, installs npm dependencies, builds the server,
+checks compatibility, and installs `TSPhoneServer` and `TSPhoneCtl`. The server
+build uses Node.js and npm. Install the Android client on the phone separately;
+Flutter and signing tools are needed only when building Android artifacts.
+
+Branches and tags resolve to full commit IDs recorded with each installation.
+Use full SHAs for `--tspi-ref` and `--phone-ref` to repeat a particular version.
+The non-interactive equivalent is:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/main/install.sh \
+  | bash -s -- --non-interactive \
+      --install-root /path/to/TSPi-installation \
+      --with-phone --with-web \
+      --service-scope user --enable-services --start-services
+```
+
+`--with-phone` installs the Phone service; `--without-phone` skips this step.
+Interactive setup offers Phone by default. Non-interactive setup installs it
+when `--with-phone` is supplied. `--phone-repo` selects its GitHub repository,
+`--phone-ref` defaults to `main`, and `--phone-port` sets the port for a new
+configuration. Re-running the wizard keeps existing `server.env`, credentials,
+and conversations. A failed Phone build leaves the selected Phone release
+unchanged. Previous builds remain available under `.pi/ts-phone/releases/`.
 
 The default service scope is the current user's systemd manager. Select the
 system scope only when running as root. TSPi itself remains an interactive
@@ -38,7 +59,7 @@ The repository-level `uninstall.sh` remains available only as a recovery entry
 point when an installation's local copy has been removed.
 
 By default it disables services belonging to the selected installation, removes
-the selected release and managed runtime links, and keeps workspaces, Pi
+TSPi releases, installed Phone server builds, and managed runtime links, and keeps workspaces, Pi
 sessions, Phone tokens, bridge secrets, and installation configuration. The
 interactive wizard can separately purge workspaces, configuration, managed
 runtime state, or the empty installation root. Automation must opt into every
@@ -61,8 +82,7 @@ Global Pi credentials under `~/.pi/agent` are never removed by this uninstaller.
 | Pi Agent `>=0.81.1 <1.0.0` | Root Agent host and TUI |
 | Python 3.11 or newer | release installer and runtime bootstrap |
 | Conda or Mamba | isolated scientific Python environment |
-| Android SDK build-tools with `apksigner` and `aapt` | independent APK verification during Package build and install |
-| npm | component release builds and maintainer validation only |
+| npm | Phone server builds and component release tooling |
 
 Configure a working Pi model and authentication before starting TSPi. TSPi
 reuses Pi's model registry and credentials; it does not store an API key in the
@@ -77,13 +97,14 @@ Optional dependencies are:
 - an Android device for the Phone UI when the Phone component is selected. Its
   signed arm64 APK is bundled only in that profile; service activation and
   device installation are explicit operations.
+- Android SDK build-tools with `apksigner` and `aapt` when building or installing
+  a Package that includes an Android APK.
 
 The default terminal client requires the configured Host to be running. It
 does not require an Android device. Native Pi remains available with
 `--standalone`.
-The installer prepares an empty private `workspaces/` root so Host can list
-projects before the first Worker runs. It does not bootstrap scientific state
-or activate services during installation.
+The installer prepares `workspaces/` so the Host can list projects before the
+first research session. The wizard enables and starts services when selected.
 
 ## Installation Layout
 
@@ -116,6 +137,13 @@ Choose one physical, non-symlink installation root:
     remote.toml                 optional
     notifications.toml          optional, mode 0600
     runtime-cache/
+    ts-phone/
+      server.env
+      current -> releases/<phone-commit>
+      releases/<phone-commit>/   server built by the installation wizard
+        installation.json
+        services/server/dist/
+    ts-phone-state/              Phone credentials and conversation management
   .agents/
     runtime/tspi/env.json
     envs/tspi/
@@ -207,7 +235,7 @@ python3 scripts/install_from_github.py \
   --install-root /srv/tspi --with-web --with-render
 ```
 
-`--ref` accepts a tag or full commit SHA. TS Phone is supplied independently
+`--ref` accepts a branch, tag, or full commit SHA. For APK-inclusive Packages, TS Phone is supplied independently
 with `--phone-repo` and `--phone-ref`; a local `../ts-phone` checkout is never
 used implicitly.
 `build_release.py` and `install_release.py` remain
@@ -386,17 +414,16 @@ Ambiguous provider effects are never retried automatically.
 
 ## Configure TS Phone
 
-Phone mode is available only when Phone was selected. That Package includes the compatible broker,
-control CLI, protocol schemas, and signed arm64 APK. It does not own the live
-service or its secrets. Copy the component's example environment into private
-installation state. Paths are inferred by the installed entrypoints; uncomment
-only the overrides this installation needs:
+Select TS Phone in `install.sh`, or pass `--with-phone` in a non-interactive
+installation. The wizard builds the server from GitHub and creates
+`.pi/ts-phone/server.env` with the installation's workspace, state, and bridge
+paths. Edit this file to change the port or other service settings.
+
+When using the wizard's systemd user service:
 
 ```bash
-mkdir -p /path/to/TSPi-installation/.pi/ts-phone
-cp /path/to/TSPi-installation/.pi/packages/tspi/current/phone/deploy/server.env.example \
-  /path/to/TSPi-installation/.pi/ts-phone/server.env
-chmod 600 /path/to/TSPi-installation/.pi/ts-phone/server.env
+systemctl --user start ts-phone-tspi.service
+systemctl --user status ts-phone-tspi.service
 ```
 
 The installed terminal client, Host, and control CLI read this owner-only file
@@ -425,14 +452,15 @@ without starting anything with `TSPhoneServer --print-service`.
 Service activation,
 restart, FRP, HTTPS, and token handling remain explicit operational actions;
 the Package installer never performs them. `TSPhoneCtl` targets the configured
-state directory. The Android artifact is under the path recorded by
-`components.phone.mobile_artifact.path` in the selected Package manifest and
-must be installed on the device separately.
+state directory. Install the Android client on the device using the
+[TS Phone app instructions](https://github.com/iawnix/ts-phone/blob/main/docs/artifacts.md).
+For a Package that includes an APK, its location is recorded in
+`components.phone.mobile_artifact.path` in the selected Package manifest.
 
-The `deploy/install-local.sh` and bundled systemd unit in the TS Phone source
-repository are standalone component-development tools. Do not combine their
-`/home/iaw/soft/ts-phone/current` selection with a suite-managed production
-installation.
+The wizard selects source-built Phone servers through `.pi/ts-phone/current`.
+`TSPhoneServer` and `TSPhoneCtl` resolve that selection and share the same
+configuration as the terminal. The active release's `installation.json` records
+its GitHub origin, commit, server version, protocols, and runtime file hashes.
 
 If the Host runs with `ProtectHome=read-only`, its service sandbox also applies
 to child TSPi Workers. Add narrowly scoped `ReadWritePaths` for the configured

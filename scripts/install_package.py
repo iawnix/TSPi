@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -681,13 +682,27 @@ def install_launchers(
     enabled = {"TSPi"}
     if "web" in components:
         enabled.add("TSWeb")
-    if "phone" in components:
+    if "phone" in components or has_source_phone(install_root):
         enabled.update({"TSPhoneCtl", "TSPhoneServer"})
     for name, target in targets.items():
         if name not in enabled:
             continue
         install_symlink(install_root / name, target)
     return {name: str(install_root / name) for name in enabled}
+
+
+def has_source_phone(install_root: Path) -> bool:
+    home = install_root / ".pi/ts-phone"
+    current = home / "current"
+    if not current.is_symlink():
+        return False
+    release = current.resolve()
+    if release.parent != home / "releases" or not re.fullmatch(r"[0-9a-f]{40}", release.name):
+        raise SuiteReleaseError("installed Phone selection is outside its release directory")
+    record = read_json_object(release / "installation.json", "installed Phone server")
+    if record.get("schema_version") != "tspi-phone-install/1" or record.get("commit") != release.name:
+        raise SuiteReleaseError("installed Phone record does not match its selected release")
+    return True
 
 
 def validate_launcher_slots(
@@ -697,7 +712,7 @@ def validate_launcher_slots(
     enabled = {"TSPi"}
     if "web" in components:
         enabled.add("TSWeb")
-    if "phone" in components:
+    if "phone" in components or has_source_phone(install_root):
         enabled.update({"TSPhoneCtl", "TSPhoneServer"})
     conflicts = [
         str(install_root / name)

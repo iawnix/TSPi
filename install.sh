@@ -3,7 +3,11 @@ set -Eeuo pipefail
 
 readonly REPO_URL="${TSPI_INSTALL_REPO:-https://github.com/iawnix/TSPi.git}"
 readonly REPO_REF="${TSPI_INSTALL_REF:-main}"
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+SCRIPT_DIR=""
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+  SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+fi
+readonly SCRIPT_DIR
 
 if [[ -f "${SCRIPT_DIR}/scripts/install_wizard.py" && -f "${SCRIPT_DIR}/package.json" ]]; then
   exec python3 "${SCRIPT_DIR}/scripts/install_wizard.py" "$@"
@@ -21,9 +25,9 @@ git -C "${TEMP_ROOT}/TSPi" fetch --depth 1 origin "${REPO_REF}"
 git -C "${TEMP_ROOT}/TSPi" checkout --detach FETCH_HEAD
 wizard=(python3 "${TEMP_ROOT}/TSPi/scripts/install_wizard.py"
   --tspi-repo "${REPO_URL}" --tspi-ref "${REPO_REF}" "$@")
-if [[ -t 0 ]]; then
+if [[ -t 0 || " $* " == *" --non-interactive "* ]]; then
   "${wizard[@]}"
-elif [[ -r /dev/tty ]]; then
+elif { true </dev/tty; } 2>/dev/null; then
   "${wizard[@]}" </dev/tty
 else
   "${wizard[@]}"

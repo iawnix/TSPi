@@ -3,6 +3,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { hostEnvironment } from "./environment.mjs";
 import { renderService } from "./service.mjs";
+import { phoneComponent } from "./phone-component.mjs";
 
 try {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
@@ -16,9 +17,9 @@ try {
   } else {
     const program = { "phone-server": "index.js", "phone-ctl": "cli.js" }[values.entrypoint];
     if (!program) throw new Error("Unknown installed Phone entrypoint.");
-    // Python has validated the selected suite. Import its Phone component, never a global checkout.
     const suite = fileURLToPath(new URL("../../../", import.meta.url));
-    const target = join(suite, "phone", "services", "server", "dist", program);
+    const component = await phoneComponent(root, suite);
+    const target = join(component, "services", "server", "dist", program);
     Object.assign(process.env, env);
     process.chdir(resolve(root));
     process.argv = [process.execPath, target, ...positionals];

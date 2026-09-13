@@ -88,6 +88,17 @@ notification settings, Phone tokens, Pi sessions, workspaces, and service state
 remain outside releases. Package installation never starts a service or installs
 the Android APK.
 
+The interactive GitHub installer can also build the Phone server as an
+installation-managed extension. `scripts/install_phone.py` stages its source
+and npm build under `.pi/ts-phone/releases/<commit>`, records the protocol
+versions and runtime file hashes, and selects it through `.pi/ts-phone/current`.
+Compatibility is checked against the requested TSPi source before TSPi
+activation. The shared Phone entrypoints verify that installed server before
+loading it when the suite does not contain a bundled Phone component. The
+wizard configures and starts systemd services when selected; configuration,
+credentials, and conversations persist across server upgrades. Android
+artifact assembly remains part of the APK-inclusive component release build.
+
 ## Python Distribution Boundary
 
 The Pi package and Python distribution are separate, coordinated boundaries.

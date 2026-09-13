@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -48,8 +47,11 @@ def validate_root(path: Path) -> Path:
     resolved = path.expanduser().resolve()
     if resolved == Path("/") or resolved == Path.home() or resolved == Path.home().parent:
         raise ValueError(f"refusing to remove broad path: {resolved}")
+    for relative in (".pi", ".pi/packages", ".pi/ts-phone", ".agents", ".agents/runtime", ".agents/envs"):
+        if (resolved / relative).is_symlink():
+            raise ValueError(f"installation state directory cannot be a symbolic link: {resolved / relative}")
     marker = resolved / ".pi/packages/tspi"
-    if not marker.is_dir() and not (resolved / "TSPi").exists():
+    if not marker.is_dir() and not (resolved / "TSPi").exists() and not (resolved / ".pi/tspi/uninstall.py").is_file():
         raise ValueError(f"does not look like a TSPi installation: {resolved}")
     return resolved
 
@@ -71,6 +73,8 @@ def choose_options(args: argparse.Namespace, root: Path) -> None:
     args.purge_config = args.purge_config or ask("Delete installation config, Phone tokens, and bridge secrets", False)
     args.purge_runtime = args.purge_runtime or ask("Delete managed Python runtime state", False)
     args.remove_root = args.remove_root or ask("Remove the installation directory", False)
+    if args.remove_root and not (args.purge_workspaces and args.purge_config and args.purge_runtime):
+        raise ValueError("removing the installation directory requires selecting all data cleanup options")
     if not args.yes and not ask("Proceed with uninstall", False):
         raise SystemExit(0)
 
@@ -82,21 +86,30 @@ def systemctl_args(scope: str) -> list[str]:
 
 
 def service_belongs_to_root(name: str, root: Path, scope: str) -> bool:
-    if name in {"ts-phone-tspi.service", "ts-web-tspi.service"}:
-        return True
     directory = Path.home() / ".config/systemd/user" if scope == "user" else Path("/etc/systemd/system")
     path = directory / name
     try:
         content = path.read_text(encoding="utf-8")
     except OSError:
         return False
-    return str(root) in content
+    root_value = str(root).replace("%", "%%")
+    for line in content.splitlines():
+        key, _, value = line.partition("=")
+        value = value.strip().strip('"')
+        if key == "WorkingDirectory" and value == root_value:
+            return True
+        if key == "EnvironmentFile" and value == f"{root_value}/.pi/ts-phone/server.env":
+            return True
+    return False
 
 
 def stop_services(args: argparse.Namespace, root: Path) -> list[str]:
+    if args.service_scope == "none" or shutil.which("systemctl") is None:
+        return []
     scopes = [args.service_scope] if args.service_scope in {"user", "system"} else ["user", "system"]
     stopped: list[str] = []
     for scope in scopes:
+        scope_stopped = False
         command = systemctl_args(scope)
         for name in SERVICE_NAMES:
             if not service_belongs_to_root(name, root, scope):
@@ -107,7 +120,8 @@ def stop_services(args: argparse.Namespace, root: Path) -> list[str]:
                 continue
             subprocess.run([*command, "disable", "--now", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
             stopped.append(f"{scope}:{name}")
-        if stopped:
+            scope_stopped = True
+        if scope_stopped:
             subprocess.run([*command, "daemon-reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     return stopped
 
@@ -120,12 +134,17 @@ def remove_service_units(args: argparse.Namespace, root: Path) -> list[str]:
         locations.append(Path("/etc/systemd/system"))
     removed: list[str] = []
     for directory in locations:
+        changed = False
         for name in SERVICE_NAMES:
             path = directory / name
             scope = "user" if directory == Path.home() / ".config/systemd/user" else "system"
             if path.is_file() and not path.is_symlink() and service_belongs_to_root(name, root, scope):
                 path.unlink()
                 removed.append(str(path))
+                changed = True
+        if changed and shutil.which("systemctl"):
+            scope = "user" if directory == Path.home() / ".config/systemd/user" else "system"
+            subprocess.run([*systemctl_args(scope), "daemon-reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     return removed
 
 
@@ -152,7 +171,7 @@ def remove_paths(paths: list[Path]) -> list[str]:
 
 
 def prune_empty_parents(root: Path) -> None:
-    for relative in (".pi/packages", ".pi", ".agents/runtime", ".agents/envs", ".agents"):
+    for relative in (".pi/ts-phone", ".pi/packages", ".pi", ".agents/runtime", ".agents/envs", ".agents"):
         directory = root / relative
         if not directory.is_dir():
             continue
@@ -174,7 +193,8 @@ def uninstall(args: argparse.Namespace) -> dict[str, object]:
         root / ".pi/session-host",
         root / ".pi/ts-web-state",
         root / ".pi/ts-phone/ts-phone.service",
-        root / ".pi/packages/tspi/source-provenance.json",
+        root / ".pi/ts-phone/current",
+        root / ".pi/ts-phone/releases",
     ]
     if args.purge_config:
         managed.extend([root / ".pi/ts-phone", root / ".pi/ts-phone-state", root / ".pi/remote.toml", root / ".pi/notifications.toml"])
@@ -187,7 +207,11 @@ def uninstall(args: argparse.Namespace) -> dict[str, object]:
     removed.extend(remove_paths(managed))
     prune_empty_parents(root)
     if args.remove_root:
-        remaining = [path for path in root.iterdir() if path.name not in {".git"}]
+        removed.extend(remove_paths([root / "uninstall.sh", root / ".pi/tspi/uninstall.py"]))
+        for path in (root / ".pi/tspi", root / ".pi"):
+            if path.is_dir() and not any(path.iterdir()):
+                path.rmdir()
+        remaining = list(root.iterdir())
         if remaining:
             raise RuntimeError(f"installation root is not empty after cleanup: {root}")
         root.rmdir()
@@ -202,7 +226,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         if not args.install_root and not args.non_interactive:
-            args.install_root = ask("TSPi installation directory", str(Path.home() / ".local/share/tspi"))
+            bundled = Path(__file__).resolve()
+            default = str(bundled.parents[2]) if bundled.parent.name == "tspi" and bundled.parent.parent.name == ".pi" else str(Path.home() / ".local/share/tspi")
+            args.install_root = input(f"TSPi installation directory [{default}]: ").strip() or default
         if not args.install_root:
             raise ValueError("--install-root is required")
         result = uninstall(args)

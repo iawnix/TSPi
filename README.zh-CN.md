@@ -20,17 +20,16 @@ TSPi 是基于 Pi 的计算化学研究助手，面向过渡态搜索和反应�
 在 Linux 主机上准备 Git、OpenSSH、Python 3.11+、Node.js 22.19+、Conda 或 Mamba，
 以及已配置模型和凭据的 Pi。完整依赖见[安装文档](docs/INSTALLATION.md#prerequisites)。
 
-从 GitHub 选择要安装的提交，将下方两处 `<commit>` 替换为完整提交 SHA：
+运行安装向导：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/<commit>/install.sh \
-  | bash -s -- --tspi-ref <commit>
+curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/main/install.sh | bash
 ```
 
-向导会询问安装目录、Conda 路径、是否安装 TS Web，以及是否配置和启动 systemd 服务。
-如需使用手机或终端共享会话，先按照 [TS Phone](https://github.com/iawnix/ts-phone)
-的说明构建服务，再在向导中填写它的源码目录。分子可视化依赖可通过安装参数
-`--with-render` 加入。
+在向导中选择安装目录、Conda 路径、TS Web 和 TS Phone 组件，以及 systemd 服务。
+选择 TS Phone 后，安装器会从 GitHub 下载源码、构建服务，并配置手机与终端共享会话。
+TSPi 和 TS Phone 都可以选择分支、标签或提交，默认使用 `main`。
+分子可视化依赖可通过安装参数 `--with-render` 加入。
 
 非交互安装、服务配置和升级方式见[安装与运维](docs/INSTALLATION.md)。
 
@@ -63,6 +62,9 @@ cd /path/to/TSPi-installation
 
 [TS Phone](https://github.com/iawnix/ts-phone) 提供 Android 客户端。
 连接服务后，可以在手机上查看会话、发送消息和继续研究；终端也可以接入同一会话。
+
+安装器在 TSPi 主机上部署 Phone 服务。手机上的 Android 客户端按
+[应用安装说明](https://github.com/iawnix/ts-phone/blob/main/docs/artifacts.md)安装。
 
 如果安装时配置了 systemd 用户服务，启动服务后打开终端：
 

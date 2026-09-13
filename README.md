@@ -23,19 +23,17 @@ Prepare a Linux host with Git, OpenSSH, Python 3.11+, Node.js 22.19+, Conda or
 Mamba, and Pi with a configured model and credentials. See the full
 [prerequisites](docs/INSTALLATION.md#prerequisites).
 
-Choose a GitHub revision and replace both instances of `<commit>` below with
-its full commit SHA:
+Run the installation wizard:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/<commit>/install.sh \
-  | bash -s -- --tspi-ref <commit>
+curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/main/install.sh | bash
 ```
 
-The wizard asks for the installation directory, Conda location, whether to
-include TS Web, and whether to configure and start systemd services. For phone
-access or shared terminal sessions, first build the server following the
-[TS Phone](https://github.com/iawnix/ts-phone) instructions, then provide its
-source directory in the wizard. Add `--with-render` to the installer arguments
+Choose the installation directory, Conda location, TS Web and TS Phone
+components, and systemd services in the wizard. Selecting TS Phone downloads
+its source from GitHub, builds the server, and configures phone access and
+shared terminal sessions. You can choose a branch, tag, or commit for TSPi and
+TS Phone; both default to `main`. Add `--with-render` to the installer arguments
 to include molecular visualization dependencies.
 
 See [Installation and Operations](docs/INSTALLATION.md) for non-interactive
@@ -74,6 +72,9 @@ output files into the workspace for local parsing.
 [TS Phone](https://github.com/iawnix/ts-phone) provides an Android client.
 Connect it to the server to browse conversations, send messages, and continue
 research. A terminal can join the same conversation.
+
+The installer sets up the Phone server on your TSPi host. Install the Android
+client on your phone using the [app instructions](https://github.com/iawnix/ts-phone/blob/main/docs/artifacts.md).
 
 If you configured a systemd user service during installation, start it and
 open the terminal:

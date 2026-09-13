@@ -66,6 +66,7 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 | `scripts/_wheel.py` | temporary-copy wheel build, metadata inspection, and release-wheel verification |
 | `scripts/_runtime_install.py` | shared base/overlay preparation, probe, and manifest publication mechanism |
 | `scripts/install_env.py` | thin command-line entrypoint for the managed runtime mechanism |
+| `scripts/install_wizard.py`, `scripts/install_phone.py` | interactive GitHub installation, Phone server builds, and service setup |
 | `packages/ts-agent-kernel/ts_agent/` | the single import namespace for all deterministic Python code |
 | `packages/ts-agent-kernel/ts_agent/workspace/` | graph state, bootstrap, Decisions, context, validation, transactions |
 | `packages/ts-agent-kernel/ts_agent/validation/` | ProofSpec compiler, predicate registry, templates, acceptance profiles |
