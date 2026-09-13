@@ -1,144 +1,93 @@
-# TSPi Package
+# TSPi
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi 是过渡态研究的核心产品和必选仓库。它包含确定性研究内核、Pi
-集成、计算与报告工具、只读工作区投影，以及可选组件的发布和安装边界。
+TSPi 是基于 Pi 的计算化学研究助手，面向过渡态搜索和反应路径分析。
+你可以用自然语言描述研究问题，让它协助准备计算、提交远端任务、分析结果，
+并把研究过程、验证依据和报告保存在同一个工作区中。
 
-`ts-phone` 是独立维护的 Phone 组件仓库，负责手机端、Phone 服务和
-Phone 协议。`ts-web` 是面向浏览器的可选组件目标，消费 TSPi 提供的只读、
-版本化投影协议；科学状态由 TSPi 统一维护，组件通过该协议读取。
+## 功能
 
-## 核心边界
-
-```text
-Root Agent
-  选择问题、假设、方法、分支、回溯和停止条件
-        |
-        v
-Research Kernel
-  管理 ResearchPhase、ResearchNode、Claim、Observation、Finding 和 ProofSpec
-        |
-        +-- 确定性 Compute / Render / Report / Remote 工具
-        +-- 隔离的 Compute 子代理
-        +-- 隔离的 Review 子代理
-        +-- 只读的 Web、Phone 和 Terminal 投影
-```
-
-只有 Research Kernel 可以修改规范化的科学状态。Compute 和 Review 在隔离
-的子会话中运行，分别执行固定的操作计划和提供有边界的建议。
-
-## 仓库布局
-
-| 目录 | 责任 |
-| --- | --- |
-| `contracts/` | Phone、Web 和组件清单的版本化协议与 fixture |
-| `packages/ts-agent-kernel/ts_agent/` | TSPi 的 Python 研究内核和确定性服务 |
-| `components/ts-web/` | 独立的可选 Web 客户端、provider、server 和静态界面 |
-| `apps/` | Host 和 Terminal 进程入口 |
-| `extensions/` | Pi 扩展和 Phone 适配策略 |
-| `skills/` | 面向模型的公开 Skill 与参考资料 |
-| `scripts/` | 稳定入口和兼容性包装器；发布机制逐步迁移到命名工具目录 |
-| `tools/` | 合约同步、公开术语检查和开发工具 |
-| `docs/` | 架构、安装、维护和 ADR 文档 |
-
-Python 包的源码目录和 Python 导入命名空间是两个概念：源码位于
-`packages/ts-agent-kernel/`，导入仍使用 `ts_agent`。这样既能表达包的责任，
-也不会破坏 Python API。
-
-## Skill 体系
-
-package 内包含一个编排 Skill、五个科学方法 Skill 和三个输出/交付 Skill。
-编排 Skill 负责跨领域合同和任务管理；其他 Skill 只在当前问题需要相应方法
-或交付能力时加载。
-
-| Skill | 范围 |
-| --- | --- |
-| `tspi-orchestration` | 工作区、Decision、证据、验证、子代理和恢复合同 |
-| `tspi-transition-state-search` | 候选构造和过渡态搜索策略 |
-| `tspi-xtb` | xTB、CREST 计算和结果解释 |
-| `tspi-gaussian` | Gaussian 输入和输出验证 |
-| `tspi-qbics` | QBICS/DMECP 电子态交叉 |
-| `tspi-connectivity` | 反应路径端点和分子结构身份 |
-| `tspi-render` | 确定性可视化产物 |
-| `tspi-report` | 由证据绑定的报告包 |
-| `tspi-email` | 固定目标通知投递 |
-
-完整目录见 [Skill Catalog](skills/README.zh-CN.md)。
+- 从 SMILES 生成初始分子结构，或导入已有的 XYZ、Gaussian 输入文件。
+- 使用 Gaussian、xTB、CREST 等工具开展结构优化、频率分析、构象搜索和反应路径研究。
+- 通过 SSH 和 Torque 提交远端计算、查询进度、取回并解析结果。
+- 记录假设、计算尝试、失败原因和验证结果，方便继续研究、比较方案和追溯结论。
+- 渲染分子结构、反应路径动画、能量曲线和扫描曲线，生成研究报告。
+- 通过终端和手机继续研究，在浏览器中查看进展与结果。
 
 ## 安装
 
-从 GitHub 进行交互式安装时，建议固定安装器的 release commit：
+在 Linux 主机上准备 Git、OpenSSH、Python 3.11+、Node.js 22.19+、Conda 或 Mamba，
+以及已配置模型和凭据的 Pi。完整依赖见[安装文档](docs/INSTALLATION.md#prerequisites)。
+
+从 GitHub 选择要安装的提交，将下方两处 `<commit>` 替换为完整提交 SHA：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/<commit>/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/<commit>/install.sh \
+  | bash -s -- --tspi-ref <commit>
 ```
 
-向导会依次选择 TSPi、TS Web、独立的 TS Phone checkout、安装目录、Python
-runtime 和可选的 systemd 服务。自动化部署可以使用同一个脚本的
-`--non-interactive` 参数；生产安装应使用完整 commit SHA。
+向导会询问安装目录、Conda 路径、是否安装 TS Web，以及是否配置和启动 systemd 服务。
+如需使用手机或终端共享会话，先按照 [TS Phone](https://github.com/iawnix/ts-phone)
+的说明构建服务，再在向导中填写它的源码目录。分子可视化依赖可通过安装参数
+`--with-render` 加入。
 
-生产安装应从固定的 GitHub tag 或 commit 开始，并在激活前记录源码 provenance：
+非交互安装、服务配置和升级方式见[安装与运维](docs/INSTALLATION.md)。
+
+## 开始研究
+
+安装后，进入安装目录，直接在终端启动研究会话：
 
 ```bash
-python3 scripts/install_from_github.py \
-  --repo https://github.com/iawnix/TSPi.git \
-  --ref v0.17.0 \
-  --install-root /path/to/TSPi-installation \
-  --with-render \
-  --json
+cd /path/to/TSPi-installation
+./TSPi --standalone --workspace reaction-a
 ```
 
-下面的 `build_package.py` 和 `install_package.py` 仍可用于离线组装和内部校验。
+每个研究项目保存在安装目录的 `workspaces/` 下。你可以先导入已有输入，
+再提出具体的研究目标，例如：
 
-每次安装都会在安装目录中放置独立的 `uninstall.sh`。它只停止属于所选安装的
-服务，默认保留工作区、会话和凭据；只有明确选择 purge 选项时才会删除这些数据：
+> 请检查这份 Gaussian 输入，设计过渡态优化、频率和 IRC 验证方案。
+> 计算完成后，整理结构、能量及反应路径连通性的依据，并生成报告。
 
-```bash
-/path/to/TSPi-installation/uninstall.sh
-```
-
-如需加入可选 Phone 组件，先从独立的 `ts-phone` 仓库构建并校验组件清单，
-再传给 TSPi 组装器：
+远端计算前，在安装目录的 `.pi/remote.toml` 中配置 SSH 主机、队列、资源和计算软件，
+然后检查连接：
 
 ```bash
-cd /path/to/ts-phone
-npm ci
-apps/mobile/tool/build_release_android.sh
-python3 deploy/build-component-release.py --output-dir dist/component --json
-
-cd /path/to/TSPi
-python3 scripts/build_package.py \
-  --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
-  --output-dir dist/package \
-  --json
-```
-
-需要只有 Core 时传入 `--without-web`。如果收到预构建的 Package 归档和清单，
-可以跳过组件构建步骤。
-
-安装器使用一个经过校验的 TSPi Package，按组件版本、协议版本、文件大小、
-SHA-256 和构建证明绑定发布内容。安装只选择内容，不自动启动 Phone 服务，
-也不自动安装 Android APK。
-
-## 启动 TSPi
-
-```bash
-./TSPi --workspace reaction-a
-./TSPi --workspace reaction-a --continue
-./TSPi --workspace reaction-a --phone
 ./TSPi --check-remote
 ```
 
-Terminal 和 Phone 共用 Host 管理的 Worker 和会话历史。只读浏览不会启动
-研究；不同工作区可以并行运行。完整行为和权限边界见
-[Terminal 文档](docs/TERMINAL.md)。
+配置示例见[远端计算设置](docs/INSTALLATION.md#configure-remote-execution)。
+结果收集步骤会把指定输出文件下载到工作区，随后在本地解析。
 
-## 查看工作区
+## 手机与共享会话
 
-TSPi 提供只读的 Web projection server。它通过版本化 JSON 投影显示工作区、
-ResearchNode、Claim、Attempt、Finding 和验证结果，不直接导入 Web 客户端
-的私有 Python 模块，也不暴露物理路径或科学状态写接口。
+[TS Phone](https://github.com/iawnix/ts-phone) 提供 Android 客户端。
+连接服务后，可以在手机上查看会话、发送消息和继续研究；终端也可以接入同一会话。
+
+如果安装时配置了 systemd 用户服务，启动服务后打开终端：
+
+```bash
+systemctl --user start ts-phone-tspi.service
+cd /path/to/TSPi-installation
+./TSPi --workspace reaction-a
+```
+
+再次连接最近的会话：
+
+```bash
+./TSPi --workspace reaction-a --continue
+```
+
+退出共享终端后，服务中的研究会话仍可继续运行。手机连接设置见
+[Phone 配置](docs/INSTALLATION.md#configure-ts-phone)，会话切换和快捷键见
+[终端使用说明](docs/TERMINAL.md)。
+
+## 浏览器查看
+
+TS Web 用于浏览研究路线、计算记录、科学结论、验证结果和文件。
+可以在研究地图中查看分支与依赖，打开具体节点查看计算详情。
+
+安装时选择 TS Web 后，可以手动启动：
 
 ```bash
 /path/to/TSPi-installation/TSWeb serve \
@@ -149,49 +98,41 @@ ResearchNode、Claim、Attempt、Finding 和验证结果，不直接导入 Web �
   --port 8766
 ```
 
-## 公开术语
+在主机浏览器中打开 [http://127.0.0.1:8766/](http://127.0.0.1:8766/)。
+多工作区和远程访问设置见[浏览器服务配置](docs/INSTALLATION.md#run-the-research-explorer)。
 
-- `ResearchPhase`：用于导航的阶段分组，不决定执行顺序。
-- `ResearchNode`：一个有边界的研究问题或决策事件。
-- `Claim`：带假设和反证条件的科学陈述。
-- `Observation`：绑定已验证产物和来源的不可变语义记录。
-- `Finding`：异常、限制、冲突或未解决问题。
-- `ProofSpec` / `ValidationResult`：冻结的验证定义及其确定性结果。
-- `Decision`：由 Root Agent 发起、由内核校验并提交的原子变更。
+## 卸载
 
-完整术语见 [中英术语表](skills/tspi-orchestration/references/glossary.zh-CN.md)。
-
-## 开发验证
-
-验证应从源码 checkout 执行，而不是从已安装 release 执行。`tsc` 只检查
-TypeScript 类型；快速 Python 测试覆盖当前环境中的内核；package 和 terminal
-测试覆盖发布边界。完整源码测试会先构建 Python wheel，再在科学环境之上创建
-临时 managed overlay，并运行全部 pytest。GitHub CI 会在每次 push 和 pull request
-执行这些层次。
+安装目录中附带卸载脚本：
 
 ```bash
+/path/to/TSPi-installation/uninstall.sh --install-root /path/to/TSPi-installation
+```
+
+按提示选择是否清理工作区、会话、配置和运行环境。默认保留研究数据和凭据。
+各项清理选项见[卸载说明](docs/INSTALLATION.md#uninstall)。
+
+## 文档
+
+- [安装与运维](docs/INSTALLATION.md)：依赖、配置、服务、升级与卸载。
+- [终端使用说明](docs/TERMINAL.md)：项目、会话、快捷键和恢复。
+- [Skill 目录](skills/README.zh-CN.md)：过渡态搜索、计算方法、结构验证、绘图和报告。
+- [中英术语表](skills/tspi-orchestration/references/glossary.zh-CN.md)：研究记录中的常用术语。
+- [中文架构](docs/ARCHITECTURE.zh-CN.md) / [Architecture](docs/ARCHITECTURE.md)：系统设计和数据模型。
+- [开发维护指南](docs/MAINTAINER_GUIDE.md)：源码结构、测试和发布。
+
+## 开发
+
+在源码仓库中安装 Node 依赖并运行检查；Python 测试需要科学计算环境：
+
+```bash
+npm ci
 npm run typecheck
 npm run test:fast
 npm run test:package
 npm run test:terminal
 npm run lint:public
-python3 scripts/test_source.py --conda-root /path/to/miniforge3 --with-render -- -q
-git diff --check
 ```
 
-修改 Pi adapter 或 subagent 时，可先运行较短的集成子集：
-
-```bash
-npm run test:pi-adapter
-```
-
-完整源码测试需要 Python、Node 和 `environment.yml` 中锁定的科学环境；如果已有
-可复用的 Conda 环境，可以传入 `--base-prefix`：
-
-```bash
-python3 scripts/test_source.py --base-prefix /path/to/conda/env --conda-root /path/to/miniforge3 -- -q
-```
-
-架构和维护规则见 [中文架构](docs/ARCHITECTURE.zh-CN.md) / [Architecture](docs/ARCHITECTURE.md)、
-[Installation](docs/INSTALLATION.md)、[Maintainer Guide](docs/MAINTAINER_GUIDE.md)
-以及 [ADR 0002](docs/adr/0002-repository-and-component-boundaries.md)。
+完整测试和环境准备见[开发环境配置](docs/MAINTAINER_GUIDE.md#development-setup)
+与[测试说明](docs/MAINTAINER_GUIDE.md#validation-tiers)。

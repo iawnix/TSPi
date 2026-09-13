@@ -8,6 +8,7 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
+README_ZH = ROOT / "README.zh-CN.md"
 ARCHITECTURE = ROOT / "docs" / "ARCHITECTURE.md"
 INSTALLATION = ROOT / "docs" / "INSTALLATION.md"
 MAINTAINER = ROOT / "docs" / "MAINTAINER_GUIDE.md"
@@ -28,41 +29,22 @@ FOCUSED_SKILLS = {
 }
 
 
-PUBLIC_DOCS = (README, ARCHITECTURE, INSTALLATION, MAINTAINER, ADR)
+PUBLIC_DOCS = (README, README_ZH, ARCHITECTURE, INSTALLATION, MAINTAINER, ADR)
 
 
-def test_readme_routes_each_reader_to_the_public_contracts() -> None:
-    text = README.read_text(encoding="utf-8")
-
-    for phrase in [
-        "one workspace contract",
-        "docs/INSTALLATION.md",
-        "docs/ARCHITECTURE.md",
-        "docs/MAINTAINER_GUIDE.md",
-        "docs/adr/0001-phase-node-research-kernel.md",
-        "scripts/build_package.py",
-        "scripts/install_package.py",
-        ".pi/packages/tspi/current",
-        "TSPhoneServer",
-        "./TSPi --workspace reaction-a",
-        "./TSPi --workspace reaction-a --continue",
-        "scripts/ts_web_provider.py",
-        "ResearchPhase roadmap",
-        "/ts-runs",
-        "ts_state",
-        "ts_change",
-        "ts_review",
-        "ts_reply",
-        "ts_calc",
-        "ts_seed",
-        "ts_compare",
-        "ts_import",
-        "ts_render",
-        "ts_report",
-        "ts_notify",
-        "twelve public tools",
-    ]:
-        assert phrase in text
+def test_readmes_link_to_setup_usage_and_developer_guides() -> None:
+    for path in (README, README_ZH):
+        targets = set(re.findall(r"\[[^\]]+\]\(([^)]+)\)", path.read_text(encoding="utf-8")))
+        for target in (
+            "README.md",
+            "README.zh-CN.md",
+            "docs/INSTALLATION.md",
+            "docs/TERMINAL.md",
+            "docs/ARCHITECTURE.md",
+            "docs/ARCHITECTURE.zh-CN.md",
+            "docs/MAINTAINER_GUIDE.md",
+        ):
+            assert target in targets, (path, target)
 
 
 def test_public_document_set_covers_install_architecture_and_maintenance() -> None:
@@ -135,15 +117,14 @@ def test_public_markdown_relative_links_resolve_inside_the_package() -> None:
 
 def test_public_docs_state_the_authority_boundary() -> None:
     texts = {
-        "readme": README.read_text(encoding="utf-8"),
         "architecture": ARCHITECTURE.read_text(encoding="utf-8"),
         "skill": SKILL.read_text(encoding="utf-8"),
         "maintainer": MAINTAINER.read_text(encoding="utf-8"),
         "state": (REFERENCES / "state_model.md").read_text(encoding="utf-8"),
     }
 
-    assert "The DAG records what happened; it does not prescribe what must happen next" in texts["readme"]
-    assert "Compute and Review use isolated child model sessions" in texts["readme"]
+    assert "The DAG records lineage and does not select the next Node" in texts["architecture"]
+    assert "Compute and Review share the same process-level safeguards" in texts["architecture"]
     assert "Only `ts_change` may mutate canonical scientific state" in texts["architecture"]
     assert "Every compute action, structure seed" in texts["architecture"]
     assert "Treat Claim relations, Node dependencies, and tags as recorded context only" in texts["skill"]

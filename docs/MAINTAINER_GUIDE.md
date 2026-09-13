@@ -431,7 +431,7 @@ close.
 
 | Document | Audience | Owns |
 | --- | --- | --- |
-| `README.md` | first-time reader | product boundary, quick install/start, public surface, navigation |
+| `README.md`, `README.zh-CN.md` | first-time reader | research use cases, features, installation, everyday use, and documentation links |
 | `docs/INSTALLATION.md` | installation operator | prerequisites, configuration, startup, upgrade, rollback, recovery |
 | `docs/ARCHITECTURE.md` | maintainer/advanced operator | ownership, lifecycle, persistence, context, validation, delivery |
 | `docs/MAINTAINER_GUIDE.md` | contributor/releaser | source workflow, change matrix, validation, release discipline |
