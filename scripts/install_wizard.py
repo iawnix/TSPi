@@ -226,7 +226,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory={root}
-ExecStart={root / 'TSWeb'} serve --state-dir {root / '.pi/ts-web-state'} --host 127.0.0.1 --port 8766 --provider {root / '.pi/packages/tspi/current/agent/scripts/ts_web_provider.py'} --workspace-root {root / 'workspaces'}
+ExecStart={root / 'TSWeb'} --provider {root / '.pi/packages/tspi/current/agent/scripts/ts_web_provider.py'} serve --state-dir {root / '.pi/ts-web-state'} --host 127.0.0.1 --port 8766 --workspace-root {root / 'workspaces'}
 Restart=on-failure
 RestartSec=3s
 UMask=0077

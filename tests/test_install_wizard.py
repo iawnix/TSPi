@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -60,6 +61,24 @@ def test_phone_unit_requires_renderer_output(tmp_path: Path, monkeypatch) -> Non
                         subprocess.CompletedProcess(command, 0, "", ""))
     with pytest.raises(RuntimeError, match="did not produce a service unit"):
         phone_unit(args)
+
+
+def test_web_unit_command_is_accepted_by_web_cli(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "components/ts-web"))
+    from ts_web import cli
+
+    args = _options(tmp_path)
+    unit = wizard.web_unit(args)
+    command = next(line for line in unit.splitlines() if line.startswith("ExecStart="))
+    arguments = shlex.split(command.removeprefix("ExecStart="))
+    calls = []
+    monkeypatch.setattr(cli, "serve", lambda *args, **kwargs: calls.append((args, kwargs)))
+    assert cli.main(arguments[1:]) == 0
+    assert len(calls) == 1
+    positional, keywords = calls[0]
+    assert positional == ("127.0.0.1", 8766, str(Path(args.install_root) / ".pi/ts-web-state"))
+    assert keywords["provider_command"] == str(Path(args.install_root) / ".pi/packages/tspi/current/agent/scripts/ts_web_provider.py")
+    assert keywords["workspace_roots"] == [str(Path(args.install_root) / "workspaces")]
 
 
 def test_phone_configuration_supports_unicode_and_spaces(tmp_path: Path) -> None:
