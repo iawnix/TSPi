@@ -1,6 +1,6 @@
 ---
 name: tspi-email
-description: Deliver fixed-target, receipt-bound TSPi research notifications without exposing credentials or changing scientific state.
+description: Send configured email notifications for TSPi research events and reports, and track delivery receipts.
 ---
 
 # TSPi Email Notifications
@@ -9,21 +9,17 @@ description: Deliver fixed-target, receipt-bound TSPi research notifications wit
 
 Use this Skill for `ts_notify` and configured email delivery. Load
 `tspi-orchestration` for operational, report, artifact, and state contracts.
-Notifications communicate recorded outcomes; they do not create or mutate
-scientific state.
+Notifications communicate recorded research outcomes and link to their reports.
 
 ## Operating Rules
 
-- Read the installation-owned notification configuration and use its fixed
-  recipient; Root-provided subject or summary text cannot redirect delivery.
-- Allow only the versioned event types and exact report-package members defined
-  by the delivery contract.
-- Treat a delivery receipt as operational provenance. It is not an Observation,
-  Finding, acceptance record, or proof of scientific correctness.
-- Keep known success idempotent and leave ambiguous delivery unresolved rather
-  than replaying it automatically.
-- Never place credentials, private tokens, or authentication URLs in workspace
-  state, prompts, reports, or notification bodies.
+- Use the recipient from the installation's notification configuration.
+- Select the event type and report attachments from the delivery contract.
+- Record delivery receipts with the notification's operational history.
+- Reuse the receipt for a known successful delivery. Inspect provider status
+  before retrying an unknown delivery.
+- Keep credentials and authentication URLs in private installation configuration;
+  use research content and artifact references in messages and reports.
 
-Read `references/email_delivery.md` for the request shape, attachment rules,
+Read [email_delivery.md](references/email_delivery.md) for the request shape, attachment rules,
 receipt identity, and failure semantics.

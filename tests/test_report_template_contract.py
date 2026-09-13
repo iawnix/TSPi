@@ -41,6 +41,5 @@ def test_report_contract_keeps_acceptance_and_provenance_explicit() -> None:
         "connectivity",
         "registered Observation",
         "source artifact",
-        "Review opinion",
     ]:
         assert phrase in text

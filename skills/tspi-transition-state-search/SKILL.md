@@ -9,8 +9,8 @@ description: Choose and assess transition-state candidate generation methods suc
 
 Use this Skill when the research question is how to construct, explore, or
 recover a transition-state candidate. Load `tspi-orchestration` for workspace
-and evidence contracts. A generated structure is a candidate, not a proven
-transition state.
+and evidence contracts. Follow candidate generation with the calculations and
+validation needed to establish the proposed transition state.
 
 ## Method Choice
 
@@ -18,10 +18,10 @@ Choose a method from the elementary-step hypothesis, endpoint quality, atom
 mapping, electronic state, conformational uncertainty, system size, cost, and
 available executors. QST/QST2/QST3, direct TS optimization, relaxed scans, NEB,
 fragment construction, and conformer sampling answer different candidate
-generation problems. Do not impose a universal sequence or let the capability
-catalog choose scientific strategy.
+generation problems. Select and order them according to the current hypothesis
+and evidence; use the capability catalog to check available operations.
 
-## Research Boundary
+## Search Workflow
 
 Give each candidate-generation question one ResearchNode and bind inputs by
 logical artifact IDs. Record the method, assumptions, parameters, and intended
@@ -32,7 +32,7 @@ appropriate to the Claim.
 
 ## Focused References
 
-- Candidate construction and follow-up evidence: `references/candidate_generation.md`
-- Backend choice: `references/backend_selection.md`
-- Mechanism Claim reflection: `references/mechanism_reflection.md`
-- Repeated-result and failed-search reflection: `references/strategy_reflection.md`
+- Candidate construction and follow-up evidence: [candidate_generation.md](references/candidate_generation.md)
+- Backend choice: [backend_selection.md](references/backend_selection.md)
+- Mechanism Claim reflection: [mechanism_reflection.md](references/mechanism_reflection.md)
+- Repeated-result and failed-search reflection: [strategy_reflection.md](references/strategy_reflection.md)

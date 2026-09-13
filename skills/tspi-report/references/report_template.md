@@ -1,8 +1,7 @@
 # Report Contract
 
 Build the standard report from a valid workspace with `ts_report`. The
-authoritative renderer is `packages/ts-agent-kernel/ts_agent/report/builder.py`;
-there is no fill-in Markdown template with a second, drifting report contract.
+renderer is `packages/ts-agent-kernel/ts_agent/report/builder.py`.
 Add any extra narrative as a separate report-package asset.
 
 ## Required Projection
@@ -29,11 +28,9 @@ files:
 
 ## Acceptance Language
 
-Do not describe a candidate as accepted from normal termination, convergence,
-one imaginary frequency, a Review opinion, or a Claim status. Cite the actual
-current acceptance record and its profile, ProofSpecs, passing ValidationResults,
+Cite the current acceptance record and its profile, ProofSpecs, passing ValidationResults,
 and Finding snapshot. A historical record whose inputs have changed must be
-labeled stale, not used as a current accepted verdict.
+labeled stale. Describe its current verification gaps alongside that history.
 
 For a classical TS, keep stationary-point, reaction-coordinate, and connectivity
 dimensions separate. Add identity, electronic structure, state-character,
@@ -45,7 +42,7 @@ system require them.
 Keep electronic energy, E+ZPE, enthalpy, and free energy distinct. Report units,
 reference state, temperature, pressure, standard-state correction, frequency
 scaling, conformer treatment, solvation/environment, dispersion, and missing
-corrections. Do not infer a missing value.
+corrections. Mark unavailable values as missing.
 
 Every numerical or structural statement cites a registered Observation and its
 source artifact. Review journals, activity records, scheduler state, and

@@ -10,8 +10,8 @@ description: 根据明确的结构证据验证反应路径端点、原子映射�
 当问题是候选路径是否到达声明的反应物和产物盆地时使用本 Skill。ProofSpec 和
 artifact 合同使用 `tspi-orchestration`，Gaussian 输出验证使用 `tspi-gaussian`。
 
-连通性独立于驻点和虚频验证。有限 IRC 端点仍需盆地赋值，视觉相似或全局 RMSD
-较低都不能证明身份。
+结合驻点和虚频验证评估连通性，通过原子映射、成键、立体化学和几何比较，
+将有限 IRC 端点归属到相应的分子盆地。
 
 ## 证据规则
 
@@ -24,5 +24,5 @@ artifact 合同使用 `tspi-orchestration`，Gaussian 输出验证使用 `tspi-g
 - 将映射方法、选定原子、RMSD、关键坐标、原始 artifact 摘要和限制记录为语义
   Observation。
 
-内置连通性维度见 `references/connectivity_validation.md`；确定性的 `ts_compare`
-参数和结构身份规则见 `references/ts_structures_contract.md`。
+内置连通性维度见 [connectivity_validation.md](references/connectivity_validation.md)；确定性的 `ts_compare`
+参数和结构身份规则见 [ts_structures_contract.md](references/ts_structures_contract.md)。

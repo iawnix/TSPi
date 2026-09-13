@@ -41,13 +41,15 @@ installation, service configuration, and upgrades.
 
 ## Start Research
 
-After installation, open the installation directory and start a research
-session directly in the terminal:
+With TS Phone installed and its service running, open the shared terminal:
 
 ```bash
 cd /path/to/TSPi-installation
-./TSPi --standalone --workspace reaction-a
+./TSPi --workspace reaction-a
 ```
+
+For a direct Pi session, use `./TSPi --standalone --workspace reaction-a`.
+Service startup and phone access are described below.
 
 Projects are stored under the installation's `workspaces/` directory. Start by
 importing an existing input and describing the research goal, for example:

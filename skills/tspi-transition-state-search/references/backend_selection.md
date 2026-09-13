@@ -2,7 +2,8 @@
 
 The Root Agent selects a backend from the scientific question, uncertainty,
 system size, electronic structure, desired observable, available artifacts,
-cost, and live environment. The capability catalog is not a priority list.
+cost, and live environment. Use the capability catalog to check accepted tasks
+and parameters.
 
 Consider:
 
@@ -18,7 +19,7 @@ Consider:
 Gaussian is a first-class candidate generator for direct TS optimization,
 relaxed scans, QST, and follow-up characterization. xTB/CREST can efficiently
 explore conformers and rough paths. ASE NEB can provide path images. QBICS can
-address crossing searches. None is universally first.
+address crossing searches. Choose their order from the current research question.
 
 Record the method choice and falsifiable purpose in the ResearchNode/Claim. If a
 method changes, preserve the prior intent and use a recalculation record or a

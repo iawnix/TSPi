@@ -1,123 +1,118 @@
 # Terminal Client
 
-The terminal is a client of the same TSPi Host used by Phone. It does not run
-an Agent, select a model provider, load research Skills, or write scientific
-state. Pi's session JSONL remains under the workspace, with one Host Worker
-holding the writer locks. TS Web continues to read the research view.
+[English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
 
 ## Start
 
-Configure and start the bundled Host with the installation's `TSPhoneServer`
-entrypoint. Service startup is an operator action, not a side effect of opening
-a terminal. Then run:
+The terminal and TS Phone connect to the same Host conversation. The Host runs
+Pi Workers and stores their sessions under the research workspace.
 
-```sh
+Start the installed Phone service, then open a terminal:
+
+```bash
+systemctl --user start ts-phone-tspi.service
+cd /path/to/TSPi-installation
 ./TSPi
-./TSPi --workspace ts_001
-./TSPi --workspace ts_001 --session-id session_1
-./TSPi --workspace ts_001 -c
+./TSPi --workspace reaction-a
+./TSPi --workspace reaction-a --continue
+./TSPi --workspace reaction-a --session-id <session-id>
 ```
 
-The active Host Controller is selected first. With several offline sessions,
-choose one, or use `-c` for the latest. Browsing and selecting do not start a
-Worker. New project/conversation actions create only Host-managed metadata;
-the first Controller activation bootstraps research deterministically.
+Use the service command when installation configured a systemd user service.
+For manual startup, run `./TSPhoneServer`; see
+[Phone configuration](INSTALLATION.md#configure-ts-phone).
 
-The client reads the installation's private `.pi/ts-phone/server.env` without
-executing it. Exported `TS_PHONE_HOST`, `TS_PHONE_PORT`, and `TS_PHONE_STATE_DIR`
-take precedence. Installed `TSPhoneServer` and `TSPhoneCtl` use this same reader;
-manual environment loading is unnecessary. Only `127.0.0.1` or `::1`
-is allowed. The token is read from `TS_PHONE_STATE_DIR/auth.token` and is never
-printed or passed as a process argument. It does not read `~/.pi/agent`;
-provider credentials stay with the Host Worker.
+The client selects the active Host Controller first. Choose from existing
+conversations, use `--continue` for the latest, or provide an exact session ID.
+Opening history reads the conversation. Sending a message creates a queued
+request and starts research when the workspace is available.
 
-The launcher resolves the SDK and terminal components from the Node-based Pi
-installation selected by `PI_BIN`, or the first `pi` executable on `PATH` when
-`PI_BIN` is unset. Releases do
-not rely on source-checkout `node_modules`, install npm packages on startup, or
-copy credentials. Pi 0.83 and 0.85 renderer exports are supported. A standalone
-Pi binary without the Node SDK requires a separate Node-based Pi installation.
+## Configuration
+
+The client reads `.pi/ts-phone/server.env`. Exported `TS_PHONE_HOST`,
+`TS_PHONE_PORT`, and `TS_PHONE_STATE_DIR` override file settings.
+`TSPhoneServer` and `TSPhoneCtl` use the same configuration reader.
+
+Terminal connections use `127.0.0.1` or `::1`; authentication reads
+`TS_PHONE_STATE_DIR/auth.token` privately. Pi model credentials remain in
+the Worker's configured Pi directory.
+
+The launcher selects a Node-based Pi installation through `PI_BIN`, or the
+first `pi` on `PATH`. It loads the terminal components from that
+installation's SDK. Pi 0.83 and 0.85 renderer exports are supported.
+When using a standalone Pi binary, configure a Node-based installation for
+the shared terminal.
 
 ## Controls
 
-Enter sends; Shift+Enter inserts a line break using Pi's editor. Ctrl+K opens
-the command selector, Ctrl+O opens conversations. Page Up/Down scroll within
-the loaded page. Ctrl+T expands or collapses tool details. Escape closes a
-selector. Ctrl+C, Ctrl+D, and `/quit` detach, never terminate the Worker.
+Enter sends; Shift+Enter inserts a line break. Ctrl+K opens commands and Ctrl+O
+opens conversations. Page Up/Down scroll the loaded page. Ctrl+T expands tool
+details; Escape closes a selector. Ctrl+C, Ctrl+D, and `/quit` detach the terminal,
+and the Host Worker continues.
 
-| Command | Effect |
+| Command | Action |
 | --- | --- |
-| `/projects`, `/sessions` | Browse existing projects and conversations |
-| `/new` | Name a new conversation in this project |
-| `/continue` | Refresh this conversation; Hosts without queue support activate without sending the draft |
-| `/model` | Choose the model for future messages, including while a turn is running |
-| `/queue` | Inspect workspace requests, cancel waiting work, or acknowledge an inspected uncertain outcome |
-| `/abort` | Stop the exact displayed generation; remote jobs are unchanged |
-| `/refresh`, `/latest` | Reload the latest bounded history and reconnect |
-| `/start`, `/older`, `/newer` | Seek to the beginning or page through history |
-| `/approvals` | Read and answer unexpired structured confirmation requests |
-| `/receipt` | Reconcile an unconfirmed message, without resending it |
+| `/projects`, `/sessions` | Browse projects and conversations |
+| `/new` | Create a conversation in this project |
+| `/continue` | Refresh the conversation; Hosts without queues activate its Worker |
+| `/model` | Select the model for future messages |
+| `/queue` | Inspect requests, cancel waiting work, or acknowledge an inspected uncertain outcome |
+| `/abort` | Stop the displayed generation; cancel remote calculations through their own tools |
+| `/refresh`, `/latest` | Load the latest history and reconnect |
+| `/start`, `/older`, `/newer` | Navigate history pages |
+| `/approvals` | View and answer current confirmation requests |
+| `/receipt` | Check an unconfirmed message's delivery |
 
-With `command.queue`, sending persists a request and Host transfers execution
-when the workspace is idle. Viewing or changing conversations never switches
-the running Agent. Multiple clients may view and enqueue; only one turn runs
-per workspace. Busy, uncertain, or external processes are not stopped.
-An external/native Pi process cannot be adopted: exit it normally, then select
-its unchanged history in Host. Hosts without queue support retain explicit idle switching.
+With `command.queue`, several clients can view and enqueue work while the Host
+runs one turn per workspace. To continue a native/external Pi session in Host,
+exit that process normally and open its history. Hosts without queues use
+explicit switching while the Worker is idle.
 
 ## Delivery And Recovery
 
-Every prompt has a client message ID and session revision. Host validates and
-deduplicates it before dispatching through Pi RPC. Client kind is display
-metadata only; `terminal` never grants more authority than `phone`.
+Each prompt carries a client message ID and session revision. The Host
+validates and deduplicates the request before Pi RPC dispatch. Rejected sends
+keep their draft.
 
-The terminal retains drafts on rejection. A lost HTTP receipt leaves the
-message unconfirmed and prevents another send from that conversation in this
-client. `/receipt` can confirm acceptance or rejection. Missing receipts,
-expired journals, and changed Host generations mean **unknown**, not "not sent."
-Reconnect reloads a snapshot and resumes SSE from its checkpoint; it never
-replays commands. Drafts and pending client state are in memory, not another
-conversation database. After closing with an unknown receipt, inspect the
-canonical history and Host state before re-entering the message.
+After a lost HTTP reply, use `/receipt` to check delivery. If the receipt has
+expired or the Host generation changed, inspect history and Host state before
+re-entering the message. Drafts and pending client state last for the current
+terminal process.
 
-Queue receipts are durable and bounded. Their model choice is frozen when each
-request is admitted. Pi retries and continuations retain one run identity until
-settled. Exhausted model-service errors become failed receipts; they do not
-mean delivery is unknown. Stopping also retains already executed tool actions.
-A Host restart preserves never-started requests but marks
-in-flight execution unknown and pauses later work in that workspace. After
-inspecting history/outputs and stopping the uncertain Worker, `/queue` can
-acknowledge it without replaying or claiming success. Direct receipts
-remain in memory. Neither path claims exactly-once execution across crashes.
-Terminal disconnect,
-generation abort, Worker shutdown, and cancellation of a remote calculation
-are separate operations.
+Queued requests and their selected models are persisted before acknowledgement.
+A Host restart retains waiting requests and marks interrupted execution
+`unknown`, pausing later work in that workspace. Inspect history and outputs,
+stop the uncertain Worker, then acknowledge the outcome through `/queue`.
+Model-service failures produce failed receipts when retries are exhausted.
+Completed tool actions remain recorded after generation stops.
 
-The Host event stream is a bounded delivery cache. A first connection, or a
-cursor that is too old to replay contiguously, begins with the current session
-snapshot and then continues with newer events. The terminal replaces its live
-view from that snapshot and never treats a missing cursor range as permission
-to resend a prompt.
+Direct receipts and event delivery history are bounded in-memory records.
+On reconnect, SSE resumes from a checkpoint or sends a current snapshot if the
+cursor is too old. The client refreshes its view from that snapshot.
 
-## Native Pi Boundary
+Terminal disconnect, generation abort, Worker shutdown, and remote calculation
+cancellation have separate effects.
 
-`--phone` aliases the thin client; it no longer starts a second interactive Pi.
-Use `--standalone` for native Pi arguments, native slash commands, extension
-dialogs/widgets, shell integration, or batch/RPC modes. The thin client has
-text input, Markdown, tool summaries, model/context status, and explicit Host
-commands. It does not serialize arbitrary native TUI components, load local
-Skills, or forward unknown slash commands. The Host's Controller/Observer
-policy and the Python research kernel are unchanged.
+## Native Pi
+
+Use `--standalone` for Pi's native slash commands, extension dialogs, widgets,
+shell integration, and batch/RPC options:
+
+```bash
+./TSPi --standalone --workspace reaction-a
+```
+
+The shared terminal provides text input, Markdown, tool summaries, model/context
+status, and the Host commands above. `--phone` selects this shared terminal.
 
 ## Maintainer Checks
 
-```sh
+```bash
 npm run test:terminal
 TS_PHONE_SOURCE=/path/to/ts-phone npm run test:terminal-host
 ```
 
 The integration check uses a temporary Host, a fake Worker, two terminal
-controllers, a Phone request, and a real PTY. It verifies one Worker, offline
-browsing, input receipts, resizing and detach. It does not call a provider or
-touch installed research workspaces. Run the Phone server tests and the
-wheel-backed launcher/session-guard tests before delivering a unified package.
+controllers, a Phone request, and a real PTY. It checks shared Worker use,
+history browsing, receipts, resizing, and detach. Package validation also
+includes Phone server and launcher/session-guard tests.

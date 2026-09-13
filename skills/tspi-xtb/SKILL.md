@@ -1,6 +1,6 @@
 ---
 name: tspi-xtb
-description: Use xTB and CREST for bounded conformer, geometry, frequency, scan, molecular-dynamics, and prescreening tasks with explicit evidence limits.
+description: Run and interpret xTB and CREST calculations for conformers, geometry, frequencies, scans, molecular dynamics, and prescreening.
 ---
 
 # TSPi xTB And CREST
@@ -11,17 +11,17 @@ Use this Skill for xTB or CREST calculations. Load `tspi-orchestration` for
 calculation, artifact, and state contracts. Load `tspi-transition-state-search`
 when the task is choosing a candidate-generation strategy.
 
-xTB is an approximate executor for bounded exploration and characterization.
-CREST supplies conformer ensembles through an xTB-based search. Neither a
-normal termination marker, a low energy, nor an optimized geometry proves a
-classical transition state or a reaction mechanism.
+xTB provides approximate electronic-structure calculations for exploration and
+characterization. CREST supplies conformer ensembles through an xTB-based
+search. Assess transition-state and mechanism Claims using stationary-point,
+mode, and connectivity evidence at the chosen level of theory.
 
 ## Operating Rules
 
 - Bind `xyz` and, for xTB scan/MD, `control` inputs as logical artifacts.
 - Choose method, charge, unpaired electrons, solvent model, accuracy, and
-  optimization level as part of the scientific intent; do not silently change
-  them in a retry.
+  optimization level as part of the scientific intent. Record changes to these
+  settings as a recalculation with an updated intent.
 - Check the required output set and parser summary, including SCC convergence
   when applicable, optimization status, frequency data, scan completeness, or
   trajectory completeness.
@@ -31,5 +31,5 @@ classical transition state or a reaction mechanism.
 
 ## References
 
-- Executor inputs, settings, and artifacts: `references/xtb_executor.md`
-- CREST ensemble checks: `references/crest_ensemble.md`
+- Executor inputs, settings, and artifacts: [xtb_executor.md](references/xtb_executor.md)
+- CREST ensemble checks: [crest_ensemble.md](references/crest_ensemble.md)

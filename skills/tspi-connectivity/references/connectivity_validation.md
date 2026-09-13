@@ -19,7 +19,7 @@ endpoint optimization artifacts with exact digests.
 
 ## Finite Paths
 
-A finite IRC endpoint is not automatically a basin assignment. Inspect the last
+To assign a finite IRC endpoint to a basin, inspect the last
 geometry/gradient, optimize the endpoint when needed, compare it with reference
 basins using a valid atom map, and expose any short-path or maximum-step limit.
 An assignment with unresolved identity ambiguity should remain inconclusive or
@@ -29,12 +29,12 @@ produce a blocking Finding.
 
 Freeze the connectivity ProofSpec against the target Claim and declared
 reactant/product refs before evaluation. Select exact Observation refs. Missing
-direction, missing endpoint, conflicting assignments, or incomplete path must
-not be converted into pass.
+direction, missing endpoints, conflicting assignments, or incomplete paths
+require further evidence or a Finding before acceptance.
 
 Add identity, stereochemistry, state-character, or electronic-structure
 ProofSpecs when the Claim needs them. They are additional dimensions under the
-same engine, not workflow branches.
+same engine.
 
 ## Acceptance
 

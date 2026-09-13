@@ -11,7 +11,7 @@ normal termination marker, all required files, a parsed ensemble, and matching
 conformer and energy-table counts. Verify atom count and coordinate identity
 before using an ensemble member in a later Node.
 
-Relative energy is a ranking within the declared CREST calculation. It is not
-a free-energy profile, a barrier, or a mechanistic conclusion. Preserve the
+Use relative energy to rank conformers within the declared CREST calculation.
+Evaluate free energies and barriers with their required corrections. Preserve the
 ensemble and selection rationale as artifacts and Observations so another
 method can reproduce or challenge the choice.

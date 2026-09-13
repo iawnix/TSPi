@@ -1,7 +1,7 @@
 # Molecular Structure Contract
 
 Structure comparison requires explicit chemical identity and geometry rules.
-Never compare coordinates by raw row order unless the atom map is verified.
+Verify the atom map before comparing coordinates by row order.
 
 ## Identity And Mapping
 
@@ -17,7 +17,7 @@ centering. Apply one proper rotation; do not allow reflection unless the
 scientific comparison explicitly requests it. Report the aligned RMSD and the
 atom subset/weights used.
 
-Do not use alignment to erase meaningful internal differences. Compare bond
+After rigid alignment, compare bond
 distances, angles, dihedrals, forming/breaking contacts, chirality, and basin
 identity after alignment.
 
@@ -28,8 +28,8 @@ coordinates, stereochemical verdict, and source artifact digests as semantic
 Observations. Use identity or stereochemical ProofSpecs when these values are
 acceptance-critical.
 
-A visually similar render or low global RMSD does not prove endpoint identity,
-especially for fragment permutations, conformers, or stereochemical inversion.
+For endpoint identity, inspect fragment permutations, conformers, and
+stereochemistry alongside the global RMSD and rendered structure.
 
 ## Deterministic Tool Parameters
 

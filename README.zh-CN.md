@@ -35,12 +35,15 @@ TSPi 和 TS Phone 都可以选择分支、标签或提交，默认使用 `main`�
 
 ## 开始研究
 
-安装后，进入安装目录，直接在终端启动研究会话：
+安装 TS Phone 并启动其服务后，进入安装目录打开共享终端：
 
 ```bash
 cd /path/to/TSPi-installation
-./TSPi --standalone --workspace reaction-a
+./TSPi --workspace reaction-a
 ```
+
+直接运行 Pi 会话时，使用 `./TSPi --standalone --workspace reaction-a`。
+服务启动和手机连接方式见下文。
 
 每个研究项目保存在安装目录的 `workspaces/` 下。你可以先导入已有输入，
 再提出具体的研究目标，例如：
@@ -82,7 +85,7 @@ cd /path/to/TSPi-installation
 
 退出共享终端后，服务中的研究会话仍可继续运行。手机连接设置见
 [Phone 配置](docs/INSTALLATION.md#configure-ts-phone)，会话切换和快捷键见
-[终端使用说明](docs/TERMINAL.md)。
+[终端使用说明](docs/TERMINAL.zh-CN.md)。
 
 ## 浏览器查看
 
@@ -116,12 +119,12 @@ TS Web 用于浏览研究路线、计算记录、科学结论、验证结果和�
 
 ## 文档
 
-- [安装与运维](docs/INSTALLATION.md)：依赖、配置、服务、升级与卸载。
-- [终端使用说明](docs/TERMINAL.md)：项目、会话、快捷键和恢复。
+- [安装与运维（英文）](docs/INSTALLATION.md)：依赖、配置、服务、升级与卸载。
+- [终端使用说明](docs/TERMINAL.zh-CN.md)：项目、会话、快捷键和恢复。
 - [Skill 目录](skills/README.zh-CN.md)：过渡态搜索、计算方法、结构验证、绘图和报告。
 - [中英术语表](skills/tspi-orchestration/references/glossary.zh-CN.md)：研究记录中的常用术语。
 - [中文架构](docs/ARCHITECTURE.zh-CN.md) / [Architecture](docs/ARCHITECTURE.md)：系统设计和数据模型。
-- [开发维护指南](docs/MAINTAINER_GUIDE.md)：源码结构、测试和发布。
+- [开发维护指南（英文）](docs/MAINTAINER_GUIDE.md)：源码结构、测试和发布。
 
 ## 开发
 

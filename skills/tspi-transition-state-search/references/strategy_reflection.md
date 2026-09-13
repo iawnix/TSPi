@@ -1,7 +1,7 @@
 # Strategy Reflection
 
 Use this reference when repeated results challenge the current plan. Reflection
-is Root reasoning; it does not change a validator or route the DAG.
+helps Root revise the hypothesis, method, or next research question.
 
 ## Questions
 
@@ -24,8 +24,7 @@ method, input, or discriminator.
 
 For excited-state, open-shell, metal, radical, crossing, bifurcating, or
 non-adiabatic problems, add semantic concepts and maintained validation
-templates/predicates appropriate to the science. Do not force them through
-classical TS templates or add a workflow branch merely to make the engine pass.
+templates/predicates appropriate to the electronic states and dynamics involved.
 
 Ask for independent Review when a bounded counterargument would help. The Root
 must still respond and own the next decision.

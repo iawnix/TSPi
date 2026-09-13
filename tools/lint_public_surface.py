@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reject retired terminology in the public README and public Skill text."""
+"""Check terminology in user guides and research Skills."""
 
 from __future__ import annotations
 
@@ -9,7 +9,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC_PATTERNS = ("README.md", "skills/**/*.md")
+PUBLIC_PATTERNS = (
+    "README*.md", "skills/**/*.md", "docs/ARCHITECTURE*.md",
+    "docs/TERMINAL*.md", "docs/INSTALLATION.md", "docs/MAINTAINER_GUIDE.md",
+)
 RULES = (
     (re.compile(r"\b(?:gate_results|required_gates)\b", re.I),
      "retired fields: describe ProofSpec and ValidationResult contracts"),

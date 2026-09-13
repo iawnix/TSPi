@@ -1,8 +1,8 @@
 # Runtime Environment Contract
 
-TSPi uses one installation-owned, hash-addressed Python environment shared by
-workspaces. It does not use the shell's current Conda environment or install
-dependencies into shared `base`.
+TSPi uses an installation-managed Python runtime shared by workspaces: a
+hash-addressed Conda environment for scientific dependencies and a venv for the
+selected kernel wheel.
 
 `scripts/install_env.py` binds package root, environment-spec digest,
 interpreter, optional render dependencies, runtime manifest, and environment
@@ -16,13 +16,12 @@ fixed-seed ETKDG embedding, and UFF optimization, recording versions and module
 origins. `packages/ts-agent-kernel/ts_agent/runtime/launcher.py` accepts the manifest only when
 the source and installed distribution digests still match.
 
-Research workspaces contain state and artifacts only; they do not contain the
-Python environment. Immutable releases contain source but no `node_modules`,
-credentials, sessions, or generated env.
+Research workspaces store state and artifacts. The installation runtime store
+holds Python environments, and release directories hold versioned program files.
 
 TSPi exports the manifest-selected interpreter as `TS_AGENT_PYTHON`, prepends
 its `bin` to `PATH`, disables user site packages, and clears `PYTHONHOME` for
-the Pi process tree. It never falls back to system Python.
+the Pi process tree. A missing or invalid runtime is repaired through the installer.
 
 When diagnosing failure, check release, Python payload digest, manifest, spec
 digest, interpreter, probe module origins, and optional renderer separately.

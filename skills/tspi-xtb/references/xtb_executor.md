@@ -23,5 +23,5 @@ Expected primary artifacts are:
 
 The parser reports execution, termination, SCC convergence when applicable,
 energies, geometry, frequencies, scan points, and trajectory summaries. These
-are candidate Observations. A negative xTB frequency is not automatically a
-validated TS mode, and a scan maximum is not automatically a stationary point.
+are candidate Observations. Inspect negative-frequency displacements for mode
+assignment, and refine scan maxima with stationary-point optimization and validation.

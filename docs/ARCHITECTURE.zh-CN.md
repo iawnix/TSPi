@@ -1,204 +1,478 @@
-# TSPi Package 架构
+# TSPi 架构
 
-本文说明 TSPi Package 与 `@iawnix/ts-agent` 的组件归属、状态边界和运行时边界。
-字段级调用形状以 JSON/TypeBox schema 为准，任务与合同语义以
-`tspi-orchestration` 为准，科学方法和输出交付由专用 Skill 提供。英文原文及完整
-字段说明见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+[English](ARCHITECTURE.md) | [简体中文](ARCHITECTURE.zh-CN.md)
 
-## 系统形态
+本文介绍 TSPi 如何组织研究会话、运行计算、验证结论，以及向终端、Phone 和 Web 提供结果。
+字段定义见实现中的 JSON/TypeBox Schema。
+
+## 系统组成
+
+TSPi 将 Pi 研究会话与科学工具、工作区记录以及终端、Phone、Web 界面连接起来。
 
 ```text
-安装根目录
-  一个选定的 TSPi Package release
-    Agent + 选定的 Web / Phone 组件
-  TSPi shell shim -> Python 生命周期 Host
-    -> 不可变 release、隔离 Python runtime、workspace bootstrap、Root 锁
-    -> Pi -> 编排 Skill、专用 Skill、扩展和主题
-       -> Root Agent -> Research Kernel
-          ResearchPhase + ResearchNode DAG + Claim 图
-          Observation / Finding registry、Decision 事务边界
-       -> 确定性 Compute / Render / Report / Remote / Notification
-       -> Validation Engine、Context Compiler、隔离 Compute / Review Agent
-       -> 只读 Activity 与历史投影
+终端 / TS Phone
+  -> TSPhoneServer（Host）
+     -> 每个工作区一个活动 Worker
+        -> Pi + Skills + 扩展
+           -> Root Agent -> Research Kernel -> 科学记录
+           -> Compute / Review -> 工具和日志
+           -> Validation Engine + Context Compiler
+           -> 分子图像、曲线和报告
+
+TSPi --standalone -> 使用相同研究工具的原生 Pi
+TS Web -> 投影提供器 -> 工作区记录和计算历史
 ```
 
-Root Agent 选择问题、假设、方法、分支、回溯和停止条件。Review 只返回 Claim
-中心的建议，Compute 只执行 Host 绑定的 action plan。确定性 Host 工具负责验证、
-提交状态和执行明确授权的副作用；子 Agent 不能直接写科学状态，也不能自行选择
-路径、文件名或验证结论。
+Root 选择问题、假设、方法、分支、解释和停止条件。Compute 执行选定的计算计划，
+Review 在独立会话中评估 Claim。Host 工具实现状态事务、计算、结构操作、渲染和投递。
 
-## Package 发布边界
+## 组件与安装
 
-TSPi、`ts-phone` 是独立 Git 仓库，`ts-web` 在 `components/ts-web/` 下保持独立
-组件边界。TSPi 拥有 provider、套件组装和安装边界；Phone 产生自己的组件归档，
-不决定 TSPi 版本；Web 客户端只消费版本化只读投影。
+GitHub 安装器构建 TSPi 和选定扩展，完成安装配置，并按选择启用和启动 systemd 服务。
 
-套件组装器接收可选 Phone manifest，构建 Agent，并校验协议、产物和构建证明，写出
-`tspi-package-release/4`。安装器先把调用方归档复制到私有 staging，对同一份字节
-完成哈希、检查和解包，再准备并探测 release 绑定的 Python runtime，最后切换一个
-`current` 指针。TSPi、TSWeb、TSPhoneCtl、TSPhoneServer 都通过该指针；安装不会
-启动服务或安装 Android APK。配置、凭据、workspace、会话和服务状态位于 release 外部。
+| 组件 | 源码 | 安装后的用途 |
+| --- | --- | --- |
+| TSPi Agent | `packages/`、`extensions/`、`skills/` | 研究会话和科学工具 |
+| TS Web | `components/ts-web/` | 通过 TSPi 投影提供器浏览研究记录 |
+| TS Phone | [ts-phone 仓库](https://github.com/iawnix/ts-phone) | 终端与手机共享的 Host，以及 Android 客户端 |
 
-GitHub 安装向导也可以将 Phone 服务安装为 TSPi 扩展组件。
-`scripts/install_phone.py` 拉取源码并构建服务，将提交、协议和运行文件哈希记录在
-`.pi/ts-phone/releases/<commit>/installation.json`，通过 `.pi/ts-phone/current`
-选择版本。安装器在激活 TSPi 前检查两者的协议兼容性；共享 Phone 入口会验证并加载
-所选服务。向导按用户选择配置和启动 systemd 服务，升级时保留配置、凭据和会话。
-包含 Android 安装包的组件仍通过 APK 发布构建流程组装。
+`scripts/install_phone.py` 拉取 Phone 源码、通过 npm 构建服务，并在
+`.pi/ts-phone/releases/<commit>/installation.json` 中记录提交、协议和运行文件哈希。
+`.pi/ts-phone/current` 选择服务版本。向导在激活前检查服务与所选 TSPi 版本的协议。
 
-## Python 分发边界
+套件构建器将 Agent 和可选 Web/Phone 归档组装为 `tspi-package-release/4`。
+包含 APK 的 Phone 归档使用 `ts-phone-component-release/2`，包括签名 APK、
+源码快照，以及绑定源码、摘要、版本、构建、ABI 和签名者的证明。
+Android 客户端安装在手机上。
 
-Pi package 与 Python distribution 是两个协同边界。`build_release.py` 从临时可写副本
-构建 `ts-agent-kernel` wheel 并放入 `python-dist/`；Agent manifest 绑定名称、版本、
-路径、大小、SHA-256 和 payload digest。`build_package.py` 组装组件，`install_package.py`
-是公开安装边界，`install_release.py` 用于 Agent 组件开发验证。
+套件安装器将归档复制到暂存目录，检查清单和摘要，解包组件，准备 Python 运行环境，
+然后选择：
 
-runtime store 分为两层：`base/<spec-hash>` 是共享 Conda 科学环境，
-`kernels/<payload-hash>` 是继承该环境的 venv 并承载精确 wheel。依赖变化创建新的
-base，内核变化创建新的 overlay。runtime probe 检查模块来源、payload 哈希以及
-NumPy/RDKit 的环境来源。激活流程是 prepare、probe、publish；失败时旧的 current、
-manifest 和稳定链接保持原状。
+```text
+<installation>/.pi/packages/tspi/current
+```
 
-## 权威矩阵
+稳定入口 `TSPi`、`TSWeb`、`TSPhoneServer` 和 `TSPhoneCtl` 解析所选版本。
+Phone 入口优先加载套件内的服务，否则加载 `.pi/ts-phone/current` 选择的服务，
+并在导入前验证该服务。
 
-| 组件 | 使用模型 | 写入规范科学状态 | 外部作用 | 持久输出 |
-| --- | --- | --- | --- | --- |
-| 生命周期 Host | 否 | 仅 bootstrap | 启动 Pi | release/config、身份、Root 锁 |
-| Root Agent | 是 | 仅通过 `ts_change` | 选择受限工具 | 会话与 Decision |
-| Research Kernel | 否 | 唯一写入者 | 无 | registry、acceptance、事务 |
-| Context Compiler | 否 | 否 | 无 | revision 绑定投影 |
-| Validation Engine | 否 | 通过 Kernel apply | 无 | ProofSpec、ValidationResult |
-| Review Agent | 是 | 否 | 无 | task、snapshot、建议或失败 |
-| Compute Agent | 是 | 否 | 仅绑定 typed tools | task、action、结果或失败 |
-| Compute / Render / Report | 否 | 否 | 确定性本地或远程作用 | manifest、产物、报告 |
-| Web / Phone / UI | 否 | 否 | 只读投影 | 瞬时界面或 UI registry |
+配置、模型凭据、SSH 设置、通知设置、Phone token、Pi 会话、工作区和服务状态与
+版本文件分开保存，升级时保留。共享 dotenv 读取器依次采用显式环境变量、安装配置
+和默认值。
 
-除 bootstrap 外，只有 `ts_change` 可以修改规范科学状态。扩展、Review 结果、parser、
-scheduler、renderer、report builder、通知和 UI 都不能绕过该边界。
+安装、服务管理、升级、回滚和卸载见[安装与运维](INSTALLATION.md)。
+
+## Python 运行环境
+
+`pyproject.toml` 从 `packages/ts-agent-kernel/ts_agent/` 构建
+`ts-agent-kernel`。Agent 构建器在临时源码副本中生成 wheel，放入
+`python-dist/`。`ts-agent-release/2` 清单记录名称、版本、大小、SHA-256
+和展开后的内容摘要。
+
+运行环境存储分为两层：
+
+| 位置 | 内容 |
+| --- | --- |
+| `base/<spec-hash>` | 共享的 Conda 科学计算与渲染依赖 |
+| `kernels/<payload-hash>` | 使用基础环境并安装所选内核 wheel 的 venv |
+
+依赖变化时准备新的基础环境，内核变化时准备新的叠加环境。运行环境探测检查模块和
+数据文件哈希、基础环境中的 NumPy/RDKit 来源，以及叠加环境中的内核分发包。
+`ts-agent-runtime/2` 清单绑定这些来源和能力。
+
+激活按准备、探测、发布的顺序进行。准备失败时保留当前版本；发布失败时恢复原有清单、
+指针、安装状态和稳定链接。已准备的版本保留供重试，服务重启由安装向导或运维人员执行。
+
+## 组件职责
+
+| 组件 | 职责 | 输出 |
+| --- | --- | --- |
+| 生命周期 Host | 选择版本、初始化工作区、持有写入锁、启动 Pi | 进程和会话身份 |
+| Root Agent | 选择并解释研究操作，提交 `ts_change` | 会话和 Decision |
+| Research Kernel | 校验并提交科学记录 | 登记表、事务、接受记录 |
+| Context Compiler | 选择相关图上下文 | 绑定修订的投影 |
+| Validation Engine | 编译和评估 ProofSpec | 冻结检查和 ValidationResult |
+| Compute Agent | 执行 Host 绑定的计算计划 | 操作回执和运行结果 |
+| Review Agent | 评估 Claim 和选定产物 | 建议和 Root 处置 |
+| 确定性工具 | 准备输入、运行计算、分析、渲染、报告、通知 | 产物和运行日志 |
+| TS Phone Host | 管理会话并向 Worker 分发消息 | 会话、队列、命令回执 |
+| 终端与 Phone 客户端 | 发送消息并显示共享会话 | 交互式会话视图 |
+| TS Web | 浏览科学记录和计算历史 | 研究地图、详情和文件预览 |
+
+工作区初始化后，科学变更通过 `ts_change` 和 Kernel 事务校验器提交。
+Root 对照源产物核验工具输出后，将其记录为 Observation 或 Finding。
 
 ## 科学状态模型
 
-### Claim 图
+| 记录 | 含义 |
+| --- | --- |
+| ResearchPhase | 通过标题和目标组织相关研究问题 |
+| ResearchNode | 一个研究问题及其交付物、依赖、Claim 范围和结果 |
+| Claim | 带假设、反证条件、状态和证据引用的科学陈述 |
+| ClaimRelation | 依赖、细化、冲突、替代等具名关系 |
+| Observation | 带单位、限定条件和产物来源的不可变类型化科学数值 |
+| Finding | 带严重程度和解决状态的异常、限制、冲突或未决问题 |
+| ProofSpec | 冻结的声明式验证检查集合 |
+| ValidationResult | 针对选定 Observation 的谓词结果和汇总判定 |
+| Acceptance | 按接受配置评估 Claim 的不可变记录 |
 
-Claim 是带 statement、assumptions、falsifiers、tags、status 以及 Observation/
-validation history 的科学陈述。ClaimRelation 连接两个 Claim，关系类型保持开放，
-但有向图必须无环。Claim 和关系 ID 是 workspace 内单调 ordinal，只表示身份；Node
-声明范围与 Claim 创建来源共同形成只读邻域。
+每个 Node 属于一个 Phase。Node 依赖形成 DAG：一个前驱表示延续，多个前驱支持合并，
+依赖较早的检查点支持回溯。已有 Node 和 Attempt 保留历史，Root 根据历史和当前证据
+选择下一个问题。
 
-### ResearchPhase 路线图
+一个 Node 对应一个主要问题和交付物。回答同一问题的重试和参数变化仍是 Attempt；
+问题、独立假设分支或主要交付物改变时，创建依赖 Node。假设、前提和反证条件记录在
+Claim 中，多个 Node 可以检验同一陈述。
 
-Phase 是用于导航的标题、目标、创建 Decision 和时间戳记录。每个 Node 属于一个
-Phase；Phase 不拥有状态、后继规则、方法政策、验证政策或权限含义。
+ClaimRelation 形成有向无环图，关系标签描述陈述之间的科学联系。
 
-### ResearchNode DAG
+`ResearchNode.claim_refs` 记录声明范围，`Claim.created_by_node` 记录创建来源。
+读取视图使用两者的并集展示 Claim 与 Node 的关系。Research Trajectory 将 Node
+与启动、完成时的 Decision 摘要关联，用于上下文、Web 和报告。
 
-Node 是有边界、可审计的研究决策事件，包含 Phase、目标、主要交付物、依赖 Node、
-相关 Claim、Observation、Finding、ProofSpec、ValidationResult 和 artifact 根。依赖
-形成 DAG，用于继续、合并和回溯；DAG 记录谱系但不决定下一步。一次 Decision 最多
-启动一个 Node 并完成一个 Node；改变目标或主要交付物应创建后继 Node。
+Kernel 分配工作区内的可读序号，如 `claim_1`、`rel_1`、`node_1`、`obs_1`、
+`fnd_1`、`proof_1`、`result_1` 和 `acc_1`。修订和内容摘要绑定记录版本。
+科学类型、标签、关系、概念和验证维度使用开放词汇；执行接口为状态、数据类型和判定
+定义枚举。
 
-### Observation 与 Finding
+## 科学记录与运行记录
 
-Observation 不可变，绑定 concept、subject、typed value、unit、qualifier、摘要、
-产物 ID/digest、producer、Node 和 Decision。Finding 表示异常、限制、冲突或未解决
-问题，可引用 Claim、Node、Observation；开放的 blocking Finding 会阻止相关 Claim
-被 acceptance。
+科学记录共同确定 `workspace_revision`：
 
-### Validation 与 acceptance
+```text
+workspace.json
+research_state.json
+phases.json
+claims.json
+claim_relations.json
+research_nodes.json
+observations.json
+proof_specs.json
+validation_results.json
+findings.json
+acceptances/<acceptance_id>.json
+decisions/<decision_id>.json
+decision_log.jsonl
+transaction_log.jsonl
+```
 
-ProofSpec 是冻结的声明式检查集合，绑定目标 Claim、dimension、模板和 predicate
-registry digest。ValidationResult 记录选定 Observation 的 digest、每个 predicate
-结果和聚合 verdict：`pass`、`fail`、`inconclusive`、`error`。
+计算 Attempt、Compute/Review 运行、工具活动、报告、远端回执和通知回执构成运行
+历史，并参与确定 `operational_revision`。运行 ID 使用 `calc_n`、`sub_n`
+和 `op_n`，在锁内按单调递增的高水位分配。
 
-Acceptance 是独立的不可变评估快照。Acceptance profile 检查 Claim 状态、ProofSpec
-覆盖、每个 specification 的最新通过结果、digest 和 blocking Finding；历史记录保留，
-当前性由它与当前规范状态的比较推导。ProofSpec、ValidationResult 和 Acceptance
-共同表达收尾验证。
+`workspace.operational.calculation_attempt_index()` 校验意图、准备、状态和结果
+之间的绑定。Context、API、Web 和文件视图共用其 Attempt 记录与完整性诊断。
+父目录无法读取或不满足路径条件时，产生 `scope=attempt_parent` 诊断；遇到符号
+链接时记录诊断并停止遍历。
 
-Claim 类型、关系、Node 标签、Finding 类型、validation dimension、Observation concept
-和 subject 保持开放字符串；只有确定性执行合同使用封闭枚举。
-
-## 规范与运行状态
-
-规范状态包括 `workspace.json`、Phase/Claim/Node registry、Observation、ProofSpec、
-ValidationResult、Finding、acceptance、Decision 以及 decision/transaction log。这些
-记录共同确定 `workspace_revision`，只能通过 Kernel 事务修改。
-
-运行或派生状态包括 Attempt、Compute/Review runs、Node outputs、activities、reports、
-Pi 会话、锁、remote receipt 和 notification receipt。它们可以有自己的
-`operational_revision`，但不能改变规范科学记录。`calc_n`、`sub_n`、`op_n` 是 workspace
-范围的单调 operational ID。
+界面显示工作区名称和可读记录 ID。工作区身份、投影 ID、修订和摘要作为追溯记录的
+技术详情提供。
 
 ## Decision 事务
 
 ```text
-ts_state -> Root decision -> ts_change（编译、校验、加锁、应用）
+ts_state -> Root 决策 -> ts_change -> 编译 -> 校验 -> 提交
 ```
 
-Kernel 私下分配技术 ID、解析 alias、编译 ProofSpec、在隔离副本校验完整后状态，
-绑定当前 scientific revision，并一次性提交 `ts-research-decision/3`。重放只有在完整
-request digest 相同时才幂等。支持创建 Phase/Claim/Node、关联 Claim、记录
-Observation/Finding、冻结和评估 ProofSpec、更新 Claim、accept Claim、设置 focus。
+Root 提交带本地别名的有序操作。遇到不熟悉的操作时，
+`ts_state mode=change_contract operation=<op>` 从编译器的操作注册表返回字段。
 
-## Validation Engine
+Kernel 分配 ID、解析别名、编译 ProofSpec，并在拟议状态上执行请求的验证。
+它持有工作区锁检查完整后状态，提交绑定当前科学修订的 `ts-research-decision/3`。
+再次提交完整请求摘要相同的请求时，返回已记录事务。
+
+支持的操作为：
 
 ```text
-模板 + typed parameters
-  -> compiler 展开 checks
-  -> 带 template / registry digest 的冻结 ProofSpec
-  -> registry 调用维护中的确定性 predicate
-  -> 带 Observation digest 的 ValidationResult
-  -> acceptance profile 生成不可变 assessment snapshot
+create_phase          create_claim          relate_claims
+start_node            complete_node
+record_observation    record_finding        resolve_finding
+freeze_proof_spec     evaluate_proof
+update_claim          accept_claim          set_focus
 ```
 
-Root 只能选择已注册模板或声明式 predicate 组合；定义中不能包含 Python、shell、
-import、表达式或可执行插件。新增科学行为必须进入维护代码、测试和新的 registry digest。
+一次 Decision 最多启动一个 Node、完成一个 Node，可以启动并完成同一个 Node。
+同时关闭旧 Node 并开启新 Node 时，需要后继依赖。Root 通常在启动当前工作时设置
+focus。Focus 记录导航位置，Claim 和验证记录表达科学解释。
 
-## Context Compiler 与只读 Web 投影
+## 验证引擎
 
-Context Compiler 向模型提供 revision 绑定的有界图投影，而不是原始 canonical 文件。
-`frontier`、`claim`、`node`、`finding`、`proof`、`subgraph` 和 `delta` 模式都报告省略
-计数和检索提示。投影按需重建，不写索引，也不改变 scientific/operational revision。
+Claim 收尾使用 ProofSpec、ValidationResult 和 Acceptance：
 
-`ts_web` 是外部只读 explorer，不是第二个 workflow runtime。它从 canonical state 和
-运行投影重建视图；registry 位于 workspace 外部，provider 负责私有路径和 workspace
-校验。浏览器端只能通过版本化 provider protocol 读取。
+1. 选择带版本的验证模板，或组合已注册谓词。
+2. 冻结检查项、参数、模板摘要和谓词注册表摘要。
+3. 针对明确的 Observation 引用和内容摘要执行评估。
+4. 检查判定并记录对 Claim 状态的解释。
+5. 使用相应接受配置运行 `accept_claim`。
 
-## TSPi 生命周期与扩展
+| 判定 | 含义 |
+| --- | --- |
+| `pass` | 满足声明的检查条件 |
+| `fail` | 有效输入未通过一个或多个必需检查 |
+| `inconclusive` | 现有有效输入仍无法确定结果 |
+| `error` | 声明的检查无法执行 |
 
-Host 解析安装、校验 release、绑定私有环境和 Root 锁，然后启动 Pi。workspace bootstrap
-接受当前合同，生命周期操作在同一目录锁下执行。安装、升级、runtime publish、launcher
-切换和 current 指针切换采用可回滚的 prepare/probe/publish 流程。
+接受要求 Claim 状态为 supported，至少有一个 ProofSpec，满足必需维度，覆盖全部
+已关联 ProofSpec，采用各自最新通过结果，摘要一致，并已处理适用的阻断 Finding。
+接受记录绑定 Claim、配置、验证定义、结果和 Finding。`acceptance_digest`
+绑定完整记录；与当前状态比较后确定这份评估是否仍然有效。
 
-扩展通过稳定 Pi API 注册工具、命令和 entry renderer。Review runtime 接收紧凑的 Claim
-snapshot，输出建议、限制和依据；Compute runtime 接收 Host 绑定的 action plan，只能调用
-允许的 typed tools。两者的结果、失败和日志由 Host 从确定性 action 记录派生。
+对于经典过渡态，驻点、虚频模式和连通性检查分别回答不同问题。电子态、热化学或
+稳健性要求取决于 Claim 和接受配置。交叉点与动力学研究可以使用额外维护的模板和谓词。
 
-## 确定性工具平面
+定义由已注册谓词声明式组合而成。增加新计算或科学检查时，需要维护实现、测试和
+更新后的注册表摘要。详细验证说明见[编排 Skill](../skills/tspi-orchestration/SKILL.zh-CN.md)
+及相应方法 Skill。
 
-Compute kernel 负责 intent、控制记录、SSH/Torque 调度、输入和输出解析。`ts_seed`、
-`ts_compare`、`ts_import` 负责受限的结构生成、比较和内容寻址导入。`ts_render` 负责
-分子、结构、曲线、能量、扫描和收敛图的确定性渲染；`ts_report` 构建绑定 revision 和
-文件 digest 的报告包。`ts_remote` 只读检查远程基础设施；`ts_notify` 向固定目标发送
-digest 绑定的通知。
+## 上下文编译器
 
-## Journal、结果交付与失败语义
+编译器提供绑定修订的投影：
 
-每个 Compute/Review run 都有不可变 task packet、action/result/failure journal 和
-digest。结果先作为操作记录保存；Root 校验主要产物并通过 Decision 提升为 Observation。
-报告、Activity、Context、API 和 Web 使用同一套派生索引。
+| 模式 | 内容 |
+| --- | --- |
+| `frontier` | 当前焦点、替代方案、依赖、开放 Finding、未完成验证和近期变化 |
+| `claim`、`node`、`finding`、`proof` | 一个对象及其相关邻域 |
+| `subgraph` | 调用方选定、具有深度限制的图 |
+| `delta` | 自已知科学与运行修订以来的变化 |
+| `locate` | 与 ID 或文本查询匹配的当前对象和产物位置 |
+| `artifacts` | 已注册逻辑产物和绑定 |
+| `capabilities` | 可用计算与验证接口 |
 
-错误按边界返回结构化 code、message、retryable 和相关 ID。解析、验证、权限、digest、
-锁和安装错误停止当前事务；远程不确定作用保留 receipt 和诊断信息。升级错误保留旧
-release 和 current 指针，供诊断或重试。
+有范围限制的视图提供省略计数和后续读取提示。Claim 产物通过直接 Observation 引用
+解析，Attempt 视图区分输入绑定与输出产物。编译器按需重建视图。
 
-## 合同位置
+紧凑的 `workspace_brief` 包含 Node 轨迹，Web 和报告使用同一轨迹推导。
+查询具体验证模板时，会先返回接受的参数和 Observation 选择器，供起草 ProofSpec 使用。
 
-- `contracts/`：Phone、Web、Package 和协议 schema。
-- `packages/ts-agent-kernel/ts_agent/`：Research Kernel、workspace、validation、compute、render、report。
-- `packages/ts-agent-runtime/`：Agent、Compute、Review 隔离运行时。
-- `components/ts-web/`：Web provider、server、静态界面和组件发布边界。
-- `extensions/`：Pi 扩展与 Phone bridge。
-- `scripts/`：构建、安装、runtime 和稳定兼容入口。
-- `skills/`：公开编排、科学方法和输出 Skill。
-- `tests/`：合同、集成、发布和运行时验证。
+## 只读 Web 投影
+
+TS Web 通过 TSPi 提供器协议读取数据。它的登记表将显示名称映射到工作区来源，
+保存在研究工作区外。安装目录发现流程同步 `<installation>/workspaces` 的直接
+子目录，保留手工登记，并在发现失败时保留登记表。
+
+一次快照请求规范化工作区并返回修订；发生变化时，同时返回由本次处理生成的 View
+和 Graph。浏览器隐藏时暂停轮询，刷新时保留当前选择。
+
+Research Map 按 Phase 和 Claim 组织工作。分组依次采用主要 Claim、唯一派生关联
+Claim、未分配分组。连通性 Observation 随其产生 Node 显示，方向使用显式
+`connectivity_direction` 限定值。Dependency DAG 展示跨 Phase 依赖、分支、
+合并和回溯。
+
+Node 详情包括结论、证据、计算系列、活动、文件和 Decision 历史。Runs 展示目的、
+重试与重新计算关系、设置、远端资源、时间和产物。Scientific Conclusions 通过表格
+和地图展示 Claim 与 ClaimRelation。
+
+HTTP API 提供读取操作。打开文件预览时，重新核验已纳入 Node 文件视图的文件位置、
+普通文件属性、UTF-8 编码和大小。服务运行在回环地址或受信任且配置防火墙的网络中，
+网络访问控制由部署环境提供。
+
+安装后的 Web 进程监测稳定 `TSWeb` 入口的目标。新版本和运行环境准备好后，进程
+关闭套接字并执行稳定命令，加载该版本。
+
+## TSPi 生命周期
+
+默认 `TSPi` 命令启动 `apps/terminal/index.mjs`，连接经过认证的 Host。
+`--phone` 使用同一路径，`--standalone` 启动原生 Pi。启动器通过
+`PI_BIN` 或 `PATH` 中第一个 `pi` 选择 Pi。
+
+Host 使用 `workspaceId + sessionId` 定位会话。客户端共享 Worker、事件流和命令
+回执。打开历史时读取记录，发送队列请求时激活执行。Host 按工作区串行执行轮次，
+并按客户端消息 ID 去重。
+
+原生 Pi 和 Host Worker 使用以下启动流程：
+
+1. 解析安装目录和选定版本。
+2. 加载运行环境、远端、通知和缓存配置。
+3. 验证隔离 Python 环境和内核内容。
+4. 解析工作区并持有会话目录锁。
+5. 获取工作区 Root 锁和指定会话的写入锁。
+6. 初始化新工作区，或校验已有科学记录。
+7. 携带套件 Skill、扩展和主题启动 Pi。
+
+一个工作区同时由一个 Root 写入者持有。不同工作区可以使用各自会话和研究数据并行
+运行。共享目录锁与独占会话锁在 Pi 执行期间持续持有。实际持有的操作系统锁确定
+归属，锁文件中的 PID 用于描述进程。
+
+Host 管理的 Worker 通过 `extensions/ts-phone-bridge/runtime.mjs` 使用 Pi SDK/RPC。
+已保存会话的模型选择优先于启动偏好。凭据和模型注册表位于
+`PI_CODING_AGENT_DIR`，默认是 `~/.pi/agent`。模型变更作用于当前会话和后续队列请求。
+
+`--continue` 选择最近会话，`--session-id` 选择指定会话。原生会话的切换或分叉
+通过启动器重新打开。ResearchNode 完成时更新工作区，会话可以继续。
+
+## Phone 会话与恢复
+
+Phone Controller 消息与终端消息使用相同的研究工具，Observer 会话使用只读工具集。
+Bridge 同时报告模型就绪情况、适合显示的提示错误和连接状态。
+
+队列接收请求时，先持久保存请求及其模型选择，再返回确认。Host 重启后保留等待请求，
+将中断的执行标记为 `unknown`。确认未知请求前，检查历史、产物和 Worker 状态。
+直接投递回执和事件缓存是有容量限制的内存记录；SSE 重连游标过旧时使用当前快照。
+
+Phone 在 `management.json` 中保存显示名称、偏好和生命周期修订，Pi 保存会话 JSONL。
+删除项目或会话前，Host 执行 `--lifecycle-preflight` 并持有 `--lifecycle-guard`。
+删除前需要处理活动写入者、远端计算、未决控制操作和完整性错误。
+
+安装记录包含 `tspi-session-guard/1`。Worker 注册时核验子进程 PID、启动身份和
+已持有的锁；启动失败返回 `session_writer_active`、
+`session_guard_upgrade_required` 等固定错误码。安装器升级时通过工作区锁和进程
+检查建立这一约定，执行该升级前应退出已有写入进程。
+
+Host 为每个工作区预留一个启动，收到模型就绪快照后完成激活。退出终端会断开客户端，
+`/abort` 停止生成；关闭 Worker 和取消远端计算分别执行。
+命令和回执恢复见[终端使用说明](TERMINAL.zh-CN.md)。
+
+## 公开扩展
+
+| 扩展 | 工具和命令 | 用途 |
+| --- | --- | --- |
+| `ts-workflow-control` | `ts_state`、`ts_change`；`/ts`、`/ts-check` | 研究上下文和状态事务 |
+| `ts-workflow-review` | `ts_review`、`ts_reply` | Claim 评审和回复 |
+| `ts-workflow-compute` | `ts_calc`、`ts_remote`；`/ts-remote` | 计算生命周期和远端诊断 |
+| `ts-workflow-artifacts` | `ts_seed`、`ts_compare`、`ts_import`、`ts_render`、`ts_report`、`ts_notify` | 输入、分析、图像、报告、投递 |
+| `ts-workflow-ui` | `/ts-runs` | 活动与运行历史 |
+
+`ts-phone-bridge` 在 Host Worker 和 `--standalone --phone` 中加载。
+[Skill 目录](../skills/README.zh-CN.md) 说明方法指导及其使用时机。
+工具 Schema 定义调用字段，能力目录描述适配器任务、验证模板、谓词和接受配置。
+
+## 独立 Agent 运行环境
+
+Compute 和 Review 各自在新的内存 Pi 会话中启动，使用选定模型、明确任务范围和工具集。
+Host 在本地校验结果，允许一次结构修正，并优先报告供应商错误，再报告输出格式错误。
+
+### Review
+
+Host 准备 Claim 材料，包括相关关系、Node、Observation、Finding、ProofSpec、
+ValidationResult 和产物清单。Review 接收这份材料作为上下文。
+其工具为 `ts_review_result`，以及选定产物可用时的一次批量
+`ts_review_artifact_read`。
+
+Host 检查产物归属、路径范围、大小、摘要和读取预算，记录摘录元数据，并核验结果身份、
+范围和引用。Review 成功后，Root 在下一次科学变更前记录一次 `ts_reply`，
+再核验采纳建议所需的原始证据。
+
+### Compute
+
+一个 `ts-agent-task/2` 绑定一个 Node、一个不可变意图摘要和一个计划：
+
+```text
+launch   prepare -> submit
+inspect  status -> optional tail
+finalize collect -> parse
+cancel   cancel
+```
+
+Host 在启动子代理前校验路径、身份、摘要、后端和执行目标。每个无参数操作工具绑定
+该请求，并在前置步骤完成后执行一次。提交或取消的效果未知时，需要核对恢复。
+模型提供摘要和限制，Host 从操作回执推导结果、产物和恢复标记。
+
+## 确定性工具
+
+### 计算
+
+计算内核实现准备、提交、状态查询、末尾输出读取、收集、取消和解析。
+`ts-calculation-intent/7` 绑定 Node、输入产物 ID 和角色、后端/任务/参数、
+执行目标和预期输出。重试保持科学意图摘要，重新计算改变该摘要并记录变化字段，
+两者都引用同一 Node 内的已有 Attempt。
+
+`local` 目标在 `dry_run=true` 下支持准备和解析。远端执行使用安装级
+SSH/Torque 配置。Submit 暂存输入和控制记录，inspect 读取调度器与程序状态。
+Finalize 按清单下载声明的输出并在本地解析；队列历史不可用时仍可按清单收集。
+
+### 结构与输入
+
+`ts_seed` 根据一个连通 SMILES 及声明的电荷、多重度生成初始几何。
+RDKit ETKDGv3 使用固定随机种子、显式氢、电荷/电子奇偶校验和可选 UFF 初始化，
+记录 XYZ 和来源。后续计算用于确定驻点性质。
+
+`ts_import` 接收内联 Gaussian、XYZ 或 xTB 控制输入，核验元数据与格式，
+返回内容寻址的 Node 产物；相同内容复用同一产物。
+
+`ts_compare` 比较两个已注册 XYZ 产物，支持从零开始的原子映射、反应中心选择、
+内坐标、立体化学检查和 RMSD 阈值。JSON 输出记录指标和来源，Root 核验数值后
+记录科学 Observation。
+
+### 图像与报告
+
+`ts_render` 使用 `xyzrender` 生成分子 PNG、轨迹 GIF、结构对比图和反应物/
+过渡态/产物示意图。`curve`、`energy`、`scan` 和 `convergence` 操作
+通过 Matplotlib 将一个 `ts-curve-data/1` JSON 产物渲染为 PNG。
+曲线数据记录输入单位、标签和能量参考点。
+
+每次渲染使用所属 Node 下的新输出文件名。`ts_report` 创建新报告包，
+校验修订和文件摘要，并复制选定 PNG/GIF 产物及 `asset_index.json`。
+
+### 通知
+
+`ts_notify` 通过 ClawEmail 发送配置的研究事件。安装级
+`notifications.toml` 提供收件人和凭据，附件使用经过验证的
+`ts-report-package/4` 清单成员。回执标识成功投递；供应商返回未知结果时，
+先检查状态再决定下一次投递。
+
+## 运行日志与结果交付
+
+```text
+nodes/<node_id>/attempts/<calc_id>/runs/<sub_id>/
+reviews/<claim_id>/runs/<sub_id>/
+```
+
+Compute 日志属于 Attempt，Review 日志属于 Claim。创建时写入不可变任务和快照，
+终止处理时记录操作、结果或失败，以及最终运行状态。进程崩溃可能留下只有任务的
+pending/unknown 日志，恢复时检查操作回执和输出。
+
+确定性工具写入带 `node_refs` 的 Activity Journal。共享索引检查归属、路径和
+状态/结果一致性，并生成 Node 视图。工具返回将结果交给 Root，`/ts-runs`
+读取持久保存的摘要。
+
+完成 Node 前，需要结清所属操作、保持日志一致、处理计算控制记录，并完成收集和解析。
+只有意图或已准备的 Attempt，在外部操作发生前可以放弃。之后的状态、结果、控制、
+运行或输出记录都需要有效的 `prepared.json` 绑定。
+
+Attempt 的 `failed`、`stopped` 和 `parsed` 状态已结清。
+`submitted`、`queued`、`running`、`completed`、`collected`、`missing`
+和 `unknown` 需要继续处理后才能完成 Node。科学输入活动失败时，Node 可以按
+`inconclusive`、`blocked` 或 `stopped` 收尾。终止的渲染失败保留在历史中，
+科学完成情况根据 Node 的证据评估。分析性 Node 可以在没有工具活动时完成。
+
+## 失败处理
+
+| 失败 | 后续处理 |
+| --- | --- |
+| 操作发生前的字段、绑定或暂存错误 | 修正请求或配置；`retry_same_submission` 允许重试 |
+| 提交开始后缺少调度器回复 | 保留作业 ID，核对回执、调度器状态和输出 |
+| 程序或解析器错误 | 检查相应输出，并按错误来源记录失败 |
+| 科学矛盾 | 记录已核验 Observation 和 Finding，重新评估 Claim |
+| 供应商 HTTP/流错误 | 先报告供应商失败，再分类子代理输出缺失 |
+| 操作完成后的日志或界面序列化错误 | 保留操作结果，单独报告记录或显示失败 |
+| 修订过期、摘要不匹配、图成环或工作区不完整 | 停止事务，检查记录并恢复有效状态 |
+
+详细恢复流程见[程序失败](../skills/tspi-orchestration/references/program_runtime_failures.md)
+和[远端执行](../skills/tspi-orchestration/references/remote_contract.md)。
+
+## 实现位置
+
+| 接口或功能 | 位置 |
+| --- | --- |
+| 工具目录 | `extensions/shared/tool-catalog.ts` |
+| 工具请求 Schema | `extensions/ts-workflow-*/index.ts` |
+| Agent 任务/结果协议 | `packages/ts-agent-runtime/agent-core/agent-protocol.cjs` |
+| 科学记录 Schema | `packages/ts-agent-kernel/ts_agent/workspace/contracts/` |
+| Decision 与事务 | `packages/ts-agent-kernel/ts_agent/workspace/decision.py` |
+| 状态校验 | `packages/ts-agent-kernel/ts_agent/workspace/validator.py` |
+| 事务应用 | `packages/ts-agent-kernel/ts_agent/workspace/engine.py` |
+| Attempt 生命周期 | `packages/ts-agent-kernel/ts_agent/workspace/operational.py` |
+| 操作字段 | `packages/ts-agent-kernel/ts_agent/workspace/operation_registry.py` |
+| 上下文与 Review 快照 | `packages/ts-agent-kernel/ts_agent/workspace/context.py` |
+| 验证模板、谓词、配置 | `packages/ts-agent-kernel/ts_agent/validation/` |
+| 计算绑定 | `packages/ts-agent-kernel/ts_agent/calculation_contracts.py` |
+| 后端与解析器 | `packages/ts-agent-kernel/ts_agent/backends/` |
+| 远端执行 | `packages/ts-agent-kernel/ts_agent/remote/` |
+| 产物请求 | `packages/ts-agent-runtime/artifacts/request-contract.cjs` |
+| 结构分析 | `packages/ts-agent-kernel/ts_agent/structures/` |
+| 渲染与曲线 | `packages/ts-agent-kernel/ts_agent/render/` |
+| 报告生成 | `packages/ts-agent-kernel/ts_agent/report/` |
+| Web 投影提供器 | `packages/ts-agent-kernel/ts_agent/projection/` |
+| Web 服务与浏览器 | `components/ts-web/` |
+| 终端与 Host 入口 | `apps/terminal/, apps/host/` |
+| 安装与运行环境 | `scripts/, pyproject.toml` |

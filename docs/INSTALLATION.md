@@ -1,9 +1,8 @@
 # Installation And Operations
 
-This guide builds and installs one validated TSPi Package containing the required
-Agent and any selected Web or TS Phone components. It also
-covers workspace startup, configuration, upgrade, rollback, and common recovery
-paths.
+Install TSPi from GitHub, choose Web and Phone extensions, and configure your
+research environment. This guide also covers services, workspaces, upgrades,
+rollback, uninstall, and recovery.
 
 ## Interactive Installer
 
@@ -46,10 +45,7 @@ launcher; the wizard creates services for TS Phone and optional TS Web.
 
 ## Uninstall
 
-Uninstallation is a separate, confirmation-based operation:
-
-The installation places a self-contained `uninstall.sh` at its root, so normal
-removal does not require another network request:
+Run the `uninstall.sh` included in the installation directory:
 
 ```bash
 /path/to/TSPi-installation/uninstall.sh
@@ -62,8 +58,8 @@ By default it disables services belonging to the selected installation, removes
 TSPi releases, installed Phone server builds, and managed runtime links, and keeps workspaces, Pi
 sessions, Phone tokens, bridge secrets, and installation configuration. The
 interactive wizard can separately purge workspaces, configuration, managed
-runtime state, or the empty installation root. Automation must opt into every
-destructive scope explicitly:
+runtime state, or the empty installation root. To remove all of these in a
+non-interactive run:
 
 ```bash
 ./uninstall.sh --non-interactive --yes \
@@ -71,12 +67,13 @@ destructive scope explicitly:
   --purge-workspaces --purge-config --purge-runtime --remove-root
 ```
 
-Global Pi credentials under `~/.pi/agent` are never removed by this uninstaller.
+Global Pi credentials under `~/.pi/agent` remain available for other Pi sessions.
 
 ## Prerequisites
 
 | Requirement | Purpose |
 | --- | --- |
+| Git | Fetch TSPi and selected components from GitHub |
 | Linux with OpenSSH client tools | TSPi host and optional remote execution |
 | Node.js `>=22.19.0` | Pi and TypeScript extension loading |
 | Pi Agent `>=0.81.1 <1.0.0` | Root Agent host and TUI |
@@ -85,8 +82,7 @@ Global Pi credentials under `~/.pi/agent` are never removed by this uninstaller.
 | npm | Phone server builds and component release tooling |
 
 Configure a working Pi model and authentication before starting TSPi. TSPi
-reuses Pi's model registry and credentials; it does not store an API key in the
-release or research workspace.
+uses Pi's model registry and credentials from its configured agent directory.
 
 Optional dependencies are:
 
@@ -94,15 +90,12 @@ Optional dependencies are:
 - Gaussian, xTB, or other software profiles on the remote execution system;
 - `xyzrender`, installed by `--with-render`, for visualization;
 - a configured ClawEmail installation for email notifications;
-- an Android device for the Phone UI when the Phone component is selected. Its
-  signed arm64 APK is bundled only in that profile; service activation and
-  device installation are explicit operations.
+- an Android device and the TS Phone app for mobile access;
 - Android SDK build-tools with `apksigner` and `aapt` when building or installing
   a Package that includes an Android APK.
 
-The default terminal client requires the configured Host to be running. It
-does not require an Android device. Native Pi remains available with
-`--standalone`.
+The default terminal client connects to the configured Host. Start its service
+before opening a shared session, or use `--standalone` to start native Pi.
 The installer prepares `workspaces/` so the Host can list projects before the
 first research session. The wizard enables and starts services when selected.
 
@@ -205,13 +198,10 @@ Each build fails on a dirty source unless
 `--allow-dirty` is supplied. That option is only for local validation and must
 not be used for a distributed release.
 
-When Phone is selected, the Package contains its arm64 APK, not the store AAB.
-TS Phone checks
-the AAB signature, sole pinned signer, source identity, and attestation, but a
-pinned `bundletool` metadata check is still required before store upload. Its
-Android build also records source provenance rather than content identities for
-the Flutter, Android SDK, and JDK toolchain, so the current contract does not
-claim bit-for-bit reproducibility across build hosts.
+An APK-inclusive Package contains the Phone arm64 APK. TS Phone's Android
+release process checks its signature, pinned signer, source identity, and build
+attestation. Store AAB preparation and toolchain records are maintained in the
+[Phone release instructions](https://github.com/iawnix/ts-phone/blob/main/docs/artifacts.md).
 
 The final output contains:
 
@@ -235,12 +225,10 @@ python3 scripts/install_from_github.py \
   --install-root /srv/tspi --with-web --with-render
 ```
 
-`--ref` accepts a branch, tag, or full commit SHA. For APK-inclusive Packages, TS Phone is supplied independently
-with `--phone-repo` and `--phone-ref`; a local `../ts-phone` checkout is never
-used implicitly.
-`build_release.py` and `install_release.py` remain
-internal Agent-component tools; they do not produce or install a complete TSPi
-deployment.
+`--ref` accepts a branch, tag, or full commit SHA. For APK-inclusive Packages,
+select TS Phone with `--phone-repo` and `--phone-ref`.
+`build_release.py` and `install_release.py` support Agent-component development;
+use the package tools above for a complete TSPi installation.
 
 ## Install Or Select A Release
 
@@ -277,14 +265,12 @@ the prior manifest, pointer, install state, and
 entrypoint links. Reinstalling identical content is idempotent and revalidates
 retained component archives and runtime entrypoints.
 
-The installer creates or reuses the managed Python runtime, but it does not run
-Pi, start or restart TS Phone, install the APK onto a device, install model
-credentials, create a research workspace, or contact a cluster.
+`install_package.py` prepares the package and managed Python runtime. Use the
+installation wizard for service setup, then start a research session through
+`TSPi`. Install the Android app on the device when using mobile access.
 
-Each installed release includes `README.md`, the three top-level guides under
-`docs/`, and versioned ADRs under `docs/adr/`. They describe that exact packaged
-version and remain readable under the selected `current` release; do not edit
-them in place.
+Each installed release includes both READMEs, guides under `docs/`, and ADRs
+under `docs/adr/`. These documents describe the selected packaged version.
 
 ## Managed Python Runtime
 
@@ -316,8 +302,7 @@ The release already contains `python-dist/ts_agent_kernel-*.whl` plus its
 identity, size, SHA-256, and payload digest in `ts-agent-release/2` metadata.
 Before writing the runtime manifest, the installer revalidates that wheel and
 installs it into the overlay without resolving duplicate pip dependencies. It
-never invokes a build backend against the read-only release tree. It then
-imports NumPy and RDKit from the base, imports `ts-agent-kernel` from the
+then imports NumPy and RDKit from the base, imports `ts-agent-kernel` from the
 overlay, parses a SMILES, performs fixed-seed ETKDG embedding, and completes a
 UFF optimization. The manifest records the wheel provenance, installed
 distribution version and payload digest, source payload digest, module origins,
@@ -325,8 +310,8 @@ capabilities, selected interpreter, and environment-spec digest outside the
 immutable release. A failed install, digest comparison, or scientific probe
 produces no trusted manifest.
 
-TSPi fails closed when that manifest is missing or stale. After selecting it,
-TSPi places the managed environment first on `PATH`, exports
+If the manifest is missing or stale, repair the runtime with the installer.
+After selecting it, TSPi places the managed environment first on `PATH`, exports
 `TS_AGENT_PYTHON`, disables user site packages, and clears `PYTHONHOME` for the
 entire Pi process tree. `TS_WORKSPACE_ROOT` still identifies only the selected
 research workspace.
@@ -343,8 +328,7 @@ export PI_BIN=/absolute/path/to/pi
 ```
 
 Verify the selected Pi version is inside the package's supported range. Pi's
-extension loader supplies its matching TypeBox runtime; the immutable TS release
-does not contain `node_modules`.
+extension loader supplies its matching TypeBox runtime.
 
 ## Configure Remote Execution
 
@@ -366,9 +350,9 @@ The profile owns:
 - software command, activation script, scratch policy, queue restrictions, and
   server-side environment.
 
-Keep SSH keys and authentication in OpenSSH configuration, not in
-`remote.toml`. A calculation request cannot override the host, remote root,
-scheduler commands, activation scripts, or arbitrary environment values.
+Keep SSH keys and authentication in OpenSSH configuration. Calculation requests
+select profiles and resources within the configured limits; host paths,
+scheduler commands, and software activation come from `remote.toml`.
 
 The launcher flag below is the command-line form of the same read-only
 connectivity check exposed in Pi as `/ts-remote status`:
@@ -380,7 +364,7 @@ cd /path/to/TSPi-installation
 
 Use `/ts-remote doctor` for the full SSH, scheduler, storage, and registered
 software chain; `queues` and `nodes` return bounded scheduler views. All four
-diagnostics are read-only. Ordinary startup does not run a remote probe.
+diagnostics are read-only. Run `doctor` before the first remote calculation.
 
 ## Configure Notifications
 
@@ -400,17 +384,16 @@ chmod 600 /path/to/TSPi-installation/.pi/notifications.toml
 
 The configured ClawEmail root must contain its valid Skill, executable manager,
 and private authentication state. The Root Agent may choose a supported research
-event, subject, bounded summary, and existing report attachments, but it cannot
-change the recipient or credentials. Set `enabled=false` to disable delivery.
+event, subject, summary, and existing report attachments. Configure the
+recipient and credentials at installation level. Set `enabled=false` to disable delivery.
 Every attachment must be an unchanged member of a generated report package
 manifest. To attach a Render result, pass its logical artifact ID to
 `ts_report.assetArtifactIds`, then pass the returned `reports/.../assets/...`
-reference to `ts_notify`; do not attach `nodes/...` paths directly.
+reference to `ts_notify`.
 
-The installation configuration is persistent authorization for that one target.
-There is no per-message activation token. A mismatch between the user's
-requested address and the configured target must be reported without sending.
-Ambiguous provider effects are never retried automatically.
+The configured recipient applies to subsequent notifications. When the requested
+address differs, update the installation configuration before sending. If a
+provider's delivery result is unknown, check its status before retrying.
 
 ## Configure TS Phone
 
@@ -449,9 +432,8 @@ The Package installer creates `.pi/ts-phone/ts-phone.service` only if absent,
 using the configured paths and retaining the narrow sandbox. Existing templates
 and live service registrations are not overwritten. Inspect an updated template
 without starting anything with `TSPhoneServer --print-service`.
-Service activation,
-restart, FRP, HTTPS, and token handling remain explicit operational actions;
-the Package installer never performs them. `TSPhoneCtl` targets the configured
+The installation wizard can enable and start the service. Configure FRP, HTTPS,
+and phone access for your deployment. `TSPhoneCtl` targets the configured
 state directory. Install the Android client on the device using the
 [TS Phone app instructions](https://github.com/iawnix/ts-phone/blob/main/docs/artifacts.md).
 For a Package that includes an APK, its location is recorded in
@@ -515,13 +497,13 @@ explicit native Pi mode when native commands are needed:
 ./TSPi --standalone --workspace reaction-a --phone --phone-access observer
 ```
 
-The client reads `<installation>/.pi/ts-phone/server.env` as data, never as a
-shell script; exported `TS_PHONE_HOST`, `TS_PHONE_PORT`, and `TS_PHONE_STATE_DIR`
+The client reads `<installation>/.pi/ts-phone/server.env`; exported
+`TS_PHONE_HOST`, `TS_PHONE_PORT`, and `TS_PHONE_STATE_DIR`
 override it. The default state directory is `${XDG_STATE_HOME:-~/.local/state}/ts-phone`.
 It accepts only loopback HTTP and a user-owned 0600 `auth.token`. This is the
-Host connection credential, not Pi's model authentication. Host unavailability
-is reported without falling back to a second Pi process. See [Terminal](TERMINAL.md)
-for client commands, limitations, and integration checks.
+Host connection credential; configure Pi model authentication separately. If
+the Host is unavailable, start its service and reconnect. See [Terminal](TERMINAL.md)
+for commands, recovery, and integration checks.
 
 The phone app can instead create a managed project/conversation and send a
 message. The Host persists the request, then starts or reuses the exact session
@@ -572,13 +554,11 @@ conversation. Another workspace can run at the same time.
 At startup:
 
 - a fresh directory is initialized once while unrelated input files remain;
-- a complete workspace is validated without canonical rewrites;
-- partial or invalid state fails closed;
-- unsupported canonical markers fail closed.
+- a complete workspace is validated against the current schemas;
+- partial, invalid, or unsupported state produces a diagnostic for recovery.
 
-Startup never rewrites an existing workspace or guesses how unsupported state
-should map into the active contract. Create a distinct workspace when the
-existing layout is unsupported.
+Preserve the existing records when resolving a startup diagnostic. For a layout
+using different schemas, open it with the matching release or start a distinct workspace.
 
 ## Run The Research Explorer
 
@@ -649,11 +629,6 @@ use the release and Python environment it started with unless it implements the
 explicit Web release watcher above. Upgrade does not rewrite research workspaces
 or terminate active calculations.
 
-During installation, obsolete `.pi/ts-email-delivery-policy.json` and
-`.pi/ts-email-delivery-authorization.json` files are moved into a private
-`.pi/archive/retired-notification-state/<timestamp>/` directory. They are kept
-for audit only and are never read as authorization by this release.
-
 ## Rollback
 
 The supported rollback path is to preserve a previous validated archive and
@@ -671,12 +646,8 @@ python3 scripts/install_package.py \
 
 The installer reuses the previous payload overlay when it still passes its
 probe, then selects the previous release. Existing release directories and
-overlays are retained for inspection, but retention alone is not a substitute
-for preserving the validated manifest and archive. Do not edit an installed
-release or manually replace files under `current`.
-
-Rollback accepts retained `/4` packages only. Historical `/3` packages must be
-rebuilt from their pinned source revision before they can be installed.
+overlays are retained for inspection. Keep the matching
+`tspi-package-release/4` manifest and archive together for reinstalling a version.
 
 Rollback changes package/runtime code only. It does not rewrite a workspace or
 reverse already committed scientific Decisions. The selected release must

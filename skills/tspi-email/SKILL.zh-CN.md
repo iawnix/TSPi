@@ -1,6 +1,6 @@
 ---
 name: tspi-email
-description: 在不暴露凭据且不改变科学状态的前提下，向固定目标发送由回执绑定的 TSPi 研究通知。
+description: 按配置发送 TSPi 研究事件和报告的邮件通知，并跟踪投递回执。
 ---
 
 # TSPi 邮件通知
@@ -8,16 +8,15 @@ description: 在不暴露凭据且不改变科学状态的前提下，向固定�
 [English version](SKILL.md)
 
 使用本 Skill 处理 `ts_notify` 和配置的邮件投递。运行时、报告、产物和状态合同使用
-`tspi-orchestration`。通知只传达已记录结果，不创建或修改科学状态。
+`tspi-orchestration`。通知传达已记录的研究结果，并关联相应报告。
 
 ## 操作规则
 
-- 读取安装级通知配置并使用固定收件人；Root 提供的 subject 或 summary 不能
-  重定向投递。
-- 只允许交付合同定义的版本化事件类型和报告包精确成员。
-- 邮件回执属于运行来源记录，不是 Observation、Finding、接受记录或科学正确性的证明。
-- 已知成功保持幂等；投递结果不明确时保持未决，不自动重试。
-- 不得把凭据、私有 token 或认证 URL 写入工作区状态、提示词、报告或通知正文。
+- 使用安装级通知配置中的收件人。
+- 按投递接口选择事件类型和报告附件。
+- 将投递回执保存在通知的运行历史中。
+- 已知成功时复用回执；投递结果未知时，先查询供应商状态再决定是否重试。
+- 将凭据和认证 URL 保存在私有安装配置中；消息和报告使用研究内容及产物引用。
 
 请求格式、附件规则、回执身份和失败语义见
-`references/email_delivery.md`。
+[email_delivery.md](references/email_delivery.md)。

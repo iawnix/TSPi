@@ -14,8 +14,8 @@ larger candidate-generation strategy.
 
 QBICS/DMECP addresses an electronic-state crossing problem. Treat its output as
 a crossing candidate until the relevant state identities, energies, geometry,
-and physical interpretation are verified. Do not force a crossing calculation
-through the classical TS or connectivity acceptance profile.
+and physical interpretation are verified. Choose validation criteria for the
+electronic-state crossing being studied.
 
 ## Operating Rules
 
@@ -27,9 +27,8 @@ through the classical TS or connectivity acceptance profile.
 - Record state-character, crossing geometry, energy gap, gradients, and method
   limitations as separate Observations or Findings when the output supports
   them. Missing state evidence remains inconclusive.
-- Add maintained electronic-structure or state-character ProofSpecs when the
-  Claim requires them; do not invent a generic `classical-ts` pass.
+- Use registered electronic-structure or state-character ProofSpecs appropriate
+  to the Claim. Record a validation gap when the required checks are unavailable.
 
-The capability descriptor expresses what the executor accepts. It does not
-prove that QBICS is installed or that the selected crossing is scientifically
-relevant; establish readiness and interpretation separately.
+Use the capability descriptor for accepted inputs and remote diagnostics for
+software readiness. Relate the verified crossing to the research hypothesis.

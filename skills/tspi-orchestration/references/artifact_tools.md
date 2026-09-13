@@ -1,7 +1,7 @@
 # Deterministic Artifact Tools
 
-Structure Seed, Structure Compare, and Import are direct host tools. They start
-no child model, make no scientific decision, and never mutate canonical records.
+Structure Seed, Structure Compare, and Import are host tools for preparing and
+analyzing Node-owned input artifacts.
 
 ## Contents
 
@@ -30,12 +30,12 @@ random seed, adds explicit hydrogens, checks formal charge and electron-count
 parity, and writes content-addressed XYZ plus provenance under the open Node.
 The activity request retains a SMILES digest, not the body. The provenance
 records canonical SMILES, RDKit version, parameters, metadata, output digest,
-and limitations. Multi-fragment SMILES are rejected because this tool does not
-choose a reactive encounter geometry.
+and limitations. Use one connected SMILES; prepare multi-fragment encounter
+geometries with an explicit arrangement and import the resulting XYZ.
 
-This output is only an initial geometry. Neither ETKDG coordinates nor UFF
-energy establishes a stationary point, transition state, mechanism, or
-acceptance fact. Use normal Compute and validation afterward.
+Use the initial geometry for follow-up optimization and characterization.
+Establish stationary-point, mode, and connectivity properties through Compute
+and the relevant ProofSpecs.
 
 ## Compare Registered Structures
 
@@ -69,8 +69,7 @@ parameters, verdict, uncertainty, RMSD/internal-coordinate/stereochemical
 metrics, diagnostics, and provenance.
 
 This result is operational. Register any value used in a Claim or ProofSpec as a
-semantic Observation through a Decision; do not cite the activity itself as
-scientific evidence.
+semantic Observation through a Decision, citing the verified analysis artifact.
 
 ## Import An Existing Input
 
@@ -104,4 +103,4 @@ Structure Seed, Structure Compare, and Import write deterministic activity
 journals whose `node_refs` are the only operation-to-Node link. Compute writes
 one `sub_n` run below its owning `calc_n` Attempt. Render, Report, and Notify
 have their own focused capability contracts. These records support diagnosis
-and reporting but do not become Observations or acceptance basis automatically.
+and reporting. Verify their underlying artifacts when recording Observations.

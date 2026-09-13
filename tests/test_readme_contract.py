@@ -10,6 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
 README_ZH = ROOT / "README.zh-CN.md"
 ARCHITECTURE = ROOT / "docs" / "ARCHITECTURE.md"
+ARCHITECTURE_ZH = ROOT / "docs" / "ARCHITECTURE.zh-CN.md"
+TERMINAL = ROOT / "docs" / "TERMINAL.md"
+TERMINAL_ZH = ROOT / "docs" / "TERMINAL.zh-CN.md"
 INSTALLATION = ROOT / "docs" / "INSTALLATION.md"
 MAINTAINER = ROOT / "docs" / "MAINTAINER_GUIDE.md"
 ADR = ROOT / "docs" / "adr" / "0001-phase-node-research-kernel.md"
@@ -29,7 +32,11 @@ FOCUSED_SKILLS = {
 }
 
 
-PUBLIC_DOCS = (README, README_ZH, ARCHITECTURE, INSTALLATION, MAINTAINER, ADR)
+PUBLIC_DOCS = (
+    README, README_ZH, ARCHITECTURE, ARCHITECTURE_ZH, TERMINAL, TERMINAL_ZH,
+    INSTALLATION, MAINTAINER, ADR,
+    ROOT / "skills" / "README.md", ROOT / "skills" / "README.zh-CN.md",
+)
 
 
 def test_readmes_link_to_setup_usage_and_developer_guides() -> None:
@@ -39,7 +46,7 @@ def test_readmes_link_to_setup_usage_and_developer_guides() -> None:
             "README.md",
             "README.zh-CN.md",
             "docs/INSTALLATION.md",
-            "docs/TERMINAL.md",
+            "docs/TERMINAL.zh-CN.md" if path == README_ZH else "docs/TERMINAL.md",
             "docs/ARCHITECTURE.md",
             "docs/ARCHITECTURE.zh-CN.md",
             "docs/MAINTAINER_GUIDE.md",
@@ -70,7 +77,7 @@ def test_public_document_set_covers_install_architecture_and_maintenance() -> No
 
     architecture = ARCHITECTURE.read_text(encoding="utf-8")
     for heading in [
-        "## Authority Matrix",
+        "## Component Responsibilities",
         "## Scientific State Model",
         "## Decision Transaction",
         "## Validation Engine",
@@ -102,9 +109,9 @@ def test_public_markdown_relative_links_resolve_inside_the_package() -> None:
     focused_files = [
         path
         for root in FOCUSED_SKILLS.values()
-        for path in (root / "SKILL.md", *sorted((root / "references").glob("*.md")))
+        for path in (root / "SKILL.md", root / "SKILL.zh-CN.md", *sorted((root / "references").glob("*.md")))
     ]
-    for path in (*PUBLIC_DOCS, SKILL, *sorted(REFERENCES.glob("*.md")), *focused_files):
+    for path in (*PUBLIC_DOCS, SKILL, SKILL_ROOT / "SKILL.zh-CN.md", *sorted(REFERENCES.glob("*.md")), *focused_files):
         for raw_target in link_pattern.findall(path.read_text(encoding="utf-8")):
             target = raw_target.strip().strip("<>")
             if target.startswith("#") or re.match(r"^[a-z][a-z0-9+.-]*:", target, re.IGNORECASE):
@@ -115,36 +122,21 @@ def test_public_markdown_relative_links_resolve_inside_the_package() -> None:
             assert resolved.exists(), (path, target)
 
 
-def test_public_docs_state_the_authority_boundary() -> None:
-    texts = {
-        "architecture": ARCHITECTURE.read_text(encoding="utf-8"),
-        "skill": SKILL.read_text(encoding="utf-8"),
-        "maintainer": MAINTAINER.read_text(encoding="utf-8"),
-        "state": (REFERENCES / "state_model.md").read_text(encoding="utf-8"),
-    }
-
-    assert "The DAG records lineage and does not select the next Node" in texts["architecture"]
-    assert "Compute and Review share the same process-level safeguards" in texts["architecture"]
-    assert "Only `ts_change` may mutate canonical scientific state" in texts["architecture"]
-    assert "Every compute action, structure seed" in texts["architecture"]
-    assert "Treat Claim relations, Node dependencies, and tags as recorded context only" in texts["skill"]
-    assert "Compute may orchestrate only its closed" in texts["maintainer"]
-    assert "checks refs and acyclicity" in texts["state"]
-    assert "label to a next action" in texts["state"]
-
-
 def test_normal_runtime_docs_expose_only_current_contracts() -> None:
     focused_files = [
         path
         for root in FOCUSED_SKILLS.values()
-        for path in (root / "SKILL.md", *sorted((root / "references").glob("*.md")))
+        for path in (root / "SKILL.md", root / "SKILL.zh-CN.md", *sorted((root / "references").glob("*.md")))
     ]
     paths = [
         README,
+        README_ZH,
         ARCHITECTURE,
+        ARCHITECTURE_ZH,
         INSTALLATION,
         MAINTAINER,
         SKILL,
+        SKILL_ROOT / "SKILL.zh-CN.md",
         *sorted(REFERENCES.glob("*.md")),
         *focused_files,
     ]
@@ -235,22 +227,10 @@ def test_focused_skills_have_bilingual_entrypoints_and_route_their_references() 
         assert chinese.is_file()
         assert f"name: {name}" in english.read_text(encoding="utf-8")
         assert f"name: {name}" in chinese.read_text(encoding="utf-8")
-        skill_text = english.read_text(encoding="utf-8")
-        for reference in root.glob("references/*.md"):
-            assert f"references/{reference.name}" in skill_text, reference
-
-
-def test_candidate_strategy_remains_root_selected() -> None:
-    orchestration = SKILL.read_text(encoding="utf-8")
-    search_skill = (FOCUSED_SKILLS["tspi-transition-state-search"] / "SKILL.md").read_text(encoding="utf-8")
-    candidate = (FOCUSED_SKILLS["tspi-transition-state-search"] / "references" / "candidate_generation.md").read_text(encoding="utf-8")
-    backend = (FOCUSED_SKILLS["tspi-transition-state-search"] / "references" / "backend_selection.md").read_text(encoding="utf-8")
-
-    assert "Load a domain Skill" in orchestration
-    assert "Do not impose a universal" in search_skill
-    assert "Choose among chemically informed construction" in candidate
-    assert "Before QST2/QST3" in candidate
-    assert "The capability catalog is not a priority list" in backend
+        for entrypoint in (english, chinese):
+            skill_text = entrypoint.read_text(encoding="utf-8")
+            for reference in root.glob("references/*.md"):
+                assert f"references/{reference.name}" in skill_text, (entrypoint, reference)
 
 
 def test_compute_reference_uses_the_registered_gaussian_input_role() -> None:

@@ -11,9 +11,9 @@ Use this Skill when deciding whether a candidate path reaches the declared
 reactant and product basins. Load `tspi-orchestration` for ProofSpec and
 artifact contracts and `tspi-gaussian` for Gaussian output validation.
 
-Connectivity is separate from stationary-point and imaginary-mode validation.
-Finite IRC endpoints need basin assignment, and visual similarity or a low
-global RMSD does not prove identity.
+Evaluate connectivity alongside stationary-point and imaginary-mode validation.
+Assign finite IRC endpoints to molecular basins using atom mapping, bonding,
+stereochemistry, and geometry comparison.
 
 ## Evidence Rules
 
@@ -27,6 +27,6 @@ global RMSD does not prove identity.
 - Record mapping method, selected atoms, RMSD, key coordinates, source artifact
   digests, and limitations as semantic Observations.
 
-Read `references/connectivity_validation.md` for the built-in connectivity
-dimension and `references/ts_structures_contract.md` for deterministic
+Read [connectivity_validation.md](references/connectivity_validation.md) for the built-in connectivity
+dimension and [ts_structures_contract.md](references/ts_structures_contract.md) for deterministic
 `ts_compare` parameters and structural identity rules.

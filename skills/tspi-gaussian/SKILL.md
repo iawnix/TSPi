@@ -16,19 +16,18 @@ Use this Skill for Gaussian input preparation and output validation. Load
 - Bind the Gaussian input as a `gjf` logical artifact and keep route, method,
   basis, charge, multiplicity, environment, resources, and relevant keywords
   in the immutable intent.
-- Check the primary output for normal termination and agreement with the intent;
-  scheduler success and file presence are insufficient.
+- Check the primary output for normal termination and agreement with the intent.
 - Keep optimization convergence, frequency count, mode assignment, IRC path,
   electronic-state concerns, and thermochemistry as separate Observations.
-- One imaginary frequency is necessary for an ordinary first-order saddle but
-  does not establish the reaction step. A normal Gaussian termination does not
-  establish connectivity, mechanism, or thermochemical acceptance.
+- For an ordinary first-order saddle, verify one imaginary frequency, assign
+  its displacement to the proposed reaction step, and establish endpoint
+  connectivity. Assess thermochemistry using its own corrections and conditions.
 - Record SCF instability, spin contamination, state ambiguity, warnings, and
   method sensitivity as Findings or explicit Observations.
 
 ## Focused Reference
 
-Read `references/gaussian_validation.md` for the validation dimensions and
+Read [gaussian_validation.md](references/gaussian_validation.md) for the validation dimensions and
 versioned ProofSpec guidance. QST and other candidate strategies belong to
 `tspi-transition-state-search`; endpoint assignment belongs to
 `tspi-connectivity`.

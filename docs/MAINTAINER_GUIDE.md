@@ -1,9 +1,8 @@
 # Maintainer Guide
 
 This guide covers development, validation, release, and documentation ownership
-for `@iawnix/ts-agent`. Change the authored Git checkout only.
-Installed releases are immutable runtime artifacts and must never be patched in
-place.
+for `@iawnix/ts-agent`. Develop in the Git checkout, run the relevant checks,
+then build and install a new release.
 
 Read [Architecture](ARCHITECTURE.md) before changing a cross-module contract,
 [Installation and Operations](INSTALLATION.md) before changing lifecycle or
@@ -12,7 +11,7 @@ changing the research graph or validation architecture, and [ADR 0002](adr/0002-
 before changing repository ownership, optional components, public protocols,
 or the source/package layout.
 
-## Non-Negotiable Boundary
+## Component Responsibilities
 
 ```text
 Root Agent       research questions, strategy, method choice, interpretation
@@ -24,16 +23,16 @@ Tool plane       deterministic compute kernel, artifacts, remote, and delivery e
 UI/web           read-only projection
 ```
 
-Only `ts_change` writes canonical scientific state. Compute
-and Review are the only child models. Compute may orchestrate only its closed,
-host-bound lifecycle; it cannot choose chemistry, arguments, paths, outcome, or
-provenance. Render and Report remain direct deterministic tools.
+Scientific state changes use `ts_change`. Compute and Review run as child
+models. Compute follows a Host-bound plan whose arguments, paths, outcomes,
+and provenance are established by the tool host. Render and Report execute
+directly as deterministic tools.
 
 Closed enums are justified only when code executes a closed contract. Research
 questions, Claim types, relation meanings, Observation concepts, Finding types,
 validation dimensions, Phase titles, Node tags, methods, and strategy rankings
-remain open scientific vocabulary. The Kernel contains no Phase lifecycle,
-prescriptive stage, Node type, scientific role/layer, or next-action router.
+remain open scientific vocabulary. Root chooses research actions from the
+question and evidence; the Kernel validates and records those decisions.
 
 ## Repository Map
 
@@ -434,21 +433,25 @@ close.
 | --- | --- | --- |
 | `README.md`, `README.zh-CN.md` | first-time reader | research use cases, features, installation, everyday use, and documentation links |
 | `docs/INSTALLATION.md` | installation operator | prerequisites, configuration, startup, upgrade, rollback, recovery |
-| `docs/ARCHITECTURE.md` | maintainer/advanced operator | ownership, lifecycle, persistence, context, validation, delivery |
+| `docs/ARCHITECTURE*.md` | maintainer/advanced operator | components, lifecycle, persistence, context, validation, delivery |
+| `docs/TERMINAL*.md` | terminal user | sessions, commands, configuration, and recovery |
 | `docs/MAINTAINER_GUIDE.md` | contributor/releaser | source workflow, change matrix, validation, release discipline |
-| `skills/*/SKILL.md` | Root Agent | concise Skill purpose, boundary, and routing |
+| `skills/*/SKILL*.md` | Root Agent and reader | purpose, method selection, operating steps, and reference routing |
 | `skills/*/references/*.md` | Root Agent on demand | one focused contract or method topic |
 | `packages/ts-agent-runtime/agents/compute/**/*.md` | Compute runtime | minimum private operational policy |
 | `packages/ts-agent-runtime/agents/review/**/*.md` | Review runtime | minimum private Review policy |
 | JSON/TypeBox schemas | callers and validators | exact fields, enums, limits, identity |
 
-Avoid copying complete field schemas into prose. Use examples where they
-clarify an interaction and validate them against real code. Tests must not be
-the only public examples.
+Write user documentation around tasks, capabilities, and observable behavior.
+Describe operating conditions with the steps needed to use or recover a feature.
+Link field schemas and use examples checked against the implementation.
+Update paired English and Chinese entrypoints together, including commands,
+capabilities, references, and navigation. Label links to English-only guides in
+Chinese navigation.
 
 Normal research sessions learn operation from registered tool schemas, live
-context/capability catalogs, the Root Skill, and focused references. Source and
-tests are maintenance material and are blocked by the package-source guard.
+context/capability catalogs, the Root Skill, and focused references. Maintainers
+use source and tests in the development checkout.
 
 ## Contract Change Matrix
 

@@ -1,22 +1,29 @@
 # TSPi Skills
 
-TSPi is distributed as one Pi package with several independently discoverable
-Skills. The package exposes the orchestration contract and specialized method
-guidance as separate resources so a session can load only what its current
-question needs.
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-| Skill | Responsibility | Load when |
-| --- | --- | --- |
-| `tspi-orchestration` | workspace state, Decisions, evidence, validation, subagents, operations, and recovery | any TSPi research task or state change |
-| `tspi-transition-state-search` | candidate construction and TS search strategy | choosing QST, scans, NEB, conformers, branches, or recovery strategy |
-| `tspi-xtb` | xTB and CREST setup and result interpretation | using xTB prescreening, optimization, frequencies, scans, MD, or conformers |
-| `tspi-gaussian` | Gaussian input and output evidence | using Gaussian single-point, optimization, frequency, or IRC calculations |
-| `tspi-qbics` | QBICS/DMECP electronic-state crossing calculations | studying crossings or non-adiabatic state character with QBICS |
-| `tspi-connectivity` | endpoint assignment and molecular structure evidence | checking IRC connectivity, atom maps, stereochemistry, or basin identity |
-| `tspi-render` | deterministic visual artifacts | rendering, comparing, animating, or presenting mechanisms |
-| `tspi-report` | evidence-bound report packages | building a report from a validated workspace |
-| `tspi-email` | fixed-target notification delivery | sending receipt-bound research updates |
+TSPi includes nine Skills for planning research, running calculations, checking
+results, and preparing figures and reports. The orchestration Skill manages
+the research workflow; load a focused Skill when its method or output is needed.
 
-Every Skill has an English `SKILL.md` and a Chinese `SKILL.zh-CN.md`. The
-orchestration Skill owns cross-cutting contracts; focused Skills do not duplicate
-those contracts or acquire permission to mutate canonical state.
+| Skill | Use it for |
+| --- | --- |
+| [tspi-orchestration](tspi-orchestration/SKILL.md) | Research questions, workspace records, Claim validation, and recovery |
+| [tspi-transition-state-search](tspi-transition-state-search/SKILL.md) | Candidate construction, QST, scans, NEB, conformers, and search strategy |
+| [tspi-xtb](tspi-xtb/SKILL.md) | xTB calculations and CREST conformer searches |
+| [tspi-gaussian](tspi-gaussian/SKILL.md) | Gaussian inputs, optimization, frequencies, and IRC |
+| [tspi-qbics](tspi-qbics/SKILL.md) | QBICS/DMECP electronic-state crossing calculations |
+| [tspi-connectivity](tspi-connectivity/SKILL.md) | IRC endpoints, atom mapping, stereochemistry, and structure comparison |
+| [tspi-render](tspi-render/SKILL.md) | Molecular images, animations, comparison panels, and scientific curves |
+| [tspi-report](tspi-report/SKILL.md) | Research reports with evidence, calculation history, and figures |
+| [tspi-email](tspi-email/SKILL.md) | Configured research notifications and report delivery |
+
+For example, a Gaussian transition-state study uses orchestration to organize
+the question, transition-state search to choose a strategy, Gaussian and
+connectivity to evaluate the result, and render/report to present it.
+Initial structures from SMILES and input imports are covered in
+[artifact tools](tspi-orchestration/references/artifact_tools.md).
+
+Each Skill has matching English and Chinese entrypoints. Detailed tool fields
+and method references are linked from the relevant Skill; shared terminology
+is in the [glossary](tspi-orchestration/references/glossary.md).

@@ -8,16 +8,16 @@ description: 选择和评估 QST、扫描、NEB、构象搜索、分支与恢复
 [English version](SKILL.md)
 
 当问题是如何构造、探索或恢复过渡态候选时使用本 Skill。工作区和证据合同
-使用 `tspi-orchestration`。生成的结构只是候选，不能直接证明过渡态。
+使用 `tspi-orchestration`。生成候选结构后，继续开展确认所提过渡态所需的计算和验证。
 
 ## 方法选择
 
 根据基元步骤假设、端点质量、原子映射、电子态、构象不确定性、体系大小、
 成本和可用执行器选择方法。QST/QST2/QST3、直接过渡态优化、弛豫扫描、NEB、
-片段构造和构象采样解决的是不同的候选生成问题。能力目录不负责选择科研策略，
-也不要强行规定统一顺序。
+片段构造和构象采样解决的是不同的候选生成问题。根据当前假设和证据选择方法及
+执行顺序，通过能力目录查询可用操作。
 
-## 研究边界
+## 搜索流程
 
 每个候选生成问题使用一个 ResearchNode，并用逻辑 artifact ID 绑定输入。记录
 方法、假设、参数和预期区分结果。保留失败候选和方法变化；假设或交付物改变时
@@ -26,7 +26,7 @@ description: 选择和评估 QST、扫描、NEB、构象搜索、分支与恢复
 
 ## 参考资料
 
-- 候选构造和后续证据：`references/candidate_generation.md`
-- 后端选择：`references/backend_selection.md`
-- 机理 Claim 反思：`references/mechanism_reflection.md`
-- 重复结果和失败搜索反思：`references/strategy_reflection.md`
+- 候选构造和后续证据：[candidate_generation.md](references/candidate_generation.md)
+- 后端选择：[backend_selection.md](references/backend_selection.md)
+- 机理 Claim 反思：[mechanism_reflection.md](references/mechanism_reflection.md)
+- 重复结果和失败搜索反思：[strategy_reflection.md](references/strategy_reflection.md)

@@ -1,6 +1,6 @@
 ---
 name: tspi-report
-description: Build deterministic evidence-bound TSPi report packages that project scientific and operational state without changing the workspace.
+description: Build TSPi research reports with conclusions, supporting evidence, calculation history, validation results, and visual assets.
 ---
 
 # TSPi Reports
@@ -17,12 +17,12 @@ the report requires visual assets.
   artifact IDs.
 - Keep scientific revision, operational revision, acceptance status, Findings,
   limitations, and open questions distinct.
-- Treat reports as projections and delivery artifacts; they cannot repair,
-  complete, or accept a ResearchNode.
+- Record the current Node and Claim status through `ts_change` before building the report;
+  include ongoing work and open questions when reporting interim progress.
 - Cite current Observation, ProofSpec, ValidationResult, Finding, and source
   artifact references for every scientific statement.
-- Require a new no-overwrite report package whose manifest matches its files and
-  revisions before returning it.
+- Create a new report package for each export and verify its files and revisions
+  against the manifest before returning it.
 
-Read `references/report_template.md` for the required projection, acceptance
+Read [report_template.md](references/report_template.md) for the required projection, acceptance
 language, numerical discipline, and package-integrity rules.
