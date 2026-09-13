@@ -75,8 +75,10 @@ output files into the workspace for local parsing.
 Connect it to the server to browse conversations, send messages, and continue
 research. A terminal can join the same conversation.
 
-The installer sets up the Phone server on your TSPi host. Install the Android
-client on your phone using the [app instructions](https://github.com/iawnix/ts-phone/blob/main/docs/artifacts.md).
+The installer sets up the Phone server on your TSPi host. Download the signed
+Android client from the matching [TS Phone GitHub Release](https://github.com/iawnix/ts-phone/releases)
+and install it on your phone; the [artifact guide](https://github.com/iawnix/ts-phone/blob/main/docs/artifacts.md)
+lists the ABI and checksum details.
 
 If you configured a systemd user service during installation, start it and
 open the terminal:

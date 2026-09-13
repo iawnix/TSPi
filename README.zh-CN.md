@@ -66,8 +66,9 @@ cd /path/to/TSPi-installation
 [TS Phone](https://github.com/iawnix/ts-phone) 提供 Android 客户端。
 连接服务后，可以在手机上查看会话、发送消息和继续研究；终端也可以接入同一会话。
 
-安装器在 TSPi 主机上部署 Phone 服务。手机上的 Android 客户端按
-[应用安装说明](https://github.com/iawnix/ts-phone/blob/main/docs/artifacts.md)安装。
+安装器在 TSPi 主机上部署 Phone 服务。手机上的 Android 客户端从匹配的
+[TS Phone GitHub Release](https://github.com/iawnix/ts-phone/releases)下载并安装；
+[产物说明](https://github.com/iawnix/ts-phone/blob/main/docs/artifacts.md)包含 ABI 和摘要信息。
 
 如果安装时配置了 systemd 用户服务，启动服务后打开终端：
 

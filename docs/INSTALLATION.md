@@ -444,6 +444,12 @@ The wizard selects source-built Phone servers through `.pi/ts-phone/current`.
 configuration as the terminal. The active release's `installation.json` records
 its GitHub origin, commit, server version, protocols, and runtime file hashes.
 
+Install the signed Android client from the matching
+[TS Phone GitHub Release](https://github.com/iawnix/ts-phone/releases). Use the
+`arm64-v8a` APK on ordinary current phones. The release page includes its
+checksum, source attestation, and the `ts-phone-component-*.tgz` archive used
+by a complete TSPi package.
+
 If the Host runs with `ProtectHome=read-only`, its service sandbox also applies
 to child TSPi Workers. Add narrowly scoped `ReadWritePaths` for the configured
 workspace root, `.pi/runtime-cache`, `.pi/session-host`, `.agents/runtime`, and `.agents/envs` under
