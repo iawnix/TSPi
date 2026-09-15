@@ -51,6 +51,20 @@ cd /path/to/TSPi-installation
 For a direct Pi session, use `./TSPi --standalone --workspace reaction-a`.
 Service startup and phone access are described below.
 
+The experimental native Pi App Server provides Pi's remote TUI with an
+independent session store. After preparing the pinned Pi source checkout, start
+the server and connect from another terminal:
+
+```bash
+export TSPI_PI_SOURCE=/path/to/prepared/pi
+./TSPi --app-server --workspace reaction-a --allow-writes
+./TSPi --app-client --connect unix:///path/printed/by/server
+```
+
+Omit `--allow-writes` for read-only tools. See the
+[App Server installation guide](docs/INSTALLATION.md#native-pi-app-server-experimental)
+for source preparation and lifecycle details.
+
 Projects are stored under the installation's `workspaces/` directory. Start by
 importing an existing input and describing the research goal, for example:
 

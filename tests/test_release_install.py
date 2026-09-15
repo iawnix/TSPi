@@ -55,6 +55,11 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "docs/ARCHITECTURE.md" in names
     assert "docs/INSTALLATION.md" in names
     assert "docs/MAINTAINER_GUIDE.md" in names
+    assert "apps/host/pi-app-server.mjs" in names
+    assert "apps/host/pi-session-worker.mjs" in names
+    assert "config/pi-source.json" in names
+    assert "config/pi-worker-entry.patch" in names
+    assert "scripts/prepare_pi_source.py" in names
     assert "packages/ts-agent-kernel/ts_agent/projection/provider.py" in names
     assert not any(name.startswith("packages/ts-agent-kernel/ts_agent/web/") for name in names)
     assert "packages/ts-agent-kernel/ts_agent/workspace/artifacts.py" in names
@@ -89,6 +94,11 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "docs" / "ARCHITECTURE.md").is_file()
     assert (package_root / "docs" / "INSTALLATION.md").is_file()
     assert (package_root / "docs" / "MAINTAINER_GUIDE.md").is_file()
+    assert (package_root / "apps" / "host" / "pi-app-server.mjs").is_file()
+    assert (package_root / "apps" / "host" / "pi-session-worker.mjs").is_file()
+    assert (package_root / "config" / "pi-source.json").is_file()
+    assert (package_root / "config" / "pi-worker-entry.patch").is_file()
+    assert (package_root / "scripts" / "prepare_pi_source.py").is_file()
     assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "projection" / "provider.py").is_file()
     assert not (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web").exists()
     assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "artifacts.py").is_file()

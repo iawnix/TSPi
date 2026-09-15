@@ -62,6 +62,51 @@ Phone 入口优先加载套件内的服务，否则加载 `.pi/ts-phone/current`
 
 安装、服务管理、升级、回滚和卸载见[安装与运维](INSTALLATION.md)。
 
+## 原生 Pi App Server（实验性）
+
+仓库在 `config/pi-source.json` 中将实验性 Pi server/client 协议固定到提交
+`d981de1229ef899957bbe968bc8dcda02a21f477`（`v0.85.1`）。请准备独立的 Pi
+源码 checkout，使用 `npm ci --ignore-scripts` 安装依赖并 hydrate 模型数据。
+校验 checkout 后，启动安装版本的 server，再连接 Pi client TUI：
+
+```bash
+python3 scripts/prepare_pi_source.py --verify /path/to/pi --apply-worker-patch
+export TSPI_PI_SOURCE=/path/to/pi
+
+./TSPi --app-server --workspace reaction-a --allow-writes
+./TSPi --app-client --connect unix:///path/printed/by/server
+```
+
+使用 `TSPI_PI_SOURCE=/path/to/pi npm run test:native-pi` 运行隔离的原生链路检查；
+运行工具执行测试时，将 `TS_AGENT_PYTHON` 指向 managed TSPi kernel interpreter。
+
+准备命令会应用 `config/pi-worker-entry.patch`。这是唯一的上游进程入口扩展，
+允许服务端选择 `apps/host/pi-session-worker.mjs`。该 Worker 调用 Pi 原生的
+`runSessionWorkerWithHarness`，并从 `apps/host/pi-native-tools.mjs` 加载原生 TSPi
+`AgentHarnessTool` 定义。`ts_state` 从权威 Research Kernel 提供受限图投影、artifact
+查找、能力目录和 change contract 查询；`ts_change` 提交规范状态事务；`ts_remote`
+只提供由安装配置约束的只读远端诊断；`ts_seed`、`ts_compare` 和 `ts_import` 直接调用
+Compute CLI 并记录确定性 activity journal，`ts_render` 和 `ts_report` 也会把生成输出
+绑定到 artifact 与 report journal。`ts_calc` 直接执行 preflight 绑定的固定 Compute
+action plan，通过 Harness 持久化进度 checkpoint，并设置 `replay: "never"`，因此 launch
+和 cancel 的外部副作用不会被工具 replay 重复执行；不明确的控制结果保持为 `unknown`，
+必须依据持久状态进行 reconcile。这些工具不会包装或调用基于 `ExtensionAPI` 的工具及其
+child-session runtime。
+
+`ts_review` 使用父级模型创建全新的内存 Pi `AgentHarness`，只开放任务绑定的 result
+tool 和可选的一次性 artifact reader。advisory 结果写入既有 Review run journal；
+在 Root 通过 `ts_reply` 写入一次性 disposition 之前，Kernel 会继续阻止科学状态变更。
+`ts_notify` 使用私有请求文件直接调用 notification CLI；安装配置拥有的收件目标、receipt
+幂等性和不明确投递结果的 reconcile 规则仍是权威边界。这三个原生工具都设置
+`replay: "never"`。
+
+Unix transport、Chord service、Worker 生命周期和 client TUI 均由 Pi 原生实现；安装
+launcher 通过 Harness resources 加载 TSPi `SKILL.md`，并将 App Server 状态保存在
+workspace 的 `.pi/app-server/`。这些 session 与 Phone Host、standalone session history
+隔离，不会在不同 runtime 之间迁移。未指定 `--allow-writes` 时，Worker 只开放 `read`、
+`ts_state` 和 `ts_remote`。指定该标志后，launcher 会先取得 workspace directory guard
+和独占 Root lock，再启用完整原生工具集；App Server 进程存活期间会一直持有这些锁。
+
 ## Python 运行环境
 
 `pyproject.toml` 从 `packages/ts-agent-kernel/ts_agent/` 构建

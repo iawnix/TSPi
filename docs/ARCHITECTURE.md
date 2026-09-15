@@ -73,6 +73,62 @@ environment values, then installation configuration, then defaults.
 See [Installation and Operations](INSTALLATION.md) for setup, service
 management, upgrades, rollback, and uninstall.
 
+## Native Pi App Server (Experimental)
+
+The repository pins the experimental Pi server/client protocol to commit
+`d981de1229ef899957bbe968bc8dcda02a21f477` (`v0.85.1`) in
+`config/pi-source.json`. Prepare a separate Pi checkout, install its
+dependencies with `npm ci --ignore-scripts`, and hydrate its model data. Verify
+the checkout, then start the installed server and connect Pi's client TUI:
+
+```bash
+python3 scripts/prepare_pi_source.py --verify /path/to/pi --apply-worker-patch
+export TSPI_PI_SOURCE=/path/to/pi
+
+./TSPi --app-server --workspace reaction-a --allow-writes
+./TSPi --app-client --connect unix:///path/printed/by/server
+```
+
+Run the isolated native checks with `TSPI_PI_SOURCE=/path/to/pi npm run
+test:native-pi`. Set `TS_AGENT_PYTHON` to the managed TSPi kernel interpreter
+when running the tool-execution test.
+
+The preparation command applies `config/pi-worker-entry.patch`, a single
+upstream process-entry extension that lets the server select
+`apps/host/pi-session-worker.mjs`. That Worker calls Pi's native
+`runSessionWorkerWithHarness` and loads native TSPi `AgentHarnessTool`
+definitions from `apps/host/pi-native-tools.mjs`. `ts_state` exposes bounded
+graph projections, artifact lookup, capability catalogs, and change-contract
+discovery from the authoritative Research Kernel. `ts_change` submits canonical
+state transactions. `ts_remote` exposes read-only installation-owned remote
+diagnostics. `ts_seed`, `ts_compare`, and `ts_import` call the Compute CLI
+directly and record deterministic activity journals; `ts_render` and
+`ts_report` similarly bind generated outputs to artifact and report journals.
+`ts_calc` runs the preflight-bound Compute action plan directly, checkpoints
+progress through Harness, and uses `replay: "never"` so launch and cancellation
+effects are never repeated by tool replay. Ambiguous control outcomes remain
+`unknown` and require durable-state reconciliation. These tools do not wrap or
+invoke the `ExtensionAPI`-based tools or their child-session runtime.
+
+`ts_review` creates a fresh in-memory Pi `AgentHarness` using the parent model
+and exposes only the task-bound result tool plus the optional one-shot artifact
+reader. Its advisory result is written to the existing Review run journal, and
+the Kernel keeps scientific mutation blocked until Root records a write-once
+disposition through `ts_reply`. `ts_notify` sends a private request directly to
+the notification CLI; its installation-owned target, receipt idempotency, and
+ambiguous-delivery reconciliation remain authoritative. All three native tools
+use `replay: "never"`.
+
+Pi owns the Unix transport, Chord services, worker lifecycle, and client TUI.
+The installed launcher loads the authored TSPi `SKILL.md` files through Harness
+resources and keeps App Server state under the workspace's `.pi/app-server/`
+directory. These sessions are isolated from Phone Host and standalone session
+history; they are not migrated between runtimes. Without `--allow-writes`, the
+Worker exposes only `read`, `ts_state`, and `ts_remote`. With that flag, the
+launcher acquires the workspace directory guard and exclusive Root lock before
+enabling the complete native tool set. The locks remain held by the App Server
+process for its lifetime.
+
 ## Python Runtime
 
 `pyproject.toml` builds `ts-agent-kernel` from

@@ -68,6 +68,9 @@ class LaunchRequest:
     phone_access: str | None
     show_help: bool
     pi_args: tuple[str, ...]
+    app_server: bool = False
+    app_client: bool = False
+    allow_writes: bool = False
     standalone: bool = False
 
 
@@ -88,6 +91,8 @@ USAGE = """Usage:
   ./TSPi [--workspace <name>] [--session-id <id> | -c]
   ./TSPi --workspace <name> --phone
   ./TSPi --standalone --workspace <name> [Pi arguments...]
+  ./TSPi --app-server --workspace <name> [--allow-writes] [server arguments...]
+  ./TSPi --app-client --connect unix://PATH [client arguments...]
   ./TSPi --check-remote
 
 The terminal and Phone connect to the same Host-managed conversation.
@@ -97,6 +102,9 @@ Start the configured TSPhoneServer first. Host failure never starts native Pi.
 Without --workspace, choose a project; a new project requires confirmation.
 --phone is an alias for the shared terminal connection.
 Only --standalone starts a native Pi process and acquires workspace locks.
+--app-server starts the pinned native Pi server with workspace lifecycle guards.
+--app-client connects Pi's TUI to that server without acquiring workspace locks.
+Without --allow-writes, App Server sessions expose only read-only tools.
 Use --standalone --phone --phone-access observer for a native read-only assistant.
 Remote computation uses the installation-owned .pi/remote.toml profile.
 Continue an exact conversation with --session-id <id>, or the latest with -c.
@@ -121,6 +129,9 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
     phone_access: str | None = None
     pi_args: list[str] = []
     standalone = False
+    app_server = False
+    app_client = False
+    allow_writes = False
     index = 0
     while index < len(argv):
         value = argv[index]
@@ -131,6 +142,12 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
             check_remote = True
         elif value == "--standalone":
             standalone = True
+        elif value == "--app-server":
+            app_server = True
+        elif value == "--app-client":
+            app_client = True
+        elif value == "--allow-writes":
+            allow_writes = True
         elif value == "--phone":
             phone_mode = True
         elif value == "--phone-worker":
@@ -184,6 +201,9 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         phone_access=phone_access,
         show_help=show_help,
         pi_args=tuple(pi_args),
+        app_server=app_server,
+        app_client=app_client,
+        allow_writes=allow_writes,
         standalone=standalone,
     )
 
@@ -650,6 +670,76 @@ def _node_runtime_command(package: Path, entry: Path) -> list[str]:
     return [node, "--import", str(package / "scripts/pi-loader.mjs"), str(entry)]
 
 
+def build_app_server_command(
+    installation: Installation,
+    workspace: Path,
+    request: LaunchRequest,
+) -> list[str]:
+    for option in ("--directory", "--session-dir", "--workspace"):
+        if _has_cli_option(request.pi_args, option):
+            raise TSPiHostError(f"{option} is managed by the TSPi App Server launcher", exit_code=2)
+    state_root = _prepare_app_server_state(workspace)
+    command = [
+        _node_binary(),
+        str(_app_server_entry(installation)),
+        "server",
+        "--workspace",
+        str(workspace),
+        "--directory",
+        str(state_root / "server"),
+        "--session-dir",
+        str(state_root / "sessions"),
+    ]
+    if request.allow_writes:
+        command.append("--allow-writes")
+    command.extend(request.pi_args)
+    return command
+
+
+def build_app_client_command(installation: Installation, request: LaunchRequest) -> list[str]:
+    command = [_node_binary(), str(_app_server_entry(installation)), "client"]
+    if request.session_id:
+        command.extend(["--session-id", request.session_id])
+    command.extend(request.pi_args)
+    return command
+
+
+def _node_binary() -> str:
+    node = shutil.which("node")
+    if not node:
+        raise TSPiHostError("Node.js executable not found", exit_code=127)
+    return node
+
+
+def _app_server_entry(installation: Installation) -> Path:
+    entry = installation.package_root / "apps" / "host" / "pi-app-server.mjs"
+    if entry.is_symlink() or not entry.is_file():
+        raise TSPiHostError("selected Package has no native Pi App Server entrypoint")
+    return entry
+
+
+def _prepare_app_server_state(workspace: Path) -> Path:
+    state_root = workspace / ".pi" / "app-server"
+    for path in (workspace / ".pi", state_root, state_root / "server", state_root / "sessions"):
+        if path.is_symlink():
+            raise TSPiHostError(f"App Server state path cannot be a symbolic link: {path}")
+        path.mkdir(mode=0o700, exist_ok=True)
+        if not path.is_dir():
+            raise TSPiHostError(f"App Server state path is not a directory: {path}")
+        path.chmod(0o700)
+    return state_root
+
+
+def _has_cli_option(arguments: tuple[str, ...], option: str) -> bool:
+    return any(value == option or value.startswith(f"{option}=") for value in arguments)
+
+
+def _launch_access_mode(request: LaunchRequest) -> str:
+    if request.app_server:
+        return "controller" if request.allow_writes else "observer"
+    return request.phone_access or "controller"
+
+
 def build_pi_command(
     installation: Installation,
     workspace: Path,
@@ -776,6 +866,22 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     if request.standalone and request.phone_worker:
         raise TSPiHostError("--standalone and --phone-worker cannot be combined", exit_code=2)
     lifecycle_operation = request.lifecycle_preflight or request.lifecycle_guard
+    if (request.app_server or request.app_client) and (
+        request.standalone
+        or request.phone_mode
+        or request.phone_worker
+        or lifecycle_operation
+        or request.check_remote
+    ):
+        raise TSPiHostError("App Server modes cannot be combined with another launch mode", exit_code=2)
+    if request.app_server and request.app_client:
+        raise TSPiHostError("--app-server and --app-client cannot be combined", exit_code=2)
+    if request.allow_writes and not request.app_server:
+        raise TSPiHostError("--allow-writes requires --app-server", exit_code=2)
+    if request.app_server and request.session_id:
+        raise TSPiHostError("--session-id belongs to --app-client, not --app-server", exit_code=2)
+    if request.app_client and request.workspace_name:
+        raise TSPiHostError("--app-client connects by endpoint and does not accept --workspace", exit_code=2)
     if request.lifecycle_preflight and request.lifecycle_guard:
         raise TSPiHostError("lifecycle preflight and guard modes cannot be combined", exit_code=2)
     if lifecycle_operation and (request.check_remote or request.phone_mode or request.phone_worker or request.pi_args):
@@ -803,7 +909,15 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         if request.model is not None and not MODEL_ID.fullmatch(request.model):
             raise TSPiHostError("--model is invalid", exit_code=2)
     installation = resolve_installation(package_root, install_root)
-    if not (request.standalone or request.phone_worker or lifecycle_operation or request.check_remote):
+    if request.app_client:
+        exec_pi(build_app_client_command(installation, request), installation.root)
+    if not (
+        request.standalone
+        or request.app_server
+        or request.phone_worker
+        or lifecycle_operation
+        or request.check_remote
+    ):
         launch_terminal(installation, request)
     if not request.check_remote:
         try:
@@ -863,7 +977,7 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     if not WORKSPACE_NAME.fullmatch(request.workspace_name):
         raise TSPiHostError("invalid workspace name")
     workspace = installation.workspaces_root / request.workspace_name
-    mode = request.phone_access or "controller"
+    mode = _launch_access_mode(request)
     descriptors: list[int] = []
     try:
         descriptors.append(acquire_directory_guard(installation.root, workspace))
@@ -883,6 +997,8 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
                 raise TSPiHostError(str(exc)) from exc
         elif not (workspace / "workspace.json").is_file():
             raise TSPiHostError("workspace bootstrap must finish before starting an observer")
+        if request.app_server:
+            exec_pi(build_app_server_command(installation, workspace, request), workspace)
         arguments = list(request.pi_args)
         if request.session_id:
             arguments.extend(["--session-id", request.session_id])

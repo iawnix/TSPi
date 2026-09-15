@@ -45,6 +45,18 @@ cd /path/to/TSPi-installation
 直接运行 Pi 会话时，使用 `./TSPi --standalone --workspace reaction-a`。
 服务启动和手机连接方式见下文。
 
+实验性的原生 Pi App Server 使用独立 session store，并允许 Pi TUI 从另一终端连接。
+准备固定版本的 Pi source checkout 后运行：
+
+```bash
+export TSPI_PI_SOURCE=/path/to/prepared/pi
+./TSPi --app-server --workspace reaction-a --allow-writes
+./TSPi --app-client --connect unix:///path/printed/by/server
+```
+
+省略 `--allow-writes` 时只开放只读工具。源码准备和生命周期细节见
+[App Server 安装说明](docs/INSTALLATION.md#native-pi-app-server-experimental)。
+
 每个研究项目保存在安装目录的 `workspaces/` 下。你可以先导入已有输入，
 再提出具体的研究目标，例如：
 

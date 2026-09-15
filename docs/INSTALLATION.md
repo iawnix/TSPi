@@ -503,6 +503,51 @@ explicit native Pi mode when native commands are needed:
 ./TSPi --standalone --workspace reaction-a --phone --phone-access observer
 ```
 
+### Native Pi App Server (Experimental)
+
+The App Server uses the repository's exact Pi source pin rather than whichever
+`pi` executable is on `PATH`. Prepare that checkout once from the selected
+Agent package:
+
+```bash
+cd /path/to/TSPi-installation
+AGENT_ROOT="$(readlink -f .pi/packages/tspi/current/agent)"
+python3 "$AGENT_ROOT/scripts/prepare_pi_source.py" --clone /path/to/pi-source
+cd /path/to/pi-source
+npm ci --ignore-scripts
+npm run hydrate:model-data
+```
+
+Start a server for one existing workspace. Read-only is the default:
+
+```bash
+cd /path/to/TSPi-installation
+export TSPI_PI_SOURCE=/path/to/pi-source
+./TSPi --app-server --workspace reaction-a
+```
+
+The server prints its ID and Unix socket. Connect Pi's TUI from another
+terminal, optionally selecting a session:
+
+```bash
+export TSPI_PI_SOURCE=/path/to/pi-source
+./TSPi --app-client --connect unix:///path/printed/by/server
+./TSPi --app-client --connect unix:///path/printed/by/server \
+  --session-id <session-id>
+```
+
+A read-only Worker exposes only `read`, `ts_state`, and `ts_remote`. Add
+`--allow-writes` to the server command to acquire the workspace directory guard
+and exclusive Root lock before exposing `write`, `bash`, and the complete
+native TSPi tool set. A conflicting Root writer causes startup to fail; the
+launcher never downgrades to read-only implicitly. Server state and sessions
+remain under `workspaces/reaction-a/.pi/app-server/`, separate from standalone
+and Phone Host history. Stopping the server releases its inherited locks.
+
+The source transport and command remain experimental. Use the Unix socket
+locally or through an SSH-forwarded workflow; do not expose it as a production
+network service.
+
 The client reads `<installation>/.pi/ts-phone/server.env`; exported
 `TS_PHONE_HOST`, `TS_PHONE_PORT`, and `TS_PHONE_STATE_DIR`
 override it. The default state directory is `${XDG_STATE_HOME:-~/.local/state}/ts-phone`.

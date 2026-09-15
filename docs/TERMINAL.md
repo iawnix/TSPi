@@ -105,6 +105,20 @@ shell integration, and batch/RPC options:
 The shared terminal provides text input, Markdown, tool summaries, model/context
 status, and the Host commands above. `--phone` selects this shared terminal.
 
+The experimental native Pi App Server uses a pinned Pi source checkout and an
+independent session store:
+
+```bash
+export TSPI_PI_SOURCE=/path/to/prepared/pi
+./TSPi --app-server --workspace reaction-a --allow-writes
+./TSPi --app-client --connect unix:///path/printed/by/server
+```
+
+Omit `--allow-writes` for a server whose Workers expose only `read`, `ts_state`,
+and `ts_remote`. See [Native Pi App Server](ARCHITECTURE.md#native-pi-app-server-experimental)
+for source preparation and lifecycle details. App Server sessions do not attach
+to Phone Host or standalone session history.
+
 ## Maintainer Checks
 
 ```bash

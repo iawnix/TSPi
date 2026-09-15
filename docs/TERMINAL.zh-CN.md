@@ -92,6 +92,18 @@ HTTP 回复丢失后，使用 `/receipt` 查询投递。如果回执过期或 Ho
 共享终端提供文本输入、Markdown、工具摘要、模型/上下文状态和上述 Host 命令。
 `--phone` 选择该共享终端。
 
+实验性的原生 Pi App Server 使用锁定的 Pi source checkout 和独立 session store：
+
+```bash
+export TSPI_PI_SOURCE=/path/to/prepared/pi
+./TSPi --app-server --workspace reaction-a --allow-writes
+./TSPi --app-client --connect unix:///path/printed/by/server
+```
+
+不指定 `--allow-writes` 时，Worker 只开放 `read`、`ts_state` 和 `ts_remote`。源码准备和
+生命周期见[原生 Pi App Server](ARCHITECTURE.zh-CN.md#原生-pi-app-server实验性)。App Server
+session 不会附着到 Phone Host 或 standalone session history。
+
 ## 维护检查
 
 ```bash

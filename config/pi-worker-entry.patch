@@ -1,0 +1,35 @@
+diff --git a/packages/coding-agent/src/experimental/process.ts b/packages/coding-agent/src/experimental/process.ts
+index 0000000..0000000 100644
+--- a/packages/coding-agent/src/experimental/process.ts
++++ b/packages/coding-agent/src/experimental/process.ts
+@@ -83,15 +83,17 @@
+ function defaultEntryUrl(role: InternalProcessRole, override: URL | undefined): URL {
+-	if (override) return override;
+-	if (isBundledNode) {
+-		const entry = role === "coordinator" ? "coordinator.js" : "cli.js";
+-		return pathToFileURL(join(getPackageDir(), "dist", "bundle", entry));
+-	}
+-	const javaScript = import.meta.url.endsWith(".js");
+-	if (role === "coordinator") {
+-		return new URL(javaScript ? "coordinator.js" : "coordinator.ts", import.meta.url);
+-	}
+-	if (role === "server") {
+-		return new URL(javaScript ? "server.js" : "server.ts", import.meta.url);
+-	}
+-	return new URL(javaScript ? "session-worker.js" : "session-worker.ts", import.meta.url);
++	if (override) return override;
++	const configuredWorkerEntry = role === "session-worker" ? process.env.PI_SESSION_WORKER_ENTRY : undefined;
++	if (configuredWorkerEntry) return pathToFileURL(resolve(configuredWorkerEntry));
++	if (isBundledNode) {
++		const entry = role === "coordinator" ? "coordinator.js" : "cli.js";
++		return pathToFileURL(join(getPackageDir(), "dist", "bundle", entry));
++	}
++	const javaScript = import.meta.url.endsWith(".js");
++	if (role === "coordinator") {
++		return new URL(javaScript ? "coordinator.js" : "coordinator.ts", import.meta.url);
++	}
++	if (role === "server") {
++		return new URL(javaScript ? "server.js" : "server.ts", import.meta.url);
++	}
++	return new URL(javaScript ? "session-worker.js" : "session-worker.ts", import.meta.url);
+ }
