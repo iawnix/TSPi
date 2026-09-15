@@ -15,9 +15,11 @@ cd TSPi
 ./install.sh
 ```
 
-The wizard asks for the installation directory, TSPi and TS Phone revisions,
-optional TS Web and TS Phone components, their HTTP ports, Conda location, and
-systemd services. Agent, the scientific runtime, and molecular rendering are one
+The bootstrap selects the TSPi revision from `--tspi-ref` or
+`TSPI_INSTALL_REF` before starting the wizard. The wizard then asks for the
+installation directory, TS Phone revision, optional TS Web and TS Phone
+components, their HTTP ports, Conda location, and systemd services. Agent, the
+scientific runtime, and molecular rendering are one
 required Core. Before asking those questions, it checks the local Python,
 Git, Node.js, npm, and Conda/Mamba toolchain. Required failures stop before the
 installation directory is changed; optional tools are reported so the selected
@@ -44,7 +46,10 @@ uses stable progress lines instead, and `--json` output contains neither ANSI
 styling nor animation control sequences. Set the standard `NO_COLOR`
 environment variable to disable semantic colors.
 
-Branches and tags resolve to full commit IDs recorded with each installation.
+The bootstrap resolves the selected TSPi branch or tag exactly once. Its full
+commit ID is shown in the plan, used by every subsequent TSPi checkout, and
+recorded alongside the requested ref. This prevents a moving branch such as
+`main` from mixing installer code and package content from different commits.
 Use full SHAs for `--tspi-ref` and `--phone-ref` to repeat a particular version.
 The non-interactive equivalent is:
 

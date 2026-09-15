@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly REPO_URL="${TSPI_INSTALL_REPO:-git@github.com:iawnix/TSPi.git}"
-readonly REPO_REF="${TSPI_INSTALL_REF:-main}"
-SCRIPT_DIR=""
-if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
-  SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-fi
-readonly SCRIPT_DIR
+REPO_URL="${TSPI_INSTALL_REPO:-git@github.com:iawnix/TSPi.git}"
+REPO_REF="${TSPI_INSTALL_REF:-main}"
+FORWARD_ARGS=()
 
 if [[ -t 2 && ! -v NO_COLOR && "${TERM:-}" != "dumb" ]]; then
   readonly BOOTSTRAP_ACCENT=$'\033[1;36m' BOOTSTRAP_SUCCESS=$'\033[1;32m'
@@ -23,10 +19,42 @@ fail() {
 
 command -v python3 >/dev/null 2>&1 || fail "Python 3.11 or newer is required." 127
 python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' || fail "Python 3.11 or newer is required."
-if [[ -f "${SCRIPT_DIR}/scripts/install_wizard.py" && -f "${SCRIPT_DIR}/package.json" ]]; then
-  exec python3 "${SCRIPT_DIR}/scripts/install_wizard.py" "$@"
-fi
 command -v git >/dev/null 2>&1 || fail "Git is required." 127
+
+while (( $# )); do
+  case "$1" in
+    --tspi-repo)
+      (( $# >= 2 )) || fail "--tspi-repo requires a value."
+      REPO_URL="$2"
+      shift 2
+      ;;
+    --tspi-repo=*)
+      REPO_URL="${1#*=}"
+      shift
+      ;;
+    --tspi-ref)
+      (( $# >= 2 )) || fail "--tspi-ref requires a value."
+      REPO_REF="$2"
+      shift 2
+      ;;
+    --tspi-ref=*)
+      REPO_REF="${1#*=}"
+      shift
+      ;;
+    --tspi-commit|--tspi-commit=*)
+      fail "--tspi-commit is reserved for the installer bootstrap."
+      ;;
+    *)
+      FORWARD_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+[[ -n "${REPO_URL}" ]] || fail "--tspi-repo must not be empty."
+if [[ ! "${REPO_REF}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$ || "${REPO_REF}" == *..* ]]; then
+  fail "--tspi-ref must be a branch, tag, or full 40-character commit SHA."
+fi
+readonly REPO_URL REPO_REF
 
 printf '\n%bTSPi Installer%b\n' "${BOOTSTRAP_ACCENT}" "${BOOTSTRAP_RESET}" >&2
 printf '==============\n' >&2
@@ -37,7 +65,7 @@ readonly TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/tspi-installer.XXXXXX")"
 readonly BOOTSTRAP_LOG="${TEMP_ROOT}/bootstrap.log"
 BOOTSTRAP_SPINNER_PID=""
 BOOTSTRAP_ANIMATIONS=true
-for argument in "$@"; do
+for argument in "${FORWARD_ARGS[@]}"; do
   [[ "${argument}" == "--json" ]] && BOOTSTRAP_ANIMATIONS=false
 done
 
@@ -89,13 +117,19 @@ run_bootstrap_step() {
   printf '  %bOK%b %s\n' "${BOOTSTRAP_SUCCESS}" "${BOOTSTRAP_RESET}" "${label}" >&2
 }
 
-run_bootstrap_step "repository access" git clone --quiet --filter=blob:none --no-checkout "${REPO_URL}" "${TEMP_ROOT}/TSPi"
+run_bootstrap_step "repository access" git clone --quiet --filter=blob:none --no-checkout -- "${REPO_URL}" "${TEMP_ROOT}/TSPi"
 run_bootstrap_step "revision ${REPO_REF}" git -C "${TEMP_ROOT}/TSPi" fetch --quiet --depth 1 origin "${REPO_REF}"
 run_bootstrap_step "source checkout" git -C "${TEMP_ROOT}/TSPi" checkout --quiet --detach FETCH_HEAD
+RESOLVED_COMMIT="$(git -C "${TEMP_ROOT}/TSPi" rev-parse --verify 'HEAD^{commit}')" \
+  || fail "could not read the resolved TSPi commit."
+[[ "${RESOLVED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
+  || fail "resolved TSPi revision is not a full commit SHA."
+readonly RESOLVED_COMMIT
 wizard=(python3 "${TEMP_ROOT}/TSPi/scripts/install_wizard.py"
-  --tspi-repo "${REPO_URL}" --tspi-ref "${REPO_REF}" "$@")
+  --tspi-repo "${REPO_URL}" --tspi-ref "${REPO_REF}"
+  --tspi-commit "${RESOLVED_COMMIT}" "${FORWARD_ARGS[@]}")
 non_interactive=false
-for argument in "$@"; do
+for argument in "${FORWARD_ARGS[@]}"; do
   [[ "${argument}" == "--non-interactive" ]] && non_interactive=true
 done
 if [[ -t 0 || "${non_interactive}" == true ]]; then

@@ -29,7 +29,7 @@ try:
         success,
         title,
     )
-    from .install_from_github import install_uninstaller, validate_ref, validate_repo
+    from .install_from_github import install_uninstaller, validate_commit, validate_ref, validate_repo
     from .install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
     from .install_release import validate_install_root
 except ImportError:
@@ -46,7 +46,7 @@ except ImportError:
         success,
         title,
     )
-    from install_from_github import install_uninstaller, validate_ref, validate_repo
+    from install_from_github import install_uninstaller, validate_commit, validate_ref, validate_repo
     from install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
     from install_release import validate_install_root
 
@@ -165,6 +165,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--install-root")
     parser.add_argument("--tspi-repo", default=DEFAULT_REPO)
     parser.add_argument("--tspi-ref", default=os.environ.get("TSPI_INSTALL_REF", "main"))
+    parser.add_argument("--tspi-commit", help=argparse.SUPPRESS)
     phone = parser.add_mutually_exclusive_group()
     phone.add_argument(
         "--with-phone",
@@ -202,8 +203,10 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
 
     section("Source and destination")
     args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/tspi"))
-    args.tspi_ref = ask("TSPi Git branch, tag, or commit", args.tspi_ref)
     field("Repository", args.tspi_repo)
+    field("Requested revision", args.tspi_ref)
+    if args.tspi_commit:
+        field("Resolved commit", args.tspi_commit)
 
     section("Core")
     field("Agent", "required", tone="success")
@@ -253,6 +256,8 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
         field("Current release", installation["release_id"])
     field("Installation root", args.install_root, tone="accent")
     field("TSPi revision", args.tspi_ref)
+    if args.tspi_commit:
+        field("Resolved commit", args.tspi_commit)
     field("Workspace root", Path(args.install_root) / "workspaces")
     field("Conda root", args.conda_root or "auto-detect")
 
@@ -322,6 +327,8 @@ def _service_plan(args: argparse.Namespace) -> str:
 def validate_options(args: argparse.Namespace) -> None:
     validate_repo(args.tspi_repo)
     validate_ref(args.tspi_ref)
+    if args.tspi_commit:
+        validate_commit(args.tspi_commit)
     if not args.install_root:
         raise ValueError("--install-root is required in non-interactive mode")
     args.install_root = str(validate_install_root(Path(args.install_root)))
@@ -476,6 +483,8 @@ def run_install(args: argparse.Namespace, phone_release: Path | None = None) -> 
         "--progress",
         "--json",
     ]
+    if args.tspi_commit:
+        command.extend(["--resolved-commit", args.tspi_commit])
     if not args.with_web:
         command.append("--without-web")
     if args.conda_root:

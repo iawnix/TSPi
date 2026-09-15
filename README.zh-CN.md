@@ -31,7 +31,8 @@ cd TSPi
 在向导中选择安装目录、Conda 路径、可选的 TS Web 与 TS Phone、对应端口和 systemd 服务。
 核心安装始终包含并验证分子渲染能力。
 选择 TS Phone 后，安装器会从 GitHub 下载源码、构建服务，并配置手机与终端共享会话。
-TSPi 和 TS Phone 都可以选择分支、标签或提交，默认使用 `main`。
+在向导启动前用 `--tspi-ref` 选择 TSPi 分支、标签或提交；bootstrap 只解析一次，
+并将整次安装绑定到该提交。TS Phone 在向导中单独选择版本，两者默认均为 `main`。
 
 非交互安装、服务配置和升级方式见[安装与运维](docs/INSTALLATION.md)。
 

@@ -39,6 +39,11 @@ def validate_ref(ref: str) -> None:
         raise ValueError("--ref must be a branch, tag, or full 40-character commit SHA")
 
 
+def validate_commit(commit: str) -> None:
+    if not FULL_SHA.fullmatch(commit):
+        raise ValueError("resolved commit must be a full 40-character SHA")
+
+
 def validate_repo(repo: str) -> None:
     if repo.startswith("git@github.com:") and repo.split(":", 1)[1].strip("/"):
         return
@@ -124,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True, help="GitHub repository URL")
     parser.add_argument("--ref", required=True, help="Branch, tag, or full commit SHA")
+    parser.add_argument("--resolved-commit", help=argparse.SUPPRESS)
     parser.add_argument("--install-root", required=True)
     parser.add_argument("--without-web", action="store_true", help="Omit the ts-web component")
     parser.add_argument("--phone-repo")
@@ -136,6 +142,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         validate_ref(args.ref)
+        if args.resolved_commit:
+            validate_commit(args.resolved_commit)
         validate_repo(args.repo)
         if bool(args.phone_repo) != bool(args.phone_ref):
             raise ValueError("--phone-repo and --phone-ref must be supplied together")
@@ -144,8 +152,18 @@ def main(argv: list[str] | None = None) -> int:
             validate_ref(args.phone_ref)
         with tempfile.TemporaryDirectory(prefix="tspi-github-") as temp:
             checkout = Path(temp) / "tspi"
-            emit_progress(args.progress, "Resolving the selected TSPi revision")
-            commit = checkout_github(args.repo, args.ref, checkout)
+            progress_message = (
+                "Checking out the locked TSPi revision"
+                if args.resolved_commit
+                else "Resolving the selected TSPi revision"
+            )
+            emit_progress(args.progress, progress_message)
+            checkout_ref = args.resolved_commit or args.ref
+            commit = checkout_github(args.repo, checkout_ref, checkout)
+            if args.resolved_commit and commit.lower() != args.resolved_commit.lower():
+                raise ValueError(
+                    f"locked TSPi commit mismatch: expected {args.resolved_commit}, checked out {commit}"
+                )
             phone_server = args.phone_server_root or Path(args.install_root).expanduser() / ".pi/ts-phone/current"
             if args.phone_server_root or phone_server.exists():
                 emit_progress(args.progress, "Checking TSPi and TS Phone compatibility")

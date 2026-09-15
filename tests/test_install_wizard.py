@@ -171,13 +171,19 @@ def test_service_conflict_is_detected_before_installation_mutates_the_root(tmp_p
 
 
 def test_interactive_phone_selection_and_web_skip(tmp_path: Path, monkeypatch) -> None:
-    args = parse_args(["--install-root", str(tmp_path / "install"), "--service-scope", "none"])
+    commit = "a" * 40
+    args = parse_args(["--install-root", str(tmp_path / "install"), "--tspi-ref", "release",
+                       "--tspi-commit", commit, "--service-scope", "none"])
     monkeypatch.setattr(wizard.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(wizard.sys.stdout, "isatty", lambda: True)
-    replies = iter(["main", "n", "y", "main", "23000", ""])
-    monkeypatch.setattr("builtins.input", lambda _: next(replies))
+    replies = iter(["n", "y", "main", "23000", ""])
+    prompts = []
+    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or next(replies))
     wizard.interactive_options(args)
     validate_options(args)
+    assert args.tspi_ref == "release"
+    assert args.tspi_commit == commit
+    assert not any("TSPi Git" in prompt for prompt in prompts)
     assert args.with_phone is True
     assert args.phone_port == 23000
     assert args.with_web is False
@@ -185,6 +191,7 @@ def test_interactive_phone_selection_and_web_skip(tmp_path: Path, monkeypatch) -
 
 def test_install_passes_prepared_phone_for_compatibility_check(tmp_path: Path, monkeypatch) -> None:
     args = _options(tmp_path)
+    args.tspi_commit = "a" * 40
     release = tmp_path / "phone-release"
     commands = []
 
@@ -194,7 +201,66 @@ def test_install_passes_prepared_phone_for_compatibility_check(tmp_path: Path, m
 
     monkeypatch.setattr(wizard, "run_logged_install", run)
     wizard.run_install(args, release)
+    assert commands[0][commands[0].index("--resolved-commit") + 1] == args.tspi_commit
     assert commands[0][-2:] == ["--phone-server-root", str(release)]
+
+
+def test_locked_source_install_preserves_requested_ref_in_provenance(tmp_path: Path, monkeypatch, capsys) -> None:
+    root = tmp_path / "install"
+    locked_commit = "a" * 40
+    checkout_refs = []
+
+    def checkout(repo: str, ref: str, destination: Path) -> str:
+        checkout_refs.append(ref)
+        (destination / "scripts").mkdir(parents=True)
+        for relative in (
+            "uninstall.sh",
+            "scripts/uninstall.py",
+            "scripts/_terminal_ui.py",
+            "scripts/_installation_metadata.py",
+        ):
+            target = destination / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / relative, target)
+        return locked_commit
+
+    def run(command: list[str], *, cwd: Path | None = None) -> str:
+        if "scripts/build_package.py" in command:
+            return json.dumps({"manifest": "/tmp/manifest.json", "archive": "/tmp/archive.tgz"})
+        if "scripts/install_package.py" in command:
+            return json.dumps({"release_id": "test", "package_root": "/tmp/package", "launchers": {}})
+        raise AssertionError(command)
+
+    monkeypatch.setattr(source_installer, "checkout_github", checkout)
+    monkeypatch.setattr(source_installer, "run", run)
+
+    result = source_installer.main([
+        "--repo", "git@github.com:iawnix/TSPi.git", "--ref", "main",
+        "--resolved-commit", locked_commit,
+        "--install-root", str(root), "--without-web", "--json",
+    ])
+
+    assert result == 0
+    assert checkout_refs == [locked_commit]
+    output = json.loads(capsys.readouterr().out)
+    provenance = json.loads(Path(output["provenance"]).read_text(encoding="utf-8"))
+    assert provenance["ref"] == "main"
+    assert provenance["commit"] == locked_commit
+
+
+def test_locked_source_install_rejects_checkout_mismatch(tmp_path: Path, monkeypatch, capsys) -> None:
+    locked_commit = "a" * 40
+    monkeypatch.setattr(source_installer, "checkout_github", lambda *args: "b" * 40)
+    monkeypatch.setattr(source_installer, "run", lambda *args, **kwargs: pytest.fail("build must not start"))
+
+    result = source_installer.main([
+        "--repo", "git@github.com:iawnix/TSPi.git", "--ref", "main",
+        "--resolved-commit", locked_commit,
+        "--install-root", str(tmp_path / "install"), "--without-web", "--json",
+    ])
+
+    assert result == 1
+    assert "locked TSPi commit mismatch" in capsys.readouterr().err
 
 
 def test_without_phone_does_not_fetch_or_configure_phone(tmp_path: Path, monkeypatch) -> None:

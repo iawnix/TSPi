@@ -35,8 +35,10 @@ Choose the installation directory, Conda location, optional TS Web and TS Phone
 components, their ports, and systemd services in the wizard. The core install
 always includes and verifies molecular rendering. Selecting TS Phone
 downloads its source from GitHub, builds the server, and configures phone access
-and shared terminal sessions. You can choose a branch, tag, or commit for TSPi
-and TS Phone; both default to `main`.
+and shared terminal sessions. Select the TSPi branch, tag, or commit with
+`--tspi-ref` before the wizard starts; the bootstrap resolves it once and binds
+the whole installation to that commit. TS Phone has a separate revision prompt.
+Both default to `main`.
 
 See [Installation and Operations](docs/INSTALLATION.md) for non-interactive
 installation, service configuration, and upgrades.

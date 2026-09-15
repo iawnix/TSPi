@@ -145,4 +145,54 @@ def test_curl_bootstrap_accepts_noninteractive_stdin(tmp_path: Path) -> None:
         input=(ROOT / "install.sh").read_text(), env={**os.environ, "TSPI_INSTALL_REPO": str(source), "TSPI_INSTALL_REF": "main"},
         capture_output=True, text=True, timeout=15)
     assert completed.returncode == 0, completed.stderr
-    assert json.loads(completed.stdout)[-2:] == ["--non-interactive", "--with-phone"]
+    arguments = json.loads(completed.stdout)
+    expected = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+    assert arguments[arguments.index("--tspi-ref") + 1] == "main"
+    assert arguments[arguments.index("--tspi-commit") + 1] == expected
+    assert arguments[-2:] == ["--non-interactive", "--with-phone"]
+
+
+def test_bootstrap_command_line_ref_selects_the_wizard_revision(tmp_path: Path) -> None:
+    source = tmp_path / "bootstrap-source"
+    (source / "scripts").mkdir(parents=True)
+    wizard = source / "scripts/install_wizard.py"
+    wizard.write_text("import json,sys; print(json.dumps({'marker':'main','argv':sys.argv[1:]}))\n")
+    for command in (["git", "init", "-b", "main"], ["git", "add", "."],
+                    ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "main"]):
+        subprocess.run(command, cwd=source, check=True, capture_output=True)
+    subprocess.run(["git", "switch", "-c", "selected"], cwd=source, check=True, capture_output=True)
+    wizard.write_text("import json,sys; print(json.dumps({'marker':'selected','argv':sys.argv[1:]}))\n")
+    subprocess.run(["git", "add", "."], cwd=source, check=True, capture_output=True)
+    subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "selected"],
+                   cwd=source, check=True, capture_output=True)
+    selected_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+
+    completed = subprocess.run(
+        ["bash", "-s", "--", "--tspi-repo", str(source), "--tspi-ref", "selected", "--non-interactive"],
+        cwd=tmp_path,
+        input=(ROOT / "install.sh").read_text(),
+        env={**os.environ, "TSPI_INSTALL_REF": "main"},
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result["marker"] == "selected"
+    assert result["argv"][result["argv"].index("--tspi-ref") + 1] == "selected"
+    assert result["argv"][result["argv"].index("--tspi-commit") + 1] == selected_commit
+
+
+def test_bootstrap_rejects_external_tspi_commit_override(tmp_path: Path) -> None:
+    completed = subprocess.run(
+        ["bash", "-s", "--", "--tspi-commit", "a" * 40],
+        cwd=tmp_path,
+        input=(ROOT / "install.sh").read_text(),
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+
+    assert completed.returncode == 1
+    assert "reserved for the installer bootstrap" in completed.stderr
