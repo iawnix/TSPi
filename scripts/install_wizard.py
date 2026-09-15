@@ -589,7 +589,7 @@ def phone_unit(args: argparse.Namespace) -> str:
 
 def web_unit(args: argparse.Namespace) -> str:
     root = Path(args.install_root)
-    working_directory = _systemd_quote(root)
+    working_directory = _systemd_value(root)
     command = " ".join(
         _systemd_quote(value)
         for value in (
@@ -634,7 +634,15 @@ WantedBy=default.target
 
 
 def _systemd_quote(value: object) -> str:
-    return json.dumps(str(value).replace("%", "%%"), ensure_ascii=False)
+    escaped = _systemd_value(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _systemd_value(value: object) -> str:
+    text = str(value)
+    if any(ord(character) < 32 or ord(character) == 127 for character in text):
+        raise ValueError("systemd values cannot contain control characters")
+    return text.replace("%", "%%")
 
 
 def _selected_service_names(args: argparse.Namespace) -> list[str]:
@@ -687,6 +695,39 @@ def validate_service_ownership(args: argparse.Namespace) -> None:
             )
 
 
+def verify_service_units(args: argparse.Namespace, units: list[tuple[str, str]]) -> None:
+    analyzer = shutil.which("systemd-analyze")
+    if analyzer is None:
+        raise RuntimeError("service configuration requires systemd-analyze to verify generated units")
+    with tempfile.TemporaryDirectory(prefix="tspi-systemd-verify-") as temporary:
+        unit_root = Path(temporary)
+        unit_paths: list[Path] = []
+        for name, content in units:
+            path = unit_root / name
+            path.write_text(content, encoding="utf-8")
+            unit_paths.append(path)
+        for name in ("basic.target", "network-online.target"):
+            (unit_root / name).write_text("[Unit]\nDescription=TSPi verification dependency\n", encoding="utf-8")
+        environment = dict(os.environ)
+        environment["SYSTEMD_UNIT_PATH"] = str(unit_root)
+        if args.service_scope == "user" and not environment.get("XDG_RUNTIME_DIR"):
+            runtime = unit_root / "runtime"
+            runtime.mkdir(mode=0o700)
+            environment["XDG_RUNTIME_DIR"] = str(runtime)
+        scope = "--system" if args.service_scope == "system" else "--user"
+        completed = subprocess.run(
+            [analyzer, scope, "--man=no", "verify", *(str(path) for path in unit_paths)],
+            env=environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout).strip()
+            raise RuntimeError(f"generated systemd service validation failed: {detail}")
+
+
 def configure_services(args: argparse.Namespace, phone_config: Path | None) -> list[dict[str, str]]:
     if args.service_scope == "none":
         return []
@@ -699,6 +740,7 @@ def configure_services(args: argparse.Namespace, phone_config: Path | None) -> l
     if not units:
         return []
     prepare_runtime_dirs(Path(args.install_root))
+    verify_service_units(args, units)
     unit_dir = _service_unit_directory(args.service_scope)
     unit_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
     names: list[str] = []

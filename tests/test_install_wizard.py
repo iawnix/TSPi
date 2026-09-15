@@ -77,6 +77,8 @@ def test_web_unit_command_is_accepted_by_web_cli(tmp_path: Path, monkeypatch) ->
     Path(args.install_root).mkdir(mode=0o700)
     credentials = provision_service_credentials(Path(args.install_root), with_phone=False, with_web=True)
     unit = wizard.web_unit(args)
+    assert f"WorkingDirectory={Path(args.install_root)}" in unit
+    assert f'WorkingDirectory="{Path(args.install_root)}"' not in unit
     command = next(line for line in unit.splitlines() if line.startswith("ExecStart="))
     arguments = shlex.split(command.removeprefix("ExecStart="))
     calls = []
@@ -353,6 +355,7 @@ def test_service_configuration_captures_systemctl_output(tmp_path: Path, monkeyp
     (root / ".pi/packages/tspi/current/agent/apps/host").mkdir(parents=True)
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "owner")
     monkeypatch.setattr(wizard, "phone_unit", lambda _: f"[Service]\nWorkingDirectory={root}\n")
+    monkeypatch.setattr(wizard, "verify_service_units", lambda *_: None)
     calls: list[list[str]] = []
 
     def run(command, **kwargs):
@@ -371,6 +374,60 @@ def test_service_configuration_captures_systemctl_output(tmp_path: Path, monkeyp
     assert {service["name"] for service in services} == {"ts-phone-tspi.service", "ts-web-tspi.service"}
     assert all(service["enabled"] == "enabled" and service["active"] == "active" for service in services)
     assert ["systemctl", "--user", "enable", "ts-web-tspi.service"] in calls
+
+
+def test_generated_web_service_passes_systemd_validation(tmp_path: Path) -> None:
+    if shutil.which("systemd-analyze") is None:
+        pytest.skip("systemd-analyze is unavailable")
+    args = _options(tmp_path / "root with spaces%value")
+    root = Path(args.install_root)
+    root.mkdir(mode=0o700, parents=True)
+    for name in ("TSPi", "TSWeb", "TSPhoneServer"):
+        launcher = root / name
+        launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        launcher.chmod(0o700)
+    phone = f"""[Unit]
+Description=TSPi test Phone service
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={wizard._systemd_value(root)}
+ExecStart={wizard._systemd_quote(root / 'TSPhoneServer')}
+
+[Install]
+WantedBy=default.target
+"""
+
+    wizard.prepare_runtime_dirs(root)
+    wizard.verify_service_units(
+        args,
+        [("ts-phone-tspi.service", phone), ("ts-web-tspi.service", wizard.web_unit(args))],
+    )
+
+
+def test_invalid_generated_service_does_not_replace_existing_unit(tmp_path: Path, monkeypatch) -> None:
+    args = _options(tmp_path)
+    root = Path(args.install_root)
+    owner = tmp_path / "owner"
+    unit_dir = owner / ".config/systemd/user"
+    unit_dir.mkdir(parents=True)
+    existing = unit_dir / "ts-web-tspi.service"
+    original = f"[Service]\nWorkingDirectory={root}\n"
+    existing.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: owner)
+    monkeypatch.setattr(wizard, "phone_unit", lambda _: f"[Service]\nWorkingDirectory={root}\n")
+    monkeypatch.setattr(
+        wizard,
+        "verify_service_units",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("invalid generated unit")),
+    )
+    monkeypatch.setattr(wizard.subprocess, "run", lambda *args, **kwargs: pytest.fail("systemctl must not run"))
+
+    with pytest.raises(RuntimeError, match="invalid generated unit"):
+        wizard.configure_services(args, root / ".pi/ts-phone/server.env")
+
+    assert existing.read_text(encoding="utf-8") == original
 
 
 def test_install_plan_separates_component_and_service_state(tmp_path: Path, capsys) -> None:
