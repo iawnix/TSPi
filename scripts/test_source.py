@@ -21,7 +21,6 @@ from _runtime_install import (
     RuntimeInstallError,
     _base_action,
     _clean_python_environment,
-    _install_render_dependency,
     _pip_install_wheel,
     _prepare_base,
     _resolve_conda,
@@ -42,7 +41,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--conda", help="Path to conda or mamba executable.")
     parser.add_argument("--conda-root", help="Root directory of an existing Conda or Mamba installation.")
     parser.add_argument("--force-base", action="store_true", help="Refresh the selected scientific base first.")
-    parser.add_argument("--with-render", action="store_true", help="Ensure xyzrender is available in the shared base.")
     parser.add_argument("--result-path", help="Path for the machine-readable test record.")
     parser.add_argument("pytest_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -94,15 +92,14 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeInstallError(
                 "the scientific base is unavailable and conda or mamba could not be resolved"
             )
-        _prepare_base(
+        base_action = _prepare_base(
             conda,
             base_prefix,
             base_python,
             package_root / "environment.yml",
+            package_root,
             base_action,
         )
-        if args.with_render:
-            _install_render_dependency(base_python, package_root)
         record["base_action"] = base_action
         record["conda_executable"] = conda
 

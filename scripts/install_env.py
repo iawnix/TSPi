@@ -34,7 +34,6 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Refresh the shared base and recreate only this release's kernel overlay.",
     )
-    parser.add_argument("--with-render", action="store_true", help="Also install optional xyzrender into the shared base.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable output.")
     args = parser.parse_args(argv)
 
@@ -46,7 +45,6 @@ def main(argv: list[str] | None = None) -> int:
         "conda": args.conda,
         "conda_root": args.conda_root,
         "force": args.force,
-        "with_render": args.with_render,
     }
     try:
         result = (

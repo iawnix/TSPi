@@ -11,14 +11,15 @@ requires-python = ">=3.11"
 dependencies = [
   "ase",
   "jsonschema",
+  "matplotlib>=3.9,<4",
   "numpy>=2.0,<3",
   "pillow>=10,<13",
   "rdkit>=2025.9,<2027",
   "scipy",
+  "xyzrender>=0.2.1",
 ]
 
 [project.optional-dependencies]
-render = ["xyzrender>=0.2.1", "matplotlib>=3.9,<4"]
 test = ["pytest>=8,<10"]
 
 [tool.setuptools]

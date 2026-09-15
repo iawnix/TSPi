@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import importlib.metadata
+import io
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 from pathlib import PurePosixPath
@@ -19,7 +22,7 @@ from .env import (
 
 
 def probe_runtime_capabilities(*, require_distribution: bool = True) -> dict[str, Any]:
-    """Exercise the RDKit operations required by deterministic structure seeding."""
+    """Exercise the chemistry and rendering capabilities required by TSPi."""
 
     import numpy
     import rdkit
@@ -38,6 +41,7 @@ def probe_runtime_capabilities(*, require_distribution: bool = True) -> dict[str
         raise RuntimeError("RDKit UFF parameters are unavailable for the probe molecule")
     if AllChem.UFFOptimizeMolecule(molecule, maxIters=200) != 0:
         raise RuntimeError("RDKit UFF probe optimization did not converge")
+    render = _probe_render_capabilities()
 
     return {
         "schema_version": RUNTIME_PROBE_VERSION,
@@ -56,11 +60,78 @@ def probe_runtime_capabilities(*, require_distribution: bool = True) -> dict[str
                 "version": str(rdkit.__version__),
                 "origin": str(Path(rdkit.__file__).resolve()),
             },
+            "matplotlib": render["matplotlib"],
         },
+        "commands": {"xyzrender": render["xyzrender"]},
         "capabilities": {
             "rdkit_smiles_parse": True,
             "rdkit_etkdg_embed": True,
             "rdkit_uff_optimize": True,
+            "matplotlib_render": True,
+            "xyzrender_cli": True,
+        },
+    }
+
+
+def _probe_render_capabilities() -> dict[str, dict[str, Any]]:
+    import matplotlib
+
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+
+    figure, axes = plt.subplots(figsize=(1, 1), dpi=32)
+    try:
+        axes.plot((0, 1), (0, 1))
+        axes.set_axis_off()
+        output = io.BytesIO()
+        figure.savefig(output, format="png")
+        if not output.getvalue().startswith(b"\x89PNG\r\n\x1a\n"):
+            raise RuntimeError("Matplotlib did not produce a valid PNG image")
+    finally:
+        plt.close(figure)
+
+    executable_name = "xyzrender.exe" if os.name == "nt" else "xyzrender"
+    candidates = (
+        Path(sys.base_prefix) / ("Scripts" if os.name == "nt" else "bin") / executable_name,
+        Path(sys.prefix) / ("Scripts" if os.name == "nt" else "bin") / executable_name,
+    )
+    executable = next(
+        (
+            path.resolve()
+            for path in candidates
+            if path.is_file() and os.access(path, os.X_OK)
+        ),
+        None,
+    )
+    if executable is None:
+        raise RuntimeError("managed scientific runtime is missing the xyzrender executable")
+    try:
+        completed = subprocess.run(
+            [str(executable), "--help"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError(f"xyzrender capability probe failed: {error}") from error
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip().splitlines()
+        suffix = f": {detail[-1]}" if detail else ""
+        raise RuntimeError(f"xyzrender capability probe exited with status {completed.returncode}{suffix}")
+    try:
+        version = importlib.metadata.version("xyzrender")
+    except importlib.metadata.PackageNotFoundError as error:
+        raise RuntimeError("managed scientific runtime is missing the xyzrender distribution") from error
+    return {
+        "matplotlib": {
+            "version": str(matplotlib.__version__),
+            "origin": str(Path(matplotlib.__file__).resolve()),
+        },
+        "xyzrender": {
+            "version": version,
+            "path": str(executable),
         },
     }
 

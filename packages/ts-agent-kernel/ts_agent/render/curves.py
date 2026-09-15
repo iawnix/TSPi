@@ -37,7 +37,7 @@ def render_curve(
 
         matplotlib.use("Agg", force=True)
         import matplotlib.pyplot as plt
-    except Exception as exc:  # pragma: no cover - depends on optional render environment
+    except Exception as exc:  # pragma: no cover - depends on the managed render environment
         return _failure("environment", "matplotlib is required for curve rendering", exc)
 
     width, height = resolution

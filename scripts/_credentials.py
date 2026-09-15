@@ -59,12 +59,12 @@ def provision_service_credentials(
     result: dict[str, dict[str, str]] = {}
     for name, path in specifications:
         if name in existing:
-            result[name] = {"path": str(path), "status": "preserved"}
+            result[name] = {"path": str(path), "status": "preserved", "mode": "0600"}
             continue
         value = _new_token(used)
         _create_secret(path, value)
         used.add(value)
-        result[name] = {"path": str(path), "status": "created"}
+        result[name] = {"path": str(path), "status": "created", "mode": "0600"}
 
     final_values = [_read_required_secret(path) for _, path in specifications]
     if len(set(final_values)) != len(final_values):

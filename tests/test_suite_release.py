@@ -91,7 +91,7 @@ fi
             package_root=Path(package_root),
             manifest_path=manifest_path,
             manifest={
-                "schema_version": "ts-agent-runtime/2",
+                "schema_version": "ts-agent-runtime/3",
                 "package_root": str(package_root),
                 "python_payload_sha256": payload_sha256,
             },

@@ -28,7 +28,8 @@ cd TSPi
 ./install.sh
 ```
 
-在向导中选择安装目录、Conda 路径、TS Web、TS Phone 和分子渲染组件，以及 systemd 服务。
+在向导中选择安装目录、Conda 路径、可选的 TS Web 与 TS Phone、对应端口和 systemd 服务。
+核心安装始终包含并验证分子渲染能力。
 选择 TS Phone 后，安装器会从 GitHub 下载源码、构建服务，并配置手机与终端共享会话。
 TSPi 和 TS Phone 都可以选择分支、标签或提交，默认使用 `main`。
 

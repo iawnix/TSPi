@@ -48,7 +48,6 @@ def install_runtime(
     conda: str | None = None,
     conda_root: str | Path | None = None,
     force: bool = False,
-    with_render: bool = False,
 ) -> dict[str, Any]:
     """Prepare, probe, and publish one complete managed runtime."""
 
@@ -61,7 +60,6 @@ def install_runtime(
         conda=conda,
         conda_root=conda_root,
         force=force,
-        with_render=with_render,
     )
     publish_runtime(prepared)
     return dict(prepared.result)
@@ -77,7 +75,6 @@ def plan_runtime(
     conda: str | None = None,
     conda_root: str | Path | None = None,
     force: bool = False,
-    with_render: bool = False,
 ) -> dict[str, Any]:
     """Resolve all managed runtime paths without mutating them."""
 
@@ -100,7 +97,6 @@ def plan_runtime(
         conda=conda_executable,
         base_action=base_action,
         kernel_action=kernel_action,
-        with_render=with_render,
         dry_run=True,
     )
     return result
@@ -116,7 +112,6 @@ def prepare_runtime(
     conda: str | None = None,
     conda_root: str | Path | None = None,
     force: bool = False,
-    with_render: bool = False,
 ) -> PreparedRuntime:
     """Create and probe the runtime without publishing its shared manifest."""
 
@@ -138,16 +133,14 @@ def prepare_runtime(
             "conda or mamba not found; set --conda, --conda-root, "
             "TS_AGENT_CONDA_EXE, or TS_AGENT_CONDA_ROOT"
         )
-    _prepare_base(
+    base_action = _prepare_base(
         conda_executable,
         paths["base_prefix"],
         paths["base_python"],
         paths["spec_path"],
+        paths["package_root"],
         base_action,
     )
-    if with_render:
-        _install_render_dependency(paths["base_python"], paths["package_root"])
-
     existing_probe: dict[str, Any] | None = None
     if kernel_action == "reuse":
         try:
@@ -180,7 +173,6 @@ def prepare_runtime(
             runtime_probe,
             conda_root=conda_root_path,
             conda=conda_executable,
-            with_render=with_render,
         )
         runtime = paths["runtime_environment"]
         if not runtime._manifest_matches_spec(paths["package_root"], manifest):
@@ -195,7 +187,6 @@ def prepare_runtime(
         conda=conda_executable,
         base_action=base_action,
         kernel_action=kernel_action,
-        with_render=with_render,
         dry_run=False,
     )
     result["python_wheel"] = distribution_install
@@ -300,23 +291,45 @@ def _prepare_base(
     prefix: Path,
     python: Path,
     spec_path: Path,
+    package_root: Path,
     action: str,
-) -> None:
+) -> str:
     prefix.parent.mkdir(parents=True, exist_ok=True)
-    if action != "reuse":
+    effective_action = action
+    if action == "reuse":
+        try:
+            _run_base_probe(python, package_root)
+        except RuntimeInstallError as error:
+            if conda is None:
+                raise RuntimeInstallError(
+                    f"existing scientific base is stale or damaged: {prefix}; "
+                    f"conda or mamba is required to repair it: {error}"
+                ) from error
+            effective_action = "update"
+    if effective_action != "reuse":
         if conda is None:
             raise RuntimeInstallError("Conda is required to create or update the scientific base")
         completed = subprocess.run(
-            _conda_env_command(conda, action, prefix, spec_path),
+            _conda_env_command(conda, effective_action, prefix, spec_path),
             text=True,
             stdout=sys.stderr,
             stderr=sys.stderr,
             check=False,
         )
         if completed.returncode != 0:
-            raise RuntimeInstallError(f"Conda {action} failed with exit code {completed.returncode}")
+            raise RuntimeInstallError(
+                f"Conda {effective_action} failed with exit code {completed.returncode}"
+            )
     if not python.is_file() or not os.access(python, os.X_OK):
         raise RuntimeInstallError(f"scientific base Python is missing or not executable: {python}")
+    if effective_action != "reuse":
+        try:
+            _run_base_probe(python, package_root)
+        except RuntimeInstallError as error:
+            raise RuntimeInstallError(
+                f"scientific base failed its required capability probe: {prefix}: {error}"
+            ) from error
+    return effective_action
 
 
 def _create_kernel_overlay(base_python: Path, prefix: Path, env_store: Path) -> None:
@@ -358,19 +371,6 @@ def _validate_managed_kernel_path(prefix: Path, env_store: Path) -> None:
         character not in "0123456789abcdef" for character in prefix.name
     ):
         raise RuntimeInstallError(f"refusing to modify an unmanaged kernel path: {prefix}")
-
-
-def _install_render_dependency(base_python: Path, package_root: Path) -> None:
-    completed = subprocess.run(
-        [str(base_python), "-m", "pip", "install", "xyzrender>=0.2.1"],
-        cwd=package_root,
-        text=True,
-        stdout=sys.stderr,
-        stderr=sys.stderr,
-        check=False,
-    )
-    if completed.returncode != 0:
-        raise RuntimeInstallError("failed to install xyzrender into the scientific base")
 
 
 @contextmanager
@@ -425,6 +425,30 @@ def _run_runtime_probe(python: Path, package_root: Path) -> dict[str, Any]:
         stderr=subprocess.PIPE,
         check=False,
     )
+    return _parse_probe_result(completed)
+
+
+def _run_base_probe(python: Path, package_root: Path) -> dict[str, Any]:
+    source_root = package_root / "packages" / "ts-agent-kernel"
+    program = (
+        "import json,sys;"
+        "sys.path.insert(0,sys.argv[1]);"
+        "from ts_agent.runtime.probe import probe_runtime_capabilities;"
+        "print(json.dumps(probe_runtime_capabilities(require_distribution=False),sort_keys=True))"
+    )
+    completed = subprocess.run(
+        [str(python), "-c", program, str(source_root)],
+        cwd=package_root,
+        env=_clean_python_environment(),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    return _parse_probe_result(completed)
+
+
+def _parse_probe_result(completed: subprocess.CompletedProcess[str]) -> dict[str, Any]:
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or "probe process failed"
         raise RuntimeInstallError(detail)
@@ -453,7 +477,6 @@ def _runtime_manifest(
     *,
     conda_root: Path | None,
     conda: str | None,
-    with_render: bool,
 ) -> dict[str, Any]:
     runtime = paths["runtime_environment"]
     return {
@@ -471,7 +494,6 @@ def _runtime_manifest(
         "manifest_path": str(paths["manifest_path"]),
         "conda_root": str(conda_root) if conda_root else None,
         "conda_executable": conda,
-        "render_dependencies_requested": bool(with_render),
         "runtime_probe": runtime_probe,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
     }
@@ -485,7 +507,6 @@ def _result_payload(
     conda: str | None,
     base_action: str,
     kernel_action: str,
-    with_render: bool,
     dry_run: bool,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
@@ -507,7 +528,6 @@ def _result_payload(
         "kernel_action": kernel_action,
         "action": kernel_action if base_action == "reuse" else base_action,
         "dry_run": dry_run,
-        "with_render": bool(with_render),
     }
     if bundled is not None:
         result["python_wheel"] = bundled[1]

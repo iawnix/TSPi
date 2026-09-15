@@ -23,8 +23,8 @@ RUNTIME_HOME_OVERRIDE = "TS_AGENT_RUNTIME_HOME"
 RUNTIME_MANIFEST_OVERRIDE = "TS_AGENT_RUNTIME_MANIFEST"
 PACKAGE_ROOT_OVERRIDE = "TS_PACKAGE_ROOT"
 WORKSPACE_ROOT_OVERRIDE = "TS_WORKSPACE_ROOT"
-MANIFEST_VERSION = "ts-agent-runtime/2"
-RUNTIME_PROBE_VERSION = "ts-runtime-probe/2"
+MANIFEST_VERSION = "ts-agent-runtime/3"
+RUNTIME_PROBE_VERSION = "ts-runtime-probe/3"
 PACKAGE_NAMESPACE = "tspi"
 CORE_SKILL_NAME = "tspi-orchestration"
 BASE_ENV_DIRECTORY = "base"
@@ -469,7 +469,13 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
     if probe.get("schema_version") != RUNTIME_PROBE_VERSION or probe.get("ok") is not True:
         return False
     capabilities = probe.get("capabilities")
-    required = ("rdkit_smiles_parse", "rdkit_etkdg_embed", "rdkit_uff_optimize")
+    required = (
+        "rdkit_smiles_parse",
+        "rdkit_etkdg_embed",
+        "rdkit_uff_optimize",
+        "matplotlib_render",
+        "xyzrender_cli",
+    )
     if not isinstance(capabilities, dict) or not all(
         capabilities.get(name) is True for name in required
     ):
@@ -481,6 +487,7 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
     probe_python = probe.get("python")
     modules = probe.get("modules")
     distribution = probe.get("distribution")
+    commands = probe.get("commands")
     if not all(
         isinstance(value, str) and value
         for value in (
@@ -508,6 +515,7 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
         or not executable.is_relative_to(kernel_prefix)
         or not isinstance(modules, dict)
         or not isinstance(distribution, dict)
+        or not isinstance(commands, dict)
     ):
         return False
     if (
@@ -522,7 +530,7 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
         return False
     if not Path(distribution_root).expanduser().resolve().is_relative_to(kernel_prefix):
         return False
-    for name in ("numpy", "rdkit"):
+    for name in ("numpy", "rdkit", "matplotlib"):
         module = modules.get(name)
         if not isinstance(module, dict):
             return False
@@ -533,6 +541,16 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
         module_path = Path(origin).expanduser().resolve()
         if not module_path.is_file() or not module_path.is_relative_to(prefix):
             return False
+    xyzrender = commands.get("xyzrender")
+    if not isinstance(xyzrender, dict):
+        return False
+    renderer_path = xyzrender.get("path")
+    renderer_version = xyzrender.get("version")
+    if not isinstance(renderer_path, str) or not isinstance(renderer_version, str) or not renderer_version:
+        return False
+    renderer = Path(renderer_path).expanduser().resolve()
+    if not renderer.is_file() or not os.access(renderer, os.X_OK) or not renderer.is_relative_to(prefix):
+        return False
     return True
 
 

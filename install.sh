@@ -29,6 +29,8 @@ fi
 command -v git >/dev/null 2>&1 || fail "Git is required." 127
 
 printf '\n%bTSPi Installer%b\n' "${BOOTSTRAP_ACCENT}" "${BOOTSTRAP_RESET}" >&2
+printf '==============\n' >&2
+printf 'Configure a reproducible TSPi installation.\n\n' >&2
 printf 'Preparing source %s (%s)...\n' "${REPO_URL}" "${REPO_REF}" >&2
 
 readonly TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/tspi-installer.XXXXXX")"
@@ -97,9 +99,9 @@ for argument in "$@"; do
   [[ "${argument}" == "--non-interactive" ]] && non_interactive=true
 done
 if [[ -t 0 || "${non_interactive}" == true ]]; then
-  "${wizard[@]}"
+  TSPI_INSTALL_BOOTSTRAPPED=1 "${wizard[@]}"
 elif { true </dev/tty; } 2>/dev/null; then
-  "${wizard[@]}" </dev/tty
+  TSPI_INSTALL_BOOTSTRAPPED=1 "${wizard[@]}" </dev/tty
 else
-  "${wizard[@]}"
+  TSPI_INSTALL_BOOTSTRAPPED=1 "${wizard[@]}"
 fi

@@ -18,8 +18,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _options(tmp_path: Path):
-    return parse_args(["--install-root", str(tmp_path / "install"), "--with-phone", "--with-web",
-                       "--service-scope", "user", "--non-interactive", "--yes"])
+    args = parse_args(["--install-root", str(tmp_path / "install"), "--with-phone", "--with-web",
+                       "--service-scope", "user", "--enable-services", "--start-services",
+                       "--non-interactive", "--yes"])
+    validate_options(args)
+    return args
 
 
 def test_phone_configuration_is_private_and_bound_to_installation(tmp_path: Path) -> None:
@@ -85,7 +88,7 @@ def test_web_unit_command_is_accepted_by_web_cli(tmp_path: Path, monkeypatch) ->
     assert keywords["workspace_roots"] == [str(Path(args.install_root) / "workspaces")]
     assert keywords["auth_token"] == Path(credentials["web_http"]["path"]).read_text().strip()
     assert "--auth-token " not in command
-    assert f"--auth-token-file {credentials['web_http']['path']}" in command
+    assert f'"--auth-token-file" "{credentials["web_http"]["path"]}"' in command
 
 
 @pytest.mark.parametrize("unsafe_kind", ["mode", "symlink", "hardlink", "malformed"])
@@ -147,14 +150,13 @@ def test_interactive_phone_selection_and_web_skip(tmp_path: Path, monkeypatch) -
     args = parse_args(["--install-root", str(tmp_path / "install"), "--service-scope", "none"])
     monkeypatch.setattr(wizard.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(wizard.sys.stdout, "isatty", lambda: True)
-    replies = iter(["main", "n", "y", "main", "23000", "n", ""])
+    replies = iter(["main", "n", "y", "main", "23000", ""])
     monkeypatch.setattr("builtins.input", lambda _: next(replies))
     wizard.interactive_options(args)
     validate_options(args)
     assert args.with_phone is True
     assert args.phone_port == 23000
-    assert args.without_web is True
-    assert args.with_render is False
+    assert args.with_web is False
 
 
 def test_install_passes_prepared_phone_for_compatibility_check(tmp_path: Path, monkeypatch) -> None:
@@ -203,7 +205,7 @@ def test_wizard_installs_phone_before_service_configuration(tmp_path: Path, monk
     assert events == ["build", ("install", release), "activate", "services"]
     captured = capsys.readouterr()
     result = json.loads(captured.out)
-    assert result["phone"]["commit"] == "a" * 40
+    assert result["components"]["phone"]["commit"] == "a" * 40
     assert set(result["credentials"]) == {"phone_http", "phone_bridge", "web_http"}
     secret_values = [Path(item["path"]).read_text().strip() for item in result["credentials"].values()]
     assert all(secret not in captured.out and secret not in captured.err for secret in secret_values)
@@ -226,6 +228,128 @@ def test_web_is_the_noninteractive_default_unless_explicitly_disabled(tmp_path: 
                           "--non-interactive", "--yes"])
     validate_options(skipped)
     assert skipped.with_web is False
+
+
+def test_render_is_required_and_no_longer_has_an_installer_flag(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        parse_args(["--install-root", str(tmp_path / "install"), "--with-render"])
+
+
+@pytest.mark.parametrize("port", [0, 65536])
+def test_web_rejects_invalid_port(tmp_path: Path, port: int) -> None:
+    args = parse_args(["--install-root", str(tmp_path / "install"), "--with-web", "--web-port", str(port)])
+    with pytest.raises(ValueError, match="--web-port"):
+        validate_options(args)
+
+
+@pytest.mark.parametrize(
+    ("component_flag", "port_flag"),
+    [
+        ("--without-web", "--web-port"),
+        ("--without-phone", "--phone-port"),
+    ],
+)
+def test_unselected_component_rejects_its_port(
+    tmp_path: Path,
+    component_flag: str,
+    port_flag: str,
+) -> None:
+    args = parse_args(
+        [
+            "--install-root",
+            str(tmp_path / "install"),
+            component_flag,
+            port_flag,
+            "23000",
+        ]
+    )
+
+    with pytest.raises(ValueError, match=f"{port_flag} requires"):
+        validate_options(args)
+
+
+def test_existing_phone_port_is_preserved_in_the_plan(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    config = root / ".pi/ts-phone/server.env"
+    config.parent.mkdir(parents=True)
+    config.write_text('TS_PHONE_PORT="23000"\n', encoding="utf-8")
+    args = parse_args(["--install-root", str(root), "--with-phone"])
+
+    validate_options(args)
+
+    assert args.phone_port == 23000
+
+
+def test_existing_phone_port_rejects_a_conflicting_override(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    config = root / ".pi/ts-phone/server.env"
+    config.parent.mkdir(parents=True)
+    config.write_text('TS_PHONE_PORT="23000"\n', encoding="utf-8")
+    args = parse_args(["--install-root", str(root), "--with-phone", "--phone-port", "24000"])
+
+    with pytest.raises(ValueError, match="does not match"):
+        validate_options(args)
+
+
+def test_web_and_phone_ports_must_be_distinct(tmp_path: Path) -> None:
+    args = parse_args(
+        [
+            "--install-root",
+            str(tmp_path / "install"),
+            "--with-phone",
+            "--phone-port",
+            "8766",
+            "--with-web",
+            "--web-port",
+            "8766",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="different ports"):
+        validate_options(args)
+
+
+def test_service_configuration_captures_systemctl_output(tmp_path: Path, monkeypatch) -> None:
+    args = _options(tmp_path)
+    validate_options(args)
+    root = Path(args.install_root)
+    (root / ".pi/packages/tspi/current/agent/apps/host").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "owner")
+    monkeypatch.setattr(wizard, "phone_unit", lambda _: f"[Service]\nWorkingDirectory={root}\n")
+    calls: list[list[str]] = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        assert kwargs.get("stdout") is subprocess.PIPE
+        assert kwargs.get("stderr") is subprocess.PIPE
+        if "is-enabled" in command:
+            return subprocess.CompletedProcess(command, 0, "enabled\n", "")
+        if "is-active" in command:
+            return subprocess.CompletedProcess(command, 0, "active\n", "")
+        return subprocess.CompletedProcess(command, 0, "Created symlink\n", "")
+
+    monkeypatch.setattr(wizard.subprocess, "run", run)
+    services = wizard.configure_services(args, root / ".pi/ts-phone/server.env")
+
+    assert {service["name"] for service in services} == {"ts-phone-tspi.service", "ts-web-tspi.service"}
+    assert all(service["enabled"] == "enabled" and service["active"] == "active" for service in services)
+    assert ["systemctl", "--user", "enable", "ts-web-tspi.service"] in calls
+
+
+def test_install_plan_separates_component_and_service_state(tmp_path: Path, capsys) -> None:
+    args = _options(tmp_path)
+    validate_options(args)
+
+    wizard.show_install_plan(args, {"operation": "install", "release_id": None})
+    output = capsys.readouterr().out
+
+    assert "Molecular rendering" in output
+    assert "install and verify (xyzrender, Matplotlib)" in output
+    assert "http://127.0.0.1:8766" in output
+    assert "http://127.0.0.1:22113" in output
+    assert str(Path(args.install_root) / "TSPhoneServer") in output
+    assert str(Path(args.install_root) / "TSPhoneCtl") in output
+    assert "user (configure, enable, start)" in output
 
 
 def test_wizard_rejects_install_root_with_symbolic_link_parent(tmp_path: Path) -> None:

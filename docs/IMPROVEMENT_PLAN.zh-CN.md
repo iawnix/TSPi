@@ -159,7 +159,7 @@ TSPi 只校验 Phone 的版本范围、协议版本、归档 digest、入口、A
 
 1. `npm ci`，安装锁定的 TypeScript/Pi 开发依赖。
 2. 创建或复用 Conda 环境。
-3. 安装 `pyproject.toml` 的 test/render 依赖。
+3. 安装 `pyproject.toml` 的核心渲染依赖和 test 依赖。
 4. 输出实际 Python、Node、RDKit、NumPy、Pi 版本。
 5. 运行一个最小 smoke test。
 

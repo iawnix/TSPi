@@ -17,7 +17,7 @@
     "agent-skill"
   ],
   "scripts": {
-    "install-env": "python3 scripts/install_env.py --package-root . --workspace-root \"${TS_WORKSPACE_ROOT:?set TS_WORKSPACE_ROOT to the TS workspace root}\" --with-render --json",
+    "install-env": "python3 scripts/install_env.py --package-root . --workspace-root \"${TS_WORKSPACE_ROOT:?set TS_WORKSPACE_ROOT to the TS workspace root}\" --json",
     "install-env:core": "python3 scripts/install_env.py --package-root . --workspace-root \"${TS_WORKSPACE_ROOT:?set TS_WORKSPACE_ROOT to the TS workspace root}\" --json",
     "test:fast": "python3 scripts/test_fast.py -- -q",
     "lint:public": "python3 tools/lint_public_surface.py",

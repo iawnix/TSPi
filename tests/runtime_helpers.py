@@ -65,9 +65,13 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
     module_root = base_prefix / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
     numpy_origin = module_root / "numpy" / "__init__.py"
     rdkit_origin = module_root / "rdkit" / "__init__.py"
-    for origin in (numpy_origin, rdkit_origin):
+    matplotlib_origin = module_root / "matplotlib" / "__init__.py"
+    for origin in (numpy_origin, rdkit_origin, matplotlib_origin):
         origin.parent.mkdir(parents=True, exist_ok=True)
         origin.write_text("# test runtime module marker\n", encoding="utf-8")
+    xyzrender = base_bin / "xyzrender"
+    xyzrender.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    xyzrender.chmod(0o755)
     environment_spec = package_root / "environment.yml"
     package = json.loads((package_root / "package.json").read_text(encoding="utf-8"))
     payload_sha256 = python_payload_sha256(package_root)
@@ -75,7 +79,7 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
     runtime_home.mkdir(parents=True, exist_ok=True)
     manifest_path = runtime_home / "env.json"
     payload = {
-        "schema_version": "ts-agent-runtime/2",
+        "schema_version": "ts-agent-runtime/3",
         "package_root": str(package_root),
         "environment_spec": str(environment_spec),
         "spec_sha256": hashlib.sha256(environment_spec.read_bytes()).hexdigest(),
@@ -85,7 +89,7 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
         "kernel_env_prefix": str(kernel_prefix),
         "python_executable": str(kernel_bin / "python"),
         "runtime_probe": {
-            "schema_version": "ts-runtime-probe/2",
+            "schema_version": "ts-runtime-probe/3",
             "ok": True,
             "python": {"version": sys.version.split()[0], "executable": str(kernel_bin / "python")},
             "distribution": {
@@ -104,11 +108,20 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
                     "version": rdkit.__version__,
                     "origin": str(rdkit_origin),
                 },
+                "matplotlib": {
+                    "version": "3.9.0",
+                    "origin": str(matplotlib_origin),
+                },
+            },
+            "commands": {
+                "xyzrender": {"version": "0.2.1", "path": str(xyzrender)},
             },
             "capabilities": {
                 "rdkit_smiles_parse": True,
                 "rdkit_etkdg_embed": True,
                 "rdkit_uff_optimize": True,
+                "matplotlib_render": True,
+                "xyzrender_cli": True,
             },
         },
     }

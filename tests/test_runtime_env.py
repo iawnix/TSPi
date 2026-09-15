@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -29,8 +30,10 @@ from ts_agent.runtime.env import (
     spec_sha256,
     write_manifest,
 )
-from ts_agent.runtime.probe import probe_runtime_capabilities
+import ts_agent.runtime.probe as runtime_probe_module
 import ts_agent.runtime.cli as runtime_cli
+from ts_agent.runtime.probe import probe_runtime_capabilities
+from scripts import _runtime_install as runtime_install
 from scripts._bootstrap import bootstrap_python_package
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -290,17 +293,22 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
     python = kernel_prefix / "bin" / "python"
     numpy_origin = base_prefix / "lib" / "numpy.py"
     rdkit_origin = base_prefix / "lib" / "rdkit.py"
-    for path in (base_python, python, numpy_origin, rdkit_origin):
+    matplotlib_origin = base_prefix / "lib" / "matplotlib.py"
+    xyzrender = base_prefix / "bin" / "xyzrender"
+    for path in (base_python, python, numpy_origin, rdkit_origin, matplotlib_origin, xyzrender):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("# test runtime file\n", encoding="utf-8")
+    xyzrender.chmod(0o755)
     runtime_probe["python"]["executable"] = str(python)
     runtime_probe["distribution"]["root"] = str(kernel_prefix)
     runtime_probe["modules"]["numpy"]["origin"] = str(numpy_origin)
     runtime_probe["modules"]["rdkit"]["origin"] = str(rdkit_origin)
+    runtime_probe["modules"]["matplotlib"]["origin"] = str(matplotlib_origin)
+    runtime_probe["commands"]["xyzrender"]["path"] = str(xyzrender)
     manifest_path = write_manifest(
         package,
         {
-            "schema_version": "ts-agent-runtime/2",
+            "schema_version": "ts-agent-runtime/3",
             "python_executable": str(python),
             "env_prefix": str(base_prefix),
             "base_python_executable": str(base_python),
@@ -334,7 +342,7 @@ def test_configured_python_ignores_stale_runtime_manifest(tmp_path: Path) -> Non
     write_manifest(
         package,
         {
-            "schema_version": "ts-agent-runtime/2",
+            "schema_version": "ts-agent-runtime/3",
             "python_executable": sys.executable,
             "spec_sha256": "stale",
         },
@@ -376,11 +384,14 @@ def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) 
     python = kernel_prefix / "bin" / "python"
     numpy_origin = env_prefix / "lib" / "numpy.py"
     rdkit_origin = env_prefix / "lib" / "rdkit.py"
-    for path in (base_python, python, numpy_origin, rdkit_origin):
+    matplotlib_origin = env_prefix / "lib" / "matplotlib.py"
+    xyzrender = env_prefix / "bin" / "xyzrender"
+    for path in (base_python, python, numpy_origin, rdkit_origin, matplotlib_origin, xyzrender):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("# test runtime file\n", encoding="utf-8")
+    xyzrender.chmod(0o755)
     base = {
-        "schema_version": "ts-agent-runtime/2",
+        "schema_version": "ts-agent-runtime/3",
         "python_executable": str(python),
         "env_prefix": str(env_prefix),
         "base_python_executable": str(base_python),
@@ -395,6 +406,8 @@ def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) 
     probe["python"]["executable"] = str(python)
     probe["modules"]["numpy"]["origin"] = str(numpy_origin)
     probe["modules"]["rdkit"]["origin"] = str(rdkit_origin)
+    probe["modules"]["matplotlib"]["origin"] = str(matplotlib_origin)
+    probe["commands"]["xyzrender"]["path"] = str(xyzrender)
     probe["distribution"]["root"] = str(kernel_prefix)
     write_manifest(package, {**base, "runtime_probe": probe})
     assert configured_python(package) == python
@@ -419,7 +432,7 @@ def test_required_runtime_fails_closed_for_stale_manifest(tmp_path: Path) -> Non
     write_manifest(
         package,
         {
-            "schema_version": "ts-agent-runtime/2",
+            "schema_version": "ts-agent-runtime/3",
             "python_executable": sys.executable,
             "spec_sha256": "stale",
         },
@@ -444,18 +457,140 @@ def test_runtime_process_binding_owns_python_commands(monkeypatch: pytest.Monkey
     assert "PYTHONHOME" not in os.environ
 
 
-def test_scientific_runtime_probe_exercises_rdkit_capabilities() -> None:
+def test_scientific_runtime_probe_exercises_required_capabilities(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime_probe_module,
+        "_probe_render_capabilities",
+        lambda: {
+            "matplotlib": {"version": "3.9.0", "origin": str(Path(__file__).resolve())},
+            "xyzrender": {"version": "0.2.1", "path": str(Path(sys.executable).resolve())},
+        },
+    )
     result = probe_runtime_capabilities(require_distribution=False)
 
-    assert result["schema_version"] == "ts-runtime-probe/2"
+    assert result["schema_version"] == "ts-runtime-probe/3"
     assert result["ok"] is True
     assert result["capabilities"] == {
         "rdkit_smiles_parse": True,
         "rdkit_etkdg_embed": True,
         "rdkit_uff_optimize": True,
+        "matplotlib_render": True,
+        "xyzrender_cli": True,
     }
     assert Path(result["modules"]["numpy"]["origin"]).is_file()
     assert Path(result["modules"]["rdkit"]["origin"]).is_file()
+
+
+def test_render_probe_executes_the_managed_xyzrender(tmp_path: Path, monkeypatch) -> None:
+    base = tmp_path / "base"
+    renderer = base / "bin/xyzrender"
+    renderer.parent.mkdir(parents=True)
+    renderer.write_text("#!/bin/sh\n[ \"$1\" = \"--help\" ]\n", encoding="utf-8")
+    renderer.chmod(0o755)
+    monkeypatch.setattr(runtime_probe_module.sys, "base_prefix", str(base))
+    monkeypatch.setattr(runtime_probe_module.importlib.metadata, "version", lambda name: "0.3.8")
+
+    result = runtime_probe_module._probe_render_capabilities()
+
+    assert result["xyzrender"] == {"version": "0.3.8", "path": str(renderer)}
+    assert Path(result["matplotlib"]["origin"]).is_file()
+
+
+def test_render_probe_rejects_an_ambient_xyzrender(tmp_path: Path, monkeypatch) -> None:
+    base = tmp_path / "base"
+    ambient = tmp_path / "ambient"
+    ambient.mkdir()
+    renderer = ambient / "xyzrender"
+    renderer.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    renderer.chmod(0o755)
+    monkeypatch.setattr(runtime_probe_module.sys, "base_prefix", str(base))
+    monkeypatch.setattr(runtime_probe_module.sys, "prefix", str(base))
+    monkeypatch.setenv("PATH", str(ambient))
+
+    with pytest.raises(RuntimeError, match="managed scientific runtime is missing"):
+        runtime_probe_module._probe_render_capabilities()
+
+
+def test_reused_scientific_base_is_repaired_when_its_probe_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    prefix = tmp_path / "envs/base/spec"
+    python = prefix / "bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    python.chmod(0o755)
+    spec = tmp_path / "environment.yml"
+    spec.write_text("name: test\n", encoding="utf-8")
+    probes = iter(
+        [
+            runtime_install.RuntimeInstallError("xyzrender is missing"),
+            {"ok": True},
+        ]
+    )
+
+    def probe(*_args):
+        result = next(probes)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    calls: list[list[str]] = []
+
+    def run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(runtime_install, "_run_base_probe", probe)
+    monkeypatch.setattr(runtime_install.subprocess, "run", run)
+
+    action = runtime_install._prepare_base(
+        "/opt/conda/bin/conda",
+        prefix,
+        python,
+        spec,
+        tmp_path,
+        "reuse",
+    )
+
+    assert action == "update"
+    assert calls == [
+        [
+            "/opt/conda/bin/conda",
+            "env",
+            "update",
+            "--solver",
+            "libmamba",
+            "-p",
+            str(prefix),
+            "-f",
+            str(spec),
+            "--prune",
+        ]
+    ]
+
+
+def test_damaged_scientific_base_requires_conda_for_repair(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    prefix = tmp_path / "envs/base/spec"
+    python = prefix / "bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    python.chmod(0o755)
+    spec = tmp_path / "environment.yml"
+    spec.write_text("name: test\n", encoding="utf-8")
+    monkeypatch.setattr(
+        runtime_install,
+        "_run_base_probe",
+        lambda *_args: (_ for _ in ()).throw(
+            runtime_install.RuntimeInstallError("xyzrender is missing")
+        ),
+    )
+
+    with pytest.raises(runtime_install.RuntimeInstallError, match="required to repair"):
+        runtime_install._prepare_base(None, prefix, python, spec, tmp_path, "reuse")
 
 
 def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path) -> None:
@@ -555,6 +690,9 @@ def test_install_env_reuses_scientific_base_and_isolates_kernel_overlay(tmp_path
     import numpy
     import rdkit
 
+    if shutil.which("xyzrender") is None:
+        pytest.skip("the current scientific base does not include the required xyzrender executable")
+
     base_prefix = Path(sys.base_prefix).resolve()
     assert Path(numpy.__file__).resolve().is_relative_to(base_prefix)
     assert Path(rdkit.__file__).resolve().is_relative_to(base_prefix)
@@ -602,9 +740,9 @@ def test_install_env_reuses_scientific_base_and_isolates_kernel_overlay(tmp_path
     assert reused["kernel_action"] == "reuse"
     assert kernel_prefix.parent == env_root / "kernels"
     assert Path(created["python_executable"]).is_relative_to(kernel_prefix)
-    assert manifest["schema_version"] == "ts-agent-runtime/2"
+    assert manifest["schema_version"] == "ts-agent-runtime/3"
     assert Path(manifest["runtime_probe"]["distribution"]["root"]).is_relative_to(kernel_prefix)
-    for name in ("numpy", "rdkit"):
+    for name in ("numpy", "rdkit", "matplotlib"):
         assert Path(manifest["runtime_probe"]["modules"][name]["origin"]).is_relative_to(base_prefix)
 
 
@@ -665,7 +803,7 @@ def test_ts_runtime_isolated_run_cannot_modify_workspace_manifest(tmp_path: Path
     manifest = write_manifest(
         ROOT,
         {
-            "schema_version": "ts-agent-runtime/2",
+            "schema_version": "ts-agent-runtime/3",
             "python_executable": sys.executable,
             "env_prefix": str(Path(sys.base_prefix).resolve()),
             "base_python_executable": str(Path(sys._base_executable).resolve()),
@@ -765,7 +903,7 @@ def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
     rdkit_origin = Path(rdkit.__file__).resolve()
     kernel_prefix = Path(sys.prefix).resolve()
     return {
-        "schema_version": "ts-runtime-probe/2",
+        "schema_version": "ts-runtime-probe/3",
         "ok": True,
         "python": {"version": sys.version.split()[0], "executable": str(executable)},
         "distribution": {
@@ -778,11 +916,17 @@ def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
         "modules": {
             "numpy": {"version": numpy.__version__, "origin": str(numpy_origin)},
             "rdkit": {"version": rdkit.__version__, "origin": str(rdkit_origin)},
+            "matplotlib": {"version": "3.9.0", "origin": str(numpy_origin)},
+        },
+        "commands": {
+            "xyzrender": {"version": "0.2.1", "path": str(executable)},
         },
         "capabilities": {
             "rdkit_smiles_parse": True,
             "rdkit_etkdg_embed": True,
             "rdkit_uff_optimize": True,
+            "matplotlib_render": True,
+            "xyzrender_cli": True,
         },
     }
 

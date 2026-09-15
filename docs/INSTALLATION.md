@@ -16,8 +16,9 @@ cd TSPi
 ```
 
 The wizard asks for the installation directory, TSPi and TS Phone revisions,
-optional TS Web and molecular rendering support, the Phone port, Conda location,
-and systemd services. Before asking those questions, it checks the local Python,
+optional TS Web and TS Phone components, their HTTP ports, Conda location, and
+systemd services. Agent, the scientific runtime, and molecular rendering are one
+required Core. Before asking those questions, it checks the local Python,
 Git, Node.js, npm, and Conda/Mamba toolchain. Required failures stop before the
 installation directory is changed; optional tools are reported so the selected
 component or runtime can validate them later. Selecting TS Phone fetches its GitHub source, installs npm
@@ -30,7 +31,9 @@ The installation plan labels the operation as a fresh install, an update of a
 validated active release, or restoration into an installation root whose
 application was previously removed. A directory containing TSPi-like files but
 no trusted package state or installation marker is rejected instead of being
-silently treated as an existing installation. Core package build details remain
+silently treated as an existing installation. Before confirmation, separate Core,
+TS Web, and TS Phone sections show launchers, listen URLs, state/configuration
+paths, credential-file actions, and exact service actions. Core package build details remain
 quiet during a successful run. On failure, the wizard preserves a private
 diagnostic file at `.pi/logs/install-failure-*.log` and prints its absolute path.
 
@@ -52,7 +55,7 @@ The non-interactive equivalent is:
   --service-scope user --enable-services --start-services
 ```
 
-`--with-phone` installs the Phone service; `--without-phone` skips this step.
+`--with-phone` installs Phone; `--without-phone` skips it.
 Interactive setup offers Phone by default. Non-interactive setup installs it
 when `--with-phone` is supplied. `--phone-repo` selects its GitHub repository,
 `--phone-ref` defaults to `main`, and `--phone-port` sets the port for a new
@@ -62,9 +65,20 @@ existing `server.env`, credentials, and conversations; it never rotates a valid
 credential implicitly. A failed Phone build leaves the selected Phone release
 unchanged. Previous builds remain available under `.pi/ts-phone/releases/`.
 
-The default service scope is the current user's systemd manager. Select the
-system scope only when running as root. TSPi itself remains an interactive
-launcher; the wizard creates services for TS Phone and optional TS Web.
+Interactive setup offers Web by default; `--without-web` omits it and
+`--web-port` changes its loopback HTTP port. The default service scope is the
+current user's systemd manager. Select the system scope only when running as
+root. When a scope is selected, the wizard configures every selected service
+component, so Web and Phone cannot silently diverge from the confirmed service
+plan. TSPi itself remains an interactive launcher.
+
+The completion summary reports each component independently, including its
+launcher, URL, effective systemd enabled/active state, configuration paths, and
+whether each credential was created or preserved. Raw credentials are never
+written to terminal output, JSON, command lines, units, or diagnostic logs. The
+summary prints an explicit `cat -- <token-file>` command for credentials that a
+user must enter while pairing a Web or Phone client. The internal Phone Bridge
+secret is never presented as a user credential.
 
 ## Uninstall
 
@@ -114,11 +128,12 @@ recovery uninstaller and ownership marker.
 Configure a working Pi model and authentication before starting TSPi. TSPi
 uses Pi's model registry and credentials from its configured agent directory.
 
-Optional dependencies are:
+The managed Core runtime installs RDKit, NumPy, Matplotlib, and `xyzrender` and
+rejects activation unless its chemistry and rendering probes pass. Optional
+external dependencies are:
 
 - a configured OpenSSH host and Torque installation for remote calculation;
 - Gaussian, xTB, or other software profiles on the remote execution system;
-- `xyzrender`, installed by `--with-render`, for visualization;
 - a configured ClawEmail installation for email notifications;
 - an Android device and the TS Phone app for mobile access;
 - Android SDK build-tools with `apksigner` and `aapt` when building or installing
@@ -268,7 +283,7 @@ tree digest are recorded before activation:
 ```bash
 python3 scripts/install_from_github.py \
   --repo git@github.com:iawnix/TSPi.git --ref v0.17.0 \
-  --install-root /srv/tspi --with-web --with-render
+  --install-root /srv/tspi
 ```
 
 `--ref` accepts a branch, tag, or full commit SHA. For APK-inclusive Packages,
@@ -285,7 +300,6 @@ python3 scripts/install_package.py \
   --manifest dist/package/tspi-package-release.json \
   --install-root /path/to/TSPi-installation \
   --conda-root /path/to/miniforge3 \
-  --with-render \
   --json
 ```
 
@@ -303,7 +317,7 @@ that same byte sequence, then validates the expanded Agent and each selected
 optional component, including the Phone server, APK, embedded source identity,
 and attestation when Phone is selected, before finalizing read-only permissions.
 Before activation it prepares the target
-release runtime and runs the NumPy/RDKit capability probe. Only a healthy
+release runtime and runs the NumPy/RDKit and molecular-rendering capability probes. Only a healthy
 runtime may publish its manifest and atomically switch the suite `current`.
 On reinstall, every expanded Phone file and its executable class is compared
 with the retained, digest-bound component archive. Activation failure restores
@@ -331,26 +345,25 @@ python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --runtime-home /path/to/TSPi-installation/.agents/runtime/tspi \
   --env-root /path/to/TSPi-installation/.agents/envs/tspi \
   --conda-root /path/to/miniforge3 \
-  --with-render \
   --json
 ```
 
 The runtime has two layers. `base/<spec-hash>` is a shared Conda environment
-containing RDKit, NumPy, SciPy, Pillow, pytest, and optional `xyzrender`.
+containing RDKit, NumPy, SciPy, Pillow, pytest, Matplotlib, and `xyzrender`.
 `kernels/<payload-hash>` is a venv with system site packages enabled and only
 the exact release wheel installed. An unchanged dependency spec therefore
 reuses the heavy scientific base, while each distinct Python payload receives
-its own small overlay. Omit `--with-render` when visualization is not required.
-Use `--dry-run` to inspect both paths. Use `--force` only to refresh the selected
+its own small overlay. Use `--dry-run` to inspect both paths. Use `--force` only to refresh the selected
 base and recreate the exact target overlay; unrelated overlays are retained.
 
 The release already contains `python-dist/ts_agent_kernel-*.whl` plus its
 identity, size, SHA-256, and payload digest in `ts-agent-release/2` metadata.
 Before writing the runtime manifest, the installer revalidates that wheel and
 installs it into the overlay without resolving duplicate pip dependencies. It
-then imports NumPy and RDKit from the base, imports `ts-agent-kernel` from the
-overlay, parses a SMILES, performs fixed-seed ETKDG embedding, and completes a
-UFF optimization. The manifest records the wheel provenance, installed
+then imports NumPy, RDKit, and Matplotlib from the base, imports
+`ts-agent-kernel` from the overlay, parses a SMILES, performs fixed-seed ETKDG
+embedding, completes a UFF optimization, and executes the managed `xyzrender`
+capability probe. The manifest records the wheel provenance, installed
 distribution version and payload digest, source payload digest, module origins,
 capabilities, selected interpreter, and environment-spec digest outside the
 immutable release. A failed install, digest comparison, or scientific probe
@@ -933,7 +946,6 @@ python3 scripts/install_package.py \
   --archive /path/to/previous/tspi-package-<release-id>.tgz \
   --install-root /path/to/TSPi-installation \
   --conda-root /path/to/miniforge3 \
-  --with-render \
   --json
 ```
 
@@ -952,7 +964,7 @@ implement the workspace schemas it opens.
 | --- | --- |
 | no selected TSPi Package release | Install a validated Package archive before startup. |
 | runtime manifest or interpreter unavailable | Reinstall the selected Package, or run its `install_env.py` as an explicit repair. |
-| managed runtime capability probe fails | Do not fall back to system Python. Refresh the shared base or recreate only the target overlay with `--force`, then inspect the NumPy/RDKit probe error. |
+| managed runtime capability probe fails | Do not fall back to system Python. The installer repairs an unhealthy shared base with Conda when available; use `--force` to recreate a damaged target overlay, then inspect the chemistry/render probe error. |
 | Python distribution payload mismatch | Reinstall the Package or recreate its payload-addressed overlay; do not edit managed site-packages or immutable release files in place. |
 | `another Root Agent already owns workspace` | Attach with the default terminal instead of `--standalone`. A native/external owner must exit normally before Host can restore its session; never delete a live owner's lock. |
 | partial or invalid workspace | Preserve the directory, inspect validation findings, and recover through an explicitly designed repair; startup will not guess. |

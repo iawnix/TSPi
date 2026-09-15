@@ -30,6 +30,7 @@ def test_service_credentials_are_distinct_private_and_persistent(tmp_path: Path)
 
     assert set(first) == {"phone_http", "phone_bridge", "web_http"}
     assert {record["status"] for record in first.values()} == {"created"}
+    assert {record["mode"] for record in first.values()} == {"0600"}
     assert len(set(values.values())) == 3
     assert all(TOKEN_PATTERN.fullmatch(value) for value in values.values())
     assert all(Path(record["path"]).stat().st_mode & 0o777 == 0o600 for record in first.values())

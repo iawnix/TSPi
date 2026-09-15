@@ -127,8 +127,8 @@ extension prompt，因此其原生与 Skill contributor 是完整的。
 | `kernels/<payload-hash>` | 使用基础环境并安装所选内核 wheel 的 venv |
 
 依赖变化时准备新的基础环境，内核变化时准备新的叠加环境。运行环境探测检查模块和
-数据文件哈希、基础环境中的 NumPy/RDKit 来源，以及叠加环境中的内核分发包。
-`ts-agent-runtime/2` 清单绑定这些来源和能力。
+数据文件哈希、基础环境中的 NumPy/RDKit/Matplotlib 来源与 `xyzrender`，以及叠加环境中的
+内核分发包。`ts-agent-runtime/3` 清单绑定这些来源和能力。
 
 激活按准备、探测、发布的顺序进行。准备失败时保留当前版本；发布失败时恢复原有清单、
 指针、安装状态和稳定链接。已准备的版本保留供重试，服务重启由安装向导或运维人员执行。

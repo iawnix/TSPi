@@ -125,9 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", required=True, help="GitHub repository URL")
     parser.add_argument("--ref", required=True, help="Branch, tag, or full commit SHA")
     parser.add_argument("--install-root", required=True)
-    parser.add_argument("--with-web", action="store_true", help="Include the ts-web component (default)")
     parser.add_argument("--without-web", action="store_true", help="Omit the ts-web component")
-    parser.add_argument("--with-render", action="store_true")
     parser.add_argument("--phone-repo")
     parser.add_argument("--phone-ref")
     parser.add_argument("--phone-server-root", type=Path, help="Prepared Phone server to check before installing TSPi.")
@@ -139,8 +137,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         validate_ref(args.ref)
         validate_repo(args.repo)
-        if args.with_web and args.without_web:
-            raise ValueError("--with-web and --without-web are mutually exclusive")
         if bool(args.phone_repo) != bool(args.phone_ref):
             raise ValueError("--phone-repo and --phone-ref must be supplied together")
         if args.phone_repo:
@@ -173,8 +169,6 @@ def main(argv: list[str] | None = None) -> int:
             emit_progress(args.progress, "Building the validated TSPi package")
             built = json.loads(run(build, cwd=checkout))
             install = [sys.executable, "scripts/install_package.py", "--manifest", built["manifest"], "--archive", built["archive"], "--install-root", args.install_root, "--json"]
-            if args.with_render:
-                install.append("--with-render")
             if args.conda:
                 install.extend(["--conda", args.conda])
             if args.conda_root:
@@ -186,7 +180,18 @@ def main(argv: list[str] | None = None) -> int:
             provenance = Path(args.install_root).expanduser().resolve() / ".pi" / "packages" / "tspi" / "source-provenance.json"
             provenance.parent.mkdir(parents=True, exist_ok=True)
             provenance.write_text(json.dumps({"schema_version": "tspi-source-provenance/1", "repo": args.repo, "ref": args.ref, "commit": commit, "tree_digest": digest, "phone_repo": args.phone_repo, "phone_ref": args.phone_ref, "phone_commit": phone_commit, "installed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            result = {"commit": commit, "tree_digest": digest, "phone_commit": phone_commit, "manifest": built["manifest"], "release_id": installed.get("release_id"), "package_root": installed.get("package_root"), "provenance": str(provenance), "uninstaller": str(uninstaller)}
+            result = {
+                "commit": commit,
+                "tree_digest": digest,
+                "phone_commit": phone_commit,
+                "manifest": built["manifest"],
+                "release_id": installed.get("release_id"),
+                "package_root": installed.get("package_root"),
+                "launchers": installed.get("launchers"),
+                "runtime": installed.get("runtime"),
+                "provenance": str(provenance),
+                "uninstaller": str(uninstaller),
+            }
             emit_progress(args.progress, "Installation artifacts verified")
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))

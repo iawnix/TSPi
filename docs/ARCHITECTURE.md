@@ -152,8 +152,9 @@ The runtime store has two layers:
 
 A dependency change prepares a new base; a kernel change prepares a new
 overlay. The runtime probe verifies installed module and data hashes,
-NumPy/RDKit origins in the base, and the kernel distribution in the overlay.
-The `ts-agent-runtime/2` manifest binds these origins and capabilities.
+NumPy/RDKit/Matplotlib origins and `xyzrender` in the base, and the kernel
+distribution in the overlay. The `ts-agent-runtime/3` manifest binds these
+origins and capabilities.
 
 Activation follows prepare, probe, publish. Preparation failures keep the
 selected release. Publication failures restore the previous manifest, pointer,

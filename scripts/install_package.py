@@ -147,7 +147,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--install-root", required=True, help="TSPi installation root.")
     parser.add_argument("--conda", help="Path to conda or mamba executable.")
     parser.add_argument("--conda-root", help="Root directory of an existing Conda or Mamba installation.")
-    parser.add_argument("--with-render", action="store_true", help="Install xyzrender into the shared scientific base.")
     parser.add_argument(
         "--force-runtime",
         action="store_true",
@@ -168,7 +167,6 @@ def main(argv: list[str] | None = None) -> int:
             Path(args.install_root).expanduser(),
             conda=args.conda,
             conda_root=args.conda_root,
-            with_render=args.with_render,
             force_runtime=args.force_runtime,
             allow_dirty=args.allow_dirty,
         )
@@ -201,7 +199,6 @@ def install_package(
     *,
     conda: str | None = None,
     conda_root: str | Path | None = None,
-    with_render: bool = False,
     force_runtime: bool = False,
     allow_dirty: bool = False,
     runtime_preparer: Callable[..., PreparedRuntime] | None = None,
@@ -243,7 +240,6 @@ def install_package(
             install_root,
             conda=conda,
             conda_root=conda_root,
-            with_render=with_render,
             force_runtime=force_runtime,
             runtime_preparer=runtime_preparer,
             runtime_publisher=runtime_publisher,
@@ -257,7 +253,6 @@ def _install_captured_package(
     *,
     conda: str | None,
     conda_root: str | Path | None,
-    with_render: bool,
     force_runtime: bool,
     runtime_preparer: Callable[..., PreparedRuntime] | None,
     runtime_publisher: Callable[[PreparedRuntime], Path] | None,
@@ -309,7 +304,6 @@ def _install_captured_package(
         conda=conda,
         conda_root=conda_root,
         force=force_runtime,
-        with_render=with_render,
     )
     archived_notification_state = archive_retired_notification_state(install_root)
     ensure_private_directory(install_root / ".pi" / "session-host")

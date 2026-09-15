@@ -487,12 +487,17 @@ The install mode runs `npm ci` and updates the `ts-agent-skill` environment
 from `environment.yml`. It reports the actual Node, TypeScript, Python and
 Conda paths used by the checkout.
 
-For the pinned Linux package set, create an isolated environment from the
-explicit lock file:
+For the pinned Linux Conda package layer, create an isolated environment from
+the explicit lock file, then install the pip-only renderer declared by
+`environment.yml`:
 
 ```bash
 conda create --name ts-agent-skill-lock --file environment.lock.txt
+conda run --name ts-agent-skill-lock python -m pip install "xyzrender>=0.2.1"
 ```
+
+`environment.lock.txt` is an `@EXPLICIT` Conda artifact and cannot encode pip
+packages. It must not be treated as a complete lock for the renderer layer.
 
 From the authored checkout:
 
@@ -501,7 +506,6 @@ npm ci
 npm run test:fast -- tests/test_readme_contract.py tests/test_report_template_contract.py
 python3 scripts/test_source.py \
   --conda-root /path/to/miniforge3 \
-  --with-render \
   -- -q
 ```
 
@@ -518,7 +522,7 @@ Release validation boundary.
 Use the standalone installer only to prepare a persistent development runtime:
 
 ```bash
-python3 scripts/install_env.py --package-root . --conda-root /path/to/miniforge3 --with-render --json
+python3 scripts/install_env.py --package-root . --conda-root /path/to/miniforge3 --json
 python3 scripts/build_release.py --allow-dirty --output-dir /tmp/ts-agent-release --json
 ```
 
@@ -562,7 +566,7 @@ git diff --check
 ### Python kernel or deterministic service
 
 ```bash
-python3 scripts/test_source.py --conda-root /path/to/miniforge3 --with-render -- -q
+python3 scripts/test_source.py --conda-root /path/to/miniforge3 -- -q
 ```
 
 ### Pi extension or Review runtime
@@ -607,7 +611,7 @@ apps/mobile/tool/build_release_android.sh
 python3 deploy/build-component-release.py --output-dir dist/component --json
 
 # TSPi repository
-python3 scripts/test_source.py --conda-root /path/to/miniforge3 --with-render -- -q
+python3 scripts/test_source.py --conda-root /path/to/miniforge3 -- -q
 npm run typecheck
 export TSPI_ANDROID_BUILD_TOOLS=/path/to/android-sdk/build-tools/<version>
 python3 scripts/build_package.py \

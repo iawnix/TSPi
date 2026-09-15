@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -17,14 +18,34 @@ from pathlib import Path
 try:
     from ._credentials import provision_service_credentials
     from ._installation_metadata import read_installation_metadata
-    from ._terminal_ui import Spinner, ask_text as ask, ask_yes_no, failure, field, note, section, success, title
+    from ._terminal_ui import (
+        Spinner,
+        ask_text as ask,
+        ask_yes_no,
+        failure,
+        field,
+        note,
+        section,
+        success,
+        title,
+    )
     from .install_from_github import validate_ref, validate_repo
     from .install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
     from .install_release import validate_install_root
 except ImportError:
     from _credentials import provision_service_credentials
     from _installation_metadata import read_installation_metadata
-    from _terminal_ui import Spinner, ask_text as ask, ask_yes_no, failure, field, note, section, success, title
+    from _terminal_ui import (
+        Spinner,
+        ask_text as ask,
+        ask_yes_no,
+        failure,
+        field,
+        note,
+        section,
+        success,
+        title,
+    )
     from install_from_github import validate_ref, validate_repo
     from install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
     from install_release import validate_install_root
@@ -145,20 +166,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--tspi-repo", default=DEFAULT_REPO)
     parser.add_argument("--tspi-ref", default=os.environ.get("TSPI_INSTALL_REF", "main"))
     phone = parser.add_mutually_exclusive_group()
-    phone.add_argument("--with-phone", dest="with_phone", action="store_true", help="Fetch and build TS Phone from GitHub.")
-    phone.add_argument("--without-phone", dest="with_phone", action="store_false", help="Skip TS Phone installation.")
-    parser.set_defaults(with_phone=None)
+    phone.add_argument(
+        "--with-phone",
+        dest="with_phone",
+        action="store_true",
+        help="Fetch and build TS Phone from GitHub.",
+    )
+    phone.add_argument(
+        "--without-phone",
+        dest="with_phone",
+        action="store_false",
+        help="Skip TS Phone installation.",
+    )
+    web = parser.add_mutually_exclusive_group()
+    web.add_argument("--with-web", dest="with_web", action="store_true", help="Install TS Web.")
+    web.add_argument("--without-web", dest="with_web", action="store_false", help="Skip TS Web installation.")
+    parser.set_defaults(with_phone=None, with_web=None)
     parser.add_argument("--phone-repo", default=DEFAULT_PHONE_REPO)
     parser.add_argument("--phone-ref", default="main", help="TS Phone branch, tag, or full commit SHA.")
-    parser.add_argument("--phone-port", type=int, default=22113, help="Port for a new Phone configuration.")
-    parser.add_argument("--with-web", action="store_true")
-    parser.add_argument("--without-web", action="store_true")
-    parser.add_argument("--with-render", action="store_true")
+    parser.add_argument("--phone-port", type=int, help="TS Phone loopback HTTP port.")
+    parser.add_argument("--web-port", type=int, help="TS Web loopback HTTP port.")
     parser.add_argument("--conda-root")
     parser.add_argument("--service-scope", choices=("none", "user", "system"))
     parser.add_argument("--enable-services", action="store_true")
     parser.add_argument("--start-services", action="store_true")
-    parser.add_argument("--web-service", action="store_true")
     parser.add_argument("--non-interactive", action="store_true")
     parser.add_argument("--yes", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -174,78 +205,159 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
     args.tspi_ref = ask("TSPi Git branch, tag, or commit", args.tspi_ref)
     field("Repository", args.tspi_repo)
 
-    section("Components")
-    if not args.with_web and not args.without_web:
+    section("Core")
+    field("Agent", "required", tone="success")
+    field("Scientific runtime", "required", tone="success")
+    field("Molecular rendering", "required", tone="success")
+
+    section("Optional components")
+    if args.with_web is None:
         args.with_web = ask_yes_no("Install TS Web", True)
-        args.without_web = not args.with_web
+    if args.with_web:
+        args.web_port = int(ask("TS Web port", str(args.web_port or 8766)))
     if args.with_phone is None:
         args.with_phone = ask_yes_no("Install TS Phone for phone access and shared terminal sessions", True)
     if args.with_phone:
         args.phone_ref = ask("TS Phone Git branch, tag, or commit", args.phone_ref)
-        if not (Path(args.install_root) / ".pi/ts-phone/server.env").exists():
-            args.phone_port = int(ask("TS Phone port", str(args.phone_port)))
-    if not args.with_render:
-        args.with_render = ask_yes_no("Install molecular rendering support", False)
-
+        existing_phone_port = read_phone_port(Path(args.install_root))
+        if args.phone_port is None and existing_phone_port is not None:
+            args.phone_port = existing_phone_port
+        if args.phone_port is None:
+            args.phone_port = int(ask("TS Phone port", "22113"))
     section("Runtime and services")
     args.conda_root = args.conda_root or ask("Conda root (blank for auto-detect)", detect_conda_root())
-    args.service_scope = args.service_scope or ("user" if ask_yes_no("Configure systemd user services", True) else "none")
+    if args.with_web or args.with_phone:
+        if args.service_scope is None:
+            configure_systemd = ask_yes_no(
+                "Configure selected components as systemd services",
+                True,
+            )
+            args.service_scope = "user" if configure_systemd else "none"
+    else:
+        args.service_scope = "none"
     if args.service_scope != "none":
         args.enable_services = ask_yes_no("Enable services", True)
         args.start_services = ask_yes_no("Start services now", True)
-        if args.with_web:
-            args.web_service = ask_yes_no("Run TS Web as a service", False)
     return args
 
 
 def show_install_plan(args: argparse.Namespace, installation: dict[str, str | None]) -> None:
-    components = ["Agent"]
-    if args.with_web and not args.without_web:
-        components.append("Web")
-    if args.with_phone:
-        components.append("Phone")
-    if args.with_render:
-        components.append("Molecular rendering")
-    service_details = args.service_scope
-    if args.service_scope != "none":
-        actions = []
-        if args.enable_services:
-            actions.append("enable")
-        if args.start_services:
-            actions.append("start")
-        service_details += f" ({', '.join(actions)})" if actions else " (configure only)"
-
     section("Installation plan")
-    operation = {"install": "Fresh install", "update": "Update existing installation", "restore": "Restore removed application"}[
-        str(installation["operation"])
-    ]
+    operation = {
+        "install": "Fresh install",
+        "update": "Update existing installation",
+        "restore": "Restore removed application",
+    }[str(installation["operation"])]
     field("Operation", operation, tone="accent")
     if installation["release_id"]:
         field("Current release", installation["release_id"])
     field("Installation root", args.install_root, tone="accent")
     field("TSPi revision", args.tspi_ref)
-    field("Components", ", ".join(components), tone="success")
+    field("Workspace root", Path(args.install_root) / "workspaces")
     field("Conda root", args.conda_root or "auto-detect")
-    field("Services", service_details, tone="success" if args.service_scope != "none" else "muted")
+
+    root = Path(args.install_root)
+    section("Core")
+    field("Agent", f"install - {root / 'TSPi'}", tone="success")
+    field("Scientific runtime", "install and verify", tone="success")
+    field("Molecular rendering", "install and verify (xyzrender, Matplotlib)", tone="success")
+
+    section("TS Web")
+    field(
+        "Install",
+        "yes" if args.with_web else "no",
+        tone="success" if args.with_web else "muted",
+    )
+    if args.with_web:
+        field("Launcher", root / "TSWeb")
+        field("Listen", f"http://127.0.0.1:{args.web_port}")
+        field("Workspace root", root / "workspaces")
+        field("State directory", root / ".pi/ts-web-state")
+        field("HTTP token", _planned_credential(root / ".pi/ts-web/auth.token"))
+        field(
+            "Service",
+            _service_plan(args),
+            tone="success" if args.service_scope != "none" else "muted",
+        )
+
+    section("TS Phone")
+    field(
+        "Install",
+        "yes" if args.with_phone else "no",
+        tone="success" if args.with_phone else "muted",
+    )
+    if args.with_phone:
+        field("Revision", args.phone_ref)
+        field("Repository", args.phone_repo)
+        field("Server launcher", root / "TSPhoneServer")
+        field("Control launcher", root / "TSPhoneCtl")
+        field("Listen", f"http://127.0.0.1:{args.phone_port}")
+        field("Configuration", root / ".pi/ts-phone/server.env")
+        field("State directory", root / ".pi/ts-phone-state")
+        field("HTTP token", _planned_credential(root / ".pi/ts-phone-state/auth.token"))
+        field("Bridge secret", _planned_credential(root / ".pi/ts-phone-state/bridge.secret"))
+        field(
+            "Service",
+            _service_plan(args),
+            tone="success" if args.service_scope != "none" else "muted",
+        )
+
+
+def _planned_credential(path: Path) -> str:
+    action = "validate and preserve" if path.exists() or path.is_symlink() else "create"
+    return f"{path} ({action}, mode 0600)"
+
+
+def _service_plan(args: argparse.Namespace) -> str:
+    if args.service_scope == "none":
+        return "not configured"
+    actions = ["configure"]
+    if args.enable_services:
+        actions.append("enable")
+    if args.start_services:
+        actions.append("start")
+    return f"{args.service_scope} ({', '.join(actions)})"
 
 
 def validate_options(args: argparse.Namespace) -> None:
     validate_repo(args.tspi_repo)
     validate_ref(args.tspi_ref)
+    if not args.install_root:
+        raise ValueError("--install-root is required in non-interactive mode")
+    args.install_root = str(validate_install_root(Path(args.install_root)))
+    if args.with_web is None:
+        args.with_web = True
+    if args.with_phone is None:
+        args.with_phone = False
+    if not args.with_phone and args.phone_port is not None:
+        raise ValueError("--phone-port requires --with-phone")
     if args.with_phone:
+        existing_phone_port = read_phone_port(Path(args.install_root))
+        if args.phone_port is None:
+            args.phone_port = existing_phone_port or 22113
+        elif existing_phone_port is not None and args.phone_port != existing_phone_port:
+            raise ValueError(
+                f"--phone-port does not match the existing Phone configuration ({existing_phone_port}); "
+                f"edit {Path(args.install_root) / '.pi/ts-phone/server.env'} before updating"
+            )
         validate_repo(args.phone_repo)
         validate_ref(args.phone_ref)
         if not 1 <= args.phone_port <= 65535:
             raise ValueError("--phone-port must be between 1 and 65535")
-    if args.with_web and args.without_web:
-        raise ValueError("--with-web and --without-web are mutually exclusive")
-    args.with_web = not args.without_web
-    if not args.install_root:
-        raise ValueError("--install-root is required in non-interactive mode")
-    args.install_root = str(validate_install_root(Path(args.install_root)))
-    if args.web_service and args.without_web:
-        raise ValueError("--web-service requires TS Web")
+    if not args.with_web and args.web_port is not None:
+        raise ValueError("--web-port requires --with-web")
+    if args.with_web:
+        if args.web_port is None:
+            args.web_port = 8766
+        if not 1 <= args.web_port <= 65535:
+            raise ValueError("--web-port must be between 1 and 65535")
+    if args.with_web and args.with_phone and args.web_port == args.phone_port:
+        raise ValueError("TS Web and TS Phone must use different ports")
     args.service_scope = args.service_scope or "none"
+    if args.service_scope != "none" and not (args.with_web or args.with_phone):
+        raise ValueError("service configuration requires TS Web or TS Phone")
+    if args.service_scope == "none" and (args.enable_services or args.start_services):
+        raise ValueError("--enable-services and --start-services require a service scope")
     if args.start_services:
         args.enable_services = True
     if args.service_scope == "system" and os.geteuid() != 0:
@@ -352,11 +464,20 @@ def run_logged_install(
 
 
 def run_install(args: argparse.Namespace, phone_release: Path | None = None) -> dict[str, object]:
-    command = [sys.executable, str(ROOT / "scripts/install_from_github.py"), "--repo", args.tspi_repo,
-               "--ref", args.tspi_ref, "--install-root", args.install_root, "--progress", "--json"]
-    command.append("--without-web" if args.without_web else "--with-web")
-    if args.with_render:
-        command.append("--with-render")
+    command = [
+        sys.executable,
+        str(ROOT / "scripts/install_from_github.py"),
+        "--repo",
+        args.tspi_repo,
+        "--ref",
+        args.tspi_ref,
+        "--install-root",
+        args.install_root,
+        "--progress",
+        "--json",
+    ]
+    if not args.with_web:
+        command.append("--without-web")
     if args.conda_root:
         command.extend(["--conda-root", args.conda_root])
     if phone_release is not None:
@@ -384,6 +505,26 @@ def write_private(path: Path, content: str) -> None:
             os.unlink(temporary)
 
 
+def read_phone_port(root: Path) -> int | None:
+    config = root / ".pi/ts-phone/server.env"
+    if not config.exists() and not config.is_symlink():
+        return None
+    if config.is_symlink() or not config.is_file():
+        raise ValueError(f"Phone configuration must be a regular file: {config}")
+    for line in config.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("TS_PHONE_PORT="):
+            continue
+        raw = line.split("=", 1)[1]
+        try:
+            value = int(json.loads(raw))
+        except (TypeError, ValueError, json.JSONDecodeError) as error:
+            raise ValueError(f"Phone configuration contains an invalid port: {config}") from error
+        if not 1 <= value <= 65535:
+            raise ValueError(f"Phone configuration contains an invalid port: {config}")
+        return value
+    raise ValueError(f"Phone configuration does not define TS_PHONE_PORT: {config}")
+
+
 def configure_phone(args: argparse.Namespace) -> Path | None:
     if not args.with_phone:
         return None
@@ -408,7 +549,11 @@ def configure_phone(args: argparse.Namespace) -> Path | None:
         "TS_PHONE_EVENT_JOURNAL_MAX_BYTES": "33554432",
     }
     config = root / ".pi/ts-phone/server.env"
-    write_private(config, "".join(f"{key}={json.dumps(str(value), ensure_ascii=False)}\n" for key, value in values.items()))
+    content = "".join(
+        f"{key}={json.dumps(str(value), ensure_ascii=False)}\n"
+        for key, value in values.items()
+    )
+    write_private(config, content)
     return config
 
 
@@ -427,8 +572,12 @@ def prepare_runtime_dirs(root: Path) -> None:
 def phone_unit(args: argparse.Namespace) -> str:
     root = Path(args.install_root)
     renderer = (root / ".pi/packages/tspi/current/agent/apps/host/service.mjs").resolve()
-    result = subprocess.run([shutil.which("node") or "node", str(renderer), "--install-root", str(root)],
-                            text=True, capture_output=True, check=True)
+    result = subprocess.run(
+        [shutil.which("node") or "node", str(renderer), "--install-root", str(root)],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
     if "[Service]\n" not in result.stdout or "ExecStart=" not in result.stdout:
         raise RuntimeError("Phone service renderer did not produce a service unit")
     search_path = os.environ.get("PATH", os.defpath)
@@ -440,14 +589,34 @@ def phone_unit(args: argparse.Namespace) -> str:
 
 def web_unit(args: argparse.Namespace) -> str:
     root = Path(args.install_root)
+    working_directory = _systemd_quote(root)
+    command = " ".join(
+        _systemd_quote(value)
+        for value in (
+            root / "TSWeb",
+            "--provider",
+            root / ".pi/packages/tspi/current/agent/scripts/ts_web_provider.py",
+            "serve",
+            "--state-dir",
+            root / ".pi/ts-web-state",
+            "--auth-token-file",
+            root / ".pi/ts-web/auth.token",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(args.web_port),
+            "--workspace-root",
+            root / "workspaces",
+        )
+    )
     return f"""[Unit]
 Description=TSPi TS Web read-only server
 After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory={root}
-ExecStart={root / 'TSWeb'} --provider {root / '.pi/packages/tspi/current/agent/scripts/ts_web_provider.py'} serve --state-dir {root / '.pi/ts-web-state'} --auth-token-file {root / '.pi/ts-web/auth.token'} --host 127.0.0.1 --port 8766 --workspace-root {root / 'workspaces'}
+WorkingDirectory={working_directory}
+ExecStart={command}
 Restart=on-failure
 RestartSec=3s
 UMask=0077
@@ -456,26 +625,34 @@ PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths={root / '.pi/ts-web-state'}
-ReadWritePaths={root / 'workspaces'}
+ReadWritePaths={_systemd_quote(root / '.pi/ts-web-state')}
+ReadWritePaths={_systemd_quote(root / 'workspaces')}
 
 [Install]
 WantedBy=default.target
 """
 
 
-def configure_services(args: argparse.Namespace, phone_config: Path | None) -> list[str]:
+def _systemd_quote(value: object) -> str:
+    return json.dumps(str(value).replace("%", "%%"), ensure_ascii=False)
+
+
+def configure_services(args: argparse.Namespace, phone_config: Path | None) -> list[dict[str, str]]:
     if args.service_scope == "none":
         return []
     units: list[tuple[str, str]] = []
     if phone_config:
         units.append(("ts-phone-tspi.service", phone_unit(args)))
-    if args.web_service:
+    if args.with_web:
         units.append(("ts-web-tspi.service", web_unit(args)))
     if not units:
         return []
     prepare_runtime_dirs(Path(args.install_root))
-    unit_dir = Path("/etc/systemd/system") if args.service_scope == "system" else Path.home() / ".config/systemd/user"
+    unit_dir = (
+        Path("/etc/systemd/system")
+        if args.service_scope == "system"
+        else Path.home() / ".config/systemd/user"
+    )
     unit_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
     names: list[str] = []
     scope = [] if args.service_scope == "system" else ["--user"]
@@ -488,21 +665,201 @@ def configure_services(args: argparse.Namespace, phone_config: Path | None) -> l
             root = str(Path(args.install_root)).replace("%", "%%")
             bindings = dict(line.split("=", 1) for line in existing.splitlines() if "=" in line)
             same_root = bindings.get("WorkingDirectory", "").strip('"') == root
-            same_config = bindings.get("EnvironmentFile", "").strip('"') == f"{root}/.pi/ts-phone/server.env"
-            if not same_root and not same_config:
+            if not same_root:
                 raise ValueError(f"service {name} belongs to another installation: {unit}")
     for name, content in units:
         (unit_dir / name).write_text(content, encoding="utf-8")
         (unit_dir / name).chmod(0o644)
         names.append(name)
-    subprocess.run(["systemctl", *scope, "daemon-reload"], check=True)
+    _run_systemctl(scope, "daemon-reload")
     if args.enable_services:
         for name in names:
-            subprocess.run(["systemctl", *scope, "enable", name], check=True)
+            _run_systemctl(scope, "enable", name)
     if args.start_services:
         for name in names:
-            subprocess.run(["systemctl", *scope, "restart", name], check=True)
-    return names
+            _run_systemctl(scope, "restart", name)
+    return [_service_status(scope, args.service_scope, name) for name in names]
+
+
+def _run_systemctl(scope: list[str], *arguments: str) -> None:
+    completed = subprocess.run(
+        ["systemctl", *scope, *arguments],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()
+        command = " ".join(("systemctl", *scope, *arguments))
+        raise RuntimeError(f"{command} failed: {detail or f'exit status {completed.returncode}'}")
+
+
+def _service_status(scope: list[str], scope_name: str, name: str) -> dict[str, str]:
+    values: dict[str, str] = {"name": name, "scope": scope_name}
+    for key, action in (("enabled", "is-enabled"), ("active", "is-active")):
+        completed = subprocess.run(
+            ["systemctl", *scope, action, name],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        values[key] = (completed.stdout or completed.stderr).strip() or "unknown"
+    return values
+
+
+def build_component_summary(
+    args: argparse.Namespace,
+    installed: dict[str, object],
+    phone: dict[str, object] | None,
+    services: list[dict[str, str]],
+    credentials: dict[str, dict[str, str]],
+) -> dict[str, object]:
+    root = Path(args.install_root)
+    runtime = (
+        installed.get("runtime")
+        if isinstance(installed.get("runtime"), dict)
+        else {}
+    )
+    probe = runtime.get("runtime_probe") if isinstance(runtime.get("runtime_probe"), dict) else {}
+    modules = probe.get("modules") if isinstance(probe.get("modules"), dict) else {}
+    commands = probe.get("commands") if isinstance(probe.get("commands"), dict) else {}
+    service_by_name = {item["name"]: item for item in services}
+    return {
+        "agent": {
+            "status": "ready",
+            "launcher": str(root / "TSPi"),
+        },
+        "runtime": {
+            "status": "ready",
+            "environment": runtime.get("env_prefix"),
+            "python": runtime.get("python_executable"),
+            "manifest": runtime.get("manifest_path"),
+        },
+        "render": {
+            "status": "ready",
+            "xyzrender": commands.get("xyzrender"),
+            "matplotlib": modules.get("matplotlib"),
+        },
+        "web": (
+            {
+                "status": "ready",
+                "launcher": str(root / "TSWeb"),
+                "url": f"http://127.0.0.1:{args.web_port}",
+                "state_directory": str(root / ".pi/ts-web-state"),
+                "workspace_root": str(root / "workspaces"),
+                "credential": credentials.get("web_http"),
+                "service": service_by_name.get("ts-web-tspi.service"),
+            }
+            if args.with_web
+            else None
+        ),
+        "phone": (
+            {
+                "status": "ready",
+                "launcher": str(root / "TSPhoneServer"),
+                "control_launcher": str(root / "TSPhoneCtl"),
+                "url": f"http://127.0.0.1:{args.phone_port}",
+                "configuration": str(root / ".pi/ts-phone/server.env"),
+                "state_directory": str(root / ".pi/ts-phone-state"),
+                "credential": credentials.get("phone_http"),
+                "bridge_secret": credentials.get("phone_bridge"),
+                "service": service_by_name.get("ts-phone-tspi.service"),
+                **(phone or {}),
+            }
+            if args.with_phone
+            else None
+        ),
+    }
+
+
+def show_installed_summary(
+    args: argparse.Namespace,
+    installed: dict[str, object],
+    components: dict[str, object],
+    credentials: dict[str, dict[str, str]],
+) -> None:
+    root = Path(args.install_root)
+    section("Installation")
+    field("Installation root", root, tone="accent")
+    field("Release", installed.get("release_id") or "package")
+    field("TSPi commit", installed.get("commit") or "unknown")
+    field("Workspace root", root / "workspaces")
+    field("Uninstaller", installed.get("uninstaller") or "not installed")
+
+    runtime = components["runtime"]
+    render = components["render"]
+    assert isinstance(runtime, dict) and isinstance(render, dict)
+    section("Core")
+    field("Agent", f"ready - {root / 'TSPi'}", tone="success")
+    field(
+        "Scientific runtime",
+        f"ready - {runtime.get('environment') or 'verified'}",
+        tone="success",
+    )
+    renderer = (
+        render.get("xyzrender")
+        if isinstance(render.get("xyzrender"), dict)
+        else {}
+    )
+    matplotlib = (
+        render.get("matplotlib")
+        if isinstance(render.get("matplotlib"), dict)
+        else {}
+    )
+    render_detail = renderer.get("path") or "xyzrender verified"
+    if matplotlib.get("version"):
+        render_detail = f"{render_detail}; Matplotlib {matplotlib['version']}"
+    field("Molecular rendering", f"ready - {render_detail}", tone="success")
+
+    section("TS Web")
+    web = components["web"]
+    if not isinstance(web, dict):
+        field("Status", "not installed", tone="muted")
+    else:
+        field("Status", "installed", tone="success")
+        field("Launcher", web["launcher"])
+        field("URL", web["url"])
+        field("State directory", web["state_directory"])
+        _show_service(web.get("service"))
+        _show_credential("HTTP token", credentials["web_http"], reveal=True)
+
+    section("TS Phone")
+    phone = components["phone"]
+    if not isinstance(phone, dict):
+        field("Status", "not installed", tone="muted")
+    else:
+        field("Status", "installed", tone="success")
+        field("Revision", phone.get("commit") or "unknown")
+        field("Server launcher", phone["launcher"])
+        field("Control launcher", phone["control_launcher"])
+        field("URL", phone["url"])
+        field("Configuration", phone["configuration"])
+        field("State directory", phone["state_directory"])
+        _show_service(phone.get("service"))
+        _show_credential("HTTP token", credentials["phone_http"], reveal=True)
+        _show_credential("Bridge secret", credentials["phone_bridge"], reveal=False)
+    note("Token values are not printed. Read an owner-only token file when pairing a client.")
+
+
+def _show_service(value: object) -> None:
+    if not isinstance(value, dict):
+        field("Service", "not configured", tone="muted")
+        return
+    detail = (
+        f"{value.get('name')} "
+        f"({value.get('scope')}, {value.get('enabled')}, {value.get('active')})"
+    )
+    tone = "success" if value.get("active") == "active" else "warning"
+    field("Service", detail, tone=tone)
+
+
+def _show_credential(label: str, credential: dict[str, str], *, reveal: bool) -> None:
+    path = credential["path"]
+    field(label, f"{path} ({credential['status']}, mode {credential['mode']})")
+    if reveal:
+        field("Read token", shlex.join(["cat", "--", path]))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -512,7 +869,8 @@ def main(argv: list[str] | None = None) -> int:
         if interactive:
             if not sys.stdin.isatty() or not sys.stdout.isatty():
                 raise RuntimeError("interactive installation requires a TTY; use --non-interactive")
-            title("TSPi Installer", "Configure a reproducible TSPi installation.")
+            if os.environ.get("TSPI_INSTALL_BOOTSTRAPPED") != "1":
+                title("TSPi Installer", "Configure a reproducible TSPi installation.")
         checks = collect_preflight()
         if interactive:
             show_preflight(checks)
@@ -553,32 +911,26 @@ def main(argv: list[str] | None = None) -> int:
             activity.update("Verifying the installed release")
             verified = inspect_installation(Path(args.install_root))
             activity.succeed("Installation finalized")
-        result = {"ok": True, "operation": installation["operation"], "install_root": args.install_root,
-                  "release_id": installed.get("release_id"),
-                  "commit": installed.get("commit"), "provenance": installed.get("provenance"),
-                  "phone": phone, "uninstaller": installed.get("uninstaller"),
-                  "phone_config": str(phone_config) if phone_config else None, "services": services,
-                  "credentials": credentials,
-                  "verified_release": verified["release_id"]}
+        components = build_component_summary(args, installed, phone, services, credentials)
+        result = {
+            "ok": True,
+            "operation": installation["operation"],
+            "install_root": args.install_root,
+            "release_id": installed.get("release_id"),
+            "commit": installed.get("commit"),
+            "provenance": installed.get("provenance"),
+            "components": components,
+            "uninstaller": installed.get("uninstaller"),
+            "phone_config": str(phone_config) if phone_config else None,
+            "services": services,
+            "credentials": credentials,
+            "verified_release": verified["release_id"],
+        }
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
             success("Installation complete")
-            section("Installed")
-            field("Installation root", args.install_root, tone="accent")
-            field("Release", installed.get("release_id") or "package")
-            field("TSPi commit", installed.get("commit") or "unknown")
-            if phone:
-                field("TS Phone commit", phone.get("commit") or "unknown")
-            for name, credential in credentials.items():
-                label = {
-                    "phone_http": "Phone HTTP token",
-                    "phone_bridge": "Phone bridge secret",
-                    "web_http": "Web HTTP token",
-                }[name]
-                field(label, f"{credential['path']} ({credential['status']})")
-            field("Services", ", ".join(services) if services else "not configured")
-            field("Uninstaller", installed.get("uninstaller") or "not installed")
+            show_installed_summary(args, installed, components, credentials)
         return 0
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
         failure(f"TSPi installation failed: {error}")
