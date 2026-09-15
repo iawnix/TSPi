@@ -13,8 +13,10 @@ import sys
 from pathlib import Path
 
 try:
+    from ._installation_metadata import read_installation_metadata
     from ._terminal_ui import ask_text as ask, ask_yes_no, failure, field, note, section, success, title
 except ImportError:
+    from _installation_metadata import read_installation_metadata
     from _terminal_ui import ask_text as ask, ask_yes_no, failure, field, note, section, success, title
 
 
@@ -42,18 +44,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def installation_identity(root: Path) -> dict[str, str | None]:
+    metadata = read_installation_metadata(root, require_ownership=True, strict_package_state=False)
+    ownership = metadata["ownership"]
+    release_id = metadata["release_id"]
+    state_error = metadata["state_error"]
+    return {
+        "ownership": str(ownership) if ownership is not None else None,
+        "release_id": str(release_id) if release_id is not None else None,
+        "state_error": str(state_error) if state_error is not None else None,
+    }
+
+
 def validate_root(path: Path) -> Path:
     if not path.is_absolute():
         raise ValueError("--install-root must be absolute")
+    if path.expanduser().is_symlink():
+        raise ValueError(f"installation root cannot be a symbolic link: {path.expanduser()}")
     resolved = path.expanduser().resolve()
     if resolved == Path("/") or resolved == Path.home() or resolved == Path.home().parent:
         raise ValueError(f"refusing to remove broad path: {resolved}")
-    for relative in (".pi", ".pi/packages", ".pi/ts-phone", ".agents", ".agents/runtime", ".agents/envs"):
+    for relative in (".pi", ".pi/tspi", ".pi/packages", ".pi/ts-phone", ".agents", ".agents/runtime", ".agents/envs"):
         if (resolved / relative).is_symlink():
             raise ValueError(f"installation state directory cannot be a symbolic link: {resolved / relative}")
-    marker = resolved / ".pi/packages/tspi"
-    if not marker.is_dir() and not (resolved / "TSPi").exists() and not (resolved / ".pi/tspi/uninstall.py").is_file():
-        raise ValueError(f"does not look like a TSPi installation: {resolved}")
+    installation_identity(resolved)
     return resolved
 
 
@@ -68,6 +82,15 @@ def choose_options(args: argparse.Namespace, root: Path) -> None:
         return
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise RuntimeError("interactive uninstall requires a TTY; use --non-interactive --yes")
+
+    identity = installation_identity(root)
+    section("Installation")
+    field("Target", root, tone="accent")
+    field("Ownership", identity["ownership"], tone="success")
+    if identity["state_error"]:
+        field("Package state", "damaged; application files will still be removed", tone="warning")
+    else:
+        field("Active release", identity["release_id"] or "application already removed")
 
     section("Data cleanup")
     note("Application releases and matching services are always removed.")
@@ -217,6 +240,7 @@ def uninstall(args: argparse.Namespace) -> dict[str, object]:
     managed = [
         root / ".pi/packages/tspi",
         root / ".pi/runtime-cache",
+        root / ".pi/logs",
         root / ".pi/session-host",
         root / ".pi/ts-web-state",
         root / ".pi/ts-phone/ts-phone.service",
@@ -224,7 +248,14 @@ def uninstall(args: argparse.Namespace) -> dict[str, object]:
         root / ".pi/ts-phone/releases",
     ]
     if args.purge_config:
-        managed.extend([root / ".pi/ts-phone", root / ".pi/ts-phone-state", root / ".pi/remote.toml", root / ".pi/notifications.toml"])
+        managed.extend([
+            root / ".pi/tspi",
+            root / ".pi/ts-phone",
+            root / ".pi/ts-phone-state",
+            root / ".pi/remote.toml",
+            root / ".pi/notifications.toml",
+            root / "uninstall.sh",
+        ])
     if args.purge_runtime:
         managed.extend([root / ".agents/runtime/tspi", root / ".agents/envs/tspi"])
     if args.purge_workspaces:

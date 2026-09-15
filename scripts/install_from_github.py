@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -15,9 +16,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+try:
+    from ._installation_metadata import write_installation_marker
+except ImportError:
+    from _installation_metadata import write_installation_marker
+
 
 FULL_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 TAG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
+PROGRESS_PREFIX = "@@tspi-progress@@"
 
 
 def run(command: list[str], *, cwd: Path | None = None) -> str:
@@ -75,16 +82,42 @@ def check_phone_protocols(source: Path, tspi: Path) -> dict[str, str]:
 
 def install_uninstaller(install_root: Path, source_root: Path) -> Path:
     destination = install_root.expanduser().resolve()
+    if destination.exists() or destination.is_symlink():
+        if destination.is_symlink() or not destination.is_dir():
+            raise ValueError(f"installation root must be a physical directory: {destination}")
+    else:
+        destination.mkdir(mode=0o700, parents=True)
     private = destination / ".pi" / "tspi"
-    private.mkdir(mode=0o700, parents=True, exist_ok=True)
+    for directory in (destination / ".pi", private):
+        if directory.exists() or directory.is_symlink():
+            if directory.is_symlink() or not directory.is_dir():
+                raise ValueError(f"installer control path must be a physical directory: {directory}")
+        else:
+            directory.mkdir(mode=0o700)
+        directory.chmod(0o700)
     uninstaller = destination / "uninstall.sh"
-    shutil.copy2(source_root / "uninstall.sh", uninstaller)
-    shutil.copy2(source_root / "scripts" / "uninstall.py", private / "uninstall.py")
-    shutil.copy2(source_root / "scripts" / "_terminal_ui.py", private / "_terminal_ui.py")
-    uninstaller.chmod(0o755)
-    (private / "uninstall.py").chmod(0o700)
-    (private / "_terminal_ui.py").chmod(0o600)
+    for source, target, mode in (
+        (source_root / "uninstall.sh", uninstaller, 0o755),
+        (source_root / "scripts" / "uninstall.py", private / "uninstall.py", 0o700),
+        (source_root / "scripts" / "_terminal_ui.py", private / "_terminal_ui.py", 0o600),
+        (source_root / "scripts" / "_installation_metadata.py", private / "_installation_metadata.py", 0o600),
+    ):
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+        os.close(descriptor)
+        temporary = Path(temporary_name)
+        try:
+            shutil.copyfile(source, temporary)
+            temporary.chmod(mode)
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+    write_installation_marker(destination)
     return uninstaller
+
+
+def emit_progress(enabled: bool, message: str) -> None:
+    if enabled:
+        print(f"{PROGRESS_PREFIX}{message}", file=sys.stderr, flush=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -100,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--phone-server-root", type=Path, help="Prepared Phone server to check before installing TSPi.")
     parser.add_argument("--conda")
     parser.add_argument("--conda-root")
+    parser.add_argument("--progress", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     try:
@@ -114,9 +148,11 @@ def main(argv: list[str] | None = None) -> int:
             validate_ref(args.phone_ref)
         with tempfile.TemporaryDirectory(prefix="tspi-github-") as temp:
             checkout = Path(temp) / "tspi"
+            emit_progress(args.progress, "Resolving the selected TSPi revision")
             commit = checkout_github(args.repo, args.ref, checkout)
             phone_server = args.phone_server_root or Path(args.install_root).expanduser() / ".pi/ts-phone/current"
             if args.phone_server_root or phone_server.exists():
+                emit_progress(args.progress, "Checking TSPi and TS Phone compatibility")
                 if not (checkout / "apps/host/phone-component.mjs").is_file():
                     raise ValueError("Selected TSPi revision does not support Phone source installation; select a newer revision")
                 check_phone_protocols(phone_server, checkout)
@@ -129,10 +165,12 @@ def main(argv: list[str] | None = None) -> int:
             phone_commit = None
             if args.phone_repo:
                 phone_checkout = Path(temp) / "ts-phone"
+                emit_progress(args.progress, "Resolving the selected TS Phone revision")
                 phone_commit = checkout_github(args.phone_repo, args.phone_ref, phone_checkout)
                 phone_output = phone_checkout / "dist" / "component"
                 phone_result = json.loads(run([sys.executable, "deploy/build-component-release.py", "--output-dir", str(phone_output), "--json"], cwd=phone_checkout))
                 build.extend(["--phone-manifest", phone_result["manifest"]])
+            emit_progress(args.progress, "Building the validated TSPi package")
             built = json.loads(run(build, cwd=checkout))
             install = [sys.executable, "scripts/install_package.py", "--manifest", built["manifest"], "--archive", built["archive"], "--install-root", args.install_root, "--json"]
             if args.with_render:
@@ -141,12 +179,15 @@ def main(argv: list[str] | None = None) -> int:
                 install.extend(["--conda", args.conda])
             if args.conda_root:
                 install.extend(["--conda-root", args.conda_root])
+            emit_progress(args.progress, "Preparing the managed runtime and activating the release")
             installed = json.loads(run(install, cwd=checkout))
+            emit_progress(args.progress, "Installing the local recovery uninstaller")
             uninstaller = install_uninstaller(Path(args.install_root), checkout)
             provenance = Path(args.install_root).expanduser().resolve() / ".pi" / "packages" / "tspi" / "source-provenance.json"
             provenance.parent.mkdir(parents=True, exist_ok=True)
             provenance.write_text(json.dumps({"schema_version": "tspi-source-provenance/1", "repo": args.repo, "ref": args.ref, "commit": commit, "tree_digest": digest, "phone_repo": args.phone_repo, "phone_ref": args.phone_ref, "phone_commit": phone_commit, "installed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             result = {"commit": commit, "tree_digest": digest, "phone_commit": phone_commit, "manifest": built["manifest"], "release_id": installed.get("release_id"), "package_root": installed.get("package_root"), "provenance": str(provenance), "uninstaller": str(uninstaller)}
+            emit_progress(args.progress, "Installation artifacts verified")
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:

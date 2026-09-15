@@ -126,11 +126,11 @@ def test_install_passes_prepared_phone_for_compatibility_check(tmp_path: Path, m
     release = tmp_path / "phone-release"
     commands = []
 
-    def run(command, **kwargs):
+    def run(command, install_root):
         commands.append(command)
-        return subprocess.CompletedProcess(command, 0, '{"release_id":"test"}', '')
+        return {"release_id": "test"}
 
-    monkeypatch.setattr(wizard.subprocess, "run", run)
+    monkeypatch.setattr(wizard, "run_logged_install", run)
     wizard.run_install(args, release)
     assert commands[0][-2:] == ["--phone-server-root", str(release)]
 
@@ -138,6 +138,7 @@ def test_install_passes_prepared_phone_for_compatibility_check(tmp_path: Path, m
 def test_without_phone_does_not_fetch_or_configure_phone(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(wizard, "prepare_phone", lambda *args: pytest.fail("Phone was not selected"))
     monkeypatch.setattr(wizard, "run_install", lambda *args: {"release_id": "test"})
+    monkeypatch.setattr(wizard, "inspect_installation", lambda *args: {"operation": "install", "release_id": "test"})
     assert wizard.main(["--install-root", str(tmp_path / "install"), "--without-phone",
                         "--non-interactive", "--yes"]) == 0
     assert not (tmp_path / "install/.pi/ts-phone/server.env").exists()
@@ -150,6 +151,7 @@ def test_wizard_installs_phone_before_service_configuration(tmp_path: Path, monk
     monkeypatch.setattr(wizard, "run_install", lambda args, phone: events.append(("install", phone)) or {"release_id": "test"})
     monkeypatch.setattr(wizard, "activate_phone", lambda *args: events.append("activate") or {"commit": "a" * 40})
     monkeypatch.setattr(wizard, "configure_services", lambda *args: events.append("services") or [])
+    monkeypatch.setattr(wizard, "inspect_installation", lambda *args: {"operation": "install", "release_id": "test"})
     assert wizard.main(["--install-root", str(tmp_path / "install"), "--with-phone",
                         "--non-interactive", "--yes", "--json"]) == 0
     assert events == ["build", ("install", release), "activate", "services"]
@@ -183,6 +185,7 @@ def test_install_places_local_uninstaller_in_installation(tmp_path: Path) -> Non
     (source / "uninstall.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     (source / "scripts/uninstall.py").write_text("print('ok')\n", encoding="utf-8")
     (source / "scripts/_terminal_ui.py").write_text("# terminal UI\n", encoding="utf-8")
+    shutil.copy2(ROOT / "scripts/_installation_metadata.py", source / "scripts/_installation_metadata.py")
     destination = tmp_path / "install"
 
     uninstaller = install_uninstaller(destination, source)
@@ -191,4 +194,79 @@ def test_install_places_local_uninstaller_in_installation(tmp_path: Path) -> Non
     assert uninstaller.is_file()
     assert (destination / ".pi/tspi/uninstall.py").is_file()
     assert (destination / ".pi/tspi/_terminal_ui.py").is_file()
+    assert (destination / ".pi/tspi/_installation_metadata.py").is_file()
+    marker = json.loads((destination / ".pi/tspi/installation.json").read_text(encoding="utf-8"))
+    assert marker == {"schema_version": "tspi-installation-root/1", "install_root": str(destination)}
     assert uninstaller.stat().st_mode & 0o111
+
+
+def test_preflight_rejects_old_node_and_requires_npm_only_for_phone(monkeypatch) -> None:
+    checks = [
+        {"key": "python", "label": "Python", "ok": True, "required": True, "detail": "3.11"},
+        {"key": "git", "label": "Git", "ok": True, "required": True, "detail": "git"},
+        {"key": "node", "label": "Node.js", "ok": False, "required": True, "detail": "20"},
+        {"key": "npm", "label": "npm", "ok": False, "required": False, "detail": "not found"},
+    ]
+    with pytest.raises(RuntimeError, match="Node.js"):
+        wizard.require_preflight(checks)
+    checks[2]["ok"] = True
+    wizard.require_preflight(checks)
+    with pytest.raises(RuntimeError, match="npm"):
+        wizard.require_preflight(checks, with_phone=True)
+
+
+def test_inspect_installation_distinguishes_fresh_restore_and_update(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    assert wizard.inspect_installation(root) == {"operation": "install", "release_id": None}
+
+    private = root / ".pi/tspi"
+    private.mkdir(parents=True)
+    (private / "installation.json").write_text(json.dumps({
+        "schema_version": "tspi-installation-root/1",
+        "install_root": str(root),
+    }))
+    assert wizard.inspect_installation(root) == {"operation": "restore", "release_id": None}
+
+    release_id = "1.0.0-sha256-0123456789abcdef"
+    package_home = root / ".pi/packages/tspi"
+    release = package_home / "releases" / release_id
+    release.mkdir(parents=True)
+    (package_home / "current").symlink_to(f"releases/{release_id}")
+    (package_home / "install-state.json").write_text(json.dumps({
+        "schema_version": "tspi-package-install/1",
+        "current_release_id": release_id,
+        "package_root": str(release),
+    }))
+    assert wizard.inspect_installation(root) == {"operation": "update", "release_id": release_id}
+
+
+def test_inspect_installation_rejects_source_checkout_as_install_root(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir()
+    (root / "TSPi").write_text("#!/bin/sh\n")
+    with pytest.raises(RuntimeError, match="without trusted package state"):
+        wizard.inspect_installation(root)
+
+
+def test_logged_install_hides_success_log_and_keeps_failure_diagnostics(tmp_path: Path, capsys) -> None:
+    success_command = [
+        wizard.sys.executable,
+        "-c",
+        "import json,sys; print('@@tspi-progress@@Checking release', file=sys.stderr); print(json.dumps({'ok': True}))",
+    ]
+    assert wizard.run_logged_install(success_command, tmp_path / "success") == {"ok": True}
+    assert not (tmp_path / "success/.pi/logs").exists()
+    assert "Checking release" in capsys.readouterr().err
+
+    failure_command = [
+        wizard.sys.executable,
+        "-c",
+        "import sys; print('@@tspi-progress@@Building release', file=sys.stderr); print('build failed', file=sys.stderr); raise SystemExit(7)",
+    ]
+    with pytest.raises(RuntimeError, match="build failed") as captured:
+        wizard.run_logged_install(failure_command, tmp_path / "failure")
+    logs = list((tmp_path / "failure/.pi/logs").glob("install-failure-*.log"))
+    assert len(logs) == 1
+    assert str(logs[0]) in str(captured.value)
+    assert "build failed" in logs[0].read_text(encoding="utf-8")
+    assert logs[0].stat().st_mode & 0o077 == 0

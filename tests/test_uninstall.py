@@ -12,6 +12,12 @@ from scripts.uninstall import uninstall
 
 
 def _args(root: Path, **overrides: object):
+    marker = root / ".pi/tspi/installation.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({
+        "schema_version": "tspi-installation-root/1",
+        "install_root": str(root.resolve()),
+    }))
     values = {
         "install_root": str(root),
         "service_scope": "none",
@@ -190,3 +196,50 @@ def test_phone_cleanup_does_not_follow_an_external_state_directory(tmp_path: Pat
         uninstall(_args(root))
     assert (external / "releases/keep").is_dir()
     assert (root / ".pi/packages/tspi").is_dir()
+
+
+def test_uninstall_rejects_a_source_checkout_without_installation_metadata(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir()
+    (root / "TSPi").write_text("#!/bin/sh\n")
+
+    with pytest.raises(ValueError, match="trusted TSPi installation metadata"):
+        uninstaller.validate_root(root)
+
+    assert (root / "TSPi").is_file()
+
+
+def test_uninstall_rejects_non_object_package_state(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    state = root / ".pi/packages/tspi/install-state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("[]\n")
+
+    with pytest.raises(ValueError, match="must contain a JSON object"):
+        uninstaller.validate_root(root)
+
+
+def test_valid_ownership_marker_allows_cleanup_of_damaged_package_state(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    state = root / ".pi/packages/tspi/install-state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("[]\n")
+    args = _args(root)
+
+    result = uninstall(args)
+
+    assert result["ok"] is True
+    assert not (root / ".pi/packages/tspi").exists()
+    assert (root / ".pi/tspi/installation.json").is_file()
+
+
+def test_purge_config_removes_local_uninstaller_and_ownership_marker(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    (root / ".pi/packages/tspi").mkdir(parents=True)
+    install_uninstaller(root, Path(__file__).resolve().parents[1])
+
+    result = uninstall(_args(root, purge_config=True))
+
+    assert result["ok"] is True
+    assert not (root / "uninstall.sh").exists()
+    assert not (root / ".pi/tspi").exists()

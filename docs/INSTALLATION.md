@@ -17,11 +17,22 @@ cd TSPi
 
 The wizard asks for the installation directory, TSPi and TS Phone revisions,
 optional TS Web and molecular rendering support, the Phone port, Conda location,
-and systemd services. Selecting TS Phone fetches its GitHub source, installs npm
+and systemd services. Before asking those questions, it checks the local Python,
+Git, Node.js, npm, and Conda/Mamba toolchain. Required failures stop before the
+installation directory is changed; optional tools are reported so the selected
+component or runtime can validate them later. Selecting TS Phone fetches its GitHub source, installs npm
 dependencies, builds the server, checks compatibility, and installs
 `TSPhoneServer` and `TSPhoneCtl`. The server build uses Node.js and npm. Install
 the Android client on the phone separately; Flutter and signing tools are needed
 only when building Android artifacts.
+
+The installation plan labels the operation as a fresh install, an update of a
+validated active release, or restoration into an installation root whose
+application was previously removed. A directory containing TSPi-like files but
+no trusted package state or installation marker is rejected instead of being
+silently treated as an existing installation. Core package build details remain
+quiet during a successful run. On failure, the wizard preserves a private
+diagnostic file at `.pi/logs/install-failure-*.log` and prints its absolute path.
 
 Interactive install and uninstall screens use semantic colors when their output
 stream is a TTY. Set the standard `NO_COLOR` environment variable to disable
@@ -77,6 +88,11 @@ data. To remove all data and the installation root in a non-interactive run:
 ```
 
 Global Pi credentials under `~/.pi/agent` remain available for other Pi sessions.
+The uninstaller requires either the package install state or the root-bound
+`.pi/tspi/installation.json` ownership marker. A source checkout or arbitrary
+directory that merely contains a file named `TSPi` is not accepted as an
+installation target. Purging installation configuration also removes the local
+recovery uninstaller and ownership marker.
 
 ## Prerequisites
 
@@ -122,6 +138,9 @@ quotes, backslashes, or a symbolic link anywhere in the path:
   TSPhoneCtl                    optional Phone component
   TSPhoneServer                 optional Phone component
   .pi/
+    tspi/
+      installation.json        installation-root ownership marker
+      uninstall.py             private recovery uninstaller
     packages/tspi/
       current -> releases/<suite-release-id>
       releases/<suite-release-id>/
