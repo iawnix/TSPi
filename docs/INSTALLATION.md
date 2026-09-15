@@ -6,29 +6,36 @@ rollback, uninstall, and recovery.
 
 ## Interactive Installer
 
-The repository provides a thin GitHub bootstrap for first-time setup:
+Clone the private repository with an authorized SSH key, then run its thin
+bootstrap for first-time setup:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/main/install.sh | bash
+git clone git@github.com:iawnix/TSPi.git
+cd TSPi
+./install.sh
 ```
 
 The wizard asks for the installation directory, TSPi and TS Phone revisions,
-optional TS Web, the Phone port, Conda location, and systemd services. Selecting
-TS Phone fetches its GitHub source, installs npm dependencies, builds the server,
-checks compatibility, and installs `TSPhoneServer` and `TSPhoneCtl`. The server
-build uses Node.js and npm. Install the Android client on the phone separately;
-Flutter and signing tools are needed only when building Android artifacts.
+optional TS Web and molecular rendering support, the Phone port, Conda location,
+and systemd services. Selecting TS Phone fetches its GitHub source, installs npm
+dependencies, builds the server, checks compatibility, and installs
+`TSPhoneServer` and `TSPhoneCtl`. The server build uses Node.js and npm. Install
+the Android client on the phone separately; Flutter and signing tools are needed
+only when building Android artifacts.
+
+Interactive install and uninstall screens use semantic colors when their output
+stream is a TTY. Set the standard `NO_COLOR` environment variable to disable
+ANSI colors. Machine-readable JSON on stdout never includes terminal styling.
 
 Branches and tags resolve to full commit IDs recorded with each installation.
 Use full SHAs for `--tspi-ref` and `--phone-ref` to repeat a particular version.
 The non-interactive equivalent is:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/main/install.sh \
-  | bash -s -- --non-interactive \
-      --install-root /path/to/TSPi-installation \
-      --with-phone --with-web \
-      --service-scope user --enable-services --start-services
+./install.sh --non-interactive --yes \
+  --install-root /path/to/TSPi-installation \
+  --with-phone --with-web \
+  --service-scope user --enable-services --start-services
 ```
 
 `--with-phone` installs the Phone service; `--without-phone` skips this step.
@@ -58,8 +65,10 @@ By default it disables services belonging to the selected installation, removes
 TSPi releases, installed Phone server builds, and managed runtime links, and keeps workspaces, Pi
 sessions, Phone tokens, bridge secrets, and installation configuration. The
 interactive wizard can separately purge workspaces, configuration, managed
-runtime state, or the empty installation root. To remove all of these in a
-non-interactive run:
+runtime state, or the dedicated installation root. Destructive data choices
+default to **No**. The final execution confirmation defaults to **Yes**, so
+pressing Enter throughout performs a normal uninstall while preserving user
+data. To remove all data and the installation root in a non-interactive run:
 
 ```bash
 ./uninstall.sh --non-interactive --yes \
@@ -229,7 +238,7 @@ tree digest are recorded before activation:
 
 ```bash
 python3 scripts/install_from_github.py \
-  --repo https://github.com/iawnix/TSPi.git --ref v0.17.0 \
+  --repo git@github.com:iawnix/TSPi.git --ref v0.17.0 \
   --install-root /srv/tspi --with-web --with-render
 ```
 

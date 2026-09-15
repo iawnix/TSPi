@@ -26,15 +26,16 @@ Mamba, and Pi with a configured model and credentials. See the full
 Run the installation wizard:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/main/install.sh | bash
+git clone git@github.com:iawnix/TSPi.git
+cd TSPi
+./install.sh
 ```
 
-Choose the installation directory, Conda location, TS Web and TS Phone
-components, and systemd services in the wizard. Selecting TS Phone downloads
-its source from GitHub, builds the server, and configures phone access and
-shared terminal sessions. You can choose a branch, tag, or commit for TSPi and
-TS Phone; both default to `main`. Add `--with-render` to the installer arguments
-to include molecular visualization dependencies.
+Choose the installation directory, Conda location, TS Web, TS Phone, molecular
+rendering support, and systemd services in the wizard. Selecting TS Phone
+downloads its source from GitHub, builds the server, and configures phone access
+and shared terminal sessions. You can choose a branch, tag, or commit for TSPi
+and TS Phone; both default to `main`.
 
 See [Installation and Operations](docs/INSTALLATION.md) for non-interactive
 installation, service configuration, and upgrades.

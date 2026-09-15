@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -45,6 +47,31 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     assert not (root / ".pi/packages/tspi").exists()
 
 
+def test_interactive_defaults_run_safe_uninstall_and_preserve_data(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "install"
+    (root / ".pi/packages/tspi").mkdir(parents=True)
+    workspace = root / "workspaces/ts_001"
+    workspace.mkdir(parents=True)
+    config = root / ".pi/remote.toml"
+    config.write_text("[remote]\n", encoding="utf-8")
+    runtime = root / ".agents/envs/tspi/base/test"
+    runtime.mkdir(parents=True)
+    (root / "TSPi").symlink_to(".pi/packages/tspi/current")
+    monkeypatch.setattr(uninstaller.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(uninstaller.sys.stdout, "isatty", lambda: True)
+    replies = iter(["", "", "", ""])
+    monkeypatch.setattr("builtins.input", lambda _: next(replies))
+
+    result = uninstall(_args(root, non_interactive=False, yes=False))
+
+    assert result["ok"] is True
+    assert workspace.is_dir()
+    assert config.is_file()
+    assert runtime.is_dir()
+    assert root.is_dir()
+    assert not (root / ".pi/packages/tspi").exists()
+
+
 def test_uninstall_removes_immutable_release_without_following_links(tmp_path: Path) -> None:
     root = tmp_path / "install"
     release = root / ".pi/packages/tspi/releases/release-id"
@@ -85,6 +112,32 @@ def test_uninstall_purge_removes_the_dedicated_installation_root(tmp_path: Path)
 
     assert result["ok"] is True
     assert not root.exists()
+
+
+def test_installed_uninstaller_runs_with_its_private_ui_module(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    (root / ".pi/packages/tspi").mkdir(parents=True)
+    install_uninstaller(root, Path(__file__).resolve().parents[1])
+
+    completed = subprocess.run(
+        [
+            str(root / "uninstall.sh"),
+            "--install-root",
+            str(root),
+            "--service-scope",
+            "none",
+            "--non-interactive",
+            "--yes",
+            "--json",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["ok"] is True
+    assert (root / ".pi/tspi/_terminal_ui.py").is_file()
 
 
 def test_phone_uninstall_removes_builds_and_keeps_conversations_and_credentials(tmp_path: Path) -> None:

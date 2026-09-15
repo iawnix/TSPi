@@ -80,8 +80,10 @@ def install_uninstaller(install_root: Path, source_root: Path) -> Path:
     uninstaller = destination / "uninstall.sh"
     shutil.copy2(source_root / "uninstall.sh", uninstaller)
     shutil.copy2(source_root / "scripts" / "uninstall.py", private / "uninstall.py")
+    shutil.copy2(source_root / "scripts" / "_terminal_ui.py", private / "_terminal_ui.py")
     uninstaller.chmod(0o755)
     (private / "uninstall.py").chmod(0o700)
+    (private / "_terminal_ui.py").chmod(0o600)
     return uninstaller
 
 

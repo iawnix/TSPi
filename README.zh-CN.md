@@ -23,13 +23,14 @@ TSPi 是基于 Pi 的计算化学研究助手，面向过渡态搜索和反应�
 运行安装向导：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iawnix/TSPi/main/install.sh | bash
+git clone git@github.com:iawnix/TSPi.git
+cd TSPi
+./install.sh
 ```
 
-在向导中选择安装目录、Conda 路径、TS Web 和 TS Phone 组件，以及 systemd 服务。
+在向导中选择安装目录、Conda 路径、TS Web、TS Phone 和分子渲染组件，以及 systemd 服务。
 选择 TS Phone 后，安装器会从 GitHub 下载源码、构建服务，并配置手机与终端共享会话。
 TSPi 和 TS Phone 都可以选择分支、标签或提交，默认使用 `main`。
-分子可视化依赖可通过安装参数 `--with-render` 加入。
 
 非交互安装、服务配置和升级方式见[安装与运维](docs/INSTALLATION.md)。
 

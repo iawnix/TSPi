@@ -12,6 +12,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:
+    from ._terminal_ui import ask_text as ask, ask_yes_no, failure, field, note, section, success, title
+except ImportError:
+    from _terminal_ui import ask_text as ask, ask_yes_no, failure, field, note, section, success, title
+
 
 SERVICE_NAMES = (
     "ts-phone-tspi.service",
@@ -35,12 +40,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--yes", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser.parse_args(argv)
-
-
-def ask(prompt: str, default: bool = False) -> bool:
-    marker = "Y/n" if default else "y/N"
-    value = input(f"{prompt} [{marker}]: ").strip().lower()
-    return default if not value else value in {"y", "yes"}
 
 
 def validate_root(path: Path) -> Path:
@@ -69,15 +68,31 @@ def choose_options(args: argparse.Namespace, root: Path) -> None:
         return
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise RuntimeError("interactive uninstall requires a TTY; use --non-interactive --yes")
-    print(f"\nTSPi installation: {root}")
-    print("The default keeps workspaces, research sessions, and user Pi credentials.")
-    args.purge_workspaces = args.purge_workspaces or ask("Delete workspaces and Pi session files", False)
-    args.purge_config = args.purge_config or ask("Delete installation config, Phone tokens, and bridge secrets", False)
-    args.purge_runtime = args.purge_runtime or ask("Delete managed Python runtime state", False)
-    args.remove_root = args.remove_root or ask("Remove the installation directory", False)
-    if args.remove_root and not (args.purge_workspaces and args.purge_config and args.purge_runtime):
-        raise ValueError("removing the installation directory requires selecting all data cleanup options")
-    if not args.yes and not ask("Proceed with uninstall", False):
+
+    section("Data cleanup")
+    note("Application releases and matching services are always removed.")
+    args.purge_workspaces = args.purge_workspaces or ask_yes_no("Delete workspaces and Pi session files", False)
+    args.purge_config = args.purge_config or ask_yes_no("Delete installation config, Phone tokens, and bridge secrets", False)
+    args.purge_runtime = args.purge_runtime or ask_yes_no("Delete managed Python runtime state", False)
+    all_data_selected = args.purge_workspaces and args.purge_config and args.purge_runtime
+    if not args.remove_root and all_data_selected:
+        args.remove_root = ask_yes_no("Remove the installation directory", False)
+
+    section("Removal plan")
+    field("Target", root, tone="accent")
+    field("Application", "Remove", tone="warning")
+    field("Workspaces", "Delete" if args.purge_workspaces else "Keep",
+          tone="danger" if args.purge_workspaces else "success")
+    field("Config and secrets", "Delete" if args.purge_config else "Keep",
+          tone="danger" if args.purge_config else "success")
+    field("Python runtime", "Delete" if args.purge_runtime else "Keep",
+          tone="danger" if args.purge_runtime else "success")
+    root_state = "Delete" if args.remove_root else "Keep"
+    if not all_data_selected:
+        root_state += " (requires all data cleanup options)"
+    field("Installation root", root_state, tone="danger" if args.remove_root else "success")
+    if not args.yes and not ask_yes_no("Proceed with uninstall", True):
+        note("Uninstall cancelled.", tone="warning")
         raise SystemExit(0)
 
 
@@ -229,26 +244,43 @@ def uninstall(args: argparse.Namespace) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
+        if not args.non_interactive:
+            if not sys.stdin.isatty() or not sys.stdout.isatty():
+                raise RuntimeError("interactive uninstall requires a TTY; use --non-interactive --yes")
+            title("TSPi Uninstaller", "Remove TSPi while keeping research data by default.", tone="warning")
         if not args.install_root and not args.non_interactive:
             bundled = Path(__file__).resolve()
             default = str(bundled.parents[2]) if bundled.parent.name == "tspi" and bundled.parent.parent.name == ".pi" else str(Path.home() / ".local/share/tspi")
-            args.install_root = input(f"TSPi installation directory [{default}]: ").strip() or default
+            args.install_root = ask("TSPi installation directory", default)
         if not args.install_root:
             raise ValueError("--install-root is required")
         result = uninstall(args)
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
-            print("Uninstall complete")
+            success("Uninstall complete")
+            section("Summary")
+            field("Installation", result["install_root"], tone="accent")
+            field("Paths removed", len(result["removed"]))
+            field("Services stopped", len(result["stopped_services"]))
+            preserved = []
+            if result["preserved_workspaces"]:
+                preserved.append("workspaces")
+            if result["preserved_config"]:
+                preserved.append("config and secrets")
+            if result["preserved_runtime"]:
+                preserved.append("Python runtime")
+            field("Preserved", ", ".join(preserved) if preserved else "nothing", tone="success" if preserved else "muted")
+            section("Removed paths")
             for item in result["removed"]:
-                print(f"removed: {item}")
+                note(item)
             for item in result["stopped_services"]:
-                print(f"stopped: {item}")
+                note(f"Stopped service: {item}")
         return 0
     except SystemExit as error:
         return int(error.code or 0)
     except (OSError, RuntimeError, ValueError) as error:
-        print(f"TSPi uninstall failed: {error}", file=sys.stderr)
+        failure(f"TSPi uninstall failed: {error}")
         return 1
 
 

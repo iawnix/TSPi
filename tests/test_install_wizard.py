@@ -111,13 +111,14 @@ def test_interactive_phone_selection_and_web_skip(tmp_path: Path, monkeypatch) -
     args = parse_args(["--install-root", str(tmp_path / "install"), "--service-scope", "none"])
     monkeypatch.setattr(wizard.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(wizard.sys.stdout, "isatty", lambda: True)
-    replies = iter(["main", "n", "y", "main", "23000", ""])
+    replies = iter(["main", "n", "y", "main", "23000", "n", ""])
     monkeypatch.setattr("builtins.input", lambda _: next(replies))
     wizard.interactive_options(args)
     validate_options(args)
     assert args.with_phone is True
     assert args.phone_port == 23000
     assert args.without_web is True
+    assert args.with_render is False
 
 
 def test_install_passes_prepared_phone_for_compatibility_check(tmp_path: Path, monkeypatch) -> None:
@@ -181,6 +182,7 @@ def test_install_places_local_uninstaller_in_installation(tmp_path: Path) -> Non
     (source / "scripts").mkdir(parents=True)
     (source / "uninstall.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     (source / "scripts/uninstall.py").write_text("print('ok')\n", encoding="utf-8")
+    (source / "scripts/_terminal_ui.py").write_text("# terminal UI\n", encoding="utf-8")
     destination = tmp_path / "install"
 
     uninstaller = install_uninstaller(destination, source)
@@ -188,4 +190,5 @@ def test_install_places_local_uninstaller_in_installation(tmp_path: Path) -> Non
     assert uninstaller == destination / "uninstall.sh"
     assert uninstaller.is_file()
     assert (destination / ".pi/tspi/uninstall.py").is_file()
+    assert (destination / ".pi/tspi/_terminal_ui.py").is_file()
     assert uninstaller.stat().st_mode & 0o111

@@ -13,29 +13,19 @@ import tempfile
 from pathlib import Path
 
 try:
+    from ._terminal_ui import ask_text as ask, ask_yes_no, failure, field, note, section, success, title
     from .install_from_github import validate_ref, validate_repo
     from .install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
     from .install_release import validate_install_root
 except ImportError:
+    from _terminal_ui import ask_text as ask, ask_yes_no, failure, field, note, section, success, title
     from install_from_github import validate_ref, validate_repo
     from install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
     from install_release import validate_install_root
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_REPO = "https://github.com/iawnix/TSPi.git"
-
-
-def ask(prompt: str, default: str = "") -> str:
-    suffix = f" [{default}]" if default else ""
-    value = input(f"{prompt}{suffix}: ").strip()
-    return value or default
-
-
-def ask_yes_no(prompt: str, default: bool = True) -> bool:
-    marker = "Y/n" if default else "y/N"
-    value = input(f"{prompt} [{marker}]: ").strip().lower()
-    return default if not value else value in {"y", "yes"}
+DEFAULT_REPO = "git@github.com:iawnix/TSPi.git"
 
 
 def detect_conda_root() -> str:
@@ -75,9 +65,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise RuntimeError("interactive installation requires a TTY; use --non-interactive")
-    print("TSPi Installer\n==============")
+
+    title("TSPi Installer", "Configure a reproducible TSPi installation.")
+    section("Source and destination")
     args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/tspi"))
     args.tspi_ref = ask("TSPi Git branch, tag, or commit", args.tspi_ref)
+    field("Repository", args.tspi_repo)
+
+    section("Components")
     if not args.with_web and not args.without_web:
         args.with_web = ask_yes_no("Install TS Web", True)
         args.without_web = not args.with_web
@@ -87,6 +82,10 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
         args.phone_ref = ask("TS Phone Git branch, tag, or commit", args.phone_ref)
         if not (Path(args.install_root) / ".pi/ts-phone/server.env").exists():
             args.phone_port = int(ask("TS Phone port", str(args.phone_port)))
+    if not args.with_render:
+        args.with_render = ask_yes_no("Install molecular rendering support", False)
+
+    section("Runtime and services")
     args.conda_root = args.conda_root or ask("Conda root (blank for auto-detect)", detect_conda_root())
     args.service_scope = args.service_scope or ("user" if ask_yes_no("Configure systemd user services", True) else "none")
     if args.service_scope != "none":
@@ -95,6 +94,31 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
         if args.with_web:
             args.web_service = ask_yes_no("Run TS Web as a service", False)
     return args
+
+
+def show_install_plan(args: argparse.Namespace) -> None:
+    components = ["Agent"]
+    if args.with_web and not args.without_web:
+        components.append("Web")
+    if args.with_phone:
+        components.append("Phone")
+    if args.with_render:
+        components.append("Molecular rendering")
+    service_details = args.service_scope
+    if args.service_scope != "none":
+        actions = []
+        if args.enable_services:
+            actions.append("enable")
+        if args.start_services:
+            actions.append("start")
+        service_details += f" ({', '.join(actions)})" if actions else " (configure only)"
+
+    section("Installation plan")
+    field("Installation root", args.install_root, tone="accent")
+    field("TSPi revision", args.tspi_ref)
+    field("Components", ", ".join(components), tone="success")
+    field("Conda root", args.conda_root or "auto-detect")
+    field("Services", service_details, tone="success" if args.service_scope != "none" else "muted")
 
 
 def validate_options(args: argparse.Namespace) -> None:
@@ -120,7 +144,7 @@ def validate_options(args: argparse.Namespace) -> None:
 
 
 def run_install(args: argparse.Namespace, phone_release: Path | None = None) -> dict[str, object]:
-    print(f"TSPi: building and installing {args.tspi_ref}", file=sys.stderr, flush=True)
+    note(f"Building and installing TSPi revision {args.tspi_ref}...", tone="accent", stream=sys.stderr)
     command = [sys.executable, str(ROOT / "scripts/install_from_github.py"), "--repo", args.tspi_repo,
                "--ref", args.tspi_ref, "--install-root", args.install_root, "--json"]
     command.append("--without-web" if args.without_web else "--with-web")
@@ -283,11 +307,10 @@ def main(argv: list[str] | None = None) -> int:
         if not args.non_interactive:
             args = interactive_options(args)
         validate_options(args)
-        if not args.yes and not args.non_interactive:
-            print(f"\nInstallation: {args.install_root}\nTSPi ref: {args.tspi_ref}\n"
-                  f"TS Web: {'yes' if args.with_web and not args.without_web else 'no'}\n"
-                  f"TS Phone: {args.phone_ref if args.with_phone else 'no'}\nServices: {args.service_scope}")
-            if not ask_yes_no("Proceed", True):
+        if not args.non_interactive:
+            show_install_plan(args)
+            if not args.yes and not ask_yes_no("Proceed with installation", True):
+                note("Installation cancelled.", tone="warning")
                 return 0
         phone_release = prepare_phone(Path(args.install_root), args.phone_repo, args.phone_ref) if args.with_phone else None
         installed = run_install(args, phone_release)
@@ -301,13 +324,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
-            print("\nInstallation complete")
-            for key, value in result.items():
-                if value is not None:
-                    print(f"{key}: {value}")
+            success("Installation complete")
+            section("Installed")
+            field("Installation root", args.install_root, tone="accent")
+            field("Release", installed.get("release_id") or "package")
+            field("TSPi commit", installed.get("commit") or "unknown")
+            if phone:
+                field("TS Phone commit", phone.get("commit") or "unknown")
+            field("Services", ", ".join(services) if services else "not configured")
+            field("Uninstaller", installed.get("uninstaller") or "not installed")
         return 0
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
-        print(f"TSPi installer failed: {error}", file=sys.stderr)
+        failure(f"TSPi installation failed: {error}")
         return 1
 
 
