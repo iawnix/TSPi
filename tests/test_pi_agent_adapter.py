@@ -12,6 +12,7 @@ from scripts.check_package import SKILL_ENTRIES, validate_version_surfaces
 ROOT = Path(__file__).resolve().parents[1]
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
 EXPECTED_TOOLS = {
+    "sys_prompt",
     "ts_state",
     "ts_change",
     "ts_remote",
@@ -200,12 +201,61 @@ process.stdout.write(JSON.stringify(result));
     assert "workflow phase" not in prompt.lower()
 
 
+def test_sys_prompt_reports_exact_pi_prompt_and_honest_extension_provenance(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    visible_path = str(tmp_path / "skills" / "visible" / "SKILL.md")
+    hidden_path = str(tmp_path / "skills" / "hidden" / "SKILL.md")
+    script = f"""
+import install from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+import {{ formatSkillsForPrompt }} from "@earendil-works/pi-coding-agent";
+const handlers={{}};const tools={{}};
+const pi={{
+  registerTool:(tool)=>tools[tool.name]=tool,registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},
+  on:(name,handler)=>handlers[name]=handler,
+}};
+install(pi);
+const sourceInfo={{path:"package",source:"test-package",scope:"project",origin:"package"}};
+const visible={{name:"visible",description:"Visible skill",filePath:{json.dumps(visible_path)},baseDir:"/skills/visible",sourceInfo,disableModelInvocation:false}};
+const hidden={{name:"hidden",description:"Hidden skill",filePath:{json.dumps(hidden_path)},baseDir:"/skills/hidden",sourceInfo,disableModelInvocation:true}};
+const options={{
+  cwd:{json.dumps(str(workspace))},selectedTools:["read","sys_prompt","ts_state"],
+  toolSnippets:{{sys_prompt:"Inspect prompt"}},promptGuidelines:["One guideline"],
+  contextFiles:[{{path:"/workspace/AGENTS.md",content:"Workspace instructions"}}],skills:[visible,hidden],
+}};
+const before=`PI NATIVE${{formatSkillsForPrompt(options.skills,"read")}}`;
+const tspi=await handlers.before_agent_start({{systemPrompt:before,systemPromptOptions:options}},{{cwd:options.cwd}});
+const effective=`${{tspi.systemPrompt}}\n\nTHIRD PARTY EXTENSION`;
+const result=await tools.sys_prompt.execute("prompt-1",{{}},undefined,undefined,{{getSystemPrompt:()=>effective}});
+process.stdout.write(JSON.stringify({{manifest:JSON.parse(result.content[0].text),details:result.details,effective}}));
+"""
+    result = _node_json(script)
+    manifest = result["manifest"]
+
+    assert manifest["schema_version"] == "tspi-system-prompt/2"
+    assert manifest["runtime"] == "pi-extension"
+    assert manifest["effective"] == result["effective"]
+    assert manifest["provenance_complete"] is False
+    assert result["details"]["provenanceComplete"] is False
+    by_origin = {}
+    for contributor in manifest["contributors"]:
+        by_origin.setdefault(contributor["origin"], []).append(contributor)
+    assert by_origin["native"][0]["attribution"] == "structured"
+    assert by_origin["native"][0]["metadata"]["context_files"] == ["/workspace/AGENTS.md"]
+    assert by_origin["skill"][0]["attribution"] == "exact"
+    assert by_origin["skill"][0]["inputs"] == [visible_path]
+    assert hidden_path not in json.dumps(manifest)
+    assert by_origin["extension"][0]["attribution"] == "exact"
+    assert "TS workspace active" in by_origin["extension"][0]["text"]
+    assert any(item.get("text") == "\n\nTHIRD PARTY EXTENSION" for item in by_origin["unknown"])
+    assert not any("THIRD PARTY EXTENSION" in item.get("text", "") for item in by_origin["native"])
+
+
 def test_host_turn_refreshes_bounded_science_without_appending_history(tmp_path: Path) -> None:
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     script = f"""
 import install from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
-const handlers={{}}; let reads=0; let unavailable=false;
-const pi={{registerTool:()=>{{}},registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},
+const handlers={{}}; const tools={{}}; let reads=0; let unavailable=false;
+const pi={{registerTool:(tool)=>tools[tool.name]=tool,registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},
   on:(name,handler)=>handlers[name]=handler,
   exec:async (command,args)=>{{
     if (args[0].endsWith("ts_runtime.py")) return {{stdout:JSON.stringify({{configured:true,python_executable:{json.dumps(sys.executable)}}})}};
@@ -219,14 +269,19 @@ const pi={{registerTool:()=>{{}},registerCommand:()=>{{}},registerEntryRenderer:
   }},
 }};
 install(pi);
+const inspect=async (prompt,index)=>JSON.parse((await tools.sys_prompt.execute(`prompt-${{index}}`,{{}},undefined,undefined,{{getSystemPrompt:()=>prompt.systemPrompt}})).content[0].text);
 process.env.TS_PHONE_WORKER="1";
 const first=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
+const firstManifest=await inspect(first,1);
 const second=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
+const secondManifest=await inspect(second,2);
 unavailable=true;
 const failed=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
+const failedManifest=await inspect(failed,3);
 delete process.env.TS_PHONE_WORKER;
 const standalone=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
-process.stdout.write(JSON.stringify({{first,second,failed,standalone,reads}}));
+const standaloneManifest=await inspect(standalone,4);
+process.stdout.write(JSON.stringify({{first,second,failed,standalone,firstManifest,secondManifest,failedManifest,standaloneManifest,reads}}));
 """
     result = _node_json(script)
     assert result["reads"] == 2
@@ -238,6 +293,27 @@ process.stdout.write(JSON.stringify({{first,second,failed,standalone,reads}}));
     assert "private diagnostic" not in result["failed"]["systemPrompt"]
     assert "workspace snapshot" not in result["standalone"]["systemPrompt"]
     assert all(set(result[key]) == {"systemPrompt"} for key in ["first", "second", "failed", "standalone"])
+    for prompt_key, manifest_key in [
+        ("first", "firstManifest"),
+        ("second", "secondManifest"),
+        ("failed", "failedManifest"),
+        ("standalone", "standaloneManifest"),
+    ]:
+        manifest = result[manifest_key]
+        assert manifest["effective"] == result[prompt_key]["systemPrompt"]
+        assert manifest["runtime"] == "pi-extension"
+        assert manifest["provenance_complete"] is False
+        extension = next(item for item in manifest["contributors"] if item["origin"] == "extension")
+        assert extension["attribution"] == "exact"
+    assert "revision-1" in next(
+        item for item in result["firstManifest"]["contributors"] if item["origin"] == "extension"
+    )["text"]
+    assert "Current workspace snapshot is unavailable" in next(
+        item for item in result["failedManifest"]["contributors"] if item["origin"] == "extension"
+    )["text"]
+    assert "workspace snapshot" not in next(
+        item for item in result["standaloneManifest"]["contributors"] if item["origin"] == "extension"
+    )["text"]
 
 
 def test_state_change_contract_routes_to_the_kernel_without_leaking_other_selectors(tmp_path: Path) -> None:

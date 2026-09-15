@@ -121,6 +121,7 @@ conditional detail into that Skill's `references/` directory.
 
 Public names describe authority:
 
+- `sys_prompt`: exact effective prompt inspection with explicit provenance limits;
 - `ts_state`, `ts_change`: bounded context and the atomic canonical mutation boundary;
 - `ts_calc`, `ts_review`: bounded child-model entrypoints;
 - `ts_seed`, `ts_compare`, `ts_import`, `ts_render`, `ts_report`: deterministic execution;

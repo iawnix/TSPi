@@ -460,6 +460,7 @@ schema generations or implementation stages. The target surface is:
 
 | Public tool | Responsibility |
 | --- | --- |
+| `sys_prompt` | inspect the exact effective prompt and attributable contributors |
 | `ts_state` | bounded frontier, delta, capability, and validation projections |
 | `ts_change` | the sole canonical mutation boundary; compile/dry-run/apply stay internal |
 | `ts_calc` | bind and run one capability action or inspect its result |

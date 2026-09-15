@@ -541,7 +541,7 @@ export TSPI_PI_SOURCE=/path/to/pi-source
   --session-id <session-id>
 ```
 
-A read-only Worker exposes only `read`, `ts_state`, and `ts_remote`. Add
+A read-only Worker exposes only `read`, `sys_prompt`, `ts_state`, and `ts_remote`. Add
 `--allow-writes` to the server command to acquire the workspace directory guard
 and exclusive Root lock before exposing `write`, `bash`, and the complete
 native TSPi tool set. A conflicting Root writer causes startup to fail; the

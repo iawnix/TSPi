@@ -100,7 +100,7 @@ export TSPI_PI_SOURCE=/path/to/prepared/pi
 ./TSPi --app-client --connect unix:///path/printed/by/server
 ```
 
-不指定 `--allow-writes` 时，Worker 只开放 `read`、`ts_state` 和 `ts_remote`。源码准备和
+不指定 `--allow-writes` 时，Worker 只开放 `read`、`sys_prompt`、`ts_state` 和 `ts_remote`。源码准备和
 生命周期见[原生 Pi App Server](ARCHITECTURE.zh-CN.md#原生-pi-app-server实验性)。App Server
 session 不会附着到 Phone Host 或 standalone session history。
 

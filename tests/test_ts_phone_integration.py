@@ -363,6 +363,7 @@ process.stdout.write(JSON.stringify({{
   controllerWrite: authorizeTsPhoneTool("controller", "write") ?? null,
   controllerUnknown: authorizeTsPhoneTool("controller", "new_tool") ?? null,
   observerRead: authorizeTsPhoneTool("observer", "read") ?? null,
+  observerSystemPrompt: authorizeTsPhoneTool("observer", "sys_prompt") ?? null,
   observerWrite: authorizeTsPhoneTool("observer", "write") ?? null,
   observerUnknown: authorizeTsPhoneTool("observer", "new_tool") ?? null,
 }}));
@@ -372,6 +373,7 @@ process.stdout.write(JSON.stringify({{
     assert result["controllerWrite"] is None
     assert result["controllerUnknown"] is None
     assert result["observerRead"] is None
+    assert result["observerSystemPrompt"] is None
     assert result["observerWrite"]["block"] is True
     assert result["observerUnknown"]["block"] is True
 

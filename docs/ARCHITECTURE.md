@@ -130,11 +130,10 @@ enabling the complete native tool set. The locks remain held by the App Server
 process for its lifetime.
 
 The Worker uses Pi Agent Core to load and format Skills, then records the exact
-effective prompt in a `tspi-system-prompt/1` manifest. Its read-only
-`sys_prompt` tool returns the effective text, SHA-256 digest, and sections
-classified as native, Skill, or extension input. Native App Server sessions do
-not load extension prompts, so their manifest normally contains native and
-Skill sections only.
+effective prompt in a `tspi-system-prompt/2` manifest. Its read-only
+`sys_prompt` tool returns the effective text, SHA-256 digest, attributable
+contributors, and explicit provenance gaps. Native App Server sessions do not
+load extension prompts, so their native and Skill contributors are complete.
 
 ## Python Runtime
 
@@ -446,13 +445,19 @@ See [Terminal Client](TERMINAL.md) for commands and receipt recovery.
 
 | Extension | Tools and commands | Purpose |
 | --- | --- | --- |
-| `ts-workflow-control` | `ts_state`, `ts_change`; `/ts`, `/ts-check` | Research context and state transactions |
+| `ts-workflow-control` | `sys_prompt`, `ts_state`, `ts_change`; `/ts`, `/ts-check` | Prompt inspection, research context, and state transactions |
 | `ts-workflow-review` | `ts_review`, `ts_reply` | Claim review and response |
 | `ts-workflow-compute` | `ts_calc`, `ts_remote`; `/ts-remote` | Calculation lifecycle and remote diagnostics |
 | `ts-workflow-artifacts` | `ts_seed`, `ts_compare`, `ts_import`, `ts_render`, `ts_report`, `ts_notify` | Inputs, analysis, figures, reports, delivery |
 | `ts-workflow-ui` | `/ts-runs` | Activity and run history |
 
 `ts-phone-bridge` is loaded for Host Workers and `--standalone --phone`.
+In the traditional Pi extension runtime, `sys_prompt` reads the final prompt
+directly from `ctx.getSystemPrompt()`. It identifies Pi's structured native
+inputs, model-visible Skills, and the exact TSPi extension text. Pi does not
+expose per-extension prompt deltas or identities, so possible earlier changes
+and observed later changes are reported as `unknown` and
+`provenance_complete` remains false instead of guessing a source.
 The [Skill catalog](../skills/README.md) describes method guidance and when
 to load it. Tool schemas define call fields; capability catalogs describe
 adapter tasks, proof templates, predicates, and profiles.

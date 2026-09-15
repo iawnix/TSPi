@@ -35,15 +35,22 @@ test("system prompt manifest reports the exact effective prompt by origin", asyn
     }])}\n\nextension instructions`,
   );
   assert.match(manifest.sha256, /^[0-9a-f]{64}$/);
-  assert.deepEqual(manifest.sections.map((section) => section.origin), ["native", "skill", "extension"]);
-  assert.deepEqual(manifest.sections[1].inputs, ["skills/example/SKILL.md"]);
-  for (const section of manifest.sections) assert.match(section.sha256, /^[0-9a-f]{64}$/);
+  assert.equal(manifest.schema_version, "tspi-system-prompt/2");
+  assert.equal(manifest.runtime, "native-app-server");
+  assert.equal(manifest.provenance_complete, true);
+  assert.deepEqual(manifest.contributors.map((contributor) => contributor.origin), ["native", "skill", "extension"]);
+  assert.deepEqual(manifest.contributors[1].inputs, ["skills/example/SKILL.md"]);
+  for (const contributor of manifest.contributors) assert.match(contributor.sha256, /^[0-9a-f]{64}$/);
 
   const tool = createSystemPromptTool(manifest);
   assert.equal(tool.name, "sys_prompt");
   const result = await tool.execute();
   assert.deepEqual(JSON.parse(result.content[0].text), manifest);
-  assert.deepEqual(result.details, { sha256: manifest.sha256, sectionCount: 3 });
+  assert.deepEqual(result.details, {
+    sha256: manifest.sha256,
+    contributorCount: 3,
+    provenanceComplete: true,
+  });
 });
 
 test("system prompt skill provenance excludes skills hidden from the model", () => {
@@ -64,7 +71,7 @@ test("system prompt skill provenance excludes skills hidden from the model", () 
     },
   });
 
-  assert.deepEqual(manifest.sections[1].inputs, ["/skills/visible/SKILL.md"]);
+  assert.deepEqual(manifest.contributors[1].inputs, ["/skills/visible/SKILL.md"]);
   assert.match(manifest.effective, /<name>visible<\/name>/);
   assert.doesNotMatch(manifest.effective, /<name>hidden<\/name>/);
 });

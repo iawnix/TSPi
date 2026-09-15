@@ -21,6 +21,7 @@ from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_TOOLS = {
+    "sys_prompt",
     "ts_state",
     "ts_change",
     "ts_review",

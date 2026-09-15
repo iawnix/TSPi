@@ -1,8 +1,14 @@
-import { keyText, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  formatSkillsForPrompt,
+  keyText,
+  type BuildSystemPromptOptions,
+  type ExtensionAPI,
+} from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import {
   requireWorkspaceRoot,
   runComputeJson,
@@ -12,9 +18,19 @@ import {
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import { guardPackageSourceRead, packageSourceSystemPrompt } from "../shared/package-source-policy.ts";
 import { registerSessionGuard } from "../shared/session-guard.ts";
+import {
+  createPromptContributor,
+  createSystemPromptManifest,
+  createSystemPromptTool,
+  sha256Text,
+  type SystemPromptContributor,
+  type SystemPromptManifest,
+} from "../shared/system-prompt.mjs";
 
 const require = createRequire(import.meta.url);
 const { buildContextSummary, resolveWorkspaceRoot, toolText } = require("./summary.cjs");
+const CONTROL_EXTENSION_SOURCE = fileURLToPath(import.meta.url);
+const PACKAGE_POLICY_SOURCE = fileURLToPath(new URL("../shared/package-source-policy.ts", import.meta.url));
 
 const GRAPH_CONTEXT_MODES = ["frontier", "claim", "node", "subgraph", "finding", "proof", "delta"] as const;
 const CONTEXT_MODES = [...GRAPH_CONTEXT_MODES, "locate", "artifacts", "capabilities", "change_contract"] as const;
@@ -49,7 +65,15 @@ type WorkspaceContextEntryData = {
 
 type WorkspaceValidationEntryData = { validation: Record<string, unknown> };
 
+type PromptObservation = {
+  beforeTspi: string;
+  emitted: string;
+  extensionText: string;
+  options: BuildSystemPromptOptions;
+};
+
 export default function (pi: ExtensionAPI) {
+  let promptObservation: PromptObservation | undefined;
   registerSessionGuard(pi);
   pi.registerEntryRenderer<WorkspaceContextEntryData>(CONTEXT_ENTRY_TYPE, (entry, { expanded }, theme) => {
     const data = entry.data;
@@ -81,11 +105,11 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, ctx) => {
     const root = resolveWorkspaceRoot("", ctx.cwd);
     const packagePolicy = packageSourceSystemPrompt();
-    if (!root) return { systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}` };
-    // A queued turn can resume history older than another session's decisions.
-    // Refresh only Host Workers, and keep this ephemeral snapshot out of history.
+    let extensionText = packagePolicy;
     let currentState = "";
-    if (process.env.TS_PHONE_WORKER === "1") {
+    if (root && process.env.TS_PHONE_WORKER === "1") {
+      // A queued turn can resume history older than another session's decisions.
+      // Refresh only Host Workers, and keep this ephemeral snapshot out of history.
       try {
         const projection = await runWorkspaceJson(pi, "context", root, ["--mode", "frontier"]);
         const summary = buildContextSummary(projection, { maxItems: 2 });
@@ -95,12 +119,25 @@ export default function (pi: ExtensionAPI) {
         currentState = "\n\nCurrent workspace snapshot is unavailable. Read ts_state before any scientific write; do not treat session history as current workspace state.";
       }
     }
-    return {
-      systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}\n\nTS workspace active: ${root}. Use ${TS_PUBLIC_TOOL_NAMES.state} for bounded context; only ${TS_PUBLIC_TOOL_NAMES.change} mutates canonical science. Root owns questions, hypotheses, capability choice, interpretation, and the next step; the kernel validates but never routes science. Register predictions and falsifiers before interpreting results. Give each changed question, principal deliverable, branch, backtrack, or synthesis goal a distinct ResearchNode; keep same-question retries inside that Node. When opening the active Node, include set_focus with exact claimRefs/nodeRefs (query the change contract first); never guess claimRef/nodeRef. Parser output is only a candidate until Root explicitly records an Observation. Query ${TS_PUBLIC_TOOL_NAMES.state} mode=change_contract before using an unfamiliar change operation; never guess its fields.${currentState}`,
+    if (root) {
+      extensionText += `\n\nTS workspace active: ${root}. Use ${TS_PUBLIC_TOOL_NAMES.state} for bounded context; only ${TS_PUBLIC_TOOL_NAMES.change} mutates canonical science. Root owns questions, hypotheses, capability choice, interpretation, and the next step; the kernel validates but never routes science. Register predictions and falsifiers before interpreting results. Give each changed question, principal deliverable, branch, backtrack, or synthesis goal a distinct ResearchNode; keep same-question retries inside that Node. When opening the active Node, include set_focus with exact claimRefs/nodeRefs (query the change contract first); never guess claimRef/nodeRef. Parser output is only a candidate until Root explicitly records an Observation. Query ${TS_PUBLIC_TOOL_NAMES.state} mode=change_contract before using an unfamiliar change operation; never guess its fields.${currentState}`;
+    }
+    const emitted = `${event.systemPrompt}\n\n${extensionText}`;
+    promptObservation = {
+      beforeTspi: event.systemPrompt,
+      emitted,
+      extensionText,
+      options: snapshotPromptOptions(event.systemPromptOptions, ctx.cwd),
     };
+    return { systemPrompt: emitted };
   });
 
   pi.on("tool_call", async (event, ctx) => guardPackageSourceRead(event, ctx.cwd));
+
+  pi.registerTool(createSystemPromptTool((ctx) => {
+    if (!ctx) throw new Error("sys_prompt requires an active Pi extension context");
+    return createPiExtensionPromptManifest(promptObservation, ctx.getSystemPrompt());
+  }, { name: TS_PUBLIC_TOOL_NAMES.systemPrompt }));
 
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.state,
@@ -251,6 +288,146 @@ export default function (pi: ExtensionAPI) {
       pi.appendEntry<WorkspaceValidationEntryData>(VALIDATION_ENTRY_TYPE, { validation });
     },
   });
+}
+
+function createPiExtensionPromptManifest(
+  observation: PromptObservation | undefined,
+  effective: string,
+): SystemPromptManifest {
+  if (!observation) {
+    return createSystemPromptManifest({
+      runtime: "pi-extension",
+      effective,
+      provenanceComplete: false,
+      contributors: [createPromptContributor("unknown", {
+        source: "pi:active-system-prompt",
+        attribution: "exact",
+        text: effective,
+        note: "No before_agent_start observation is available for this turn.",
+      })],
+      limitations: ["The active prompt was observed without the Pi build inputs or extension-chain boundary."],
+    });
+  }
+
+  const contributors: SystemPromptContributor[] = [
+    createPromptContributor("native", {
+      source: "@earendil-works/pi-coding-agent:systemPromptOptions",
+      attribution: "structured",
+      inputs: observation.options.contextFiles?.map((file) => file.path) || [],
+      metadata: nativePromptMetadata(observation.options),
+      note: "Pi exposes these base build inputs, but not an isolated native text range after extension chaining.",
+    }),
+  ];
+  const skillContributor = piSkillContributor(observation.options, effective);
+  if (skillContributor) contributors.push(skillContributor);
+
+  const extensionIsEffective = effective.includes(observation.extensionText);
+  contributors.push(createPromptContributor("extension", {
+    source: CONTROL_EXTENSION_SOURCE,
+    attribution: extensionIsEffective ? "exact" : "observed",
+    inputs: [PACKAGE_POLICY_SOURCE],
+    text: observation.extensionText,
+    note: extensionIsEffective
+      ? "Exact text returned by the TSPi before_agent_start handler."
+      : "TSPi returned this text, but a later handler replaced or removed it from the effective prompt.",
+  }));
+
+  contributors.push(createPromptContributor("unknown", {
+    source: "pi:before-tspi-extension-chain",
+    attribution: "unattributed",
+    metadata: {
+      boundary: "before_ts_workflow_control",
+      observed_sha256: sha256Text(observation.beforeTspi),
+    },
+    note: "Pi does not expose whether earlier handlers changed the prompt before TSPi received it.",
+  }));
+
+  if (effective !== observation.emitted) {
+    const appended = effective.startsWith(observation.emitted)
+      ? effective.slice(observation.emitted.length)
+      : undefined;
+    contributors.push(createPromptContributor("unknown", {
+      source: "pi:later-before-agent-start-handlers",
+      attribution: appended !== undefined ? "exact" : "unattributed",
+      ...(appended !== undefined ? { text: appended } : {}),
+      metadata: { tspi_emitted_sha256: sha256Text(observation.emitted) },
+      note: appended !== undefined
+        ? "Exact text appended after the TSPi handler; Pi does not expose the responsible extension."
+        : "A later handler replaced or rewrote the TSPi result; Pi does not expose its prompt delta.",
+    }));
+  }
+
+  return createSystemPromptManifest({
+    runtime: "pi-extension",
+    effective,
+    provenanceComplete: false,
+    contributors,
+    limitations: [
+      "Pi exposes chained prompt text and base build inputs, but not per-extension prompt deltas or extension identities.",
+      "Contributors describe evidence and may overlap; they are not concatenation instructions or a lossless partition of effective.",
+    ],
+  });
+}
+
+function piSkillContributor(
+  options: BuildSystemPromptOptions,
+  effective: string,
+): SystemPromptContributor | undefined {
+  const selectedTools = options.selectedTools || ["read", "bash", "edit", "write"];
+  const fileReadTool = selectedTools.includes("read") ? "read" : selectedTools.includes("bash") ? "bash" : undefined;
+  const visibleSkills = (options.skills || []).filter((skill) => !skill.disableModelInvocation);
+  if (!fileReadTool || visibleSkills.length === 0) return undefined;
+  const text = formatSkillsForPrompt(visibleSkills, fileReadTool);
+  if (!text) return undefined;
+  const exact = effective.includes(text);
+  return createPromptContributor("skill", {
+    source: "@earendil-works/pi-coding-agent:formatSkillsForPrompt",
+    attribution: exact ? "exact" : "structured",
+    inputs: visibleSkills.map((skill) => skill.filePath),
+    ...(exact ? { text } : {}),
+    metadata: {
+      file_read_tool: fileReadTool,
+      skills: visibleSkills.map((skill) => ({
+        name: skill.name,
+        file_path: skill.filePath,
+        source: skill.sourceInfo?.source,
+        scope: skill.sourceInfo?.scope,
+        origin: skill.sourceInfo?.origin,
+      })),
+    },
+    ...(!exact ? { note: "Pi reported these model-visible Skills, but their formatted block is absent from the final prompt." } : {}),
+  });
+}
+
+function nativePromptMetadata(options: BuildSystemPromptOptions): Record<string, unknown> {
+  return {
+    cwd: options.cwd,
+    prompt_kind: options.customPrompt ? "custom" : "default",
+    selected_tools: [...(options.selectedTools || ["read", "bash", "edit", "write"])],
+    tool_snippets: Object.keys(options.toolSnippets || {}).sort(),
+    prompt_guideline_count: options.promptGuidelines?.length || 0,
+    append_system_prompt: Boolean(options.appendSystemPrompt),
+    context_files: options.contextFiles?.map((file) => file.path) || [],
+  };
+}
+
+function snapshotPromptOptions(
+  options: BuildSystemPromptOptions | undefined,
+  cwd: string,
+): BuildSystemPromptOptions {
+  if (!options) return { cwd };
+  return {
+    cwd: options.cwd,
+    ...(options.customPrompt !== undefined ? { customPrompt: options.customPrompt } : {}),
+    ...(options.selectedTools ? { selectedTools: [...options.selectedTools] } : {}),
+    ...(options.toolSnippets ? { toolSnippets: { ...options.toolSnippets } } : {}),
+    ...(options.promptGuidelines ? { promptGuidelines: [...options.promptGuidelines] } : {}),
+    ...(options.appendSystemPrompt !== undefined ? { appendSystemPrompt: options.appendSystemPrompt } : {}),
+    ...(options.contextFiles
+      ? { contextFiles: options.contextFiles.map((file) => ({ ...file })) }
+      : {}),
+    ...(options.skills ? { skills: [...options.skills] } : {}),
+  };
 }
 
 function contextArgs(mode: typeof GRAPH_CONTEXT_MODES[number], params: Record<string, unknown>): string[] {

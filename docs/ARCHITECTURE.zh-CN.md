@@ -108,9 +108,9 @@ workspace 的 `.pi/app-server/`。这些 session 与 Phone Host、standalone ses
 和独占 Root lock，再启用完整原生工具集；App Server 进程存活期间会一直持有这些锁。
 
 Worker 使用 Pi Agent Core 加载并格式化 Skill，再把实际生效的 prompt 记录为
-`tspi-system-prompt/1` manifest。只读工具 `sys_prompt` 返回完整文本、SHA-256 摘要，
-并把各段来源标为原生、Skill 或 extension 注入。原生 App Server session 不加载
-extension prompt，因此其 manifest 通常只有原生段和 Skill 段。
+`tspi-system-prompt/2` manifest。只读工具 `sys_prompt` 返回完整文本、SHA-256 摘要、
+可确认的 contributor 和明确的 provenance 缺口。原生 App Server session 不加载
+extension prompt，因此其原生与 Skill contributor 是完整的。
 
 ## Python 运行环境
 
@@ -376,13 +376,17 @@ Host 为每个工作区预留一个启动，收到模型就绪快照后完成激
 
 | 扩展 | 工具和命令 | 用途 |
 | --- | --- | --- |
-| `ts-workflow-control` | `ts_state`、`ts_change`；`/ts`、`/ts-check` | 研究上下文和状态事务 |
+| `ts-workflow-control` | `sys_prompt`、`ts_state`、`ts_change`；`/ts`、`/ts-check` | prompt 检查、研究上下文和状态事务 |
 | `ts-workflow-review` | `ts_review`、`ts_reply` | Claim 评审和回复 |
 | `ts-workflow-compute` | `ts_calc`、`ts_remote`；`/ts-remote` | 计算生命周期和远端诊断 |
 | `ts-workflow-artifacts` | `ts_seed`、`ts_compare`、`ts_import`、`ts_render`、`ts_report`、`ts_notify` | 输入、分析、图像、报告、投递 |
 | `ts-workflow-ui` | `/ts-runs` | 活动与运行历史 |
 
 `ts-phone-bridge` 在 Host Worker 和 `--standalone --phone` 中加载。
+在传统 Pi extension runtime 中，`sys_prompt` 直接读取 `ctx.getSystemPrompt()` 的最终
+prompt，并分别标出 Pi 的结构化原生输入、模型可见 Skill 和 TSPi extension 的精确注入
+文本。Pi 不提供逐个 extension 的 prompt delta 或身份，因此无法确认的前序修改及已观察
+到的后序修改会标为 `unknown`，`provenance_complete` 保持为 `false`，不会猜测来源。
 [Skill 目录](../skills/README.zh-CN.md) 说明方法指导及其使用时机。
 工具 Schema 定义调用字段，能力目录描述适配器任务、验证模板、谓词和接受配置。
 

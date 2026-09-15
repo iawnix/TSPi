@@ -1,4 +1,5 @@
 export const TS_PUBLIC_TOOL_NAMES = Object.freeze({
+  systemPrompt: "sys_prompt",
   state: "ts_state",
   change: "ts_change",
   remote: "ts_remote",
@@ -14,6 +15,7 @@ export const TS_PUBLIC_TOOL_NAMES = Object.freeze({
 } as const);
 
 export const TS_PUBLIC_TOOL_EXECUTION = Object.freeze({
+  [TS_PUBLIC_TOOL_NAMES.systemPrompt]: "deterministic_runtime",
   [TS_PUBLIC_TOOL_NAMES.state]: "deterministic_workspace",
   [TS_PUBLIC_TOOL_NAMES.change]: "deterministic_workspace",
   [TS_PUBLIC_TOOL_NAMES.remote]: "deterministic_infrastructure",

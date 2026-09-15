@@ -114,8 +114,8 @@ export TSPI_PI_SOURCE=/path/to/prepared/pi
 ./TSPi --app-client --connect unix:///path/printed/by/server
 ```
 
-Omit `--allow-writes` for a server whose Workers expose only `read`, `ts_state`,
-and `ts_remote`. See [Native Pi App Server](ARCHITECTURE.md#native-pi-app-server-experimental)
+Omit `--allow-writes` for a server whose Workers expose only `read`, `sys_prompt`,
+`ts_state`, and `ts_remote`. See [Native Pi App Server](ARCHITECTURE.md#native-pi-app-server-experimental)
 for source preparation and lifecycle details. App Server sessions do not attach
 to Phone Host or standalone session history.
 
