@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from scripts import install_wizard as wizard
+from scripts import install_from_github as source_installer
 from scripts._credentials import provision_service_credentials
 from scripts.install_wizard import configure_phone, parse_args, phone_unit, validate_options
 from scripts.install_from_github import install_uninstaller
@@ -146,6 +147,27 @@ def test_service_install_keeps_another_installations_unit(tmp_path: Path, monkey
     assert unit.read_text() == content
 
 
+def test_service_conflict_is_detected_before_installation_mutates_the_root(tmp_path: Path, monkeypatch, capsys) -> None:
+    root = tmp_path / "install"
+    owner = tmp_path / "owner"
+    unit_dir = owner / ".config/systemd/user"
+    unit_dir.mkdir(parents=True)
+    unit = unit_dir / "ts-phone-tspi.service"
+    unit.write_text(f"[Service]\nWorkingDirectory={tmp_path / 'other'}\n", encoding="utf-8")
+    monkeypatch.setattr(Path, "home", lambda: owner)
+    monkeypatch.setattr(wizard, "prepare_phone", lambda *args, **kwargs: pytest.fail("Phone build must not start"))
+    monkeypatch.setattr(wizard, "run_install", lambda *args, **kwargs: pytest.fail("Package install must not start"))
+
+    result = wizard.main([
+        "--install-root", str(root), "--with-phone", "--without-web",
+        "--service-scope", "user", "--non-interactive", "--yes", "--json",
+    ])
+
+    assert result == 1
+    assert not root.exists()
+    assert "belongs to another installation" in capsys.readouterr().err
+
+
 def test_interactive_phone_selection_and_web_skip(tmp_path: Path, monkeypatch) -> None:
     args = parse_args(["--install-root", str(tmp_path / "install"), "--service-scope", "none"])
     monkeypatch.setattr(wizard.sys.stdin, "isatty", lambda: True)
@@ -178,7 +200,8 @@ def test_without_phone_does_not_fetch_or_configure_phone(tmp_path: Path, monkeyp
     monkeypatch.setattr(
         wizard,
         "run_install",
-        lambda args, *_: Path(args.install_root).mkdir(mode=0o700, parents=True) or {"release_id": "test"},
+        lambda args, *_: Path(args.install_root).mkdir(mode=0o700, parents=True, exist_ok=True)
+        or {"release_id": "test"},
     )
     monkeypatch.setattr(wizard, "inspect_installation", lambda *args: {"operation": "install", "release_id": "test"})
     assert wizard.main(["--install-root", str(tmp_path / "install"), "--without-phone",
@@ -190,10 +213,24 @@ def test_without_phone_does_not_fetch_or_configure_phone(tmp_path: Path, monkeyp
 def test_wizard_installs_phone_before_service_configuration(tmp_path: Path, monkeypatch, capsys) -> None:
     events = []
     release = tmp_path / "phone-release"
-    monkeypatch.setattr(wizard, "prepare_phone", lambda *args, **kwargs: events.append("build") or release)
+    real_install_uninstaller = wizard.install_uninstaller
+
+    def install_recovery(root, source):
+        events.append("recovery")
+        return real_install_uninstaller(root, source)
+
+    def prepare(*args, **kwargs):
+        root = Path(args[0])
+        assert (root / "uninstall.sh").is_file()
+        assert (root / ".pi/tspi/installation.json").is_file()
+        events.append("build")
+        return release
+
+    monkeypatch.setattr(wizard, "install_uninstaller", install_recovery)
+    monkeypatch.setattr(wizard, "prepare_phone", prepare)
     def run_install(args, phone):
         events.append(("install", phone))
-        Path(args.install_root).mkdir(mode=0o700, parents=True)
+        Path(args.install_root).mkdir(mode=0o700, parents=True, exist_ok=True)
         return {"release_id": "test"}
 
     monkeypatch.setattr(wizard, "run_install", run_install)
@@ -202,7 +239,7 @@ def test_wizard_installs_phone_before_service_configuration(tmp_path: Path, monk
     monkeypatch.setattr(wizard, "inspect_installation", lambda *args: {"operation": "install", "release_id": "test"})
     assert wizard.main(["--install-root", str(tmp_path / "install"), "--with-phone",
                         "--non-interactive", "--yes", "--json"]) == 0
-    assert events == ["build", ("install", release), "activate", "services"]
+    assert events == ["recovery", "build", ("install", release), "activate", "services"]
     captured = capsys.readouterr()
     result = json.loads(captured.out)
     assert result["components"]["phone"]["commit"] == "a" * 40
@@ -384,6 +421,44 @@ def test_install_places_local_uninstaller_in_installation(tmp_path: Path) -> Non
     marker = json.loads((destination / ".pi/tspi/installation.json").read_text(encoding="utf-8"))
     assert marker == {"schema_version": "tspi-installation-root/1", "install_root": str(destination)}
     assert uninstaller.stat().st_mode & 0o111
+
+
+def test_direct_package_failure_leaves_a_recoverable_installation(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "install"
+
+    def checkout(repo: str, ref: str, destination: Path) -> str:
+        (destination / "scripts").mkdir(parents=True)
+        for relative in (
+            "uninstall.sh",
+            "scripts/uninstall.py",
+            "scripts/_terminal_ui.py",
+            "scripts/_installation_metadata.py",
+        ):
+            target = destination / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / relative, target)
+        return "a" * 40
+
+    def run(command: list[str], *, cwd: Path | None = None) -> str:
+        if "scripts/build_package.py" in command:
+            return json.dumps({"manifest": "/tmp/manifest.json", "archive": "/tmp/archive.tgz"})
+        if "scripts/install_package.py" in command:
+            assert (root / "uninstall.sh").is_file()
+            assert wizard.inspect_installation(root) == {"operation": "restore", "release_id": None}
+            raise RuntimeError("simulated package failure")
+        raise AssertionError(command)
+
+    monkeypatch.setattr(source_installer, "checkout_github", checkout)
+    monkeypatch.setattr(source_installer, "run", run)
+
+    result = source_installer.main([
+        "--repo", "git@github.com:iawnix/TSPi.git", "--ref", "main",
+        "--install-root", str(root), "--without-web", "--json",
+    ])
+
+    assert result == 1
+    assert wizard.inspect_installation(root) == {"operation": "restore", "release_id": None}
+    assert (root / "uninstall.sh").is_file()
 
 
 def test_preflight_rejects_old_node_and_requires_npm_only_for_phone(monkeypatch) -> None:

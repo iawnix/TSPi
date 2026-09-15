@@ -29,7 +29,7 @@ try:
         success,
         title,
     )
-    from .install_from_github import validate_ref, validate_repo
+    from .install_from_github import install_uninstaller, validate_ref, validate_repo
     from .install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
     from .install_release import validate_install_root
 except ImportError:
@@ -46,7 +46,7 @@ except ImportError:
         success,
         title,
     )
-    from install_from_github import validate_ref, validate_repo
+    from install_from_github import install_uninstaller, validate_ref, validate_repo
     from install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
     from install_release import validate_install_root
 
@@ -637,9 +637,60 @@ def _systemd_quote(value: object) -> str:
     return json.dumps(str(value).replace("%", "%%"), ensure_ascii=False)
 
 
+def _selected_service_names(args: argparse.Namespace) -> list[str]:
+    names: list[str] = []
+    if args.with_phone:
+        names.append("ts-phone-tspi.service")
+    if args.with_web:
+        names.append("ts-web-tspi.service")
+    return names
+
+
+def _service_unit_directory(scope: str) -> Path:
+    return Path("/etc/systemd/system") if scope == "system" else Path.home() / ".config/systemd/user"
+
+
+def _service_working_directory(content: str) -> str | None:
+    for line in content.splitlines():
+        key, separator, raw_value = line.partition("=")
+        if separator and key.strip() == "WorkingDirectory":
+            value = raw_value.strip()
+            if value.startswith('"'):
+                try:
+                    decoded = json.loads(value)
+                except json.JSONDecodeError:
+                    return None
+                return decoded if isinstance(decoded, str) else None
+            return value
+    return None
+
+
+def validate_service_ownership(args: argparse.Namespace) -> None:
+    if args.service_scope == "none":
+        return
+    unit_dir = _service_unit_directory(args.service_scope)
+    expected_root = str(Path(args.install_root)).replace("%", "%%")
+    for name in _selected_service_names(args):
+        unit = unit_dir / name
+        if unit.is_symlink():
+            raise ValueError(f"service unit is a symbolic link: {unit}")
+        if not unit.exists():
+            continue
+        if not unit.is_file():
+            raise ValueError(f"service unit is not a regular file: {unit}")
+        working_directory = _service_working_directory(unit.read_text(encoding="utf-8"))
+        if working_directory != expected_root:
+            owner = working_directory or "unknown"
+            raise ValueError(
+                f"service {name} belongs to another installation ({owner}): {unit}; "
+                "uninstall that installation or remove the stale unit before retrying"
+            )
+
+
 def configure_services(args: argparse.Namespace, phone_config: Path | None) -> list[dict[str, str]]:
     if args.service_scope == "none":
         return []
+    validate_service_ownership(args)
     units: list[tuple[str, str]] = []
     if phone_config:
         units.append(("ts-phone-tspi.service", phone_unit(args)))
@@ -648,25 +699,10 @@ def configure_services(args: argparse.Namespace, phone_config: Path | None) -> l
     if not units:
         return []
     prepare_runtime_dirs(Path(args.install_root))
-    unit_dir = (
-        Path("/etc/systemd/system")
-        if args.service_scope == "system"
-        else Path.home() / ".config/systemd/user"
-    )
+    unit_dir = _service_unit_directory(args.service_scope)
     unit_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
     names: list[str] = []
     scope = [] if args.service_scope == "system" else ["--user"]
-    for name, _ in units:
-        unit = unit_dir / name
-        if unit.is_symlink():
-            raise ValueError(f"service unit is a symbolic link: {unit}")
-        if unit.exists():
-            existing = unit.read_text(encoding="utf-8")
-            root = str(Path(args.install_root)).replace("%", "%%")
-            bindings = dict(line.split("=", 1) for line in existing.splitlines() if "=" in line)
-            same_root = bindings.get("WorkingDirectory", "").strip('"') == root
-            if not same_root:
-                raise ValueError(f"service {name} belongs to another installation: {unit}")
     for name, content in units:
         (unit_dir / name).write_text(content, encoding="utf-8")
         (unit_dir / name).chmod(0o644)
@@ -880,11 +916,13 @@ def main(argv: list[str] | None = None) -> int:
         validate_options(args)
         require_preflight(checks, with_phone=bool(args.with_phone))
         installation = inspect_installation(Path(args.install_root))
+        validate_service_ownership(args)
         if not args.non_interactive:
             show_install_plan(args, installation)
             if not args.yes and not ask_yes_no("Proceed with installation", True):
                 note("Installation cancelled.", tone="warning")
                 return 0
+        install_uninstaller(Path(args.install_root), ROOT)
         phone_release = None
         if args.with_phone:
             with Spinner("Preparing TS Phone", stream=sys.stderr, enabled=not args.json) as activity:

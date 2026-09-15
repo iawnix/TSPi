@@ -173,10 +173,10 @@ def main(argv: list[str] | None = None) -> int:
                 install.extend(["--conda", args.conda])
             if args.conda_root:
                 install.extend(["--conda-root", args.conda_root])
-            emit_progress(args.progress, "Preparing the managed runtime and activating the release")
-            installed = json.loads(run(install, cwd=checkout))
             emit_progress(args.progress, "Installing the local recovery uninstaller")
             uninstaller = install_uninstaller(Path(args.install_root), checkout)
+            emit_progress(args.progress, "Preparing the managed runtime and activating the release")
+            installed = json.loads(run(install, cwd=checkout))
             provenance = Path(args.install_root).expanduser().resolve() / ".pi" / "packages" / "tspi" / "source-provenance.json"
             provenance.parent.mkdir(parents=True, exist_ok=True)
             provenance.write_text(json.dumps({"schema_version": "tspi-source-provenance/1", "repo": args.repo, "ref": args.ref, "commit": commit, "tree_digest": digest, "phone_repo": args.phone_repo, "phone_ref": args.phone_ref, "phone_commit": phone_commit, "installed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")

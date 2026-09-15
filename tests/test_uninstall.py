@@ -153,6 +153,37 @@ def test_installed_uninstaller_runs_with_its_private_ui_module(tmp_path: Path) -
     assert (root / ".pi/tspi/_terminal_ui.py").is_file()
 
 
+def test_installed_uninstaller_removes_an_immutable_partial_release(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    install_uninstaller(root, Path(__file__).resolve().parents[1])
+    release = root / ".pi/packages/tspi/releases/partial-release/agent"
+    release.mkdir(parents=True)
+    artifact = release / "package.json"
+    artifact.write_text("{}\n", encoding="utf-8")
+    artifact.chmod(0o400)
+    for directory in (release, release.parent):
+        directory.chmod(0o500)
+
+    completed = subprocess.run(
+        [
+            str(root / "uninstall.sh"),
+            "--install-root", str(root),
+            "--service-scope", "none",
+            "--purge-all",
+            "--non-interactive",
+            "--yes",
+            "--json",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["ok"] is True
+    assert not root.exists()
+
+
 def test_phone_uninstall_removes_builds_and_keeps_conversations_and_credentials(tmp_path: Path) -> None:
     root = tmp_path / "install"
     (root / ".pi/packages/tspi").mkdir(parents=True)
