@@ -643,6 +643,13 @@ repeatedly to override the inferred root. Use `register`, `list`, or `remove`
 for external or specially labeled workspaces. Open `http://127.0.0.1:8766/` in
 a browser.
 
+For a non-loopback bind, pass `--allow-remote` and configure `--auth-token` or
+`TSPI_WEB_AUTH_TOKEN`. The browser prompts for the token after the server
+returns its first authentication challenge, keeps it only in page memory, and
+adds it as a Bearer credential only to same-origin `/api/` requests. Reloading
+the page clears it. Put TLS in front of the service before sending the token
+over an untrusted network.
+
 The visible browser polls a revision-aware snapshot route every five seconds.
 It pauses while hidden, never overlaps a manual refresh, and preserves the
 current view, scroll position, and open inspector when data changes. An

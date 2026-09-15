@@ -41,6 +41,7 @@
     <symbol id="icon-fit" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
     <symbol id="icon-focus" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M3 12h3M18 12h3M12 3v3M12 18v3"/></symbol>
     <symbol id="icon-filter" viewBox="0 0 24 24"><path d="M4 5h16M7 12h10M10 19h4"/></symbol>
+    <symbol id="icon-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m11.5 11.5 8-8M15 8l2 2M18 5l2 2"/></symbol>
     <symbol id="icon-arrow-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
     <symbol id="icon-arrow-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
   </svg>
@@ -100,6 +101,28 @@
     </div>
     <div class="inspector-body" id="inspector-body"></div>
   </aside>
+
+  <dialog class="auth-dialog" id="auth-dialog" aria-labelledby="auth-title" aria-describedby="auth-description">
+    <form class="auth-form" id="auth-form">
+      <div class="auth-heading">
+        <span class="auth-mark" aria-hidden="true"><svg class="icon"><use href="#icon-key"/></svg></span>
+        <div>
+          <h2 id="auth-title" data-i18n="auth.title">Access token required</h2>
+          <p id="auth-description" data-i18n="auth.description">Enter the token configured for this TS Web server.</p>
+        </div>
+      </div>
+      <div class="auth-error" id="auth-error" role="alert" data-i18n="auth.invalid" hidden>The token was rejected. Check it and try again.</div>
+      <label class="auth-label" for="auth-token" data-i18n="auth.tokenLabel">Access token</label>
+      <input class="auth-input mono" id="auth-token" name="access-token" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="4096" required>
+      <label class="auth-reveal"><input id="auth-reveal" type="checkbox"><span data-i18n="auth.reveal">Show token</span></label>
+      <div class="auth-note"><svg class="icon" aria-hidden="true"><use href="#icon-key"/></svg><span data-i18n="auth.memoryOnly">The token is kept in memory and cleared when this page closes.</span></div>
+      <div class="auth-warning" id="auth-warning" role="note" hidden>
+        <svg class="icon" aria-hidden="true"><use href="#icon-findings"/></svg>
+        <span data-i18n="auth.insecure">This connection is not encrypted. Use HTTPS before entering a token on an untrusted network.</span>
+      </div>
+      <button class="auth-submit" id="auth-submit" type="submit" data-i18n="auth.connect">Connect</button>
+    </form>
+  </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="/i18n.js" defer></script>

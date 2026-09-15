@@ -30,6 +30,10 @@ const state = {
   claimMapFilters: null,
   conclusionsMode: "table",
   snapshotReceivedAt: null,
+  authToken: "",
+  authPrompt: null,
+  resolveAuthPrompt: null,
+  authChecking: false,
 };
 
 const content = document.getElementById("content");
@@ -46,6 +50,13 @@ const inspector = document.getElementById("inspector");
 const inspectorKicker = document.getElementById("inspector-kicker");
 const inspectorTitle = document.getElementById("inspector-title");
 const inspectorBody = document.getElementById("inspector-body");
+const authDialog = document.getElementById("auth-dialog");
+const authForm = document.getElementById("auth-form");
+const authTokenInput = document.getElementById("auth-token");
+const authReveal = document.getElementById("auth-reveal");
+const authError = document.getElementById("auth-error");
+const authWarning = document.getElementById("auth-warning");
+const authSubmit = document.getElementById("auth-submit");
 const toast = document.getElementById("toast");
 const themeStorageKey = "ts-explorer-theme";
 const workspaceStorageKey = "ts-explorer-workspace";
@@ -70,16 +81,72 @@ function trAttemptKind(value) {
 }
 
 async function api(path) {
-  const response = await fetch(path, { cache: "no-store", headers: { Accept: "application/json" } });
-  const text = await response.text();
-  let payload;
-  try {
-    payload = JSON.parse(text);
-  } catch (_error) {
-    throw new Error(tr("error.invalidJson", "Invalid JSON from {{path}}.", { path }));
+  const target = new URL(path, window.location.href);
+  if (target.origin !== window.location.origin || !target.pathname.startsWith("/api/")) {
+    throw new Error(tr("error.unsafeApiTarget", "Refusing an API request outside this TS Web server."));
   }
-  if (!response.ok) throw new Error(payload.error || `${response.status} ${response.statusText}`);
-  return payload;
+  while (true) {
+    const headers = { Accept: "application/json" };
+    if (state.authToken) headers.Authorization = `Bearer ${state.authToken}`;
+    const submittedToken = Boolean(state.authToken);
+    let response;
+    try {
+      response = await fetch(target.href, { cache: "no-store", headers });
+    } catch (error) {
+      completeAuthentication();
+      throw error;
+    }
+    const text = await response.text();
+    if (response.status === 401) {
+      await requestAccessToken({ rejected: submittedToken });
+      continue;
+    }
+    completeAuthentication();
+    let payload;
+    try {
+      payload = JSON.parse(text);
+    } catch (_error) {
+      throw new Error(tr("error.invalidJson", "Invalid JSON from {{path}}.", { path }));
+    }
+    if (!response.ok) throw new Error(payload.error || `${response.status} ${response.statusText}`);
+    return payload;
+  }
+}
+
+function requestAccessToken({ rejected = false } = {}) {
+  state.authToken = "";
+  state.authChecking = false;
+  authError.hidden = !rejected;
+  authWarning.hidden = isEncryptedOrLoopback();
+  authSubmit.disabled = false;
+  authSubmit.textContent = tr("auth.connect", "Connect");
+  setHealth("invalid", tr("health.authRequired", "Authentication required"));
+  if (!authDialog.open) authDialog.showModal();
+  requestAnimationFrame(() => {
+    authTokenInput.focus();
+    if (rejected) authTokenInput.select();
+  });
+  if (!state.authPrompt) {
+    state.authPrompt = new Promise(resolve => {
+      state.resolveAuthPrompt = resolve;
+    });
+  }
+  return state.authPrompt;
+}
+
+function completeAuthentication() {
+  if (!state.authChecking) return;
+  state.authChecking = false;
+  authTokenInput.value = "";
+  authReveal.checked = false;
+  authTokenInput.type = "password";
+  if (authDialog.open) authDialog.close();
+}
+
+function isEncryptedOrLoopback() {
+  if (window.location.protocol === "https:") return true;
+  const hostname = window.location.hostname.toLowerCase();
+  return hostname === "localhost" || hostname === "::1" || hostname.startsWith("127.");
 }
 
 async function boot() {
@@ -1428,6 +1495,25 @@ workspaceSelect.addEventListener("change", async event => {
 themeButton.addEventListener("click", toggleTheme);
 languageButton.addEventListener("click", toggleLanguage);
 refreshButton.addEventListener("click", refreshExplorer);
+authForm.addEventListener("submit", event => {
+  event.preventDefault();
+  const token = authTokenInput.value.trim();
+  if (!token || !state.resolveAuthPrompt) return;
+  state.authToken = token;
+  state.authChecking = true;
+  authError.hidden = true;
+  authSubmit.disabled = true;
+  authSubmit.textContent = tr("auth.checking", "Checking...");
+  const resolve = state.resolveAuthPrompt;
+  state.authPrompt = null;
+  state.resolveAuthPrompt = null;
+  resolve();
+});
+authReveal.addEventListener("change", () => {
+  authTokenInput.type = authReveal.checked ? "text" : "password";
+  authTokenInput.focus();
+});
+authDialog.addEventListener("cancel", event => event.preventDefault());
 document.getElementById("close-inspector").addEventListener("click", closeInspector);
 document.getElementById("inspector-backdrop").addEventListener("click", closeInspector);
 document.addEventListener("keydown", event => {

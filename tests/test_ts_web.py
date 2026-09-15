@@ -1226,6 +1226,18 @@ def test_static_ui_refreshes_registry_and_persists_theme() -> None:
     assert ':root[data-theme="dark"]' in css
     assert "body.inspector-open { overflow: hidden; }" in css
     assert 'id="theme-button"' in html
+    assert 'id="auth-dialog"' in html
+    assert 'id="auth-token"' in html
+    assert 'autocomplete="off"' in html
+    assert 'id="auth-warning"' in html
+    assert "response.status === 401" in script
+    assert 'headers.Authorization = `Bearer ${state.authToken}`' in script
+    assert "target.origin !== window.location.origin" in script
+    assert 'target.pathname.startsWith("/api/")' in script
+    assert 'authDialog.addEventListener("cancel", event => event.preventDefault())' in script
+    assert "sessionStorage" not in script
+    assert "ts-explorer-token" not in script
+    assert ".auth-dialog::backdrop" in css
     assert 'const themeStorageKey = "ts-explorer-theme"' in script
     assert 'themeButton.addEventListener("click", toggleTheme)' in script
     assert "async function loadWorkspaceCatalog()" in script
