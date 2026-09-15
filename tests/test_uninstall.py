@@ -31,6 +31,9 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     (root / ".pi/packages/tspi").mkdir(parents=True)
     (root / "workspaces/ts_001").mkdir(parents=True)
     (root / ".pi/ts-phone-state").mkdir(parents=True)
+    download = root / "downloads/client.apk"
+    download.parent.mkdir()
+    download.write_bytes(b"apk")
     (root / "TSPi").symlink_to(".pi/packages/tspi/current")
 
     result = uninstall(_args(root))
@@ -38,10 +41,34 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     assert result["ok"] is True
     assert (root / "workspaces/ts_001").is_dir()
     assert (root / ".pi/ts-phone-state").is_dir()
+    assert download.read_bytes() == b"apk"
     assert not (root / ".pi/packages/tspi").exists()
 
 
-def test_uninstall_purge_can_remove_empty_installation(tmp_path: Path) -> None:
+def test_uninstall_removes_immutable_release_without_following_links(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    release = root / ".pi/packages/tspi/releases/release-id"
+    nested = release / "agent/packages"
+    nested.mkdir(parents=True)
+    artifact = nested / "package.json"
+    artifact.write_text("{}\n", encoding="utf-8")
+    external = tmp_path / "external"
+    external.mkdir()
+    preserved = external / "keep.txt"
+    preserved.write_text("keep\n", encoding="utf-8")
+    (release / "external").symlink_to(external, target_is_directory=True)
+    artifact.chmod(0o400)
+    for directory in (nested, nested.parent, release):
+        directory.chmod(0o500)
+
+    result = uninstall(_args(root))
+
+    assert result["ok"] is True
+    assert not (root / ".pi/packages/tspi").exists()
+    assert preserved.read_text(encoding="utf-8") == "keep\n"
+
+
+def test_uninstall_purge_removes_the_dedicated_installation_root(tmp_path: Path) -> None:
     root = tmp_path / "install"
     (root / ".pi/packages/tspi").mkdir(parents=True)
     (root / "workspaces/ts_001").mkdir(parents=True)
@@ -50,6 +77,9 @@ def test_uninstall_purge_can_remove_empty_installation(tmp_path: Path) -> None:
     install_uninstaller(root, Path(__file__).resolve().parents[1])
     (root / ".pi/ts-phone/releases/phone-commit").mkdir(parents=True)
     (root / ".pi/ts-phone/current").symlink_to("releases/phone-commit")
+    download = root / "downloads/client.apk"
+    download.parent.mkdir()
+    download.write_bytes(b"apk")
 
     result = uninstall(_args(root, purge_workspaces=True, purge_config=True, purge_runtime=True, remove_root=True))
 

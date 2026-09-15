@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -158,6 +160,15 @@ def remove_entrypoints(root: Path) -> list[str]:
     return removed
 
 
+def make_tree_removable(root: Path) -> None:
+    """Restore owner-write permission on directories without following links."""
+    for current, _, _ in os.walk(root, followlinks=False):
+        directory = Path(current)
+        mode = stat.S_IMODE(directory.stat().st_mode)
+        if not mode & stat.S_IWUSR:
+            directory.chmod(mode | stat.S_IWUSR)
+
+
 def remove_paths(paths: list[Path]) -> list[str]:
     removed: list[str] = []
     for path in paths:
@@ -165,6 +176,7 @@ def remove_paths(paths: list[Path]) -> list[str]:
             path.unlink()
             removed.append(str(path))
         elif path.is_dir():
+            make_tree_removable(path)
             shutil.rmtree(path)
             removed.append(str(path))
     return removed
@@ -207,15 +219,7 @@ def uninstall(args: argparse.Namespace) -> dict[str, object]:
     removed.extend(remove_paths(managed))
     prune_empty_parents(root)
     if args.remove_root:
-        removed.extend(remove_paths([root / "uninstall.sh", root / ".pi/tspi/uninstall.py"]))
-        for path in (root / ".pi/tspi", root / ".pi"):
-            if path.is_dir() and not any(path.iterdir()):
-                path.rmdir()
-        remaining = list(root.iterdir())
-        if remaining:
-            raise RuntimeError(f"installation root is not empty after cleanup: {root}")
-        root.rmdir()
-        removed.append(str(root))
+        removed.extend(remove_paths([root]))
     removed.extend(service_units)
     return {"ok": True, "install_root": str(root), "stopped_services": stopped, "removed": removed,
             "preserved_workspaces": not args.purge_workspaces, "preserved_config": not args.purge_config,
