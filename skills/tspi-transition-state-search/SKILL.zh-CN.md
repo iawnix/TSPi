@@ -28,5 +28,7 @@ description: 选择和评估 QST、扫描、NEB、构象搜索、分支与恢复
 
 - 候选构造和后续证据：[candidate_generation.md](references/candidate_generation.md)
 - 后端选择：[backend_selection.md](references/backend_selection.md)
+- ASE NEB 执行器：[ase_neb_executor.zh-CN.md](references/ase_neb_executor.zh-CN.md)
+- ASE NEB 执行器（英文）：[ase_neb_executor.md](references/ase_neb_executor.md)
 - 机理 Claim 反思：[mechanism_reflection.md](references/mechanism_reflection.md)
 - 重复结果和失败搜索反思：[strategy_reflection.md](references/strategy_reflection.md)

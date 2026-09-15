@@ -16,6 +16,13 @@ from dataclasses import asdict, replace
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
+from ts_agent.backends.ase_neb import (
+    ASE_NEB_REQUIRED_ARTIFACTS,
+    parse_ase_neb_artifacts,
+    prepare_ase_neb,
+    validate_ase_neb_endpoints,
+    write_ase_neb_parse_artifacts,
+)
 from ts_agent.backends.base import BackendTask, PreparedTask
 from ts_agent.backends.crest import (
     CREST_REQUIRED_ARTIFACTS,
@@ -82,6 +89,7 @@ BACKEND_PREPARERS: dict[str, Callable[[BackendTask], PreparedTask]] = {
     "gaussian": prepare_gaussian,
     "xtb": prepare_xtb,
     "crest": prepare_crest,
+    "ase_neb": prepare_ase_neb,
 }
 BACKENDS: dict[str, dict[str, tuple[set[str], Callable[[BackendTask], PreparedTask]]]] = {
     backend: {
@@ -819,7 +827,9 @@ def parse_calculation(
         raise ComputeContractError("xTB parser requires the bound xtb.out artifact")
     if backend == "crest" and source.name != "crest.out":
         raise ComputeContractError("CREST parser requires the bound crest.out artifact")
-    if backend not in {"gaussian", "xtb", "crest"}:
+    if backend == "ase_neb" and source.name != "neb_summary.json":
+        raise ComputeContractError("ASE NEB parser requires the bound neb_summary.json artifact")
+    if backend not in {"gaussian", "xtb", "crest", "ase_neb"}:
         raise ComputeContractError(f"no deterministic parser is exposed for backend: {backend}")
 
     parse_inputs = _bound_parse_artifacts(workspace, intent, prepared_task, source_ref)
@@ -832,6 +842,13 @@ def parse_calculation(
         control_ref = _workspace_ref(workspace, str(intent["input_refs"]["control"]), read=True)
         xtb_control = workspace / control_ref
         parser_inputs.append({"ref": control_ref, "sha256": _sha256_file(xtb_control)})
+    ase_neb_endpoints: dict[str, Path] = {}
+    if backend == "ase_neb":
+        for role in ("reactant", "product"):
+            endpoint_ref = _workspace_ref(workspace, str(intent["input_refs"][role]), read=True)
+            endpoint = workspace / endpoint_ref
+            ase_neb_endpoints[role] = endpoint
+            parser_inputs.append({"ref": endpoint_ref, "sha256": _sha256_file(endpoint)})
 
     _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
     result_path = workspace / output_ref / "calculation_result.json"
@@ -864,9 +881,16 @@ def parse_calculation(
             {name: path for name, (_, path) in parse_inputs.items()},
             control=xtb_control,
         )
-    else:
+    elif backend == "crest":
         parsed = parse_crest_artifacts(
             {name: path for name, (_, path) in parse_inputs.items()}
+        )
+    else:
+        parsed = parse_ase_neb_artifacts(
+            {name: path for name, (_, path) in parse_inputs.items()},
+            reactant=ase_neb_endpoints["reactant"],
+            product=ase_neb_endpoints["product"],
+            expected_settings=adapter_settings(intent["parameters"]),
         )
     summary = parsed.get("summary")
     if not isinstance(summary, dict):
@@ -892,8 +916,10 @@ def parse_calculation(
             write_parse_artifacts(parsed, parse_dir, source.stem, source.name)
         elif backend == "xtb":
             write_xtb_parse_artifacts(parsed, parse_dir)
-        else:
+        elif backend == "crest":
             write_crest_parse_artifacts(parsed, parse_dir)
+        else:
+            write_ase_neb_parse_artifacts(parsed, parse_dir)
         parser_output_refs = sorted(
             path.relative_to(workspace).as_posix()
             for path in parse_dir.glob("*")
@@ -981,7 +1007,9 @@ def _parser_name(backend: str, is_irc: bool) -> str:
         return "ts_agent.backends.gaussian.parse_irc_log" if is_irc else "ts_agent.backends.gaussian.parse_log"
     if backend == "xtb":
         return "ts_agent.backends.xtb.parse_xtb_artifacts"
-    return "ts_agent.backends.crest.parse_crest_artifacts"
+    if backend == "crest":
+        return "ts_agent.backends.crest.parse_crest_artifacts"
+    return "ts_agent.backends.ase_neb.parse_ase_neb_artifacts"
 
 
 def _validate_backend_request(
@@ -1015,6 +1043,15 @@ def _validate_backend_request(
             )
         except (OSError, UnicodeError, ValueError) as exc:
             raise ComputeContractError(f"invalid xTB scan control input: {exc}") from exc
+        return
+    if backend == "ase_neb":
+        try:
+            validate_ase_neb_endpoints(
+                workspace / inputs["reactant"],
+                workspace / inputs["product"],
+            )
+        except (OSError, UnicodeError, ValueError) as exc:
+            raise ComputeContractError(f"invalid ASE NEB endpoints: {exc}") from exc
         return
     if backend != "gaussian":
         return
@@ -1137,6 +1174,8 @@ def _validate_required_backend_artifacts(intent: dict[str, Any], prepared: Prepa
         required = XTB_REQUIRED_ARTIFACTS[task_type]
     elif backend == "crest":
         required = CREST_REQUIRED_ARTIFACTS
+    elif backend == "ase_neb":
+        required = ASE_NEB_REQUIRED_ARTIFACTS
     else:
         return
     names = {Path(ref).name for ref in prepared.expected_artifacts}
@@ -1347,6 +1386,8 @@ def _remote_stdout_name(prepared: dict[str, Any]) -> str:
         return captures[0]
     if backend == "xtb" and "xtb.out" in expected:
         return "xtb.out"
+    if backend == "ase_neb" and "ase_neb.out" in expected:
+        return "ase_neb.out"
     return "remote_job.stdout"
 
 

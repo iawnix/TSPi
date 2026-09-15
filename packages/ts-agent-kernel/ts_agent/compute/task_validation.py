@@ -33,7 +33,7 @@ def parsed_program_outcome(backend: str, facts: dict[str, Any]) -> tuple[str, st
 
     if backend == "gaussian":
         completed = facts.get("normal_termination") is True
-    elif backend in {"xtb", "crest"}:
+    elif backend in {"xtb", "crest", "ase_neb"}:
         completed = facts.get("execution_completed") is True
     else:
         raise ValueError(f"no program outcome rule is registered for backend: {backend}")
@@ -140,5 +140,13 @@ _TASK_VALIDATORS: dict[tuple[str, str], TaskValidator] = {
     ("crest", "conformer_search"): _require_truthy(
         ("conformer_count", "conformers_missing"),
         ("ensemble_counts_match", "ensemble_energy_counts_differ"),
+    ),
+    ("ase_neb", "neb"): _require_truthy(
+        ("converged", "neb_not_converged"),
+        ("path_complete", "reaction_path_incomplete"),
+        ("endpoint_match", "reaction_path_endpoints_differ"),
+        ("image_energies_complete", "reaction_path_energies_incomplete"),
+        ("force_threshold_satisfied", "neb_force_threshold_not_satisfied"),
+        ("settings_match", "run_settings_differ_from_intent"),
     ),
 }

@@ -28,3 +28,12 @@ requires_gpu = false
 command = ["/home/agent/soft/xtb/current/bin/xtb"]
 allowed_queues = ["batch", "fat", "fata"]
 requires_gpu = false
+
+[profiles.cluster_1w.software.ase_neb]
+# A Pixi environment containing ASE, NumPy, and the matching ts-agent-kernel wheel.
+command = ["/home/agent/soft/ase-neb/current/.pixi/envs/default/bin/python"]
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false
+
+[profiles.cluster_1w.software.ase_neb.environment]
+TS_ASE_NEB_XTB = "/home/agent/soft/xtb/current/bin/xtb"

@@ -18,8 +18,9 @@ Consider:
 
 Gaussian is a first-class candidate generator for direct TS optimization,
 relaxed scans, QST, and follow-up characterization. xTB/CREST can efficiently
-explore conformers and rough paths. External NEB or DMECP workflows can
-address crossing searches. Choose their order from the current research question.
+explore conformers and rough paths. The registered `ase.neb` capability uses
+ASE path optimization with xTB energies and forces. External DMECP workflows
+can address crossing searches. Choose their order from the current research question.
 
 Record the method choice and falsifiable purpose in the ResearchNode/Claim. If a
 method changes, preserve the prior intent and use a recalculation record or a

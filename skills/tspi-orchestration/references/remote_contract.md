@@ -17,6 +17,9 @@ Use `ts_remote` for read-only diagnostics:
 - `nodes`: bounded compute-resource view.
 
 Run `doctor` before the first remote calculation or after configuration changes.
+For `ase_neb`, `doctor` additionally imports ASE and the TSPi runner with the
+configured Python and executes the configured xTB program's version probe. The
+profile is ready only when all three components are available.
 
 ## Isolation
 

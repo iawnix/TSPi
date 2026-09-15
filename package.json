@@ -41,6 +41,8 @@
     "docs/*.md",
     "docs/adr/*.md",
     "config/*.json",
+    "config/*.toml",
+    "config/*.lock",
     "config/pi-worker-entry.patch",
     "contracts/ts-render/curve-data.schema.json",
     "contracts/ts-phone/README.md",

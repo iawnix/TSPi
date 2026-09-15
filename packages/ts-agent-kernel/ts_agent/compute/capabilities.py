@@ -78,6 +78,51 @@ def _parameters(*names: str) -> dict[str, Any]:
     }
 
 
+def _ase_neb_parameters() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "images": {"type": "integer", "minimum": 3, "maximum": 32, "default": 7},
+            "fmax": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 10,
+                "default": 0.05,
+            },
+            "max_steps": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100_000,
+                "default": 500,
+            },
+            "spring_constant": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 10,
+                "default": 0.1,
+            },
+            "interpolation": {"enum": ["linear", "idpp"], "default": "idpp"},
+            "climb": {"type": "boolean", "default": False},
+            "remove_rotation_and_translation": {"type": "boolean", "default": True},
+            "method": {"enum": ["gfn1", "gfn2"], "default": "gfn2"},
+            "charge": {"type": "integer", "minimum": -100, "maximum": 100, "default": 0},
+            "uhf": {"type": "integer", "minimum": 0, "maximum": 100, "default": 0},
+            "accuracy": {"type": "number", "exclusiveMinimum": 0, "maximum": 100},
+            "electronic_temperature": {"type": "number", "minimum": 0, "maximum": 1_000_000},
+            "solvent_model": {"enum": ["alpb", "gbsa"]},
+            "solvent": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$",
+            },
+        },
+        "dependentRequired": {
+            "solvent": ["solvent_model"],
+            "solvent_model": ["solvent"],
+        },
+        "additionalProperties": False,
+    }
+
+
 def _descriptor(
     capability: str,
     backend: str,
@@ -146,6 +191,16 @@ CAPABILITY_DESCRIPTORS: Final[tuple[CapabilityDescriptor, ...]] = (
         "crest.conformer_search", "crest", "conformer_search", frozenset({"xyz"}), ("program_output", "conformer_ensemble"),
         parser="crest.artifacts/2",
         parameter_schema=_parameters("charge", "method", "opt_level", "search_level", "solvent", "solvent_model", "threads", "uhf"),
+    ),
+    _descriptor(
+        "ase.neb",
+        "ase_neb",
+        "neb",
+        frozenset({"reactant", "product"}),
+        ("program_output", "reaction_path"),
+        parser="ase.neb/1",
+        parameter_schema=_ase_neb_parameters(),
+        limits={"max_images": 32, "calculator": "xtb_cli", "optimizer": "FIRE"},
     ),
 )
 

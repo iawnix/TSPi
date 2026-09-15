@@ -371,6 +371,37 @@ Use `/ts-remote doctor` for the full SSH, scheduler, storage, and registered
 software chain; `queues` and `nodes` return bounded scheduler views. All four
 diagnostics are read-only. Run `doctor` before the first remote calculation.
 
+### Deploy The ASE NEB Runtime With Pixi
+
+`ase.neb` requires a shared cluster-side Python containing ASE, NumPy, and the
+same `ts-agent-kernel` release used to prepare the calculation. The repository
+ships `config/ase-neb-pixi.toml`; resolve it once, retain its `pixi.lock`, and
+install each kernel wheel into a new release directory with `--no-deps`.
+
+The shipped manifest and lock target the `cluster_1w` compute baseline of
+Linux 3.10 and glibc 2.18. For another cluster, update the manifest's platform
+virtual packages, regenerate the lock on purpose, and derive a new release id
+from the manifest, lock, and kernel wheel together.
+
+For example:
+
+```bash
+PIXI=/absolute/path/to/pixi
+RUNTIME=/home/agent/soft/ase-neb/<release-id>
+mkdir -p "$RUNTIME"
+cp config/ase-neb-pixi.toml "$RUNTIME/pixi.toml"
+cp config/ase-neb-pixi.lock "$RUNTIME/pixi.lock"
+"$PIXI" install --locked --manifest-path "$RUNTIME/pixi.toml"
+"$RUNTIME/.pixi/envs/default/bin/python" -m pip install \
+  --no-deps /path/to/ts_agent_kernel-<version>-py3-none-any.whl
+```
+
+Point `[profiles.<name>.software.ase_neb].command` at that environment's
+absolute Python path. Set `TS_ASE_NEB_XTB` to the cluster's xTB executable in
+the software profile environment. Do not point the profile at an interactive
+shell or a Python environment that lacks the matching TSPi runner. The
+`ase_neb` doctor check verifies the Python imports and xTB version command.
+
 ## Configure Notifications
 
 Notifications are optional and fixed-target. Create exactly this installation

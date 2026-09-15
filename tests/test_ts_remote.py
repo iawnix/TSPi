@@ -649,4 +649,62 @@ def test_doctor_is_unhealthy_when_storage_or_software_is_unavailable(tmp_path: P
 
     assert checks["remote_root_writable"] is False
     assert checks["software"]["gaussian"]["command_available"] is True
+    assert checks["software"]["gaussian"]["runtime_dependencies_available"] is None
     assert checks["ok"] is False
+
+
+def test_doctor_checks_ase_neb_python_ase_and_xtb_runtime(tmp_path: Path) -> None:
+    profile = _profile(tmp_path)
+    ase_software = replace(
+        profile.software["gaussian"],
+        command=("/opt/ase-neb/bin/python",),
+        activation_script=None,
+        environment={"TS_ASE_NEB_XTB": "/opt/xtb/bin/xtb"},
+    )
+    profile = replace(profile, software={"ase_neb": ase_software})
+
+    class Client:
+        calls = 0
+
+        def run(self, argv, *, check=True):
+            del check
+            return CommandResult(tuple(argv), 0, "ok\n", "")
+
+        def run_script(self, _script, args, *, check=True):
+            del check
+            self.calls += 1
+            if self.calls == 1:
+                return CommandResult(("ssh",), 0, "", "")
+            assert args == ["", "/opt/ase-neb/bin/python", "/opt/xtb/bin/xtb"]
+            return CommandResult(("ssh",), 1, "", "ASE import failed")
+
+    checks = _doctor(Client(), profile)
+
+    assert checks["software"]["ase_neb"]["command_available"] is True
+    assert checks["software"]["ase_neb"]["runtime_dependencies_available"] is False
+    assert checks["ok"] is False
+
+
+def test_torque_renders_ase_neb_profile_python_and_xtb_environment(tmp_path: Path) -> None:
+    base = _job(tmp_path)
+    ase_software = replace(
+        base.profile.software["gaussian"],
+        command=("/opt/ase-neb/bin/python",),
+        activation_script=None,
+        environment={"TS_ASE_NEB_XTB": "/opt/xtb/bin/xtb"},
+    )
+    profile = replace(base.profile, software={"ase_neb": ase_software})
+    config = replace(
+        base,
+        backend="ase_neb",
+        profile=profile,
+        command=("/local/python", "-m", "ts_agent.backends.ase_neb_runner", "--images", "7"),
+        expected_artifacts=("ase_neb.out", "neb.traj", "neb_path.xyz", "neb_summary.json"),
+        stdout_name="ase_neb.out",
+    )
+
+    script = render_job_script(config)
+
+    assert "export TS_ASE_NEB_XTB=/opt/xtb/bin/xtb" in script
+    assert "/opt/ase-neb/bin/python -m ts_agent.backends.ase_neb_runner --images 7" in script
+    assert "> ase_neb.out" in script

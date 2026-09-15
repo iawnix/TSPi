@@ -462,7 +462,7 @@ use source and tests in the development checkout.
 | Validation template/profile | versioned JSON, compiler/acceptance tests, capability projection, scientific docs |
 | Public tool | tool catalog, extension schema/help, Root Skill, README/architecture, UI, inventory tests |
 | Compute/Review task or result | JSON schema, CJS validator, role packet builder, result tool, journal/history, provider tests |
-| Backend capability | capability catalog, request validator, adapter, compute reference, parser tests |
+| Backend capability | capability catalog, request validator, adapter, compute reference, parser tests, remote runtime probe |
 | Remote behavior | config/model, lifecycle/transfer, compute mapping, installation/remote docs, recovery tests |
 | Release contents | `package.json.files`, package checker, installer allow/deny lists, tests, installation docs |
 | Startup behavior | Python host, launcher tests, installation docs, architecture lifecycle, launch smoke |

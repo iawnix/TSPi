@@ -12,10 +12,11 @@ readable catalog and [compute_tools.md](compute_tools.md) for public calls.
 - Gaussian: `sp`, `opt`, `freq`, `opt_freq`, `irc`.
 - xTB: `sp`, `opt`, `freq`, `opt_freq`, `scan`, `md`.
 - CREST: `conformer_search`.
+- ASE with the xTB CLI calculator: `neb`.
 
-ASE NEB and QBICS DMECP are not registered capabilities. A backend is not
-public until it has a deterministic parser contract and task-validation tests;
-an input preparer alone is insufficient.
+QBICS DMECP is not a registered capability. A backend is not public until it
+has a deterministic parser contract and task-validation tests; an input
+preparer alone is insufficient.
 
 Use the catalog to construct requests and `ts_remote doctor` to check readiness.
 

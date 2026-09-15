@@ -22,6 +22,7 @@ def test_capability_catalog_keeps_adapters_separate_from_readiness() -> None:
         "gaussian",
         "xtb",
         "crest",
+        "ase_neb",
     }
     assert all("backend" not in item and "task_type" not in item for item in catalog["capabilities"])
 
@@ -39,7 +40,13 @@ def test_catalog_describes_executor_contracts_without_strategy_routing() -> None
         "xtb.scan",
         "crest.conformer_search",
     } <= set(capabilities)
-    assert "ase.neb" not in capabilities
+    assert capabilities["ase.neb"]["input_roles"] == ["product", "reactant"]
+    assert capabilities["ase.neb"]["parsers"] == ["ase.neb/1"]
+    assert capabilities["ase.neb"]["limits"] == {
+        "max_images": 32,
+        "calculator": "xtb_cli",
+        "optimizer": "FIRE",
+    }
     assert "qbics.dmecp" not in capabilities
     assert capabilities["gaussian.opt_freq"]["input_roles"] == ["gjf"]
     assert capabilities["gaussian.opt_freq"]["output_roles"] == [
@@ -68,6 +75,16 @@ def test_capability_parameters_are_descriptor_bound() -> None:
     assert validate_capability_parameters(descriptor, {"max_cycles": 7}) == {"max_cycles": 7}
     with pytest.raises(ValueError, match="Additional properties"):
         validate_capability_parameters(descriptor, {"unknown_setting": "invented"})
+
+    neb = resolve_capability("ase.neb", "1")
+    assert validate_capability_parameters(neb, {"images": 7, "climb": True}) == {
+        "images": 7,
+        "climb": True,
+    }
+    with pytest.raises(ValueError, match="less than the minimum"):
+        validate_capability_parameters(neb, {"images": 2})
+    with pytest.raises(ValueError, match="dependency"):
+        validate_capability_parameters(neb, {"solvent": "water"})
 
 
 def test_unknown_capability_is_a_structured_nonretryable_gap() -> None:

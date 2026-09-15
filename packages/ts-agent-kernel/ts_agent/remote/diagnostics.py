@@ -85,6 +85,17 @@ def _doctor(client: SSHClient, profile: RemoteProfile) -> dict[str, Any]:
             [item.activation_script or "", executable],
             check=False,
         )
+        dependency_check = None
+        if name == "ase_neb":
+            dependency_check = client.run_script(
+                _ase_neb_check_script(),
+                [
+                    item.activation_script or "",
+                    executable,
+                    item.environment.get("TS_ASE_NEB_XTB", "xtb"),
+                ],
+                check=False,
+            )
         activation_check = (
             client.run(["test", "-r", item.activation_script], check=False)
             if item.activation_script
@@ -93,6 +104,9 @@ def _doctor(client: SSHClient, profile: RemoteProfile) -> dict[str, Any]:
         software[name] = {
             "command_available": command_check.returncode == 0,
             "activation_script_available": activation_check.returncode == 0 if activation_check else None,
+            "runtime_dependencies_available": (
+                dependency_check.returncode == 0 if dependency_check else None
+            ),
             "allowed_queues": list(item.allowed_queues),
             "requires_gpu": item.requires_gpu,
         }
@@ -103,7 +117,9 @@ def _doctor(client: SSHClient, profile: RemoteProfile) -> dict[str, Any]:
         "software": software,
     }
     checks["ok"] = checks["remote_root_writable"] and all(
-        item["command_available"] and item["activation_script_available"] is not False
+        item["command_available"]
+        and item["activation_script_available"] is not False
+        and item["runtime_dependencies_available"] is not False
         for item in software.values()
     )
     return checks
@@ -119,6 +135,22 @@ if [[ "$executable" == /* ]]; then
 else
   command -v -- "$executable" >/dev/null
 fi
+'''
+
+
+def _ase_neb_check_script() -> str:
+    return r'''set -eo pipefail
+activation=$1
+python_executable=$2
+xtb_executable=$3
+if [[ -n "$activation" ]]; then source "$activation"; fi
+"$python_executable" -c 'import ase, numpy; import ts_agent.backends.ase_neb_runner'
+if [[ "$xtb_executable" == /* ]]; then
+  test -x "$xtb_executable"
+else
+  command -v -- "$xtb_executable" >/dev/null
+fi
+"$xtb_executable" --version >/dev/null 2>&1
 '''
 
 

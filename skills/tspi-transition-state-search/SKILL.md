@@ -34,5 +34,7 @@ appropriate to the Claim.
 
 - Candidate construction and follow-up evidence: [candidate_generation.md](references/candidate_generation.md)
 - Backend choice: [backend_selection.md](references/backend_selection.md)
+- ASE NEB executor: [ase_neb_executor.md](references/ase_neb_executor.md)
+- ASE NEB executor (Chinese): [ase_neb_executor.zh-CN.md](references/ase_neb_executor.zh-CN.md)
 - Mechanism Claim reflection: [mechanism_reflection.md](references/mechanism_reflection.md)
 - Repeated-result and failed-search reflection: [strategy_reflection.md](references/strategy_reflection.md)

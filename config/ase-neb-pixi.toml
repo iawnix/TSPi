@@ -1,0 +1,13 @@
+[workspace]
+name = "tspi-ase-neb-runtime"
+channels = ["conda-forge"]
+platforms = [
+  { platform = "linux-64", linux = "3.10", glibc = "2.18" },
+]
+
+[dependencies]
+python = "3.11.*"
+ase = "3.29.*"
+numpy = ">=2,<3"
+scipy = ">=1.13,<2"
+pip = ">=24,<26"
