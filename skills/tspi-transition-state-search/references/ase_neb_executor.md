@@ -28,7 +28,20 @@ maximum NEB force above `fmax`, mismatched endpoints, or incomplete path data
 leaves `task_validation.status=incomplete` even when the program terminated
 normally.
 
-The remote `ase_neb` software profile must select a Python environment that can
-import ASE, NumPy, and the matching `ts_agent.backends.ase_neb_runner`. Set
-`TS_ASE_NEB_XTB` in the profile environment when `xtb` is not on `PATH`. Run
-`ts_remote doctor` before submitting.
+## Runtime Readiness
+
+The remote `ase_neb` software profile must select the Python interpreter from
+an operator-managed, versioned environment. That interpreter must import ASE,
+NumPy, and the `ts_agent.backends.ase_neb_runner` version matching the TSPi
+release that prepared the calculation. Set `TS_ASE_NEB_XTB` in the profile
+environment to the validated xTB executable; do not depend on an interactive
+shell's `PATH`.
+
+Run `ts_remote doctor` after deployment or profile changes and before the first
+NEB submission. A missing interpreter, failed import, mismatched runner, or
+failed xTB probe is an operational failure, not evidence about the reaction
+path. Do not install packages from a calculation job or into a research
+workspace. Follow the
+[ASE NEB deployment procedure](../../../docs/INSTALLATION.md#deploy-the-ase-neb-runtime-with-pixi)
+and switch the software profile only after its login-host and compute-node smoke
+checks pass.

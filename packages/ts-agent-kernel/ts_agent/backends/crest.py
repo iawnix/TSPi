@@ -52,7 +52,7 @@ def prepare_crest(task: BackendTask) -> PreparedTask:
     opt_level = task.settings.get("opt_level", "vtight").lower()
     if opt_level not in {"vloose", "loose", "normal", "tight", "vtight"}:
         raise ValueError(f"unsupported CREST opt_level: {opt_level}")
-    command.extend(["-opt", opt_level])
+    command.extend(["--optlev", opt_level])
     if "threads" in task.settings:
         command.extend(["-T", str(_positive_int(task.settings["threads"], "threads"))])
     solvent = task.settings.get("solvent")

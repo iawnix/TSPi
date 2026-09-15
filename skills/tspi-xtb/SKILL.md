@@ -25,6 +25,10 @@ mode, and connectivity evidence at the chosen level of theory.
 - Check the required output set and parser summary, including SCC convergence
   when applicable, optimization status, frequency data, scan completeness, or
   trajectory completeness.
+- Before remote xTB or CREST submission, require the configured software profile
+  to pass `ts_remote doctor`. Treat a missing command, activation script, or
+  runtime dependency as an operational failure; do not install or repair cluster
+  software from a calculation job.
 - Treat conformer count, energy table, and ensemble geometry as separate facts.
   Select a conformer through a stated Claim or Node rationale.
 - Promote only verified parser values and primary artifacts through `ts_change`.

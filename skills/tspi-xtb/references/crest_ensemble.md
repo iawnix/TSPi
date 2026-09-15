@@ -11,6 +11,21 @@ normal termination marker, all required files, a parsed ensemble, and matching
 conformer and energy-table counts. Verify atom count and coordinate identity
 before using an ensemble member in a later Node.
 
+## Runtime Readiness
+
+The remote `crest` software profile must select an operator-managed, versioned
+CREST binary. Its activation script must make the compatible xTB executable
+available without changing the research workspace. Run `ts_remote doctor`
+after deployment or profile changes and before the first calculation. A missing
+command or activation script is an operational failure, not a scientific
+result.
+
+Do not install or upgrade CREST from a calculation job. Follow the
+[cluster deployment procedure](../../../docs/INSTALLATION.md#deploy-crest),
+then use a bounded compute-node smoke search. A zero scheduler exit status with
+any required primary artifact missing is a program or integration failure, not
+an empty conformer ensemble.
+
 Use relative energy to rank conformers within the declared CREST calculation.
 Evaluate free energies and barriers with their required corrections. Preserve the
 ensemble and selection rationale as artifacts and Observations so another

@@ -29,6 +29,12 @@ command = ["/home/agent/soft/xtb/current/bin/xtb"]
 allowed_queues = ["batch", "fat", "fata"]
 requires_gpu = false
 
+[profiles.cluster_1w.software.crest]
+command = ["/home/agent/soft/crest/current/bin/crest"]
+activation_script = "/home/agent/soft/crest/activate_crest.sh"
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false
+
 [profiles.cluster_1w.software.ase_neb]
 # A Pixi environment containing ASE, NumPy, and the matching ts-agent-kernel wheel.
 command = ["/home/agent/soft/ase-neb/current/.pixi/envs/default/bin/python"]

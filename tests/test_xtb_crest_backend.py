@@ -189,7 +189,7 @@ def test_crest_prepares_distinct_conformer_search_backend() -> None:
         "0",
         "-gfn2",
         "-squick",
-        "-opt",
+        "--optlev",
         "tight",
         "-T",
         "4",

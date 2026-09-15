@@ -412,6 +412,95 @@ Use `/ts-remote doctor` for the full SSH, scheduler, storage, and registered
 software chain; `queues` and `nodes` return bounded scheduler views. All four
 diagnostics are read-only. Run `doctor` before the first remote calculation.
 
+### Manage Remote Software Releases
+
+Installing or upgrading cluster software is an operator action, separate from a
+research calculation. Keep immutable release directories under the cluster's
+software root and expose only a validated release through a `current` symlink.
+Pin source URLs and checksums or lock files, retain the material used to build
+the release, and do not modify an active release in place.
+
+Prepare and verify a new release before changing `current`. After the switch,
+run `/ts-remote doctor` and a bounded scheduler smoke job. Keep the previous
+release so rollback changes only the symlink. A calculation agent may report a
+missing or unhealthy profile, but it must not install software inside a remote
+workspace or scheduler job unless the user separately authorizes that
+administrative change.
+
+### Deploy CREST
+
+`crest.conformer_search` requires a CREST binary and a compatible xTB
+executable. Prefer a tagged stable CREST release for routine calculations; use
+a continuous or prerelease build only when its extra behavior is required and
+record that choice in the calculation provenance. Verify the binary against
+the login and compute-node operating-system and CPU baseline before selection.
+
+The following example pins the GNU static CREST 3.0.2 artifact validated for the
+`cluster_1w` baseline. Recheck the official release URL and checksum when
+selecting another version:
+
+```bash
+CREST_ROOT=/home/agent/soft/crest
+CREST_VERSION=3.0.2
+CREST_RELEASE="$CREST_ROOT/$CREST_VERSION"
+CREST_STAGE="$CREST_ROOT/.$CREST_VERSION.staging"
+CREST_ARCHIVE="$CREST_ROOT/src/crest-$CREST_VERSION-gnu12.tar.xz"
+CREST_URL="https://github.com/crest-lab/crest/releases/download/v$CREST_VERSION/crest-gnu-12-ubuntu-latest.tar.xz"
+CREST_SHA256=8e5bd18b06f99741ebd7bb71b3a996295f391b2f076aaeab739740f709e9554d
+
+test ! -e "$CREST_RELEASE"
+test ! -e "$CREST_STAGE"
+install -d -m 0755 "$CREST_ROOT/src" "$CREST_STAGE"
+curl -fsSL --retry 3 -o "$CREST_ARCHIVE.partial" "$CREST_URL"
+printf '%s  %s\n' "$CREST_SHA256" "$CREST_ARCHIVE.partial" | sha256sum -c -
+mv "$CREST_ARCHIVE.partial" "$CREST_ARCHIVE"
+tar -xf "$CREST_ARCHIVE" --strip-components=1 -C "$CREST_STAGE"
+install -d -m 0755 "$CREST_STAGE/bin" "$CREST_STAGE/licenses"
+mv "$CREST_STAGE/crest" "$CREST_STAGE/bin/crest"
+mv "$CREST_STAGE/LICENSE" "$CREST_STAGE/LICENSE.LESSER" "$CREST_STAGE/licenses/"
+chmod 0755 "$CREST_STAGE/bin/crest"
+file "$CREST_STAGE/bin/crest"
+"$CREST_STAGE/bin/crest" --version
+mv "$CREST_STAGE" "$CREST_RELEASE"
+```
+
+Install a reviewed `/home/agent/soft/crest/activate_crest.sh` with mode `0644`
+and this content:
+
+```bash
+#!/usr/bin/env bash
+
+source /home/agent/soft/xtb/current/activate_xtb.sh
+
+CRESTHOME=/home/agent/soft/crest/current
+export CRESTHOME
+export PATH="$CRESTHOME/bin${PATH:+:$PATH}"
+```
+
+Only after the binary and activation script are in place, select the release:
+
+```bash
+ln -s "$CREST_VERSION" "$CREST_ROOT/.current.new"
+mv -T "$CREST_ROOT/.current.new" "$CREST_ROOT/current"
+```
+
+Register the binary and activation script in the remote profile:
+
+```toml
+[profiles.cluster_1w.software.crest]
+command = ["/home/agent/soft/crest/current/bin/crest"]
+activation_script = "/home/agent/soft/crest/activate_crest.sh"
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false
+```
+
+After `/ts-remote doctor` reports both the command and activation script as
+available, submit a small flexible molecule through `crest.conformer_search` on
+a compute node. Require `crest.out`, `crest_best.xyz`,
+`crest_conformers.xyz`, and `crest.energies`, plus the normal termination
+marker. Scheduler success without all four files is an integration failure, not
+a valid empty ensemble.
+
 ### Deploy The ASE NEB Runtime With Pixi
 
 `ase.neb` requires a shared cluster-side Python containing ASE, NumPy, and the
@@ -424,24 +513,77 @@ Linux 3.10 and glibc 2.18. For another cluster, update the manifest's platform
 virtual packages, regenerate the lock on purpose, and derive a new release id
 from the manifest, lock, and kernel wheel together.
 
-For example:
+Unlike a standalone program, the ASE NEB profile selects the Python interpreter
+inside this environment. Conda environments can contain absolute prefixes, so
+build directly in a new final release directory and never relocate that
+directory afterward. Do not select it through `current` until every check has
+passed.
+
+For example, with `RELEASE_ID` derived from the manifest, lock, and exact wheel:
 
 ```bash
 PIXI=/absolute/path/to/pixi
-RUNTIME=/home/agent/soft/ase-neb/<release-id>
-mkdir -p "$RUNTIME"
-cp config/ase-neb-pixi.toml "$RUNTIME/pixi.toml"
-cp config/ase-neb-pixi.lock "$RUNTIME/pixi.lock"
+ASE_NEB_ROOT=/home/agent/soft/ase-neb
+RELEASE_ID=replace-with-content-derived-id
+RUNTIME="$ASE_NEB_ROOT/$RELEASE_ID"
+KERNEL_WHEEL_NAME=ts_agent_kernel-VERSION-py3-none-any.whl
+KERNEL_WHEEL_SOURCE="/path/to/$KERNEL_WHEEL_NAME"
+
+test ! -e "$RUNTIME"
+install -d -m 0755 "$RUNTIME"
+install -m 0644 config/ase-neb-pixi.toml "$RUNTIME/pixi.toml"
+install -m 0644 config/ase-neb-pixi.lock "$RUNTIME/pixi.lock"
+install -m 0644 "$KERNEL_WHEEL_SOURCE" "$RUNTIME/$KERNEL_WHEEL_NAME"
 "$PIXI" install --locked --manifest-path "$RUNTIME/pixi.toml"
 "$RUNTIME/.pixi/envs/default/bin/python" -m pip install \
-  --no-deps /path/to/ts_agent_kernel-<version>-py3-none-any.whl
+  --no-deps "$RUNTIME/$KERNEL_WHEEL_NAME"
+PYTHONNOUSERSITE=1 "$RUNTIME/.pixi/envs/default/bin/python" -c \
+  'import ase, numpy; from ts_agent.backends import ase_neb_runner'
+TS_ASE_NEB_XTB=/home/agent/soft/xtb/current/bin/xtb \
+  "$RUNTIME/.pixi/envs/default/bin/python" -c \
+  'import os, subprocess; subprocess.run([os.environ["TS_ASE_NEB_XTB"], "--version"], check=True)'
+ln -s "$RELEASE_ID" "$ASE_NEB_ROOT/.current.new"
+mv -T "$ASE_NEB_ROOT/.current.new" "$ASE_NEB_ROOT/current"
 ```
 
-Point `[profiles.<name>.software.ase_neb].command` at that environment's
-absolute Python path. Set `TS_ASE_NEB_XTB` to the cluster's xTB executable in
-the software profile environment. Do not point the profile at an interactive
-shell or a Python environment that lacks the matching TSPi runner. The
-`ase_neb` doctor check verifies the Python imports and xTB version command.
+Point the software profile at the stable interpreter path and bind xTB
+explicitly:
+
+```toml
+[profiles.cluster_1w.software.ase_neb]
+command = ["/home/agent/soft/ase-neb/current/.pixi/envs/default/bin/python"]
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false
+
+[profiles.cluster_1w.software.ase_neb.environment]
+TS_ASE_NEB_XTB = "/home/agent/soft/xtb/current/bin/xtb"
+```
+
+Do not point the profile at an interactive shell or a Python environment that
+lacks the matching TSPi runner. The `ase_neb` doctor check verifies the ASE,
+NumPy, runner, and xTB chain. Follow it with a bounded compute-node `ase.neb`
+job whose endpoints have identical atoms and ordering. Verify `ase_neb.out`,
+`neb.traj`, `neb_path.xyz`, and `neb_summary.json`. Runtime completion and
+scientific convergence are separate: a complete smoke job may still report
+`converged=false`, which requires scientific follow-up rather than reinstalling
+the environment.
+
+### Roll Back Remote Software
+
+Rollback selects a previously verified immutable directory; it does not edit or
+rebuild that directory. For either software root, create a replacement symlink
+and atomically move it over `current`:
+
+```bash
+SOFTWARE_ROOT=/home/agent/soft/crest
+PREVIOUS_RELEASE=replace-with-previous-release
+ln -s "$PREVIOUS_RELEASE" "$SOFTWARE_ROOT/.current.rollback"
+mv -T "$SOFTWARE_ROOT/.current.rollback" "$SOFTWARE_ROOT/current"
+```
+
+Update `SOFTWARE_ROOT` for ASE NEB, then rerun `/ts-remote doctor` and the
+corresponding compute-node smoke job. Retain failed release material until its
+logs and checksums have been reviewed; deleting it is a separate cleanup step.
 
 ## Configure Notifications
 
