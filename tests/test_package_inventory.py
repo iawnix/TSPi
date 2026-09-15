@@ -33,3 +33,5 @@ def test_required_release_members_are_in_the_npm_allowlist() -> None:
 
 
     assert "contracts/ts-render/curve-data.schema.json" in package_inventory.REQUIRED_RUNTIME_FILES
+    assert "apps/host/system-prompt.mjs" in package_inventory.REQUIRED_RUNTIME_FILES
+    assert set(package_inventory.HOST_APP_FILES) <= package_inventory.REQUIRED_RUNTIME_FILES

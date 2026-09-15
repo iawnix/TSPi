@@ -104,7 +104,6 @@ def parse_xtb_artifacts(
         "charge": _last_int(text, r"net charge\s+(-?\d+)"),
         "unpaired_electrons": _last_int(text, r"unpaired electrons\s+(\d+)"),
         "execution_completed": "* finished run on" in text,
-        "normal_termination_marker": "normal termination of xtb" in text.lower(),
         "scc_convergence_applicable": scc_applicable,
         "scc_converged": (
             "convergence criteria satisfied after" in text if scc_applicable else None
@@ -188,9 +187,6 @@ def parse_xtb_artifacts(
             )
             details["trajectory"] = trajectory
 
-    task_completed = _xtb_task_completed(task_type, summary)
-    summary["task_completed"] = task_completed
-    summary["artifacts_complete"] = not summary["missing_artifacts"]
     return {"summary": summary, **details}
 
 
@@ -290,24 +286,6 @@ def _parse_md_log(text: str) -> dict[str, Any]:
         "md_average_total_energy_hartree": _last_float(text, rf"\n\s*Etot\s*:\s*({_FLOAT})"),
         "md_average_temperature_k": _last_float(text, rf"\n\s*T\s*:\s*({_FLOAT})"),
     }
-
-
-def _xtb_task_completed(task_type: str, summary: dict[str, Any]) -> bool:
-    electronic_convergence = (
-        not summary["scc_convergence_applicable"] or summary["scc_converged"] is True
-    )
-    common = bool(summary["execution_completed"] and electronic_convergence)
-    if task_type == "sp":
-        return common and summary["total_energy_hartree"] is not None
-    if task_type == "opt":
-        return common and bool(summary["optimization_converged"])
-    if task_type == "freq":
-        return common and bool(summary.get("frequency_count"))
-    if task_type == "opt_freq":
-        return common and bool(summary["optimization_converged"] and summary.get("frequency_count"))
-    if task_type == "scan":
-        return common and bool(summary.get("scan_complete"))
-    return common and bool(summary.get("md_completed")) and bool(summary.get("trajectory_frame_count"))
 
 
 def _write_json(path: Path, value: Any) -> Path:

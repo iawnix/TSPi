@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi 提供九个 Skill，用于规划研究、运行计算、检查结果，以及制作图像和报告。
+TSPi 提供八个 Skill，用于规划研究、运行计算、检查结果，以及制作图像和报告。
 编排 Skill 管理研究流程；需要具体方法或输出时，加载相应的专用 Skill。
 
 | Skill | 用途 |
@@ -11,7 +11,6 @@ TSPi 提供九个 Skill，用于规划研究、运行计算、检查结果，以
 | [tspi-transition-state-search](tspi-transition-state-search/SKILL.zh-CN.md) | 候选构造、QST、扫描、NEB、构象和搜索策略 |
 | [tspi-xtb](tspi-xtb/SKILL.zh-CN.md) | xTB 计算与 CREST 构象搜索 |
 | [tspi-gaussian](tspi-gaussian/SKILL.zh-CN.md) | Gaussian 输入、优化、频率和 IRC |
-| [tspi-qbics](tspi-qbics/SKILL.zh-CN.md) | QBICS/DMECP 电子态交叉计算 |
 | [tspi-connectivity](tspi-connectivity/SKILL.zh-CN.md) | IRC 端点、原子映射、立体化学和结构比较 |
 | [tspi-render](tspi-render/SKILL.zh-CN.md) | 分子图像、动画、结构对比图和科学曲线 |
 | [tspi-report](tspi-report/SKILL.zh-CN.md) | 包含证据、计算历史和图像的研究报告 |

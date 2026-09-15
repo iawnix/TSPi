@@ -124,10 +124,17 @@ The installed launcher loads the authored TSPi `SKILL.md` files through Harness
 resources and keeps App Server state under the workspace's `.pi/app-server/`
 directory. These sessions are isolated from Phone Host and standalone session
 history; they are not migrated between runtimes. Without `--allow-writes`, the
-Worker exposes only `read`, `ts_state`, and `ts_remote`. With that flag, the
+Worker exposes only `read`, `sys_prompt`, `ts_state`, and `ts_remote`. With that flag, the
 launcher acquires the workspace directory guard and exclusive Root lock before
 enabling the complete native tool set. The locks remain held by the App Server
 process for its lifetime.
+
+The Worker uses Pi Agent Core to load and format Skills, then records the exact
+effective prompt in a `tspi-system-prompt/1` manifest. Its read-only
+`sys_prompt` tool returns the effective text, SHA-256 digest, and sections
+classified as native, Skill, or extension input. Native App Server sessions do
+not load extension prompts, so their manifest normally contains native and
+Skill sections only.
 
 ## Python Runtime
 

@@ -88,6 +88,7 @@ function actionStatusForResult(result) {
   const control = isPlainObject(result.control) ? result.control : {};
   if (control.effect_outcome === "unknown") return "unknown";
   if (control.effect_outcome === "failed") return "failed";
+  if (isPlainObject(result.task_validation) && result.task_validation.status === "incomplete") return "failed";
   if (control.effect_outcome === "succeeded") return "completed";
   if (
     result.state === "unknown"

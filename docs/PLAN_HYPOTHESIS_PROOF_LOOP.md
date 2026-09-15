@@ -322,10 +322,13 @@ An HTTP success or a returned job ID is never by itself scientific evidence.
 
 ### Step 6: Parse into candidates
 
-Deterministic parsers verify normal termination, route consistency, numerical
-fields, and source digests. They emit `ObservationCandidate` records and
-diagnostics. A parser cannot invent a scientific conclusion and a failed or
-missing output remains a visible Finding.
+Deterministic parsers extract program markers, route data, numerical fields,
+artifact presence, and source-bound provenance. A separate task-validation
+layer combines those facts with the requested capability: `program_status`
+describes program termination, while `task_validation` describes requested-task
+completion. They emit `ObservationCandidate` records and diagnostics. Neither
+layer can invent a scientific conclusion, and a failed or missing output remains
+a visible Finding.
 
 ### Step 7: Promote and interpret
 
@@ -388,7 +391,7 @@ descriptor is:
   "produces": ["program_output", "optimized_geometry", "frequencies"],
   "effects": ["local_prepare", "local_parse", "remote_compute"],
   "limits": {"max_atoms": 500, "max_runtime_seconds": 86400},
-  "parsers": ["gaussian.log/1"]
+  "parsers": ["gaussian.output/2"]
 }
 ```
 

@@ -92,6 +92,16 @@ def test_action_log_preserves_ambiguous_control_and_redacts_secrets() -> None:
     assert "user:pass" not in result["diagnostic"]["message"]
 
 
+def test_action_log_fails_a_program_that_completed_without_completing_its_task() -> None:
+    script = (
+        f"const helper=require({json.dumps(str(ACTION_LOG))});"
+        "const result={state:'completed',program_status:'completed',"
+        "task_validation:{status:'incomplete',failures:['optimization_not_converged']}};"
+        "process.stdout.write(JSON.stringify({status:helper.actionStatusForResult(result)}));"
+    )
+    assert json.loads(_node(script).stdout) == {"status": "failed"}
+
+
 def test_untyped_control_exception_requires_reconciliation_and_stays_schema_valid() -> None:
     script = (
         f"const helper=require({json.dumps(str(ACTION_LOG))});"

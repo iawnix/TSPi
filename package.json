@@ -126,15 +126,17 @@
     "node": ">=22.19.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": ">=0.81.1 <1.0.0",
-    "@earendil-works/pi-coding-agent": ">=0.81.1 <1.0.0",
-    "@earendil-works/pi-tui": ">=0.81.1 <1.0.0",
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
     "typebox": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.83.0",
-    "@earendil-works/pi-coding-agent": "0.83.0",
-    "@earendil-works/pi-tui": "0.83.0",
+    "@earendil-works/pi-agent-core": "0.85.1",
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1",
     "@types/node": "24.12.4",
     "typescript": "5.9.3"
   },
@@ -144,7 +146,6 @@
       "./skills/tspi-transition-state-search",
       "./skills/tspi-xtb",
       "./skills/tspi-gaussian",
-      "./skills/tspi-qbics",
       "./skills/tspi-connectivity",
       "./skills/tspi-render",
       "./skills/tspi-report",

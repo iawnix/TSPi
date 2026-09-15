@@ -18,7 +18,7 @@ Consider:
 
 Gaussian is a first-class candidate generator for direct TS optimization,
 relaxed scans, QST, and follow-up characterization. xTB/CREST can efficiently
-explore conformers and rough paths. ASE NEB can provide path images. QBICS can
+explore conformers and rough paths. External NEB or DMECP workflows can
 address crossing searches. Choose their order from the current research question.
 
 Record the method choice and falsifiable purpose in the ResearchNode/Claim. If a

@@ -120,6 +120,6 @@ not scientific meaning. Canonical Claims and Observations remain single
 registries; the Web/locator derives their Claim-Node-Attempt neighborhood instead
 of duplicating records into operational directories.
 
-`TS Activity` is transient presentation state. The Activity Journal, Review
-history, and compute controls are durable but do not mutate Claims by
-themselves.
+The foreground working message is transient presentation state. The Activity
+Journal, Review history, and compute controls are durable but do not mutate
+Claims by themselves.

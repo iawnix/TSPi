@@ -25,6 +25,8 @@ from ts_agent.compute.contracts import validate_compute_contract
 from ts_agent.remote import lifecycle as remote_lifecycle
 from ts_agent.remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguous, RemoteSubmissionRejected
 from ts_agent.remote.models import RemoteJobStatus, RemoteReceipt
+from ts_agent.backends.gaussian import parse_log
+from ts_agent.compute.task_validation import validate_parsed_task
 from ts_agent.workspace.identity import workspace_id
 
 
@@ -509,6 +511,9 @@ def test_gaussian_parse_is_attempt_scoped_idempotent_and_scientifically_read_onl
     assert result["program_status"] == "completed"
     assert result["parser_facts"]["normal_termination"] is True
     assert result["parser_facts"]["imaginary_frequency_count"] == 1
+    assert "status" not in result["parser_facts"]
+    assert "validation_failures" not in result["parser_facts"]
+    assert result["task_validation"] == {"status": "completed", "failures": []}
     assert "claim_status" not in result
     assert scientific_before == {
         name: (workspace / name).read_bytes()
@@ -524,6 +529,85 @@ def test_gaussian_parse_is_attempt_scoped_idempotent_and_scientifically_read_onl
     foreign.write_text(_gaussian_log(), encoding="utf-8")
     with pytest.raises(ComputeContractError, match=f"nodes/{node_id}/attempts/{created['intent_id']}/outputs"):
         parse_calculation(workspace, created["intent_id"], "inputs/foreign.log")
+
+
+@pytest.mark.parametrize(
+    ("task_type", "body"),
+    [
+        ("sp", " SCF Done:  E(RHF) =  -1.000000     A.U.\n"),
+        (
+            "opt",
+            " Standard orientation:\n"
+            " ---------------------------------------------------------------------\n"
+            " Center Atomic Atomic Coordinates (Angstroms)\n"
+            " Number Number Type X Y Z\n"
+            " ---------------------------------------------------------------------\n"
+            " 1 1 0 0.000000 0.000000 0.000000\n"
+            " ---------------------------------------------------------------------\n"
+            " Maximum Force 0.000010 0.000450 YES\n"
+            " RMS Force 0.000006 0.000300 YES\n"
+            " Maximum Displacement 0.000020 0.001800 YES\n"
+            " RMS Displacement 0.000012 0.001200 YES\n"
+            " Stationary point found.\n",
+        ),
+        ("freq", " Frequencies --  10.0 20.0 30.0\n"),
+        (
+            "opt_freq",
+            " Standard orientation:\n"
+            " ---------------------------------------------------------------------\n"
+            " Center Atomic Atomic Coordinates (Angstroms)\n"
+            " Number Number Type X Y Z\n"
+            " ---------------------------------------------------------------------\n"
+            " 1 1 0 0.000000 0.000000 0.000000\n"
+            " ---------------------------------------------------------------------\n"
+            " Maximum Force 0.000010 0.000450 YES\n"
+            " RMS Force 0.000006 0.000300 YES\n"
+            " Maximum Displacement 0.000020 0.001800 YES\n"
+            " RMS Displacement 0.000012 0.001200 YES\n"
+            " Stationary point found.\n"
+            " Frequencies --  10.0 20.0 30.0\n",
+        ),
+    ],
+)
+def test_gaussian_task_validation_does_not_apply_transition_state_semantics(
+    tmp_path: Path,
+    task_type: str,
+    body: str,
+) -> None:
+    log = tmp_path / f"{task_type}.log"
+    log.write_text(
+        " Entering Link 1 = synthetic\n"
+        f" #P HF/STO-3G {task_type}\n"
+        " -------------------------------------------------------------------\n"
+        f"{body}"
+        " Normal termination of Gaussian 16\n",
+        encoding="utf-8",
+    )
+
+    facts = parse_log(log)["summary"]
+
+    assert validate_parsed_task("gaussian", task_type, facts) == {
+        "status": "completed",
+        "failures": [],
+    }
+    assert "status" not in facts
+    assert "validation_failures" not in facts
+
+
+def test_gaussian_optimization_reports_missing_convergence_evidence_once() -> None:
+    validation = validate_parsed_task("gaussian", "opt", {
+        "normal_termination": True,
+        "missing_artifacts": [],
+        "stationary_point_found": True,
+        "final_geometry_atoms": 1,
+        "final_convergence_evidence_present": False,
+        "final_convergence_satisfied": False,
+    })
+
+    assert validation == {
+        "status": "incomplete",
+        "failures": ["optimization_convergence_evidence_missing"],
+    }
 
 
 def test_compute_result_contract_rejects_scientific_verdict_fields() -> None:

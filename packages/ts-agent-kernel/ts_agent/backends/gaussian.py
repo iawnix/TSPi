@@ -709,20 +709,7 @@ def parse_log(
     final_convergence_satisfied = bool(convergence) and all(
         str(row["converged"]).upper() == "YES" for row in convergence.values()
     )
-    validation_failures: list[str] = []
-    if not normal_termination:
-        validation_failures.append("missing_normal_termination")
-    if not stationary_point_found:
-        validation_failures.append("missing_stationary_point")
-    if len(imaginary) != 1:
-        validation_failures.append("imaginary_frequency_count_not_one")
-    if not final_convergence_evidence_present:
-        validation_failures.append("missing_final_convergence_evidence")
-    elif not final_convergence_satisfied:
-        validation_failures.append("final_convergence_not_satisfied")
-    status = "validated_ts" if not validation_failures else "not_validated_ts"
     summary: dict[str, object] = {
-        "status": status,
         "log": str(log_path),
         "section_count": section["section_count"],
         "selected_section_index": section["index"],
@@ -762,7 +749,6 @@ def parse_log(
         "force_convergence_source": convergence_source,
         "final_convergence_evidence_present": final_convergence_evidence_present,
         "final_convergence_satisfied": final_convergence_satisfied,
-        "validation_failures": validation_failures,
         "final_geometry_atoms": len(atoms),
     }
     return {"summary": summary, "frequencies": section_frequencies, "atoms": atoms}
@@ -775,7 +761,7 @@ def write_parse_artifacts(parsed: dict[str, object], output_dir: Path, log_stem:
     atoms = parsed["atoms"]
     if not isinstance(summary, dict) or not isinstance(frequencies, list) or not isinstance(atoms, list):
         raise TypeError("parsed Gaussian artifact has unexpected shape")
-    write_json(output_dir / "validation_summary.json", summary)
+    write_json(output_dir / "gaussian_summary.json", summary)
     (output_dir / "frequencies_cm-1.txt").write_text(
         "\n".join(f"{float(freq):.6f}" for freq in frequencies) + ("\n" if frequencies else ""),
         encoding="utf-8",
@@ -842,13 +828,12 @@ def prepare_input_main(argv: list[str] | None = None) -> int:
 
 
 def build_parse_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Parse a Gaussian TS/frequency log and emit validation artifacts.")
+    parser = argparse.ArgumentParser(description="Parse a Gaussian log and emit program facts.")
     parser.add_argument("log", type=Path, help="Gaussian .log file")
     parser.add_argument("-o", "--output-dir", type=Path, default=None, help="Directory for parsed artifacts")
     parser.add_argument("--section-index", type=int, default=None, help="Evaluate a specific zero-based job section")
     parser.add_argument("--expected-route", help="Expected Gaussian route section for log readback diagnostics")
     parser.add_argument("--input-gjf", type=Path, help="Read expected route from a Gaussian input file")
-    parser.add_argument("--strict", action="store_true", help="Return a non-zero exit code if TS validation fails")
     return parser
 
 
@@ -865,10 +850,8 @@ def parse_result_main(argv: list[str] | None = None) -> int:
     write_parse_artifacts(parsed, output_dir, args.log.stem, args.log.name)
 
     print(
-        f"{summary['status']}: section={summary['selected_section_index']}/{summary['section_count']} "
+        f"parsed: section={summary['selected_section_index']}/{summary['section_count']} "
         f"normal={summary['normal_termination']} "
-        f"stationary={summary['stationary_point_found']} imag={summary['imaginary_frequency_count']}"
+        f"stationary={summary['stationary_point_found']} frequencies={summary['frequency_count']}"
     )
-    if args.strict and summary["status"] != "validated_ts":
-        return 2
     return 0

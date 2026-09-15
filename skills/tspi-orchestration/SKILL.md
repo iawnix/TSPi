@@ -11,7 +11,7 @@ Use this Skill to organize research questions, record calculations, and verify
 Claims. Represent each question as a ResearchNode and connect its results to
 the workspace's scientific records. Load a domain Skill when the active question
 needs method knowledge: `tspi-transition-state-search`, `tspi-xtb`, `tspi-gaussian`,
-`tspi-qbics`, `tspi-connectivity`, `tspi-render`, `tspi-report`, or
+`tspi-connectivity`, `tspi-render`, `tspi-report`, or
 `tspi-email`.
 
 ## Research Records
@@ -98,7 +98,7 @@ Read only the contract needed for the active operation:
 
 Focused references live with their owning Skills. Use
 `tspi-transition-state-search` for candidate strategy, `tspi-xtb` for xTB/CREST,
-`tspi-gaussian` for Gaussian, `tspi-qbics` for QBICS/DMECP, and
-`tspi-connectivity` for endpoint and structure evidence. Use `tspi-render`,
+`tspi-gaussian` for Gaussian, and `tspi-connectivity` for endpoint and structure
+evidence. Use `tspi-render`,
 `tspi-report`, and `tspi-email` for visual output, report packaging, and fixed
 target notification delivery.

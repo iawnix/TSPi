@@ -32,7 +32,7 @@ export default function (pi: ExtensionAPI) {
           version: "1",
           input_roles: ["gjf"],
           output_roles: ["program_output", "optimized_geometry", "frequencies"],
-          parsers: ["gaussian.log/1"],
+          parsers: ["gaussian.output/2"],
         },
         nodeId: "node_1",
         binding,

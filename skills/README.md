@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi includes nine Skills for planning research, running calculations, checking
+TSPi includes eight Skills for planning research, running calculations, checking
 results, and preparing figures and reports. The orchestration Skill manages
 the research workflow; load a focused Skill when its method or output is needed.
 
@@ -12,7 +12,6 @@ the research workflow; load a focused Skill when its method or output is needed.
 | [tspi-transition-state-search](tspi-transition-state-search/SKILL.md) | Candidate construction, QST, scans, NEB, conformers, and search strategy |
 | [tspi-xtb](tspi-xtb/SKILL.md) | xTB calculations and CREST conformer searches |
 | [tspi-gaussian](tspi-gaussian/SKILL.md) | Gaussian inputs, optimization, frequencies, and IRC |
-| [tspi-qbics](tspi-qbics/SKILL.md) | QBICS/DMECP electronic-state crossing calculations |
 | [tspi-connectivity](tspi-connectivity/SKILL.md) | IRC endpoints, atom mapping, stereochemistry, and structure comparison |
 | [tspi-render](tspi-render/SKILL.md) | Molecular images, animations, comparison panels, and scientific curves |
 | [tspi-report](tspi-report/SKILL.md) | Research reports with evidence, calculation history, and figures |

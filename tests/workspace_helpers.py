@@ -71,7 +71,7 @@ def calculation_result_fixture(
 ) -> dict[str, Any]:
     """Return one schema-valid result bound to ``calculation_intent_fixture``."""
 
-    return {
+    result = {
         "schema_version": "ts-calculation-result/2",
         "job_id": job_id,
         "intent_id": intent["intent_id"],
@@ -92,6 +92,9 @@ def calculation_result_fixture(
             "capability_descriptor_digest": intent["capability_descriptor_digest"],
         },
     }
+    if state == "parsed":
+        result["task_validation"] = {"status": "completed", "failures": []}
+    return result
 
 
 def calculation_prepared_fixture(intent: dict[str, Any]) -> dict[str, Any]:

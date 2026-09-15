@@ -10,7 +10,7 @@ description: 编排 TSPi 研究任务，管理工作区状态、Decision、证�
 使用本 Skill 组织研究问题、记录计算并验证 Claim。将每个问题表示为
 ResearchNode，并把结果关联到工作区的科学记录。当前问题需要方法知识或
 交付能力时，加载
-`tspi-transition-state-search`、`tspi-xtb`、`tspi-gaussian`、`tspi-qbics`、
+`tspi-transition-state-search`、`tspi-xtb`、`tspi-gaussian`、
 `tspi-connectivity`、`tspi-render`、`tspi-report` 或 `tspi-email`。
 
 ## 研究记录
@@ -83,5 +83,5 @@ Review 供应商和投递失败，保留失败 Node 与 Attempt。
 | 源码与安装源 | [package_sources.md](references/package_sources.md) |
 
 方法和交付参考资料放在各自 Skill 中：搜索方法、xTB/CREST、Gaussian、
-QBICS/DMECP、端点和结构证据，以及渲染、报告和邮件通知分别使用对应的
+端点和结构证据，以及渲染、报告和邮件通知分别使用对应的
 `tspi-*` Skill。

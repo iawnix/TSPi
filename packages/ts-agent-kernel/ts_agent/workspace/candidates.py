@@ -41,7 +41,7 @@ class ObservationCandidateError(ContractError):
 
 
 # Metadata and very large parser internals are not semantic candidates.  The
-# parser's complete summary remains available in validation_summary.json.
+# parser's complete summary remains available in its backend summary artifact.
 _SKIP_KEYS = frozenset({
     "log",
     "section_count",
@@ -102,9 +102,6 @@ def build_observation_candidates(
             break
 
     diagnostics: list[str] = []
-    failures = summary.get("validation_failures")
-    if isinstance(failures, list):
-        diagnostics.extend(str(item) for item in failures if isinstance(item, str) and item)
     if not candidates:
         diagnostics.append("parser produced no non-null semantic candidate fields")
     document = {

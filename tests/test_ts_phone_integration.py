@@ -963,56 +963,6 @@ process.stdout.write(JSON.stringify(formatTsSubagentHistoryMarkdown(records)));
     assert "> Independent review is running." in markdown
 
 
-def test_rpc_activity_widget_uses_serializable_string_lines() -> None:
-    script = f"""
-import installUi from {json.dumps(UI.as_uri())};
-const handlers = {{}};
-const listeners = new Map();
-const pi = {{
-  on: (name, handler) => {{ handlers[name] = handler; }},
-  registerEntryRenderer: () => {{}},
-  registerCommand: () => {{}},
-  getThinkingLevel: () => "high",
-  events: {{
-    on: (channel, listener) => {{
-      const values = listeners.get(channel) || new Set();
-      values.add(listener);
-      listeners.set(channel, values);
-      return () => values.delete(listener);
-    }},
-  }},
-}};
-installUi(pi);
-const widgets = [];
-const ctx = {{
-  mode: "rpc",
-  cwd: "/tmp/tspi-phone-rpc",
-  ui: {{
-    setWidget: (key, content, options) => widgets.push({{ key, content, options }}),
-    setWorkingMessage: () => {{}},
-  }},
-}};
-await handlers.session_start({{ type: "session_start", reason: "startup" }}, ctx);
-await handlers.tool_execution_start({{
-  type: "tool_execution_start",
-  toolCallId: "render-1",
-  toolName: "ts_render",
-  args: {{ operation: "compare", nodeId: "node_1", outputName: "compare.png" }},
-}}, ctx);
-const active = widgets.findLast((item) => Array.isArray(item.content));
-await handlers.session_shutdown({{ type: "session_shutdown", reason: "quit" }}, ctx);
-process.stdout.write(JSON.stringify(active));
-"""
-    widget = _node_json(script)
-    assert widget["key"] == "ts-activity"
-    assert widget["options"] == {"placement": "aboveEditor"}
-    assert isinstance(widget["content"], list)
-    assert widget["content"]
-    assert all(isinstance(line, str) for line in widget["content"])
-    assert "TS Activity" in widget["content"][0]
-    assert "Render" in "\n".join(widget["content"])
-
-
 def test_phone_sdk_runtime_preserves_session_local_models() -> None:
     result = subprocess.run(
         ["node", "tests/phone-runtime.test.mjs"],

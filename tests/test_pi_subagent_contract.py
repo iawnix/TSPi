@@ -160,7 +160,7 @@ def test_compute_task_and_result_are_bound_to_typed_actions(tmp_path: Path) -> N
     script = f"""
 const taskHelper=require({json.dumps(str(COMPUTE_TASK_PACKET))});
 const resultHelper=require({json.dumps(str(COMPUTE_OUTPUT_SCHEMA))});
-const descriptor={{capability:"gaussian.opt_freq",version:"1",input_roles:["gjf"],output_roles:["program_output","optimized_geometry","frequencies"],parsers:["gaussian.log/1"]}};
+const descriptor={{capability:"gaussian.opt_freq",version:"1",input_roles:["gjf"],output_roles:["program_output","optimized_geometry","frequencies"],parsers:["gaussian.output/2"]}};
 const descriptorDigest="sha256:"+"c".repeat(64);
 const task=taskHelper.buildComputeTask({{
   runId:"sub_1",workspaceRoot:process.argv[1],operation:"launch",capability:"gaussian.opt_freq",capabilityVersion:"1",capabilityDescriptor:descriptor,nodeId:"node_1",
@@ -210,7 +210,7 @@ import {{ shouldForceComputeResult }} from {json.dumps(COMPUTE_RUNTIME.as_uri())
 import {{ createRequire }} from "node:module";
 const require=createRequire(import.meta.url);
 const taskHelper=require({json.dumps(str(COMPUTE_TASK_PACKET))});
-const descriptor={{capability:"gaussian.opt_freq",version:"1",input_roles:["gjf"],output_roles:["program_output","optimized_geometry","frequencies"],parsers:["gaussian.log/1"]}};
+const descriptor={{capability:"gaussian.opt_freq",version:"1",input_roles:["gjf"],output_roles:["program_output","optimized_geometry","frequencies"],parsers:["gaussian.output/2"]}};
 const descriptorDigest="sha256:"+"c".repeat(64);
 const task=taskHelper.buildComputeTask({{
   runId:"sub_2",workspaceRoot:process.argv[1],operation:"inspect",capability:"gaussian.opt_freq",capabilityVersion:"1",capabilityDescriptor:descriptor,nodeId:"node_1",

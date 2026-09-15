@@ -466,11 +466,11 @@ def test_binding_rejects_unknown_incompatible_and_incomplete_roles(tmp_path: Pat
         create_calculation_intent(workspace, _request(node_id, xyz_artifact["artifact_id"]))
 
     incomplete = _request(node_id, xyz_artifact["artifact_id"])
-    incomplete["capability"] = "ase.neb"
+    incomplete["capability"] = "xtb.scan"
     incomplete["input_artifacts"] = [
-        {"input_role": "reactant", "artifact_id": xyz_artifact["artifact_id"]}
+        {"input_role": "xyz", "artifact_id": xyz_artifact["artifact_id"]}
     ]
-    with pytest.raises(ComputeContractError, match=r"missing=\['product'\]"):
+    with pytest.raises(ComputeContractError, match=r"missing=\['control'\]"):
         create_calculation_intent(workspace, incomplete)
 
     second_gjf = workspace / "inputs" / "second.gjf"

@@ -107,13 +107,12 @@ def test_public_skill_uses_nested_pi_skill_layout() -> None:
     assert not (ROOT / "templates").exists()
 
 
-def test_public_skill_family_has_one_orchestration_five_method_and_three_delivery_skills() -> None:
+def test_public_skill_family_has_one_orchestration_four_method_and_three_delivery_skills() -> None:
     expected = {
         "tspi-orchestration",
         "tspi-transition-state-search",
         "tspi-xtb",
         "tspi-gaussian",
-        "tspi-qbics",
         "tspi-connectivity",
         "tspi-render",
         "tspi-report",
@@ -204,7 +203,23 @@ def test_package_manifest_exposes_the_public_skill_family_and_allowlisted_runtim
     assert "python-dist/*.whl" in manifest["files"]
     assert "scripts/_runtime_install.py" in manifest["files"]
     assert "scripts/_wheel.py" in manifest["files"]
-    assert manifest["peerDependencies"]["typebox"] == "*"
+    assert manifest["peerDependencies"] == {
+        "@earendil-works/pi-agent-core": "*",
+        "@earendil-works/pi-ai": "*",
+        "@earendil-works/pi-coding-agent": "*",
+        "@earendil-works/pi-tui": "*",
+        "typebox": "*",
+    }
+    assert {
+        name: manifest["devDependencies"][name]
+        for name in manifest["peerDependencies"]
+        if name.startswith("@earendil-works/pi-")
+    } == {
+        "@earendil-works/pi-agent-core": "0.85.1",
+        "@earendil-works/pi-ai": "0.85.1",
+        "@earendil-works/pi-coding-agent": "0.85.1",
+        "@earendil-works/pi-tui": "0.85.1",
+    }
     assert "dependencies" not in manifest
     for name in ("ARCHITECTURE.md", "INSTALLATION.md", "MAINTAINER_GUIDE.md"):
         assert (ROOT / "docs" / name).is_file()

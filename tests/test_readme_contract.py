@@ -24,7 +24,6 @@ FOCUSED_SKILLS = {
     "tspi-transition-state-search": ROOT / "skills" / "tspi-transition-state-search",
     "tspi-xtb": ROOT / "skills" / "tspi-xtb",
     "tspi-gaussian": ROOT / "skills" / "tspi-gaussian",
-    "tspi-qbics": ROOT / "skills" / "tspi-qbics",
     "tspi-connectivity": ROOT / "skills" / "tspi-connectivity",
     "tspi-render": ROOT / "skills" / "tspi-render",
     "tspi-report": ROOT / "skills" / "tspi-report",

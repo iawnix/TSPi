@@ -16,7 +16,6 @@ from dataclasses import asdict, replace
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
-from ts_agent.backends.ase_neb import prepare_ase_neb
 from ts_agent.backends.base import BackendTask, PreparedTask
 from ts_agent.backends.crest import (
     CREST_REQUIRED_ARTIFACTS,
@@ -33,7 +32,6 @@ from ts_agent.backends.gaussian import (
     write_irc_parse_artifacts,
     write_parse_artifacts,
 )
-from ts_agent.backends.qbics_dmecp import prepare_qbics_dmecp
 from ts_agent.backends.xtb import (
     XTB_REQUIRED_ARTIFACTS,
     parse_xtb_artifacts,
@@ -73,6 +71,7 @@ from .contracts import (
     validate_calculation_result_binding,
     validate_compute_contract,
 )
+from .task_validation import parsed_program_outcome, validate_parsed_task
 
 
 INTENT_SCHEMA = "calculation_intent.schema.json"
@@ -83,8 +82,6 @@ BACKEND_PREPARERS: dict[str, Callable[[BackendTask], PreparedTask]] = {
     "gaussian": prepare_gaussian,
     "xtb": prepare_xtb,
     "crest": prepare_crest,
-    "ase_neb": prepare_ase_neb,
-    "qbics_dmecp": prepare_qbics_dmecp,
 }
 BACKENDS: dict[str, dict[str, tuple[set[str], Callable[[BackendTask], PreparedTask]]]] = {
     backend: {
@@ -882,7 +879,11 @@ def parse_calculation(
     if parse_dir.exists() and any(parse_dir.iterdir()):
         raise ComputeContractError("parse output directory is non-empty without a matching calculation result")
     parser_name = _parser_name(backend, is_irc)
-    parser_contract = _parser_contract(backend, is_irc)
+    descriptor = resolve_capability(str(intent["capability"]), str(intent["capability_version"]))
+    if len(descriptor.parsers) != 1:
+        raise ComputeContractError(f"capability must bind exactly one parser: {intent['capability']}")
+    parser_contract = descriptor.parsers[0]
+    task_validation = validate_parsed_task(backend, str(intent["task_type"]), summary)
     parsed_at = now_iso()
     try:
         if backend == "gaussian" and is_irc:
@@ -920,7 +921,7 @@ def parse_calculation(
             for path in parse_dir.glob("*")
             if not has_symlink_component(workspace, path) and path.is_file() and not path.is_symlink()
         )
-        program_status, error_class = _parsed_program_outcome(backend, summary)
+        program_status, error_class = parsed_program_outcome(backend, summary)
         result = _result(
             intent,
             job_id=(previous.get("job_id") if previous else None),
@@ -929,6 +930,7 @@ def parse_calculation(
             exit_status=(previous.get("exit_status") if previous else None),
             artifact_refs=[*raw_refs, *parsed_refs],
             parser_facts=summary,
+            task_validation=task_validation,
             error_class=error_class,
             provenance={
                 "parsed_at": parsed_at,
@@ -974,32 +976,12 @@ def _bound_parse_artifacts(
     return artifacts
 
 
-def _parsed_program_outcome(backend: str, summary: dict[str, Any]) -> tuple[str, str | None]:
-    if backend == "gaussian":
-        normal = bool(summary.get("normal_termination"))
-        return ("completed", None) if normal else ("failed", "gaussian_error_termination")
-    prefix = "xtb" if backend == "xtb" else "crest"
-    if not summary.get("execution_completed"):
-        return "failed", f"{prefix}_error_termination"
-    if not summary.get("artifacts_complete"):
-        return "failed", f"{prefix}_artifacts_incomplete"
-    if not summary.get("task_completed"):
-        return "failed", f"{prefix}_task_incomplete"
-    return "completed", None
-
-
 def _parser_name(backend: str, is_irc: bool) -> str:
     if backend == "gaussian":
         return "ts_agent.backends.gaussian.parse_irc_log" if is_irc else "ts_agent.backends.gaussian.parse_log"
     if backend == "xtb":
         return "ts_agent.backends.xtb.parse_xtb_artifacts"
     return "ts_agent.backends.crest.parse_crest_artifacts"
-
-
-def _parser_contract(backend: str, is_irc: bool) -> str:
-    if backend == "gaussian":
-        return "gaussian-irc-parser/1" if is_irc else "gaussian-tsfreq-parser/1"
-    return "xtb-task-parser/1" if backend == "xtb" else "crest-conformer-parser/1"
 
 
 def _validate_backend_request(
@@ -2206,6 +2188,7 @@ def _result(
     exit_status: int | None = None,
     artifact_refs: list[str] | None = None,
     parser_facts: dict[str, Any] | None = None,
+    task_validation: dict[str, Any] | None = None,
     error_class: str | None = None,
     control: dict[str, Any] | None = None,
     provenance: dict[str, Any] | None = None,
@@ -2237,6 +2220,8 @@ def _result(
             **(provenance or {}),
         },
     }
+    if task_validation is not None:
+        result["task_validation"] = task_validation
     if control is not None:
         result["control"] = control
     validate_compute_contract(RESULT_SCHEMA, result)

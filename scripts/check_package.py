@@ -101,8 +101,17 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     if manifest.get("dependencies"):
         errors.append("Pi-provided runtime packages must not be bundled as dependencies")
     peer_dependencies = manifest.get("peerDependencies")
-    if not isinstance(peer_dependencies, dict) or peer_dependencies.get("typebox") != "*":
-        errors.append("Pi-provided typebox must be declared as peerDependencies.typebox='*'")
+    pi_peers = {
+        "@earendil-works/pi-agent-core",
+        "@earendil-works/pi-ai",
+        "@earendil-works/pi-coding-agent",
+        "@earendil-works/pi-tui",
+        "typebox",
+    }
+    if not isinstance(peer_dependencies, dict) or {
+        name for name in pi_peers if peer_dependencies.get(name) != "*"
+    }:
+        errors.append("Pi-provided runtime packages must all use '*' peer dependency ranges")
 
     pi = manifest.get("pi")
     if not isinstance(pi, dict):

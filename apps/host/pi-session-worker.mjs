@@ -1,11 +1,11 @@
-import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   AgentHarness, createBashTool, createReadTool, createWriteTool,
-  TODO_CONTEXT,
+  loadSkills, TODO_CONTEXT,
 } from "@earendil-works/pi-agent-core";
 import { createTspiTools } from "./pi-native-tools.mjs";
+import { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 
 export {
   createChangeTool,
@@ -22,6 +22,7 @@ export {
   createStateTool,
   createTspiTools,
 } from "./pi-native-tools.mjs";
+export { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 
 const sourceRoot = process.env.TSPI_PI_SOURCE;
 if (!sourceRoot) throw new Error("TSPi worker requires TSPI_PI_SOURCE");
@@ -34,20 +35,16 @@ const { runSessionWorkerWithHarness } = workerModule;
 const { isDirectInternalProcessEntry, consumeInternalProcessRole } = processModule;
 const { findInitialModel, resolveCliModel } = modelResolver;
 
-async function loadTspiSkills() {
+async function loadTspiSkills(executionEnv) {
   const packageRoot = process.env.TSPI_PACKAGE_ROOT;
   if (!packageRoot) throw new Error("TSPi native worker requires TSPI_PACKAGE_ROOT");
   const skillsRoot = join(packageRoot, "skills");
-  const entries = await readdir(skillsRoot, { withFileTypes: true });
-  const skills = [];
-  for (const entry of entries.filter((candidate) => candidate.isDirectory()).sort((left, right) => left.name.localeCompare(right.name))) {
-    const filePath = join(skillsRoot, entry.name, "SKILL.md");
-    const content = await readFile(filePath, "utf8");
-    const name = content.match(/^name:\s*(\S+)\s*$/m)?.[1] || entry.name;
-    const description = content.match(/^description:\s*(.+?)\s*$/m)?.[1] || `TSPi skill ${entry.name}`;
-    skills.push({ name, description, content, filePath });
+  const loaded = await loadSkills(executionEnv, skillsRoot, TODO_CONTEXT);
+  if (loaded.diagnostics.length > 0) {
+    const details = loaded.diagnostics.map((item) => `${item.path}: ${item.message}`).join("; ");
+    throw new Error(`TSPi skill loading failed: ${details}`);
   }
-  return skills;
+  return { packageRoot, skillsRoot, skills: loaded.skills };
 }
 
 async function createTspiHarness(session, options, executionEnv) {
@@ -62,7 +59,18 @@ async function createTspiHarness(session, options, executionEnv) {
     })
     : resolveCliModel({ cliProvider: options.provider, cliModel: options.model, modelRuntime });
   if (resolved.error || !resolved.model) throw new Error(resolved.error || "Session worker could not resolve a model");
-  const builtinTools = [createReadTool()];
+  const loadedSkills = await loadTspiSkills(executionEnv);
+  const promptManifest = createSystemPromptManifest({
+    native: {
+      source: join(loadedSkills.packageRoot, "apps/host/pi-session-worker.mjs"),
+      text: tspiSystemPrompt(session.metadata.cwd),
+    },
+    skills: {
+      source: loadedSkills.skillsRoot,
+      items: loadedSkills.skills,
+    },
+  });
+  const builtinTools = [createReadTool(), createSystemPromptTool(promptManifest)];
   if (process.env.TSPI_NATIVE_WRITES === "1") {
     builtinTools.push(createWriteTool(), createBashTool());
   }
@@ -80,7 +88,6 @@ async function createTspiHarness(session, options, executionEnv) {
       : tspiTools.filter((tool) => ["ts_state", "ts_remote"].includes(tool.name))),
   ];
   const activeToolNames = tools.map((tool) => tool.name);
-  const skills = await loadTspiSkills();
   const created = await AgentHarness.create({
     session,
     models: modelRuntime,
@@ -89,8 +96,8 @@ async function createTspiHarness(session, options, executionEnv) {
     tools,
     activeToolNames,
     toolContext: { env: executionEnv, cwd: session.metadata.cwd },
-    resources: { skills },
-    systemPrompt: `You are the TSPi research agent for ${session.metadata.cwd}. The Research Kernel is authoritative for scientific state. Use ts_state before reasoning from workspace records. Use ts_change for canonical scientific writes; include a concrete rationale and auditable operations. Use ts_remote only for read-only infrastructure diagnostics and ts_calc for one preflight-bound calculation lifecycle. Use ts_seed or ts_import for validated calculation inputs, ts_compare for deterministic structure comparisons, ts_render for registered visual artifacts, and ts_report for revision-bound report packages. Use ts_review for isolated advisory assessment, then record Root's disposition with ts_reply before applying its advice. Use ts_notify only for material configured delivery events. Do not invent identifiers, artifact paths, or calculation results. Treat tool output as evidence, preserve uncertainty, and keep hypotheses, observations, validation, and conclusions distinct.`,
+    resources: { skills: loadedSkills.skills },
+    systemPrompt: promptManifest.effective,
   }, TODO_CONTEXT);
   try {
     const lane = await created.harness.lane("main", TODO_CONTEXT);
@@ -104,6 +111,10 @@ async function createTspiHarness(session, options, executionEnv) {
     await created.harness.close(TODO_CONTEXT).catch(() => {});
     throw error;
   }
+}
+
+function tspiSystemPrompt(cwd) {
+  return `You are the TSPi research agent for ${cwd}. The Research Kernel is authoritative for scientific state. Use ts_state before reasoning from workspace records. Use ts_change for canonical scientific writes; include a concrete rationale and auditable operations. Use ts_remote only for read-only infrastructure diagnostics and ts_calc for one preflight-bound calculation lifecycle. Use ts_seed or ts_import for validated calculation inputs, ts_compare for deterministic structure comparisons, ts_render for registered visual artifacts, and ts_report for revision-bound report packages. Use ts_review for isolated advisory assessment, then record Root's disposition with ts_reply before applying its advice. Use ts_notify only for material configured delivery events. Use sys_prompt when the effective system prompt or its provenance must be inspected. Do not invent identifiers, artifact paths, or calculation results. Treat tool output as evidence, preserve uncertainty, and keep hypotheses, observations, validation, and conclusions distinct.`;
 }
 
 if (isDirectInternalProcessEntry(import.meta.url)) {

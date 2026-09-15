@@ -50,6 +50,20 @@
         }
       }
     },
+    "task_validation": {
+      "type": "object",
+      "required": ["status", "failures"],
+      "properties": {
+        "status": {"enum": ["completed", "incomplete"]},
+        "failures": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+        }
+      },
+      "additionalProperties": false
+    },
     "error_class": {"type": ["string", "null"]},
     "control": {
       "type": "object",
@@ -98,5 +112,14 @@
     },
     "provenance": {"type": "object"}
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"state": {"const": "parsed"}},
+        "required": ["state"]
+      },
+      "then": {"required": ["task_validation"]}
+    }
+  ],
   "additionalProperties": false
 }

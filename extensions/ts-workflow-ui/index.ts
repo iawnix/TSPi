@@ -14,9 +14,6 @@ import {
   tspiIconLabel,
 } from "../shared/icons.ts";
 import {
-  renderTsActivityPanel,
-} from "./activity-panel.ts";
-import {
   formatElapsed,
   formatLocalDateTime,
   subagentActionLabel,
@@ -34,7 +31,6 @@ import {
   pruneTsActivities,
   reducePublishedTsActivity,
   reduceTsToolActivity,
-  summarizeTsActivities,
 } from "./activity-store.ts";
 import {
   collectTsSubagentRecords,
@@ -44,7 +40,6 @@ import {
 import { SubagentHistoryBrowser } from "./subagent-history.ts";
 import { requireWorkspaceRoot, runWorkspaceJson } from "../shared/workspace-cli.ts";
 
-const WIDGET_KEY = "ts-activity";
 type ForegroundState = "idle" | "thinking" | "compacting" | "error";
 export function formatTsSubagentHistory(
   entryType: string,
@@ -72,7 +67,6 @@ export default function (pi: ExtensionAPI) {
   const activityStore = createTsActivityStore();
   let foregroundState: ForegroundState = "idle";
   const activeTools = new Map<string, string>();
-  let timer: ReturnType<typeof setInterval> | undefined;
   let latestContext: ExtensionContext | undefined;
   let activeTui: TUI | undefined;
   let activeHeader: ReturnType<typeof createTspiStartupHeader> | undefined;
@@ -168,76 +162,36 @@ export default function (pi: ExtensionAPI) {
     requestRender();
   };
 
-  const updateUi = (ctx: ExtensionContext, now = Date.now()) => {
+  const updateActivityState = (ctx: ExtensionContext, now = Date.now()) => {
     latestContext = ctx;
     pruneTsActivities(activityStore, now);
-    const summary = summarizeTsActivities(activityStore);
-    if (summary.total === 0) {
-      ctx.ui.setWidget(WIDGET_KEY, undefined);
-      if (timer) clearInterval(timer);
-      timer = undefined;
-      requestRender();
-      updateWorkingMessage(ctx);
-      return;
-    }
-    if (ctx.mode === "rpc") {
-      ctx.ui.setWidget(
-        WIDGET_KEY,
-        renderTsActivityPanel(activityStore, 88, Date.now(), 4, "unicode").map((line) => line.text),
-        { placement: "aboveEditor" },
-      );
-    } else {
-      ctx.ui.setWidget(
-        WIDGET_KEY,
-        (_tui, theme) => ({
-          render: (width) => {
-            return renderTsActivityPanel(activityStore, width, Date.now()).map((line) => theme.fg(line.tone, line.text));
-          },
-          invalidate: () => {},
-        }),
-        { placement: "aboveEditor" },
-      );
-    }
-    const needsRefresh = summary.active > 0 || summary.done > 0;
-    if (needsRefresh && !timer) {
-      timer = setInterval(() => {
-        if (latestContext) updateUi(latestContext);
-      }, 1000);
-      timer.unref?.();
-    } else if (!needsRefresh && timer) {
-      clearInterval(timer);
-      timer = undefined;
-    }
     requestRender();
     updateWorkingMessage(ctx);
   };
 
   const unsubscribeActivity = subscribeTsActivity(pi.events, (event) => {
     if (!reducePublishedTsActivity(activityStore, event) || !latestContext) return;
-    updateUi(latestContext);
+    updateActivityState(latestContext);
   });
 
   pi.on("session_start", (_event, ctx) => {
     latestContext = ctx;
-    if (timer) clearInterval(timer);
-    timer = undefined;
     clearTsActivityStore(activityStore);
     activeTools.clear();
-    ctx.ui.setWidget(WIDGET_KEY, undefined);
     setForegroundState("idle");
     installUi(ctx);
   });
 
   pi.on("tool_execution_start", (event, ctx) => {
     if (!isTrackedActivityTool(event.toolName)) activeTools.set(event.toolCallId, event.toolName);
-    if (reduceTsToolActivity(activityStore, event, Date.now())) updateUi(ctx);
+    if (reduceTsToolActivity(activityStore, event, Date.now())) updateActivityState(ctx);
     updateWorkingMessage(ctx);
   });
   pi.on("tool_execution_update", (event, ctx) => {
-    if (reduceTsToolActivity(activityStore, event, Date.now())) updateUi(ctx);
+    if (reduceTsToolActivity(activityStore, event, Date.now())) updateActivityState(ctx);
   });
   pi.on("tool_execution_end", (event, ctx) => {
-    if (reduceTsToolActivity(activityStore, event, Date.now())) updateUi(ctx);
+    if (reduceTsToolActivity(activityStore, event, Date.now())) updateActivityState(ctx);
     activeTools.delete(event.toolCallId);
     setForegroundState(event.isError ? "error" : "thinking");
     updateWorkingMessage(ctx);
@@ -268,11 +222,8 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", (_event, ctx) => {
     unsubscribeActivity();
     disposeHeader();
-    if (timer) clearInterval(timer);
-    timer = undefined;
     clearTsActivityStore(activityStore);
     activeTools.clear();
-    ctx.ui.setWidget(WIDGET_KEY, undefined);
     if (ctx.mode === "tui") {
       ctx.ui.setHeader(undefined);
       ctx.ui.setFooter(undefined);

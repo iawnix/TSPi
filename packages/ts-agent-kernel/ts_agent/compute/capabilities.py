@@ -107,52 +107,46 @@ def _descriptor(
 # This is an executor registry, not a strategy table.  New scientific domains
 # add a descriptor and an adapter; they do not edit a hypothesis dispatch map.
 CAPABILITY_DESCRIPTORS: Final[tuple[CapabilityDescriptor, ...]] = (
-    _descriptor("gaussian.sp", "gaussian", "sp", frozenset({"gjf"}), ("program_output", "energy"), parser="gaussian.log/1"),
-    _descriptor("gaussian.opt", "gaussian", "opt", frozenset({"gjf"}), ("program_output", "optimized_geometry"), parser="gaussian.log/1"),
-    _descriptor("gaussian.freq", "gaussian", "freq", frozenset({"gjf"}), ("program_output", "frequencies"), parser="gaussian.log/1"),
-    _descriptor("gaussian.opt_freq", "gaussian", "opt_freq", frozenset({"gjf"}), ("program_output", "optimized_geometry", "frequencies"), parser="gaussian.log/1"),
-    _descriptor("gaussian.irc", "gaussian", "irc", frozenset({"gjf"}), ("program_output", "reaction_path"), parser="gaussian.irc/1"),
+    _descriptor("gaussian.sp", "gaussian", "sp", frozenset({"gjf"}), ("program_output", "energy"), parser="gaussian.output/2"),
+    _descriptor("gaussian.opt", "gaussian", "opt", frozenset({"gjf"}), ("program_output", "optimized_geometry"), parser="gaussian.output/2"),
+    _descriptor("gaussian.freq", "gaussian", "freq", frozenset({"gjf"}), ("program_output", "frequencies"), parser="gaussian.output/2"),
+    _descriptor("gaussian.opt_freq", "gaussian", "opt_freq", frozenset({"gjf"}), ("program_output", "optimized_geometry", "frequencies"), parser="gaussian.output/2"),
+    _descriptor("gaussian.irc", "gaussian", "irc", frozenset({"gjf"}), ("program_output", "reaction_path"), parser="gaussian.irc/2"),
     _descriptor(
         "xtb.sp", "xtb", "sp", frozenset({"xyz"}), ("program_output", "energy"),
-        parser="xtb.log/1",
+        parser="xtb.artifacts/2",
         parameter_schema=_parameters("accuracy", "charge", "electronic_temperature", "method", "solvent", "solvent_model", "uhf"),
     ),
     _descriptor(
         "xtb.opt", "xtb", "opt", frozenset({"xyz"}), ("program_output", "optimized_geometry"),
-        parser="xtb.log/1",
+        parser="xtb.artifacts/2",
         parameter_schema=_parameters("accuracy", "charge", "electronic_temperature", "method", "solvent", "solvent_model", "uhf", "max_cycles", "opt_level"),
     ),
     _descriptor(
         "xtb.freq", "xtb", "freq", frozenset({"xyz"}), ("program_output", "frequencies"),
-        parser="xtb.log/1",
+        parser="xtb.artifacts/2",
         parameter_schema=_parameters("accuracy", "charge", "electronic_temperature", "method", "solvent", "solvent_model", "uhf"),
     ),
     _descriptor(
         "xtb.opt_freq", "xtb", "opt_freq", frozenset({"xyz"}), ("program_output", "optimized_geometry", "frequencies"),
-        parser="xtb.log/1",
+        parser="xtb.artifacts/2",
         parameter_schema=_parameters("accuracy", "charge", "electronic_temperature", "method", "solvent", "solvent_model", "uhf", "max_cycles", "opt_level"),
     ),
     _descriptor(
         "xtb.scan", "xtb", "scan", frozenset({"xyz", "control"}), ("program_output", "scan_profile"),
-        parser="xtb.scan/1",
+        parser="xtb.artifacts/2",
         parameter_schema=_parameters("accuracy", "charge", "electronic_temperature", "method", "solvent", "solvent_model", "uhf", "max_cycles", "opt_level"),
     ),
     _descriptor(
         "xtb.md", "xtb", "md", frozenset({"xyz", "control"}), ("program_output", "trajectory"),
-        parser="xtb.md/1",
+        parser="xtb.artifacts/2",
         parameter_schema=_parameters("accuracy", "charge", "electronic_temperature", "method", "solvent", "solvent_model", "uhf"),
     ),
     _descriptor(
         "crest.conformer_search", "crest", "conformer_search", frozenset({"xyz"}), ("program_output", "conformer_ensemble"),
-        parser="crest.log/1",
+        parser="crest.artifacts/2",
         parameter_schema=_parameters("charge", "method", "opt_level", "search_level", "solvent", "solvent_model", "threads", "uhf"),
     ),
-    _descriptor(
-        "ase.neb", "ase_neb", "neb", frozenset({"reactant", "product"}), ("program_output", "reaction_path"),
-        parser="ase.neb/1",
-        parameter_schema=_parameters("images"),
-    ),
-    _descriptor("qbics.dmecp", "qbics_dmecp", "dmecp", frozenset({"config"}), ("program_output", "crossing_point"), parser="qbics.dmecp/1"),
 )
 
 CAPABILITIES_BY_ID: Final[dict[str, CapabilityDescriptor]] = {

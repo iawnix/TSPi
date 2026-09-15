@@ -16,7 +16,7 @@ services, not a second Agent runtime.
 
 ## Loaded Surface
 
-Normal startup registers nine Skills, five extensions, one theme, twelve public
+Normal startup registers eight Skills, five extensions, one theme, twelve public
 tools, and four slash commands. The orchestration Skill is the cross-cutting
 contract; domain Skill bodies are loaded when the active question matches.
 `ts_calc` and `ts_review`
@@ -100,9 +100,9 @@ guards/receipts, not UI state, are authoritative for remote recovery.
 
 ## UI
 
-`TS Activity` presents current Compute, Review, and deterministic-tool activity
-as compact kind, owner, action, state, and elapsed-time rows without gaining
-authority. It omits run IDs and audit paths and is transient.
+The foreground working message summarizes whether Root is thinking or running
+Compute, Review, or deterministic tools without gaining authority. It is
+transient and contains no run IDs or audit paths.
 `/ts-runs` is a paginated read-only Compute/Review browser: its list
 uses canonical `sub_n` run IDs, while details put outcome and error before scope,
 actions, artifacts, and audit metadata. Pi's normal expand key expands/collapses

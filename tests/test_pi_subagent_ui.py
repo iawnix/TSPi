@@ -9,7 +9,6 @@ ROOT = Path(__file__).resolve().parents[1]
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
 STATUS = ROOT / "extensions" / "shared" / "subagent-status.ts"
 STORE = ROOT / "extensions" / "ts-workflow-ui" / "activity-store.ts"
-PANEL = ROOT / "extensions" / "ts-workflow-ui" / "activity-panel.ts"
 DETAILS = ROOT / "extensions" / "ts-workflow-ui" / "agent-details.ts"
 HISTORY = ROOT / "extensions" / "ts-workflow-ui" / "subagent-history.ts"
 UI = ROOT / "extensions" / "ts-workflow-ui" / "index.ts"
@@ -66,38 +65,6 @@ process.stdout.write(JSON.stringify({{before,after,summary:summarizeTsActivities
     assert result["pruned"] is True
     assert all(item.get("activityKind") != "render" for item in result["after"])
     assert result["summary"]["active"] == 5
-
-
-def test_activity_panel_renders_compact_review_compute_and_failure_rows() -> None:
-    script = f"""
-import {{ createTsActivityStore,reduceTsToolActivity }} from {json.dumps(STORE.as_uri())};
-import {{ renderTsActivityPanel }} from {json.dumps(PANEL.as_uri())};
-const store=createTsActivityStore();
-for (const [id,name,args,time] of [
- ["review","ts_review",{{targetClaimRef:"claim_1"}},1000],
- ["compute","ts_calc",{{operation:"launch",capability:"gaussian",nodeId:"node_1"}},2000],
- ["report","ts_report",{{operation:"build",packageName:"final"}},3000],
-]) reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId:id,toolName:name,args}},time);
-reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:1,tool_call_id:"review",task_id:"sub_1",role:"review",operation:"claim_review",state:"waiting",started_at:new Date(1000).toISOString(),updated_at:new Date(3500).toISOString(),claim_refs:["claim_1"],target_ref:"claim_1",wait_reason:"model_response"}}}}}},3500);
-reduceTsToolActivity(store,{{type:"tool_execution_end",toolCallId:"report",toolName:"ts_report",result:{{}},isError:true}},4000);
-const widths=[38,64,100].map((width)=>({{width,lines:renderTsActivityPanel(store,width,5000,4,"ascii")}}));
-process.stdout.write(JSON.stringify(widths));
-"""
-    rows = _node_json(script)
-    for row in rows:
-        text = "\n".join(item["text"] for item in row["lines"])
-        assert "TS Activity" in text
-        assert "Review" in text
-        assert "Compute" in text
-        assert "Report" in text
-        assert all(len(item["text"]) <= row["width"] for item in row["lines"])
-    wide = "\n".join(item["text"] for item in rows[-1]["lines"])
-    assert "2 active" in wide
-    assert "1 attention" in wide
-    assert "claim_1" in wide
-    assert "waiting · model" in wide
-    assert "Gaussian launch" in wide
-    assert "workspace" in wide
 
 
 def test_subagent_history_merges_live_and_durable_roles_with_owner_paths() -> None:
@@ -195,7 +162,7 @@ process.stdout.write(formatTsSubagentHistoryMarkdown([record]));
 
 def test_ui_tracks_current_tools_and_history_covers_compute_and_review() -> None:
     source = UI.read_text(encoding="utf-8")
-    assert 'const WIDGET_KEY = "ts-activity"' in source
+    assert "setWidget" not in source
     assert 'pi.registerCommand("ts-runs"' in source
     assert "TS Subagent History" in source
     assert "Compute and Review subagent runs" in source

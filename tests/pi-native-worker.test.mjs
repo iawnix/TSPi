@@ -6,9 +6,87 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
+import { formatSkillsForSystemPrompt, loadSkills, TODO_CONTEXT } from "@earendil-works/pi-agent-core";
+import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
+import { createSystemPromptManifest, createSystemPromptTool } from "../apps/host/system-prompt.mjs";
 
 const sourceRoot = process.env.TSPI_PI_SOURCE;
 const executeFile = promisify(execFile);
+
+test("system prompt manifest reports the exact effective prompt by origin", async () => {
+  const manifest = createSystemPromptManifest({
+    native: { source: "native.mjs", text: "native instructions" },
+    skills: {
+      source: "skills",
+      items: [{
+        name: "example",
+        description: "Example skill",
+        filePath: "skills/example/SKILL.md",
+      }],
+    },
+    extensions: [{ source: "extension.ts", text: "extension instructions" }],
+  });
+  assert.equal(
+    manifest.effective,
+    `native instructions\n\n${formatSkillsForSystemPrompt([{
+      name: "example",
+      description: "Example skill",
+      filePath: "skills/example/SKILL.md",
+    }])}\n\nextension instructions`,
+  );
+  assert.match(manifest.sha256, /^[0-9a-f]{64}$/);
+  assert.deepEqual(manifest.sections.map((section) => section.origin), ["native", "skill", "extension"]);
+  assert.deepEqual(manifest.sections[1].inputs, ["skills/example/SKILL.md"]);
+  for (const section of manifest.sections) assert.match(section.sha256, /^[0-9a-f]{64}$/);
+
+  const tool = createSystemPromptTool(manifest);
+  assert.equal(tool.name, "sys_prompt");
+  const result = await tool.execute();
+  assert.deepEqual(JSON.parse(result.content[0].text), manifest);
+  assert.deepEqual(result.details, { sha256: manifest.sha256, sectionCount: 3 });
+});
+
+test("system prompt skill provenance excludes skills hidden from the model", () => {
+  const skills = [
+    { name: "visible", description: "Visible skill", filePath: "/skills/visible/SKILL.md" },
+    {
+      name: "hidden",
+      description: "Hidden skill",
+      filePath: "/skills/hidden/SKILL.md",
+      disableModelInvocation: true,
+    },
+  ];
+  const manifest = createSystemPromptManifest({
+    native: { source: "native.mjs", text: "native instructions" },
+    skills: {
+      source: "/skills",
+      items: skills,
+    },
+  });
+
+  assert.deepEqual(manifest.sections[1].inputs, ["/skills/visible/SKILL.md"]);
+  assert.match(manifest.effective, /<name>visible<\/name>/);
+  assert.doesNotMatch(manifest.effective, /<name>hidden<\/name>/);
+});
+
+test("Pi Agent Core loads the packaged TSPi skill catalog", async () => {
+  const env = new NodeExecutionEnv({ cwd: process.cwd() });
+  const loaded = await loadSkills(env, join(process.cwd(), "skills"), TODO_CONTEXT);
+  assert.deepEqual(loaded.diagnostics, []);
+  assert.deepEqual(loaded.skills.map((skill) => skill.name), [
+    "tspi-connectivity",
+    "tspi-email",
+    "tspi-gaussian",
+    "tspi-orchestration",
+    "tspi-render",
+    "tspi-report",
+    "tspi-transition-state-search",
+    "tspi-xtb",
+  ]);
+  const prompt = formatSkillsForSystemPrompt(loaded.skills);
+  assert.match(prompt, /<available_skills>/);
+  assert.doesNotMatch(prompt, /tspi-qbics/);
+});
 
 function kernelPython() {
   const candidate = process.env.TS_AGENT_PYTHON || "python3";
@@ -69,7 +147,7 @@ test("native Pi server starts a TSPi Harness with native research tools", { skip
     }
     assert.ok(runtime.workerPids.has(summary.sessionId), "native Worker did not start");
     const state = await readExperimentalSessionState(runtime.sessionDir, summary.sessionId);
-    assert.deepEqual(state.activeTools, ["read", "ts_state", "ts_remote"]);
+    assert.deepEqual(state.activeTools, ["read", "sys_prompt", "ts_state", "ts_remote"]);
 
     process.env.TSPI_NATIVE_WRITES = "1";
     const writable = await management.create({ id: "native-writable-tools" }, BACKGROUND_CONTEXT);
@@ -80,7 +158,7 @@ test("native Pi server starts a TSPi Harness with native research tools", { skip
     assert.ok(runtime.workerPids.has(writable.sessionId), "writable native Worker did not start");
     const writableState = await readExperimentalSessionState(runtime.sessionDir, writable.sessionId);
     assert.deepEqual(writableState.activeTools, [
-      "read", "write", "bash", "ts_state", "ts_change", "ts_remote",
+      "read", "sys_prompt", "write", "bash", "ts_state", "ts_change", "ts_remote",
       "ts_calc", "ts_review", "ts_reply", "ts_seed", "ts_compare", "ts_import",
       "ts_render", "ts_report", "ts_notify",
     ]);

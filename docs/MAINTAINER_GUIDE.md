@@ -42,7 +42,6 @@ question and evidence; the Kernel validates and records those decisions.
 | `skills/tspi-transition-state-search/` | candidate generation and transition-state search strategy |
 | `skills/tspi-xtb/` | xTB and CREST method guidance |
 | `skills/tspi-gaussian/` | Gaussian method and output guidance |
-| `skills/tspi-qbics/` | QBICS/DMECP state-crossing guidance |
 | `skills/tspi-connectivity/` | endpoint and molecular-structure evidence guidance |
 | `skills/tspi-render/` | deterministic visual-artifact guidance |
 | `skills/tspi-report/` | evidence-bound report-package guidance |
@@ -51,7 +50,7 @@ question and evidence; the Kernel validates and records those decisions.
 | `extensions/ts-workflow-review/` | advisory Review entrypoint and Root disposition |
 | `extensions/ts-workflow-compute/` | Compute subagent entrypoint, bound action tools, and remote diagnostics |
 | `extensions/ts-workflow-artifacts/` | deterministic structure seed/comparison, input import, Render, Report, and notification tools |
-| `extensions/ts-workflow-ui/` | startup, editor/footer, TS Activity, Compute/Review history |
+| `extensions/ts-workflow-ui/` | startup, editor/footer, working state, Compute/Review history |
 | `extensions/shared/` | public tool inventory and shared UI/path helpers |
 | `packages/ts-agent-kernel/` | Python Research Kernel distribution and deterministic scientific services |
 | `packages/ts-agent-runtime/` | reusable TypeScript Agent, Compute, Review, and artifact runtime modules |
@@ -106,7 +105,7 @@ the existing wrapper while callers migrate.
 
 `package.json` registers exactly:
 
-- nine Skills: one orchestration Skill, five scientific-method Skills, and three output/delivery Skills under `skills/`;
+- eight Skills: one orchestration Skill, four scientific-method Skills, and three output/delivery Skills under `skills/`;
 - five normal extensions: control, UI, Review, compute, and artifacts;
 - one theme: `themes/ts-theme.json`.
 
@@ -412,9 +411,7 @@ Do not document stronger durability than the implementation provides:
 - no background result replay or acknowledgement queue exists;
 - immediate tool return is the active conversation delivery channel;
 - deterministic tools keep separate authoritative records;
-- `TS Activity` is transient and cleared with the Pi session;
-- its normal row contract is kind, semantic owner, action, state, and elapsed
-  time, without run IDs or audit paths;
+- the foreground working message is transient and cleared with the Pi session;
 - `/ts-runs` reads durable Compute and Review summaries on demand,
   lists canonical `sub_n` IDs, and orders details as outcome/error, scope,
   actions/artifacts, then audit metadata.

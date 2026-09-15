@@ -215,7 +215,7 @@ const workspace=process.argv[4];
 const nodeId=process.argv[5];
 const digest="sha256:"+"d".repeat(64);
 const descriptorDigest="sha256:"+"e".repeat(64);
-const descriptor={capability:"gaussian.opt_freq",version:"1",input_roles:["gjf"],output_roles:["program_output","optimized_geometry","frequencies"],parsers:["gaussian.log/1"]};
+const descriptor={capability:"gaussian.opt_freq",version:"1",input_roles:["gjf"],output_roles:["program_output","optimized_geometry","frequencies"],parsers:["gaussian.output/2"]};
 const task=taskHelper.buildComputeTask({
   runId:"sub_1",workspaceRoot:workspace,operation:"cancel",capability:"gaussian.opt_freq",capabilityVersion:"1",capabilityDescriptor:descriptor,nodeId,
   binding:{intentId:"calc_1",intentDigest:digest,executionKind:"remote",capabilityDescriptorDigest:descriptorDigest},
@@ -337,7 +337,7 @@ const nodeId=process.argv[4];
 const taskId=process.argv[5];
 const digest="sha256:"+"c".repeat(64);
 const descriptorDigest="sha256:"+"e".repeat(64);
-const descriptor={capability:"gaussian.opt_freq",version:"1",input_roles:["gjf"],output_roles:["program_output","optimized_geometry","frequencies"],parsers:["gaussian.log/1"]};
+const descriptor={capability:"gaussian.opt_freq",version:"1",input_roles:["gjf"],output_roles:["program_output","optimized_geometry","frequencies"],parsers:["gaussian.output/2"]};
 const task=taskHelper.buildComputeTask({
   runId:taskId,workspaceRoot:workspace,operation:"cancel",capability:"gaussian.opt_freq",capabilityVersion:"1",capabilityDescriptor:descriptor,nodeId,
   binding:{intentId:"calc_1",intentDigest:digest,executionKind:"remote",capabilityDescriptorDigest:descriptorDigest},

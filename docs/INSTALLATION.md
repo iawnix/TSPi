@@ -76,7 +76,7 @@ Global Pi credentials under `~/.pi/agent` remain available for other Pi sessions
 | Git | Fetch TSPi and selected components from GitHub |
 | Linux with OpenSSH client tools | TSPi host and optional remote execution |
 | Node.js `>=22.19.0` | Pi and TypeScript extension loading |
-| Pi Agent `>=0.81.1 <1.0.0` | Root Agent host and TUI |
+| Pi Agent `0.85.1` | Validated Root Agent host, Harness, and TUI |
 | Python 3.11 or newer | release installer and runtime bootstrap |
 | Conda or Mamba | isolated scientific Python environment |
 | npm | Phone server builds and component release tooling |
@@ -153,6 +153,11 @@ are immutable and shared. Workspaces keep separate Pi sessions,
 canonical state, calculation controls, reports, and Root locks. Phone tokens,
 service configuration, model credentials, and other runtime state remain
 outside the release.
+
+This is a TSPi application distribution layout, not a Pi package-manager
+installation. The `pi` entries in `package.json` remain the authored extension-mode
+surface, while the suite installer owns immutable application releases,
+component selection, managed Python runtimes, and stable launchers.
 
 ## Build A Release
 

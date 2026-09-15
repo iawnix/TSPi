@@ -22,8 +22,6 @@ def test_capability_catalog_keeps_adapters_separate_from_readiness() -> None:
         "gaussian",
         "xtb",
         "crest",
-        "ase_neb",
-        "qbics_dmecp",
     }
     assert all("backend" not in item and "task_type" not in item for item in catalog["capabilities"])
 
@@ -40,9 +38,9 @@ def test_catalog_describes_executor_contracts_without_strategy_routing() -> None
         "gaussian.irc",
         "xtb.scan",
         "crest.conformer_search",
-        "ase.neb",
-        "qbics.dmecp",
     } <= set(capabilities)
+    assert "ase.neb" not in capabilities
+    assert "qbics.dmecp" not in capabilities
     assert capabilities["gaussian.opt_freq"]["input_roles"] == ["gjf"]
     assert capabilities["gaussian.opt_freq"]["output_roles"] == [
         "program_output",
@@ -66,10 +64,10 @@ def test_capability_effects_separate_local_preparation_from_remote_execution() -
 
 
 def test_capability_parameters_are_descriptor_bound() -> None:
-    descriptor = resolve_capability("ase.neb", "1")
-    assert validate_capability_parameters(descriptor, {"images": 7}) == {"images": 7}
+    descriptor = resolve_capability("xtb.opt", "1")
+    assert validate_capability_parameters(descriptor, {"max_cycles": 7}) == {"max_cycles": 7}
     with pytest.raises(ValueError, match="Additional properties"):
-        validate_capability_parameters(descriptor, {"method": "invented"})
+        validate_capability_parameters(descriptor, {"unknown_setting": "invented"})
 
 
 def test_unknown_capability_is_a_structured_nonretryable_gap() -> None:

@@ -109,7 +109,7 @@ export async function runComputeOperator(options: ComputeRunOptions): Promise<Co
       allowModelNetwork: false,
     });
     if (options.parentApiKey) {
-      await modelRuntime.setRuntimeApiKey(options.parentModel.provider, options.parentApiKey, { allowNetwork: false });
+      await modelRuntime.setRuntimeApiKey(options.parentModel.provider, options.parentApiKey);
     }
     const model = requireRuntimeModel(modelRuntime, options.parentModel);
 

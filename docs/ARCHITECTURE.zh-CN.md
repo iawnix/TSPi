@@ -104,8 +104,13 @@ Unix transport、Chord service、Worker 生命周期和 client TUI 均由 Pi 原
 launcher 通过 Harness resources 加载 TSPi `SKILL.md`，并将 App Server 状态保存在
 workspace 的 `.pi/app-server/`。这些 session 与 Phone Host、standalone session history
 隔离，不会在不同 runtime 之间迁移。未指定 `--allow-writes` 时，Worker 只开放 `read`、
-`ts_state` 和 `ts_remote`。指定该标志后，launcher 会先取得 workspace directory guard
+`sys_prompt`、`ts_state` 和 `ts_remote`。指定该标志后，launcher 会先取得 workspace directory guard
 和独占 Root lock，再启用完整原生工具集；App Server 进程存活期间会一直持有这些锁。
+
+Worker 使用 Pi Agent Core 加载并格式化 Skill，再把实际生效的 prompt 记录为
+`tspi-system-prompt/1` manifest。只读工具 `sys_prompt` 返回完整文本、SHA-256 摘要，
+并把各段来源标为原生、Skill 或 extension 注入。原生 App Server session 不加载
+extension prompt，因此其 manifest 通常只有原生段和 Skill 段。
 
 ## Python 运行环境
 

@@ -129,8 +129,12 @@ Finalize collects an allowed output set and parses one collected artifact:
 
 Parse runs only after collection completes. Collection verifies the immutable
 remote manifest and does not depend on Torque history. Parser facts are
-operational output. Root must verify the primary artifacts before recording
-individual semantic Observations through a Decision.
+operational output. `program_status` reports whether the executable reached its
+normal terminus; `task_validation` separately reports whether the requested
+capability produced its required outputs and convergence evidence. A normally
+terminated program can therefore have `task_validation.status=incomplete`.
+Root must verify the primary artifacts before recording individual semantic
+Observations through a Decision.
 
 For a Node that was closed prematurely by an older runtime, continue inspect and
 finalize with the original `nodeId` and `intentId`. Never move or duplicate the

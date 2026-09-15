@@ -125,13 +125,6 @@ def parse_crest_artifacts(artifacts: dict[str, Path]) -> dict[str, Any]:
         and summary.get("conformer_count") == summary.get("relative_energy_count")
     )
     summary["ensemble_counts_match"] = counts_match
-    summary["artifacts_complete"] = not summary["missing_artifacts"]
-    summary["task_completed"] = bool(
-        summary["execution_completed"]
-        and summary["artifacts_complete"]
-        and summary.get("conformer_count")
-        and counts_match
-    )
     return {"summary": summary, **details}
 
 

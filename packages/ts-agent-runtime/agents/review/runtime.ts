@@ -138,7 +138,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
       allowModelNetwork: false,
     });
     if (options.parentApiKey) {
-      await modelRuntime.setRuntimeApiKey(options.parentModel.provider, options.parentApiKey, { allowNetwork: false });
+      await modelRuntime.setRuntimeApiKey(options.parentModel.provider, options.parentApiKey);
     }
     const model = requireRuntimeModel(modelRuntime, options.parentModel);
 

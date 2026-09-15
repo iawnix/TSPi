@@ -21,6 +21,7 @@ from ts_agent.compute import (
     parse_calculation,
     prepare_calculation,
 )
+from ts_agent.compute.task_validation import validate_parsed_task
 from ts_agent.io import sha256_json
 
 
@@ -259,13 +260,12 @@ def test_xtb_opt_freq_parse_consumes_bound_artifact_set_and_advances_collected_r
     assert result["job_id"] == "123.cluster"
     assert result["exit_status"] == 0
     assert result["parser_facts"]["execution_completed"] is True
-    assert result["parser_facts"]["task_completed"] is True
-    assert result["parser_facts"]["artifacts_complete"] is True
+    assert result["task_validation"] == {"status": "completed", "failures": []}
     assert result["parser_facts"]["optimization_converged"] is True
     assert result["parser_facts"]["frequency_count"] == 9
     assert result["parser_facts"]["imaginary_frequency_count"] == 1
     assert result["parser_facts"]["imaginary_frequencies_cm-1"] == [-125.5]
-    assert result["provenance"]["parser_contract"] == "xtb-task-parser/1"
+    assert result["provenance"]["parser_contract"] == "xtb.artifacts/2"
     assert len(result["provenance"]["parser_inputs"]) == 3
     assert (output_dir / "parsed/xtb_summary.json").is_file()
     assert (output_dir / "parsed/frequencies.json").is_file()
@@ -304,7 +304,8 @@ def test_xtb_sp_parse_accepts_native_colon_summary(tmp_path: Path) -> None:
     facts = parse_xtb_artifacts("sp", {"xtb.out": output})["summary"]
 
     assert facts["execution_completed"] is True
-    assert facts["task_completed"] is True
+    assert "task_completed" not in facts
+    assert validate_parsed_task("xtb", "sp", facts) == {"status": "completed", "failures": []}
     assert facts["total_energy_hartree"] == pytest.approx(-5.065772968305)
     assert facts["gradient_norm_hartree_per_bohr"] == pytest.approx(0.097095675437)
     assert facts["homo_lumo_gap_ev"] == pytest.approx(16.326799898512)
@@ -328,7 +329,7 @@ def test_xtb_gfnff_completion_does_not_require_scc_convergence(tmp_path: Path) -
 
     assert facts["scc_convergence_applicable"] is False
     assert facts["scc_converged"] is None
-    assert facts["task_completed"] is True
+    assert validate_parsed_task("xtb", "sp", facts) == {"status": "completed", "failures": []}
 
 
 def test_xtb_vibrational_parser_accepts_raman_columns(tmp_path: Path) -> None:
@@ -422,7 +423,10 @@ def test_xtb_concerted_scan_parser_handles_distance_angle_and_dihedral(tmp_path:
         control=control,
     )
 
-    assert parsed["summary"]["task_completed"] is True
+    assert validate_parsed_task("xtb", "scan", parsed["summary"]) == {
+        "status": "completed",
+        "failures": [],
+    }
     first = parsed["scan_points"]["points"][0]["coordinates"]
     assert [coordinate["kind"] for coordinate in first] == ["distance", "angle", "dihedral"]
     assert first[0]["actual_value"] == pytest.approx(1.0)
@@ -452,7 +456,9 @@ def test_xtb_scan_parser_rejects_an_incomplete_point_series(tmp_path: Path) -> N
     assert parsed["summary"]["scan_expected_point_count"] == 3
     assert parsed["summary"]["scan_point_count"] == 2
     assert parsed["summary"]["scan_complete"] is False
-    assert parsed["summary"]["task_completed"] is False
+    validation = validate_parsed_task("xtb", "scan", parsed["summary"])
+    assert validation["status"] == "incomplete"
+    assert "scan_not_complete" in validation["failures"]
 
 
 def test_xtb_md_parse_reports_trajectory_without_embedding_coordinates(tmp_path: Path) -> None:
@@ -497,12 +503,13 @@ def test_xtb_parse_distinguishes_completed_process_from_missing_task_artifact(tm
         (output_dir / "xtb.out").relative_to(workspace).as_posix(),
     )
 
-    assert result["program_status"] == "failed"
-    assert result["error_class"] == "xtb_artifacts_incomplete"
+    assert result["program_status"] == "completed"
+    assert result["error_class"] is None
     assert result["parser_facts"]["execution_completed"] is True
     assert result["parser_facts"]["optimization_converged"] is True
-    assert result["parser_facts"]["artifacts_complete"] is False
     assert result["parser_facts"]["missing_artifacts"] == ["xtbopt.xyz"]
+    assert result["task_validation"]["status"] == "incomplete"
+    assert "required_artifacts_missing" in result["task_validation"]["failures"]
 
 
 def test_crest_parse_reports_ensemble_and_relative_energy_consistency(tmp_path: Path) -> None:
@@ -530,13 +537,13 @@ def test_crest_parse_reports_ensemble_and_relative_energy_consistency(tmp_path: 
 
     facts = result["parser_facts"]
     assert result["program_status"] == "completed"
-    assert result["provenance"]["parser_contract"] == "crest-conformer-parser/1"
+    assert result["provenance"]["parser_contract"] == "crest.artifacts/2"
     assert facts["program_version"] == "3.0.2"
     assert facts["conformer_count"] == 2
     assert facts["relative_energy_count"] == 2
     assert facts["relative_energy_max_kcal_mol"] == pytest.approx(1.0)
     assert facts["ensemble_counts_match"] is True
-    assert facts["task_completed"] is True
+    assert result["task_validation"] == {"status": "completed", "failures": []}
     assert (output_dir / "parsed/crest_summary.json").is_file()
     assert (output_dir / "parsed/conformer_energies.json").is_file()
     assert (output_dir / "parsed/ensemble_summary.json").is_file()

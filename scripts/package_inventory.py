@@ -32,7 +32,6 @@ SKILL_NAMES = [
     "tspi-transition-state-search",
     "tspi-xtb",
     "tspi-gaussian",
-    "tspi-qbics",
     "tspi-connectivity",
     "tspi-render",
     "tspi-report",
@@ -43,6 +42,20 @@ SKILL_ENTRY_FILES = [
     f"skills/{name}/{filename}"
     for name in SKILL_NAMES
     for filename in ("SKILL.md", "SKILL.zh-CN.md")
+]
+
+HOST_APP_FILES = [
+    "apps/host/entrypoint.mjs",
+    "apps/host/environment.mjs",
+    "apps/host/phone-component.mjs",
+    "apps/host/pi-app-server.mjs",
+    "apps/host/pi-native-compute.mjs",
+    "apps/host/pi-native-notify.mjs",
+    "apps/host/pi-native-review.mjs",
+    "apps/host/pi-native-tools.mjs",
+    "apps/host/pi-session-worker.mjs",
+    "apps/host/service.mjs",
+    "apps/host/system-prompt.mjs",
 ]
 
 
@@ -166,7 +179,6 @@ REQUIRED_TARBALL_FILES = frozenset(
         "extensions/ts-phone-bridge/protocol.ts",
         "extensions/ts-workflow-control/index.ts",
         "extensions/ts-workflow-ui/index.ts",
-        "extensions/ts-workflow-ui/activity-panel.ts",
         "extensions/ts-workflow-ui/activity-store.ts",
         "extensions/ts-workflow-review/index.ts",
         "extensions/ts-workflow-compute/index.ts",
@@ -191,10 +203,7 @@ REQUIRED_TARBALL_FILES = frozenset(
         "apps/terminal/host-client.mjs",
         "apps/terminal/controller.mjs",
         "apps/terminal/view.mjs",
-        "apps/host/entrypoint.mjs",
-        "apps/host/environment.mjs",
-        "apps/host/phone-component.mjs",
-        "apps/host/service.mjs",
+        *HOST_APP_FILES,
         "packages/ts-agent-kernel/ts_agent/path_safety.py",
         "packages/ts-agent-kernel/ts_agent/compute/artifacts.py",
         "packages/ts-agent-kernel/ts_agent/calculation_contracts.py",
@@ -258,10 +267,7 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "scripts/package_inventory.py",
         "scripts/tspi_host.py",
         "scripts/pi-loader.mjs",
-        "apps/host/entrypoint.mjs",
-        "apps/host/environment.mjs",
-        "apps/host/phone-component.mjs",
-        "apps/host/service.mjs",
+        *HOST_APP_FILES,
         "scripts/ts_compute.py",
         "scripts/ts_web_provider.py",
         *SKILL_ENTRY_FILES,
@@ -286,7 +292,6 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "extensions/ts-phone-bridge/bridge-client.ts",
         "extensions/ts-phone-bridge/policy.ts",
         "extensions/ts-phone-bridge/protocol.ts",
-        "extensions/ts-workflow-ui/activity-panel.ts",
         "extensions/ts-workflow-ui/activity-store.ts",
         "packages/ts-agent-runtime/agent-core/activity-journal.cjs",
         "packages/ts-agent-runtime/agent-core/agent-protocol.cjs",
