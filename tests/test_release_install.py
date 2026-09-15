@@ -106,8 +106,8 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "docs/ARCHITECTURE.md" in names
     assert "docs/INSTALLATION.md" in names
     assert "docs/MAINTAINER_GUIDE.md" in names
-    assert "apps/host/pi-app-server.mjs" in names
-    assert "apps/host/pi-session-worker.mjs" in names
+    assert "apps/app-server/pi-app-server.mjs" in names
+    assert "apps/app-server/pi-session-worker.mjs" in names
     assert "config/pi-source.json" in names
     assert "config/pi-worker-entry.patch" in names
     assert "scripts/prepare_pi_source.py" in names
@@ -145,8 +145,8 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "docs" / "ARCHITECTURE.md").is_file()
     assert (package_root / "docs" / "INSTALLATION.md").is_file()
     assert (package_root / "docs" / "MAINTAINER_GUIDE.md").is_file()
-    assert (package_root / "apps" / "host" / "pi-app-server.mjs").is_file()
-    assert (package_root / "apps" / "host" / "pi-session-worker.mjs").is_file()
+    assert (package_root / "apps" / "app-server" / "pi-app-server.mjs").is_file()
+    assert (package_root / "apps" / "app-server" / "pi-session-worker.mjs").is_file()
     assert (package_root / "config" / "pi-source.json").is_file()
     assert (package_root / "config" / "pi-worker-entry.patch").is_file()
     assert (package_root / "scripts" / "prepare_pi_source.py").is_file()
@@ -425,8 +425,6 @@ def _synthetic_release(
     root.mkdir(parents=True)
     temporary_archive = root / "package.tgz"
     files = {name: b"\n" for name in required_files}
-    for name in ("apps/host/environment.mjs", "apps/host/service.mjs"):
-        files[name] = (ROOT / name).read_bytes()
     files["package.json"] = json.dumps(
         {"name": "@iawnix/ts-agent", "version": version},
         separators=(",", ":"),

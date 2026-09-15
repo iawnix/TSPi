@@ -465,6 +465,22 @@ def test_submit_script_uses_atomic_lock_and_durable_scheduler_outputs() -> None:
     assert '"$qsub_command" "$script_name"' in script
 
 
+@pytest.mark.parametrize("stdout_name", ["crest.out", "remote_job.stdout"])
+def test_crest_collection_keeps_actual_capture_provenance(tmp_path, monkeypatch, stdout_name):
+    config = replace(_job(tmp_path), backend="crest", stdout_name=stdout_name, expected_artifacts=("crest.out",))
+
+    def download(client, directory, remote_name, destination):
+        assert remote_name == stdout_name
+        assert destination.name == "crest.out"
+        destination.write_bytes(b"CREST terminated normally.\n")
+        return TransferRecord(remote_path=directory + "/" + remote_name, size=26, sha256="sha256:" + "a" * 64)
+
+    monkeypatch.setattr("ts_agent.remote.lifecycle.download_verified", download)
+    downloaded, manifest = collect(config, ["crest.out"], tmp_path / "collected", client=object())
+    assert downloaded == ["crest.out"]
+    assert manifest[0]["remote_path"].endswith("/" + stdout_name)
+
+
 def test_submit_rejects_remote_path_escape_before_any_ssh_action(tmp_path: Path) -> None:
     config = replace(_job(tmp_path), remote_dir="/tmp/outside")
 

@@ -6,15 +6,10 @@ readonly LAUNCHER_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
 readonly PACKAGE_ROOT="$(dirname -- "$LAUNCHER_PATH")"
 readonly LAUNCHER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly INSTALL_ROOT="${TS_AGENT_INSTALL_ROOT:-$LAUNCHER_DIR}"
-readonly HOST="$PACKAGE_ROOT/scripts/tspi_host.py"
-case "${BASH_SOURCE[0]##*/}" in
-  TSPhoneServer) ENTRYPOINT="phone-server" ;;
-  TSPhoneCtl) ENTRYPOINT="phone-ctl" ;;
-  *) ENTRYPOINT="agent" ;;
-esac
+readonly LAUNCHER="$PACKAGE_ROOT/scripts/tspi_launcher.py"
 
-if [[ ! -f "$HOST" ]]; then
-  printf 'TSPi: Python host is missing from the active package: %s\n' "$HOST" >&2
+if [[ ! -f "$LAUNCHER" ]]; then
+  printf 'TSPi: launcher is missing from the active package: %s\n' "$LAUNCHER" >&2
   exit 1
 fi
-exec python3 "$HOST" --install-root "$INSTALL_ROOT" --entrypoint "$ENTRYPOINT" -- "$@"
+exec python3 "$LAUNCHER" --install-root "$INSTALL_ROOT" -- "$@"

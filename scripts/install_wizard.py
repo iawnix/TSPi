@@ -30,7 +30,6 @@ try:
         title,
     )
     from .install_from_github import install_uninstaller, validate_commit, validate_ref, validate_repo
-    from .install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
     from .install_release import validate_install_root
 except ImportError:
     from _credentials import provision_service_credentials
@@ -47,7 +46,6 @@ except ImportError:
         title,
     )
     from install_from_github import install_uninstaller, validate_commit, validate_ref, validate_repo
-    from install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
     from install_release import validate_install_root
 
 
@@ -100,7 +98,7 @@ def collect_preflight() -> list[dict[str, object]]:
 
     npm = shutil.which("npm")
     npm_ok, npm_version = _command_output([npm, "--version"]) if npm else (False, "not found")
-    checks.append({"key": "npm", "label": "npm", "ok": npm_ok, "required": False, "detail": npm_version})
+    checks.append({"key": "npm", "label": "npm", "ok": npm_ok, "required": True, "detail": npm_version})
 
     conda = shutil.which("mamba") or shutil.which("conda")
     conda_ok, conda_version = _command_output([conda, "--version"]) if conda else (False, "not found")
@@ -118,10 +116,8 @@ def show_preflight(checks: list[dict[str, object]]) -> None:
         field(str(check["label"]), f"{state} - {check['detail']}", tone=tone)
 
 
-def require_preflight(checks: list[dict[str, object]], *, with_phone: bool = False) -> None:
-    required = {"python", "git", "node"}
-    if with_phone:
-        required.add("npm")
+def require_preflight(checks: list[dict[str, object]]) -> None:
+    required = {"python", "git", "node", "npm"}
     failed = [str(check["label"]) for check in checks if check["key"] in required and not check["ok"]]
     if failed:
         raise RuntimeError("missing or unsupported installation prerequisites: " + ", ".join(failed))
@@ -166,26 +162,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--tspi-repo", default=DEFAULT_REPO)
     parser.add_argument("--tspi-ref", default=os.environ.get("TSPI_INSTALL_REF", "main"))
     parser.add_argument("--tspi-commit", help=argparse.SUPPRESS)
-    phone = parser.add_mutually_exclusive_group()
-    phone.add_argument(
-        "--with-phone",
-        dest="with_phone",
-        action="store_true",
-        help="Fetch and build TS Phone from GitHub.",
-    )
-    phone.add_argument(
-        "--without-phone",
-        dest="with_phone",
-        action="store_false",
-        help="Skip TS Phone installation.",
-    )
     web = parser.add_mutually_exclusive_group()
     web.add_argument("--with-web", dest="with_web", action="store_true", help="Install TS Web.")
     web.add_argument("--without-web", dest="with_web", action="store_false", help="Skip TS Web installation.")
-    parser.set_defaults(with_phone=None, with_web=None)
-    parser.add_argument("--phone-repo", default=DEFAULT_PHONE_REPO)
-    parser.add_argument("--phone-ref", default="main", help="TS Phone branch, tag, or full commit SHA.")
-    parser.add_argument("--phone-port", type=int, help="TS Phone loopback HTTP port.")
+    parser.set_defaults(with_web=None)
     parser.add_argument("--web-port", type=int, help="TS Web loopback HTTP port.")
     parser.add_argument("--conda-root")
     parser.add_argument("--service-scope", choices=("none", "user", "system"))
@@ -212,32 +192,21 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
     field("Agent", "required", tone="success")
     field("Scientific runtime", "required", tone="success")
     field("Molecular rendering", "required", tone="success")
+    field("Pi App Server runtime", "required", tone="success")
 
     section("Optional components")
     if args.with_web is None:
         args.with_web = ask_yes_no("Install TS Web", True)
     if args.with_web:
         args.web_port = int(ask("TS Web port", str(args.web_port or 8766)))
-    if args.with_phone is None:
-        args.with_phone = ask_yes_no("Install TS Phone for phone access and shared terminal sessions", True)
-    if args.with_phone:
-        args.phone_ref = ask("TS Phone Git branch, tag, or commit", args.phone_ref)
-        existing_phone_port = read_phone_port(Path(args.install_root))
-        if args.phone_port is None and existing_phone_port is not None:
-            args.phone_port = existing_phone_port
-        if args.phone_port is None:
-            args.phone_port = int(ask("TS Phone port", "22113"))
     section("Runtime and services")
     args.conda_root = args.conda_root or ask("Conda root (blank for auto-detect)", detect_conda_root())
-    if args.with_web or args.with_phone:
-        if args.service_scope is None:
-            configure_systemd = ask_yes_no(
-                "Configure selected components as systemd services",
-                True,
-            )
-            args.service_scope = "user" if configure_systemd else "none"
-    else:
-        args.service_scope = "none"
+    if args.service_scope is None:
+        configure_systemd = ask_yes_no(
+            "Install App Server and selected component service units",
+            True,
+        )
+        args.service_scope = "user" if configure_systemd else "none"
     if args.service_scope != "none":
         args.enable_services = ask_yes_no("Enable services", True)
         args.start_services = ask_yes_no("Start services now", True)
@@ -266,6 +235,12 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Agent", f"install - {root / 'TSPi'}", tone="success")
     field("Scientific runtime", "install and verify", tone="success")
     field("Molecular rendering", "install and verify (xyzrender, Matplotlib)", tone="success")
+    field("Pi App Server", "install pinned runtime and verify", tone="success")
+    field(
+        "App Server service",
+        _service_plan(args, template=True),
+        tone="success" if args.service_scope != "none" else "muted",
+    )
 
     section("TS Web")
     field(
@@ -285,42 +260,21 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
             tone="success" if args.service_scope != "none" else "muted",
         )
 
-    section("TS Phone")
-    field(
-        "Install",
-        "yes" if args.with_phone else "no",
-        tone="success" if args.with_phone else "muted",
-    )
-    if args.with_phone:
-        field("Revision", args.phone_ref)
-        field("Repository", args.phone_repo)
-        field("Server launcher", root / "TSPhoneServer")
-        field("Control launcher", root / "TSPhoneCtl")
-        field("Listen", f"http://127.0.0.1:{args.phone_port}")
-        field("Configuration", root / ".pi/ts-phone/server.env")
-        field("State directory", root / ".pi/ts-phone-state")
-        field("HTTP token", _planned_credential(root / ".pi/ts-phone-state/auth.token"))
-        field("Bridge secret", _planned_credential(root / ".pi/ts-phone-state/bridge.secret"))
-        field(
-            "Service",
-            _service_plan(args),
-            tone="success" if args.service_scope != "none" else "muted",
-        )
-
-
 def _planned_credential(path: Path) -> str:
     action = "validate and preserve" if path.exists() or path.is_symlink() else "create"
     return f"{path} ({action}, mode 0600)"
 
 
-def _service_plan(args: argparse.Namespace) -> str:
+def _service_plan(args: argparse.Namespace, *, template: bool = False) -> str:
     if args.service_scope == "none":
         return "not configured"
     actions = ["configure"]
-    if args.enable_services:
+    if args.enable_services and not template:
         actions.append("enable")
-    if args.start_services:
+    if args.start_services and not template:
         actions.append("start")
+    if template:
+        actions.append("start per workspace")
     return f"{args.service_scope} ({', '.join(actions)})"
 
 
@@ -334,23 +288,6 @@ def validate_options(args: argparse.Namespace) -> None:
     args.install_root = str(validate_install_root(Path(args.install_root)))
     if args.with_web is None:
         args.with_web = True
-    if args.with_phone is None:
-        args.with_phone = False
-    if not args.with_phone and args.phone_port is not None:
-        raise ValueError("--phone-port requires --with-phone")
-    if args.with_phone:
-        existing_phone_port = read_phone_port(Path(args.install_root))
-        if args.phone_port is None:
-            args.phone_port = existing_phone_port or 22113
-        elif existing_phone_port is not None and args.phone_port != existing_phone_port:
-            raise ValueError(
-                f"--phone-port does not match the existing Phone configuration ({existing_phone_port}); "
-                f"edit {Path(args.install_root) / '.pi/ts-phone/server.env'} before updating"
-            )
-        validate_repo(args.phone_repo)
-        validate_ref(args.phone_ref)
-        if not 1 <= args.phone_port <= 65535:
-            raise ValueError("--phone-port must be between 1 and 65535")
     if not args.with_web and args.web_port is not None:
         raise ValueError("--web-port requires --with-web")
     if args.with_web:
@@ -358,11 +295,7 @@ def validate_options(args: argparse.Namespace) -> None:
             args.web_port = 8766
         if not 1 <= args.web_port <= 65535:
             raise ValueError("--web-port must be between 1 and 65535")
-    if args.with_web and args.with_phone and args.web_port == args.phone_port:
-        raise ValueError("TS Web and TS Phone must use different ports")
     args.service_scope = args.service_scope or "none"
-    if args.service_scope != "none" and not (args.with_web or args.with_phone):
-        raise ValueError("service configuration requires TS Web or TS Phone")
     if args.service_scope == "none" and (args.enable_services or args.start_services):
         raise ValueError("--enable-services and --start-services require a service scope")
     if args.start_services:
@@ -470,7 +403,7 @@ def run_logged_install(
         raise
 
 
-def run_install(args: argparse.Namespace, phone_release: Path | None = None) -> dict[str, object]:
+def run_install(args: argparse.Namespace) -> dict[str, object]:
     command = [
         sys.executable,
         str(ROOT / "scripts/install_from_github.py"),
@@ -489,87 +422,32 @@ def run_install(args: argparse.Namespace, phone_release: Path | None = None) -> 
         command.append("--without-web")
     if args.conda_root:
         command.extend(["--conda-root", args.conda_root])
-    if phone_release is not None:
-        command.extend(["--phone-server-root", str(phone_release)])
     return run_logged_install(command, Path(args.install_root), show_progress=not args.json)
 
 
-def write_private(path: Path, content: str) -> None:
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if path.exists() or path.is_symlink():
-        if path.is_symlink() or not path.is_file():
-            raise RuntimeError(f"refusing to replace unsafe file: {path}")
-        path.chmod(0o600)
-        return
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
-
-def read_phone_port(root: Path) -> int | None:
-    config = root / ".pi/ts-phone/server.env"
-    if not config.exists() and not config.is_symlink():
-        return None
-    if config.is_symlink() or not config.is_file():
-        raise ValueError(f"Phone configuration must be a regular file: {config}")
-    for line in config.read_text(encoding="utf-8").splitlines():
-        if not line.startswith("TS_PHONE_PORT="):
-            continue
-        raw = line.split("=", 1)[1]
-        try:
-            value = int(json.loads(raw))
-        except (TypeError, ValueError, json.JSONDecodeError) as error:
-            raise ValueError(f"Phone configuration contains an invalid port: {config}") from error
-        if not 1 <= value <= 65535:
-            raise ValueError(f"Phone configuration contains an invalid port: {config}")
-        return value
-    raise ValueError(f"Phone configuration does not define TS_PHONE_PORT: {config}")
-
-
-def configure_phone(args: argparse.Namespace) -> Path | None:
-    if not args.with_phone:
-        return None
-    root = Path(args.install_root)
-    state = root / ".pi/ts-phone-state"
-    state.mkdir(mode=0o700, parents=True, exist_ok=True)
-    (root / "workspaces").mkdir(mode=0o700, exist_ok=True)
-    values = {
-        "TS_PHONE_HOST": "127.0.0.1",
-        "TS_PHONE_PORT": str(args.phone_port),
-        "TS_PHONE_TSPI": root / "TSPi",
-        "TS_PHONE_WORKSPACES": root / "workspaces",
-        "TS_PHONE_STATE_DIR": state,
-        "TS_PHONE_BRIDGE_SOCKET": state / "bridge.sock",
-        "TS_PHONE_BRIDGE_SECRET_FILE": state / "bridge.secret",
-        "TS_PHONE_COMMAND_TIMEOUT_MS": "30000",
-        "TS_PHONE_SHUTDOWN_TIMEOUT_MS": "10000",
-        "TS_PHONE_BRIDGE_HEARTBEAT_TIMEOUT_MS": "45000",
-        "TS_PHONE_BRIDGE_MAX_RECORD_BYTES": "8388608",
-        "TS_PHONE_MAX_BODY_BYTES": "131072",
-        "TS_PHONE_EVENT_JOURNAL_SIZE": "1000",
-        "TS_PHONE_EVENT_JOURNAL_MAX_BYTES": "33554432",
-    }
-    config = root / ".pi/ts-phone/server.env"
-    content = "".join(
-        f"{key}={json.dumps(str(value), ensure_ascii=False)}\n"
-        for key, value in values.items()
+def prepare_app_server_runtime(root: Path) -> Path:
+    installer = root / ".pi/packages/tspi/current/agent/scripts/prepare_pi_source.py"
+    if installer.is_symlink() or not installer.is_file():
+        raise RuntimeError(f"installed App Server runtime installer is unavailable: {installer}")
+    completed = subprocess.run(
+        [sys.executable, str(installer), "--install", str(root)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
     )
-    write_private(config, content)
-    return config
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise RuntimeError(f"Pi App Server runtime installation failed: {detail}")
+    source = Path(completed.stdout.strip())
+    if not source.is_absolute() or not source.is_dir():
+        raise RuntimeError("Pi App Server runtime installer returned an invalid source path")
+    return source
 
 
 def prepare_runtime_dirs(root: Path) -> None:
     for relative in (
         ".pi/runtime-cache",
-        ".pi/session-host",
         ".agents/runtime",
         ".agents/envs",
         ".pi/ts-web-state",
@@ -578,22 +456,37 @@ def prepare_runtime_dirs(root: Path) -> None:
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
 
 
-def phone_unit(args: argparse.Namespace) -> str:
+def app_server_unit(args: argparse.Namespace) -> str:
     root = Path(args.install_root)
-    renderer = (root / ".pi/packages/tspi/current/agent/apps/host/service.mjs").resolve()
-    result = subprocess.run(
-        [shutil.which("node") or "node", str(renderer), "--install-root", str(root)],
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    if "[Service]\n" not in result.stdout or "ExecStart=" not in result.stdout:
-        raise RuntimeError("Phone service renderer did not produce a service unit")
     search_path = os.environ.get("PATH", os.defpath)
     if any(ord(char) < 32 for char in search_path):
-        raise ValueError("PATH cannot contain control characters")
-    environment = json.dumps("PATH=" + search_path.replace("%", "%%"), ensure_ascii=False)
-    return result.stdout.replace("[Service]\n", f"[Service]\nEnvironment={environment}\n", 1)
+        raise ValueError("service PATH cannot contain control characters")
+    command = " ".join(
+        (_systemd_quote(root / "TSPi"), "--app-server", "--workspace", "%i")
+    )
+    return f"""[Unit]
+Description=TSPi App Server for workspace %i
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={_systemd_value(root)}
+ExecStart={command}
+Environment={_systemd_quote('PATH=' + search_path)}
+Restart=on-failure
+RestartSec=3s
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths={_systemd_quote(root / '.pi/runtime-cache')}
+ReadWritePaths={_systemd_quote(root / 'workspaces')}
+
+[Install]
+WantedBy=default.target
+"""
 
 
 def web_unit(args: argparse.Namespace) -> str:
@@ -655,9 +548,7 @@ def _systemd_value(value: object) -> str:
 
 
 def _selected_service_names(args: argparse.Namespace) -> list[str]:
-    names: list[str] = []
-    if args.with_phone:
-        names.append("ts-phone-tspi.service")
+    names = ["ts-app-server-tspi@.service"]
     if args.with_web:
         names.append("ts-web-tspi.service")
     return names
@@ -737,17 +628,15 @@ def verify_service_units(args: argparse.Namespace, units: list[tuple[str, str]])
             raise RuntimeError(f"generated systemd service validation failed: {detail}")
 
 
-def configure_services(args: argparse.Namespace, phone_config: Path | None) -> list[dict[str, str]]:
+def configure_services(args: argparse.Namespace) -> list[dict[str, str]]:
     if args.service_scope == "none":
         return []
     validate_service_ownership(args)
-    units: list[tuple[str, str]] = []
-    if phone_config:
-        units.append(("ts-phone-tspi.service", phone_unit(args)))
+    units: list[tuple[str, str]] = [
+        ("ts-app-server-tspi@.service", app_server_unit(args)),
+    ]
     if args.with_web:
         units.append(("ts-web-tspi.service", web_unit(args)))
-    if not units:
-        return []
     prepare_runtime_dirs(Path(args.install_root))
     verify_service_units(args, units)
     unit_dir = _service_unit_directory(args.service_scope)
@@ -759,13 +648,26 @@ def configure_services(args: argparse.Namespace, phone_config: Path | None) -> l
         (unit_dir / name).chmod(0o644)
         names.append(name)
     _run_systemctl(scope, "daemon-reload")
+    managed_names = [name for name in names if "@." not in name]
     if args.enable_services:
-        for name in names:
+        for name in managed_names:
             _run_systemctl(scope, "enable", name)
     if args.start_services:
-        for name in names:
+        for name in managed_names:
             _run_systemctl(scope, "restart", name)
-    return [_service_status(scope, args.service_scope, name) for name in names]
+    return [
+        (
+            {
+                "name": name,
+                "scope": args.service_scope,
+                "enabled": "per-workspace",
+                "active": "per-workspace",
+            }
+            if "@." in name
+            else _service_status(scope, args.service_scope, name)
+        )
+        for name in names
+    ]
 
 
 def _run_systemctl(scope: list[str], *arguments: str) -> None:
@@ -799,7 +701,7 @@ def _service_status(scope: list[str], scope_name: str, name: str) -> dict[str, s
 def build_component_summary(
     args: argparse.Namespace,
     installed: dict[str, object],
-    phone: dict[str, object] | None,
+    app_server_runtime: Path,
     services: list[dict[str, str]],
     credentials: dict[str, dict[str, str]],
 ) -> dict[str, object]:
@@ -829,6 +731,13 @@ def build_component_summary(
             "xyzrender": commands.get("xyzrender"),
             "matplotlib": modules.get("matplotlib"),
         },
+        "app_server": {
+            "status": "ready",
+            "runtime": str(app_server_runtime),
+            "service": service_by_name.get("ts-app-server-tspi@.service"),
+            "server_id": str(root / "workspaces/<workspace>/.pi/app-server/server-id"),
+            "start": str(root / "TSPi") + " --app-server --workspace <workspace>",
+        },
         "web": (
             {
                 "status": "ready",
@@ -840,22 +749,6 @@ def build_component_summary(
                 "service": service_by_name.get("ts-web-tspi.service"),
             }
             if args.with_web
-            else None
-        ),
-        "phone": (
-            {
-                "status": "ready",
-                "launcher": str(root / "TSPhoneServer"),
-                "control_launcher": str(root / "TSPhoneCtl"),
-                "url": f"http://127.0.0.1:{args.phone_port}",
-                "configuration": str(root / ".pi/ts-phone/server.env"),
-                "state_directory": str(root / ".pi/ts-phone-state"),
-                "credential": credentials.get("phone_http"),
-                "bridge_secret": credentials.get("phone_bridge"),
-                "service": service_by_name.get("ts-phone-tspi.service"),
-                **(phone or {}),
-            }
-            if args.with_phone
             else None
         ),
     }
@@ -900,6 +793,16 @@ def show_installed_summary(
         render_detail = f"{render_detail}; Matplotlib {matplotlib['version']}"
     field("Molecular rendering", f"ready - {render_detail}", tone="success")
 
+    app_server = components["app_server"]
+    assert isinstance(app_server, dict)
+    section("Pi App Server")
+    field("Status", "installed", tone="success")
+    field("Runtime", app_server["runtime"])
+    field("Manual start", app_server["start"])
+    field("Server ID", app_server["server_id"])
+    _show_service(app_server.get("service"))
+    note("Start one App Server per workspace. The terminal and TS Phone attach to that server.")
+
     section("TS Web")
     web = components["web"]
     if not isinstance(web, dict):
@@ -912,22 +815,9 @@ def show_installed_summary(
         _show_service(web.get("service"))
         _show_credential("HTTP token", credentials["web_http"], reveal=True)
 
-    section("TS Phone")
-    phone = components["phone"]
-    if not isinstance(phone, dict):
-        field("Status", "not installed", tone="muted")
-    else:
-        field("Status", "installed", tone="success")
-        field("Revision", phone.get("commit") or "unknown")
-        field("Server launcher", phone["launcher"])
-        field("Control launcher", phone["control_launcher"])
-        field("URL", phone["url"])
-        field("Configuration", phone["configuration"])
-        field("State directory", phone["state_directory"])
-        _show_service(phone.get("service"))
-        _show_credential("HTTP token", credentials["phone_http"], reveal=True)
-        _show_credential("Bridge secret", credentials["phone_bridge"], reveal=False)
-    note("Token values are not printed. Read an owner-only token file when pairing a client.")
+    note("TS Phone is a separate App Server client and is no longer installed as a local service.")
+    if isinstance(web, dict):
+        note("Token values are not printed. Read the owner-only TS Web token file when pairing a browser.")
 
 
 def _show_service(value: object) -> None:
@@ -965,7 +855,6 @@ def main(argv: list[str] | None = None) -> int:
         if not args.non_interactive:
             args = interactive_options(args)
         validate_options(args)
-        require_preflight(checks, with_phone=bool(args.with_phone))
         installation = inspect_installation(Path(args.install_root))
         validate_service_ownership(args)
         if not args.non_interactive:
@@ -974,33 +863,21 @@ def main(argv: list[str] | None = None) -> int:
                 note("Installation cancelled.", tone="warning")
                 return 0
         install_uninstaller(Path(args.install_root), ROOT)
-        phone_release = None
-        if args.with_phone:
-            with Spinner("Preparing TS Phone", stream=sys.stderr, enabled=not args.json) as activity:
-                phone_release = prepare_phone(
-                    Path(args.install_root),
-                    args.phone_repo,
-                    args.phone_ref,
-                    progress=activity.update,
-                )
-                activity.succeed("TS Phone release prepared")
-        installed = run_install(args, phone_release)
+        installed = run_install(args)
         with Spinner("Finalizing installation", stream=sys.stderr, enabled=not args.json) as activity:
-            phone = activate_phone(Path(args.install_root), phone_release) if phone_release is not None else None
+            activity.update("Installing the Pi App Server runtime")
+            app_server_runtime = prepare_app_server_runtime(Path(args.install_root))
             activity.update("Provisioning service credentials")
             credentials = provision_service_credentials(
                 Path(args.install_root),
-                with_phone=bool(args.with_phone),
                 with_web=bool(args.with_web),
             )
-            activity.update("Writing service configuration")
-            phone_config = configure_phone(args)
             activity.update("Configuring services")
-            services = configure_services(args, phone_config)
+            services = configure_services(args)
             activity.update("Verifying the installed release")
             verified = inspect_installation(Path(args.install_root))
             activity.succeed("Installation finalized")
-        components = build_component_summary(args, installed, phone, services, credentials)
+        components = build_component_summary(args, installed, app_server_runtime, services, credentials)
         result = {
             "ok": True,
             "operation": installation["operation"],
@@ -1010,7 +887,6 @@ def main(argv: list[str] | None = None) -> int:
             "provenance": installed.get("provenance"),
             "components": components,
             "uninstaller": installed.get("uninstaller"),
-            "phone_config": str(phone_config) if phone_config else None,
             "services": services,
             "credentials": credentials,
             "verified_release": verified["release_id"],

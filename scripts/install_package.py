@@ -7,9 +7,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
-import stat
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -32,9 +29,6 @@ try:
         sha256_file,
         suite_components_schema_version,
         validate_components,
-        validate_extracted_phone_matches_archive,
-        validate_phone_archive_files,
-        validate_phone_runtime,
         validate_web_archive_files,
         validate_web_component_archive,
         validate_suite_manifest,
@@ -84,9 +78,6 @@ except ImportError:
         sha256_file,
         suite_components_schema_version,
         validate_components,
-        validate_extracted_phone_matches_archive,
-        validate_phone_archive_files,
-        validate_phone_runtime,
         validate_web_archive_files,
         validate_web_component_archive,
         validate_suite_manifest,
@@ -127,8 +118,6 @@ INSTALLED_MANIFEST = ".tspi-package-release.json"
 LAUNCHER_PATHS = {
     "TSPi": ("agent", "TSPi"),
     "TSWeb": ("web", "bin", "ts-web"),
-    "TSPhoneCtl": ("agent", "TSPi"),
-    "TSPhoneServer": ("agent", "TSPi"),
 }
 
 # Installer control code is standard-library-only and must precede runtime activation.
@@ -210,7 +199,7 @@ def install_package(
             label
             for label, component in (
                 (label, manifest["components"][key])
-                for label, key in (("Agent", "agent"), ("Web", "web"), ("Phone", "phone"))
+                for label, key in (("Agent", "agent"), ("Web", "web"))
                 if key in manifest["components"]
             )
             if isinstance(component.get("source"), dict) and component["source"].get("dirty")
@@ -265,17 +254,11 @@ def _install_captured_package(
     }
     if "web" in manifest["components"]:
         expected_suite_files.add(manifest["components"]["web"]["archive"]["path"])
-    if "phone" in manifest["components"]:
-        expected_suite_files.add(manifest["components"]["phone"]["archive"]["path"])
     if suite_files != expected_suite_files:
         raise SuiteReleaseError("TSPi Package archive does not contain the exact declared component set")
 
     install_root = prepare_install_root(install_root)
     validate_launcher_slots(install_root, manifest["components"])
-    if "phone" not in manifest["components"]:
-        service_path = install_root / ".pi" / "ts-phone" / "ts-phone.service"
-        if service_path.exists() or service_path.is_symlink():
-            raise SuiteReleaseError("stale Phone service state exists but Phone is not selected")
     package_home = ensure_private_directory(install_root / ".pi" / "packages" / "tspi")
     releases_root = ensure_private_directory(package_home / "releases")
     target = releases_root / manifest["release_id"]
@@ -306,15 +289,9 @@ def _install_captured_package(
         force=force_runtime,
     )
     archived_notification_state = archive_retired_notification_state(install_root)
-    ensure_private_directory(install_root / ".pi" / "session-host")
-    # Host browsing precedes the first Worker and must work on a fresh install.
+    ensure_private_directory(install_root / ".pi" / "session-guards")
     ensure_private_directory(install_root / "workspaces")
     installed_manifest = read_json_object(target / INSTALLED_MANIFEST, "installed TSPi Package manifest")
-    service_template = (
-        prepare_phone_service(install_root, target)
-        if "phone" in manifest["components"]
-        else None
-    )
     state = {
         "schema_version": SUITE_INSTALL_SCHEMA_VERSION,
         "current_release_id": manifest["release_id"],
@@ -348,31 +325,7 @@ def _install_captured_package(
         "runtime": dict(prepared_runtime.result),
         "services_activated": False,
         "archived_retired_notification_state": archived_notification_state,
-        "phone_service_template": str(service_template) if service_template is not None else None,
     }
-
-
-def prepare_phone_service(install_root: Path, target: Path) -> Path:
-    directory = ensure_private_directory(install_root / ".pi" / "ts-phone")
-    destination = directory / "ts-phone.service"
-    if destination.exists() or destination.is_symlink():
-        info = destination.lstat()
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1:
-            raise SuiteReleaseError("existing Phone service template must be an owner-only regular file")
-        return destination
-    try:
-        completed = subprocess.run(
-            ["node", str(target / "agent" / "apps" / "host" / "service.mjs"), "--install-root", str(install_root)],
-            capture_output=True, text=True, timeout=10, check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise SuiteReleaseError("Phone service template generation timed out") from exc
-    if completed.returncode != 0 or not completed.stdout.startswith("[Unit]\n"):
-        raise SuiteReleaseError("cannot generate Phone service template; check the private installation configuration")
-    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        handle.write(completed.stdout)
-    return destination
 
 
 def _activate_release(
@@ -505,14 +458,6 @@ def validate_extracted_suite(root: Path, manifest: dict[str, Any]) -> None:
             "entrypoint": web_descriptor["entrypoint"],
             "protocols": web_descriptor["protocols"],
         })
-    if "phone" in components:
-        phone_descriptor = components["phone"]
-        phone_archive, phone_members = inspect_embedded_phone(root, phone_descriptor)
-        phone_root = root / "phone"
-        phone_root.mkdir(mode=0o700)
-        extract_rooted_archive(phone_archive, phone_members, phone_root)
-        validate_phone_runtime(phone_root, phone_descriptor)
-        validate_extracted_phone_matches_archive(phone_root, phone_archive, phone_members)
 
 
 def validate_existing_suite(target: Path, manifest: dict[str, Any]) -> None:
@@ -543,10 +488,6 @@ def validate_installed_suite(root: Path, manifest: dict[str, Any]) -> None:
     if "web" in manifest["components"]:
         inspect_embedded_web(root, manifest["components"]["web"])
         validate_web_runtime(root / "web", manifest["components"]["web"])
-    if "phone" in manifest["components"]:
-        phone_archive, phone_members = inspect_embedded_phone(root, manifest["components"]["phone"])
-        validate_phone_runtime(root / "phone", manifest["components"]["phone"])
-        validate_extracted_phone_matches_archive(root / "phone", phone_archive, phone_members)
 
 
 def inspect_embedded_agent(
@@ -574,20 +515,6 @@ def inspect_embedded_agent(
     wheels = sorted(name for name in files if name.startswith(f"{WHEEL_DIRECTORY}/") and name.endswith(".whl"))
     if wheels != [wheel_path]:
         raise SuiteReleaseError("Agent archive does not contain its one declared Python wheel")
-    return archive, members
-
-
-def inspect_embedded_phone(
-    root: Path,
-    descriptor: dict[str, Any],
-) -> tuple[Path, list[tuple[tarfile.TarInfo, PurePosixPath]]]:
-    archive = verify_archive_descriptor(
-        root.joinpath(*PurePosixPath(descriptor["archive"]["path"]).parts),
-        descriptor["archive"],
-        "embedded Phone archive",
-    )
-    members, files = inspect_rooted_archive(archive, "component")
-    validate_phone_archive_files(files, descriptor)
     return archive, members
 
 
@@ -676,27 +603,11 @@ def install_launchers(
     enabled = {"TSPi"}
     if "web" in components:
         enabled.add("TSWeb")
-    if "phone" in components or has_source_phone(install_root):
-        enabled.update({"TSPhoneCtl", "TSPhoneServer"})
     for name, target in targets.items():
         if name not in enabled:
             continue
         install_symlink(install_root / name, target)
     return {name: str(install_root / name) for name in enabled}
-
-
-def has_source_phone(install_root: Path) -> bool:
-    home = install_root / ".pi/ts-phone"
-    current = home / "current"
-    if not current.is_symlink():
-        return False
-    release = current.resolve()
-    if release.parent != home / "releases" or not re.fullmatch(r"[0-9a-f]{40}", release.name):
-        raise SuiteReleaseError("installed Phone selection is outside its release directory")
-    record = read_json_object(release / "installation.json", "installed Phone server")
-    if record.get("schema_version") != "tspi-phone-install/1" or record.get("commit") != release.name:
-        raise SuiteReleaseError("installed Phone record does not match its selected release")
-    return True
 
 
 def validate_launcher_slots(
@@ -706,8 +617,6 @@ def validate_launcher_slots(
     enabled = {"TSPi"}
     if "web" in components:
         enabled.add("TSWeb")
-    if "phone" in components or has_source_phone(install_root):
-        enabled.update({"TSPhoneCtl", "TSPhoneServer"})
     conflicts = [
         str(install_root / name)
         for name in LAUNCHER_PATHS

@@ -205,6 +205,7 @@ def compile_context(
         "unresolved_controls": operations["unresolved_controls"],
         "pending_review_dispositions": operations["pending_review_dispositions"],
         "activity_summaries": activity_summaries,
+        "node_dispatch": [row for row in operations.get("node_dispatch", []) if row["node_id"] in selected_node_ids],
         # This is an operational, bounded projection.  It is intentionally
         # excluded from ``scientific_binding`` so scheduler churn does not
         # invalidate the scientific context projection ID.

@@ -1,10 +1,21 @@
 # TSPi Hypothesis--Proof Loop Refactor Plan
 
-- Status: implementation complete in the authored checkout; commit, publication,
-  and production installation remain explicit delivery steps
+- Status: research-kernel implementation and native Pi App Server architecture
+  are complete in the authored checkout; commit, publication, and production
+  installation remain explicit delivery steps
 - Working branch: `ts-hypothesis-loop`
 - Scope: TSPi Agent, deterministic research kernel, embedded Web explorer,
-  TS Phone component, and the unified release package
+  native Pi App Server, and the independent TS Phone mobile client
+
+> **Architecture update (2026-09-16):** This plan contains historical design
+> notes from before the native App Server transition. The implemented contract
+> is now one native Pi App Server per workspace. TS Phone is a separate Radius
+> client and is never assembled into, installed by, or run as a TSPi Phone
+> server. The App Server owns the session directory, transcript, model state,
+> and local/Radius transports; the old shared Host and bridge are removed.
+> Sections below that describe a Phone component manifest or Phone server are
+> retained only as historical rationale and are not current implementation
+> requirements.
 
 The plan is a living implementation record. The current checkout has already
 landed the kernel, capability, candidate, ProofSpec, bounded-context, isolated
@@ -87,9 +98,9 @@ runtime-facing components:
 
 ```text
 TSPi Package
-├── Agent + Research Kernel       authoritative reasoning host and state
+├── Agent + Research Kernel       authoritative reasoning process and state
 ├── TS Web                        read-only research projection
-└── TS Phone                      authenticated remote client and bridge
+└── TS Phone                      authenticated Radius presentation client
 ```
 
 This is one distribution unit, not one process and not necessarily one source
@@ -110,11 +121,12 @@ Source ownership and release ownership are intentionally different:
 | --- | --- | --- |
 | Scientific state, Agent, kernel | TSPi repository | TSPi Agent process |
 | Research projection and static Web assets | TSPi repository | TS Web process, read-only |
-| Phone server and mobile client | `ts-phone` repository | Phone bridge/server plus mobile client |
+| Phone mobile client | `ts-phone` repository | Pi Radius presentation client |
 | Version binding and installation | TSPi package builder | TSPi installer |
 
 Neither Web nor Phone becomes a second workspace store. Phone commands go
-through the authenticated TSPi host, and Web reads validated projections.
+through the authenticated Pi App Server via Radius, and Web reads validated
+projections.
 
 ## 3. Three Layers
 
@@ -536,21 +548,20 @@ workspace state. It is never stored inside the scientific canonical files.
 
 TS Phone remains a companion interface:
 
-- the TSPi host owns scientific state and mutation authority;
-- the Phone server authenticates and multiplexes workspace/session views;
+- the Pi App Server owns session, transcript, scientific state, and mutation
+  authority;
+- Pi Radius authenticates and relays one App Server's presentation sessions;
 - the mobile app displays conversation, loop timeline, model/context metadata,
   and recovery state;
-- controller and observer sessions remain distinct;
-- stale commands fail on session revision mismatch;
+- App Server Controller services own prompt, model, and abort operations;
 - Phone cannot submit arbitrary paths, shell commands, or direct state writes.
 
 The package builder binds:
 
 - Agent/kernel release and wheel digest;
 - Web assets and launcher;
-- Phone server archive and launcher;
-- API, event, and bridge protocol versions;
-- signed mobile APK descriptor and certificate digest.
+- App Server entrypoint and pinned Pi protocol version;
+- mobile release metadata and certificate digest.
 
 The installer verifies the complete manifest and atomically selects one suite
 release. Configuration, credentials, workspace data, phone tokens, and service
@@ -648,7 +659,7 @@ The redesign is complete only when all of the following are demonstrated:
   Phone projections;
 - TS Web and TS Phone render the same authoritative loop without becoming state
   owners;
-- one TSPi package installs a version-compatible Agent and selected Web/Phone components and can
+- one TSPi package installs a version-compatible Agent and selected Web component and can
   be rolled back atomically.
 
 ## 14. Risks And Deliberate Controls

@@ -51,7 +51,7 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     shutil.copy2(TSPI_LAUNCHER, package_root / "TSPi")
     (package_root / "TSPi").chmod(0o755)
     (package_root / "scripts").mkdir()
-    for name in ("_bootstrap.py", "tspi_host.py", "ts_compute.py"):
+    for name in ("_bootstrap.py", "tspi_launcher.py", "ts_compute.py"):
         shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
     shutil.copytree(
         ROOT / "packages" / "ts-agent-kernel",
@@ -108,13 +108,14 @@ def test_public_skill_uses_nested_pi_skill_layout() -> None:
     assert not (ROOT / "templates").exists()
 
 
-def test_public_skill_family_has_one_orchestration_four_method_and_three_delivery_skills() -> None:
+def test_public_skill_family_has_one_orchestration_five_method_and_three_delivery_skills() -> None:
     expected = {
         "tspi-orchestration",
         "tspi-transition-state-search",
         "tspi-xtb",
         "tspi-gaussian",
         "tspi-connectivity",
+        "tspi-mechanism",
         "tspi-render",
         "tspi-report",
         "tspi-email",
@@ -232,8 +233,10 @@ def test_repository_layout_has_named_source_boundaries() -> None:
     assert not (ROOT / "src").exists()
     assert (ROOT / "packages" / "ts-agent-kernel" / "ts_agent").is_dir()
     assert (ROOT / "packages" / "ts-agent-runtime").is_dir()
-    assert (ROOT / "apps" / "host").is_dir()
-    assert (ROOT / "apps" / "terminal").is_dir()
+    assert (ROOT / "apps" / "app-server").is_dir()
+    assert (ROOT / "apps" / "app-server" / "pi-app-server.mjs").is_file()
+    assert not (ROOT / "apps" / "host").exists()
+    assert not (ROOT / "apps" / "terminal").exists()
 
 
 def test_tspi_shell_is_a_thin_executable_shim() -> None:
@@ -250,7 +253,7 @@ def test_tspi_shell_is_a_thin_executable_shim() -> None:
     assert TSPI_LAUNCHER.stat().st_mode & 0o111
     assert (ROOT / "scripts" / "ts_web_provider.py").stat().st_mode & 0o111
     assert len(source.splitlines()) <= 20
-    assert "scripts/tspi_host.py" in source
+    assert "scripts/tspi_launcher.py" in source
     assert "TS_AGENT_INSTALL_ROOT" in source
     for mechanism in ("configure_remote", "configure_notifications", "acquire_root_agent_lock", "ts_compute.py"):
         assert mechanism not in source
@@ -356,7 +359,7 @@ def test_tspi_requires_an_installed_release(tmp_path: Path) -> None:
     shutil.copy2(TSPI_LAUNCHER, launcher)
     launcher.chmod(0o755)
     (install_root / "scripts").mkdir()
-    for name in ("_bootstrap.py", "tspi_host.py"):
+    for name in ("_bootstrap.py", "tspi_launcher.py"):
         shutil.copy2(ROOT / "scripts" / name, install_root / "scripts" / name)
 
     completed = _run_tspi(launcher, "--workspace", "release-required")

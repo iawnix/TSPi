@@ -1,6 +1,0 @@
-{
-  "schema_version": "ts-phone-protocol-set/1",
-  "api": "ts-phone-api/4",
-  "events": "ts-phone-events/3",
-  "bridge": "ts-phone-bridge/3"
-}

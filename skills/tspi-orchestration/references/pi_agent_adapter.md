@@ -16,11 +16,11 @@ services, not a second Agent runtime.
 
 ## Loaded Surface
 
-Normal startup registers eight Skills, five extensions, one theme, twelve public
+Normal startup registers nine Skills, five extensions, one theme, fourteen public
 tools, and four slash commands. The orchestration Skill is the cross-cutting
 contract; domain Skill bodies are loaded when the active question matches.
-`ts_calc` and `ts_review`
-create isolated child sessions. All underlying compute actions, structure seed,
+`ts_calc` and `ts_review` create isolated child sessions. `ts_analyze` runs locally
+in the host and records an analysis artifact. All underlying compute actions, structure seed,
 input import, Render, Report, remote inspection, workspace control, Review
 disposition, and notification remain deterministic host calls.
 
@@ -38,9 +38,10 @@ workspace.
 ## Context
 
 Use graph modes `frontier`, `claim`, `node`, `subgraph`, `finding`,
-`proof`, or `delta`. Use catalog modes `artifacts`, `compute`, and `proof` via
-`ts_state`. Every bounded graph
+`proof`, or `delta`. Use `ts_state mode=artifacts` for artifact discovery and
+`mode=capabilities capabilityKind=compute|analysis|proof` for capability catalogs. Every bounded graph
 projection reports its scientific/operational revisions and omitted counts.
+For analysis details, add `query=<capability>@<version>`; the default index omits schemas.
 The validation catalog stays compact; query one exact `templateId` and
 `templateVersion` to retrieve its parameters and Observation selectors.
 

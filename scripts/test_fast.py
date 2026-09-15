@@ -40,7 +40,6 @@ DEFAULT_TEST_PATHS = (
     "tests/test_operational.py",
     "tests/test_operational_ids.py",
     "tests/test_package_inventory.py",
-    "tests/test_phone_protocol_contract.py",
     "tests/test_public_surface.py",
     "tests/test_readme_contract.py",
     "tests/test_report.py",

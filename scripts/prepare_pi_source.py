@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,11 +79,57 @@ def clone(destination: Path) -> Path:
     return destination
 
 
+def install(install_root: Path) -> Path:
+    """Install the pinned, patched Pi tree used by App Server processes."""
+    commit = str(_pin()["commit"])
+    destination = install_root.resolve() / ".pi" / "runtime-cache" / "pi" / commit
+    if destination.exists():
+        verify(destination)
+        if not (destination / "node_modules").is_dir():
+            _install_dependencies(destination)
+        _prepare_runtime_build(destination)
+        return destination
+    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with tempfile.TemporaryDirectory(prefix=".pi-source-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / commit
+        clone(staged)
+        _install_dependencies(staged)
+        _prepare_runtime_build(staged)
+        os.replace(staged, destination)
+    return destination
+
+
+def _install_dependencies(source: Path) -> None:
+    npm = shutil.which("npm")
+    if npm is None:
+        raise PiSourceError("npm is required to install the managed Pi App Server runtime")
+    try:
+        subprocess.run([npm, "ci", "--ignore-scripts"], cwd=source, check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PiSourceError(f"failed to install pinned Pi dependencies: {exc}") from exc
+
+
+def _prepare_runtime_build(source: Path) -> None:
+    """The source entrypoint still imports generated model data and package dist files."""
+    npm = shutil.which("npm")
+    if npm is None:
+        raise PiSourceError("npm is required to prepare the pinned Pi runtime")
+    try:
+        if not (source / "packages/ai/src/providers/data/amazon-bedrock.json").is_file():
+            subprocess.run([npm, "run", "hydrate:model-data"], cwd=source, check=True)
+        required = ("packages/chord/dist/index.js", "packages/coding-agent/dist/bundle")
+        if any(not (source / path).exists() for path in required):
+            subprocess.run([npm, "run", "build:offline"], cwd=source, check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PiSourceError(f"failed to build pinned Pi runtime: {exc}") from exc
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--verify", type=Path, metavar="SOURCE_ROOT")
     group.add_argument("--clone", type=Path, metavar="DESTINATION")
+    group.add_argument("--install", type=Path, metavar="INSTALL_ROOT")
     parser.add_argument("--apply-worker-patch", action="store_true", help="apply the native Worker entrypoint patch before verification")
     args = parser.parse_args()
     try:
@@ -88,10 +137,14 @@ def main() -> int:
             if args.apply_worker_patch:
                 apply_worker_patch(args.verify)
             source = verify(args.verify)
-        else:
+        elif args.clone is not None:
             if args.apply_worker_patch:
                 parser.error("--apply-worker-patch is only valid with --verify")
             source = clone(args.clone)
+        else:
+            if args.apply_worker_patch:
+                parser.error("--apply-worker-patch is only valid with --verify")
+            source = install(args.install)
     except PiSourceError as exc:
         parser.error(str(exc))
     print(source)

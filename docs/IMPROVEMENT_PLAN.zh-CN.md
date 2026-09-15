@@ -3,6 +3,11 @@
 > 实施状态（2026-09-12）：第一阶段的 `/3` 清理、仓内 Web 组件边界、曲线渲染
 > 合约和 GitHub source-first 安装入口已完成；后续阶段保留为演进计划。
 
+> **架构更新（2026-09-16）：** 本文包含原生 Pi App Server 迁移前的历史规划。
+> 当前实现是每个工作区一个原生 Pi App Server；TS Phone 是独立的 Radius
+> 客户端，不再作为 TSPi Suite 组件、Phone Server、bridge 或本地守护进程
+> 安装。旧的 Phone manifest/服务规划仅保留作历史背景，不是当前实现要求。
+
 ## 目标
 
 本方案针对当前 TSPi 的实际边界，目标是：

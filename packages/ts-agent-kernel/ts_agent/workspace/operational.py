@@ -95,7 +95,10 @@ def operational_snapshot(
         files,
         operational_integrity_findings,
     )
+    from .dispatch import dispatch_projection
+    dispatch = dispatch_projection(root_path, [p.name for p in (root_path / "nodes").iterdir() if NODE_ID.fullmatch(p.name)] if (root_path / "nodes").is_dir() else [])
     return {
+        "node_dispatch": dispatch,
         "operational_revision": sha256_json(
             {
                 "files": file_digests,
@@ -122,6 +125,7 @@ def operational_snapshot(
         "retryable_controls": retryable_controls,
         "calculation_attempts": calculation_attempts,
         "operational_summary": {
+            "paused_node_count": sum(row.get("paused") is True for row in dispatch),
             "tracked_file_count": len(file_digests),
             "calculation_file_count": sum(
                 1 for row in file_digests if "attempts" in Path(str(row["path"])).parts
@@ -610,6 +614,7 @@ def _operational_files(
         "nodes/*/attempts/*/*_receipt.json",
         "nodes/*/attempts/*/outputs/calculation_result.json",
         "nodes/*/activities/*/*.json",
+        "nodes/*/dispatch/*.json",
         "operations/activities/*/*.json",
         "nodes/*/attempts/*/runs/*/*.json",
         "reviews/*/runs/*/*.json",
@@ -716,6 +721,7 @@ def _empty_operational_snapshot(finding: dict[str, Any]) -> dict[str, Any]:
 
     findings = [finding]
     return {
+        "node_dispatch": [],
         "operational_revision": sha256_json({"workspace_path_finding": finding}),
         "deterministic_activities": [],
         "activity_summaries": [],
@@ -733,6 +739,7 @@ def _empty_operational_snapshot(finding: dict[str, Any]) -> dict[str, Any]:
         "retryable_controls": [],
         "calculation_attempts": [],
         "operational_summary": {
+            "paused_node_count": 0,
             "tracked_file_count": 0,
             "calculation_file_count": 0,
             "activity_count": 0,
@@ -1174,6 +1181,8 @@ def _calculation_ordinal(value: str) -> int:
 
 
 def _is_current_operational_path(parts: tuple[str, ...]) -> bool:
+    if len(parts) == 4 and parts[0] == "nodes" and NODE_ID.fullmatch(parts[1]) and parts[2] == "dispatch":
+        return parts[3].endswith(".json")
     if parts == (".ts-operational-ids.json",):
         return True
     if len(parts) >= 5 and parts[0] == "nodes" and NODE_ID.fullmatch(parts[1]):

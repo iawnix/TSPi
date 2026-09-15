@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { formatSkillsForSystemPrompt, loadSkills, TODO_CONTEXT } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
-import { createSystemPromptManifest, createSystemPromptTool } from "../apps/host/system-prompt.mjs";
+import { createSystemPromptManifest, createSystemPromptTool } from "../apps/app-server/system-prompt.mjs";
 
 const sourceRoot = process.env.TSPI_PI_SOURCE;
 const executeFile = promisify(execFile);
@@ -84,6 +84,7 @@ test("Pi Agent Core loads the packaged TSPi skill catalog", async () => {
     "tspi-connectivity",
     "tspi-email",
     "tspi-gaussian",
+    "tspi-mechanism",
     "tspi-orchestration",
     "tspi-render",
     "tspi-report",
@@ -105,6 +106,96 @@ function kernelPython() {
   }
 }
 
+test("native analysis discovers contracts and journals explicit mapping results", {
+  skip: !kernelPython(),
+}, async () => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-native-analysis-"));
+  const workspace = join(root, "workspace");
+  const previous = {
+    TSPI_PACKAGE_ROOT: process.env.TSPI_PACKAGE_ROOT,
+    TS_AGENT_PYTHON: process.env.TS_AGENT_PYTHON,
+    TSPI_NATIVE_WRITES: process.env.TSPI_NATIVE_WRITES,
+  };
+  process.env.TSPI_PACKAGE_ROOT = process.cwd();
+  process.env.TS_AGENT_PYTHON = kernelPython();
+  delete process.env.TSPI_NATIVE_WRITES;
+  try {
+    await executeFile(kernelPython(), ["-c", [
+      "import sys",
+      "from pathlib import Path",
+      "from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node",
+      "start_research_node(bootstrap_workspace_fixture(Path(sys.argv[1])))",
+    ].join("\n"), workspace], {
+      cwd: process.cwd(),
+      env: { ...process.env, PYTHONPATH: join(process.cwd(), "packages/ts-agent-kernel") },
+    });
+    const { createAnalyzeTool, createImportTool, createStateTool, createManageTool } = await import("../apps/app-server/pi-native-tools.mjs");
+    const context = { abortSignal: new AbortController().signal };
+    const invoke = async (tool, params) => JSON.parse((await tool.execute(
+      "analysis-test", params, undefined, { cwd: workspace }, undefined, context,
+    )).content[0].text);
+    const state = createStateTool();
+    const catalog = await invoke(state, { mode: "capabilities", capabilityKind: "analysis" });
+    assert.equal(catalog.capabilities[0].capability, "reaction.mapping.validate");
+    assert.equal(catalog.capabilities[0].parameter_schema, undefined);
+    const detail = await invoke(state, {
+      mode: "capabilities", capabilityKind: "analysis", query: "reaction.mapping.validate@1",
+    });
+    assert.deepEqual(detail.input_schema.required, ["reactants", "products"]);
+    const analyze = createAnalyzeTool();
+    const params = {
+      operation: "run", nodeId: "node_1", capability: "reaction.mapping.validate", capabilityVersion: "1",
+      inputArtifacts: {}, parameters: { mapping: [] },
+    };
+    await assert.rejects(invoke(analyze, params), /ts_analyze requires the guarded/);
+    process.env.TSPI_NATIVE_WRITES = "1";
+    const imported = await invoke(createImportTool(), {
+      operation: "import", nodeId: "node_1", format: "xyz_structure", inputName: "h2.xyz",
+      content: "2\nhydrogen\nH 0 0 0\nH 0 0 0.74\n", charge: 0, multiplicity: 1,
+    });
+    params.inputArtifacts = { reactants: [imported.artifact.artifact_id], products: [imported.artifact.artifact_id] };
+    params.parameters.mapping = [0, 1].map((atom) => ({ reactant: { species: 0, atom }, product: { species: 0, atom } }));
+    const result = await invoke(analyze, params);
+    assert.equal(result.schema_version, "ts-analysis-result/1");
+    assert.equal(result.valid, true);
+    assert.equal(result.analysis_artifact.owner_node, "node_1");
+    const request = JSON.parse(await readFile(join(workspace, result.activity_ref, "request.json"), "utf8"));
+    assert.equal(request.kind, "scientific_analysis");
+    assert.equal(request.request.parameters, undefined);
+    const status = JSON.parse(await readFile(join(workspace, result.activity_ref, "status.json"), "utf8"));
+    assert.equal(status.status, "completed");
+    params.parameters.mapping.pop();
+    assert.equal((await invoke(analyze, params)).verdict, "inconclusive");
+    params.parameters.mapping.push(params.parameters.mapping[0]);
+    assert.equal((await invoke(analyze, params)).verdict, "invalid");
+    params.parameters.unknown = true;
+    await assert.rejects(invoke(analyze, params), /analysis parameters/);
+    const operational = await invoke(state, { mode: "node", nodeRef: "node_1" });
+    assert.equal(operational.valid, true);
+    assert.equal(operational.activity_summaries[0].completed_count, 4);
+    assert.equal(operational.activity_summaries[0].failed_count, 1);
+    assert.match(result.summary, /mapped atom pairs/);
+    const observations = JSON.parse(await readFile(join(workspace, "observations.json"), "utf8"));
+    assert.deepEqual(observations.observations, []);
+    const generic = { operation: "run", nodeId: "node_1", capability: "reaction.parse", capabilityVersion: "1", inputArtifacts: {},
+      parameters: { reaction_smiles: "O>>O", multiplicities: { reactants: [1], products: [1] } } };
+    assert.equal((await invoke(state, { mode: "capabilities", capabilityKind: "analysis", query: "reaction.parse" })).ok, true);
+    assert.equal((await invoke(analyze, generic)).verdict, "valid");
+    const manage = createManageTool();
+    await invoke(manage, { operation: "pause", nodeId: "node_1", rationale: "Pause selected branch" });
+    await assert.rejects(invoke(analyze, generic), /node_dispatch_paused/);
+    assert.equal((await invoke(state, { mode: "node", nodeRef: "node_1" })).node_dispatch[0].paused, true);
+    await invoke(manage, { operation: "resume", nodeId: "node_1", rationale: "Continue selected branch" });
+    assert.equal((await invoke(analyze, generic)).verdict, "valid");
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("native ts_import writes a semantic input basename", {
   skip: !kernelPython(),
 }, async () => {
@@ -125,7 +216,7 @@ test("native ts_import writes a semantic input basename", {
       cwd: process.cwd(),
       env: { ...process.env, TS_AGENT_DISABLE_RUNTIME_REEXEC: "1", PYTHONNOUSERSITE: "1" },
     });
-    const nativeTools = await import(pathToFileURL(join(process.cwd(), "apps/host/pi-native-tools.mjs")).href);
+    const nativeTools = await import(pathToFileURL(join(process.cwd(), "apps/app-server/pi-native-tools.mjs")).href);
     const toolContext = { cwd: workspace };
     const context = { abortSignal: new AbortController().signal };
     const changed = await nativeTools.createChangeTool().execute("create-node", {
@@ -201,7 +292,7 @@ test("native Pi server starts a TSPi Harness with native research tools", { skip
   process.env.PI_CODING_AGENT_DIR = agentDir;
   process.env.PI_OFFLINE = "1";
   process.env.TSPI_PACKAGE_ROOT = process.cwd();
-  process.env.PI_SESSION_WORKER_ENTRY = join(process.cwd(), "apps/host/pi-session-worker.mjs");
+  process.env.PI_SESSION_WORKER_ENTRY = join(process.cwd(), "apps/app-server/pi-session-worker.mjs");
   delete process.env.TSPI_NATIVE_WRITES;
   const fromSource = (relative) => import(pathToFileURL(join(sourceRoot, relative)).href);
   const { BACKGROUND_CONTEXT } = await fromSource("packages/chord/src/context/index.ts");
@@ -247,7 +338,7 @@ test("native Pi server starts a TSPi Harness with native research tools", { skip
     const writableState = await readExperimentalSessionState(runtime.sessionDir, writable.sessionId);
     assert.deepEqual(writableState.activeTools, [
       "read", "sys_prompt", "write", "bash", "ts_state", "ts_change", "ts_remote",
-      "ts_calc", "ts_review", "ts_reply", "ts_seed", "ts_compare", "ts_import",
+      "ts_calc", "ts_review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze", "ts_manage", "ts_import",
       "ts_render", "ts_report", "ts_notify",
     ]);
   } finally {
@@ -291,7 +382,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       cwd: process.cwd(),
       env: { ...process.env, TS_AGENT_DISABLE_RUNTIME_REEXEC: "1", PYTHONNOUSERSITE: "1" },
     });
-    const nativeTools = await import(pathToFileURL(join(process.cwd(), "apps/host/pi-native-tools.mjs")).href);
+    const nativeTools = await import(pathToFileURL(join(process.cwd(), "apps/app-server/pi-native-tools.mjs")).href);
     const piAi = await import(pathToFileURL(join(sourceRoot, "packages/ai/src/index.ts")).href);
     const faux = piAi.fauxProvider();
     const models = piAi.createModels();
@@ -352,7 +443,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     };
     await assert.rejects(
       changeTool.execute("change-disabled", request, () => {}, toolContext, undefined, context),
-      /ts_change is disabled for native Pi sessions/,
+      /ts_change requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
       tools.ts_seed.execute("seed-disabled", {
@@ -363,7 +454,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         multiplicity: 1,
         optimization: "none",
       }, () => {}, toolContext, undefined, context),
-      /ts_seed is disabled for native Pi sessions/,
+      /ts_seed requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
       tools.ts_render.execute("render-disabled", {
@@ -372,14 +463,14 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         inputArtifactIds: ["art_aaaaaaaaaaaaaaaaaaaaaaaa"],
         outputName: "disabled.png",
       }, () => {}, toolContext, undefined, context),
-      /ts_render is disabled for native Pi sessions/,
+      /ts_render requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
       tools.ts_report.execute("report-disabled", {
         operation: "build",
         packageName: "disabled",
       }, () => {}, toolContext, undefined, context),
-      /ts_report is disabled for native Pi sessions/,
+      /ts_report requires the guarded TSPi App Server Root Agent/,
     );
     assert.equal(tools.ts_calc.replay, "never");
     await assert.rejects(
@@ -388,7 +479,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         nodeId: "node_1",
         intentId: "calc_1",
       }, () => {}, toolContext, undefined, context),
-      /ts_calc is disabled for native Pi sessions/,
+      /ts_calc requires the guarded TSPi App Server Root Agent/,
     );
     assert.equal(tools.ts_review.replay, "never");
     assert.equal(tools.ts_reply.replay, "never");
@@ -398,7 +489,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         targetClaimRef: "claim_1",
         question: "Review the bounded Claim.",
       }, () => {}, toolContext, undefined, context),
-      /ts_review is disabled for native Pi sessions/,
+      /ts_review requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
       tools.ts_reply.execute("reply-disabled", {
@@ -407,7 +498,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         disposition: "deferred",
         response: "No review is available.",
       }, () => {}, toolContext, undefined, context),
-      /ts_reply is disabled for native Pi sessions/,
+      /ts_reply requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
       tools.ts_notify.execute("notify-disabled", {
@@ -416,7 +507,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         subject: "Disabled notification",
         summary: "This must not be delivered without native writes enabled.",
       }, () => {}, toolContext, undefined, context),
-      /ts_notify is disabled for native Pi sessions/,
+      /ts_notify requires the guarded TSPi App Server Root Agent/,
     );
 
     process.env.TSPI_NATIVE_WRITES = "1";

@@ -2,28 +2,14 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi is a computational chemistry research assistant built on Pi, focused on
-transition-state searches and reaction-path analysis. Describe a research
-question in natural language to get help preparing calculations, submitting
-remote jobs, and interpreting results. Research history, supporting evidence,
-and reports stay together in a project workspace.
-
-## Features
-
-- Generate initial molecular structures from SMILES, or import existing XYZ and Gaussian inputs.
-- Use Gaussian, xTB, CREST, and other tools for geometry optimization, frequency analysis, conformer searches, and reaction-path studies.
-- Submit remote calculations through SSH and Torque, check progress, and collect and parse results.
-- Track hypotheses, calculation attempts, failures, and validation results to resume research, compare approaches, and trace conclusions.
-- Render molecular structures, reaction-path animations, energy profiles, and scan curves, and generate research reports.
-- Continue research from a terminal or phone, and explore progress and results in a browser.
+TSPi is a Pi-based computational chemistry research assistant for
+transition-state searches and reaction-path analysis. Research state,
+evidence, calculations, and reports live in one workspace.
 
 ## Install
 
-Prepare a Linux host with Git, OpenSSH, Python 3.11+, Node.js 22.19+, Conda or
-Mamba, and Pi with a configured model and credentials. See the full
-[prerequisites](docs/INSTALLATION.md#prerequisites).
-
-Run the installation wizard:
+Prepare Git, OpenSSH, Python 3.11+, Node.js 22.19+, Conda/Mamba, and a Pi
+credential. Then run the interactive installer:
 
 ```bash
 git clone git@github.com:iawnix/TSPi.git
@@ -31,150 +17,69 @@ cd TSPi
 ./install.sh
 ```
 
-Choose the installation directory, Conda location, optional TS Web and TS Phone
-components, their ports, and systemd services in the wizard. The core install
-always includes and verifies molecular rendering. Selecting TS Phone
-downloads its source from GitHub, builds the server, and configures phone access
-and shared terminal sessions. Select the TSPi branch, tag, or commit with
-`--tspi-ref` before the wizard starts; the bootstrap resolves it once and binds
-the whole installation to that commit. TS Phone has a separate revision prompt.
-Both default to `main`.
+The core installation always includes the Agent, scientific runtime, and
+molecular rendering. TS Web is optional. The installer can configure the
+per-workspace App Server systemd template; there is no TS Phone daemon to
+install.
 
-See [Installation and Operations](docs/INSTALLATION.md) for non-interactive
-installation, service configuration, and upgrades.
+See [Installation and Operations](docs/INSTALLATION.md) for prerequisites,
+runtime setup, upgrades, rollback, and recovery.
 
-## Start Research
+## App Server and terminal
 
-With TS Phone installed and its service running, open the shared terminal:
+Each workspace has one Pi App Server, which owns its sessions, transcript
+history, model state, and Root lock:
 
 ```bash
-cd /path/to/TSPi-installation
+./TSPi --app-server --workspace reaction-a
+```
+
+The default TSPi command is the local terminal client of that server:
+
+```bash
 ./TSPi --workspace reaction-a
 ```
 
-For a direct Pi session, use `./TSPi --standalone --workspace reaction-a`.
-Service startup and phone access are described below.
+The TS Phone Flutter app connects to the same App Server through Pi Radius;
+it is not a second Host or broker. See [Terminal](docs/TERMINAL.md),
+[Architecture](docs/ARCHITECTURE.md), and the [TS Phone client guide](https://github.com/iawnix/ts-phone/blob/main/README.md).
 
-The experimental native Pi App Server provides Pi's remote TUI with an
-independent session store. After preparing the pinned Pi source checkout, start
-the server and connect from another terminal:
+## Research and remote execution
 
-```bash
-export TSPI_PI_SOURCE=/path/to/prepared/pi
-./TSPi --app-server --workspace reaction-a --allow-writes
-./TSPi --app-client --connect unix:///path/printed/by/server
-```
-
-Omit `--allow-writes` for read-only tools. See the
-[App Server installation guide](docs/INSTALLATION.md#native-pi-app-server-experimental)
-for source preparation and lifecycle details.
-
-Projects are stored under the installation's `workspaces/` directory. Start by
-importing an existing input and describing the research goal, for example:
-
-> Check this Gaussian input and plan a transition-state optimization, frequency
-> calculation, and IRC validation. Once the calculations finish, summarize the
-> evidence for the structure, energy, and reaction-path connectivity in a report.
-
-Before running remote calculations, configure the SSH host, queue, resources,
-and software in the installation's `.pi/remote.toml`, then check the connection:
+Configure SSH/Torque and software profiles in `.pi/remote.toml`, then verify:
 
 ```bash
 ./TSPi --check-remote
 ```
 
-See [remote execution setup](docs/INSTALLATION.md#configure-remote-execution)
-for configuration examples. The result collection step downloads selected
-output files into the workspace for local parsing.
+The skills cover Gaussian, xTB, CREST, ASE-NEB, structure validation,
+rendering, reports, and email delivery. See the [Skill Catalog](skills/README.md)
+and [Glossary](skills/tspi-orchestration/references/glossary.md).
 
-## Phone And Shared Sessions
+## Browser explorer
 
-[TS Phone](https://github.com/iawnix/ts-phone) provides an Android client.
-Connect it to the server to browse conversations, send messages, and continue
-research. A terminal can join the same conversation.
-
-The installer sets up the Phone server on your TSPi host. Download the signed
-Android client from the matching [TS Phone GitHub Release](https://github.com/iawnix/ts-phone/releases)
-and install it on your phone; the [artifact guide](https://github.com/iawnix/ts-phone/blob/main/docs/artifacts.md)
-lists the ABI and checksum details.
-
-If you configured a systemd user service during installation, start it and
-open the terminal:
-
-```bash
-systemctl --user start ts-phone-tspi.service
-cd /path/to/TSPi-installation
-./TSPi --workspace reaction-a
-```
-
-Reconnect to the latest conversation:
-
-```bash
-./TSPi --workspace reaction-a --continue
-```
-
-Research hosted by the service can keep running after you exit the shared
-terminal. See [Phone configuration](docs/INSTALLATION.md#configure-ts-phone)
-for connection settings and [Terminal](docs/TERMINAL.md) for conversation
-controls and keyboard shortcuts.
-
-## Explore In A Browser
-
-TS Web displays the research roadmap, calculation records, scientific
-conclusions, validation results, and files. Explore branches and dependencies
-on the research map, then open a node to inspect its calculations.
-
-If you selected TS Web during installation, you can start it manually:
-
-```bash
-/path/to/TSPi-installation/TSWeb serve \
-  --state-dir /path/to/TSPi-installation/.pi/ts-web-state \
-  --auth-token-file /path/to/TSPi-installation/.pi/ts-web/auth.token \
-  --source-root /path/to/TSPi-installation/workspaces/reaction-a \
-  --label "Reaction A" \
-  --host 127.0.0.1 \
-  --port 8766
-```
-
-Open [http://127.0.0.1:8766/](http://127.0.0.1:8766/) in a browser on the host.
-See [browser server setup](docs/INSTALLATION.md#run-the-research-explorer) for
-multiple workspaces and remote access.
+TS Web is an optional read-only workspace explorer. When selected during
+installation it is available as `TSWeb`; its token and state remain under the
+installation's `.pi/ts-web*` directories.
 
 ## Uninstall
 
-The installation includes an uninstaller:
+Run the installer-provided uninstaller and choose whether to retain workspaces,
+Pi sessions, configuration, and managed runtime state:
 
 ```bash
-/path/to/TSPi-installation/uninstall.sh --install-root /path/to/TSPi-installation
+./uninstall.sh
 ```
-
-Follow the prompts to choose whether to remove workspaces, sessions,
-configuration, and runtime environments. Research data and credentials are
-kept by default. See [uninstall options](docs/INSTALLATION.md#uninstall).
-
-## Documentation
-
-- [Installation and Operations](docs/INSTALLATION.md): dependencies, configuration, services, upgrades, and removal.
-- [Terminal](docs/TERMINAL.md): projects, conversations, keyboard shortcuts, and recovery.
-- [Skill Catalog](skills/README.md): transition-state searches, calculation methods, structure validation, visualization, and reports.
-- [Glossary](skills/tspi-orchestration/references/glossary.md): terminology used in research records.
-- [Architecture](docs/ARCHITECTURE.md) / [中文架构](docs/ARCHITECTURE.zh-CN.md): system design and data model.
-- [Maintainer Guide](docs/MAINTAINER_GUIDE.md): source layout, testing, and releases.
 
 ## Development
 
-Install the Node dependencies and run checks from the source checkout.
-Python tests require the scientific Python environment:
+Use the project checks from the source checkout:
 
 ```bash
-npm ci
-npm run typecheck
-npm run test:fast
-npm run test:package
-npm run test:terminal
+python3 -m unittest discover -s tests -p 'test_*.py'
 npm run lint:public
 ```
 
-See [development setup](docs/MAINTAINER_GUIDE.md#development-setup) and
-[validation tiers](docs/MAINTAINER_GUIDE.md#validation-tiers) for environment
-preparation and the complete test suite.
+The [Maintainer Guide](docs/MAINTAINER_GUIDE.md) describes package validation,
+the App Server lifecycle, and release procedure. 中文说明见
+[中文架构](docs/ARCHITECTURE.zh-CN.md) 和 [终端文档](docs/TERMINAL.zh-CN.md)。

@@ -847,6 +847,7 @@ function renderNodeOverview(payload) {
   return `<section class="detail-section"><h3>${escapeHtml(tr("detail.researchDecision", "Research Decision"))}</h3><div class="detail-callout info"><div class="detail-meta"><span class="mono">${escapeHtml(opening.decision_id || node.created_by_decision)}</span><span>${escapeHtml(formatTime(opening.created_at || node.created_at))}</span></div><p class="detail-copy">${escapeHtml(opening.rationale || node.objective)}</p></div></section>
     <section class="detail-section"><h3>${escapeHtml(tr("detail.researchContract", "Research Contract"))}</h3><dl class="detail-grid"><dt>${escapeHtml(tr("detail.phase", "Phase"))}</dt><dd><span class="mono">${escapeHtml(payload.phase.phase_id)}</span> ${escapeHtml(payload.phase.title)}</dd><dt>${escapeHtml(tr("detail.question", "Question"))}</dt><dd>${escapeHtml(node.objective)}</dd><dt>${escapeHtml(tr("detail.principalDeliverable", "Principal deliverable"))}</dt><dd>${escapeHtml(node.deliverable)}</dd><dt>${escapeHtml(tr("detail.primaryClaim", "Primary Claim"))}</dt><dd>${node.primary_claim_ref ? detailButton("claim", node.primary_claim_ref, node.primary_claim_ref) : escapeHtml(tr("detail.none", "none"))}</dd></dl></section>
     ${renderAttemptOverview(node)}
+    ${renderNodeDispatch(payload)}
     <section class="detail-section"><h3>${escapeHtml(tr("detail.outcome", "Outcome"))}</h3>${result.outcome ? `<div class="detail-callout ${tone(result.outcome)}"><div class="detail-meta">${badge(result.outcome)}<span>${escapeHtml(formatTime(result.completed_at))}</span></div><p class="detail-copy">${escapeHtml(result.summary)}</p>${bulletGroup(tr("detail.openQuestions", "Open Questions"), result.open_questions)}</div>` : `<div class="detail-empty">${escapeHtml(tr("detail.noTerminalResult", "No terminal result has been recorded."))}</div>`}</section>
     <section class="detail-section"><h3>${escapeHtml(tr("detail.lineage", "Lineage"))}</h3>${linkedNodeGroup(tr("detail.dependsOn", "Depends on"), payload.dependencies)}${linkedNodeGroup(tr("detail.continuedBy", "Continued by"), payload.dependents)}</section>
     <section class="detail-section"><h3>${escapeHtml(tr("detail.relatedClaims", "Related Claims"))}</h3>${linkedClaimRows(payload.claims)}</section>`;
@@ -863,7 +864,21 @@ function renderNodeConclusions(payload) {
 function renderNodeEvidence(payload) {
   return `<section class="detail-section"><h3>${escapeHtml(tr("detail.observations", "Observations"))}</h3>${detailRecordRows(payload.observations, "observation", "observation_id", "summary", "concept_id")}</section>
     <section class="detail-section"><h3>${escapeHtml(tr("detail.frozenProofSpecs", "Frozen ProofSpecs"))}</h3>${detailRecordRows(payload.proof_specs, "validation-spec", "proof_id", "title", "dimension")}</section>
-    <section class="detail-section"><h3>${escapeHtml(tr("detail.validationResults", "Validation Results"))}</h3>${detailRecordRows(payload.validation_results, "validation-result", "result_id", "dimension", "verdict")}</section>`;
+    <section class="detail-section"><h3>${escapeHtml(tr("detail.validationResults", "Validation Results"))}</h3>${detailRecordRows(payload.validation_results, "validation-result", "result_id", "dimension", "verdict")}</section>
+    ${renderScientificAnalyses(payload)}`;
+}
+
+function renderNodeDispatch(payload) {
+  const record = array(payload.node_dispatch).at(-1);
+  if (!record) return "";
+  const label = record.paused === true ? tr("detail.dispatchPaused", "Further dispatch paused") : record.paused === false ? tr("detail.dispatchResumed", "Further dispatch enabled") : tr("detail.dispatchUnknown", "Dispatch state needs inspection");
+  return `<section class="detail-section"><h3>${escapeHtml(label)}</h3><p>${escapeHtml(record.rationale || record.integrity_error || "")}</p><p class="muted">${escapeHtml(tr("detail.dispatchIndependent", "Existing jobs remain independently inspectable and cancellable. Scientific status is unchanged."))}</p></section>`;
+}
+
+function renderScientificAnalyses(payload) {
+  const analyses = array(payload.scientific_analyses?.analyses);
+  if (!analyses.length) return "";
+  return `<section class="detail-section"><h3>${escapeHtml(tr("detail.scientificAnalyses", "Scientific analyses"))}</h3>${analyses.map(row => `<div class="detail-callout"><div class="detail-meta"><span>${escapeHtml(row.capability)}@${escapeHtml(row.version)}</span>${badge(row.verdict)}</div>${pathRow(row.path, row.artifact_id, {available: true})}${bulletGroup(tr("detail.limitations", "Limitations"), row.limitations)}</div>`).join("")}</section>`;
 }
 
 function renderAttemptOverview(node) {

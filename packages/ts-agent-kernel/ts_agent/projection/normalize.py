@@ -168,6 +168,7 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "operational_summary": operations["operational_summary"],
         "deterministic_activities": activities,
         "activity_summaries": operations["activity_summaries"],
+        "node_dispatch": operations.get("node_dispatch", []),
         "activity_integrity_findings": operations["activity_integrity_findings"],
         "operational_integrity_findings": operational_integrity_findings,
         "agent_runs": agent_runs,
@@ -395,6 +396,7 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
         "operational_summary": _object(view.get("operational_summary")),
         "deterministic_activities": _objects(view.get("deterministic_activities")),
         "activity_summaries": _objects(view.get("activity_summaries")),
+        "node_dispatch": _objects(view.get("node_dispatch")),
         "activity_integrity_findings": _list(view.get("activity_integrity_findings")),
         "operational_integrity_findings": _list(view.get("operational_integrity_findings")),
         "calculation_attempt_integrity_findings": _list(view.get("calculation_attempt_integrity_findings")),
@@ -530,7 +532,14 @@ def node_payload(source_root: str | Path, node_id: str, *, label: str | None = N
             row for row in _objects(view.get("decisions")) if _contains_ref(row, node_id)
         ],
         "files": list_node_files(root, node_id),
+        "node_dispatch": [row for row in view.get("node_dispatch", []) if row["node_id"] == node_id],
+        "scientific_analyses": _node_analysis_projection(root, node_id),
     }
+
+
+def _node_analysis_projection(root, node_id):
+    from ts_agent.analysis.projection import analysis_projection
+    return analysis_projection(root, node_id, limit=32)
 
 
 def list_node_files(source_root: str | Path, node_id: str) -> dict[str, Any]:

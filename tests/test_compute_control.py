@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+
+def test_remote_crest_stdout_matches_parser_contract():
+    from ts_agent.compute.control import _remote_stdout_name
+    assert _remote_stdout_name({"backend": "crest", "expected_artifacts": ["outputs/crest.out", "outputs/crest_best.xyz"]}) == "crest.out"
+
 import json
 import shutil
 from concurrent.futures import ThreadPoolExecutor

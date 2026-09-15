@@ -11,11 +11,13 @@ from typing import Any
 
 from .artifacts import (
     create_structure_comparison_artifact,
+    create_reaction_mapping_validation_artifact,
     create_structure_seed_artifact,
     import_calculation_artifact,
     list_calculation_artifacts,
     resolve_artifact_ids,
 )
+from .analysis import analysis_capabilities, resolve_analysis_capability, run_analysis
 from .capabilities import CapabilityGapError, calculation_capabilities, resolve_capability_result
 from .contracts import ComputeContractError
 from .control import (
@@ -66,8 +68,24 @@ def main(argv: list[str] | None = None) -> int:
     structure_compare.add_argument("--root", required=True)
     structure_compare.add_argument("--request-file", required=True)
 
+    reaction_mapping = sub.add_parser("reaction-mapping-validate")
+    reaction_mapping.add_argument("--root", required=True)
+    reaction_mapping.add_argument("--request-file", required=True)
+
+    analysis = sub.add_parser("analyze")
+    analysis.add_argument("--root", required=True)
+    analysis.add_argument("--request-file", required=True)
+
     capabilities = sub.add_parser("capabilities")
     capabilities.add_argument("--root")
+
+    analysis_capability_catalog = sub.add_parser("analysis-capabilities")
+    analysis_capability_catalog.add_argument("--root")
+
+    resolve_analysis = sub.add_parser("resolve-analysis-capability")
+    resolve_analysis.add_argument("--root")
+    resolve_analysis.add_argument("--capability", required=True)
+    resolve_analysis.add_argument("--version", default="1")
 
     resolve_capability = sub.add_parser("resolve-capability")
     resolve_capability.add_argument("--root")
@@ -88,6 +106,12 @@ def main(argv: list[str] | None = None) -> int:
     preflight.add_argument("--intent-id")
     preflight.add_argument("--artifact-ref")
 
+    dispatch = sub.add_parser("node-dispatch")
+    dispatch.add_argument("--root", required=True)
+    dispatch.add_argument("--node-id", required=True)
+    dispatch.add_argument("--operation", choices=("pause", "resume"), required=True)
+    dispatch.add_argument("--rationale", required=True)
+
     remote_diagnostic = sub.add_parser("remote-diagnostic")
     remote_diagnostic.add_argument("--mode", choices=sorted(REMOTE_DIAGNOSTIC_MODES), default="status")
     remote_diagnostic.add_argument("--profile")
@@ -103,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         elif command == "collect":
             item.add_argument("--artifact", action="append", default=[])
         elif command == "parse":
-            item.add_argument("--artifact-ref", required=True)
+            item.add_argument("--artifact-ref")
         elif command == "cancel":
             item.add_argument("--expected-job-id")
 
@@ -137,6 +161,10 @@ def _capability_gap_payload(error: CapabilityGapError) -> dict[str, Any]:
 def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "capabilities":
         return calculation_capabilities()
+    if args.command == "analysis-capabilities":
+        return analysis_capabilities()
+    if args.command == "resolve-analysis-capability":
+        return resolve_analysis_capability(args.capability, args.version)
     if args.command == "resolve-capability":
         return resolve_capability_result(args.capability, args.version)
     if args.command == "remote-diagnostic":
@@ -164,6 +192,12 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "structure-compare":
         request = _read_private_request(args.request_file, "structure comparison", 64 * 1024)
         return create_structure_comparison_artifact(args.root, request)
+    if args.command == "reaction-mapping-validate":
+        request = _read_private_request(args.request_file, "reaction mapping", 1024 * 1024)
+        return create_reaction_mapping_validation_artifact(args.root, request)
+    if args.command == "analyze":
+        request = _read_private_request(args.request_file, "analysis", 1024 * 1024)
+        return run_analysis(args.root, request)
     if args.command == "preflight":
         return preflight_calculation(
             args.root,
@@ -175,6 +209,9 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
             intent_id=args.intent_id,
             artifact_ref=args.artifact_ref,
         )
+    if args.command == "node-dispatch":
+        from ts_agent.workspace.dispatch import set_node_dispatch
+        return set_node_dispatch(args.root, args.node_id, args.operation, args.rationale)
     if args.command == "prepare":
         return prepare_calculation(args.root, args.intent_file, args.expected_intent_digest)
     if args.command == "submit":

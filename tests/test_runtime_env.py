@@ -501,6 +501,8 @@ def test_scientific_runtime_probe_exercises_required_capabilities(monkeypatch) -
     assert result["schema_version"] == "ts-runtime-probe/3"
     assert result["ok"] is True
     assert result["capabilities"] == {
+        "reaction_analysis": True,
+        "ase_thermochemistry": True,
         "rdkit_smiles_parse": True,
         "rdkit_etkdg_embed": True,
         "rdkit_uff_optimize": True,

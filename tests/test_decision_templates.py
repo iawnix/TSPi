@@ -65,6 +65,10 @@ def test_operation_catalog_groups_public_variants_and_exact_fields() -> None:
 
     assert catalog["schema_version"] == "ts-change-operation-catalog/1"
     assert catalog["selected_operation"] == "record_observation"
+    constraints = catalog["operations"][0].pop("value_constraints")
+    assert constraints["artifact_binding"] == {"required": ["artifactId"], "optional": ["sha256"]}
+    assert constraints["direct_provenance"]["required"] == ["producer"]
+    assert "json" in constraints["datatype"]
     assert catalog["operations"] == [{
         "op": "record_observation",
         "template_ref": "skills/tspi-orchestration/assets/templates/decision/record_observation.json",

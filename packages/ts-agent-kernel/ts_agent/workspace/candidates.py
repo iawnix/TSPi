@@ -177,6 +177,10 @@ def load_observation_candidate(
         raise ObservationCandidateError("ObservationCandidate artifact digest changed")
     path = str(artifact["path"])
     parts = PurePosixPath(path).parts
+    if len(parts) == 5 and parts[:4] == ("nodes", node_id, "outputs", "analysis"):
+        from .analysis_candidates import load_analysis_candidate
+
+        return load_analysis_candidate(root, artifact, node_id, candidate_id)
     if (
         len(parts) != 7
         or parts[0] != "nodes"

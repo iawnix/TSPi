@@ -67,7 +67,7 @@ def guard_installation_upgrade(installation: Path) -> Iterator[None]:
     if installation_is_guarded(installation):
         yield
         return
-    from .launcher import WORKSPACE_NAME, TSPiHostError, acquire_lifecycle_guard
+    from .launcher import WORKSPACE_NAME, TSPiHostError, acquire_root_agent_lock
 
     container = installation / "workspaces"
     if container.is_symlink():
@@ -83,14 +83,9 @@ def guard_installation_upgrade(installation: Path) -> Iterator[None]:
             directory = acquire_directory_guard(installation, workspace, exclusive=True)
             guards.callback(os.close, directory)
             try:
-                root = acquire_lifecycle_guard(workspace)
+                root = acquire_root_agent_lock(workspace)
             except TSPiHostError as exc:
                 raise SessionGuardError(f"cannot verify Root lock in {workspace.name} during guard upgrade") from exc
-            if root is None:
-                raise SessionGuardError(
-                    f"old TSPi writer is active in {workspace.name}; close it before upgrading",
-                    code="session_writer_active",
-                )
             guards.callback(os.close, root)
             assert_no_unguarded_writers(workspace)
         yield
@@ -98,7 +93,7 @@ def guard_installation_upgrade(installation: Path) -> Iterator[None]:
 
 def guard_directory(installation: Path, workspace: Path) -> Path:
     key = hashlib.sha256(os.fsencode(workspace)).hexdigest()
-    return installation / ".pi" / "session-host" / "guards" / key
+    return installation / ".pi" / "session-guards" / key
 
 
 def session_lock_path(installation: Path, workspace: Path, session_id: str) -> Path:
@@ -195,7 +190,7 @@ def assert_no_unguarded_writers(workspace: Path) -> None:
                     and values.get(b"TS_SESSION_GUARD") == CONTRACT.encode()):
                 continue
             raise SessionGuardError(
-                f"unguarded TSPi writer pid {process.name} is still open; exit it before using Session Host",
+                f"unguarded TSPi writer pid {process.name} is still open; exit it before upgrading",
                 code="session_writer_active",
             )
         except (FileNotFoundError, ProcessLookupError):
@@ -231,46 +226,6 @@ def _uses_workspace_sessions(process: Path, workspace: Path, arguments: list[byt
         if directory.resolve() == expected:
             return True
     return False
-
-
-def verify_session_writer(installation: Path, workspace: Path, session_id: str, mode: str, pid: int) -> None:
-    """Bind Bridge identity to held OS guards, not just an occupied Root lock."""
-    if pid <= 0 or not SESSION_ID.fullmatch(session_id) or mode not in {"controller", "observer"}:
-        raise SessionGuardError("invalid session writer identity")
-    process = Path("/proc") / str(pid)
-    lock_path = session_lock_path(installation, workspace, session_id)
-    expected = {
-        guard_directory(installation, workspace) / "directory.lock": "READ",
-        lock_path: "WRITE",
-    }
-    if mode == "controller":
-        expected[workspace / ".pi" / "root-agent.lock"] = "WRITE"
-    try:
-        if process.stat().st_uid != os.getuid():
-            raise SessionGuardError("session writer belongs to another account")
-        for descriptor in (process / "fd").iterdir():
-            try:
-                path = Path(os.readlink(descriptor))
-            except FileNotFoundError:
-                continue
-            lock_mode = expected.get(path)
-            if lock_mode is None:
-                continue
-            info = (process / "fdinfo" / descriptor.name).read_text()
-            if re.search(rf"^lock:\s+\d+: FLOCK\s+ADVISORY\s+{lock_mode}\s+{pid}\s", info, re.MULTILINE):
-                del expected[path]
-        if expected:
-            raise SessionGuardError("session writer does not hold the required guards")
-        descriptor = os.open(lock_path, os.O_RDONLY | os.O_NOFOLLOW)
-        with os.fdopen(descriptor, "rb") as handle:
-            identity = json.loads(handle.read(4097))
-        if identity != {
-            "contract": CONTRACT, "pid": pid, "workspace": str(workspace),
-            "sessionId": session_id, "accessMode": mode,
-        }:
-            raise SessionGuardError("session writer guard identity mismatch")
-    except (OSError, ValueError) as exc:
-        raise SessionGuardError("session writer could not be verified") from exc
 
 
 def select_session(workspace: Path, arguments: list[str], *, default_continue: bool = False) -> tuple[str, list[str]]:

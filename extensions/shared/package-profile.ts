@@ -9,6 +9,7 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
     Object.freeze({ name: "tspi-xtb", path: "./skills/tspi-xtb" }),
     Object.freeze({ name: "tspi-gaussian", path: "./skills/tspi-gaussian" }),
     Object.freeze({ name: "tspi-connectivity", path: "./skills/tspi-connectivity" }),
+    Object.freeze({ name: "tspi-mechanism", path: "./skills/tspi-mechanism" }),
     Object.freeze({ name: "tspi-render", path: "./skills/tspi-render" }),
     Object.freeze({ name: "tspi-report", path: "./skills/tspi-report" }),
     Object.freeze({ name: "tspi-email", path: "./skills/tspi-email" }),

@@ -21,6 +21,8 @@ EXPECTED_TOOLS = {
     "ts_calc",
     "ts_seed",
     "ts_compare",
+    "ts_analyze",
+    "ts_manage",
     "ts_import",
     "ts_render",
     "ts_report",
@@ -68,6 +70,7 @@ process.stdout.write(JSON.stringify({{
     }
     assert result["execution"]["ts_seed"] == "deterministic_artifact"
     assert result["execution"]["ts_compare"] == "deterministic_artifact"
+    assert result["execution"]["ts_analyze"] == "deterministic_artifact"
     assert result["execution"]["ts_import"] == "deterministic_artifact"
     assert result["execution"]["ts_render"] == "deterministic_artifact"
     assert result["execution"]["ts_report"] == "deterministic_artifact"
@@ -132,8 +135,14 @@ process.stdout.write(JSON.stringify({{rows,total:rows.reduce((sum,row)=>sum+row.
 
     assert skill_bytes <= 7_000
     assert by_name["ts_calc"]["schema"] <= 4_500
-    assert measured["total"] <= 13_000
-    assert skill_bytes + measured["total"] + measured["systemPromptBytes"] <= 19_800
+    # Preserve the previous surface budget; new analyses share one small
+    # envelope with domain schemas loaded through the capability catalog.
+    analysis_bytes = by_name["ts_analyze"]["total"]
+    management_bytes = by_name["ts_manage"]["total"]
+    assert analysis_bytes <= 900
+    assert management_bytes <= 500
+    assert measured["total"] - analysis_bytes - management_bytes <= 13_000
+    assert skill_bytes + measured["total"] - analysis_bytes - management_bytes + measured["systemPromptBytes"] <= 19_800
 
 
 def test_workspace_cli_compiles_frontier_and_focused_node(tmp_path: Path) -> None:
@@ -251,7 +260,7 @@ process.stdout.write(JSON.stringify({{manifest:JSON.parse(result.content[0].text
     assert not any("THIRD PARTY EXTENSION" in item.get("text", "") for item in by_origin["native"])
 
 
-def test_host_turn_refreshes_bounded_science_without_appending_history(tmp_path: Path) -> None:
+def test_extension_turn_refreshes_bounded_science_without_appending_history(tmp_path: Path) -> None:
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     script = f"""
 import install from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
@@ -271,7 +280,6 @@ const pi={{registerTool:(tool)=>tools[tool.name]=tool,registerCommand:()=>{{}},r
 }};
 install(pi);
 const inspect=async (prompt,index)=>JSON.parse((await tools.sys_prompt.execute(`prompt-${{index}}`,{{}},undefined,undefined,{{getSystemPrompt:()=>prompt.systemPrompt}})).content[0].text);
-process.env.TS_PHONE_WORKER="1";
 const first=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
 const firstManifest=await inspect(first,1);
 const second=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
@@ -279,7 +287,6 @@ const secondManifest=await inspect(second,2);
 unavailable=true;
 const failed=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
 const failedManifest=await inspect(failed,3);
-delete process.env.TS_PHONE_WORKER;
 const standalone=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
 const standaloneManifest=await inspect(standalone,4);
 process.stdout.write(JSON.stringify({{first,second,failed,standalone,firstManifest,secondManifest,failedManifest,standaloneManifest,reads}}));
@@ -292,7 +299,7 @@ process.stdout.write(JSON.stringify({{first,second,failed,standalone,firstManife
     assert "node_2" in result["second"]["systemPrompt"]
     assert "Current workspace snapshot is unavailable" in result["failed"]["systemPrompt"]
     assert "private diagnostic" not in result["failed"]["systemPrompt"]
-    assert "workspace snapshot" not in result["standalone"]["systemPrompt"]
+    assert "Current workspace snapshot is unavailable" in result["standalone"]["systemPrompt"]
     assert all(set(result[key]) == {"systemPrompt"} for key in ["first", "second", "failed", "standalone"])
     for prompt_key, manifest_key in [
         ("first", "firstManifest"),
@@ -312,7 +319,7 @@ process.stdout.write(JSON.stringify({{first,second,failed,standalone,firstManife
     assert "Current workspace snapshot is unavailable" in next(
         item for item in result["failedManifest"]["contributors"] if item["origin"] == "extension"
     )["text"]
-    assert "workspace snapshot" not in next(
+    assert "Current workspace snapshot is unavailable" in next(
         item for item in result["standaloneManifest"]["contributors"] if item["origin"] == "extension"
     )["text"]
 

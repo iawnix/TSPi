@@ -419,10 +419,12 @@ def _normalize_operation(
                 root=root,
             )
         provenance = raw["provenance"]
+        if raw["datatype"] not in {"boolean", "integer", "number", "string", "string_array", "number_array", "object", "json"}:
+            raise ContractError("record_observation.datatype must be boolean, integer, number, string, string_array, number_array, object, or json")
         if not isinstance(provenance, dict):
             raise ContractError("Observation provenance must be an object")
         _keys(provenance, required={"producer"}, optional={"producerVersion"}, label="Observation provenance")
-        artifacts = _artifact_bindings(raw.get("artifacts", []))
+        artifacts = _artifact_bindings(raw.get("artifacts", []), root=root)
         return {
             "op": "append_observation",
             "record": {
@@ -447,6 +449,8 @@ def _normalize_operation(
             },
         }
     if name == "record_finding":
+        if raw["severity"] not in {"blocking", "warning", "informational"}:
+            raise ContractError("record_finding.severity must be blocking, warning, or informational")
         return {
             "op": "append_finding",
             "record": {
@@ -473,7 +477,7 @@ def _normalize_operation(
             raise ContractError("freeze_proof_spec requires a Claim with pre-registered predictions and falsifiers")
         request = {
             "dimension": raw["dimension"],
-            "title": raw["title"],
+            **({"title": raw["title"]} if "title" in raw else {}),
             **({"template": _template_binding(raw["template"])} if "template" in raw else {}),
             **({"definition": deepcopy(raw["definition"])} if "definition" in raw else {}),
         }
@@ -819,6 +823,8 @@ def _ref(value: Any, allocations: dict[str, str]) -> str:
         if alias not in allocations:
             raise ContractError(f"unknown local reference: {value}")
         return allocations[alias]
+    if value in allocations:
+        raise ContractError(f"local reference {value!r} requires the '$' prefix: ${value}")
     return value
 
 
@@ -864,18 +870,21 @@ def _unique_strings(value: Any, label: str, maximum_items: int, maximum_length: 
     return values
 
 
-def _artifact_bindings(value: Any) -> list[dict[str, str]]:
+def _artifact_bindings(value: Any, *, root: Path) -> list[dict[str, str]]:
     if not isinstance(value, list) or len(value) > 64:
         raise ContractError("Observation artifacts must be an array with at most 64 entries")
     bindings = []
     for item in value:
         if not isinstance(item, dict):
             raise ContractError("Observation artifact binding must be an object")
-        _keys(item, required={"artifactId", "sha256"}, label="Observation artifact binding")
+        _keys(item, required={"artifactId"}, optional={"sha256"}, label="Observation artifact binding")
         artifact_id = item["artifactId"]
-        digest = item["sha256"]
         if not isinstance(artifact_id, str) or len(artifact_id) != 28 or not artifact_id.startswith("art_"):
             raise ContractError("Observation artifactId is invalid")
+        digest = item.get("sha256")
+        if digest is None:
+            from .artifacts import resolve_workspace_artifact_ids
+            digest = resolve_workspace_artifact_ids(root, [artifact_id])[0]["sha256"]
         if not isinstance(digest, str) or len(digest) != 71 or not digest.startswith("sha256:"):
             raise ContractError("Observation artifact digest is invalid")
         bindings.append({"artifactId": artifact_id, "sha256": digest})

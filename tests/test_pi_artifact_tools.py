@@ -201,6 +201,55 @@ process.stdout.write(JSON.stringify({{entries,updates,rejection}}));
     assert json.loads((workspace / "observations.json").read_text(encoding="utf-8"))["observations"] == []
 
 
+def test_public_reaction_analysis_validates_explicit_mapping(tmp_path: Path) -> None:
+    workspace, refs, artifacts = _workspace_with_xyz(tmp_path)
+    by_path = {item["path"]: item for item in artifacts}
+    script = f"""
+import install from {json.dumps(ARTIFACT_EXTENSION.as_uri())};
+import {{ spawnSync }} from "node:child_process";
+process.env.TS_AGENT_PYTHON={json.dumps(sys.executable)};
+const tools={{}};const entries=[];
+const pi={{
+  registerTool:(tool)=>tools[tool.name]=tool,
+  appendEntry:(type,data)=>entries.push({{type,data}}),
+  exec:async(command,args)=>{{
+    const value=spawnSync(command,args,{{encoding:"utf8",env:process.env}});
+    return {{code:value.status,stdout:value.stdout,stderr:value.stderr}};
+  }},
+}};
+install(pi);
+await tools.ts_analyze.execute("call-mapping",{{
+  operation:"run",nodeId:{json.dumps(refs['node_id'])},
+  capability:"reaction.mapping.validate",capabilityVersion:"1",
+  inputArtifacts:{{
+    reactants:[{json.dumps(by_path['inputs/reactant.xyz']['artifact_id'])}],
+    products:[{json.dumps(by_path['inputs/product.xyz']['artifact_id'])}],
+  }},
+  parameters:{{mapping:[{{reactant:{{species:0,atom:0}},product:{{species:0,atom:0}}}}]}},
+}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+process.stdout.write(JSON.stringify(entries));
+"""
+    completed = _node_ts(script)
+    entries = json.loads(completed.stdout)
+    result = entries[0]["data"]
+    assert entries[0]["type"] == "ts-deterministic-activity"
+    assert result["capability"] == "reaction.mapping.validate"
+    assert result["verdict"] == "valid"
+    assert result["analysis_artifact"]["owner_node"] == refs["node_id"]
+    request = json.loads((workspace / result["activity_ref"] / "request.json").read_text())
+    assert request["kind"] == "scientific_analysis"
+    assert "parameters" not in request["request"]
+    assert request["request"]["submitted_sha256"].startswith("sha256:")
+    assert json.loads((workspace / "observations.json").read_text())["observations"] == []
+    from ts_agent.projection.normalize import node_payload
+
+    node = node_payload(workspace, refs["node_id"])["research_node"]
+    assert any(
+        item["kind"] == "scientific_analysis" and "mapped atom pairs" in item["summary"]
+        for item in node["activities"]
+    )
+
+
 def test_render_request_resolves_logical_ids_and_host_owns_output_path(tmp_path: Path) -> None:
     workspace, refs, artifacts = _workspace_with_xyz(tmp_path)
     request = {

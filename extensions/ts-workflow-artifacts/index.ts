@@ -9,6 +9,7 @@ import {
   allocateOperationalId,
   requireWorkspaceRoot,
   runArtifactImportJson,
+  runAnalysisJson,
   runComputeJson,
   runNotifyUserJson,
   runRenderJson,
@@ -19,6 +20,7 @@ import {
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 
 const require = createRequire(import.meta.url);
+const { nodeControlProperties, nodeControlArguments } = require("../../packages/ts-agent-runtime/artifacts/node-control.cjs");
 const { toolText } = require("../ts-workflow-control/summary.cjs");
 const { beginActivity, completeActivity, failActivity } = require("../../packages/ts-agent-runtime/agent-core/activity-journal.cjs");
 const {
@@ -89,8 +91,30 @@ const StructureComparisonParameters = Type.Object({}, {
   additionalProperties: true,
   maxProperties: 8,
 });
+const { analysisProperties, analysisRequest, analysisRequestSummary, validateAnalysisResult } = require(
+  "../../packages/ts-agent-runtime/artifacts/analysis-contract.cjs",
+);
+type AnalysisParameters = {
+  operation: "run";
+  nodeId: string;
+  capability: string;
+  capabilityVersion: string;
+  inputArtifacts: Record<string, string[]>;
+  parameters: Record<string, unknown>;
+  root?: string;
+};
 
 export default function (pi: ExtensionAPI) {
+  pi.registerTool({
+    name: TS_PUBLIC_TOOL_NAMES.manage,
+    label: "TS Node Dispatch",
+    description: "Pause or resume new calculation/analysis dispatch for an open Node. In-flight jobs remain independently inspectable and cancellable with ts_calc.",
+    parameters: Type.Object(nodeControlProperties(Type), { additionalProperties: false }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const result = await runComputeJson(pi, "node-dispatch", requireWorkspaceRoot(undefined, ctx.cwd), nodeControlArguments(params), signal);
+      return toolText(JSON.stringify(result), { dispatch: result });
+    },
+  });
   const notificationTarget = configuredNotificationTarget();
 
   pi.registerTool({
@@ -220,6 +244,59 @@ export default function (pi: ExtensionAPI) {
           journal.activityRef,
           "structure_compare",
           "compare",
+          [params.nodeId],
+          error,
+        );
+        failActivity(journal, error, failure);
+        pi.appendEntry("ts-deterministic-activity-failed", failure);
+        throw error;
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: TS_PUBLIC_TOOL_NAMES.analyze,
+    label: "TS Scientific Analysis",
+    description: "Run a registered local scientific analysis and save a Node-owned artifact.",
+    promptSnippet: "Analyze registered artifacts",
+    promptGuidelines: [
+      "Discover input roles and parameters via ts_state mode=capabilities capabilityKind=analysis; record selected facts with ts_change.",
+    ],
+    executionMode: "sequential",
+    parameters: Type.Unsafe<AnalysisParameters>(Type.Object({
+      ...analysisProperties(Type),
+      root: Type.Optional(Type.String()),
+    }, { additionalProperties: false })),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      const activityId = await allocateOperationalId(pi, "op", root, signal);
+      const journal = beginActivity(root, {
+        activity_id: activityId,
+        kind: "scientific_analysis",
+        operation: "run",
+        node_refs: [params.nodeId],
+        request: analysisRequestSummary(params),
+      });
+      onUpdate?.(toolText(`TS Analysis · ${params.capability} · ${params.nodeId}`, {
+        activity: { activity_id: activityId, state: "running" },
+      }));
+      try {
+        const raw = await runAnalysisJson(pi, root, analysisRequest(params), signal);
+        validateAnalysisResult(raw, params);
+        const result = {
+          ...raw,
+          activity_id: activityId,
+          activity_ref: journal.activityRef,
+        };
+        completeActivity(journal, result);
+        pi.appendEntry("ts-deterministic-activity", result);
+        return toolText(JSON.stringify(result, null, 2), { result });
+      } catch (error) {
+        const failure = deterministicFailure(
+          activityId,
+          journal.activityRef,
+          "scientific_analysis",
+          "run",
           [params.nodeId],
           error,
         );
@@ -578,7 +655,7 @@ function requireReportAssetRefs(value: unknown, packageRef: string, expectedCoun
 function deterministicFailure(
   activityId: string,
   activityRef: string,
-  kind: "structure_seed" | "structure_compare" | "artifact_import" | "render" | "report",
+  kind: "structure_seed" | "structure_compare" | "scientific_analysis" | "artifact_import" | "render" | "report",
   operation: string,
   nodeRefs: string[],
   error: unknown,

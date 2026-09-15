@@ -25,6 +25,7 @@ FOCUSED_SKILLS = {
     "tspi-xtb": ROOT / "skills" / "tspi-xtb",
     "tspi-gaussian": ROOT / "skills" / "tspi-gaussian",
     "tspi-connectivity": ROOT / "skills" / "tspi-connectivity",
+    "tspi-mechanism": ROOT / "skills" / "tspi-mechanism",
     "tspi-render": ROOT / "skills" / "tspi-render",
     "tspi-report": ROOT / "skills" / "tspi-report",
     "tspi-email": ROOT / "skills" / "tspi-email",

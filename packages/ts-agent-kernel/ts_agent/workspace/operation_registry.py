@@ -82,9 +82,9 @@ INPUT_OPERATION_CONTRACTS: dict[str, OperationContract] = {
     ),
     "freeze_proof_spec": OperationContract(
         required=frozenset({
-            "op", "local_ref", "nodeRef", "targetClaimRef", "dimension", "title",
+            "op", "local_ref", "nodeRef", "targetClaimRef", "dimension",
         }),
-        optional=frozenset({"template", "definition"}),
+        optional=frozenset({"template", "definition", "title"}),
     ),
     "evaluate_proof": OperationContract(
         required=frozenset({"op", "local_ref", "nodeRef", "proofRef", "observationRefs"}),
@@ -171,6 +171,11 @@ def operation_catalog(operation: str | None = None) -> dict[str, object]:
             # each variant below points at its own exact snippet.
             "template_ref": _primary_template_ref(public_name),
             "variants": variants,
+            **({"value_constraints": {"severity": ["blocking", "warning", "informational"]}} if public_name == "record_finding" else {}),
+            **({"value_constraints": {"direct_provenance": {"required": ["producer"], "optional": ["producerVersion"]},
+                "datatype": ["boolean", "integer", "number", "string", "string_array", "number_array", "object", "json"],
+                "artifact_binding": {"required": ["artifactId"], "optional": ["sha256"]},
+                "candidate": "Use returned artifactId/candidateId; omit direct value/datatype/provenance fields."}} if public_name == "record_observation" else {}),
         })
     return {
         "schema_version": "ts-change-operation-catalog/1",

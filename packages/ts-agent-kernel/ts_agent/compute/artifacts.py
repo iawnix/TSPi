@@ -31,7 +31,9 @@ from ts_agent.workspace.refs import NODE_ID
 from ts_agent.workspace.path_safety import has_symlink_component
 from ts_agent.workspace.transactions import workspace_lock
 from ts_agent.structures.api import compare_structures
+from ts_agent.structures.internals import read_xyz
 from ts_agent.structures.seed import StructureSeedError, generate_smiles_seed
+from ts_agent.reaction.mapping import mapping_observation_candidates, validate_atom_mapping
 
 from .contracts import ComputeContractError
 
@@ -44,6 +46,9 @@ STRUCTURE_SEED_RESULT_SCHEMA_VERSION = "ts-structure-seed-result/1"
 STRUCTURE_COMPARE_REQUEST_SCHEMA_VERSION = "ts-structure-compare-request/1"
 STRUCTURE_COMPARE_RESULT_SCHEMA_VERSION = "ts-structure-compare-result/1"
 STRUCTURE_COMPARISON_SCHEMA_VERSION = "ts-structure-comparison/1"
+REACTION_MAPPING_VALIDATE_REQUEST_SCHEMA_VERSION = "ts-reaction-mapping-validate-request/1"
+REACTION_MAPPING_VALIDATE_RESULT_SCHEMA_VERSION = "ts-reaction-mapping-validate-result/1"
+REACTION_MAPPING_VALIDATE_ARTIFACT_SCHEMA_VERSION = "ts-reaction-mapping-validation/1"
 MAX_IMPORT_BYTES = 128 * 1024
 IMPORT_FORMATS = frozenset({"gaussian_input", "xyz_structure", "xtb_control"})
 IMPORT_FORMAT_SUFFIXES = {
@@ -154,6 +159,9 @@ def create_structure_seed_artifact(root: str | Path, request: dict[str, Any]) ->
 
     workspace = _workspace_root(root)
     normalized = _validate_structure_seed_request(request)
+    from ts_agent.workspace.dispatch import require_dispatch_allowed
+    with workspace_lock(workspace):
+        require_dispatch_allowed(workspace, normalized["node_id"])
     try:
         generated = generate_smiles_seed(
             normalized["smiles"],
@@ -168,6 +176,7 @@ def create_structure_seed_artifact(root: str | Path, request: dict[str, Any]) ->
     xyz_digest = "sha256:" + hashlib.sha256(xyz_payload).hexdigest()
     xyz_filename = f"structure_seed_{xyz_digest.removeprefix('sha256:')}.xyz"
     with workspace_lock(workspace):
+        require_dispatch_allowed(workspace, normalized["node_id"])
         node = _node_record(workspace, normalized["node_id"])
         if node.get("status") != "open":
             raise ComputeContractError(
@@ -232,6 +241,8 @@ def create_structure_comparison_artifact(root: str | Path, request: dict[str, An
     normalized = _validate_structure_compare_request(request)
     input_ids = [normalized["reference_artifact_id"], normalized["target_artifact_id"]]
     with workspace_lock(workspace):
+        from ts_agent.workspace.dispatch import require_dispatch_allowed
+        require_dispatch_allowed(workspace, normalized["node_id"])
         node = _node_record(workspace, normalized["node_id"])
         if node.get("status") != "open":
             raise ComputeContractError(
@@ -307,6 +318,114 @@ def create_structure_comparison_artifact(root: str | Path, request: dict[str, An
         "uncertainty": comparison["uncertainty"],
         "metrics": comparison["metrics"],
         "diagnostics": comparison["diagnostics"],
+    }
+
+
+def create_reaction_mapping_validation_artifact(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
+    """Validate an explicit atom mapping and persist a Node-owned analysis artifact."""
+
+    workspace = _workspace_root(root)
+    normalized = _validate_reaction_mapping_request(request)
+    input_ids = [
+        item["artifact_id"]
+        for side in ("reactants", "products")
+        for item in normalized[side]
+    ]
+    with workspace_lock(workspace):
+        node = _node_record(workspace, normalized["node_id"])
+        if node.get("status") != "open":
+            raise ComputeContractError(
+                f"reaction mapping validation requires an open ResearchNode: {normalized['node_id']}"
+            )
+        from ts_agent.workspace.dispatch import require_dispatch_allowed
+        require_dispatch_allowed(workspace, normalized["node_id"])
+        # Roles are ordered species occurrences; a catalyst or a repeated
+        # stoichiometric species may bind the same immutable XYZ more than once.
+        artifacts = resolve_artifact_ids(workspace, list(dict.fromkeys(input_ids)))
+        artifact_by_id = {item["artifact_id"]: item for item in artifacts}
+        atom_sides: dict[str, list[list[str]]] = {"reactants": [], "products": []}
+        input_bindings: dict[str, list[dict[str, Any]]] = {"reactants": [], "products": []}
+        for side in ("reactants", "products"):
+            for item in normalized[side]:
+                artifact = artifact_by_id[item["artifact_id"]]
+                if "xyz" not in artifact["input_roles"]:
+                    raise ComputeContractError(
+                        f"reaction mapping {side} artifact must be XYZ: {artifact['artifact_id']}"
+                    )
+                path = workspace.joinpath(*PurePosixPath(artifact["path"]).parts)
+                try:
+                    symbols, _coordinates = read_xyz(path)
+                    if len(symbols) > 4096:
+                        raise ValueError("at most 4096 atoms per species are supported")
+                except (OSError, TypeError, ValueError) as exc:
+                    raise ComputeContractError(
+                        f"reaction mapping could not read {side} artifact {artifact['artifact_id']}: {exc}"
+                    ) from exc
+                atom_sides[side].append(list(symbols))
+                input_bindings[side].append(_comparison_input_binding(artifact))
+            if sum(len(atoms) for atoms in atom_sides[side]) > 4096:
+                raise ComputeContractError(f"reaction mapping {side} exceeds 4096 total atoms")
+
+        validation = validate_atom_mapping(
+            atom_sides["reactants"], atom_sides["products"], normalized["mapping"]
+        )
+        candidates = mapping_observation_candidates(validation, normalized["node_id"], artifacts)
+        document = {
+            "schema_version": REACTION_MAPPING_VALIDATE_ARTIFACT_SCHEMA_VERSION,
+            "capability": "reaction.mapping.validate",
+            "capability_version": "1",
+            "operation": "validate",
+            "node_id": normalized["node_id"],
+            "inputs": input_bindings,
+            "mapping": normalized["mapping"],
+            "verdict": validation["verdict"],
+            "complete": validation["complete"],
+            "valid": validation["valid"],
+            "mapping_count": validation["mapping_count"],
+            "atom_counts": {
+                "reactants": validation["reactant_atom_count"],
+                "products": validation["product_atom_count"],
+            },
+            "element_counts": validation["element_counts"],
+            "pairs": validation["pairs"],
+            "unmapped": validation["unmapped"],
+            "diagnostics": validation["diagnostics"],
+            "observation_candidates": candidates,
+            "provenance": {
+                "producer": "ts_agent.reaction.mapping.validate_atom_mapping",
+                "producer_version": "1",
+                "input_digests": [artifact_by_id[item_id]["sha256"] for item_id in input_ids],
+            },
+        }
+        payload = (json.dumps(document, indent=2, sort_keys=True, ensure_ascii=True) + "\n").encode("utf-8")
+        digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+        output_path = _node_analysis_directory(workspace, normalized["node_id"]) / (
+            f"reaction_mapping_validate_{digest.removeprefix('sha256:')}.json"
+        )
+        created = _write_artifact_payload(output_path, payload)
+        artifact = _artifact_for_path(workspace, output_path, _node_ids(workspace))
+
+    return {
+        "schema_version": REACTION_MAPPING_VALIDATE_RESULT_SCHEMA_VERSION,
+        "operation": "validate",
+        "capability": "reaction.mapping.validate",
+        "capability_version": "1",
+        "node_id": normalized["node_id"],
+        "created": created,
+        "input_artifact_ids": input_ids,
+        "analysis_artifact": artifact,
+        "candidate_refs": [
+            {"artifactId": artifact["artifact_id"], "candidateId": item["candidate_id"],
+             "conceptId": item["concept_id"], "value": item["value"]}
+            for item in candidates["candidates"]
+        ],
+        "verdict": validation["verdict"],
+        "complete": validation["complete"],
+        "valid": validation["valid"],
+        "mapping_count": validation["mapping_count"],
+        "element_counts": validation["element_counts"],
+        "diagnostics": validation["diagnostics"][:32],
+        "diagnostic_count": len(validation["diagnostics"]),
     }
 
 
@@ -473,6 +592,45 @@ def _validate_import_request(request: dict[str, Any]) -> dict[str, Any]:
     elif charge is not None or multiplicity is not None:
         raise ComputeContractError("xTB control artifact does not accept charge or multiplicity")
     return dict(request)
+
+
+def _validate_reaction_mapping_request(request: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(request, dict):
+        raise ComputeContractError("reaction mapping request must be an object")
+    required = {"schema_version", "node_id", "reactants", "products", "mapping"}
+    missing = sorted(required - set(request))
+    unexpected = sorted(set(request) - required)
+    if missing or unexpected:
+        raise ComputeContractError(
+            f"reaction mapping fields are invalid: missing={missing}; unexpected={unexpected}"
+        )
+    if request.get("schema_version") != REACTION_MAPPING_VALIDATE_REQUEST_SCHEMA_VERSION:
+        raise ComputeContractError(
+            "reaction mapping schema_version must be "
+            f"{REACTION_MAPPING_VALIDATE_REQUEST_SCHEMA_VERSION}"
+        )
+    node_id = request.get("node_id")
+    if not isinstance(node_id, str) or NODE_ID.fullmatch(node_id) is None:
+        raise ComputeContractError("reaction mapping node_id is invalid")
+    normalised: dict[str, Any] = {"schema_version": request["schema_version"], "node_id": node_id}
+    for side in ("reactants", "products"):
+        values = request.get(side)
+        if not isinstance(values, list) or not 1 <= len(values) <= 64:
+            raise ComputeContractError(f"reaction mapping {side} must contain 1 to 64 species")
+        rows: list[dict[str, str]] = []
+        for index, value in enumerate(values):
+            if not isinstance(value, dict) or set(value) != {"artifact_id"}:
+                raise ComputeContractError(f"reaction mapping {side}[{index}] must contain artifact_id only")
+            artifact_id = value["artifact_id"]
+            if not isinstance(artifact_id, str) or not re.fullmatch(r"^art_[0-9a-f]{24}$", artifact_id):
+                raise ComputeContractError(f"reaction mapping {side}[{index}] artifact_id is invalid")
+            rows.append({"artifact_id": artifact_id})
+        normalised[side] = rows
+    mapping = request.get("mapping")
+    if not isinstance(mapping, list) or len(mapping) > 4096:
+        raise ComputeContractError("reaction mapping mapping must be a list of at most 4096 entries")
+    normalised["mapping"] = mapping
+    return normalised
 
 
 def _validate_structure_seed_request(request: dict[str, Any]) -> dict[str, Any]:

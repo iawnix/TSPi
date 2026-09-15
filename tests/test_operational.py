@@ -93,6 +93,7 @@ def test_operational_snapshot_separates_activities_reviews_and_controls(tmp_path
     assert report["unresolved_controls"][0]["intent_id"] == "calc_1"
     assert report["pending_controls"] == []
     assert report["operational_summary"] == {
+        "paused_node_count": 0,
         "tracked_file_count": 8,
         "calculation_file_count": 2,
         "activity_count": 1,

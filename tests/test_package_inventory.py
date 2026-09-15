@@ -27,7 +27,7 @@ def test_required_release_members_are_in_the_npm_allowlist() -> None:
     assert "scripts/package_inventory.py" in package_inventory.REQUIRED_RUNTIME_FILES
     assert "requirements-runtime.txt" in package_inventory.REQUIRED_TARBALL_FILES
     assert "requirements-runtime.txt" in package_inventory.REQUIRED_RUNTIME_FILES
-    assert "contracts/ts-phone/versions.json" in package_inventory.PACKAGE_FILES
+    assert not any(path.startswith("contracts/ts-phone/") for path in package_inventory.PACKAGE_FILES)
     assert "contracts/ts-web/component-manifest.schema.json" in package_inventory.PACKAGE_FILES
     assert "contracts/ts-web/provider-request.schema.json" in package_inventory.REQUIRED_TARBALL_FILES
     assert "contracts/ts-web/provider-response.schema.json" in package_inventory.REQUIRED_RUNTIME_FILES
@@ -35,5 +35,5 @@ def test_required_release_members_are_in_the_npm_allowlist() -> None:
 
 
     assert "contracts/ts-render/curve-data.schema.json" in package_inventory.REQUIRED_RUNTIME_FILES
-    assert "apps/host/system-prompt.mjs" in package_inventory.REQUIRED_RUNTIME_FILES
-    assert set(package_inventory.HOST_APP_FILES) <= package_inventory.REQUIRED_RUNTIME_FILES
+    assert "apps/app-server/system-prompt.mjs" in package_inventory.REQUIRED_RUNTIME_FILES
+    assert set(package_inventory.APP_SERVER_FILES) <= package_inventory.REQUIRED_RUNTIME_FILES

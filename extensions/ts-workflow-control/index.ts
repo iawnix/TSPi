@@ -34,7 +34,7 @@ const PACKAGE_POLICY_SOURCE = fileURLToPath(new URL("../shared/package-source-po
 
 const GRAPH_CONTEXT_MODES = ["frontier", "claim", "node", "subgraph", "finding", "proof", "delta"] as const;
 const CONTEXT_MODES = [...GRAPH_CONTEXT_MODES, "locate", "artifacts", "capabilities", "change_contract"] as const;
-const CAPABILITY_KINDS = ["compute", "proof"] as const;
+const CAPABILITY_KINDS = ["compute", "analysis", "proof"] as const;
 // Keep the public envelope small and stable. Detailed field and cross-record
 // validation remains in the Python kernel.  Operation names intentionally use
 // a constrained string instead of a copied enum: the on-demand
@@ -107,9 +107,10 @@ export default function (pi: ExtensionAPI) {
     const packagePolicy = packageSourceSystemPrompt();
     let extensionText = packagePolicy;
     let currentState = "";
-    if (root && process.env.TS_PHONE_WORKER === "1") {
-      // A queued turn can resume history older than another session's decisions.
-      // Refresh only Host Workers, and keep this ephemeral snapshot out of history.
+    if (root) {
+      // A queued turn can resume history older than the current workspace state.
+      // Keep this bounded snapshot ephemeral; canonical writes still go through
+      // the guarded TSPi tools.
       try {
         const projection = await runWorkspaceJson(pi, "context", root, ["--mode", "frontier"]);
         const summary = buildContextSummary(projection, { maxItems: 2 });
@@ -118,8 +119,6 @@ export default function (pi: ExtensionAPI) {
       } catch {
         currentState = "\n\nCurrent workspace snapshot is unavailable. Read ts_state before any scientific write; do not treat session history as current workspace state.";
       }
-    }
-    if (root) {
       extensionText += `\n\nTS workspace active: ${root}. Use ${TS_PUBLIC_TOOL_NAMES.state} for bounded context; only ${TS_PUBLIC_TOOL_NAMES.change} mutates canonical science. Root owns questions, hypotheses, capability choice, interpretation, and the next step; the kernel validates but never routes science. Register predictions and falsifiers before interpreting results. Give each changed question, principal deliverable, branch, backtrack, or synthesis goal a distinct ResearchNode; keep same-question retries inside that Node. When opening the active Node, include set_focus with exact claimRefs/nodeRefs (query the change contract first); never guess claimRef/nodeRef. Parser output is only a candidate until Root explicitly records an Observation. Query ${TS_PUBLIC_TOOL_NAMES.state} mode=change_contract before using an unfamiliar change operation; never guess its fields.${currentState}`;
     }
     const emitted = `${event.systemPrompt}\n\n${extensionText}`;
@@ -182,7 +181,8 @@ export default function (pi: ExtensionAPI) {
         );
         return toolText(JSON.stringify(locator, null, 2), { locator });
       }
-      if (params.query !== undefined) {
+      const analysisQuery = mode === "capabilities" && params.capabilityKind === "analysis";
+      if (params.query !== undefined && !analysisQuery) {
         throw new Error("workspace context query is only valid with mode=locate");
       }
       if (mode === "artifacts") {
@@ -192,12 +192,25 @@ export default function (pi: ExtensionAPI) {
       }
       if (mode === "capabilities") {
         const capabilityKind = params.capabilityKind;
-        if (!capabilityKind) throw new Error("state mode=capabilities requires capabilityKind=compute or proof");
+        if (!capabilityKind) throw new Error("state mode=capabilities requires capabilityKind=compute, analysis, or proof");
         if (capabilityKind === "compute") {
           if (params.templateId !== undefined || params.templateVersion !== undefined) {
             throw new Error("compute capabilities do not accept proof template selectors");
           }
           const capabilities = await runComputeJson(pi, "capabilities", root, [], signal);
+          return toolText(JSON.stringify(capabilities, null, 2), { capabilities });
+        }
+        if (capabilityKind === "analysis") {
+          if (params.templateId !== undefined || params.templateVersion !== undefined) {
+            throw new Error("analysis capabilities do not accept proof template selectors");
+          }
+          const selector = params.query?.split("@");
+          if (selector && (selector.length > 2 || !selector[0] || (selector.length === 2 && !selector[1]))) {
+            throw new Error("analysis query must be <capability> or <capability>@<version>");
+          }
+          const capabilities = selector
+            ? await runComputeJson(pi, "resolve-analysis-capability", root, ["--capability", selector[0], "--version", selector[1] || "1"], signal)
+            : await runComputeJson(pi, "analysis-capabilities", root, [], signal);
           return toolText(JSON.stringify(capabilities, null, 2), { capabilities });
         }
         if ((params.templateId === undefined) !== (params.templateVersion === undefined)) {

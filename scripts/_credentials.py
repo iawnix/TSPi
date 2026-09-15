@@ -17,7 +17,6 @@ TOKEN_BYTES = 32
 def provision_service_credentials(
     install_root: Path,
     *,
-    with_phone: bool,
     with_web: bool,
 ) -> dict[str, dict[str, str]]:
     """Create missing service credentials and preserve valid existing values."""
@@ -26,14 +25,6 @@ def provision_service_credentials(
         raise ValueError(f"installation root cannot be a symbolic link: {expanded_root}")
     root = expanded_root.resolve()
     specifications: list[tuple[str, Path]] = []
-    if with_phone:
-        phone_state = root / ".pi" / "ts-phone-state"
-        specifications.extend(
-            (
-                ("phone_http", phone_state / "auth.token"),
-                ("phone_bridge", phone_state / "bridge.secret"),
-            )
-        )
     if with_web:
         specifications.append(("web_http", root / ".pi" / "ts-web" / "auth.token"))
     if not specifications:

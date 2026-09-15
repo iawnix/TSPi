@@ -231,6 +231,7 @@ def _workspace_route(row: dict[str, Any], route: str, query: dict[str, list[str]
             "operational_summary": view["operational_summary"],
             "deterministic_activities": view["deterministic_activities"],
             "activity_summaries": view["activity_summaries"],
+            "node_dispatch": view.get("node_dispatch", []),
             "activity_integrity_findings": view["activity_integrity_findings"],
             "operational_integrity_findings": view.get("operational_integrity_findings", []),
             "calculation_attempt_integrity_findings": view["calculation_attempt_integrity_findings"],

@@ -74,6 +74,7 @@ def build_report_package(
             "excluded_activity_refs": context["excluded_activity_refs"],
         })
         _write_json(staging / "observation_index.json", {"observations": context["observations"]})
+        _write_json(staging / "scientific_analyses.json", context.get("scientific_analyses", {}))
         _write_json(staging / "validation.json", {
             "specs": context["proof_specs"],
             "results": context["validation_results"],
@@ -331,6 +332,8 @@ def render_final_report(context: dict[str, Any]) -> str:
         lines.append("- No historical acceptance remains current at this workspace revision.")
 
     lines.extend(["", "## Operational Follow-up", ""])
+    for row in context.get("node_dispatch", []):
+        lines.append(f"- Node `{row['node_id']}` dispatch: {'paused' if row.get('paused') else 'resumed'}; {_escape(row.get('rationale', row.get('integrity_error', '')))}")
     if context["unresolved_controls"]:
         lines.append(f"- {len(context['unresolved_controls'])} unresolved compute control record(s) remain.")
     if context["pending_review_dispositions"]:
@@ -360,6 +363,38 @@ def render_final_report(context: dict[str, Any]) -> str:
         "",
         "The Root Agent owns research strategy. The Research Kernel owns canonical mutation, provenance, frozen validation, and acceptance.",
     ])
+    analyses = context.get("scientific_analyses", {})
+    if analyses.get("analyses"):
+        lines.extend(["", "## Scientific Analysis Evidence", "", "All indexed analyses are shown; inclusion does not imply Claim acceptance.", "",
+                      "| Node | Capability | Verdict | Source | Observations |", "| --- | --- | --- | --- | --- |"])
+        for row in analyses["analyses"]:
+            lines.append(f"| `{row['node_id']}` | `{row['capability']}@{row['version']}` | {row['verdict']} | [{row['artifact_id']}](../../{row['path']}) | {_escape(', '.join(row.get('observation_refs', [])))} |")
+        lines.extend(["", "### Energies and Rates", "", "| Node | Quantity | Value | Unit | Conditions and method | Source |", "| --- | --- | --- | --- | --- | --- |"])
+        for row in analyses["analyses"]:
+            data = row["summary"]
+            quantities = [(data.get("quantity"), data.get("value"), data.get("unit"))] if "value" in data else []
+            if row["capability"] == "barrier.evaluate":
+                quantities += [(key, data.get(key), data.get("unit")) for key in ("forward", "reverse", "reaction")]
+            if row["capability"] == "kinetics.tst":
+                quantities += [("rate constant", data.get("rate_constant"), data.get("rate_constant_unit")), ("reaction rate", data.get("rate_molar_s"), "mol/L/s")]
+            for quantity, value, unit in quantities:
+                lines.append(f"| `{row['node_id']}` | {_escape(str(quantity))} | {_escape(str(value))} | {_escape(str(unit))} | {_escape(json.dumps({'conditions': data.get('conditions'), 'methods': data.get('methods')}, ensure_ascii=False))} | [{row['artifact_id']}](../../{row['path']}) |")
+        for row in analyses["analyses"]:
+            data = row["summary"]
+            if data.get("fractions"):
+                lines.extend(["", f"Initial branching from [{row['artifact_id']}](../../{row['path']}):", "",
+                              "| Rate evidence | Fraction |", "| --- | --- |"])
+                for rate_id, fraction in zip(data.get("rate_artifact_ids", []), data["fractions"]):
+                    lines.append(f"| `{rate_id}` | {fraction:.8g} |")
+                lines.extend(["", "Assumptions: " + _escape(json.dumps(data.get("assumptions", {}), ensure_ascii=False)),
+                              "", "These are initial branch weights, not general network yields."])
+            if data.get("steps"):
+                lines.extend(["", f"Network from [{row['artifact_id']}](../../{row['path']}):", "", "| Step | Reactants | Products | Reversible |", "| --- | --- | --- | --- |"])
+                for step in data["steps"]:
+                    sides = [" + ".join(f"{r['coefficient']} {r['species']}" for r in step[side]) for side in ("reactants", "products")]
+                    lines.append(f"| `{step['step_key']}` | {_escape(sides[0])} | {_escape(sides[1])} | {step['reversible']} |")
+        if analyses.get("omitted"):
+            lines.append(f"\n{analyses['omitted']} additional analyses are available in the workspace artifact index.")
     return "\n".join(lines) + "\n"
 
 

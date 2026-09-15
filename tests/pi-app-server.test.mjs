@@ -10,7 +10,7 @@ const sourceRoot = process.env.TSPI_PI_SOURCE;
 
 async function startNativeServer(root) {
   const child = spawn(process.execPath, [
-    "apps/host/pi-app-server.mjs", "server", "--source-root", sourceRoot,
+    "apps/app-server/pi-app-server.mjs", "server", "--source-root", sourceRoot,
     "--directory", join(root, "server"), "--workspace", root, "--session-dir", join(root, "sessions"),
   ], {
     cwd: process.cwd(), env: { ...process.env, PI_EXPERIMENTAL: "1", PI_OFFLINE: "1", PI_CODING_AGENT_DIR: join(root, "agent") },
@@ -61,7 +61,7 @@ async function stopNativeServer(child) {
 async function runNativeClient(root, ...arguments_) {
   return await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [
-      "apps/host/pi-app-server.mjs", "client", "--source-root", sourceRoot, ...arguments_,
+      "apps/app-server/pi-app-server.mjs", "client", "--source-root", sourceRoot, ...arguments_,
     ], {
       cwd: process.cwd(),
       env: { ...process.env, PI_EXPERIMENTAL: "1", PI_OFFLINE: "1", PI_CODING_AGENT_DIR: join(root, "agent") },
@@ -82,7 +82,7 @@ test("native Pi app server rejects mode-incompatible arguments", { skip: !source
   const cases = [
     {
       args: ["server", "--source-root", sourceRoot, "--workspace", process.cwd(), "--connect", "unix:///tmp/pi.sock"],
-      message: "--connect is not valid in server mode",
+      message: "The experimental server command does not support existing CLI options yet",
     },
     {
       args: ["client", "--source-root", sourceRoot, "--workspace", process.cwd()],
@@ -90,7 +90,7 @@ test("native Pi app server rejects mode-incompatible arguments", { skip: !source
     },
   ];
   for (const fixture of cases) {
-    const result = spawnSync(process.execPath, ["apps/host/pi-app-server.mjs", ...fixture.args], {
+    const result = spawnSync(process.execPath, ["apps/app-server/pi-app-server.mjs", ...fixture.args], {
       cwd: process.cwd(),
       encoding: "utf8",
     });
@@ -104,7 +104,7 @@ test("native Pi app server starts from the pinned source entrypoint", { skip: !s
   await mkdir(join(root, "agent"), { recursive: true });
   await writeFile(join(root, "agent", "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test-key" } }), { mode: 0o600 });
   const child = spawn(process.execPath, [
-    "apps/host/pi-app-server.mjs", "server", "--source-root", sourceRoot,
+    "apps/app-server/pi-app-server.mjs", "server", "--source-root", sourceRoot,
     "--directory", join(root, "server"), "--workspace", root, "--session-dir", join(root, "sessions"),
   ], {
     cwd: process.cwd(), env: { ...process.env, PI_EXPERIMENTAL: "1", PI_OFFLINE: "1", PI_CODING_AGENT_DIR: join(root, "agent") },
@@ -144,7 +144,7 @@ test("native Pi app server starts from the pinned source entrypoint", { skip: !s
     const session = await services.use(SessionManagement).create({ id: "cli-attach" }, backgroundContext);
     const client = await new Promise((resolve, reject) => {
       const result = spawn(process.execPath, [
-        "apps/host/pi-app-server.mjs", "client", "--source-root", sourceRoot,
+        "apps/app-server/pi-app-server.mjs", "client", "--source-root", sourceRoot,
         "--connect", `unix://${socket}`, "--session-id", session.sessionId,
       ], {
         cwd: process.cwd(),

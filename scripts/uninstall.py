@@ -21,11 +21,14 @@ except ImportError:
 
 
 SERVICE_NAMES = (
-    "ts-phone-tspi.service",
+    "ts-app-server-tspi@.service",
     "ts-web-tspi.service",
+    # Remove service units left by pre-App-Server installations.
+    "ts-phone-tspi.service",
     "ts-phone.service",
     "ts-web.service",
 )
+# Retired Phone entrypoints are included only so upgrades can remove them.
 ENTRYPOINTS = ("TSPi", "TSWeb", "TSPhoneCtl", "TSPhoneServer")
 
 
@@ -154,6 +157,17 @@ def stop_services(args: argparse.Namespace, root: Path) -> list[str]:
         for name in SERVICE_NAMES:
             if not service_belongs_to_root(name, root, scope):
                 continue
+            if name == "ts-app-server-tspi@.service":
+                for instance in app_server_instances(command):
+                    subprocess.run(
+                        [*command, "disable", "--now", instance],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
+                    stopped.append(f"{scope}:{instance}")
+                    scope_stopped = True
+                continue
             probe = subprocess.run([*command, "is-enabled", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
             active = subprocess.run([*command, "is-active", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
             if probe.returncode != 0 and active.returncode != 0:
@@ -164,6 +178,24 @@ def stop_services(args: argparse.Namespace, root: Path) -> list[str]:
         if scope_stopped:
             subprocess.run([*command, "daemon-reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     return stopped
+
+
+def app_server_instances(command: list[str]) -> list[str]:
+    completed = subprocess.run(
+        [*command, "list-units", "--all", "--plain", "--no-legend", "ts-app-server-tspi@*.service"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return []
+    names = []
+    for line in completed.stdout.splitlines():
+        name = line.split(None, 1)[0] if line.strip() else ""
+        if name.startswith("ts-app-server-tspi@") and name.endswith(".service") and "/" not in name:
+            names.append(name)
+    return names
 
 
 def remove_service_units(args: argparse.Namespace, root: Path) -> list[str]:
@@ -246,6 +278,8 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
             root / ".pi/packages/tspi",
             root / ".pi/runtime-cache",
             root / ".pi/logs",
+            root / ".pi/session-guards",
+            # Remove state left by the retired shared session process.
             root / ".pi/session-host",
             root / ".pi/ts-web-state",
             root / ".pi/ts-phone/ts-phone.service",

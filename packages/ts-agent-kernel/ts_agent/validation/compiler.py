@@ -32,7 +32,6 @@ def compile_proof_spec(
     if ("template" in request) == ("definition" in request):
         raise ProofSpecCompileError("ProofSpec request requires exactly one of template or definition")
     dimension = _nonempty_string(request.get("dimension"), "dimension", 128)
-    title = _nonempty_string(request.get("title"), "title", 300)
 
     template_ref = None
     template_digest = None
@@ -55,6 +54,8 @@ def compile_proof_spec(
         template_digest = sha256_json(template)
     else:
         definition = deepcopy(request["definition"])
+
+    title = _nonempty_string(request.get("title", template.get("title") if template_ref else None), "title", 300)
 
     normalized = _normalize_definition(definition, registry)
     spec = {

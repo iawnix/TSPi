@@ -22,8 +22,6 @@ def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> P
                 "package": {"name": "@iawnix/tspi", "version": version},
                 "components": {
                     "agent": {"release_id": "test-agent", "version": version},
-                    "web": {},
-                    "phone": {},
                 },
                 "archive": {"filename": "test.tgz", "sha256": "0" * 64, "size_bytes": 1},
                 "created_at_utc": "2026-08-27T00:00:00+00:00",

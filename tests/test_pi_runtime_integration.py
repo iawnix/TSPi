@@ -30,6 +30,8 @@ EXPECTED_TOOLS = {
     "ts_remote",
     "ts_seed",
     "ts_compare",
+    "ts_analyze",
+    "ts_manage",
     "ts_import",
     "ts_render",
     "ts_report",

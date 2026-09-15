@@ -23,7 +23,8 @@ The current problems are:
    expressed as a simple installation contract.
 3. The Web client needs an independent source and release boundary while the
    TSPi provider retains ownership of private workspace and operational data.
-4. The Phone bridge protocol is represented in more than one source tree.
+4. The former Phone bridge duplicated the session transport and authority
+   boundary instead of using Pi's native App Server protocol.
 5. Public Skill terminology and internal implementation terminology are not
    governed by one vocabulary policy.
 6. The Review runtime has good isolation, but `ts-reviewers` is not yet a
@@ -40,10 +41,10 @@ contracts are explicit.
 | Area | Current fact | Consequence |
 | --- | --- | --- |
 | TSPi | Owns the kernel, Pi package, Web implementation, release assembly, and installation boundary | It is the natural required core repository and product release owner |
-| `ts-phone` | Independent repository with API, events, bridge schemas, broker, mobile client, and component release tooling | It can remain independently developed and become an optional installed component |
+| `ts-phone` | Independent repository with the Flutter presentation client and mobile release tooling | It remains independently developed; its runtime dependency is the Pi App Server protocol |
 | `ts-web` | Client, registry, server, and static UI under `components/ts-web/`; it consumes the TSPi provider through `ts-web-provider/1` | The component can be archived and installed independently from Agent |
-| Phone protocol | `ts-phone` publishes `ts-phone-api/4`, `ts-phone-events/3`, and `ts-phone-bridge/3`; TSPi also contains a hand-written Bridge type/parser | The wire contract currently has duplicate ownership |
-| Release boundary | TSPi emits `tspi-package-release/4` with required Agent and optional independent Web or Phone descriptors | The schema bump separates the Web archive contract from the Agent payload |
+| Phone transport | TS Phone speaks Pi protocol v8 through the authenticated Radius session relay; no TSPi Phone server or bridge is installed | Pi owns the session transport and TS Phone owns only its presentation adapter |
+| Release boundary | TSPi emits `tspi-package-release/4` with required Agent and optional independent Web descriptor | The suite contains the runtime; TS Phone is released separately |
 | Review | One isolated advisory Review runtime exists; no reviewer pool, role selection, aggregation, or conflict protocol exists | Improve the contract before adding more reviewer prompts or agents |
 | Testing | `scripts/test_source.py` builds a wheel and temporary overlay before running Python tests | Fast edit feedback and release-backed validation need separate commands |
 
@@ -61,9 +62,10 @@ The TSPi repository owns:
 - core Pi extensions and lifecycle entrypoints;
 - component compatibility checks, suite assembly, and installation.
 
-`ts-phone` remains a separate repository and an optional TSPi component. It
-owns the Phone broker, mobile applications, Phone-specific persistence,
-deployment, signing, release artifacts, and Phone wire schemas.
+`ts-phone` remains a separate repository and an optional client distribution. It
+owns the mobile application, Phone-specific presentation state, deployment,
+signing, and release artifacts. It does not ship a session broker or redefine
+the Pi wire protocol.
 
 `ts-web` is an optional component with its own source boundary under
 `components/ts-web/`. It owns the browser UI, HTTP transport, registry client,
@@ -78,8 +80,8 @@ TSPi product
 +-- TSPi Core repository             required
 |     kernel, Root runtime, provider, suite installer
 |
-+-- ts-phone repository              optional component
-|     broker, mobile client, Phone protocols
++-- ts-phone repository              optional client
+|     mobile client and release tooling
 |
 `-- components/ts-web/                 optional component source
       projection client and browser UI
@@ -121,8 +123,8 @@ Compatibility rules:
 - compatible minor and patch changes must be defined by the protocol contract,
   not guessed from package versions;
 - capabilities are descriptive and cannot grant scientific mutation authority;
-- an omitted Phone or Web descriptor means the component is unavailable, not
-  silently embedded from a source path;
+- an omitted Web descriptor means the component is unavailable, not silently
+  embedded from a source path; TS Phone is never embedded in the suite;
 - installation selects content only. Component service activation remains an
   explicit lifecycle operation.
 
@@ -134,18 +136,11 @@ scientific or control protocol.
 
 ### 3. Protocol ownership
 
-The Phone repository is the canonical source for:
-
-- `ts-phone-api`;
-- `ts-phone-events`;
-- `ts-phone-bridge`;
-- their JSON Schemas, OpenAPI document, version set, and generated client
-  bindings where applicable.
-
-TSPi owns the adapter policy that maps a valid Phone command to TSPi authority,
-session, and workspace behavior. TSPi may retain a generated or vendored
-consumer artifact for local typechecking, but it must not hand-maintain a
-second semantic definition of the same record.
+Pi owns the App Server protocol, Chord service contracts, and Radius relay
+transport. TS Phone owns a typed presentation adapter that maps native Pi
+session, transcript, model, prompt, and abort services into its mobile UI. It
+must not introduce a second broker, event journal, or semantic definition of
+the App Server records.
 
 TSPi owns the semantic source for the read-only workspace projection consumed
 by Web. The projection is a public, versioned, JSON boundary. The current
@@ -206,8 +201,9 @@ move one boundary at a time while retaining stable entrypoint shims.
 
 The first staged move places the Python kernel under
 `packages/ts-agent-kernel/` and the TypeScript runtime under
-`packages/ts-agent-runtime/`. Host and Terminal processes live under `apps/`.
-Stable package entrypoints and release manifests now point at these explicit
+`packages/ts-agent-runtime/`. The native App Server lives under `apps/`; the
+terminal is Pi's client mode and TS Phone is an external Radius client. Stable
+package entrypoints and release manifests now point at these explicit
 locations. The remaining `scripts/` transition is intentionally separate so
 installed command names stay stable while mechanisms move into named tools.
 

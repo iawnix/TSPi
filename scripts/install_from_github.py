@@ -74,17 +74,6 @@ def checkout_github(repo: str, ref: str, destination: Path) -> str:
     return commit
 
 
-def check_phone_protocols(source: Path, tspi: Path) -> dict[str, str]:
-    actual = json.loads((source / "packages/protocol/versions.json").read_text(encoding="utf-8"))
-    expected = json.loads((tspi / "contracts/ts-phone/versions.json").read_text(encoding="utf-8"))
-    if actual != expected:
-        raise ValueError("TS Phone protocol versions do not match the selected TSPi version")
-    for name in ("bridge.schema.json", "events.schema.json", "openapi.yaml"):
-        if (source / "packages/protocol" / name).read_bytes() != (tspi / "contracts/ts-phone" / name).read_bytes():
-            raise ValueError(f"TS Phone {name} does not match the selected TSPi version")
-    return actual
-
-
 def install_uninstaller(install_root: Path, source_root: Path) -> Path:
     destination = install_root.expanduser().resolve()
     if destination.exists() or destination.is_symlink():
@@ -132,9 +121,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--resolved-commit", help=argparse.SUPPRESS)
     parser.add_argument("--install-root", required=True)
     parser.add_argument("--without-web", action="store_true", help="Omit the ts-web component")
-    parser.add_argument("--phone-repo")
-    parser.add_argument("--phone-ref")
-    parser.add_argument("--phone-server-root", type=Path, help="Prepared Phone server to check before installing TSPi.")
     parser.add_argument("--conda")
     parser.add_argument("--conda-root")
     parser.add_argument("--progress", action="store_true", help=argparse.SUPPRESS)
@@ -145,11 +131,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.resolved_commit:
             validate_commit(args.resolved_commit)
         validate_repo(args.repo)
-        if bool(args.phone_repo) != bool(args.phone_ref):
-            raise ValueError("--phone-repo and --phone-ref must be supplied together")
-        if args.phone_repo:
-            validate_repo(args.phone_repo)
-            validate_ref(args.phone_ref)
         with tempfile.TemporaryDirectory(prefix="tspi-github-") as temp:
             checkout = Path(temp) / "tspi"
             progress_message = (
@@ -164,26 +145,11 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError(
                     f"locked TSPi commit mismatch: expected {args.resolved_commit}, checked out {commit}"
                 )
-            phone_server = args.phone_server_root or Path(args.install_root).expanduser() / ".pi/ts-phone/current"
-            if args.phone_server_root or phone_server.exists():
-                emit_progress(args.progress, "Checking TSPi and TS Phone compatibility")
-                if not (checkout / "apps/host/phone-component.mjs").is_file():
-                    raise ValueError("Selected TSPi revision does not support Phone source installation; select a newer revision")
-                check_phone_protocols(phone_server, checkout)
             digest = tree_digest(checkout)
             output = checkout / "dist" / "package"
             build = [sys.executable, "scripts/build_package.py", "--output-dir", str(output), "--json"]
             if args.without_web:
                 build.append("--without-web")
-            phone_checkout = None
-            phone_commit = None
-            if args.phone_repo:
-                phone_checkout = Path(temp) / "ts-phone"
-                emit_progress(args.progress, "Resolving the selected TS Phone revision")
-                phone_commit = checkout_github(args.phone_repo, args.phone_ref, phone_checkout)
-                phone_output = phone_checkout / "dist" / "component"
-                phone_result = json.loads(run([sys.executable, "deploy/build-component-release.py", "--output-dir", str(phone_output), "--json"], cwd=phone_checkout))
-                build.extend(["--phone-manifest", phone_result["manifest"]])
             emit_progress(args.progress, "Building the validated TSPi package")
             built = json.loads(run(build, cwd=checkout))
             install = [sys.executable, "scripts/install_package.py", "--manifest", built["manifest"], "--archive", built["archive"], "--install-root", args.install_root, "--json"]
@@ -197,11 +163,10 @@ def main(argv: list[str] | None = None) -> int:
             installed = json.loads(run(install, cwd=checkout))
             provenance = Path(args.install_root).expanduser().resolve() / ".pi" / "packages" / "tspi" / "source-provenance.json"
             provenance.parent.mkdir(parents=True, exist_ok=True)
-            provenance.write_text(json.dumps({"schema_version": "tspi-source-provenance/1", "repo": args.repo, "ref": args.ref, "commit": commit, "tree_digest": digest, "phone_repo": args.phone_repo, "phone_ref": args.phone_ref, "phone_commit": phone_commit, "installed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            provenance.write_text(json.dumps({"schema_version": "tspi-source-provenance/1", "repo": args.repo, "ref": args.ref, "commit": commit, "tree_digest": digest, "installed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             result = {
                 "commit": commit,
                 "tree_digest": digest,
-                "phone_commit": phone_commit,
                 "manifest": built["manifest"],
                 "release_id": installed.get("release_id"),
                 "package_root": installed.get("package_root"),

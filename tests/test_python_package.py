@@ -106,11 +106,17 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
             "-c",
             (
                 "import importlib.metadata,json; from pathlib import Path; import ts_agent; "
+                "from ts_agent.analysis.engine import Inputs,evaluate; "
+                "reaction=evaluate('reaction.parse',Inputs({},{}),{'reaction_smiles':'CCl.[OH-]>>CO.[Cl-]','multiplicities':{'reactants':[1,1],'products':[1,1]}}); "
                 "root=Path(ts_agent.__file__).resolve().parent; "
                 "print(json.dumps({'version': importlib.metadata.version('ts-agent-kernel'), "
                 "'schema': (root/'compute/contracts/calculation_request.schema.json').is_file(), "
                 "'candidate_schema': (root/'workspace/contracts/observation_candidates.schema.json').is_file(), "
                 "'candidate_module': (root/'workspace/candidates.py').is_file(), "
+                "'analysis_candidates': (root/'workspace/analysis_candidates.py').is_file(), "
+                "'reaction_mapping': (root/'reaction/mapping.py').is_file(), "
+                "'analysis_catalog': (root/'compute/analysis.py').is_file(), "
+                "'scientific_analysis': reaction['verdict'], "
                 "'projection_provider': (root/'projection/provider.py').is_file(), "
                 "'web': (root/'web/static/app.js').is_file()}))"
             ),
@@ -128,6 +134,10 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
         "schema": True,
         "candidate_schema": True,
         "candidate_module": True,
+        "analysis_candidates": True,
+        "reaction_mapping": True,
+        "analysis_catalog": True,
+        "scientific_analysis": "valid",
         "projection_provider": True,
         "web": False,
     }

@@ -77,6 +77,17 @@ def test_template_compilation_is_expanded_and_digest_bound() -> None:
     assert {check["predicate"] for check in spec["checks"]} == {"observation.equals"}
 
 
+def test_template_title_is_derived_but_inline_title_remains_explicit():
+    from ts_agent.validation.registry import load_proof_template
+    request = {"dimension": "stationary_point", "template": {"template_id": "classical-ts", "version": "1", "parameters": {"subject_ref": "calc_001"}}}
+    args = dict(proof_id="proof_1", target_claim_ref="claim_1", claim_preregistration_digest="sha256:" + "c" * 64,
+                registry=builtin_predicate_registry(), created_by_node="node_1", created_by_decision="dec_1")
+    proof = compile_proof_spec(request, **args)
+    assert proof["title"] == load_proof_template("classical-ts", "1")["title"]
+    with pytest.raises(ProofSpecCompileError, match="title"):
+        compile_proof_spec({"dimension": "stationary_point", "definition": {"checks": [], "success_policy": {}}}, **args)
+
+
 def test_gate_evaluation_passes_from_exact_semantic_observations() -> None:
     registry = builtin_predicate_registry()
     spec = _compile_classical_ts()

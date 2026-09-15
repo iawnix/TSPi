@@ -102,6 +102,22 @@ export async function runStructureCompareJson(
   return runPrivateComputeRequest(pi, "ts-structure-compare-", "structure-compare", root, request, signal);
 }
 
+export async function runAnalysisJson(
+  pi: ExtensionAPI,
+  root: string,
+  request: unknown,
+  signal?: AbortSignal,
+) {
+  return runPrivateComputeRequest(
+    pi,
+    "ts-analysis-",
+    "analyze",
+    root,
+    request,
+    signal,
+  );
+}
+
 async function runPrivateComputeRequest(
   pi: ExtensionAPI,
   temporaryPrefix: string,

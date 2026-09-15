@@ -57,7 +57,12 @@ def collect_report_context(
     operations = operational_snapshot(root_path, exclude_activity_refs=exclude_activity_refs)
     research_phases = list(documents[RESEARCH_PHASES_FILE]["phases"])
     research_nodes = list(documents[RESEARCH_NODES_FILE]["nodes"])
+    from ts_agent.analysis.projection import analysis_projection
+    analyses = analysis_projection(root_path)
+    for row in analyses["analyses"]:
+        row["observation_refs"] = [observation["observation_id"] for observation in documents[OBSERVATIONS_FILE]["observations"] if row["artifact_id"] in observation["artifact_refs"]]
     return {
+        "scientific_analyses": analyses,
         "schema_version": "ts-report-context/5",
         "workspace_root": str(root_path),
         "workspace_id": documents[WORKSPACE_FILE]["workspace_id"],
@@ -86,6 +91,7 @@ def collect_report_context(
         "current_acceptances": current_acceptances,
         "deterministic_activities": operations["deterministic_activities"],
         "activity_summaries": operations["activity_summaries"],
+        "node_dispatch": operations.get("node_dispatch", []),
         "activity_integrity_findings": operations["activity_integrity_findings"],
         "operational_integrity_findings": operations.get("operational_integrity_findings", []),
         "calculation_attempt_integrity_findings": operations.get(

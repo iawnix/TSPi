@@ -42,6 +42,16 @@ def probe_runtime_capabilities(*, require_distribution: bool = True) -> dict[str
     if AllChem.UFFOptimizeMolecule(molecule, maxIters=200) != 0:
         raise RuntimeError("RDKit UFF probe optimization did not converge")
     render = _probe_render_capabilities()
+    from ts_agent.analysis.engine import Inputs, evaluate
+    analyzed = evaluate("reaction.parse", Inputs({}, {}), {
+        "reaction_smiles": "CCl.[OH-]>>CO.[Cl-]", "multiplicities": {"reactants": [1, 1], "products": [1, 1]},
+    })
+    if analyzed["verdict"] != "valid":
+        raise RuntimeError("molecular reaction analysis probe failed")
+    from ase.thermochemistry import IdealGasThermo
+    thermal = IdealGasThermo([], geometry="monatomic", potentialenergy=0, natoms=1).get_enthalpy(298.15, verbose=False)
+    if not 0.06 < thermal < 0.07:
+        raise RuntimeError("ASE thermal-model probe failed")
 
     return {
         "schema_version": RUNTIME_PROBE_VERSION,
@@ -69,6 +79,8 @@ def probe_runtime_capabilities(*, require_distribution: bool = True) -> dict[str
             "rdkit_uff_optimize": True,
             "matplotlib_render": True,
             "xyzrender_cli": True,
+            "reaction_analysis": True,
+            "ase_thermochemistry": True,
         },
     }
 

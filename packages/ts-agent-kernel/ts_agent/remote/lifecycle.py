@@ -256,7 +256,11 @@ def collect(
     manifest: list[dict[str, Any]] = []
     output_dir.mkdir(parents=True, exist_ok=True)
     for name in artifacts:
-        transfer = download_verified(remote, config.remote_dir, name, output_dir / Path(name).name)
+        # Historical CREST scripts captured stdout under the generic name.
+        # Retain the real remote path/digest in the transfer receipt while
+        # exposing the parser's stable local filename.
+        remote_name = config.stdout_name if config.backend == "crest" and name == "crest.out" else name
+        transfer = download_verified(remote, config.remote_dir, remote_name, output_dir / Path(name).name)
         downloaded.append(name)
         manifest.append(asdict(transfer))
     return downloaded, manifest

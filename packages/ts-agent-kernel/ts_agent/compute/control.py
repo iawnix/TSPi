@@ -270,13 +270,15 @@ def preflight_calculation(
             raise ComputeContractError(f"{operation} requires an intent with dry_run=false")
         if operation == "parse":
             if artifact_ref is None:
-                raise ComputeContractError("parse preflight requires artifact_ref")
+                artifact_ref = _default_parse_ref(workspace, intent, prepared_record)
             normalized_artifact = _workspace_ref(workspace, artifact_ref, read=True)
             _require_calculation_output_ref(intent, normalized_artifact)
             artifact_ref = normalized_artifact
     status = _read_local_status(workspace, intent)
     if operation == "collect":
         _collection_program_status(workspace, intent, prepared_record, execution_policy)
+        artifact_ref = artifact_ref or _default_parse_ref(workspace, intent, prepared_record)
+        _require_calculation_output_ref(intent, artifact_ref)
     if operation in {"submit", "cancel"}:
         control = _read_control_result(workspace, intent, operation)
         if control is not None and control.get("state") == "unknown":
@@ -809,11 +811,11 @@ def cancel_calculation(
 def parse_calculation(
     root: str | Path,
     intent_id: str,
-    artifact_ref: str,
+    artifact_ref: str | None = None,
     expected_intent_digest: str | None = None,
 ) -> dict[str, Any]:
     workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
-    source_ref = _workspace_ref(workspace, artifact_ref, read=True)
+    source_ref = _workspace_ref(workspace, artifact_ref or _default_parse_ref(workspace, intent, prepared), read=True)
     _require_calculation_output_ref(intent, source_ref)
     prepared_task = prepared["prepared_task"]
     expected = {Path(ref).name for ref in prepared_task["expected_artifacts"]}
@@ -1313,7 +1315,7 @@ def _remote_job_config(
         raise ComputeContractError(f"invalid prepared ts_remote target: {exc}") from exc
     _validate_profile_resources(profile, resources)
     command = tuple(_rewritten_remote_command(prepared_task))
-    return RemoteJobConfig(
+    config = RemoteJobConfig(
         submission_id=_remote_submission_id(str(target["workspace_id"]), str(intent["intent_id"])),
         intent_id=str(intent["intent_id"]),
         intent_digest=sha256_json(intent),
@@ -1329,6 +1331,17 @@ def _remote_job_config(
         environment={str(key): str(value) for key, value in prepared_task.get("environment", {}).items()},
         stdout_name=_remote_stdout_name(prepared),
     )
+    # Preserve the script binding of CREST jobs submitted before its capture
+    # filename was fixed. Only the exact historical script digest is accepted.
+    receipt_path = workspace / _receipt_ref(intent)
+    if config.backend == "crest" and receipt_path.exists():
+        if has_symlink_component(workspace, receipt_path) or receipt_path.is_symlink():
+            raise ComputeContractError("remote receipt cannot be a symbolic link")
+        receipt = _read_object(receipt_path, "remote receipt")
+        historical = replace(config, stdout_name="remote_job.stdout")
+        if receipt.get("script_sha256") == remote_lifecycle.submission_script_digest(historical):
+            return historical
+    return config
 
 
 def _prepared_execution_policy(prepared: dict[str, Any]) -> dict[str, Any]:
@@ -1386,6 +1399,8 @@ def _remote_stdout_name(prepared: dict[str, Any]) -> str:
         return captures[0]
     if backend == "xtb" and "xtb.out" in expected:
         return "xtb.out"
+    if backend == "crest" and "crest.out" in expected:
+        return "crest.out"
     if backend == "ase_neb" and "ase_neb.out" in expected:
         return "ase_neb.out"
     return "remote_job.stdout"
@@ -1404,6 +1419,24 @@ def _remote_output_dir(workspace: Path, intent: dict[str, Any]) -> Path:
         str(intent["intent_id"]),
     )
     return workspace / output_ref / "remote"
+
+
+def _default_parse_ref(workspace: Path, intent: dict[str, Any], prepared: dict[str, Any]) -> str:
+    names = _expected_remote_names(prepared)
+    backend = intent["backend"]
+    if backend == "gaussian":
+        candidates = [name for name in names if Path(name).suffix.lower() in {".log", ".out"}]
+    else:
+        primary = {"xtb": "xtb.out", "crest": "crest.out", "ase_neb": "neb_summary.json"}.get(backend)
+        candidates = [name for name in names if name == primary]
+    if len(candidates) != 1:
+        raise ComputeContractError(f"parse primary artifact is ambiguous: {candidates}; supply an exact artifact_ref")
+    if _prepared_execution_policy(prepared)["kind"] == "remote":
+        return (_remote_output_dir(workspace, intent) / candidates[0]).relative_to(workspace).as_posix()
+    refs = [ref for ref in intent["expected_artifacts"] if Path(ref).name == candidates[0]]
+    if len(refs) != 1:
+        raise ComputeContractError("local parse primary artifact requires an explicit artifact_ref")
+    return refs[0]
 
 
 def _remote_submission_id(workspace_identity: str, intent_id: str) -> str:
@@ -2071,6 +2104,16 @@ def _read_control_guard(
 
 
 def _claim_control(workspace: Path, intent: dict[str, Any], operation: str) -> int:
+    from ts_agent.workspace.transactions import workspace_lock
+    from ts_agent.workspace.dispatch import require_dispatch_allowed
+
+    with workspace_lock(workspace):
+        if operation == "submit":
+            require_dispatch_allowed(workspace, intent["node_id"])
+        return _claim_control_locked(workspace, intent, operation)
+
+
+def _claim_control_locked(workspace: Path, intent: dict[str, Any], operation: str) -> int:
     latest = _latest_control_attempt(workspace, intent, operation)
     if latest is not None:
         pending = workspace / _control_guard_ref(intent, operation, latest)

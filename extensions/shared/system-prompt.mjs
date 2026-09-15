@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import Type from "typebox";
+import Type from "../../apps/app-server/pi-runtime-deps.mjs";
 
 const SYS_PROMPT_PARAMETERS = Type.Object({}, { additionalProperties: false });
 const ORIGINS = new Set(["native", "skill", "extension", "unknown"]);

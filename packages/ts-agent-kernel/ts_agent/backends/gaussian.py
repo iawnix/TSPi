@@ -679,6 +679,41 @@ def write_irc_parse_artifacts(parsed: dict[str, object], output_dir: Path, log_s
     write_xyz(output_dir / f"{log_stem}_endpoint.xyz", atoms, f"IRC endpoint extracted from {log_name}")
 
 
+def parse_thermochemistry(lines: list[str]) -> dict[str, object]:
+    """Read thermochemical quantities from an already selected job section."""
+    text = "\n".join(lines)
+    numeric = r"([-+]?\d+(?:\.\d*)?(?:[DdEe][-+]?\d+)?)"
+    patterns = {
+        "electronic_energy_hartree": rf"SCF Done:.*?=\s*{numeric}",
+        "zero_point_correction_hartree": rf"Zero-point correction=\s*{numeric}",
+        "thermal_energy_correction_hartree": rf"Thermal correction to Energy=\s*{numeric}",
+        "thermal_enthalpy_correction_hartree": rf"Thermal correction to Enthalpy=\s*{numeric}",
+        "thermal_gibbs_correction_hartree": rf"Thermal correction to Gibbs Free Energy=\s*{numeric}",
+        "electronic_plus_zpe_hartree": rf"Sum of electronic and zero-point Energies=\s*{numeric}",
+        "electronic_plus_thermal_enthalpy_hartree": rf"Sum of electronic and thermal Enthalpies=\s*{numeric}",
+        "electronic_plus_thermal_free_energy_hartree": rf"Sum of electronic and thermal Free Energies=\s*{numeric}",
+        "temperature_k": rf"Temperature\s+{numeric}\s+Kelvin",
+        "pressure_atm": rf"Pressure\s+{numeric}\s+Atm",
+    }
+    result = {}
+    for key, pattern in patterns.items():
+        matches = re.findall(pattern, text)
+        result[key] = float(matches[-1].replace("D", "E").replace("d", "e")) if matches else None
+    result["entropy_cal_mol_k"] = None
+    in_table = False
+    for line in lines:
+        if "E (Thermal)" in line and "CV" in line:
+            in_table = True
+        elif in_table and re.match(r"\s*Total\s", line):
+            values = line.split()
+            try:
+                result["entropy_cal_mol_k"] = float(values[-1])
+            except ValueError:
+                pass
+            in_table = False
+    return result
+
+
 def parse_log(
     log_path: Path,
     section_index: int | None = None,
@@ -751,6 +786,7 @@ def parse_log(
         "final_convergence_satisfied": final_convergence_satisfied,
         "final_geometry_atoms": len(atoms),
     }
+    summary.update(parse_thermochemistry(section_lines))
     return {"summary": summary, "frequencies": section_frequencies, "atoms": atoms}
 
 
