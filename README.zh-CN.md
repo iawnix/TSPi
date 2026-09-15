@@ -110,7 +110,8 @@ TS Web 用于浏览研究路线、计算记录、科学结论、验证结果和�
 
 ```bash
 /path/to/TSPi-installation/TSWeb serve \
-  --state-dir /path/to/TSPi-installation/.pi/ts-web \
+  --state-dir /path/to/TSPi-installation/.pi/ts-web-state \
+  --auth-token-file /path/to/TSPi-installation/.pi/ts-web/auth.token \
   --source-root /path/to/TSPi-installation/workspaces/reaction-a \
   --label "Reaction A" \
   --host 127.0.0.1 \

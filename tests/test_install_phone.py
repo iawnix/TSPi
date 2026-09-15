@@ -88,6 +88,22 @@ def test_source_phone_build_activation_entrypoints_and_upgrade(tmp_path: Path, p
     assert not rejected.stdout
 
 
+def test_phone_build_reports_bounded_installation_stages(tmp_path: Path, phone_repo) -> None:
+    repo, _ = phone_repo
+    messages = []
+
+    release = prepare_phone(tmp_path / "install", repo, "main", progress=messages.append)
+
+    assert release.is_dir()
+    assert messages == [
+        "Resolving TS Phone revision main",
+        "Installing TS Phone dependencies",
+        "Building the TS Phone server",
+        "Validating the TS Phone server build",
+        "Pruning TS Phone build dependencies",
+    ]
+
+
 def test_failed_phone_build_keeps_previous_selection(tmp_path: Path, phone_repo) -> None:
     repo, source = phone_repo
     root = tmp_path / "install"

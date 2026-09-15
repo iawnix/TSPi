@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 try:
     from .install_from_github import check_phone_protocols, checkout_github
@@ -52,7 +53,13 @@ def check_release(release: Path) -> dict[str, object]:
     return record
 
 
-def prepare_phone(install_root: Path, repo: str, ref: str) -> Path:
+def prepare_phone(
+    install_root: Path,
+    repo: str,
+    ref: str,
+    *,
+    progress: Callable[[str], None] | None = None,
+) -> Path:
     """Stage a complete server build; leave the active selection untouched."""
     root = private_directory(install_root)
     home = private_directory(private_directory(root / ".pi") / "ts-phone")
@@ -66,20 +73,25 @@ def prepare_phone(install_root: Path, repo: str, ref: str) -> Path:
         raise ValueError("TS Phone installation requires Node.js 22.19.0 or newer")
     with tempfile.TemporaryDirectory(prefix=".build-", dir=releases) as directory:
         source = Path(directory) / "source"
-        print(f"TS Phone: fetching {repo} ({ref})", file=sys.stderr)
+        _report(progress, f"Resolving TS Phone revision {ref}")
         commit = checkout_github(repo, ref, source)
         target = releases / commit
         if target.is_symlink():
             raise ValueError(f"TS Phone release cannot be a symbolic link: {target}")
         if target.exists():
+            _report(progress, "Verifying the existing TS Phone release")
             check_release(target)
             return target
-        print("TS Phone: installing dependencies and building the server", file=sys.stderr)
-        for command in ([npm, "ci", "--no-audit", "--no-fund"], [npm, "run", "build"]):
-            subprocess.run(command, cwd=source, stdout=sys.stderr, stderr=sys.stderr, check=True)
+        for message, command in (
+            ("Installing TS Phone dependencies", [npm, "ci", "--no-audit", "--no-fund"]),
+            ("Building the TS Phone server", [npm, "run", "build"]),
+        ):
+            _report(progress, message)
+            _run_build(command, source, quiet=progress is not None)
         dist = source / "services/server/dist"
+        _report(progress, "Validating the TS Phone server build")
         for name in ("index.js", "cli.js"):
-            subprocess.run([node, "--check", str(dist / name)], check=True, stdout=sys.stderr, stderr=sys.stderr)
+            _run_build([node, "--check", str(dist / name)], source, quiet=progress is not None)
         version = json.loads((source / "services/server/package.json").read_text(encoding="utf-8"))["version"]
         protocols = json.loads((source / "packages/protocol/versions.json").read_text(encoding="utf-8"))
         paths = [source / "package.json", source / "services/server/package.json",
@@ -91,10 +103,33 @@ def prepare_phone(install_root: Path, repo: str, ref: str) -> Path:
         (source / "installation.json").chmod(0o600)
         # The server currently has no production npm dependencies. Keep any that a
         # subsequent release declares, while dropping the build-only toolchain.
-        subprocess.run([npm, "prune", "--omit=dev", "--no-audit", "--no-fund"], cwd=source,
-                       stdout=sys.stderr, stderr=sys.stderr, check=True)
+        _report(progress, "Pruning TS Phone build dependencies")
+        _run_build([npm, "prune", "--omit=dev", "--no-audit", "--no-fund"], source,
+                   quiet=progress is not None)
         source.rename(target)
     return target
+
+
+def _report(progress: Callable[[str], None] | None, message: str) -> None:
+    if progress is None:
+        print(f"TS Phone: {message}", file=sys.stderr)
+    else:
+        progress(message)
+
+
+def _run_build(command: list[str], cwd: Path, *, quiet: bool) -> None:
+    if not quiet:
+        subprocess.run(command, cwd=cwd, stdout=sys.stderr, stderr=sys.stderr, check=True)
+        return
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as output:
+        completed = subprocess.run(command, cwd=cwd, stdout=output, stderr=subprocess.STDOUT, check=False)
+        if completed.returncode == 0:
+            return
+        end = output.seek(0, os.SEEK_END)
+        output.seek(max(0, end - 64 * 1024))
+        details = [line.strip() for line in output.read().splitlines() if line.strip()]
+    summary = details[-1] if details else "command exited without diagnostics"
+    raise RuntimeError(f"TS Phone build failed while running {Path(command[0]).name}: {summary}")
 
 
 def activate_phone(install_root: Path, release: Path) -> dict[str, object]:

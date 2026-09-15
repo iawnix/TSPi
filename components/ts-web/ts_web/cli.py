@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import errno
+import ipaddress
 import json
 import os
-import ipaddress
+import re
+import stat
 import sys
 from pathlib import Path
 
 from .provider import ProviderClient
 from .server import serve
+
+
+TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{40,100}$")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,7 +37,9 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Allow binding a non-loopback address (authentication remains the operator's responsibility).",
     )
-    serve_cmd.add_argument("--auth-token", default=os.environ.get("TSPI_WEB_AUTH_TOKEN"))
+    auth = serve_cmd.add_mutually_exclusive_group()
+    auth.add_argument("--auth-token", default=os.environ.get("TSPI_WEB_AUTH_TOKEN"))
+    auth.add_argument("--auth-token-file")
     serve_cmd.add_argument("--port", type=int, default=8766)
     serve_cmd.add_argument("--source-root", action="append", default=[])
     serve_cmd.add_argument("--label", action="append", default=[])
@@ -63,8 +71,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("more labels than source roots")
     if not _is_loopback(args.host) and not args.allow_remote:
         parser.error("non-loopback --host requires --allow-remote")
-    if not _is_loopback(args.host) and not args.auth_token:
-        parser.error("non-loopback --host requires --auth-token or TSPI_WEB_AUTH_TOKEN")
+    if args.auth_token_file and os.environ.get("TSPI_WEB_AUTH_TOKEN"):
+        parser.error("--auth-token-file cannot be combined with TSPI_WEB_AUTH_TOKEN")
+    auth_token = _read_auth_token_file(args.auth_token_file) if args.auth_token_file else args.auth_token
+    if not _is_loopback(args.host) and not auth_token:
+        parser.error("non-loopback --host requires --auth-token-file, --auth-token, or TSPI_WEB_AUTH_TOKEN")
     if args.source_root:
         client.register(args.source_root, args.label)
     restart = serve(
@@ -75,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         workspace_roots=args.workspace_root,
         release_entrypoint=None if args.no_watch_release else _entrypoint(),
         loaded_entrypoint=_entrypoint(),
-        auth_token=args.auth_token,
+        auth_token=auth_token,
     )
     return 75 if restart else 0
 
@@ -108,3 +119,36 @@ def _is_loopback(host: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def _read_auth_token_file(value: str) -> str:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        raise SystemExit("--auth-token-file must be an absolute path")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise SystemExit("--auth-token-file cannot be a symbolic link") from error
+        raise SystemExit(f"cannot read --auth-token-file: {error}") from error
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise SystemExit("--auth-token-file must be a regular file without hard links")
+        if info.st_uid != os.getuid():
+            raise SystemExit("--auth-token-file must be owned by the current user")
+        if stat.S_IMODE(info.st_mode) != 0o600:
+            raise SystemExit("--auth-token-file must have mode 0600")
+        raw = os.read(descriptor, 257)
+        if len(raw) > 256:
+            raise SystemExit("--auth-token-file is too large")
+    finally:
+        os.close(descriptor)
+    try:
+        token = raw.decode("ascii").strip()
+    except UnicodeDecodeError as error:
+        raise SystemExit("--auth-token-file contains an invalid token") from error
+    if TOKEN_PATTERN.fullmatch(token) is None:
+        raise SystemExit("--auth-token-file contains an invalid token")
+    return token

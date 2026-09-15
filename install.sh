@@ -33,7 +33,36 @@ printf 'Preparing source %s (%s)...\n' "${REPO_URL}" "${REPO_REF}" >&2
 
 readonly TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/tspi-installer.XXXXXX")"
 readonly BOOTSTRAP_LOG="${TEMP_ROOT}/bootstrap.log"
-cleanup() { rm -rf -- "${TEMP_ROOT}"; }
+BOOTSTRAP_SPINNER_PID=""
+BOOTSTRAP_ANIMATIONS=true
+for argument in "$@"; do
+  [[ "${argument}" == "--json" ]] && BOOTSTRAP_ANIMATIONS=false
+done
+
+stop_bootstrap_spinner() {
+  if [[ -n "${BOOTSTRAP_SPINNER_PID}" ]]; then
+    kill "${BOOTSTRAP_SPINNER_PID}" 2>/dev/null || true
+    wait "${BOOTSTRAP_SPINNER_PID}" 2>/dev/null || true
+    BOOTSTRAP_SPINNER_PID=""
+    printf '\r\033[2K' >&2
+  fi
+}
+
+bootstrap_spinner() {
+  local label="$1" frame index=0
+  local -a frames=('|' '/' '-' $'\\')
+  while true; do
+    frame="${frames[index % ${#frames[@]}]}"
+    printf '\r\033[2K  %b%s%b %s' "${BOOTSTRAP_ACCENT}" "${frame}" "${BOOTSTRAP_RESET}" "${label}" >&2
+    index=$((index + 1))
+    sleep 0.12
+  done
+}
+
+cleanup() {
+  stop_bootstrap_spinner
+  rm -rf -- "${TEMP_ROOT}"
+}
 interrupted() { exit "$1"; }
 trap cleanup EXIT
 trap 'interrupted 130' INT
@@ -41,14 +70,21 @@ trap 'interrupted 143' TERM
 
 run_bootstrap_step() {
   local label="$1"
+  local status=0
   shift
   : >"${BOOTSTRAP_LOG}"
-  if ! "$@" >"${BOOTSTRAP_LOG}" 2>&1; then
+  if [[ "${BOOTSTRAP_ANIMATIONS}" == true && -t 2 && "${TERM:-}" != "dumb" ]]; then
+    bootstrap_spinner "${label}" &
+    BOOTSTRAP_SPINNER_PID=$!
+  fi
+  "$@" >"${BOOTSTRAP_LOG}" 2>&1 || status=$?
+  stop_bootstrap_spinner
+  if (( status != 0 )); then
     printf '%bFailed:%b %s\n' "${BOOTSTRAP_DANGER}" "${BOOTSTRAP_RESET}" "${label}" >&2
     sed -n '1,120p' "${BOOTSTRAP_LOG}" >&2
-    exit 1
+    exit "${status}"
   fi
-  printf '%bReady:%b %s\n' "${BOOTSTRAP_SUCCESS}" "${BOOTSTRAP_RESET}" "${label}" >&2
+  printf '  %bOK%b %s\n' "${BOOTSTRAP_SUCCESS}" "${BOOTSTRAP_RESET}" "${label}" >&2
 }
 
 run_bootstrap_step "repository access" git clone --quiet --filter=blob:none --no-checkout "${REPO_URL}" "${TEMP_ROOT}/TSPi"

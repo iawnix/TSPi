@@ -14,10 +14,10 @@ from pathlib import Path
 
 try:
     from ._installation_metadata import read_installation_metadata
-    from ._terminal_ui import ask_text as ask, ask_yes_no, failure, field, note, section, success, title
+    from ._terminal_ui import Spinner, ask_text as ask, ask_yes_no, failure, field, note, section, success, title
 except ImportError:
     from _installation_metadata import read_installation_metadata
-    from _terminal_ui import ask_text as ask, ask_yes_no, failure, field, note, section, success, title
+    from _terminal_ui import Spinner, ask_text as ask, ask_yes_no, failure, field, note, section, success, title
 
 
 SERVICE_NAMES = (
@@ -34,7 +34,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--install-root")
     parser.add_argument("--service-scope", choices=("auto", "user", "system", "none"), default="auto")
     parser.add_argument("--purge-workspaces", action="store_true", help="Delete research workspaces and Pi session files.")
-    parser.add_argument("--purge-config", action="store_true", help="Delete installation configuration and Phone credentials.")
+    parser.add_argument("--purge-config", action="store_true", help="Delete installation configuration and Phone/Web credentials.")
     parser.add_argument("--purge-runtime", action="store_true", help="Delete managed Conda/venv runtime state.")
     parser.add_argument("--remove-root", action="store_true", help="Remove the installation directory after cleanup.")
     parser.add_argument("--purge-all", action="store_true", help="Enable all purge and root removal options.")
@@ -95,7 +95,7 @@ def choose_options(args: argparse.Namespace, root: Path) -> None:
     section("Data cleanup")
     note("Application releases and matching services are always removed.")
     args.purge_workspaces = args.purge_workspaces or ask_yes_no("Delete workspaces and Pi session files", False)
-    args.purge_config = args.purge_config or ask_yes_no("Delete installation config, Phone tokens, and bridge secrets", False)
+    args.purge_config = args.purge_config or ask_yes_no("Delete installation config and Phone/Web credentials", False)
     args.purge_runtime = args.purge_runtime or ask_yes_no("Delete managed Python runtime state", False)
     all_data_selected = args.purge_workspaces and args.purge_config and args.purge_runtime
     if not args.remove_root and all_data_selected:
@@ -231,45 +231,56 @@ def prune_empty_parents(root: Path) -> None:
             pass
 
 
-def uninstall(args: argparse.Namespace) -> dict[str, object]:
+def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[str, object]:
     root = validate_root(Path(args.install_root))
     choose_options(args, root)
-    stopped = stop_services(args, root)
-    service_units = remove_service_units(args, root)
-    removed = remove_entrypoints(root)
-    managed = [
-        root / ".pi/packages/tspi",
-        root / ".pi/runtime-cache",
-        root / ".pi/logs",
-        root / ".pi/session-host",
-        root / ".pi/ts-web-state",
-        root / ".pi/ts-phone/ts-phone.service",
-        root / ".pi/ts-phone/current",
-        root / ".pi/ts-phone/releases",
-    ]
-    if args.purge_config:
-        managed.extend([
-            root / ".pi/tspi",
-            root / ".pi/ts-phone",
-            root / ".pi/ts-phone-state",
-            root / ".pi/remote.toml",
-            root / ".pi/notifications.toml",
-            root / "uninstall.sh",
-        ])
-    if args.purge_runtime:
-        managed.extend([root / ".agents/runtime/tspi", root / ".agents/envs/tspi"])
-    if args.purge_workspaces:
-        managed.append(root / "workspaces")
-    if args.purge_all:
-        managed.append(root / "ts-phone")
-    removed.extend(remove_paths(managed))
-    prune_empty_parents(root)
-    if args.remove_root:
-        removed.extend(remove_paths([root]))
-    removed.extend(service_units)
-    return {"ok": True, "install_root": str(root), "stopped_services": stopped, "removed": removed,
-            "preserved_workspaces": not args.purge_workspaces, "preserved_config": not args.purge_config,
-            "preserved_runtime": not args.purge_runtime}
+    activity = Spinner("Stopping TSPi services", stream=sys.stderr, enabled=show_progress)
+    activity.start()
+    try:
+        stopped = stop_services(args, root)
+        activity.update("Removing service registrations")
+        service_units = remove_service_units(args, root)
+        activity.update("Removing installed application files")
+        removed = remove_entrypoints(root)
+        managed = [
+            root / ".pi/packages/tspi",
+            root / ".pi/runtime-cache",
+            root / ".pi/logs",
+            root / ".pi/session-host",
+            root / ".pi/ts-web-state",
+            root / ".pi/ts-phone/ts-phone.service",
+            root / ".pi/ts-phone/current",
+            root / ".pi/ts-phone/releases",
+        ]
+        if args.purge_config:
+            managed.extend([
+                root / ".pi/tspi",
+                root / ".pi/ts-phone",
+                root / ".pi/ts-phone-state",
+                root / ".pi/ts-web",
+                root / ".pi/remote.toml",
+                root / ".pi/notifications.toml",
+                root / "uninstall.sh",
+            ])
+        if args.purge_runtime:
+            managed.extend([root / ".agents/runtime/tspi", root / ".agents/envs/tspi"])
+        if args.purge_workspaces:
+            managed.append(root / "workspaces")
+        if args.purge_all:
+            managed.append(root / "ts-phone")
+        removed.extend(remove_paths(managed))
+        prune_empty_parents(root)
+        if args.remove_root:
+            activity.update("Removing the installation directory")
+            removed.extend(remove_paths([root]))
+        removed.extend(service_units)
+        activity.succeed("TSPi application files removed")
+        return {"ok": True, "install_root": str(root), "stopped_services": stopped, "removed": removed,
+                "preserved_workspaces": not args.purge_workspaces, "preserved_config": not args.purge_config,
+                "preserved_runtime": not args.purge_runtime}
+    except BaseException:
+        activity.fail("TSPi uninstall failed")
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -285,7 +296,7 @@ def main(argv: list[str] | None = None) -> int:
             args.install_root = ask("TSPi installation directory", default)
         if not args.install_root:
             raise ValueError("--install-root is required")
-        result = uninstall(args)
+        result = uninstall(args, show_progress=not args.json)
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:

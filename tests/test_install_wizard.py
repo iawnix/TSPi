@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from scripts import install_wizard as wizard
+from scripts._credentials import provision_service_credentials
 from scripts.install_wizard import configure_phone, parse_args, phone_unit, validate_options
 from scripts.install_from_github import install_uninstaller
 
@@ -65,9 +66,12 @@ def test_phone_unit_requires_renderer_output(tmp_path: Path, monkeypatch) -> Non
 
 def test_web_unit_command_is_accepted_by_web_cli(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.syspath_prepend(str(ROOT / "components/ts-web"))
+    monkeypatch.delenv("TSPI_WEB_AUTH_TOKEN", raising=False)
     from ts_web import cli
 
     args = _options(tmp_path)
+    Path(args.install_root).mkdir(mode=0o700)
+    credentials = provision_service_credentials(Path(args.install_root), with_phone=False, with_web=True)
     unit = wizard.web_unit(args)
     command = next(line for line in unit.splitlines() if line.startswith("ExecStart="))
     arguments = shlex.split(command.removeprefix("ExecStart="))
@@ -79,6 +83,38 @@ def test_web_unit_command_is_accepted_by_web_cli(tmp_path: Path, monkeypatch) ->
     assert positional == ("127.0.0.1", 8766, str(Path(args.install_root) / ".pi/ts-web-state"))
     assert keywords["provider_command"] == str(Path(args.install_root) / ".pi/packages/tspi/current/agent/scripts/ts_web_provider.py")
     assert keywords["workspace_roots"] == [str(Path(args.install_root) / "workspaces")]
+    assert keywords["auth_token"] == Path(credentials["web_http"]["path"]).read_text().strip()
+    assert "--auth-token " not in command
+    assert f"--auth-token-file {credentials['web_http']['path']}" in command
+
+
+@pytest.mark.parametrize("unsafe_kind", ["mode", "symlink", "hardlink", "malformed"])
+def test_web_cli_rejects_unsafe_token_files(tmp_path: Path, monkeypatch, unsafe_kind: str) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "components/ts-web"))
+    monkeypatch.delenv("TSPI_WEB_AUTH_TOKEN", raising=False)
+    from ts_web import cli
+
+    token = tmp_path / "auth.token"
+    token.write_text("a" * 43 + "\n", encoding="ascii")
+    token.chmod(0o600)
+    if unsafe_kind == "mode":
+        token.chmod(0o644)
+        match = "mode 0600"
+    elif unsafe_kind == "symlink":
+        original = tmp_path / "original.token"
+        token.rename(original)
+        token.symlink_to(original)
+        match = "symbolic link"
+    elif unsafe_kind == "hardlink":
+        (tmp_path / "duplicate.token").hardlink_to(token)
+        match = "without hard links"
+    else:
+        token.write_text("invalid\n", encoding="ascii")
+        match = "invalid token"
+
+    with pytest.raises(SystemExit, match=match):
+        cli.main(["--provider", "/provider", "serve", "--state-dir", str(tmp_path / "state"),
+                  "--auth-token-file", str(token)])
 
 
 def test_phone_configuration_supports_unicode_and_spaces(tmp_path: Path) -> None:
@@ -126,7 +162,7 @@ def test_install_passes_prepared_phone_for_compatibility_check(tmp_path: Path, m
     release = tmp_path / "phone-release"
     commands = []
 
-    def run(command, install_root):
+    def run(command, install_root, **kwargs):
         commands.append(command)
         return {"release_id": "test"}
 
@@ -137,25 +173,40 @@ def test_install_passes_prepared_phone_for_compatibility_check(tmp_path: Path, m
 
 def test_without_phone_does_not_fetch_or_configure_phone(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(wizard, "prepare_phone", lambda *args: pytest.fail("Phone was not selected"))
-    monkeypatch.setattr(wizard, "run_install", lambda *args: {"release_id": "test"})
+    monkeypatch.setattr(
+        wizard,
+        "run_install",
+        lambda args, *_: Path(args.install_root).mkdir(mode=0o700, parents=True) or {"release_id": "test"},
+    )
     monkeypatch.setattr(wizard, "inspect_installation", lambda *args: {"operation": "install", "release_id": "test"})
     assert wizard.main(["--install-root", str(tmp_path / "install"), "--without-phone",
                         "--non-interactive", "--yes"]) == 0
     assert not (tmp_path / "install/.pi/ts-phone/server.env").exists()
+    assert (tmp_path / "install/.pi/ts-web/auth.token").is_file()
 
 
 def test_wizard_installs_phone_before_service_configuration(tmp_path: Path, monkeypatch, capsys) -> None:
     events = []
     release = tmp_path / "phone-release"
-    monkeypatch.setattr(wizard, "prepare_phone", lambda *args: events.append("build") or release)
-    monkeypatch.setattr(wizard, "run_install", lambda args, phone: events.append(("install", phone)) or {"release_id": "test"})
+    monkeypatch.setattr(wizard, "prepare_phone", lambda *args, **kwargs: events.append("build") or release)
+    def run_install(args, phone):
+        events.append(("install", phone))
+        Path(args.install_root).mkdir(mode=0o700, parents=True)
+        return {"release_id": "test"}
+
+    monkeypatch.setattr(wizard, "run_install", run_install)
     monkeypatch.setattr(wizard, "activate_phone", lambda *args: events.append("activate") or {"commit": "a" * 40})
     monkeypatch.setattr(wizard, "configure_services", lambda *args: events.append("services") or [])
     monkeypatch.setattr(wizard, "inspect_installation", lambda *args: {"operation": "install", "release_id": "test"})
     assert wizard.main(["--install-root", str(tmp_path / "install"), "--with-phone",
                         "--non-interactive", "--yes", "--json"]) == 0
     assert events == ["build", ("install", release), "activate", "services"]
-    assert json.loads(capsys.readouterr().out)["phone"]["commit"] == "a" * 40
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert result["phone"]["commit"] == "a" * 40
+    assert set(result["credentials"]) == {"phone_http", "phone_bridge", "web_http"}
+    secret_values = [Path(item["path"]).read_text().strip() for item in result["credentials"].values()]
+    assert all(secret not in captured.out and secret not in captured.err for secret in secret_values)
 
 
 @pytest.mark.parametrize("arguments", [["--phone-port", "65536"], ["--phone-repo", "https://example.com/phone"], ["--phone-ref", "../escape"]])
@@ -164,6 +215,17 @@ def test_phone_options_reject_invalid_configuration_before_install(tmp_path: Pat
     with pytest.raises(ValueError):
         validate_options(args)
     assert not (tmp_path / "install").exists()
+
+
+def test_web_is_the_noninteractive_default_unless_explicitly_disabled(tmp_path: Path) -> None:
+    selected = parse_args(["--install-root", str(tmp_path / "selected"), "--non-interactive", "--yes"])
+    validate_options(selected)
+    assert selected.with_web is True
+
+    skipped = parse_args(["--install-root", str(tmp_path / "skipped"), "--without-web",
+                          "--non-interactive", "--yes"])
+    validate_options(skipped)
+    assert skipped.with_web is False
 
 
 def test_wizard_rejects_install_root_with_symbolic_link_parent(tmp_path: Path) -> None:

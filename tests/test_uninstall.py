@@ -39,6 +39,11 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     (root / ".pi/packages/tspi").mkdir(parents=True)
     (root / "workspaces/ts_001").mkdir(parents=True)
     (root / ".pi/ts-phone-state").mkdir(parents=True)
+    bridge_secret = root / ".pi/ts-phone-state/bridge.secret"
+    bridge_secret.write_text("b" * 43)
+    web_token = root / ".pi/ts-web/auth.token"
+    web_token.parent.mkdir(parents=True)
+    web_token.write_text("w" * 43)
     download = root / "downloads/client.apk"
     download.parent.mkdir()
     download.write_bytes(b"apk")
@@ -49,6 +54,8 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     assert result["ok"] is True
     assert (root / "workspaces/ts_001").is_dir()
     assert (root / ".pi/ts-phone-state").is_dir()
+    assert bridge_secret.read_text() == "b" * 43
+    assert web_token.read_text() == "w" * 43
     assert download.read_bytes() == b"apk"
     assert not (root / ".pi/packages/tspi").exists()
 
@@ -237,9 +244,13 @@ def test_purge_config_removes_local_uninstaller_and_ownership_marker(tmp_path: P
     root = tmp_path / "install"
     (root / ".pi/packages/tspi").mkdir(parents=True)
     install_uninstaller(root, Path(__file__).resolve().parents[1])
+    web_token = root / ".pi/ts-web/auth.token"
+    web_token.parent.mkdir(parents=True)
+    web_token.write_text("w" * 43)
 
     result = uninstall(_args(root, purge_config=True))
 
     assert result["ok"] is True
     assert not (root / "uninstall.sh").exists()
     assert not (root / ".pi/tspi").exists()
+    assert not web_token.exists()

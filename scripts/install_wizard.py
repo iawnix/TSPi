@@ -15,14 +15,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 try:
+    from ._credentials import provision_service_credentials
     from ._installation_metadata import read_installation_metadata
-    from ._terminal_ui import ask_text as ask, ask_yes_no, failure, field, note, section, success, title
+    from ._terminal_ui import Spinner, ask_text as ask, ask_yes_no, failure, field, note, section, success, title
     from .install_from_github import validate_ref, validate_repo
     from .install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
     from .install_release import validate_install_root
 except ImportError:
+    from _credentials import provision_service_credentials
     from _installation_metadata import read_installation_metadata
-    from _terminal_ui import ask_text as ask, ask_yes_no, failure, field, note, section, success, title
+    from _terminal_ui import Spinner, ask_text as ask, ask_yes_no, failure, field, note, section, success, title
     from install_from_github import validate_ref, validate_repo
     from install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
     from install_release import validate_install_root
@@ -237,6 +239,7 @@ def validate_options(args: argparse.Namespace) -> None:
             raise ValueError("--phone-port must be between 1 and 65535")
     if args.with_web and args.without_web:
         raise ValueError("--with-web and --without-web are mutually exclusive")
+    args.with_web = not args.without_web
     if not args.install_root:
         raise ValueError("--install-root is required in non-interactive mode")
     args.install_root = str(validate_install_root(Path(args.install_root)))
@@ -251,7 +254,12 @@ def validate_options(args: argparse.Namespace) -> None:
         raise ValueError("service configuration requires systemctl; choose --service-scope none")
 
 
-def run_logged_install(command: list[str], install_root: Path) -> dict[str, object]:
+def run_logged_install(
+    command: list[str],
+    install_root: Path,
+    *,
+    show_progress: bool = True,
+) -> dict[str, object]:
     install_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     pi_root = install_root / ".pi"
     log_root = pi_root / "logs"
@@ -268,6 +276,8 @@ def run_logged_install(command: list[str], install_root: Path) -> dict[str, obje
     stderr_lines: list[str] = []
     stdout = ""
     returncode = 1
+    activity = Spinner("Starting the TSPi package installation", stream=sys.stderr, enabled=show_progress)
+    activity.start()
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as log:
             log.write("TSPi installation diagnostic log\n")
@@ -287,7 +297,7 @@ def run_logged_install(command: list[str], install_root: Path) -> dict[str, obje
                     log.write(line)
                     log.flush()
                     if line.startswith(PROGRESS_PREFIX):
-                        note(line.removeprefix(PROGRESS_PREFIX).strip(), tone="accent", stream=sys.stderr)
+                        activity.update(line.removeprefix(PROGRESS_PREFIX).strip())
 
             relay = threading.Thread(target=relay_stderr, daemon=True)
             relay.start()
@@ -326,6 +336,7 @@ def run_logged_install(command: list[str], install_root: Path) -> dict[str, obje
                         log_root.rmdir()
                     except OSError:
                         pass
+                    activity.succeed("TSPi package installed")
                     return result
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         failure_log = log_root / f"install-failure-{stamp}.log"
@@ -334,13 +345,13 @@ def run_logged_install(command: list[str], install_root: Path) -> dict[str, obje
         summary = details[-1] if details else f"installer process exited with status {returncode}"
         raise RuntimeError(f"{summary}\nDiagnostic log: {failure_log}")
     except BaseException:
+        activity.fail("TSPi package installation failed")
         if temporary.exists():
             temporary.unlink()
         raise
 
 
 def run_install(args: argparse.Namespace, phone_release: Path | None = None) -> dict[str, object]:
-    note(f"Installing TSPi revision {args.tspi_ref}...", tone="accent", stream=sys.stderr)
     command = [sys.executable, str(ROOT / "scripts/install_from_github.py"), "--repo", args.tspi_repo,
                "--ref", args.tspi_ref, "--install-root", args.install_root, "--progress", "--json"]
     command.append("--without-web" if args.without_web else "--with-web")
@@ -350,7 +361,7 @@ def run_install(args: argparse.Namespace, phone_release: Path | None = None) -> 
         command.extend(["--conda-root", args.conda_root])
     if phone_release is not None:
         command.extend(["--phone-server-root", str(phone_release)])
-    return run_logged_install(command, Path(args.install_root))
+    return run_logged_install(command, Path(args.install_root), show_progress=not args.json)
 
 
 def write_private(path: Path, content: str) -> None:
@@ -436,7 +447,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory={root}
-ExecStart={root / 'TSWeb'} --provider {root / '.pi/packages/tspi/current/agent/scripts/ts_web_provider.py'} serve --state-dir {root / '.pi/ts-web-state'} --host 127.0.0.1 --port 8766 --workspace-root {root / 'workspaces'}
+ExecStart={root / 'TSWeb'} --provider {root / '.pi/packages/tspi/current/agent/scripts/ts_web_provider.py'} serve --state-dir {root / '.pi/ts-web-state'} --auth-token-file {root / '.pi/ts-web/auth.token'} --host 127.0.0.1 --port 8766 --workspace-root {root / 'workspaces'}
 Restart=on-failure
 RestartSec=3s
 UMask=0077
@@ -516,17 +527,38 @@ def main(argv: list[str] | None = None) -> int:
             if not args.yes and not ask_yes_no("Proceed with installation", True):
                 note("Installation cancelled.", tone="warning")
                 return 0
-        phone_release = prepare_phone(Path(args.install_root), args.phone_repo, args.phone_ref) if args.with_phone else None
+        phone_release = None
+        if args.with_phone:
+            with Spinner("Preparing TS Phone", stream=sys.stderr, enabled=not args.json) as activity:
+                phone_release = prepare_phone(
+                    Path(args.install_root),
+                    args.phone_repo,
+                    args.phone_ref,
+                    progress=activity.update,
+                )
+                activity.succeed("TS Phone release prepared")
         installed = run_install(args, phone_release)
-        phone = activate_phone(Path(args.install_root), phone_release) if phone_release is not None else None
-        phone_config = configure_phone(args)
-        services = configure_services(args, phone_config)
-        verified = inspect_installation(Path(args.install_root))
+        with Spinner("Finalizing installation", stream=sys.stderr, enabled=not args.json) as activity:
+            phone = activate_phone(Path(args.install_root), phone_release) if phone_release is not None else None
+            activity.update("Provisioning service credentials")
+            credentials = provision_service_credentials(
+                Path(args.install_root),
+                with_phone=bool(args.with_phone),
+                with_web=bool(args.with_web),
+            )
+            activity.update("Writing service configuration")
+            phone_config = configure_phone(args)
+            activity.update("Configuring services")
+            services = configure_services(args, phone_config)
+            activity.update("Verifying the installed release")
+            verified = inspect_installation(Path(args.install_root))
+            activity.succeed("Installation finalized")
         result = {"ok": True, "operation": installation["operation"], "install_root": args.install_root,
                   "release_id": installed.get("release_id"),
                   "commit": installed.get("commit"), "provenance": installed.get("provenance"),
                   "phone": phone, "uninstaller": installed.get("uninstaller"),
                   "phone_config": str(phone_config) if phone_config else None, "services": services,
+                  "credentials": credentials,
                   "verified_release": verified["release_id"]}
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
@@ -538,6 +570,13 @@ def main(argv: list[str] | None = None) -> int:
             field("TSPi commit", installed.get("commit") or "unknown")
             if phone:
                 field("TS Phone commit", phone.get("commit") or "unknown")
+            for name, credential in credentials.items():
+                label = {
+                    "phone_http": "Phone HTTP token",
+                    "phone_bridge": "Phone bridge secret",
+                    "web_http": "Web HTTP token",
+                }[name]
+                field(label, f"{credential['path']} ({credential['status']})")
             field("Services", ", ".join(services) if services else "not configured")
             field("Uninstaller", installed.get("uninstaller") or "not installed")
         return 0

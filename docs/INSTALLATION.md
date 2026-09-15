@@ -34,9 +34,12 @@ silently treated as an existing installation. Core package build details remain
 quiet during a successful run. On failure, the wizard preserves a private
 diagnostic file at `.pi/logs/install-failure-*.log` and prints its absolute path.
 
-Interactive install and uninstall screens use semantic colors when their output
-stream is a TTY. Set the standard `NO_COLOR` environment variable to disable
-ANSI colors. Machine-readable JSON on stdout never includes terminal styling.
+Interactive prompts show the field name and default directly; no leading `?`
+status marker is used. Long-running clone, build, activation, service, and
+removal steps use a single-line spinner when stderr is a TTY. Redirected output
+uses stable progress lines instead, and `--json` output contains neither ANSI
+styling nor animation control sequences. Set the standard `NO_COLOR`
+environment variable to disable semantic colors.
 
 Branches and tags resolve to full commit IDs recorded with each installation.
 Use full SHAs for `--tspi-ref` and `--phone-ref` to repeat a particular version.
@@ -53,8 +56,10 @@ The non-interactive equivalent is:
 Interactive setup offers Phone by default. Non-interactive setup installs it
 when `--with-phone` is supplied. `--phone-repo` selects its GitHub repository,
 `--phone-ref` defaults to `main`, and `--phone-port` sets the port for a new
-configuration. Re-running the wizard keeps existing `server.env`, credentials,
-and conversations. A failed Phone build leaves the selected Phone release
+configuration. The installer creates separate owner-only HTTP and Bridge
+credentials before services start. Re-running the wizard validates and keeps
+existing `server.env`, credentials, and conversations; it never rotates a valid
+credential implicitly. A failed Phone build leaves the selected Phone release
 unchanged. Previous builds remain available under `.pi/ts-phone/releases/`.
 
 The default service scope is the current user's systemd manager. Select the
@@ -74,7 +79,7 @@ point when an installation's local copy has been removed.
 
 By default it disables services belonging to the selected installation, removes
 TSPi releases, installed Phone server builds, and managed runtime links, and keeps workspaces, Pi
-sessions, Phone tokens, bridge secrets, and installation configuration. The
+sessions, Phone and Web HTTP tokens, the Phone bridge secret, and installation configuration. The
 interactive wizard can separately purge workspaces, configuration, managed
 runtime state, or the dedicated installation root. Destructive data choices
 default to **No**. The final execution confirmation defaults to **Yes**, so
@@ -168,6 +173,11 @@ quotes, backslashes, or a symbolic link anywhere in the path:
         installation.json
         services/server/dist/
     ts-phone-state/              Phone credentials and conversation management
+      auth.token                 Phone HTTP Bearer token, mode 0600
+      bridge.secret              internal Host/Worker capability, mode 0600
+    ts-web/
+      auth.token                 Web HTTP Bearer token, mode 0600
+    ts-web-state/                Web registry and runtime state
   .agents/
     runtime/tspi/env.json
     envs/tspi/
@@ -181,7 +191,7 @@ The selected top-level entrypoints resolve through the same suite `current`
 pointer: `TSPi` is always present; `TSWeb` is present when Web is selected;
 `TSPhoneCtl` and `TSPhoneServer` are present when Phone is selected. Releases
 are immutable and shared. Workspaces keep separate Pi sessions,
-canonical state, calculation controls, reports, and Root locks. Phone tokens,
+canonical state, calculation controls, reports, and Root locks. Phone/Web tokens,
 service configuration, model credentials, and other runtime state remain
 outside the release.
 
@@ -467,7 +477,11 @@ provider's delivery result is unknown, check its status before retrying.
 Select TS Phone in `install.sh`, or pass `--with-phone` in a non-interactive
 installation. The wizard builds the server from GitHub and creates
 `.pi/ts-phone/server.env` with the installation's workspace, state, and bridge
-paths. Edit this file to change the port or other service settings.
+paths. It also creates `.pi/ts-phone-state/auth.token` for Phone/terminal HTTP
+access and `.pi/ts-phone-state/bridge.secret` for the internal Host/Worker
+channel. These are distinct 32-byte random values stored in owner-only `0600`
+files under an owner-only `0700` directory. Edit `server.env` to change the port
+or other non-secret service settings.
 
 When using the wizard's systemd user service:
 
@@ -501,7 +515,9 @@ and live service registrations are not overwritten. Inspect an updated template
 without starting anything with `TSPhoneServer --print-service`.
 The installation wizard can enable and start the service. Configure FRP, HTTPS,
 and phone access for your deployment. `TSPhoneCtl` targets the configured
-state directory. Install the Android client on the device using the
+state directory; `TSPhoneCtl token` prints the local HTTP token when it must be
+entered in the Android client. Keep the Bridge secret internal and never reuse
+it as the Phone token. Install the Android client on the device using the
 [TS Phone app instructions](https://github.com/iawnix/ts-phone/blob/main/docs/artifacts.md).
 For a Package that includes an APK, its location is recorded in
 `components.phone.mobile_artifact.path` in the selected Package manifest.
@@ -685,7 +701,8 @@ workspaces and register one or more studies while starting the server:
 
 ```bash
 /path/to/TSPi-installation/TSWeb serve \
-  --state-dir /path/to/TSPi-installation/.pi/ts-web \
+  --state-dir /path/to/TSPi-installation/.pi/ts-web-state \
+  --auth-token-file /path/to/TSPi-installation/.pi/ts-web/auth.token \
   --source-root /path/to/TSPi-installation/workspaces/reaction-a \
   --label "Reaction A" \
   --source-root /path/to/TSPi-installation/workspaces/reaction-b \
@@ -694,9 +711,10 @@ workspaces and register one or more studies while starting the server:
   --port 8766
 ```
 
-The registry persists, so later starts may omit `--source-root`. When the state
-directory is `<installation>/.pi/ts-web`, the server automatically treats
-`<installation>/workspaces` as a managed discovery root. Startup and each
+The registry persists, so later starts may omit `--source-root`. The generated
+service passes `<installation>/workspaces` as its managed discovery root.
+When a manually configured state directory is `<installation>/.pi/ts-web`, the
+server infers that same root. Startup and each
 browser catalog refresh register direct children whose `workspace.json`
 declares the supported workspace contract, and remove managed rows whose directory or identity file
 has disappeared. A missing or unreadable discovery root is not pruned, and
@@ -705,8 +723,16 @@ repeatedly to override the inferred root. Use `register`, `list`, or `remove`
 for external or specially labeled workspaces. Open `http://127.0.0.1:8766/` in
 a browser.
 
-For a non-loopback bind, pass `--allow-remote` and configure `--auth-token` or
-`TSPI_WEB_AUTH_TOKEN`. The browser prompts for the token after the server
+The installer creates `.pi/ts-web/auth.token` as an independent owner-only
+credential. The generated systemd service always reads this file through
+`--auth-token-file`; the token value is never embedded in the unit, command
+line, installer result, or diagnostic log. An explicitly supplied token file
+must be an absolute, user-owned `0600` regular file without symbolic or hard
+links.
+
+For a non-loopback bind, pass `--allow-remote` and configure
+`--auth-token-file` (recommended), `--auth-token`, or `TSPI_WEB_AUTH_TOKEN`.
+The browser prompts for the token after the server
 returns its first authentication challenge, keeps it only in page memory, and
 adds it as a Bearer credential only to same-origin `/api/` requests. Reloading
 the page clears it. Put TLS in front of the service before sending the token

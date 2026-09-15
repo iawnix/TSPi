@@ -14,8 +14,9 @@ Package may omit it; when selected, the installer places it under
 `current/web/` and creates the `TSWeb` launcher.
 The server binds to `127.0.0.1` by default. Binding a LAN or public address
 requires the explicit `--allow-remote` flag and a token supplied with
-`--auth-token` or `TSPI_WEB_AUTH_TOKEN`; use TLS when crossing an untrusted
-network.
+`--auth-token-file` (recommended), `--auth-token`, or `TSPI_WEB_AUTH_TOKEN`;
+use TLS when crossing an untrusted network. Token files must be absolute,
+user-owned `0600` regular files without symbolic or hard links.
 When a token is enabled, the browser prompts for it on first access and retains
 it only in the current page's memory. Reloading or closing the page requires the
 token again; it is never placed in the URL or persistent browser storage.
