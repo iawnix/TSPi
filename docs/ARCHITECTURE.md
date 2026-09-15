@@ -150,8 +150,10 @@ The runtime store has two layers:
 | `base/<spec-hash>` | Shared Conda scientific and rendering dependencies |
 | `kernels/<payload-hash>` | A venv using the base and the selected kernel wheel |
 
-A dependency change prepares a new base; a kernel change prepares a new
-overlay. The runtime probe verifies installed module and data hashes,
+A dependency change in `environment.yml` or `requirements-runtime.txt`
+prepares a new base. Conda installs its dependency layer first, then the new
+base interpreter installs the pip-only runtime requirements. A kernel change
+prepares a new overlay. The runtime probe verifies installed module and data hashes,
 NumPy/RDKit/Matplotlib origins and `xyzrender` in the base, and the kernel
 distribution in the overlay. The `ts-agent-runtime/3` manifest binds these
 origins and capabilities.

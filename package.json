@@ -61,6 +61,7 @@
     "contracts/ts-web/workspace-snapshot.schema.json",
     "environment.yml",
     "environment.lock.txt",
+    "requirements-runtime.txt",
     "extensions/shared/*.d.mts",
     "extensions/shared/*.mjs",
     "extensions/shared/*.ts",

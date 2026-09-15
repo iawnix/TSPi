@@ -15,5 +15,4 @@ dependencies:
   - ase
   - pillow>=10,<13
   - matplotlib>=3.9,<4
-  - pip:
-      - xyzrender>=0.2.1
+# Pip-only Core dependencies are installed separately from requirements-runtime.txt.

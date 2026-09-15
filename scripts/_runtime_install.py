@@ -138,6 +138,7 @@ def prepare_runtime(
         paths["base_prefix"],
         paths["base_python"],
         paths["spec_path"],
+        paths["requirements_path"],
         paths["package_root"],
         base_action,
     )
@@ -226,6 +227,11 @@ def _runtime_paths(
     if not spec_path.is_file() or spec_path.is_symlink():
         raise RuntimeInstallError(f"missing or unsafe environment spec: {spec_path}")
     runtime = load_runtime_environment(root)
+    requirements_path = runtime.runtime_requirements_path(root)
+    if not requirements_path.is_file() or requirements_path.is_symlink():
+        raise RuntimeInstallError(
+            f"missing or unsafe runtime pip requirements: {requirements_path}"
+        )
     payload_sha256 = runtime.python_payload_sha256(root)
     store = (
         Path(env_root).expanduser().resolve()
@@ -254,6 +260,7 @@ def _runtime_paths(
         "runtime_environment": runtime,
         "package_root": root,
         "spec_path": spec_path,
+        "requirements_path": requirements_path,
         "spec_sha256": runtime.spec_sha256(root),
         "payload_sha256": payload_sha256,
         "env_store": store,
@@ -291,6 +298,7 @@ def _prepare_base(
     prefix: Path,
     python: Path,
     spec_path: Path,
+    requirements_path: Path,
     package_root: Path,
     action: str,
 ) -> str:
@@ -323,6 +331,12 @@ def _prepare_base(
     if not python.is_file() or not os.access(python, os.X_OK):
         raise RuntimeInstallError(f"scientific base Python is missing or not executable: {python}")
     if effective_action != "reuse":
+        completed = _pip_install_requirements(python, requirements_path, package_root)
+        if completed.returncode != 0:
+            raise RuntimeInstallError(
+                "scientific base pip dependency installation failed "
+                f"with exit code {completed.returncode}"
+            )
         try:
             _run_base_probe(python, package_root)
         except RuntimeInstallError as error:
@@ -415,6 +429,31 @@ def _pip_install_wheel(
     )
 
 
+def _pip_install_requirements(
+    python: Path,
+    requirements_path: Path,
+    package_root: Path,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-cache-dir",
+            "--requirement",
+            str(requirements_path),
+        ],
+        cwd=package_root,
+        env=_clean_python_environment(),
+        text=True,
+        stdout=sys.stderr,
+        stderr=sys.stderr,
+        check=False,
+    )
+
+
 def _run_runtime_probe(python: Path, package_root: Path) -> dict[str, Any]:
     completed = subprocess.run(
         [str(python), "-m", "ts_agent.runtime.probe", "--json"],
@@ -483,6 +522,7 @@ def _runtime_manifest(
         "schema_version": runtime.MANIFEST_VERSION,
         "package_root": str(paths["package_root"]),
         "environment_spec": str(paths["spec_path"]),
+        "runtime_requirements": str(paths["requirements_path"]),
         "spec_sha256": paths["spec_sha256"],
         "python_payload_sha256": paths["payload_sha256"],
         "python_wheel": distribution_install,
@@ -512,6 +552,7 @@ def _result_payload(
     result: dict[str, Any] = {
         "package_root": str(paths["package_root"]),
         "environment_spec": str(paths["spec_path"]),
+        "runtime_requirements": str(paths["requirements_path"]),
         "spec_sha256": paths["spec_sha256"],
         "python_distribution": paths["runtime_environment"].PYTHON_DISTRIBUTION,
         "python_payload_sha256": paths["payload_sha256"],

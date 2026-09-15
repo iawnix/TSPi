@@ -176,9 +176,20 @@ def environment_spec_path(package_root: str | Path | None = None) -> Path:
     return root / "environment.yml"
 
 
+def runtime_requirements_path(package_root: str | Path | None = None) -> Path:
+    root = resolve_package_root(package_root)
+    return root / "requirements-runtime.txt"
+
+
 def spec_sha256(package_root: str | Path | None = None) -> str:
-    spec = environment_spec_path(package_root)
-    return hashlib.sha256(spec.read_bytes()).hexdigest()
+    environment_spec = environment_spec_path(package_root)
+    pip_requirements = runtime_requirements_path(package_root)
+    return payload_records_sha256(
+        [
+            (environment_spec.name, environment_spec.read_bytes()),
+            (pip_requirements.name, pip_requirements.read_bytes()),
+        ]
+    )
 
 
 def package_version(package_root: str | Path | None = None) -> str:
@@ -450,14 +461,15 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
     if not isinstance(expected, str) or not expected:
         return False
     spec = environment_spec_path(package_root)
-    if not spec.exists():
-        return False
-    if expected != spec_sha256(package_root):
+    requirements = runtime_requirements_path(package_root)
+    if not spec.exists() or not requirements.exists():
         return False
     source_payload = manifest.get("python_payload_sha256")
     if not isinstance(source_payload, str) or not source_payload:
         return False
     try:
+        if expected != spec_sha256(package_root):
+            return False
         if source_payload != python_payload_sha256(package_root):
             return False
         current_package_version = package_version(package_root)

@@ -60,6 +60,7 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     )
     shutil.copy2(ROOT / "pyproject.toml", package_root / "pyproject.toml")
     shutil.copy2(ROOT / "environment.yml", package_root / "environment.yml")
+    shutil.copy2(ROOT / "requirements-runtime.txt", package_root / "requirements-runtime.txt")
     write_test_runtime_manifest(package_root, install_root)
     (package_home / "current").symlink_to("releases/test-suite")
     launcher = install_root / "TSPi"

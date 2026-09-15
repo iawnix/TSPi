@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
 import sys
 from pathlib import Path
 
-from ts_agent.runtime.env import python_payload_sha256
+from ts_agent.runtime.env import python_payload_sha256, spec_sha256
 
 
 def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> Path:
@@ -82,7 +81,8 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
         "schema_version": "ts-agent-runtime/3",
         "package_root": str(package_root),
         "environment_spec": str(environment_spec),
-        "spec_sha256": hashlib.sha256(environment_spec.read_bytes()).hexdigest(),
+        "runtime_requirements": str(package_root / "requirements-runtime.txt"),
+        "spec_sha256": spec_sha256(package_root),
         "python_payload_sha256": payload_sha256,
         "env_prefix": str(base_prefix),
         "base_python_executable": str(base_bin / "python"),

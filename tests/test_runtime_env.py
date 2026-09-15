@@ -39,6 +39,14 @@ from scripts._bootstrap import bootstrap_python_package
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _write_runtime_specs(package: Path) -> None:
+    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    (package / "requirements-runtime.txt").write_text(
+        "xyzrender>=0.2.1\n",
+        encoding="utf-8",
+    )
+
+
 def test_resolve_package_root_honors_process_binding(monkeypatch, tmp_path: Path) -> None:
     package = tmp_path / "package"
     monkeypatch.setenv(PACKAGE_ROOT_OVERRIDE, str(package))
@@ -72,7 +80,7 @@ def test_package_root_detection_uses_package_markers_with_nested_skill(tmp_path:
 def test_default_env_prefix_is_spec_hash_scoped(tmp_path: Path) -> None:
     package = tmp_path / "skill"
     package.mkdir()
-    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    _write_runtime_specs(package)
 
     prefix = default_env_prefix(package, tmp_path / "envs")
 
@@ -80,10 +88,32 @@ def test_default_env_prefix_is_spec_hash_scoped(tmp_path: Path) -> None:
     assert prefix.name == spec_sha256(package)[:12]
 
 
+def test_scientific_base_hash_covers_conda_and_pip_specs(tmp_path: Path) -> None:
+    package = tmp_path / "skill"
+    package.mkdir()
+    _write_runtime_specs(package)
+    initial = spec_sha256(package)
+
+    (package / "requirements-runtime.txt").write_text(
+        "xyzrender>=0.3\n",
+        encoding="utf-8",
+    )
+
+    assert spec_sha256(package) != initial
+
+
+def test_repository_conda_spec_does_not_delegate_runtime_pip_installation() -> None:
+    conda_spec = (ROOT / "environment.yml").read_text(encoding="utf-8")
+    pip_requirements = (ROOT / "requirements-runtime.txt").read_text(encoding="utf-8")
+
+    assert "\n  - pip:" not in conda_spec
+    assert "xyzrender>=0.2.1" in pip_requirements.splitlines()
+
+
 def test_default_kernel_prefix_is_python_payload_scoped(tmp_path: Path) -> None:
     package = tmp_path / "skill"
     package.mkdir()
-    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    _write_runtime_specs(package)
     payload_sha256 = _write_test_python_payload(package)
 
     prefix = default_kernel_prefix(package, tmp_path / "envs")
@@ -270,7 +300,7 @@ def test_workspace_root_owns_runtime_home_and_env_store(tmp_path: Path, monkeypa
     package = tmp_path / "pi" / "git" / "github.com" / "iawnix" / "TSPi"
     workspace.mkdir()
     package.mkdir(parents=True)
-    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    _write_runtime_specs(package)
 
     assert default_runtime_home(package, workspace) == workspace / ".agents" / "runtime" / "tspi"
     assert default_env_store(package, workspace) == workspace / ".agents" / "envs" / "tspi"
@@ -280,7 +310,7 @@ def test_workspace_root_owns_runtime_home_and_env_store(tmp_path: Path, monkeypa
 def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
     package = tmp_path / "skill"
     package.mkdir()
-    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    _write_runtime_specs(package)
     payload_sha256 = _write_test_python_payload(package)
     runtime_probe = _runtime_probe(payload_sha256=payload_sha256)
     # Keep this fixture valid on both Conda (where ``sys.prefix`` equals
@@ -338,7 +368,7 @@ def test_seed_workspace_root_from_argv_sets_runtime_env(monkeypatch, tmp_path: P
 def test_configured_python_ignores_stale_runtime_manifest(tmp_path: Path) -> None:
     package = tmp_path / "skill"
     package.mkdir()
-    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    _write_runtime_specs(package)
     write_manifest(
         package,
         {
@@ -354,7 +384,7 @@ def test_configured_python_ignores_stale_runtime_manifest(tmp_path: Path) -> Non
 def test_runtime_one_manifest_is_rejected(tmp_path: Path) -> None:
     package = tmp_path / "skill"
     package.mkdir()
-    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    _write_runtime_specs(package)
     _write_test_python_payload(package)
     manifest = runtime_manifest_path(package)
     manifest.parent.mkdir(parents=True)
@@ -376,7 +406,7 @@ def test_runtime_one_manifest_is_rejected(tmp_path: Path) -> None:
 def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) -> None:
     package = tmp_path / "skill"
     package.mkdir()
-    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    _write_runtime_specs(package)
     payload_sha256 = _write_test_python_payload(package)
     env_prefix = tmp_path / "managed-base"
     kernel_prefix = tmp_path / "managed-kernel"
@@ -428,7 +458,7 @@ def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) 
 def test_required_runtime_fails_closed_for_stale_manifest(tmp_path: Path) -> None:
     package = tmp_path / "skill"
     package.mkdir()
-    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    _write_runtime_specs(package)
     write_manifest(
         package,
         {
@@ -522,6 +552,8 @@ def test_reused_scientific_base_is_repaired_when_its_probe_fails(
     python.chmod(0o755)
     spec = tmp_path / "environment.yml"
     spec.write_text("name: test\n", encoding="utf-8")
+    requirements = tmp_path / "requirements-runtime.txt"
+    requirements.write_text("xyzrender>=0.2.1\n", encoding="utf-8")
     probes = iter(
         [
             runtime_install.RuntimeInstallError("xyzrender is missing"),
@@ -549,6 +581,7 @@ def test_reused_scientific_base_is_repaired_when_its_probe_fails(
         prefix,
         python,
         spec,
+        requirements,
         tmp_path,
         "reuse",
     )
@@ -566,7 +599,70 @@ def test_reused_scientific_base_is_repaired_when_its_probe_fails(
             "-f",
             str(spec),
             "--prune",
-        ]
+        ],
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-cache-dir",
+            "--requirement",
+            str(requirements),
+        ],
+    ]
+
+
+def test_scientific_base_reports_pip_failure_after_conda_succeeds(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    prefix = tmp_path / "envs/base/spec"
+    python = prefix / "bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    python.chmod(0o755)
+    spec = tmp_path / "environment.yml"
+    spec.write_text("name: test\n", encoding="utf-8")
+    requirements = tmp_path / "requirements-runtime.txt"
+    requirements.write_text("xyzrender>=0.2.1\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    def run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 7 if command[0] == str(python) else 0)
+
+    monkeypatch.setattr(runtime_install.subprocess, "run", run)
+    monkeypatch.setattr(
+        runtime_install,
+        "_run_base_probe",
+        lambda *_args: pytest.fail("the capability probe must not run after pip fails"),
+    )
+
+    with pytest.raises(
+        runtime_install.RuntimeInstallError,
+        match="pip dependency installation failed with exit code 7",
+    ):
+        runtime_install._prepare_base(
+            "/opt/conda/bin/conda",
+            prefix,
+            python,
+            spec,
+            requirements,
+            tmp_path,
+            "create",
+        )
+
+    assert calls[0][:3] == ["/opt/conda/bin/conda", "env", "create"]
+    assert calls[1] == [
+        str(python),
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        "--no-cache-dir",
+        "--requirement",
+        str(requirements),
     ]
 
 
@@ -581,6 +677,8 @@ def test_damaged_scientific_base_requires_conda_for_repair(
     python.chmod(0o755)
     spec = tmp_path / "environment.yml"
     spec.write_text("name: test\n", encoding="utf-8")
+    requirements = tmp_path / "requirements-runtime.txt"
+    requirements.write_text("xyzrender>=0.2.1\n", encoding="utf-8")
     monkeypatch.setattr(
         runtime_install,
         "_run_base_probe",
@@ -590,7 +688,15 @@ def test_damaged_scientific_base_requires_conda_for_repair(
     )
 
     with pytest.raises(runtime_install.RuntimeInstallError, match="required to repair"):
-        runtime_install._prepare_base(None, prefix, python, spec, tmp_path, "reuse")
+        runtime_install._prepare_base(
+            None,
+            prefix,
+            python,
+            spec,
+            requirements,
+            tmp_path,
+            "reuse",
+        )
 
 
 def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path) -> None:
@@ -620,6 +726,7 @@ def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path) -> None:
     assert payload["env_prefix"].startswith(str(tmp_path / "envs" / "base"))
     assert payload["kernel_env_prefix"].startswith(str(tmp_path / "envs" / "kernels"))
     assert payload["manifest_path"].endswith("/.runtime/tspi/env.json")
+    assert payload["runtime_requirements"] == str(ROOT / "requirements-runtime.txt")
     assert payload["python_executable"].endswith("/bin/python")
     assert payload["python_distribution"] == "ts-agent-kernel"
     assert payload["python_payload_sha256"] == python_payload_sha256(ROOT)

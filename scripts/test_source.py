@@ -77,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
         "ok": False,
         "package_root": str(package_root),
         "environment_spec": str(package_root / "environment.yml"),
+        "runtime_requirements": str(package_root / "requirements-runtime.txt"),
         "spec_sha256": runtime.spec_sha256(package_root),
         "python_payload_sha256": runtime.python_payload_sha256(package_root),
         "base_env_prefix": str(base_prefix),
@@ -97,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
             base_prefix,
             base_python,
             package_root / "environment.yml",
+            package_root / "requirements-runtime.txt",
             package_root,
             base_action,
         )

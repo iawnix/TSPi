@@ -483,21 +483,22 @@ python3 tools/bootstrap_dev.py --json
 python3 tools/bootstrap_dev.py --install --json
 ```
 
-The install mode runs `npm ci` and updates the `ts-agent-skill` environment
-from `environment.yml`. It reports the actual Node, TypeScript, Python and
-Conda paths used by the checkout.
+The install mode runs `npm ci`, updates the `ts-agent-skill` Conda environment
+from `environment.yml`, and then installs its pip-only Core dependencies from
+`requirements-runtime.txt` with that environment's Python. It reports the
+actual Node, TypeScript, Python and Conda paths used by the checkout.
 
 For the pinned Linux Conda package layer, create an isolated environment from
-the explicit lock file, then install the pip-only renderer declared by
-`environment.yml`:
+the explicit lock file, then install the pip-only Core dependencies:
 
 ```bash
 conda create --name ts-agent-skill-lock --file environment.lock.txt
-conda run --name ts-agent-skill-lock python -m pip install "xyzrender>=0.2.1"
+conda run --name ts-agent-skill-lock python -m pip install -r requirements-runtime.txt
 ```
 
 `environment.lock.txt` is an `@EXPLICIT` Conda artifact and cannot encode pip
-packages. It must not be treated as a complete lock for the renderer layer.
+packages. The managed runtime identity covers both `environment.yml` and
+`requirements-runtime.txt`.
 
 From the authored checkout:
 

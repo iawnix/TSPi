@@ -348,8 +348,11 @@ python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --json
 ```
 
-The runtime has two layers. `base/<spec-hash>` is a shared Conda environment
-containing RDKit, NumPy, SciPy, Pillow, pytest, Matplotlib, and `xyzrender`.
+The runtime has two layers. `base/<spec-hash>` is a shared environment. Conda
+installs RDKit, NumPy, SciPy, Pillow, pytest, and Matplotlib from
+`environment.yml`; that environment's Python then installs the required
+`xyzrender` package from `requirements-runtime.txt`. The spec hash covers both
+files.
 `kernels/<payload-hash>` is a venv with system site packages enabled and only
 the exact release wheel installed. An unchanged dependency spec therefore
 reuses the heavy scientific base, while each distinct Python payload receives

@@ -159,12 +159,12 @@ TSPi 只校验 Phone 的版本范围、协议版本、归档 digest、入口、A
 
 1. `npm ci`，安装锁定的 TypeScript/Pi 开发依赖。
 2. 创建或复用 Conda 环境。
-3. 安装 `pyproject.toml` 的核心渲染依赖和 test 依赖。
+3. 安装 `requirements-runtime.txt` 的核心渲染依赖和测试依赖。
 4. 输出实际 Python、Node、RDKit、NumPy、Pi 版本。
 5. 运行一个最小 smoke test。
 
-科学依赖已增加 Linux Conda explicit lock 文件。`environment.yml` 可以继续
-作为人类可读入口，但不能作为唯一的可复现依据。
+科学依赖已增加 Linux Conda explicit lock 文件。`environment.yml` 描述 Conda 层，
+`requirements-runtime.txt` 描述仅能通过 pip 获取的 Core 依赖；运行时规格摘要同时覆盖二者。
 
 建议 CI 分为四个 job：
 

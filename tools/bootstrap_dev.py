@@ -73,6 +73,22 @@ def main(argv: list[str] | None = None) -> int:
                 raise RuntimeError("conda or mamba is required for --install")
             # The environment file pins channels to conda-forge/nodefaults.
             run([conda, "env", "update", "--name", ENV_NAME, "--file", str(ROOT / "environment.yml"), "--prune"])
+            run(
+                [
+                    conda,
+                    "run",
+                    "--name",
+                    ENV_NAME,
+                    "python",
+                    "-m",
+                    "pip",
+                    "install",
+                    "--disable-pip-version-check",
+                    "--no-cache-dir",
+                    "--requirement",
+                    str(ROOT / "requirements-runtime.txt"),
+                ]
+            )
             report["tsc"] = command_version("node_modules/.bin/tsc") or command_version("tsc")
             report["environment_prefix"] = environment_prefix(conda)
         report["ok"] = bool(report["node"] and report["npm"] and report["conda"] and report["environment_prefix"])

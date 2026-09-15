@@ -46,6 +46,7 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
     )
     shutil.copy2(ROOT / "environment.yml", package_root / "environment.yml")
+    shutil.copy2(ROOT / "requirements-runtime.txt", package_root / "requirements-runtime.txt")
     write_test_runtime_manifest(package_root, install_root)
     (package_home / "current").symlink_to("releases/test-suite")
     launcher = install_root / "TSPi"
