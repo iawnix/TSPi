@@ -217,6 +217,23 @@ def test_suite_build_and_install_supports_core_only_and_web_only_profiles(
         assert not (install_root / "TSWeb").exists()
 
 
+def test_suite_install_rejects_relative_install_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    agent_manifest, _ = _synthetic_release(tmp_path / "agent", marker="relative-install-root")
+    built = build_package(
+        phone_manifest_path=None,
+        output_dir=tmp_path / "package",
+        agent_manifest_path=agent_manifest,
+        allow_dirty=False,
+        include_web=False,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValueError, match="must be absolute"):
+        install_package(Path(built["manifest"]), None, Path("install"))
+
+    assert not (tmp_path / "install").exists()
+
+
 def test_core_only_install_rejects_stale_optional_entrypoint(tmp_path: Path) -> None:
     agent_manifest, _ = _synthetic_release(tmp_path / "agent", marker="stale-optional-entrypoint")
     built = build_package(

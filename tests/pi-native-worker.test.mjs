@@ -105,6 +105,87 @@ function kernelPython() {
   }
 }
 
+test("native ts_import writes a semantic input basename", {
+  skip: !kernelPython(),
+}, async () => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-native-import-"));
+  const workspace = join(root, "workspace");
+  const python = kernelPython();
+  assert.ok(python, "a Python runtime with jsonschema is required");
+  const previous = {
+    TSPI_PACKAGE_ROOT: process.env.TSPI_PACKAGE_ROOT,
+    TS_AGENT_PYTHON: process.env.TS_AGENT_PYTHON,
+    TSPI_NATIVE_WRITES: process.env.TSPI_NATIVE_WRITES,
+  };
+  process.env.TSPI_PACKAGE_ROOT = process.cwd();
+  process.env.TS_AGENT_PYTHON = python;
+  process.env.TSPI_NATIVE_WRITES = "1";
+  try {
+    await executeFile(python, ["scripts/ts_workspace.py", "init_workspace", "--root", workspace], {
+      cwd: process.cwd(),
+      env: { ...process.env, TS_AGENT_DISABLE_RUNTIME_REEXEC: "1", PYTHONNOUSERSITE: "1" },
+    });
+    const nativeTools = await import(pathToFileURL(join(process.cwd(), "apps/host/pi-native-tools.mjs")).href);
+    const toolContext = { cwd: workspace };
+    const context = { abortSignal: new AbortController().signal };
+    const changed = await nativeTools.createChangeTool().execute("create-node", {
+      rationale: "Create one bounded Node for semantic import naming.",
+      operations: [
+        {
+          op: "create_phase",
+          local_ref: "phase",
+          title: "Semantic import naming",
+          objective: "Verify that imported inputs retain a meaningful basename.",
+        },
+        {
+          op: "create_claim",
+          local_ref: "claim",
+          claimType: "test",
+          question: "Does native artifact import preserve the requested basename?",
+          statement: "Native artifact import preserves a validated semantic basename.",
+          scope: "One bounded Gaussian input.",
+          uncertainty: "The import has not run yet.",
+          predictions: ["The Node input is named named-candidate.gjf."],
+          falsifiers: ["The Node input is named from a content hash."],
+        },
+        {
+          op: "start_node",
+          local_ref: "node",
+          phaseRef: "$phase",
+          title: "Native semantic import",
+          objective: "Import one Gaussian input under a semantic basename.",
+          deliverable: "A Node-owned named Gaussian input.",
+          primaryClaimRef: "$claim",
+          claimRefs: ["$claim"],
+        },
+      ],
+    }, () => {}, toolContext, undefined, context);
+    const nodeId = JSON.parse(changed.content[0].text).created_refs.nodes[0];
+    const content = "#p hf/sto-3g sp\n\nH2\n\n0 1\nH 0 0 0\nH 0 0 0.74\n\n";
+    const imported = await nativeTools.createImportTool().execute("import", {
+      operation: "import",
+      nodeId,
+      format: "gaussian_input",
+      inputName: "named-candidate.gjf",
+      content,
+      charge: 0,
+      multiplicity: 1,
+    }, () => {}, toolContext, undefined, context);
+    const result = JSON.parse(imported.content[0].text);
+    assert.equal(result.artifact.path, `nodes/${nodeId}/inputs/named-candidate.gjf`);
+    assert.equal(await readFile(join(workspace, ...result.artifact.path.split("/")), "utf8"), content);
+    const activityRequest = JSON.parse(await readFile(join(workspace, result.activity_ref, "request.json"), "utf8"));
+    assert.equal(activityRequest.request.input_name, "named-candidate.gjf");
+    assert.equal(JSON.stringify(activityRequest).includes(content), false);
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("native Pi server starts a TSPi Harness with native research tools", { skip: !sourceRoot }, async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-worker-"));
   const agentDir = join(root, "agent");
@@ -386,6 +467,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       operation: "import",
       nodeId,
       format: "xyz_structure",
+      inputName: "h2-reference.xyz",
       content: referenceContent,
       charge: 0,
       multiplicity: 1,
@@ -394,12 +476,14 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       operation: "import",
       nodeId,
       format: "xyz_structure",
+      inputName: "h2-target.xyz",
       content: targetContent,
       charge: 0,
       multiplicity: 1,
     }, () => {}, toolContext, undefined, context)).content[0].text);
     assert.equal(importedReference.schema_version, "ts-artifact-import-result/1");
     assert.match(importedReference.artifact.artifact_id, /^art_[0-9a-f]{24}$/);
+    assert.equal(importedReference.artifact.path, `nodes/${nodeId}/inputs/h2-reference.xyz`);
     assert.notEqual(importedReference.artifact.artifact_id, importedTarget.artifact.artifact_id);
     assert.equal(updates.length, 1);
     assert.equal(updates[0].details.activity.activity_id, importedReference.activity_id);

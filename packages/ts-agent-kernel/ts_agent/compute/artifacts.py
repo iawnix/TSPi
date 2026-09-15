@@ -37,7 +37,7 @@ from .contracts import ComputeContractError
 
 
 CATALOG_SCHEMA_VERSION = "ts-artifact-catalog/3"
-IMPORT_REQUEST_SCHEMA_VERSION = "ts-artifact-import-request/1"
+IMPORT_REQUEST_SCHEMA_VERSION = "ts-artifact-import-request/2"
 IMPORT_RESULT_SCHEMA_VERSION = "ts-artifact-import-result/1"
 STRUCTURE_SEED_REQUEST_SCHEMA_VERSION = "ts-structure-seed-request/1"
 STRUCTURE_SEED_RESULT_SCHEMA_VERSION = "ts-structure-seed-result/1"
@@ -45,11 +45,13 @@ STRUCTURE_COMPARE_REQUEST_SCHEMA_VERSION = "ts-structure-compare-request/1"
 STRUCTURE_COMPARE_RESULT_SCHEMA_VERSION = "ts-structure-compare-result/1"
 STRUCTURE_COMPARISON_SCHEMA_VERSION = "ts-structure-comparison/1"
 MAX_IMPORT_BYTES = 128 * 1024
-IMPORT_FORMATS = {
-    "gaussian_input": ".gjf",
-    "xyz_structure": ".xyz",
-    "xtb_control": ".inp",
+IMPORT_FORMATS = frozenset({"gaussian_input", "xyz_structure", "xtb_control"})
+IMPORT_FORMAT_SUFFIXES = {
+    "gaussian_input": frozenset({".com", ".gjf"}),
+    "xyz_structure": frozenset({".xyz"}),
+    "xtb_control": frozenset({".inp"}),
 }
+IMPORT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 ROLE_SUFFIXES = {
     "gjf": frozenset({".gjf", ".com"}),
     "xyz": frozenset({".xyz"}),
@@ -108,7 +110,7 @@ def resolve_artifact_ref(root: str | Path, artifact_ref: str) -> dict[str, Any]:
 
 
 def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
-    """Materialize one validated, Node-owned calculation input without a caller path."""
+    """Materialize one validated, Node-owned calculation input under a safe basename."""
 
     workspace = _workspace_root(root)
     normalized = _validate_import_request(request)
@@ -131,10 +133,8 @@ def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> di
             normalized.get("multiplicity"),
         )
         digest = "sha256:" + hashlib.sha256(payload).hexdigest()
-        suffix = IMPORT_FORMATS[normalized["format"]]
-        filename = f"seed_{digest.removeprefix('sha256:')}{suffix}"
         inputs = _node_inputs_directory(workspace, normalized["node_id"])
-        path = inputs / filename
+        path = inputs / normalized["input_name"]
         created = _write_artifact_payload(path, payload)
         artifact = _artifact_for_path(workspace, path, _node_ids(workspace))
 
@@ -431,7 +431,7 @@ def _with_input_roles(record: dict[str, Any]) -> dict[str, Any]:
 def _validate_import_request(request: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(request, dict):
         raise ComputeContractError("artifact import request must be an object")
-    required = {"schema_version", "node_id", "format", "content"}
+    required = {"schema_version", "node_id", "format", "input_name", "content"}
     optional = {"charge", "multiplicity"}
     missing = sorted(required - set(request))
     unexpected = sorted(set(request) - required - optional)
@@ -450,6 +450,15 @@ def _validate_import_request(request: dict[str, Any]) -> dict[str, Any]:
     if artifact_format not in IMPORT_FORMATS:
         raise ComputeContractError(
             "artifact import format must be one of: " + ", ".join(sorted(IMPORT_FORMATS))
+        )
+    input_name = request.get("input_name")
+    if not isinstance(input_name, str) or IMPORT_NAME.fullmatch(input_name) is None:
+        raise ComputeContractError("artifact import input_name must be a safe filename")
+    suffixes = IMPORT_FORMAT_SUFFIXES[artifact_format]
+    if PurePosixPath(input_name).suffix.lower() not in suffixes:
+        raise ComputeContractError(
+            f"artifact import input_name for {artifact_format} must end with "
+            + " or ".join(sorted(suffixes))
         )
     content = request.get("content")
     if not isinstance(content, str) or not content:
@@ -929,11 +938,11 @@ def _node_analysis_directory(workspace: Path, node_id: str) -> Path:
 def _write_artifact_payload(path: Path, payload: bytes) -> bool:
     if path.exists() or path.is_symlink():
         if path.is_symlink() or not path.is_file():
-            raise ComputeContractError("content-addressed artifact target is not a regular file")
+            raise ComputeContractError("artifact target is not a regular file")
         if path.read_bytes() != payload:
-            raise ComputeContractError("content-addressed artifact collision")
+            raise ComputeContractError("artifact target already contains different content")
         if path.stat().st_mode & 0o077:
-            raise ComputeContractError("existing content-addressed artifact is not private")
+            raise ComputeContractError("existing artifact is not private")
         return False
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:

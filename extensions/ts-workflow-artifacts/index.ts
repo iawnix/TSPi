@@ -236,13 +236,17 @@ export default function (pi: ExtensionAPI) {
     description: "Import one validated Node-owned calculation input.",
     promptSnippet: "Import a calculation input",
     promptGuidelines: [
-      "Use bounded Gaussian, XYZ, or xTB control text; reuse the returned art_* ID.",
+      "Choose a concise semantic inputName with the format's extension; use bounded Gaussian, XYZ, or xTB control text and reuse the returned art_* ID.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
       operation: Type.Literal("import"),
       nodeId: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
       format: StringEnum(IMPORT_FORMATS),
+      inputName: Type.String({
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+        description: "Semantic input basename with the extension required by the selected format.",
+      }),
       content: Type.String({ minLength: 1, maxLength: 131_072 }),
       charge: Type.Optional(Type.Integer({ minimum: -20, maximum: 20 })),
       multiplicity: Type.Optional(Type.Integer({ minimum: 1, maximum: 21 })),
@@ -258,20 +262,22 @@ export default function (pi: ExtensionAPI) {
         node_refs: [params.nodeId],
         request: {
           format: params.format,
+          input_name: params.inputName,
           submitted_sha256: `sha256:${createHash("sha256").update(params.content, "utf8").digest("hex")}`,
           submitted_size_bytes: Buffer.byteLength(params.content, "utf8"),
           charge: params.charge,
           multiplicity: params.multiplicity,
         },
       });
-      onUpdate?.(toolText(`TS Artifact import · ${params.nodeId}`, {
+      onUpdate?.(toolText(`TS Artifact import · ${params.inputName}`, {
         activity: { activity_id: activityId, state: "running" },
       }));
       try {
         const raw = await runArtifactImportJson(pi, root, {
-          schema_version: "ts-artifact-import-request/1",
+          schema_version: "ts-artifact-import-request/2",
           node_id: params.nodeId,
           format: params.format,
+          input_name: params.inputName,
           content: params.content,
           charge: params.charge,
           multiplicity: params.multiplicity,

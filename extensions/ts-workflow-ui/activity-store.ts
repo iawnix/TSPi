@@ -238,7 +238,7 @@ function operationFor(kind: TsDeterministicKind, args: Record<string, unknown>):
 function detailFor(kind: TsDeterministicKind, args: Record<string, unknown>): string | undefined {
   if (kind === "structure") return compact(["SMILES", stringValue(args.optimization)]);
   if (kind === "analysis") return "XYZ comparison";
-  if (kind === "artifact") return stringValue(args.format);
+  if (kind === "artifact") return stringValue(args.inputName) || stringValue(args.format);
   if (kind === "render") return stringValue(args.outputName);
   if (kind === "report") return stringValue(args.packageName);
   if (kind === "notify") return stringValue(args.event);

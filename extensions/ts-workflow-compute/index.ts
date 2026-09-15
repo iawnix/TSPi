@@ -224,7 +224,7 @@ export default function (pi: ExtensionAPI) {
     promptSnippet: "Run one bound transition-state Compute lifecycle",
     promptGuidelines: [
       "Before launch, confirm the focused Node question; otherwise open a dependent Node.",
-      "Before launch, verify logical inputs and capability with ts_state; the host owns paths, hashes, filenames, and IDs.",
+      "Before launch, verify logical inputs and capability with ts_state; the host validates paths and binds hashes and IDs.",
       "Set attemptKind; retry/recalculation cite one same-Node source Attempt; cross-Node work uses dependencies and artifacts.",
       "Use launch=prepare+submit, inspect=status+optional tail, finalize=collect+parse, cancel=bound job.",
       "Compute output is operational until Root explicitly promotes selected facts through the mutation boundary.",

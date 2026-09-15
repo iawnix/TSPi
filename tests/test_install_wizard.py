@@ -163,6 +163,19 @@ def test_phone_options_reject_invalid_configuration_before_install(tmp_path: Pat
     assert not (tmp_path / "install").exists()
 
 
+def test_wizard_rejects_install_root_with_symbolic_link_parent(tmp_path: Path) -> None:
+    physical_parent = tmp_path / "physical"
+    physical_parent.mkdir()
+    linked_parent = tmp_path / "linked"
+    linked_parent.symlink_to(physical_parent, target_is_directory=True)
+    args = parse_args(["--install-root", str(linked_parent / "install"), "--without-phone"])
+
+    with pytest.raises(ValueError, match="physical directory path"):
+        validate_options(args)
+
+    assert not (physical_parent / "install").exists()
+
+
 def test_install_places_local_uninstaller_in_installation(tmp_path: Path) -> None:
     source = tmp_path / "source"
     (source / "scripts").mkdir(parents=True)

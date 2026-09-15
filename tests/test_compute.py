@@ -278,9 +278,10 @@ def test_fresh_workspace_imports_first_artifact_before_compute_prepare(tmp_path:
     imported = import_calculation_artifact(
         root,
         {
-            "schema_version": "ts-artifact-import-request/1",
+            "schema_version": "ts-artifact-import-request/2",
             "node_id": node_id,
             "format": "gaussian_input",
+            "input_name": "candidate.gjf",
             "content": "#p hf/sto-3g sp\n\nH2\n\n0 1\nH 0 0 0\nH 0 0 0.74\n\n",
             "charge": 0,
             "multiplicity": 1,

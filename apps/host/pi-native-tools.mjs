@@ -81,6 +81,10 @@ const TS_IMPORT_PARAMETERS = Type.Object({
   operation: Type.Literal("import"),
   nodeId: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
   format: Type.Union(IMPORT_FORMATS.map((value) => Type.Literal(value))),
+  inputName: Type.String({
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+    description: "Semantic input basename with the extension required by the selected format.",
+  }),
   content: Type.String({ minLength: 1, maxLength: 131_072 }),
   charge: Type.Optional(Type.Integer({ minimum: -20, maximum: 20 })),
   multiplicity: Type.Optional(Type.Integer({ minimum: 1, maximum: 21 })),
@@ -320,7 +324,7 @@ export function createImportTool() {
   return {
     name: "ts_import",
     label: "TS Artifact Import",
-    description: "Import one validated Node-owned calculation input.",
+    description: "Import one validated Node-owned calculation input under a semantic basename.",
     parameters: TS_IMPORT_PARAMETERS,
     executionMode: "sequential",
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
@@ -332,18 +336,20 @@ export function createImportTool() {
         nodeId: params.nodeId,
         requestSummary: {
           format: params.format,
+          input_name: params.inputName,
           submitted_sha256: sha256Text(params.content),
           submitted_size_bytes: Buffer.byteLength(params.content, "utf8"),
           charge: params.charge,
           multiplicity: params.multiplicity,
         },
-        progressLabel: `TS Artifact import: ${params.nodeId}`,
+        progressLabel: `TS Artifact import: ${params.inputName}`,
         temporaryPrefix: "tspi-native-artifact-import-",
         command: "import-artifact",
         request: {
-          schema_version: "ts-artifact-import-request/1",
+          schema_version: "ts-artifact-import-request/2",
           node_id: params.nodeId,
           format: params.format,
+          input_name: params.inputName,
           content: params.content,
           charge: params.charge,
           multiplicity: params.multiplicity,

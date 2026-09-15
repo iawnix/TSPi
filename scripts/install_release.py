@@ -354,13 +354,28 @@ def remove_staging_tree(root: Path) -> None:
     shutil.rmtree(root)
 
 
+def validate_install_root(path: Path) -> Path:
+    path = path.expanduser()
+    if not path.is_absolute():
+        raise ValueError("--install-root must be absolute")
+    if any(ord(char) < 32 or char in {'"', "\\"} for char in str(path)):
+        raise ValueError("--install-root cannot contain control characters, double quotes, or backslashes")
+    if any(candidate.is_symlink() for candidate in (path, *path.parents)):
+        raise ValueError("--install-root must use a physical directory path")
+
+    resolved = path.resolve()
+    home = Path.home().expanduser().resolve()
+    if resolved in {Path("/"), home, home.parent}:
+        raise ValueError("--install-root must name a dedicated installation directory")
+    return resolved
+
+
 def prepare_install_root(path: Path) -> Path:
-    if path.is_symlink():
-        raise ReleaseInstallError(f"install root cannot be a symbolic link: {path}")
+    path = validate_install_root(path)
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     if not path.is_dir():
         raise ReleaseInstallError(f"install root is not a directory: {path}")
-    return path.resolve()
+    return path
 
 
 def ensure_private_directory(path: Path) -> Path:

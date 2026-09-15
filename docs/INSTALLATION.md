@@ -101,7 +101,10 @@ first research session. The wizard enables and starts services when selected.
 
 ## Installation Layout
 
-Choose one physical, non-symlink installation root:
+Choose one dedicated, physical installation root. The wizard, Package installer,
+and Core release installer all require an absolute path; reject `/`, the current
+user's home directory, and its parent; and reject control characters, double
+quotes, backslashes, or a symbolic link anywhere in the path:
 
 ```text
 <installation>/

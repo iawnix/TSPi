@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.install_release import REQUIRED_RUNTIME_FILES
+from scripts.install_release import REQUIRED_RUNTIME_FILES, install_release, prepare_install_root
 from scripts._wheel import inspect_wheel
 from tests.runtime_helpers import write_test_runtime_manifest
 
@@ -23,6 +23,57 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD_RELEASE = ROOT / "scripts" / "build_release.py"
 INSTALL_RELEASE = ROOT / "scripts" / "install_release.py"
 PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
+
+
+def test_prepare_install_root_rejects_relative_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValueError, match="must be absolute"):
+        prepare_install_root(Path("install"))
+
+    assert not (tmp_path / "install").exists()
+
+
+@pytest.mark.parametrize("name", ['install"root', "install\\root", "install\nroot"])
+def test_prepare_install_root_rejects_unsafe_characters(tmp_path: Path, name: str) -> None:
+    install_root = tmp_path / name
+
+    with pytest.raises(ValueError, match="cannot contain"):
+        prepare_install_root(install_root)
+
+    assert not install_root.exists()
+
+
+def test_prepare_install_root_rejects_broad_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    home = tmp_path / "owner"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    for install_root in (Path("/"), home, home.parent):
+        with pytest.raises(ValueError, match="dedicated installation directory"):
+            prepare_install_root(install_root)
+
+
+def test_prepare_install_root_rejects_symbolic_link_parent(tmp_path: Path) -> None:
+    physical_parent = tmp_path / "physical"
+    physical_parent.mkdir()
+    linked_parent = tmp_path / "linked"
+    linked_parent.symlink_to(physical_parent, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="physical directory path"):
+        prepare_install_root(linked_parent / "install")
+
+    assert not (physical_parent / "install").exists()
+
+
+def test_release_install_rejects_relative_install_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest_path, _ = _synthetic_release(tmp_path / "release", marker="relative-install-root")
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValueError, match="must be absolute"):
+        install_release(manifest_path, None, Path("install"))
+
+    assert not (tmp_path / "install").exists()
 
 
 def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path) -> None:

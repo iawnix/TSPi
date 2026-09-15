@@ -15,9 +15,11 @@ from pathlib import Path
 try:
     from .install_from_github import validate_ref, validate_repo
     from .install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
+    from .install_release import validate_install_root
 except ImportError:
     from install_from_github import validate_ref, validate_repo
     from install_phone import DEFAULT_PHONE_REPO, activate_phone, prepare_phone
+    from install_release import validate_install_root
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,16 +109,7 @@ def validate_options(args: argparse.Namespace) -> None:
         raise ValueError("--with-web and --without-web are mutually exclusive")
     if not args.install_root:
         raise ValueError("--install-root is required in non-interactive mode")
-    root = Path(args.install_root).expanduser()
-    if not root.is_absolute():
-        raise ValueError("--install-root must be absolute")
-    if root.resolve() in {Path("/"), Path.home(), Path.home().parent}:
-        raise ValueError("--install-root must name a dedicated installation directory")
-    if any(ord(char) < 32 or char in {'"', "\\"} for char in str(root)):
-        raise ValueError("--install-root cannot contain control characters, double quotes, or backslashes")
-    if any(path.is_symlink() for path in (root, *root.parents)):
-        raise ValueError("--install-root must use a physical directory path")
-    args.install_root = str(root.resolve())
+    args.install_root = str(validate_install_root(Path(args.install_root)))
     if args.web_service and args.without_web:
         raise ValueError("--web-service requires TS Web")
     args.service_scope = args.service_scope or "none"

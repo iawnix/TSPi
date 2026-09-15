@@ -43,6 +43,7 @@ const pi={{
 install(pi);
 await tools.ts_import.execute("call-import",{{
   operation:"import",nodeId:{json.dumps(refs['node_id'])},format:"xyz_structure",
+  inputName:"h2-reference.xyz",
   content:{json.dumps(content)},charge:0,multiplicity:1,
 }},undefined,(value)=>updates.push(value),{{cwd:{json.dumps(str(workspace))}}});
 process.stdout.write(JSON.stringify({{entries,updates}}));
@@ -62,6 +63,7 @@ process.stdout.write(JSON.stringify({{entries,updates}}));
     assert value["entries"][0]["type"] == "ts-deterministic-activity"
     assert result["schema_version"] == "ts-artifact-import-result/1"
     assert result["artifact"]["artifact_id"].startswith("art_")
+    assert result["artifact"]["path"] == f"nodes/{refs['node_id']}/inputs/h2-reference.xyz"
     activity = workspace / result["activity_ref"]
     request = json.loads((activity / "request.json").read_text(encoding="utf-8"))
     status = json.loads((activity / "status.json").read_text(encoding="utf-8"))

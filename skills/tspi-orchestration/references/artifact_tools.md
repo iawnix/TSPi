@@ -73,26 +73,30 @@ semantic Observation through a Decision, citing the verified analysis artifact.
 
 ## Import An Existing Input
 
-After starting an open ResearchNode, create one bounded seed without choosing a
-path or filename:
+After starting an open ResearchNode, create one bounded input with a semantic
+basename. The host owns its Node-local directory:
 
 ```json
 {
   "operation":"import",
   "nodeId":"node_1",
   "format":"gaussian_input",
+  "inputName":"cycloaddition-ts.gjf",
   "content":"#p M062X/6-31+G(d,p) opt\n\n...\n",
   "charge":0,
   "multiplicity":1
 }
 ```
 
-Formats are `gaussian_input`, `xyz_structure`, and `xtb_control`. Gaussian and
-XYZ imports require declared charge and multiplicity. The host bounds and
-validates UTF-8 text, rejects traversal and symlinks, generates a private
-content-addressed Node input, and returns its logical `artifactId`. Identical
-replay is idempotent. The activity journal stores hashes and metadata, never
-the input body. QST2/QST3 imports also require every structure to use the same
+Formats are `gaussian_input`, `xyz_structure`, and `xtb_control`. Provide a
+concise semantic `inputName`; Gaussian accepts `.gjf` or `.com`, XYZ requires
+`.xyz`, and xTB control requires `.inp`. Gaussian and XYZ imports require
+declared charge and multiplicity. The host bounds and validates UTF-8 text,
+restricts the name to a safe basename, rejects traversal and symlinks, writes a
+private Node input, and returns its content-bound logical `artifactId`.
+Replaying the same name and content is idempotent; the same name never
+overwrites different content. The activity journal stores hashes and metadata,
+never the input body. QST2/QST3 imports also require every structure to use the same
 declared charge/multiplicity, atom count, and atom order. Multi-job `--Link1--`
 inputs and Link 0 filesystem paths are rejected. Resolve the result with
 `ts_state mode=artifacts` before Compute.

@@ -96,12 +96,13 @@ def test_artifact_id_binds_path_and_content(tmp_path: Path) -> None:
     assert third["sha256"] != second["sha256"]
 
 
-def test_seed_import_is_private_content_addressed_and_idempotent(tmp_path: Path) -> None:
+def test_artifact_import_uses_safe_semantic_name_and_is_idempotent(tmp_path: Path) -> None:
     workspace, node_id = _workspace(tmp_path)
     request = {
-        "schema_version": "ts-artifact-import-request/1",
+        "schema_version": "ts-artifact-import-request/2",
         "node_id": node_id,
         "format": "xyz_structure",
+        "input_name": "h2-reference.xyz",
         "content": "2\nH2\nH 0 0 0\nH 0 0 0.74\n",
         "charge": 0,
         "multiplicity": 1,
@@ -119,18 +120,19 @@ def test_seed_import_is_private_content_addressed_and_idempotent(tmp_path: Path)
     assert artifact["artifact_id"].startswith("art_")
     assert artifact["owner_node"] == node_id
     assert artifact["input_roles"] == ["product", "reactant", "xyz"]
-    assert artifact["path"].startswith(f"nodes/{node_id}/inputs/seed_")
+    assert artifact["path"] == f"nodes/{node_id}/inputs/h2-reference.xyz"
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert first["chemical_metadata"]["atom_order"] == ["H", "H"]
     assert list_calculation_artifacts(workspace, node_id=node_id)["artifacts"] == [artifact]
 
 
-def test_concurrent_identical_seed_import_creates_one_artifact(tmp_path: Path) -> None:
+def test_concurrent_identical_named_import_creates_one_artifact(tmp_path: Path) -> None:
     workspace, node_id = _workspace(tmp_path)
     request = {
-        "schema_version": "ts-artifact-import-request/1",
+        "schema_version": "ts-artifact-import-request/2",
         "node_id": node_id,
         "format": "xyz_structure",
+        "input_name": "h2-reference.xyz",
         "content": "2\nH2\nH 0 0 0\nH 0 0 0.74\n",
         "charge": 0,
         "multiplicity": 1,
@@ -142,6 +144,36 @@ def test_concurrent_identical_seed_import_creates_one_artifact(tmp_path: Path) -
     assert sorted(result["created"] for result in results) == [False, True]
     assert results[0]["artifact"] == results[1]["artifact"]
     assert len(list_calculation_artifacts(workspace, node_id=node_id)["artifacts"]) == 1
+
+
+def test_artifact_import_rejects_unsafe_name_extension_and_overwrite(tmp_path: Path) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    request = {
+        "schema_version": "ts-artifact-import-request/2",
+        "node_id": node_id,
+        "format": "gaussian_input",
+        "input_name": "candidate.gjf",
+        "content": "#p hf/sto-3g sp\n\nH2\n\n0 1\nH 0 0 0\nH 0 0 0.74\n\n",
+        "charge": 0,
+        "multiplicity": 1,
+    }
+
+    for input_name in ("../escape.gjf", "/tmp/escape.gjf", "candidate input.gjf"):
+        with pytest.raises(ComputeContractError, match="safe filename"):
+            import_calculation_artifact(workspace, {**request, "input_name": input_name})
+    with pytest.raises(ComputeContractError, match=r"must end with \.com or \.gjf"):
+        import_calculation_artifact(workspace, {**request, "input_name": "candidate.log"})
+
+    imported = import_calculation_artifact(workspace, request)
+    path = workspace / imported["artifact"]["path"]
+    original = path.read_bytes()
+    with pytest.raises(ComputeContractError, match="already contains different content"):
+        import_calculation_artifact(
+            workspace,
+            {**request, "content": request["content"].replace("0.74", "0.75")},
+        )
+    assert path.read_bytes() == original
+    assert not (tmp_path / "escape.gjf").exists()
 
 
 def test_rdkit_structure_seed_is_deterministic_and_explicit_about_limitations() -> None:
@@ -327,9 +359,10 @@ def test_structure_comparison_rejects_unregistered_shapes_and_invalid_parameters
 def test_seed_import_rejects_invalid_metadata_content_and_symlink_root(tmp_path: Path) -> None:
     workspace, node_id = _workspace(tmp_path)
     base = {
-        "schema_version": "ts-artifact-import-request/1",
+        "schema_version": "ts-artifact-import-request/2",
         "node_id": node_id,
         "format": "gaussian_input",
+        "input_name": "candidate.gjf",
         "content": "#p hf/sto-3g sp\n\nH2\n\n0 1\nH 0 0 0\nH 0 0 0.74\n\n",
         "charge": 0,
         "multiplicity": 1,
@@ -364,9 +397,10 @@ def test_seed_import_rejects_invalid_metadata_content_and_symlink_root(tmp_path:
 def test_gaussian_qst_import_validates_every_structure_and_atom_mapping(tmp_path: Path) -> None:
     workspace, node_id = _workspace(tmp_path)
     qst2 = {
-        "schema_version": "ts-artifact-import-request/1",
+        "schema_version": "ts-artifact-import-request/2",
         "node_id": node_id,
         "format": "gaussian_input",
+        "input_name": "qst-candidate.gjf",
         "content": (
             "#p hf/sto-3g opt=(qst2,calcfc)\n\nReactant\n\n0 1\n"
             "C 0 0 0\nH 0 0 1\n\nProduct\n\n0 1\nC 0 0 0\nH 0 1 0\n\n"
@@ -524,9 +558,10 @@ def test_import_artifact_cli_uses_bounded_request_file(tmp_path: Path, capsys: p
     request = tmp_path / "import.json"
     request.write_text(
         json.dumps({
-            "schema_version": "ts-artifact-import-request/1",
+            "schema_version": "ts-artifact-import-request/2",
             "node_id": node_id,
             "format": "xyz_structure",
+            "input_name": "hydrogen.xyz",
             "content": "1\nH\nH 0 0 0\n",
             "charge": 0,
             "multiplicity": 2,

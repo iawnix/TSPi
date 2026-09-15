@@ -327,9 +327,11 @@ The first input in a fresh workspace enters through `ts_seed` or
 `ts_import`. Structure seeding owns fixed ETKDG parameters, one
 connected SMILES, chemical metadata checks, content-addressed XYZ/provenance,
 and the explicit rule that a generated geometry is not evidence. Import remains
-bounded inline UTF-8 in registered formats. Both require one open Node, mode-0600
-files, no caller path, no symlink/overwrite path, and digest-only activity
-requests. Their returned `art_*` is consumed by the ordinary Compute contract.
+bounded inline UTF-8 in registered formats and requires a validated semantic
+basename with the matching format extension. Both require one open Node,
+mode-0600 files, no caller-controlled directory, no symlink/overwrite path, and
+digest-only input bodies in activity requests. Their returned `art_*` is consumed
+by the ordinary Compute contract.
 
 Structure comparison takes two registered XYZ IDs and delegates scientific
 geometry logic to `ts_agent.structures`. `ts_agent.compute.artifacts` owns workspace

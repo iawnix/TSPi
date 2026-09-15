@@ -45,7 +45,7 @@ reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",to
 start("compute","ts_calc",{{operation:"launch",capability:"gaussian",nodeId:"node_1"}},3000);
 start("structure","ts_seed",{{operation:"generate",optimization:"uff",nodeId:"node_1"}},3250);
 start("analysis","ts_compare",{{operation:"compare",nodeId:"node_1"}},3375);
-start("artifact","ts_import",{{operation:"import",format:"xyz_structure",nodeId:"node_1"}},3500);
+start("artifact","ts_import",{{operation:"import",format:"xyz_structure",inputName:"reference.xyz",nodeId:"node_1"}},3500);
 start("render","ts_render",{{operation:"compare",nodeId:"node_1",outputName:"compare.png"}},4000);
 reduceTsToolActivity(store,{{type:"tool_execution_end",toolCallId:"render",toolName:"ts_render",result:{{}},isError:false}},5000);
 const stale=reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:0,tool_call_id:"review",task_id:"sub_1",role:"review",operation:"claim_review",state:"running",started_at:new Date(1000).toISOString(),updated_at:new Date(6000).toISOString()}}}}}},6000);
@@ -59,7 +59,7 @@ process.stdout.write(JSON.stringify({{before,after,summary:summarizeTsActivities
     assert by_id["subagent:compute"]["capability"] == "gaussian"
     assert by_id["tool:structure"]["detail"] == "SMILES · uff"
     assert by_id["tool:analysis"]["detail"] == "XYZ comparison"
-    assert by_id["tool:artifact"]["detail"] == "xyz_structure"
+    assert by_id["tool:artifact"]["detail"] == "reference.xyz"
     assert by_id["tool:render"]["detail"] == "compare.png"
     assert result["stale"] is False
     assert result["pruned"] is True

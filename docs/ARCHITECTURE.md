@@ -522,9 +522,10 @@ charge and multiplicity. RDKit ETKDGv3 uses a fixed seed, explicit hydrogens,
 charge/electron-parity checks, and optional UFF initialization. It records XYZ
 and provenance. Follow-up calculations establish stationary-point properties.
 
-`ts_import` accepts inline Gaussian, XYZ, or xTB control input, checks metadata
-and format, and returns a content-addressed Node artifact. Identical content
-reuses that artifact.
+`ts_import` accepts inline Gaussian, XYZ, or xTB control input plus a safe
+semantic basename, checks metadata, format, and extension, and returns a
+content-bound Node artifact. Replaying the same name and content reuses that
+artifact; the same name never overwrites different content.
 
 `ts_compare` compares two registered XYZ artifacts with optional zero-based
 atom mapping, reaction-center selection, internal coordinates, stereochemical

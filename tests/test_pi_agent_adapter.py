@@ -98,6 +98,7 @@ process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(tools).map
     assert "referenceArtifactId" in schemas["ts_compare"]
     assert "targetArtifactId" in schemas["ts_compare"]
     assert "nodeId" in schemas["ts_import"]
+    assert "inputName" in schemas["ts_import"]
     assert "content" in schemas["ts_import"]
     assert "nodeId" in schemas["ts_render"]
     assert "inputArtifactIds" in schemas["ts_render"]
