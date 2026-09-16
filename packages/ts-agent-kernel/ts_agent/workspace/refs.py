@@ -32,6 +32,10 @@ VALIDATION_RESULT_ID_PATTERN = r"^result_[1-9][0-9]*$"
 VALIDATION_RESULT_ID = re.compile(VALIDATION_RESULT_ID_PATTERN)
 ACCEPTANCE_ID_PATTERN = r"^acc_[1-9][0-9]*$"
 ACCEPTANCE_ID = re.compile(ACCEPTANCE_ID_PATTERN)
+GATE_ID_PATTERN = r"^gate_[1-9][0-9]*$"
+GATE_ID = re.compile(GATE_ID_PATTERN)
+GATE_RESULT_ID_PATTERN = r"^gate_result_[1-9][0-9]*$"
+GATE_RESULT_ID = re.compile(GATE_RESULT_ID_PATTERN)
 ARTIFACT_ID = re.compile(r"^art_[0-9a-f]{24}$")
 
 
@@ -217,6 +221,26 @@ def acceptance_sort_key(value: str) -> tuple[int, str]:
     """Sort canonical Acceptance IDs numerically while remaining defensive."""
 
     return _sort_key(value, acceptance_ordinal)
+
+
+def gate_ordinal(value: str) -> int:
+    """Return the workspace-local ordinal encoded by one GateSpec ID."""
+
+    return _ordinal(value, pattern=GATE_ID, prefix="gate_", label="GateSpec")
+
+
+def next_gate_ordinal(values: Any) -> int:
+    return _next_ordinal(values, gate_ordinal)
+
+
+def gate_result_ordinal(value: str) -> int:
+    """Return the workspace-local ordinal encoded by one GateResult ID."""
+
+    return _ordinal(value, pattern=GATE_RESULT_ID, prefix="gate_result_", label="GateResult")
+
+
+def next_gate_result_ordinal(values: Any) -> int:
+    return _next_ordinal(values, gate_result_ordinal)
 
 
 def _ordinal(value: str, *, pattern: re.Pattern[str], prefix: str, label: str) -> int:

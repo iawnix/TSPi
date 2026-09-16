@@ -848,6 +848,7 @@ function renderNodeOverview(payload) {
     <section class="detail-section"><h3>${escapeHtml(tr("detail.researchContract", "Research Contract"))}</h3><dl class="detail-grid"><dt>${escapeHtml(tr("detail.phase", "Phase"))}</dt><dd><span class="mono">${escapeHtml(payload.phase.phase_id)}</span> ${escapeHtml(payload.phase.title)}</dd><dt>${escapeHtml(tr("detail.question", "Question"))}</dt><dd>${escapeHtml(node.objective)}</dd><dt>${escapeHtml(tr("detail.principalDeliverable", "Principal deliverable"))}</dt><dd>${escapeHtml(node.deliverable)}</dd><dt>${escapeHtml(tr("detail.primaryClaim", "Primary Claim"))}</dt><dd>${node.primary_claim_ref ? detailButton("claim", node.primary_claim_ref, node.primary_claim_ref) : escapeHtml(tr("detail.none", "none"))}</dd></dl></section>
     ${renderAttemptOverview(node)}
     ${renderNodeDispatch(payload)}
+    ${renderGateSummary(payload.node_gate, "node")}
     <section class="detail-section"><h3>${escapeHtml(tr("detail.outcome", "Outcome"))}</h3>${result.outcome ? `<div class="detail-callout ${tone(result.outcome)}"><div class="detail-meta">${badge(result.outcome)}<span>${escapeHtml(formatTime(result.completed_at))}</span></div><p class="detail-copy">${escapeHtml(result.summary)}</p>${bulletGroup(tr("detail.openQuestions", "Open Questions"), result.open_questions)}</div>` : `<div class="detail-empty">${escapeHtml(tr("detail.noTerminalResult", "No terminal result has been recorded."))}</div>`}</section>
     <section class="detail-section"><h3>${escapeHtml(tr("detail.lineage", "Lineage"))}</h3>${linkedNodeGroup(tr("detail.dependsOn", "Depends on"), payload.dependencies)}${linkedNodeGroup(tr("detail.continuedBy", "Continued by"), payload.dependents)}</section>
     <section class="detail-section"><h3>${escapeHtml(tr("detail.relatedClaims", "Related Claims"))}</h3>${linkedClaimRows(payload.claims)}</section>`;
@@ -1092,12 +1093,30 @@ function renderClaimDetail(payload) {
   inspectorTitle.textContent = claim.statement;
   inspectorBody.innerHTML = `<div class="detail-summary"><div class="detail-meta">${badge(claim.status)}<span>${escapeHtml(claim.claim_id)}</span></div><p>${escapeHtml(claim.statement)}</p></div>
     <section class="detail-section"><h3>${escapeHtml(tr("detail.scientificContract", "Scientific Contract"))}</h3>${bulletGroup(tr("detail.assumptions", "Assumptions"), claim.assumptions)}${bulletGroup(tr("detail.falsifiers", "Falsifiers"), claim.falsifiers)}</section>
+    ${renderGateSummary(payload.claim_gate, "claim")}
     <section class="detail-section"><h3>${escapeHtml(tr("detail.researchNodes", "ResearchNodes"))}</h3>${linkedNodeGroup(tr("detail.relatedNodes", "Related Nodes"), payload.research_nodes)}</section>
     <section class="detail-section"><h3>${escapeHtml(tr("detail.observations", "Observations"))}</h3>${detailRecordRows(payload.observations, "observation", "observation_id", "summary", "concept_id")}</section>
     <section class="detail-section"><h3>${escapeHtml(tr("detail.validation", "Validation"))}</h3>${detailRecordRows(payload.validation_results, "validation-result", "result_id", "dimension", "verdict")}</section>
     <section class="detail-section"><h3>${escapeHtml(tr("section.scientificFindings", "Findings"))}</h3>${detailRecordRows(payload.findings, "finding", "finding_id", "statement", "status")}</section>
     <section class="detail-section"><h3>${escapeHtml(tr("detail.acceptance", "Acceptance"))}</h3>${detailRecordRows(payload.acceptances, "acceptance", "acceptance_id", "profile_id", "current")}</section>
     <section class="detail-section"><h3>${escapeHtml(tr("detail.reviewRuns", "Review Runs"))}</h3>${detailRecordRows(payload.review_runs, "agent", "task_id", "summary", "status")}</section>`;
+}
+
+function renderGateSummary(gate, scope) {
+  const row = object(gate);
+  const spec = object(row.spec);
+  const result = object(row.result);
+  if (!result.verdict && !spec.gate_id) return "";
+  const checks = array(result.check_results);
+  const history = array(row.result_history);
+  const title = scope === "node" ? tr("detail.nodeGate", "Node Gate") : tr("detail.claimGate", "Claim Gate");
+  const verdict = result.verdict || tr("detail.gateNotEvaluated", "not evaluated");
+  const stale = result.stale === true;
+  return `<section class="detail-section"><div class="detail-section-heading"><h3>${escapeHtml(title)}</h3><div class="detail-meta">${badge(verdict)}${stale ? badge("stale") : ""}</div></div>
+    <dl class="detail-grid"><dt>${escapeHtml(tr("detail.gateProfile", "Profile"))}</dt><dd><span class="mono">${escapeHtml(object(spec.profile_ref).profile_id || "derived")}</span> @ ${escapeHtml(object(spec.profile_ref).version || "1")}</dd><dt>${escapeHtml(tr("detail.gateRevision", "Input revision"))}</dt><dd class="mono">${escapeHtml(shortDigest(result.input_revision))}</dd></dl>
+    ${checks.length ? `<div class="gate-check-list">${checks.map(check => `<div class="detail-callout ${tone(check.verdict)}"><div class="detail-meta"><span class="mono">${escapeHtml(check.check_id || check.predicate || "check")}</span>${badge(check.verdict)}</div><p class="detail-copy">${escapeHtml(check.message || "")}</p></div>`).join("")}</div>` : `<div class="detail-empty">${escapeHtml(tr("detail.gateNotEvaluated", "This Gate has not been evaluated."))}</div>`}
+    ${history.length > 1 ? `<details class="attempt-technical"><summary>${escapeHtml(tr("detail.gateHistory", "Gate history"))} (${history.length})</summary>${history.map(item => `<div class="record-row"><span class="mono">${escapeHtml(item.gate_result_id || "result")}</span>${badge(item.verdict)}<span>${escapeHtml(formatTime(item.evaluated_at))}</span></div>`).join("")}</details>` : ""}
+  </section>`;
 }
 
 function renderRelationDetail(relation) {

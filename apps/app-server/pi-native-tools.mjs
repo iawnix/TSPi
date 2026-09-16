@@ -33,7 +33,7 @@ const { nodeControlProperties, nodeControlArguments } = require("../../packages/
 
 const GRAPH_CONTEXT_MODES = ["frontier", "claim", "node", "subgraph", "finding", "proof", "delta"];
 const CONTEXT_MODES = [...GRAPH_CONTEXT_MODES, "locate", "artifacts", "capabilities", "change_contract"];
-const CAPABILITY_KINDS = ["compute", "analysis", "proof"];
+const CAPABILITY_KINDS = ["compute", "analysis", "proof", "gate"];
 const IMPORT_FORMATS = ["gaussian_input", "xyz_structure", "xtb_control"];
 const STRUCTURE_OPTIMIZATIONS = ["none", "uff"];
 const REMOTE_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes"];
@@ -142,7 +142,7 @@ export function createStateTool() {
         args = ["list-artifacts", "--root", root];
         if (params.nodeRef) args.push("--node-id", params.nodeRef);
       } else if (mode === "capabilities") {
-        if (!params.capabilityKind) throw new Error("state mode=capabilities requires capabilityKind=compute, analysis, or proof");
+        if (!params.capabilityKind) throw new Error("state mode=capabilities requires capabilityKind=compute, analysis, proof, or gate");
         if (params.capabilityKind === "compute") {
           if (params.templateId !== undefined || params.templateVersion !== undefined) {
             throw new Error("compute capabilities do not accept proof template selectors");
@@ -161,7 +161,7 @@ export function createStateTool() {
           args = selector
             ? ["resolve-analysis-capability", "--root", root, "--capability", selector[0], "--version", selector[1] || "1"]
             : ["analysis-capabilities", "--root", root];
-        } else {
+        } else if (params.capabilityKind === "proof") {
           if ((params.templateId === undefined) !== (params.templateVersion === undefined)) {
             throw new Error("proof capabilities require templateId and templateVersion together");
           }
@@ -170,6 +170,12 @@ export function createStateTool() {
           if (params.templateId !== undefined) {
             args.push("--template-id", params.templateId, "--template-version", params.templateVersion);
           }
+        } else {
+          if (params.templateId !== undefined || params.templateVersion !== undefined) {
+            throw new Error("gate capabilities do not accept proof template selectors");
+          }
+          script = packageScript("ts_workspace.py");
+          args = ["gate_capabilities", "--root", root];
         }
       } else if (mode === "change_contract") {
         if (params.capabilityKind !== undefined || params.templateId !== undefined || params.templateVersion !== undefined) {

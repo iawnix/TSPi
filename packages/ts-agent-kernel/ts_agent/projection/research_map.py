@@ -28,6 +28,8 @@ def project_research_map(
     claims: Iterable[dict[str, Any]],
     claim_relations: Iterable[dict[str, Any]],
     observations: Iterable[dict[str, Any]],
+    *,
+    gates: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Group ResearchNodes by Phase and Claim without changing canonical state."""
 
@@ -36,6 +38,19 @@ def project_research_map(
     claim_rows = _sorted_records(claims, "claim_id", claim_sort_key)
     relation_rows = _sorted_records(claim_relations, "relation_id", claim_relation_sort_key)
     observation_rows = _sorted_records(observations, "observation_id", observation_sort_key)
+    gate_rows = gates if isinstance(gates, dict) else {}
+    node_gates = {
+        str(row.get("result", {}).get("target_node_ref")): row
+        for row in _objects(gate_rows.get("node_gates"))
+        if isinstance(row.get("result"), dict)
+        and isinstance(row.get("result", {}).get("target_node_ref"), str)
+    }
+    claim_gates = {
+        str(row.get("result", {}).get("target_claim_ref")): row
+        for row in _objects(gate_rows.get("claim_gates"))
+        if isinstance(row.get("result"), dict)
+        and isinstance(row.get("result", {}).get("target_claim_ref"), str)
+    }
     claim_by_id = {
         str(row["claim_id"]): row
         for row in claim_rows
@@ -46,6 +61,13 @@ def project_research_map(
         for row in node_rows
         if isinstance(row.get("node_id"), str)
     }
+    dependent_by_node: dict[str, list[str]] = defaultdict(list)
+    for node in node_rows:
+        node_ref = node.get("node_id")
+        if not isinstance(node_ref, str):
+            continue
+        for dependency in _strings(node.get("dependency_refs")):
+            dependent_by_node[dependency].append(node_ref)
     related_by_node: dict[str, list[str]] = defaultdict(list)
     for claim_ref, node_ref in derive_claim_node_links(claim_rows, node_rows):
         related_by_node[node_ref].append(claim_ref)
@@ -55,7 +77,13 @@ def project_research_map(
         connectivity_by_node[str(segment["node_ref"])].append(segment)
 
     projected_nodes = [
-        _project_node(node, node_by_id)
+        _project_node(
+            node,
+            node_by_id,
+            node_gates.get(str(node.get("node_id"))),
+            observations=observation_rows,
+            dependent_refs=dependent_by_node.get(str(node.get("node_id")), []),
+        )
         for node in node_rows
         if isinstance(node.get("node_id"), str)
     ]
@@ -67,6 +95,7 @@ def project_research_map(
             relation_rows,
             related_by_node,
             connectivity_by_node,
+            claim_gates,
         )
         for phase in phase_rows
     ]
@@ -75,11 +104,17 @@ def project_research_map(
         "phases": projected_phases,
         "nodes": projected_nodes,
         "connectivity_segments": connectivity,
+        "gates": {
+            "node_gates": _objects(gate_rows.get("node_gates")),
+            "claim_gates": _objects(gate_rows.get("claim_gates")),
+            "summary": _object(gate_rows.get("summary")),
+        },
         "summary": {
             "phase_count": len(projected_phases),
             "lane_count": sum(len(row["lanes"]) for row in projected_phases),
             "shared_node_count": sum(len(row["shared_node_refs"]) for row in projected_phases),
             "connectivity_segment_count": len(connectivity),
+            "trace_node_count": len(projected_nodes),
         },
     }
 
@@ -91,6 +126,7 @@ def _project_phase(
     relations: list[dict[str, Any]],
     related_by_node: dict[str, list[str]],
     connectivity_by_node: dict[str, list[dict[str, Any]]],
+    claim_gates: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     phase_id = str(phase.get("phase_id") or "")
     phase_nodes = [row for row in nodes if row.get("phase_ref") == phase_id]
@@ -124,7 +160,12 @@ def _project_phase(
             unassigned.append(node_ref)
 
     lanes = [
-        _claim_lane(claim_by_id[claim_ref], assigned.get(claim_ref, []), connectivity_by_node)
+        _claim_lane(
+            claim_by_id[claim_ref],
+            assigned.get(claim_ref, []),
+            connectivity_by_node,
+            claim_gates.get(claim_ref),
+        )
         for claim_ref in sorted(phase_claims, key=claim_sort_key)
     ]
     if unassigned:
@@ -167,6 +208,7 @@ def _claim_lane(
     claim: dict[str, Any],
     node_refs: list[str],
     connectivity_by_node: dict[str, list[dict[str, Any]]],
+    gate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     claim_ref = str(claim.get("claim_id") or "")
     return {
@@ -178,10 +220,18 @@ def _claim_lane(
         "status": claim.get("status"),
         "node_refs": node_refs,
         "connectivity_segments": _segments_for_nodes(node_refs, connectivity_by_node),
+        "claim_gate": gate,
     }
 
 
-def _project_node(node: dict[str, Any], node_by_id: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _project_node(
+    node: dict[str, Any],
+    node_by_id: dict[str, dict[str, Any]],
+    gate: dict[str, Any] | None = None,
+    *,
+    observations: list[dict[str, Any]] | None = None,
+    dependent_refs: list[str] | None = None,
+) -> dict[str, Any]:
     attempts = _objects(node.get("attempts"))
     latest = attempts[-1] if attempts else None
     dependencies = []
@@ -206,6 +256,18 @@ def _project_node(node: dict[str, Any], node_by_id: dict[str, dict[str, Any]]) -
         "status": node.get("status"),
         "dependency_refs": _strings(node.get("dependency_refs")),
         "upstream_dependencies": dependencies,
+        "dependent_refs": list(dependent_refs or []),
+        "observation_refs": _strings(node.get("observation_refs")),
+        "observations": [
+            {
+                "observation_ref": row.get("observation_id"),
+                "concept_id": row.get("concept_id"),
+                "subject_ref": row.get("subject_ref"),
+                "summary": row.get("summary"),
+            }
+            for row in (observations or [])
+            if row.get("created_by_node") == node.get("node_id")
+        ],
         "attempt_count": len(attempts),
         "observation_candidate_count": sum(
             int(_object(attempt.get("observation_candidates")).get("candidate_count") or 0)
@@ -228,6 +290,25 @@ def _project_node(node: dict[str, Any], node_by_id: dict[str, dict[str, Any]]) -
             if latest is not None
             else None
         ),
+        "node_gate": gate,
+        "outcome": node.get("result"),
+        "trace": {
+            "node_ref": node.get("node_id"),
+            "dependency_refs": _strings(node.get("dependency_refs")),
+            "tool_runs": [
+                {
+                    "intent_id": item.get("intent_id"),
+                    "capability": item.get("capability"),
+                    "state": item.get("display_state"),
+                }
+                for item in attempts
+            ],
+            "observation_refs": _strings(node.get("observation_refs")),
+            "gate_result": _object(gate.get("result")) if isinstance(gate, dict) else None,
+            "gate_result_history": _objects(gate.get("result_history")) if isinstance(gate, dict) else [],
+            "outcome": node.get("result"),
+            "dependent_refs": list(dependent_refs or []),
+        },
     }
 
 

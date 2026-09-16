@@ -1032,6 +1032,8 @@ def test_static_ui_exposes_research_map_dependency_dag_and_node_details() -> Non
     assert 'global.TSResearchMap = { mount }' in research_map
     assert "Connectivity evidence" in research_map
     assert "Shared foundation" in research_map
+    assert "gateStatus" in research_map
+    assert "node_gate" in research_map
     assert "computeLayout" in claim_map
     assert "computeLineage" in claim_map
     assert "filterNodes" in claim_map

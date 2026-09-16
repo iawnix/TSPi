@@ -28,8 +28,8 @@ operation needs a unique `local_ref`; later operations in the same draft refer
 to it as `$local_ref`.
 
 All canonical research records use workspace-local monotonic ordinals:
-`phase_1`, `claim_1`, `rel_1`, `node_1`, `obs_1`, `fnd_1`, `proof_1`, `result_1`, `acc_1`, and
-so on. Allocation, dry-run validation, and commit share one workspace lock, so
+`phase_1`, `claim_1`, `rel_1`, `node_1`, `obs_1`, `fnd_1`, `proof_1`, `result_1`, `acc_1`,
+`gate_1`, and `gate_result_1`, and so on. Allocation, dry-run validation, and commit share one workspace lock, so
 callers never hold or copy an uncommitted Decision. Committed, aborted, and
 recoverable Decision transaction IDs are not reused.
 
@@ -76,6 +76,18 @@ has no file source.
 - `accept_claim`: target Claim, versioned profile, summary, and a local ref for
   the acceptance record.
 
+`freeze_gate` accepts `scope=node|claim`, a target ref, and a versioned Gate
+profile. It freezes an immutable `GateSpec` in `gate_specs.json`. `evaluate_gate`
+references that spec, evaluates the installed deterministic predicates against
+the current scientific revision, and writes a digest-bound `GateResult` to
+`gate_results.json`. A later state revision makes an older result stale; it is
+history, not a new verdict for the current state. Neither Gate operation changes
+Claim status or selects a successor Node.
+
+ProofSpec/ValidationResult remain the ClaimGate's evidence dimensions, and
+NodeGate remains the Node completion guard. The compatibility projection is used
+when no explicit Gate registry exists.
+
 Compilation expands templates and freezes digests before commit. Evaluation is
 deterministic against the proposed state, so one change may record Observations,
 freeze a specification, and evaluate it using local aliases in one atomic
@@ -97,8 +109,9 @@ derived comparison against later canonical state.
   the active work item, include this operation in the same Decision (unless the
   rationale explicitly preserves another focus).
 
-Completing a Node does not infer Claim status or acceptance. Updating a Claim
-does not complete a Node. Deterministic activities are derived from journaled
+Completing a Node does not infer Claim status or acceptance. When an explicit
+NodeGate exists, completion additionally requires its latest matching
+`GateResult.verdict=pass`. Updating a Claim does not complete a Node. Deterministic activities are derived from journaled
 `node_refs`; never add a Decision solely to link an operation. Completion fails
 while an owned Compute run or deterministic activity is non-terminal, an owned
 activity journal is inconsistent, a compute control is pending/unresolved, or

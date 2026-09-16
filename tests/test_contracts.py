@@ -31,6 +31,8 @@ SCHEMA_FILES = {
     "decision.schema.json",
     "finding.schema.json",
     "finding_registry.schema.json",
+    "gate_result.schema.json",
+    "gate_spec.schema.json",
     "observation.schema.json",
     "observation_candidates.schema.json",
     "observation_registry.schema.json",
@@ -70,6 +72,71 @@ def test_required_schema_files_match_the_active_contract() -> None:
 
 def test_contract_schemas_are_valid_draft_2020_12() -> None:
     check_all_contract_schemas()
+
+
+def test_gate_contracts_keep_node_and_claim_scopes_distinct() -> None:
+    from ts_agent.workspace.schema_validation import validate_contract
+
+    base_spec = {
+        "schema_version": "ts-gate-spec/1",
+        "gate_id": "gate_1",
+        "scope": "node",
+        "target_node_ref": "node_1",
+        "target_claim_ref": None,
+        "title": "Node completion",
+        "purpose": "Check that the bounded research task can close.",
+        "profile_ref": None,
+        "checks": [{
+            "check_id": "deliverable.recorded",
+            "predicate": "node.deliverable_recorded",
+            "predicate_version": "1",
+            "parameters": {},
+            "blocking": True,
+        }],
+        "success_policy": {"mode": "all_blocking"},
+        "created_by_node": "node_1",
+        "created_by_decision": "dec_1",
+        "created_at": "2026-09-16T00:00:00Z",
+        "frozen_at": "2026-09-16T00:00:00Z",
+        "gate_digest": "sha256:" + "a" * 64,
+    }
+    validate_contract("gate_spec.schema.json", base_spec)
+    invalid_scope = {**base_spec, "target_claim_ref": "claim_1"}
+    with pytest.raises(ValueError):
+        validate_contract("gate_spec.schema.json", invalid_scope)
+
+    result = {
+        "schema_version": "ts-gate-result/1",
+        "gate_result_id": "gate_result_1",
+        "gate_ref": "gate_1",
+        "gate_digest": base_spec["gate_digest"],
+        "scope": "node",
+        "target_node_ref": "node_1",
+        "target_claim_ref": None,
+        "verdict": "pass",
+        "observation_refs": [],
+        "validation_result_refs": [],
+        "finding_refs": [],
+        "artifact_refs": [],
+        "check_results": [{
+            "check_id": "deliverable.recorded",
+            "predicate": "node.deliverable_recorded",
+            "predicate_version": "1",
+            "blocking": True,
+            "verdict": "pass",
+            "observation_refs": [],
+            "validation_result_refs": [],
+            "finding_refs": [],
+            "artifact_refs": [],
+            "message": "Deliverable recorded.",
+        }],
+        "input_revision": "sha256:" + "b" * 64,
+        "evaluated_by_node": "node_1",
+        "evaluated_by_decision": "dec_2",
+        "evaluated_at": "2026-09-16T00:01:00Z",
+        "result_digest": "sha256:" + "c" * 64,
+    }
+    validate_contract("gate_result.schema.json", result)
 
 
 def test_init_workspace_creates_only_canonical_state(tmp_path: Path) -> None:

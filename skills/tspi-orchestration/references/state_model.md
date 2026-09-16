@@ -12,6 +12,7 @@ identity, integrity, persistence, and transactions.
 - ResearchNode DAG
 - Observation
 - Finding
+- GateSpec And GateResult
 - ProofSpec And ValidationResult
 - Acceptance
 - Revisions
@@ -118,6 +119,20 @@ if a result claims to be terminal. A symlinked or unreadable `attempts/` parent
 produces a separate `scope=attempt_parent` integrity finding and is never
 enumerated. Context, Web, API, and Research Files consume the same projection;
 it is operational only and does not enter the scientific context digest.
+
+## GateSpec And GateResult
+
+`GateSpec` and `GateResult` are the staged unified contract for NodeGate and
+ClaimGate. A spec freezes a target (`node` or `claim`), profile, versioned
+predicates, success policy, and digest. A result repeats the target, binds the
+spec digest and input revision, and records `pass`, `fail`, `inconclusive`, or
+`blocked` checks. NodeGate is the completion projection for one Node; ClaimGate
+is the evidence/validation projection for one Claim. Explicit Gate mutations
+persist specs/results in `gate_specs.json` and `gate_results.json`; their absence
+is valid and falls back to the same derived projection. A gate verdict never
+silently mutates Claim status or selects a successor Node. A result bound to an
+older input revision remains immutable history and is shown as stale until
+re-evaluated.
 
 ## Observation
 

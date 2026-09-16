@@ -3,6 +3,15 @@
 function forceNamedToolChoice(payload, toolName) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
   if (typeof toolName !== "string" || !toolName) throw new Error("named result tool must be a non-empty string");
+  // DeepSeek reasoning/thinking endpoints reject a named tool choice with a
+  // 400. Keep the tool available and let the bounded prompt request it; the
+  // caller still validates the result and can issue a repair turn.
+  if (payload.thinking && typeof payload.thinking === "object" && !Array.isArray(payload.thinking)
+    && payload.thinking.type === "enabled") {
+    const relaxed = { ...payload };
+    delete relaxed.tool_choice;
+    return relaxed;
+  }
   return {
     ...payload,
     tool_choice: {

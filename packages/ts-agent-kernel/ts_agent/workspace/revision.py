@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ts_agent.io import read_json, sha256_json
-from .state import STATE_FILES
+from .state import STATE_FILES, document_state_names, state_document_names
 from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
@@ -15,7 +15,7 @@ def workspace_revision(root: str | Path) -> str:
     if path_has_symlink(root_path):
         raise ValueError(f"workspace root contains a symbolic link: {root_path}")
     documents: dict[str, Any] = {}
-    for name in STATE_FILES:
+    for name in state_document_names(root_path):
         path = root_path / name
         if has_symlink_component(root_path, path) or path.is_symlink():
             raise ValueError(f"workspace file contains a symbolic link: {name}")
@@ -32,6 +32,29 @@ def workspace_revision(root: str | Path) -> str:
 
 
 def workspace_revision_from_documents(documents: dict[str, Any]) -> str:
+    return sha256_json({name: documents[name] for name in document_state_names(documents)})
+
+
+def gate_input_revision(root: str | Path) -> str:
+    """Return the revision Gate evaluation is bound to.
+
+    Gate registries are history of the evaluation itself, so including them in
+    the input digest would make every newly persisted result immediately stale.
+    The scientific workspace documents are the evaluator input boundary.
+    """
+
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ValueError(f"workspace root contains a symbolic link: {root_path}")
+    documents: dict[str, Any] = {}
+    for name in STATE_FILES:
+        path = root_path / name
+        if has_symlink_component(root_path, path) or path.is_symlink():
+            raise ValueError(f"workspace file contains a symbolic link: {name}")
+        value = read_json(path)
+        if not isinstance(value, dict):
+            raise ValueError(f"workspace file is not an object: {name}")
+        documents[name] = value
     return sha256_json({name: documents[name] for name in STATE_FILES})
 
 

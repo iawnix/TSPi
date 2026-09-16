@@ -25,6 +25,7 @@ from ts_agent.workspace.candidates import (
 from ts_agent.io import read_json
 from ts_agent.workspace.locator import locate_research_files
 from ts_agent.workspace.operational import operational_snapshot
+from ts_agent.workspace.gates import project_gates
 from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from ts_agent.workspace.refs import (
     ACTIVITY_ID,
@@ -33,7 +34,7 @@ from ts_agent.workspace.refs import (
     node_sort_key,
     phase_sort_key,
 )
-from ts_agent.workspace.revision import report_id_for_revision, workspace_revision_from_documents
+from ts_agent.workspace.revision import gate_input_revision, report_id_for_revision, workspace_revision_from_documents
 from ts_agent.workspace.trajectory import project_research_trajectory
 from ts_agent.workspace.state import (
     CLAIMS_FILE,
@@ -47,6 +48,9 @@ from ts_agent.workspace.state import (
     VALIDATION_RESULTS_FILE,
     PROOF_SPECS_FILE,
     WORKSPACE_FILE,
+    OPTIONAL_STATE_FILES,
+    GATE_SPECS_FILE,
+    GATE_RESULTS_FILE,
 )
 from ts_agent.workspace.validator import validate_workspace
 
@@ -61,6 +65,9 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
     if path_has_symlink(root):
         raise ValueError(f"workspace root contains a symbolic link: {root}")
     documents = {name: _read_object(root / name, root=root) for name in STATE_FILES}
+    for name in OPTIONAL_STATE_FILES:
+        if (root / name).exists():
+            documents[name] = _read_optional_object(root / name, root=root)
     validation = validate_workspace(root)
     revision = workspace_revision_from_documents(documents)
     state = documents[RESEARCH_STATE_FILE]
@@ -73,6 +80,9 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
     retryable_controls = [_normalize_control(record) for record in operations["retryable_controls"]]
     claims = _objects(documents[CLAIMS_FILE].get("claims"))
     observations = _objects(documents[OBSERVATIONS_FILE].get("observations"))
+    proof_specs = _objects(documents[PROOF_SPECS_FILE].get("proofs"))
+    validation_results = _objects(documents[VALIDATION_RESULTS_FILE].get("results"))
+    findings = _objects(documents[FINDINGS_FILE].get("findings"))
     raw_phases = _objects(documents[RESEARCH_PHASES_FILE].get("phases"))
     nodes = sorted([
         _normalize_node(
@@ -126,12 +136,24 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         ],
         key=lambda record: phase_sort_key(str(record.get("phase_id") or "")),
     )
+    gates = project_gates(
+        nodes=nodes,
+        claims=claims,
+        proof_specs=proof_specs,
+        validation_results=validation_results,
+        findings=findings,
+        operational=operations,
+        input_revision=gate_input_revision(root),
+        gate_specs=_objects(documents.get(GATE_SPECS_FILE, {}).get("specs")),
+        gate_results=_objects(documents.get(GATE_RESULTS_FILE, {}).get("results")),
+    )
     research_map = project_research_map(
         phases,
         nodes,
         claims,
         _objects(documents[CLAIM_RELATIONS_FILE].get("relations")),
         observations,
+        gates=gates,
     )
 
     return {
@@ -157,10 +179,11 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "research_phases": phases,
         "research_nodes": nodes,
         "research_map": research_map,
+        "gates": gates,
         "observations": observations,
-        "proof_specs": _objects(documents[PROOF_SPECS_FILE].get("proofs")),
-        "validation_results": _objects(documents[VALIDATION_RESULTS_FILE].get("results")),
-        "findings": _objects(documents[FINDINGS_FILE].get("findings")),
+        "proof_specs": proof_specs,
+        "validation_results": validation_results,
+        "findings": findings,
         "acceptances": acceptances,
         "current_acceptances": current_acceptances,
         "decisions": _recent_decisions(root / "decision_log.jsonl"),
@@ -389,6 +412,7 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
             "nodes": nodes,
         },
         "research_map": _object(view.get("research_map")),
+        "gates": _object(view.get("gates")),
         "claim_graph": {"nodes": claims, "edges": relations},
         "research_node_dag": {"nodes": nodes, "edges": node_edges},
         "claim_node_links": claim_node_links,
@@ -429,6 +453,7 @@ def claim_payload(source_root: str | Path, claim_id: str, *, label: str | None =
     return {
         "schema_version": "ts-explorer-claim/1",
         "claim": claim,
+        "claim_gate": _gate_for_target(view, "claim_gates", "target_claim_ref", claim_id),
         "relations": relations,
         "research_nodes": nodes,
         "observations": [
@@ -496,6 +521,7 @@ def node_payload(source_root: str | Path, node_id: str, *, label: str | None = N
     return {
         "schema_version": "ts-explorer-research-node/1",
         "research_node": node,
+        "node_gate": _gate_for_target(view, "node_gates", "target_node_ref", node_id),
         "phase": phase,
         "dependencies": [row for row in all_nodes if row.get("node_id") in dependency_ids],
         "dependents": [row for row in all_nodes if node_id in _strings(row.get("dependency_refs"))],
@@ -1180,6 +1206,20 @@ def _read_optional_object(path: Path, *, root: Path | None = None) -> dict[str, 
 
 def _object(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _gate_for_target(
+    view: dict[str, Any],
+    collection: str,
+    target_key: str,
+    target_ref: str,
+) -> dict[str, Any] | None:
+    gates = _object(view.get("gates"))
+    for row in _objects(gates.get(collection)):
+        result = _object(row.get("result"))
+        if result.get(target_key) == target_ref:
+            return row
+    return None
 
 
 def _objects(value: Any) -> list[dict[str, Any]]:

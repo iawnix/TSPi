@@ -41,7 +41,7 @@ INPUT_OPERATION_CONTRACTS: dict[str, OperationContract] = {
             "op", "local_ref", "question", "claimType", "statement", "scope",
             "uncertainty", "predictions", "falsifiers",
         }),
-        optional=frozenset({"createdByNode", "assumptions", "tags"}),
+        optional=frozenset({"createdByNode", "assumptions", "tags", "gateProfile"}),
     ),
     "relate_claims": OperationContract(
         required=frozenset({
@@ -53,7 +53,7 @@ INPUT_OPERATION_CONTRACTS: dict[str, OperationContract] = {
         required=frozenset({
             "op", "local_ref", "phaseRef", "title", "objective", "deliverable",
         }),
-        optional=frozenset({"dependencyRefs", "primaryClaimRef", "claimRefs", "tags"}),
+        optional=frozenset({"dependencyRefs", "primaryClaimRef", "claimRefs", "tags", "gateProfile"}),
     ),
     "record_observation": OperationContract(
         required=frozenset({
@@ -106,6 +106,14 @@ INPUT_OPERATION_CONTRACTS: dict[str, OperationContract] = {
     ),
     "set_focus": OperationContract(
         required=frozenset({"op", "claimRefs", "nodeRefs"}),
+    ),
+    "freeze_gate": OperationContract(
+        required=frozenset({"op", "local_ref", "scope", "targetRef", "profileId", "profileVersion"}),
+        optional=frozenset({"title", "purpose"}),
+    ),
+    "evaluate_gate": OperationContract(
+        required=frozenset({"op", "local_ref", "gateRef"}),
+        optional=frozenset({"nodeRef"}),
     ),
 }
 

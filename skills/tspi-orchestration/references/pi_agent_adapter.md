@@ -39,7 +39,7 @@ workspace.
 
 Use graph modes `frontier`, `claim`, `node`, `subgraph`, `finding`,
 `proof`, or `delta`. Use `ts_state mode=artifacts` for artifact discovery and
-`mode=capabilities capabilityKind=compute|analysis|proof` for capability catalogs. Every bounded graph
+`mode=capabilities capabilityKind=compute|analysis|proof|gate` for capability catalogs. Every bounded graph
 projection reports its scientific/operational revisions and omitted counts.
 For analysis details, add `query=<capability>@<version>`; the default index omits schemas.
 The validation catalog stays compact; query one exact `templateId` and

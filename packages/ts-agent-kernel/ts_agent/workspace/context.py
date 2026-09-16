@@ -18,6 +18,7 @@ from .acceptance import project_acceptances
 from .associations import derive_claim_node_links
 from ts_agent.io import read_json, sha256_json
 from .operational import operational_snapshot
+from .gates import gate_profile_catalog, project_gates
 from .node_contract import node_contract_digest
 from .refs import (
     acceptance_sort_key,
@@ -30,7 +31,7 @@ from .refs import (
     validation_result_sort_key,
     proof_spec_sort_key,
 )
-from .revision import report_id_for_revision, workspace_revision_from_documents
+from .revision import gate_input_revision, report_id_for_revision, workspace_revision_from_documents
 from .trajectory import project_research_trajectory
 from .state import (
     CLAIMS_FILE,
@@ -44,6 +45,9 @@ from .state import (
     VALIDATION_RESULTS_FILE,
     PROOF_SPECS_FILE,
     WORKSPACE_FILE,
+    OPTIONAL_STATE_FILES,
+    GATE_SPECS_FILE,
+    GATE_RESULTS_FILE,
 )
 from .validator import validate_workspace
 from .path_safety import has_symlink_component, lexical_path, path_has_symlink
@@ -130,6 +134,30 @@ def compile_context(
         item for item in all_acceptances if item.get("claim_ref") in selected_claim_refs
     ]
     bounded, omitted = _bound_selection(selected, {**DEFAULT_LIMITS, **(limits or {})})
+    all_gates = project_gates(
+        nodes=_objects(documents[RESEARCH_NODES_FILE].get("nodes")),
+        claims=_objects(documents[CLAIMS_FILE].get("claims")),
+        proof_specs=_objects(documents[PROOF_SPECS_FILE].get("proofs")),
+        validation_results=_objects(documents[VALIDATION_RESULTS_FILE].get("results")),
+        findings=_objects(documents[FINDINGS_FILE].get("findings")),
+        operational=operations,
+        input_revision=gate_input_revision(root_path),
+        gate_specs=_objects(documents.get(GATE_SPECS_FILE, {}).get("specs")),
+        gate_results=_objects(documents.get(GATE_RESULTS_FILE, {}).get("results")),
+    )
+    selected_gate_node_ids = {str(item.get("node_id")) for item in bounded["research_nodes"]}
+    selected_gate_claim_ids = {str(item.get("claim_id")) for item in bounded["claims"]}
+    gates = {
+        **all_gates,
+        "node_gates": [
+            row for row in all_gates["node_gates"]
+            if row.get("result", {}).get("target_node_ref") in selected_gate_node_ids
+        ],
+        "claim_gates": [
+            row for row in all_gates["claim_gates"]
+            if row.get("result", {}).get("target_claim_ref") in selected_gate_claim_ids
+        ],
+    }
     trajectory = project_research_trajectory(
         root_path,
         bounded["research_phases"],
@@ -200,6 +228,7 @@ def compile_context(
         },
         "workspace_brief": workspace_brief,
         **bounded,
+        "gates": gates,
         "open_findings": [item for item in bounded["findings"] if item.get("status") == "open"],
         "incomplete_proof": _incomplete_proof(bounded["proof_specs"], bounded["validation_results"]),
         "unresolved_controls": operations["unresolved_controls"],
@@ -249,6 +278,11 @@ def compile_context(
         "proof_specs": payload["proof_specs"],
         "validation_results": payload["validation_results"],
         "findings": payload["findings"],
+        # Gate projections are included in the returned context, but their
+        # derived verdict can include operational scheduler state.  The
+        # canonical workspace revision already binds explicit GateSpec and
+        # GateResult records, so do not let a queued->running transition
+        # change the scientific projection identity.
         "acceptances": payload["acceptances"],
         "recent_decisions": payload["recent_decisions"],
         "omitted": scientific_omitted,
@@ -283,6 +317,28 @@ def proof_capabilities(
             "digest": sha256_json(template),
         }
     return payload
+
+
+def gate_capabilities() -> dict[str, Any]:
+    """Describe the built-in Gate profiles available to the Root Agent."""
+
+    profiles = gate_profile_catalog()
+    return {
+        "schema_version": "ts-gate-capabilities/1",
+        "profiles": profiles,
+        "predicate_contract": {
+            "schema_version": "ts-gate-predicate-contract/1",
+            "input_refs": ["claim", "node", "observation", "validation_result", "finding", "artifact"],
+            "verdicts": ["pass", "fail", "inconclusive", "blocked"],
+            "plugin_extensions": {
+                "allowed": True,
+                "required_fields": ["profile_id", "version", "scope", "predicates", "evaluator_version"],
+                "agent_supplied_executable_code": False,
+            },
+        },
+        "verdicts": ["pass", "fail", "inconclusive", "blocked"],
+        "agent_supplied_executable_code": False,
+    }
 
 
 def build_review_snapshot(root: str | Path, *, target_claim_ref: str, depth: int = 2) -> dict[str, Any]:
@@ -350,6 +406,7 @@ def build_review_snapshot(root: str | Path, *, target_claim_ref: str, depth: int
         "validation_results": projection["validation_results"],
         "findings": projection["findings"],
         "acceptances": projection["acceptances"],
+        "claim_gates": projection.get("gates", {}).get("claim_gates", []),
         "dependency_refs": dependency_refs,
         "omitted": projection["omitted"],
     }
@@ -607,6 +664,19 @@ def _read_state_documents(root: Path) -> dict[str, dict[str, Any]]:
     documents: dict[str, dict[str, Any]] = {}
     for name in STATE_FILES:
         path = root / name
+        if has_symlink_component(root, path) or path.is_symlink():
+            raise ContextCompileError(f"workspace file contains a symbolic link: {name}")
+        try:
+            value = read_json(path)
+        except (OSError, ValueError) as exc:
+            raise ContextCompileError(f"cannot read workspace file {name}: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ContextCompileError(f"workspace file is not an object: {name}")
+        documents[name] = value
+    for name in OPTIONAL_STATE_FILES:
+        path = root / name
+        if not path.exists():
+            continue
         if has_symlink_component(root, path) or path.is_symlink():
             raise ContextCompileError(f"workspace file contains a symbolic link: {name}")
         try:
@@ -926,6 +996,10 @@ def _projection_id(value: Any) -> str:
 
 def _map(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str, Any]]:
     return {str(row[key]): row for row in rows if isinstance(row, dict) and isinstance(row.get(key), str)}
+
+
+def _objects(value: Any) -> list[dict[str, Any]]:
+    return [row for row in value if isinstance(row, dict)] if isinstance(value, list) else []
 
 
 def _string_list(value: Any) -> list[str]:

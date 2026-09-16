@@ -12,7 +12,7 @@ def test_public_terminology_is_current() -> None:
     assert check_public_surface(ROOT) == []
 
 
-@pytest.mark.parametrize("term", ["gate_results", "required_gates", "Evidence layer", "evidence roles", "ts-reviewers", "stage_router"])
+@pytest.mark.parametrize("term", ["required_gates", "Evidence layer", "evidence roles", "ts-reviewers", "stage_router"])
 def test_retired_public_terms_report_their_line(term: str) -> None:
     assert lint_text(f"# Example\nUse {term} here.")[0][0] == 2
 

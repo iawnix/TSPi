@@ -16,7 +16,8 @@ ResearchNode，并把结果关联到工作区的科学记录。当前问题需�
 ## 研究记录
 
 - Root Agent 选择问题、假设、方法、分支、停止条件和解释。
-- Research Kernel 负责 ID、Schema、引用、事务、路径、来源和验证。
+- Research Kernel 负责 ID、Schema、引用、事务、路径、来源、Gate 编译/评估和验证；
+  不负责运行执行工具。
 - 通过 `ts_change` 提交科学状态变更。
 - 通过 Claim 关系、Node 依赖和标签理解已有工作，根据问题和现有证据选择下一任务。
 - 对照产物核验工具输出，再记录 Observation 或 Finding。
@@ -26,16 +27,20 @@ ResearchNode，并把结果关联到工作区的科学记录。当前问题需�
 
 1. 读取 `frontier`；已知上次的科学与运行修订时读取 `delta`。
 2. 写明一个未解决问题、假设、预测和反证条件。
-3. 创建或复用 ResearchPhase，启动一个对应具体决策的 ResearchNode，明确依赖和
-   Claim 范围，并有意识地设置 focus。
+3. 创建或复用 ResearchPhase，启动一个对应具体决策的 ResearchNode，明确依赖、
+   Claim 范围和收尾意图；Gate 操作可用时再使用 NodeGate profile，并有意识地设置
+   focus。
 4. 加载相应领域 Skill，根据问题、不确定性、成本和现有产物选择方法。
 5. 在所属 Node 下运行具体工具操作，使用逻辑 artifact ID，并保持 Node
    开放直到解释完成。
 6. 检查 parser candidate 和原始产物，通过 `ts_change` 将已核验值提升为
    Observation 或 Finding。
-7. 对明确 Observation 引用冻结并评估 ProofSpec。
-8. 更新 Claim 状态；对已获支持且准备接受的 Claim 运行 `accept_claim`。
-   问题和相关操作处理完后完成 Node。
+7. 对明确 Observation 引用冻结并评估 ProofSpec；这是 ClaimGate 的证据维度。需要
+   一等 Gate 时用 `freeze_gate` 冻结 profile，再用 `evaluate_gate` 产生绑定当前
+   revision 的 GateResult。
+8. 更新 Claim 状态；对已获支持且准备接受的 Claim 运行 `accept_claim`。存在显式
+   NodeGate 时，只有最新 GateResult 为 `pass` 才能完成 Node；没有显式 Gate 时仍
+   使用兼容的 Node completion projection。
 9. 重新编译上下文，把下一个实质问题记录为依赖 Node、新 Phase，或明确停止。
 
 一个 Node 对应一个可见问题和交付物。保持同一问题的重试仍是 Attempt；问题、

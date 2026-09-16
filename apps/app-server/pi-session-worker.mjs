@@ -4,7 +4,7 @@ import {
   AgentHarness, createBashTool, createReadTool, createWriteTool,
   loadSkills, TODO_CONTEXT,
 } from "@earendil-works/pi-agent-core";
-import { createTspiTools } from "./pi-native-tools.mjs";
+import { loadServerExtensions } from "./server-extension-loader.mjs";
 import { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 
 export {
@@ -21,7 +21,6 @@ export {
   createReviewTool,
   createSeedTool,
   createStateTool,
-  createTspiTools,
 } from "./pi-native-tools.mjs";
 export { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 
@@ -61,6 +60,17 @@ async function createTspiHarness(session, options, executionEnv) {
     : resolveCliModel({ cliProvider: options.provider, cliModel: options.model, modelRuntime });
   if (resolved.error || !resolved.model) throw new Error(resolved.error || "Session worker could not resolve a model");
   const loadedSkills = await loadTspiSkills(executionEnv);
+  const loadedExtensions = await loadServerExtensions({
+    packageRoot: loadedSkills.packageRoot,
+    reservedToolNames: ["read", "write", "bash", "sys_prompt"],
+    factoryOptions: {
+      review: {
+        models: modelRuntime,
+        model: resolved.model,
+        thinkingLevel: resolved.thinkingLevel,
+      },
+    },
+  });
   const promptManifest = createSystemPromptManifest({
     native: {
       source: join(loadedSkills.packageRoot, "apps/app-server/pi-session-worker.mjs"),
@@ -70,18 +80,17 @@ async function createTspiHarness(session, options, executionEnv) {
       source: loadedSkills.skillsRoot,
       items: loadedSkills.skills,
     },
+    extensions: loadedExtensions.inventory.map((extension) => ({
+      source: join(loadedSkills.packageRoot, extension.entry),
+      inputs: [extension.entry],
+      text: `Server extension ${extension.name} provides: ${extension.tools.join(", ")}.`,
+    })),
   });
   const builtinTools = [createReadTool(), createSystemPromptTool(promptManifest)];
   if (process.env.TSPI_NATIVE_WRITES === "1") {
     builtinTools.push(createWriteTool(), createBashTool());
   }
-  const tspiTools = createTspiTools({
-    review: {
-      models: modelRuntime,
-      model: resolved.model,
-      thinkingLevel: resolved.thinkingLevel,
-    },
-  });
+  const tspiTools = loadedExtensions.tools;
   const tools = [
     ...builtinTools,
     ...(process.env.TSPI_NATIVE_WRITES === "1"

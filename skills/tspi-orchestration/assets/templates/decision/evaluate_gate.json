@@ -1,0 +1,5 @@
+{
+  "op": "evaluate_gate",
+  "local_ref": "gate_result",
+  "gateRef": "gate_1"
+}

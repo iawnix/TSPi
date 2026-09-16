@@ -15,6 +15,8 @@ OBSERVATIONS_FILE = "observations.json"
 PROOF_SPECS_FILE = "proof_specs.json"
 VALIDATION_RESULTS_FILE = "validation_results.json"
 FINDINGS_FILE = "findings.json"
+GATE_SPECS_FILE = "gate_specs.json"
+GATE_RESULTS_FILE = "gate_results.json"
 
 STATE_FILES = (
     WORKSPACE_FILE,
@@ -28,15 +30,36 @@ STATE_FILES = (
     VALIDATION_RESULTS_FILE,
     FINDINGS_FILE,
 )
+# Gate registries are an additive protocol layer.  They are deliberately not
+# required for protocol-6 workspaces; the first explicit gate mutation creates
+# them and readers treat their absence as an empty registry.
+OPTIONAL_STATE_FILES = (GATE_SPECS_FILE, GATE_RESULTS_FILE)
 REQUIRED_FILES = frozenset((*STATE_FILES, "decision_log.jsonl", "transaction_log.jsonl"))
 REQUIRED_DIRS = frozenset({"nodes", "acceptances", "decisions"})
 OPTIONAL_DIRS = frozenset({"inputs", "reports", "scratch", "operations"})
 UNSUPPORTED_MARKERS = frozenset({
     "acts",
     "evidence_registry.json",
-    "gate_results.json",
     "research_acts.json",
 })
+
+
+def state_document_names(root: Any | None = None) -> tuple[str, ...]:
+    """Return required state files plus present additive registries."""
+
+    names = list(STATE_FILES)
+    if root is not None:
+        for name in OPTIONAL_STATE_FILES:
+            path = root / name
+            if path.exists():
+                names.append(name)
+    return tuple(names)
+
+
+def document_state_names(documents: dict[str, Any]) -> tuple[str, ...]:
+    """Return required state files plus optional registries in a document map."""
+
+    return tuple((*STATE_FILES, *(name for name in OPTIONAL_STATE_FILES if name in documents)))
 
 
 def initial_documents(workspace_id: str, created_at: str) -> dict[str, dict[str, Any]]:

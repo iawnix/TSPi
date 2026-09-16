@@ -41,6 +41,7 @@ SKILL_ENTRY_FILES = [
 
 APP_SERVER_FILES = [
     "apps/app-server/pi-app-server.mjs",
+    "apps/app-server/server-extension-loader.mjs",
     "apps/app-server/pi-native-compute.mjs",
     "apps/app-server/pi-native-notify.mjs",
     "apps/app-server/pi-native-review.mjs",
@@ -82,6 +83,8 @@ PACKAGE_FILES = [
     "extensions/ts-workflow-control/*.cjs",
     "extensions/ts-workflow-review/*.ts",
     "extensions/ts-workflow-ui/*.ts",
+    "extensions/server/*.mjs",
+    "extensions/server/*.json",
     "scripts/install_env.py",
     "scripts/install_package.py",
     "scripts/install_from_github.py",
@@ -191,6 +194,8 @@ REQUIRED_TARBALL_FILES = frozenset(
         "extensions/ts-workflow-review/index.ts",
         "extensions/ts-workflow-compute/index.ts",
         "extensions/ts-workflow-artifacts/index.ts",
+        "extensions/server/ts-workflow-native.mjs",
+        "extensions/server/extensions.json",
         "packages/ts-agent-runtime/agent-core/agent-protocol.cjs",
         "packages/ts-agent-runtime/agent-core/fact-kinds.cjs",
         "packages/ts-agent-runtime/agent-core/failure-taxonomy.cjs",
@@ -233,6 +238,8 @@ REQUIRED_TARBALL_FILES = frozenset(
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/change_request.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/attempt_intent_projection.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/attempt_result_projection.schema.json",
+        "packages/ts-agent-kernel/ts_agent/workspace/contracts/gate_result.schema.json",
+        "packages/ts-agent-kernel/ts_agent/workspace/contracts/gate_spec.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/observation_candidates.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/proof_spec.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/proof_spec_registry.schema.json",
@@ -250,6 +257,7 @@ REQUIRED_TARBALL_FILES = frozenset(
         "packages/ts-agent-kernel/ts_agent/projection/registry.py",
         "scripts/ts_web_provider.py",
         "docs/adr/0001-phase-node-research-kernel.md",
+        "docs/adr/0003-minimal-research-kernel-and-gates.md",
     }
 )
 
@@ -299,6 +307,8 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "extensions/ts-workflow-review/index.ts",
         "extensions/ts-workflow-compute/index.ts",
         "extensions/ts-workflow-artifacts/index.ts",
+        "extensions/server/ts-workflow-native.mjs",
+        "extensions/server/extensions.json",
         "extensions/shared/system-prompt.mjs",
         "extensions/shared/activity-events.ts",
         "extensions/shared/icons.ts",
@@ -342,6 +352,8 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "packages/ts-agent-kernel/ts_agent/workspace/context.py",
         "packages/ts-agent-kernel/ts_agent/workspace/bootstrap.py",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/change_request.schema.json",
+        "packages/ts-agent-kernel/ts_agent/workspace/contracts/gate_result.schema.json",
+        "packages/ts-agent-kernel/ts_agent/workspace/contracts/gate_spec.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/observation_candidates.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/proof_spec.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/proof_spec_registry.schema.json",
@@ -362,5 +374,6 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "contracts/ts-web/error.schema.json",
         "contracts/ts-web/workspace-snapshot.fixture.json",
         "docs/adr/0001-phase-node-research-kernel.md",
+        "docs/adr/0003-minimal-research-kernel-and-gates.md",
     }
 )

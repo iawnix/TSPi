@@ -201,7 +201,7 @@ print("ok")
 def _fake_png_xyzrender(tmp_path: Path) -> Path:
     script = tmp_path / "xyzrender"
     script.write_text(
-        """#!/usr/bin/env python3
+        f"""#!{sys.executable}
 import sys
 from pathlib import Path
 from PIL import Image, ImageDraw

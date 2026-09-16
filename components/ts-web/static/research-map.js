@@ -67,11 +67,13 @@
   function renderLane(lane, nodes, options, highlights) {
     const nodeRefs = array(lane.node_refs);
     const isClaim = lane.lane_type === "claim" && lane.claim_ref;
+    const claimGate = object(lane.claim_gate);
+    const claimGateResult = object(claimGate.result);
     return `<section class="research-map-lane ${isClaim ? "claim" : "exploration"}">
       <header class="research-map-lane-header">
         <div class="research-map-lane-kicker">${escapeHtml(isClaim ? lane.claim_type || tr("map.hypothesis", "Hypothesis") : tr("map.exploration", "Exploration"))}</div>
         ${isClaim
-          ? `<button type="button" data-research-claim="${escapeHtml(lane.claim_ref)}"><span>${escapeHtml(lane.claim_ref)}</span>${status(lane.status)}</button>`
+          ? `<button type="button" data-research-claim="${escapeHtml(lane.claim_ref)}"><span>${escapeHtml(lane.claim_ref)}</span>${status(lane.status)}${gateStatus(claimGateResult, "claim")}</button>`
           : `<div class="research-map-lane-title"><span>${escapeHtml(tr("map.unassigned", "Unassigned research"))}</span>${status(lane.status)}</div>`}
         <p>${escapeHtml(lane.statement || "")}</p>
       </header>
@@ -97,6 +99,7 @@
   function renderNode(node, options, highlights) {
     if (!node) return "";
     const latest = object(node.latest_calculation);
+    const nodeGate = object(object(node.node_gate).result);
     const selected = options.selectedId === node.node_ref;
     const focused = array(options.focusNodeRefs).includes(node.node_ref);
     const dimmed = highlights && !highlights.has(node.node_ref);
@@ -107,11 +110,14 @@
     const upstream = dependencies.length
       ? dependencies.map(row => `${row.node_ref} · ${row.observation_count} ${tr("map.observations", "observations")}`).join("; ")
       : tr("map.entryDecision", "Entry research decision");
+    const traceText = `${array(node.observation_refs).length} ${tr("map.observations", "observations")} · ${array(node.dependent_refs).length} ${tr("map.downstream", "downstream")}`;
+    const outcome = object(node.outcome);
     return `<button class="research-map-node ${selected ? "selected" : ""} ${focused ? "focused" : ""} ${dimmed ? "dimmed" : ""}" type="button" data-research-node="${escapeHtml(node.node_ref)}">
-      <span class="research-map-node-head"><code>${escapeHtml(node.node_ref)}</code>${status(node.status)}</span>
+      <span class="research-map-node-head"><code>${escapeHtml(node.node_ref)}</code>${status(node.status)}${gateStatus(nodeGate, "node")}</span>
       <strong>${escapeHtml(node.title || node.node_ref)}</strong>
       <span class="research-map-node-objective">${escapeHtml(node.objective || "")}</span>
       <span class="research-map-node-run">${escapeHtml(attemptText)}</span>
+      <span class="research-map-node-run">${escapeHtml(traceText)}${outcome.outcome ? ` · ${escapeHtml(trStatus(outcome.outcome))}` : ""}</span>
       <span class="research-map-node-upstream"><b>${escapeHtml(tr("map.upstream", "Upstream"))}</b>${escapeHtml(upstream)}</span>
     </button>`;
   }
@@ -126,6 +132,15 @@
           ? "warn"
           : "info";
     return `<span class="research-map-status ${tone}">${escapeHtml(trStatus(normalized))}</span>`;
+  }
+
+  function gateStatus(result, scope) {
+    const verdict = String(result.verdict || "");
+    if (!verdict) return "";
+    const stale = result.stale === true;
+    const tone = verdict === "pass" ? "good" : ["fail", "blocked"].includes(verdict) ? "bad" : "warn";
+    const label = stale ? `${tr(`map.gate.${verdict}`, verdict)} · ${tr("map.gate.stale", "stale")}` : tr(`map.gate.${verdict}`, verdict);
+    return `<span class="research-map-status ${tone}" title="${escapeHtml(tr(`map.${scope}Gate`, scope === "node" ? "Node Gate" : "Claim Gate"))}">${escapeHtml(label)}</span>`;
   }
 
   function tr(key, fallback = key, variables = null) {

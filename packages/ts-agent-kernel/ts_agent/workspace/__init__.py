@@ -14,7 +14,7 @@ from .candidates import (
     validate_observation_candidates,
     validate_promoted_candidate,
 )
-from .context import build_review_snapshot, compile_context, proof_capabilities
+from .context import build_review_snapshot, compile_context, gate_capabilities, proof_capabilities
 from .engine import change_workspace, init_workspace
 from .errors import ContractError, WorkspaceValidationError
 from .identity import ensure_workspace_identity, read_workspace_identity, workspace_id
@@ -46,5 +46,6 @@ __all__ = [
     "validate_promoted_candidate",
     "validate_workspace",
     "proof_capabilities",
+    "gate_capabilities",
     "workspace_id",
 ]

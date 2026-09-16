@@ -28,6 +28,8 @@ EXPECTED_FILES = {
     "create_phase.json",
     "create_claim.json",
     "evaluate_proof.json",
+    "evaluate_gate.json",
+    "freeze_gate.json",
     "freeze_proof_spec.json",
     "record_finding.json",
     "record_observation.json",

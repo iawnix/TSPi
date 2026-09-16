@@ -30,6 +30,20 @@
     },
     "claim_refs": {"type": "array", "uniqueItems": true, "maxItems": 128, "items": {"$ref": "claim.schema.json#/$defs/claim_id"}},
     "tags": {"type": "array", "uniqueItems": true, "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 128}},
+    "gate_profile": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile_id", "version"],
+          "properties": {
+            "profile_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$", "maxLength": 128},
+            "version": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$", "maxLength": 64}
+          }
+        }
+      ]
+    },
     "observation_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "observation.schema.json#/$defs/observation_id"}},
     "finding_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "finding.schema.json#/$defs/finding_id"}},
     "proof_spec_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "proof_spec.schema.json#/$defs/proof_id"}},

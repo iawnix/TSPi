@@ -19,6 +19,7 @@ from .claims import claim_is_testable, claim_preregistration_digest
 from .errors import ContractError
 from ts_agent.io import now_iso, read_json, sha256_json
 from .operational import operational_snapshot
+from .gates import evaluate_claim_gate, evaluate_frozen_gate, evaluate_node_gate
 from .operation_registry import (
     input_operation_names,
     validate_input_operation_keys,
@@ -27,6 +28,8 @@ from .refs import (
     WorkspaceRefError,
     decision_ordinal,
     next_acceptance_ordinal,
+    next_gate_ordinal,
+    next_gate_result_ordinal,
     next_claim_ordinal,
     next_claim_relation_ordinal,
     next_decision_ordinal,
@@ -37,7 +40,7 @@ from .refs import (
     next_validation_result_ordinal,
     next_proof_spec_ordinal,
 )
-from .revision import workspace_revision
+from .revision import gate_input_revision, workspace_revision
 from .schema_validation import SchemaValidationError, validate_contract
 from .state import (
     CLAIMS_FILE,
@@ -49,6 +52,8 @@ from .state import (
     RESEARCH_STATE_FILE,
     VALIDATION_RESULTS_FILE,
     PROOF_SPECS_FILE,
+    GATE_SPECS_FILE,
+    GATE_RESULTS_FILE,
 )
 from .transactions import recorded_decision_ids
 from .path_safety import has_symlink_component, lexical_path, path_has_symlink
@@ -64,6 +69,8 @@ CREATOR_PREFIXES = {
     "freeze_proof_spec": "proof",
     "evaluate_proof": "result",
     "accept_claim": "acc",
+    "freeze_gate": "gate",
+    "evaluate_gate": "gate_result",
 }
 INPUT_OPERATIONS = input_operation_names()
 
@@ -106,6 +113,8 @@ def _compile_change(
         existing_proof_spec_ids=state.specs,
         existing_validation_result_ids=state.results,
         existing_acceptance_ids=state.acceptances,
+        existing_gate_ids=state.gate_specs,
+        existing_gate_result_ids=state.gate_results,
     )
     registry = builtin_predicate_registry()
     operations: list[dict[str, Any]] = []
@@ -272,6 +281,8 @@ def _allocate_aliases(
     existing_proof_spec_ids: Any,
     existing_validation_result_ids: Any,
     existing_acceptance_ids: Any,
+    existing_gate_ids: Any,
+    existing_gate_result_ids: Any,
 ) -> dict[str, str]:
     allocations: dict[str, str] = {}
     try:
@@ -285,6 +296,8 @@ def _allocate_aliases(
             "proof": next_proof_spec_ordinal(existing_proof_spec_ids),
             "result": next_validation_result_ordinal(existing_validation_result_ids),
             "acc": next_acceptance_ordinal(existing_acceptance_ids),
+            "gate": next_gate_ordinal(existing_gate_ids),
+            "gate_result": next_gate_result_ordinal(existing_gate_result_ids),
         }
     except WorkspaceRefError as exc:
         raise ContractError(str(exc)) from exc
@@ -353,6 +366,7 @@ def _normalize_operation(
             "predictions": _strings(raw["predictions"], "predictions", 64, 2000),
             "falsifiers": _strings(raw["falsifiers"], "falsifiers", 64, 2000),
             "tags": _unique_strings(raw.get("tags", []), "tags", 64, 128),
+            "gate_profile": _profile_binding(raw.get("gateProfile")),
             "preregistration_digest": "",
             "preregistered_at": created_at,
             "created_by_node": _optional_ref(raw.get("createdByNode"), allocations),
@@ -399,6 +413,7 @@ def _normalize_operation(
                 "primary_claim_ref": primary_claim_ref,
                 "claim_refs": claim_refs,
                 "tags": _unique_strings(raw.get("tags", []), "tags", 64, 128),
+                "gate_profile": _profile_binding(raw.get("gateProfile")),
                 "observation_refs": [],
                 "finding_refs": [],
                 "proof_spec_refs": [],
@@ -592,6 +607,67 @@ def _normalize_operation(
         }
         record["acceptance_digest"] = sha256_json(record)
         return {"op": "accept_claim", "record": record}
+    if name == "freeze_gate":
+        scope = raw["scope"]
+        if scope not in {"node", "claim"}:
+            raise ContractError("freeze_gate.scope must be node or claim")
+        target_ref = _ref(raw["targetRef"], allocations)
+        profile_id = _string(raw["profileId"], "profileId", 128)
+        profile_version = _string(raw["profileVersion"], "profileVersion", 64)
+        operational = operational_snapshot(root)
+        if scope == "node":
+            target = state.nodes.get(target_ref)
+            if target is None:
+                raise ContractError(f"freeze_gate references an unavailable ResearchNode: {target_ref}")
+            projection = evaluate_node_gate(
+                {**target, "gate_profile": {"profile_id": profile_id, "version": profile_version}},
+                findings=state.findings.values(),
+                operational=operational,
+            )
+        else:
+            target = state.claims.get(target_ref)
+            if target is None:
+                raise ContractError(f"freeze_gate references an unavailable Claim: {target_ref}")
+            projection = evaluate_claim_gate(
+                {**target, "gate_profile": {"profile_id": profile_id, "version": profile_version}},
+                proof_specs=state.specs.values(),
+                validation_results=state.results.values(),
+                findings=state.findings.values(),
+            )
+        spec = deepcopy(projection["spec"])
+        if spec["profile_ref"]["profile_id"] != profile_id or spec["profile_ref"]["version"] != profile_version:
+            raise ContractError(f"unsupported or incompatible Gate profile: {profile_id}@{profile_version}")
+        spec["gate_id"] = allocations[raw["local_ref"]]
+        spec["title"] = _string(raw.get("title", spec["title"]), "gate title", 300)
+        spec["purpose"] = _string(raw.get("purpose", spec["purpose"]), "gate purpose", 4000)
+        spec["created_by_decision"] = decision_id
+        spec["created_at"] = created_at
+        spec["frozen_at"] = created_at
+        spec["gate_digest"] = _digest_without(spec, "gate_digest")
+        return {"op": "append_gate_spec", "record": spec}
+    if name == "evaluate_gate":
+        gate_ref = _ref(raw["gateRef"], allocations)
+        spec = state.gate_specs.get(gate_ref)
+        if spec is None:
+            raise ContractError(f"evaluate_gate references an unavailable GateSpec: {gate_ref}")
+        input_revision = gate_input_revision(root)
+        node = state.nodes.get(str(spec.get("target_node_ref"))) if spec.get("scope") == "node" else None
+        claim = state.claims.get(str(spec.get("target_claim_ref"))) if spec.get("scope") == "claim" else None
+        result = evaluate_frozen_gate(
+            spec,
+            node=node,
+            claim=claim,
+            proof_specs=state.specs.values(),
+            validation_results=state.results.values(),
+            findings=state.findings.values(),
+            operational=operational_snapshot(root),
+            input_revision=input_revision,
+            result_id=allocations[raw["local_ref"]],
+            evaluated_by_node=_optional_ref(raw.get("nodeRef"), allocations),
+            evaluated_by_decision=decision_id,
+            evaluated_at=created_at,
+        )
+        return {"op": "append_gate_result", "record": result}
     raise ContractError(f"unsupported change operation: {name}")
 
 
@@ -681,6 +757,8 @@ class _DraftState:
         results: dict[str, dict[str, Any]],
         findings: dict[str, dict[str, Any]],
         acceptances: set[str],
+        gate_specs: dict[str, dict[str, Any]],
+        gate_results: dict[str, dict[str, Any]],
     ) -> None:
         self.decision_id = decision_id
         self.phases = phases
@@ -692,6 +770,8 @@ class _DraftState:
         self.results = results
         self.findings = findings
         self.acceptances = acceptances
+        self.gate_specs = gate_specs
+        self.gate_results = gate_results
 
     @classmethod
     def load(cls, root: Path, *, decision_id: str) -> "_DraftState":
@@ -706,10 +786,18 @@ class _DraftState:
             VALIDATION_RESULTS_FILE,
             FINDINGS_FILE,
             RESEARCH_STATE_FILE,
+            GATE_SPECS_FILE,
+            GATE_RESULTS_FILE,
         ):
             path = root / name
             if has_symlink_component(root, path) or path.is_symlink():
                 raise ContractError(f"workspace file contains a symbolic link: {name}")
+            if not path.exists() and name in {GATE_SPECS_FILE, GATE_RESULTS_FILE}:
+                documents[name] = {"schema_version": (
+                    "ts-gate-spec-registry/1" if name == GATE_SPECS_FILE else "ts-gate-result-registry/1"
+                )}
+                documents[name]["specs" if name == GATE_SPECS_FILE else "results"] = []
+                continue
             try:
                 value = read_json(path)
             except (OSError, ValueError) as exc:
@@ -732,6 +820,8 @@ class _DraftState:
                 for ref in documents[RESEARCH_STATE_FILE]["acceptance_refs"]
                 if isinstance(ref, str)
             },
+            gate_specs=_map(documents[GATE_SPECS_FILE]["specs"], "gate_id"),
+            gate_results=_map(documents[GATE_RESULTS_FILE]["results"], "gate_result_id"),
         )
 
     def apply(self, operation: dict[str, Any]) -> None:
@@ -800,6 +890,12 @@ class _DraftState:
                     "decision_id": self.decision_id,
                     "resolved_at": operation["resolved_at"],
                 }
+        elif name == "append_gate_spec":
+            record = deepcopy(operation["record"])
+            self.gate_specs[record["gate_id"]] = record
+        elif name == "append_gate_result":
+            record = deepcopy(operation["record"])
+            self.gate_results[record["gate_result_id"]] = record
 
 
 def _created_identifier(operation: dict[str, Any]) -> str | None:
@@ -809,6 +905,7 @@ def _created_identifier(operation: dict[str, Any]) -> str | None:
     for key in (
         "phase_id", "claim_id", "relation_id", "node_id", "observation_id",
         "finding_id", "proof_id", "result_id", "acceptance_id",
+        "gate_id", "gate_result_id",
     ):
         if isinstance(record.get(key), str):
             return str(record[key])
@@ -830,6 +927,18 @@ def _ref(value: Any, allocations: dict[str, str]) -> str:
 
 def _optional_ref(value: Any, allocations: dict[str, str]) -> str | None:
     return None if value is None else _ref(value, allocations)
+
+
+def _profile_binding(value: Any) -> dict[str, str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ContractError("gateProfile must be an object")
+    _keys(value, required={"profileId", "version"}, label="gateProfile")
+    return {
+        "profile_id": _string(value["profileId"], "gateProfile.profileId", 128),
+        "version": _string(value["version"], "gateProfile.version", 64),
+    }
 
 
 def _refs(value: Any, allocations: dict[str, str]) -> list[str]:
@@ -911,3 +1020,9 @@ def _map(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str, Any]]:
 def _append_unique(values: Any, value: str) -> None:
     if isinstance(values, list) and value not in values:
         values.append(value)
+
+
+def _digest_without(record: dict[str, Any], field: str) -> str:
+    value = dict(record)
+    value.pop(field, None)
+    return sha256_json(value)

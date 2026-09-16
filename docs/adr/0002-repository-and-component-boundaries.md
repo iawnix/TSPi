@@ -250,7 +250,8 @@ routing concepts:
 
 - `stage` for a private execution or failure location;
 - `transaction prepare/commit` for Kernel internals;
-- `gate_results` and `required_gates` as retired compatibility fields;
+- ad hoc `gate_results` or `required_gates` fields used as a workflow router;
+  gate evaluation belongs to the scoped `GateSpec`/`GateResult` contract;
 - `Evidence layer` or `Evidence role` when the actual owner is an Artifact,
   Observation, Finding, or ValidationResult;
 - a fixed workflow stage table or a central next-action router.

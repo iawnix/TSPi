@@ -823,30 +823,45 @@ def _app_server_socket_directory(workspace: Path, *, create: bool) -> Path:
         base = Path(configured).expanduser()
         if not base.is_absolute():
             raise TSPiHostError("TSPI_APP_SERVER_RUNTIME_DIR must be absolute")
+        bases = [base]
     else:
         xdg = os.environ.get("XDG_RUNTIME_DIR", "").strip()
         candidate = Path(xdg) if xdg else Path(f"/run/user/{os.getuid()}")
-        base = candidate / "tspi" if candidate.is_dir() else Path(tempfile.gettempdir()) / f"tspi-{os.getuid()}"
+        bases = []
+        if candidate.is_dir():
+            bases.append(candidate / "tspi")
+        bases.append(Path(tempfile.gettempdir()) / f"tspi-{os.getuid()}")
     key = hashlib.sha256(os.fsencode(workspace.resolve())).hexdigest()[:16]
-    directory = base / key
-    longest_socket = directory / f"server-{'0' * 36}-{'0' * 12}.sock"
-    if len(os.fsencode(longest_socket)) >= 108:
-        raise TSPiHostError(
-            f"App Server runtime directory is too long for Unix sockets: {directory}; "
-            "set TSPI_APP_SERVER_RUNTIME_DIR to a shorter private directory"
-        )
-    for path in (base, directory):
-        if path.is_symlink():
-            raise TSPiHostError(f"App Server runtime directory cannot be a symbolic link: {path}")
-        if create:
-            path.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if path.exists():
-            info = path.stat()
-            if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
-                raise TSPiHostError(f"App Server runtime directory must be owned by the current user: {path}")
-            if create:
-                path.chmod(0o700)
-    return directory
+    last_error: OSError | None = None
+    for base in bases:
+        directory = base / key
+        longest_socket = directory / f"server-{'0' * 36}-{'0' * 12}.sock"
+        if len(os.fsencode(longest_socket)) >= 108:
+            if configured:
+                raise TSPiHostError(
+                    f"App Server runtime directory is too long for Unix sockets: {directory}; "
+                    "set TSPI_APP_SERVER_RUNTIME_DIR to a shorter private directory"
+                )
+            continue
+        try:
+            for path in (base, directory):
+                if path.is_symlink():
+                    raise TSPiHostError(f"App Server runtime directory cannot be a symbolic link: {path}")
+                if create:
+                    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+                if path.exists():
+                    info = path.stat()
+                    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+                        raise TSPiHostError(f"App Server runtime directory must be owned by the current user: {path}")
+                    if create:
+                        path.chmod(0o700)
+            return directory
+        except OSError as exc:
+            if configured:
+                raise TSPiHostError(f"cannot prepare App Server runtime directory: {base}: {exc}") from exc
+            last_error = exc
+    detail = f": {last_error}" if last_error else ""
+    raise TSPiHostError(f"cannot prepare a private App Server runtime directory{detail}")
 
 
 def _host_socket_directory(installation: Installation, *, create: bool) -> Path:

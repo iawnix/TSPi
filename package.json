@@ -25,7 +25,7 @@
     "test:pi-adapter": "python3 scripts/test_source.py -- -q tests/test_pi_agent_adapter.py tests/test_pi_subagent_contract.py tests/test_pi_subagent_ui.py tests/test_pi_compute_tools.py tests/test_pi_artifact_tools.py tests/test_pi_runtime_integration.py tests/test_agent_protocol.py",
     "test:subagents": "python3 scripts/test_source.py -- -q tests/test_pi_subagent_contract.py tests/test_pi_subagent_ui.py tests/test_pi_compute_tools.py tests/test_pi_artifact_tools.py tests/test_pi_runtime_integration.py tests/test_agent_protocol.py tests/test_agent_run_journal.py",
     "test:package": "python3 scripts/check_package.py",
-    "test:native-pi": "node --import \"$TSPI_PI_SOURCE/packages/coding-agent/src/experimental/source-resolver.ts\" --test tests/pi-app-server.test.mjs tests/pi-native-worker.test.mjs",
+    "test:native-pi": "node --import \"$TSPI_PI_SOURCE/packages/coding-agent/src/experimental/source-resolver.ts\" --test tests/pi-app-server.test.mjs tests/pi-native-worker.test.mjs tests/server-extension-loader.test.mjs tests/provider-turn.test.mjs",
     "release:agent": "python3 scripts/build_release.py --output-dir dist/agent --json",
     "release:build": "python3 scripts/build_package.py --output-dir dist/package --json",
     "typecheck": "tsc --noEmit"
@@ -64,6 +64,8 @@
     "extensions/ts-workflow-control/*.cjs",
     "extensions/ts-workflow-review/*.ts",
     "extensions/ts-workflow-ui/*.ts",
+    "extensions/server/*.mjs",
+    "extensions/server/*.json",
     "scripts/install_env.py",
     "scripts/install_package.py",
     "scripts/install_from_github.py",

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
-from .context import build_review_snapshot, compile_context, proof_capabilities
+from .context import build_review_snapshot, compile_context, gate_capabilities, proof_capabilities
 from .engine import change_workspace, init_workspace
 from .errors import ContractError
 from .operational import operational_snapshot
@@ -54,6 +54,9 @@ def main(
     command.add_argument("--root", required=False)
     command.add_argument("--template-id")
     command.add_argument("--template-version")
+
+    command = sub.add_parser("gate_capabilities", help="list built-in NodeGate and ClaimGate profiles")
+    command.add_argument("--root", required=False)
 
     command = sub.add_parser("change_contract", help="read exact public ts_change operation fields")
     command.add_argument("--root", required=False)
@@ -128,6 +131,8 @@ def _dispatch(
             template_id=args.template_id,
             template_version=args.template_version,
         )
+    if args.command == "gate_capabilities":
+        return gate_capabilities()
     if args.command == "change_contract":
         return operation_catalog(args.operation)
     if args.command == "validate_workspace":

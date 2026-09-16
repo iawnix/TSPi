@@ -22,6 +22,7 @@ from ts_agent.workspace.state import (
     VALIDATION_RESULTS_FILE,
     PROOF_SPECS_FILE,
     WORKSPACE_FILE,
+    OPTIONAL_STATE_FILES,
 )
 from ts_agent.workspace.validator import validate_workspace
 from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
@@ -117,6 +118,19 @@ def _read_state_documents(root: Path) -> dict[str, dict[str, Any]]:
     documents: dict[str, dict[str, Any]] = {}
     for name in STATE_FILES:
         path = root / name
+        if has_symlink_component(root, path) or path.is_symlink():
+            raise ValueError(f"workspace file contains a symbolic link: {name}")
+        try:
+            value = read_json(path)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"cannot read workspace file {name}: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ValueError(f"workspace file is not an object: {name}")
+        documents[name] = value
+    for name in OPTIONAL_STATE_FILES:
+        path = root / name
+        if not path.exists():
+            continue
         if has_symlink_component(root, path) or path.is_symlink():
             raise ValueError(f"workspace file contains a symbolic link: {name}")
         try:

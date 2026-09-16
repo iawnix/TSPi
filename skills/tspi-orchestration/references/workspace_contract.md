@@ -36,6 +36,13 @@ than stored as a permanent Claim flag. `phases.json` groups Nodes for human
 navigation and carries no lifecycle or policy. ResearchNode artifacts live below
 `nodes/<node_id>/`. Reports and operational records are not canonical science.
 
+`gate_spec.schema.json` and `gate_result.schema.json` describe the staged,
+scoped Gate contract. `gate_specs.json` and `gate_results.json` are additive,
+lazily-created registries written only through `ts_change`; their absence is
+valid for protocol-6 workspaces. Existing ProofSpec, ValidationResult,
+Acceptance, and Node completion records remain the compatibility source for
+derived Gate projections.
+
 ## Bootstrap
 
 TSPi bootstraps before starting the Root Agent:

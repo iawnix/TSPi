@@ -3,10 +3,11 @@
 > 实施状态（2026-09-12）：第一阶段的 `/3` 清理、仓内 Web 组件边界、曲线渲染
 > 合约和 GitHub source-first 安装入口已完成；后续阶段保留为演进计划。
 
-> **架构更新（2026-09-16）：** 本文包含原生 Pi App Server 迁移前的历史规划。
-> 当前实现是每个工作区一个原生 Pi App Server；TS Phone 是独立的 Radius
-> 客户端，不再作为 TSPi Suite 组件、Phone Server、bridge 或本地守护进程
-> 安装。旧的 Phone manifest/服务规划仅保留作历史背景，不是当前实现要求。
+> **架构更新（2026-09-17）：** 本文包含原生 Pi App Server 迁移前的历史规划。
+> 当前实现是每个安装目录一个统一 Host，由一个原生 Pi App Server 服务多个工作区
+> cwd；TS Phone 是独立的 Radius 客户端，不再作为 TSPi Suite 组件、Phone Server、
+> bridge 或本地守护进程安装。旧的 Phone manifest/服务规划仅保留作历史背景，不是
+> 当前实现要求。
 
 ## 目标
 
@@ -282,8 +283,10 @@ staged install -> runtime probe -> atomic activation
 
 ## Claim 收尾与“Gate”语义
 
-当前 TSPi 没有一等的 `Gate` 实体，也没有新的 `gate_results.json` 或
-`required_gates` 字段。旧 gate 名称被作为废弃兼容术语拒绝。现有等价机制是：
+当前不要求所有 Claim/Node 携带重复的 Gate 字段。Gate registry 作为兼容增量层
+按需创建：旧 workspace 通过投影兼容；显式 `freeze_gate` / `evaluate_gate` 会写入
+`gate_specs.json` / `gate_results.json`，并保留 digest 与输入 revision。现有记录到
+Gate 的映射是：
 
 ```text
 Claim
@@ -312,10 +315,16 @@ Claim
 `reaction_coordinate`、`connectivity` 三个维度；所有附加 ProofSpec 的最新
 结果都必须是 `pass`，并且不能存在开放的 blocking Finding。
 
-这里的 `ProofSpec` 相当于“gate definition”，`ValidationResult` 相当于
-“gate execution result”，`Acceptance` 才是最终收尾记录。若 UI 需要显示
-“Gate”，建议只做一个由这三类记录推导出的展示别名，不要重新建立平行的
-`gate_results` 状态源。
+这里的 `ProofSpec` 是 ClaimGate 检查的主要来源，`ValidationResult` 是检查执行
+结果，`Acceptance` 是 Claim 的不可变收尾快照；Node completion blockers 则是
+NodeGate 的现有来源。统一契约 `GateSpec/GateResult` 已加入
+`packages/ts-agent-kernel/ts_agent/workspace/contracts/`，分别用
+`scope=node|claim` 表示作用域。GateSpec 在第一次评估前冻结并绑定 digest，
+GateResult 绑定输入 revision，结果为 `pass`、`fail`、`inconclusive` 或
+`blocked`。当前 Kernel 已实现确定性的 Gate projection、显式冻结/评估操作和
+registry；UI 直接消费 projection。旧 workspace 不需要迁移，Gate registry 的首次
+写入仍通过同一个 `ts_change` 事务边界完成。历史 Result 在输入 revision 改变后
+保持可审计，但 Research Map 会标为 stale，要求重新评估。
 
 ## 第六阶段：可观测性和故障诊断
 

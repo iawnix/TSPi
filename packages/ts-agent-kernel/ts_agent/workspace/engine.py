@@ -14,6 +14,7 @@ from .acceptance import project_acceptances
 from .claims import claim_is_testable, claim_preregistration_digest
 from .decision import _compile_change, validate_decision, validate_decision_binding
 from .errors import ContractError
+from .gates import evaluate_frozen_gate
 from .identity import WorkspaceIdentityError, ensure_workspace_identity
 from ts_agent.io import now_iso, read_json, write_json
 from .operational import node_completion_blockers, operational_snapshot
@@ -23,6 +24,8 @@ from .state import (
     CLAIM_RELATIONS_FILE,
     OBSERVATIONS_FILE,
     FINDINGS_FILE,
+    GATE_SPECS_FILE,
+    GATE_RESULTS_FILE,
     OPTIONAL_DIRS,
     RESEARCH_PHASES_FILE,
     RESEARCH_NODES_FILE,
@@ -33,6 +36,7 @@ from .state import (
     VALIDATION_RESULTS_FILE,
     PROOF_SPECS_FILE,
     WORKSPACE_FILE,
+    OPTIONAL_STATE_FILES,
     initial_documents,
 )
 from .transactions import (
@@ -195,6 +199,23 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(value, dict):
             raise ContractError(f"workspace file is not an object: {name}")
         documents[name] = deepcopy(value)
+    for name in OPTIONAL_STATE_FILES:
+        path = root / name
+        if not path.exists():
+            documents[name] = {
+                "schema_version": "ts-gate-spec-registry/1" if name == GATE_SPECS_FILE else "ts-gate-result-registry/1",
+            }
+            documents[name]["specs" if name == GATE_SPECS_FILE else "results"] = []
+            continue
+        if has_symlink_component(root, path) or path.is_symlink():
+            raise ContractError(f"workspace file contains a symbolic link: {name}")
+        try:
+            value = read_json(path)
+        except (OSError, ValueError) as exc:
+            raise ContractError(f"cannot read workspace file {name}: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ContractError(f"workspace file is not an object: {name}")
+        documents[name] = deepcopy(value)
     phases = _map(documents[RESEARCH_PHASES_FILE]["phases"], "phase_id")
     claims = _map(documents[CLAIMS_FILE]["claims"], "claim_id")
     relations = _map(documents[CLAIM_RELATIONS_FILE]["relations"], "relation_id")
@@ -203,6 +224,8 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
     specs = _map(documents[PROOF_SPECS_FILE]["proofs"], "proof_id")
     results = _map(documents[VALIDATION_RESULTS_FILE]["results"], "result_id")
     findings = _map(documents[FINDINGS_FILE]["findings"], "finding_id")
+    gate_specs = _map(documents[GATE_SPECS_FILE]["specs"], "gate_id")
+    gate_results = _map(documents[GATE_RESULTS_FILE]["results"], "gate_result_id")
     operational = operational_snapshot(root)
     accepted_changes: dict[Path, Any] = {}
     created_refs = {
@@ -215,6 +238,8 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
         "proof_specs": [],
         "validation_results": [],
         "acceptances": [],
+        "gates": [],
+        "gate_results": [],
     }
 
     for operation in decision["operations"]:
@@ -323,6 +348,33 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             _append_unique(claim["validation_result_refs"], record["result_id"])
             _append_unique(node["validation_result_refs"], record["result_id"])
             created_refs["validation_results"].append(record["result_id"])
+        elif name == "append_gate_spec":
+            record = deepcopy(operation["record"])
+            _require_new(record["gate_id"], gate_specs, "GateSpec")
+            _validate_gate_spec_record(record, nodes, claims)
+            gate_specs[record["gate_id"]] = record
+            documents[GATE_SPECS_FILE]["specs"].append(record)
+            created_refs["gates"].append(record["gate_id"])
+        elif name == "append_gate_result":
+            record = deepcopy(operation["record"])
+            _require_new(record["gate_result_id"], gate_results, "GateResult")
+            spec = gate_specs.get(record["gate_ref"])
+            if spec is None:
+                raise ContractError(f"GateResult references unknown GateSpec: {record['gate_ref']}")
+            _validate_gate_result_record(
+                record,
+                spec=spec,
+                nodes=nodes,
+                claims=claims,
+                proof_specs=specs,
+                validation_results=results,
+                observations=observations,
+                findings=findings,
+                operational=operational,
+            )
+            gate_results[record["gate_result_id"]] = record
+            documents[GATE_RESULTS_FILE]["results"].append(record)
+            created_refs["gate_results"].append(record["gate_result_id"])
         elif name == "update_claim":
             claim = _require_claim(claims, operation["claim_ref"])
             _require_known(operation["observation_refs"], observations, "Claim update observation_refs")
@@ -359,6 +411,22 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             if blockers:
                 details = "; ".join(f"[{item['code']}] {item['message']}" for item in blockers[:8])
                 raise ContractError(f"ResearchNode completion is blocked: {details}")
+            node_gates = [
+                spec for spec in gate_specs.values()
+                if spec.get("scope") == "node" and spec.get("target_node_ref") == operation["node_ref"]
+            ]
+            if node_gates:
+                latest_spec = max(node_gates, key=lambda item: (str(item.get("frozen_at") or ""), str(item.get("gate_id") or "")))
+                current_results = [
+                    result for result in gate_results.values()
+                    if result.get("gate_ref") == latest_spec.get("gate_id")
+                    and result.get("gate_digest") == latest_spec.get("gate_digest")
+                ]
+                latest_result = max(current_results, key=lambda item: (str(item.get("evaluated_at") or ""), str(item.get("gate_result_id") or "")), default=None)
+                if latest_result is None or latest_result.get("verdict") != "pass":
+                    raise ContractError(
+                        f"ResearchNode completion requires a passing NodeGate: {latest_spec['gate_id']}"
+                    )
             node["status"] = operation["outcome"]
             node["result"] = {
                 "outcome": operation["outcome"],
@@ -400,6 +468,10 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             raise ContractError(f"unsupported Decision operation: {name}")
 
     changes = {root / name: documents[name] for name in STATE_FILES if name != WORKSPACE_FILE}
+    if created_refs["gates"] or (root / GATE_SPECS_FILE).exists():
+        changes[root / GATE_SPECS_FILE] = documents[GATE_SPECS_FILE]
+    if created_refs["gate_results"] or (root / GATE_RESULTS_FILE).exists():
+        changes[root / GATE_RESULTS_FILE] = documents[GATE_RESULTS_FILE]
     changes.update(accepted_changes)
     result = {
         "schema_version": "ts-decision-apply-result/1",
@@ -445,6 +517,69 @@ def _require_open_node(nodes: dict[str, dict[str, Any]], node_ref: str, operatio
     if node.get("status") != "open":
         raise ContractError(f"{operation} requires an open ResearchNode: {node_ref}")
     return node
+
+
+def _validate_gate_spec_record(
+    record: dict[str, Any],
+    nodes: dict[str, dict[str, Any]],
+    claims: dict[str, dict[str, Any]],
+) -> None:
+    from .schema_validation import validate_contract
+
+    validate_contract("gate_spec.schema.json", record)
+    target_node = record.get("target_node_ref")
+    target_claim = record.get("target_claim_ref")
+    if target_node is not None and target_node not in nodes:
+        raise ContractError(f"GateSpec references unknown ResearchNode: {target_node}")
+    if target_claim is not None and target_claim not in claims:
+        raise ContractError(f"GateSpec references unknown Claim: {target_claim}")
+    digest = dict(record)
+    expected = digest.pop("gate_digest", None)
+    from ts_agent.io import sha256_json
+
+    if expected != sha256_json(digest):
+        raise ContractError(f"GateSpec digest mismatch: {record.get('gate_id')}")
+
+
+def _validate_gate_result_record(
+    record: dict[str, Any],
+    *,
+    spec: dict[str, Any],
+    nodes: dict[str, dict[str, Any]],
+    claims: dict[str, dict[str, Any]],
+    proof_specs: dict[str, dict[str, Any]],
+    validation_results: dict[str, dict[str, Any]],
+    observations: dict[str, dict[str, Any]],
+    findings: dict[str, dict[str, Any]],
+    operational: dict[str, Any],
+) -> None:
+    from .schema_validation import validate_contract
+    from ts_agent.io import sha256_json
+
+    validate_contract("gate_result.schema.json", record)
+    if record.get("gate_digest") != spec.get("gate_digest"):
+        raise ContractError(f"GateResult GateSpec digest mismatch: {record.get('gate_result_id')}")
+    evaluator = record.get("evaluated_by_node")
+    if evaluator is not None and evaluator not in nodes:
+        raise ContractError(f"GateResult evaluator references unknown ResearchNode: {evaluator}")
+    node = nodes.get(str(spec.get("target_node_ref"))) if spec.get("scope") == "node" else None
+    claim = claims.get(str(spec.get("target_claim_ref"))) if spec.get("scope") == "claim" else None
+    expected = evaluate_frozen_gate(
+        spec,
+        node=node,
+        claim=claim,
+        proof_specs=proof_specs.values(),
+        validation_results=validation_results.values(),
+        findings=findings.values(),
+        operational=operational,
+        input_revision=record.get("input_revision"),
+        result_id=record.get("gate_result_id"),
+        evaluated_by_node=record.get("evaluated_by_node"),
+        evaluated_by_decision=record.get("evaluated_by_decision"),
+        evaluated_at=record.get("evaluated_at"),
+    )
+    if expected != record:
+        raise ContractError(f"GateResult differs from deterministic evaluation: {record.get('gate_result_id')}")
 
 
 def _append_unique(values: list[str], value: str) -> None:

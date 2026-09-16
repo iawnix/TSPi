@@ -27,6 +27,7 @@ from .state import (
     RESEARCH_NODES_FILE,
     STATE_FILES,
     WORKSPACE_FILE,
+    OPTIONAL_STATE_FILES,
 )
 
 
@@ -691,6 +692,19 @@ def _read_state_documents(root: Path) -> dict[str, dict[str, Any]]:
     documents: dict[str, dict[str, Any]] = {}
     for name in STATE_FILES:
         path = root / name
+        if has_symlink_component(root, path) or path.is_symlink():
+            raise ContractError(f"workspace file contains a symbolic link: {name}")
+        try:
+            value = read_json(path)
+        except (OSError, ValueError) as exc:
+            raise ContractError(f"cannot read workspace file {name}: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ContractError(f"workspace file is not an object: {name}")
+        documents[name] = value
+    for name in OPTIONAL_STATE_FILES:
+        path = root / name
+        if not path.exists():
+            continue
         if has_symlink_component(root, path) or path.is_symlink():
             raise ContractError(f"workspace file contains a symbolic link: {name}")
         try:

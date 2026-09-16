@@ -24,6 +24,9 @@ The canonical workspace files are `workspace.json`, `research_state.json`,
 `observations.json`, `proof_specs.json`, `validation_results.json`,
 `findings.json`, and `acceptances/<acceptance_id>.json`. Phase is a research
 objective; node is an executable/evidence unit inside that objective.
+When a workspace uses explicit Gate operations, `gate_specs.json` and
+`gate_results.json` are additive registries for the shared NodeGate/ClaimGate
+contract; their absence remains valid for older workspaces.
 
 ## Validation Engine Rules
 

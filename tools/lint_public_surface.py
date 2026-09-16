@@ -14,8 +14,8 @@ PUBLIC_PATTERNS = (
     "docs/TERMINAL*.md", "docs/INSTALLATION.md", "docs/MAINTAINER_GUIDE.md",
 )
 RULES = (
-    (re.compile(r"\b(?:gate_results|required_gates)\b", re.I),
-     "retired fields: describe ProofSpec and ValidationResult contracts"),
+    (re.compile(r"\brequired_gates\b", re.I),
+     "retired field: describe the scoped GateSpec/GateResult contract"),
     (re.compile(r"\bevidence\s+(?:layers?|roles?)\b", re.I),
      "ambiguous evidence category: name Artifact, Observation, Finding, or ValidationResult"),
     (re.compile(r"\bts-reviewers\b", re.I),

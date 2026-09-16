@@ -60,6 +60,8 @@
           }
         },
         {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "accept_claim"}, "record": {"$ref": "acceptance_record.schema.json"}}}
+        ,{"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_gate_spec"}, "record": {"$ref": "gate_spec.schema.json"}}}
+        ,{"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_gate_result"}, "record": {"$ref": "gate_result.schema.json"}}}
       ]
     }
   },
@@ -93,7 +95,9 @@
           {"pattern": "^phase_[1-9][0-9]*$"},
           {"pattern": "^claim_[1-9][0-9]*$"},
           {"pattern": "^(rel|obs|fnd|proof|result|acc)_[1-9][0-9]*$"},
-          {"pattern": "^node_[1-9][0-9]*$"}
+          {"pattern": "^node_[1-9][0-9]*$"},
+          {"pattern": "^gate_[1-9][0-9]*$"},
+          {"pattern": "^gate_result_[1-9][0-9]*$"}
         ]
       }
     },

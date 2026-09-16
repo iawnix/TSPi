@@ -32,6 +32,9 @@ from .state import (
     VALIDATION_RESULTS_FILE,
     PROOF_SPECS_FILE,
     WORKSPACE_FILE,
+    OPTIONAL_STATE_FILES,
+    GATE_SPECS_FILE,
+    GATE_RESULTS_FILE,
 )
 
 
@@ -77,7 +80,24 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
             continue
         documents[name] = value
         findings.extend(schema_findings(STATE_SCHEMAS[name], value, name))
-    if len(documents) != len(STATE_FILES) or findings:
+    for name in OPTIONAL_STATE_FILES:
+        path = root_path / name
+        if not path.exists():
+            continue
+        if has_symlink_component(root_path, path) or path.is_symlink() or not path.is_file():
+            _finding(findings, "error", "invalid_gate_registry", f"Gate registry is not a regular file: {name}", name)
+            continue
+        try:
+            value = read_json(path)
+        except (OSError, ValueError) as exc:
+            _finding(findings, "error", "invalid_json", str(exc), name)
+            continue
+        if not isinstance(value, dict):
+            _finding(findings, "error", "invalid_document", "Gate registry must be an object", name)
+            continue
+        documents[name] = value
+        _validate_gate_registry_shape(name, value, findings)
+    if len(documents) < len(STATE_FILES) or findings:
         return _result(findings)
 
     try:
@@ -104,6 +124,18 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
     _validate_observations(root_path, observations, nodes, findings)
     _validate_findings(finding_map, claims, nodes, observations, findings)
     _validate_specs_and_results(specs, results, claims, nodes, observations, findings)
+    _validate_gates(
+        documents.get(GATE_SPECS_FILE, {}).get("specs", []),
+        documents.get(GATE_RESULTS_FILE, {}).get("results", []),
+        claims,
+        nodes,
+        specs,
+        results,
+        observations,
+        finding_map,
+        root_path,
+        findings,
+    )
     _validate_acceptance(root_path, documents, claims, specs, results, finding_map, findings)
     activity_index = build_activity_index(root_path, known_node_ids=nodes)
     findings.extend(activity_index["integrity_findings"])
@@ -315,6 +347,84 @@ def _validate_specs_and_results(
             continue
         if expected != result:
             _finding(findings, "error", "validation_result_mismatch", f"ValidationResult {result_id} differs from deterministic evaluation", VALIDATION_RESULTS_FILE)
+
+
+def _validate_gates(
+    specs_rows: Any,
+    results_rows: Any,
+    claims: dict[str, dict[str, Any]],
+    nodes: dict[str, dict[str, Any]],
+    proof_specs: dict[str, dict[str, Any]],
+    validation_results: dict[str, dict[str, Any]],
+    observations: dict[str, dict[str, Any]],
+    finding_map: dict[str, dict[str, Any]],
+    root: Path,
+    findings: list[dict[str, str]],
+) -> None:
+    from .gates import evaluate_frozen_gate
+    from .operational import operational_snapshot
+    from ts_agent.io import sha256_json
+    from .revision import gate_input_revision
+    current_revision = gate_input_revision(root)
+
+    specs = _unique_map(specs_rows, "gate_id", GATE_SPECS_FILE, findings)
+    results = _unique_map(results_rows, "gate_result_id", GATE_RESULTS_FILE, findings)
+    for gate_id, spec in specs.items():
+        target_node = spec.get("target_node_ref")
+        target_claim = spec.get("target_claim_ref")
+        if target_node not in nodes if target_node is not None else False:
+            _finding(findings, "error", "unknown_gate_target", f"GateSpec {gate_id} references unknown ResearchNode", GATE_SPECS_FILE)
+        if target_claim not in claims if target_claim is not None else False:
+            _finding(findings, "error", "unknown_gate_target", f"GateSpec {gate_id} references unknown Claim", GATE_SPECS_FILE)
+        digest_input = dict(spec)
+        digest = digest_input.pop("gate_digest", None)
+        if digest != sha256_json(digest_input):
+            _finding(findings, "error", "gate_spec_digest_mismatch", f"GateSpec {gate_id} digest differs from content", GATE_SPECS_FILE)
+    for result_id, result in results.items():
+        spec = specs.get(str(result.get("gate_ref") or ""))
+        if spec is None:
+            _finding(findings, "error", "unknown_gate_result_ref", f"GateResult {result_id} references unknown GateSpec", GATE_RESULTS_FILE)
+            continue
+        digest_input = dict(result)
+        result_digest = digest_input.pop("result_digest", None)
+        if result_digest != sha256_json(digest_input):
+            _finding(findings, "error", "gate_result_digest_mismatch", f"GateResult {result_id} digest differs from content", GATE_RESULTS_FILE)
+        # A result is an immutable historical evaluation.  Recompute it only
+        # while it is bound to the current revision; later state changes make
+        # the record stale, not corrupt.
+        if result.get("input_revision") != current_revision:
+            continue
+        node = nodes.get(str(spec.get("target_node_ref"))) if spec.get("scope") == "node" else None
+        claim = claims.get(str(spec.get("target_claim_ref"))) if spec.get("scope") == "claim" else None
+        try:
+            expected = evaluate_frozen_gate(
+                spec,
+                node=node,
+                claim=claim,
+                proof_specs=proof_specs.values(),
+                validation_results=validation_results.values(),
+                findings=finding_map.values(),
+                operational=operational_snapshot(root),
+                input_revision=result.get("input_revision"),
+                result_id=result_id,
+                evaluated_by_node=result.get("evaluated_by_node"),
+                evaluated_by_decision=result.get("evaluated_by_decision"),
+                evaluated_at=result.get("evaluated_at"),
+            )
+        except Exception as exc:  # noqa: BLE001 - validation reports malformed records
+            _finding(findings, "error", "gate_result_recompute_error", f"GateResult {result_id} cannot be recomputed: {exc}", GATE_RESULTS_FILE)
+            continue
+        if expected != result:
+            _finding(findings, "error", "gate_result_mismatch", f"GateResult {result_id} differs from deterministic evaluation", GATE_RESULTS_FILE)
+
+
+def _validate_gate_registry_shape(name: str, value: dict[str, Any], findings: list[dict[str, str]]) -> None:
+    expected_schema = "ts-gate-spec-registry/1" if name == GATE_SPECS_FILE else "ts-gate-result-registry/1"
+    key = "specs" if name == GATE_SPECS_FILE else "results"
+    rows = value.get(key)
+    if value.get("schema_version") != expected_schema or not isinstance(rows, list):
+        _finding(findings, "error", "unsupported_state_present", f"unsupported or malformed Gate registry: {name}", name)
+        _finding(findings, "error", "invalid_gate_registry", f"{name} must contain schema_version={expected_schema} and an array {key}", name)
 
 
 def _validate_acceptance(

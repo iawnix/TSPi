@@ -19,7 +19,8 @@ needs method knowledge: `tspi-transition-state-search`, `tspi-xtb`, `tspi-gaussi
 - Root chooses questions, hypotheses, methods, branches, stopping, and
   interpretation.
 - The Research Kernel owns IDs, schemas, references, transactions, paths,
-  provenance, and validation.
+  provenance, gate compilation/evaluation, and validation; it does not run
+  execution tools.
 - Submit scientific state changes through `ts_change`.
 - Use Claim relations, Node dependencies, and tags to understand prior work;
   choose the next task from the question and available evidence.
@@ -33,16 +34,21 @@ needs method knowledge: `tspi-transition-state-search`, `tspi-xtb`, `tspi-gaussi
 1. Read `frontier`, or `delta` when both prior revisions are known.
 2. State one unresolved question, assumptions, predictions, and falsifiers.
 3. Create or reuse a ResearchPhase and open one decision-sized ResearchNode
-   with explicit dependencies and Claim scope. Set focus deliberately.
+   with explicit dependencies, Claim scope, and an explicit completion intent;
+   use a NodeGate profile when the Gate operation is available. Set focus
+   deliberately.
 4. Load the relevant domain Skill and select a method from the question,
    uncertainty, cost, and available artifacts.
 5. Run bounded tools under the owning Node. Use logical artifact IDs and keep
    the Node open through interpretation.
 6. Inspect parser candidates and primary outputs, then use `ts_change` to
    promote verified values into Observations and Findings.
-7. Freeze and evaluate ProofSpecs over explicit Observation references.
+7. Freeze and evaluate ProofSpecs over explicit Observation references; these
+   are ClaimGate evidence dimensions. When a first-class Gate is useful, use
+   `freeze_gate` and then `evaluate_gate` to persist a revision-bound result.
 8. Update Claim status. For a supported Claim ready for acceptance, run
-   `accept_claim`. Complete the Node after its question and operations are settled.
+   `accept_claim`. If an explicit NodeGate exists, complete the Node only after
+   its latest GateResult is `pass`; otherwise use the compatibility projection.
 9. Recompile context and record the next material question as a dependent Node,
    a new Phase, or an explicit stop.
 

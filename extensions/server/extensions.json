@@ -1,0 +1,34 @@
+{
+  "schema_version": "tspi-server-extensions/1",
+  "extensions": [
+    {
+      "name": "ts-workflow-native",
+      "entry": "extensions/server/ts-workflow-native.mjs",
+      "scope": "server",
+      "sha256": "sha256:92d2dd0fab72f9275f03736aa7cb95b3dfd1f5ac38aa3fe0d036268547824eac",
+      "tools": [
+        "ts_state",
+        "ts_change",
+        "ts_remote",
+        "ts_calc",
+        "ts_review",
+        "ts_reply",
+        "ts_seed",
+        "ts_compare",
+        "ts_analyze",
+        "ts_manage",
+        "ts_import",
+        "ts_render",
+        "ts_report",
+        "ts_notify"
+      ],
+      "permissions": [
+        "workspace.read",
+        "workspace.write",
+        "remote.submit",
+        "model.delegate",
+        "notify.send"
+      ]
+    }
+  ]
+}
