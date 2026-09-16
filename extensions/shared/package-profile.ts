@@ -22,5 +22,5 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
     Object.freeze({ name: "artifacts", path: "./extensions/ts-workflow-artifacts/index.ts" }),
   ]),
   theme: Object.freeze({ name: "ts-theme", path: "./themes/ts-theme.json" }),
-  commands: Object.freeze(["/ts", "/ts-check", "/ts-remote", "/ts-runs"]),
+  commands: Object.freeze(["/ts", "/ts-check", "/sys_prompt", "/ts-remote", "/ts-runs"]),
 });

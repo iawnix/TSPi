@@ -28,7 +28,7 @@ EXPECTED_TOOLS = {
     "ts_report",
     "ts_notify",
 }
-EXPECTED_COMMANDS = {"ts", "ts-check", "ts-remote", "ts-runs"}
+EXPECTED_COMMANDS = {"ts", "ts-check", "sys_prompt", "ts-remote", "ts-runs"}
 
 
 def test_package_manifest_and_profile_expose_skill_family_five_extensions_one_theme() -> None:
@@ -258,6 +258,34 @@ process.stdout.write(JSON.stringify({{manifest:JSON.parse(result.content[0].text
     assert "TS workspace active" in by_origin["extension"][0]["text"]
     assert any(item.get("text") == "\n\nTHIRD PARTY EXTENSION" for item in by_origin["unknown"])
     assert not any("THIRD PARTY EXTENSION" in item.get("text", "") for item in by_origin["native"])
+
+
+def test_sys_prompt_command_renders_the_same_manifest_as_the_tool() -> None:
+    script = f"""
+import install from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+const commands={{}}; const entries=[]; const notices=[];
+const pi={{
+  registerTool:()=>{{}}, registerCommand:(name,command)=>commands[name]=command,
+  registerEntryRenderer:()=>{{}}, on:()=>{{}},
+  appendEntry:(type,data)=>entries.push({{type,data}}),
+}};
+install(pi);
+const ctx={{
+  signal:undefined, getSystemPrompt:()=>"ACTIVE PROMPT",
+  ui:{{notify:(message,level)=>notices.push({{message,level}})}},
+}};
+await commands.sys_prompt.handler("",ctx);
+await commands.sys_prompt.handler("unexpected",ctx);
+process.stdout.write(JSON.stringify({{entries,notices,description:commands.sys_prompt.description}}));
+"""
+    result = _node_json(script)
+    assert result["description"].startswith("Show the effective system prompt")
+    assert len(result["entries"]) == 1
+    assert result["entries"][0]["type"] == "ts-system-prompt"
+    manifest = result["entries"][0]["data"]["manifest"]
+    assert manifest["schema_version"] == "tspi-system-prompt/2"
+    assert manifest["effective"] == "ACTIVE PROMPT"
+    assert result["notices"] == [{"message": "/sys_prompt takes no arguments", "level": "warning"}]
 
 
 def test_extension_turn_refreshes_bounded_science_without_appending_history(tmp_path: Path) -> None:

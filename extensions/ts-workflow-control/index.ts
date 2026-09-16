@@ -55,6 +55,7 @@ const CHANGE_OPERATION_PARAMETER = Type.Object(
 );
 const CONTEXT_ENTRY_TYPE = "ts-state-result";
 const VALIDATION_ENTRY_TYPE = "ts-check-result";
+const SYSTEM_PROMPT_ENTRY_TYPE = "ts-system-prompt";
 
 type WorkspaceContextEntryData = {
   summary: string;
@@ -64,6 +65,7 @@ type WorkspaceContextEntryData = {
 };
 
 type WorkspaceValidationEntryData = { validation: Record<string, unknown> };
+type SystemPromptEntryData = { manifest: SystemPromptManifest };
 
 type PromptObservation = {
   beforeTspi: string;
@@ -102,6 +104,25 @@ export default function (pi: ExtensionAPI) {
     return new Text(text, 1, 0);
   });
 
+  pi.registerEntryRenderer<SystemPromptEntryData>(SYSTEM_PROMPT_ENTRY_TYPE, (entry, { expanded }, theme) => {
+    const manifest = entry.data?.manifest;
+    const effective = typeof manifest?.effective === "string" ? manifest.effective : "";
+    const contributors = Array.isArray(manifest?.contributors) ? manifest.contributors : [];
+    const provenanceComplete = manifest?.provenance_complete === true;
+    let text = `${theme.fg("accent", "System Prompt")}: ${theme.fg(
+      provenanceComplete ? "success" : "warning",
+      provenanceComplete ? "complete" : "partial provenance",
+    )}`;
+    text += theme.fg(
+      "muted",
+      ` · ${manifest?.runtime || "unknown runtime"} · ${effective.length} chars · ${contributors.length} contributors`,
+    );
+    if (typeof manifest?.sha256 === "string") text += theme.fg("muted", ` · sha256 ${manifest.sha256}`);
+    if (expanded) text += `\n${theme.fg("dim", JSON.stringify(manifest || {}, null, 2))}`;
+    text += expandHint(theme, expanded);
+    return new Text(text, 1, 0);
+  });
+
   pi.on("before_agent_start", async (event, ctx) => {
     const root = resolveWorkspaceRoot("", ctx.cwd);
     const packagePolicy = packageSourceSystemPrompt();
@@ -133,10 +154,11 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("tool_call", async (event, ctx) => guardPackageSourceRead(event, ctx.cwd));
 
-  pi.registerTool(createSystemPromptTool((ctx) => {
+  const systemPromptTool = createSystemPromptTool((ctx) => {
     if (!ctx) throw new Error("sys_prompt requires an active Pi extension context");
     return createPiExtensionPromptManifest(promptObservation, ctx.getSystemPrompt());
-  }, { name: TS_PUBLIC_TOOL_NAMES.systemPrompt }));
+  }, { name: TS_PUBLIC_TOOL_NAMES.systemPrompt });
+  pi.registerTool(systemPromptTool);
 
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.state,
@@ -299,6 +321,28 @@ export default function (pi: ExtensionAPI) {
       const root = requireWorkspaceRoot(undefined, ctx.cwd);
       const validation = await runWorkspaceJson(pi, "validate_workspace", root, [], ctx.signal);
       pi.appendEntry<WorkspaceValidationEntryData>(VALIDATION_ENTRY_TYPE, { validation });
+    },
+  });
+
+  pi.registerCommand("sys_prompt", {
+    description: "Show the effective system prompt and provenance · read-only · local.",
+    handler: async (args, ctx) => {
+      if (String(args || "").trim()) {
+        ctx.ui.notify("/sys_prompt takes no arguments", "warning");
+        return;
+      }
+      const result = await systemPromptTool.execute(
+        "sys_prompt-command",
+        {},
+        ctx.signal,
+        undefined,
+        ctx,
+      );
+      const text = result.content?.[0]?.type === "text" ? result.content[0].text : undefined;
+      if (typeof text !== "string") throw new Error("sys_prompt returned an invalid manifest");
+      pi.appendEntry<SystemPromptEntryData>(SYSTEM_PROMPT_ENTRY_TYPE, {
+        manifest: JSON.parse(text) as SystemPromptManifest,
+      });
     },
   });
 }
