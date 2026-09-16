@@ -18,6 +18,20 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 
 
+def test_normalize_proxy_environment_accepts_host_port_and_drops_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HTTP_PROXY", "58.198.181.184:7897")
+    monkeypatch.setenv("https_proxy", "https://proxy.example.test:8443")
+    monkeypatch.setenv("ALL_PROXY", "not a proxy")
+
+    launcher.normalize_proxy_environment()
+
+    assert os.environ["HTTP_PROXY"] == "http://58.198.181.184:7897"
+    assert os.environ["https_proxy"] == "https://proxy.example.test:8443"
+    assert "ALL_PROXY" not in os.environ
+
+
 class _ExecCalled(RuntimeError):
     pass
 

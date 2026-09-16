@@ -17,6 +17,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
+from urllib.parse import urlsplit
 
 from .env import (
     DISABLE_REEXEC,
@@ -47,6 +48,15 @@ APP_SERVER_ID = re.compile(
 )
 NOTIFICATION_FIELDS = {"enabled", "recipient", "clawemail_root"}
 EMAIL_ADDRESS = re.compile(r"^[^@\s]+@[^@\s]+$")
+PROXY_VARIABLES = (
+    "http_proxy",
+    "HTTP_PROXY",
+    "https_proxy",
+    "HTTPS_PROXY",
+    "all_proxy",
+    "ALL_PROXY",
+)
+PROXY_SCHEMES = {"http", "https", "socks", "socks5"}
 
 
 class TSPiHostError(RuntimeError):
@@ -248,6 +258,42 @@ def configure_runtime_environment(installation: Installation) -> None:
     os.environ["TS_AGENT_RUNTIME_HOME"] = str(installation.runtime_home)
     os.environ["TS_AGENT_RUNTIME_MANIFEST"] = str(installation.runtime_manifest)
     os.environ["TS_AGENT_ENV_ROOT"] = str(installation.env_root)
+
+
+def normalize_proxy_environment() -> None:
+    """Make inherited proxy variables acceptable to Node's Undici client.
+
+    Undici requires an absolute proxy URL, while shell profiles commonly use
+    ``host:port``. Normalize that shorthand and discard malformed values so a
+    stale proxy setting cannot prevent Pi from starting at all.
+    """
+
+    for variable in PROXY_VARIABLES:
+        value = os.environ.get(variable)
+        if not value:
+            continue
+        normalized = value.strip()
+        if "://" not in normalized:
+            normalized = f"http://{normalized}"
+        try:
+            parsed = urlsplit(normalized)
+            valid = (
+                parsed.scheme.lower() in PROXY_SCHEMES
+                and bool(parsed.hostname)
+                and not any(character.isspace() for character in normalized)
+            )
+            if valid:
+                # Accessing port validates malformed numeric ports as well.
+                _ = parsed.port
+        except ValueError:
+            valid = False
+        if valid:
+            if normalized != value:
+                os.environ[variable] = normalized
+                print(f"TSPi: normalized {variable} to an HTTP proxy URL", file=sys.stderr)
+        else:
+            os.environ.pop(variable, None)
+            print(f"TSPi: ignoring invalid {variable} proxy setting", file=sys.stderr)
 
 
 def prepare_workspace(installation: Installation, workspace_name: str) -> Path:
@@ -735,6 +781,7 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     if request.show_help:
         print(USAGE, end="")
         return 0
+    normalize_proxy_environment()
     if (request.app_server or request.app_client) and (request.standalone or request.check_remote):
         raise TSPiHostError("App Server modes cannot be combined with another launch mode", exit_code=2)
     if request.app_server and request.app_client:
