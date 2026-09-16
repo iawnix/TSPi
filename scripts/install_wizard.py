@@ -439,7 +439,11 @@ def prepare_app_server_runtime(root: Path) -> Path:
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
         raise RuntimeError(f"Pi App Server runtime installation failed: {detail}")
-    source = Path(completed.stdout.strip())
+    # The runtime helper prints the selected source path last, while npm and
+    # git may emit progress lines before it. Keep the machine-facing contract
+    # tolerant of those diagnostics so a successful install is not rejected.
+    output_lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    source = Path(output_lines[-1]) if output_lines else Path()
     if not source.is_absolute() or not source.is_dir():
         raise RuntimeError("Pi App Server runtime installer returned an invalid source path")
     return source

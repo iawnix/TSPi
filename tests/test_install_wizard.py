@@ -74,7 +74,12 @@ def test_prepare_app_server_runtime_uses_installed_release_script(
 
     def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         commands.append(command)
-        return subprocess.CompletedProcess(command, 0, stdout=str(runtime) + "\n", stderr="")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="npm warn deprecated package\n" + str(runtime) + "\n",
+            stderr="",
+        )
 
     monkeypatch.setattr(wizard.subprocess, "run", run)
     assert wizard.prepare_app_server_runtime(root) == runtime
