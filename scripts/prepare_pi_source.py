@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PIN_PATH = ROOT / "config" / "pi-source.json"
 PATCH_PATH = ROOT / "config" / "pi-worker-entry.patch"
+MULTI_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace.patch"
 
 
 class PiSourceError(RuntimeError):
@@ -50,6 +51,9 @@ def verify(source: Path) -> str:
     process_path = source / "packages" / "coding-agent" / "src" / "experimental" / "process.ts"
     if marker not in process_path.read_text(encoding="utf-8"):
         raise PiSourceError(f"Pi source is missing the TSPi Worker entrypoint patch: {source}")
+    sessions_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "sessions.ts"
+    if "tspi.workspace-directory" not in sessions_path.read_text(encoding="utf-8"):
+        raise PiSourceError(f"Pi source is missing the TSPi multi-workspace patch: {source}")
     return commit
 
 
@@ -61,6 +65,16 @@ def apply_worker_patch(source: Path) -> None:
         subprocess.run(["git", "-C", str(source), "apply", str(PATCH_PATH)], check=True, text=True)
     except (OSError, subprocess.CalledProcessError) as exc:
         raise PiSourceError(f"failed to apply TSPi Worker entrypoint patch: {exc}") from exc
+
+
+def apply_multi_workspace_patch(source: Path) -> None:
+    sessions_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "sessions.ts"
+    if "tspi.workspace-directory" in sessions_path.read_text(encoding="utf-8"):
+        return
+    try:
+        subprocess.run(["git", "-C", str(source), "apply", str(MULTI_WORKSPACE_PATCH_PATH)], check=True, text=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PiSourceError(f"failed to apply TSPi multi-workspace patch: {exc}") from exc
 
 
 def clone(destination: Path) -> Path:
@@ -75,6 +89,7 @@ def clone(destination: Path) -> Path:
     except (OSError, subprocess.CalledProcessError) as exc:
         raise PiSourceError(f"failed to clone pinned Pi source: {exc}") from exc
     apply_worker_patch(destination)
+    apply_multi_workspace_patch(destination)
     verify(destination)
     return destination
 
@@ -84,6 +99,8 @@ def install(install_root: Path) -> Path:
     commit = str(_pin()["commit"])
     destination = install_root.resolve() / ".pi" / "runtime-cache" / "pi" / commit
     if destination.exists():
+        apply_worker_patch(destination)
+        apply_multi_workspace_patch(destination)
         verify(destination)
         if not (destination / "node_modules").is_dir():
             _install_dependencies(destination)

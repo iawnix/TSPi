@@ -128,6 +128,53 @@ def test_app_server_command_owns_workspace_state_and_forwards_pi_options(
         assert stat.S_IMODE(path.stat().st_mode) == 0o700
 
 
+def test_host_command_owns_installation_state_and_workspace_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = _installation(tmp_path)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
+    server_id = "123e4567-e89b-42d3-a456-426614174000"
+    socket_directory = tmp_path / "sockets"
+    monkeypatch.setattr(launcher, "_host_server_id", lambda *_args, **_kwargs: server_id)
+    monkeypatch.setattr(launcher, "_host_socket_directory", lambda *_args, **_kwargs: socket_directory)
+    request = launcher.parse_launch_request(["--host", "--provider", "anthropic"])
+
+    command = launcher.build_host_server_command(installation, request)
+
+    state_root = installation.root / ".pi/app-server-host"
+    assert command == [
+        "/usr/bin/node",
+        str(installation.package_root / "apps/app-server/pi-app-server.mjs"),
+        "server",
+        "--workspace",
+        str(state_root / "workspace"),
+        "--directory",
+        str(socket_directory),
+        "--server-id",
+        server_id,
+        "--session-dir",
+        str(state_root / "sessions"),
+        "--provider",
+        "anthropic",
+    ]
+    assert request.host is True
+    assert (installation.root / "workspaces").is_dir()
+    assert state_root.is_dir()
+
+
+def test_host_client_requires_one_host_socket(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = _installation(tmp_path)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
+    monkeypatch.setattr(launcher, "_host_server_id", lambda *_args, **_kwargs: "123e4567-e89b-42d3-a456-426614174000")
+    monkeypatch.setattr(launcher, "_host_socket_directory", lambda *_args, **_kwargs: tmp_path / "missing-socket")
+    with pytest.raises(launcher.TSPiHostError, match="TSPi Host is not running"):
+        launcher.build_host_client_command(installation, launcher.parse_launch_request(["--workspace", "reaction-a"]))
+
+
 @pytest.mark.parametrize("endpoint", ["unix:///run/tspi.sock", "radius://123e4567-e89b-42d3-a456-426614174000"])
 def test_explicit_app_client_forwards_native_connection_arguments(
     tmp_path: Path,

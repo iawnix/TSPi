@@ -36,13 +36,14 @@ def test_non_interactive_options_select_only_web_as_optional_component(tmp_path:
     assert not hasattr(args, "with_phone")
 
 
-def test_app_server_service_is_workspace_template(tmp_path: Path) -> None:
+def test_app_server_service_is_one_installation_host(tmp_path: Path) -> None:
     args = _options(tmp_path)
     root = Path(args.install_root)
     unit = wizard.app_server_unit(args)
 
     assert f"WorkingDirectory={root}" in unit
-    assert f'ExecStart="{root / "TSPi"}" --app-server --workspace %i' in unit
+    assert f'ExecStart="{root / "TSPi"}" --host' in unit
+    assert f'ReadWritePaths="{root / ".pi/app-server-host"}"' in unit
     assert f'ReadWritePaths="{root / "workspaces"}"' in unit
     assert "WantedBy=default.target" in unit
     assert "TSPhone" not in unit
@@ -103,7 +104,7 @@ def test_prepare_app_server_runtime_reports_installer_failure(
         wizard.prepare_app_server_runtime(root)
 
 
-def test_configure_services_installs_template_but_starts_only_web(
+def test_configure_services_installs_and_starts_host_and_web(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -121,15 +122,17 @@ def test_configure_services_installs_template_but_starts_only_web(
 
     services = wizard.configure_services(args)
 
-    assert (unit_dir / "ts-app-server-tspi@.service").is_file()
+    assert (unit_dir / "ts-app-server-tspi.service").is_file()
     assert (unit_dir / "ts-web-tspi.service").is_file()
     assert calls == [
         ("daemon-reload",),
+        ("enable", "ts-app-server-tspi.service"),
         ("enable", "ts-web-tspi.service"),
+        ("restart", "ts-app-server-tspi.service"),
         ("restart", "ts-web-tspi.service"),
     ]
-    assert services[0]["name"] == "ts-app-server-tspi@.service"
-    assert services[0]["active"] == "per-workspace"
+    assert services[0]["name"] == "ts-app-server-tspi.service"
+    assert services[0]["active"] == "active"
 
 
 def test_service_ownership_rejects_a_different_installation(
@@ -139,7 +142,7 @@ def test_service_ownership_rejects_a_different_installation(
     args = _options(tmp_path)
     unit_dir = tmp_path / "units"
     unit_dir.mkdir()
-    (unit_dir / "ts-app-server-tspi@.service").write_text(
+    (unit_dir / "ts-app-server-tspi.service").write_text(
         "[Service]\nWorkingDirectory=/another/install\n",
         encoding="utf-8",
     )
@@ -155,11 +158,12 @@ def test_component_summary_exposes_app_server_and_no_phone(tmp_path: Path) -> No
         args,
         {"runtime": {"env_prefix": "/runtime", "runtime_probe": {"modules": {}, "commands": {}}}},
         runtime,
-        [{"name": "ts-app-server-tspi@.service", "scope": "user", "enabled": "per-workspace", "active": "per-workspace"}],
+        [{"name": "ts-app-server-tspi.service", "scope": "user", "enabled": "enabled", "active": "active"}],
         {"web_http": {"path": "/token", "status": "created", "mode": "0600"}},
     )
     assert components["app_server"]["runtime"] == str(runtime)
-    assert "<workspace>" in components["app_server"]["server_id"]
+    assert components["app_server"]["server_id"].endswith("/.pi/app-server-host/server-id")
+    assert components["app_server"]["start"].endswith("/TSPi --host")
     assert "phone" not in components
 
 

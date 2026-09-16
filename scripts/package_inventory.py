@@ -67,6 +67,7 @@ PACKAGE_FILES = [
     "config/*.toml",
     "config/*.lock",
     "config/pi-worker-entry.patch",
+    "config/pi-multi-workspace.patch",
     *CONTRACT_FILES,
     "environment.yml",
     "environment.lock.txt",

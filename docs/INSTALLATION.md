@@ -64,34 +64,43 @@ Optional email notifications are configured in `<install>/.pi/notifications.toml
 with mode 0600. The launcher validates the recipient and clawemail root before
 the App Server starts. Disable notifications by omitting the file.
 
-## Start And Resume Workspaces
+## Start The Installation Host
 
-Create and start one App Server per workspace:
+Start one Host for the installation. It owns a single Pi App Server and serves
+all validated workspaces below the installation workspace root:
 
 ```bash
-./TSPi --app-server --workspace reaction-a
+./TSPi --host
 ```
 
-Attach the native terminal in another shell:
+With systemd enabled, the same Host is managed as:
+
+```bash
+systemctl --user start ts-app-server-tspi.service
+```
+
+Attach the native terminal to a project in another shell:
 
 ```bash
 ./TSPi --workspace reaction-a
 ```
 
-The App Server identity is `<workspace>/.pi/app-server/server-id`; sessions are
-under `<workspace>/.pi/app-server/sessions`. With systemd enabled, the service
-template is `ts-app-server-tspi@.service` and an instance is started with
-`systemctl --user start ts-app-server-tspi@reaction-a.service`.
+The Host identity is `<install>/.pi/app-server-host/server-id`; its native
+session directory is `<install>/.pi/app-server-host/sessions`. Each session
+still runs with the selected project's own cwd and is restricted to a direct
+child of `<install>/workspaces`.
 
-TS Phone connects to the same App Server through Pi Radius. Its token and
+TS Phone connects once to this Host through Pi Radius, lists the available
+projects, and switches project/session inside that connection. Its token and
 server UUID are configured in the mobile app and are not stored by TSPi.
 
 ## Workspace Bootstrap
 
-The first App Server start creates a 0700 workspace and canonical scientific
-files. Bootstrap validates existing JSON and refuses unsupported state rather
-than rewriting it. The Root lock prevents two App Servers from writing one
-workspace concurrently.
+The first `./TSPi --app-server --workspace <name>` invocation remains available
+as a compatibility mode and creates a 0700 workspace and canonical
+scientific files. New installations should start the Host and create projects
+through the normal workspace bootstrap path. Bootstrap validates existing JSON
+and refuses unsupported state rather than rewriting it.
 
 ## Run The Research Explorer
 
@@ -124,16 +133,16 @@ rollback if their package entrypoint changes.
 
 ## Operational Recovery
 
-If an App Server exits, restart the same workspace instance. The Root lock is
-released by process exit and Pi JSONL sessions remain intact. A terminal or
-phone reconnect first receives a fresh session snapshot; prompts are never
-resent automatically after an uncertain transport failure.
+If the Host exits, restart the single Host service. The Root lock is released by
+process exit and Pi JSONL sessions remain intact. A terminal or phone reconnect
+first receives a fresh session snapshot; prompts are never resent automatically
+after an uncertain transport failure.
 
 Inspect the latest installer log under `<install>/.pi/logs/` and verify:
 
 ```bash
-./TSPi --app-server --workspace reaction-a
-systemctl --user status 'ts-app-server-tspi@reaction-a.service'
+./TSPi --host
+systemctl --user status ts-app-server-tspi.service
 ```
 
 ## Uninstall

@@ -238,7 +238,7 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Pi App Server", "install pinned runtime and verify", tone="success")
     field(
         "App Server service",
-        _service_plan(args, template=True),
+        _service_plan(args),
         tone="success" if args.service_scope != "none" else "muted",
     )
 
@@ -269,12 +269,10 @@ def _service_plan(args: argparse.Namespace, *, template: bool = False) -> str:
     if args.service_scope == "none":
         return "not configured"
     actions = ["configure"]
-    if args.enable_services and not template:
+    if args.enable_services:
         actions.append("enable")
-    if args.start_services and not template:
+    if args.start_services:
         actions.append("start")
-    if template:
-        actions.append("start per workspace")
     return f"{args.service_scope} ({', '.join(actions)})"
 
 
@@ -439,12 +437,22 @@ def prepare_app_server_runtime(root: Path) -> Path:
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
         raise RuntimeError(f"Pi App Server runtime installation failed: {detail}")
-    # The runtime helper prints the selected source path last, while npm and
-    # git may emit progress lines before it. Keep the machine-facing contract
-    # tolerant of those diagnostics so a successful install is not rejected.
-    output_lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
-    source = Path(output_lines[-1]) if output_lines else Path()
-    if not source.is_absolute() or not source.is_dir():
+    # Prefer the pinned destination, which is deterministic even when npm or
+    # git writes diagnostics after the helper's final stdout line.
+    source: Path | None = None
+    pin_path = root / ".pi/packages/tspi/current/agent/config/pi-source.json"
+    try:
+        pin = json.loads(pin_path.read_text(encoding="utf-8"))
+        commit = pin.get("commit") if isinstance(pin, dict) else None
+        if isinstance(commit, str) and commit:
+            source = root / ".pi/runtime-cache/pi" / commit
+    except (OSError, json.JSONDecodeError):
+        pass
+    if source is None or not source.is_dir():
+        output_lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+        candidates = [Path(line) for line in reversed(output_lines)]
+        source = next((candidate for candidate in candidates if candidate.is_absolute() and candidate.is_dir()), None)
+    if source is None or not source.is_absolute() or not source.is_dir():
         raise RuntimeError("Pi App Server runtime installer returned an invalid source path")
     return source
 
@@ -465,11 +473,9 @@ def app_server_unit(args: argparse.Namespace) -> str:
     search_path = os.environ.get("PATH", os.defpath)
     if any(ord(char) < 32 for char in search_path):
         raise ValueError("service PATH cannot contain control characters")
-    command = " ".join(
-        (_systemd_quote(root / "TSPi"), "--app-server", "--workspace", "%i")
-    )
+    command = " ".join((_systemd_quote(root / "TSPi"), "--host"))
     return f"""[Unit]
-Description=TSPi App Server for workspace %i
+Description=TSPi installation Host (all workspaces)
 After=network-online.target
 
 [Service]
@@ -486,6 +492,7 @@ ProtectSystem=strict
 ProtectHome=read-only
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths={_systemd_quote(root / '.pi/runtime-cache')}
+ReadWritePaths={_systemd_quote(root / '.pi/app-server-host')}
 ReadWritePaths={_systemd_quote(root / 'workspaces')}
 
 [Install]
@@ -552,7 +559,7 @@ def _systemd_value(value: object) -> str:
 
 
 def _selected_service_names(args: argparse.Namespace) -> list[str]:
-    names = ["ts-app-server-tspi@.service"]
+    names = ["ts-app-server-tspi.service"]
     if args.with_web:
         names.append("ts-web-tspi.service")
     return names
@@ -582,7 +589,8 @@ def validate_service_ownership(args: argparse.Namespace) -> None:
         return
     unit_dir = _service_unit_directory(args.service_scope)
     expected_root = str(Path(args.install_root)).replace("%", "%%")
-    for name in _selected_service_names(args):
+    names = [*_selected_service_names(args), "ts-app-server-tspi@.service"]
+    for name in names:
         unit = unit_dir / name
         if unit.is_symlink():
             raise ValueError(f"service unit is a symbolic link: {unit}")
@@ -637,7 +645,7 @@ def configure_services(args: argparse.Namespace) -> list[dict[str, str]]:
         return []
     validate_service_ownership(args)
     units: list[tuple[str, str]] = [
-        ("ts-app-server-tspi@.service", app_server_unit(args)),
+        ("ts-app-server-tspi.service", app_server_unit(args)),
     ]
     if args.with_web:
         units.append(("ts-web-tspi.service", web_unit(args)))
@@ -651,27 +659,23 @@ def configure_services(args: argparse.Namespace) -> list[dict[str, str]]:
         (unit_dir / name).write_text(content, encoding="utf-8")
         (unit_dir / name).chmod(0o644)
         names.append(name)
+    template_unit = unit_dir / "ts-app-server-tspi@.service"
+    if template_unit.exists() or template_unit.is_symlink():
+        if template_unit.is_symlink() or not template_unit.is_file():
+            raise ValueError(f"template service unit is not a regular file: {template_unit}")
+        scope = [] if args.service_scope == "system" else ["--user"]
+        for action in ("stop", "disable"):
+            subprocess.run(["systemctl", *scope, action, "ts-app-server-tspi@.service"], check=False)
+        template_unit.unlink()
     _run_systemctl(scope, "daemon-reload")
-    managed_names = [name for name in names if "@." not in name]
+    managed_names = names
     if args.enable_services:
         for name in managed_names:
             _run_systemctl(scope, "enable", name)
     if args.start_services:
         for name in managed_names:
             _run_systemctl(scope, "restart", name)
-    return [
-        (
-            {
-                "name": name,
-                "scope": args.service_scope,
-                "enabled": "per-workspace",
-                "active": "per-workspace",
-            }
-            if "@." in name
-            else _service_status(scope, args.service_scope, name)
-        )
-        for name in names
-    ]
+    return [_service_status(scope, args.service_scope, name) for name in names]
 
 
 def _run_systemctl(scope: list[str], *arguments: str) -> None:
@@ -738,9 +742,10 @@ def build_component_summary(
         "app_server": {
             "status": "ready",
             "runtime": str(app_server_runtime),
-            "service": service_by_name.get("ts-app-server-tspi@.service"),
-            "server_id": str(root / "workspaces/<workspace>/.pi/app-server/server-id"),
-            "start": str(root / "TSPi") + " --app-server --workspace <workspace>",
+            "service": service_by_name.get("ts-app-server-tspi.service"),
+            "server_id": str(root / ".pi/app-server-host/server-id"),
+            "workspace_root": str(root / "workspaces"),
+            "start": str(root / "TSPi") + " --host",
         },
         "web": (
             {
@@ -804,8 +809,9 @@ def show_installed_summary(
     field("Runtime", app_server["runtime"])
     field("Manual start", app_server["start"])
     field("Server ID", app_server["server_id"])
+    field("Workspace root", app_server["workspace_root"])
     _show_service(app_server.get("service"))
-    note("Start one App Server per workspace. The terminal and TS Phone attach to that server.")
+    note("One Host serves all workspaces below the workspace root. The terminal and TS Phone attach once and switch projects.")
 
     section("TS Web")
     web = components["web"]

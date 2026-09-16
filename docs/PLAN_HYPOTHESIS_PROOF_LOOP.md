@@ -7,12 +7,13 @@
 - Scope: TSPi Agent, deterministic research kernel, embedded Web explorer,
   native Pi App Server, and the independent TS Phone mobile client
 
-> **Architecture update (2026-09-16):** This plan contains historical design
+> **Architecture update (2026-09-17):** This plan contains historical design
 > notes from before the native App Server transition. The implemented contract
-> is now one native Pi App Server per workspace. TS Phone is a separate Radius
-> client and is never assembled into, installed by, or run as a TSPi Phone
-> server. The App Server owns the session directory, transcript, model state,
-> and local/Radius transports; the old shared Host and bridge are removed.
+> is now one installation Host with one native Pi App Server serving multiple
+> workspace cwd values. TS Phone is a separate Radius client and is never
+> assembled into, installed by, or run as a TSPi Phone server. The Host owns the
+> session directory, transcript, model state, and local/Radius transports; the
+> old REST/SSE broker and per-workspace service template are removed.
 > Sections below that describe a Phone component manifest or Phone server are
 > retained only as historical rationale and are not current implementation
 > requirements.

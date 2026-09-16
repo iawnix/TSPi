@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,12 +8,18 @@ import test from "node:test";
 
 const sourceRoot = process.env.TSPI_PI_SOURCE;
 
-async function startNativeServer(root) {
+async function startNativeServer(root, { workspaceRoot } = {}) {
   const child = spawn(process.execPath, [
     "apps/app-server/pi-app-server.mjs", "server", "--source-root", sourceRoot,
     "--directory", join(root, "server"), "--workspace", root, "--session-dir", join(root, "sessions"),
   ], {
-    cwd: process.cwd(), env: { ...process.env, PI_EXPERIMENTAL: "1", PI_OFFLINE: "1", PI_CODING_AGENT_DIR: join(root, "agent") },
+    cwd: process.cwd(), env: {
+      ...process.env,
+      PI_EXPERIMENTAL: "1",
+      PI_OFFLINE: "1",
+      PI_CODING_AGENT_DIR: join(root, "agent"),
+      ...(workspaceRoot === undefined ? {} : { TSPI_WORKSPACE_ROOT: workspaceRoot }),
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
@@ -219,6 +225,62 @@ test("native Pi app server restores and reattaches a persisted session after res
     await client?.dispose().catch(() => {});
     if (first) await stopNativeServer(first.child);
     if (second) await stopNativeServer(second.child);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("native Pi app server exposes direct workspaces and binds session cwd", { skip: !sourceRoot }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-native-workspaces-"));
+  const workspaceRoot = join(root, "workspaces");
+  const projectA = join(workspaceRoot, "project-a");
+  const projectB = join(workspaceRoot, "project-b");
+  await mkdir(join(root, "agent"), { recursive: true });
+  await mkdir(projectA, { recursive: true });
+  await mkdir(projectB, { recursive: true });
+  await writeFile(join(root, "agent", "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test-key" } }), { mode: 0o600 });
+  for (const [directory, workspaceId] of [[projectA, "ws_aaaaaaaaaaaaaaaaaaaaaaaa"], [projectB, "ws_bbbbbbbbbbbbbbbbbbbbbbbb"]]) {
+    await writeFile(join(directory, "workspace.json"), JSON.stringify({
+      schema_version: "ts-workspace/6",
+      workspace_id: workspaceId,
+      kernel_protocol: "ts-research-kernel/6",
+      created_at: "2026-09-17T00:00:00+00:00",
+    }));
+  }
+  await mkdir(join(projectA, "nested"));
+  await symlink(projectA, join(workspaceRoot, "project-a-alias"));
+  const server = await startNativeServer(root, { workspaceRoot });
+  let serverClient;
+  let services;
+  let backgroundContext;
+  try {
+    const fromSource = (relative) => import(pathToFileURL(join(sourceRoot, relative)).href);
+    ({ BACKGROUND_CONTEXT: backgroundContext } = await fromSource("packages/chord/src/context/index.ts"));
+    const { Client } = await fromSource("packages/client/src/index.ts");
+    const { createUnixTransportFactory } = await fromSource("packages/client/src/unix.ts");
+    const { SessionManagement, WorkspaceDirectory } = await fromSource("packages/coding-agent/src/experimental/services/sessions.ts");
+    const { createServerServiceBinding } = await fromSource("packages/coding-agent/test/experimental-service-binding.ts");
+    serverClient = await Client.connect({
+      serverId: server.serverId,
+      transportFactory: createUnixTransportFactory({ path: server.socket }),
+    });
+    services = createServerServiceBinding(serverClient, { services: [SessionManagement, WorkspaceDirectory] });
+    await services.ready(backgroundContext);
+
+    const workspaces = await services.use(WorkspaceDirectory).list(backgroundContext);
+    assert.deepEqual(workspaces, [
+      { workspaceId: "project-a", name: "project-a", root: projectA },
+      { workspaceId: "project-b", name: "project-b", root: projectB },
+    ]);
+
+    const created = await services.use(SessionManagement).create({ cwd: projectA }, backgroundContext);
+    assert.equal(created.cwd, projectA);
+    await assert.rejects(services.use(SessionManagement).create({ cwd: workspaceRoot }, backgroundContext));
+    await assert.rejects(services.use(SessionManagement).create({ cwd: join(projectA, "nested") }, backgroundContext));
+    await assert.rejects(services.use(SessionManagement).create({ cwd: join(workspaceRoot, "project-a-alias") }, backgroundContext));
+  } finally {
+    await services?.dispose(backgroundContext).catch(() => {});
+    await serverClient?.dispose().catch(() => {});
+    await stopNativeServer(server.child);
     await rm(root, { recursive: true, force: true });
   }
 });

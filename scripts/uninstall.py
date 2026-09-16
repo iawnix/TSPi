@@ -21,6 +21,7 @@ except ImportError:
 
 
 SERVICE_NAMES = (
+    "ts-app-server-tspi.service",
     "ts-app-server-tspi@.service",
     "ts-web-tspi.service",
     # Remove service units left by pre-App-Server installations.

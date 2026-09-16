@@ -41,6 +41,7 @@
     "config/*.toml",
     "config/*.lock",
     "config/pi-worker-entry.patch",
+    "config/pi-multi-workspace.patch",
     "contracts/ts-render/curve-data.schema.json",
     "contracts/ts-web/README.md",
     "contracts/ts-web/component-manifest.schema.json",

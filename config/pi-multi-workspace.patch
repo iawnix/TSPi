@@ -1,0 +1,283 @@
+diff --git a/packages/coding-agent/src/experimental/client-tui.ts b/packages/coding-agent/src/experimental/client-tui.ts
+index 0f0915dba..060327645 100644
+--- a/packages/coding-agent/src/experimental/client-tui.ts
++++ b/packages/coding-agent/src/experimental/client-tui.ts
+@@ -630,6 +630,13 @@ async function prepareClientSession(
+ 	command: ClientCommand,
+ 	servers: readonly ClientTuiServer[],
+ ): Promise<PreparedClientSession> {
++	const sessionCwd = process.env.TSPI_SESSION_CWD?.trim();
++	const sessionCreateOptions = (id?: string) => ({
++		...(id === undefined ? {} : { id }),
++		...(sessionCwd === undefined || sessionCwd.length === 0 ? {} : { cwd: sessionCwd }),
++	});
++	const sessionMatchesCwd = (summary: SessionSummary): boolean =>
++		sessionCwd === undefined || sessionCwd.length === 0 || summary.cwd === sessionCwd;
+ 	const opened = servers.map((server) => ({
+ 		server,
+ 		services: server.server.open({
+@@ -657,7 +664,7 @@ async function prepareClientSession(
+ 		if (command.sessionId !== undefined) {
+ 			const matches = features.flatMap((feature) =>
+ 				(feature.directory.state.value?.sessions ?? [])
+-					.filter((session) => session.sessionId === command.sessionId)
++					.filter((session) => session.sessionId === command.sessionId && sessionMatchesCwd(session))
+ 					.map((summary) => ({
+ 						server: feature.server,
+ 						management: feature.management,
+@@ -676,13 +683,15 @@ async function prepareClientSession(
+ 					server: feature.server,
+ 					management: feature.management,
+ 					plugins: feature.plugins,
+-					summary: await feature.management.create({ id: command.sessionId }, BACKGROUND_CONTEXT),
++					summary: await feature.management.create(sessionCreateOptions(command.sessionId), BACKGROUND_CONTEXT),
+ 				};
+ 			}
+ 		} else if (command.continue === true || command.resume === true) {
+ 			selected = features
+ 				.flatMap((feature) =>
+-					(feature.directory.state.value?.sessions ?? []).map((summary) => ({
++					(feature.directory.state.value?.sessions ?? [])
++						.filter(sessionMatchesCwd)
++						.map((summary) => ({
+ 						server: feature.server,
+ 						management: feature.management,
+ 						plugins: feature.plugins,
+@@ -702,7 +711,7 @@ async function prepareClientSession(
+ 				server: feature.server,
+ 				management: feature.management,
+ 				plugins: feature.plugins,
+-				summary: await feature.management.create({}, BACKGROUND_CONTEXT),
++				summary: await feature.management.create(sessionCreateOptions(), BACKGROUND_CONTEXT),
+ 			};
+ 		}
+ 		const presentationPlugins = await selected.plugins.prepareSession(
+diff --git a/packages/coding-agent/src/experimental/client.ts b/packages/coding-agent/src/experimental/client.ts
+index b717760ed..28e2c27da 100644
+--- a/packages/coding-agent/src/experimental/client.ts
++++ b/packages/coding-agent/src/experimental/client.ts
+@@ -14,6 +14,19 @@ export type ClientResult =
+ 	| { readonly kind: "attached"; readonly serverId: string; readonly sessionId: string }
+ 	| { readonly kind: "prompted"; readonly serverId: string; readonly sessionId: string; readonly text: string };
+ 
++function sessionCreateOptions(id?: string): { id?: string; cwd?: string } {
++	const cwd = process.env.TSPI_SESSION_CWD?.trim();
++	return {
++		...(id === undefined ? {} : { id }),
++		...(cwd === undefined || cwd.length === 0 ? {} : { cwd }),
++	};
++}
++
++function sessionMatchesCwd(summary: { cwd?: string }): boolean {
++	const cwd = process.env.TSPI_SESSION_CWD?.trim();
++	return cwd === undefined || cwd.length === 0 || summary.cwd === cwd;
++}
++
+ export interface RunClientOptions {
+ 	/** Directory searched when --connect is omitted. Defaults to PI_SERVER_DIR or ~/.pi/server. */
+ 	readonly directory?: string;
+@@ -47,11 +60,13 @@ export async function runClient(command: ClientCommand, options: RunClientOption
+ 				throw new Error("Client prompt requires exactly one discovered server to create a Session");
+ 			}
+ 			match = discovered[0]!;
+-			sessionId = (await match.management.create({}, BACKGROUND_CONTEXT)).sessionId;
++			sessionId = (await match.management.create(sessionCreateOptions(), BACKGROUND_CONTEXT)).sessionId;
+ 		} else {
+ 			const selectedSessionId = sessionId;
+ 			const matches = discovered.filter((candidate) =>
+-				candidate.directory.state.value!.sessions.some(({ sessionId }) => sessionId === selectedSessionId),
++				candidate.directory.state.value!.sessions.some(
++					(session) => session.sessionId === selectedSessionId && sessionMatchesCwd(session),
++				),
+ 			);
+ 			if (matches.length > 1) {
+ 				throw new Error(`Session ${selectedSessionId} is available from more than one server`);
+@@ -64,7 +79,7 @@ export async function runClient(command: ClientCommand, options: RunClientOption
+ 					throw new Error(`No discovered server contains session ${selectedSessionId}`);
+ 				}
+ 				match = discovered[0]!;
+-				await match.management.create({ id: selectedSessionId }, BACKGROUND_CONTEXT);
++				await match.management.create(sessionCreateOptions(selectedSessionId), BACKGROUND_CONTEXT);
+ 			}
+ 		}
+ 		await match.plugins.prepareSession(
+diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-agent/src/experimental/server.ts
+index 5ec02aaa2..6628e5298 100644
+--- a/packages/coding-agent/src/experimental/server.ts
++++ b/packages/coding-agent/src/experimental/server.ts
+@@ -1,7 +1,7 @@
+ import { randomUUID } from "node:crypto";
+-import { chmod, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
++import { chmod, lstat, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+ import { homedir } from "node:os";
+-import { isAbsolute, join } from "node:path";
++import { isAbsolute, join, relative, resolve } from "node:path";
+ import type { Context } from "@earendil-works/chord";
+ import type { FacetBundleArtifact } from "@earendil-works/chord/node";
+ import {
+@@ -45,7 +45,7 @@ import {
+ import { RadiusRelayAuthResolver } from "./radius-auth.ts";
+ import { RadiusRelayHost, type RadiusRelayHostStatus } from "./radius-relay.ts";
+ import { createExperimentalServerServices } from "./services/server.ts";
+-import type { SessionCreateOptions, SessionSummary } from "./services/sessions.ts";
++import type { SessionCreateOptions, SessionSummary, WorkspaceSummary } from "./services/sessions.ts";
+ import { SessionPluginSelectionConflictError, SessionWorkerManager } from "./session-worker-manager.ts";
+ 
+ export const ENV_SERVER_DIR = "PI_SERVER_DIR";
+@@ -373,6 +373,60 @@ interface RunningServerBackend extends RunningServer {
+ 	refreshSessions(): Promise<void>;
+ }
+ 
++const WORKSPACE_ROOT_ENV = "TSPI_WORKSPACE_ROOT";
++
++async function resolveSessionCwd(requested: string | undefined): Promise<string> {
++	const rootValue = process.env[WORKSPACE_ROOT_ENV];
++	const root = rootValue === undefined ? undefined : resolvePath(rootValue);
++	const candidate = resolvePath(requested ?? process.cwd());
++	if (root !== undefined) {
++		const relativePath = relative(root, candidate);
++		if (
++			relativePath === "" ||
++			relativePath.startsWith("..") ||
++			isAbsolute(relativePath) ||
++			relativePath.includes("/")
++		) {
++			throw new Error(`Session cwd must be inside ${WORKSPACE_ROOT_ENV}: ${candidate}`);
++		}
++	}
++	const info = await lstat(candidate);
++	if (!info.isDirectory() || info.isSymbolicLink()) {
++		throw new Error(`Session cwd must be a regular directory: ${candidate}`);
++	}
++	if (root !== undefined) {
++		try {
++			const identity = JSON.parse(await readFile(join(candidate, "workspace.json"), "utf8"));
++			if (identity?.schema_version !== "ts-workspace/6") throw new Error("unsupported workspace schema");
++		} catch {
++			throw new Error(`Session cwd is not a supported TSPi workspace: ${candidate}`);
++		}
++	}
++	return candidate;
++}
++
++async function listWorkspaceRoots(_context: Context): Promise<WorkspaceSummary[]> {
++	const rootValue = process.env[WORKSPACE_ROOT_ENV];
++	if (rootValue === undefined) return [];
++	const root = resolvePath(rootValue);
++	const entries = await readdir(root, { withFileTypes: true });
++	const workspaces: WorkspaceSummary[] = [];
++	for (const entry of entries) {
++		if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
++		const workspaceRoot = resolve(root, entry.name);
++		try {
++			const info = await stat(workspaceRoot);
++			if (!info.isDirectory()) continue;
++			const identity = JSON.parse(await readFile(join(workspaceRoot, "workspace.json"), "utf8"));
++			if (identity?.schema_version !== "ts-workspace/6") continue;
++		} catch {
++			continue;
++		}
++		workspaces.push({ workspaceId: entry.name, name: entry.name, root: workspaceRoot });
++	}
++	return workspaces.sort((left, right) => left.name.localeCompare(right.name));
++}
++
+ async function startServerBackend(
+ 	options: StartServerBackendOptions,
+ 	workers: SessionWorkerManager,
+@@ -397,7 +451,8 @@ async function startServerBackend(
+ 		createOptions: SessionCreateOptions,
+ 		context: Context,
+ 	): Promise<JsonlSessionMetadata> => {
+-		const session = await repo.create({ ...createOptions, cwd: process.cwd() }, context);
++		const cwd = await resolveSessionCwd(createOptions.cwd);
++		const session = await repo.create({ ...createOptions, cwd }, context);
+ 		try {
+ 			return session.metadata;
+ 		} finally {
+@@ -408,6 +463,7 @@ async function startServerBackend(
+ 		serverId,
+ 		sessionId: metadata.id,
+ 		createdAt: metadata.createdAt,
++		cwd: metadata.cwd,
+ 	});
+ 	const closeStorage = async (): Promise<void> => {
+ 		const cleanup = await Promise.allSettled([repo.close(TODO_CONTEXT), executionEnv.cleanup(TODO_CONTEXT)]);
+@@ -420,6 +476,7 @@ async function startServerBackend(
+ 			(await listSessions(context))
+ 				.map(summarize)
+ 				.sort((left, right) => left.sessionId.localeCompare(right.sessionId) || left.createdAt - right.createdAt),
++		listWorkspaces: listWorkspaceRoots,
+ 		create: async (createOptions, context) => summarize(await createSession(createOptions, context)),
+ 		remove: async (sessionId, context) => {
+ 			const metadata = await resolveSession(sessionId, context);
+diff --git a/packages/coding-agent/src/experimental/services/server.ts b/packages/coding-agent/src/experimental/services/server.ts
+index 86cc76863..e64208efe 100644
+--- a/packages/coding-agent/src/experimental/services/server.ts
++++ b/packages/coding-agent/src/experimental/services/server.ts
+@@ -14,6 +14,8 @@ import {
+ 	type SessionDirectoryState,
+ 	SessionManagement,
+ 	type SessionSummary,
++	WorkspaceDirectory,
++	type WorkspaceSummary,
+ } from "./sessions.ts";
+ 
+ export interface ExperimentalServerServices {
+@@ -24,6 +26,7 @@ export interface ExperimentalServerServices {
+ 
+ export async function createExperimentalServerServices(options: {
+ 	list(context: Context): Promise<SessionSummary[]>;
++	listWorkspaces(context: Context): Promise<WorkspaceSummary[]>;
+ 	create(createOptions: SessionCreateOptions, context: Context): Promise<SessionSummary>;
+ 	remove(sessionId: string, context: Context): Promise<void>;
+ 	prepareSessionPlugins(
+@@ -64,9 +67,13 @@ export async function createExperimentalServerServices(options: {
+ 				const provider = new RemoteServiceProvider([
+ 					{ service: SessionDirectory, mode: "singleton" },
+ 					{ service: SessionManagement, mode: "singleton" },
++					{ service: WorkspaceDirectory, mode: "singleton" },
+ 					{ service: PresentationPlugins, mode: "singleton" },
+ 				]);
+ 				provider.provide(SessionDirectory, { state: directory });
++				provider.provide(WorkspaceDirectory, {
++					list: (context) => options.listWorkspaces(context),
++				});
+ 				provider.provide(PresentationPlugins, {
+ 					prepareSession: ({ sessionId, packagePaths }, context) =>
+ 						serialize(async () => {
+diff --git a/packages/coding-agent/src/experimental/services/sessions.ts b/packages/coding-agent/src/experimental/services/sessions.ts
+index 79dbec2f5..7a7bb7333 100644
+--- a/packages/coding-agent/src/experimental/services/sessions.ts
++++ b/packages/coding-agent/src/experimental/services/sessions.ts
+@@ -8,10 +8,14 @@ export interface SessionAddress {
+ 
+ export interface SessionSummary extends SessionAddress {
+ 	createdAt: number;
++	/** Working directory owned by this session. Optional for wire compatibility. */
++	cwd?: string;
+ }
+ 
+ export interface SessionCreateOptions {
+ 	id?: string;
++	/** Project directory for a multi-workspace host. */
++	cwd?: string;
+ }
+ 
+ export interface SessionDirectoryState {
+@@ -33,3 +37,15 @@ export interface SessionManagement {
+ }
+ 
+ export const SessionManagement = defineService<SessionManagement>("pi.session-management");
++
++export interface WorkspaceSummary {
++	workspaceId: string;
++	name: string;
++	root: string;
++}
++
++export interface WorkspaceDirectory {
++	list(context: Context): Promise<WorkspaceSummary[]>;
++}
++
++export const WorkspaceDirectory = defineService<WorkspaceDirectory>("tspi.workspace-directory");

@@ -1,31 +1,31 @@
 # Terminal
 
-The TSPi terminal is Pi's native TUI attached to a workspace App Server. The
-App Server is the only session owner; the terminal and TS Phone are equal
-clients of it.
+The TSPi terminal is Pi's native TUI attached to the installation Host. The
+Host is the only session owner; the terminal and TS Phone are equal clients of
+it. One Host can serve every project below `workspaces/`.
 
-## Start a workspace
+## Start the Host
 
 From the installation directory:
 
 ```bash
-./TSPi --app-server --workspace reaction-a
+./TSPi --host
 ```
 
-Leave that process running, then in another terminal attach the TUI:
+Leave that process running, then in another terminal attach the TUI to a project:
 
 ```bash
 ./TSPi --workspace reaction-a
 ```
 
-If a systemd template was enabled by the installer, start the instance with:
+If the Host service was enabled by the installer, start it with:
 
 ```bash
-systemctl --user start 'ts-app-server-tspi@reaction-a.service'
+systemctl --user start ts-app-server-tspi.service
 ```
 
-The App Server identity is kept at
-`workspaces/reaction-a/.pi/app-server/server-id`; its private Unix socket is
+The Host identity is kept at
+`.pi/app-server-host/server-id`; its private Unix socket is
 under `$XDG_RUNTIME_DIR/tspi/` (or the installation's configured runtime
 directory).
 
@@ -42,16 +42,18 @@ disconnect; inspect the transcript before trying again.
 
 ## Phone access
 
-TS Phone connects to this same App Server through Pi Radius using protocol v8.
-It does not connect to the terminal process and does not require a local HTTP
-service, bridge secret, reverse proxy, or `TSPhoneServer`/`TSPhoneCtl` binary.
+TS Phone connects once to this Host through Pi Radius using protocol v8. It can
+list projects and switch sessions without another service per project. It does
+not connect to the terminal process and does not require a local HTTP service,
+bridge secret, reverse proxy, or `TSPhoneServer`/`TSPhoneCtl` binary.
 
 ## Troubleshooting
 
-- `workspace is unavailable`: create it once with `TSPi --app-server --workspace <name>`.
-- `App Server is not running`: start the matching systemd instance or command above.
-- `another Root Agent already owns workspace`: use the existing App Server; do
-  not start a second one for the same workspace.
+- `workspace is unavailable`: bootstrap the project, then ensure `TSPi --host`
+  is running.
+- `App Server is not running`: start the single Host service or command above.
+- `another Root Agent already owns workspace`: use the existing Host; do not
+  start a second Host for the installation.
 - A changed App Server UUID means a different installation or workspace; update
   the phone connection deliberately.
 

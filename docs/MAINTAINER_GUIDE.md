@@ -83,7 +83,7 @@ bridge, REST/SSE compatibility layer, or terminal Host.
 2. Build and validate the Agent release with `npm run release:agent`.
 3. Build the optional Web component when requested by the release plan.
 4. Build the suite package with `npm run release:build` and inspect its manifest.
-5. Test installation into a fresh private directory and start one App Server.
+5. Test installation into a fresh private directory and start one installation Host.
 
 The package manifest, archive digest, selected Agent component, and Pi source
 commit must agree. Never publish a dirty source tree or modify a release after
@@ -91,7 +91,7 @@ it has been content-addressed.
 
 ## Rollback Discipline
 
-Stop affected App Server instances, select a prior validated release under
-`.pi/packages/tspi/releases`, and restart one instance per workspace. Workspace
-JSONL and scientific records are independent of the package release and must
-not be deleted during rollback.
+Stop the Host service, select a prior validated release under
+`.pi/packages/tspi/releases`, and restart the single Host. Workspace JSONL and
+scientific records are independent of the package release and must not be
+deleted during rollback.
