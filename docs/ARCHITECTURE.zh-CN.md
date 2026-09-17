@@ -8,16 +8,19 @@ Pi App Server Host，由它服务 `workspaces/` 下的所有直接子工作区�
 
 - `apps/app-server/` 启动 Pi 原生 App Server 和 session worker。
 - `packages/ts-agent-kernel/ts_agent/` 管理科学契约、工作区状态、引用完整性、验证
-  和只读投影。计算、远程执行、渲染、报告和邮件由 Skill/Plugin 提供工具实现，
-  Kernel 不拥有这些执行过程。
-- `extensions/` 提供可选的独立 Pi 工作流扩展。原生 App Server 不注入这些
-  扩展；Worker 直接提供受保护的 TSPi 原生工具。
-- `components/ts-web/` 是可选的只读浏览器投影。
+  和只读投影。计算控制面负责本地子进程的持久化生命周期，并通过配置好的
+  `ts_remote` adapter 委托远程执行；渲染、报告和邮件仍由 Skill/Plugin 工具提供。
+- `extensions/` 同时包含客户端展示扩展和包内的 server workflow 扩展。App Server
+  只加载 `extensions/server/extensions.json` 中经过 allowlist 和 SHA-256 校验的
+  条目，不执行客户端提交的代码。
+- `components/ts-web/` 是可选的只读浏览器投影；浏览器控制通过显式启动的
+  `TSPi --gateway` 适配器附着到已有 Host session，不会创建第二个 Worker。
 - TS Phone 是独立 Flutter 客户端，通过 Pi Radius 连接 App Server。
 
 App Server 独占 session directory、对话历史、模型状态、prompt 操作和工作区 Root
-锁；本地 TUI 与 TS Phone 连接同一个 owner。原生 Worker 会加载包中对模型可见的
-skill 及原生 system prompt；扩展 manifest 不会被默认为当前生效的提示词来源。
+锁；本地 TUI 与 TS Phone 连接同一个 owner。Worker 会加载包中对模型可见的 skill、
+原生 system prompt 和经过验证的 server extension inventory。该 inventory 会写入
+`sys_prompt` provenance，客户端可以审计本次会话使用的工具集合。
 
 ## 科学状态模型
 
@@ -122,8 +125,24 @@ TS Phone 使用 Pi protocol v8 和 `pi-session-relay.client.v1`，通过
 会话列表由 Host 的 workspace/session services 提供，手机不维护第二套状态机或
 Host bridge。
 
+## 浏览器控制
+
+TS Web 默认只读，不拥有 Pi session。需要浏览器控制时，显式启动 loopback gateway：
+
+```text
+TSPi --gateway --workspace reaction-a --session-id <session-id> --port 8767
+```
+
+Gateway 只附着已经存在的 Host session，通过版本化 session-control 合约提供
+snapshot、prompt、abort、queue 和 SSE 事件；request id 保证重试幂等，sequence
+cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
+
 ## 其他契约
 
-验证模板位于 `packages/ts-agent-kernel/ts_agent/validation/`；远程计算和产物记录
-使用显式 schema。TS Web 只读取工作区文件，不拥有 Pi session。入口、skill、扩展和
-测试位置与[英文架构](ARCHITECTURE.md)一致。
+验证模板位于 `packages/ts-agent-kernel/ts_agent/validation/`；`ts_calc` 对
+`execution_target.kind=local` 和 `remote` 使用同一套
+`prepare -> submit -> inspect -> collect -> parse` 生命周期。Research Kernel
+工作区始终是唯一规范存储：本地执行在 Attempt 的 execution 目录暂存输入并把输出
+收集回工作区，远程目录只是临时执行镜像，TS Web 不需要访问远程文件系统。远程计算
+和产物记录使用显式 schema。TS Web 只读取工作区文件，不拥有 Pi session。入口、skill、
+扩展和测试位置与[英文架构](ARCHITECTURE.md)一致。

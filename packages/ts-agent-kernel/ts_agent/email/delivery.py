@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import fcntl
 import json
+import mimetypes
 import os
 import re
 import shutil
+import smtplib
+import ssl
 import stat
 import subprocess
 import tempfile
@@ -14,6 +17,8 @@ import tomllib
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from email.message import EmailMessage
+from email.utils import formatdate
 from pathlib import Path
 from typing import Any
 
@@ -24,9 +29,16 @@ from .errors import NotificationError
 
 CONFIG_ENV = "TS_NOTIFICATION_CONFIG"
 CONFIG_SCHEMA = "ts-notification-config/1"
+SMTP_CONFIG_SCHEMA = "ts-notification-config/2"
 REQUEST_SCHEMA = "ts-user-notification/1"
 RECEIPT_SCHEMA = "ts-user-notification-receipt/1"
 DELIVERY_DIR_REF = "reports/email/deliveries"
+SMTP_PRESETS: dict[str, dict[str, Any]] = {
+    "163": {"host": "smtp.163.com", "port": 465, "security": "ssl"},
+    "qq": {"host": "smtp.qq.com", "port": 465, "security": "ssl"},
+}
+SMTP_SECURITY = frozenset({"ssl", "starttls"})
+ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 EVENTS = frozenset(
     {
         "progress",
@@ -43,8 +55,17 @@ class EmailNotificationConfig:
     source: Path
     enabled: bool
     recipient: str
-    clawemail_root: Path
-    digest: str
+    clawemail_root: Path | None = None
+    digest: str = ""
+    provider: str = "clawemail"
+    from_address: str | None = None
+    smtp_preset: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_security: str | None = None
+    smtp_username: str | None = None
+    smtp_password_env: str | None = None
+    smtp_password_file: Path | None = None
 
 
 class _DeliveryNotStarted(RuntimeError):
@@ -62,7 +83,11 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
     config = load_notification_config()
     if not config.enabled:
         raise ValueError("email notifications are disabled by the installation configuration")
-    manager = _validate_clawemail_install(config.clawemail_root)
+    manager = (
+        _validate_clawemail_install(config.clawemail_root)
+        if config.provider == "clawemail"
+        else None
+    )
     request = _load_request(request_file)
     event = _event(request.get("event"))
     subject = bounded_text(request.get("subject"), "notification subject", 300)
@@ -104,6 +129,7 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
             "created_at": _now(),
             "event": event,
             "subject": subject,
+            "provider": config.provider,
             "workspace_id": workspace_id,
             "workspace_revision": workspace_revision,
             "notification_digest": notification_digest,
@@ -119,8 +145,10 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
                 workspace_revision,
                 attachment_records,
             )
-            provider_output = _run_clawemail(
-                manager,
+            provider_output = _run_provider(
+                config,
+                manager=manager,
+                notification_digest=notification_digest,
                 recipient=config.recipient,
                 subject=subject,
                 body=summary,
@@ -177,6 +205,7 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
             workspace_id=workspace_id,
             workspace_revision=workspace_revision,
             notification_digest=notification_digest,
+            provider=config.provider,
             attachment_refs=attachment_refs,
             receipt_ref=receipt_ref,
             external_side_effects=True,
@@ -196,9 +225,133 @@ def load_notification_config(path: str | Path | None = None) -> EmailNotificatio
     if set(notifications) != {"email"}:
         raise ValueError("notification configuration must contain only [notifications.email]")
     email = _mapping(notifications.get("email"), "notifications.email")
-    expected = {"enabled", "recipient", "clawemail_root"}
-    unknown = sorted(set(email) - expected)
-    missing = sorted(expected - set(email))
+    enabled = email.get("enabled")
+    if not isinstance(enabled, bool):
+        raise ValueError("notifications.email.enabled must be true or false")
+    recipient = _email_address(email.get("recipient"))
+    provider = email.get("provider", "clawemail")
+    if not isinstance(provider, str) or provider not in {"clawemail", "smtp"}:
+        raise ValueError("notifications.email.provider must be clawemail or smtp")
+
+    if provider == "clawemail":
+        expected = {"enabled", "recipient", "clawemail_root"}
+        if "provider" in email:
+            expected.add("provider")
+        _validate_config_fields(email, expected)
+        clawemail_root = _private_install_path(
+            email.get("clawemail_root"),
+            "notifications.email.clawemail_root",
+            must_exist=True,
+        )
+        canonical = {
+            "schema_version": CONFIG_SCHEMA,
+            "email": {
+                "enabled": enabled,
+                "recipient": recipient,
+                "clawemail_root": str(clawemail_root),
+            },
+        }
+        return EmailNotificationConfig(
+            source=source,
+            enabled=enabled,
+            recipient=recipient,
+            provider=provider,
+            digest=sha256_json(canonical),
+            clawemail_root=clawemail_root,
+        )
+
+    return _load_smtp_config(source, email, enabled=enabled, recipient=recipient)
+
+
+def _load_smtp_config(
+    source: Path,
+    email: dict[str, Any],
+    *,
+    enabled: bool,
+    recipient: str,
+) -> EmailNotificationConfig:
+    allowed = {
+        "enabled",
+        "provider",
+        "preset",
+        "recipient",
+        "from_address",
+        "username",
+        "password_env",
+        "password_file",
+        "host",
+        "port",
+        "security",
+    }
+    _validate_config_fields(email, allowed, required={"provider", "preset", "username"})
+    preset = bounded_text(email.get("preset"), "notifications.email.preset", 32).lower()
+    if preset not in SMTP_PRESETS:
+        raise ValueError(
+            "notifications.email.preset must be one of: "
+            + ", ".join(sorted(SMTP_PRESETS))
+        )
+    defaults = SMTP_PRESETS[preset]
+    host = bounded_text(email.get("host", defaults["host"]), "notifications.email.host", 255)
+    if any(character.isspace() for character in host) or "/" in host or "@" in host:
+        raise ValueError("notifications.email.host must be a hostname")
+    if host != defaults["host"]:
+        raise ValueError(f"notifications.email.host must be {defaults['host']} for preset {preset}")
+    port = email.get("port", defaults["port"])
+    if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
+        raise ValueError("notifications.email.port must be an integer from 1 to 65535")
+    security = bounded_text(
+        email.get("security", defaults["security"]),
+        "notifications.email.security",
+        16,
+    ).lower()
+    if security not in SMTP_SECURITY:
+        raise ValueError("notifications.email.security must be ssl or starttls")
+    username = _email_address(email.get("username"))
+    from_address = _email_address(email.get("from_address", username))
+    password_env, password_file = _secret_source(email)
+    canonical = {
+        "schema_version": SMTP_CONFIG_SCHEMA,
+        "email": {
+            "enabled": enabled,
+            "provider": "smtp",
+            "preset": preset,
+            "recipient": recipient,
+            "from_address": from_address,
+            "username": username,
+            "host": host,
+            "port": port,
+            "security": security,
+            "credential": {
+                "env": password_env,
+                "file": str(password_file) if password_file is not None else None,
+            },
+        },
+    }
+    return EmailNotificationConfig(
+        source=source,
+        enabled=enabled,
+        recipient=recipient,
+        provider="smtp",
+        digest=sha256_json(canonical),
+        from_address=from_address,
+        smtp_preset=preset,
+        smtp_host=host,
+        smtp_port=port,
+        smtp_security=security,
+        smtp_username=username,
+        smtp_password_env=password_env,
+        smtp_password_file=password_file,
+    )
+
+
+def _validate_config_fields(
+    value: dict[str, Any],
+    allowed: set[str],
+    *,
+    required: set[str] | None = None,
+) -> None:
+    unknown = sorted(set(value) - allowed)
+    missing = sorted((required or allowed) - set(value))
     if unknown or missing:
         details = []
         if unknown:
@@ -206,27 +359,51 @@ def load_notification_config(path: str | Path | None = None) -> EmailNotificatio
         if missing:
             details.append(f"missing fields: {', '.join(missing)}")
         raise ValueError(f"invalid notifications.email configuration ({'; '.join(details)})")
-    enabled = email.get("enabled")
-    if not isinstance(enabled, bool):
-        raise ValueError("notifications.email.enabled must be true or false")
-    recipient = _email_address(email.get("recipient"))
-    clawemail_raw = bounded_text(email.get("clawemail_root"), "notifications.email.clawemail_root", 4096)
-    clawemail_root = Path(clawemail_raw).expanduser()
-    if not clawemail_root.is_absolute() or clawemail_root.is_symlink():
-        raise ValueError("notifications.email.clawemail_root must be an absolute non-symbolic-link path")
+
+
+def _private_install_path(
+    value: Any,
+    label: str,
+    *,
+    must_exist: bool,
+    directory: bool = True,
+) -> Path:
+    raw = bounded_text(value, label, 4096)
+    path = Path(raw).expanduser()
+    if not path.is_absolute() or path.is_symlink():
+        raise ValueError(f"{label} must be an absolute non-symbolic-link path")
     try:
-        clawemail_root = clawemail_root.resolve(strict=True)
+        resolved = path.resolve(strict=must_exist)
     except OSError as exc:
-        raise ValueError("configured ClawEmail installation is unavailable") from exc
-    canonical = {
-        "schema_version": CONFIG_SCHEMA,
-        "email": {
-            "enabled": enabled,
-            "recipient": recipient,
-            "clawemail_root": str(clawemail_root),
-        },
-    }
-    return EmailNotificationConfig(source, enabled, recipient, clawemail_root, sha256_json(canonical))
+        raise ValueError(f"{label} is unavailable") from exc
+    if must_exist and directory and not resolved.is_dir():
+        raise ValueError(f"{label} must be a directory")
+    return resolved
+
+
+def _secret_source(email: dict[str, Any]) -> tuple[str | None, Path | None]:
+    password_env = email.get("password_env")
+    password_file_raw = email.get("password_file")
+    if (password_env is None) == (password_file_raw is None):
+        raise ValueError(
+            "notifications.email must set exactly one of password_env or password_file"
+        )
+    if password_env is not None:
+        name = bounded_text(password_env, "notifications.email.password_env", 128)
+        if not ENV_NAME.fullmatch(name):
+            raise ValueError("notifications.email.password_env must be an environment variable name")
+        return name, None
+    path = _private_install_path(
+        password_file_raw,
+        "notifications.email.password_file",
+        must_exist=True,
+        directory=False,
+    )
+    if not path.is_file():
+        raise ValueError("notifications.email.password_file must be a regular file")
+    if path.stat().st_mode & 0o077:
+        raise ValueError("notifications.email.password_file must have mode 0600")
+    return None, path
 
 
 def _configured_path(path: str | Path | None) -> Path:
@@ -313,6 +490,155 @@ def _report_manifest_binding(workspace: Path, ref: str, path: Path) -> dict[str,
         "manifest_ref": manifest_ref,
         "manifest_sha256": sha256_path(manifest_path),
     }
+
+
+def _run_provider(
+    config: EmailNotificationConfig,
+    *,
+    manager: Path | None,
+    notification_digest: str,
+    recipient: str,
+    subject: str,
+    body: str,
+    attachments: list[tuple[Path, dict[str, Any]]],
+) -> str:
+    if config.provider == "clawemail":
+        if manager is None:
+            raise _DeliveryNotStarted("ClawEmail manager is unavailable")
+        return _run_clawemail(
+            manager,
+            recipient=recipient,
+            subject=subject,
+            body=body,
+            attachments=attachments,
+        )
+    if config.provider == "smtp":
+        return _run_smtp(
+            config,
+            notification_digest=notification_digest,
+            recipient=recipient,
+            subject=subject,
+            body=body,
+            attachments=attachments,
+        )
+    raise _DeliveryNotStarted(f"unsupported email provider: {config.provider}")
+
+
+def _run_smtp(
+    config: EmailNotificationConfig,
+    *,
+    notification_digest: str,
+    recipient: str,
+    subject: str,
+    body: str,
+    attachments: list[tuple[Path, dict[str, Any]]],
+) -> str:
+    if not config.smtp_host or not config.smtp_port or not config.smtp_security:
+        raise _DeliveryNotStarted("SMTP configuration is incomplete")
+    if "\r" in subject or "\n" in subject:
+        raise _DeliveryNotStarted("SMTP subject must not contain line breaks")
+    password = _smtp_password(config)
+    message = EmailMessage()
+    message["From"] = config.from_address or config.smtp_username or ""
+    message["To"] = recipient
+    message["Subject"] = subject
+    message["Date"] = formatdate(localtime=True)
+    message["Message-ID"] = (
+        f"<tspi-{notification_digest.removeprefix('sha256:')}"
+        f"@{message['From'].split('@', 1)[-1]}>"
+    )
+    message["X-TSPi-Notification-Digest"] = notification_digest
+    message.set_content(body)
+    for source, record in attachments:
+        try:
+            payload = source.read_bytes()
+        except OSError as exc:
+            raise _DeliveryNotStarted(f"unable to read notification attachment: {source.name}") from exc
+        if sha256_path(source) != record.get("sha256") or len(payload) != record.get("size_bytes"):
+            raise _DeliveryNotStarted(f"notification attachment changed while composing: {source.name}")
+        mime_type, _ = mimetypes.guess_type(source.name, strict=False)
+        maintype, subtype = (mime_type or "application/octet-stream").split("/", 1)
+        message.add_attachment(
+            payload,
+            maintype=maintype,
+            subtype=subtype,
+            filename=source.name,
+        )
+
+    client: smtplib.SMTP | smtplib.SMTP_SSL | None = None
+    connected = False
+    authenticated = False
+    try:
+        context = ssl.create_default_context()
+        if config.smtp_security == "ssl":
+            client = smtplib.SMTP_SSL(
+                config.smtp_host,
+                config.smtp_port,
+                timeout=120,
+                context=context,
+            )
+        else:
+            client = smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=120)
+            client.ehlo()
+            client.starttls(context=context)
+            client.ehlo()
+        connected = True
+        client.login(config.smtp_username, password)
+        authenticated = True
+        refused = client.send_message(message)
+        if refused:
+            raise _DeliveryNotStarted(
+                "SMTP refused recipient(s): " + ", ".join(sorted(refused))
+            )
+        return "smtp message accepted"
+    except _DeliveryNotStarted:
+        raise
+    except (smtplib.SMTPAuthenticationError, smtplib.SMTPRecipientsRefused) as exc:
+        raise _DeliveryNotStarted(_smtp_exception_text(exc)) from exc
+    except smtplib.SMTPResponseException as exc:
+        raise _DeliveryNotStarted(_smtp_exception_text(exc)) from exc
+    except (smtplib.SMTPServerDisconnected, TimeoutError, OSError) as exc:
+        if connected and authenticated:
+            raise _DeliveryAmbiguous(
+                "SMTP connection ended before delivery was confirmed: "
+                + _smtp_exception_text(exc)
+            ) from exc
+        raise _DeliveryNotStarted(_smtp_exception_text(exc)) from exc
+    except smtplib.SMTPException as exc:
+        if connected and authenticated:
+            raise _DeliveryAmbiguous(_smtp_exception_text(exc)) from exc
+        raise _DeliveryNotStarted(_smtp_exception_text(exc)) from exc
+    finally:
+        if client is not None:
+            try:
+                client.quit()
+            except (OSError, smtplib.SMTPException):
+                pass
+
+
+def _smtp_password(config: EmailNotificationConfig) -> str:
+    if config.smtp_password_env is not None:
+        value = os.environ.get(config.smtp_password_env, "")
+    elif config.smtp_password_file is not None:
+        try:
+            value = config.smtp_password_file.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise _DeliveryNotStarted("SMTP password file is unavailable") from exc
+    else:
+        raise _DeliveryNotStarted("SMTP password source is not configured")
+    value = value.strip()
+    if not value:
+        raise _DeliveryNotStarted("SMTP password source is empty")
+    return value
+
+
+def _smtp_exception_text(exc: BaseException) -> str:
+    if isinstance(exc, smtplib.SMTPResponseException):
+        detail = exc.smtp_error.decode("utf-8", "replace") if isinstance(exc.smtp_error, bytes) else str(exc.smtp_error)
+        detail = " ".join(detail.split())
+        return f"SMTP server returned {exc.smtp_code}: {detail[:500]}"
+    detail = " ".join(str(exc).split())
+    return detail[:500] or exc.__class__.__name__
 
 
 def _run_clawemail(
@@ -425,6 +751,7 @@ def _existing_delivery_result(
         workspace_id=str(receipt.get("workspace_id")),
         workspace_revision=str(receipt.get("workspace_revision")),
         notification_digest=notification_digest,
+        provider=str(receipt.get("provider", "clawemail")),
         attachment_refs=[
             str(record.get("ref"))
             for record in receipt.get("report_artifacts", [])
@@ -443,6 +770,7 @@ def _delivery_result(
     workspace_id: str,
     workspace_revision: str,
     notification_digest: str,
+    provider: str,
     attachment_refs: list[str],
     receipt_ref: str,
     external_side_effects: bool,
@@ -455,6 +783,7 @@ def _delivery_result(
         "subject": subject,
         "workspace_id": workspace_id,
         "workspace_revision": workspace_revision,
+        "provider": provider,
         "notification_digest": notification_digest,
         "attachment_refs": attachment_refs,
         "receipt_ref": receipt_ref,

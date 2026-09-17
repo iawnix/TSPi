@@ -126,20 +126,6 @@
   },
   "allOf": [
     {
-      "if": {
-        "required": ["execution_target"],
-        "properties": {
-          "execution_target": {
-            "type": "object",
-            "properties": {"kind": {"const": "local"}}
-          }
-        }
-      },
-      "then": {
-        "properties": {"dry_run": {"const": true}}
-      }
-    },
-    {
       "if": {"properties": {"attempt_kind": {"const": "primary"}}},
       "then": {"properties": {"lineage": {"type": "null"}}},
       "else": {"properties": {"lineage": {"type": "object"}}}

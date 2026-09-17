@@ -333,6 +333,34 @@ def test_tspi_loads_installation_owned_notification_config(
     assert json.loads(completed.stdout) == {"config": str(config), "display": expected}
 
 
+def test_tspi_loads_smtp_notification_config_without_clawemail(
+    tmp_path: Path,
+) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    config = install_root / ".pi" / "notifications.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        "[notifications.email]\n"
+        "enabled = true\n"
+        'provider = "smtp"\n'
+        'preset = "163"\n'
+        'recipient = "researcher@example.org"\n'
+        'username = "researcher@163.com"\n'
+        'password_env = "TSPI_EMAIL_PASSWORD"\n',
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    fake_pi = _fake_pi(
+        tmp_path / "fake-pi.py",
+        "import json, os\nprint(json.dumps({'config': os.environ['TS_NOTIFICATION_CONFIG'], 'display': os.environ['TS_NOTIFICATION_DISPLAY_TARGET']}))\n",
+    )
+
+    completed = _run_tspi(launcher, "--workspace", "notify", pi_bin=fake_pi)
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout) == {"config": str(config), "display": "researcher@example.org"}
+
+
 def test_tspi_rejects_non_private_notification_config(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
     config = install_root / ".pi" / "notifications.toml"

@@ -132,7 +132,7 @@ def _descriptor(
     *,
     parser: str | None = None,
     parameter_schema: dict[str, Any] | None = None,
-    effects: tuple[str, ...] = ("local_prepare", "local_parse", "remote_compute"),
+    effects: tuple[str, ...] = ("local_prepare", "local_compute", "local_parse", "remote_compute"),
     limits: dict[str, Any] | None = None,
 ) -> CapabilityDescriptor:
     return CapabilityDescriptor(

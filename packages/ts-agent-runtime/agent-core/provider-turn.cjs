@@ -3,15 +3,10 @@
 function forceNamedToolChoice(payload, toolName) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
   if (typeof toolName !== "string" || !toolName) throw new Error("named result tool must be a non-empty string");
-  // DeepSeek reasoning/thinking endpoints reject a named tool choice with a
-  // 400. Keep the tool available and let the bounded prompt request it; the
-  // caller still validates the result and can issue a repair turn.
-  if (payload.thinking && typeof payload.thinking === "object" && !Array.isArray(payload.thinking)
-    && payload.thinking.type === "enabled") {
-    const relaxed = { ...payload };
-    delete relaxed.tool_choice;
-    return relaxed;
-  }
+  // Reasoning/thinking endpoints reject a named tool choice with a 400. Keep
+  // the tool available and let the bounded prompt request it; the caller
+  // still validates the result and can issue a repair turn.
+  if (isThinkingEnabledPayload(payload)) return withoutToolChoice(payload);
   return {
     ...payload,
     tool_choice: {
@@ -19,6 +14,39 @@ function forceNamedToolChoice(payload, toolName) {
       function: { name: toolName },
     },
   };
+}
+
+/**
+ * Remove an incompatible tool choice even on the initial (non-forced) turn.
+ * Pi may carry `tool_choice: required` from a caller or a prior request, and
+ * DeepSeek rejects both that and named choices while thinking is enabled.
+ */
+function stripIncompatibleThinkingToolChoice(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  return isThinkingEnabledPayload(payload) ? withoutToolChoice(payload) : payload;
+}
+
+function isThinkingEnabledPayload(payload) {
+  const thinking = payload.thinking;
+  if (thinking && typeof thinking === "object" && !Array.isArray(thinking)) {
+    if (thinking.type === "enabled" || thinking.enabled === true) return true;
+  }
+  if (payload.enable_thinking === true) return true;
+  const template = payload.chat_template_kwargs;
+  if (template && typeof template === "object" && !Array.isArray(template)
+    && template.enable_thinking === true) return true;
+  return false;
+}
+
+function isDisabledThinkingValue(value) {
+  return ["off", "none", "disabled", "disable", "false", "0"].includes(value.toLowerCase());
+}
+
+function withoutToolChoice(payload) {
+  if (!Object.hasOwn(payload, "tool_choice")) return payload;
+  const relaxed = { ...payload };
+  delete relaxed.tool_choice;
+  return relaxed;
 }
 
 function assertProviderTurnSucceeded(session, model, response, options = {}) {
@@ -88,5 +116,6 @@ function headerValue(headers, expected) {
 module.exports = {
   assertProviderTurnSucceeded,
   forceNamedToolChoice,
+  stripIncompatibleThinkingToolChoice,
   headerValue,
 };

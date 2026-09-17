@@ -12,6 +12,7 @@ import pytest
 
 from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
 from ts_agent.compute.artifacts import list_calculation_artifacts
+from ts_agent.email import delivery as email_delivery
 from ts_agent.email.delivery import notify_user
 from ts_agent.email.errors import NotificationError
 from ts_agent.report import build_report_package
@@ -444,6 +445,151 @@ def test_notification_uses_fixed_installation_recipient_and_is_idempotent(
     assert stat.S_IMODE((workspace / first["receipt_ref"]).stat().st_mode) == 0o600
 
 
+def test_notification_sends_with_qq_smtp_preset_and_env_authorization_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeSMTPSSL:
+        instances: list["FakeSMTPSSL"] = []
+
+        def __init__(self, host: str, port: int, *, timeout: int, context: object) -> None:
+            self.host = host
+            self.port = port
+            self.timeout = timeout
+            self.context = context
+            self.logged_in: tuple[str | None, str] | None = None
+            self.message = None
+            self.__class__.instances.append(self)
+
+        def login(self, username: str | None, password: str) -> None:
+            self.logged_in = (username, password)
+
+        def send_message(self, message: object) -> dict[str, tuple[int, bytes]]:
+            self.message = message
+            return {}
+
+        def quit(self) -> tuple[int, bytes]:
+            return (221, b"bye")
+
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    start_research_node(workspace)
+    config = _smtp_notification_install(tmp_path, preset="qq")
+    monkeypatch.setenv("TS_NOTIFICATION_CONFIG", str(config))
+    monkeypatch.setenv("TSPI_TEST_EMAIL_PASSWORD", "qq-authorization-code")
+    monkeypatch.setattr(email_delivery.smtplib, "SMTP_SSL", FakeSMTPSSL)
+    request = tmp_path / "notification.json"
+    request.write_text(json.dumps({
+        "schema_version": "ts-user-notification/1",
+        "event": "node_completed",
+        "subject": "Research node completed",
+        "summary": "The bounded research node completed.",
+        "report_refs": [],
+    }), encoding="utf-8")
+
+    result = notify_user(workspace, request)
+
+    assert result["state"] == "sent"
+    assert result["provider"] == "smtp"
+    smtp = FakeSMTPSSL.instances[-1]
+    assert (smtp.host, smtp.port, smtp.timeout) == ("smtp.qq.com", 465, 120)
+    assert smtp.logged_in == ("sender@qq.com", "qq-authorization-code")
+    assert smtp.message["From"] == "sender@qq.com"
+    assert smtp.message["To"] == "researcher@example.org"
+    assert smtp.message["Subject"] == "Research node completed"
+    assert "qq-authorization-code" not in json.dumps(json.loads(
+        (workspace / result["receipt_ref"]).read_text(encoding="utf-8")
+    ))
+
+
+def test_notification_sends_with_starttls_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeSMTP:
+        instance: "FakeSMTP | None" = None
+
+        def __init__(self, host: str, port: int, *, timeout: int) -> None:
+            self.host = host
+            self.port = port
+            self.timeout = timeout
+            self.starttls_context = None
+            self.login_args = None
+            self.message = None
+            self.__class__.instance = self
+
+        def ehlo(self) -> tuple[int, bytes]:
+            return (250, b"ok")
+
+        def starttls(self, *, context: object) -> tuple[int, bytes]:
+            self.starttls_context = context
+            return (220, b"ready")
+
+        def login(self, username: str | None, password: str) -> None:
+            self.login_args = (username, password)
+
+        def send_message(self, message: object) -> dict[str, tuple[int, bytes]]:
+            self.message = message
+            return {}
+
+        def quit(self) -> tuple[int, bytes]:
+            return (221, b"bye")
+
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    start_research_node(workspace)
+    config = _smtp_notification_install(
+        tmp_path,
+        preset="qq",
+        host="smtp.qq.com",
+        port=587,
+        security="starttls",
+    )
+    monkeypatch.setenv("TS_NOTIFICATION_CONFIG", str(config))
+    monkeypatch.setenv("TSPI_TEST_EMAIL_PASSWORD", "qq-authorization-code")
+    monkeypatch.setattr(email_delivery.smtplib, "SMTP", FakeSMTP)
+    request = tmp_path / "notification.json"
+    request.write_text(json.dumps({
+        "schema_version": "ts-user-notification/1",
+        "event": "progress",
+        "subject": "Progress",
+        "summary": "A progress update.",
+        "report_refs": [],
+    }), encoding="utf-8")
+
+    result = notify_user(workspace, request)
+
+    assert result["state"] == "sent"
+    smtp = FakeSMTP.instance
+    assert smtp is not None
+    assert (smtp.host, smtp.port) == ("smtp.qq.com", 587)
+    assert smtp.starttls_context is not None
+    assert smtp.login_args == ("sender@qq.com", "qq-authorization-code")
+
+
+def test_smtp_notification_requires_one_supported_preset_and_secret_source(
+    tmp_path: Path,
+) -> None:
+    config = _smtp_notification_install(tmp_path, preset="qq")
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('preset = "qq"', 'preset = "gmail"'),
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    with pytest.raises(ValueError, match="preset must be one of"):
+        email_delivery.load_notification_config(config)
+
+    config = _smtp_notification_install(tmp_path / "missing-secret", preset="163")
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            'password_env = "TSPI_TEST_EMAIL_PASSWORD"',
+            'password_env = "TSPI_TEST_EMAIL_PASSWORD"\npassword_file = "/tmp/also-secret"',
+        ),
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    with pytest.raises(ValueError, match="exactly one"):
+        email_delivery.load_notification_config(config)
+
+
 def test_notification_rejects_removed_act_event_and_unsafe_report_ref(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -749,5 +895,36 @@ def _notification_install(tmp_path: Path, *, capture: Path | None = None) -> Pat
         f'clawemail_root = "{claw}"\n',
         encoding="utf-8",
     )
+    config.chmod(0o600)
+    return config
+
+
+def _smtp_notification_install(
+    tmp_path: Path,
+    *,
+    preset: str,
+    host: str | None = None,
+    port: int | None = None,
+    security: str | None = None,
+) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    config = tmp_path / "smtp-notifications.toml"
+    lines = [
+        "[notifications.email]",
+        "enabled = true",
+        'provider = "smtp"',
+        f'preset = "{preset}"',
+        'recipient = "researcher@example.org"',
+        'from_address = "sender@qq.com"',
+        'username = "sender@qq.com"',
+        'password_env = "TSPI_TEST_EMAIL_PASSWORD"',
+    ]
+    if host is not None:
+        lines.append(f'host = "{host}"')
+    if port is not None:
+        lines.append(f"port = {port}")
+    if security is not None:
+        lines.append(f'security = "{security}"')
+    config.write_text("\n".join(lines) + "\n", encoding="utf-8")
     config.chmod(0o600)
     return config

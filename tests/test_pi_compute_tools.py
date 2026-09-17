@@ -32,11 +32,13 @@ let compute;const pi={{registerTool:(tool)=>{{if(tool.name==="ts_calc")compute=t
 install(pi);const check=Compile(compute.parameters);
 const base={{nodeId:"node_1"}};
 const launch={{...base,operation:"launch",purpose:"Single point",capability:"gaussian.sp",capabilityVersion:"1",attemptKind:"primary",inputArtifacts:[{{inputRole:"gjf",artifactId:"art_"+"b".repeat(24)}}],executionTarget:{{kind:"remote",profile:"cluster_1w",resources:{{queue:"batch",nodes:1,ncpus:8,memory:"16gb",walltime:"01:00:00",ngpus:0}}}}}};
+const localLaunch={{...launch,executionTarget:{{kind:"local"}}}};
 const invalidInspect={{...base,operation:"inspect",intentId:"calc_1",purpose:"bad"}};
 let hostError="";
 try {{ await compute.execute("call-1",invalidInspect,undefined,()=>{{}},{{cwd:"/tmp"}}); }} catch(error) {{ hostError=error.message; }}
 process.stdout.write(JSON.stringify({{
   launch:check.Check(launch),
+  localLaunch:check.Check(localLaunch),
   physicalPath:check.Check({{...launch,inputArtifacts:[{{inputRole:"gjf",artifactId:"inputs/test.gjf"}}]}}),
   oldNode:check.Check({{...launch,nodeId:undefined,nodeId:"n001"}}),
   inspect:check.Check({{...base,operation:"inspect",intentId:"calc_1"}}),
@@ -48,6 +50,7 @@ process.stdout.write(JSON.stringify({{
     result = _node_json(script)
     assert result == {
         "launch": True,
+        "localLaunch": True,
         "physicalPath": False,
         "oldNode": False,
         "inspect": True,

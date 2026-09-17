@@ -18,6 +18,10 @@ CONTRACT_FILES = [
     "contracts/ts-web/workspace-request.schema.json",
     "contracts/ts-web/workspace-snapshot.fixture.json",
     "contracts/ts-web/workspace-snapshot.schema.json",
+    "contracts/tspi-session-control/1/README.md",
+    "contracts/tspi-session-control/1/session-control-request.schema.json",
+    "contracts/tspi-session-control/1/session-control-response.schema.json",
+    "contracts/tspi-session-control/1/session-event.schema.json",
 ]
 
 
@@ -46,6 +50,8 @@ APP_SERVER_FILES = [
     "apps/app-server/pi-native-notify.mjs",
     "apps/app-server/pi-native-review.mjs",
     "apps/app-server/pi-native-tools.mjs",
+    "apps/app-server/pi-session-control.mjs",
+    "apps/app-server/pi-session-control-server.mjs",
     "apps/app-server/pi-session-worker.mjs",
     "apps/app-server/pi-runtime-deps.mjs",
     "apps/app-server/system-prompt.mjs",
@@ -69,6 +75,7 @@ PACKAGE_FILES = [
     "config/*.lock",
     "config/pi-worker-entry.patch",
     "config/pi-multi-workspace.patch",
+    "config/pi-source-resolver.patch",
     *CONTRACT_FILES,
     "environment.yml",
     "environment.lock.txt",
@@ -258,6 +265,7 @@ REQUIRED_TARBALL_FILES = frozenset(
         "scripts/ts_web_provider.py",
         "docs/adr/0001-phase-node-research-kernel.md",
         "docs/adr/0003-minimal-research-kernel-and-gates.md",
+        "docs/adr/0004-unified-app-server-extension-runtime.md",
     }
 )
 
@@ -340,6 +348,8 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "packages/ts-agent-kernel/ts_agent/compute/contracts/calculation_intent.schema.json",
         "packages/ts-agent-kernel/ts_agent/compute/contracts/calculation_request.schema.json",
         "packages/ts-agent-kernel/ts_agent/compute/contracts/calculation_result.schema.json",
+        "packages/ts-agent-kernel/ts_agent/compute/local_lifecycle.py",
+        "packages/ts-agent-kernel/ts_agent/compute/local_worker.py",
         "packages/ts-agent-kernel/ts_agent/email/delivery.py",
         "packages/ts-agent-kernel/ts_agent/runtime/probe.py",
         "packages/ts-agent-kernel/ts_agent/structures/api.py",
@@ -375,5 +385,6 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "contracts/ts-web/workspace-snapshot.fixture.json",
         "docs/adr/0001-phase-node-research-kernel.md",
         "docs/adr/0003-minimal-research-kernel-and-gates.md",
+        "docs/adr/0004-unified-app-server-extension-runtime.md",
     }
 )

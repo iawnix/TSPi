@@ -9,20 +9,26 @@ requirement.
 
 - `apps/app-server/` starts Pi's native App Server and session worker.
 - `packages/ts-agent-kernel/ts_agent/` owns scientific contracts, workspace
-  state, reference integrity, validation, and read-only projections. Calculation,
-  remote execution, rendering, reporting, and email are Skill/Plugin tools; the
-  Kernel does not own their execution lifecycles.
-- `extensions/` contains optional standalone Pi workflow extensions. The native
-  App Server does not inject them; its Worker exposes the equivalent guarded
-  TSPi tools directly.
-- `components/ts-web/` is an optional read-only browser projection.
+  state, reference integrity, validation, and read-only projections. Its
+  calculation control plane runs local subprocesses durably and delegates
+  remote execution to the configured `ts_remote` adapter; rendering, reporting,
+  and email remain Skill/Plugin tools.
+- `extensions/` contains the client-only Pi presentation extensions and the
+  package-owned server workflow extension set. The App Server loads only the
+  allowlisted, digest-verified entries in `extensions/server/extensions.json`;
+  it never evaluates code supplied by a client.
+- `components/ts-web/` is an optional read-only browser projection. The optional
+  `apps/app-server/pi-session-control-server.mjs` adapter exposes the same Host
+  session to a browser over the versioned session-control contract; it attaches
+  to an existing session and never owns a second Worker.
 - TS Phone is an independent Flutter client that connects through Pi Radius.
 
 The App Server owns session directory, transcript history, model state, prompt
 operations, and the workspace Root lock. The local TUI and TS Phone connect to
-that same owner. Native Workers load the package's model-visible skills and
-their native system prompt; extension manifests are not silently treated as
-active prompt contributors.
+that same owner. Workers load the package's model-visible skills, the native
+system prompt, and the selected server extension inventory. The inventory is
+included in `sys_prompt` provenance so a client can audit which tool set is
+active.
 
 ## Scientific State Model
 
@@ -120,11 +126,14 @@ The orchestration skill compiles a bounded context from canonical workspace
 state, recent operations, and selected artifacts. It never invents a second
 state store and never rewrites unsupported records during bootstrap.
 
-## Read-Only Web Projection
+## Read-Only Web Projection And Browser Control
 
 TS Web reads the workspace files through `components/ts-web/`. It does not own
 Pi sessions or submit prompts. Its optional systemd unit is independent from
-the App Server instance.
+the App Server instance. Browser control is a separate, explicitly started
+loopback adapter (`TSPi --gateway`) backed by Pi's `AgentController` and
+`Transcript`; it uses request IDs for idempotency and sequence cursors for
+reconnects. TS Phone uses the same underlying services through Pi Radius.
 
 ## TSPi Lifecycle
 
@@ -145,6 +154,11 @@ The launcher validates installation ownership, package identity, workspace
 path safety, and runtime configuration before executing Node/Pi. A second Host
 for the same installation fails on the Host Root lock rather than creating a
 parallel history.
+
+The systemd user unit sets `TSPI_SERVER_EXTENSIONS=ts-workflow-native` so the
+release's server tool inventory is deterministic. A development host may set a
+different allowlist, but every selected entry must remain inside the selected
+Package release and match its recorded SHA-256 digest.
 
 ## Isolated Agent Runtimes
 
@@ -176,7 +190,13 @@ infer the next action. See [ADR 0003](adr/0003-minimal-research-kernel-and-gates
 
 Public tools validate input paths against the workspace root, normalize
 artifacts, and return machine-readable errors. Scientific backends are
-selected by capability and parse only their own output formats.
+selected by capability and parse only their own output formats. `ts_calc` uses
+one lifecycle (`prepare -> submit -> inspect -> collect -> parse`) for either
+`execution_target.kind=local` or `remote`: the Research Kernel workspace is
+always canonical, while a remote directory is only a temporary execution
+mirror. Local runs stage inputs under the Attempt's execution directory and
+collect outputs back into the same workspace paths, so TS Web needs no remote
+filesystem access.
 
 ## Run Journals And Result Delivery
 
@@ -191,7 +211,8 @@ are separate from the scientific operation journal.
 - Installation/runtime launcher: `TSPi`, `scripts/tspi_launcher.py`, and
   `packages/ts-agent-kernel/ts_agent/runtime/launcher.py`.
 - Scientific contracts: `packages/ts-agent-kernel/ts_agent/**`.
-- Skills and extension manifests: `skills/` and `package.json`.
+- Skills and extension manifests: `skills/`, `package.json`, and
+  `extensions/server/extensions.json`.
 - TS Web contracts: `contracts/ts-web/`.
 - App Server lifecycle tests: `tests/test_pi_app_server_launcher.py` and
   `tests/pi-app-server.test.mjs`.

@@ -23,8 +23,9 @@ const PERMISSIONS = new Set([
  */
 export async function loadServerExtensions(options = {}) {
   const packageRoot = requireAbsoluteDirectory(options.packageRoot, "packageRoot");
+  await assertRegularDirectory(packageRoot, "packageRoot");
   const manifestPath = resolveManifestPath(packageRoot, options.manifestPath);
-  const manifest = await readManifest(manifestPath);
+  const manifest = await readManifest(manifestPath, packageRoot);
   const allowlist = resolveAllowlist(options.allowlist, manifest.extensions);
   const selected = manifest.extensions.filter((extension) => allowlist.has(extension.name));
   if (selected.length === 0) {
@@ -33,6 +34,7 @@ export async function loadServerExtensions(options = {}) {
 
   const names = new Set();
   const toolNames = new Set(Array.isArray(options.reservedToolNames) ? options.reservedToolNames : []);
+  const extensionToolNames = new Set();
   const tools = [];
   const inventory = [];
   for (const descriptor of selected) {
@@ -61,6 +63,7 @@ export async function loadServerExtensions(options = {}) {
     for (const tool of actualTools) {
       if (toolNames.has(tool.name)) throw new Error(`server tool name collision: ${tool.name}`);
       toolNames.add(tool.name);
+      extensionToolNames.add(tool.name);
       tools.push(tool);
     }
     inventory.push(Object.freeze({
@@ -72,6 +75,11 @@ export async function loadServerExtensions(options = {}) {
       sha256: descriptor.sha256,
     }));
   }
+  if (Array.isArray(options.requiredToolNames)) {
+    for (const name of options.requiredToolNames) {
+      if (!extensionToolNames.has(name)) throw new Error(`server extension selection did not provide required tool: ${name}`);
+    }
+  }
   return Object.freeze({
     tools: Object.freeze(tools),
     inventory: Object.freeze(inventory),
@@ -81,7 +89,8 @@ export async function loadServerExtensions(options = {}) {
 
 export async function readServerExtensionManifest(packageRoot, manifestPath) {
   const root = requireAbsoluteDirectory(packageRoot, "packageRoot");
-  return readManifest(resolveManifestPath(root, manifestPath));
+  await assertRegularDirectory(root, "packageRoot");
+  return readManifest(resolveManifestPath(root, manifestPath), root);
 }
 
 function resolveManifestPath(packageRoot, configured) {
@@ -95,9 +104,10 @@ function resolveManifestPath(packageRoot, configured) {
   return candidate;
 }
 
-async function readManifest(path) {
+async function readManifest(path, packageRoot) {
   let parsed;
   try {
+    await assertOwnedParents(packageRoot, path);
     const info = await lstat(path);
     if (!info.isFile() || info.isSymbolicLink()) throw new Error("manifest must be a regular file");
     parsed = JSON.parse(await readFile(path, "utf8"));
@@ -165,6 +175,7 @@ async function resolveOwnedEntry(packageRoot, entry, name) {
   }
   let info;
   try {
+    await assertOwnedParents(packageRoot, path);
     info = await lstat(path);
   } catch (error) {
     throw new Error(`server extension ${name} entry is unavailable: ${entry}`, { cause: error });
@@ -184,6 +195,21 @@ function validateTool(tool, extensionName) {
   }
   if (typeof tool.execute !== "function") throw new Error(`server extension ${extensionName} tool ${tool.name} has no execute function`);
   return tool;
+}
+
+async function assertRegularDirectory(path, label) {
+  const info = await lstat(path);
+  if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`${label} must be a regular directory`);
+}
+
+async function assertOwnedParents(root, target) {
+  const relativePath = relative(root, target);
+  let current = root;
+  for (const segment of relativePath.split(sep).slice(0, -1)) {
+    current = resolve(current, segment);
+    const info = await lstat(current);
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`server extension path contains a non-owned directory: ${current}`);
+  }
 }
 
 function requireAbsoluteDirectory(value, label) {

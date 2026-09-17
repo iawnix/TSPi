@@ -28,6 +28,7 @@ const {
   assertProviderTurnSucceeded,
   forceNamedToolChoice,
   headerValue,
+  stripIncompatibleThinkingToolChoice,
 } = require("../../agent-core/provider-turn.cjs");
 const { isComputePlanReady, validateComputeActionPlan } = require("./output-schema.cjs");
 const { validateComputeTask } = require("./task-packet.cjs");
@@ -266,9 +267,10 @@ async function createIsolatedResourceLoader(
         pi.on("before_provider_request", (event) => {
           delete providerResponse.status;
           delete providerResponse.contentType;
+          const payload = stripIncompatibleThinkingToolChoice(event.payload);
           return shouldForceResult()
-            ? forceNamedToolChoice(event.payload, COMPUTE_RESULT_TOOL_NAME)
-            : event.payload;
+            ? forceNamedToolChoice(payload, COMPUTE_RESULT_TOOL_NAME)
+            : payload;
         });
         pi.on("after_provider_response", (event) => {
           providerResponse.status = event.status;

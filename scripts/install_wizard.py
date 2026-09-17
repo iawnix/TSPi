@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
+import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -53,6 +56,12 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO = "git@github.com:iawnix/TSPi.git"
 PROGRESS_PREFIX = "@@tspi-progress@@"
 MINIMUM_NODE_VERSION = (22, 19, 0)
+EMAIL_PROVIDERS = {"clawemail", "smtp"}
+SMTP_PRESETS = {
+    "163": "smtp.163.com",
+    "qq": "smtp.qq.com",
+}
+ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def detect_conda_root() -> str:
@@ -171,6 +180,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--service-scope", choices=("none", "user", "system"))
     parser.add_argument("--enable-services", action="store_true")
     parser.add_argument("--start-services", action="store_true")
+    email = parser.add_argument_group("email notifications")
+    email.add_argument("--email-provider", choices=sorted(EMAIL_PROVIDERS))
+    email.add_argument("--email-preset", choices=sorted(SMTP_PRESETS))
+    email.add_argument("--email-recipient")
+    email.add_argument("--email-from")
+    email.add_argument("--email-username")
+    email.add_argument("--clawemail-root")
+    password = email.add_mutually_exclusive_group()
+    password.add_argument("--email-password-env")
+    password.add_argument("--email-password-file")
     parser.add_argument("--non-interactive", action="store_true")
     parser.add_argument("--yes", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -210,7 +229,37 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
     if args.service_scope != "none":
         args.enable_services = ask_yes_no("Enable services", True)
         args.start_services = ask_yes_no("Start services now", True)
+    configure_email_interactively(args)
     return args
+
+
+def configure_email_interactively(args: argparse.Namespace) -> None:
+    if args.email_provider is not None:
+        return
+    root = Path(args.install_root)
+    existing = root / ".pi" / "notifications.toml"
+    prompt = "Reconfigure email notifications" if existing.is_file() else "Configure email notifications"
+    if not ask_yes_no(prompt, False):
+        return
+    args.email_provider = ask("Email provider (smtp or clawemail)", "smtp").lower()
+    args.email_recipient = ask("Notification recipient")
+    if args.email_provider == "clawemail":
+        args.clawemail_root = ask("ClawEmail installation root")
+        return
+    args.email_preset = ask("SMTP mailbox preset (163 or qq)", "qq").lower()
+    args.email_username = ask("SMTP username")
+    args.email_from = ask("From address (blank uses username)", args.email_username)
+    if ask_yes_no("Read SMTP authorization code from an environment variable", False):
+        args.email_password_env = ask("Password environment variable", "TSPI_EMAIL_PASSWORD")
+        return
+    default_password_file = root / ".pi" / "email" / "smtp-password"
+    args.email_password_file = ask("SMTP authorization-code file", str(default_password_file))
+    password_path = Path(args.email_password_file).expanduser()
+    if not password_path.exists():
+        password = getpass.getpass("SMTP authorization code (hidden): ").strip()
+        if not password:
+            raise ValueError("SMTP authorization code must not be empty")
+        args._email_password = password
 
 
 def show_install_plan(args: argparse.Namespace, installation: dict[str, str | None]) -> None:
@@ -241,6 +290,20 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
         _service_plan(args),
         tone="success" if args.service_scope != "none" else "muted",
     )
+
+    section("Email notifications")
+    if args.email_provider is None:
+        field("Configuration", "preserve existing" if (Path(args.install_root) / ".pi/notifications.toml").is_file() else "not configured", tone="muted")
+    elif args.email_provider == "clawemail":
+        field("Provider", "ClawEmail", tone="success")
+        field("Recipient", args.email_recipient)
+        field("ClawEmail root", args.clawemail_root)
+    else:
+        field("Provider", f"SMTP ({args.email_preset})", tone="success")
+        field("Recipient", args.email_recipient)
+        field("Username", args.email_username)
+        credential = args.email_password_env or args.email_password_file
+        field("Credential", credential)
 
     section("TS Web")
     field(
@@ -302,6 +365,179 @@ def validate_options(args: argparse.Namespace) -> None:
         raise ValueError("system services require root; choose --service-scope user")
     if args.service_scope != "none" and shutil.which("systemctl") is None:
         raise ValueError("service configuration requires systemctl; choose --service-scope none")
+    validate_email_options(args)
+
+
+def validate_email_options(args: argparse.Namespace) -> None:
+    values = (
+        args.email_preset,
+        args.email_recipient,
+        args.email_from,
+        args.email_username,
+        args.clawemail_root,
+        args.email_password_env,
+        args.email_password_file,
+    )
+    if args.email_provider is None:
+        if any(value is not None for value in values):
+            raise ValueError("email options require --email-provider")
+        return
+    if args.email_provider not in EMAIL_PROVIDERS:
+        raise ValueError("--email-provider must be smtp or clawemail")
+    _validate_email_address(args.email_recipient, "--email-recipient")
+    if args.email_provider == "clawemail":
+        clawemail_path = Path(args.clawemail_root).expanduser() if isinstance(args.clawemail_root, str) else None
+        if (
+            clawemail_path is None
+            or not clawemail_path.is_absolute()
+            or clawemail_path.is_symlink()
+            or not clawemail_path.is_dir()
+        ):
+            raise ValueError("--clawemail-root must be an existing absolute non-symbolic-link directory")
+        if any(
+            value is not None
+            for value in (args.email_preset, args.email_from, args.email_username, args.email_password_env, args.email_password_file)
+        ):
+            raise ValueError("SMTP-only email options cannot be used with ClawEmail")
+        return
+
+    if args.email_preset not in SMTP_PRESETS:
+        raise ValueError("--email-preset must be 163 or qq for SMTP")
+    _validate_email_address(args.email_username, "--email-username")
+    if args.email_from is not None:
+        _validate_email_address(args.email_from, "--email-from")
+    if (args.email_password_env is None) == (args.email_password_file is None):
+        raise ValueError("SMTP requires exactly one of --email-password-env or --email-password-file")
+    if args.email_password_env is not None and not ENV_NAME.fullmatch(args.email_password_env):
+        raise ValueError("--email-password-env must be an environment variable name")
+    if args.email_password_file is not None:
+        password_path = Path(args.email_password_file).expanduser()
+        if not password_path.is_absolute() or password_path.is_symlink():
+            raise ValueError("--email-password-file must be an absolute non-symbolic-link path")
+        if not password_path.exists() and not hasattr(args, "_email_password"):
+            raise ValueError("--email-password-file must exist for non-interactive installation")
+        if password_path.exists():
+            if not password_path.is_file() or stat.S_IMODE(password_path.stat().st_mode) != 0o600:
+                raise ValueError("--email-password-file must be a regular file with mode 0600")
+    if hasattr(args, "_email_password") and args.email_password_env is not None:
+        raise ValueError("an interactive SMTP password must use a password file")
+
+
+def _validate_email_address(value: object, label: str) -> None:
+    if not isinstance(value, str) or not value.strip() or any(character.isspace() for character in value):
+        raise ValueError(f"{label} must be one email address")
+    if value.count("@") != 1:
+        raise ValueError(f"{label} must be one email address")
+    local, domain = value.split("@")
+    if not local or "." not in domain or domain.startswith(".") or domain.endswith("."):
+        raise ValueError(f"{label} must be one email address")
+
+
+def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
+    """Write installation-owned notification configuration without exposing secrets."""
+
+    root = Path(args.install_root).expanduser().resolve()
+    config_path = root / ".pi" / "notifications.toml"
+    if args.email_provider is None:
+        return {
+            "status": "preserved" if config_path.is_file() else "not_configured",
+            "path": str(config_path),
+        }
+
+    if args.email_provider == "clawemail":
+        content = "\n".join(
+            [
+                "[notifications.email]",
+                "enabled = true",
+                f"recipient = {_toml_string(args.email_recipient)}",
+                f"clawemail_root = {_toml_string(str(Path(args.clawemail_root).expanduser()))}",
+                "",
+            ]
+        )
+        _write_private_text(config_path, content)
+        return {"status": "configured", "provider": "clawemail", "path": str(config_path)}
+
+    password_file: Path | None = None
+    if args.email_password_file is not None:
+        password_file = Path(args.email_password_file).expanduser()
+        if hasattr(args, "_email_password"):
+            _write_private_text(password_file, f"{args._email_password}\n")
+        _validate_private_secret_file(password_file)
+
+    lines = [
+        "[notifications.email]",
+        "enabled = true",
+        "provider = \"smtp\"",
+        f"preset = {_toml_string(args.email_preset)}",
+        f"recipient = {_toml_string(args.email_recipient)}",
+        f"username = {_toml_string(args.email_username)}",
+    ]
+    if args.email_from and args.email_from != args.email_username:
+        lines.append(f"from_address = {_toml_string(args.email_from)}")
+    if args.email_password_env is not None:
+        lines.append(f"password_env = {_toml_string(args.email_password_env)}")
+        credential = args.email_password_env
+    else:
+        assert password_file is not None
+        lines.append(f"password_file = {_toml_string(str(password_file.resolve()))}")
+        credential = str(password_file.resolve())
+    lines.append("")
+    _write_private_text(config_path, "\n".join(lines))
+    return {
+        "status": "configured",
+        "provider": "smtp",
+        "preset": args.email_preset,
+        "credential": credential,
+        "path": str(config_path),
+    }
+
+
+def _toml_string(value: str) -> str:
+    return json.dumps(value, ensure_ascii=True)
+
+
+def _ensure_private_directory(path: Path) -> None:
+    if path.exists() or path.is_symlink():
+        if path.is_symlink() or not path.is_dir():
+            raise ValueError(f"notification directory must be a physical directory: {path}")
+    else:
+        path.mkdir(mode=0o700, parents=True)
+    path.chmod(0o700)
+
+
+def _write_private_text(path: Path, content: str) -> None:
+    if path.is_symlink():
+        raise ValueError(f"notification file cannot be a symbolic link: {path}")
+    _ensure_private_directory(path.parent)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=".notification-", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            descriptor = -1
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        os.chmod(path, 0o600)
+    finally:
+        if descriptor != -1:
+            os.close(descriptor)
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _validate_private_secret_file(path: Path) -> None:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"--email-password-file must be a regular file: {path}")
+    if stat.S_IMODE(path.stat().st_mode) != 0o600:
+        raise ValueError(f"--email-password-file must have mode 0600: {path}")
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except UnicodeDecodeError as error:
+        raise ValueError(f"--email-password-file must contain text: {path}") from error
+    if not value:
+        raise ValueError(f"--email-password-file must not be empty: {path}")
 
 
 def run_logged_install(
@@ -462,6 +698,7 @@ def prepare_runtime_dirs(root: Path) -> None:
         ".pi/runtime-cache",
         ".agents/runtime",
         ".agents/envs",
+        ".pi/agent",
         ".pi/ts-web-state",
     ):
         directory = root / relative
@@ -473,6 +710,9 @@ def app_server_unit(args: argparse.Namespace) -> str:
     search_path = os.environ.get("PATH", os.defpath)
     if any(ord(char) < 32 for char in search_path):
         raise ValueError("service PATH cannot contain control characters")
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    if not Path(runtime_dir).is_absolute():
+        raise ValueError("service XDG_RUNTIME_DIR must be an absolute path")
     command = " ".join((_systemd_quote(root / "TSPi"), "--host"))
     return f"""[Unit]
 Description=TSPi installation Host (all workspaces)
@@ -483,6 +723,9 @@ Type=simple
 WorkingDirectory={_systemd_value(root)}
 ExecStart={command}
 Environment={_systemd_quote('PATH=' + search_path)}
+Environment={_systemd_quote('XDG_RUNTIME_DIR=' + runtime_dir)}
+Environment={_systemd_quote('PI_CODING_AGENT_DIR=' + str(root / '.pi/agent'))}
+Environment=TSPI_SERVER_EXTENSIONS=ts-workflow-native
 Restart=on-failure
 RestartSec=3s
 UMask=0077
@@ -493,6 +736,9 @@ ProtectHome=read-only
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths={_systemd_quote(root / '.pi/runtime-cache')}
 ReadWritePaths={_systemd_quote(root / '.pi/app-server-host')}
+ReadWritePaths={_systemd_quote(root / '.pi/session-guards')}
+ReadWritePaths={_systemd_quote(root / '.pi/agent')}
+ReadWritePaths={_systemd_quote(Path(runtime_dir) / 'tspi')}
 ReadWritePaths={_systemd_quote(root / 'workspaces')}
 
 [Install]
@@ -589,7 +835,10 @@ def validate_service_ownership(args: argparse.Namespace) -> None:
         return
     unit_dir = _service_unit_directory(args.service_scope)
     expected_root = str(Path(args.install_root)).replace("%", "%%")
-    names = [*_selected_service_names(args), "ts-app-server-tspi@.service"]
+    names = [*_selected_service_names(args)]
+    if "ts-web-tspi.service" not in names:
+        names.append("ts-web-tspi.service")
+    names.append("ts-app-server-tspi@.service")
     for name in names:
         unit = unit_dir / name
         if unit.is_symlink():
@@ -655,6 +904,14 @@ def configure_services(args: argparse.Namespace) -> list[dict[str, str]]:
     unit_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
     names: list[str] = []
     scope = [] if args.service_scope == "system" else ["--user"]
+    if not args.with_web:
+        stale_web = unit_dir / "ts-web-tspi.service"
+        if stale_web.exists() or stale_web.is_symlink():
+            if stale_web.is_symlink() or not stale_web.is_file():
+                raise ValueError(f"optional web service unit is not a regular file: {stale_web}")
+            for action in ("stop", "disable"):
+                _run_systemctl(scope, action, stale_web.name)
+            stale_web.unlink()
     for name, content in units:
         (unit_dir / name).write_text(content, encoding="utf-8")
         (unit_dir / name).chmod(0o644)
@@ -882,6 +1139,8 @@ def main(argv: list[str] | None = None) -> int:
                 Path(args.install_root),
                 with_web=bool(args.with_web),
             )
+            activity.update("Configuring email notifications")
+            notifications = configure_notification_config(args)
             activity.update("Configuring services")
             services = configure_services(args)
             activity.update("Verifying the installed release")
@@ -899,6 +1158,7 @@ def main(argv: list[str] | None = None) -> int:
             "uninstaller": installed.get("uninstaller"),
             "services": services,
             "credentials": credentials,
+            "notifications": notifications,
             "verified_release": verified["release_id"],
         }
         if args.json:

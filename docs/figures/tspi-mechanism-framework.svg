@@ -1,0 +1,184 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="183mm" height="112mm" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">Auditable reaction-mechanism research with TSPi</title>
+  <desc id="desc">A publication-ready framework showing how a Root Agent turns a reaction-mechanism claim into bounded research nodes, dispatches chemistry skills, promotes verified artifacts to observations and findings, evaluates NodeGate and ClaimGate, and uses the result to select the next node or branch.</desc>
+  <defs>
+    <marker id="arrow-navy" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#31576B"/>
+    </marker>
+    <marker id="arrow-teal" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#1D8078"/>
+    </marker>
+    <marker id="arrow-coral" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#C45B48"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#17384D" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      text { font-family: Inter, "Noto Sans", Arial, sans-serif; fill: #17384D; }
+      .title { font-size: 29px; font-weight: 700; letter-spacing: .1px; }
+      .subtitle { font-size: 16px; fill: #58717E; }
+      .section { font-size: 14px; font-weight: 700; letter-spacing: 1.6px; fill: #5B7280; }
+      .heading { font-size: 20px; font-weight: 700; }
+      .subheading { font-size: 17px; font-weight: 700; }
+      .body { font-size: 16px; fill: #4E6876; }
+      .small { font-size: 14px; fill: #58717E; }
+      .small-strong { font-size: 14px; font-weight: 700; fill: #4E6876; }
+      .inverse { fill: #FFFFFF; }
+      .flow { fill: none; stroke: #31576B; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow-navy); }
+      .evidence-flow { fill: none; stroke: #1D8078; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow-teal); }
+      .feedback { fill: none; stroke: #C45B48; stroke-width: 2.5; stroke-dasharray: 9 8; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow-coral); }
+      .card { filter: url(#shadow); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="980" fill="#FBFCFB"/>
+  <rect x="24" y="24" width="1552" height="932" rx="20" fill="#FBFCFB" stroke="#D6E1E3" stroke-width="1.6"/>
+
+  <text x="60" y="70" class="title">Auditable reaction-mechanism research with TSPi</text>
+  <text x="60" y="99" class="subtitle">From a falsifiable scientific claim to validated, provenance-preserving mechanistic conclusions</text>
+
+  <text x="60" y="147" class="section">SCIENTIFIC DIRECTION</text>
+  <text x="390" y="147" class="section">RESEARCH KERNEL &#183; CANONICAL STATE</text>
+  <text x="1190" y="147" class="section">READ-ONLY PROJECTION</text>
+
+  <!-- Root Agent -->
+  <g class="card">
+    <rect x="60" y="170" width="285" height="235" rx="16" fill="#183E56" stroke="#15364A" stroke-width="1.8"/>
+  </g>
+  <circle cx="94" cy="211" r="18" fill="#E9C46A"/>
+  <path d="M94 222v-12m0 0-10-10m10 10 10-10m-10 10h-14m14 0h14" fill="none" stroke="#183E56" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="125" y="218" class="heading inverse">Root Agent</text>
+  <text x="84" y="263" class="body inverse">Claim / hypothesis</text>
+  <text x="84" y="288" class="body inverse">Falsifier / stopping rule</text>
+  <text x="84" y="313" class="body inverse">Method and branch choice</text>
+  <line x1="84" y1="337" x2="321" y2="337" stroke="#6E95A8" stroke-width="1" opacity=".55"/>
+  <text x="84" y="364" class="small inverse" opacity=".85">scientific interpretation and control</text>
+  <text x="84" y="388" class="small inverse" opacity=".85">never delegated to a plugin</text>
+
+  <!-- Research Kernel -->
+  <g class="card">
+    <rect x="390" y="170" width="730" height="430" rx="18" fill="#EEF8F6" stroke="#65AAA2" stroke-width="2"/>
+  </g>
+  <circle cx="429" cy="211" r="17" fill="#CDEAE5"/>
+  <path d="M420 211h18M429 202v18" stroke="#1D8078" stroke-width="2.6" stroke-linecap="round"/>
+  <text x="458" y="218" class="heading">Research Kernel</text>
+  <text x="428" y="247" class="body">schema, references, revisions, provenance, and transactional mutation</text>
+
+  <!-- Kernel state cards -->
+  <g>
+    <rect x="428" y="278" width="203" height="145" rx="12" fill="#FFFFFF" stroke="#1D8078" stroke-width="1.8"/>
+    <circle cx="458" cy="310" r="14" fill="#D8F0EC"/>
+    <path d="M450 315l8-11 8 11m-16 0h16" fill="none" stroke="#1D8078" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="484" y="316" class="subheading">Research graph</text>
+    <text x="448" y="353" class="small-strong">Claim / Node</text>
+    <text x="448" y="376" class="small">dependencies &#183; scope</text>
+    <text x="448" y="399" class="small">deliverable &#183; outcome</text>
+  </g>
+  <g>
+    <rect x="653" y="278" width="203" height="145" rx="12" fill="#FFFFFF" stroke="#665B9B" stroke-width="1.8"/>
+    <circle cx="683" cy="310" r="14" fill="#E8E6F6"/>
+    <path d="M677 303h10l4 4v14h-14zM687 303v5h4M680 314h8M680 319h7" fill="none" stroke="#665B9B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="709" y="316" class="subheading">Provenance</text>
+    <text x="673" y="353" class="small-strong">Artifact references</text>
+    <text x="673" y="376" class="small">digest &#183; activity &#183; revision</text>
+    <text x="673" y="399" class="small">raw output stays inspectable</text>
+  </g>
+  <g>
+    <rect x="878" y="278" width="203" height="145" rx="12" fill="#FFFFFF" stroke="#C45B48" stroke-width="1.8"/>
+    <circle cx="908" cy="310" r="14" fill="#F6E0DB"/>
+    <path d="M899 310l6 6 11-13" fill="none" stroke="#C45B48" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="934" y="316" class="subheading">Gate contract</text>
+    <text x="898" y="353" class="small-strong">GateSpec &#8594; GateResult</text>
+    <text x="898" y="376" class="small">NodeGate: close a Node</text>
+    <text x="898" y="399" class="small">ClaimGate: test a Claim</text>
+  </g>
+
+  <line x1="428" y1="459" x2="1081" y2="459" stroke="#A7D1CC" stroke-width="1.5"/>
+  <rect x="428" y="484" width="653" height="75" rx="11" fill="#DFF2EF" stroke="#9DCBC5" stroke-width="1.2"/>
+  <text x="452" y="515" class="subheading">ts_state</text>
+  <text x="585" y="515" class="body">read canonical workspace state</text>
+  <text x="452" y="542" class="subheading">ts_change</text>
+  <text x="585" y="542" class="body">commit explicit, auditable scientific decisions</text>
+  <text x="1057" y="531" class="small-strong" text-anchor="end">one mutation boundary</text>
+
+  <!-- Read-only projection -->
+  <g class="card">
+    <rect x="1190" y="170" width="330" height="235" rx="16" fill="#FFFFFF" stroke="#4E7C90" stroke-width="1.8"/>
+  </g>
+  <circle cx="1228" cy="213" r="18" fill="#E0EFF3"/>
+  <rect x="1218" y="204" width="20" height="14" rx="2" fill="none" stroke="#4E7C90" stroke-width="2"/>
+  <path d="M1223 223h10m-5-5v5" stroke="#4E7C90" stroke-width="2" stroke-linecap="round"/>
+  <text x="1259" y="220" class="heading">Research Map</text>
+  <text x="1218" y="267" class="body">Claim &#8594; Node &#8594; evidence &#8594; gate</text>
+  <text x="1218" y="294" class="body">dependencies &#183; outcomes &#183; stale history</text>
+  <line x1="1218" y1="320" x2="1490" y2="320" stroke="#D5E2E5" stroke-width="1"/>
+  <text x="1218" y="351" class="small-strong">projection only</text>
+  <text x="1218" y="376" class="small">no second scientific state</text>
+
+  <!-- Main connectors -->
+  <path d="M345 287H390" class="flow"/>
+  <text x="368" y="269" class="small-strong" text-anchor="middle">typed proposal</text>
+  <path d="M1120 286H1190" class="evidence-flow"/>
+  <text x="1155" y="268" class="small-strong" text-anchor="middle" fill="#1D8078">read-only</text>
+
+  <!-- Capability and evidence plane -->
+  <text x="60" y="660" class="section">EXECUTION + EVIDENCE PLANE</text>
+  <g class="card">
+    <rect x="60" y="688" width="425" height="205" rx="16" fill="#FFF9EC" stroke="#C89535" stroke-width="1.8"/>
+  </g>
+  <text x="86" y="727" class="heading">Skill / plugin execution</text>
+  <text x="86" y="756" class="body">ts_calc &#183; ts_remote &#183; ts_render</text>
+  <text x="86" y="785" class="small">geometry generation &#183; TS optimization</text>
+  <text x="86" y="809" class="small">frequencies &#183; IRC &#183; competing paths</text>
+  <rect x="86" y="835" width="287" height="29" rx="14.5" fill="#F6E9BE"/>
+  <text x="229.5" y="855" class="small-strong" text-anchor="middle">tool success &#8800; scientific proof</text>
+
+  <g class="card">
+    <rect x="548" y="688" width="485" height="205" rx="16" fill="#F4F8FC" stroke="#6A8EAF" stroke-width="1.8"/>
+  </g>
+  <text x="575" y="727" class="heading">Evidence curation</text>
+  <text x="575" y="756" class="body">artifact &#8594; candidate &#8594; verified semantic record</text>
+  <g>
+    <circle cx="594" cy="814" r="9" fill="#FFFFFF" stroke="#6A8EAF" stroke-width="2"/>
+    <circle cx="774" cy="814" r="9" fill="#FFFFFF" stroke="#6A8EAF" stroke-width="2"/>
+    <circle cx="959" cy="814" r="9" fill="#D9E8F3" stroke="#6A8EAF" stroke-width="2"/>
+    <path d="M603 814H765M783 814H950" fill="none" stroke="#6A8EAF" stroke-width="2.8" stroke-linecap="round" marker-end="url(#arrow-navy)"/>
+    <text x="594" y="848" class="small" text-anchor="middle">raw artifact</text>
+    <text x="774" y="848" class="small" text-anchor="middle">Root verifies</text>
+    <text x="959" y="848" class="small" text-anchor="middle">Observation / Finding</text>
+  </g>
+
+  <g class="card">
+    <rect x="1096" y="688" width="424" height="205" rx="16" fill="#FFF4F0" stroke="#C45B48" stroke-width="1.8"/>
+  </g>
+  <text x="1123" y="727" class="heading">Scientific interpretation</text>
+  <text x="1123" y="756" class="body">NodeGate closes work; ClaimGate evaluates meaning</text>
+  <text x="1123" y="791" class="small-strong">supported &#183; refuted &#183; open &#183; stale</text>
+  <text x="1123" y="823" class="small">Root updates the Claim or creates a dependent Node</text>
+  <text x="1123" y="849" class="small">failed attempts remain visible history</text>
+
+  <!-- Plane connectors -->
+  <path d="M530 600C530 638 300 638 272 688" class="flow"/>
+  <text x="390" y="642" class="small-strong" text-anchor="middle">dispatch bounded action</text>
+  <path d="M485 790H548" class="flow"/>
+  <text x="516" y="772" class="small-strong" text-anchor="middle">artifacts</text>
+  <path d="M790 688C790 643 795 623 795 600" class="evidence-flow"/>
+  <text x="820" y="648" class="small-strong" fill="#1D8078">promote after verification</text>
+  <path d="M1018 600C1040 637 1180 641 1220 688" class="evidence-flow"/>
+  <text x="1122" y="642" class="small-strong" fill="#1D8078" text-anchor="middle">gate evaluation</text>
+
+  <!-- Feedback loop -->
+  <path d="M1504 790H1550V130H210V170" class="feedback"/>
+  <rect x="1003" y="112" width="270" height="27" rx="13.5" fill="#FFF1ED"/>
+  <text x="1138" y="131" class="small-strong" text-anchor="middle" fill="#B74C3B">next node &#183; branch &#183; backtrack</text>
+
+  <!-- Legend -->
+  <line x1="60" y1="930" x2="92" y2="930" class="flow"/>
+  <text x="104" y="935" class="small">action / artifact</text>
+  <line x1="260" y1="930" x2="292" y2="930" class="evidence-flow"/>
+  <text x="304" y="935" class="small">verified evidence / projection</text>
+  <line x1="555" y1="930" x2="587" y2="930" class="feedback"/>
+  <text x="599" y="935" class="small">scientific decision feedback</text>
+  <text x="1520" y="935" class="small" text-anchor="end">TSPi &#183; reaction-mechanism framework &#183; 2026</text>
+</svg>

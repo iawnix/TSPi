@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tspi.iawnix.xyz/schema/tspi-session-control-request-v1.json",
+  "title": "TSPi session control request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "session_id", "action"],
+  "properties": {
+    "schema_version": { "const": "tspi-session-control/1" },
+    "request_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,160}$" },
+    "session_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$" },
+    "action": { "enum": ["snapshot", "prompt", "abort", "queue"] },
+    "message": { "type": "string", "minLength": 1, "maxLength": 1000000 },
+    "images": {
+      "type": ["array", "null"],
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "data", "mimeType"],
+        "properties": {
+          "type": { "const": "image" },
+          "data": { "type": "string" },
+          "mimeType": { "type": "string", "minLength": 1, "maxLength": 128 }
+        }
+      }
+    },
+    "operation_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "mode": { "enum": ["steer", "follow_up", "next_run"] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "action": { "const": "prompt" } } },
+      "then": { "required": ["message"] }
+    },
+    {
+      "if": { "properties": { "action": { "const": "abort" } } },
+      "then": { "required": ["operation_id"] }
+    },
+    {
+      "if": { "properties": { "action": { "const": "queue" } } },
+      "then": { "required": ["message", "mode"] }
+    }
+  ]
+}

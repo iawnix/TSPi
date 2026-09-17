@@ -84,6 +84,45 @@ async function runNativeClient(root, ...arguments_) {
   });
 }
 
+async function startNativeGateway(root, socket, sessionId) {
+  const child = spawn(process.execPath, [
+    "apps/app-server/pi-app-server.mjs", "gateway", "--source-root", sourceRoot,
+    "--connect", `unix://${socket}`, "--session-id", sessionId,
+    "--port", "0", "--auth-token", "gateway-test-token",
+  ], {
+    cwd: process.cwd(),
+    env: { ...process.env, PI_EXPERIMENTAL: "1", PI_OFFLINE: "1", PI_CODING_AGENT_DIR: join(root, "agent") },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  let errors = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => { output += chunk; });
+  child.stderr.on("data", (chunk) => { errors += chunk; });
+  const address = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`native gateway did not start: ${output}${errors}`)), 15_000);
+    child.stdout.on("data", () => {
+      const match = output.match(/^Gateway: (http:\/\/[^\n]+)$/m);
+      if (match) {
+        clearTimeout(timer);
+        resolve(match[1]);
+      }
+    });
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("exit", (code) => {
+      if (code !== null && code !== 0) {
+        clearTimeout(timer);
+        reject(new Error(`native gateway exited ${code}: ${output}${errors}`));
+      }
+    });
+  });
+  return { child, address };
+}
+
 test("native Pi app server rejects mode-incompatible arguments", { skip: !sourceRoot }, () => {
   const cases = [
     {
@@ -103,6 +142,12 @@ test("native Pi app server rejects mode-incompatible arguments", { skip: !source
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, new RegExp(fixture.message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+  const gateway = spawnSync(process.execPath, ["apps/app-server/pi-app-server.mjs", "gateway", "--source-root", sourceRoot], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  assert.notEqual(gateway.status, 0);
+  assert.match(gateway.stderr, /gateway requires --connect/);
 });
 
 test("native Pi app server starts from the pinned source entrypoint", { skip: !sourceRoot }, async () => {
@@ -225,6 +270,47 @@ test("native Pi app server restores and reattaches a persisted session after res
     await client?.dispose().catch(() => {});
     if (first) await stopNativeServer(first.child);
     if (second) await stopNativeServer(second.child);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("native session-control gateway attaches the existing Host session", { skip: !sourceRoot }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-native-gateway-"));
+  await mkdir(join(root, "agent"), { recursive: true });
+  await writeFile(join(root, "agent", "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test-key" } }), { mode: 0o600 });
+  const server = await startNativeServer(root);
+  let serverClient;
+  let services;
+  let backgroundContext;
+  let gateway;
+  try {
+    const fromSource = (relative) => import(pathToFileURL(join(sourceRoot, relative)).href);
+    ({ BACKGROUND_CONTEXT: backgroundContext } = await fromSource("packages/chord/src/context/index.ts"));
+    const { Client } = await fromSource("packages/client/src/index.ts");
+    const { createUnixTransportFactory } = await fromSource("packages/client/src/unix.ts");
+    const { SessionManagement } = await fromSource("packages/coding-agent/src/experimental/services/sessions.ts");
+    const { createServerServiceBinding } = await fromSource("packages/coding-agent/test/experimental-service-binding.ts");
+    serverClient = await Client.connect({
+      serverId: server.serverId,
+      transportFactory: createUnixTransportFactory({ path: server.socket }),
+    });
+    services = createServerServiceBinding(serverClient, { services: [SessionManagement] });
+    await services.ready(backgroundContext);
+    const session = await services.use(SessionManagement).create({ id: "gateway-attach" }, backgroundContext);
+
+    gateway = await startNativeGateway(root, server.socket, session.sessionId);
+    const headers = { Authorization: "Bearer gateway-test-token" };
+    const health = await fetch(`${gateway.address}/health`, { headers });
+    assert.equal(health.status, 200);
+    assert.equal((await health.json()).session_id, session.sessionId);
+    const snapshot = await fetch(`${gateway.address}/v1/session/${session.sessionId}/snapshot`, { headers });
+    assert.equal(snapshot.status, 200);
+    assert.equal((await snapshot.json()).snapshot.lane, "main");
+  } finally {
+    if (gateway) await stopNativeServer(gateway.child);
+    await services?.dispose(backgroundContext).catch(() => {});
+    await serverClient?.dispose().catch(() => {});
+    await stopNativeServer(server.child);
     await rm(root, { recursive: true, force: true });
   }
 });

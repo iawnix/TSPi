@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PIN_PATH = ROOT / "config" / "pi-source.json"
 PATCH_PATH = ROOT / "config" / "pi-worker-entry.patch"
 MULTI_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace.patch"
+SOURCE_RESOLVER_PATCH_PATH = ROOT / "config" / "pi-source-resolver.patch"
 
 
 class PiSourceError(RuntimeError):
@@ -54,6 +55,9 @@ def verify(source: Path) -> str:
     sessions_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "sessions.ts"
     if "tspi.workspace-directory" not in sessions_path.read_text(encoding="utf-8"):
         raise PiSourceError(f"Pi source is missing the TSPi multi-workspace patch: {source}")
+    resolver_path = source / "packages" / "coding-agent" / "src" / "experimental" / "source-resolver.ts"
+    if 'pattern === "typebox"' not in resolver_path.read_text(encoding="utf-8"):
+        raise PiSourceError(f"Pi source is missing the TSPi source resolver patch: {source}")
     return commit
 
 
@@ -77,6 +81,16 @@ def apply_multi_workspace_patch(source: Path) -> None:
         raise PiSourceError(f"failed to apply TSPi multi-workspace patch: {exc}") from exc
 
 
+def apply_source_resolver_patch(source: Path) -> None:
+    resolver_path = source / "packages" / "coding-agent" / "src" / "experimental" / "source-resolver.ts"
+    if 'pattern === "typebox"' in resolver_path.read_text(encoding="utf-8"):
+        return
+    try:
+        subprocess.run(["git", "-C", str(source), "apply", str(SOURCE_RESOLVER_PATCH_PATH)], check=True, text=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PiSourceError(f"failed to apply TSPi source resolver patch: {exc}") from exc
+
+
 def clone(destination: Path) -> Path:
     pin = _pin()
     if destination.exists():
@@ -90,6 +104,7 @@ def clone(destination: Path) -> Path:
         raise PiSourceError(f"failed to clone pinned Pi source: {exc}") from exc
     apply_worker_patch(destination)
     apply_multi_workspace_patch(destination)
+    apply_source_resolver_patch(destination)
     verify(destination)
     return destination
 
@@ -101,6 +116,7 @@ def install(install_root: Path) -> Path:
     if destination.exists():
         apply_worker_patch(destination)
         apply_multi_workspace_patch(destination)
+        apply_source_resolver_patch(destination)
         verify(destination)
         if not (destination / "node_modules").is_dir():
             _install_dependencies(destination)

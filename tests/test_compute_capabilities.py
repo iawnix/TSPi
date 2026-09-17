@@ -57,11 +57,12 @@ def test_catalog_describes_executor_contracts_without_strategy_routing() -> None
     assert all("candidate_strategies" not in item for item in capabilities.values())
 
 
-def test_capability_effects_separate_local_preparation_from_remote_execution() -> None:
+def test_capability_effects_advertise_both_local_and_remote_execution() -> None:
     descriptor = resolve_capability("gaussian.opt_freq", "1").public()
 
     assert set(descriptor["effects"]) == {
         "local_prepare",
+        "local_compute",
         "local_parse",
         "remote_compute",
     }

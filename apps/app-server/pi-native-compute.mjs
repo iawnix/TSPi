@@ -49,9 +49,9 @@ const REMOTE_RESOURCES_PARAMETER = Type.Object({
   ompthreads: Type.Optional(Type.Integer({ minimum: 1 })),
 }, { additionalProperties: false });
 const EXECUTION_TARGET_PARAMETER = Type.Object({
-  kind: Type.Literal("remote"),
-  profile: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" }),
-  resources: REMOTE_RESOURCES_PARAMETER,
+  kind: Type.Union([Type.Literal("local"), Type.Literal("remote")]),
+  profile: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" })),
+  resources: Type.Optional(REMOTE_RESOURCES_PARAMETER),
 }, { additionalProperties: false });
 const TS_CALC_PARAMETERS = Type.Object({
   operation: Type.Union(OPERATIONS.map((value) => Type.Literal(value))),
@@ -461,6 +461,22 @@ function validatePublicComputeParameters(input) {
   const allowed = new Set(["operation", "nodeId", ...COMPUTE_OPERATION_FIELDS[input.operation]]);
   const unexpected = Object.keys(input).filter((key) => !allowed.has(key));
   if (unexpected.length) throw new Error(`${input.operation} does not accept: ${unexpected.sort().join(", ")}`);
+  if (input.operation === "launch") validateExecutionTarget(input.executionTarget);
+}
+
+function validateExecutionTarget(target) {
+  if (!isPlainObject(target) || (target.kind !== "local" && target.kind !== "remote")) {
+    throw new Error("launch requires executionTarget.kind=local or remote");
+  }
+  if (target.kind === "local") {
+    if (Object.keys(target).some((key) => key !== "kind")) {
+      throw new Error("local executionTarget only accepts kind");
+    }
+    return;
+  }
+  if (typeof target.profile !== "string" || !isPlainObject(target.resources)) {
+    throw new Error("remote executionTarget requires profile and resources");
+  }
 }
 
 function buildCalculationRequest(request) {
@@ -471,7 +487,7 @@ function buildCalculationRequest(request) {
     || !request.executionTarget
     || !request.inputArtifacts?.length
   ) {
-    throw new Error("launch requires purpose, capability, capabilityVersion, inputArtifacts, and a remote executionTarget");
+    throw new Error("launch requires purpose, capability, capabilityVersion, inputArtifacts, and an executionTarget");
   }
   if (!request.attemptKind) throw new Error("launch requires an explicit attemptKind");
   const sourceAttempt = request.sourceAttempt;
@@ -482,7 +498,31 @@ function buildCalculationRequest(request) {
     throw new Error(`${request.attemptKind} launch requires sourceAttempt.intentId and sourceAttempt.reason`);
   }
   const target = request.executionTarget;
-  if (target.kind !== "remote") throw new Error("launch requires executionTarget.kind=remote");
+  validateExecutionTarget(target);
+  if (target.kind === "local") {
+    return {
+      schema_version: "ts-calculation-request/5",
+      node_id: request.nodeId,
+      purpose: request.purpose,
+      attempt_kind: request.attemptKind,
+      lineage: sourceAttempt ? {
+        source_node: request.nodeId,
+        source_intent_id: sourceAttempt.intentId,
+        relation: request.attemptKind,
+        reason: sourceAttempt.reason,
+      } : null,
+      capability: request.capability,
+      capability_version: request.capabilityVersion,
+      input_artifacts: request.inputArtifacts.map((item) => ({
+        input_role: item.inputRole,
+        artifact_id: item.artifactId,
+      })),
+      parameters: request.parameters || {},
+      execution_target: { kind: "local" },
+      dry_run: false,
+    };
+  }
+  if (target.kind !== "remote") throw new Error("executionTarget.kind must be local or remote");
   const resources = isPlainObject(target.resources) ? target.resources : {};
   return {
     schema_version: "ts-calculation-request/5",

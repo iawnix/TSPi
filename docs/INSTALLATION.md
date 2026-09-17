@@ -46,6 +46,12 @@ discovery, Node pause/resume, and opt-in remote/model smoke commands.
 
 ## Configure Remote Execution
 
+Local calculation is available without a remote profile and runs the selected
+backend command in a durable Attempt-local subprocess. The input and output
+files remain in the local workspace. Choose `execution_target.kind=remote`
+only when the calculation should be submitted through the profile below;
+remote execution mirrors inputs temporarily and collects results back locally.
+
 Create `<install>/.pi/remote.toml` with an SSH host, scheduler (`torque` or
 `direct`), queue, resource limits, and remote software paths. Restrict the file
 to mode 0600, then run:
@@ -61,8 +67,48 @@ credentials into the mobile client.
 ## Configure Notifications
 
 Optional email notifications are configured in `<install>/.pi/notifications.toml`
-with mode 0600. The launcher validates the recipient and clawemail root before
-the App Server starts. Disable notifications by omitting the file.
+with mode 0600. The launcher validates the recipient and selected transport
+before the App Server starts. Disable notifications by omitting the file.
+
+Existing ClawEmail installations remain supported. For direct SMTP delivery,
+use an SMTP authorization code from a 163 or QQ mailbox (not the normal
+web-login password), and keep it outside the configuration file:
+
+The interactive `install.sh` flow now asks whether to configure email. For a
+non-interactive install, the same configuration can be supplied explicitly:
+
+```bash
+./install.sh \
+  --install-root "$HOME/.local/share/tspi" \
+  --non-interactive --yes --service-scope user \
+  --email-provider smtp --email-preset qq \
+  --email-recipient receiver@example.com \
+  --email-username sender@qq.com \
+  --email-password-file "$HOME/.config/tspi/qq-smtp-password"
+```
+
+The password file must already exist and have mode `0600` for a
+non-interactive install. The interactive flow prompts for the authorization
+code without echoing it and creates the file automatically below the private
+installation state directory. Use `--email-password-env NAME` instead when the
+Host service environment provides the secret.
+
+```toml
+[notifications.email]
+enabled = true
+provider = "smtp"
+preset = "qq"                 # "163" or "qq"
+recipient = "receiver@example.com"
+from_address = "sender@qq.com"
+username = "sender@qq.com"
+password_env = "TSPI_EMAIL_PASSWORD"
+```
+
+The SMTP presets use `smtp.163.com` or `smtp.qq.com` on port 465 with implicit
+TLS by default. QQ can use port 587 with `security = "starttls"`. Set the
+`TSPI_EMAIL_PASSWORD` environment variable in the Host service environment,
+or use a private 0600 `password_file` instead. POP3 and IMAP are not required
+for TSPi notifications because this capability only sends mail.
 
 ## Start The Installation Host
 
@@ -78,6 +124,12 @@ With systemd enabled, the same Host is managed as:
 ```bash
 systemctl --user start ts-app-server-tspi.service
 ```
+
+The user unit explicitly enables the selected Package server extension set
+(`TSPI_SERVER_EXTENSIONS=ts-workflow-native`). The App Server verifies the
+manifest and entry digest at each Worker startup. Do not place client code or
+an ad-hoc path in this allowlist; development-only experiments belong in
+`--standalone`.
 
 Attach the native terminal to a project in another shell:
 

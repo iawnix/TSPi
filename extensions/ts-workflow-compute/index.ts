@@ -97,10 +97,13 @@ const REMOTE_RESOURCES_PARAMETER = Type.Object({
   mpiprocs: Type.Optional(Type.Integer({ minimum: 1 })),
   ompthreads: Type.Optional(Type.Integer({ minimum: 1 })),
 }, { additionalProperties: false });
+// Keep this public schema compact; the operation-specific validator below
+// enforces the conditional required fields without duplicating the full
+// remote branch in the model-facing contract.
 const EXECUTION_TARGET_PARAMETER = Type.Object({
-  kind: Type.Literal("remote"),
-  profile: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" }),
-  resources: REMOTE_RESOURCES_PARAMETER,
+  kind: Type.Union([Type.Literal("local"), Type.Literal("remote")]),
+  profile: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" })),
+  resources: Type.Optional(REMOTE_RESOURCES_PARAMETER),
 }, { additionalProperties: false });
 const COMPUTE_PARAMETERS = Type.Object({
   ...COMPUTE_COMMON_PARAMETERS,
@@ -525,7 +528,7 @@ function createScopedComputeTools(
     add(
       "ts_workspace_compute_submit",
       "TS Compute Submit",
-      "Submit the pre-bound remote calculation. Call exactly once and never retry.",
+      "Submit the pre-bound local or remote calculation. Call exactly once and never retry.",
       (signal) => runComputeJson(pi, "submit", root, [
         "--intent-id", request.intentId as string,
         "--expected-intent-digest", request.intentDigest as string,
@@ -536,7 +539,7 @@ function createScopedComputeTools(
     add(
       "ts_workspace_compute_status",
       "TS Compute Status",
-      "Poll the pre-bound allowlisted remote calculation. Call this first and exactly once.",
+      "Poll the pre-bound allowlisted local or remote calculation. Call this first and exactly once.",
       (signal) => runComputeJson(pi, "status", root, [
         "--intent-id", request.intentId as string,
         "--expected-intent-digest", request.intentDigest as string,
@@ -588,7 +591,7 @@ function createScopedComputeTools(
     add(
       "ts_workspace_compute_cancel",
       "TS Compute Cancel",
-      "Cancel the pre-bound remote calculation. Call exactly once and never retry.",
+      "Cancel the pre-bound local or remote calculation. Call exactly once and never retry.",
       (signal) => {
         const args = [
           "--intent-id", request.intentId as string,
@@ -743,6 +746,22 @@ function validatePublicComputeParameters(input: ComputeRequest & { root?: string
   if (unexpected.length) {
     throw new Error(`${input.operation} does not accept: ${unexpected.sort().join(", ")}`);
   }
+  if (input.operation === "launch") validateExecutionTarget(input.executionTarget);
+}
+
+function validateExecutionTarget(target: Record<string, unknown> | undefined): void {
+  if (!isPlainObject(target) || (target.kind !== "local" && target.kind !== "remote")) {
+    throw new Error("launch requires executionTarget.kind=local or remote");
+  }
+  if (target.kind === "local") {
+    if (Object.keys(target).some((key) => key !== "kind")) {
+      throw new Error("local executionTarget only accepts kind");
+    }
+    return;
+  }
+  if (typeof target.profile !== "string" || !isPlainObject(target.resources)) {
+    throw new Error("remote executionTarget requires profile and resources");
+  }
 }
 
 function buildCalculationRequest(request: ComputeRequest): Record<string, unknown> {
@@ -753,7 +772,7 @@ function buildCalculationRequest(request: ComputeRequest): Record<string, unknow
     || !request.executionTarget
     || !request.inputArtifacts?.length
   ) {
-    throw new Error("launch requires purpose, capability, capabilityVersion, inputArtifacts, and a remote executionTarget");
+    throw new Error("launch requires purpose, capability, capabilityVersion, inputArtifacts, and an executionTarget");
   }
   const sourceAttempt = request.sourceAttempt;
   if (!request.attemptKind) throw new Error("launch requires an explicit attemptKind");
@@ -764,22 +783,27 @@ function buildCalculationRequest(request: ComputeRequest): Record<string, unknow
     throw new Error(`${request.attemptKind} launch requires sourceAttempt.intentId and sourceAttempt.reason`);
   }
   const target = request.executionTarget;
-  if (target.kind !== "remote") throw new Error("launch requires executionTarget.kind=remote");
-  const resources = isPlainObject(target.resources) ? target.resources : {};
-  const executionTarget: Record<string, unknown> = {
-    kind: "remote",
-    profile: target.profile,
-    resources: {
-      queue: resources.queue,
-      nodes: resources.nodes,
-      ncpus: resources.ncpus,
-      memory: resources.memory,
-      walltime: resources.walltime,
-      ngpus: resources.ngpus,
-      mpiprocs: resources.mpiprocs ?? null,
-      ompthreads: resources.ompthreads ?? null,
-    },
-  };
+  validateExecutionTarget(target);
+  const executionTarget: Record<string, unknown> = target.kind === "local"
+    ? { kind: "local" }
+    : (() => {
+        if (target.kind !== "remote") throw new Error("executionTarget.kind must be local or remote");
+        const resources = isPlainObject(target.resources) ? target.resources : {};
+        return {
+          kind: "remote",
+          profile: target.profile,
+          resources: {
+            queue: resources.queue,
+            nodes: resources.nodes,
+            ncpus: resources.ncpus,
+            memory: resources.memory,
+            walltime: resources.walltime,
+            ngpus: resources.ngpus,
+            mpiprocs: resources.mpiprocs ?? null,
+            ompthreads: resources.ompthreads ?? null,
+          },
+        };
+      })();
   return {
     schema_version: "ts-calculation-request/5",
     node_id: request.nodeId,

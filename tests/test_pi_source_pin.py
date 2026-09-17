@@ -19,6 +19,9 @@ def test_pi_source_pin_is_explicit_and_valid() -> None:
     patch = (ROOT / "config" / "pi-worker-entry.patch").read_text(encoding="utf-8")
     assert "PI_SESSION_WORKER_ENTRY" in patch
     assert "packages/coding-agent/src/experimental/process.ts" in patch
+    resolver_patch = (ROOT / "config" / "pi-source-resolver.patch").read_text(encoding="utf-8")
+    assert "source-resolver.ts" in resolver_patch
+    assert "resolveTypeboxPath" in resolver_patch
 
 
 def test_prepare_pi_source_verifies_a_matching_checkout() -> None:

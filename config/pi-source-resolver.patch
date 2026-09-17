@@ -1,0 +1,45 @@
+diff --git a/packages/coding-agent/src/experimental/source-resolver.ts b/packages/coding-agent/src/experimental/source-resolver.ts
+index e3d022206..bef8e7b5b 100644
+--- a/packages/coding-agent/src/experimental/source-resolver.ts
++++ b/packages/coding-agent/src/experimental/source-resolver.ts
+@@ -27,7 +27,7 @@ const paths = tsconfig.compilerOptions?.paths;
+ if (!paths) throw new Error(`Source runtime requires compilerOptions.paths in ${tsconfigPath}`);
+ 
+ const aliases: SourceAlias[] = Object.entries(paths)
+-	.filter(([pattern]) => pattern.startsWith("@earendil-works/"))
++	.filter(([pattern]) => pattern.startsWith("@earendil-works/") || pattern === "typebox")
+ 	.map(([pattern, replacements]) => {
+ 		const wildcard = pattern.indexOf("*");
+ 		if (wildcard !== -1 && pattern.indexOf("*", wildcard + 1) !== -1) {
+@@ -44,6 +44,8 @@ const aliases: SourceAlias[] = Object.entries(paths)
+ 
+ registerHooks({
+ 	resolve(specifier, context, nextResolve) {
++		const typeboxPath = resolveTypeboxPath(specifier);
++		if (typeboxPath) return { url: pathToFileURL(typeboxPath).href, shortCircuit: true };
+ 		let matchedPattern: string | undefined;
+ 		for (const alias of aliases) {
+ 			const wildcard = matchAlias(alias, specifier);
+@@ -55,12 +57,22 @@ registerHooks({
+ 			}
+ 		}
+ 		if (matchedPattern) {
++			const packagePath = resolveTypeboxPath(specifier);
++			if (packagePath) return { url: pathToFileURL(packagePath).href, shortCircuit: true };
+ 			throw new Error(`Source runtime could not resolve ${specifier} through tsconfig path ${matchedPattern}`);
+ 		}
+ 		return nextResolve(specifier, context);
+ 	},
+ });
+ 
++function resolveTypeboxPath(specifier: string): string | undefined {
++	const relative = specifier === "typebox" ? "index.mjs" : specifier.startsWith("typebox/") ? `${specifier.slice(8)}/index.mjs` : undefined;
++	if (relative === undefined) return undefined;
++	const candidate = resolve(repositoryRoot, "node_modules/typebox/build", relative);
++	const rootPrefix = resolve(repositoryRoot, "node_modules/typebox/build") + sep;
++	return candidate.startsWith(rootPrefix) && existsSync(candidate) && statSync(candidate).isFile() ? candidate : undefined;
++}
++
+ function matchAlias(alias: SourceAlias, specifier: string): string | undefined {
+ 	if (!alias.pattern.includes("*")) return specifier === alias.pattern ? "" : undefined;
+ 	if (!specifier.startsWith(alias.prefix) || !specifier.endsWith(alias.suffix)) return undefined;

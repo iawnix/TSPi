@@ -258,8 +258,8 @@ def _install_captured_package(
         raise SuiteReleaseError("TSPi Package archive does not contain the exact declared component set")
 
     install_root = prepare_install_root(install_root)
-    validate_launcher_slots(install_root, manifest["components"])
     package_home = ensure_private_directory(install_root / ".pi" / "packages" / "tspi")
+    validate_launcher_slots(install_root, package_home, manifest["components"])
     releases_root = ensure_private_directory(package_home / "releases")
     target = releases_root / manifest["release_id"]
     created = False
@@ -604,14 +604,21 @@ def install_launchers(
     if "web" in components:
         enabled.add("TSWeb")
     for name, target in targets.items():
+        link = install_root / name
         if name not in enabled:
+            if link.is_symlink():
+                releases_root = (package_home / "releases").resolve()
+                if not _launcher_points_into_package_store(link, releases_root):
+                    raise SuiteReleaseError(f"stale optional component entrypoint escapes the package store: {link}")
+                link.unlink()
             continue
-        install_symlink(install_root / name, target)
+        install_symlink(link, target)
     return {name: str(install_root / name) for name in enabled}
 
 
 def validate_launcher_slots(
     install_root: Path,
+    package_home: Path,
     components: dict[str, Any],
 ) -> None:
     enabled = {"TSPi"}
@@ -626,13 +633,18 @@ def validate_launcher_slots(
         raise SuiteReleaseError(
             "refusing to replace non-symlink package entrypoints: " + ", ".join(conflicts)
         )
-    stale = [
-        str(install_root / name)
-        for name in LAUNCHER_PATHS
-        if name not in enabled and (install_root / name).is_symlink()
-    ]
-    if stale:
-        raise SuiteReleaseError("stale optional component entrypoints exist: " + ", ".join(stale))
+    releases_root = (package_home / "releases").resolve()
+    for name in LAUNCHER_PATHS:
+        link = install_root / name
+        if name not in enabled and link.is_symlink() and not _launcher_points_into_package_store(link, releases_root):
+            raise SuiteReleaseError(f"stale optional component entrypoint escapes the package store: {link}")
+
+
+def _launcher_points_into_package_store(link: Path, releases_root: Path) -> bool:
+    try:
+        return link.resolve(strict=False).is_relative_to(releases_root)
+    except (OSError, RuntimeError) as error:
+        raise SuiteReleaseError(f"cannot inspect optional component entrypoint: {link}") from error
 
 
 def install_symlink(link: Path, target: Path) -> None:

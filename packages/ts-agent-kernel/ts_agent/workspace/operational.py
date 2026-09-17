@@ -613,6 +613,7 @@ def _operational_files(
         "nodes/*/attempts/*/*_reconciliation.json",
         "nodes/*/attempts/*/*_receipt.json",
         "nodes/*/attempts/*/outputs/calculation_result.json",
+        "nodes/*/attempts/*/execution/*/*.json",
         "nodes/*/activities/*/*.json",
         "nodes/*/dispatch/*.json",
         "operations/activities/*/*.json",

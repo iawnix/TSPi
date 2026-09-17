@@ -146,7 +146,7 @@ function validateComputeInputs(value) {
     node_id: nodeId,
     intent_id: intentId,
     intent_digest: value.intent_digest,
-    execution_kind: requireEnum(value.execution_kind, "inputs.execution_kind", ["remote"]),
+    execution_kind: requireEnum(value.execution_kind, "inputs.execution_kind", ["local", "remote"]),
     required_actions: uniqueEnumArray(value.required_actions, "inputs.required_actions", COMPUTE_ACTIONS, 2),
     optional_actions: uniqueEnumArray(value.optional_actions, "inputs.optional_actions", COMPUTE_ACTIONS, 2),
     tail,
@@ -201,8 +201,8 @@ function validateComputePlan(operation, inputs) {
   if (JSON.stringify(inputs.optional_actions) !== JSON.stringify(expected.optional)) {
     throw new Error(`Compute ${operation} optional_actions do not match the fixed plan`);
   }
-  if (inputs.execution_kind !== "remote") {
-    throw new Error(`Compute ${operation} requires remote execution`);
+  if (!["local", "remote"].includes(inputs.execution_kind)) {
+    throw new Error(`Compute ${operation} requires local or remote execution`);
   }
   if ((operation === "inspect") !== (inputs.tail !== null)) {
     throw new Error(`Compute ${operation} tail binding does not match the fixed plan`);
@@ -315,8 +315,8 @@ function validateConstraints(value) {
   for (const key of ["canonical_workspace_mutation", "scientific_decision", "recursive_delegation"]) {
     if (value[key] !== false) throw new Error(`constraints.${key} must be false`);
   }
-  if (value.remote_authority !== "execution_mirror") {
-    throw new Error("constraints.remote_authority must be execution_mirror");
+  if (!["execution_mirror", "local_process"].includes(value.remote_authority)) {
+    throw new Error("constraints.remote_authority must be execution_mirror or local_process");
   }
   if (typeof value.external_side_effects !== "boolean") {
     throw new Error("constraints.external_side_effects must be boolean");
@@ -325,7 +325,7 @@ function validateConstraints(value) {
     canonical_workspace_mutation: false,
     scientific_decision: false,
     recursive_delegation: false,
-    remote_authority: "execution_mirror",
+    remote_authority: value.remote_authority,
     external_side_effects: value.external_side_effects,
   };
 }

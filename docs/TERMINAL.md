@@ -47,6 +47,21 @@ list projects and switch sessions without another service per project. It does
 not connect to the terminal process and does not require a local HTTP service,
 bridge secret, reverse proxy, or `TSPhoneServer`/`TSPhoneCtl` binary.
 
+## Browser control
+
+TS Web remains a read-only scientific projection by default. To control one
+existing Pi session from a browser, start the optional loopback adapter while
+the Host is running:
+
+```bash
+./TSPi --gateway --workspace reaction-a --session-id <session-id> \
+  --port 8767 --auth-token '<private-token>'
+```
+
+The adapter exposes the versioned `tspi-session-control/1` request contract and
+an SSE transcript stream. It attaches to the Host session and never starts a
+second Worker. Phone clients should continue using Pi Radius directly.
+
 ## Troubleshooting
 
 - `workspace is unavailable`: bootstrap the project, then ensure `TSPi --host`

@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import posixpath
+import signal
 import shutil
 import tempfile
 from dataclasses import asdict, replace
@@ -79,6 +80,7 @@ from .contracts import (
     validate_compute_contract,
 )
 from .task_validation import parsed_program_outcome, validate_parsed_task
+from . import local_lifecycle
 
 
 INTENT_SCHEMA = "calculation_intent.schema.json"
@@ -264,8 +266,6 @@ def preflight_calculation(
         _require_request_scope(intent, node_id, capability, capability_version)
         intent_ref = str(prepared_record["intent_ref"])
         execution_policy = _prepared_execution_policy(prepared_record)
-        if operation in {"submit", "inspect", "collect", "cancel"}:
-            _require_remote_execution(execution_policy, operation)
         if operation in {"submit", "cancel"} and intent.get("dry_run") is not False:
             raise ComputeContractError(f"{operation} requires an intent with dry_run=false")
         if operation == "parse":
@@ -297,11 +297,11 @@ def preflight_calculation(
         if operation == "submit" and (control is None or control.get("state") != "submitted"):
             verify_input_bindings(workspace, intent)
     if operation == "cancel" and status is None:
-        raise ComputeContractError("cancel requires a prior local submission status")
+        raise ComputeContractError("cancel requires a prior submission status")
     if operation == "cancel" and status is not None:
         _require_cancellable_status(status)
         if not isinstance(status.get("job_id"), str) or not status.get("job_id"):
-            raise ComputeContractError("cancel requires a prior inspect with a bound remote job_id")
+            raise ComputeContractError("cancel requires a prior inspect with a bound calculation job_id")
     return {
         "schema_version": "ts-compute-binding/1",
         "operation": operation,
@@ -404,6 +404,8 @@ def submit_calculation(
 ) -> dict[str, Any]:
     workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
     policy = _prepared_execution_policy(prepared)
+    if policy.get("kind") == "local":
+        return _submit_local_calculation(workspace, intent, prepared)
     _require_remote_execution(policy, "submit")
     if intent.get("dry_run") is not False:
         raise ComputeContractError("submit requires an intent with dry_run=false")
@@ -537,6 +539,8 @@ def calculation_status(
 ) -> dict[str, Any]:
     workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
     policy = _prepared_execution_policy(prepared)
+    if policy.get("kind") == "local":
+        return _local_calculation_status(workspace, intent, prepared)
     _require_remote_execution(policy, "inspect")
     config = _remote_job_config(workspace, intent, prepared)
     submitted = _read_control_result(workspace, intent, "submit")
@@ -593,6 +597,27 @@ def calculation_tail(
     if not 1 <= int(lines) <= 500:
         raise ComputeContractError("tail lines must be between 1 and 500")
     policy = _prepared_execution_policy(prepared)
+    if policy.get("kind") == "local":
+        receipt = _local_receipt(workspace, intent, prepared)
+        config = _local_job_config(workspace, intent, prepared)
+        text = local_lifecycle.tail(config, receipt, artifact or config.stdout_name, int(lines))
+        encoded = text.encode("utf-8")
+        truncated = len(encoded) > MAX_TAIL_BYTES
+        if truncated:
+            text = encoded[-MAX_TAIL_BYTES:].decode("utf-8", errors="replace")
+        return {
+            "schema_version": "ts-calculation-tail/1",
+            "intent_id": intent["intent_id"],
+            "node_id": intent["node_id"],
+            "capability": intent["capability"],
+            "capability_version": intent["capability_version"],
+            "capability_descriptor_digest": intent["capability_descriptor_digest"],
+            "expected_output_roles": list(intent["expected_output_roles"]),
+            "artifact": artifact or config.stdout_name,
+            "lines": int(lines),
+            "truncated": truncated,
+            "text": text,
+        }
     _require_remote_execution(policy, "inspect")
     config = _remote_job_config(workspace, intent, prepared)
     target = artifact or config.stdout_name
@@ -632,6 +657,8 @@ def collect_calculation(
 ) -> dict[str, Any]:
     workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
     policy = _prepared_execution_policy(prepared)
+    if policy.get("kind") == "local":
+        return _collect_local_calculation(workspace, intent, prepared, artifacts)
     _require_remote_execution(policy, "collect")
     expected_names = _expected_remote_names(prepared)
     selected = artifacts or expected_names
@@ -709,6 +736,320 @@ def collect_calculation(
     return result
 
 
+def _local_execution_dir(workspace: Path, intent: dict[str, Any]) -> Path:
+    base, _, _ = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
+    return workspace / base / "execution" / "local"
+
+
+def _local_run_ref(intent: dict[str, Any]) -> str:
+    base, _, _ = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
+    return f"{base}/execution/local"
+
+
+def _local_receipt_ref(intent: dict[str, Any]) -> str:
+    return f"{_local_run_ref(intent)}/local_receipt.json"
+
+
+def _local_job_config(
+    workspace: Path,
+    intent: dict[str, Any],
+    prepared: dict[str, Any],
+) -> local_lifecycle.LocalJobConfig:
+    prepared_task = prepared.get("prepared_task")
+    if not isinstance(prepared_task, dict):
+        raise ComputeContractError("prepared calculation is missing prepared_task")
+    input_refs = [str(ref) for ref in prepared_task.get("input_paths", [])]
+    command = [str(part) for part in prepared_task.get("command", [])]
+    rewrites = {ref: Path(ref).name for ref in input_refs}
+    expected = tuple(Path(str(ref)).name for ref in prepared_task.get("expected_artifacts", []))
+    local_command = [rewrites.get(part, part) for part in command]
+    stdin_name: str | None = None
+    if prepared_task.get("backend") == "gaussian":
+        if len(local_command) != 2 or local_command[1] not in {Path(ref).name for ref in input_refs}:
+            raise ComputeContractError("Gaussian local calculation must bind exactly one staged input")
+        stdin_name = local_command[1]
+        local_command = [local_command[0]]
+    run_dir = _local_execution_dir(workspace, intent)
+    _require_physical_compute_directory(workspace, run_dir, "local calculation run")
+    return local_lifecycle.LocalJobConfig(
+        intent_id=str(intent["intent_id"]),
+        run_dir=run_dir,
+        command=tuple(local_command),
+        input_paths=tuple(workspace / _workspace_ref(workspace, ref, read=True) for ref in input_refs),
+        expected_artifacts=expected,
+        environment={str(key): str(value) for key, value in (prepared_task.get("environment") or {}).items()},
+        stdin_name=stdin_name,
+        stdout_name=(
+            "local_job.stdout"
+            if _remote_stdout_name(prepared_task) == "remote_job.stdout"
+            else _remote_stdout_name(prepared_task)
+        ),
+    )
+
+
+def _local_receipt(
+    workspace: Path,
+    intent: dict[str, Any],
+    prepared: dict[str, Any],
+) -> local_lifecycle.LocalReceipt:
+    config = _local_job_config(workspace, intent, prepared)
+    try:
+        receipt = local_lifecycle.read_receipt(config)
+    except (OSError, ValueError, KeyError) as exc:
+        raise ComputeContractError(f"local calculation has no valid durable receipt: {exc}") from exc
+    if (
+        receipt.intent_id != intent["intent_id"]
+        or receipt.command != config.command
+        or receipt.expected_artifacts != config.expected_artifacts
+    ):
+        raise ComputeContractError("local calculation receipt does not match the prepared execution")
+    return receipt
+
+
+def _submit_local_calculation(
+    workspace: Path,
+    intent: dict[str, Any],
+    prepared: dict[str, Any],
+) -> dict[str, Any]:
+    if intent.get("dry_run") is not False:
+        raise ComputeContractError("submit requires an intent with dry_run=false")
+    existing = _read_control_result(workspace, intent, "submit")
+    if existing is not None:
+        if existing.get("state") == "submitted":
+            return existing
+        if not _control_allows_same_submission_retry(existing):
+            raise ComputeContractError(
+                f"submit refuses automatic replay from durable state {existing.get('state', 'unknown')}"
+            )
+    verify_input_bindings(workspace, intent)
+    config = _local_job_config(workspace, intent, prepared)
+    control_attempt = _claim_control(workspace, intent, "submit")
+    try:
+        receipt = local_lifecycle.submit(config)
+    except Exception as exc:
+        result = _result(
+            intent,
+            state="failed",
+            program_status="not_run",
+            error_class="local_submit_failed",
+            control=_control_outcome(
+                operation="submit",
+                phase="prepare_staging",
+                effect_outcome="failed",
+                effect_attempted=False,
+                retry_disposition="retry_same_submission",
+                reconciliation_required=False,
+                submission_id=f"local-{intent['intent_id']}",
+                job_id=None,
+            ),
+            provenance={
+                "runner": "local",
+                "run_ref": _local_run_ref(intent),
+                "observed_at": now_iso(),
+                "failure_type": type(exc).__name__,
+                "failure_message": str(exc)[:2000],
+            },
+        )
+        _write_control_result(workspace, intent, "submit", result, control_attempt)
+        _write_status(workspace, intent, result)
+        return result
+
+    receipt_ref = _local_receipt_ref(intent)
+    receipt_path = workspace / receipt_ref
+    _require_physical_compute_path(workspace, receipt_path, "local receipt")
+    result = _result(
+        intent,
+        job_id=receipt.job_id,
+        state="submitted",
+        program_status="not_run",
+        artifact_refs=[receipt_ref],
+        control=_control_outcome(
+            operation="submit",
+            phase="receipt_persist",
+            effect_outcome="succeeded",
+            effect_attempted=True,
+            retry_disposition="none",
+            reconciliation_required=False,
+            submission_id=receipt.job_id,
+            job_id=receipt.job_id,
+        ),
+        provenance={
+            "runner": "local",
+            "run_ref": _local_run_ref(intent),
+            "submitted_at": receipt.submitted_at,
+            "receipt_ref": receipt_ref,
+        },
+    )
+    _write_control_result(workspace, intent, "submit", result, control_attempt)
+    _write_status(workspace, intent, result)
+    return result
+
+
+def _local_calculation_status(
+    workspace: Path,
+    intent: dict[str, Any],
+    prepared: dict[str, Any],
+) -> dict[str, Any]:
+    submitted = _read_control_result(workspace, intent, "submit")
+    if submitted is None or submitted.get("state") != "submitted":
+        raise ComputeContractError("inspect requires a durable local submission")
+    receipt = _local_receipt(workspace, intent, prepared)
+    observed = local_lifecycle.status(_local_job_config(workspace, intent, prepared), receipt)
+    state = str(observed.get("state", "unknown"))
+    if state not in {"running", "completed", "failed", "stopped", "unknown"}:
+        state = "unknown"
+    program_status = str(observed.get("program_status", "not_run"))
+    if program_status not in {"completed", "failed", "stopped", "not_run"}:
+        program_status = "not_run"
+    error_class = {
+        "failed": "local_program_failed",
+        "stopped": "local_job_cancelled",
+        "unknown": "local_process_unknown",
+    }.get(state)
+    result = _result(
+        intent,
+        job_id=receipt.job_id,
+        state=state,
+        program_status=program_status,
+        exit_status=observed.get("exit_status") if isinstance(observed.get("exit_status"), int) else None,
+        error_class=error_class,
+        provenance={
+            "runner": "local",
+            "run_ref": _local_run_ref(intent),
+            "observed_at": observed.get("observed_at", now_iso()),
+            "worker_pid": receipt.pid,
+            "worker_status": observed,
+        },
+    )
+    _write_status(workspace, intent, result)
+    return result
+
+
+def _collect_local_calculation(
+    workspace: Path,
+    intent: dict[str, Any],
+    prepared: dict[str, Any],
+    artifacts: list[str] | None,
+) -> dict[str, Any]:
+    expected_names = _expected_remote_names(prepared)
+    selected = artifacts or expected_names
+    if not selected or len(selected) != len(set(selected)) or any(name not in expected_names for name in selected):
+        raise ComputeContractError("collect artifacts must be a unique subset of the prepared expected artifacts")
+    program_status = _collection_program_status(workspace, intent, prepared, {"kind": "local"})
+    config = _local_job_config(workspace, intent, prepared)
+    _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
+    output_dir = workspace / output_ref
+    _require_physical_compute_directory(workspace, output_dir, "local calculation output")
+    existing = [name for name in selected if (output_dir / Path(name).name).exists()]
+    if existing:
+        raise ComputeContractError(f"collect refuses to overwrite existing artifacts: {existing}")
+    _require_physical_compute_directory(workspace, output_dir.parent, "local calculation attempt")
+    with tempfile.TemporaryDirectory(prefix=".collect-", dir=output_dir.parent) as temporary:
+        staging = Path(temporary)
+        copied, transfer_manifest = local_lifecycle.collect(config, selected, staging)
+        if copied != selected:
+            raise ComputeContractError("local collect returned artifacts that differ from the request")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        moved: list[tuple[Path, Path]] = []
+        try:
+            for name in copied:
+                source = staging / Path(name).name
+                destination = output_dir / Path(name).name
+                source.replace(destination)
+                moved.append((source, destination))
+        except Exception:
+            for source, destination in reversed(moved):
+                if destination.exists() and not source.exists():
+                    destination.replace(source)
+            raise
+    artifact_refs = [(output_dir / Path(name).name).relative_to(workspace).as_posix() for name in copied]
+    result = _result(
+        intent,
+        job_id=_read_control_result(workspace, intent, "submit").get("job_id"),
+        state="collected",
+        program_status=program_status,
+        artifact_refs=artifact_refs,
+        provenance={
+            "runner": "local",
+            "run_ref": _local_run_ref(intent),
+            "collected_at": now_iso(),
+            "requested_artifacts": selected,
+            "transfer_manifest": transfer_manifest,
+        },
+    )
+    _write_result(workspace, intent, result)
+    return result
+
+
+def _cancel_local_calculation(
+    workspace: Path,
+    intent: dict[str, Any],
+    prepared: dict[str, Any],
+    *,
+    expected_job_id: str | None,
+) -> dict[str, Any]:
+    if intent.get("dry_run") is not False:
+        raise ComputeContractError("cancel requires an intent with dry_run=false")
+    previous = _read_control_result(workspace, intent, "cancel")
+    if previous is not None:
+        if previous.get("state") in {"stopped", "completed", "failed"}:
+            return previous
+        raise ComputeContractError(
+            f"cancel refuses automatic replay from durable state {previous.get('state', 'unknown')}"
+        )
+    current = _read_local_status(workspace, intent)
+    if current is None:
+        raise ComputeContractError("cancel requires a prior local submission status")
+    if current.get("state") == "stopped":
+        return current
+    _require_cancellable_status(current)
+    job_id = current.get("job_id") if isinstance(current.get("job_id"), str) else None
+    if job_id is None:
+        raise ComputeContractError("cancel requires a prior inspect with a bound local job_id")
+    submitted = _read_control_result(workspace, intent, "submit")
+    if submitted is None:
+        raise ComputeContractError("local cancellation requires a durable submit result")
+    _require_matching_job_id(submitted, job_id, "local cancellation")
+    if expected_job_id is not None and job_id != expected_job_id:
+        raise ComputeContractError("cancel job_id changed after preflight binding")
+    receipt = _local_receipt(workspace, intent, prepared)
+    control_attempt = _claim_control(workspace, intent, "cancel")
+    observed = local_lifecycle.cancel(_local_job_config(workspace, intent, prepared), receipt)
+    observed_state = str(observed.get("state") or "stopped")
+    if observed_state not in {"completed", "failed", "stopped"}:
+        observed_state = "stopped"
+    observed_program_status = str(observed.get("program_status") or observed_state)
+    if observed_program_status not in {"completed", "failed", "stopped", "not_run"}:
+        observed_program_status = "stopped"
+    result = _result(
+        intent,
+        job_id=job_id,
+        state=observed_state,
+        program_status=observed_program_status,
+        exit_status=observed.get("exit_status") if isinstance(observed.get("exit_status"), int) else -signal.SIGTERM,
+        error_class=("local_job_cancelled" if observed_state == "stopped" else "local_program_failed" if observed_state == "failed" else None),
+        control=_control_outcome(
+            operation="cancel",
+            phase="cancel_confirmed",
+            effect_outcome="succeeded",
+            effect_attempted=True,
+            retry_disposition="none",
+            reconciliation_required=False,
+            submission_id=job_id,
+            job_id=job_id,
+        ),
+        provenance={
+            "runner": "local",
+            "run_ref": _local_run_ref(intent),
+            "cancelled_at": now_iso(),
+            "worker_pid": receipt.pid,
+        },
+    )
+    _write_control_result(workspace, intent, "cancel", result, control_attempt)
+    _write_status(workspace, intent, result)
+    return result
+
+
 def cancel_calculation(
     root: str | Path,
     intent_id: str,
@@ -717,6 +1058,13 @@ def cancel_calculation(
 ) -> dict[str, Any]:
     workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
     policy = _prepared_execution_policy(prepared)
+    if policy.get("kind") == "local":
+        return _cancel_local_calculation(
+            workspace,
+            intent,
+            prepared,
+            expected_job_id=expected_job_id,
+        )
     _require_remote_execution(policy, "cancel")
     if intent.get("dry_run") is not False:
         raise ComputeContractError("cancel requires an intent with dry_run=false")
@@ -729,17 +1077,17 @@ def cancel_calculation(
         )
     current = _read_local_status(workspace, intent)
     if current is None:
-        raise ComputeContractError("cancel requires a prior local submission status")
+        raise ComputeContractError("cancel requires a prior remote submission status")
     if current.get("state") == "stopped":
         return current
     _require_cancellable_status(current)
 
     job_id = current.get("job_id") if isinstance(current.get("job_id"), str) else None
     if job_id is None:
-        raise ComputeContractError("cancel requires a prior inspect with a bound remote job_id")
+        raise ComputeContractError("cancel requires a prior inspect with a bound scheduler job_id")
     submitted = _read_control_result(workspace, intent, "submit")
     if submitted is None:
-        raise ComputeContractError("remote cancellation requires a durable local submit result")
+        raise ComputeContractError("remote cancellation requires a durable submit result")
     _require_matching_job_id(submitted, job_id, "remote cancellation")
     remote_config = _remote_job_config(workspace, intent, prepared)
     if expected_job_id is not None and job_id != expected_job_id:
@@ -1233,20 +1581,8 @@ def _validate_execution_target(target: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_execution_mode(target: Any, dry_run: Any) -> None:
-    """Keep the currently supported local mode honest.
-
-    Local preparation and parsing are useful for deterministic tests and for
-    already-produced outputs, but this package has no local scheduler/process
-    lifecycle. A non-dry local intent would otherwise be accepted at creation
-    and fail much later at submit, which makes the capability contract
-    misleading and wastes a model turn.
-    """
-
-    if isinstance(target, dict) and target.get("kind") == "local" and dry_run is not True:
-        raise ComputeContractError(
-            "local execution is currently preparation/parsing only; "
-            "set dry_run=true or choose a configured remote execution target"
-        )
+    if not isinstance(target, dict) or target.get("kind") not in {"local", "remote"}:
+        raise ComputeContractError("execution_target must select local or remote execution")
 
 
 def _execution_policy_for_prepare(
@@ -1354,8 +1690,7 @@ def _prepared_execution_policy(prepared: dict[str, Any]) -> dict[str, Any]:
 def _require_remote_execution(policy: dict[str, Any], operation: str) -> None:
     if policy.get("kind") != "remote" or not isinstance(policy.get("profile"), str):
         raise ComputeContractError(
-            f"{operation} requires a prepared remote execution target; "
-            "local targets support preparation and parsing only"
+            f"{operation} requires a prepared remote execution target"
         )
 
 
@@ -2339,7 +2674,7 @@ def _control_outcome(
 def _require_cancellable_status(status: dict[str, Any]) -> None:
     state = status.get("state")
     if state not in {"submitted", "queued", "running", "unknown"}:
-        raise ComputeContractError(f"cancel requires an active or unresolved remote job; current state is {state}")
+        raise ComputeContractError(f"cancel requires an active or unresolved calculation; current state is {state}")
 
 
 def _require_matching_job_id(
@@ -2365,6 +2700,13 @@ def _collection_program_status(
     submitted = _read_control_result(workspace, intent, "submit")
     if submitted is None or submitted.get("state") != "submitted":
         raise ComputeContractError("collect requires a durable successful submit result")
+    if policy.get("kind") == "local":
+        receipt = _local_receipt(workspace, intent, prepared)
+        observed = local_lifecycle.status(_local_job_config(workspace, intent, prepared), receipt)
+        state = observed.get("state")
+        if state not in {"completed", "failed", "stopped"}:
+            raise ComputeContractError(f"collect requires a completed local calculation; current state is {state}")
+        return str(observed.get("program_status") or "not_run")
     remote_dir = str(policy["remote_dir"])
     provenance = submitted.get("provenance")
     if not isinstance(provenance, dict) or any(

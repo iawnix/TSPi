@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tspi.iawnix.xyz/schema/tspi-session-event-v1.json",
+  "title": "TSPi session control event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session_id", "sequence", "kind", "snapshot", "event"],
+  "properties": {
+    "schema_version": { "const": "tspi-session-event/1" },
+    "session_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "kind": { "enum": ["snapshot", "event"] },
+    "snapshot": {},
+    "event": {}
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "snapshot" } } },
+      "then": { "properties": { "event": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "event" } } },
+      "then": { "properties": { "event": { "type": "object" } } }
+    }
+  ]
+}

@@ -163,6 +163,25 @@ def test_host_command_owns_installation_state_and_workspace_root(
     assert state_root.is_dir()
 
 
+def test_host_state_prepares_private_pi_workspace_before_root_lock(tmp_path: Path) -> None:
+    installation = _installation(tmp_path)
+
+    host_workspace, state_root = launcher._prepare_host_state(installation)
+
+    assert host_workspace == state_root / "workspace"
+    assert (host_workspace / ".pi").is_dir()
+    assert stat.S_IMODE((host_workspace / ".pi").stat().st_mode) == 0o700
+
+
+def test_host_state_rejects_an_insecure_installation_pi_directory(tmp_path: Path) -> None:
+    installation = _installation(tmp_path)
+    installation.root.joinpath(".pi").mkdir(mode=0o700)
+    installation.root.joinpath(".pi").chmod(0o755)
+
+    with pytest.raises(launcher.TSPiHostError, match="must be owner-only"):
+        launcher._prepare_host_state(installation)
+
+
 def test_host_client_requires_one_host_socket(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -196,6 +215,47 @@ def test_explicit_app_client_forwards_native_connection_arguments(
         "--connect",
         endpoint,
         "--continue",
+    ]
+
+
+def test_gateway_attaches_one_host_session_with_http_options(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = _installation(tmp_path)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
+    server_id = "123e4567-e89b-42d3-a456-426614174000"
+    socket_directory = Path(f"/tmp/tspi-gateway-{os.getpid()}")
+    socket_directory.mkdir()
+    monkeypatch.setattr(launcher, "_host_server_id", lambda *_args, **_kwargs: server_id)
+    monkeypatch.setattr(launcher, "_host_socket_directory", lambda *_args, **_kwargs: socket_directory)
+    endpoint = socket_directory / f"{server_id}.sock"
+    listener = socket.socket(socket.AF_UNIX)
+    listener.bind(str(endpoint))
+    try:
+        request = launcher.parse_launch_request([
+            "--gateway", "--workspace", "reaction-a", "--session-id", "session-1",
+            "--port", "8080", "--auth-token", "secret",
+        ])
+        command = launcher.build_gateway_command(installation, request)
+    finally:
+        listener.close()
+        endpoint.unlink(missing_ok=True)
+        socket_directory.rmdir()
+
+    assert request.gateway is True
+    assert command == [
+        "/usr/bin/node",
+        str(installation.package_root / "apps/app-server/pi-app-server.mjs"),
+        "gateway",
+        "--connect",
+        f"unix://{endpoint}",
+        "--session-id",
+        "session-1",
+        "--port",
+        "8080",
+        "--auth-token",
+        "secret",
     ]
 
 

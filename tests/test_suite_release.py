@@ -94,6 +94,31 @@ def test_core_package_build_is_deterministic_and_installs_app_server_payload(tmp
     assert not (package_root / "phone").exists()
 
 
+def test_optional_web_launcher_is_removed_when_rolling_back_to_core_only(
+    tmp_path: Path,
+) -> None:
+    agent_manifest, _agent_release = _synthetic_release(tmp_path / "agent", marker="rollback-web")
+    with_web = build_package(
+        output_dir=tmp_path / "with-web",
+        agent_manifest_path=agent_manifest,
+        allow_dirty=True,
+        include_web=True,
+    )
+    core_only = build_package(
+        output_dir=tmp_path / "core-only",
+        agent_manifest_path=agent_manifest,
+        allow_dirty=True,
+        include_web=False,
+    )
+    install_root = tmp_path / "install"
+    install_package(Path(with_web["manifest"]), None, install_root, allow_dirty=True)
+    assert (install_root / "TSWeb").is_symlink()
+
+    install_package(Path(core_only["manifest"]), None, install_root, allow_dirty=True)
+
+    assert not (install_root / "TSWeb").exists()
+
+
 def test_suite_contract_rejects_retired_phone_component(tmp_path: Path) -> None:
     agent_manifest, _ = _synthetic_release(tmp_path / "agent", marker="no-phone")
     built = build_package(

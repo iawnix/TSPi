@@ -25,9 +25,9 @@ const COMPUTE_PLANS = Object.freeze({
 });
 const OBJECTIVES = Object.freeze({
   launch: "Prepare the bound calculation intent and submit it exactly once.",
-  inspect: "Inspect the bound remote calculation and optionally read one bounded diagnostic tail.",
-  finalize: "Collect the bound remote artifacts and run the bound deterministic parser.",
-  cancel: "Cancel the bound remote calculation exactly once.",
+  inspect: "Inspect the bound local or remote calculation and optionally read one bounded diagnostic tail.",
+  finalize: "Collect the bound calculation artifacts and run the bound deterministic parser.",
+  cancel: "Cancel the bound local or remote calculation exactly once.",
 });
 const MAX_COMPUTE_TASK_BYTES = 16 * 1024;
 
@@ -76,8 +76,8 @@ function buildComputeTask({
   );
   const intentId = requirePattern(binding.intentId, "binding.intentId", /^calc_[1-9][0-9]*$/, 128);
   const intentDigest = requirePattern(binding.intentDigest, "binding.intentDigest", /^sha256:[0-9a-f]{64}$/, 71);
-  if (binding.executionKind !== "remote") {
-    throw new Error(`Compute ${operation} requires a remote execution binding`);
+  if (!["local", "remote"].includes(binding.executionKind)) {
+    throw new Error(`Compute ${operation} requires a local or remote execution binding`);
   }
   const collectArtifacts = operation === "finalize"
     ? uniqueStrings(artifacts || [], "artifacts", 32, 255)
@@ -94,7 +94,7 @@ function buildComputeTask({
     node_id: normalizedNodeId,
     intent_id: intentId,
     intent_digest: intentDigest,
-    execution_kind: "remote",
+    execution_kind: binding.executionKind,
     required_actions: [...plan.required],
     optional_actions: [...plan.optional],
     tail: operation === "inspect"
@@ -125,7 +125,7 @@ function buildComputeTask({
       canonical_workspace_mutation: false,
       scientific_decision: false,
       recursive_delegation: false,
-      remote_authority: "execution_mirror",
+      remote_authority: binding.executionKind === "remote" ? "execution_mirror" : "local_process",
       external_side_effects: ["launch", "cancel"].includes(operation),
     },
     output_contract: "ts-agent-result/1",

@@ -63,6 +63,7 @@ async function createTspiHarness(session, options, executionEnv) {
   const loadedExtensions = await loadServerExtensions({
     packageRoot: loadedSkills.packageRoot,
     reservedToolNames: ["read", "write", "bash", "sys_prompt"],
+    requiredToolNames: ["ts_state", "ts_remote"],
     factoryOptions: {
       review: {
         models: modelRuntime,

@@ -6,7 +6,10 @@ def test_remote_crest_stdout_matches_parser_contract():
     assert _remote_stdout_name({"backend": "crest", "expected_artifacts": ["outputs/crest.out", "outputs/crest_best.xyz"]}) == "crest.out"
 
 import json
+import os
 import shutil
+import stat
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -33,6 +36,7 @@ from ts_agent.remote.models import RemoteJobStatus, RemoteReceipt
 from ts_agent.backends.gaussian import parse_log
 from ts_agent.compute.task_validation import validate_parsed_task
 from ts_agent.workspace.identity import workspace_id
+from ts_agent.workspace.operational import _operational_files
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
@@ -226,13 +230,100 @@ def _prepared_remote(
     return workspace, node_id, created
 
 
-def test_local_non_dry_run_is_rejected_before_creating_an_attempt(tmp_path: Path) -> None:
+def test_local_non_dry_run_creates_a_runnable_attempt_intent(tmp_path: Path) -> None:
     workspace, node_id = _workspace(tmp_path)
 
-    with pytest.raises(ComputeContractError, match="dry_run.*expected|local execution is currently preparation/parsing only"):
-        _create(workspace, node_id, dry_run=False)
+    created = _create(workspace, node_id, dry_run=False)
 
-    assert not (workspace / "nodes" / node_id / "attempts").exists()
+    assert created["execution_target"] == {"kind": "local"}
+    assert (workspace / created["intent_ref"]).is_file()
+
+
+def test_local_lifecycle_collects_into_workspace_and_parses_locally(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    created = _create(workspace, node_id, dry_run=False)
+    prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
+
+    executable_dir = tmp_path / "bin"
+    executable_dir.mkdir()
+    executable = executable_dir / "g16"
+    executable.write_text(
+        "#!/bin/sh\n"
+        "input=$(cat)\n"
+        "[ -n \"$input\" ] || exit 9\n"
+        "cat > gaussian.out <<'EOF'\n"
+        f"{_gaussian_log()}\n"
+        "EOF\n",
+        encoding="utf-8",
+    )
+    executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("PATH", f"{executable_dir}:{os.environ['PATH']}")
+
+    submitted = submit_calculation(workspace, created["intent_id"])
+    assert submitted["job_id"] == "local-calc_1"
+    execution_root = (
+        workspace / "nodes" / node_id / "attempts" / created["intent_id"] / "execution" / "local"
+    )
+    assert (execution_root / "local_receipt.json").is_file()
+    tracked = _operational_files(workspace, excluded_activity_refs=set())
+    assert execution_root / "local_receipt.json" in tracked
+    for _ in range(200):
+        status = calculation_status(workspace, created["intent_id"])
+        if status["state"] in {"completed", "failed"}:
+            break
+        time.sleep(0.01)
+    assert status["state"] == "completed"
+    assert "Normal termination" in calculation_tail(workspace, created["intent_id"])["text"]
+
+    collected = collect_calculation(workspace, created["intent_id"])
+    assert collected["artifact_refs"] == [
+        f"nodes/{node_id}/attempts/{created['intent_id']}/outputs/gaussian.out"
+    ]
+    parsed = parse_calculation(workspace, created["intent_id"])
+    assert parsed["state"] == "parsed"
+    assert parsed["program_status"] == "completed"
+
+
+def test_local_lifecycle_cancels_a_running_process_and_is_idempotent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    created = _create(workspace, node_id, dry_run=False)
+    prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
+
+    executable_dir = tmp_path / "bin"
+    executable_dir.mkdir()
+    executable = executable_dir / "g16"
+    executable.write_text(
+        "#!/bin/sh\n"
+        "sleep 30\n"
+        "printf 'should not finish\\n' > gaussian.out\n",
+        encoding="utf-8",
+    )
+    executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("PATH", f"{executable_dir}:{os.environ['PATH']}")
+
+    submitted = submit_calculation(workspace, created["intent_id"])
+    assert submitted["state"] == "submitted"
+    for _ in range(200):
+        observed = calculation_status(workspace, created["intent_id"])
+        if observed["state"] == "running":
+            break
+        time.sleep(0.01)
+    assert observed["state"] == "running"
+
+    cancelled = cancel_calculation(
+        workspace,
+        created["intent_id"],
+        expected_job_id=submitted["job_id"],
+    )
+    assert cancelled["state"] == "stopped"
+    assert cancelled["program_status"] == "stopped"
+    assert cancel_calculation(workspace, created["intent_id"])["state"] == "stopped"
 
 
 def test_unavailable_capability_fails_without_implicit_substitution_or_attempt(tmp_path: Path) -> None:

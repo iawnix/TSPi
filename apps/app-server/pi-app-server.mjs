@@ -1,7 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const { mode, wrapper, forwarded } = parseWrapperArguments(process.argv.slice(2));
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -44,6 +44,16 @@ const childEnv = {
   TSPI_NATIVE_WRITES: "1",
 };
 if (wrapper.directory) childEnv.PI_SERVER_DIR = resolve(wrapper.directory);
+if (mode === "gateway") {
+  // The gateway attaches to Pi's TypeScript source services directly. Install
+  // Pi's source aliases before importing the runtime so package imports cannot
+  // fall through to an unrelated globally installed Pi release.
+  Object.assign(process.env, childEnv);
+  await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts")).href);
+  const { runGatewayCli } = await import("./pi-session-control-server.mjs");
+  await runGatewayCli({ sourceRoot, arguments_: forwarded });
+  process.exit(0);
+}
 const child = spawn(process.execPath, ["--import", join(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts"), ...args], {
   cwd: workspaceRoot || sourceRoot, env: childEnv, stdio: "inherit",
 });
@@ -52,7 +62,7 @@ child.once("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
 
 function parseWrapperArguments(arguments_) {
   const mode = arguments_[0] || "server";
-  if (mode !== "server" && mode !== "client") throw new Error("mode must be server or client");
+  if (mode !== "server" && mode !== "client" && mode !== "gateway") throw new Error("mode must be server, client, or gateway");
   const wrapper = { sourceRoot: undefined, directory: undefined, workspace: undefined };
   const forwarded = [];
   for (let index = 1; index < arguments_.length; index += 1) {

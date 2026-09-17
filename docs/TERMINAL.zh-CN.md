@@ -41,6 +41,19 @@ TS Phone 通过 Pi Radius 使用 protocol v8 一次连接 Host，然后列出项
 它不连接终端进程，也不需要本地 HTTP 服务、bridge secret、反向代理或
 `TSPhoneServer`/`TSPhoneCtl`。
 
+## 浏览器控制
+
+TS Web 默认仍然是只读科学投影。如果浏览器需要控制一个已经存在的 Pi 会话，
+在 Host 运行时启动可选的 loopback adapter：
+
+```bash
+./TSPi --gateway --workspace reaction-a --session-id <session-id> \
+  --port 8767 --auth-token '<private-token>'
+```
+
+adapter 使用版本化的 `tspi-session-control/1` 请求合约和 SSE transcript 流，
+只附着到 Host 会话，不会启动第二个 Worker。Phone 客户端继续直接使用 Pi Radius。
+
 ## 故障排查
 
 - `workspace is unavailable`：先完成项目 bootstrap，再运行 `TSPi --host`。

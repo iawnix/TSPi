@@ -21,6 +21,7 @@ const {
   assertProviderTurnSucceeded,
   forceNamedToolChoice,
   headerValue,
+  stripIncompatibleThinkingToolChoice,
 } = require("../../agent-core/provider-turn.cjs");
 const { validateReviewTaskBundle } = require("./task-packet.cjs");
 const { loadReviewerRole } = require("./roles.cjs");
@@ -321,9 +322,10 @@ async function createIsolatedResourceLoader(
           pi.on("before_provider_request", (event) => {
             delete providerResponse.status;
             delete providerResponse.contentType;
+            const payload = stripIncompatibleThinkingToolChoice(event.payload);
             return shouldForceResult()
-              ? forceReviewResultToolChoice(event.payload)
-              : event.payload;
+              ? forceReviewResultToolChoice(payload)
+              : payload;
           });
           pi.on("after_provider_response", (event) => {
             providerResponse.status = event.status;
