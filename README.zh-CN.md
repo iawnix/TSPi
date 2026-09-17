@@ -16,17 +16,17 @@ cd TSPi
 ./install.sh
 ```
 
-核心安装始终包含 Agent、科学运行时和分子渲染；TS Web 是可选组件。安装器可以
-配置每个工作区的 App Server systemd 模板；不再安装 TS Phone 守护进程。
+核心安装始终包含 Agent、科学运行时和分子渲染；TS Web 是可选组件。安装器配置
+整个安装目录共用的 App Server Host；不再安装 TS Phone 守护进程。
 
 详见[安装与运维](docs/INSTALLATION.md)，其中包含依赖、运行时、升级、回滚和恢复说明。
 
 ## App Server 与终端
 
-每个工作区运行一个 Pi App Server，由它独占会话、对话历史、模型状态和 Root 锁：
+整个安装目录运行一个 Pi App Server Host，由它为所有工作区独占会话、对话历史、模型状态和 Root 锁：
 
 ```bash
-./TSPi --app-server --workspace reaction-a
+./TSPi --host
 ```
 
 普通 TSPi 命令是该 App Server 的本地终端客户端：
@@ -41,7 +41,7 @@ broker。参阅[终端文档](docs/TERMINAL.zh-CN.md)、[中文架构](docs/ARCH
 
 ## 研究与远程计算
 
-在 `.pi/remote.toml` 配置 SSH/Torque 和软件 profile，然后验证：
+在 `.pi/remote.toml`（或安装时使用 `--remote-config`）配置 SSH/Torque 和软件 profile，然后验证：
 
 ```bash
 ./TSPi --check-remote

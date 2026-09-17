@@ -300,11 +300,17 @@ test("native Pi server starts a TSPi Harness with native research tools", { skip
   const { createUnixTransportFactory } = await fromSource("packages/client/src/unix.ts");
   const { startServer } = await fromSource("packages/coding-agent/src/experimental/server.ts");
   const { SessionManagement } = await fromSource("packages/coding-agent/src/experimental/services/sessions.ts");
-  const { createServerServiceBinding } = await fromSource("packages/coding-agent/test/experimental-service-binding.ts");
+  const { TspiSystemPrompt } = await fromSource(
+    "packages/coding-agent/src/experimental/services/slash-commands-provider.ts",
+  );
+  const { createServerServiceBinding, createSessionServiceBinding } = await fromSource(
+    "packages/coding-agent/test/experimental-service-binding.ts",
+  );
   const { readExperimentalSessionState } = await fromSource("packages/coding-agent/test/experimental-session-support.ts");
   let runtime;
   let client;
   let services;
+  let sessionServices;
   try {
     runtime = await startServer({
       directory: join(root, "server"),
@@ -321,6 +327,12 @@ test("native Pi server starts a TSPi Harness with native research tools", { skip
     const management = services.use(SessionManagement);
     const summary = await management.create({ id: "native-tools" }, BACKGROUND_CONTEXT);
     await management.attach(summary.sessionId, BACKGROUND_CONTEXT);
+    sessionServices = createSessionServiceBinding(client, { services: [TspiSystemPrompt] });
+    await sessionServices.ready(BACKGROUND_CONTEXT);
+    const promptManifest = await sessionServices.use(TspiSystemPrompt).inspect(BACKGROUND_CONTEXT);
+    assert.equal(promptManifest.runtime, "native-app-server");
+    assert.equal(promptManifest.provenance_complete, true);
+    assert.match(promptManifest.effective, /You are the TSPi research agent/);
     for (let index = 0; index < 80 && !runtime.workerPids.has(summary.sessionId); index++) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -342,6 +354,7 @@ test("native Pi server starts a TSPi Harness with native research tools", { skip
       "ts_render", "ts_report", "ts_notify",
     ]);
   } finally {
+    await sessionServices?.dispose(BACKGROUND_CONTEXT).catch(() => {});
     await services?.dispose(BACKGROUND_CONTEXT).catch(() => {});
     await client?.dispose().catch(() => {});
     await runtime?.close().catch(() => {});

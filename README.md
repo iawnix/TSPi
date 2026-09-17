@@ -18,20 +18,19 @@ cd TSPi
 ```
 
 The core installation always includes the Agent, scientific runtime, and
-molecular rendering. TS Web is optional. The installer can configure the
-per-workspace App Server systemd template; there is no TS Phone daemon to
-install.
+molecular rendering. TS Web is optional. The installer configures one
+installation-wide App Server Host; there is no TS Phone daemon to install.
 
 See [Installation and Operations](docs/INSTALLATION.md) for prerequisites,
 runtime setup, upgrades, rollback, and recovery.
 
 ## App Server and terminal
 
-Each workspace has one Pi App Server, which owns its sessions, transcript
-history, model state, and Root lock:
+One installation-wide Pi App Server Host owns sessions, transcript history,
+model state, and the Root lock for all workspaces:
 
 ```bash
-./TSPi --app-server --workspace reaction-a
+./TSPi --host
 ```
 
 The default TSPi command is the local terminal client of that server:
@@ -46,7 +45,8 @@ it is not a second Host or broker. See [Terminal](docs/TERMINAL.md),
 
 ## Research and remote execution
 
-Configure SSH/Torque and software profiles in `.pi/remote.toml`, then verify:
+Configure SSH/Torque and software profiles in `.pi/remote.toml` (or pass
+`--remote-config` to the installer), then verify:
 
 ```bash
 ./TSPi --check-remote

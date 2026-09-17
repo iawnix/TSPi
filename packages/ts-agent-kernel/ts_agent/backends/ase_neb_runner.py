@@ -21,6 +21,7 @@ from ase.io import read, write
 from ase.mep import NEB
 from ase.optimize import FIRE
 from ase.units import Bohr, Hartree
+from .base import configured_backend_command
 
 
 _FLOAT = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[EeDd][-+]?\d+)?"
@@ -178,7 +179,7 @@ def run_ase_neb(
     neb.interpolate(method=config.interpolation)
 
     if calculator_factory is None:
-        executable = os.environ.get("TS_ASE_NEB_XTB", "xtb")
+        executable = os.environ.get("TS_ASE_NEB_XTB") or configured_backend_command("ase_neb_xtb", "xtb")
 
         def calculator_factory(_index: int) -> Calculator:
             return XtbCliCalculator(

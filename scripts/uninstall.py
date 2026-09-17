@@ -254,7 +254,18 @@ def remove_paths(paths: list[Path]) -> list[str]:
 
 
 def prune_empty_parents(root: Path) -> None:
-    for relative in (".pi/ts-phone", ".pi/packages", ".pi", ".agents/runtime", ".agents/envs", ".agents"):
+    for relative in (
+        ".pi/app-server-host/workspace/.pi",
+        ".pi/app-server-host/workspace",
+        ".pi/app-server-host/sessions",
+        ".pi/app-server-host",
+        ".pi/ts-phone",
+        ".pi/packages",
+        ".pi",
+        ".agents/runtime",
+        ".agents/envs",
+        ".agents",
+    ):
         directory = root / relative
         if not directory.is_dir():
             continue
@@ -278,6 +289,7 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
         managed = [
             root / ".pi/packages/tspi",
             root / ".pi/runtime-cache",
+            root / ".pi/app-server-runtime",
             root / ".pi/logs",
             root / ".pi/session-guards",
             # Remove state left by the retired shared session process.
@@ -290,17 +302,25 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
         if args.purge_config:
             managed.extend([
                 root / ".pi/tspi",
+                root / ".pi/app-server-host/server-id",
+                root / ".pi/app-server-host/workspace",
+                root / ".pi/agent",
+                root / ".pi/email",
                 root / ".pi/ts-phone",
                 root / ".pi/ts-phone-state",
                 root / ".pi/ts-web",
                 root / ".pi/remote.toml",
+                root / ".pi/local.toml",
                 root / ".pi/notifications.toml",
                 root / "uninstall.sh",
             ])
         if args.purge_runtime:
             managed.extend([root / ".agents/runtime/tspi", root / ".agents/envs/tspi"])
         if args.purge_workspaces:
-            managed.append(root / "workspaces")
+            managed.extend([
+                root / "workspaces",
+                root / ".pi/app-server-host/sessions",
+            ])
         if args.purge_all:
             managed.append(root / "ts-phone")
         removed.extend(remove_paths(managed))

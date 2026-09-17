@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PIN_PATH = ROOT / "config" / "pi-source.json"
 PATCH_PATH = ROOT / "config" / "pi-worker-entry.patch"
 MULTI_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace.patch"
+SYSTEM_PROMPT_PATCH_PATH = ROOT / "config" / "pi-system-prompt.patch"
 SOURCE_RESOLVER_PATCH_PATH = ROOT / "config" / "pi-source-resolver.patch"
 
 
@@ -55,6 +56,17 @@ def verify(source: Path) -> str:
     sessions_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "sessions.ts"
     if "tspi.workspace-directory" not in sessions_path.read_text(encoding="utf-8"):
         raise PiSourceError(f"Pi source is missing the TSPi multi-workspace patch: {source}")
+    slash_commands_path = (
+        source
+        / "packages"
+        / "coding-agent"
+        / "src"
+        / "experimental"
+        / "services"
+        / "slash-commands-provider.ts"
+    )
+    if "tspi.system-prompt" not in slash_commands_path.read_text(encoding="utf-8"):
+        raise PiSourceError(f"Pi source is missing the TSPi system prompt patch: {source}")
     resolver_path = source / "packages" / "coding-agent" / "src" / "experimental" / "source-resolver.ts"
     if 'pattern === "typebox"' not in resolver_path.read_text(encoding="utf-8"):
         raise PiSourceError(f"Pi source is missing the TSPi source resolver patch: {source}")
@@ -81,6 +93,28 @@ def apply_multi_workspace_patch(source: Path) -> None:
         raise PiSourceError(f"failed to apply TSPi multi-workspace patch: {exc}") from exc
 
 
+def apply_system_prompt_patch(source: Path) -> None:
+    slash_commands_path = (
+        source
+        / "packages"
+        / "coding-agent"
+        / "src"
+        / "experimental"
+        / "services"
+        / "slash-commands-provider.ts"
+    )
+    if "tspi.system-prompt" in slash_commands_path.read_text(encoding="utf-8"):
+        return
+    try:
+        subprocess.run(
+            ["git", "-C", str(source), "apply", "--ignore-whitespace", str(SYSTEM_PROMPT_PATCH_PATH)],
+            check=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PiSourceError(f"failed to apply TSPi system prompt patch: {exc}") from exc
+
+
 def apply_source_resolver_patch(source: Path) -> None:
     resolver_path = source / "packages" / "coding-agent" / "src" / "experimental" / "source-resolver.ts"
     if 'pattern === "typebox"' in resolver_path.read_text(encoding="utf-8"):
@@ -104,6 +138,7 @@ def clone(destination: Path) -> Path:
         raise PiSourceError(f"failed to clone pinned Pi source: {exc}") from exc
     apply_worker_patch(destination)
     apply_multi_workspace_patch(destination)
+    apply_system_prompt_patch(destination)
     apply_source_resolver_patch(destination)
     verify(destination)
     return destination
@@ -116,6 +151,7 @@ def install(install_root: Path) -> Path:
     if destination.exists():
         apply_worker_patch(destination)
         apply_multi_workspace_patch(destination)
+        apply_system_prompt_patch(destination)
         apply_source_resolver_patch(destination)
         verify(destination)
         if not (destination / "node_modules").is_dir():

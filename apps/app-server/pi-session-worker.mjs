@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createStaticFacetLoader, defineFacet, defineService } from "@earendil-works/chord";
 import {
   AgentHarness, createBashTool, createReadTool, createWriteTool,
   loadSkills, TODO_CONTEXT,
@@ -34,6 +35,7 @@ const { SettingsManager } = await import(pathToFileURL(join(sourceRoot, "package
 const { runSessionWorkerWithHarness } = workerModule;
 const { isDirectInternalProcessEntry, consumeInternalProcessRole } = processModule;
 const { findInitialModel, resolveCliModel } = modelResolver;
+const TspiSystemPrompt = defineService("tspi.system-prompt");
 
 async function loadTspiSkills(executionEnv) {
   const packageRoot = process.env.TSPI_PACKAGE_ROOT;
@@ -117,6 +119,14 @@ async function createTspiHarness(session, options, executionEnv) {
       lane,
       modelRuntime,
       settingsManager,
+      facetLoader: createStaticFacetLoader([
+        defineFacet({
+          id: "@tspi/system-prompt",
+          setup(env) {
+            env.provide(TspiSystemPrompt, { async inspect() { return promptManifest; } });
+          },
+        }),
+      ]),
     };
   } catch (error) {
     await created.harness.close(TODO_CONTEXT).catch(() => {});

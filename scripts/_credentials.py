@@ -18,6 +18,7 @@ def provision_service_credentials(
     install_root: Path,
     *,
     with_web: bool,
+    web_token_path: Path | None = None,
 ) -> dict[str, dict[str, str]]:
     """Create missing service credentials and preserve valid existing values."""
     expanded_root = install_root.expanduser()
@@ -26,7 +27,14 @@ def provision_service_credentials(
     root = expanded_root.resolve()
     specifications: list[tuple[str, Path]] = []
     if with_web:
-        specifications.append(("web_http", root / ".pi" / "ts-web" / "auth.token"))
+        token = web_token_path.expanduser() if web_token_path is not None else root / ".pi" / "ts-web" / "auth.token"
+        if not token.is_absolute():
+            raise ValueError("TS Web token path must be an absolute path inside the installation root")
+        if token.is_symlink():
+            raise ValueError(f"TS Web token path cannot be a symbolic link: {token}")
+        if root not in token.resolve().parents:
+            raise ValueError("TS Web token path must be an absolute path inside the installation root")
+        specifications.append(("web_http", token.resolve()))
     if not specifications:
         return {}
 
@@ -75,7 +83,7 @@ def _ensure_private_directory(path: Path) -> None:
         raise ValueError(f"credential directory cannot be a symbolic link: {path}")
     if not stat.S_ISDIR(info.st_mode):
         raise ValueError(f"credential path must be a directory: {path}")
-    if info.st_uid != os.getuid():
+    if info.st_uid != os.getuid() and os.geteuid() != 0:
         raise ValueError(f"credential directory must be owned by the installing user: {path}")
     if created and stat.S_IMODE(info.st_mode) != 0o700:
         os.chmod(path, 0o700, follow_symlinks=False)
@@ -126,7 +134,7 @@ def _read_required_secret(path: Path) -> str:
 def _validate_secret_file(path: Path, info: os.stat_result) -> None:
     if not stat.S_ISREG(info.st_mode):
         raise ValueError(f"credential must be a regular file: {path}")
-    if info.st_uid != os.getuid():
+    if info.st_uid != os.getuid() and os.geteuid() != 0:
         raise ValueError(f"credential must be owned by the installing user: {path}")
     if info.st_nlink != 1:
         raise ValueError(f"credential must not have hard links: {path}")

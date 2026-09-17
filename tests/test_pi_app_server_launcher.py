@@ -218,6 +218,20 @@ def test_explicit_app_client_forwards_native_connection_arguments(
     ]
 
 
+def test_explicit_unix_client_can_select_a_workspace() -> None:
+    request = launcher.parse_launch_request([
+        "--app-client",
+        "--connect",
+        "unix:///run/tspi.sock",
+        "--workspace",
+        "reaction-a",
+    ])
+
+    assert request.app_client is True
+    assert request.workspace_name == "reaction-a"
+    assert launcher._app_client_endpoint(request) == "unix:///run/tspi.sock"
+
+
 def test_gateway_attaches_one_host_session_with_http_options(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -248,6 +262,8 @@ def test_gateway_attaches_one_host_session_with_http_options(
         "/usr/bin/node",
         str(installation.package_root / "apps/app-server/pi-app-server.mjs"),
         "gateway",
+        "--workspace",
+        str(installation.workspaces_root / "reaction-a"),
         "--connect",
         f"unix://{endpoint}",
         "--session-id",
@@ -408,7 +424,6 @@ def test_installed_app_server_is_the_exclusive_workspace_owner(tmp_path: Path) -
     [
         (["--app-server", "--app-client"], "cannot be combined"),
         (["--app-client", "--allow-writes"], "was removed"),
-        (["--app-client", "--workspace", "reaction-a"], "does not accept --workspace"),
         (["--app-server", "--session-id", "session-1"], "belongs to --app-client"),
     ],
 )

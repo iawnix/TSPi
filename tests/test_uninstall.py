@@ -285,3 +285,24 @@ def test_purge_config_removes_local_uninstaller_and_ownership_marker(tmp_path: P
     assert not (root / "uninstall.sh").exists()
     assert not (root / ".pi/tspi").exists()
     assert not web_token.exists()
+
+
+def test_purge_removes_unified_host_sessions_and_credentials(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    (root / ".pi/packages/tspi").mkdir(parents=True)
+    host_session = root / ".pi/app-server-host/sessions/session.jsonl"
+    host_session.parent.mkdir(parents=True)
+    host_session.write_text("session\n", encoding="utf-8")
+    (root / ".pi/app-server-host/server-id").write_text("server\n", encoding="utf-8")
+    (root / ".pi/agent/auth.json").parent.mkdir(parents=True)
+    (root / ".pi/agent/auth.json").write_text("{}\n", encoding="utf-8")
+    (root / ".pi/email/smtp-password").parent.mkdir(parents=True)
+    (root / ".pi/email/smtp-password").write_text("secret\n", encoding="utf-8")
+
+    result = uninstall(_args(root, purge_workspaces=True, purge_config=True))
+
+    assert result["ok"] is True
+    assert not host_session.exists()
+    assert not (root / ".pi/app-server-host/server-id").exists()
+    assert not (root / ".pi/agent").exists()
+    assert not (root / ".pi/email").exists()

@@ -19,6 +19,7 @@ export async function startSessionControlGateway(options) {
     sourceRoot,
     connect,
     sessionId,
+    workspaceRoot,
     host = "127.0.0.1",
     port = 0,
     authToken,
@@ -28,6 +29,9 @@ export async function startSessionControlGateway(options) {
   if (typeof sourceRoot !== "string" || !sourceRoot.startsWith("/")) throw new TypeError("sourceRoot must be absolute");
   const socketPath = parseUnixSocket(connect);
   if (typeof sessionId !== "string" || sessionId.length === 0) throw new TypeError("sessionId is required");
+  if (typeof workspaceRoot !== "string" || !workspaceRoot.startsWith("/")) {
+    throw new TypeError("workspaceRoot must be absolute");
+  }
   if (host !== "127.0.0.1" && host !== "localhost" && !authToken) {
     throw new Error("remote session control gateway requires authToken");
   }
@@ -49,6 +53,7 @@ export async function startSessionControlGateway(options) {
       serverId,
       socketPath,
       sessionId,
+      workspaceRoot,
     }));
     const control = createSessionControl({
       sessionId,
@@ -79,7 +84,7 @@ export async function startSessionControlGateway(options) {
   }
 }
 
-async function connectAndAttach({ openClientRuntime, activateBuiltinClientServices, BACKGROUND_CONTEXT, serverId, socketPath, sessionId }) {
+async function connectAndAttach({ openClientRuntime, activateBuiltinClientServices, BACKGROUND_CONTEXT, serverId, socketPath, sessionId, workspaceRoot }) {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     let runtime;
     try {
@@ -89,6 +94,7 @@ async function connectAndAttach({ openClientRuntime, activateBuiltinClientServic
       });
       if (runtime.servers.length !== 1) throw new Error("session control gateway requires exactly one App Server");
       const active = await activateBuiltinClientServices(runtime.servers[0]);
+      assertSessionWorkspace(active.directory, sessionId, workspaceRoot);
       // Match Pi's native client attach sequence. Preparing the session's
       // presentation plugins resolves its persisted metadata and makes the
       // subsequent management attach deterministic for a fresh connection.
@@ -108,9 +114,9 @@ async function connectAndAttach({ openClientRuntime, activateBuiltinClientServic
 }
 
 /** CLI used by `TSPi gateway`; the Host remains the session owner. */
-export async function runGatewayCli({ sourceRoot, arguments_ }) {
+export async function runGatewayCli({ sourceRoot, workspaceRoot, arguments_ }) {
   const options = parseGatewayArguments(arguments_);
-  const gateway = await startSessionControlGateway({ sourceRoot, ...options });
+  const gateway = await startSessionControlGateway({ sourceRoot, workspaceRoot, ...options });
   const address = gateway.address;
   process.stdout.write(`Gateway: ${typeof address === "object" && address ? `http://${address.address}:${address.port}` : String(address)}\n`);
   process.stdout.write(`Session: ${options.sessionId}\n`);
@@ -312,6 +318,20 @@ function parseGatewayArguments(arguments_) {
   if (!options.sessionId) throw new Error("gateway requires --session-id");
   if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65_535) throw new Error("gateway --port must be between 0 and 65535");
   return options;
+}
+
+export function assertSessionWorkspace(directory, sessionId, workspaceRoot) {
+  const sessions = directory?.state?.value?.sessions;
+  if (!Array.isArray(sessions)) return;
+  const matches = sessions.filter((summary) => summary?.sessionId === sessionId);
+  if (matches.length === 0) return;
+  const summary = matches[0];
+  if (summary.cwd !== workspaceRoot) {
+    const error = new Error(`session ${sessionId} belongs to workspace ${summary.cwd || "an unknown workspace"}, not ${workspaceRoot}`);
+    error.code = "session_workspace_mismatch";
+    error.retryable = false;
+    throw error;
+  }
 }
 
 function assignGatewayArgument(options, key, value) {

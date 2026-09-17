@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .base import Backend, BackendTask, PreparedTask
+from .base import Backend, BackendTask, PreparedTask, configured_backend_command
 from .xyz import xyz_frame_metadata
 
 
@@ -36,7 +36,7 @@ def prepare_crest(task: BackendTask) -> PreparedTask:
     if unknown:
         raise ValueError(f"unsupported CREST conformer_search settings: {unknown}")
 
-    command = ["crest", task.inputs["xyz"]]
+    command = [configured_backend_command("crest", "crest"), task.inputs["xyz"]]
     charge = _integer(task.settings.get("charge", "0"), "charge")
     uhf = _nonnegative_int(task.settings.get("uhf", "0"), "uhf")
     command.extend(["-chrg", str(charge), "-uhf", str(uhf)])

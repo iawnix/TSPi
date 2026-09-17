@@ -51,7 +51,7 @@ if (mode === "gateway") {
   Object.assign(process.env, childEnv);
   await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts")).href);
   const { runGatewayCli } = await import("./pi-session-control-server.mjs");
-  await runGatewayCli({ sourceRoot, arguments_: forwarded });
+  await runGatewayCli({ sourceRoot, workspaceRoot, arguments_: forwarded });
   process.exit(0);
 }
 const child = spawn(process.execPath, ["--import", join(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts"), ...args], {

@@ -84,9 +84,10 @@ async function runNativeClient(root, ...arguments_) {
   });
 }
 
-async function startNativeGateway(root, socket, sessionId) {
+async function startNativeGateway(root, socket, sessionId, workspaceRoot = root) {
   const child = spawn(process.execPath, [
     "apps/app-server/pi-app-server.mjs", "gateway", "--source-root", sourceRoot,
+    "--workspace", workspaceRoot,
     "--connect", `unix://${socket}`, "--session-id", sessionId,
     "--port", "0", "--auth-token", "gateway-test-token",
   ], {
@@ -113,9 +114,9 @@ async function startNativeGateway(root, socket, sessionId) {
       clearTimeout(timer);
       reject(error);
     });
-    child.once("exit", (code) => {
-      if (code !== null && code !== 0) {
-        clearTimeout(timer);
+  child.once("exit", (code) => {
+    if (code !== null && code !== 0) {
+      clearTimeout(timer);
         reject(new Error(`native gateway exited ${code}: ${output}${errors}`));
       }
     });

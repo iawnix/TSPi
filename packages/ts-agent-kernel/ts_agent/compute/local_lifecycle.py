@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import os
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -45,6 +46,12 @@ class LocalReceipt:
     command: tuple[str, ...]
     expected_artifacts: tuple[str, ...]
     submitted_at: str
+
+
+@dataclass(frozen=True)
+class _WorkerHandle:
+    process: subprocess.Popen[bytes] | None = None
+    unit: str | None = None
 
 
 def submit(config: LocalJobConfig) -> LocalReceipt:
@@ -92,25 +99,80 @@ def submit(config: LocalJobConfig) -> LocalReceipt:
     pythonpath = os.pathsep.join(
         item for item in (str(package_root), inherited_pythonpath) if item
     )
-    worker = subprocess.Popen(
-        [sys.executable, str(Path(__file__).with_name("local_worker.py")), "--config", str(worker_config)],
-        cwd=config.run_dir,
-        env={**os.environ, "PYTHONPATH": pythonpath, **config.environment},
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-        close_fds=True,
-    )
+    worker = _start_worker(config, worker_config, pythonpath)
     deadline = time.monotonic() + 2.0
     while time.monotonic() < deadline:
         if receipt_path.is_file():
             return _receipt_from_mapping(read_json(receipt_path))
-        if worker.poll() is not None:
+        if worker.process is not None and worker.process.poll() is not None:
             break
         time.sleep(0.01)
-    _terminate_process_group(worker.pid)
+    _stop_worker(worker)
     raise RuntimeError("local worker did not persist its receipt")
+
+
+def _start_worker(config: LocalJobConfig, worker_config: Path, pythonpath: str) -> _WorkerHandle:
+    command = [sys.executable, str(Path(__file__).with_name("local_worker.py")), "--config", str(worker_config)]
+    environment = {**os.environ, "PYTHONPATH": pythonpath, **config.environment}
+    systemd_run = shutil.which("systemd-run")
+    if systemd_run and os.environ.get("TSPI_LOCAL_RUNNER_SYSTEMD", "auto").lower() not in {"0", "false", "no", "off"}:
+        # Host restarts must not terminate calculations. A transient user
+        # service has its own cgroup while retaining the workspace paths and
+        # environment used by the worker.
+        unit = "tspi-local-" + hashlib.sha256(str(config.run_dir).encode("utf-8")).hexdigest()[:24]
+        completed = subprocess.run(
+            [
+                systemd_run,
+                "--user",
+                "--no-block",
+                "--collect",
+                "--unit",
+                unit,
+                "--service-type=simple",
+                "--working-directory",
+                str(config.run_dir),
+                "--setenv",
+                f"PYTHONPATH={pythonpath}",
+                "--setenv",
+                f"PATH={environment.get('PATH', os.defpath)}",
+                "--",
+                *command,
+            ],
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if completed.returncode == 0:
+            return _WorkerHandle(unit=unit)
+
+    return _WorkerHandle(
+        process=subprocess.Popen(
+            command,
+            cwd=config.run_dir,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+    )
+
+
+def _stop_worker(worker: _WorkerHandle) -> None:
+    if worker.process is not None:
+        _terminate_process_group(worker.process.pid)
+    if worker.unit is not None:
+        systemctl = shutil.which("systemctl")
+        if systemctl:
+            subprocess.run(
+                [systemctl, "--user", "stop", worker.unit],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
 
 
 def status(config: LocalJobConfig, receipt: LocalReceipt | None = None) -> dict[str, Any]:

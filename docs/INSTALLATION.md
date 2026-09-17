@@ -10,7 +10,9 @@ or local HTTP broker is installed.
 - Python 3.11+, Conda/Mamba, and a writable user installation directory.
 - A prepared Pi source checkout at the pinned revision (the installer can
   download and patch it automatically).
-- Optional: systemd user services and a configured TS Web port.
+- Optional: systemd user services and a configured TS Web port. Conda/Mamba is
+  required when the managed scientific runtime is created; it is not an
+  optional backend dependency.
 
 The installer can use a private SSH checkout or an HTTPS public repository. It
 does not need the TS Phone repository.
@@ -52,9 +54,12 @@ files remain in the local workspace. Choose `execution_target.kind=remote`
 only when the calculation should be submitted through the profile below;
 remote execution mirrors inputs temporarily and collects results back locally.
 
-Create `<install>/.pi/remote.toml` with an SSH host, scheduler (`torque` or
-`direct`), queue, resource limits, and remote software paths. Restrict the file
-to mode 0600, then run:
+Pass `--remote-config /absolute/path/remote.toml` to `install.sh` to validate and
+copy a profile into `<install>/.pi/remote.toml`, or create that file manually.
+The current remote contract supports Torque/PBS only (`scheduler = "torque"`).
+The profile must describe SSH, a writable remote root, allowed queues, and the
+site-managed Gaussian/xTB/CREST/ASE-NEB commands. TSPi does not install remote
+software. Restrict the file to mode 0600, then run:
 
 ```bash
 ./TSPi --check-remote
@@ -63,6 +68,25 @@ to mode 0600, then run:
 Remote execution code and software environments belong to the configured
 compute node; the App Server submits and records jobs but does not copy
 credentials into the mobile client.
+
+### Local backends
+
+Core installation installs the managed Python, RDKit/ASE scientific runtime,
+and render tools. It does not download Gaussian or silently install arbitrary
+native chemistry programs. Use `--local-config /absolute/path/local.toml` to
+select existing executables; the file is copied to `<install>/.pi/local.toml`:
+
+```toml
+[backends]
+gaussian = "/opt/gaussian/g16"
+xtb = "/opt/xtb/bin/xtb"
+crest = "/opt/crest/bin/crest"
+ase_neb_xtb = "/opt/xtb/bin/xtb"
+```
+
+The installer reports command readiness for every local backend. ASE-NEB reuses
+the managed Python runtime and only needs a working xTB executable. Gaussian
+license checks and site-specific native installation remain administrator work.
 
 ## Configure Notifications
 
@@ -105,10 +129,13 @@ password_env = "TSPI_EMAIL_PASSWORD"
 ```
 
 The SMTP presets use `smtp.163.com` or `smtp.qq.com` on port 465 with implicit
-TLS by default. QQ can use port 587 with `security = "starttls"`. Set the
-`TSPI_EMAIL_PASSWORD` environment variable in the Host service environment,
-or use a private 0600 `password_file` instead. POP3 and IMAP are not required
-for TSPi notifications because this capability only sends mail.
+TLS by default. Set `--email-port` and `--email-security starttls` for a
+different supported SMTP mode. With `--email-password-env NAME`, the installer
+creates a private systemd `EnvironmentFile` when NAME is present in the install
+environment; otherwise create `<install>/.pi/email/service.env` before starting
+the Host. A private 0600 `password_file` avoids service-environment setup.
+POP3 and IMAP are not required for TSPi notifications because this capability
+only sends mail.
 
 ## Start The Installation Host
 
@@ -125,7 +152,11 @@ With systemd enabled, the same Host is managed as:
 systemctl --user start ts-app-server-tspi.service
 ```
 
-The user unit explicitly enables the selected Package server extension set
+The default and recommended scope is a systemd user unit. A system unit must be
+given an explicit `--service-user`; the installer sets `HOME`, `PI_CODING_AGENT_DIR`,
+and a private runtime directory so its Host identity and Pi authorization are
+usable by the same account as manual `TSPi --host` launches. The user unit
+explicitly enables the selected Package server extension set
 (`TSPI_SERVER_EXTENSIONS=ts-workflow-native`). The App Server verifies the
 manifest and entry digest at each Worker startup. Do not place client code or
 an ad-hoc path in this allowlist; development-only experiments belong in
@@ -143,16 +174,19 @@ still runs with the selected project's own cwd and is restricted to a direct
 child of `<install>/workspaces`.
 
 TS Phone connects once to this Host through Pi Radius, lists the available
-projects, and switches project/session inside that connection. Its token and
-server UUID are configured in the mobile app and are not stored by TSPi.
+projects, and switches project/session inside that connection. The installer
+prints the Host UUID and configured `PI_RADIUS_GATEWAY` (when present) as the
+pairing checklist. Phone credentials are held by the mobile secure store and
+are unrelated to the TS Web HTTP token.
 
 ## Workspace Bootstrap
 
-The first `./TSPi --app-server --workspace <name>` invocation remains available
-as a compatibility mode and creates a 0700 workspace and canonical
-scientific files. New installations should start the Host and create projects
-through the normal workspace bootstrap path. Bootstrap validates existing JSON
-and refuses unsupported state rather than rewriting it.
+The first `./TSPi --workspace <name>` invocation creates a 0700 workspace and
+canonical scientific files when the named project does not exist. The same
+validated bootstrap is used by the compatibility
+`./TSPi --app-server --workspace <name>` mode. The Host itself does not create
+unnamed projects, and bootstrap validates existing JSON and refuses unsupported
+state rather than rewriting it.
 
 ## Run The Research Explorer
 
@@ -161,12 +195,14 @@ If TS Web was selected, start it with:
 ```bash
 ./TSWeb serve \
   --state-dir .pi/ts-web-state \
-  --auth-token-file .pi/ts-web/auth.token \
+  --auth-token-file "$HOME/.local/share/tspi/.pi/ts-web/auth.token" \
   --source-root workspaces/reaction-a \
   --label "Reaction A" --host 127.0.0.1 --port 8766
 ```
 
-TS Web is read-only and does not own Pi sessions. Its bearer token is separate
+Use `--web-host 0.0.0.0 --allow-remote` only with an authenticated token file;
+the installer rejects a non-loopback bind without both explicit settings. TS
+Web is read-only and does not own Pi sessions. Its bearer token is separate
 from Pi Radius credentials.
 
 ## Upgrade
@@ -186,9 +222,11 @@ rollback if their package entrypoint changes.
 ## Operational Recovery
 
 If the Host exits, restart the single Host service. The Root lock is released by
-process exit and Pi JSONL sessions remain intact. A terminal or phone reconnect
-first receives a fresh session snapshot; prompts are never resent automatically
-after an uncertain transport failure.
+process exit and Pi JSONL sessions remain intact. Local calculation workers use
+independent transient user services when available, so a Host restart does not
+normally interrupt them; check the calculation status after recovery. A
+terminal or phone reconnect first receives a fresh session snapshot; prompts
+are never resent automatically after an uncertain transport failure.
 
 Inspect the latest installer log under `<install>/.pi/logs/` and verify:
 

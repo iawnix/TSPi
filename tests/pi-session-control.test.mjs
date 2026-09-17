@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createSessionControl, SESSION_CONTROL_PROTOCOL, SESSION_EVENT_PROTOCOL } from "../apps/app-server/pi-session-control.mjs";
-import { createSessionControlHttpServer } from "../apps/app-server/pi-session-control-server.mjs";
+import { assertSessionWorkspace, createSessionControlHttpServer } from "../apps/app-server/pi-session-control-server.mjs";
+
+test("gateway workspace guard rejects cross-project session attachment", () => {
+  const directory = { state: { value: { sessions: [{ sessionId: "session-a", cwd: "/workspaces/project-a" }] } } };
+  assert.throws(
+    () => assertSessionWorkspace(directory, "session-a", "/workspaces/project-b"),
+    (error) => error.code === "session_workspace_mismatch" && /project-a/.test(error.message),
+  );
+  assert.doesNotThrow(() => assertSessionWorkspace(directory, "session-a", "/workspaces/project-a"));
+});
 
 function fakeTranscript() {
   let value = { snapshot: { tipId: null, transcript: [] }, event: null };

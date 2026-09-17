@@ -150,6 +150,10 @@ the selected project's filesystem context. TS Phone uses the same service and
 can switch projects without opening another Host connection. The old
 `--app-server --workspace <name>` mode remains only as a compatibility path.
 
+The first client launch initializes a missing workspace through the same
+validated bootstrap used by compatibility mode. A workspace is still never
+created implicitly by the Host itself; the client must name it explicitly.
+
 The launcher validates installation ownership, package identity, workspace
 path safety, and runtime configuration before executing Node/Pi. A second Host
 for the same installation fails on the Host Root lock rather than creating a
@@ -196,7 +200,11 @@ one lifecycle (`prepare -> submit -> inspect -> collect -> parse`) for either
 always canonical, while a remote directory is only a temporary execution
 mirror. Local runs stage inputs under the Attempt's execution directory and
 collect outputs back into the same workspace paths, so TS Web needs no remote
-filesystem access.
+filesystem access. Local workers are launched in an independent transient
+systemd user service when available, so restarting the App Server Host does not
+kill an in-flight local calculation; environments without a user systemd
+manager use the process-group fallback and should avoid restarting the parent
+service during a calculation.
 
 ## Run Journals And Result Delivery
 

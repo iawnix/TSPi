@@ -42,6 +42,7 @@
     "config/*.lock",
     "config/pi-worker-entry.patch",
     "config/pi-multi-workspace.patch",
+    "config/pi-system-prompt.patch",
     "config/pi-source-resolver.patch",
     "contracts/ts-render/curve-data.schema.json",
     "contracts/ts-web/README.md",

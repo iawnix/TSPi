@@ -112,6 +112,7 @@ class Installation:
     runtime_manifest: Path
     env_root: Path
     process_cache_root: Path
+    local_config_default: Path | None = None
 
 
 USAGE = """Usage:
@@ -119,7 +120,7 @@ USAGE = """Usage:
   ./TSPi --workspace <name> [--session-id <id> | -c]
   ./TSPi --standalone --workspace <name> [Pi arguments...]
   ./TSPi --app-server --workspace <name> [server arguments...]
-  ./TSPi --app-client --connect <unix://PATH|radius://SERVER_ID> [client arguments...]
+  ./TSPi --app-client --connect <unix://PATH|radius://SERVER_ID> [--workspace <name>] [client arguments...]
   ./TSPi --gateway --workspace <name> --session-id <id> [gateway arguments...]
   ./TSPi --check-remote
 
@@ -129,7 +130,8 @@ Start the Host once before connecting local or Radius clients.
 Exit detaches the terminal; /abort stops generation, not remote calculations.
 --host starts the installation-wide App Server and workspace directory.
 --app-server is retained as a compatibility per-workspace mode.
---app-client is the transport-level client for an explicit Unix or Radius endpoint.
+--app-client is the transport-level client for an explicit Unix or Radius endpoint. A
+  local Unix client may select or initialize a workspace with --workspace.
 --gateway exposes one attached session as a loopback HTTP/SSE browser adapter.
 --standalone is an isolated maintenance mode and does not share App Server sessions.
 Remote computation uses the installation-owned .pi/remote.toml profile.
@@ -253,6 +255,7 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
         runtime_manifest=runtime_home / "env.json",
         env_root=root / ".agents" / "envs" / "tspi",
         process_cache_root=root / ".pi" / "runtime-cache",
+        local_config_default=root / ".pi" / "local.toml",
     )
 
 
@@ -557,7 +560,7 @@ def check_remote(installation: Installation) -> int:
         print(f"TSPi: remote configuration is missing: {installation.remote_config_default}", file=sys.stderr)
         return 1
     completed = subprocess.run(
-        [sys.executable, str(installation.package_root / "scripts" / "ts_compute.py"), "remote-diagnostic", "--mode", "status"],
+        [sys.executable, str(installation.package_root / "scripts" / "ts_compute.py"), "remote-diagnostic", "--mode", "doctor"],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -582,6 +585,11 @@ def configure_process_environment(installation: Installation, workspace: Path, w
     os.environ[PACKAGE_ROOT_OVERRIDE] = str(installation.package_root)
     os.environ["TSPI_INSTALL_ROOT"] = str(installation.root)
     os.environ["TS_WORKSPACE_ROOT"] = str(workspace)
+    os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / ".pi" / "agent")
+    if installation.local_config_default and installation.local_config_default.is_file():
+        os.environ["TS_LOCAL_CONFIG"] = str(installation.local_config_default)
+    else:
+        os.environ.pop("TS_LOCAL_CONFIG", None)
     python_cache = installation.process_cache_root / "python" / workspace_name
     pytest_cache = installation.process_cache_root / "pytest" / workspace_name
     for path in (installation.process_cache_root, python_cache.parent, pytest_cache.parent, python_cache, pytest_cache):
@@ -599,6 +607,11 @@ def configure_host_process_environment(installation: Installation) -> None:
     os.environ["TSPI_INSTALL_ROOT"] = str(installation.root)
     os.environ["TS_WORKSPACE_ROOT"] = str(installation.workspaces_root)
     os.environ["TSPI_WORKSPACE_ROOT"] = str(installation.workspaces_root)
+    os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / ".pi" / "agent")
+    if installation.local_config_default and installation.local_config_default.is_file():
+        os.environ["TS_LOCAL_CONFIG"] = str(installation.local_config_default)
+    else:
+        os.environ.pop("TS_LOCAL_CONFIG", None)
     python_cache = installation.process_cache_root / "python" / "host"
     pytest_cache = installation.process_cache_root / "pytest" / "host"
     for path in (installation.process_cache_root, python_cache.parent, pytest_cache.parent, python_cache, pytest_cache):
@@ -813,6 +826,8 @@ def build_gateway_command(installation: Installation, request: LaunchRequest) ->
         _node_binary(),
         str(_app_server_entry(installation)),
         "gateway",
+        "--workspace",
+        str(installation.workspaces_root / request.workspace_name),
         "--connect",
         f"unix://{socket_path}",
         "--session-id",
@@ -1021,6 +1036,16 @@ def _has_cli_option(arguments: tuple[str, ...], option: str) -> bool:
     return any(value == option or value.startswith(f"{option}=") for value in arguments)
 
 
+def _app_client_endpoint(request: LaunchRequest) -> str | None:
+    arguments = request.pi_args
+    for index, value in enumerate(arguments):
+        if value == "--connect" and index + 1 < len(arguments):
+            return arguments[index + 1]
+        if value.startswith("--connect="):
+            return value.split("=", 1)[1]
+    return None
+
+
 def _launch_access_mode(request: LaunchRequest) -> str:
     return "controller"
 
@@ -1090,8 +1115,6 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         raise TSPiHostError("--host does not accept --workspace or --session-id", exit_code=2)
     if request.app_server and request.session_id:
         raise TSPiHostError("--session-id belongs to --app-client, not --app-server", exit_code=2)
-    if request.app_client and request.workspace_name:
-        raise TSPiHostError("--app-client connects by endpoint and does not accept --workspace", exit_code=2)
     if request.gateway and not request.workspace_name:
         raise TSPiHostError("--gateway requires --workspace", exit_code=2)
     if request.gateway and not request.session_id:
@@ -1099,7 +1122,25 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     installation = resolve_installation(package_root, install_root)
     os.environ["TSPI_INSTALL_ROOT"] = str(installation.root)
     if request.app_client:
-        exec_pi(build_app_client_command(installation, request), installation.root)
+        workspace = None
+        if request.workspace_name:
+            endpoint = _app_client_endpoint(request)
+            if endpoint is not None and endpoint.startswith("radius://"):
+                raise TSPiHostError(
+                    "--workspace with a Radius client must be selected from the remote WorkspaceDirectory; "
+                    "use TS Phone or a workspace-aware client",
+                    exit_code=2,
+                )
+            workspace = prepare_workspace(installation, request.workspace_name)
+            from ts_agent.workspace.bootstrap import WorkspaceBootstrapError, bootstrap_workspace
+
+            try:
+                bootstrap_workspace(workspace)
+            except WorkspaceBootstrapError as exc:
+                raise TSPiHostError(str(exc)) from exc
+            configure_process_environment(installation, workspace, request.workspace_name)
+            os.environ["TSPI_SESSION_CWD"] = str(workspace)
+        exec_pi(build_app_client_command(installation, request), workspace or installation.root)
     try:
         require_guarded_installation(installation.root)
     except SessionGuardError as exc:
@@ -1112,7 +1153,13 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     if default_client:
         if not request.workspace_name:
             raise TSPiHostError(f"a research workspace is required\n{USAGE}", exit_code=2)
-        workspace = resolve_existing_workspace(installation, request.workspace_name)
+        workspace = prepare_workspace(installation, request.workspace_name)
+        from ts_agent.workspace.bootstrap import WorkspaceBootstrapError, bootstrap_workspace
+
+        try:
+            bootstrap_workspace(workspace)
+        except WorkspaceBootstrapError as exc:
+            raise TSPiHostError(str(exc)) from exc
         configure_process_environment(installation, workspace, request.workspace_name)
         launch_terminal(installation, request, workspace)
 

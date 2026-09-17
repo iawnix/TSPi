@@ -195,6 +195,7 @@ def test_configure_services_installs_and_starts_host_and_web(
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr(wizard, "_service_unit_directory", lambda _scope: unit_dir)
     monkeypatch.setattr(wizard, "verify_service_units", lambda *_args: None)
+    monkeypatch.setattr(wizard, "app_server_service_instances", lambda _scope: [])
     monkeypatch.setattr(wizard, "_run_systemctl", lambda _scope, *values: calls.append(values))
     monkeypatch.setattr(
         wizard,
@@ -215,6 +216,38 @@ def test_configure_services_installs_and_starts_host_and_web(
     ]
     assert services[0]["name"] == "ts-app-server-tspi.service"
     assert services[0]["active"] == "active"
+
+
+def test_configure_services_stops_concrete_legacy_app_server_instances(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = _options(tmp_path)
+    unit_dir = tmp_path / "units"
+    unit_dir.mkdir()
+    (unit_dir / "ts-app-server-tspi@.service").write_text(
+        f"[Service]\nWorkingDirectory={args.install_root}\n",
+        encoding="utf-8",
+    )
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(wizard, "_service_unit_directory", lambda _scope: unit_dir)
+    monkeypatch.setattr(wizard, "verify_service_units", lambda *_args: None)
+    monkeypatch.setattr(wizard, "app_server_service_instances", lambda _scope: [
+        "ts-app-server-tspi@reaction-a.service",
+        "ts-app-server-tspi@reaction-b.service",
+    ])
+    monkeypatch.setattr(wizard, "_run_systemctl", lambda _scope, *values: calls.append(values))
+    monkeypatch.setattr(
+        wizard,
+        "_service_status",
+        lambda _scope, scope, name: {"name": name, "scope": scope, "enabled": "disabled", "active": "inactive"},
+    )
+
+    wizard.configure_services(args)
+
+    assert not (unit_dir / "ts-app-server-tspi@.service").exists()
+    assert ("disable", "--now", "ts-app-server-tspi@reaction-a.service") in calls
+    assert ("disable", "--now", "ts-app-server-tspi@reaction-b.service") in calls
 
 
 def test_configure_services_removes_owned_web_unit_when_web_is_disabled(

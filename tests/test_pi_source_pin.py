@@ -22,6 +22,9 @@ def test_pi_source_pin_is_explicit_and_valid() -> None:
     resolver_patch = (ROOT / "config" / "pi-source-resolver.patch").read_text(encoding="utf-8")
     assert "source-resolver.ts" in resolver_patch
     assert "resolveTypeboxPath" in resolver_patch
+    system_prompt_patch = (ROOT / "config" / "pi-system-prompt.patch").read_text(encoding="utf-8")
+    assert "slash-commands-provider.ts" in system_prompt_patch
+    assert "tspi.system-prompt" in system_prompt_patch
 
 
 def test_prepare_pi_source_verifies_a_matching_checkout() -> None:

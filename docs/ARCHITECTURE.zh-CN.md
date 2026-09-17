@@ -118,6 +118,9 @@ Phase 名称或工具退出码直接当成科学状态，也不推断下一步�
 `TSPI_SESSION_CWD`。TS Phone 通过同一个 service 列出项目、切换项目和会话，无需为
 每个项目再次连接或启动 Host。旧的 `--app-server --workspace <name>` 仅作为兼容路径。
 
+第一次执行 `TSPi --workspace <name>` 时，如果项目不存在，客户端会通过同一套经过校验
+的 bootstrap 初始化它；Host 本身不会创建未命名项目，必须由客户端明确指定名称。
+
 ## 手机连接
 
 TS Phone 使用 Pi protocol v8 和 `pi-session-relay.client.v1`，通过
@@ -146,3 +149,7 @@ cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
 收集回工作区，远程目录只是临时执行镜像，TS Web 不需要访问远程文件系统。远程计算
 和产物记录使用显式 schema。TS Web 只读取工作区文件，不拥有 Pi session。入口、skill、
 扩展和测试位置与[英文架构](ARCHITECTURE.md)一致。
+
+可用 user systemd 时，本地 worker 会进入独立的临时 service，因此重启 App Server Host
+通常不会终止正在运行的本地计算；没有 user systemd 时使用进程组回退方案，重启父
+service 前应先检查计算状态。

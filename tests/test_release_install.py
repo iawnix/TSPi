@@ -110,6 +110,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "apps/app-server/pi-session-worker.mjs" in names
     assert "config/pi-source.json" in names
     assert "config/pi-worker-entry.patch" in names
+    assert "config/pi-system-prompt.patch" in names
     assert "scripts/prepare_pi_source.py" in names
     assert "packages/ts-agent-kernel/ts_agent/projection/provider.py" in names
     assert not any(name.startswith("packages/ts-agent-kernel/ts_agent/web/") for name in names)
@@ -149,6 +150,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "apps" / "app-server" / "pi-session-worker.mjs").is_file()
     assert (package_root / "config" / "pi-source.json").is_file()
     assert (package_root / "config" / "pi-worker-entry.patch").is_file()
+    assert (package_root / "config" / "pi-system-prompt.patch").is_file()
     assert (package_root / "scripts" / "prepare_pi_source.py").is_file()
     assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "projection" / "provider.py").is_file()
     assert not (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web").exists()
