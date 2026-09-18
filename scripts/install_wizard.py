@@ -68,6 +68,7 @@ SMTP_PRESETS = {
     "custom": None,
 }
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+WEB_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{40,100}$")
 
 
 def detect_conda_root() -> str:
@@ -271,7 +272,7 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
         if args.web_host not in {"127.0.0.1", "::1", "localhost"}:
             args.allow_remote = ask_yes_no("Allow remote TS Web clients", False)
         if args.web_auth_token is None and ask_yes_no("Use a custom TS Web access token", False):
-            args.web_auth_token = getpass.getpass("TS Web access token (hidden; blank generates one): ").strip() or None
+            args.web_auth_token = _ask_web_auth_token()
     if args.with_model_icons is None:
         args.with_model_icons = ask_yes_no("Install TSPi model icon font", True)
     section("Compute backends")
@@ -433,6 +434,23 @@ def _planned_credential(path: Path) -> str:
     return f"{path} ({action}, mode 0600)"
 
 
+def _ask_web_auth_token() -> str | None:
+    """Read a custom token without delaying validation until installation."""
+
+    while True:
+        value = getpass.getpass(
+            "TS Web access token (40-100 URL-safe characters; blank generates one): "
+        ).strip()
+        if not value:
+            return None
+        if WEB_TOKEN_PATTERN.fullmatch(value):
+            return value
+        note(
+            "Token must contain 40-100 URL-safe characters: A-Z, a-z, 0-9, _ or -.",
+            tone="warning",
+        )
+
+
 def _service_plan(args: argparse.Namespace, *, template: bool = False) -> str:
     if args.service_scope == "none":
         return "not configured"
@@ -484,7 +502,7 @@ def validate_options(args: argparse.Namespace) -> None:
     if args.web_auth_token is not None:
         if not args.with_web:
             raise ValueError("--web-auth-token requires --with-web")
-        if not re.fullmatch(r"[A-Za-z0-9_-]{40,100}", args.web_auth_token):
+        if WEB_TOKEN_PATTERN.fullmatch(args.web_auth_token) is None:
             raise ValueError("--web-auth-token must contain 40 to 100 URL-safe characters")
     if not args.with_web and args.web_port is not None:
         raise ValueError("--web-port requires --with-web")

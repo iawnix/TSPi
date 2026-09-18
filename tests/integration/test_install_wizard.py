@@ -38,6 +38,19 @@ def test_non_interactive_options_select_only_web_as_optional_component(tmp_path:
     assert not hasattr(args, "with_phone")
 
 
+def test_interactive_web_token_reprompts_until_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+    values = iter(("too-short", "a" * 40))
+    monkeypatch.setattr(wizard.getpass, "getpass", lambda _prompt: next(values))
+
+    assert wizard._ask_web_auth_token() == "a" * 40
+
+
+def test_interactive_web_token_blank_uses_generated_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(wizard.getpass, "getpass", lambda _prompt: "   ")
+
+    assert wizard._ask_web_auth_token() is None
+
+
 def test_interactive_compute_backends_accepts_one_file_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
