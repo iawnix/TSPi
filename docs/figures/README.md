@@ -1,5 +1,7 @@
 # TSPi research architecture figure
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Files:
 
 - `tspi-research-architecture.svg`: editable vector artwork for manuscripts and web pages.

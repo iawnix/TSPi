@@ -1,5 +1,7 @@
 # Architecture
 
+[English](ARCHITECTURE.md) | [简体中文](ARCHITECTURE.zh-CN.md)
+
 TSPi packages scientific skills and workflow extensions on top of Pi. One
 installation Host serves all direct-child workspaces through one native Pi App
 Server; there is no separate TS Phone broker or per-workspace service

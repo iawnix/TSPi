@@ -1,9 +1,12 @@
 # TSPi 能力驱动研究与 Node 交互管理规划
 
+[English](PLAN_CAPABILITY_DRIVEN_RESEARCH.md) | 简体中文
+
 日期：2026-09-16。
 
 状态：M0–M7 的首版实现与试用验收已完成。本文件保留设计取舍和验收标准；
-实际支持边界、试验限制及条件性后续项见能力目录、运维文档和验证报告。
+实际支持边界、试验限制及条件性后续项见能力目录和运维文档；一次性验收报告不作为
+仓库文件保留。
 
 本规划整合过渡态、反应机制能力扩展与协议减负的讨论。以本文件中的取舍替代
 早期讨论中固定 MechanismPlan 执行器、合并研究节点以减负、为每种科学对象
@@ -28,8 +31,8 @@ ID 推导 digest。协议错误会提示局部引用、datatype、severity 等�
 报告和只读 Web 已展示分析、证据来源、能量/速率、网络参与物与派发状态。新增
 `tspi-mechanism` 按问题提供参考，没有固定计算序列。使用方法见
 [运维文档](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)，设计决定见
-[ADR 0002](adr/0002-independent-scientific-capabilities.md)，测试结果见
-[首版验证报告](VALIDATION_CAPABILITY_DRIVEN_RESEARCH.zh-CN.md)。
+[ADR 0002](adr/0002-independent-scientific-capabilities.md)。当前证据以源码测试、
+组件测试和发布检查为准。
 
 静态协议基线沿用 `tests/test_pi_agent_adapter.py` 的 UTF-8 字节计量：
 
@@ -82,7 +85,7 @@ CREST、ASE-NEB 小体系作业均已完成收集和解析。该 smoke 证明接
 10. 不因增加能力而给每个工具、物种或计算候选强制建立一套新的管理生命周期。
 
 依据：[ADR 0001](adr/0001-phase-node-research-kernel.md)、
-[假设与证明循环](PLAN_HYPOTHESIS_PROOF_LOOP.md)、
+[假设与证明循环](PLAN_HYPOTHESIS_PROOF_LOOP.zh-CN.md)、
 [状态模型](../skills/tspi-orchestration/references/state_model.md)。
 
 ## 3. 当前基础与实际增量

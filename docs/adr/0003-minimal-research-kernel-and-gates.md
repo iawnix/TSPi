@@ -1,5 +1,7 @@
 # ADR 0003: Minimal Research Kernel And Gate Contracts
 
+[English](0003-minimal-research-kernel-and-gates.md) | [简体中文](0003-minimal-research-kernel-and-gates.zh-CN.md)
+
 - Status: proposed
 - Date: 2026-09-16
 - Supersedes: the implicit assumption that execution, validation, and research state

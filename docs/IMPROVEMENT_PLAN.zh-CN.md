@@ -1,5 +1,7 @@
 # TSPi 改善方案
 
+[English](IMPROVEMENT_PLAN.md) | 简体中文
+
 > 实施状态（2026-09-12）：第一阶段的 `/3` 清理、仓内 Web 组件边界、曲线渲染
 > 合约和 GitHub source-first 安装入口已完成；后续阶段保留为演进计划。
 
@@ -41,18 +43,18 @@ TSPi 负责科学状态、只读投影协议、Provider、Suite 组装和安装�
 暂时不定义为独立 Git 仓库。只有在 Web 需要独立团队、独立发布节奏、多个
 后端或 CDN/SaaS 部署时，才重新评估拆仓库。
 
-## 第一阶段：删除 Web `/3` 兼容（高优先级）
+## 第一阶段：删除 Web `/3` 兼容（已完成）
 
 ### 代码清理
 
-删除所有历史 Web 嵌入路径和条件分支：
+以下历史 Web 嵌入路径和条件分支已经删除；本节保留迁移记录：
 
 - `scripts/_suite.py` 中的 `SUITE_COMPAT_SCHEMA_VERSION`、兼容组件版本和旧 Web 校验。
 - `scripts/_wheel.py` 中的旧版 Web 参数及 Web 嵌入判断。
 - `scripts/install_package.py` 中针对 Suite `/3`、旧 Web entrypoint 和旧版 runtime 的分支。
 - `scripts/install_release.py` 中仅为旧 Web 形态保留的参数和校验。
 - `scripts/package_inventory.py` 中的旧版 Web inventory 常量。
-- `packages/ts-agent-kernel/ts_agent/web/` 整个旧 Web 实现。
+- 旧的内嵌 Web 实现（当前已不存在；现行组件位于 `components/ts-web/`）。
 - `scripts/ts_web.py` 兼容包装器。
 
 当前唯一受支持的 Suite 结构为：
@@ -70,10 +72,8 @@ tspi-package-release/4
 ### 测试和文档清理
 
 - 删除只覆盖 `/3` 的安装、回滚和旧版 Web 测试。
-- 将 `tests/test_ts_web.py` 中依赖 `ts_agent.web` 的测试迁移到
-  `tests/test_ts_web_component.py`，直接测试 `components/ts-web/ts_web/`。
-- 新增测试，确认源码和发布包中不存在 `scripts/ts_web.py` 与
-  `packages/ts-agent-kernel/ts_agent/web/`。
+- `tests/test_ts_web.py` 与 `tests/test_ts_web_component.py` 现在直接覆盖
+  `components/ts-web/`；组件测试确认源码和归档中不存在旧入口。
 - 删除 README、Architecture、Installation、Maintainer Guide 中关于
   `/3` 回滚和 Agent 内嵌 Web 的说明。
 - 将 `docs/adr/0002` 的状态改为“Web 组件边界已完成，旧 `/3` 兼容已终止”。
@@ -91,7 +91,7 @@ tspi-package-release/4
 - `npm run test:package` 通过。
 - Suite `/4` 的 Core-only、Core+Web、Core+Phone、Core+Web+Phone 四种组合均能构建和安装。
 - 旧 `/3` 包被明确拒绝，并返回可理解的升级提示。
-- Web 运行时不再从 `ts_agent.web` 导入任何代码。
+- Web 运行时只从 `components/ts-web/` 的公开组件边界加载代码。
 
 ## 第二阶段：固定 `ts-web` 的仓库内组件边界
 

@@ -53,8 +53,9 @@ schemas out of the always-loaded tools. Do not add scientific successor routing.
 Node pause/resume receipts are operational state. Preserve the shared workspace
 lock at submission and analysis boundaries; keep inspection, collection and
 cancellation available. Test native App Server and extension entrypoints, wheel
-installation, projections and source-tampering rejection. See the
-[validation report](VALIDATION_CAPABILITY_DRIVEN_RESEARCH.zh-CN.md).
+installation, projections and source-tampering rejection. Use the stable
+operations guide and focused test suites as the current evidence; one-off
+validation reports do not belong in the repository.
 
 ## Documentation Ownership
 

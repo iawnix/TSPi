@@ -1,7 +1,11 @@
 # Independent scientific analysis and Node dispatch management
 
-Status: implemented and validated within the documented first-release scope (2026-09-16).
-See the [validation report](../VALIDATION_CAPABILITY_DRIVEN_RESEARCH.zh-CN.md).
+[English](0002-independent-scientific-capabilities.md) | [简体中文](0002-independent-scientific-capabilities.zh-CN.md)
+
+Status: implemented within the documented first-release scope (2026-09-16).
+Use the focused scientific-analysis, package, and component test suites as the
+current validation record. One-off validation reports are intentionally not
+checked into `docs/`.
 
 ## Context
 

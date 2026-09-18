@@ -1,5 +1,7 @@
 # ADR 0001: Phase And ResearchNode Kernel
 
+[English](0001-phase-node-research-kernel.md) | [简体中文](0001-phase-node-research-kernel.zh-CN.md)
+
 - Status: accepted
 - Date: 2026-08-23
 - Branch: `ts-dag`

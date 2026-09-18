@@ -1,5 +1,7 @@
 # 科学分析能力：使用与运维
 
+[English](SCIENTIFIC_CAPABILITIES_OPERATIONS.md) | 简体中文
+
 `ts_state mode=capabilities capabilityKind=analysis` 返回小型能力索引；
 `query=<capability>@1` 返回输入角色、参数 schema、输出与适用边界。
 `ts_analyze` 只调用用户问题所需要的独立能力，不规定研究顺序。
@@ -86,7 +88,7 @@ CREST 的标准输出现在绑定 `crest.out`。历史提交若绑定的是 `rem
 
 首版热化学支持匹配的 HF/Kohn-Sham SCF 总能、解析热修正及显式 RRHO。相关电子
 方法、同位素 RRHO、构象系综和微观动力学超出本版；缺失或不兼容证据不能由电子
-能代替。具体实测边界见[验证报告](VALIDATION_CAPABILITY_DRIVEN_RESEARCH.zh-CN.md)。
+能代替。具体测试入口见本文件的“验证入口”一节；一次性验收报告不作为仓库文件保留。
 
 原生 App Server smoke 使用 `config/pi-source.json` 固定源码版本。源码入口仍需
 生成模型数据和依赖包 build 产物；`prepare_pi_source.py --install <root>` 会检查

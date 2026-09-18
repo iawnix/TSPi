@@ -1,5 +1,7 @@
 # 模型兼容性
 
+[English](MODEL_COMPATIBILITY.md) | [简体中文](MODEL_COMPATIBILITY.zh-CN.md)
+
 TSPi 不维护第二套模型 provider。安装级 Host 直接使用
 `config/pi-source.json` 固定的 Pi 版本所提供的模型目录、认证、API adapter 和
 `models.json`。终端与 TS Phone 连接同一个 session Worker，因此二者使用同一个模型

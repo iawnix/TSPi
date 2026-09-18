@@ -1,5 +1,7 @@
 # ADR 0002: Repository And Component Boundaries
 
+[English](0002-repository-and-component-boundaries.md) | [简体中文](0002-repository-and-component-boundaries.zh-CN.md)
+
 - Status: accepted, implemented (Web boundary extracted; Suite `/3` retired)
 - Date: 2026-09-10
 - Scope: TSPi, `ts-phone`, and the optional `ts-web` component

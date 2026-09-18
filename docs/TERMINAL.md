@@ -1,5 +1,7 @@
 # Terminal
 
+[English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
+
 The TSPi terminal is Pi's native TUI attached to the installation Host. The
 Host is the only session owner; the terminal and TS Phone are equal clients of
 it. One Host can serve every project below the configured workspace root.

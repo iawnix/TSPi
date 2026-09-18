@@ -1,5 +1,7 @@
 # ADR 0004: Unified App Server Extension Runtime
 
+[English](0004-unified-app-server-extension-runtime.md) | [简体中文](0004-unified-app-server-extension-runtime.zh-CN.md)
+
 - Status: accepted
 - Date: 2026-09-17
 - Scope: TSPi App Server, terminal TUI, Phone, and Web clients

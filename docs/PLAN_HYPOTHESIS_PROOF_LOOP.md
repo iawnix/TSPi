@@ -1,5 +1,7 @@
 # TSPi Hypothesis--Proof Loop Refactor Plan
 
+[English](PLAN_HYPOTHESIS_PROOF_LOOP.md) | [简体中文](PLAN_HYPOTHESIS_PROOF_LOOP.zh-CN.md)
+
 - Status: research-kernel implementation and native Pi App Server architecture
   are complete in the authored checkout; commit, publication, and production
   installation remain explicit delivery steps

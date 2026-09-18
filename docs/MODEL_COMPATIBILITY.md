@@ -1,5 +1,7 @@
 # Model Compatibility
 
+[English](MODEL_COMPATIBILITY.md) | [简体中文](MODEL_COMPATIBILITY.zh-CN.md)
+
 TSPi does not implement a second model-provider stack. The installation Host
 uses the model registry, authentication store, API adapters, and `models.json`
 support from the pinned Pi release in `config/pi-source.json`. The terminal and

@@ -1,0 +1,34 @@
+# ADR 0004：统一 App Server Extension Runtime
+
+[English](0004-unified-app-server-extension-runtime.md) | 简体中文
+
+- 状态：已接受
+- 日期：2026-09-17
+
+## 决定
+
+安装级 systemd App Server 是生产环境唯一的 Root Agent runtime。终端命令
+`TSPi --workspace <name>` 是连接它的 Pi 原生客户端；TS Phone 和 Web 也附着到其会话，
+不会启动第二个 workflow runtime，也不会上传可执行 extension。`--standalone` 仅用于
+开发和恢复。
+
+服务工具由 `extensions/server/extensions.json` 选择，每个 descriptor 绑定 scope、
+工具清单、权限和 SHA-256 digest。loader 拒绝 package 外路径、符号链接、未知 allowlist
+名称、非法 factory 以及和内建工具或其他 extension 的名称冲突。客户端只能调用由
+Host context 创建的 protocol service。
+
+`ts-workflow-native` 是规范 server tool set，所有客户端共享其实现；现有 Pi presentation
+extension 仍然只属于 `--standalone`。新的 workflow 功能必须增加 server entry 和对应
+client projection，不得重新创建 per-client broker。
+
+## Provider 兼容性
+
+Compute 和 Review runtime 仍校验结果 tool call。对声明 DeepSeek 风格 thinking mode
+的 provider，不发送命名 `tool_choice`，因为该组合会被 provider 以 HTTP 400 拒绝；
+普通 provider 继续使用命名 choice。结果 schema 和修复回合仍是权威合同。
+
+## 后果
+
+TUI、Phone 和 Web 共享一份 session transcript 与 Root lock；客户端断开后可由另一个
+认证客户端接替，不需要重放不确定 prompt 或远程操作。Standalone 不与 Host 同步，
+发布验证必须覆盖 loader、manifest 和 server entry。

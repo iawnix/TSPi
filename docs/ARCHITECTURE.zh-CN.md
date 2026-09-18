@@ -1,5 +1,7 @@
 # 架构
 
+[English](ARCHITECTURE.md) | [简体中文](ARCHITECTURE.zh-CN.md)
+
 TSPi 在 Pi 之上提供计算化学 skill 和工作流扩展。一个安装目录只运行一个原生
 Pi App Server Host，由它服务配置的 workspace root 下的所有直接子工作区；不再需要单独
 的 TS Phone broker 或每个工作区一个 service。

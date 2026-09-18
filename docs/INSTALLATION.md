@@ -1,5 +1,7 @@
 # Installation and Operations
 
+[English](INSTALLATION.md) | [简体中文](INSTALLATION.zh-CN.md)
+
 This guide installs the TSPi Agent package and its optional TS Web projection.
 TS Phone is a separate Flutter application; no TS Phone server, bridge secret,
 or local HTTP broker is installed.
