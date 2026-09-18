@@ -16,7 +16,7 @@ from .provider import ProviderClient
 from .server import serve
 
 
-TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{40,100}$")
+TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
 
 
 def main(argv: list[str] | None = None) -> int:

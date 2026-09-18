@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 
-TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{40,100}$")
+TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
 TOKEN_BYTES = 32
 
 
@@ -163,7 +163,7 @@ def _new_token(used: set[str]) -> str:
 
 def _validate_token_value(value: str) -> None:
     if TOKEN_PATTERN.fullmatch(value) is None:
-        raise ValueError("TS Web token must contain 40 to 100 URL-safe characters")
+        raise ValueError("TS Web token must contain 8 to 100 URL-safe characters")
 
 
 def _write_secret(path: Path, value: str) -> None:

@@ -39,10 +39,10 @@ def test_non_interactive_options_select_only_web_as_optional_component(tmp_path:
 
 
 def test_interactive_web_token_reprompts_until_valid(monkeypatch: pytest.MonkeyPatch) -> None:
-    values = iter(("too-short", "a" * 40))
+    values = iter(("too-short", "a" * 8))
     monkeypatch.setattr(wizard.getpass, "getpass", lambda _prompt: next(values))
 
-    assert wizard._ask_web_auth_token() == "a" * 40
+    assert wizard._ask_web_auth_token() == "a" * 8
 
 
 def test_interactive_web_token_blank_uses_generated_token(monkeypatch: pytest.MonkeyPatch) -> None:

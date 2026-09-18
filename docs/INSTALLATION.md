@@ -257,7 +257,7 @@ Web is read-only and does not own Pi sessions. Its bearer token is separate
 from Pi Radius credentials.
 
 The installer generates a random TS Web token when the token file is missing.
-For a selected token, pass `--web-auth-token` (40-100 URL-safe characters) or
+For a selected token, pass `--web-auth-token` (8-100 URL-safe characters) or
 enter one at the hidden interactive prompt. The command-line form can be
 visible in shell history or process listings; a pre-created `0600` token file
 with `--web-auth-token-file` is preferred for production use.

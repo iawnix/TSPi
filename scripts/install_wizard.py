@@ -68,7 +68,7 @@ SMTP_PRESETS = {
     "custom": None,
 }
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-WEB_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{40,100}$")
+WEB_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
 
 
 def detect_conda_root() -> str:
@@ -206,7 +206,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--web-auth-token-file", help="TS Web token file (must be inside the installation root).")
     parser.add_argument(
         "--web-auth-token",
-        help="Explicit TS Web token (40-100 URL-safe characters; prefer --web-auth-token-file for secrets).",
+        help="Explicit TS Web token (8-100 URL-safe characters; prefer --web-auth-token-file for secrets).",
     )
     parser.add_argument("--remote-config", help="Existing remote.toml to install as .pi/remote.toml.")
     parser.add_argument("--local-config", help="Existing local.toml to install as .pi/local.toml.")
@@ -439,14 +439,14 @@ def _ask_web_auth_token() -> str | None:
 
     while True:
         value = getpass.getpass(
-            "TS Web access token (40-100 URL-safe characters; blank generates one): "
+            "TS Web access token (8-100 URL-safe characters; blank generates one): "
         ).strip()
         if not value:
             return None
         if WEB_TOKEN_PATTERN.fullmatch(value):
             return value
         note(
-            "Token must contain 40-100 URL-safe characters: A-Z, a-z, 0-9, _ or -.",
+            "Token must contain 8-100 URL-safe characters: A-Z, a-z, 0-9, _ or -.",
             tone="warning",
         )
 
@@ -503,7 +503,7 @@ def validate_options(args: argparse.Namespace) -> None:
         if not args.with_web:
             raise ValueError("--web-auth-token requires --with-web")
         if WEB_TOKEN_PATTERN.fullmatch(args.web_auth_token) is None:
-            raise ValueError("--web-auth-token must contain 40 to 100 URL-safe characters")
+            raise ValueError("--web-auth-token must contain 8 to 100 URL-safe characters")
     if not args.with_web and args.web_port is not None:
         raise ValueError("--web-port requires --with-web")
     if args.with_web:

@@ -27,8 +27,8 @@ def test_web_credential_is_created_once_and_preserved(tmp_path: Path) -> None:
 def test_web_credential_accepts_an_explicit_token_and_can_rotate_it(tmp_path: Path) -> None:
     root = tmp_path / "install"
     root.mkdir()
-    selected = "a" * 40
-    rotated = "b" * 40
+    selected = "a" * 8
+    rotated = "b" * 8
 
     first = provision_service_credentials(root, with_web=True, web_token_value=selected)
     token = Path(first["web_http"]["path"])
