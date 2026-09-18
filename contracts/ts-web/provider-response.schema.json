@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "request_id", "ok"],
   "properties": {
-    "schema_version": { "const": "ts-web-provider/1" },
+    "schema_version": { "const": "ts-research-provider/1" },
     "request_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,160}$" },
     "ok": { "type": "boolean" },
     "payload": {},

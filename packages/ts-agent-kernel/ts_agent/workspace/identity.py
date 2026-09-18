@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from ts_agent.io import now_iso
-from .schema_validation import SchemaValidationError, validate_contract
 from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
@@ -37,8 +36,8 @@ def read_workspace_identity(root: str | Path) -> dict[str, str]:
     try:
         with path.open("r", encoding="utf-8") as handle:
             record = json.load(handle)
-        validate_contract("workspace_identity.schema.json", record)
-    except (OSError, json.JSONDecodeError, SchemaValidationError) as exc:
+        _validate_record(record)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
         raise WorkspaceIdentityError(f"invalid workspace identity: {path}: {exc}") from exc
     return {str(key): str(value) for key, value in record.items()}
 
@@ -61,7 +60,7 @@ def ensure_workspace_identity(root: str | Path) -> dict[str, str]:
         "workspace_id": f"ws_{uuid.uuid4().hex[:24]}",
         "created_at": now_iso(),
     }
-    validate_contract("workspace_identity.schema.json", record)
+    _validate_record(record)
     payload = (json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8")
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
@@ -96,3 +95,16 @@ def workspace_id(root: str | Path, *, create: bool = False) -> str:
     if not WORKSPACE_ID_PATTERN.fullmatch(value):
         raise WorkspaceIdentityError(f"invalid workspace_id: {value}")
     return value
+
+
+def _validate_record(record: object) -> None:
+    if not isinstance(record, dict):
+        raise ValueError("workspace identity must be an object")
+    if record.get("schema_version") != IDENTITY_SCHEMA:
+        raise ValueError("workspace identity schema is unsupported")
+    workspace_value = record.get("workspace_id")
+    if not isinstance(workspace_value, str) or not WORKSPACE_ID_PATTERN.fullmatch(workspace_value):
+        raise ValueError("workspace identity has an invalid workspace_id")
+    created_at = record.get("created_at")
+    if not isinstance(created_at, str) or not created_at:
+        raise ValueError("workspace identity has an invalid created_at")

@@ -20,11 +20,10 @@
     "protocols": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["provider", "projection", "graph", "theme"],
+      "required": ["provider", "map", "theme"],
       "properties": {
-        "provider": { "const": "ts-web-provider/1" },
-        "projection": { "const": "ts-web-workspace/6" },
-        "graph": { "const": "ts-explorer-graph/6" },
+        "provider": { "const": "ts-research-provider/1" },
+        "map": { "const": "research-map/1" },
         "theme": { "const": "ts-theme/1" }
       }
     },

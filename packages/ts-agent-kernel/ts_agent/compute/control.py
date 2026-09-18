@@ -63,6 +63,7 @@ from ts_agent.workspace.operational_ids import allocate_operational_id
 from ts_agent.workspace.identity import WorkspaceIdentityError, workspace_id
 from ts_agent.workspace.node_contract import node_contract_digest
 from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.workspace.artifacts import WorkspaceArtifactError, workspace_node_records, workspace_root as canonical_workspace_root
 
 from .artifacts import resolve_artifact_ref, resolve_input_artifacts, verify_input_bindings
 from ts_agent.workspace.candidates import CANDIDATE_FILE_NAME, build_observation_candidates
@@ -2167,25 +2168,10 @@ def _has_collected_result(workspace: Path, intent: dict[str, Any]) -> bool:
 
 
 def _workspace_root(root: str | Path) -> Path:
-    workspace = lexical_path(root)
-    if path_has_symlink(workspace):
-        raise ComputeContractError(f"workspace root cannot contain a symbolic link: {workspace}")
-    workspace_doc = workspace / "workspace.json"
-    nodes_doc = workspace / "research_nodes.json"
-    nodes_root = workspace / "nodes"
-    if any(has_symlink_component(workspace, path) for path in (workspace_doc, nodes_doc, nodes_root)):
-        raise ComputeContractError("workspace canonical paths cannot contain symbolic links")
-    if not workspace_doc.is_file() or not nodes_doc.is_file() or not nodes_root.is_dir():
-        raise ComputeContractError(f"not an initialized TS workspace: {workspace}")
     try:
-        workspace_record = read_json(workspace_doc)
-    except (OSError, ValueError) as exc:
-        raise ComputeContractError(f"cannot read workspace identity: {workspace_doc}") from exc
-    if not isinstance(workspace_record, dict):
-        raise ComputeContractError("workspace.json must contain an object")
-    if workspace_record.get("schema_version") != "ts-workspace/6":
-        raise ComputeContractError(f"unsupported TS workspace protocol: {workspace}")
-    return workspace
+        return canonical_workspace_root(root)
+    except WorkspaceArtifactError as exc:
+        raise ComputeContractError(str(exc)) from exc
 
 
 def _intent_source(workspace: Path, value: str | Path) -> tuple[Path, str]:
@@ -2258,17 +2244,11 @@ def _resolve_capability_contract(capability: str, version: str) -> CapabilityDes
 
 
 def _load_node(workspace: Path, node_id: str) -> dict[str, Any]:
-    registry = _read_object(workspace / "research_nodes.json", "ResearchNode registry")
-    if registry.get("schema_version") != "ts-research-node-registry/2":
-        raise ComputeContractError("invalid ResearchNode registry")
-    raw_nodes = registry.get("nodes")
-    if not isinstance(raw_nodes, list):
-        raise ComputeContractError("ResearchNode registry nodes must be an array")
-    matches = [
-        item
-        for item in raw_nodes
-        if isinstance(item, dict) and item.get("node_id") == node_id
-    ]
+    try:
+        records = workspace_node_records(workspace)
+    except WorkspaceArtifactError as exc:
+        raise ComputeContractError(str(exc)) from exc
+    matches = [item for item in records if item.get("node_id") == node_id]
     if len(matches) != 1:
         raise ComputeContractError(f"unknown ResearchNode: {node_id}")
     return matches[0]
@@ -2302,7 +2282,7 @@ def _validate_intent(intent: dict[str, Any]) -> None:
 
 def _validate_intent_node_scope(workspace: Path, intent: dict[str, Any], node: dict[str, Any]) -> None:
     if node.get("schema_version") != "ts-research-node/2":
-        raise ComputeContractError("calculations require a ts-research-node/2 owner")
+        raise ComputeContractError("calculations require a ResearchNode owner")
     if node.get("status") != "open":
         raise ComputeContractError("calculations require an open ResearchNode")
     if intent.get("node_id") != node.get("node_id"):

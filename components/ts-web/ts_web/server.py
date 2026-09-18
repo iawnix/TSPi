@@ -21,10 +21,6 @@ STATIC_FILES = {
     "i18n.js": "text/javascript; charset=utf-8",
     "logo.svg": "image/svg+xml",
     "favicon.svg": "image/svg+xml",
-    "research-tree.js": "text/javascript; charset=utf-8",
-    "research-map.js": "text/javascript; charset=utf-8",
-    "claim-map.js": "text/javascript; charset=utf-8",
-    "attempt-timeline.js": "text/javascript; charset=utf-8",
 }
 STATIC_ROOT = Path(__file__).resolve().parents[1] / "static"
 
@@ -96,10 +92,9 @@ def _make_handler(provider: ProviderClient, *, auth_token: str | None = None):
                     self._send_json(
                         {
                             "ok": True,
-                            "protocol": "ts-research-kernel/6",
-                            "projection_protocol": "ts-web-workspace/6",
-                            "graph_protocol": "ts-explorer-graph/6",
-                            "provider_protocol": "ts-web-provider/1",
+                            "protocol": "research-map/1",
+                            "provider_protocol": "ts-research-provider/1",
+                            "canonical": "ResearchMap",
                             "read_only": True,
                         }
                     )

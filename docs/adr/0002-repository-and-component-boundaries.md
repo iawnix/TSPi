@@ -44,7 +44,7 @@ contracts are explicit.
 | --- | --- | --- |
 | TSPi | Owns the kernel, Pi package, Web implementation, release assembly, and installation boundary | It is the natural required core repository and product release owner |
 | `ts-phone` | Independent repository with the Flutter presentation client and mobile release tooling | It remains independently developed; its runtime dependency is the Pi App Server protocol |
-| `ts-web` | Client, registry, server, and static UI under `components/ts-web/`; it consumes the TSPi provider through `ts-web-provider/1` | The component can be archived and installed independently from Agent |
+| `ts-web` | Client, registry, server, and static UI under `components/ts-web/`; it consumes the canonical ResearchMap through `ts-research-provider/1` | The component can be archived and installed independently from Agent |
 | Phone transport | TS Phone speaks Pi protocol v8 through the authenticated Radius session relay; no TSPi Phone server or bridge is installed | Pi owns the session transport and TS Phone owns only its presentation adapter |
 | Release boundary | TSPi emits `tspi-package-release/4` with required Agent and optional independent Web descriptor | The suite contains the runtime; TS Phone is released separately |
 | Review | One isolated advisory Review runtime exists; no reviewer pool, role selection, aggregation, or conflict protocol exists | Improve the contract before adding more reviewer prompts or agents |
@@ -60,7 +60,7 @@ The TSPi repository owns:
 - the Root Agent integration and public Skill family, led by `tspi-orchestration`;
 - the deterministic Research Kernel and canonical workspace contract;
 - deterministic compute, artifact, report, remote, and notification mechanisms;
-- the TSPi projection provider for canonical workspace data;
+- the TSPi ResearchMap provider for canonical workspace data;
 - core Pi extensions and lifecycle entrypoints;
 - component compatibility checks, suite assembly, and installation.
 
@@ -72,7 +72,7 @@ the Pi wire protocol.
 `ts-web` is an optional component with its own source boundary under
 `components/ts-web/`. It owns the browser UI, HTTP transport, registry client,
 and thin provider client. It must not import private TSPi Python modules. TSPi
-owns the projection provider, workspace paths, and provider protocol.
+owns the ResearchMap provider, workspace paths, and provider protocol.
 
 This distinction is deliberate:
 
@@ -86,7 +86,7 @@ TSPi product
 |     mobile client and release tooling
 |
 `-- components/ts-web/                 optional component source
-      projection client and browser UI
+      ResearchMap client and browser UI
 ```
 
 The product may ship one assembled release containing selected components.
@@ -144,18 +144,17 @@ session, transcript, model, prompt, and abort services into its mobile UI. It
 must not introduce a second broker, event journal, or semantic definition of
 the App Server records.
 
-TSPi owns the semantic source for the read-only workspace projection consumed
-by Web. The projection is a public, versioned, JSON boundary. The current
-`ts-web-workspace/6` contract can be retained as the compatibility baseline;
-its name or major version should change only through an intentional protocol
-decision.
+TSPi owns the semantic source for the canonical ResearchMap consumed by Web.
+The map is a public, versioned JSON boundary. The current
+  `research-map/1` is the canonical ResearchMap payload. It replaces the old
+  workspace-view and graph pair; there is no compatibility projection layer.
 
 The minimum Web boundary is:
 
 ```text
-TSPi projection provider
-    -> versioned snapshot/request contract
-    -> ts-web projection client and UI
+TSPi ResearchMap provider
+    -> versioned request/response contract
+    -> ts-web canonical-map client and UI
 ```
 
 The contract must include protocol version, workspace identity, scientific and
@@ -239,11 +238,9 @@ should use the following concepts:
 | ResearchPhase | human navigation grouping only |
 | ResearchNode | one bounded research decision episode |
 | Claim | scientific statement, assumptions, and falsifiers |
-| Observation | immutable semantic record with provenance |
-| Finding | anomaly, limitation, conflict, or unresolved question |
-| ProofSpec | frozen declarative validation definition |
-| ValidationResult | deterministic result over selected Observations |
-| Decision | the canonical mutation transaction |
+| Finding | Node output, specialized as FactFinding or IssueFinding |
+| Gate | common Node/Claim completion and assessment contract |
+| ChangeSet | the canonical map mutation request |
 | Review | bounded advisory assessment |
 | Compute | bounded operational execution |
 
@@ -252,10 +249,10 @@ routing concepts:
 
 - `stage` for a private execution or failure location;
 - `transaction prepare/commit` for Kernel internals;
-- ad hoc `gate_results` or `required_gates` fields used as a workflow router;
-  gate evaluation belongs to the scoped `GateSpec`/`GateResult` contract;
-- `Evidence layer` or `Evidence role` when the actual owner is an Artifact,
-  Observation, Finding, or ValidationResult;
+- ad hoc gate fields used as a workflow router; evaluation belongs to the
+  scoped `Gate` contract;
+- `Evidence layer` or `Evidence role` when the actual owner is an Artifact or
+  Finding;
 - a fixed workflow stage table or a central next-action router.
 
 This is not a global search-and-replace task. Each occurrence must be
@@ -304,13 +301,13 @@ The project adopts four feedback tiers:
 | Tier | Purpose | Required behavior |
 | --- | --- | --- |
 | Fast | ordinary source edits | runs direct source/unit/contract checks without building a wheel or solving a runtime |
-| Component | shared boundary changes | checks Python/TypeScript contracts, projection fixtures, Phone/Web compatibility, and Pi adapter behavior |
+| Component | shared boundary changes | checks Python/TypeScript contracts, ResearchMap fixtures, Phone/Web compatibility, and Pi adapter behavior |
 | Candidate | release-shaped validation | builds the relevant component and runs managed runtime/package tests |
 | Release | delivery validation | assembles the selected suite, verifies digests/permissions, and runs end-to-end smoke checks |
 
 Change selection should be path-aware:
 
-- Web-only changes start with Web projection and UI checks;
+- Web-only changes start with ResearchMap transport and UI checks;
 - Skill-only changes start with terminology, README, and Skill contract checks;
 - Review changes start with Review isolation, task/result, journal, and
   provider-recording checks;
@@ -342,8 +339,8 @@ for local changes.
 
 ### Phase 2: extract the Web boundary (completed)
 
-- isolate the TSPi projection provider behind the versioned
-  `ts-web-provider/1` request/response contract;
+- expose the canonical ResearchMap behind the versioned
+  `ts-research-provider/1` request/response contract;
 - make the Web client under `components/ts-web/` consume only that contract;
 - add archive and source tests proving the client has no `ts_agent` imports;
 - package the Web UI as an independently validated optional component.
@@ -394,7 +391,7 @@ The restructuring is ready for implementation completion only when:
 - optional components are selected through a validated manifest, not source
   path discovery;
 - Phone schemas have one canonical source and TSPi has compatibility tests;
-- Web communicates through a versioned read-only projection and has no private
+- Web communicates through a versioned read-only ResearchMap transport and has no private
   `ts_agent` imports;
 - protocol, component, and theme revisions are visible in diagnostics and
   checked during assembly;
@@ -408,7 +405,7 @@ The restructuring is ready for implementation completion only when:
 
 ## Consequences
 
-This decision adds explicit component manifests, projection contracts, and
+This decision adds explicit component manifests, ResearchMap contracts, and
 compatibility tests. It also requires maintainers to distinguish source
 ownership from release assembly and public terminology from private mechanics.
 

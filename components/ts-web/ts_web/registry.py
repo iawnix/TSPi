@@ -266,6 +266,8 @@ def _registered_workspace_exists(source: Path) -> bool:
         and not path_has_symlink(identity)
         and identity.is_file()
         and not identity.is_symlink()
+        and (source / "research_map.json").is_file()
+        and not (source / "research_map.json").is_symlink()
     )
 
 
@@ -278,8 +280,8 @@ def _is_supported_workspace(source: Path) -> bool:
         return False
     return (
         isinstance(identity, dict)
-        and identity.get("schema_version") == "ts-workspace/6"
-        and identity.get("kernel_protocol") == "ts-research-kernel/6"
+        and identity.get("schema_version") == "research-workspace/1"
+        and identity.get("kernel_protocol") == "research-map/1"
     )
 
 

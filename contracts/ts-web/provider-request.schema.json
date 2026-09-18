@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "request_id", "operation", "query"],
   "properties": {
-    "schema_version": { "const": "ts-web-provider-request/1" },
+    "schema_version": { "const": "research-web-request/1" },
     "request_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,160}$" },
     "operation": { "enum": ["catalog", "route", "remove"] },
     "workspace_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$" },

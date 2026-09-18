@@ -31,9 +31,9 @@ const {
 const executeFile = promisify(execFile);
 const { nodeControlProperties, nodeControlArguments } = require("../../packages/ts-agent-runtime/artifacts/node-control.cjs");
 
-const GRAPH_CONTEXT_MODES = ["frontier", "claim", "node", "subgraph", "finding", "proof", "delta"];
-const CONTEXT_MODES = [...GRAPH_CONTEXT_MODES, "locate", "artifacts", "capabilities", "change_contract"];
-const CAPABILITY_KINDS = ["compute", "analysis", "proof", "gate"];
+const MAP_MODES = ["map", "claim", "node", "finding"];
+const CONTEXT_MODES = [...MAP_MODES, "locate", "artifacts", "capabilities"];
+const CAPABILITY_KINDS = ["compute", "analysis"];
 const IMPORT_FORMATS = ["gaussian_input", "xyz_structure", "xtb_control"];
 const STRUCTURE_OPTIMIZATIONS = ["none", "uff"];
 const REMOTE_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes"];
@@ -43,24 +43,16 @@ const TS_STATE_PARAMETERS = Type.Object({
   claimRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
   nodeRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
   findingRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-  proofRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-  claimSeeds: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 32 })),
-  nodeSeeds: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { maxItems: 32 })),
-  depth: Type.Optional(Type.Integer({ minimum: 0, maximum: 4 })),
-  sinceRevision: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
-  sinceOperationalRevision: Type.Optional(Type.String({ minLength: 1, maxLength: 512 })),
-  templateId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-  templateVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
   capabilityKind: Type.Optional(Type.Union(CAPABILITY_KINDS.map((kind) => Type.Literal(kind)))),
-  operation: Type.Optional(Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9_]*$" })),
 }, { additionalProperties: false });
 const CHANGE_OPERATION = Type.Object({
-  op: Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9_]*$" }),
+  type: Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9_]*$" }),
 }, { additionalProperties: true, maxProperties: 24 });
 const TS_CHANGE_PARAMETERS = Type.Object({
   rationale: Type.String({ minLength: 1, maxLength: 12_000 }),
   operations: Type.Array(CHANGE_OPERATION, { minItems: 1, maxItems: 128 }),
   basisRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 256, uniqueItems: true })),
+  expectedRevision: Type.Optional(Type.Integer({ minimum: 0 })),
 }, { additionalProperties: false });
 const TS_SEED_PARAMETERS = Type.Object({
   operation: Type.Literal("generate"),
@@ -133,7 +125,7 @@ export function createStateTool() {
     description: "Read bounded authoritative TSPi research state, artifacts, capabilities, or a change contract.",
     parameters: TS_STATE_PARAMETERS,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
-      const mode = params.mode || "frontier";
+      const mode = params.mode || "map";
       const root = toolContext.cwd;
       let script;
       let args;
@@ -142,17 +134,11 @@ export function createStateTool() {
         args = ["list-artifacts", "--root", root];
         if (params.nodeRef) args.push("--node-id", params.nodeRef);
       } else if (mode === "capabilities") {
-        if (!params.capabilityKind) throw new Error("state mode=capabilities requires capabilityKind=compute, analysis, proof, or gate");
+        if (!params.capabilityKind) throw new Error("state mode=capabilities requires capabilityKind=compute or analysis");
         if (params.capabilityKind === "compute") {
-          if (params.templateId !== undefined || params.templateVersion !== undefined) {
-            throw new Error("compute capabilities do not accept proof template selectors");
-          }
           script = packageScript("ts_compute.py");
           args = ["capabilities", "--root", root];
         } else if (params.capabilityKind === "analysis") {
-          if (params.templateId !== undefined || params.templateVersion !== undefined) {
-            throw new Error("analysis capabilities do not accept proof template selectors");
-          }
           const selector = params.query?.split("@");
           if (selector && (selector.length > 2 || !selector[0] || (selector.length === 2 && !selector[1]))) {
             throw new Error("analysis query must be <capability> or <capability>@<version>");
@@ -161,52 +147,33 @@ export function createStateTool() {
           args = selector
             ? ["resolve-analysis-capability", "--root", root, "--capability", selector[0], "--version", selector[1] || "1"]
             : ["analysis-capabilities", "--root", root];
-        } else if (params.capabilityKind === "proof") {
-          if ((params.templateId === undefined) !== (params.templateVersion === undefined)) {
-            throw new Error("proof capabilities require templateId and templateVersion together");
-          }
-          script = packageScript("ts_workspace.py");
-          args = ["proof_capabilities", "--root", root];
-          if (params.templateId !== undefined) {
-            args.push("--template-id", params.templateId, "--template-version", params.templateVersion);
-          }
         } else {
-          if (params.templateId !== undefined || params.templateVersion !== undefined) {
-            throw new Error("gate capabilities do not accept proof template selectors");
-          }
-          script = packageScript("ts_workspace.py");
-          args = ["gate_capabilities", "--root", root];
+          throw new Error("ResearchMap has no separate proof or gate capability registry");
         }
-      } else if (mode === "change_contract") {
-        if (params.capabilityKind !== undefined || params.templateId !== undefined || params.templateVersion !== undefined) {
-          throw new Error("change_contract does not accept capability selectors");
-        }
-        script = packageScript("ts_workspace.py");
-        args = ["change_contract", "--root", root];
-        if (params.operation !== undefined) args.push("--operation", params.operation);
       } else {
-        script = packageScript("ts_workspace.py");
-        if (mode === "locate") {
-          if (!params.query?.trim()) throw new Error("workspace locate requires a non-empty query");
-          args = ["context", "--root", root, "--mode", "locate", "--query", params.query];
-        } else {
-          if (params.query !== undefined) throw new Error("workspace context query is only valid with mode=locate");
-          if (params.capabilityKind !== undefined || params.templateId !== undefined || params.templateVersion !== undefined) {
-            throw new Error("capability selectors are only valid with mode=capabilities");
-          }
-          if (params.operation !== undefined) throw new Error("operation is only valid with mode=change_contract");
-          args = ["context", "--root", root, "--mode", mode, "--depth", String(params.depth ?? 1)];
-          addStateArg(args, "--claim-ref", params.claimRef);
-          addStateArg(args, "--node-ref", params.nodeRef);
-          addStateArg(args, "--finding-ref", params.findingRef);
-          addStateArg(args, "--proof-ref", params.proofRef);
-          addStateArg(args, "--since-revision", params.sinceRevision);
-          addStateArg(args, "--since-operational-revision", params.sinceOperationalRevision);
-          for (const value of params.claimSeeds || []) args.push("--claim-seed", value);
-          for (const value of params.nodeSeeds || []) args.push("--node-seed", value);
-        }
+        script = packageScript("ts_research.py");
+        args = ["show", "--root", root];
       }
-      const result = await runJsonCli(script, args, root, context?.abortSignal);
+      let result = await runJsonCli(script, args, root, context?.abortSignal);
+      if (mode === "claim" || mode === "node" || mode === "finding") {
+        const collection = `${mode}s`;
+        const requested = mode === "claim" ? params.claimRef : mode === "node" ? params.nodeRef : params.findingRef;
+        if (!requested) throw new Error(`state mode=${mode} requires its reference`);
+        result = { ...result, [mode]: (result[collection] || []).find((item) => item.id === requested) || null };
+        delete result.phases;
+        delete result.claims;
+        delete result.nodes;
+        delete result.findings;
+        delete result.gates;
+      } else if (mode === "locate") {
+        const query = String(params.query || "").toLowerCase();
+        result = {
+          schema_version: result.schema_version,
+          map_id: result.map_id,
+          matches: ["phases", "claims", "nodes", "findings", "gates"].flatMap((key) =>
+            (result[key] || []).filter((item) => !query || JSON.stringify(item).toLowerCase().includes(query)).map((item) => ({ type: key.slice(0, -1), ...item }))),
+        };
+      }
       return {
         content: [{ type: "text", text: JSON.stringify(result) }],
         details: { mode },
@@ -226,12 +193,13 @@ export function createChangeTool() {
       requireNativeWrites("ts_change");
       const result = await runPrivateRequest(
         "tspi-native-change-",
-        packageScript("ts_workspace.py"),
+        packageScript("ts_research.py"),
         "change",
         toolContext.cwd,
         {
           schema_version: "ts-change-request/1",
           rationale: params.rationale,
+          expected_revision: params.expectedRevision,
           basis_refs: params.basisRefs || [],
           operations: params.operations,
         },

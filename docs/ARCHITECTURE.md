@@ -10,8 +10,8 @@ requirement.
 ## Component Responsibilities
 
 - `apps/app-server/` starts Pi's native App Server and session worker.
-- `packages/ts-agent-kernel/ts_agent/` owns scientific contracts, workspace
-  state, reference integrity, validation, and read-only projections. Its
+- `packages/ts-agent-kernel/ts_agent/` owns the `ResearchMap`, reference
+  integrity, validation, and transactions. Its
   `ts_calc` control plane uses one lifecycle for local subprocesses and remote
   scheduler jobs; the configured `ts_remote` adapter supplies remote transport
   and readiness operations. Rendering, reporting, and email remain
@@ -20,7 +20,8 @@ requirement.
   package-owned server workflow extension set. The App Server loads only the
   allowlisted, digest-verified entries in `extensions/server/extensions.json`;
   it never evaluates code supplied by a client.
-- `components/ts-web/` is an optional read-only browser projection. The optional
+- `components/ts-web/` is an optional read-only browser client that renders the
+  serialized canonical `ResearchMap`. The optional
   `apps/app-server/pi-session-control-server.mjs` adapter exposes the same Host
   session to a browser over the versioned session-control contract; it attaches
   to an existing session and never owns a second Worker.
@@ -36,79 +37,56 @@ provenance so a client can audit which tool set is active.
 
 ## Scientific State Model
 
-Each workspace has canonical files:
+Each workspace has one canonical research object:
 
 ```text
-workspace.json
-research_state.json
-phases.json
-claims.json
-claim_relations.json
-research_nodes.json
-observations.json
-proof_specs.json
-validation_results.json
-findings.json
-acceptances/<acceptance_id>.json
+research_map.json
+nodes/<node_id>/          # Attempt and Artifact execution records
+transactions.jsonl        # Kernel change history
 ```
 
-Phases group a research objective; nodes are executable or evidentiary units
-within a phase. A node can reference artifacts and validation results without
-changing the phase's lifecycle. The kernel validates all files before a
-transaction commits.
+`ResearchMap` is the canonical project object. It is not assembled as a
+derived view from separate scientific registries. It contains `ResearchPhase`,
+`ResearchClaim`, `ResearchNode`, typed `Finding` objects, and typed `Gate`
+objects, together with their dependency, output, and target references.
 
-### Minimal Research Kernel
+### ResearchMap And Research Kernel
 
-The scientific spine has four roles: `Claim` (a scientific statement),
-`ResearchNode` (one bounded question and deliverable), `Observation` (verified
-semantic evidence), and one scoped `GateSpec/GateResult` contract. A Hypothesis
-is normally a proposed Claim (`status=proposed`); Attempts, Activities, Runs,
-and raw artifacts remain execution records until the Root Agent promotes their
-meaning to an Observation.
+`ResearchMap` is a typed research graph. `ResearchClaim` represents a scientific
+statement, `ResearchNode` represents bounded work, and `ResearchPhase` is an
+optional navigation grouping. Nodes produce a common `Finding` base type:
+`FactFinding` records a confirmed fact and `IssueFinding` records a problem,
+contradiction, or risk.
 
 ```text
-Claim / Hypothesis -> ResearchNode -> Skill/Plugin runs
-                                  -> Observation / Finding
-                                  -> NodeGate -> Node outcome
-                                  -> ClaimGate -> Claim interpretation
+ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
+       ^               |                  |
+       |               +------ Gate <-----+
+       +----------- ClaimGate / NodeGate
 ```
 
-The Kernel owns IDs, references, digests, transactions, and projections. The
-Root Agent chooses questions, methods, branches, and stopping conditions.
-Skills and Plugins execute tools such as `ts_calc`, `ts_remote`, `ts_render`,
-and `ts_email`. At the Agent boundary the Kernel is the guarded `ts_state` /
-`ts_change` tool surface; it can manage workspace identity and Node artifact
-roots, but it is not another agent runtime. Tool success never becomes a
-scientific conclusion by itself.
+`ResearchKernel` loads, validates, commits, and persists the `ResearchMap`.
+`ResearchMap.to_dict()` is canonical serialization for TS Web and Root Agent,
+not a second scientific model. The Root Agent chooses questions, methods,
+branches, and stopping conditions. Skills describe research procedures,
+Capabilities describe callable operations, Backends implement software, and
+Platforms provide local, container, or HPC execution environments. Tool
+success never becomes a scientific conclusion by itself.
 
 ### NodeGate And ClaimGate
 
-These are two scopes of one contract, not two new state machines:
+`NodeGate` and `ClaimGate` specialize one `Gate` base class:
 
 ```text
-GateSpec   = frozen completion or evaluation criteria
-GateResult = one digest- and input-revision-bound evaluation
-scope      = node | claim
+Gate.criteria    = frozen completion or evaluation criteria
+Gate.evaluations = one or more evaluation records
+scope            = node | claim
 ```
 
-A NodeGate checks whether a bounded Node can close: for example, its deliverable
-is recorded, owned runs are terminal, and blocking Findings are handled. A
-passing NodeGate only permits a terminal Node outcome; it does not support the
-primary Claim. A ClaimGate evaluates whether declared evidence supports,
-refutes, or cannot yet decide a Claim. It normally composes existing
-`ProofSpec`, `ValidationResult`, and acceptance-profile records. A ClaimGate
-result never silently updates Claim status or creates an Acceptance; the Root
-Agent submits that interpretation through `ts_change`.
-
-Gate production is explicit: the Root Agent selects intent and a profile;
-Plugins advertise supported predicates and schemas; the Kernel expands the
-profile, checks refs, binds the predicate registry, and freezes the GateSpec
-before evaluation. Tools can provide evidence after that point, but cannot
-silently change the criteria or verdict. The standalone
-`gate_spec.schema.json` and `gate_result.schema.json` contracts are introduced
-alongside explicit `freeze_gate` / `evaluate_gate` mutations. Those mutations
-lazily create `gate_specs.json` and `gate_results.json`; old workspaces without
-those files remain valid and continue to receive derived Gate projections.
+A NodeGate checks whether a bounded Node can close. A ClaimGate checks whether
+the current Findings support or contradict a Claim. Gates record evaluations,
+but never silently update a Node or Claim; the Root Agent submits that
+interpretation through a Map ChangeSet.
 
 ## Decision Transaction
 
@@ -121,8 +99,8 @@ failed transaction leaves the previous revision untouched.
 
 Validation templates and acceptance profiles live under
 `packages/ts-agent-kernel/ts_agent/validation/`. Predicates are deterministic,
-results record their input digest and template identity, and an acceptance can
-reference only validated observations and findings.
+results record their input digest and template identity. Only explicit
+`FactFinding` and `IssueFinding` records enter the ResearchMap.
 
 ## Context Compiler
 
@@ -130,7 +108,7 @@ The orchestration skill compiles a bounded context from canonical workspace
 state, recent operations, and selected artifacts. It never invents a second
 state store and never rewrites unsupported records during bootstrap.
 
-## Read-Only Web Projection And Browser Control
+## Read-Only Web And Browser Control
 
 TS Web reads the workspace files through `components/ts-web/`. It does not own
 Pi sessions or submit prompts. Its optional systemd unit is independent from
@@ -191,15 +169,13 @@ hyperedges and may contain cycles, independently of the ResearchNode DAG.
 `ts_manage` writes Node-scoped pause/resume receipts outside canonical science.
 A shared lock orders pauses against new analysis and submission guards. In-flight
 jobs remain inspectable, collectable and cancellable. Reports and TS Web expose
-these states through read-only projections. See [ADR 0002](adr/0002-independent-scientific-capabilities.md)
+these execution records separately from the canonical map. See [ADR 0002](adr/0002-independent-scientific-capabilities.md)
 and the [operations guide](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md).
 
-The Research Map reads a projection of Claims, Nodes, Observations, Gate
-results, and dependency history. It shows how a question unfolded, which Node
-produced tool runs and evidence, the Node outcome, and where a gate is blocked,
-inconclusive, or stale; it does not
-turn backend logs, Phase labels, or tool exit codes into scientific state or
-infer the next action. See [ADR 0003](adr/0003-minimal-research-kernel-and-gates.md).
+TS Web renders the canonical `ResearchMap` document directly. Findings and Gate
+evaluations are ordinary map records, so the browser never reconstructs
+scientific state from backend logs or a second registry. It does not infer the
+next action from tool exit codes. See [ADR 0003](adr/0003-minimal-research-kernel-and-gates.md).
 
 Public tools validate input paths against the workspace root, normalize
 artifacts, and return machine-readable errors. Scientific backends are

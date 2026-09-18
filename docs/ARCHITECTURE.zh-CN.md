@@ -9,14 +9,15 @@ Pi App Server Host，由它服务配置的 workspace root 下的所有直接子�
 ## 组件职责
 
 - `apps/app-server/` 启动 Pi 原生 App Server 和 session worker。
-- `packages/ts-agent-kernel/ts_agent/` 管理科学契约、工作区状态、引用完整性、验证
-  和只读投影。计算控制面负责本地子进程的持久化生命周期，并通过配置好的
+- `packages/ts-agent-kernel/ts_agent/` 管理 `ResearchMap`、引用完整性、验证和事务。
+  计算控制面负责本地子进程的持久化生命周期，并通过配置好的
   `ts_calc` 对 local 和 remote 使用同一套计算生命周期；`ts_remote` 仅提供
   远程传输和就绪性检查。渲染、报告和邮件仍由 Skill/Plugin 工具提供。
 - `extensions/` 同时包含客户端展示扩展和包内的 server workflow 扩展。App Server
   只加载 `extensions/server/extensions.json` 中经过 allowlist 和 SHA-256 校验的
   条目，不执行客户端提交的代码。
-- `components/ts-web/` 是可选的只读浏览器投影；浏览器控制通过显式启动的
+- `components/ts-web/` 是可选的只读浏览器客户端，直接渲染 Kernel 序列化的
+  `ResearchMap`；浏览器控制通过显式启动的
   `TSPi --gateway` 适配器附着到已有 Host session，不会创建第二个 Worker。
 - TS Phone 是独立 Flutter 客户端，通过 Pi Radius 连接 App Server。
 
@@ -28,71 +29,49 @@ system prompt 和经过验证的 server extension inventory。该 inventory 会�
 
 ## 科学状态模型
 
-工作区的规范文件包括：
+工作区的规范状态是一个 `ResearchMap`。它以一个对象序列化为：
 
 ```text
-workspace.json
-research_state.json
-phases.json
-claims.json
-claim_relations.json
-research_nodes.json
-observations.json
-proof_specs.json
-validation_results.json
-findings.json
-acceptances/<acceptance_id>.json
+research_map.json
+nodes/<node_id>/          # Attempt / Artifact 等执行记录
+transactions.jsonl        # Kernel 变更历史
 ```
 
-Phase 表示研究目标，node 是其中可执行或提供证据的单元。内核在事务提交前验证
-全部引用和 schema。
+`ResearchMap` 是项目研究进展的规范对象，不是从多个 registry 临时拼接出来的
+派生视图。它包含 `ResearchPhase`、`ResearchClaim`、`ResearchNode`、`Finding` 和
+`Gate`，并维护它们之间的依赖、产出和目标引用。
 
-### 最小 Research Kernel
+### ResearchMap 与 Research Kernel
 
-Kernel 的科学主线只有四个角色：`Claim`（科学命题）、`ResearchNode`（一次有明确
-问题和交付物的研究事件）、`Observation`（确认后的语义证据）以及统一的
-`GateSpec/GateResult`。Hypothesis 通常只是 `status=proposed` 的 Claim；Attempt、
-Activity、Run 和原始 artifact 属于执行记录，只有经 Root Agent 核对后才提升为
-Observation。
+`ResearchMap` 是一个有类型的研究图。`ResearchClaim` 表示科学命题，`ResearchNode`
+表示有界工作，`ResearchPhase` 只是可选的导航分组。Node 产生统一的 `Finding`，其中
+`FactFinding` 表示确认后的事实，`IssueFinding` 表示问题、矛盾或风险。
 
 ```text
-Claim / Hypothesis -> ResearchNode -> Skill/Plugin runs
-                                  -> Observation / Finding
-                                  -> NodeGate -> Node outcome
-                                  -> ClaimGate -> Claim interpretation
+ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
+       ^               |                  |
+       |               +------ Gate <-----+
+       +----------- ClaimGate / NodeGate
 ```
 
-Kernel 负责 ID、引用、digest、事务和投影；在 Agent 边界上它就是受保护的
-`ts_state` / `ts_change` 工具表面，也可管理 workspace identity 和 Node 产物根目录，
-但不是另一个 agent runtime。Root Agent 选择问题、方法、分支和停止条件；Skill/Plugin
-执行 `ts_calc`、`ts_remote`、`ts_render`、`ts_email` 等工具。`ts_calc` 是统一的
-local/remote 计算入口，`ts_remote doctor` 只是远程只读诊断；工具成功不等于科学
-结论成立，也不能直接改变 Claim 状态。
+`ResearchKernel` 负责加载、校验、事务提交和持久化 `ResearchMap`。`ResearchMap.to_dict()`
+是给 TS Web 和 Root Agent 的规范序列化，不是第二个科学状态。Root Agent 选择问题、
+方法、分支和停止条件；Skill/Capability 选择执行方式；Backend 实现软件适配；Platform
+提供本地、容器或 HPC 环境。工具成功不等于科学结论成立。
 
 ### NodeGate 与 ClaimGate
 
-两者不是两套实体，而是一个 Gate 合约的两个作用域：
+`NodeGate` 和 `ClaimGate` 是同一个 `Gate` 基类的两个特化类：
 
 ```text
-GateSpec   = 冻结的收尾/验证标准
-GateResult = 对该标准的一次、绑定 digest 和输入 revision 的评估
-scope      = node | claim
+Gate.criteria    = 冻结的收尾/评估标准
+Gate.evaluations = 一次或多次评估记录
+scope            = node | claim
 ```
 
-NodeGate 判断一个 bounded Node 是否具备收尾条件，例如交付物已登记、拥有的运行
-已结束、阻塞 Finding 已处理。NodeGate `pass` 只允许 Node 进入 terminal outcome，
-不表示 Claim 成立。ClaimGate 判断一组证据是否支持、反驳或暂时无法判断 Claim；
-它通常由现有 `ProofSpec`、`ValidationResult` 和 Acceptance profile 编译而来。
-ClaimGate 结果不会自动更新 Claim 或生成 Acceptance，仍由 Root Agent 通过
-`ts_change` 明确解释和提交。
-
-Gate 的产生过程是：Root Agent 选择研究意图和 profile；Plugin 声明可用能力与检查
-输入输出；Kernel 展开 profile、校验目标引用、绑定 predicate registry，并在第一次
-评估前冻结 `GateSpec`。之后工具只能提供证据，不能静默修改 Gate 标准或 verdict。
-`gate_spec.schema.json` 与 `gate_result.schema.json` 已作为独立契约加入。Kernel
-同时支持显式 `freeze_gate` / `evaluate_gate` mutation；第一次执行时惰性创建
-`gate_specs.json` 与 `gate_results.json`。没有这两个文件的 protocol-6 workspace
-仍然有效，并继续得到推导式 Gate projection。
+NodeGate 判断 Node 是否可以关闭；ClaimGate 判断当前 Finding 是否足以支持或反驳
+Claim。Gate 记录结果，但不会自动修改 Node 或 Claim；解释和状态变化必须由 Root Agent
+通过 ChangeSet 明确提交。
 
 ## 独立科学能力与节点管理
 
@@ -106,13 +85,12 @@ Gate 的产生过程是：Root Agent 选择研究意图和 profile；Plugin 声�
 
 `ts_manage` 的暂停/恢复回执位于操作层，不改变 Node 科学状态。共享锁协调暂停
 与分析、提交 guard 的边界；在途作业仍可查看、收集和取消。报告和 TS Web 消费
-只读投影。详见 [ADR 0002](adr/0002-independent-scientific-capabilities.md) 和
+规范 ResearchMap 数据。详见 [ADR 0002](adr/0002-independent-scientific-capabilities.md) 和
 [能力运维文档](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。
 
-Research Map 只读取 Claim、Node、Observation、Gate 结果和依赖历史的投影，展示问题
-如何展开、工具运行和证据由哪个 Node 产生、Node 的 outcome、哪个 Gate 阻塞、尚未确定
-或已过期；它不把后端运行日志、
-Phase 名称或工具退出码直接当成科学状态，也不推断下一步行动。详见
+TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、Gate 和依赖关系
+都是同一个 map 的记录；浏览器不从后端日志或第二套 registry 重建科学状态，也不把
+工具退出码直接当成结论或推断下一步行动。详见
 [ADR 0003](adr/0003-minimal-research-kernel-and-gates.md)。
 
 ## App Server 生命周期

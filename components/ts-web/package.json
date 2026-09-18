@@ -4,9 +4,8 @@
   "private": true,
   "description": "Optional read-only TS Web explorer component",
   "protocols": {
-    "provider": "ts-web-provider/1",
-    "projection": "ts-web-workspace/6",
-    "graph": "ts-explorer-graph/6",
+    "provider": "ts-research-provider/1",
+    "map": "research-map/1",
     "theme": "ts-theme/1"
   }
 }

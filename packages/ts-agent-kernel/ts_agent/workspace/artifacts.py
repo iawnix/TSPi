@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from ts_agent.io import read_json
+from ts_agent.research import ResearchKernel, ResearchKernelError
 
 from .errors import ContractError
 from .path_safety import has_symlink_component, lexical_path, path_has_symlink
@@ -183,13 +184,13 @@ def workspace_root(root: str | Path) -> Path:
     if path_has_symlink(workspace):
         raise WorkspaceArtifactError(f"workspace root cannot contain a symbolic link: {workspace}")
     workspace_doc = workspace / "workspace.json"
-    nodes_doc = workspace / "research_nodes.json"
+    map_doc = workspace / "research_map.json"
     if not workspace.is_dir() or workspace.is_symlink():
         raise WorkspaceArtifactError(f"not an initialized TS workspace: {workspace}")
-    for path in (workspace_doc, nodes_doc, workspace / "nodes"):
+    for path in (workspace_doc, map_doc, workspace / "nodes"):
         if has_symlink_component(workspace, path):
             raise WorkspaceArtifactError(f"workspace canonical path uses a symbolic link: {path.relative_to(workspace)}")
-    if not workspace_doc.is_file() or workspace_doc.is_symlink() or not nodes_doc.is_file() or nodes_doc.is_symlink() or not (workspace / "nodes").is_dir():
+    if not workspace_doc.is_file() or workspace_doc.is_symlink() or not map_doc.is_file() or map_doc.is_symlink() or not (workspace / "nodes").is_dir():
         raise WorkspaceArtifactError(f"not an initialized TS workspace: {workspace}")
     try:
         identity = read_json(workspace_doc)
@@ -197,8 +198,12 @@ def workspace_root(root: str | Path) -> Path:
         raise WorkspaceArtifactError(
             f"cannot read workspace identity: {workspace_doc}"
         ) from exc
-    if not isinstance(identity, dict) or identity.get("schema_version") != "ts-workspace/6":
+    if not isinstance(identity, dict) or identity.get("schema_version") != "research-workspace/1":
         raise WorkspaceArtifactError(f"unsupported workspace protocol: {workspace}")
+    try:
+        ResearchKernel(workspace).load()
+    except ResearchKernelError as exc:
+        raise WorkspaceArtifactError(f"invalid ResearchMap: {exc}") from exc
     return workspace
 
 
@@ -218,35 +223,29 @@ def workspace_node_records(workspace: Path) -> list[dict[str, Any]]:
     """
 
     workspace = lexical_path(workspace)
-    registry_path = workspace / "research_nodes.json"
-    if path_has_symlink(workspace) or has_symlink_component(workspace, registry_path):
-        raise WorkspaceArtifactError("ResearchNode registry cannot contain a symbolic link")
     try:
-        if not registry_path.is_file() or registry_path.is_symlink():
-            raise WorkspaceArtifactError("ResearchNode registry is not a regular file")
-        registry = read_json(registry_path)
-    except WorkspaceArtifactError:
-        raise
-    except (OSError, ValueError) as exc:
-        raise WorkspaceArtifactError("cannot read ResearchNode registry") from exc
-    if not isinstance(registry, dict):
-        raise WorkspaceArtifactError("ResearchNode registry must contain an object")
-    if registry.get("schema_version") != "ts-research-node-registry/2":
-        raise WorkspaceArtifactError("invalid ResearchNode registry")
-    raw_nodes = registry.get("nodes")
-    if not isinstance(raw_nodes, list):
-        raise WorkspaceArtifactError("ResearchNode registry nodes must be an array")
+        research_map = ResearchKernel(workspace).load()
+    except ResearchKernelError as exc:
+        raise WorkspaceArtifactError(f"cannot read ResearchMap: {exc}") from exc
     records: list[dict[str, Any]] = []
     ids: set[str] = set()
-    for item in raw_nodes:
-        if not isinstance(item, dict) or not isinstance(item.get("node_id"), str):
-            raise WorkspaceArtifactError("ResearchNode registry contains an invalid node record")
-        node_id = item["node_id"]
+    for node in research_map.nodes.values():
+        node_id = node.id
         if NODE_ID.fullmatch(node_id) is None:
-            raise WorkspaceArtifactError("ResearchNode registry contains an invalid node_id")
+            raise WorkspaceArtifactError("ResearchMap contains an invalid node id")
         if node_id in ids:
-            raise WorkspaceArtifactError(f"ResearchNode registry contains duplicate node_id: {node_id}")
+            raise WorkspaceArtifactError(f"ResearchMap contains duplicate node id: {node_id}")
         ids.add(node_id)
+        item = node.to_dict()
+        item.update({
+            "schema_version": "ts-research-node/2",
+            "node_id": node.id,
+            "phase_ref": node.phase_id,
+            "claim_refs": list(node.claim_ids),
+            "dependency_refs": list(node.dependency_ids),
+            "status": "open" if node.state.value != "closed" else "closed",
+            "deliverable": node.metadata.get("deliverable", ""),
+        })
         records.append(item)
     return records
 

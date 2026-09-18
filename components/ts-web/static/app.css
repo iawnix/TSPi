@@ -457,6 +457,20 @@ select:focus, .search-input:focus { border-color: var(--focus); box-shadow: 0 0 
 .badge.review { border-color: color-mix(in srgb, var(--violet) 48%, var(--line)); background: var(--violet-bg); color: var(--violet); }
 
 .section { margin-top: 26px; border-top: 1px solid var(--line-strong); }
+.section-block { margin-top: 24px; border-top: 1px solid var(--line-strong); }
+.section-heading { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+.section-heading h2 { margin: 0; font-size: 15px; }
+.record-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; padding-top: 12px; }
+.record-card { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: inherit; text-align: left; cursor: pointer; }
+.record-card:hover { border-color: var(--line-strong); background: var(--surface-raised); }
+.record-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.record-card p { margin: 9px 0; color: var(--muted); line-height: 1.45; }
+.record-card-meta { color: var(--dim); font-size: 11px; }
+.badge.planned, .badge.paused { color: var(--amber); background: var(--amber-bg); }
+.badge.active { color: var(--cyan); background: var(--cyan-bg); }
+.badge.blocked { color: var(--red); background: var(--red-bg); }
+.badge.closed { color: var(--green); background: var(--green-bg); }
+.json-view { margin: 0; padding: 14px; overflow: auto; background: var(--bg); color: var(--text); font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .section-header { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
 .section-header h2 { margin: 0; font-size: 15px; }
 .section-meta { color: var(--dim); font-size: 11px; }

@@ -65,12 +65,12 @@ ResearchNodes do not duplicate hypothesis text. Hypotheses, assumptions, and
 falsifiers belong to Claims so that several Nodes can test the same statement
 without copied scientific state.
 
-### Claim And Validation
+### Claim, Findings, And Gates
 
-Claims remain independent of execution. Observations are immutable semantic
-records with artifact provenance. ProofSpecs are fully expanded and frozen
-before deterministic evaluation. Validation does not select the next Node, and
-acceptance remains a revision-bound assessment separate from Claim status.
+Claims remain independent of execution. A Node produces `Finding` records,
+specialized as `FactFinding` or `IssueFinding`, with artifact provenance. One
+`Gate` base type is specialized as `NodeGate` or `ClaimGate`; evaluations are
+recorded on the Gate and do not silently mutate the target status.
 
 ### Authority
 
@@ -83,53 +83,37 @@ bounded operational and advisory mechanisms, not scientific state owners.
 
 ### Context And Presentation
 
-Default Root context uses a compact workspace brief and focused graph
-projections. Full canonical records and artifact excerpts are retrieved only on
-demand. Review receives one Claim dossier, not complete workspace files.
-
-`ts_web` is a read-only projection:
-
-- its default Research Map groups each Phase into shared foundation work and
-  Claim-owned hypothesis lanes;
-- structured endpoint Observations may be displayed as deduplicated,
-  non-authoritative connectivity evidence without implying a Gate verdict;
-- the exact ResearchNode dependency DAG remains a secondary audit view;
-- Node details expose Overview, Conclusions, Evidence, Runs, Files, and History;
-- Scientific Conclusions exposes Claim Table and Map modes;
-- it never infers a next action, Phase status, Claim status, validation verdict,
-  acceptance, or chemical direction from labels.
-
-The canonical paths are `phases.json`, `research_nodes.json`, and
-`nodes/<node_id>/...`.
+`ResearchMap.to_dict()` is the canonical serialized map. RootAgent and TS Web
+query that document directly; they may choose a focused view but do not create
+another scientific state store. The canonical paths are `research_map.json`,
+`transactions.jsonl`, and `nodes/<node_id>/...`.
 
 ## Invariants
 
-- Only Decision apply mutates canonical scientific state after bootstrap.
+- Only ResearchKernel ChangeSet apply mutates canonical scientific state after bootstrap.
 - Every Node references one existing Phase.
 - A primary Claim, when present, is also in the Node Claim scope.
 - Phase metadata never authorizes an operation.
 - Node and Claim DAGs are acyclic and serve different purposes.
-- One Decision cannot hide several Node openings or closures.
+- One ChangeSet records explicit Node state transitions.
 - Files, attempts, activities, and Compute runs have one owning Node.
 - Review runs have one target Claim and advisory authority only.
-- Web, reports, and context are projections, never alternate state stores.
+- Web, reports, and context consume canonical map serialization, never alternate state stores.
 
 ## Consequences
 
-Users can navigate a study and locate files without reading the Claim graph.
+Users can navigate a study and locate files without reading every map record.
 Claims can span multiple Nodes, while one Node can test alternatives without
-duplicating hypotheses. Context becomes smaller because the default projection
-can summarize Phases and focused Nodes instead of serializing every record.
+duplicating hypotheses. Clients can filter the canonical map without creating
+another scientific model.
 
-The cost is an additional canonical Phase registry and a required `phaseRef`
-when starting a Node. This is accepted because Phase has a deliberately narrow
-schema and no behavioral semantics. New scientific domains still extend Claims,
-Observations, declarative ProofSpecs, and maintained predicates rather than
-adding hard-coded workflow branches.
+The cost is an additional Phase class and optional `phase_id` when creating a
+Node. This is accepted because Phase has a deliberately narrow schema and no
+behavioral semantics. New scientific domains extend Finding metadata and
+Skills rather than adding hard-coded workflow branches.
 
 ## Validation
 
-The release must verify schema and transaction tests, context budgets, compute
-and Review contracts, report projection, package checks, TypeScript typecheck,
-and a live desktop/mobile `ts_web` smoke test including refresh and theme
-switching.
+The release must verify ResearchMap round trips, ChangeSet transactions, Gate
+semantics, compute node lookup, package checks, TypeScript typecheck, and a
+live `ts_web` smoke test including refresh and theme switching.

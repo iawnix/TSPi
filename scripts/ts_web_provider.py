@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve the TSPi-owned JSON-lines projection provider for TS Web."""
+"""Serve the TSPi-owned JSON-lines ResearchMap provider for TS Web."""
 
 from __future__ import annotations
 
@@ -15,15 +15,15 @@ from _bootstrap import bootstrap_python_package
 
 bootstrap_python_package(ROOT, entrypoint=ENTRYPOINT)
 
-from ts_agent.projection.provider import (  # noqa: E402
+from ts_agent.research.web import (  # noqa: E402
     PROVIDER_PROTOCOL,
-    ProviderRequestError,
+    ResearchWebError,
     handle_request,
     provider_error_payload,
     provider_success_payload,
     register_sources,
 )
-from ts_agent.projection.registry import list_workspaces  # noqa: E402
+from ts_agent.research.registry import list_workspaces  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -63,15 +63,15 @@ def _serve_protocol(state_dir: str, workspace_roots: list[str] | None) -> int:
             response = provider_success_payload(request_id, payload)
         except (OSError, ValueError, json.JSONDecodeError) as error:
             request_id = _request_id(request)
-            if not isinstance(error, ProviderRequestError):
-                error = ProviderRequestError(_sanitize(str(error), state_dir), retryable=True)
+            if not isinstance(error, ResearchWebError):
+                error = ResearchWebError(_sanitize(str(error), state_dir), retryable=True)
             else:
-                error = ProviderRequestError(_sanitize(str(error), state_dir), retryable=error.retryable)
+                error = ResearchWebError(_sanitize(str(error), state_dir), retryable=error.retryable)
             response = provider_error_payload(request_id, error)
         except Exception as error:  # noqa: BLE001 - the protocol must return a bounded error record
             response = provider_error_payload(
                 _request_id(locals().get("request")),
-                ProviderRequestError(_sanitize(str(error), state_dir), retryable=True),
+                ResearchWebError(_sanitize(str(error), state_dir), retryable=True),
             )
         print(json.dumps(response, ensure_ascii=False, sort_keys=True), flush=True)
     return 0

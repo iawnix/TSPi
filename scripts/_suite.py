@@ -28,9 +28,8 @@ SUITE_COMPONENTS_SCHEMA_VERSION = "tspi-package-components/4"
 SUITE_INSTALL_SCHEMA_VERSION = "tspi-package-install/1"
 WEB_SCHEMA_VERSION = "ts-web-component-release/1"
 WEB_COMPONENT_PACKAGE_NAME = "@iawnix/ts-web"
-WEB_PROVIDER_PROTOCOL = "ts-web-provider/1"
-WEB_PROJECTION_PROTOCOL = "ts-web-workspace/6"
-WEB_GRAPH_PROTOCOL = "ts-explorer-graph/6"
+WEB_PROVIDER_PROTOCOL = "ts-research-provider/1"
+WEB_MAP_PROTOCOL = "research-map/1"
 WEB_THEME_PROTOCOL = "ts-theme/1"
 SUITE_MANIFEST_NAME = "tspi-package-release.json"
 SUITE_PACKAGE_NAME = "@iawnix/tspi"
@@ -55,16 +54,11 @@ WEB_COMPONENT_FILES = frozenset(
         "static/i18n.js",
         "static/logo.svg",
         "static/favicon.svg",
-        "static/research-tree.js",
-        "static/research-map.js",
-        "static/claim-map.js",
-        "static/attempt-timeline.js",
     }
 )
 WEB_PROTOCOLS = {
     "provider": WEB_PROVIDER_PROTOCOL,
-    "projection": WEB_PROJECTION_PROTOCOL,
-    "graph": WEB_GRAPH_PROTOCOL,
+    "map": WEB_MAP_PROTOCOL,
     "theme": WEB_THEME_PROTOCOL,
 }
 MAX_ARCHIVE_MEMBER_BYTES = 512 * 1024 * 1024

@@ -1,14 +1,12 @@
-# TS Web Projection Contract
+# TS Web ResearchMap Contract
 
-TSPi owns the read-only projection provider. An optional `ts-web` client under
-`components/ts-web/` consumes the snapshot and graph payloads without importing
-TSPi Python modules.
-The current compatibility baseline is `ts-web-workspace/6` and
-`ts-explorer-graph/6`.
+TSPi owns the read-only ResearchMap provider. An optional `ts-web` client under
+`components/ts-web/` consumes the canonical map payload without importing TSPi
+Python modules. The map schema is `research-map/1`.
 
-The request contract carries workspace identity and the two independent
-revision values. A response is either a changed snapshot with `workspace`,
-`view`, and `graph`, or an unchanged snapshot with only revision metadata.
+The request contract carries workspace identity and an optional map revision.
+A response contains `workspace` metadata and the canonical `map`, or an
+unchanged response with only revision metadata.
 Errors and stale client state are transport conditions; they must not be
 treated as scientific changes.
 
