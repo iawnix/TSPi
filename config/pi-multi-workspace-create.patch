@@ -10,11 +10,11 @@ diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-
  import { isAbsolute, join, relative, resolve } from "node:path";
 @@ -374,11 +376,43 @@
  }
- 
+
  const WORKSPACE_ROOT_ENV = "TSPI_WORKSPACE_ROOT";
 +const WORKSPACE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 +const execFileAsync = promisify(execFile);
- 
+
 -async function resolveSessionCwd(requested: string | undefined): Promise<string> {
 +function resolveWorkspacePath(workspaceId: string): string {
 +	if (!WORKSPACE_NAME.test(workspaceId)) throw new Error("workspaceId is invalid");
@@ -57,7 +57,7 @@ diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-
 @@ -405,14 +439,14 @@
  	return candidate;
  }
- 
+
 -async function listWorkspaceRoots(_context: Context): Promise<WorkspaceSummary[]> {
 +async function listWorkspaceRoots(_context?: Context): Promise<WorkspaceSummary[]> {
  	const rootValue = process.env[WORKSPACE_ROOT_ENV];
@@ -117,13 +117,13 @@ diff --git a/packages/coding-agent/src/experimental/services/sessions.ts b/packa
 +	/** Installation workspace name. Prefer this over sending a filesystem path. */
 +	workspaceId?: string;
  }
- 
+
  export interface SessionDirectoryState {
 @@ -46,6 +48,7 @@
- 
+
  export interface WorkspaceDirectory {
  	list(context: Context): Promise<WorkspaceSummary[]>;
 +	create(workspaceId: string, context: Context): Promise<WorkspaceSummary>;
  }
- 
+
  export const WorkspaceDirectory = defineService<WorkspaceDirectory>("tspi.workspace-directory");
