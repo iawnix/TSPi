@@ -174,7 +174,6 @@ enabled = true
 provider = "smtp"
 preset = "qq"                 # "163", "qq", or "custom"
 recipient = "receiver@example.com"
-from_address = "sender@qq.com"
 username = "sender@qq.com"
 password_env = "TSPI_EMAIL_PASSWORD"
 ```

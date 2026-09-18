@@ -30,6 +30,8 @@ def test_pi_source_pin_is_explicit_and_valid() -> None:
     system_prompt_patch = (ROOT / "config" / "pi-system-prompt.patch").read_text(encoding="utf-8")
     assert "slash-commands-provider.ts" in system_prompt_patch
     assert "tspi.system-prompt" in system_prompt_patch
+    model_data_patch = (ROOT / "config" / "pi-model-data.patch").read_text(encoding="utf-8")
+    assert "kimi-code-plan-global" in model_data_patch
 
 
 def test_prepare_pi_source_verifies_a_matching_checkout() -> None:

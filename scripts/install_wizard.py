@@ -223,7 +223,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     email.add_argument("--email-preset", choices=sorted(SMTP_PRESETS))
     email.add_argument("--email-host", help="SMTP hostname; required with --email-preset custom.")
     email.add_argument("--email-recipient")
-    email.add_argument("--email-from", help="From email address; defaults to the SMTP sender address.")
     email.add_argument(
         "--email-address",
         "--email-username",
@@ -323,10 +322,6 @@ def configure_email_interactively(args: argparse.Namespace) -> None:
     args.email_port = int(ask("SMTP port", "465"))
     args.email_security = ask("SMTP security (ssl or starttls)", "ssl").lower()
     args.email_username = _ask_email_address("SMTP sender email address")
-    args.email_from = _ask_email_address(
-        "From email address (blank uses sender address)",
-        args.email_username,
-    )
     if ask_yes_no("Read SMTP authorization code from an environment variable", False):
         args.email_password_env = ask("Password environment variable", "TSPI_EMAIL_PASSWORD")
         return
@@ -614,7 +609,6 @@ def validate_email_options(args: argparse.Namespace) -> None:
         args.email_preset,
         args.email_host,
         args.email_recipient,
-        args.email_from,
         args.email_username,
         args.email_port,
         args.email_security,
@@ -641,7 +635,7 @@ def validate_email_options(args: argparse.Namespace) -> None:
         _validate_clawemail_install(clawemail_path)
         if any(
             value is not None
-            for value in (args.email_preset, args.email_host, args.email_from, args.email_username, args.email_port, args.email_security, args.email_password_env, args.email_password_file)
+            for value in (args.email_preset, args.email_host, args.email_username, args.email_port, args.email_security, args.email_password_env, args.email_password_file)
         ):
             raise ValueError("SMTP-only email options cannot be used with ClawEmail")
         return
@@ -662,8 +656,6 @@ def validate_email_options(args: argparse.Namespace) -> None:
     if args.email_security not in {"ssl", "starttls"}:
         raise ValueError("--email-security must be ssl or starttls")
     _validate_email_address(args.email_username, "--email-username")
-    if args.email_from is not None:
-        _validate_email_address(args.email_from, "--email-from")
     if (args.email_password_env is None) == (args.email_password_file is None):
         raise ValueError("SMTP requires exactly one of --email-password-env or --email-password-file")
     if args.email_password_env is not None and not ENV_NAME.fullmatch(args.email_password_env):
@@ -767,8 +759,6 @@ def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
     ]
     if args.email_preset == "custom":
         lines.append(f"host = {_toml_string(args.email_host)}")
-    if args.email_from and args.email_from != args.email_username:
-        lines.append(f"from_address = {_toml_string(args.email_from)}")
     if args.email_password_env is not None:
         lines.append(f"password_env = {_toml_string(args.email_password_env)}")
         credential = args.email_password_env
@@ -1463,6 +1453,23 @@ def _restore_file(path: Path, snapshot: dict[str, object]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _make_tree_removable(path: Path) -> None:
+    """Restore owner write permissions before removing a read-only release tree."""
+
+    if path.is_symlink() or not path.exists():
+        return
+
+    def visit(item: Path) -> None:
+        if item.is_symlink() or not item.is_dir():
+            return
+        mode = stat.S_IMODE(item.lstat().st_mode)
+        os.chmod(item, mode | stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        for child in item.iterdir():
+            visit(child)
+
+    visit(path)
+
+
 def restore_install_configuration(root: Path, snapshot: dict[str, object]) -> None:
     files = snapshot.get("files")
     if isinstance(files, dict):
@@ -1510,6 +1517,7 @@ def restore_install_configuration(root: Path, snapshot: dict[str, object]) -> No
         for path in releases_root.iterdir():
             if path.name in original or path.is_symlink() or not path.is_dir():
                 continue
+            _make_tree_removable(path)
             shutil.rmtree(path)
 
     workspace = snapshot.get("workspace_root")

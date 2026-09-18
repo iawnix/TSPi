@@ -48,6 +48,7 @@
     "config/pi-multi-workspace-create.patch",
     "config/pi-system-prompt.patch",
     "config/pi-source-resolver.patch",
+    "config/pi-model-data.patch",
     "contracts/ts-render/curve-data.schema.json",
     "contracts/ts-web/README.md",
     "contracts/ts-web/component-manifest.schema.json",

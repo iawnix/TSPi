@@ -1,0 +1,19 @@
+diff --git a/packages/ai/scripts/generate-models.ts b/packages/ai/scripts/generate-models.ts
+--- a/packages/ai/scripts/generate-models.ts
++++ b/packages/ai/scripts/generate-models.ts
+@@ -2174,8 +2174,13 @@
+ 		}
+ 
+ 		// Process Kimi For Coding models
+-		if (data["kimi-for-coding"]?.models) {
+-			const kimiModels = data["kimi-for-coding"].models as Record<string, ModelsDevModel>;
++		// models.dev renamed the subscription catalog to kimi-code-plan-*.
++		// Keep the Pi provider stable while accepting either catalog shape.
++		const kimiCatalog = data["kimi-for-coding"]
++			?? data["kimi-code-plan-global"]
++			?? data["kimi-code-plan-cn"];
++		if (kimiCatalog?.models) {
++			const kimiModels = kimiCatalog.models as Record<string, ModelsDevModel>;
+ 			const hasCanonicalModel = Object.prototype.hasOwnProperty.call(kimiModels, "kimi-for-coding");
+ 
+ 			const kimiAliases = new Set(["k2p5", "k2p6", "k2p7"]);

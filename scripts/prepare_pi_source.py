@@ -17,6 +17,7 @@ MULTI_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace.patch"
 MULTI_WORKSPACE_CREATE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace-create.patch"
 SYSTEM_PROMPT_PATCH_PATH = ROOT / "config" / "pi-system-prompt.patch"
 SOURCE_RESOLVER_PATCH_PATH = ROOT / "config" / "pi-source-resolver.patch"
+MODEL_DATA_PATCH_PATH = ROOT / "config" / "pi-model-data.patch"
 
 
 class PiSourceError(RuntimeError):
@@ -83,6 +84,9 @@ def verify(source: Path) -> str:
     resolver_path = source / "packages" / "coding-agent" / "src" / "experimental" / "source-resolver.ts"
     if 'pattern === "typebox"' not in resolver_path.read_text(encoding="utf-8"):
         raise PiSourceError(f"Pi source is missing the TSPi source resolver patch: {source}")
+    model_generator = source / "packages" / "ai" / "scripts" / "generate-models.ts"
+    if 'data["kimi-code-plan-global"]' not in model_generator.read_text(encoding="utf-8"):
+        raise PiSourceError(f"Pi source is missing the Kimi model catalog compatibility patch: {source}")
     return commit
 
 
@@ -163,6 +167,16 @@ def apply_source_resolver_patch(source: Path) -> None:
         raise PiSourceError(f"failed to apply TSPi source resolver patch: {exc}") from exc
 
 
+def apply_model_data_patch(source: Path) -> None:
+    model_generator = source / "packages" / "ai" / "scripts" / "generate-models.ts"
+    if 'data["kimi-code-plan-global"]' in model_generator.read_text(encoding="utf-8"):
+        return
+    try:
+        subprocess.run(["git", "-C", str(source), "apply", str(MODEL_DATA_PATCH_PATH)], check=True, text=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PiSourceError(f"failed to apply Pi model catalog compatibility patch: {exc}") from exc
+
+
 def clone(destination: Path) -> Path:
     pin = _pin()
     if destination.exists():
@@ -178,6 +192,7 @@ def clone(destination: Path) -> Path:
     apply_multi_workspace_patch(destination)
     apply_system_prompt_patch(destination)
     apply_source_resolver_patch(destination)
+    apply_model_data_patch(destination)
     verify(destination)
     return destination
 
@@ -191,6 +206,7 @@ def install(install_root: Path) -> Path:
         apply_multi_workspace_patch(destination)
         apply_system_prompt_patch(destination)
         apply_source_resolver_patch(destination)
+        apply_model_data_patch(destination)
         verify(destination)
         if not (destination / "node_modules").is_dir():
             _install_dependencies(destination)

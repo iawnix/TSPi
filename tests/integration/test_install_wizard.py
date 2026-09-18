@@ -75,6 +75,39 @@ def test_interactive_compute_backends_accepts_one_file_path(
     assert args.compute_config is None
 
 
+def test_interactive_smtp_uses_sender_as_from_without_a_redundant_prompt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = wizard.parse_args([
+        "--install-root", str(tmp_path / "install"),
+        "--without-web", "--service-scope", "none", "--non-interactive",
+    ])
+    prompts: list[str] = []
+    values = {
+        "Email provider (smtp or clawemail)": "smtp",
+        "Notification recipient": "receiver@example.org",
+        "SMTP mailbox preset (163, qq, or custom)": "qq",
+        "SMTP port": "465",
+        "SMTP security (ssl or starttls)": "ssl",
+        "SMTP sender email address": "sender@qq.com",
+    }
+
+    def fake_ask(prompt: str, default: str = "") -> str:
+        prompts.append(prompt)
+        return values.get(prompt, default)
+
+    monkeypatch.setattr(wizard, "ask", fake_ask)
+    monkeypatch.setattr(wizard, "ask_yes_no", lambda prompt, default=False: prompt == "Configure email notifications")
+    monkeypatch.setattr(wizard.getpass, "getpass", lambda _prompt: "authorization-code")
+
+    wizard.configure_email_interactively(args)
+
+    assert args.email_username == "sender@qq.com"
+    assert not hasattr(args, "email_from")
+    assert not any("From email" in prompt for prompt in prompts)
+
+
 def test_model_icon_options_are_mutually_exclusive(tmp_path: Path) -> None:
     root = tmp_path / "install"
     with_icons = wizard.parse_args(["--install-root", str(root), "--with-model-icons", "--non-interactive"])
@@ -184,7 +217,14 @@ def test_install_configuration_rollback_restores_owned_files_and_removes_new_rel
     phone.write_text("new-phone\n", encoding="utf-8")
     (root / ".pi/compute.toml").parent.mkdir(parents=True, exist_ok=True)
     (root / ".pi/compute.toml").write_text("new\n", encoding="utf-8")
-    (root / ".pi/packages/tspi/releases/new").mkdir(parents=True)
+    new_release = root / ".pi/packages/tspi/releases/new"
+    nested = new_release / "nested"
+    nested.mkdir(parents=True)
+    payload = nested / "payload"
+    payload.write_text("generated\n", encoding="utf-8")
+    payload.chmod(0o400)
+    nested.chmod(0o300)
+    new_release.chmod(0o300)
 
     wizard.restore_install_configuration(root, snapshot)
 
@@ -221,6 +261,7 @@ def test_non_interactive_smtp_options_write_only_a_secure_credential_reference(t
     content = config.read_text(encoding="utf-8")
     assert 'preset = "qq"' in content
     assert f'password_file = "{password_file}"' in content
+    assert "from_address" not in content
     assert "qq-authorization-code" not in content
 
 

@@ -78,6 +78,7 @@ PACKAGE_FILES = [
     "config/pi-multi-workspace-create.patch",
     "config/pi-system-prompt.patch",
     "config/pi-source-resolver.patch",
+    "config/pi-model-data.patch",
     *CONTRACT_FILES,
     "environment.yml",
     "environment.lock.txt",
