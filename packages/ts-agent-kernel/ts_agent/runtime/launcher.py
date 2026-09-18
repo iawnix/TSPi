@@ -126,6 +126,7 @@ USAGE = """Usage:
 
 Advanced compatibility and maintenance modes:
   ./TSPi --standalone --workspace <name> [Pi arguments...]
+  ./TSPi --service-host [server arguments...]
   ./TSPi --app-server --workspace <name> [server arguments...]
   ./TSPi --app-client --connect <unix://PATH|radius://SERVER_ID> [--workspace <name>] [client arguments...]
   ./TSPi --gateway --workspace <name> --session-id <id> [gateway arguments...]

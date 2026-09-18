@@ -6,6 +6,7 @@ def test_remote_crest_stdout_matches_parser_contract():
     assert _remote_stdout_name({"backend": "crest", "expected_artifacts": ["outputs/crest.out", "outputs/crest_best.xyz"]}) == "crest.out"
 
 import json
+import hashlib
 import os
 import shutil
 import stat
@@ -447,11 +448,12 @@ def test_remote_submit_status_tail_collect_and_cancel_are_receipt_bound(
     def fake_collect(config, artifacts, output_dir):
         calls["collect"] += 1
         output_dir.mkdir(parents=True, exist_ok=True)
-        (output_dir / "gaussian.out").write_text(_gaussian_log(), encoding="utf-8")
+        payload = _gaussian_log()
+        (output_dir / "gaussian.out").write_text(payload, encoding="utf-8")
         return list(artifacts), [{
             "remote_path": f"{config.remote_dir}/gaussian.out",
-            "size": (output_dir / "gaussian.out").stat().st_size,
-            "sha256": "sha256:" + "b" * 64,
+            "size": len(payload.encode("utf-8")),
+            "sha256": "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest(),
         }]
 
     def fake_cancel(_config, _job_id):
@@ -474,8 +476,14 @@ def test_remote_submit_status_tail_collect_and_cancel_are_receipt_bound(
     assert collected["artifact_refs"] == [
         f"nodes/{node_id}/attempts/{created['intent_id']}/outputs/remote/gaussian.out"
     ]
+    assert collect_calculation(workspace, created["intent_id"], ["gaussian.out"]) == collected
     assert cancel_calculation(workspace, created["intent_id"], expected_job_id="123.cluster")["state"] == "stopped"
     assert calls == {"submit": 1, "status": 1, "collect": 1, "cancel": 1}
+    monkeypatch.setattr(
+        "ts_agent.compute.control._prepared_task_for_intent",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ComputeContractError("provider metadata unavailable")),
+    )
+    assert collect_calculation(workspace, created["intent_id"], ["gaussian.out"]) == collected
 
 
 def test_pre_submit_failure_is_retryable_but_scheduler_rejection_is_not(

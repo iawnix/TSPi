@@ -115,7 +115,20 @@ def apply_multi_workspace_patch(source: Path) -> None:
     try:
         subprocess.run(["git", "-C", str(source), "apply", str(patch_path)], check=True, text=True)
     except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply TSPi multi-workspace patch ({patch_path.name}): {exc}") from exc
+        # An older release may already carry the list-only workspace patch in
+        # its working tree. A three-way apply uses the pinned Pi commit as the
+        # merge base and upgrades that partial patch without requiring a clean
+        # checkout.
+        try:
+            subprocess.run(
+                ["git", "-C", str(source), "apply", "--3way", str(patch_path)],
+                check=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as fallback:
+            raise PiSourceError(
+                f"failed to upgrade TSPi multi-workspace patch ({patch_path.name}): {fallback}"
+            ) from exc
 
 
 def apply_system_prompt_patch(source: Path) -> None:

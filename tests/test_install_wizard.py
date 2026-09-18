@@ -124,6 +124,39 @@ def test_update_preserves_workspace_root_and_radius_gateway_defaults(tmp_path: P
     assert args.radius_gateway == "wss://radius.example.test"
 
 
+def test_install_configuration_rollback_restores_owned_files_and_removes_new_release(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "install"
+    workspace_root = tmp_path / "research"
+    workspace_root.mkdir()
+    root.mkdir()
+    args = wizard.parse_args([
+        "--install-root", str(root),
+        "--workspace-root", str(workspace_root),
+        "--without-web", "--service-scope", "none", "--non-interactive",
+    ])
+    wizard.validate_options(args)
+    phone = root / ".pi/app-server-host/phone-connection.json"
+    phone.parent.mkdir(parents=True)
+    phone.write_text("old-phone\n", encoding="utf-8")
+    release = root / ".pi/packages/tspi/releases/old"
+    release.mkdir(parents=True)
+    snapshot = wizard.snapshot_install_configuration(root, args)
+
+    phone.write_text("new-phone\n", encoding="utf-8")
+    (root / ".pi/compute.toml").parent.mkdir(parents=True, exist_ok=True)
+    (root / ".pi/compute.toml").write_text("new\n", encoding="utf-8")
+    (root / ".pi/packages/tspi/releases/new").mkdir(parents=True)
+
+    wizard.restore_install_configuration(root, snapshot)
+
+    assert phone.read_text(encoding="utf-8") == "old-phone\n"
+    assert not (root / ".pi/compute.toml").exists()
+    assert release.is_dir()
+    assert not (root / ".pi/packages/tspi/releases/new").exists()
+
+
 def test_non_interactive_smtp_options_write_only_a_secure_credential_reference(tmp_path: Path) -> None:
     root = tmp_path / "install"
     password_file = tmp_path / "smtp-password"
@@ -459,6 +492,11 @@ def test_phone_manifest_is_secret_free_and_keeps_terminal_tool_access(tmp_path: 
     assert manifest["radius_gateway"] == "wss://radius.example.test"
     assert manifest["tool_access"] == "same_as_terminal"
     assert manifest["protocol_version"] == 8
+    assert manifest["workspace_service"] == {
+        "service_id": "tspi.workspace-directory",
+        "members": ["list", "create"],
+    }
+    assert manifest["session_service"]["workspace_binding"] == "workspaceId"
     assert "token" not in manifest
     assert "secret" not in manifest
 

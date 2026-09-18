@@ -263,7 +263,11 @@ def preflight_calculation(
     else:
         if intent_id is None or intent_file is not None:
             raise ComputeContractError(f"{operation} preflight requires intent_id and forbids intent_file")
-        workspace, intent, prepared_record = _load_prepared(workspace, intent_id)
+        workspace, intent, prepared_record = _load_prepared(
+            workspace,
+            intent_id,
+            allow_collected_recovery=operation == "collect",
+        )
         _require_request_scope(intent, node_id, capability, capability_version)
         intent_ref = str(prepared_record["intent_ref"])
         execution_policy = _prepared_execution_policy(prepared_record)
@@ -656,7 +660,12 @@ def collect_calculation(
     artifacts: list[str] | None = None,
     expected_intent_digest: str | None = None,
 ) -> dict[str, Any]:
-    workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
+    workspace, intent, prepared = _load_prepared(
+        root,
+        intent_id,
+        expected_intent_digest,
+        allow_collected_recovery=True,
+    )
     policy = _prepared_execution_policy(prepared)
     if policy.get("kind") == "local":
         return _collect_local_calculation(workspace, intent, prepared, artifacts)
@@ -667,11 +676,14 @@ def collect_calculation(
         raise ComputeContractError("calculation intent has no expected artifacts to collect")
     if len(selected) != len(set(selected)) or any(name not in expected_names for name in selected):
         raise ComputeContractError("collect artifacts must be a unique subset of the prepared expected artifacts")
-    program_status = _collection_program_status(workspace, intent, prepared, policy)
     output_dir = _remote_output_dir(workspace, intent)
     for path in (output_dir.parent, output_dir):
         if has_symlink_component(workspace, path) or path.is_symlink() or (path.exists() and not path.is_dir()):
             raise ComputeContractError(f"calculation output path is not a physical directory: {path}")
+    reused = _reuse_collected_result(workspace, intent, selected, output_dir)
+    if reused is not None:
+        return reused
+    program_status = _collection_program_status(workspace, intent, prepared, policy)
     existing = [name for name in selected if (output_dir / Path(name).name).exists()]
     if existing:
         raise ComputeContractError(f"collect refuses to overwrite existing artifacts: {existing}")
@@ -941,11 +953,14 @@ def _collect_local_calculation(
     selected = artifacts or expected_names
     if not selected or len(selected) != len(set(selected)) or any(name not in expected_names for name in selected):
         raise ComputeContractError("collect artifacts must be a unique subset of the prepared expected artifacts")
-    program_status = _collection_program_status(workspace, intent, prepared, {"kind": "local"})
     config = _local_job_config(workspace, intent, prepared)
     _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
     output_dir = workspace / output_ref
     _require_physical_compute_directory(workspace, output_dir, "local calculation output")
+    reused = _reuse_collected_result(workspace, intent, selected, output_dir)
+    if reused is not None:
+        return reused
+    program_status = _collection_program_status(workspace, intent, prepared, {"kind": "local"})
     existing = [name for name in selected if (output_dir / Path(name).name).exists()]
     if existing:
         raise ComputeContractError(f"collect refuses to overwrite existing artifacts: {existing}")
@@ -1168,7 +1183,12 @@ def parse_calculation(
     artifact_ref: str | None = None,
     expected_intent_digest: str | None = None,
 ) -> dict[str, Any]:
-    workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
+    workspace, intent, prepared = _load_prepared(
+        root,
+        intent_id,
+        expected_intent_digest,
+        allow_collected_recovery=True,
+    )
     source_ref = _workspace_ref(workspace, artifact_ref or _default_parse_ref(workspace, intent, prepared), read=True)
     _require_calculation_output_ref(intent, source_ref)
     prepared_task = prepared["prepared_task"]
@@ -2042,6 +2062,8 @@ def _load_prepared(
     root: str | Path,
     intent_id: str,
     expected_intent_digest: str | None = None,
+    *,
+    allow_collected_recovery: bool = False,
 ) -> tuple[Path, dict[str, Any], dict[str, Any]]:
     if not intent_id.startswith("calc_") or any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-" for char in intent_id[5:]):
         raise ComputeContractError("invalid intent_id")
@@ -2097,18 +2119,51 @@ def _load_prepared(
         raise ComputeContractError("prepared calculation scope does not match its intent")
     if prepared.get("schema_version") != "ts-compute-prepared/1" or prepared.get("intent_id") != intent_id:
         raise ComputeContractError("prepared calculation metadata is invalid")
-    expected_task = _prepared_task_dict(
-        _prepared_task_for_intent(workspace, intent, verify_inputs=False)
-    )
+    collected_recovery = allow_collected_recovery and _has_collected_result(workspace, intent)
+    try:
+        expected_task = _prepared_task_dict(
+            _prepared_task_for_intent(workspace, intent, verify_inputs=False)
+        )
+    except ComputeContractError:
+        if not collected_recovery:
+            raise
+        expected_task = prepared.get("prepared_task")
+        if not isinstance(expected_task, dict):
+            raise ComputeContractError("prepared calculation has no recoverable backend metadata")
     if prepared.get("prepared_task") != expected_task:
-        raise ComputeContractError("prepared backend metadata does not match the calculation intent")
-    expected_policy = _expected_prepared_execution_policy(workspace, intent)
+        if not collected_recovery:
+            raise ComputeContractError("prepared backend metadata does not match the calculation intent")
+        expected_task = prepared.get("prepared_task")
+        if not isinstance(expected_task, dict):
+            raise ComputeContractError("prepared calculation has no recoverable backend metadata")
+    try:
+        expected_policy = _expected_prepared_execution_policy(workspace, intent)
+    except ComputeContractError:
+        if not collected_recovery:
+            raise
+        expected_policy = prepared.get("execution_policy")
+        if not isinstance(expected_policy, dict):
+            raise ComputeContractError("prepared calculation has no recoverable execution policy")
     if prepared.get("execution_policy") != expected_policy:
-        raise ComputeContractError("prepared execution policy does not match the calculation intent")
+        if not collected_recovery:
+            raise ComputeContractError("prepared execution policy does not match the calculation intent")
+        expected_policy = prepared.get("execution_policy")
+        if not isinstance(expected_policy, dict):
+            raise ComputeContractError("prepared calculation has no recoverable execution policy")
     if expected_policy["kind"] == "remote":
         _require_unique_remote_basenames(expected_task["expected_artifacts"])
         _remote_stdout_name(expected_task)
     return workspace, intent, prepared
+
+
+def _has_collected_result(workspace: Path, intent: dict[str, Any]) -> bool:
+    _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
+    path = workspace / output_ref / "calculation_result.json"
+    if not path.is_file() or path.is_symlink():
+        return False
+    result = _read_object(path, "calculation result")
+    _validate_bound_result(intent, result, "calculation result")
+    return result.get("state") == "collected"
 
 
 def _workspace_root(root: str | Path) -> Path:
@@ -2780,6 +2835,60 @@ def _control_allows_same_submission_retry(result: dict[str, Any]) -> bool:
 
 def _validate_bound_result(intent: dict[str, Any], result: dict[str, Any], label: str) -> None:
     validate_calculation_result_binding(intent, result, label=label)
+
+
+def _reuse_collected_result(
+    workspace: Path,
+    intent: dict[str, Any],
+    selected: list[str],
+    output_dir: Path,
+) -> dict[str, Any] | None:
+    """Return a previously collected result when every selected file is unchanged.
+
+    Collection is deliberately no-overwrite. A retry after a parser failure is
+    therefore allowed only when the durable collection receipt proves that the
+    files already on disk are the same files that were collected previously.
+    """
+
+    _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
+    result_path = workspace / output_ref / "calculation_result.json"
+    if not result_path.is_file() or result_path.is_symlink():
+        return None
+    previous = _read_object(result_path, "calculation result")
+    _validate_bound_result(intent, previous, "calculation result")
+    if previous.get("state") != "collected":
+        return None
+    refs = previous.get("artifact_refs")
+    provenance = previous.get("provenance")
+    manifest = provenance.get("transfer_manifest") if isinstance(provenance, dict) else None
+    if not isinstance(refs, list) or not isinstance(manifest, list):
+        return None
+    expected_refs = {
+        (output_dir / Path(name).name).relative_to(workspace).as_posix()
+        for name in selected
+    }
+    if not expected_refs.issubset({ref for ref in refs if isinstance(ref, str)}):
+        return None
+    manifest_by_name: dict[str, str] = {}
+    for item in manifest:
+        if not isinstance(item, dict) or not isinstance(item.get("sha256"), str):
+            continue
+        source = item.get("remote_path") or item.get("local_path")
+        if isinstance(source, str):
+            manifest_by_name[Path(source).name] = item["sha256"]
+    for name in selected:
+        path = output_dir / Path(name).name
+        if has_symlink_component(workspace, path) or path.is_symlink() or not path.is_file():
+            return None
+        expected_digest = manifest_by_name.get(Path(name).name)
+        if expected_digest is None:
+            return None
+        actual_digest = _sha256_file(path)
+        if actual_digest != expected_digest:
+            raise ComputeContractError(
+                f"collect refuses to reuse changed artifact: {name}"
+            )
+    return previous
 
 
 def _write_result(workspace: Path, intent: dict[str, Any], result: dict[str, Any]) -> None:

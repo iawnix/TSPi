@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
-from ts_agent.io import read_json
+from ts_agent.io import read_json, sha256_json
 from .refs import NODE_ID, ACTIVITY_ID
 from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 
@@ -119,7 +119,8 @@ def activity_completion_blockers(
                 "ref": str(finding.get("path") or node_id),
                 "message": str(finding.get("message") or "activity journal integrity failed"),
             })
-    for row in index.get("activities", []):
+    activities = [row for row in index.get("activities", []) if isinstance(row, dict)]
+    for row in activities:
         if not isinstance(row, dict) or node_id not in _string_list(row.get("node_refs")):
             continue
         state = row.get("status")
@@ -131,12 +132,48 @@ def activity_completion_blockers(
                 "message": f"deterministic activity is still {state}: {ref}",
             })
         elif state == "failed" and outcome == "completed" and row.get("kind") != "render":
+            if _superseded_by_completed_activity(row, activities):
+                continue
             blockers.append({
                 "code": "failed_activity_requires_non_success_outcome",
                 "ref": ref,
                 "message": f"failed deterministic activity cannot be closed as completed: {ref}",
             })
     return _unique_blockers(blockers)
+
+
+def _superseded_by_completed_activity(
+    failed: dict[str, Any],
+    activities: list[dict[str, Any]],
+) -> bool:
+    """A later successful retry may supersede one failed deterministic attempt.
+
+    Activity IDs are allocated monotonically, but timestamps are the authority
+    here because imported journals may be copied between workspaces.  The
+    intent key deliberately ignores content digests for artifact imports and
+    analyses: correcting malformed content or rerunning the same analysis is
+    the same operational intent, while a different input name/artifact remains
+    a separate intent.
+    """
+
+    key = failed.get("intent_key")
+    if not isinstance(key, str) or not key:
+        return False
+    failed_completed_at = str(failed.get("completed_at") or "")
+    failed_started_at = str(failed.get("started_at") or "")
+    failed_order = max(failed_completed_at, failed_started_at)
+    for candidate in activities:
+        if candidate is failed or candidate.get("status") != "completed":
+            continue
+        if candidate.get("intent_key") != key:
+            continue
+        candidate_order = max(
+            str(candidate.get("completed_at") or ""),
+            str(candidate.get("started_at") or ""),
+        )
+        if candidate_order > failed_order:
+            return True
+    return False
 
 
 def _activity_row_sort_key(row: dict[str, Any]) -> tuple[int, str]:
@@ -250,6 +287,7 @@ def _read_activity(
     state = status.get("status") if status.get("status") in ACTIVITY_STATES else "pending"
     _validate_terminal_state(state, status, result, result_exists, ref, findings, node_refs)
     error = status.get("error") if isinstance(status.get("error"), dict) else {}
+    request_payload = request.get("request") if isinstance(request.get("request"), dict) else {}
     return {
         "activity_id": status.get("activity_id") or request.get("activity_id") or directory_id,
         "kind": status.get("kind") or request.get("kind"),
@@ -263,7 +301,36 @@ def _read_activity(
         "outcome": result.get("outcome") if isinstance(result, dict) else None,
         "error_name": error.get("name"),
         "error_message": error.get("message"),
+        "intent_key": _activity_intent_key(
+            kind=status.get("kind") or request.get("kind"),
+            operation=status.get("operation") or request.get("operation"),
+            node_refs=node_refs,
+            request=request_payload,
+        ),
     }
+
+
+def _activity_intent_key(
+    *,
+    kind: Any,
+    operation: Any,
+    node_refs: list[str],
+    request: dict[str, Any],
+) -> str:
+    """Return a stable key for retries of the same operational intent."""
+
+    payload = dict(request)
+    # These identify the submitted bytes, not the operation's target.  A
+    # corrected retry must still supersede a failed import/analysis.
+    if kind in {"artifact_import", "scientific_analysis"}:
+        payload.pop("submitted_sha256", None)
+        payload.pop("submitted_size_bytes", None)
+    return sha256_json({
+        "kind": kind,
+        "operation": operation,
+        "node_refs": list(node_refs),
+        "request": payload,
+    })
 
 
 def _validate_request(

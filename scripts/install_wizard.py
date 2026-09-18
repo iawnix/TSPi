@@ -1444,6 +1444,175 @@ def snapshot_active_release(root: Path) -> dict[str, object] | None:
     }
 
 
+def _snapshot_file(path: Path) -> dict[str, object]:
+    if path.is_symlink():
+        return {"kind": "symlink", "target": os.readlink(path)}
+    if path.is_file():
+        return {
+            "kind": "file",
+            "content": path.read_bytes(),
+            "mode": stat.S_IMODE(path.stat().st_mode),
+        }
+    if path.exists():
+        raise RuntimeError(f"rollback target must be a regular file or absent: {path}")
+    return {"kind": "absent"}
+
+
+def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict[str, object]:
+    """Capture installer-owned configuration before any install side effect."""
+
+    relative_paths = [
+        "TSPi",
+        "TSWeb",
+        "uninstall.sh",
+        ".pi/tspi/workspace-root.json",
+        ".pi/app-server-host/server-id",
+        ".pi/app-server-host/phone-connection.json",
+        ".pi/ts-web/auth.token",
+        ".pi/tspi/model-icons.json",
+        ".pi/notifications.toml",
+        ".pi/email/service.env",
+        ".pi/email/smtp-password",
+        ".pi/compute.toml",
+        ".pi/local.toml",
+        ".pi/remote.toml",
+    ]
+    paths = {str(root / relative): _snapshot_file(root / relative) for relative in relative_paths}
+    external_password = getattr(args, "email_password_file", None)
+    if isinstance(external_password, str):
+        password_path = Path(external_password).expanduser()
+        if password_path.is_absolute() and password_path != root / ".pi/email/smtp-password":
+            paths[str(password_path)] = _snapshot_file(password_path)
+
+    services: dict[str, object] = {}
+    if getattr(args, "service_scope", "none") != "none":
+        unit_dir = _service_unit_directory(args.service_scope)
+        names = ["ts-app-server-tspi.service", "ts-web-tspi.service", "ts-app-server-tspi@.service"]
+        for name in names:
+            unit_path = unit_dir / name
+            services[str(unit_path)] = {
+                "file": _snapshot_file(unit_path),
+                "status": _service_status(
+                    [] if args.service_scope == "system" else ["--user"],
+                    args.service_scope,
+                    name,
+                ),
+            }
+    releases_root = root / ".pi/packages/tspi/releases"
+    release_ids = sorted(
+        path.name
+        for path in releases_root.iterdir()
+        if path.is_dir() and not path.is_symlink()
+    ) if releases_root.is_dir() and not releases_root.is_symlink() else []
+    workspace_root = Path(args.workspace_root).expanduser().resolve()
+    return {
+        "files": paths,
+        "services": services,
+        "service_scope": getattr(args, "service_scope", "none"),
+        "release_ids": release_ids,
+        "workspace_root": {
+            "path": str(workspace_root),
+            "existed": workspace_root.exists(),
+            "empty": workspace_root.is_dir() and not any(workspace_root.iterdir()),
+        },
+    }
+
+
+def _restore_file(path: Path, snapshot: dict[str, object]) -> None:
+    kind = snapshot.get("kind")
+    if kind == "absent":
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.exists():
+            raise RuntimeError(f"rollback target is no longer a regular file: {path}")
+        return
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if kind == "symlink":
+        target = snapshot.get("target")
+        if not isinstance(target, str):
+            raise RuntimeError(f"rollback symlink target is invalid: {path}")
+        temporary = path.parent / f".{path.name}.rollback.{os.getpid()}"
+        temporary.unlink(missing_ok=True)
+        temporary.symlink_to(target)
+        os.replace(temporary, path)
+        return
+    if kind != "file" or not isinstance(snapshot.get("content"), bytes):
+        raise RuntimeError(f"rollback file snapshot is invalid: {path}")
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.rollback.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        mode = snapshot.get("mode", 0o600)
+        os.fchmod(descriptor, int(mode) if isinstance(mode, int) else 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = -1
+            handle.write(snapshot["content"])
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if descriptor != -1:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+
+
+def restore_install_configuration(root: Path, snapshot: dict[str, object]) -> None:
+    files = snapshot.get("files")
+    if isinstance(files, dict):
+        for raw_path, raw_snapshot in files.items():
+            if isinstance(raw_path, str) and isinstance(raw_snapshot, dict):
+                _restore_file(Path(raw_path), raw_snapshot)
+
+    services = snapshot.get("services")
+    if isinstance(services, dict) and services:
+        for raw_path, raw_value in services.items():
+            if isinstance(raw_path, str) and isinstance(raw_value, dict):
+                file_snapshot = raw_value.get("file")
+                if isinstance(file_snapshot, dict):
+                    _restore_file(Path(raw_path), file_snapshot)
+        service_scope = snapshot.get("service_scope")
+        scope = [] if service_scope == "system" else ["--user"]
+        # Restore the activation state captured before the transaction. A
+        # systemd failure must not hide the original install error.
+        try:
+            _run_systemctl(scope, "daemon-reload")
+            for raw_path, raw_value in services.items():
+                if not isinstance(raw_path, str) or not isinstance(raw_value, dict):
+                    continue
+                status = raw_value.get("status")
+                if not isinstance(status, dict):
+                    continue
+                name = Path(raw_path).name
+                enabled = status.get("enabled")
+                if enabled in {"enabled", "enabled-runtime"}:
+                    _run_systemctl(scope, "enable", name)
+                elif enabled in {"disabled", "masked"}:
+                    _run_systemctl(scope, "disable", name)
+                active = status.get("active")
+                if active == "active":
+                    _run_systemctl(scope, "restart", name)
+                elif active in {"inactive", "failed"}:
+                    _run_systemctl(scope, "stop", name)
+        except RuntimeError:
+            pass
+
+    release_ids = snapshot.get("release_ids")
+    releases_root = root / ".pi/packages/tspi/releases"
+    if isinstance(release_ids, list) and releases_root.is_dir() and not releases_root.is_symlink():
+        original = {item for item in release_ids if isinstance(item, str)}
+        for path in releases_root.iterdir():
+            if path.name in original or path.is_symlink() or not path.is_dir():
+                continue
+            shutil.rmtree(path)
+
+    workspace = snapshot.get("workspace_root")
+    if isinstance(workspace, dict) and workspace.get("existed") is False:
+        path_value = workspace.get("path")
+        if isinstance(path_value, str):
+            path = Path(path_value)
+            if path.is_dir() and not path.is_symlink() and not any(path.iterdir()):
+                path.rmdir()
+
+
 def restore_active_release(root: Path, snapshot: dict[str, object] | None) -> None:
     if not snapshot:
         return
@@ -1619,6 +1788,14 @@ def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
         "transport": "pi-radius",
         "protocol_version": 8,
         "session_relay_service": "pi-session-relay.client.v1",
+        "workspace_service": {
+            "service_id": "tspi.workspace-directory",
+            "members": ["list", "create"],
+        },
+        "session_service": {
+            "service_id": "pi.session-management",
+            "workspace_binding": "workspaceId",
+        },
         "server_id": server_id,
         "radius_gateway": args.radius_gateway or None,
         "workspace_root": str(Path(args.workspace_root)),
@@ -2206,6 +2383,7 @@ def _show_credential(label: str, credential: dict[str, str], *, reveal: bool) ->
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     previous_release: dict[str, object] | None = None
+    previous_configuration: dict[str, object] | None = None
     installation_root: Path | None = None
     try:
         interactive = not args.non_interactive
@@ -2226,6 +2404,7 @@ def main(argv: list[str] | None = None) -> int:
         installation = inspect_installation(Path(args.install_root))
         installation_root = Path(args.install_root)
         previous_release = snapshot_active_release(installation_root)
+        previous_configuration = snapshot_install_configuration(installation_root, args)
         validate_service_ownership(args)
         if not args.non_interactive:
             show_install_plan(args, installation)
@@ -2329,6 +2508,11 @@ def main(argv: list[str] | None = None) -> int:
                 restore_active_release(installation_root, previous_release)
             except (OSError, RuntimeError, ValueError) as rollback_error:
                 error = RuntimeError(f"{error}; release rollback failed: {rollback_error}")
+        if installation_root is not None and previous_configuration is not None:
+            try:
+                restore_install_configuration(installation_root, previous_configuration)
+            except (OSError, RuntimeError, ValueError) as rollback_error:
+                error = RuntimeError(f"{error}; configuration rollback failed: {rollback_error}")
         if installation_root is not None:
             try:
                 append_install_log(

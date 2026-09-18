@@ -350,6 +350,38 @@ def test_analytical_and_terminal_activity_completion_policy(tmp_path: Path) -> N
     apply_compiled_change(failed, inconclusive)
 
 
+def test_failed_activity_is_superseded_by_a_later_retry_of_same_intent(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    refs = start_research_node(root)
+    _activity_documents(root, refs["node_id"], activity_id="op_1", state="failed", kind="artifact_import")
+    retry = _activity_documents(root, refs["node_id"], activity_id="op_2", state="completed", kind="artifact_import")
+    request = read_json(retry / "request.json")
+    request["started_at"] = "2026-08-16T00:02:00+00:00"
+    write_json(retry / "request.json", request)
+    status = read_json(retry / "status.json")
+    status["started_at"] = "2026-08-16T00:02:00+00:00"
+    status["completed_at"] = "2026-08-16T00:03:00+00:00"
+    write_json(retry / "status.json", status)
+
+    decision = _completion(root, refs["node_id"], "completed")
+    validate_compiled_change(root, decision)
+
+
+def test_failed_activity_with_different_intent_still_blocks_completion(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    refs = start_research_node(root)
+    _activity_documents(root, refs["node_id"], activity_id="op_1", state="failed", kind="artifact_import")
+    retry = _activity_documents(root, refs["node_id"], activity_id="op_2", state="completed", kind="artifact_import")
+    request = read_json(retry / "request.json")
+    request["request"]["input_artifact_ids"] = ["art_other"]
+    write_json(retry / "request.json", request)
+
+    with pytest.raises(ContractError, match="failed_activity_requires_non_success_outcome"):
+        validate_compiled_change(root, _completion(root, refs["node_id"], "completed"))
+
+
 def test_report_and_frontier_use_compact_derived_activity_projection(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)

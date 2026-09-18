@@ -235,6 +235,10 @@ def test_host_command_owns_installation_state_and_workspace_root(
     assert state_root.is_dir()
 
 
+def test_launcher_usage_documents_the_systemd_host_entrypoint() -> None:
+    assert "./TSPi --service-host" in launcher.USAGE
+
+
 def test_host_state_prepares_private_pi_workspace_before_root_lock(tmp_path: Path) -> None:
     installation = _installation(tmp_path)
 

@@ -334,10 +334,13 @@ workspaces, App Server identities, and TS Web credentials are retained.
 
 ## Rollback
 
-Select a previous release with the installer rollback option or replace the
-`current` pointer with a validated directory under `.pi/packages/tspi/releases`.
-Never edit a release in place. Stop affected App Server instances before a
-rollback if their package entrypoint changes.
+The installer has a transaction rollback for failed upgrades: the selected
+release, launchers, runtime manifest, credentials, backend files, Phone
+manifest, and managed service units are restored together. There is no separate
+rollback selector in the current CLI. To move to an older release, run the
+installer with the desired pinned revision and let it perform a normal,
+validated upgrade; never edit a release directory in place or hand-edit the
+`current` pointer.
 
 ## Operational Recovery
 

@@ -695,7 +695,13 @@ async function preflightComputeRequest(
     throw new Error("compute preflight capability descriptor output roles do not match the bound intent");
   }
   request.capabilityDescriptor = descriptorSummary;
-  if (request.operation === "finalize") request.artifactRef ||= requireBindingString(raw.artifact_ref, "artifact_ref");
+  if (request.operation === "finalize") {
+    const canonicalArtifactRef = requireBindingString(raw.artifact_ref, "artifact_ref");
+    if (request.artifactRef && request.artifactRef !== canonicalArtifactRef) {
+      throw new Error("finalize artifactRef does not match the bound parser artifact");
+    }
+    request.artifactRef = canonicalArtifactRef;
+  }
   return {
     intentId: raw.intent_id as string,
     intentRef: raw.intent_ref as string,
