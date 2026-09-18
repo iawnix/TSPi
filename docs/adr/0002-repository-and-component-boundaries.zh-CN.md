@@ -29,7 +29,7 @@ Pi 拥有 App Server、Chord 和 Radius relay 协议；TS Phone 是连接原生 
 变更权。省略 Web descriptor 表示组件不可用，不应从源码路径静默嵌入。
 
 发布清单是 payload 的单一来源，包检查和安装器必须验证同一清单。开发测试和生成文件
-不应进入生产归档。当前 staged migration 将 Kernel 放在 `packages/ts-agent-kernel/`，
+不应进入生产归档。当前目录布局将 Kernel 放在 `packages/ts-agent-kernel/`，
 TypeScript runtime 放在 `packages/ts-agent-runtime/`，原生 App Server 放在 `apps/`。
 
 ## 后果

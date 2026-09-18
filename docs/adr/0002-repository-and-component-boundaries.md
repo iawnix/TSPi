@@ -48,7 +48,7 @@ contracts are explicit.
 | Phone transport | TS Phone speaks Pi protocol v8 through the authenticated Radius session relay; no TSPi Phone server or bridge is installed | Pi owns the session transport and TS Phone owns only its presentation adapter |
 | Release boundary | TSPi emits `tspi-package-release/4` with required Agent and optional independent Web descriptor | The suite contains the runtime; TS Phone is released separately |
 | Review | One isolated advisory Review runtime exists; no reviewer pool, role selection, aggregation, or conflict protocol exists | Improve the contract before adding more reviewer prompts or agents |
-| Testing | `scripts/test_source.py` builds a wheel and temporary overlay before running Python tests | Fast edit feedback and release-backed validation need separate commands |
+| Testing | `tools/test/runner.py` selects the manifest lane; the source lane builds a wheel and temporary overlay before running Python tests | Fast edit feedback and release-backed validation use explicit, reproducible environments |
 
 ## Decision
 

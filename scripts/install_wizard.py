@@ -385,9 +385,9 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Local backend policy", "core Python/runtime only; native tools must be selected explicitly", tone="muted")
     field("Compute backend config", args.compute_config or "preserve <install>/.pi/compute.toml if present", tone="muted")
     if args.local_config:
-        field("Legacy local backend file", args.local_config, tone="muted")
+        field("Previous local backend file", args.local_config, tone="muted")
     if args.remote_config:
-        field("Legacy remote backend file", args.remote_config, tone="muted")
+        field("Previous remote backend file", args.remote_config, tone="muted")
     field("Remote readiness", "probe during installation" if args.probe_remote else "not probed", tone="success" if args.probe_remote else "muted")
     field(
         "App Server service",

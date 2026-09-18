@@ -1,0 +1,71 @@
+schema_version = "tspi-test-manifest/1"
+
+[suites.fast]
+kind = "pytest-source"
+environment = "conda:ts-agent-skill"
+description = "Deterministic unit and public contract tests against the source tree."
+paths = ["tests/unit", "tests/contract"]
+
+[suites.source]
+kind = "pytest-managed"
+environment = "wheel-overlay"
+description = "All Python tests against a temporary wheel-backed runtime."
+paths = ["tests"]
+
+[suites.pi-adapter]
+kind = "pytest-managed"
+environment = "wheel-overlay + Node.js"
+description = "Pi extension, adapter, artifact, and runtime integration tests."
+paths = [
+  "tests/unit/test_agent_protocol.py",
+  "tests/unit/test_agent_run_journal.py",
+  "tests/integration/test_pi_agent_adapter.py",
+  "tests/integration/test_pi_subagent_contract.py",
+  "tests/integration/test_pi_subagent_ui.py",
+  "tests/integration/test_pi_compute_tools.py",
+  "tests/integration/test_pi_artifact_tools.py",
+  "tests/integration/test_pi_runtime_integration.py",
+]
+
+[suites.subagents]
+kind = "pytest-managed"
+environment = "wheel-overlay + Node.js"
+description = "Bounded Compute and Review subagent contract tests."
+paths = [
+  "tests/unit/test_agent_protocol.py",
+  "tests/unit/test_agent_run_journal.py",
+  "tests/integration/test_pi_subagent_contract.py",
+  "tests/integration/test_pi_subagent_ui.py",
+  "tests/integration/test_pi_compute_tools.py",
+  "tests/integration/test_pi_artifact_tools.py",
+  "tests/integration/test_pi_runtime_integration.py",
+]
+
+[suites.native-pi]
+kind = "node-native"
+environment = "Node.js 22 + prepared TSPI_PI_SOURCE"
+description = "Native Pi App Server, worker, extension loader, and provider tests."
+paths = [
+  "tests/node/native/pi-app-server.test.mjs",
+  "tests/node/native/pi-native-worker.test.mjs",
+  "tests/node/native/server-extension-loader.test.mjs",
+  "tests/node/native/provider-turn.test.mjs",
+]
+
+[suites.package]
+kind = "package-check"
+environment = "Node.js 22"
+description = "Package inventory and release-boundary checks."
+paths = []
+
+[suites.remote-smoke]
+kind = "scenario"
+environment = "managed Python + explicit TS_REMOTE_CONFIG"
+description = "Opt-in remote transport smoke; never part of the default suite."
+paths = ["tools/test/scenarios/scientific_remote_smoke.py"]
+
+[suites.live-eval]
+kind = "scenario"
+environment = "managed Python + authorized model provider"
+description = "Opt-in model evaluation; never part of CI or the default suite."
+paths = ["tools/test/scenarios/mechanism_live_eval.mjs"]

@@ -42,7 +42,7 @@ jobs:
           channels: conda-forge
           channel-priority: strict
       - shell: bash -el {0}
-        run: python scripts/test_fast.py -- -q
+        run: python tools/test/runner.py fast -- -q
       - shell: bash -el {0}
         run: python3 tools/lint_public_surface.py
 
@@ -65,7 +65,7 @@ jobs:
           channel-priority: strict
       - shell: bash -el {0}
         run: >-
-          python scripts/test_source.py
+          python tools/test/runner.py
           --base-prefix "$CONDA_PREFIX"
           --conda-root "$(conda info --base)"
-          -- -q
+          source -- -q

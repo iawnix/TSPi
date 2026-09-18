@@ -49,8 +49,8 @@ Run focused tests while iterating and the release-backed source suite before
 publishing:
 
 ```bash
-python3 -m pytest -q tests/test_scientific_analysis.py tests/test_node_dispatch.py
-python3 scripts/test_source.py -- -q
+python3 tools/test/runner.py fast -- -q tests/unit/test_scientific_analysis.py tests/unit/test_node_dispatch.py
+python3 tools/test/runner.py source -- -q
 ```
 
 Remote smoke tests require an explicit `TS_REMOTE_CONFIG` and an administrator-

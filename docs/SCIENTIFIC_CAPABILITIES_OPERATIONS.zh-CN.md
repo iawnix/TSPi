@@ -53,14 +53,14 @@ artifact，避免改写历史来源。
 
 ## 验证入口
 
-相关单元/集成测试：`tests/test_scientific_analysis.py`、
-`tests/test_node_dispatch.py`、`tests/test_reaction_mapping.py` 以及现有 compute、
+相关单元/集成测试：`tests/unit/test_scientific_analysis.py`、
+`tests/unit/test_node_dispatch.py`、`tests/unit/test_reaction_mapping.py` 以及现有 compute、
 report、Web、candidate、wheel 测试。参数合同检查不会加载全部科学依赖。
 
 真实模型选择评测入口（隔离临时 workspace，不提交科学作业）：
 
 ```bash
-TS_AGENT_PYTHON=/path/to/managed/python node tests/mechanism_live_eval.mjs PROVIDER MODEL 3 /tmp/tspi-evaluation.json
+TS_AGENT_PYTHON=/path/to/managed/python python3 tools/test/runner.py live-eval -- PROVIDER MODEL 3 /tmp/tspi-evaluation.json
 ```
 
 读取现有 Pi 模型配置和授权；输出不包含凭据。覆盖反应定义、已有 TS、已有 IRC、
@@ -74,8 +74,8 @@ TS_AGENT_PYTHON=/path/to/managed/python node tests/mechanism_live_eval.mjs PROVI
 真实远端小体系验收使用独立目录和已配置 profile：
 
 ```bash
-TS_REMOTE_CONFIG=/path/to/remote.toml /path/to/managed/python -m tests.scientific_remote_smoke launch /tmp/tspi-smoke --profile PROFILE
-TS_REMOTE_CONFIG=/path/to/remote.toml /path/to/managed/python -m tests.scientific_remote_smoke advance /tmp/tspi-smoke
+TS_REMOTE_CONFIG=/path/to/remote.toml TS_AGENT_PYTHON=/path/to/managed/python python3 tools/test/runner.py remote-smoke -- launch /tmp/tspi-smoke --profile PROFILE
+TS_REMOTE_CONFIG=/path/to/remote.toml TS_AGENT_PYTHON=/path/to/managed/python python3 tools/test/runner.py remote-smoke -- advance /tmp/tspi-smoke
 ```
 
 launch 只提交缺失的测试，advance 查看已有作业并收集/解析。保存

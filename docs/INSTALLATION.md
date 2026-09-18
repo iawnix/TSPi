@@ -100,7 +100,7 @@ its profile name in the calculation intent. SSH keys and other credentials stay 
 the SSH configuration and are never copied into this TOML. TSPi does not install
 Gaussian or other site-managed native chemistry software.
 
-Existing installations may continue to use the legacy `--local-config` and
+Existing installations may continue to use the previous `--local-config` and
 `--remote-config` files. New installations should use the unified template above.
 `ts_remote doctor` (also available as `./TSPi --check-remote`) is a read-only
 readiness check for the remote profile and is not a second calculation command.

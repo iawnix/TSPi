@@ -34,7 +34,7 @@ ID 推导 digest。协议错误会提示局部引用、datatype、severity 等�
 [ADR 0002](adr/0002-independent-scientific-capabilities.md)。当前证据以源码测试、
 组件测试和发布检查为准。
 
-静态协议基线沿用 `tests/test_pi_agent_adapter.py` 的 UTF-8 字节计量：
+静态协议基线沿用 `tests/integration/test_pi_agent_adapter.py` 的 UTF-8 字节计量：
 
 | 测量项 | 本轮结果 |
 | --- | --- |

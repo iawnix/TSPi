@@ -238,5 +238,5 @@ are separate from the scientific operation journal.
 - Skills and extension manifests: `skills/`, `package.json`, and
   `extensions/server/extensions.json`.
 - TS Web contracts: `contracts/ts-web/`.
-- App Server lifecycle tests: `tests/test_pi_app_server_launcher.py` and
-  `tests/pi-app-server.test.mjs`.
+- App Server lifecycle tests: `tests/integration/test_pi_app_server_launcher.py` and
+  `tests/node/native/pi-app-server.test.mjs`.

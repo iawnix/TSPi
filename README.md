@@ -88,7 +88,9 @@ Pi sessions, configuration, and managed runtime state:
 Use the project checks from the source checkout:
 
 ```bash
-python3 -m unittest discover -s tests -p 'test_*.py'
+python3 tools/test/runner.py list
+python3 tools/test/runner.py fast -- -q
+python3 tools/test/runner.py source -- -q
 npm run lint:public
 ```
 

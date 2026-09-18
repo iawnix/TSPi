@@ -87,7 +87,9 @@ TS Web 是可选的只读工作区浏览器。安装时选择后可使用 `TSWeb
 在源码目录执行项目检查：
 
 ```bash
-python3 -m unittest discover -s tests -p 'test_*.py'
+python3 tools/test/runner.py list
+python3 tools/test/runner.py fast -- -q
+python3 tools/test/runner.py source -- -q
 npm run lint:public
 ```
 

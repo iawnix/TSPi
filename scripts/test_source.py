@@ -28,6 +28,11 @@ from _runtime_install import (
     _run_runtime_probe,
 )
 
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.test.manifest import suite_paths
+
 RESULT_SCHEMA_VERSION = "ts-source-test/1"
 
 
@@ -70,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     if pytest_args[:1] == ["--"]:
         pytest_args = pytest_args[1:]
     if not pytest_args:
-        pytest_args = ["-q"]
+        pytest_args = ["-q", *suite_paths("source")]
 
     record: dict[str, Any] = {
         "schema_version": RESULT_SCHEMA_VERSION,

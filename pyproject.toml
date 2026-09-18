@@ -45,4 +45,4 @@ exclude = ["ts_agent.web", "ts_agent.web.*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["packages/ts-agent-kernel", "."]
-testpaths = ["tests"]
+testpaths = ["tests/unit", "tests/contract", "tests/integration"]

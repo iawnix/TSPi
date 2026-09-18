@@ -10,12 +10,19 @@ Kernel 拥有规范科学状态，可选的 TS Web 只读取工作区。
 安装 `environment.yml` 描述的科学环境和固定 Pi 源码。修改包布局前运行：
 
 ```bash
-python3 scripts/test_fast.py -- -q
+python3 tools/test/runner.py list
+python3 tools/test/runner.py fast -- -q
 npm run lint:public
 ```
 
-完整 Python 套件使用 `python3 scripts/test_source.py -- -q`；原生 App Server 测试需要
-`TSPI_PI_SOURCE` 指向准备好的 Pi checkout。
+完整 Python 套件使用 `python3 tools/test/runner.py source -- -q`。原生 App Server
+测试使用 `npm run test:native-pi`，需要 `TSPI_PI_SOURCE` 指向准备好的 Pi checkout。
+远端 smoke 和真实模型评测是显式 opt-in lane，需要外部配置，不属于默认测试套件。
+
+权威测试清单是 `tools/test/manifest.toml`，由 `tools/test/runner.py` 调度。
+Python 测试按 `tests/unit/`、`tests/contract/` 和 `tests/integration/` 分组；Node
+测试位于 `tests/node/`；共享 fixture 位于 `tests/support/`。外部探针和真实场景位于
+`tools/test/probes/` 与 `tools/test/scenarios/`，不能加入默认 Python 测试套件。
 
 ## 科学模型与验证规则
 

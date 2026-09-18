@@ -10,12 +10,23 @@ Install the pinned Pi source and the scientific environment described by
 `environment.yml`. Run the fast test suite before changing package layout:
 
 ```bash
-python3 scripts/test_fast.py -- -q
+python3 tools/test/runner.py fast -- -q
 npm run lint:public
 ```
 
-The full suite uses `python3 scripts/test_source.py -- -q`; native App Server
-checks require `TSPI_PI_SOURCE` pointing at the prepared Pi checkout.
+The full suite uses `python3 tools/test/runner.py source -- -q`. Use
+`python3 tools/test/runner.py list` to inspect all lanes. Native App Server
+checks use `npm run test:native-pi` and require `TSPI_PI_SOURCE` pointing at the
+prepared Pi checkout. Remote smoke and live model evaluation are opt-in lanes;
+they require explicit external configuration and are never part of the default
+suite.
+
+The authoritative lane and path definition is `tools/test/manifest.toml`,
+dispatched by `tools/test/runner.py`. Python tests are grouped under
+`tests/unit/`, `tests/contract/`, and `tests/integration/`; Node tests live under
+`tests/node/`; shared fixtures are under `tests/support/`. External probes and
+live scenarios belong to `tools/test/probes/` and `tools/test/scenarios/` and
+must not be added to the default Python suite.
 
 ## Scientific Model
 

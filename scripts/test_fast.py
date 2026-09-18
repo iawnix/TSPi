@@ -22,43 +22,10 @@ from _bootstrap import load_runtime_environment
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULT_SCHEMA_VERSION = "ts-fast-source-test/1"
-DEFAULT_TEST_PATHS = (
-    "tests/test_activity_index.py",
-    "tests/test_agent_failure_taxonomy.py",
-    "tests/test_agent_protocol.py",
-    "tests/test_agent_run_journal.py",
-    "tests/test_compute.py",
-    "tests/test_compute_artifacts.py",
-    "tests/test_compute_candidates.py",
-    "tests/test_compute_capabilities.py",
-    "tests/test_compute_control.py",
-    "tests/test_context_compiler.py",
-    "tests/test_contracts.py",
-    "tests/test_decision_templates.py",
-    "tests/test_gates.py",
-    "tests/test_file_preview.py",
-    "tests/test_io_safety.py",
-    "tests/test_operational.py",
-    "tests/test_operational_ids.py",
-    "tests/test_package_inventory.py",
-    "tests/test_public_surface.py",
-    "tests/test_readme_contract.py",
-    "tests/test_report.py",
-    "tests/test_report_template_contract.py",
-    "tests/test_review_roles.py",
-    "tests/test_trajectory.py",
-    "tests/test_transactions.py",
-    "tests/test_ts_structures_alignment.py",
-    "tests/test_ts_structures_stereo.py",
-    "tests/test_ts_render.py",
-    "tests/test_ts_web_component.py",
-    "tests/test_validation_engine.py",
-    "tests/test_workspace_bootstrap.py",
-    "tests/test_workspace_engine.py",
-    "tests/test_workspace_identity.py",
-    "tests/test_workspace_locator.py",
-    "tests/test_xtb_crest_backend.py",
-)
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.test.manifest import suite_paths
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -77,8 +44,8 @@ def main(argv: list[str] | None = None) -> int:
         pytest_args = pytest_args[1:]
     if not pytest_args:
         pytest_args = ["-q"]
-    if not any(value.startswith("tests/") for value in pytest_args):
-        pytest_args.extend(DEFAULT_TEST_PATHS)
+    if not any(value.endswith(".py") for value in pytest_args):
+        pytest_args.extend(suite_paths("fast"))
 
     python = _resolve_python(package_root, args.python)
     environment = dict(os.environ)
