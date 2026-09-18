@@ -2,7 +2,7 @@
 
 [English](INSTALLATION.md) | [简体中文](INSTALLATION.zh-CN.md)
 
-This guide installs the TSPi Agent package and its optional TS Web projection.
+This guide installs the TSPi Agent package and its optional TS Web browser.
 TS Phone is a separate Flutter application; no TS Phone server, bridge secret,
 or local HTTP broker is installed.
 
@@ -16,8 +16,14 @@ or local HTTP broker is installed.
   required when the managed scientific runtime is created; it is not an
   optional backend dependency.
 
-The installer can use a private SSH checkout or an HTTPS public repository. It
-does not need the TS Phone repository.
+The bootstrap uses the public HTTPS repository by default and retries interrupted
+Git transfers before falling back to a regular shallow clone. It can also use a
+private GitHub SSH checkout when passed explicitly; it does not need the TS Phone
+repository:
+
+```bash
+./install.sh --tspi-repo git@github.com:your-org/TSPi.git
+```
 
 ## Install Or Select A Release
 
@@ -102,8 +108,10 @@ Gaussian or other site-managed native chemistry software.
 
 Existing installations may continue to use the previous `--local-config` and
 `--remote-config` files. New installations should use the unified template above.
-`ts_remote doctor` (also available as `./TSPi --check-remote`) is a read-only
-readiness check for the remote profile and is not a second calculation command.
+`/compute` and the `compute.environments` command list the configured local and
+remote profiles. Remote scheduler checks remain available to the execution
+layer when a remote calculation is prepared; they are not a separate
+remote-only command surface.
 Add `--probe-remote` when installation should run `TSPi --check-remote` and fail
 unless SSH, the scheduler, writable remote root, and configured software probes
 are ready. Without that flag the summary reports `not_probed` rather than

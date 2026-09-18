@@ -30,7 +30,7 @@ calculator。参数类型与边界以能力目录为准，主要参数包括 `im
 `ts_agent.backends.ase_neb_runner`。在 profile 环境中将 `TS_ASE_NEB_XTB`
 设为已验证的 xTB 可执行文件，不依赖交互式 shell 的 `PATH`。
 
-部署或修改 profile 后、首次提交 NEB 前运行 `ts_remote doctor`。解释器缺失、
+部署或修改 profile 后、首次提交 NEB 前运行 `TSPi --check-remote`。解释器缺失、
 导入失败、runner 版本不一致或 xTB 探测失败都属于运维失败，不能作为反应路径
 证据。不得从计算作业中安装包，也不得把软件安装到研究工作区。按照
 [ASE NEB 部署流程](../../../docs/INSTALLATION.md#deploy-the-ase-neb-runtime-with-pixi)

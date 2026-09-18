@@ -87,7 +87,7 @@ bridge, REST/SSE compatibility layer, or terminal Host.
 | App Server protocol or service | `apps/app-server/`, launcher tests, TS Phone client, architecture docs |
 | Workspace schema | kernel contract, bootstrap, validation tests, workspace references |
 | Scientific backend | backend parser, capability registry, focused skill reference, tests |
-| Scientific analysis | analysis registry/handler, replay validation, scientific counterexamples, report/Web projection, wheel inventory |
+| Scientific analysis | analysis registry/handler, replay validation, scientific counterexamples, report/Web transport, wheel inventory |
 | Node dispatch | operational receipt chain, submission guard, native/extension tools, restart and pause tests |
 | Package inventory | `package.json`, `scripts/package_inventory.py`, package layout tests |
 | Installer/service path | `scripts/install_wizard.py`, uninstall logic, installation docs |

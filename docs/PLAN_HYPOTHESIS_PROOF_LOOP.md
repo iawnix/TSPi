@@ -22,7 +22,7 @@
 
 The plan is a living implementation record. The current checkout has already
 landed the kernel, capability, candidate, ProofSpec, bounded-context, isolated
-agent, Web projection, and package-boundary changes described below. The
+agent, Web transport, and package-boundary changes described below. The
 remaining work is to make every public document and schema describe the same
 contract, make unsupported execution modes fail with an explicit error, and
 complete source/package/runtime verification before release.
@@ -38,7 +38,7 @@ Completed in this branch:
 - bounded frontier/delta context and logical artifact resolution;
 - isolated Compute and advisory Review runtimes with provider-error-first
   reporting;
-- Node-first Web projection, Attempt/Run detail views, and the unified TSPi
+- Node-first Web browser views, Attempt/Run detail views, and the unified TSPi
   package source boundary;
 - Python kernel wheel packaging and release/package checks.
 
@@ -102,7 +102,7 @@ runtime-facing components:
 ```text
 TSPi Package
 ├── Agent + Research Kernel       authoritative reasoning process and state
-├── TS Web                        read-only research projection
+├── TS Web                        read-only canonical ResearchMap browser
 └── TS Phone                      authenticated Radius presentation client
 ```
 
@@ -481,7 +481,7 @@ schema generations or implementation stages. The target surface is:
 | `ts_calc` | bind and run one capability action or inspect its result |
 | `ts_review` | bounded advisory review |
 | `ts_reply` | Root disposition of advisory output |
-| `ts_remote` | bound remote transport, readiness, and scheduler effects |
+| `ts_environment` | inspect configured local and remote compute environments |
 | `ts_seed` | deterministic structure seed |
 | `ts_import` | bounded input/artifact import |
 | `ts_compare` | deterministic structure comparison |
@@ -495,19 +495,26 @@ structured success or failure; it does not ask the model to infer whether a
 free-text response was executed.
 
 Calculation intent remains the owner of a scientific calculation. Its executor
-may call the `ts_remote` transport capability for upload, submit, status,
-collection, or cancel. `ts_remote` therefore remains a real remote subsystem,
+may use the configured remote adapter for upload, submit, status, collection,
+or cancel. The adapter remains a real remote subsystem,
 but every effect must be bound to an immutable intent, Node, policy, and
 receipt; it is never an arbitrary shell or free-form scheduler surface.
 
-The minimal human command surface remains:
+The minimal human command surface is:
 
 ```text
-/ts          compact current research state
-/ts-check    validate the workspace and release contracts
-/ts-remote   inspect remote execution readiness
-/ts-runs     browse durable Compute/Review history
+/research                         show the current ResearchMap summary
+/research validate                validate the ResearchMap
+/research detail <kind> <id>      inspect one map object
+/compute                          list local and remote compute environments
+/compute show <environment>       inspect one environment configuration
+/runs                             browse durable Compute/Review history
+/debug prompt                     inspect the effective system prompt
 ```
+
+These commands call the same canonical command service as the Pi tools and
+the Python CLI. They are presentation and argument-parsing adapters, not a
+second state API.
 
 ## 9. Context And Subagent Policy
 

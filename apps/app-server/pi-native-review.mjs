@@ -26,6 +26,9 @@ const {
   buildReviewTaskBundle,
   validateSubagentRequest,
 } = require("../../packages/ts-agent-runtime/agents/review/task-packet.cjs");
+const { reviewSnapshotFromMap } = require(
+  "../../packages/ts-agent-runtime/agents/review/research-map-adapter.cjs",
+);
 const {
   beginAgentRun,
   completeAgentRun,
@@ -87,17 +90,18 @@ export function createReviewTool(runtime) {
       publishProgress(onUpdate, toolCallId, taskId, request, "queued");
       try {
         publishProgress(onUpdate, toolCallId, taskId, request, "snapshotting");
-        const reviewSnapshot = await runJsonCli(
-          packageScript("ts_workspace.py"),
-          ["build_review_snapshot", "--root", root, "--target-claim-ref", request.targetClaimRef],
+        const researchMap = await runJsonCli(
+          packageScript("ts_api.py"),
+          ["research.map", "--root", root],
           root,
           context?.abortSignal,
           60_000,
         );
+        const reviewSnapshot = reviewSnapshotFromMap(researchMap, request.targetClaimRef);
         const artifactCatalog = request.artifactIds.length
           ? (await runJsonCli(
-              packageScript("ts_compute.py"),
-              ["list-artifacts", "--root", root],
+              packageScript("ts_api.py"),
+              ["compute.artifacts", "--root", root],
               root,
               context?.abortSignal,
               60_000,

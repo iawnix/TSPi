@@ -35,7 +35,7 @@ Root Agent 选择问题、方法、替代方案、反例、回溯和停止条件
 分配 ID、校验引用和 schema、应用 Decision 并持久化规范状态。Compute、Render、Report、
 远程控制、导入和通知是确定性工具；Review 只提供 advisory 评估。
 
-TS Web、报告和 context 都是只读 projection，不是第二套状态存储。只有 Decision apply
+TS Web、报告和 context 都是 canonical 记录的只读 transport，不是第二套状态存储。只有 Decision apply
 能改变规范科学状态；Phase 不授权操作；Node 和 Claim 图分别保持无环且语义不同。
 
 ## 结果

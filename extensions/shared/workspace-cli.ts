@@ -11,6 +11,7 @@ const { parseJsonOutput, resolveWorkspaceRoot } = require("../ts-workflow-contro
 const SHARED_DIR = dirname(fileURLToPath(import.meta.url));
 export const PACKAGE_ROOT = resolve(SHARED_DIR, "..", "..");
 const WORKSPACE_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_workspace.py");
+const API_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_api.py");
 const COMPUTE_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_compute.py");
 const RENDER_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_render.py");
 const REPORT_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_report.py");
@@ -29,6 +30,50 @@ export async function runWorkspaceJson(
   return parseJsonOutput(result);
 }
 
+/** Execute the canonical domain command used by CLI, tools, and slash commands. */
+export async function runApiJson(
+  pi: ExtensionAPI,
+  command: string,
+  root: string,
+  extraArgs: string[] = [],
+  signal?: AbortSignal,
+  timeoutMs = 60_000,
+) {
+  const python = await resolvePythonExecutable(pi, root, signal);
+  const operationSignal = deadlineSignal(signal, timeoutMs);
+  const result = await pi.exec(python, [API_CLI, command, "--root", root, ...extraArgs], {
+    signal: operationSignal,
+  });
+  return parseJsonOutput(result);
+}
+
+export async function runResearchJson(
+  pi: ExtensionAPI,
+  command: "map" | "summary" | "validate" | "operations" | "detail" | "locate",
+  root: string,
+  params: { kind?: string; id?: string; query?: string } = {},
+  signal?: AbortSignal,
+) {
+  const args: string[] = [];
+  if (params.kind !== undefined) args.push("--kind", params.kind);
+  if (params.id !== undefined) args.push("--id", params.id);
+  if (params.query !== undefined) args.push("--query", params.query);
+  return runApiJson(pi, `research.${command}`, root, args, signal);
+}
+
+export async function runComputeApiJson(
+  pi: ExtensionAPI,
+  command: "environments" | "environment" | "capabilities" | "artifacts" | "runs",
+  root: string,
+  params: { name?: string; nodeId?: string } = {},
+  signal?: AbortSignal,
+) {
+  const args: string[] = [];
+  if (params.name !== undefined) args.push("--name", params.name);
+  if (params.nodeId !== undefined) args.push("--node-id", params.nodeId);
+  return runApiJson(pi, `compute.${command}`, root, args, signal);
+}
+
 export async function allocateOperationalId(
   pi: ExtensionAPI,
   kind: "calc" | "sub" | "op",
@@ -43,17 +88,17 @@ export async function allocateOperationalId(
   return identifier;
 }
 
-export async function runWorkspaceChangeJson(
+export async function runResearchChangeJson(
   pi: ExtensionAPI,
   root: string,
   request: unknown,
   signal?: AbortSignal,
 ) {
-  const tempRoot = mkdtempSync(join(tmpdir(), "ts-workspace-change-"));
+  const tempRoot = mkdtempSync(join(tmpdir(), "ts-research-change-"));
   const requestFile = join(tempRoot, "request.json");
   try {
     writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-    return await runWorkspaceJson(pi, "change", root, ["--request-file", requestFile], signal);
+    return await runApiJson(pi, "research.change", root, ["--request-file", requestFile], signal);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -133,41 +178,6 @@ async function runPrivateComputeRequest(
     return await runComputeJson(pi, command, root, ["--request-file", requestFile], signal);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
-  }
-}
-
-export async function runRemoteDiagnosticJson(
-  pi: ExtensionAPI,
-  mode: "status" | "doctor" | "queues" | "nodes",
-  cwd: string,
-  signal?: AbortSignal,
-  timeoutMs = 90_000,
-) {
-  const workspaceRoot = resolveWorkspaceRoot("", cwd) || findRuntimeWorkspaceRoot(cwd);
-  const python = await resolvePythonExecutable(pi, workspaceRoot, signal);
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  const operationSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-  let result: unknown;
-  try {
-    result = await pi.exec(python, [COMPUTE_CLI, "remote-diagnostic", "--mode", mode], {
-      signal: operationSignal,
-    });
-  } catch (error) {
-    throw classifyRemoteDiagnosticFailure(error, mode, signal, timeoutSignal, timeoutMs);
-  }
-  if (operationSignal.aborted) {
-    throw classifyRemoteDiagnosticFailure(undefined, mode, signal, timeoutSignal, timeoutMs);
-  }
-  try {
-    return parseJsonOutput(result);
-  } catch (error) {
-    throw remoteDiagnosticError(
-      "REMOTE_DIAGNOSTIC_INVALID_OUTPUT",
-      "invalid_output",
-      `ts_remote ${mode} diagnostic returned invalid JSON; no remote action was attempted`,
-      mode,
-      error,
-    );
   }
 }
 
@@ -253,17 +263,6 @@ export function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string)
   return root;
 }
 
-function findRuntimeWorkspaceRoot(start: string): string | undefined {
-  let current = resolve(start);
-  while (true) {
-    const manifest = join(current, ".agents", "runtime", "tspi", "env.json");
-    if (existsSync(manifest)) return current;
-    const parent = dirname(current);
-    if (parent === current) return undefined;
-    current = parent;
-  }
-}
-
 async function resolvePythonExecutable(
   pi: ExtensionAPI,
   workspaceRoot: string | undefined,
@@ -324,55 +323,4 @@ async function runPackageJson(
 function deadlineSignal(parent: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs);
   return parent ? AbortSignal.any([parent, timeout]) : timeout;
-}
-
-function classifyRemoteDiagnosticFailure(
-  error: unknown,
-  mode: string,
-  parent: AbortSignal | undefined,
-  timeout: AbortSignal,
-  timeoutMs: number,
-): Error {
-  if (parent?.aborted) {
-    return remoteDiagnosticError(
-      "REMOTE_DIAGNOSTIC_CANCELLED",
-      "cancelled",
-      `ts_remote ${mode} diagnostic was cancelled; no remote action was attempted`,
-      mode,
-      error,
-    );
-  }
-  if (timeout.aborted) {
-    return remoteDiagnosticError(
-      "REMOTE_DIAGNOSTIC_TIMEOUT",
-      "diagnostic_timeout",
-      `ts_remote ${mode} diagnostic timed out after ${Math.ceil(timeoutMs / 1000)} seconds; no remote action was attempted`,
-      mode,
-      error,
-    );
-  }
-  return remoteDiagnosticError(
-    "REMOTE_DIAGNOSTIC_PROCESS_FAILED",
-    "process_failed",
-    `ts_remote ${mode} diagnostic process failed before returning a result; no remote action was attempted`,
-    mode,
-    error,
-  );
-}
-
-function remoteDiagnosticError(
-  code: string,
-  errorClass: string,
-  message: string,
-  mode: string,
-  cause?: unknown,
-): Error {
-  const error = new Error(message) as Error & Record<string, unknown>;
-  error.code = code;
-  error.errorClass = errorClass;
-  error.mode = mode;
-  error.retrySafe = true;
-  error.remoteActionAttempted = false;
-  if (cause !== undefined) error.cause = cause;
-  return error;
 }

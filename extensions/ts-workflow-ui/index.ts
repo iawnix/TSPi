@@ -39,7 +39,7 @@ import {
   type TsSubagentRecord,
 } from "./agent-details.ts";
 import { SubagentHistoryBrowser } from "./subagent-history.ts";
-import { requireWorkspaceRoot, runWorkspaceJson } from "../shared/workspace-cli.ts";
+import { requireWorkspaceRoot, runComputeApiJson } from "../shared/workspace-cli.ts";
 
 type ForegroundState = "idle" | "thinking" | "compacting" | "error";
 export function formatTsSubagentHistory(
@@ -235,18 +235,18 @@ export default function (pi: ExtensionAPI) {
     latestContext = undefined;
   });
 
-  pi.registerCommand("ts-runs", {
-    description: "Browse active and recorded Compute and Review subagent runs · read-only · local.",
+  pi.registerCommand("runs", {
+    description: "Browse active and recorded Compute and Review runs.",
     handler: async (args, ctx) => {
       if (String(args || "").trim()) {
-        ctx.ui.notify("/ts-runs does not accept arguments", "warning");
+        ctx.ui.notify("/runs does not accept arguments", "warning");
         return;
       }
       let root = process.env.TS_WORKSPACE_ROOT || ctx.cwd;
       let report: Record<string, unknown> | undefined;
       try {
         root = requireWorkspaceRoot(undefined, ctx.cwd);
-        report = await runWorkspaceJson(pi, "operational", root, [], ctx.signal);
+        report = await runComputeApiJson(pi, "runs", root, {}, ctx.signal);
       } catch (error) {
         if (activityStore.activities.size === 0) {
           ctx.ui.notify(error instanceof Error ? error.message : String(error), "warning");
@@ -332,7 +332,7 @@ function foregroundToolLabel(toolName: string): string {
   const labels: Record<string, string> = {
     [TS_PUBLIC_TOOL_NAMES.state]: "reading research state",
     [TS_PUBLIC_TOOL_NAMES.change]: "applying research change",
-    [TS_PUBLIC_TOOL_NAMES.remote]: "checking remote compute",
+    [TS_PUBLIC_TOOL_NAMES.environment]: "checking compute environment",
     [TS_PUBLIC_TOOL_NAMES.importArtifact]: "importing calculation input",
     [TS_PUBLIC_TOOL_NAMES.compare]: "comparing molecular structures",
     [TS_PUBLIC_TOOL_NAMES.reply]: "recording review response",

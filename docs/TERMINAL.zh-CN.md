@@ -48,7 +48,7 @@ Phone 是可交互的 Pi 客户端，不是只读投影。手机提交的 prompt
 
 ## 浏览器控制
 
-TS Web 默认仍然是只读科学投影。如果浏览器需要控制一个已经存在的 Pi 会话，
+TS Web 默认直接读取 canonical ResearchMap。如果浏览器需要控制一个已经存在的 Pi 会话，
 在 Host 运行时启动可选的 loopback adapter：
 
 ```bash

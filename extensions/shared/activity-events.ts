@@ -1,16 +1,16 @@
 import type { EventBus } from "@earendil-works/pi-coding-agent";
 
 export const TS_ACTIVITY_STATES = ["running", "completed", "failed"] as const;
-export const TS_REMOTE_ACTIVITY_MODES = ["status", "doctor", "queues", "nodes"] as const;
+export const TS_ENVIRONMENT_ACTIVITY_MODES = ["list", "show"] as const;
 export const TS_ACTIVITY_EVENT_CHANNEL = "ts-workflow:activity/1";
 
 export type TsPublishedActivityState = typeof TS_ACTIVITY_STATES[number];
-export type TsRemoteActivityMode = typeof TS_REMOTE_ACTIVITY_MODES[number];
+export type TsEnvironmentActivityMode = typeof TS_ENVIRONMENT_ACTIVITY_MODES[number];
 
-export interface TsRemoteActivity {
-  kind: "remote";
+export interface TsEnvironmentActivity {
+  kind: "environment";
   id: string;
-  mode: TsRemoteActivityMode;
+  mode: TsEnvironmentActivityMode;
   state: TsPublishedActivityState;
   detail: string;
   startedAt: number;
@@ -20,7 +20,7 @@ export interface TsRemoteActivity {
 }
 
 export type TsActivityEvent =
-  | { type: "upsert"; activity: TsRemoteActivity }
+  | { type: "upsert"; activity: TsEnvironmentActivity }
   | { type: "remove"; activityId: string };
 
 export type TsActivityListener = (event: TsActivityEvent) => void;
@@ -40,9 +40,9 @@ function isTsActivityEvent(value: unknown): value is TsActivityEvent {
   if (value.type === "remove") return typeof value.activityId === "string" && value.activityId.length > 0;
   if (value.type !== "upsert" || !isObject(value.activity)) return false;
   const activity = value.activity;
-  return activity.kind === "remote"
+  return activity.kind === "environment"
     && typeof activity.id === "string"
-    && (TS_REMOTE_ACTIVITY_MODES as readonly unknown[]).includes(activity.mode)
+    && (TS_ENVIRONMENT_ACTIVITY_MODES as readonly unknown[]).includes(activity.mode)
     && (TS_ACTIVITY_STATES as readonly unknown[]).includes(activity.state)
     && typeof activity.detail === "string"
     && typeof activity.startedAt === "number"

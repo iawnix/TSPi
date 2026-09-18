@@ -1487,7 +1487,7 @@ def _materialize_execution_target(
         resources = RemoteResources.from_mapping(request_target["resources"])
         identity = workspace_id(workspace, create=True)
     except (ComputeConfigurationError, RemoteConfigurationError, WorkspaceIdentityError) as exc:
-        raise ComputeContractError(f"cannot materialize ts_remote target: {exc}") from exc
+        raise ComputeContractError(f"cannot materialize remote execution target: {exc}") from exc
     _validate_profile_resources(profile, resources)
     remote_dir = str(
         PurePosixPath(profile.remote_root)
@@ -1782,7 +1782,7 @@ def _validate_execution_target(target: dict[str, Any]) -> dict[str, Any]:
         profile = _remote_profile(str(target["profile"]))
         resources = RemoteResources.from_mapping(target["resources"])
     except (KeyError, ComputeConfigurationError, RemoteConfigurationError) as exc:
-        raise ComputeContractError(f"invalid ts_remote target: {exc}") from exc
+        raise ComputeContractError(f"invalid remote execution target: {exc}") from exc
     _validate_profile_resources(profile, resources)
     return {
         "kind": "remote",
@@ -1845,7 +1845,7 @@ def _remote_job_config(
         not isinstance(target, dict)
         or target.get("kind") != "remote"
     ):
-        raise ComputeContractError("this operation requires a prepared ts_remote target")
+        raise ComputeContractError("this operation requires a prepared remote execution target")
     prepared_task = prepared.get("prepared_task")
     if not isinstance(prepared_task, dict):
         raise ComputeContractError("prepared calculation is missing prepared_task")
@@ -1861,7 +1861,7 @@ def _remote_job_config(
         profile = _remote_profile(str(target["profile"]))
         resources = RemoteResources.from_mapping(target["resources"])
     except (ComputeConfigurationError, RemoteConfigurationError) as exc:
-        raise ComputeContractError(f"invalid prepared ts_remote target: {exc}") from exc
+        raise ComputeContractError(f"invalid prepared remote execution target: {exc}") from exc
     _validate_profile_resources(profile, resources)
     command = tuple(_rewritten_remote_command(prepared_task))
     config = RemoteJobConfig(
@@ -2004,7 +2004,7 @@ def _receipt_ref(intent: dict[str, Any]) -> str:
 def _validate_profile_resources(profile: Any, resources: RemoteResources) -> None:
     if resources.queue not in profile.allowed_queues:
         raise ComputeContractError(
-            f"queue {resources.queue!r} is not allowed by ts_remote profile {profile.name}"
+            f"queue {resources.queue!r} is not allowed by remote compute profile {profile.name}"
         )
     if resources.nodes > profile.max_nodes:
         raise ComputeContractError(

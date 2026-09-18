@@ -2,11 +2,13 @@
 
 [English](MODEL_COMPATIBILITY.md) | [简体中文](MODEL_COMPATIBILITY.zh-CN.md)
 
-TSPi does not implement a second model-provider stack. The installation Host
-uses the model registry, authentication store, API adapters, and `models.json`
-support from the pinned Pi release in `config/pi-source.json`. The terminal and
-TS Phone attach to the same session Worker, so they use the same selected model
-and complete tool inventory.
+Model access is managed by Pi. TSPi focuses on the research workflow: each
+installation runs one App Server, and the terminal and TS Phone attach to the
+same session Worker and model configuration.
+
+Custom models use Pi's `models.json` and normal authentication mechanisms. TSPi
+does not maintain a separate model catalog, credential store, or provider API
+adapter.
 
 ## Compatibility Matrix
 

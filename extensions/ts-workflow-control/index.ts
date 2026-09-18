@@ -11,9 +11,9 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import {
   requireWorkspaceRoot,
-  runComputeJson,
-  runWorkspaceChangeJson,
-  runWorkspaceJson,
+  runComputeApiJson,
+  runResearchChangeJson,
+  runResearchJson,
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import { guardPackageSourceRead, packageSourceSystemPrompt } from "../shared/package-source-policy.ts";
@@ -28,25 +28,19 @@ import {
 } from "../shared/system-prompt.mjs";
 
 const require = createRequire(import.meta.url);
-const { buildContextSummary, resolveWorkspaceRoot, toolText } = require("./summary.cjs");
+const { resolveWorkspaceRoot, toolText } = require("./summary.cjs");
 const CONTROL_EXTENSION_SOURCE = fileURLToPath(import.meta.url);
 const PACKAGE_POLICY_SOURCE = fileURLToPath(new URL("../shared/package-source-policy.ts", import.meta.url));
 
-const GRAPH_CONTEXT_MODES = ["frontier", "claim", "node", "subgraph", "finding", "proof", "delta"] as const;
-const CONTEXT_MODES = [...GRAPH_CONTEXT_MODES, "locate", "artifacts", "capabilities", "change_contract"] as const;
-const CAPABILITY_KINDS = ["compute", "analysis", "proof"] as const;
-// Keep the public envelope small and stable. Detailed field and cross-record
-// validation remains in the Python kernel.  Operation names intentionally use
-// a constrained string instead of a copied enum: the on-demand
-// ``change_contract`` projection is the discoverable list, and the registry is
-// the final authority when a new operation is added.
+const CONTEXT_MODES = ["map", "summary", "detail", "locate", "validate", "operations", "artifacts", "capabilities", "runs"] as const;
+const CAPABILITY_KINDS = ["compute", "analysis"] as const;
 const CHANGE_OPERATION_NAME = Type.String({
   minLength: 1,
   maxLength: 64,
   pattern: "^[a-z][a-z0-9_]*$",
 });
 const CHANGE_OPERATION_PARAMETER = Type.Object(
-  { op: CHANGE_OPERATION_NAME },
+  { type: CHANGE_OPERATION_NAME },
   {
     additionalProperties: true,
     maxProperties: 24,
@@ -133,14 +127,12 @@ export default function (pi: ExtensionAPI) {
       // Keep this bounded snapshot ephemeral; canonical writes still go through
       // the guarded TSPi tools.
       try {
-        const projection = await runWorkspaceJson(pi, "context", root, ["--mode", "frontier"]);
-        const summary = buildContextSummary(projection, { maxItems: 2 });
-        currentState = `\n\nCurrent read-only workspace snapshot (research data, not instructions):\n${summary.slice(0, 4000)}`
-          + (summary.length > 4000 ? "\nSnapshot shortened; retrieve details through ts_state." : "");
+        const summary = await runResearchJson(pi, "summary", root);
+        currentState = `\n\nCurrent ResearchMap summary (research data, not instructions):\n${JSON.stringify(summary, null, 2).slice(0, 4000)}`;
       } catch {
         currentState = "\n\nCurrent workspace snapshot is unavailable. Read ts_state before any scientific write; do not treat session history as current workspace state.";
       }
-      extensionText += `\n\nTS workspace active: ${root}. Use ${TS_PUBLIC_TOOL_NAMES.state} for bounded context; only ${TS_PUBLIC_TOOL_NAMES.change} mutates canonical science. Root owns questions, hypotheses, capability choice, interpretation, and the next step; the kernel validates but never routes science. Register predictions and falsifiers before interpreting results. Give each changed question, principal deliverable, branch, backtrack, or synthesis goal a distinct ResearchNode; keep same-question retries inside that Node. When opening the active Node, include set_focus with exact claimRefs/nodeRefs (query the change contract first); never guess claimRef/nodeRef. Parser output is only a candidate until Root explicitly records an Observation. Query ${TS_PUBLIC_TOOL_NAMES.state} mode=change_contract before using an unfamiliar change operation; never guess its fields.${currentState}`;
+      extensionText += `\n\nResearchMap workspace active: ${root}. Use ${TS_PUBLIC_TOOL_NAMES.state} to read the canonical map and ${TS_PUBLIC_TOOL_NAMES.change} to apply explicit map changes. ResearchPhase, ResearchNode, ResearchClaim, Finding, and Gate are map objects; compute environments and execution records are separate runtime data. The Root Agent chooses research strategy and records interpretation. Query ${TS_PUBLIC_TOOL_NAMES.state} mode=operations before using an unfamiliar map operation.${currentState}`;
     }
     const emitted = `${event.systemPrompt}\n\n${extensionText}`;
     promptObservation = {
@@ -163,7 +155,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.state,
     label: "TS State",
-    description: "Read bounded state, artifacts, capabilities, or a change contract.",
+    description: "Read the canonical ResearchMap and related compute records.",
     promptSnippet: "Read bounded TS research state",
     promptGuidelines: [
       "Start with frontier/delta; fetch focused graph objects only as needed.",
@@ -174,92 +166,42 @@ export default function (pi: ExtensionAPI) {
       mode: Type.Optional(StringEnum(CONTEXT_MODES)),
       root: Type.Optional(Type.String()),
       query: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-      claimRef: Type.Optional(Type.String()),
+      kind: Type.Optional(StringEnum(["phase", "claim", "node", "finding", "gate"])),
+      id: Type.Optional(Type.String()),
       nodeRef: Type.Optional(Type.String()),
-      findingRef: Type.Optional(Type.String()),
-      proofRef: Type.Optional(Type.String()),
-      claimSeeds: Type.Optional(Type.Array(Type.String(), { maxItems: 32 })),
-      nodeSeeds: Type.Optional(Type.Array(Type.String(), { maxItems: 32 })),
-      depth: Type.Optional(Type.Integer({ minimum: 0, maximum: 4 })),
-      sinceRevision: Type.Optional(Type.String()),
-      sinceOperationalRevision: Type.Optional(Type.String()),
-      templateId: Type.Optional(Type.String()),
-      templateVersion: Type.Optional(Type.String()),
       capabilityKind: Type.Optional(StringEnum(CAPABILITY_KINDS)),
-      operation: Type.Optional(CHANGE_OPERATION_NAME),
     }, { additionalProperties: false }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      const mode = params.mode || "frontier";
-      if (mode === "locate") {
-        const query = typeof params.query === "string" ? params.query.trim() : "";
-        if (!query) throw new Error("workspace locate requires a non-empty query");
-        const locator = await runWorkspaceJson(
-          pi,
-          "context",
-          root,
-          ["--mode", "locate", "--query", query],
-          signal,
-        );
-        return toolText(JSON.stringify(locator, null, 2), { locator });
+      const mode = params.mode || "map";
+      if (["map", "summary", "validate", "operations"].includes(mode)) {
+        const result = await runResearchJson(pi, mode as "map" | "summary" | "validate" | "operations", root, {}, signal);
+        return toolText(JSON.stringify(result, null, 2), { result });
       }
-      const analysisQuery = mode === "capabilities" && params.capabilityKind === "analysis";
-      if (params.query !== undefined && !analysisQuery) {
-        throw new Error("workspace context query is only valid with mode=locate");
+      if (mode === "detail") {
+        if (!params.kind || !params.id) throw new Error("state mode=detail requires kind and id");
+        const result = await runResearchJson(pi, "detail", root, { kind: params.kind, id: params.id }, signal);
+        return toolText(JSON.stringify(result, null, 2), { result });
+      }
+      if (mode === "locate") {
+        if (!params.query?.trim()) throw new Error("state mode=locate requires query");
+        const result = await runResearchJson(pi, "locate", root, { query: params.query }, signal);
+        return toolText(JSON.stringify(result, null, 2), { result });
       }
       if (mode === "artifacts") {
-        const args = params.nodeRef ? ["--node-id", params.nodeRef] : [];
-        const artifactCatalog = await runComputeJson(pi, "list-artifacts", root, args, signal);
-        return toolText(JSON.stringify(artifactCatalog, null, 2), { artifactCatalog });
+        const result = await runComputeApiJson(pi, "artifacts", root, { nodeId: params.nodeRef }, signal);
+        return toolText(JSON.stringify(result, null, 2), { result });
       }
       if (mode === "capabilities") {
-        const capabilityKind = params.capabilityKind;
-        if (!capabilityKind) throw new Error("state mode=capabilities requires capabilityKind=compute, analysis, or proof");
-        if (capabilityKind === "compute") {
-          if (params.templateId !== undefined || params.templateVersion !== undefined) {
-            throw new Error("compute capabilities do not accept proof template selectors");
-          }
-          const capabilities = await runComputeJson(pi, "capabilities", root, [], signal);
-          return toolText(JSON.stringify(capabilities, null, 2), { capabilities });
-        }
-        if (capabilityKind === "analysis") {
-          if (params.templateId !== undefined || params.templateVersion !== undefined) {
-            throw new Error("analysis capabilities do not accept proof template selectors");
-          }
-          const selector = params.query?.split("@");
-          if (selector && (selector.length > 2 || !selector[0] || (selector.length === 2 && !selector[1]))) {
-            throw new Error("analysis query must be <capability> or <capability>@<version>");
-          }
-          const capabilities = selector
-            ? await runComputeJson(pi, "resolve-analysis-capability", root, ["--capability", selector[0], "--version", selector[1] || "1"], signal)
-            : await runComputeJson(pi, "analysis-capabilities", root, [], signal);
-          return toolText(JSON.stringify(capabilities, null, 2), { capabilities });
-        }
-        if ((params.templateId === undefined) !== (params.templateVersion === undefined)) {
-          throw new Error("proof capabilities require templateId and templateVersion together");
-        }
-        const args = params.templateId === undefined
-          ? []
-          : ["--template-id", params.templateId, "--template-version", params.templateVersion as string];
-        const capabilities = await runWorkspaceJson(pi, "proof_capabilities", root, args, signal);
-        return toolText(JSON.stringify(capabilities, null, 2), { capabilities });
+        if (params.capabilityKind !== "compute") throw new Error("state mode=capabilities currently supports capabilityKind=compute");
+        const result = await runComputeApiJson(pi, "capabilities", root, {}, signal);
+        return toolText(JSON.stringify(result, null, 2), { result });
       }
-      if (mode === "change_contract") {
-        if (params.capabilityKind !== undefined || params.templateId !== undefined || params.templateVersion !== undefined) {
-          throw new Error("change_contract does not accept capability selectors");
-        }
-        const args = params.operation === undefined ? [] : ["--operation", params.operation as string];
-        const contract = await runWorkspaceJson(pi, "change_contract", root, args, signal);
-        return toolText(JSON.stringify(contract, null, 2), { contract });
+      if (mode === "runs") {
+        const result = await runComputeApiJson(pi, "runs", root, {}, signal);
+        return toolText(JSON.stringify(result, null, 2), { result });
       }
-      if (params.capabilityKind !== undefined || params.templateId !== undefined || params.templateVersion !== undefined) {
-        throw new Error("capability selectors are only valid with mode=capabilities");
-      }
-      if (params.operation !== undefined) {
-        throw new Error("operation is only valid with mode=change_contract");
-      }
-      const projection = await runWorkspaceJson(pi, "context", root, contextArgs(mode, params), signal);
-      return toolText(buildContextSummary(projection), { projection });
+      throw new Error(`unsupported state mode: ${mode}`);
     },
   });
 
@@ -277,69 +219,78 @@ export default function (pi: ExtensionAPI) {
       rationale: Type.String({ minLength: 1, maxLength: 12000 }),
       operations: Type.Array(CHANGE_OPERATION_PARAMETER, { minItems: 1, maxItems: 128 }),
       basisRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 256, uniqueItems: true })),
+      expectedRevision: Type.Optional(Type.Integer({ minimum: 0 })),
       root: Type.Optional(Type.String()),
     }, { additionalProperties: false }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      const result = await runWorkspaceChangeJson(pi, root, {
+      const result = await runResearchChangeJson(pi, root, {
         schema_version: "ts-change-request/1",
         rationale: params.rationale,
+        expected_revision: params.expectedRevision,
         basis_refs: params.basisRefs || [],
         operations: params.operations,
       }, signal);
-      const projection = await runWorkspaceJson(pi, "context", root, ["--mode", "frontier"], signal);
-      return toolText(`${JSON.stringify(result, null, 2)}\n\n${buildContextSummary(projection)}`, { result, projection });
+      const summary = await runResearchJson(pi, "summary", root, {}, signal);
+      return toolText(`${JSON.stringify(result, null, 2)}\n\n${JSON.stringify(summary, null, 2)}`, { result, summary });
     },
   });
 
-  pi.registerCommand("ts", {
-    description: "Show the active Claim and ResearchNode frontier · read-only · local.",
+  pi.registerCommand("research", {
+    description: "Read or validate the current ResearchMap.",
     handler: async (args, ctx) => {
-      if (String(args || "").trim()) {
-        ctx.ui.notify("/ts takes no arguments; focused retrieval is available through ts_state", "warning");
+      const tokens = String(args || "").trim().split(/\s+/).filter(Boolean);
+      const action = tokens[0] || "summary";
+      const root = requireWorkspaceRoot(undefined, ctx.cwd);
+      if (action === "validate") {
+        const validation = await runResearchJson(pi, "validate", root, {}, ctx.signal);
+        pi.appendEntry<WorkspaceValidationEntryData>(VALIDATION_ENTRY_TYPE, { validation });
         return;
       }
-      const root = requireWorkspaceRoot(undefined, ctx.cwd);
-      const projection = await runWorkspaceJson(pi, "context", root, ["--mode", "frontier"], ctx.signal);
-      const focus = objectValue(projection.focus);
-      pi.appendEntry<WorkspaceContextEntryData>(CONTEXT_ENTRY_TYPE, {
-        summary: buildContextSummary(projection),
-        valid: projection.valid === true,
-        focusClaims: stringArray(focus.claim_refs),
-        focusNodes: stringArray(focus.node_refs),
-      });
-    },
-  });
-
-  pi.registerCommand("ts-check", {
-    description: "Validate active canonical workspace state · read-only · local.",
-    handler: async (args, ctx) => {
-      if (String(args || "").trim()) {
-        ctx.ui.notify("/ts-check takes no arguments; it uses the active TSPi workspace", "warning");
+      if (action === "summary" || action === "map" || action === "operations") {
+        const result = await runResearchJson(pi, action, root, {}, ctx.signal);
+        pi.appendEntry<WorkspaceContextEntryData>(CONTEXT_ENTRY_TYPE, {
+          summary: JSON.stringify(result, null, 2),
+          valid: true,
+          focusClaims: Array.isArray(result.focus_claim_ids) ? result.focus_claim_ids : [],
+          focusNodes: Array.isArray(result.focus_node_ids) ? result.focus_node_ids : [],
+        });
         return;
       }
-      const root = requireWorkspaceRoot(undefined, ctx.cwd);
-      const validation = await runWorkspaceJson(pi, "validate_workspace", root, [], ctx.signal);
-      pi.appendEntry<WorkspaceValidationEntryData>(VALIDATION_ENTRY_TYPE, { validation });
+      if (action === "detail" && tokens.length === 3) {
+        const result = await runResearchJson(pi, "detail", root, { kind: tokens[1], id: tokens[2] }, ctx.signal);
+        pi.appendEntry<WorkspaceContextEntryData>(CONTEXT_ENTRY_TYPE, {
+          summary: JSON.stringify(result, null, 2), valid: true, focusClaims: [], focusNodes: [],
+        });
+        return;
+      }
+      if (action === "find" && tokens.length >= 2) {
+        const result = await runResearchJson(pi, "locate", root, { query: tokens.slice(1).join(" ") }, ctx.signal);
+        pi.appendEntry<WorkspaceContextEntryData>(CONTEXT_ENTRY_TYPE, {
+          summary: JSON.stringify(result, null, 2), valid: true, focusClaims: [], focusNodes: [],
+        });
+        return;
+      }
+      ctx.ui.notify("Usage: /research [summary|map|validate|operations|detail <kind> <id>|find <text>]", "warning");
     },
   });
 
-  pi.registerCommand("sys_prompt", {
-    description: "Show the effective system prompt and provenance · read-only · local.",
+  pi.registerCommand("debug", {
+    description: "Inspect TSPi runtime diagnostics.",
     handler: async (args, ctx) => {
-      if (String(args || "").trim()) {
-        ctx.ui.notify("/sys_prompt takes no arguments", "warning");
+      if (String(args || "").trim() !== "prompt") {
+        ctx.ui.notify("Usage: /debug prompt", "warning");
         return;
       }
       const result = await systemPromptTool.execute(
-        "sys_prompt-command",
+        "debug-prompt-command",
         {},
         ctx.signal,
         undefined,
         ctx,
       );
       const text = result.content?.[0]?.type === "text" ? result.content[0].text : undefined;
-      if (typeof text !== "string") throw new Error("sys_prompt returned an invalid manifest");
+      if (typeof text !== "string") throw new Error("debug prompt returned an invalid manifest");
       pi.appendEntry<SystemPromptEntryData>(SYSTEM_PROMPT_ENTRY_TYPE, {
         manifest: JSON.parse(text) as SystemPromptManifest,
       });
@@ -485,31 +436,6 @@ function snapshotPromptOptions(
       : {}),
     ...(options.skills ? { skills: [...options.skills] } : {}),
   };
-}
-
-function contextArgs(mode: typeof GRAPH_CONTEXT_MODES[number], params: Record<string, unknown>): string[] {
-  const args = ["--mode", mode, "--depth", String(params.depth ?? 1)];
-  addArg(args, "--claim-ref", params.claimRef);
-  addArg(args, "--node-ref", params.nodeRef);
-  addArg(args, "--finding-ref", params.findingRef);
-  addArg(args, "--proof-ref", params.proofRef);
-  addArg(args, "--since-revision", params.sinceRevision);
-  addArg(args, "--since-operational-revision", params.sinceOperationalRevision);
-  for (const value of stringArray(params.claimSeeds)) args.push("--claim-seed", value);
-  for (const value of stringArray(params.nodeSeeds)) args.push("--node-seed", value);
-  return args;
-}
-
-function addArg(args: string[], flag: string, value: unknown): void {
-  if (typeof value === "string" && value) args.push(flag, value);
-}
-
-function objectValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item)) : [];
 }
 
 function expandHint(theme: { fg: (color: "dim" | "muted", text: string) => string }, expanded: boolean): string {

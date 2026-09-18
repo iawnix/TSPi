@@ -37,7 +37,7 @@ release that prepared the calculation. Set `TS_ASE_NEB_XTB` in the profile
 environment to the validated xTB executable; do not depend on an interactive
 shell's `PATH`.
 
-Run `ts_remote doctor` after deployment or profile changes and before the first
+Run `TSPi --check-remote` after deployment or profile changes and before the first
 NEB submission. A missing interpreter, failed import, mismatched runner, or
 failed xTB probe is an operational failure, not evidence about the reaction
 path. Do not install packages from a calculation job or into a research

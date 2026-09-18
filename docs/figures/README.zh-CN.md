@@ -14,7 +14,7 @@
 Kernel 是 Phase–Node–Claim 图、provenance ledger 和声明式验证记录的唯一变更
 权威。能力 adapter 生成可检查的 artifact 和 parser candidate；只有 Root 核验后的
 证据才能提升为不可变 Observation，并由冻结的 ProofSpec 评估。验证结果、开放
-Finding 和回溯决定进入下一步研究。TS Web 消费有界 projection，终端与 TS Phone
+Finding 和回溯决定进入下一步研究。TS Web 直接渲染 canonical ResearchMap 的有界视图，终端与 TS Phone
 连接共享 Pi session；它们都不是第二套科学状态存储。
 
 图使用色盲友好的语义色：teal 表示规范状态，navy 表示数据流，amber 表示能力，

@@ -4,7 +4,7 @@ import { Type } from "typebox";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { allocateOperationalId, requireWorkspaceRoot, runComputeJson, runWorkspaceJson } from "../shared/workspace-cli.ts";
+import { allocateOperationalId, requireWorkspaceRoot, runComputeApiJson, runResearchJson } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import {
   createSubagentStatusReporter,
@@ -20,6 +20,7 @@ import { runScientificReview } from "../../packages/ts-agent-runtime/agents/revi
 const require = createRequire(import.meta.url);
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const { buildReviewTaskBundle, validateSubagentRequest } = require(resolve(EXTENSION_DIR, "..", "..", "packages", "ts-agent-runtime", "agents", "review", "task-packet.cjs"));
+const { reviewSnapshotFromMap } = require(resolve(EXTENSION_DIR, "..", "..", "packages", "ts-agent-runtime", "agents", "review", "research-map-adapter.cjs"));
 const {
   beginAgentRun,
   completeAgentRun,
@@ -83,11 +84,11 @@ export default function (pi: ExtensionAPI) {
         reviewer_role: request.reviewerRole,
       }, onUpdate);
       reportStatus("queued");
-      const snapshotArgs = ["--target-claim-ref", request.targetClaimRef];
-      const reviewSnapshot = await runWorkspaceJson(pi, "build_review_snapshot", root, snapshotArgs, signal);
-      const artifactCatalog = request.artifactIds.length
-        ? (await runComputeJson(pi, "list-artifacts", root, [], signal)).artifacts
-        : [];
+      const researchMap = await runResearchJson(pi, "map", root, {}, signal);
+      const reviewSnapshot = reviewSnapshotFromMap(researchMap, request.targetClaimRef);
+        const artifactCatalog = request.artifactIds.length
+          ? (await runComputeApiJson(pi, "artifacts", root, {}, signal)).artifacts
+          : [];
       const bundle = buildReviewTaskBundle({
         runId: taskId,
         workspaceRoot: root,

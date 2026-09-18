@@ -46,7 +46,7 @@ ProofSpec 是版本化、可证伪的证据标准，不是对化学机理的永�
 
 ## Web、Phone 与发布
 
-TS Web 只消费 Research Kernel projection；它可以展示轨迹、证据、Gate、Finding 和
+TS Web 直接读取 ResearchMap；它可以展示轨迹、证据、Gate、Finding 和
 运行详情，但不提供科学写入，也不推断下一步。TS Phone 连接同一 Pi session，不创建
 第二个 broker 或工作流 runtime。发布顺序依次冻结合同、实现通用能力、完善观察和
 验证、接入 Web/Phone projection，最后构建并安装经过 manifest 校验的 package。

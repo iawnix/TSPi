@@ -128,7 +128,7 @@
     <rect x="60" y="688" width="425" height="205" rx="16" fill="#FFF9EC" stroke="#C89535" stroke-width="1.8"/>
   </g>
   <text x="86" y="727" class="heading">Skill / plugin execution</text>
-  <text x="86" y="756" class="body">ts_calc &#183; ts_remote &#183; ts_render</text>
+  <text x="86" y="756" class="body">ts_calc &#183; ts_environment &#183; ts_render</text>
   <text x="86" y="785" class="small">geometry generation &#183; TS optimization</text>
   <text x="86" y="809" class="small">frequencies &#183; IRC &#183; competing paths</text>
   <rect x="86" y="835" width="287" height="29" rx="14.5" fill="#F6E9BE"/>

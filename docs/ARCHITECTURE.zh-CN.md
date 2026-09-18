@@ -11,8 +11,9 @@ Pi App Server Host，由它服务配置的 workspace root 下的所有直接子�
 - `apps/app-server/` 启动 Pi 原生 App Server 和 session worker。
 - `packages/ts-agent-kernel/ts_agent/` 管理 `ResearchMap`、引用完整性、验证和事务。
   计算控制面负责本地子进程的持久化生命周期，并通过配置好的
-  `ts_calc` 对 local 和 remote 使用同一套计算生命周期；`ts_remote` 仅提供
-  远程传输和就绪性检查。渲染、报告和邮件仍由 Skill/Plugin 工具提供。
+  `ts_calc` 对 local 和 remote 使用同一套计算生命周期；统一的
+  `compute.environments` 查询同时返回两类环境。渲染、报告和邮件仍由
+  Skill/Plugin 工具提供。
 - `extensions/` 同时包含客户端展示扩展和包内的 server workflow 扩展。App Server
   只加载 `extensions/server/extensions.json` 中经过 allowlist 和 SHA-256 校验的
   条目，不执行客户端提交的代码。
@@ -140,7 +141,8 @@ cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
 工作区始终是唯一规范存储：本地执行在 Attempt 的 execution 目录暂存输入并把输出
 收集回工作区，远程目录只是临时执行镜像，TS Web 不需要访问远程文件系统。推荐的
 `compute.toml` 将 local/remote 软件提供平台放在同一份 profile 目录中，只有 remote
-profile 增加 SSH/Torque 字段。远程计算和产物记录使用显式 schema。TS Web 只读取工作区
+profile 增加 SSH/Torque 字段。`/compute` 和 `compute.environments` 使用同一份配置查询。
+远程计算和产物记录使用显式 schema。TS Web 只读取工作区
 文件，不拥有 Pi session。入口、skill、
 扩展和测试位置与[英文架构](ARCHITECTURE.md)一致。
 

@@ -11,10 +11,8 @@ state reader to backend dependencies.
 from importlib import import_module
 from typing import Any
 
-from .contracts import ComputeContractError
-
-
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "ComputeContractError": (".contracts", "ComputeContractError"),
     "cancel_calculation": (".control", "cancel_calculation"),
     "calculation_status": (".control", "calculation_status"),
     "calculation_tail": (".control", "calculation_tail"),

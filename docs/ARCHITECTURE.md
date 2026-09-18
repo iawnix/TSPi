@@ -13,8 +13,8 @@ requirement.
 - `packages/ts-agent-kernel/ts_agent/` owns the `ResearchMap`, reference
   integrity, validation, and transactions. Its
   `ts_calc` control plane uses one lifecycle for local subprocesses and remote
-  scheduler jobs; the configured `ts_remote` adapter supplies remote transport
-  and readiness operations. Rendering, reporting, and email remain
+  scheduler jobs; the configured remote adapter supplies transport and
+  readiness operations. Rendering, reporting, and email remain
   Skill/Plugin tools.
 - `extensions/` contains the client-only Pi presentation extensions and the
   package-owned server workflow extension set. The App Server loads only the
@@ -191,12 +191,12 @@ kill an in-flight local calculation; environments without a user systemd
 manager use the process-group fallback and should avoid restarting the parent
 service during a calculation.
 
-`ts_remote` is not a second calculation command. It is the remote transport and
-readiness subsystem used by `ts_calc`. The recommended `compute.toml` keeps
-local and remote software providers in one profile catalog; only remote
-profiles add SSH/Torque fields. The read-only `ts_remote doctor` command checks
-SSH, Torque/PBS, remote storage, and configured software before a remote target
-is submitted.
+`compute.toml` keeps local and remote software providers in one profile catalog;
+only remote profiles add SSH/Torque fields. The canonical
+`compute.environments` query exposes both kinds of profile. Pi tools and the
+`/compute` command use that query; scheduler diagnostics remain an
+implementation detail of a remote profile rather than the name of the whole
+environment API.
 
 ## Run Journals And Result Delivery
 

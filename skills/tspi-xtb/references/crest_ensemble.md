@@ -15,7 +15,7 @@ before using an ensemble member in a later Node.
 
 The remote `crest` software profile must select an operator-managed, versioned
 CREST binary. Its activation script must make the compatible xTB executable
-available without changing the research workspace. Run `ts_remote doctor`
+available without changing the research workspace. Run `TSPi --check-remote`
 after deployment or profile changes and before the first calculation. A missing
 command or activation script is an operational failure, not a scientific
 result.

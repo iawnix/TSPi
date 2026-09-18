@@ -9,14 +9,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .artifacts import (
-    create_structure_comparison_artifact,
-    create_reaction_mapping_validation_artifact,
-    create_structure_seed_artifact,
-    import_calculation_artifact,
-    list_calculation_artifacts,
-    resolve_artifact_ids,
-)
 from .analysis import analysis_capabilities, resolve_analysis_capability, run_analysis
 from .capabilities import CapabilityGapError, calculation_capabilities, resolve_capability_result
 from .contracts import ComputeContractError
@@ -116,6 +108,14 @@ def main(argv: list[str] | None = None) -> int:
     remote_diagnostic.add_argument("--mode", choices=sorted(REMOTE_DIAGNOSTIC_MODES), default="status")
     remote_diagnostic.add_argument("--profile")
 
+    environments = sub.add_parser("environments", help="list configured local and remote compute environments")
+    environments.add_argument("--root", required=True)
+    environment = sub.add_parser("environment", help="show one configured compute environment")
+    environment.add_argument("--root", required=True)
+    environment.add_argument("--name", required=True)
+    runs = sub.add_parser("runs", help="list durable compute and review records")
+    runs.add_argument("--root", required=True)
+
     for command in ("submit", "status", "tail", "collect", "cancel", "parse"):
         item = sub.add_parser(command)
         item.add_argument("--root", required=True)
@@ -160,7 +160,9 @@ def _capability_gap_payload(error: CapabilityGapError) -> dict[str, Any]:
 
 def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "capabilities":
-        return calculation_capabilities()
+        from ts_agent.api import execute
+
+        return execute("compute.capabilities", args.root or ".")
     if args.command == "analysis-capabilities":
         return analysis_capabilities()
     if args.command == "resolve-analysis-capability":
@@ -169,14 +171,30 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return resolve_capability_result(args.capability, args.version)
     if args.command == "remote-diagnostic":
         return diagnose_remote(args.mode, profile_name=args.profile)
+    if args.command == "environments":
+        from ts_agent.api import execute
+
+        return execute("compute.environments", args.root)
+    if args.command == "environment":
+        from ts_agent.api import execute
+
+        return execute("compute.environment", args.root, {"name": args.name})
+    if args.command == "runs":
+        from ts_agent.api import execute
+
+        return execute("compute.runs", args.root)
     if args.command == "create-intent":
         request = json.loads(args.request_json)
         if not isinstance(request, dict):
             raise ComputeContractError("calculation request must be a JSON object")
         return create_calculation_intent(args.root, request)
     if args.command == "list-artifacts":
-        return list_calculation_artifacts(args.root, node_id=args.node_id)
+        from ts_agent.api import execute
+
+        return execute("compute.artifacts", args.root, {"node_id": args.node_id})
     if args.command == "resolve-artifacts":
+        from .artifacts import resolve_artifact_ids
+
         artifacts = resolve_artifact_ids(args.root, args.artifact_id)
         return {
             "schema_version": "ts-artifact-resolution/2",
@@ -184,15 +202,23 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
             "artifacts": artifacts,
         }
     if args.command == "import-artifact":
+        from .artifacts import import_calculation_artifact
+
         request = _read_private_request(args.request_file, "artifact import", 2 * 128 * 1024)
         return import_calculation_artifact(args.root, request)
     if args.command == "structure-seed":
+        from .artifacts import create_structure_seed_artifact
+
         request = _read_private_request(args.request_file, "structure seed", 16 * 1024)
         return create_structure_seed_artifact(args.root, request)
     if args.command == "structure-compare":
+        from .artifacts import create_structure_comparison_artifact
+
         request = _read_private_request(args.request_file, "structure comparison", 64 * 1024)
         return create_structure_comparison_artifact(args.root, request)
     if args.command == "reaction-mapping-validate":
+        from .artifacts import create_reaction_mapping_validation_artifact
+
         request = _read_private_request(args.request_file, "reaction mapping", 1024 * 1024)
         return create_reaction_mapping_validation_artifact(args.root, request)
     if args.command == "analyze":

@@ -1,8 +1,9 @@
 # Remote Execution Contract
 
 `ts_calc` owns the calculation lifecycle for both local and remote targets.
-`ts_remote` is the installation-bound OpenSSH/SCP and Torque transport plus its
-read-only diagnostics; it is not a second public calculation lifecycle.
+The remote adapter is the installation-bound OpenSSH/SCP and Torque transport;
+it is not a second public calculation lifecycle. The public environment query
+is `compute.environments`, exposed as `/compute` and `ts_environment`.
 
 ## Installation-Owned Policy
 
@@ -13,14 +14,15 @@ activation, scratch policy, and server environment. Existing `remote.toml` remai
 accepted. A calculation request selects a named profile and resources within
 its configured limits.
 
-Use `ts_remote` for read-only diagnostics:
+Use the installation-level `TSPi --check-remote` command for read-only diagnostics:
 
 - `status`: SSH connectivity only;
 - `doctor`: SSH, scheduler, storage, and registered software;
 - `queues`: bounded queue view;
 - `nodes`: bounded compute-resource view.
 
-Run `doctor` before the first remote calculation or after configuration changes.
+Run `TSPi --check-remote` before the first remote calculation or after
+configuration changes.
 For `ase_neb`, `doctor` additionally imports ASE and the TSPi runner with the
 configured Python and executes the configured xTB program's version probe. The
 profile is ready only when all three components are available.
@@ -51,6 +53,6 @@ manifest and works even when scheduler history is unavailable.
 
 - Reconcile an unknown submit or cancel result before another control action.
 - Resolve remote paths and commands from the installation profile and intent.
-- Use `doctor` to check scheduler and software readiness as well as SSH.
+- Use `TSPi --check-remote` to check scheduler and software readiness as well as SSH.
 - Check program termination and required outputs after scheduler completion.
 - Collect outputs, verify them locally, and parse them before recording Observations.

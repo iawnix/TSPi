@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-REPO_URL="${TSPI_INSTALL_REPO:-git@github.com:iawnix/TSPi.git}"
+REPO_URL="${TSPI_INSTALL_REPO:-https://github.com/iawnix/TSPi.git}"
 REPO_REF="${TSPI_INSTALL_REF:-main}"
 FORWARD_ARGS=()
 
@@ -117,8 +117,52 @@ run_bootstrap_step() {
   printf '  %bOK%b %s\n' "${BOOTSTRAP_SUCCESS}" "${BOOTSTRAP_RESET}" "${label}" >&2
 }
 
-run_bootstrap_step "repository access" git clone --quiet --filter=blob:none --no-checkout -- "${REPO_URL}" "${TEMP_ROOT}/TSPi"
-run_bootstrap_step "revision ${REPO_REF}" git -C "${TEMP_ROOT}/TSPi" fetch --quiet --depth 1 origin "${REPO_REF}"
+git_clone_source() {
+  local destination="$1" attempt
+  for ((attempt = 1; attempt <= 3; attempt++)); do
+    if git clone --quiet --filter=blob:none --no-checkout -- "${REPO_URL}" "${destination}"; then
+      return 0
+    fi
+    rm -rf -- "${destination}"
+    if (( attempt < 3 )); then
+      sleep "${attempt}"
+    fi
+  done
+  return 1
+}
+
+git_fetch_revision() {
+  local checkout="$1" attempt fallback
+  for ((attempt = 1; attempt <= 3; attempt++)); do
+    if git -C "${checkout}" fetch --quiet --depth 1 origin "${REPO_REF}"; then
+      return 0
+    fi
+    if (( attempt < 3 )); then
+      sleep "${attempt}"
+    fi
+  done
+
+  # A proxy or Git server may terminate partial-clone pack transfers. Retry
+  # with a regular shallow clone, which avoids the filter negotiation.
+  fallback="${checkout}.fallback"
+  for ((attempt = 1; attempt <= 3; attempt++)); do
+    rm -rf -- "${fallback}"
+    if git clone --quiet --depth 1 --no-checkout -- "${REPO_URL}" "${fallback}" \
+      && git -C "${fallback}" fetch --quiet --depth 1 origin "${REPO_REF}"; then
+      rm -rf -- "${checkout}"
+      mv -- "${fallback}" "${checkout}"
+      return 0
+    fi
+    if (( attempt < 3 )); then
+      sleep "${attempt}"
+    fi
+  done
+  rm -rf -- "${fallback}"
+  return 1
+}
+
+run_bootstrap_step "repository access" git_clone_source "${TEMP_ROOT}/TSPi"
+run_bootstrap_step "revision ${REPO_REF}" git_fetch_revision "${TEMP_ROOT}/TSPi"
 run_bootstrap_step "source checkout" git -C "${TEMP_ROOT}/TSPi" checkout --quiet --detach FETCH_HEAD
 RESOLVED_COMMIT="$(git -C "${TEMP_ROOT}/TSPi" rev-parse --verify 'HEAD^{commit}')" \
   || fail "could not read the resolved TSPi commit."

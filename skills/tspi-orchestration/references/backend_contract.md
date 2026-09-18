@@ -21,8 +21,8 @@ preparer alone is insufficient.
 Use the catalog to construct `ts_calc` requests. Select
 `execution_target.kind = "local"` or `"remote"` and, when a shared
 `compute.toml` is installed, the corresponding profile name; the lifecycle and
-result contract are the same. Run `ts_remote doctor` only to check readiness
-for a remote target.
+  result contract are the same. Remote readiness is checked during calculation
+  preflight; it is not a separate calculation API.
 
 For example, a local request can bind `{"kind":"local","profile":"local"}`;
 the same capability can bind `{"kind":"remote","profile":"cluster_1w",...}`.

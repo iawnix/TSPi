@@ -1,5 +1,5 @@
 import type { ToolExecutionEndEvent, ToolExecutionStartEvent, ToolExecutionUpdateEvent } from "@earendil-works/pi-coding-agent";
-import type { TsActivityEvent, TsRemoteActivity } from "../shared/activity-events.ts";
+import type { TsActivityEvent, TsEnvironmentActivity } from "../shared/activity-events.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import {
   isTsSubagentStatus,
@@ -13,7 +13,7 @@ const TERMINAL_STATES = new Set<TsSubagentState>(["completed", "partial", "faile
 const ATTENTION_STATES = new Set<TsSubagentState>(["partial", "failed", "cancelled", "unknown"]);
 const ACTIVE_STATES = new Set<TsSubagentState>(["queued", "starting", "running", "waiting", "validating"]);
 
-export type TsDeterministicKind = "structure" | "analysis" | "artifact" | "render" | "report" | "notify" | "remote";
+export type TsDeterministicKind = "structure" | "analysis" | "artifact" | "render" | "report" | "notify" | "environment";
 
 const DETERMINISTIC_TOOLS = new Map<string, TsDeterministicKind>([
   [TS_PUBLIC_TOOL_NAMES.seed, "structure"],
@@ -22,7 +22,7 @@ const DETERMINISTIC_TOOLS = new Map<string, TsDeterministicKind>([
   [TS_PUBLIC_TOOL_NAMES.render, "render"],
   [TS_PUBLIC_TOOL_NAMES.report, "report"],
   [TS_PUBLIC_TOOL_NAMES.notify, "notify"],
-  [TS_PUBLIC_TOOL_NAMES.remote, "remote"],
+  [TS_PUBLIC_TOOL_NAMES.environment, "environment"],
 ]);
 
 export interface TsSubagentActivity {
@@ -49,7 +49,7 @@ export interface TsDeterministicActivity {
   error?: string;
 }
 
-export type TsActivity = TsSubagentActivity | TsDeterministicActivity | TsRemoteActivity;
+export type TsActivity = TsSubagentActivity | TsDeterministicActivity | TsEnvironmentActivity;
 export interface TsActivityStore { activities: Map<string, TsActivity> }
 export interface TsActivitySummary { active: number; attention: number; done: number; total: number }
 
@@ -232,7 +232,7 @@ function fallbackSubagentStatus(event: ToolExecutionStartEvent, now: number): Ts
 }
 
 function operationFor(kind: TsDeterministicKind, args: Record<string, unknown>): string {
-  return stringValue(args.operation) || (kind === "report" ? "build" : kind === "notify" ? "send" : kind === "remote" ? stringValue(args.mode) || "status" : kind);
+  return stringValue(args.operation) || (kind === "report" ? "build" : kind === "notify" ? "send" : kind === "environment" ? stringValue(args.mode) || "list" : kind);
 }
 
 function detailFor(kind: TsDeterministicKind, args: Record<string, unknown>): string | undefined {

@@ -9,7 +9,7 @@
       "tools": [
         "ts_state",
         "ts_change",
-        "ts_remote",
+        "ts_environment",
         "ts_calc",
         "ts_review",
         "ts_reply",

@@ -2,19 +2,14 @@ import { keyText, type ExtensionAPI, type ToolDefinition } from "@earendil-works
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { Text } from "@earendil-works/pi-tui";
-import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import {
   allocateOperationalId,
   requireWorkspaceRoot,
+  runComputeApiJson,
   runComputeJson,
-  runRemoteDiagnosticJson,
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
-import {
-  publishTsActivity,
-  type TsRemoteActivity,
-} from "../shared/activity-events.ts";
 import {
   createSubagentStatusReporter,
   terminalStateForReport,
@@ -41,30 +36,8 @@ const {
   sanitizeActionError,
 } = require("./action-log.cjs");
 const OPERATIONS = ["launch", "inspect", "finalize", "cancel"] as const;
-const REMOTE_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes"] as const;
-type RemoteDiagnosticMode = typeof REMOTE_DIAGNOSTIC_MODES[number];
-const REMOTE_DIAGNOSTIC_ACTIVITY = Object.freeze({
-  status: {
-    description: "Check the configured SSH remote profile",
-    detail: "Read-only · SSH connectivity",
-    selector: "status · SSH connectivity only",
-  },
-  doctor: {
-    description: "Check SSH, scheduler, storage, and registered software",
-    detail: "Read-only · full control-path health",
-    selector: "doctor · SSH, scheduler, storage, and software",
-  },
-  queues: {
-    description: "Read the scheduler queue state",
-    detail: "Read-only · scheduler queue state",
-    selector: "queues · scheduler queue state",
-  },
-  nodes: {
-    description: "Read compute-node state and available resources",
-    detail: "Read-only · compute-node resources",
-    selector: "nodes · compute-node resources",
-  },
-} satisfies Record<RemoteDiagnosticMode, { description: string; detail: string; selector: string }>);
+const ENVIRONMENT_MODES = ["list", "show"] as const;
+type EnvironmentMode = typeof ENVIRONMENT_MODES[number];
 const ATTEMPT_KINDS = ["primary", "retry", "recalculation"] as const;
 const COMPUTE_COMMON_PARAMETERS = {
   nodeId: Type.String({
@@ -177,19 +150,20 @@ type ComputeExecutionStage =
   | "agent_runtime"
   | "result_journal"
   | "result_delivery";
-type RemoteDiagnosticEntryData = {
-  mode: RemoteDiagnosticMode;
+type ComputeEnvironmentEntryData = {
+  mode: EnvironmentMode;
   result: Record<string, unknown>;
 };
 
 export default function (pi: ExtensionAPI) {
-  pi.registerEntryRenderer<RemoteDiagnosticEntryData>("ts-workspace-remote-diagnostic", (entry, { expanded }, theme) => {
+  pi.registerEntryRenderer<ComputeEnvironmentEntryData>("ts-compute-environment", (entry, { expanded }, theme) => {
     const data = entry.data;
     const result = data?.result || {};
-    const mode = data?.mode || "status";
-    const ok = result.ok === true;
-    const label = theme.fg(ok ? "success" : "error", ok ? "passed" : "failed");
-    let text = `${theme.fg("accent", `TS Remote ${mode}`)}: ${label}`;
+    const mode = data?.mode || "list";
+    const configured = result.configured === true || Boolean(result.environment);
+    const label = theme.fg(configured ? "success" : "warning", configured ? "configured" : "unconfigured");
+    const count = Array.isArray(result.environments) ? ` · ${result.environments.length} profiles` : "";
+    let text = `${theme.fg("accent", `TS Compute Environment ${mode}`)}: ${label}${theme.fg("muted", count)}`;
     const expandKey = theme.fg("dim", keyText("app.tools.expand"));
     if (expanded) {
       text += `\n${theme.fg("dim", JSON.stringify(result, null, 2))}`;
@@ -201,21 +175,25 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.remote,
-    label: "TS Remote Inspect",
-    description: "Run one read-only SSH/Torque readiness probe.",
-    promptSnippet: "Inspect TS remote readiness",
+    name: TS_PUBLIC_TOOL_NAMES.environment,
+    label: "TS Environment",
+    description: "Inspect configured local and remote compute environments.",
+    promptSnippet: "Inspect configured compute environments",
     promptGuidelines: [
-      "Use status for connectivity, doctor for the full chain, or queues/nodes for one scheduler view.",
-      "Timeout means unknown readiness; this tool never changes files, jobs, or scientific state.",
+      "Use list to enumerate profiles or show to inspect one named environment.",
+      "This tool is read-only and never changes files, jobs, or ResearchMap state.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
-      mode: Type.Optional(StringEnum(REMOTE_DIAGNOSTIC_MODES)),
+      mode: Type.Optional(StringEnum(ENVIRONMENT_MODES)),
+      name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
     }, { additionalProperties: false }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const mode = params.mode || "status";
-      const result = await runRemoteDiagnosticJson(pi, mode, ctx.cwd, signal);
+      const mode = params.mode || "list";
+      if (mode === "show" && !params.name) throw new Error("environment show requires name");
+      const result = await runComputeApiJson(pi, mode === "show" ? "environment" : "environments", ctx.cwd, {
+        name: params.name,
+      }, signal);
       return toolText(JSON.stringify(result, null, 2), { result });
     },
   });
@@ -386,94 +364,32 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("ts-remote", {
-    description: "Inspect TS remote compute environment · read-only · SSH.",
+  pi.registerCommand("compute", {
+    description: "Inspect configured local and remote compute environments.",
     getArgumentCompletions: (prefix) => {
       const candidate = prefix.trim().toLowerCase();
-      const matches = REMOTE_DIAGNOSTIC_MODES
-        .filter((mode) => mode.startsWith(candidate))
-        .map((mode) => ({
-          value: mode,
-          label: mode,
-          description: REMOTE_DIAGNOSTIC_ACTIVITY[mode].description,
-        }));
+      const matches = ["list", "show"].filter((mode) => mode.startsWith(candidate)).map((mode) => ({
+        value: mode,
+        label: mode,
+        description: mode === "list" ? "List local and remote profiles" : "Show one profile",
+      }));
       return matches.length > 0 ? matches : null;
     },
     handler: async (args, ctx) => {
-      let candidate = String(args || "").trim();
-      if (!candidate) {
-        const options = REMOTE_DIAGNOSTIC_MODES.map((mode) => REMOTE_DIAGNOSTIC_ACTIVITY[mode].selector);
-        const selected = await ctx.ui.select("TS Remote · read-only SSH diagnostics", options);
-        if (!selected) return;
-        candidate = REMOTE_DIAGNOSTIC_MODES.find(
-          (mode) => REMOTE_DIAGNOSTIC_ACTIVITY[mode].selector === selected,
-        ) || "";
-      }
-      if (!REMOTE_DIAGNOSTIC_MODES.includes(candidate as RemoteDiagnosticMode)) {
-        ctx.ui.notify("Unknown TS Remote mode; choose status, doctor, queues, or nodes", "warning");
+      const tokens = String(args || "").trim().split(/\s+/).filter(Boolean);
+      const mode = (tokens[0] || "list") as EnvironmentMode;
+      if (!ENVIRONMENT_MODES.includes(mode)) {
+        ctx.ui.notify("Usage: /compute [list|show <environment>]", "warning");
         return;
       }
-      const mode = candidate as RemoteDiagnosticMode;
-      const activity = REMOTE_DIAGNOSTIC_ACTIVITY[mode];
-      const activityId = `remote:${randomUUID()}`;
-      const startedAt = Date.now();
-      publishRemoteActivity(pi, {
-        id: activityId,
-        mode,
-        state: "running",
-        detail: activity.detail,
-        startedAt,
-        updatedAt: startedAt,
-      });
-      try {
-        const result = await runRemoteDiagnosticJson(pi, mode, ctx.cwd, ctx.signal);
-        const terminalAt = Date.now();
-        publishRemoteActivity(pi, {
-          id: activityId,
-          mode,
-          state: result.ok === true ? "completed" : "failed",
-          detail: activity.detail,
-          startedAt,
-          updatedAt: terminalAt,
-          terminalAt,
-          error: result.ok === true ? undefined : remoteDiagnosticError(result),
-        });
-        pi.appendEntry<RemoteDiagnosticEntryData>("ts-workspace-remote-diagnostic", { mode, result });
-        ctx.ui.notify(
-          result.ok === true ? `TS Remote ${mode} passed` : `TS Remote ${mode} failed`,
-          result.ok === true ? "info" : "warning",
-        );
-      } catch (error) {
-        const message = error instanceof Error
-          ? error.message
-          : `TS Remote ${mode} stopped before a result was returned`;
-        const terminalAt = Date.now();
-        publishRemoteActivity(pi, {
-          id: activityId,
-          mode,
-          state: "failed",
-          detail: activity.detail,
-          startedAt,
-          updatedAt: terminalAt,
-          terminalAt,
-          error: message,
-        });
-        ctx.ui.notify(message, "error");
-        throw error;
+      if (mode === "show" && !tokens[1]) {
+        ctx.ui.notify("Usage: /compute show <environment>", "warning");
+        return;
       }
+      const result = await runComputeApiJson(pi, mode === "show" ? "environment" : "environments", ctx.cwd, { name: tokens[1] }, ctx.signal);
+      pi.appendEntry<ComputeEnvironmentEntryData>("ts-compute-environment", { mode, result });
     },
   });
-}
-
-function publishRemoteActivity(pi: ExtensionAPI, activity: Omit<TsRemoteActivity, "kind">): void {
-  publishTsActivity(pi.events, { type: "upsert", activity: { kind: "remote", ...activity } });
-}
-
-function remoteDiagnosticError(result: Record<string, unknown>): string | undefined {
-  const error = result.error;
-  if (!error || typeof error !== "object" || Array.isArray(error)) return undefined;
-  const message = (error as Record<string, unknown>).message;
-  return typeof message === "string" && message ? message : undefined;
 }
 
 function createScopedComputeTools(

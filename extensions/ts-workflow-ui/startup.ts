@@ -64,8 +64,8 @@ export interface TspiStartupDetails {
   compact?: boolean;
   frame?: number;
   notificationDisplayTarget?: string;
-  remoteDisplayTarget?: string;
-  remoteConfigured?: boolean;
+  computeDisplayTarget?: string;
+  computeConfigured?: boolean;
   modelLabel?: string;
   thinkingLabel?: string;
 }
@@ -108,8 +108,8 @@ export function createTspiStartupHeader(
         compact: tui.terminal.rows > 0 && tui.terminal.rows < 25,
         frame,
         notificationDisplayTarget: process.env.TS_NOTIFICATION_DISPLAY_TARGET,
-        remoteDisplayTarget: process.env.TS_REMOTE_DISPLAY_TARGET,
-        remoteConfigured: Boolean(process.env.TS_REMOTE_CONFIG),
+        computeDisplayTarget: process.env.TS_COMPUTE_DISPLAY_TARGET,
+        computeConfigured: Boolean(process.env.TS_COMPUTE_CONFIG),
         modelLabel: formatModelLabel(ctx.model),
         thinkingLabel: formatThinkingLabel(pi.getThinkingLevel()),
       });
@@ -168,8 +168,8 @@ function renderStartup(
   const packageSummary = `${profile.skills.length} skills · ${profile.extensions.length} extensions`;
   const rightLines = [
     "",
-    palette.accent(palette.bold(details.remoteConfigured ? "Remote configured" : "Remote")),
-    palette.muted(remoteLabel(details.remoteDisplayTarget)),
+    palette.accent(palette.bold(details.computeConfigured ? "Compute configured" : "Compute")),
+    palette.muted(computeLabel(details.computeDisplayTarget)),
     palette.muted(`Email · ${notificationLabel(details.notificationDisplayTarget)}`),
     divider,
     palette.accent(palette.bold("Package")),
@@ -218,7 +218,7 @@ function paintLogoCell(cell: string, frame: number, palette: StartupPalette): st
   return palette.link(PIXEL);
 }
 
-function remoteLabel(displayTarget?: string): string {
+function computeLabel(displayTarget?: string): string {
   return displayTarget?.trim() || "not configured";
 }
 

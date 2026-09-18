@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .kernel import ResearchKernel, ResearchKernelError, create_research_map
+from ts_agent.api import CommandError, execute
+
+from .kernel import ResearchKernelError, create_research_map
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -22,6 +24,21 @@ def main(argv: list[str] | None = None) -> int:
     command.add_argument("--title", required=True)
 
     command = sub.add_parser("show", help="print the canonical ResearchMap")
+    command.add_argument("--root", required=True)
+
+    command = sub.add_parser("summary", help="print ResearchMap progress")
+    command.add_argument("--root", required=True)
+
+    command = sub.add_parser("detail", help="print one ResearchMap object")
+    command.add_argument("--root", required=True)
+    command.add_argument("--kind", required=True)
+    command.add_argument("--id", required=True)
+
+    command = sub.add_parser("locate", help="find ResearchMap objects")
+    command.add_argument("--root", required=True)
+    command.add_argument("--query", required=True)
+
+    command = sub.add_parser("operations", help="list ResearchMap change operations")
     command.add_argument("--root", required=True)
 
     command = sub.add_parser("validate", help="validate the canonical ResearchMap")
@@ -37,16 +54,23 @@ def main(argv: list[str] | None = None) -> int:
             result = create_research_map(args.root, args.map_id, args.title, _now())
             payload: Any = {"created": True, "map": result.to_dict()}
         elif args.command == "show":
-            payload = ResearchKernel(args.root).load().to_dict()
+            payload = execute("research.map", args.root)
+        elif args.command == "summary":
+            payload = execute("research.summary", args.root)
+        elif args.command == "detail":
+            payload = execute("research.detail", args.root, {"kind": args.kind, "id": args.id})
+        elif args.command == "locate":
+            payload = execute("research.locate", args.root, {"query": args.query})
+        elif args.command == "operations":
+            payload = execute("research.operations", args.root)
         elif args.command == "validate":
-            ResearchKernel(args.root).load()
-            payload = {"valid": True}
+            payload = execute("research.validate", args.root)
         else:
             request = _load_request(args.request_file)
-            payload = ResearchKernel(args.root).apply(request)
+            payload = execute("research.change", args.root, request)
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
-    except (ResearchKernelError, OSError, ValueError, json.JSONDecodeError) as exc:
+    except (CommandError, ResearchKernelError, OSError, ValueError, json.JSONDecodeError) as exc:
         print(json.dumps({"valid": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 2
 

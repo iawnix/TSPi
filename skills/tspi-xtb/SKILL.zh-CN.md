@@ -20,7 +20,7 @@ xTB 提供用于探索和表征的近似电子结构计算。CREST 通过基于 
   设置时，更新意图并记录为重新计算。
 - 检查完整输出集合和 parser summary，包括适用时的 SCC 收敛、优化状态、频率、
   扫描完整性或轨迹完整性。
-- 远程提交 xTB 或 CREST 前，要求已配置的软件 profile 通过 `ts_remote doctor`。
+- 远程提交 xTB 或 CREST 前，要求已配置的软件 profile 通过 `TSPi --check-remote`。
   命令、激活脚本或运行时依赖缺失属于运维失败；不得从计算作业中安装或修复集群软件。
 - 将构象数量、能量表和集合几何作为独立事实；通过 Claim 或 Node 理由选择构象。
 - 只有已核验的 parser 值和原始产物才能通过 `ts_change` 提升。

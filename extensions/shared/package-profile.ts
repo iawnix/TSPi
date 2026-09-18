@@ -1,3 +1,5 @@
+import { TS_COMMAND_NAMES } from "./command-catalog.ts";
+
 export const TS_PACKAGE_PROFILE = Object.freeze({
   displayName: "TSPi",
   version: "0.17.0",
@@ -22,5 +24,5 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
     Object.freeze({ name: "artifacts", path: "./extensions/ts-workflow-artifacts/index.ts" }),
   ]),
   theme: Object.freeze({ name: "ts-theme", path: "./themes/ts-theme.json" }),
-  commands: Object.freeze(["/ts", "/ts-check", "/sys_prompt", "/ts-remote", "/ts-runs"]),
+  commands: TS_COMMAND_NAMES,
 });

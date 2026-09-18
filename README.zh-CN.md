@@ -7,11 +7,11 @@ TSPi 是基于 Pi 的计算化学研究助手，面向过渡态搜索和反应�
 
 ## 安装
 
-准备 Git、OpenSSH、Python 3.11+、Node.js 22.19+、Conda/Mamba 以及 Pi 凭据，
-然后运行交互式安装器：
+准备 Git、Python 3.11+、Node.js 22.19+、Conda/Mamba 以及 Pi 凭据。只有使用
+私有 SSH 仓库或远程计算时才需要 OpenSSH。然后运行交互式安装器：
 
 ```bash
-git clone git@github.com:iawnix/TSPi.git
+git clone https://github.com/iawnix/TSPi.git
 cd TSPi
 ./install.sh
 ```
@@ -63,8 +63,9 @@ broker。参阅[终端文档](docs/TERMINAL.zh-CN.md)、[中文架构](docs/ARCH
 
 `ts_calc` 是 local 和 remote 共用的唯一计算生命周期入口。每个 compute
 profile 都有 `kind = "local"` 或 `"remote"` 以及对应的软件表；只有
-remote profile 额外包含 SSH/Torque 字段。`ts_remote doctor` 仅用于远程
-SSH/Torque/软件就绪性检查。
+remote profile 额外包含 SSH/Torque 字段。`/compute` 和 `ts_environment` 工具
+查询完整的 local/remote profile；远端就绪性检查属于已绑定计算的 preflight，
+不再单独形成一套 remote 命令。
 
 Skill 覆盖 Gaussian、xTB、CREST、ASE-NEB、结构验证、渲染、报告和邮件投递。详见
 [Skill 目录](skills/README.zh-CN.md) 与 [术语表](skills/tspi-orchestration/references/glossary.zh-CN.md)。

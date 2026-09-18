@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -25,6 +26,7 @@ except ImportError:
 FULL_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 TAG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
 PROGRESS_PREFIX = "@@tspi-progress@@"
+GIT_RETRY_ATTEMPTS = 3
 
 
 def run(command: list[str], *, cwd: Path | None = None) -> str:
@@ -32,6 +34,20 @@ def run(command: list[str], *, cwd: Path | None = None) -> str:
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or "command failed: " + " ".join(command))
     return result.stdout.strip()
+
+
+def retry_git(command: list[str], *, cwd: Path | None = None) -> str:
+    last_error: RuntimeError | None = None
+    for attempt in range(1, GIT_RETRY_ATTEMPTS + 1):
+        try:
+            return run(command, cwd=cwd)
+        except RuntimeError as error:
+            last_error = error
+            if attempt < GIT_RETRY_ATTEMPTS:
+                time.sleep(attempt)
+    if last_error is None:
+        raise RuntimeError("git command failed without diagnostics")
+    raise last_error
 
 
 def validate_ref(ref: str) -> None:
@@ -65,13 +81,37 @@ def tree_digest(root: Path) -> str:
 def checkout_github(repo: str, ref: str, destination: Path) -> str:
     validate_repo(repo)
     validate_ref(ref)
-    run(["git", "clone", "--filter=blob:none", "--no-checkout", repo, str(destination)])
-    run(["git", "fetch", "--depth", "1", "origin", ref], cwd=destination)
-    run(["git", "checkout", "--detach", "FETCH_HEAD"], cwd=destination)
-    commit = run(["git", "rev-parse", "HEAD"], cwd=destination)
-    if not FULL_SHA.fullmatch(commit):
-        raise ValueError("GitHub checkout did not resolve to a full commit SHA")
-    return commit
+    last_error: RuntimeError | ValueError | None = None
+    for filtered in (True, False):
+        attempts = GIT_RETRY_ATTEMPTS if filtered else 1
+        for attempt in range(attempts):
+            if destination.is_symlink() or destination.is_file():
+                destination.unlink()
+            elif destination.exists():
+                shutil.rmtree(destination)
+            clone = ["git", "clone"]
+            if filtered:
+                clone.append("--filter=blob:none")
+            clone.extend(("--no-checkout", repo, str(destination)))
+            try:
+                run(clone)
+                retry_git(["git", "fetch", "--depth", "1", "origin", ref], cwd=destination)
+                run(["git", "checkout", "--detach", "FETCH_HEAD"], cwd=destination)
+                commit = run(["git", "rev-parse", "HEAD"], cwd=destination)
+                if not FULL_SHA.fullmatch(commit):
+                    raise ValueError("GitHub checkout did not resolve to a full commit SHA")
+                return commit
+            except (RuntimeError, ValueError) as error:
+                last_error = error
+                if destination.is_symlink() or destination.is_file():
+                    destination.unlink()
+                elif destination.exists():
+                    shutil.rmtree(destination)
+                if filtered and attempt < attempts - 1:
+                    time.sleep(attempt + 1)
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("GitHub checkout failed")
 
 
 def install_uninstaller(install_root: Path, source_root: Path) -> Path:

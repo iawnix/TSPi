@@ -26,7 +26,7 @@ mode, and connectivity evidence at the chosen level of theory.
   when applicable, optimization status, frequency data, scan completeness, or
   trajectory completeness.
 - Before remote xTB or CREST submission, require the configured software profile
-  to pass `ts_remote doctor`. Treat a missing command, activation script, or
+  to pass `TSPi --check-remote`. Treat a missing command, activation script, or
   runtime dependency as an operational failure; do not install or repair cluster
   software from a calculation job.
 - Treat conformer count, energy table, and ensemble geometry as separate facts.

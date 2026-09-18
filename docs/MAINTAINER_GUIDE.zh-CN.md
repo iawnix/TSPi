@@ -68,7 +68,7 @@ server、bridge、REST/SSE 兼容层或终端 Host。
 | App Server 协议或服务 | `apps/app-server/`、启动器测试、TS Phone 客户端、架构文档 |
 | 工作区 schema | Kernel 合同、bootstrap、验证测试、工作区参考 |
 | 科学后端 | parser、能力 registry、对应 Skill、测试 |
-| 科学分析 | registry/handler、重放验证、反例、报告/Web projection、wheel inventory |
+| 科学分析 | registry/handler、重放验证、反例、报告/Web transport、wheel inventory |
 | Node 派发 | 操作回执链、提交 guard、原生/extension 工具、重启和暂停测试 |
 | 包清单 | `package.json`、`scripts/package_inventory.py`、布局测试 |
 | 安装或 service 路径 | installer、卸载逻辑、安装文档 |

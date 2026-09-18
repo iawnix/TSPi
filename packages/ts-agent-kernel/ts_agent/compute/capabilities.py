@@ -284,7 +284,7 @@ def calculation_capabilities() -> dict[str, object]:
             "meaning": (
                 "Descriptor presence does not prove executable, profile, scheduler, "
                 "or transport readiness; establish readiness separately with "
-                "runtime checks or ts_remote diagnostics."
+                "runtime checks or the installation remote readiness check."
             ),
         },
     }

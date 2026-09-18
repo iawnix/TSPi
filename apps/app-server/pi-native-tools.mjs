@@ -31,18 +31,19 @@ const {
 const executeFile = promisify(execFile);
 const { nodeControlProperties, nodeControlArguments } = require("../../packages/ts-agent-runtime/artifacts/node-control.cjs");
 
-const MAP_MODES = ["map", "claim", "node", "finding"];
-const CONTEXT_MODES = [...MAP_MODES, "locate", "artifacts", "capabilities"];
+const MAP_MODES = ["map", "summary", "detail", "claim", "node", "finding", "operations"];
+const CONTEXT_MODES = [...MAP_MODES, "locate", "artifacts", "capabilities", "runs"];
 const CAPABILITY_KINDS = ["compute", "analysis"];
 const IMPORT_FORMATS = ["gaussian_input", "xyz_structure", "xtb_control"];
 const STRUCTURE_OPTIMIZATIONS = ["none", "uff"];
-const REMOTE_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes"];
 const TS_STATE_PARAMETERS = Type.Object({
   mode: Type.Optional(Type.Union(CONTEXT_MODES.map((mode) => Type.Literal(mode)))),
   query: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
   claimRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
   nodeRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
   findingRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+  kind: Type.Optional(Type.Union(["phase", "claim", "node", "finding", "gate"].map((kind) => Type.Literal(kind)))),
+  id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
   capabilityKind: Type.Optional(Type.Union(CAPABILITY_KINDS.map((kind) => Type.Literal(kind)))),
 }, { additionalProperties: false });
 const CHANGE_OPERATION = Type.Object({
@@ -102,8 +103,9 @@ const TS_REPORT_PARAMETERS = Type.Object({
     { maxItems: 8, uniqueItems: true },
   )),
 }, { additionalProperties: false });
-const TS_REMOTE_PARAMETERS = Type.Object({
-  mode: Type.Optional(Type.Union(REMOTE_DIAGNOSTIC_MODES.map((value) => Type.Literal(value)))),
+const TS_ENVIRONMENT_PARAMETERS = Type.Object({
+  mode: Type.Optional(Type.Union(["list", "show"].map((value) => Type.Literal(value)))),
+  name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
 }, { additionalProperties: false });
 
 class RenderExecutionError extends Error {
@@ -122,7 +124,7 @@ export function createStateTool() {
   return {
     name: "ts_state",
     label: "TS State",
-    description: "Read bounded authoritative TSPi research state, artifacts, capabilities, or a change contract.",
+    description: "Read the canonical ResearchMap and related compute records.",
     parameters: TS_STATE_PARAMETERS,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       const mode = params.mode || "map";
@@ -130,14 +132,14 @@ export function createStateTool() {
       let script;
       let args;
       if (mode === "artifacts") {
-        script = packageScript("ts_compute.py");
-        args = ["list-artifacts", "--root", root];
+        script = packageScript("ts_api.py");
+        args = ["compute.artifacts", "--root", root];
         if (params.nodeRef) args.push("--node-id", params.nodeRef);
       } else if (mode === "capabilities") {
         if (!params.capabilityKind) throw new Error("state mode=capabilities requires capabilityKind=compute or analysis");
         if (params.capabilityKind === "compute") {
-          script = packageScript("ts_compute.py");
-          args = ["capabilities", "--root", root];
+          script = packageScript("ts_api.py");
+          args = ["compute.capabilities", "--root", root];
         } else if (params.capabilityKind === "analysis") {
           const selector = params.query?.split("@");
           if (selector && (selector.length > 2 || !selector[0] || (selector.length === 2 && !selector[1]))) {
@@ -151,29 +153,25 @@ export function createStateTool() {
           throw new Error("ResearchMap has no separate proof or gate capability registry");
         }
       } else {
-        script = packageScript("ts_research.py");
-        args = ["show", "--root", root];
+        script = packageScript("ts_api.py");
+        let command = mode === "map" || mode === "summary" || mode === "operations"
+          ? `research.${mode}`
+          : mode === "locate" ? "research.locate" : "research.detail";
+        args = [command, "--root", root];
+        if (mode === "locate") {
+          if (!params.query) throw new Error("state mode=locate requires query");
+          args.push("--query", params.query);
+        } else if (mode === "claim" || mode === "node" || mode === "finding" || mode === "detail") {
+          const kind = mode === "detail" ? params.kind : mode;
+          const id = mode === "detail" ? params.id : mode === "claim" ? params.claimRef : mode === "node" ? params.nodeRef : params.findingRef;
+          if (!kind || !id) throw new Error(`state mode=${mode} requires kind and id`);
+          args.push("--kind", kind, "--id", id);
+        } else if (mode === "runs") {
+          command = "compute.runs";
+          args[0] = command;
+        }
       }
       let result = await runJsonCli(script, args, root, context?.abortSignal);
-      if (mode === "claim" || mode === "node" || mode === "finding") {
-        const collection = `${mode}s`;
-        const requested = mode === "claim" ? params.claimRef : mode === "node" ? params.nodeRef : params.findingRef;
-        if (!requested) throw new Error(`state mode=${mode} requires its reference`);
-        result = { ...result, [mode]: (result[collection] || []).find((item) => item.id === requested) || null };
-        delete result.phases;
-        delete result.claims;
-        delete result.nodes;
-        delete result.findings;
-        delete result.gates;
-      } else if (mode === "locate") {
-        const query = String(params.query || "").toLowerCase();
-        result = {
-          schema_version: result.schema_version,
-          map_id: result.map_id,
-          matches: ["phases", "claims", "nodes", "findings", "gates"].flatMap((key) =>
-            (result[key] || []).filter((item) => !query || JSON.stringify(item).toLowerCase().includes(query)).map((item) => ({ type: key.slice(0, -1), ...item }))),
-        };
-      }
       return {
         content: [{ type: "text", text: JSON.stringify(result) }],
         details: { mode },
@@ -193,8 +191,8 @@ export function createChangeTool() {
       requireNativeWrites("ts_change");
       const result = await runPrivateRequest(
         "tspi-native-change-",
-        packageScript("ts_research.py"),
-        "change",
+        packageScript("ts_api.py"),
+        "research.change",
         toolContext.cwd,
         {
           schema_version: "ts-change-request/1",
@@ -213,16 +211,22 @@ export function createChangeTool() {
   };
 }
 
-export function createRemoteTool() {
+export function createEnvironmentTool() {
   return {
-    name: "ts_remote",
-    label: "TS Remote Inspect",
-    description: "Run one read-only SSH/Torque readiness probe.",
-    parameters: TS_REMOTE_PARAMETERS,
+    name: "ts_environment",
+    label: "TS Environment",
+    description: "Inspect configured local and remote compute environments.",
+    parameters: TS_ENVIRONMENT_PARAMETERS,
     executionMode: "sequential",
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
-      const mode = params.mode || "status";
-      const result = await runRemoteDiagnostic(mode, toolContext.cwd, context?.abortSignal);
+      const mode = params.mode || "list";
+      if (mode === "show" && !params.name) throw new Error("environment show requires name");
+      const result = await runCanonicalApi(
+        mode === "show" ? "compute.environment" : "compute.environments",
+        toolContext.cwd,
+        mode === "show" ? ["--name", params.name] : [],
+        context?.abortSignal,
+      );
       return toolResult(result);
     },
   };
@@ -573,7 +577,7 @@ export function createTspiTools(options = {}) {
   return [
     createStateTool(),
     createChangeTool(),
-    createRemoteTool(),
+    createEnvironmentTool(),
     createComputeTool(),
     createReviewTool(options.review),
     createReplyTool(),
@@ -705,81 +709,22 @@ function parseJsonObject(value) {
   }
 }
 
-async function runRemoteDiagnostic(mode, cwd, parentSignal, timeoutMs = 90_000) {
+async function runCanonicalApi(command, cwd, extraArgs, parentSignal, timeoutMs = 60_000) {
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signal = parentSignal ? AbortSignal.any([parentSignal, timeoutSignal]) : timeoutSignal;
   let completed;
   try {
-    completed = await executeFile(nativePython(), [
-      packageScript("ts_compute.py"),
-      "remote-diagnostic",
-      "--mode",
-      mode,
-    ], {
+    completed = await executeFile(nativePython(), [packageScript("ts_api.py"), command, "--root", cwd, ...extraArgs], {
       cwd,
       env: { ...process.env, PYTHONNOUSERSITE: "1" },
       maxBuffer: 8 * 1024 * 1024,
       signal,
     });
   } catch (error) {
-    throw classifyRemoteDiagnosticFailure(error, mode, parentSignal, timeoutSignal, timeoutMs);
+    throw new Error(`canonical command ${command} failed`, { cause: error });
   }
-  if (signal.aborted) {
-    throw classifyRemoteDiagnosticFailure(undefined, mode, parentSignal, timeoutSignal, timeoutMs);
-  }
-  const result = parseJsonObject(completed.stdout);
-  if (
-    !result
-    || result.schema_version !== "ts-remote-diagnostic/1"
-    || result.mode !== mode
-    || typeof result.ok !== "boolean"
-  ) {
-    throw remoteDiagnosticError(
-      "REMOTE_DIAGNOSTIC_INVALID_OUTPUT",
-      "invalid_output",
-      `ts_remote ${mode} diagnostic returned invalid JSON; no remote action was attempted`,
-      mode,
-    );
-  }
-  return result;
-}
-
-function classifyRemoteDiagnosticFailure(error, mode, parentSignal, timeoutSignal, timeoutMs) {
-  if (parentSignal?.aborted) {
-    return remoteDiagnosticError(
-      "REMOTE_DIAGNOSTIC_CANCELLED",
-      "cancelled",
-      `ts_remote ${mode} diagnostic was cancelled; no remote action was attempted`,
-      mode,
-      error,
-    );
-  }
-  if (timeoutSignal.aborted) {
-    return remoteDiagnosticError(
-      "REMOTE_DIAGNOSTIC_TIMEOUT",
-      "diagnostic_timeout",
-      `ts_remote ${mode} diagnostic timed out after ${Math.ceil(timeoutMs / 1000)} seconds; no remote action was attempted`,
-      mode,
-      error,
-    );
-  }
-  return remoteDiagnosticError(
-    "REMOTE_DIAGNOSTIC_PROCESS_FAILED",
-    "process_failed",
-    `ts_remote ${mode} diagnostic process failed before returning a result; no remote action was attempted`,
-    mode,
-    error,
-  );
-}
-
-function remoteDiagnosticError(code, errorClass, message, mode, cause) {
-  const error = new Error(message, cause === undefined ? undefined : { cause });
-  error.code = code;
-  error.errorClass = errorClass;
-  error.mode = mode;
-  error.retrySafe = true;
-  error.remoteActionAttempted = false;
-  return error;
+  if (signal.aborted) throw new Error(`canonical command ${command} was cancelled`);
+  return parseJsonObject(completed.stdout) || (() => { throw new Error(`canonical command ${command} returned invalid JSON`); })();
 }
 
 async function resolveArtifacts(root, artifactIds, signal) {

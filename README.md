@@ -8,11 +8,12 @@ evidence, calculations, and reports live in one workspace.
 
 ## Install
 
-Prepare Git, OpenSSH, Python 3.11+, Node.js 22.19+, Conda/Mamba, and a Pi
-credential. Then run the interactive installer:
+Prepare Git, Python 3.11+, Node.js 22.19+, Conda/Mamba, and a Pi credential.
+OpenSSH is only needed when using a private SSH repository or remote compute.
+Then run the interactive installer:
 
 ```bash
-git clone git@github.com:iawnix/TSPi.git
+git clone https://github.com/iawnix/TSPi.git
 cd TSPi
 ./install.sh
 ```
@@ -61,8 +62,9 @@ remote profile with:
 
 `ts_calc` is the single calculation lifecycle for both local and remote
 targets. A compute profile contains a `kind` (`local` or `remote`) and its
-software table; only remote profiles add SSH/Torque fields. `ts_remote doctor`
-is only a read-only remote readiness check.
+software table; only remote profiles add SSH/Torque fields. `/compute` and the
+`ts_environment` tool inspect the complete profile catalog; readiness checks
+run as part of the bound calculation preflight.
 
 The skills cover Gaussian, xTB, CREST, ASE-NEB, structure validation,
 rendering, reports, and email delivery. See the [Skill Catalog](skills/README.md)

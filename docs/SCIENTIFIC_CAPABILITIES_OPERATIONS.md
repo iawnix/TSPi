@@ -34,7 +34,8 @@ cancellation outcomes must be inspected before retrying.
 Analysis outputs live under `nodes/<node_id>/outputs/analysis/` and are bound to
 input digests, generated files, and parser candidates. The Root Agent verifies a
 candidate before promoting it through `ts_change` to an immutable Observation
-or an explicit Finding. Reports and TS Web consume read-only projections; they
+or an explicit Finding. Reports and TS Web consume canonical records through
+read-only transport responses; they
 do not become a second scientific state store or choose the next Node.
 
 Thermochemistry is limited to compatible HF/Kohn-Sham SCF energies, analytical

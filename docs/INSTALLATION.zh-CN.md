@@ -2,7 +2,7 @@
 
 [English](INSTALLATION.md) | 简体中文
 
-本指南安装 TSPi Agent 及可选的 TS Web 只读投影。TS Phone 是独立的 Flutter
+本指南安装 TSPi Agent 及可选的 TS Web 只读浏览器。TS Phone 是独立的 Flutter
 应用；TSPi 不安装 TS Phone server、bridge secret 或本地 HTTP broker。
 
 ## 前置条件
@@ -11,6 +11,13 @@
 - Python 3.11+、Conda/Mamba，以及可写的用户安装目录。
 - `config/pi-source.json` 指定版本的 Pi 源码 checkout；安装器也可以自动下载并修补。
 - 可选的 systemd user service 和 TS Web 端口。创建受管科学运行时需要 Conda/Mamba。
+
+启动脚本默认使用公开 HTTPS 仓库；Git 传输中断时会有限重试，仍失败则回退到普通
+浅克隆。私有 GitHub 仓库可显式传入 SSH 地址：
+
+```bash
+./install.sh --tspi-repo git@github.com:your-org/TSPi.git
+```
 
 ## 安装或选择版本
 
@@ -55,16 +62,13 @@ scripts/prepare_pi_source.py --install <root>
 安装后的文件为 `<install>/.pi/compute.toml`，权限为 `0600`。
 
 已有安装仍兼容 `--local-config` 和 `--remote-config` 两种旧格式；新安装建议使用上面的
-统一模板。TSPi 不会下载 Gaussian 或其他站点管理的本地化学软件，SSH 凭据仍由 SSH
+统一模板。`/compute` 和 `compute.environments` 会列出已配置的本地与远端 profile，
+TSPi 不会下载 Gaussian 或其他站点管理的本地化学软件，SSH 凭据仍由 SSH
 配置管理，不会复制到该 TOML 文件中。
 
 当前远程合同只支持 Torque/PBS。配置必须声明 SSH、可写远程根目录、允许队列及站点
-管理的 Gaussian/xTB/CREST/ASE-NEB 命令；配置文件应保持 `0600`。可用下面的命令执行
-只读远程就绪性检查：
-
-```bash
-./TSPi --check-remote
-```
+管理的 Gaussian/xTB/CREST/ASE-NEB 命令；配置文件应保持 `0600`。执行层会在准备远端
+计算时完成必要的就绪性检查；交互查看配置使用 `/compute`。
 
 ## 安装日志、通知与 Host
 
@@ -83,8 +87,8 @@ session Worker，不创建第二个 Agent runtime。
 ## 工作区初始化与 TS Web
 
 首次运行 `./TSPi --workspace <name>` 时，客户端会在配置的 workspace root 下创建并
-校验命名工作区。TS Web 是可选的只读浏览器投影；它读取版本化 projection，不拥有
-规范科学状态，也不提供科学写入路由。
+校验命名工作区。TS Web 是可选的只读浏览器；它直接读取 canonical ResearchMap，
+不拥有第二份科学状态，也不提供科学写入路由。
 
 ## 模型配置
 

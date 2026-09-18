@@ -58,7 +58,7 @@ workspace, capability, and operating-system permissions still apply.
 
 ## Browser control
 
-TS Web remains a read-only scientific projection by default. To control one
+TS Web remains a read-only browser of the canonical ResearchMap by default. To control one
 existing Pi session from a browser, start the optional loopback adapter while
 the Host is running:
 

@@ -298,7 +298,9 @@ function requireWorkspaceRoot(value) {
   if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error("workspace root must be absolute");
   const root = fs.realpathSync(value);
   const workspace = JSON.parse(fs.readFileSync(path.resolve(root, "workspace.json"), "utf8"));
-  if (workspace.schema_version !== "ts-workspace/6") throw new Error("Review requires a supported workspace");
+  if (workspace.schema_version !== "ts-workspace/6" && workspace.schema_version !== "research-workspace/1") {
+    throw new Error("Review requires a supported workspace");
+  }
   return root;
 }
 

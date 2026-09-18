@@ -104,7 +104,7 @@ guards/receipts, not UI state, are authoritative for remote recovery.
 The foreground working message summarizes whether Root is thinking or running
 Compute, Review, or deterministic tools without gaining authority. It is
 transient and contains no run IDs or audit paths.
-`/ts-runs` is a paginated read-only Compute/Review browser: its list
+`/runs` is a paginated read-only Compute/Review browser: its list
 uses canonical `sub_n` run IDs, while details put outcome and error before scope,
 actions, artifacts, and audit metadata. Pi's normal expand key expands/collapses
 tool details globally; the history browser paginates its own list.
