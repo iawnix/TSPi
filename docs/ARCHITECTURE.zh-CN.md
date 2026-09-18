@@ -96,8 +96,11 @@ Gate 的产生过程是：Root Agent 选择研究意图和 profile；Plugin 声�
 
 ## 独立科学能力与节点管理
 
-`ts_analyze` 通过按需目录派发 22 项版本化独立分析能力，领域实现位于 `analysis/`。
-结果绑定 Node、输入 digest、生成文件和候选事实；选定事实通过已有 `ts_change`
+`ts_analyze` 通过按需能力目录派发 22 项版本化独立分析能力；对外目录由
+`packages/ts-agent-kernel/ts_agent/compute/analysis.py` 组装，领域描述由
+`packages/ts-agent-kernel/ts_agent/analysis/catalog.py` 定义，领域实现位于
+`packages/ts-agent-kernel/ts_agent/analysis/`。结果绑定 Node、输入 digest、生成文件
+和候选事实；选定事实通过已有 `ts_change`
 入口重算校验后登记。能力不选择下一科学步骤，不接受 Claim。化学网络使用带计量
 的超边并允许有环，独立于研究 Node DAG。
 
@@ -150,8 +153,11 @@ cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
 
 ## 其他契约
 
-验证模板位于 `packages/ts-agent-kernel/ts_agent/validation/`；`ts_calc` 对
-`execution_target.kind=local` 和 `remote` 使用同一套
+验证模板和 acceptance profile 位于
+`packages/ts-agent-kernel/ts_agent/validation/`，其中模板在
+`packages/ts-agent-kernel/ts_agent/validation/templates/`、profile 在
+`packages/ts-agent-kernel/ts_agent/validation/acceptance_profiles/`；`ts_calc` 对
+`execution_target.kind=local` 和 `execution_target.kind=remote` 使用同一套
 `prepare -> submit -> inspect -> collect -> parse` 生命周期。Research Kernel
 工作区始终是唯一规范存储：本地执行在 Attempt 的 execution 目录暂存输入并把输出
 收集回工作区，远程目录只是临时执行镜像，TS Web 不需要访问远程文件系统。推荐的
