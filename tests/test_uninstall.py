@@ -44,6 +44,9 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     web_token = root / ".pi/ts-web/auth.token"
     web_token.parent.mkdir(parents=True)
     web_token.write_text("w" * 43)
+    phone_connection = root / ".pi/app-server-host/phone-connection.json"
+    phone_connection.parent.mkdir(parents=True)
+    phone_connection.write_text('{"schema_version":"tspi-phone-connection/1"}\n', encoding="utf-8")
     download = root / "downloads/client.apk"
     download.parent.mkdir()
     download.write_bytes(b"apk")
@@ -56,8 +59,43 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     assert (root / ".pi/ts-phone-state").is_dir()
     assert bridge_secret.read_text() == "b" * 43
     assert web_token.read_text() == "w" * 43
+    assert phone_connection.is_file()
     assert download.read_bytes() == b"apk"
     assert not (root / ".pi/packages/tspi").exists()
+
+
+def test_uninstall_uses_configured_external_workspace_root(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    (root / ".pi/packages/tspi").mkdir(parents=True)
+    workspace_root = tmp_path / "research"
+    (workspace_root / "reaction-a").mkdir(parents=True)
+    config = root / ".pi/tspi/workspace-root.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(json.dumps({
+        "schema_version": "tspi-workspace-root/1",
+        "workspace_root": str(workspace_root),
+    }) + "\n", encoding="utf-8")
+
+    result = uninstall(_args(root, purge_workspaces=True))
+
+    assert result["workspace_root"] == str(workspace_root)
+    assert not workspace_root.exists()
+
+
+def test_uninstall_refuses_to_purge_an_installation_ancestor(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    (root / ".pi/packages/tspi").mkdir(parents=True)
+    config = root / ".pi/tspi/workspace-root.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(json.dumps({
+        "schema_version": "tspi-workspace-root/1",
+        "workspace_root": str(tmp_path),
+    }) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="broad workspace root"):
+        uninstall(_args(root, purge_workspaces=True))
+
+    assert root.is_dir()
 
 
 def test_interactive_defaults_run_safe_uninstall_and_preserve_data(tmp_path: Path, monkeypatch) -> None:
@@ -294,6 +332,8 @@ def test_purge_removes_unified_host_sessions_and_credentials(tmp_path: Path) -> 
     host_session.parent.mkdir(parents=True)
     host_session.write_text("session\n", encoding="utf-8")
     (root / ".pi/app-server-host/server-id").write_text("server\n", encoding="utf-8")
+    phone_connection = root / ".pi/app-server-host/phone-connection.json"
+    phone_connection.write_text("{}\n", encoding="utf-8")
     (root / ".pi/agent/auth.json").parent.mkdir(parents=True)
     (root / ".pi/agent/auth.json").write_text("{}\n", encoding="utf-8")
     (root / ".pi/email/smtp-password").parent.mkdir(parents=True)
@@ -304,5 +344,6 @@ def test_purge_removes_unified_host_sessions_and_credentials(tmp_path: Path) -> 
     assert result["ok"] is True
     assert not host_session.exists()
     assert not (root / ".pi/app-server-host/server-id").exists()
+    assert not phone_connection.exists()
     assert not (root / ".pi/agent").exists()
     assert not (root / ".pi/email").exists()

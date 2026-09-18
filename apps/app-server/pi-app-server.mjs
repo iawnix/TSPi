@@ -41,6 +41,8 @@ const childEnv = {
   TSPI_PI_SOURCE: sourceRoot,
   TSPI_PACKAGE_ROOT: process.env.TSPI_PACKAGE_ROOT || packageRoot,
   PI_SESSION_WORKER_ENTRY: join(packageRoot, "apps/app-server/pi-session-worker.mjs"),
+  TSPI_WORKSPACE_BOOTSTRAP: join(packageRoot, "scripts/ts_workspace.py"),
+  TSPI_WORKSPACE_PYTHON: process.env.TS_AGENT_PYTHON || "python3",
   TSPI_NATIVE_WRITES: "1",
 };
 if (wrapper.directory) childEnv.PI_SERVER_DIR = resolve(wrapper.directory);

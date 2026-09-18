@@ -23,6 +23,11 @@ Run `./install.sh` and confirm the installation directory, TSPi revision,
 workspace root, Conda root, optional TS Web component, and service policy. Core
 Agent, scientific runtime, and molecular rendering are always installed.
 
+For non-interactive installation, `--workspace-root /absolute/path` selects the
+directory containing named projects. The default is `<install>/workspaces`.
+The installer records it in `.pi/tspi/workspace-root.json`; the Host, terminal,
+TS Web service, and uninstaller consume that same value.
+
 The package is selected atomically through:
 
 ```text
@@ -31,6 +36,28 @@ The package is selected atomically through:
 
 Only the selected release is exposed by the `TSPi` launcher. The installer
 records checksums and never executes source outside that release.
+
+### Optional model icon font
+
+The installer can add the small TSPi Model Icons font for branded model icons
+in the terminal status bar. Interactive installs ask this question (default
+yes); non-interactive installs keep the font disabled unless explicitly
+requested:
+
+```bash
+./install.sh --non-interactive --yes --with-model-icons \
+  --install-root "$HOME/.local/share/tspi"
+```
+
+Use `--without-model-icons` to leave the optional component disabled. The font
+is installed under the user data directory (`$XDG_DATA_HOME/fonts/tspi`, or
+`$HOME/.local/share/fonts/tspi`) and the selected release records a private
+marker at `<install>/.pi/tspi/model-icons.json`. It is not necessary to install
+Nerd Font: TSPi falls back to the existing Nerd Font glyphs for other icons and
+to ordinary Unicode when `TSPI_ICON_STYLE=unicode` is set. An explicit
+`TSPI_ICON_STYLE=nerd` or `unicode` always overrides the installer choice.
+The installer refreshes the fontconfig cache when `fc-cache` is available;
+already-open terminals may need to be restarted to reload their fallback fonts.
 
 ## Managed Python Runtime
 
@@ -46,16 +73,41 @@ also needs hydrated model data and built workspace dependencies;
 [scientific operations](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md) for capability
 discovery, Node pause/resume, and opt-in remote/model smoke commands.
 
+During an upgrade, the same step verifies the complete multi-workspace patch. Older
+installations that already have the project-listing portion receive the compatible
+incremental patch for project creation and `workspaceId` session binding before the
+Host is restarted.
+
 ## Configure Remote Execution
 
-Local calculation is available without a remote profile and runs the selected
-backend command in a durable Attempt-local subprocess. The input and output
-files remain in the local workspace. Choose `execution_target.kind=remote`
-only when the calculation should be submitted through the profile below;
-remote execution mirrors inputs temporarily and collects results back locally.
+Local calculation runs the selected provider in a durable Attempt-local
+subprocess. Remote execution mirrors inputs temporarily and collects results
+back locally. Both are selected from the same compute profile model; only a
+remote profile carries SSH/Torque transport fields.
 
-Pass `--remote-config /absolute/path/remote.toml` to `install.sh` to validate and
-copy a profile into `<install>/.pi/remote.toml`, or create that file manually.
+The recommended installation file is `<install>/.pi/compute.toml`. A complete
+machine-oriented template is available at `config/compute.example.toml`.
+Import it with `--compute-config /absolute/path/compute.toml`.
+
+The interactive installer can still create `<install>/.pi/remote.toml` field by field.
+It asks for the profile name, SSH host and config path, Torque/PBS queue policy,
+remote workspace root, timeouts, and the Gaussian, xTB, CREST, and ASE-NEB
+commands (including optional activation and scratch paths). SSH keys and other
+credentials stay in the SSH configuration; they are never copied into this
+TOML. To import a file that is already managed by an administrator, pass
+`--remote-config /absolute/path/remote.toml` instead. Both paths use the same
+validation and are installed with mode `0600`.
+
+The generated or imported profile is used for remote execution. Local and
+remote calculations share one public lifecycle through `ts_calc`; choose
+`execution_target.kind = "local"` or `"remote"` and, when using the unified
+file, its profile name in the calculation intent.
+`ts_remote doctor` (also available as `./TSPi --check-remote`) is a read-only
+readiness check for the remote profile and is not a second calculation command.
+Add `--probe-remote` when installation should run `TSPi --check-remote` and fail
+unless SSH, the scheduler, writable remote root, and configured software probes
+are ready. Without that flag the summary reports `not_probed` rather than
+claiming remote readiness.
 The current remote contract supports Torque/PBS only (`scheduler = "torque"`).
 The profile must describe SSH, a writable remote root, allowed queues, and the
 site-managed Gaussian/xTB/CREST/ASE-NEB commands. TSPi does not install remote
@@ -65,11 +117,35 @@ software. Restrict the file to mode 0600, then run:
 ./TSPi --check-remote
 ```
 
+The resulting file has this shape (the installer fills in every value):
+
+```toml
+default_profile = "cluster_1w"
+
+[profiles."cluster_1w"]
+ssh_host = "agent.1w"
+ssh_config = "/home/me/.ssh/config"
+scheduler = "torque"
+remote_root = "/home/me/ts-remote-workspaces"
+allowed_queues = ["batch", "fat"]
+max_nodes = 1
+
+[profiles."cluster_1w".software.gaussian]
+command = ["g16"]
+activation_script = "/opt/gaussian/activate.sh"
+allowed_queues = ["batch", "fat"]
+```
+
+Additional scheduler commands and xTB/CREST/ASE-NEB software tables are
+generated when those fields are entered. Paths are resolved on the remote
+host; TSPi only checks their declared shape and performs the opt-in doctor
+probe.
+
 Remote execution code and software environments belong to the configured
 compute node; the App Server submits and records jobs but does not copy
 credentials into the mobile client.
 
-### Local backends
+### Existing local backend file
 
 Core installation installs the managed Python, RDKit/ASE scientific runtime,
 and render tools. It does not download Gaussian or silently install arbitrary
@@ -77,16 +153,38 @@ native chemistry programs. Use `--local-config /absolute/path/local.toml` to
 select existing executables; the file is copied to `<install>/.pi/local.toml`:
 
 ```toml
-[backends]
-gaussian = "/opt/gaussian/g16"
-xtb = "/opt/xtb/bin/xtb"
-crest = "/opt/crest/bin/crest"
-ase_neb_xtb = "/opt/xtb/bin/xtb"
+[backends.gaussian]
+command = "/opt/gaussian/g16"
+activation_script = "/opt/gaussian/activate.sh"
+
+[backends.xtb]
+command = "/opt/xtb/bin/xtb"
+activation_script = "/opt/xtb/activate.sh"
+
+[backends.crest]
+command = "/opt/crest/bin/crest"
+activation_script = "/opt/crest/activate.sh"
+
+[backends.ase_neb_xtb]
+command = "/opt/xtb/bin/xtb"
+activation_script = "/opt/xtb/activate.sh"
 ```
 
-The installer reports command readiness for every local backend. ASE-NEB reuses
-the managed Python runtime and only needs a working xTB executable. Gaussian
-license checks and site-specific native installation remain administrator work.
+The installer reports command readiness for every local backend. An optional
+`activation_script` is sourced by the local worker before it starts the command.
+ASE-NEB reuses the managed Python runtime and only needs a working xTB
+executable. Gaussian license checks and site-specific native installation
+remain administrator work.
+
+## Installation Logs
+
+Every install or update keeps an owner-only diagnostic log at
+`<install>/.pi/logs/install.YYYY.MM.DD.log`. Repeated runs on the same day are
+appended with a UTC run separator. The log records installer output, selected
+paths, release and service status, backend configuration status, and failure
+details, but never prints TS Web tokens, SMTP authorization codes, or SSH keys.
+Failed package steps also retain a separate
+`install-failure-<timestamp>.log` in the same directory.
 
 ## Configure Notifications
 
@@ -107,7 +205,7 @@ non-interactive install, the same configuration can be supplied explicitly:
   --non-interactive --yes --service-scope user \
   --email-provider smtp --email-preset qq \
   --email-recipient receiver@example.com \
-  --email-username sender@qq.com \
+  --email-address sender@qq.com \
   --email-password-file "$HOME/.config/tspi/qq-smtp-password"
 ```
 
@@ -121,7 +219,7 @@ Host service environment provides the secret.
 [notifications.email]
 enabled = true
 provider = "smtp"
-preset = "qq"                 # "163" or "qq"
+preset = "qq"                 # "163", "qq", or "custom"
 recipient = "receiver@example.com"
 from_address = "sender@qq.com"
 username = "sender@qq.com"
@@ -129,8 +227,9 @@ password_env = "TSPI_EMAIL_PASSWORD"
 ```
 
 The SMTP presets use `smtp.163.com` or `smtp.qq.com` on port 465 with implicit
-TLS by default. Set `--email-port` and `--email-security starttls` for a
-different supported SMTP mode. With `--email-password-env NAME`, the installer
+TLS by default. A different SMTP server can be configured with
+`--email-preset custom --email-host mail.example.org`, plus `--email-port` and
+`--email-security`. With `--email-password-env NAME`, the installer
 creates a private systemd `EnvironmentFile` when NAME is present in the install
 environment; otherwise create `<install>/.pi/email/service.env` before starting
 the Host. A private 0600 `password_file` avoids service-environment setup.
@@ -143,19 +242,17 @@ Start one Host for the installation. It owns a single Pi App Server and serves
 all validated workspaces below the installation workspace root:
 
 ```bash
-./TSPi --host
-```
-
-With systemd enabled, the same Host is managed as:
-
-```bash
 systemctl --user start ts-app-server-tspi.service
 ```
+
+Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for the
+Host lifecycle. The generated unit invokes TSPi's internal service entrypoint;
+ordinary users do not run `TSPi --host`.
 
 The default and recommended scope is a systemd user unit. A system unit must be
 given an explicit `--service-user`; the installer sets `HOME`, `PI_CODING_AGENT_DIR`,
 and a private runtime directory so its Host identity and Pi authorization are
-usable by the same account as manual `TSPi --host` launches. The user unit
+usable by the same account as the service user. The user unit
 explicitly enables the selected Package server extension set
 (`TSPI_SERVER_EXTENSIONS=ts-workflow-native`). The App Server verifies the
 manifest and entry digest at each Worker startup. Do not place client code or
@@ -171,19 +268,28 @@ Attach the native terminal to a project in another shell:
 The Host identity is `<install>/.pi/app-server-host/server-id`; its native
 session directory is `<install>/.pi/app-server-host/sessions`. Each session
 still runs with the selected project's own cwd and is restricted to a direct
-child of `<install>/workspaces`.
+child of the configured workspace root.
 
 TS Phone connects once to this Host through Pi Radius, lists the available
-projects, and switches project/session inside that connection. The installer
+projects, creates a project when needed, and creates or switches sessions
+inside that connection. The installer
 prints the Host UUID and configured `PI_RADIUS_GATEWAY` (when present) as the
-pairing checklist. Phone credentials are held by the mobile secure store and
-are unrelated to the TS Web HTTP token.
+pairing checklist. It also writes the secret-free
+`.pi/app-server-host/phone-connection.json` manifest with protocol version,
+Host ID, Radius endpoint, workspace root, and `same_as_terminal` tool access.
+Phone credentials are held by the mobile secure store and are unrelated to the
+TS Web HTTP token.
+
+Phone is a normal interactive Pi client. Its prompts run on the App Server
+machine and use the same `read`, `write`, `bash`, and TSPi tools as the terminal;
+TS Web is the read-only client in this architecture.
 
 ## Workspace Bootstrap
 
 The first `./TSPi --workspace <name>` invocation creates a 0700 workspace and
-canonical scientific files when the named project does not exist. The same
-validated bootstrap is used by the compatibility
+canonical scientific files when the named project does not exist. The Host's
+WorkspaceDirectory exposes the same operation to TS Phone. The same validated
+bootstrap is used by the compatibility
 `./TSPi --app-server --workspace <name>` mode. The Host itself does not create
 unnamed projects, and bootstrap validates existing JSON and refuses unsupported
 state rather than rewriting it.
@@ -196,7 +302,7 @@ If TS Web was selected, start it with:
 ./TSWeb serve \
   --state-dir .pi/ts-web-state \
   --auth-token-file "$HOME/.local/share/tspi/.pi/ts-web/auth.token" \
-  --source-root workspaces/reaction-a \
+  --source-root /configured/workspace-root/reaction-a \
   --label "Reaction A" --host 127.0.0.1 --port 8766
 ```
 
@@ -204,6 +310,20 @@ Use `--web-host 0.0.0.0 --allow-remote` only with an authenticated token file;
 the installer rejects a non-loopback bind without both explicit settings. TS
 Web is read-only and does not own Pi sessions. Its bearer token is separate
 from Pi Radius credentials.
+
+The installer generates a random TS Web token when the token file is missing.
+For a selected token, pass `--web-auth-token` (40-100 URL-safe characters) or
+enter one at the hidden interactive prompt. The command-line form can be
+visible in shell history or process listings; a pre-created `0600` token file
+with `--web-auth-token-file` is preferred for production use.
+
+## Configure Models
+
+Model selection and authentication are provided by the pinned Pi runtime, not
+by a separate TSPi provider registry. Built-in and conditional support for GPT,
+Gemini, DeepSeek, GLM/Zhipu, Kimi, custom OpenAI-compatible endpoints, and the
+non-support boundary for SeedDance/Seedream are listed in
+[Model Compatibility](MODEL_COMPATIBILITY.md).
 
 ## Upgrade
 
@@ -231,13 +351,12 @@ are never resent automatically after an uncertain transport failure.
 Inspect the latest installer log under `<install>/.pi/logs/` and verify:
 
 ```bash
-./TSPi --host
 systemctl --user status ts-app-server-tspi.service
 ```
 
 ## Uninstall
 
-Run `./uninstall.sh`. The default preserves workspaces, Pi session history,
+Run `./uninstall.sh`. The default preserves the configured workspace root, Pi session history,
 credentials, and configuration. Removing the installation root is explicit;
 the uninstaller also stops and removes matching App Server and TS Web user
 services. There are no Phone server files or bridge secrets to clean up.

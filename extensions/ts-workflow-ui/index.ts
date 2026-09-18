@@ -12,6 +12,7 @@ import {
 } from "../shared/activity-events.ts";
 import {
   tspiIconLabel,
+  tspiModelIconLabel,
 } from "../shared/icons.ts";
 import {
   formatElapsed,
@@ -145,7 +146,7 @@ export default function (pi: ExtensionAPI) {
           const rightParts = [
             tspiIconLabel("context", contextText(ctx)),
             width >= 72 ? tspiIconLabel("thinking", pi.getThinkingLevel()) : undefined,
-            tspiIconLabel("model", ctx.model?.id || "Default model"),
+            tspiModelIconLabel(ctx.model),
           ].filter((value): value is string => Boolean(value));
           const right = theme.fg("muted", rightParts.join(" · "));
           if (width < 58) return [truncateToWidth(right, width, "")];

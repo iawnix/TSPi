@@ -7,6 +7,13 @@ import sys
 import threading
 from typing import TextIO
 
+# Python only wires GNU readline into ``input`` when the module is imported.
+# Keep this optional so the installer remains usable on platforms without it.
+try:
+    import readline  # noqa: F401
+except ImportError:
+    readline = None  # type: ignore[assignment]
+
 
 RESET = "\033[0m"
 COLORS = {

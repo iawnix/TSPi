@@ -5,23 +5,14 @@ TS Phone 都只是它的客户端，一个 Host 可以服务多个项目。
 
 ## 启动 Host
 
-在安装目录运行：
-
-```bash
-./TSPi --host
-```
-
-保持该进程运行，再在另一个终端连接某个项目的 TUI：
-
-```bash
-./TSPi --workspace reaction-a
-```
-
-如果安装器启用了 systemd Host service，可启动：
+先由 systemd 启动安装级 Host，再连接某个项目的 TUI：
 
 ```bash
 systemctl --user start ts-app-server-tspi.service
+./TSPi --workspace reaction-a
 ```
+
+使用 `systemctl --user stop|restart|status ts-app-server-tspi.service` 管理 Host 生命周期。
 
 Host 身份位于 `.pi/app-server-host/server-id`；私有 Unix socket
 位于 `$XDG_RUNTIME_DIR/tspi/`（也可以通过安装配置指定运行目录）。
@@ -37,9 +28,21 @@ Ctrl+C 中断当前本地 turn，`/abort` 向 App Server 请求中止当前 agen
 
 ## 手机访问
 
-TS Phone 通过 Pi Radius 使用 protocol v8 一次连接 Host，然后列出项目并切换会话。
+TS Phone 通过 Pi Radius 使用 protocol v8 一次连接 Host，然后列出或创建项目，
+并创建或切换会话。
 它不连接终端进程，也不需要本地 HTTP 服务、bridge secret、反向代理或
 `TSPhoneServer`/`TSPhoneCtl`。
+
+Host 提供 `WorkspaceDirectory.list/create` 用于项目列表和创建；新会话通过
+`SessionManagement.create({ workspaceId })` 请求。Host 会把名称解析为经过验证的
+直接子工作区，并在 session summary 中记录其 cwd。
+TS Phone 客户端也必须声明并使用这两个 service；只支持列表和切换的旧版 Phone
+需要更新后才会显示创建操作。
+
+Phone 是可交互的 Pi 客户端，不是只读投影。手机提交的 prompt 在 App Server 所在
+机器的目标工作区执行，与同一 session 的终端共享 `read`、`write`、`bash` 和全部
+包内工具。传输层不会按 Phone 身份过滤命令；Host 账户、工作区、能力合约和操作系统
+权限仍然正常生效。
 
 ## 浏览器控制
 
@@ -56,7 +59,7 @@ adapter 使用版本化的 `tspi-session-control/1` 请求合约和 SSE transcri
 
 ## 故障排查
 
-- `workspace is unavailable`：先完成项目 bootstrap，再运行 `TSPi --host`。
+- `workspace is unavailable`：先完成项目 bootstrap，再确认 Host 服务正在运行。
 - `App Server is not running`：启动单一 Host service 或上面的命令。
 - `another Root Agent already owns workspace`：复用现有 Host，不要为同一安装启动第二个。
 - App Server UUID 变化表示指向了不同安装或工作区，请在手机端有意更新连接配置。

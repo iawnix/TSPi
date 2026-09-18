@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PIN_PATH = ROOT / "config" / "pi-source.json"
 PATCH_PATH = ROOT / "config" / "pi-worker-entry.patch"
 MULTI_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace.patch"
+MULTI_WORKSPACE_CREATE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace-create.patch"
 SYSTEM_PROMPT_PATCH_PATH = ROOT / "config" / "pi-system-prompt.patch"
 SOURCE_RESOLVER_PATCH_PATH = ROOT / "config" / "pi-source-resolver.patch"
 
@@ -54,8 +55,20 @@ def verify(source: Path) -> str:
     if marker not in process_path.read_text(encoding="utf-8"):
         raise PiSourceError(f"Pi source is missing the TSPi Worker entrypoint patch: {source}")
     sessions_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "sessions.ts"
-    if "tspi.workspace-directory" not in sessions_path.read_text(encoding="utf-8"):
-        raise PiSourceError(f"Pi source is missing the TSPi multi-workspace patch: {source}")
+    sessions = sessions_path.read_text(encoding="utf-8")
+    server_path = source / "packages" / "coding-agent" / "src" / "experimental" / "server.ts"
+    server = server_path.read_text(encoding="utf-8")
+    services_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "server.ts"
+    services = services_path.read_text(encoding="utf-8")
+    multi_workspace_markers = {
+        "workspace service": "tspi.workspace-directory" in sessions,
+        "workspaceId session binding": "workspaceId?: string" in sessions and "createOptions.workspaceId" in server,
+        "workspace creation": "createWorkspace: createWorkspaceRoot" in server,
+        "workspace create service": "createWorkspace(workspaceId: string" in services and "create: (workspaceId, context)" in services,
+    }
+    missing = [label for label, present in multi_workspace_markers.items() if not present]
+    if missing:
+        raise PiSourceError(f"Pi source is missing the complete TSPi multi-workspace patch ({', '.join(missing)}): {source}")
     slash_commands_path = (
         source
         / "packages"
@@ -85,12 +98,24 @@ def apply_worker_patch(source: Path) -> None:
 
 def apply_multi_workspace_patch(source: Path) -> None:
     sessions_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "sessions.ts"
-    if "tspi.workspace-directory" in sessions_path.read_text(encoding="utf-8"):
+    server_path = source / "packages" / "coding-agent" / "src" / "experimental" / "server.ts"
+    services_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "server.ts"
+    sessions = sessions_path.read_text(encoding="utf-8")
+    server = server_path.read_text(encoding="utf-8")
+    services = services_path.read_text(encoding="utf-8")
+    if (
+        "tspi.workspace-directory" in sessions
+        and "workspaceId?: string" in sessions
+        and "createWorkspace: createWorkspaceRoot" in server
+        and "createWorkspace(workspaceId: string" in services
+        and "create: (workspaceId, context)" in services
+    ):
         return
+    patch_path = MULTI_WORKSPACE_CREATE_PATCH_PATH if "tspi.workspace-directory" in sessions else MULTI_WORKSPACE_PATCH_PATH
     try:
-        subprocess.run(["git", "-C", str(source), "apply", str(MULTI_WORKSPACE_PATCH_PATH)], check=True, text=True)
+        subprocess.run(["git", "-C", str(source), "apply", str(patch_path)], check=True, text=True)
     except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply TSPi multi-workspace patch: {exc}") from exc
+        raise PiSourceError(f"failed to apply TSPi multi-workspace patch ({patch_path.name}): {exc}") from exc
 
 
 def apply_system_prompt_patch(source: Path) -> None:

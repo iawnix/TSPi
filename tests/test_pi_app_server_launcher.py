@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -53,6 +54,7 @@ def _installation(tmp_path: Path) -> launcher.Installation:
         runtime_manifest=root / ".agents/runtime/tspi/env.json",
         env_root=root / ".agents/envs/tspi",
         process_cache_root=root / ".pi/runtime-cache",
+        model_icons_config=root / ".pi/tspi/model-icons.json",
     )
 
 
@@ -84,6 +86,76 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     installed_launcher = install_root / "TSPi"
     installed_launcher.symlink_to(".pi/packages/tspi/current/agent/TSPi")
     return install_root, installed_launcher
+
+
+def test_resolve_installation_uses_configured_workspace_root(tmp_path: Path) -> None:
+    install_root, _launcher = _copy_launcher(tmp_path)
+    workspace_root = tmp_path / "research-projects"
+    config = install_root / ".pi/tspi/workspace-root.json"
+    config.parent.mkdir(parents=True)
+    config.write_text(json.dumps({
+        "schema_version": "tspi-workspace-root/1",
+        "workspace_root": str(workspace_root),
+    }) + "\n", encoding="utf-8")
+    package_root = install_root / ".pi/packages/tspi/current/agent"
+
+    installation = launcher.resolve_installation(package_root, install_root)
+
+    assert installation.workspaces_root == workspace_root
+
+
+def test_model_icon_marker_enables_tspi_style_and_preserves_explicit_style(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = _installation(tmp_path)
+    font = tmp_path / "fonts/TSPi-Model-Icons.ttf"
+    font.parent.mkdir()
+    font.write_bytes(b"font fixture")
+    marker = installation.model_icons_config
+    assert marker is not None
+    marker.parent.mkdir(parents=True)
+    marker.write_text(
+        json.dumps(
+            {
+                "schema_version": launcher.MODEL_ICON_CONFIG_SCHEMA,
+                "enabled": True,
+                "font_path": str(font),
+                "sha256": hashlib.sha256(font.read_bytes()).hexdigest(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("TSPI_ICON_STYLE", raising=False)
+
+    assert launcher.configure_model_icon_environment(installation) is True
+    assert os.environ["TSPI_ICON_STYLE"] == "tspi"
+
+    monkeypatch.setenv("TSPI_ICON_STYLE", "unicode")
+    assert launcher.configure_model_icon_environment(installation) is False
+    assert os.environ["TSPI_ICON_STYLE"] == "unicode"
+
+
+def test_invalid_model_icon_marker_does_not_enable_tspi_style(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    installation = _installation(tmp_path)
+    marker = installation.model_icons_config
+    assert marker is not None
+    marker.parent.mkdir(parents=True)
+    marker.write_text(
+        json.dumps(
+            {
+                "schema_version": launcher.MODEL_ICON_CONFIG_SCHEMA,
+                "enabled": True,
+                "font_path": str(tmp_path / "missing.ttf"),
+                "sha256": "0" * 64,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("TSPI_ICON_STYLE", raising=False)
+
+    assert launcher.configure_model_icon_environment(installation) is False
+    assert "TSPI_ICON_STYLE" not in os.environ
 
 
 def test_app_server_command_owns_workspace_state_and_forwards_pi_options(
@@ -422,6 +494,7 @@ def test_installed_app_server_is_the_exclusive_workspace_owner(tmp_path: Path) -
 @pytest.mark.parametrize(
     ("arguments", "message"),
     [
+        (["--host"], "managed by systemd"),
         (["--app-server", "--app-client"], "cannot be combined"),
         (["--app-client", "--allow-writes"], "was removed"),
         (["--app-server", "--session-id", "session-1"], "belongs to --app-client"),

@@ -33,8 +33,95 @@ def _options(tmp_path: Path):
 def test_non_interactive_options_select_only_web_as_optional_component(tmp_path: Path) -> None:
     args = _options(tmp_path)
     assert args.with_web is True
+    assert args.with_model_icons is False
     assert args.web_port == 8766
     assert not hasattr(args, "with_phone")
+
+
+def test_model_icon_options_are_mutually_exclusive(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    with_icons = wizard.parse_args(["--install-root", str(root), "--with-model-icons", "--non-interactive"])
+    without_icons = wizard.parse_args(["--install-root", str(root), "--without-model-icons", "--non-interactive"])
+
+    assert with_icons.with_model_icons is True
+    assert without_icons.with_model_icons is False
+    with pytest.raises(SystemExit):
+        wizard.parse_args([
+            "--install-root",
+            str(root),
+            "--with-model-icons",
+            "--without-model-icons",
+            "--non-interactive",
+        ])
+
+
+def test_model_icon_font_install_writes_private_marker_and_handles_missing_fc_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = tmp_path / "package"
+    source = package / "assets/fonts/tspi-model-icons.ttf"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"font fixture")
+    install_root = tmp_path / "install"
+    install_root.mkdir()
+    data_home = tmp_path / "xdg-data"
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
+    monkeypatch.setattr(wizard.shutil, "which", lambda _name: None)
+
+    result = wizard.install_model_icon_font(package, install_root, enabled=True)
+
+    target = data_home / "fonts/tspi/TSPi-Model-Icons.ttf"
+    marker = install_root / ".pi/tspi/model-icons.json"
+    assert result["status"] == "installed_cache_unavailable"
+    assert result["enabled"] is True
+    assert target.read_bytes() == source.read_bytes()
+    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+    assert stat.S_IMODE(marker.stat().st_mode) == 0o600
+    assert stat.S_IMODE(marker.parent.stat().st_mode) == 0o700
+    document = json.loads(marker.read_text(encoding="utf-8"))
+    assert document["enabled"] is True
+    assert document["font_path"] == str(target)
+    assert document["sha256"] == result["sha256"]
+
+
+def test_model_icon_font_can_be_disabled_without_removing_shared_font(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    package = tmp_path / "package"
+    source = package / "assets/fonts/tspi-model-icons.ttf"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"font fixture")
+    install_root = tmp_path / "install"
+    install_root.mkdir()
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-data"))
+    wizard.install_model_icon_font(package, install_root, enabled=True)
+
+    result = wizard.install_model_icon_font(package, install_root, enabled=False)
+
+    assert result["status"] == "disabled"
+    assert (tmp_path / "xdg-data/fonts/tspi/TSPi-Model-Icons.ttf").is_file()
+    assert json.loads((install_root / ".pi/tspi/model-icons.json").read_text(encoding="utf-8"))["enabled"] is False
+
+
+def test_update_preserves_workspace_root_and_radius_gateway_defaults(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    workspace_root = tmp_path / "research"
+    workspace_config = root / ".pi/tspi/workspace-root.json"
+    workspace_config.parent.mkdir(parents=True)
+    workspace_config.write_text(json.dumps({
+        "schema_version": "tspi-workspace-root/1",
+        "workspace_root": str(workspace_root),
+    }), encoding="utf-8")
+    phone = root / ".pi/app-server-host/phone-connection.json"
+    phone.parent.mkdir(parents=True)
+    phone.write_text(json.dumps({"radius_gateway": "wss://radius.example.test"}), encoding="utf-8")
+    args = wizard.parse_args([
+        "--install-root", str(root), "--without-web", "--service-scope", "none", "--non-interactive",
+    ])
+
+    wizard.validate_options(args)
+
+    assert args.workspace_root == str(workspace_root)
+    assert args.radius_gateway == "wss://radius.example.test"
 
 
 def test_non_interactive_smtp_options_write_only_a_secure_credential_reference(tmp_path: Path) -> None:
@@ -50,7 +137,7 @@ def test_non_interactive_smtp_options_write_only_a_secure_credential_reference(t
         "--email-provider", "smtp",
         "--email-preset", "qq",
         "--email-recipient", "receiver@example.org",
-        "--email-username", "sender@qq.com",
+        "--email-address", "sender@qq.com",
         "--email-password-file", str(password_file),
     ])
     wizard.validate_options(args)
@@ -94,7 +181,16 @@ def test_interactive_smtp_password_is_written_to_the_default_private_file(tmp_pa
 def test_clawemail_options_write_compatible_configuration(tmp_path: Path) -> None:
     root = tmp_path / "install"
     clawemail = tmp_path / "clawemail"
-    clawemail.mkdir()
+    (clawemail / "bin").mkdir(parents=True)
+    (clawemail / ".clawemail").mkdir()
+    (clawemail / "SKILL.md").write_text("---\nname: clawemail\n---\n", encoding="utf-8")
+    manager = clawemail / "bin/clawemail-manager"
+    manager.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    manager.chmod(0o755)
+    for name in ("skill.json", "mail-cli.json"):
+        path = clawemail / ".clawemail" / name
+        path.write_text("{}\n", encoding="utf-8")
+        path.chmod(0o600)
     args = wizard.parse_args([
         "--install-root", str(root),
         "--without-web",
@@ -120,7 +216,8 @@ def test_app_server_service_is_one_installation_host(tmp_path: Path) -> None:
     unit = wizard.app_server_unit(args)
 
     assert f"WorkingDirectory={root}" in unit
-    assert f'ExecStart="{root / "TSPi"}" --host' in unit
+    assert f'ExecStart="{root / "TSPi"}" --service-host' in unit
+    assert "Environment=TSPI_SYSTEMD_HOST=1" in unit
     assert 'Environment="XDG_RUNTIME_DIR=' in unit
     assert f'PI_CODING_AGENT_DIR={root / ".pi/agent"}' in unit
     assert 'ReadWritePaths="/run/user/' in unit
@@ -141,6 +238,8 @@ def test_web_service_uses_installed_launcher_and_workspace_root(tmp_path: Path) 
     assert f'ExecStart="{root / "TSWeb"}"' in unit
     assert str(root / "workspaces") in unit
     assert str(root / ".pi/ts-web/auth.token") in unit
+    assert f'ReadOnlyPaths="{root / "workspaces"}"' in unit
+    assert f'ReadWritePaths="{root / "workspaces"}"' not in unit
 
 
 def test_prepare_app_server_runtime_uses_installed_release_script(
@@ -300,7 +399,7 @@ def test_service_ownership_rejects_a_different_installation(
         wizard.validate_service_ownership(args)
 
 
-def test_component_summary_exposes_app_server_and_no_phone(tmp_path: Path) -> None:
+def test_component_summary_exposes_app_server_and_phone_connection(tmp_path: Path) -> None:
     args = _options(tmp_path)
     runtime = tmp_path / "install/.pi/runtime-cache/pi/commit"
     components = wizard.build_component_summary(
@@ -312,8 +411,147 @@ def test_component_summary_exposes_app_server_and_no_phone(tmp_path: Path) -> No
     )
     assert components["app_server"]["runtime"] == str(runtime)
     assert components["app_server"]["server_id"].endswith("/.pi/app-server-host/server-id")
-    assert components["app_server"]["start"].endswith("/TSPi --host")
-    assert "phone" not in components
+    assert components["app_server"]["start"] == "systemctl --user start ts-app-server-tspi.service"
+    assert components["phone"]["tool_access"] == "same_as_terminal"
+    assert components["phone"]["protocol_version"] == 8
+
+
+def test_custom_workspace_root_flows_into_host_and_web_services(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "research"
+    args = wizard.parse_args([
+        "--install-root", str(tmp_path / "install"),
+        "--workspace-root", str(workspace_root),
+        "--with-web",
+        "--service-scope", "user",
+        "--non-interactive",
+    ])
+    wizard.validate_options(args)
+
+    assert args.workspace_root == str(workspace_root)
+    assert f'ReadWritePaths="{workspace_root}"' in wizard.app_server_unit(args)
+    web_unit = wizard.web_unit(args)
+    assert '"--workspace-root"' in web_unit
+    assert f'"{workspace_root}"' in web_unit
+    assert f'ReadOnlyPaths="{workspace_root}"' in web_unit
+
+
+def test_workspace_root_rejects_an_installation_ancestor(tmp_path: Path) -> None:
+    args = wizard.parse_args([
+        "--install-root", str(tmp_path / "install"),
+        "--workspace-root", str(tmp_path),
+        "--without-web", "--service-scope", "none", "--non-interactive",
+    ])
+
+    with pytest.raises(ValueError, match="dedicated directory"):
+        wizard.validate_options(args)
+
+
+def test_phone_manifest_is_secret_free_and_keeps_terminal_tool_access(tmp_path: Path) -> None:
+    args = _options(tmp_path)
+    root = Path(args.install_root)
+    (root / ".pi/tspi").mkdir(parents=True)
+    wizard.configure_workspace_root(args)
+    args.radius_gateway = "wss://radius.example.test"
+
+    result = wizard.configure_phone_connection(args)
+
+    manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+    assert manifest["radius_gateway"] == "wss://radius.example.test"
+    assert manifest["tool_access"] == "same_as_terminal"
+    assert manifest["protocol_version"] == 8
+    assert "token" not in manifest
+    assert "secret" not in manifest
+
+
+def test_custom_smtp_provider_writes_explicit_host(tmp_path: Path) -> None:
+    password_file = tmp_path / "smtp-password"
+    password_file.write_text("authorization-code\n", encoding="utf-8")
+    password_file.chmod(0o600)
+    args = wizard.parse_args([
+        "--install-root", str(tmp_path / "install"),
+        "--without-web", "--service-scope", "none", "--non-interactive",
+        "--email-provider", "smtp", "--email-preset", "custom",
+        "--email-host", "mail.example.test", "--email-port", "587",
+        "--email-security", "starttls", "--email-recipient", "receiver@example.org",
+        "--email-username", "sender@example.org", "--email-password-file", str(password_file),
+    ])
+    wizard.validate_options(args)
+
+    wizard.configure_notification_config(args)
+
+    content = (Path(args.install_root) / ".pi/notifications.toml").read_text(encoding="utf-8")
+    assert 'preset = "custom"' in content
+    assert 'host = "mail.example.test"' in content
+
+
+def test_remote_probe_records_readiness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    args = _options(tmp_path)
+    args.probe_remote = True
+    configs = {"remote": {"status": "configured", "path": "/remote.toml", "doctor": "not_probed"}}
+    monkeypatch.setattr(
+        wizard.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 0, stdout="ready\n", stderr=""),
+    )
+
+    wizard.probe_remote_backend(args, configs)
+
+    assert configs["remote"]["doctor"] == "ready"
+
+
+def test_install_log_is_date_named_and_appends_same_day_runs(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    path = wizard.append_install_log(root, "first-run", "status=success")
+    same = wizard.append_install_log(root, "second-run", "status=failure")
+
+    assert same == path
+    assert path.name == f"install.{wizard.datetime.now().strftime('%Y.%m.%d')}.log"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    content = path.read_text(encoding="utf-8")
+    assert "first-run" in content
+    assert "===== install run " in content
+    assert "second-run" in content
+
+
+def test_logged_package_step_is_kept_in_date_named_log(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    result = wizard.run_logged_install(
+        [wizard.sys.executable, "-c", "import json; print(json.dumps({'ok': True}))"],
+        root,
+        show_progress=False,
+    )
+
+    assert result == {"ok": True}
+    log = root / ".pi" / "logs" / f"install.{wizard.datetime.now().strftime('%Y.%m.%d')}.log"
+    assert log.is_file()
+    assert '"ok": true' in log.read_text(encoding="utf-8")
+
+
+def test_interactive_remote_toml_is_validated_and_written_private(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    ssh_config = tmp_path / "ssh-config"
+    ssh_config.write_text("Host cluster\n", encoding="utf-8")
+    ssh_config.chmod(0o600)
+    args = wizard.parse_args([
+        "--install-root", str(root), "--without-web", "--service-scope", "none", "--non-interactive",
+    ])
+    args._remote_config_content = "\n".join([
+        'default_profile = "cluster"',
+        '[profiles."cluster"]',
+        'ssh_host = "cluster"',
+        f'ssh_config = "{ssh_config}"',
+        'scheduler = "torque"',
+        'remote_root = "/srv/tspi"',
+        'allowed_queues = ["batch"]',
+        '',
+    ])
+    wizard.validate_options(args)
+    configs = wizard.configure_backend_configs(args)
+
+    destination = root / ".pi" / "remote.toml"
+    assert configs["remote"]["source"] == "interactive"
+    assert destination.read_text(encoding="utf-8") == args._remote_config_content
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o600
 
 
 def test_install_uninstaller_copies_recovery_files_and_marks_ownership(tmp_path: Path) -> None:

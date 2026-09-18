@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ts_agent import remote as ts_remote
 from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
-from ts_agent.backends.base import Backend, BackendTask
+from ts_agent.backends.base import Backend, BackendTask, configured_backend
 from ts_agent.backends.gaussian import GaussianBackend, prepare_gaussian
 from ts_agent.render import MolVisualizer
 from ts_agent.structures import compare_structures
@@ -35,6 +35,24 @@ def test_backend_prepares_command_without_workspace_write() -> None:
         "nodes/node_1/outputs/gaussian.out"
     ]
     assert isinstance(GaussianBackend(), Backend)
+
+
+def test_local_backend_config_loads_activation_script(tmp_path: Path, monkeypatch) -> None:
+    activation = tmp_path / "activate.sh"
+    activation.write_text("export TSPI_TEST_ACTIVATED=1\n", encoding="utf-8")
+    config = tmp_path / "local.toml"
+    config.write_text(
+        "[backends.gaussian]\n"
+        "command = \"/opt/gaussian/g16\"\n"
+        f"activation_script = \"{activation}\"\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TS_LOCAL_CONFIG", str(config))
+
+    selected = configured_backend("gaussian", "g16")
+
+    assert selected.command == "/opt/gaussian/g16"
+    assert selected.activation_script == str(activation)
 
 
 def test_remote_boundary_exposes_scheduler_lifecycle_without_raw_runner() -> None:

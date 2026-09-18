@@ -24,7 +24,7 @@ from ts_agent.backends.ase_neb import (
     validate_ase_neb_endpoints,
     write_ase_neb_parse_artifacts,
 )
-from ts_agent.backends.base import BackendTask, PreparedTask
+from ts_agent.backends.base import BackendTask, PreparedTask, configured_backend
 from ts_agent.backends.crest import (
     CREST_REQUIRED_ARTIFACTS,
     parse_crest_artifacts,
@@ -81,6 +81,7 @@ from .contracts import (
 )
 from .task_validation import parsed_program_outcome, validate_parsed_task
 from . import local_lifecycle
+from .config import ComputeConfigurationError, SoftwareProvider, load_config as load_compute_config
 
 
 INTENT_SCHEMA = "calculation_intent.schema.json"
@@ -363,7 +364,7 @@ def prepare_calculation(
         "intent_digest": sha256_json(intent),
         "attempt_kind": intent["attempt_kind"],
         "prepared_at": now_iso(),
-        "prepared_task": asdict(prepared),
+        "prepared_task": _prepared_task_dict(prepared),
         "execution_policy": execution_policy,
     }
     if prepared_path.exists():
@@ -778,6 +779,11 @@ def _local_job_config(
         input_paths=tuple(workspace / _workspace_ref(workspace, ref, read=True) for ref in input_refs),
         expected_artifacts=expected,
         environment={str(key): str(value) for key, value in (prepared_task.get("environment") or {}).items()},
+        activation_script=(
+            str(prepared_task["activation_script"])
+            if prepared_task.get("activation_script") is not None
+            else None
+        ),
         stdin_name=stdin_name,
         stdout_name=(
             "local_job.stdout"
@@ -1428,13 +1434,38 @@ def _materialize_execution_target(
     intent_id: str,
 ) -> dict[str, Any]:
     if request_target["kind"] == "local":
-        return {"kind": "local"}
+        profile_name = request_target.get("profile")
+        if profile_name is not None:
+            if not isinstance(profile_name, str) or not profile_name:
+                raise ComputeContractError("local execution profile must be a non-empty string")
+            try:
+                _compute_profile(profile_name, kind="local")
+            except ComputeConfigurationError as exc:
+                raise ComputeContractError(f"invalid local compute profile: {exc}") from exc
+            return {"kind": "local", "profile": profile_name}
+        # Keep the compact compatibility target valid.  The default local profile is
+        # resolved and captured during preparation when a unified config is
+        # installed.
+        try:
+            configured = load_compute_config()
+        except ComputeConfigurationError:
+            return {"kind": "local"}
+        default_profile = configured.profiles.get(configured.default_profile)
+        if default_profile is not None and default_profile.kind == "local":
+            return {"kind": "local", "profile": configured.default_profile}
+        local_profiles = [
+            profile.name for profile in configured.profiles.values() if profile.kind == "local"
+        ]
+        if len(local_profiles) == 1:
+            return {"kind": "local", "profile": local_profiles[0]}
+        raise ComputeContractError(
+            "local execution requires profile when compute.toml has no unambiguous local default"
+        )
     try:
-        remote_config = load_remote_config()
-        profile = remote_config.profile(str(request_target["profile"]))
+        profile = _remote_profile(str(request_target["profile"]))
         resources = RemoteResources.from_mapping(request_target["resources"])
         identity = workspace_id(workspace, create=True)
-    except (RemoteConfigurationError, WorkspaceIdentityError) as exc:
+    except (ComputeConfigurationError, RemoteConfigurationError, WorkspaceIdentityError) as exc:
         raise ComputeContractError(f"cannot materialize ts_remote target: {exc}") from exc
     _validate_profile_resources(profile, resources)
     remote_dir = str(
@@ -1514,7 +1545,161 @@ def _prepared_task_for_intent(
         require_inputs=verify_inputs,
     )
     _validate_required_backend_artifacts(intent, normalized)
-    return normalized
+    return _apply_compute_profile(workspace, intent, normalized)
+
+
+def _prepared_task_dict(prepared: PreparedTask) -> dict[str, Any]:
+    """Serialize optional local activation only when it is configured."""
+    value = asdict(prepared)
+    if value.get("activation_script") is None:
+        value.pop("activation_script", None)
+    return value
+
+
+def _backend_provider_name(backend: str) -> str:
+    return "ase_neb_xtb" if backend == "ase_neb" else backend
+
+
+def _backend_provider_names(backend: str) -> tuple[str, ...]:
+    if backend == "ase_neb":
+        return ("ase_neb_xtb", "ase_neb")
+    return (backend,)
+
+
+def _compute_profile(name: str | None = None, *, kind: str | None = None):
+    """Load one profile from the unified config, preserving compatibility fallback."""
+    return load_compute_config().profile(name, kind=kind)
+
+
+def _compute_config_is_selected() -> bool:
+    if os.environ.get("TS_COMPUTE_CONFIG", "").strip():
+        return True
+    install_root = os.environ.get("TSPI_INSTALL_ROOT", "").strip()
+    return bool(
+        install_root
+        and (Path(install_root) / ".pi" / "compute.toml").is_file()
+    )
+
+
+def _remote_profile(name: str):
+    """Resolve a remote profile from compute.toml or the existing remote file."""
+    # A caller-provided TS_REMOTE_CONFIG is an explicit compatibility override
+    # unless a TS_COMPUTE_CONFIG was explicitly selected alongside it.
+    if os.environ.get("TS_REMOTE_CONFIG", "").strip() and not os.environ.get("TS_COMPUTE_CONFIG", "").strip():
+        return load_remote_config().profile(name)
+    try:
+        configured = load_compute_config()
+    except ComputeConfigurationError as exc:
+        # An explicitly selected unified file must fail loudly.  When no
+        # unified file is configured, continue to the existing remote loader.
+        if _compute_config_is_selected():
+            raise
+    else:
+        profile = configured.profile(name, kind="remote")
+        if profile.remote is None:
+            raise ComputeConfigurationError(f"compute profile {name!r} has no remote contract")
+        return profile.remote
+    return load_remote_config().profile(name)
+
+
+def _software_provider(workspace: Path, intent: dict[str, Any], backend: str) -> SoftwareProvider | None:
+    target = intent.get("execution_target") or {}
+    kind = str(target.get("kind"))
+    profile_name = target.get("profile") if isinstance(target.get("profile"), str) else None
+    provider_name = _backend_provider_name(backend)
+    provider_names = _backend_provider_names(backend)
+    if kind == "remote":
+        profile = _remote_profile(str(profile_name))
+        value = next(
+            (profile.software.get(name) for name in provider_names if profile.software.get(name)),
+            None,
+        )
+        if value is None:
+            raise ComputeConfigurationError(
+                f"remote profile {profile.name!r} does not configure software.{provider_name}"
+            )
+        return SoftwareProvider(
+            command=value.command,
+            activation_script=value.activation_script,
+            scratch_root=value.scratch_root,
+            environment=dict(value.environment),
+        )
+    try:
+        configured = load_compute_config()
+    except ComputeConfigurationError as exc:
+        if _compute_config_is_selected():
+            raise
+    else:
+        if profile_name is None:
+            default_profile = configured.profiles.get(configured.default_profile)
+            if default_profile is not None and default_profile.kind == "local":
+                profile = default_profile
+            else:
+                local_profiles = [
+                    item for item in configured.profiles.values() if item.kind == "local"
+                ]
+                if len(local_profiles) != 1:
+                    raise ComputeConfigurationError("local execution has no unambiguous profile")
+                profile = local_profiles[0]
+        else:
+            profile = configured.profile(profile_name, kind="local")
+        value = next(
+            (profile.software.get(name) for name in provider_names if profile.software.get(name)),
+            None,
+        )
+        if value is None:
+            raise ComputeConfigurationError(
+                f"local profile {profile.name!r} does not configure software.{provider_name}"
+            )
+        return value
+    # Existing local.toml and built-in defaults remain valid when no unified
+    # configuration is present.
+    default = {
+        "gaussian": "g16",
+        "xtb": "xtb",
+        "crest": "crest",
+        "ase_neb_xtb": "xtb",
+    }.get(provider_name, provider_name)
+    configured = configured_backend(provider_name, default)
+    return SoftwareProvider(
+        command=(configured.command,),
+        activation_script=configured.activation_script,
+    )
+
+
+def _apply_compute_profile(
+    workspace: Path,
+    intent: dict[str, Any],
+    prepared: PreparedTask,
+) -> PreparedTask:
+    try:
+        provider = _software_provider(workspace, intent, prepared.backend)
+    except (ComputeConfigurationError, RemoteConfigurationError) as exc:
+        raise ComputeContractError(f"invalid compute software provider: {exc}") from exc
+    if provider is None or not provider.command:
+        return prepared
+    command = list(prepared.command)
+    if prepared.backend == "ase_neb":
+        # The ASE runner launches xTB itself; bind that provider via the
+        # prepared environment. A remote profile also selects its Python.
+        environment = {
+            **prepared.environment,
+            **provider.environment,
+        }
+        environment.setdefault("TS_ASE_NEB_XTB", provider.command[0])
+        if intent.get("execution_target", {}).get("kind") == "remote":
+            # On a remote platform the provider command names the remote
+            # Python runtime that owns ASE and the runner module.
+            command = list(provider.command) + command[1:]
+    else:
+        command = list(provider.command) + command[1:]
+        environment = {**prepared.environment, **provider.environment}
+    activation = (
+        provider.activation_script
+        if intent.get("execution_target", {}).get("kind") == "local"
+        else prepared.activation_script
+    )
+    return replace(prepared, command=command, environment=environment, activation_script=activation)
 
 
 def _validate_required_backend_artifacts(intent: dict[str, Any], prepared: PreparedTask) -> None:
@@ -1562,12 +1747,20 @@ def _normalize_prepared_task(
 
 def _validate_execution_target(target: dict[str, Any]) -> dict[str, Any]:
     if target["kind"] == "local":
+        profile_name = target.get("profile")
+        if profile_name is not None:
+            if not isinstance(profile_name, str) or not profile_name:
+                raise ComputeContractError("local execution profile must be a non-empty string")
+            try:
+                _compute_profile(profile_name, kind="local")
+            except ComputeConfigurationError as exc:
+                raise ComputeContractError(f"invalid local compute profile: {exc}") from exc
+            return {"kind": "local", "profile": profile_name}
         return {"kind": "local"}
     try:
-        configured = load_remote_config()
-        profile = configured.profile(str(target["profile"]))
+        profile = _remote_profile(str(target["profile"]))
         resources = RemoteResources.from_mapping(target["resources"])
-    except (KeyError, RemoteConfigurationError) as exc:
+    except (KeyError, ComputeConfigurationError, RemoteConfigurationError) as exc:
         raise ComputeContractError(f"invalid ts_remote target: {exc}") from exc
     _validate_profile_resources(profile, resources)
     return {
@@ -1598,8 +1791,7 @@ def _execution_policy_for_prepare(
         identity = workspace_id(workspace, create=create_identity)
     except WorkspaceIdentityError as exc:
         raise ComputeContractError(f"cannot bind remote calculation to workspace identity: {exc}") from exc
-    configured = load_remote_config()
-    profile = configured.profile(str(policy["profile"]))
+    profile = _remote_profile(str(policy["profile"]))
     expected_dir = str(
         PurePosixPath(profile.remote_root)
         / "workspaces"
@@ -1645,9 +1837,9 @@ def _remote_job_config(
         raise ComputeContractError("expected remote artifacts have colliding basenames")
     _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
     try:
-        profile = load_remote_config().profile(str(target["profile"]))
+        profile = _remote_profile(str(target["profile"]))
         resources = RemoteResources.from_mapping(target["resources"])
-    except RemoteConfigurationError as exc:
+    except (ComputeConfigurationError, RemoteConfigurationError) as exc:
         raise ComputeContractError(f"invalid prepared ts_remote target: {exc}") from exc
     _validate_profile_resources(profile, resources)
     command = tuple(_rewritten_remote_command(prepared_task))
@@ -1905,7 +2097,7 @@ def _load_prepared(
         raise ComputeContractError("prepared calculation scope does not match its intent")
     if prepared.get("schema_version") != "ts-compute-prepared/1" or prepared.get("intent_id") != intent_id:
         raise ComputeContractError("prepared calculation metadata is invalid")
-    expected_task = asdict(
+    expected_task = _prepared_task_dict(
         _prepared_task_for_intent(workspace, intent, verify_inputs=False)
     )
     if prepared.get("prepared_task") != expected_task:

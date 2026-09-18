@@ -36,6 +36,7 @@ DELIVERY_DIR_REF = "reports/email/deliveries"
 SMTP_PRESETS: dict[str, dict[str, Any]] = {
     "163": {"host": "smtp.163.com", "port": 465, "security": "ssl"},
     "qq": {"host": "smtp.qq.com", "port": 465, "security": "ssl"},
+    "custom": {"host": None, "port": 465, "security": "ssl"},
 }
 SMTP_SECURITY = frozenset({"ssl", "starttls"})
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -294,7 +295,7 @@ def _load_smtp_config(
     host = bounded_text(email.get("host", defaults["host"]), "notifications.email.host", 255)
     if any(character.isspace() for character in host) or "/" in host or "@" in host:
         raise ValueError("notifications.email.host must be a hostname")
-    if host != defaults["host"]:
+    if preset != "custom" and host != defaults["host"]:
         raise ValueError(f"notifications.email.host must be {defaults['host']} for preset {preset}")
     port = email.get("port", defaults["port"])
     if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:

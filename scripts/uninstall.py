@@ -13,10 +13,10 @@ import sys
 from pathlib import Path
 
 try:
-    from ._installation_metadata import read_installation_metadata
+    from ._installation_metadata import read_installation_metadata, read_workspace_root
     from ._terminal_ui import Spinner, ask_text as ask, ask_yes_no, failure, field, note, section, success, title
 except ImportError:
-    from _installation_metadata import read_installation_metadata
+    from _installation_metadata import read_installation_metadata, read_workspace_root
     from _terminal_ui import Spinner, ask_text as ask, ask_yes_no, failure, field, note, section, success, title
 
 
@@ -278,6 +278,14 @@ def prune_empty_parents(root: Path) -> None:
 def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[str, object]:
     root = validate_root(Path(args.install_root))
     choose_options(args, root)
+    try:
+        workspace_root = read_workspace_root(root)
+    except ValueError:
+        if args.purge_workspaces:
+            raise
+        workspace_root = root / "workspaces"
+    if args.purge_workspaces:
+        workspace_root = _validated_workspace_purge_target(root, workspace_root)
     activity = Spinner("Stopping TSPi services", stream=sys.stderr, enabled=show_progress)
     activity.start()
     try:
@@ -303,6 +311,7 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
             managed.extend([
                 root / ".pi/tspi",
                 root / ".pi/app-server-host/server-id",
+                root / ".pi/app-server-host/phone-connection.json",
                 root / ".pi/app-server-host/workspace",
                 root / ".pi/agent",
                 root / ".pi/email",
@@ -311,6 +320,7 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
                 root / ".pi/ts-web",
                 root / ".pi/remote.toml",
                 root / ".pi/local.toml",
+                root / ".pi/compute.toml",
                 root / ".pi/notifications.toml",
                 root / "uninstall.sh",
             ])
@@ -318,7 +328,7 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
             managed.extend([root / ".agents/runtime/tspi", root / ".agents/envs/tspi"])
         if args.purge_workspaces:
             managed.extend([
-                root / "workspaces",
+                workspace_root,
                 root / ".pi/app-server-host/sessions",
             ])
         if args.purge_all:
@@ -330,12 +340,31 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
             removed.extend(remove_paths([root]))
         removed.extend(service_units)
         activity.succeed("TSPi application files removed")
-        return {"ok": True, "install_root": str(root), "stopped_services": stopped, "removed": removed,
+        return {"ok": True, "install_root": str(root), "workspace_root": str(workspace_root), "stopped_services": stopped, "removed": removed,
                 "preserved_workspaces": not args.purge_workspaces, "preserved_config": not args.purge_config,
                 "preserved_runtime": not args.purge_runtime}
     except BaseException:
         activity.fail("TSPi uninstall failed")
         raise
+
+
+def _validated_workspace_purge_target(root: Path, configured: Path) -> Path:
+    if not configured.is_absolute() or configured.is_symlink():
+        raise ValueError(f"configured workspace root is unsafe: {configured}")
+    resolved = configured.resolve()
+    home = Path.home().resolve()
+    if (
+        resolved.parent == Path("/")
+        or resolved == home
+        or resolved in home.parents
+        or resolved == root
+        or resolved in root.parents
+    ):
+        raise ValueError(f"refusing to purge broad workspace root: {resolved}")
+    for protected in (root / ".pi", root / ".agents"):
+        if resolved == protected or protected in resolved.parents:
+            raise ValueError(f"refusing to purge workspace root inside installation state: {resolved}")
+    return resolved
 
 
 def main(argv: list[str] | None = None) -> int:

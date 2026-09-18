@@ -1,0 +1,46 @@
+# Unified compute configuration.
+# Copy to the installation-owned .pi/compute.toml and edit the providers
+# available on each execution platform. A profile is one software provider
+# platform; kind controls how jobs reach it.
+
+default_profile = "local"
+
+[profiles.local]
+kind = "local"
+
+[profiles.local.software.gaussian]
+command = "/home/iaw/soft/gaussian/current/g16/g16"
+activation_script = "/home/iaw/soft/gaussian/activate_gaussian16.sh"
+
+[profiles.local.software.xtb]
+command = "/home/iaw/soft/xtb/current/bin/xtb"
+activation_script = "/home/iaw/soft/xtb/current/activate_xtb.sh"
+
+[profiles.local.software.ase_neb_xtb]
+command = "/home/iaw/soft/xtb/current/bin/xtb"
+activation_script = "/home/iaw/soft/xtb/current/activate_xtb.sh"
+
+[profiles.local.software.crest]
+command = "/home/iaw/soft/crest/current/bin/crest"
+activation_script = "/home/iaw/soft/crest/activate_crest.sh"
+
+# Add one or more remote software platforms below. Commands are arrays
+# because the remote scheduler script may need fixed command arguments.
+#
+# [profiles.cluster_1w]
+# kind = "remote"
+# ssh_host = "agent.1w"
+# ssh_config = "/home/me/.ssh/config"
+# scheduler = "torque"
+# remote_root = "/home/me/ts-remote-workspaces"
+# allowed_queues = ["batch", "fat"]
+# max_nodes = 1
+#
+# [profiles.cluster_1w.software.gaussian]
+# command = ["g16"]
+# activation_script = "/home/me/soft/gaussian/activate.sh"
+# allowed_queues = ["batch", "fat"]
+#
+# [profiles.cluster_1w.software.xtb]
+# command = ["xtb"]
+# allowed_queues = ["batch", "fat"]

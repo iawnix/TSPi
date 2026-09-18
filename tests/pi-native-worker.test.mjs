@@ -277,7 +277,7 @@ test("native ts_import writes a semantic input basename", {
   }
 });
 
-test("native Pi server starts a TSPi Harness with native research tools", { skip: !sourceRoot }, async () => {
+test("native Pi server gives every client the complete Agent tool inventory", { skip: !sourceRoot }, async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-worker-"));
   const agentDir = join(root, "agent");
   await mkdir(agentDir, { recursive: true });
@@ -338,17 +338,7 @@ test("native Pi server starts a TSPi Harness with native research tools", { skip
     }
     assert.ok(runtime.workerPids.has(summary.sessionId), "native Worker did not start");
     const state = await readExperimentalSessionState(runtime.sessionDir, summary.sessionId);
-    assert.deepEqual(state.activeTools, ["read", "sys_prompt", "ts_state", "ts_remote"]);
-
-    process.env.TSPI_NATIVE_WRITES = "1";
-    const writable = await management.create({ id: "native-writable-tools" }, BACKGROUND_CONTEXT);
-    await management.attach(writable.sessionId, BACKGROUND_CONTEXT);
-    for (let index = 0; index < 80 && !runtime.workerPids.has(writable.sessionId); index++) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    assert.ok(runtime.workerPids.has(writable.sessionId), "writable native Worker did not start");
-    const writableState = await readExperimentalSessionState(runtime.sessionDir, writable.sessionId);
-    assert.deepEqual(writableState.activeTools, [
+    assert.deepEqual(state.activeTools, [
       "read", "sys_prompt", "write", "bash", "ts_state", "ts_change", "ts_remote",
       "ts_calc", "ts_review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze", "ts_manage", "ts_import",
       "ts_render", "ts_report", "ts_notify",

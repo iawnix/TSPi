@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,7 +8,7 @@ import test from "node:test";
 
 const sourceRoot = process.env.TSPI_PI_SOURCE;
 
-async function startNativeServer(root, { workspaceRoot } = {}) {
+async function startNativeServer(root, { workspaceRoot, python } = {}) {
   const child = spawn(process.execPath, [
     "apps/app-server/pi-app-server.mjs", "server", "--source-root", sourceRoot,
     "--directory", join(root, "server"), "--workspace", root, "--session-dir", join(root, "sessions"),
@@ -19,6 +19,7 @@ async function startNativeServer(root, { workspaceRoot } = {}) {
       PI_OFFLINE: "1",
       PI_CODING_AGENT_DIR: join(root, "agent"),
       ...(workspaceRoot === undefined ? {} : { TSPI_WORKSPACE_ROOT: workspaceRoot }),
+      ...(python === undefined ? {} : { TS_AGENT_PYTHON: python }),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -324,6 +325,14 @@ test("native Pi app server exposes direct workspaces and binds session cwd", { s
   await mkdir(join(root, "agent"), { recursive: true });
   await mkdir(projectA, { recursive: true });
   await mkdir(projectB, { recursive: true });
+  const bootstrapPython = join(root, "bootstrap-python.mjs");
+  await writeFile(bootstrapPython, `#!/usr/bin/env node
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const workspace = process.argv.at(-1);
+mkdirSync(workspace, { recursive: true, mode: 0o700 });
+writeFileSync(join(workspace, "workspace.json"), JSON.stringify({ schema_version: "ts-workspace/6" }));
+`, { mode: 0o700 });
   await writeFile(join(root, "agent", "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test-key" } }), { mode: 0o600 });
   for (const [directory, workspaceId] of [[projectA, "ws_aaaaaaaaaaaaaaaaaaaaaaaa"], [projectB, "ws_bbbbbbbbbbbbbbbbbbbbbbbb"]]) {
     await writeFile(join(directory, "workspace.json"), JSON.stringify({
@@ -335,7 +344,7 @@ test("native Pi app server exposes direct workspaces and binds session cwd", { s
   }
   await mkdir(join(projectA, "nested"));
   await symlink(projectA, join(workspaceRoot, "project-a-alias"));
-  const server = await startNativeServer(root, { workspaceRoot });
+  const server = await startNativeServer(root, { workspaceRoot, python: bootstrapPython });
   let serverClient;
   let services;
   let backgroundContext;
@@ -359,8 +368,16 @@ test("native Pi app server exposes direct workspaces and binds session cwd", { s
       { workspaceId: "project-b", name: "project-b", root: projectB },
     ]);
 
+    const projectC = join(workspaceRoot, "project-c");
+    const createdWorkspace = await services.use(WorkspaceDirectory).create("project-c", backgroundContext);
+    assert.deepEqual(createdWorkspace, { workspaceId: "project-c", name: "project-c", root: projectC });
+    assert.equal(JSON.parse(await readFile(join(projectC, "workspace.json"))).schema_version, "ts-workspace/6");
+    await assert.rejects(services.use(WorkspaceDirectory).create("../outside", backgroundContext));
+
     const created = await services.use(SessionManagement).create({ cwd: projectA }, backgroundContext);
     assert.equal(created.cwd, projectA);
+    const workspaceSession = await services.use(SessionManagement).create({ workspaceId: "project-c" }, backgroundContext);
+    assert.equal(workspaceSession.cwd, projectC);
     await assert.rejects(services.use(SessionManagement).create({ cwd: workspaceRoot }, backgroundContext));
     await assert.rejects(services.use(SessionManagement).create({ cwd: join(projectA, "nested") }, backgroundContext));
     await assert.rejects(services.use(SessionManagement).create({ cwd: join(workspaceRoot, "project-a-alias") }, backgroundContext));

@@ -23,7 +23,7 @@ from pathlib import Path
 
 try:
     from ._credentials import provision_service_credentials
-    from ._installation_metadata import read_installation_metadata
+    from ._installation_metadata import read_installation_metadata, read_workspace_root, write_workspace_root
     from ._terminal_ui import (
         Spinner,
         ask_text as ask,
@@ -37,9 +37,10 @@ try:
     )
     from .install_from_github import install_uninstaller, validate_commit, validate_ref, validate_repo
     from .install_release import validate_install_root
+    from .model_icons import install_model_icon_font
 except ImportError:
     from _credentials import provision_service_credentials
-    from _installation_metadata import read_installation_metadata
+    from _installation_metadata import read_installation_metadata, read_workspace_root, write_workspace_root
     from _terminal_ui import (
         Spinner,
         ask_text as ask,
@@ -53,6 +54,7 @@ except ImportError:
     )
     from install_from_github import install_uninstaller, validate_commit, validate_ref, validate_repo
     from install_release import validate_install_root
+    from model_icons import install_model_icon_font
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +65,7 @@ EMAIL_PROVIDERS = {"clawemail", "smtp"}
 SMTP_PRESETS = {
     "163": "smtp.163.com",
     "qq": "smtp.qq.com",
+    "custom": None,
 }
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -174,6 +177,7 @@ def inspect_installation(root: Path) -> dict[str, str | None]:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--install-root")
+    parser.add_argument("--workspace-root", help="Absolute directory containing named research workspaces.")
     parser.add_argument("--tspi-repo", default=DEFAULT_REPO)
     parser.add_argument("--tspi-ref", default=os.environ.get("TSPI_INSTALL_REF", "main"))
     parser.add_argument("--tspi-commit", help=argparse.SUPPRESS)
@@ -181,12 +185,32 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     web.add_argument("--with-web", dest="with_web", action="store_true", help="Install TS Web.")
     web.add_argument("--without-web", dest="with_web", action="store_false", help="Skip TS Web installation.")
     parser.set_defaults(with_web=None)
+    icons = parser.add_mutually_exclusive_group()
+    icons.add_argument(
+        "--with-model-icons",
+        dest="with_model_icons",
+        action="store_true",
+        help="Install the optional TSPi model icon font.",
+    )
+    icons.add_argument(
+        "--without-model-icons",
+        dest="with_model_icons",
+        action="store_false",
+        help="Do not install the optional TSPi model icon font.",
+    )
+    parser.set_defaults(with_model_icons=None)
     parser.add_argument("--web-port", type=int, help="TS Web HTTP port.")
     parser.add_argument("--web-host", default="127.0.0.1", help="TS Web listen address.")
     parser.add_argument("--allow-remote", action="store_true", help="Allow TS Web to listen on a non-loopback address.")
     parser.add_argument("--web-auth-token-file", help="TS Web token file (must be inside the installation root).")
+    parser.add_argument(
+        "--web-auth-token",
+        help="Explicit TS Web token (40-100 URL-safe characters; prefer --web-auth-token-file for secrets).",
+    )
     parser.add_argument("--remote-config", help="Existing remote.toml to install as .pi/remote.toml.")
     parser.add_argument("--local-config", help="Existing local.toml to install as .pi/local.toml.")
+    parser.add_argument("--compute-config", help="Unified compute.toml to install as .pi/compute.toml.")
+    parser.add_argument("--probe-remote", action="store_true", help="Run the remote doctor and fail if the configured profile is not ready.")
     parser.add_argument("--conda-root")
     parser.add_argument("--service-scope", choices=("none", "user", "system"))
     parser.add_argument("--service-user", help="Unix account used by systemd services (required for system scope).")
@@ -196,9 +220,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     email = parser.add_argument_group("email notifications")
     email.add_argument("--email-provider", choices=sorted(EMAIL_PROVIDERS))
     email.add_argument("--email-preset", choices=sorted(SMTP_PRESETS))
+    email.add_argument("--email-host", help="SMTP hostname; required with --email-preset custom.")
     email.add_argument("--email-recipient")
-    email.add_argument("--email-from")
-    email.add_argument("--email-username")
+    email.add_argument("--email-from", help="From email address; defaults to the SMTP sender address.")
+    email.add_argument(
+        "--email-address",
+        "--email-username",
+        dest="email_username",
+        help="SMTP sender email address (email-username is a compatibility alias).",
+    )
     email.add_argument("--email-port", type=int)
     email.add_argument("--email-security", choices=("ssl", "starttls"))
     email.add_argument("--clawemail-root")
@@ -217,6 +247,10 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
 
     section("Source and destination")
     args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/tspi"))
+    args.workspace_root = args.workspace_root or ask(
+        "Workspace root",
+        str(read_workspace_root(Path(args.install_root).expanduser())),
+    )
     field("Repository", args.tspi_repo)
     field("Requested revision", args.tspi_ref)
     if args.tspi_commit:
@@ -236,6 +270,40 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
         args.web_host = ask("TS Web listen address", args.web_host or "127.0.0.1")
         if args.web_host not in {"127.0.0.1", "::1", "localhost"}:
             args.allow_remote = ask_yes_no("Allow remote TS Web clients", False)
+        if args.web_auth_token is None and ask_yes_no("Use a custom TS Web access token", False):
+            args.web_auth_token = getpass.getpass("TS Web access token (hidden; blank generates one): ").strip() or None
+    if args.with_model_icons is None:
+        args.with_model_icons = ask_yes_no("Install TSPi model icon font", True)
+    section("Compute backends")
+    args.compute_config = ask(
+        "Unified compute.toml path (blank uses existing or separate files)",
+        args.compute_config or "",
+    ).strip() or None
+    if not args.compute_config:
+        args.local_config = ask(
+            "Local backend TOML (blank preserves existing configuration)",
+            args.local_config or "",
+        ).strip() or None
+        existing_remote = Path(args.install_root).expanduser() / ".pi" / "remote.toml"
+        args.remote_config = ask(
+            "Existing remote.toml path (blank preserves existing or configures below)",
+            args.remote_config or "",
+        ).strip() or None
+        if args.remote_config:
+            args.probe_remote = ask_yes_no("Run remote readiness checks during installation", False)
+        elif ask_yes_no(
+            "Configure a remote backend profile now",
+            False if existing_remote.is_file() else True,
+        ):
+            args._remote_config_content = _interactive_remote_config()
+            args.probe_remote = ask_yes_no("Run remote readiness checks during installation", False)
+    section("Phone connection")
+    if args.radius_gateway is None:
+        args.radius_gateway = _existing_radius_gateway(Path(args.install_root))
+    args.radius_gateway = ask(
+        "Pi Radius gateway (blank to configure later)",
+        args.radius_gateway or "",
+    ).strip() or None
     section("Runtime and services")
     args.conda_root = args.conda_root or ask("Conda root (blank for auto-detect)", detect_conda_root())
     if args.service_scope is None:
@@ -262,15 +330,20 @@ def configure_email_interactively(args: argparse.Namespace) -> None:
     if not ask_yes_no(prompt, False):
         return
     args.email_provider = ask("Email provider (smtp or clawemail)", "smtp").lower()
-    args.email_recipient = ask("Notification recipient")
+    args.email_recipient = _ask_email_address("Notification recipient")
     if args.email_provider == "clawemail":
         args.clawemail_root = ask("ClawEmail installation root")
         return
-    args.email_preset = ask("SMTP mailbox preset (163 or qq)", "qq").lower()
+    args.email_preset = ask("SMTP mailbox preset (163, qq, or custom)", "qq").lower()
+    if args.email_preset == "custom":
+        args.email_host = ask("SMTP hostname")
     args.email_port = int(ask("SMTP port", "465"))
     args.email_security = ask("SMTP security (ssl or starttls)", "ssl").lower()
-    args.email_username = ask("SMTP username")
-    args.email_from = ask("From address (blank uses username)", args.email_username)
+    args.email_username = _ask_email_address("SMTP sender email address")
+    args.email_from = _ask_email_address(
+        "From email address (blank uses sender address)",
+        args.email_username,
+    )
     if ask_yes_no("Read SMTP authorization code from an environment variable", False):
         args.email_password_env = ask("Password environment variable", "TSPI_EMAIL_PASSWORD")
         return
@@ -282,6 +355,17 @@ def configure_email_interactively(args: argparse.Namespace) -> None:
         if not password:
             raise ValueError("SMTP authorization code must not be empty")
         args._email_password = password
+
+
+def _ask_email_address(prompt: str, default: str = "") -> str:
+    while True:
+        value = ask(prompt, default)
+        try:
+            _validate_email_address(value, prompt)
+        except ValueError:
+            note("Please enter a complete email address, for example sender@example.com.", tone="warning")
+            continue
+        return value
 
 
 def show_install_plan(args: argparse.Namespace, installation: dict[str, str | None]) -> None:
@@ -298,11 +382,17 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("TSPi revision", args.tspi_ref)
     if args.tspi_commit:
         field("Resolved commit", args.tspi_commit)
-    field("Workspace root", Path(args.install_root) / "workspaces")
+    field("Workspace root", args.workspace_root)
     field("Conda root", args.conda_root or "auto-detect")
     if args.service_scope == "system":
         field("Installation owner", f"{args.service_user} (private package/runtime/state tree)", tone="warning")
     field("Pi Radius gateway", args.radius_gateway or "not configured", tone="muted" if not args.radius_gateway else "success")
+    field("Phone tool access", "same Agent and tools as terminal", tone="success")
+    field(
+        "Model icon font",
+        "install optional TSPi font" if args.with_model_icons else "use Nerd Font/Unicode fallback",
+        tone="success" if args.with_model_icons else "muted",
+    )
 
     root = Path(args.install_root)
     section("Core")
@@ -311,7 +401,15 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Molecular rendering", "install and verify (xyzrender, Matplotlib)", tone="success")
     field("Pi App Server", "install pinned runtime and verify", tone="success")
     field("Local backend policy", "core Python/runtime only; native tools must be selected explicitly", tone="muted")
-    field("Remote backend profile", args.remote_config or "preserve <install>/.pi/remote.toml", tone="muted")
+    field("Unified compute config", args.compute_config or "preserve <install>/.pi/compute.toml if present", tone="muted")
+    field("Local backend profile", args.local_config or "preserve <install>/.pi/local.toml", tone="muted")
+    remote_plan = (
+        "generate interactively"
+        if getattr(args, "_remote_config_content", None)
+        else args.remote_config or "preserve <install>/.pi/remote.toml"
+    )
+    field("Remote backend profile", remote_plan, tone="muted")
+    field("Remote readiness", "probe during installation" if args.probe_remote else "not probed", tone="success" if args.probe_remote else "muted")
     field(
         "App Server service",
         _service_plan(args),
@@ -341,7 +439,7 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     if args.with_web:
         field("Launcher", root / "TSWeb")
         field("Listen", f"http://{args.web_host}:{args.web_port}")
-        field("Workspace root", root / "workspaces")
+        field("Workspace root", args.workspace_root)
         field("State directory", root / ".pi/ts-web-state")
         token_path = Path(args.web_auth_token_file).expanduser() if args.web_auth_token_file else root / ".pi/ts-web/auth.token"
         field("HTTP token", _planned_credential(token_path))
@@ -375,8 +473,40 @@ def validate_options(args: argparse.Namespace) -> None:
     if not args.install_root:
         raise ValueError("--install-root is required in non-interactive mode")
     args.install_root = str(validate_install_root(Path(args.install_root)))
+    generated_remote = getattr(args, "_remote_config_content", None)
+    if args.compute_config and (args.local_config or args.remote_config or generated_remote):
+        raise ValueError("--compute-config cannot be combined with --local-config or --remote-config")
+    if args.compute_config:
+        source = Path(args.compute_config).expanduser()
+        if not source.is_absolute() or source.is_symlink() or not source.is_file():
+            raise ValueError("--compute-config must be an existing absolute regular file")
+        try:
+            parsed_compute = tomllib.loads(source.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+            raise ValueError(f"invalid compute TOML configuration: {source}: {error}") from error
+        _validate_compute_config(parsed_compute)
+    if generated_remote:
+        if args.remote_config:
+            raise ValueError("--remote-config cannot be combined with an interactive remote profile")
+        try:
+            generated = tomllib.loads(generated_remote)
+        except tomllib.TOMLDecodeError as error:
+            raise ValueError(f"invalid generated remote TOML configuration: {error}") from error
+        _validate_remote_config(generated, Path(args.install_root).resolve())
+    if args.workspace_root is None:
+        args.workspace_root = str(read_workspace_root(Path(args.install_root)))
+    args.workspace_root = str(_validate_workspace_root(args.workspace_root, Path(args.install_root)))
+    if args.radius_gateway is None:
+        args.radius_gateway = _existing_radius_gateway(Path(args.install_root))
     if args.with_web is None:
         args.with_web = True
+    if args.with_model_icons is None:
+        args.with_model_icons = False
+    if args.web_auth_token is not None:
+        if not args.with_web:
+            raise ValueError("--web-auth-token requires --with-web")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{40,100}", args.web_auth_token):
+            raise ValueError("--web-auth-token must contain 40 to 100 URL-safe characters")
     if not args.with_web and args.web_port is not None:
         raise ValueError("--web-port requires --with-web")
     if args.with_web:
@@ -431,9 +561,61 @@ def validate_options(args: argparse.Namespace) -> None:
     validate_email_options(args)
 
 
+def _validate_workspace_root(value: object, install_root: Path) -> Path:
+    requested = Path(value).expanduser() if isinstance(value, str) and value else install_root / "workspaces"
+    if not requested.is_absolute():
+        raise ValueError("--workspace-root must be absolute")
+    if requested.is_symlink():
+        raise ValueError("--workspace-root cannot be a symbolic link")
+    resolved = requested.resolve()
+    install = install_root.resolve()
+    home = Path.home().resolve()
+    if (
+        resolved.parent == Path("/")
+        or resolved == home
+        or resolved in home.parents
+        or resolved == install
+        or resolved in install.parents
+    ):
+        raise ValueError("--workspace-root must be a dedicated directory")
+    for protected in (install / ".pi", install / ".agents"):
+        if resolved == protected or protected in resolved.parents:
+            raise ValueError("--workspace-root cannot be inside installation control or runtime state")
+    if resolved.exists() and not resolved.is_dir():
+        raise ValueError("--workspace-root must be a directory")
+    return resolved
+
+
+def configure_workspace_root(args: argparse.Namespace) -> dict[str, str]:
+    root = Path(args.install_root).resolve()
+    requested = Path(args.workspace_root)
+    if requested.is_symlink():
+        raise ValueError(f"workspace root cannot be a symbolic link: {requested}")
+    workspace_root = requested.resolve()
+    workspace_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not workspace_root.is_dir():
+        raise ValueError(f"workspace root is not a directory: {workspace_root}")
+    workspace_root.chmod(0o700)
+    config = write_workspace_root(root, workspace_root)
+    return {"status": "configured", "path": str(config), "workspace_root": str(workspace_root)}
+
+
+def _existing_radius_gateway(root: Path) -> str | None:
+    manifest = root / ".pi/app-server-host/phone-connection.json"
+    if not manifest.is_file() or manifest.is_symlink():
+        return None
+    try:
+        value = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    gateway = value.get("radius_gateway") if isinstance(value, dict) else None
+    return gateway if isinstance(gateway, str) and gateway else None
+
+
 def validate_email_options(args: argparse.Namespace) -> None:
     values = (
         args.email_preset,
+        args.email_host,
         args.email_recipient,
         args.email_from,
         args.email_username,
@@ -459,15 +641,22 @@ def validate_email_options(args: argparse.Namespace) -> None:
             or not clawemail_path.is_dir()
         ):
             raise ValueError("--clawemail-root must be an existing absolute non-symbolic-link directory")
+        _validate_clawemail_install(clawemail_path)
         if any(
             value is not None
-            for value in (args.email_preset, args.email_from, args.email_username, args.email_port, args.email_security, args.email_password_env, args.email_password_file)
+            for value in (args.email_preset, args.email_host, args.email_from, args.email_username, args.email_port, args.email_security, args.email_password_env, args.email_password_file)
         ):
             raise ValueError("SMTP-only email options cannot be used with ClawEmail")
         return
 
     if args.email_preset not in SMTP_PRESETS:
-        raise ValueError("--email-preset must be 163 or qq for SMTP")
+        raise ValueError("--email-preset must be 163, qq, or custom for SMTP")
+    if args.email_preset == "custom":
+        _validate_smtp_host(args.email_host, "--email-host")
+    elif args.email_host is not None:
+        expected_host = SMTP_PRESETS[args.email_preset]
+        if args.email_host != expected_host:
+            raise ValueError(f"--email-host must be {expected_host} for preset {args.email_preset}")
     if args.email_port is None:
         args.email_port = 465
     if not isinstance(args.email_port, int) or isinstance(args.email_port, bool) or not 1 <= args.email_port <= 65535:
@@ -503,6 +692,128 @@ def _validate_email_address(value: object, label: str) -> None:
     local, domain = value.split("@")
     if not local or "." not in domain or domain.startswith(".") or domain.endswith("."):
         raise ValueError(f"{label} must be one email address")
+
+
+def _validate_smtp_host(value: object, label: str) -> None:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > 255
+        or any(character.isspace() or ord(character) < 32 for character in value)
+        or "/" in value
+        or "@" in value
+    ):
+        raise ValueError(f"{label} must be a hostname")
+
+
+def _validate_clawemail_install(root: Path) -> None:
+    skill_file = root / "SKILL.md"
+    manager = root / "bin/clawemail-manager"
+    state = root / ".clawemail"
+    if (
+        not skill_file.is_file()
+        or skill_file.is_symlink()
+        or "name: clawemail" not in skill_file.read_text(encoding="utf-8")[:2048]
+    ):
+        raise ValueError("--clawemail-root does not contain a ClawEmail skill")
+    if not manager.is_file() or manager.is_symlink() or not os.access(manager, os.X_OK):
+        raise ValueError("--clawemail-root does not contain an executable clawemail-manager")
+    if state.is_symlink() or not state.is_dir():
+        raise ValueError("--clawemail-root does not contain a physical .clawemail state directory")
+    for path, label in ((state / "skill.json", "settings"), (state / "mail-cli.json", "authentication")):
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"ClawEmail {label} file is missing or unsafe: {path}")
+        if stat.S_IMODE(path.stat().st_mode) != 0o600:
+            raise ValueError(f"ClawEmail {label} file must have mode 0600: {path}")
+
+
+def _toml_array(values: list[str] | tuple[str, ...]) -> str:
+    return "[" + ", ".join(_toml_string(value) for value in values) + "]"
+
+
+def _csv_values(value: str, label: str) -> list[str]:
+    values = [item.strip() for item in value.split(",") if item.strip()]
+    if not values:
+        raise ValueError(f"{label} must contain at least one value")
+    return values
+
+
+def _interactive_remote_config() -> str:
+    """Collect a complete remote profile without ever asking for credentials."""
+
+    profile = ask("Remote profile name", "cluster_1w")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", profile):
+        raise ValueError("remote profile name must contain only letters, numbers, '.', '_' or '-'")
+    ssh_host = ask("SSH host or alias", "agent.1w")
+    ssh_config = ask("SSH config path", str(Path.home() / ".ssh" / "config"))
+    scheduler = ask("Scheduler (torque)", "torque").lower()
+    remote_root = ask(
+        "Remote workspace root (absolute POSIX path)",
+        f"/home/{getpass.getuser()}/ts-remote-workspaces",
+    )
+    queues = _csv_values(ask("Allowed queues (comma separated)", "batch,fat,fata"), "allowed queues")
+    max_nodes = int(ask("Maximum nodes", "1"))
+    connect_timeout = int(ask("SSH connect timeout (seconds)", "15"))
+    command_timeout = int(ask("Remote command timeout (seconds)", "60"))
+    scheduler_commands = {
+        name: ask(f"Torque {name} command", name)
+        for name in ("qsub", "qstat", "qdel", "pbsnodes")
+    }
+    if any(not value or any(character.isspace() for character in value) for value in scheduler_commands.values()):
+        raise ValueError("Torque scheduler commands must be non-empty names without whitespace")
+
+    def software(name: str, command_default: str) -> tuple[tuple[str, ...], str | None, str | None, list[str], bool] | None:
+        if not ask_yes_no(f"Configure remote {name} profile", True):
+            return None
+        command_text = ask(f"{name} executable or command", command_default)
+        command = tuple(shlex.split(command_text))
+        if not command:
+            raise ValueError(f"{name} command must not be empty")
+        activation = ask(f"{name} activation script (blank if none)", "").strip() or None
+        scratch = ask(f"{name} scratch root (blank uses node TMPDIR)", "").strip() or None
+        queue_text = ask(f"{name} allowed queues (blank uses profile queues)", "").strip()
+        software_queues = _csv_values(queue_text, f"{name} allowed queues") if queue_text else queues
+        requires_gpu = ask_yes_no(f"{name} requires GPU", False)
+        return command, activation, scratch, software_queues, requires_gpu
+
+    gaussian = software("Gaussian", "g16")
+    xtb = software("xTB", "xtb")
+    crest = software("CREST", "crest")
+    ase_neb = software("ASE-NEB Python", "python")
+    ase_xtb = ask("ASE-NEB xTB executable", "xtb") if ase_neb is not None else None
+
+    profile_key = _toml_string(profile)
+    lines = [
+        f"default_profile = {_toml_string(profile)}",
+        "",
+        f"[profiles.{profile_key}]",
+        f"ssh_host = {_toml_string(ssh_host)}",
+        f"ssh_config = {_toml_string(ssh_config)}",
+        f"scheduler = {_toml_string(scheduler)}",
+        f"remote_root = {_toml_string(remote_root)}",
+        f"allowed_queues = {_toml_array(queues)}",
+        f"max_nodes = {max_nodes}",
+        f"connect_timeout_seconds = {connect_timeout}",
+        f"command_timeout_seconds = {command_timeout}",
+        "",
+        f"[profiles.{profile_key}.commands]",
+        *[f"{name} = {_toml_string(command)}" for name, command in scheduler_commands.items()],
+    ]
+    for name, value in (("gaussian", gaussian), ("xtb", xtb), ("crest", crest), ("ase_neb", ase_neb)):
+        if value is None:
+            continue
+        command, activation, scratch, software_queues, requires_gpu = value
+        lines.extend(["", f"[profiles.{profile_key}.software.{name}]", f"command = {_toml_array(command)}"])
+        if activation:
+            lines.append(f"activation_script = {_toml_string(activation)}")
+        if scratch:
+            lines.append(f"scratch_root = {_toml_string(scratch)}")
+        lines.append(f"allowed_queues = {_toml_array(software_queues)}")
+        lines.append(f"requires_gpu = {'true' if requires_gpu else 'false'}")
+        if name == "ase_neb":
+            assert ase_xtb is not None
+            lines.extend(["", f"[profiles.{profile_key}.software.{name}.environment]", f"TS_ASE_NEB_XTB = {_toml_string(ase_xtb)}"])
+    return "\n".join(lines) + "\n"
 
 
 def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
@@ -546,6 +857,8 @@ def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
         f"recipient = {_toml_string(args.email_recipient)}",
         f"username = {_toml_string(args.email_username)}",
     ]
+    if args.email_preset == "custom":
+        lines.append(f"host = {_toml_string(args.email_host)}")
     if args.email_from and args.email_from != args.email_username:
         lines.append(f"from_address = {_toml_string(args.email_from)}")
     if args.email_password_env is not None:
@@ -579,7 +892,7 @@ def _toml_string(value: str) -> str:
 def _ensure_private_directory(path: Path) -> None:
     if path.exists() or path.is_symlink():
         if path.is_symlink() or not path.is_dir():
-            raise ValueError(f"notification directory must be a physical directory: {path}")
+            raise ValueError(f"private directory must be a physical directory: {path}")
     else:
         path.mkdir(mode=0o700, parents=True)
     path.chmod(0o700)
@@ -632,33 +945,156 @@ def _copy_private_config(source_value: str, destination: Path, *, kind: str) -> 
             parsed = tomllib.loads(raw.decode("utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise ValueError(f"invalid {kind} TOML configuration: {source}: {error}") from error
-    if kind == "remote":
-        profiles = parsed.get("profiles")
-        default = parsed.get("default_profile")
-        if not isinstance(profiles, dict) or not profiles or not isinstance(default, str) or default not in profiles:
-            raise ValueError("remote config must define default_profile and at least one profile")
-        for name, profile in profiles.items():
-            if not isinstance(profile, dict) or profile.get("scheduler", "torque") != "torque":
-                raise ValueError(f"remote profile {name!r} must use scheduler=torque")
-            if not isinstance(profile.get("ssh_host"), str) or not isinstance(profile.get("remote_root"), str):
-                raise ValueError(f"remote profile {name!r} is missing ssh_host or remote_root")
-            ssh_config = profile.get("ssh_config")
-            if not isinstance(ssh_config, str) or not ssh_config:
-                raise ValueError(f"remote profile {name!r} is missing ssh_config")
-            ssh_path = Path(os.path.expandvars(os.path.expanduser(ssh_config)))
-            if not ssh_path.is_absolute():
-                ssh_path = source.parent / ssh_path
-            if ssh_path.is_symlink() or not ssh_path.is_file():
-                raise ValueError(f"remote profile {name!r} ssh_config is not a regular file: {ssh_path}")
+    if kind == "compute":
+        _validate_compute_config(parsed)
+    elif kind == "remote":
+        _validate_remote_config(parsed, source.parent)
     elif kind == "local":
         table = parsed.get("backends", parsed.get("local", parsed))
         if not isinstance(table, dict):
             raise ValueError("local config must contain a [backends] table")
-        for name, command in table.items():
-            if isinstance(command, dict):
-                command = command.get("command")
+        for name, entry in table.items():
+            activation = None
+            command = entry
+            if isinstance(entry, dict):
+                command = entry.get("command")
+                activation = entry.get("activation_script")
             if not isinstance(name, str) or not isinstance(command, str) or not command.strip():
                 raise ValueError("local backend commands must be non-empty strings")
+            if activation is not None:
+                activation_path = Path(activation).expanduser() if isinstance(activation, str) else None
+                if (
+                    activation_path is None
+                    or not activation_path.is_absolute()
+                    or activation_path.is_symlink()
+                    or not activation_path.is_file()
+                    or not os.access(activation_path, os.R_OK)
+                ):
+                    raise ValueError(f"local backend {name!r} activation_script must be an absolute readable regular file")
+    _write_private_config_bytes(raw, destination)
+    return {"status": "configured", "path": str(destination), "source": str(source)}
+
+
+def _validate_compute_config(parsed: dict[str, object]) -> None:
+    """Validate the shared profile shape before installing it."""
+    profiles = parsed.get("profiles")
+    default = parsed.get("default_profile")
+    if not isinstance(profiles, dict) or not profiles or not isinstance(default, str) or default not in profiles:
+        raise ValueError("compute config must define default_profile and at least one profile")
+    kinds: set[str] = set()
+    for name, profile in profiles.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", name):
+            raise ValueError(f"invalid compute profile name: {name!r}")
+        if not isinstance(profile, dict) or profile.get("kind") not in {"local", "remote"}:
+            raise ValueError(f"compute profile {name!r} must declare kind=local or kind=remote")
+        kinds.add(str(profile["kind"]))
+        software = profile.get("software", {})
+        if not isinstance(software, dict):
+            raise ValueError(f"compute profile {name!r} software must be a table")
+        for backend, item in software.items():
+            if not isinstance(backend, str) or not isinstance(item, dict):
+                raise ValueError(f"compute profile {name!r} has an invalid software provider")
+            command = item.get("command")
+            valid_command = isinstance(command, str) and bool(command.strip()) if profile["kind"] == "local" else (
+                isinstance(command, list) and bool(command) and all(isinstance(value, str) and value for value in command)
+            )
+            if not valid_command:
+                expected = "string" if profile["kind"] == "local" else "string array"
+                raise ValueError(f"compute profile {name!r} software.{backend}.command must be a {expected}")
+            activation = item.get("activation_script")
+            if activation is not None and (not isinstance(activation, str) or not activation.startswith("/")):
+                raise ValueError(f"compute profile {name!r} software.{backend}.activation_script must be absolute")
+        if profile["kind"] == "remote":
+            _validate_remote_config({"default_profile": name, "profiles": {name: profile}}, Path("/"))
+
+
+def _validate_remote_config(parsed: dict[str, object], base: Path) -> None:
+    profiles = parsed.get("profiles")
+    default = parsed.get("default_profile")
+    if not isinstance(profiles, dict) or not profiles or not isinstance(default, str) or default not in profiles:
+        raise ValueError("remote config must define default_profile and at least one profile")
+    for name, profile in profiles.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", name):
+            raise ValueError(f"invalid remote profile name: {name!r}")
+        if not isinstance(profile, dict) or profile.get("scheduler", "torque") != "torque":
+            raise ValueError(f"remote profile {name!r} must use scheduler=torque")
+        ssh_host = profile.get("ssh_host")
+        if not isinstance(ssh_host, str):
+            raise ValueError(f"remote profile {name!r} is missing ssh_host or remote_root")
+        if any(character.isspace() for character in ssh_host):
+            raise ValueError(f"remote profile {name!r} has an invalid ssh_host")
+        remote_root = profile.get("remote_root")
+        if not isinstance(remote_root, str):
+            raise ValueError(f"remote profile {name!r} is missing ssh_host or remote_root")
+        if (
+            not remote_root.startswith("/")
+            or remote_root == "/"
+            or ".." in Path(remote_root).parts
+            or any(not re.fullmatch(r"[A-Za-z0-9_.-]+", part) for part in Path(remote_root).parts[1:])
+        ):
+            raise ValueError(f"remote profile {name!r} has an invalid remote_root")
+        queues = profile.get("allowed_queues")
+        if not isinstance(queues, list) or not queues or any(
+            not isinstance(queue, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", queue)
+            for queue in queues
+        ):
+            raise ValueError(f"remote profile {name!r} must define allowed_queues")
+        for key in ("max_nodes", "connect_timeout_seconds", "command_timeout_seconds"):
+            value = profile.get(key, 1 if key == "max_nodes" else (15 if key == "connect_timeout_seconds" else 60))
+            maximum = {"max_nodes": None, "connect_timeout_seconds": 300, "command_timeout_seconds": 3600}[key]
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < 1
+                or (maximum is not None and value > maximum)
+            ):
+                raise ValueError(f"remote profile {name!r} has an invalid {key}")
+        commands = profile.get("commands", {})
+        if not isinstance(commands, dict):
+            raise ValueError(f"remote profile {name!r} commands must be a table")
+        for command_name in ("qsub", "qstat", "qdel", "pbsnodes"):
+            command_value = commands.get(command_name, command_name)
+            if (
+                not isinstance(command_value, str)
+                or not command_value
+                or any(character.isspace() for character in command_value)
+            ):
+                raise ValueError(f"remote profile {name!r} has an invalid scheduler command: {command_name}")
+        software = profile.get("software", {})
+        if not isinstance(software, dict):
+            raise ValueError(f"remote profile {name!r} software must be a table")
+        for backend, item in software.items():
+            if not isinstance(backend, str) or not isinstance(item, dict):
+                raise ValueError(f"remote profile {name!r} has an invalid software profile")
+            command = item.get("command")
+            if not isinstance(command, list) or not command or any(not isinstance(value, str) or not value for value in command):
+                raise ValueError(f"remote profile {name!r} software.{backend} must define command")
+            software_queues = item.get("allowed_queues", queues)
+            if not isinstance(software_queues, list) or not software_queues or any(
+                not isinstance(queue, str) or queue not in queues for queue in software_queues
+            ):
+                raise ValueError(f"remote profile {name!r} software.{backend} has invalid allowed_queues")
+            for path_key in ("activation_script", "scratch_root"):
+                path_value = item.get(path_key)
+                if path_value is not None and (
+                    not isinstance(path_value, str)
+                    or not path_value.startswith("/")
+                    or path_value == "/"
+                    or ".." in Path(path_value).parts
+                    or any(not re.fullmatch(r"[A-Za-z0-9_.-]+", part) for part in Path(path_value).parts[1:])
+                ):
+                    raise ValueError(f"remote profile {name!r} software.{backend}.{path_key} must be a safe absolute path")
+        ssh_config = profile.get("ssh_config")
+        if not isinstance(ssh_config, str) or not ssh_config:
+            raise ValueError(f"remote profile {name!r} is missing ssh_config")
+        ssh_path = Path(os.path.expandvars(os.path.expanduser(ssh_config)))
+        if not ssh_path.is_absolute():
+            raise ValueError(f"remote profile {name!r} ssh_config must be an absolute path")
+        if ssh_path.is_symlink() or not ssh_path.is_file():
+            raise ValueError(f"remote profile {name!r} ssh_config is not a regular file: {ssh_path}")
+
+
+def _write_private_config_bytes(raw: bytes, destination: Path) -> None:
     root = destination.parent
     _ensure_private_directory(root)
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{destination.name}.", dir=root)
@@ -676,13 +1112,36 @@ def _copy_private_config(source_value: str, destination: Path, *, kind: str) -> 
         if descriptor != -1:
             os.close(descriptor)
         temporary.unlink(missing_ok=True)
-    return {"status": "configured", "path": str(destination), "source": str(source)}
+    return None
 
 
 def configure_backend_configs(args: argparse.Namespace) -> dict[str, dict[str, str]]:
     root = Path(args.install_root).expanduser().resolve()
     result: dict[str, dict[str, str]] = {}
-    if args.remote_config:
+    compute_config = getattr(args, "compute_config", None)
+    if compute_config and (args.local_config or args.remote_config or getattr(args, "_remote_config_content", None)):
+        raise ValueError("--compute-config cannot be combined with local or remote backend configuration")
+    if compute_config:
+        result["compute"] = _copy_private_config(
+            compute_config,
+            root / ".pi" / "compute.toml",
+            kind="compute",
+        )
+        # Keep the summary shape stable for callers of older installer APIs.
+        result["remote"] = {"status": "preserved", "path": str(root / ".pi" / "remote.toml"), "doctor": "not_probed"}
+        result["local"] = {"status": "preserved", "path": str(root / ".pi" / "local.toml")}
+        return result
+    if getattr(args, "_remote_config_content", None):
+        content = args._remote_config_content
+        try:
+            parsed = tomllib.loads(content)
+        except tomllib.TOMLDecodeError as error:
+            raise ValueError(f"invalid generated remote TOML configuration: {error}") from error
+        _validate_remote_config(parsed, Path(args.install_root).resolve())
+        destination = root / ".pi" / "remote.toml"
+        _write_private_config_bytes(content.encode("utf-8"), destination)
+        result["remote"] = {"status": "configured", "path": str(destination), "source": "interactive"}
+    elif args.remote_config:
         result["remote"] = _copy_private_config(args.remote_config, root / ".pi" / "remote.toml", kind="remote")
     else:
         path = root / ".pi" / "remote.toml"
@@ -696,9 +1155,34 @@ def configure_backend_configs(args: argparse.Namespace) -> dict[str, dict[str, s
     return result
 
 
+def probe_remote_backend(args: argparse.Namespace, configs: dict[str, dict[str, str]]) -> None:
+    if not args.probe_remote:
+        return
+    remote = configs["remote"]
+    if remote.get("status") == "not_configured":
+        raise ValueError("--probe-remote requires an installed remote configuration")
+    command = [str(Path(args.install_root) / "TSPi"), "--check-remote"]
+    completed = subprocess.run(
+        command,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0:
+        remote["doctor"] = "failed"
+        detail = (completed.stderr or completed.stdout).strip()
+        raise RuntimeError(f"remote backend readiness check failed: {detail or 'unknown error'}")
+    remote["doctor"] = "ready"
+
+
 def local_backend_readiness(root: Path) -> dict[str, dict[str, object]]:
     configured: dict[str, str] = {}
     path = root / ".pi" / "local.toml"
+    compute_path = root / ".pi" / "compute.toml"
+    config_display = path
+    if compute_path.is_file():
+        config_display = compute_path
     if path.is_file():
         try:
             raw = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -711,8 +1195,26 @@ def local_backend_readiness(root: Path) -> dict[str, dict[str, object]]:
                 }
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
             return {"config": {"status": "invalid", "path": str(path)}}
+    if compute_path.is_file():
+        try:
+            raw = tomllib.loads(compute_path.read_text(encoding="utf-8"))
+            profiles = raw.get("profiles", {})
+            default_name = raw.get("default_profile")
+            profile = profiles.get(default_name) if isinstance(profiles, dict) else None
+            if not isinstance(profile, dict) or profile.get("kind") != "local":
+                local_profiles = [item for item in profiles.values() if isinstance(item, dict) and item.get("kind") == "local"] if isinstance(profiles, dict) else []
+                profile = local_profiles[0] if len(local_profiles) == 1 else None
+            software = profile.get("software", {}) if isinstance(profile, dict) else {}
+            if isinstance(software, dict):
+                configured.update({
+                    str(key): str(value.get("command"))
+                    for key, value in software.items()
+                    if isinstance(value, dict) and isinstance(value.get("command"), str)
+                })
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+            return {"config": {"status": "invalid", "path": str(compute_path)}}
     defaults = {"gaussian": "g16", "xtb": "xtb", "crest": "crest", "ase_neb_xtb": "xtb"}
-    result: dict[str, dict[str, object]] = {"config": {"status": "configured" if path.is_file() else "not_configured", "path": str(path)}}
+    result: dict[str, dict[str, object]] = {"config": {"status": "configured" if (path.is_file() or compute_path.is_file()) else "not_configured", "path": str(config_display)}}
     for name, default in defaults.items():
         command = configured.get(name, default)
         resolved = shutil.which(command) if not Path(command).is_absolute() else command
@@ -747,6 +1249,8 @@ def run_logged_install(
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as log:
             log.write("TSPi installation diagnostic log\n")
+            log.write(f"started_at_utc={datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}\n")
+            log.write(f"command={shlex.join(command)}\n\n")
             process = subprocess.Popen(
                 command,
                 cwd=ROOT,
@@ -797,15 +1301,13 @@ def run_logged_install(
                 if not isinstance(result, dict):
                     stderr_lines.append("installer returned a non-object JSON result\n")
                 else:
-                    temporary.unlink()
-                    try:
-                        log_root.rmdir()
-                    except OSError:
-                        pass
+                    _append_log_file(_install_log_path(install_root), temporary)
+                    temporary.unlink(missing_ok=True)
                     activity.succeed("TSPi package installed")
                     return result
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         failure_log = log_root / f"install-failure-{stamp}.log"
+        _append_log_file(_install_log_path(install_root), temporary)
         os.replace(temporary, failure_log)
         details = [line.strip() for line in stderr_lines if line.strip() and not line.startswith(PROGRESS_PREFIX)]
         summary = details[-1] if details else f"installer process exited with status {returncode}"
@@ -815,6 +1317,56 @@ def run_logged_install(
         if temporary.exists():
             temporary.unlink()
         raise
+
+
+def _install_log_path(install_root: Path, *, now: datetime | None = None) -> Path:
+    """Return the owner-only, date-addressable installer log path."""
+
+    root = install_root.expanduser().resolve()
+    log_root = root / ".pi" / "logs"
+    _ensure_private_directory(root / ".pi")
+    _ensure_private_directory(log_root)
+    current = now or datetime.now()
+    return log_root / f"install.{current.strftime('%Y.%m.%d')}.log"
+
+
+def _append_log_file(destination: Path, source: Path) -> None:
+    """Append a temporary run log, separating repeated runs on one date."""
+
+    if destination.is_symlink() or (destination.exists() and not destination.is_file()):
+        raise RuntimeError(f"installer log path must be a physical file: {destination}")
+    destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    destination.parent.chmod(0o700)
+    existed = destination.exists()
+    with destination.open("ab" if existed else "wb") as output, source.open("rb") as input_file:
+        if existed and destination.stat().st_size:
+            output.write(
+                f"\n===== install run {datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')} =====\n".encode()
+            )
+        shutil.copyfileobj(input_file, output)
+        output.flush()
+        os.fsync(output.fileno())
+    os.chmod(destination, 0o600)
+
+
+def append_install_log(install_root: Path, *lines: str) -> Path:
+    """Record final installer state without writing secret values."""
+
+    path = _install_log_path(install_root)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=".install-summary-", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            descriptor = -1
+            handle.write("\n".join(lines).rstrip() + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        _append_log_file(path, temporary)
+    finally:
+        if descriptor != -1:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+    return path
 
 
 def run_install(args: argparse.Namespace) -> dict[str, object]:
@@ -839,6 +1391,30 @@ def run_install(args: argparse.Namespace) -> dict[str, object]:
     return run_logged_install(command, Path(args.install_root), show_progress=not args.json)
 
 
+def configure_model_icons(args: argparse.Namespace, installed: dict[str, object]) -> dict[str, object]:
+    package_root_value = installed.get("package_root")
+    if not isinstance(package_root_value, str) or not package_root_value:
+        raise RuntimeError("installed package did not report a package root for model icons")
+    package_root = Path(package_root_value).expanduser().resolve()
+    agent_root = package_root / "agent"
+    if not agent_root.is_dir():
+        # Keep this compatible with direct package fixtures and older package
+        # wrappers that report the Agent root itself.
+        agent_root = package_root
+    font_home: Path | None = None
+    if args.service_scope == "system" and args.service_user:
+        try:
+            font_home = Path(pwd.getpwnam(args.service_user).pw_dir)
+        except KeyError as error:
+            raise RuntimeError(f"service user does not exist for model icon font: {args.service_user}") from error
+    return install_model_icon_font(
+        agent_root,
+        Path(args.install_root),
+        enabled=bool(args.with_model_icons),
+        font_home=font_home,
+    )
+
+
 def snapshot_active_release(root: Path) -> dict[str, object] | None:
     package_home = root / ".pi" / "packages" / "tspi"
     current = package_home / "current"
@@ -855,7 +1431,17 @@ def snapshot_active_release(root: Path) -> dict[str, object] | None:
             runtime_manifest = (manifest_path, Path(manifest_path).read_bytes())
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         pass
-    return {"current": os.readlink(current), "state": state_bytes, "launchers": launchers, "runtime_manifest": runtime_manifest}
+    model_icon_marker = root / ".pi/tspi/model-icons.json"
+    marker_snapshot: bytes | None = None
+    if model_icon_marker.is_file() and not model_icon_marker.is_symlink():
+        marker_snapshot = model_icon_marker.read_bytes()
+    return {
+        "current": os.readlink(current),
+        "state": state_bytes,
+        "launchers": launchers,
+        "runtime_manifest": runtime_manifest,
+        "model_icon_marker": marker_snapshot,
+    }
 
 
 def restore_active_release(root: Path, snapshot: dict[str, object] | None) -> None:
@@ -913,6 +1499,26 @@ def restore_active_release(root: Path, snapshot: dict[str, object] | None) -> No
                 if descriptor != -1:
                     os.close(descriptor)
                 temporary.unlink(missing_ok=True)
+    marker_path = root / ".pi/tspi/model-icons.json"
+    marker_snapshot = snapshot.get("model_icon_marker")
+    if isinstance(marker_snapshot, bytes):
+        marker_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{marker_path.name}.rollback.", dir=marker_path.parent)
+        temporary = Path(temporary_name)
+        try:
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "wb") as handle:
+                descriptor = -1
+                handle.write(marker_snapshot)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, marker_path)
+        finally:
+            if descriptor != -1:
+                os.close(descriptor)
+            temporary.unlink(missing_ok=True)
+    elif marker_path.exists() or marker_path.is_symlink():
+        marker_path.unlink()
 
 
 def prepare_app_server_runtime(root: Path) -> Path:
@@ -1001,8 +1607,38 @@ def ensure_host_identity(root: Path) -> Path:
     return identity
 
 
+def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
+    """Write a secret-free manifest consumed when pairing the Phone client."""
+
+    root = Path(args.install_root).resolve()
+    identity = ensure_host_identity(root)
+    server_id = identity.read_text(encoding="ascii").strip()
+    manifest = root / ".pi/app-server-host/phone-connection.json"
+    payload = {
+        "schema_version": "tspi-phone-connection/1",
+        "transport": "pi-radius",
+        "protocol_version": 8,
+        "session_relay_service": "pi-session-relay.client.v1",
+        "server_id": server_id,
+        "radius_gateway": args.radius_gateway or None,
+        "workspace_root": str(Path(args.workspace_root)),
+        "tool_access": "same_as_terminal",
+        "credentials": "mobile_secure_store",
+    }
+    _write_private_text(manifest, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    return {
+        "status": "configured" if args.radius_gateway else "awaiting_gateway",
+        "manifest": str(manifest),
+        "server_id": server_id,
+        "radius_gateway": args.radius_gateway,
+        "protocol_version": 8,
+        "tool_access": "same_as_terminal",
+    }
+
+
 def app_server_unit(args: argparse.Namespace) -> str:
     root = Path(args.install_root)
+    workspace_root = Path(args.workspace_root)
     search_path = os.environ.get("PATH", os.defpath)
     if any(ord(char) < 32 for char in search_path):
         raise ValueError("service PATH cannot contain control characters")
@@ -1012,7 +1648,9 @@ def app_server_unit(args: argparse.Namespace) -> str:
     runtime_dir = f"/run/user/{service_uid}" if args.service_scope == "system" else (os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{service_uid}")
     if not Path(runtime_dir).is_absolute():
         raise ValueError("service XDG_RUNTIME_DIR must be an absolute path")
-    command = " ".join((_systemd_quote(root / "TSPi"), "--host"))
+    # Host is an internal service entrypoint. Ordinary users manage this unit
+    # through systemctl and never need to invoke the Host process directly.
+    command = " ".join((_systemd_quote(root / "TSPi"), "--service-host"))
     wanted_by = "multi-user.target" if args.service_scope == "system" else "default.target"
     runtime_directory = "RuntimeDirectory=tspi\nRuntimeDirectoryMode=0700" if args.service_scope == "system" else ""
     return f"""[Unit]
@@ -1027,6 +1665,8 @@ Environment={_systemd_quote('PATH=' + search_path)}
 Environment={_systemd_quote('HOME=' + str(service_home))}
 Environment={_systemd_quote('XDG_RUNTIME_DIR=' + runtime_dir)}
 Environment={_systemd_quote('PI_CODING_AGENT_DIR=' + str(root / '.pi/agent'))}
+Environment=TSPI_SYSTEMD_HOST=1
+Environment={_systemd_quote('TSPI_WORKSPACE_ROOT=' + str(workspace_root))}
 Environment={_systemd_quote('TSPI_APP_SERVER_RUNTIME_DIR=' + ('/run/tspi' if args.service_scope == 'system' else str(Path(runtime_dir) / 'tspi')))}
 {f'Environment={_systemd_quote("PI_RADIUS_GATEWAY=" + args.radius_gateway)}' if getattr(args, "radius_gateway", None) else ''}
 Environment=TSPI_SERVER_EXTENSIONS=ts-workflow-native
@@ -1048,7 +1688,7 @@ ReadWritePaths={_systemd_quote(Path('/run/tspi') if args.service_scope == 'syste
 ReadWritePaths={_systemd_quote(root / '.pi/session-guards')}
 ReadWritePaths={_systemd_quote(root / '.pi/agent')}
 ReadWritePaths={_systemd_quote(Path(runtime_dir) / 'tspi')}
-ReadWritePaths={_systemd_quote(root / 'workspaces')}
+ReadWritePaths={_systemd_quote(workspace_root)}
 
 [Install]
 WantedBy={wanted_by}
@@ -1057,6 +1697,7 @@ WantedBy={wanted_by}
 
 def web_unit(args: argparse.Namespace) -> str:
     root = Path(args.install_root)
+    workspace_root = Path(args.workspace_root)
     working_directory = _systemd_value(root)
     wanted_by = "multi-user.target" if args.service_scope == "system" else "default.target"
     command_values: list[object] = [
@@ -1073,7 +1714,7 @@ def web_unit(args: argparse.Namespace) -> str:
     ]
     if args.allow_remote:
         command_values.append("--allow-remote")
-    command_values.extend(("--port", str(args.web_port), "--workspace-root", root / "workspaces"))
+    command_values.extend(("--port", str(args.web_port), "--workspace-root", workspace_root))
     command = " ".join(_systemd_quote(value) for value in command_values)
     return f"""[Unit]
 Description=TSPi TS Web read-only server
@@ -1096,7 +1737,7 @@ ProtectHome=read-only
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths={_systemd_quote(root / '.pi/ts-web-state')}
 ReadWritePaths={_systemd_quote(root / '.pi/ts-web')}
-ReadWritePaths={_systemd_quote(root / 'workspaces')}
+ReadOnlyPaths={_systemd_quote(workspace_root)}
 
 [Install]
 WantedBy={wanted_by}
@@ -1286,6 +1927,16 @@ def align_service_ownership(args: argparse.Namespace) -> None:
             child = current_path / name
             if not child.is_symlink():
                 os.chown(child, account.pw_uid, account.pw_gid)
+    workspace_root = Path(args.workspace_root)
+    if workspace_root.is_symlink() or not workspace_root.is_dir():
+        raise ValueError(f"workspace root must be a physical directory: {workspace_root}")
+    current = workspace_root.stat()
+    if current.st_uid not in {account.pw_uid, os.getuid()}:
+        raise ValueError(
+            f"workspace root is owned by another account: {workspace_root}; "
+            f"make it accessible to {args.service_user} before installing the system service"
+        )
+    os.chown(workspace_root, account.pw_uid, account.pw_gid)
 
 
 def app_server_service_instances(scope: list[str]) -> list[str]:
@@ -1342,8 +1993,11 @@ def build_component_summary(
     services: list[dict[str, str]],
     credentials: dict[str, dict[str, str]],
     backend_configs: dict[str, dict[str, str]] | None = None,
+    phone_connection: dict[str, object] | None = None,
+    model_icons: dict[str, object] | None = None,
 ) -> dict[str, object]:
     root = Path(args.install_root)
+    workspace_root = Path(args.workspace_root)
     runtime = (
         installed.get("runtime")
         if isinstance(installed.get("runtime"), dict)
@@ -1382,8 +2036,20 @@ def build_component_summary(
             "server_uuid": server_id,
             "server_id_path": str(server_id_path),
             "radius_gateway": args.radius_gateway or "not configured",
-            "workspace_root": str(root / "workspaces"),
-            "start": str(root / "TSPi") + " --host",
+            "workspace_root": str(workspace_root),
+            "start": "systemctl --user start ts-app-server-tspi.service",
+        },
+        "phone": phone_connection or {
+            "status": "not_configured",
+            "manifest": str(root / ".pi/app-server-host/phone-connection.json"),
+            "radius_gateway": args.radius_gateway,
+            "protocol_version": 8,
+            "tool_access": "same_as_terminal",
+        },
+        "model_icons": model_icons or {
+            "status": "disabled",
+            "enabled": False,
+            "config_path": str(root / ".pi/tspi/model-icons.json"),
         },
         "web": (
             {
@@ -1391,7 +2057,7 @@ def build_component_summary(
                 "launcher": str(root / "TSWeb"),
                 "url": f"http://{args.web_host}:{args.web_port}",
                 "state_directory": str(root / ".pi/ts-web-state"),
-                "workspace_root": str(root / "workspaces"),
+                "workspace_root": str(workspace_root),
                 "credential": credentials.get("web_http"),
                 "service": service_by_name.get("ts-web-tspi.service"),
             }
@@ -1399,6 +2065,7 @@ def build_component_summary(
             else None
         ),
         "backends": {
+            "compute": backend_configs.get("compute") if backend_configs else {"status": "preserved" if (root / ".pi/compute.toml").is_file() else "not_configured", "path": str(root / ".pi/compute.toml")},
             "local": local_backend_readiness(root),
             "remote": backend_configs.get("remote") if backend_configs else {"status": "preserved" if (root / ".pi/remote.toml").is_file() else "not_configured", "path": str(root / ".pi/remote.toml"), "doctor": "not_probed"},
         },
@@ -1425,8 +2092,9 @@ def show_installed_summary(
     field("Installation root", root, tone="accent")
     field("Release", installed.get("release_id") or "package")
     field("TSPi commit", installed.get("commit") or "unknown")
-    field("Workspace root", root / "workspaces")
+    field("Workspace root", args.workspace_root)
     field("Uninstaller", installed.get("uninstaller") or "not installed")
+    field("Install log", _install_log_path(root))
 
     runtime = components["runtime"]
     render = components["render"]
@@ -1452,6 +2120,16 @@ def show_installed_summary(
     if matplotlib.get("version"):
         render_detail = f"{render_detail}; Matplotlib {matplotlib['version']}"
     field("Molecular rendering", f"ready - {render_detail}", tone="success")
+    model_icons = components.get("model_icons")
+    if isinstance(model_icons, dict):
+        icon_status = str(model_icons.get("status", "disabled"))
+        icon_enabled = bool(model_icons.get("enabled"))
+        icon_detail = model_icons.get("font_path") or model_icons.get("config_path") or "not configured"
+        field(
+            "Model icon font",
+            f"{icon_status} - {icon_detail}",
+            tone="success" if icon_enabled else "muted",
+        )
 
     app_server = components["app_server"]
     assert isinstance(app_server, dict)
@@ -1481,12 +2159,19 @@ def show_installed_summary(
 
     note("TS Phone is a separate App Server client and is no longer installed as a local service.")
     note("Phone pairing uses the Host Server ID and Pi Radius authorization; it is distinct from the TS Web HTTP token.")
+    phone = components.get("phone")
+    if isinstance(phone, dict):
+        field("Phone connection manifest", phone.get("manifest", "not configured"))
+        field("Phone tool access", phone.get("tool_access", "same_as_terminal"))
     if isinstance(web, dict):
         note("Token values are not printed. Read the owner-only TS Web token file when pairing a browser.")
 
     backends = components.get("backends")
     if isinstance(backends, dict):
         section("Compute backends")
+        compute = backends.get("compute")
+        if isinstance(compute, dict):
+            field("Unified config", compute.get("path", "not configured"))
         local = backends.get("local")
         if isinstance(local, dict):
             available = [name for name, value in local.items() if name != "config" and isinstance(value, dict) and value.get("available")]
@@ -1550,25 +2235,43 @@ def main(argv: list[str] | None = None) -> int:
         install_uninstaller(Path(args.install_root), ROOT)
         installed = run_install(args)
         with Spinner("Finalizing installation", stream=sys.stderr, enabled=not args.json) as activity:
+            activity.update("Configuring the model icon font")
+            model_icons = configure_model_icons(args, installed)
+            activity.update("Configuring the workspace root")
+            workspace_config = configure_workspace_root(args)
             activity.update("Installing the Pi App Server runtime")
             app_server_runtime = prepare_app_server_runtime(Path(args.install_root))
             ensure_host_identity(Path(args.install_root))
+            activity.update("Writing the Phone connection manifest")
+            phone_connection = configure_phone_connection(args)
             activity.update("Provisioning service credentials")
             credentials = provision_service_credentials(
                 Path(args.install_root),
                 with_web=bool(args.with_web),
                 web_token_path=Path(args.web_auth_token_file).expanduser() if args.web_auth_token_file else None,
+                web_token_value=args.web_auth_token,
             )
             activity.update("Configuring email notifications")
             notifications = configure_notification_config(args)
             activity.update("Installing backend configuration")
             backend_configs = configure_backend_configs(args)
+            activity.update("Checking the remote backend")
+            probe_remote_backend(args, backend_configs)
             activity.update("Configuring services")
             services = configure_services(args)
             activity.update("Verifying the installed release")
             verified = inspect_installation(Path(args.install_root))
             activity.succeed("Installation finalized")
-        components = build_component_summary(args, installed, app_server_runtime, services, credentials, backend_configs)
+        components = build_component_summary(
+            args,
+            installed,
+            app_server_runtime,
+            services,
+            credentials,
+            backend_configs,
+            phone_connection,
+            model_icons,
+        )
         if args.start_services:
             failed_services = [
                 str(item.get("name"))
@@ -1590,8 +2293,30 @@ def main(argv: list[str] | None = None) -> int:
             "credentials": credentials,
             "notifications": notifications,
             "backend_configs": backend_configs,
+            "workspace_config": workspace_config,
+            "phone_connection": phone_connection,
+            "model_icons": model_icons,
             "verified_release": verified["release_id"],
+            "install_log": str(_install_log_path(Path(args.install_root))),
         }
+        append_install_log(
+            Path(args.install_root),
+            "TSPi installer final summary",
+            f"completed_at_utc={datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}",
+            f"operation={installation['operation']}",
+            f"install_root={args.install_root}",
+            f"workspace_root={args.workspace_root}",
+            f"release_id={installed.get('release_id') or ''}",
+            f"commit={installed.get('commit') or ''}",
+            f"with_web={bool(args.with_web)}",
+            f"service_scope={args.service_scope}",
+            f"remote_config={backend_configs.get('remote', {}).get('status', 'not_configured')}",
+            f"remote_doctor={backend_configs.get('remote', {}).get('doctor', 'not_probed')}",
+            f"phone_manifest={phone_connection.get('manifest', '') if isinstance(phone_connection, dict) else ''}",
+            f"model_icons={model_icons.get('status', 'unknown') if isinstance(model_icons, dict) else 'unknown'}",
+            f"web_token_file={credentials.get('web_http', {}).get('path', '') if isinstance(credentials.get('web_http'), dict) else ''}",
+            "status=success",
+        )
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
@@ -1604,6 +2329,18 @@ def main(argv: list[str] | None = None) -> int:
                 restore_active_release(installation_root, previous_release)
             except (OSError, RuntimeError, ValueError) as rollback_error:
                 error = RuntimeError(f"{error}; release rollback failed: {rollback_error}")
+        if installation_root is not None:
+            try:
+                append_install_log(
+                    installation_root,
+                    "TSPi installer failure",
+                    f"failed_at_utc={datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}",
+                    f"install_root={installation_root}",
+                    f"error={error}",
+                    "status=failure",
+                )
+            except (OSError, RuntimeError, ValueError):
+                pass
         failure(f"TSPi installation failed: {error}")
         return 1
 

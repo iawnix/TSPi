@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
+from .bootstrap import bootstrap_workspace
 from .context import build_review_snapshot, compile_context, gate_capabilities, proof_capabilities
 from .engine import change_workspace, init_workspace
 from .errors import ContractError
@@ -29,6 +30,9 @@ def main(
     sub = parser.add_subparsers(dest="command", required=True)
 
     command = sub.add_parser("init_workspace", help="initialize one fresh workspace")
+    command.add_argument("--root", required=True)
+
+    command = sub.add_parser("bootstrap", help="initialize or validate one supported workspace")
     command.add_argument("--root", required=True)
 
     command = sub.add_parser("context", help="compile one bounded graph projection")
@@ -95,6 +99,8 @@ def _dispatch(
 ) -> dict[str, Any]:
     if args.command == "init_workspace":
         return init_workspace(args.root)
+    if args.command == "bootstrap":
+        return bootstrap_workspace(args.root)
     if args.command == "context":
         if args.mode == "locate":
             if not isinstance(args.query, str) or not args.query.strip():

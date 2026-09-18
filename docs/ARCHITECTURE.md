@@ -10,9 +10,10 @@ requirement.
 - `apps/app-server/` starts Pi's native App Server and session worker.
 - `packages/ts-agent-kernel/ts_agent/` owns scientific contracts, workspace
   state, reference integrity, validation, and read-only projections. Its
-  calculation control plane runs local subprocesses durably and delegates
-  remote execution to the configured `ts_remote` adapter; rendering, reporting,
-  and email remain Skill/Plugin tools.
+  `ts_calc` control plane uses one lifecycle for local subprocesses and remote
+  scheduler jobs; the configured `ts_remote` adapter supplies remote transport
+  and readiness operations. Rendering, reporting, and email remain
+  Skill/Plugin tools.
 - `extensions/` contains the client-only Pi presentation extensions and the
   package-owned server workflow extension set. The App Server loads only the
   allowlisted, digest-verified entries in `extensions/server/extensions.json`;
@@ -25,10 +26,11 @@ requirement.
 
 The App Server owns session directory, transcript history, model state, prompt
 operations, and the workspace Root lock. The local TUI and TS Phone connect to
-that same owner. Workers load the package's model-visible skills, the native
-system prompt, and the selected server extension inventory. The inventory is
-included in `sys_prompt` provenance so a client can audit which tool set is
-active.
+that same owner and receive the same `read`, `write`, `bash`, and package tool
+inventory; client transport is not an authorization role. Workers load the
+package's model-visible skills, the native system prompt, and the selected
+server extension inventory. The inventory is included in `sys_prompt`
+provenance so a client can audit which tool set is active.
 
 ## Scientific State Model
 
@@ -137,22 +139,27 @@ reconnects. TS Phone uses the same underlying services through Pi Radius.
 
 ## TSPi Lifecycle
 
-`TSPi --host` creates the installation Host state at `.pi/app-server-host/`,
-generates one stable server UUID, acquires the Host Root lock, and starts Pi's
-native App Server. Its session directory is `.pi/app-server-host/sessions/`;
-each session is created with a project cwd under `workspaces/`, enforced by
-`TSPI_WORKSPACE_ROOT`. The workspace-directory service exposes only validated
-direct-child workspaces containing a supported `workspace.json`.
+The `ts-app-server-tspi.service` unit invokes TSPi's internal Host entrypoint.
+It creates the installation Host state at `.pi/app-server-host/`, generates one
+stable server UUID, acquires the Host Root lock, and starts Pi's native App
+Server. Its session directory is `.pi/app-server-host/sessions/`;
+`.pi/app-server-host/workspace/` is only the Host's private Pi control cwd, not a
+research project.
+each session is created with a project cwd under the configured workspace root
+(default `<install>/workspaces`), enforced by `TSPI_WORKSPACE_ROOT`. The
+workspace-directory service exposes only validated direct-child workspaces
+containing a supported `workspace.json`.
 
 `TSPi --workspace <name>` is the native TUI client. It connects to the Host and
 passes `TSPI_SESSION_CWD` when creating a session, so the session worker keeps
-the selected project's filesystem context. TS Phone uses the same service and
-can switch projects without opening another Host connection. The old
-`--app-server --workspace <name>` mode remains only as a compatibility path.
+the selected project's filesystem context. TS Phone uses the same services to
+list or create projects and to create or switch sessions without opening
+another Host connection. The old `--app-server --workspace <name>` mode remains
+only as a compatibility path.
 
 The first client launch initializes a missing workspace through the same
-validated bootstrap used by compatibility mode. A workspace is still never
-created implicitly by the Host itself; the client must name it explicitly.
+validated bootstrap used by compatibility mode. The Host never creates an
+unnamed workspace; a client must request a valid direct-child name explicitly.
 
 The launcher validates installation ownership, package identity, workspace
 path safety, and runtime configuration before executing Node/Pi. A second Host
@@ -205,6 +212,13 @@ systemd user service when available, so restarting the App Server Host does not
 kill an in-flight local calculation; environments without a user systemd
 manager use the process-group fallback and should avoid restarting the parent
 service during a calculation.
+
+`ts_remote` is not a second calculation command. It is the remote transport and
+readiness subsystem used by `ts_calc`. The recommended `compute.toml` keeps
+local and remote software providers in one profile catalog; only remote
+profiles add SSH/Torque fields. The read-only `ts_remote doctor` command checks
+SSH, Torque/PBS, remote storage, and configured software before a remote target
+is submitted.
 
 ## Run Journals And Result Delivery
 

@@ -14,6 +14,7 @@ from .models import RemoteProfile, SchedulerCommands, SoftwareProfile
 
 
 CONFIG_ENV = "TS_REMOTE_CONFIG"
+COMPUTE_CONFIG_ENV = "TS_COMPUTE_CONFIG"
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -33,7 +34,14 @@ class RemoteConfig:
 def configured_path() -> Path:
     raw = os.environ.get(CONFIG_ENV, "").strip()
     if not raw:
-        raise RemoteConfigurationError(f"{CONFIG_ENV} is not configured")
+        raw = os.environ.get(COMPUTE_CONFIG_ENV, "").strip()
+    if not raw:
+        install_root = os.environ.get("TSPI_INSTALL_ROOT", "").strip()
+        candidate = Path(install_root) / ".pi" / "compute.toml" if install_root else None
+        if candidate is not None and candidate.is_file():
+            raw = str(candidate)
+    if not raw:
+        raise RemoteConfigurationError(f"{CONFIG_ENV} or {COMPUTE_CONFIG_ENV} is not configured")
     path = Path(raw).expanduser()
     if not path.is_absolute():
         raise RemoteConfigurationError(f"{CONFIG_ENV} must be an absolute path")
@@ -52,8 +60,11 @@ def load_config(path: str | Path | None = None) -> RemoteConfig:
     profiles = {
         name: _profile(name, _mapping(value, f"profiles.{name}"), source.parent)
         for name, value in profiles_raw.items()
+        if not (isinstance(value, dict) and value.get("kind") == "local")
     }
     default = raw.get("default_profile")
+    if not isinstance(default, str) or default not in profiles:
+        default = next(iter(profiles), None)
     if not isinstance(default, str) or default not in profiles:
         raise RemoteConfigurationError("default_profile must name one configured profile")
     return RemoteConfig(source=source, default_profile=default, profiles=profiles)
@@ -96,6 +107,11 @@ def _profile(name: str, raw: dict[str, Any], base: Path) -> RemoteProfile:
         commands=commands,
         software=software,
     ).validate()
+
+
+def parse_profile(name: str, raw: dict[str, Any], base: Path) -> RemoteProfile:
+    """Parse one remote profile for the unified compute config loader."""
+    return _profile(name, raw, base)
 
 
 def _software(name: str, raw: dict[str, Any], profile_queues: tuple[str, ...]) -> SoftwareProfile:

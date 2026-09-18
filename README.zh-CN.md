@@ -19,15 +19,26 @@ cd TSPi
 核心安装始终包含 Agent、科学运行时和分子渲染；TS Web 是可选组件。安装器配置
 整个安装目录共用的 App Server Host；不再安装 TS Phone 守护进程。
 
-详见[安装与运维](docs/INSTALLATION.md)，其中包含依赖、运行时、升级、回滚和恢复说明。
+安装器还会询问是否安装可选的 TSPi 模型图标字体。交互安装默认安装；非交互安装
+默认不写入用户字体目录，可显式传入 `--with-model-icons`，或用
+`--without-model-icons` 禁用。字体安装在 `$XDG_DATA_HOME/fonts/tspi`（未设置时为
+`$HOME/.local/share/fonts/tspi`），未安装时仍使用 Nerd Font/Unicode 回退；设置
+`TSPI_ICON_STYLE=unicode` 或 `TSPI_ICON_STYLE=nerd` 可以覆盖自动选择。
+安装器会在可用时刷新 fontconfig 缓存；已经打开的终端可能需要重启后才能加载回退字体。
+
+详见[安装与运维](docs/INSTALLATION.md)，其中包含依赖、运行时、升级、回滚和恢复说明；
+模型与 provider 边界见[模型兼容性](docs/MODEL_COMPATIBILITY.zh-CN.md)。
 
 ## App Server 与终端
 
 整个安装目录运行一个 Pi App Server Host，由它为所有工作区独占会话、对话历史、模型状态和 Root 锁：
 
 ```bash
-./TSPi --host
+systemctl --user start ts-app-server-tspi.service
 ```
+
+使用 `systemctl --user stop|restart|status ts-app-server-tspi.service` 管理
+Host 生命周期。`--host` 只是服务内部入口，不用于日常启动。
 
 普通 TSPi 命令是该 App Server 的本地终端客户端：
 
@@ -41,11 +52,18 @@ broker。参阅[终端文档](docs/TERMINAL.zh-CN.md)、[中文架构](docs/ARCH
 
 ## 研究与远程计算
 
-在 `.pi/remote.toml`（或安装时使用 `--remote-config`）配置 SSH/Torque 和软件 profile，然后验证：
+安装时可以在统一的 `.pi/compute.toml` 中配置软件提供平台（使用
+`--compute-config` 导入已有文件）。旧的 `.pi/local.toml` 和
+`.pi/remote.toml` 仍然兼容。远程 profile 可用下面的命令验证：
 
 ```bash
 ./TSPi --check-remote
 ```
+
+`ts_calc` 是 local 和 remote 共用的唯一计算生命周期入口。每个 compute
+profile 都有 `kind = "local"` 或 `"remote"` 以及对应的软件表；只有
+remote profile 额外包含 SSH/Torque 字段。`ts_remote doctor` 仅用于远程
+SSH/Torque/软件就绪性检查。
 
 Skill 覆盖 Gaussian、xTB、CREST、ASE-NEB、结构验证、渲染、报告和邮件投递。详见
 [Skill 目录](skills/README.zh-CN.md) 与 [术语表](skills/tspi-orchestration/references/glossary.zh-CN.md)。

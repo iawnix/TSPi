@@ -1,12 +1,16 @@
 # Remote Execution Contract
 
-`ts_remote` uses OpenSSH/SCP and Torque for remote diagnostics.
+`ts_calc` owns the calculation lifecycle for both local and remote targets.
+`ts_remote` is the installation-bound OpenSSH/SCP and Torque transport plus its
+read-only diagnostics; it is not a second public calculation lifecycle.
 
 ## Installation-Owned Policy
 
-`remote.toml` owns SSH host/config, remote root, scheduler commands, queues,
-resource ceilings, software commands, activation, scratch policy, and server
-environment. A calculation request selects a named profile and resources within
+`compute.toml` is the recommended shared policy file. Each profile declares a
+`kind` and a `software` table; `kind = "remote"` profiles additionally own SSH
+host/config, remote root, scheduler commands, queues, resource ceilings,
+activation, scratch policy, and server environment. Existing `remote.toml` remains
+accepted. A calculation request selects a named profile and resources within
 its configured limits.
 
 Use `ts_remote` for read-only diagnostics:

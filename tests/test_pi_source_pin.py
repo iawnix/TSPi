@@ -5,6 +5,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,6 +21,9 @@ def test_pi_source_pin_is_explicit_and_valid() -> None:
     patch = (ROOT / "config" / "pi-worker-entry.patch").read_text(encoding="utf-8")
     assert "PI_SESSION_WORKER_ENTRY" in patch
     assert "packages/coding-agent/src/experimental/process.ts" in patch
+    create_patch = (ROOT / "config" / "pi-multi-workspace-create.patch").read_text(encoding="utf-8")
+    assert "createWorkspace(workspaceId" in create_patch
+    assert "WorkspaceDirectory" in create_patch
     resolver_patch = (ROOT / "config" / "pi-source-resolver.patch").read_text(encoding="utf-8")
     assert "source-resolver.ts" in resolver_patch
     assert "resolveTypeboxPath" in resolver_patch
@@ -62,3 +67,61 @@ def test_prepare_runtime_build_is_idempotent(tmp_path, monkeypatch):
     prepare_pi_source._prepare_runtime_build(tmp_path)
     prepare_pi_source._prepare_runtime_build(tmp_path)
     assert calls == ["hydrate:model-data", "build:offline"]
+
+
+def test_multi_workspace_patch_upgrades_a_list_only_checkout(tmp_path, monkeypatch):
+    from scripts import prepare_pi_source
+
+    source = tmp_path / "pi"
+    services = source / "packages/coding-agent/src/experimental/services"
+    services.mkdir(parents=True)
+    (services / "sessions.ts").write_text(
+        'export const WorkspaceDirectory = defineService<WorkspaceDirectory>("tspi.workspace-directory");\n',
+        encoding="utf-8",
+    )
+    (services / "server.ts").write_text(
+        "listWorkspaces(context: Context): Promise<WorkspaceSummary[]>;\n"
+        "provider.provide(WorkspaceDirectory, { list: (context) => options.listWorkspaces(context) });\n",
+        encoding="utf-8",
+    )
+    (source / "packages/coding-agent/src/experimental/server.ts").write_text(
+        "listWorkspaces: listWorkspaceRoots,\n",
+        encoding="utf-8",
+    )
+    calls: list[list[str]] = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+
+    monkeypatch.setattr(prepare_pi_source.subprocess, "run", run)
+
+    prepare_pi_source.apply_multi_workspace_patch(source)
+
+    assert calls == [["git", "-C", str(source), "apply", str(prepare_pi_source.MULTI_WORKSPACE_CREATE_PATCH_PATH)]]
+
+
+def test_pi_source_verify_rejects_a_list_only_workspace_patch(tmp_path, monkeypatch):
+    from scripts import prepare_pi_source
+
+    source = tmp_path / "pi"
+    experimental = source / "packages/coding-agent/src/experimental"
+    services = experimental / "services"
+    services.mkdir(parents=True)
+    (source / ".git").mkdir()
+    (experimental / "cli.ts").write_text("", encoding="utf-8")
+    (experimental / "process.ts").write_text("PI_SESSION_WORKER_ENTRY", encoding="utf-8")
+    (services / "sessions.ts").write_text(
+        'export const WorkspaceDirectory = defineService<WorkspaceDirectory>("tspi.workspace-directory");\n',
+        encoding="utf-8",
+    )
+    (experimental / "server.ts").write_text("listWorkspaces: listWorkspaceRoots,\n", encoding="utf-8")
+    (services / "server.ts").write_text(
+        "listWorkspaces(context: Context): Promise<WorkspaceSummary[]>;\n",
+        encoding="utf-8",
+    )
+    (services / "slash-commands-provider.ts").write_text("tspi.system-prompt", encoding="utf-8")
+    (experimental / "source-resolver.ts").write_text('pattern === "typebox"', encoding="utf-8")
+    monkeypatch.setattr(prepare_pi_source, "_git", lambda *_args: prepare_pi_source._pin()["commit"])
+
+    with pytest.raises(prepare_pi_source.PiSourceError, match="complete TSPi multi-workspace patch"):
+        prepare_pi_source.verify(source)

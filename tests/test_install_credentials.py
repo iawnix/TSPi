@@ -24,6 +24,22 @@ def test_web_credential_is_created_once_and_preserved(tmp_path: Path) -> None:
     assert stat.S_IMODE(token.parent.stat().st_mode) == 0o700
 
 
+def test_web_credential_accepts_an_explicit_token_and_can_rotate_it(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    root.mkdir()
+    selected = "a" * 40
+    rotated = "b" * 40
+
+    first = provision_service_credentials(root, with_web=True, web_token_value=selected)
+    token = Path(first["web_http"]["path"])
+    second = provision_service_credentials(root, with_web=True, web_token_value=rotated)
+
+    assert first["web_http"]["status"] == "configured"
+    assert second["web_http"]["status"] == "configured"
+    assert token.read_text(encoding="ascii") == f"{rotated}\n"
+    assert stat.S_IMODE(token.stat().st_mode) == 0o600
+
+
 def test_no_web_requires_no_service_credentials(tmp_path: Path) -> None:
     root = tmp_path / "install"
     root.mkdir()

@@ -21,7 +21,13 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run test:package
-      - run: npm run test:terminal
+      - name: Prepare pinned Pi source
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_root="$(python3 scripts/prepare_pi_source.py --install "$RUNNER_TEMP/tspi")"
+          echo "TSPI_PI_SOURCE=$source_root" >> "$GITHUB_ENV"
+      - run: npm run test:native-pi
 
   python-fast:
     name: Python fast tests

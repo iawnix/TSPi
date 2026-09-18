@@ -11,6 +11,7 @@ from pathlib import Path
 
 INSTALLATION_MARKER_SCHEMA = "tspi-installation-root/1"
 PACKAGE_STATE_SCHEMA = "tspi-package-install/1"
+WORKSPACE_ROOT_SCHEMA = "tspi-workspace-root/1"
 RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
@@ -92,6 +93,51 @@ def write_installation_marker(root: Path) -> Path:
         if os.path.exists(temporary_name):
             os.unlink(temporary_name)
     return marker
+
+
+def read_workspace_root(root: Path) -> Path:
+    """Return the installation-owned workspace container configuration."""
+
+    path = root / ".pi/tspi/workspace-root.json"
+    if not path.exists() and not path.is_symlink():
+        return root / "workspaces"
+    value = _read_object(path, "workspace root configuration")
+    if set(value) != {"schema_version", "workspace_root"} or value.get("schema_version") != WORKSPACE_ROOT_SCHEMA:
+        raise ValueError(f"workspace root configuration is invalid: {path}")
+    configured = value.get("workspace_root")
+    if not isinstance(configured, str) or not configured or any(ord(character) < 32 for character in configured):
+        raise ValueError(f"workspace root configuration is invalid: {path}")
+    workspace_root = Path(configured).expanduser()
+    if not workspace_root.is_absolute():
+        raise ValueError(f"workspace root configuration must be absolute: {path}")
+    return workspace_root
+
+
+def write_workspace_root(root: Path, workspace_root: Path) -> Path:
+    """Atomically persist the workspace container without changing ownership metadata."""
+
+    private = root / ".pi/tspi"
+    if private.is_symlink() or not private.is_dir():
+        raise ValueError(f"installer control path must be a physical directory: {private}")
+    path = private / "workspace-root.json"
+    descriptor, temporary_name = tempfile.mkstemp(prefix=".workspace-root.", dir=private)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(
+                {"schema_version": WORKSPACE_ROOT_SCHEMA, "workspace_root": str(workspace_root)},
+                handle,
+                indent=2,
+                sort_keys=True,
+            )
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary_name, 0o600)
+        os.replace(temporary_name, path)
+    finally:
+        if os.path.exists(temporary_name):
+            os.unlink(temporary_name)
+    return path
 
 
 def _read_object(path: Path, label: str) -> dict[str, object]:

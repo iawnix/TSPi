@@ -1,7 +1,7 @@
 # 架构
 
 TSPi 在 Pi 之上提供计算化学 skill 和工作流扩展。一个安装目录只运行一个原生
-Pi App Server Host，由它服务 `workspaces/` 下的所有直接子工作区；不再需要单独
+Pi App Server Host，由它服务配置的 workspace root 下的所有直接子工作区；不再需要单独
 的 TS Phone broker 或每个工作区一个 service。
 
 ## 组件职责
@@ -9,7 +9,8 @@ Pi App Server Host，由它服务 `workspaces/` 下的所有直接子工作区�
 - `apps/app-server/` 启动 Pi 原生 App Server 和 session worker。
 - `packages/ts-agent-kernel/ts_agent/` 管理科学契约、工作区状态、引用完整性、验证
   和只读投影。计算控制面负责本地子进程的持久化生命周期，并通过配置好的
-  `ts_remote` adapter 委托远程执行；渲染、报告和邮件仍由 Skill/Plugin 工具提供。
+  `ts_calc` 对 local 和 remote 使用同一套计算生命周期；`ts_remote` 仅提供
+  远程传输和就绪性检查。渲染、报告和邮件仍由 Skill/Plugin 工具提供。
 - `extensions/` 同时包含客户端展示扩展和包内的 server workflow 扩展。App Server
   只加载 `extensions/server/extensions.json` 中经过 allowlist 和 SHA-256 校验的
   条目，不执行客户端提交的代码。
@@ -18,8 +19,9 @@ Pi App Server Host，由它服务 `workspaces/` 下的所有直接子工作区�
 - TS Phone 是独立 Flutter 客户端，通过 Pi Radius 连接 App Server。
 
 App Server 独占 session directory、对话历史、模型状态、prompt 操作和工作区 Root
-锁；本地 TUI 与 TS Phone 连接同一个 owner。Worker 会加载包中对模型可见的 skill、
-原生 system prompt 和经过验证的 server extension inventory。该 inventory 会写入
+锁；本地 TUI 与 TS Phone 连接同一个 owner，并共享 `read`、`write`、`bash` 和全部
+包内工具，客户端传输方式不是权限角色。Worker 会加载包中对模型可见的 skill、原生
+system prompt 和经过验证的 server extension inventory。该 inventory 会写入
 `sys_prompt` provenance，客户端可以审计本次会话使用的工具集合。
 
 ## 科学状态模型
@@ -61,7 +63,8 @@ Claim / Hypothesis -> ResearchNode -> Skill/Plugin runs
 Kernel 负责 ID、引用、digest、事务和投影；在 Agent 边界上它就是受保护的
 `ts_state` / `ts_change` 工具表面，也可管理 workspace identity 和 Node 产物根目录，
 但不是另一个 agent runtime。Root Agent 选择问题、方法、分支和停止条件；Skill/Plugin
-执行 `ts_calc`、`ts_remote`、`ts_render`、`ts_email` 等工具。工具成功不等于科学
+执行 `ts_calc`、`ts_remote`、`ts_render`、`ts_email` 等工具。`ts_calc` 是统一的
+local/remote 计算入口，`ts_remote doctor` 只是远程只读诊断；工具成功不等于科学
 结论成立，也不能直接改变 Claim 状态。
 
 ### NodeGate 与 ClaimGate
@@ -109,17 +112,20 @@ Phase 名称或工具退出码直接当成科学状态，也不推断下一步�
 
 ## App Server 生命周期
 
-`TSPi --host` 在 `.pi/app-server-host/` 创建安装级 Host 状态，写入一个稳定 UUID，
+`ts-app-server-tspi.service` 调用 TSPi 的内部 Host 入口，在 `.pi/app-server-host/`
+创建安装级 Host 状态并写入一个稳定 UUID，
 获取 Host Root 锁并启动 Pi App Server。`.pi/app-server-host/sessions/` 保存全部会话；
-每个会话创建时带有 `workspaces/` 下项目的 cwd，并由 `TSPI_WORKSPACE_ROOT` 限制。
+`.pi/app-server-host/workspace/` 只是 Host 的私有 Pi 控制 cwd，不是研究项目。
+每个会话创建时带有配置的 workspace root（默认 `<install>/workspaces`）下项目的 cwd，
+并由 `TSPI_WORKSPACE_ROOT` 限制。
 `tspi.workspace-directory` 只暴露包含受支持 `workspace.json` 的直接子工作区。
 
 `TSPi --workspace <name>` 是连接 Host 的 Pi 原生 TUI 客户端，并在创建会话时传递
-`TSPI_SESSION_CWD`。TS Phone 通过同一个 service 列出项目、切换项目和会话，无需为
-每个项目再次连接或启动 Host。旧的 `--app-server --workspace <name>` 仅作为兼容路径。
+`TSPI_SESSION_CWD`。TS Phone 通过同一组 service 列出或创建项目，并创建或切换会话，
+无需为每个项目再次连接或启动 Host。旧的 `--app-server --workspace <name>` 仅作为兼容路径。
 
 第一次执行 `TSPi --workspace <name>` 时，如果项目不存在，客户端会通过同一套经过校验
-的 bootstrap 初始化它；Host 本身不会创建未命名项目，必须由客户端明确指定名称。
+的 bootstrap 初始化它；Host 不会创建未命名项目，必须由客户端明确指定合法名称。
 
 ## 手机连接
 
@@ -146,8 +152,10 @@ cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
 `execution_target.kind=local` 和 `remote` 使用同一套
 `prepare -> submit -> inspect -> collect -> parse` 生命周期。Research Kernel
 工作区始终是唯一规范存储：本地执行在 Attempt 的 execution 目录暂存输入并把输出
-收集回工作区，远程目录只是临时执行镜像，TS Web 不需要访问远程文件系统。远程计算
-和产物记录使用显式 schema。TS Web 只读取工作区文件，不拥有 Pi session。入口、skill、
+收集回工作区，远程目录只是临时执行镜像，TS Web 不需要访问远程文件系统。推荐的
+`compute.toml` 将 local/remote 软件提供平台放在同一份 profile 目录中，只有 remote
+profile 增加 SSH/Torque 字段。远程计算和产物记录使用显式 schema。TS Web 只读取工作区
+文件，不拥有 Pi session。入口、skill、
 扩展和测试位置与[英文架构](ARCHITECTURE.md)一致。
 
 可用 user systemd 时，本地 worker 会进入独立的临时 service，因此重启 App Server Host

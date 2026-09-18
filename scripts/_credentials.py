@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import stat
+import tempfile
 from pathlib import Path
 
 
@@ -19,6 +20,7 @@ def provision_service_credentials(
     *,
     with_web: bool,
     web_token_path: Path | None = None,
+    web_token_value: str | None = None,
 ) -> dict[str, dict[str, str]]:
     """Create missing service credentials and preserve valid existing values."""
     expanded_root = install_root.expanduser()
@@ -38,6 +40,9 @@ def provision_service_credentials(
     if not specifications:
         return {}
 
+    if web_token_value is not None:
+        _validate_token_value(web_token_value)
+
     directories: list[Path] = []
     for _, path in specifications:
         for directory in (root / ".pi", path.parent):
@@ -48,6 +53,8 @@ def provision_service_credentials(
 
     existing: dict[str, str] = {}
     for name, path in specifications:
+        if name == "web_http" and web_token_value is not None:
+            continue
         value = _read_existing_secret(path)
         if value is not None:
             existing[name] = value
@@ -60,10 +67,15 @@ def provision_service_credentials(
         if name in existing:
             result[name] = {"path": str(path), "status": "preserved", "mode": "0600"}
             continue
-        value = _new_token(used)
-        _create_secret(path, value)
+        value = web_token_value if name == "web_http" and web_token_value is not None else _new_token(used)
+        if web_token_value is not None and name == "web_http":
+            _write_secret(path, value)
+            status = "configured"
+        else:
+            _create_secret(path, value)
+            status = "created"
         used.add(value)
-        result[name] = {"path": str(path), "status": "created", "mode": "0600"}
+        result[name] = {"path": str(path), "status": status, "mode": "0600"}
 
     final_values = [_read_required_secret(path) for _, path in specifications]
     if len(set(final_values)) != len(final_values):
@@ -147,6 +159,31 @@ def _new_token(used: set[str]) -> str:
         value = secrets.token_urlsafe(TOKEN_BYTES)
         if value not in used:
             return value
+
+
+def _validate_token_value(value: str) -> None:
+    if TOKEN_PATTERN.fullmatch(value) is None:
+        raise ValueError("TS Web token must contain 40 to 100 URL-safe characters")
+
+
+def _write_secret(path: Path, value: str) -> None:
+    """Atomically install an explicitly selected token without following links."""
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        payload = f"{value}\n".encode("ascii")
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = -1
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        _validate_secret_file(path, os.stat(path))
+    finally:
+        if descriptor != -1:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
 
 
 def _create_secret(path: Path, value: str) -> None:

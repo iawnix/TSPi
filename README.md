@@ -22,7 +22,8 @@ molecular rendering. TS Web is optional. The installer configures one
 installation-wide App Server Host; there is no TS Phone daemon to install.
 
 See [Installation and Operations](docs/INSTALLATION.md) for prerequisites,
-runtime setup, upgrades, rollback, and recovery.
+runtime setup, upgrades, rollback, and recovery. Model/provider behavior is
+documented in [Model Compatibility](docs/MODEL_COMPATIBILITY.md).
 
 ## App Server and terminal
 
@@ -30,8 +31,12 @@ One installation-wide Pi App Server Host owns sessions, transcript history,
 model state, and the Root lock for all workspaces:
 
 ```bash
-./TSPi --host
+systemctl --user start ts-app-server-tspi.service
 ```
+
+Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for the
+Host lifecycle. `--host` is an internal service entrypoint and is not part of
+normal operation.
 
 The default TSPi command is the local terminal client of that server:
 
@@ -45,12 +50,19 @@ it is not a second Host or broker. See [Terminal](docs/TERMINAL.md),
 
 ## Research and remote execution
 
-Configure SSH/Torque and software profiles in `.pi/remote.toml` (or pass
-`--remote-config` to the installer), then verify:
+Configure software providers and execution platforms in the unified
+`.pi/compute.toml` (or pass one to the installer with `--compute-config`).
+Existing `.pi/local.toml` and `.pi/remote.toml` files remain supported. Verify a
+remote profile with:
 
 ```bash
 ./TSPi --check-remote
 ```
+
+`ts_calc` is the single calculation lifecycle for both local and remote
+targets. A compute profile contains a `kind` (`local` or `remote`) and its
+software table; only remote profiles add SSH/Torque fields. `ts_remote doctor`
+is only a read-only remote readiness check.
 
 The skills cover Gaussian, xTB, CREST, ASE-NEB, structure validation,
 rendering, reports, and email delivery. See the [Skill Catalog](skills/README.md)

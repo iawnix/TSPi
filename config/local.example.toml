@@ -1,0 +1,35 @@
+# Local backend configuration for this machine (compatibility format).
+# Prefer config/compute.example.toml, which keeps local and remote profiles
+# together. Copy this file to .pi/local.toml only when using the older format.
+# Values are command strings, not shell command lines or argument arrays.
+# Optional activation_script entries are sourced by the local worker before
+# it execs the backend command. The detected software activation scripts are:
+#
+#   Gaussian: /home/iaw/soft/gaussian/activate_gaussian16.sh
+#   xTB:      /home/iaw/soft/xtb/current/activate_xtb.sh
+#   CREST:    /home/iaw/soft/crest/activate_crest.sh
+#
+# Gaussian and CREST need their activation environments for a complete
+# installation. The current systemd Host does not source interactive shell
+# activation files, so declare the scripts here.
+
+[backends.gaussian]
+
+# Gaussian 16 A.03.
+command = "/home/iaw/soft/gaussian/current/g16/g16"
+activation_script = "/home/iaw/soft/gaussian/activate_gaussian16.sh"
+
+[backends.xtb]
+# xTB 6.7.1.
+command = "/home/iaw/soft/xtb/current/bin/xtb"
+activation_script = "/home/iaw/soft/xtb/current/activate_xtb.sh"
+
+[backends.ase_neb_xtb]
+# ASE-NEB uses the same xTB executable.
+command = "/home/iaw/soft/xtb/current/bin/xtb"
+activation_script = "/home/iaw/soft/xtb/current/activate_xtb.sh"
+
+[backends.crest]
+# CREST 3.0.2.
+command = "/home/iaw/soft/crest/current/bin/crest"
+activation_script = "/home/iaw/soft/crest/activate_crest.sh"

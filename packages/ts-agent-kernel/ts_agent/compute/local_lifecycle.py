@@ -30,6 +30,7 @@ class LocalJobConfig:
     input_paths: tuple[Path, ...]
     expected_artifacts: tuple[str, ...]
     environment: dict[str, str]
+    activation_script: str | None = None
     stdin_name: str | None = None
     stdout_name: str = "local_job.stdout"
     stderr_name: str = "local_job.stderr"
@@ -74,6 +75,7 @@ def submit(config: LocalJobConfig) -> LocalReceipt:
         "run_dir": str(config.run_dir),
         "command": list(config.command),
         "environment": config.environment,
+        "activation_script": config.activation_script,
         "stdin_path": str(config.run_dir / config.stdin_name) if config.stdin_name else None,
         "stdout_path": str(config.run_dir / config.stdout_name),
         "stderr_path": str(config.run_dir / config.stderr_name),
@@ -317,6 +319,15 @@ def _validate_config(config: LocalJobConfig) -> None:
         raise ValueError("local calculation command must be a non-empty argv")
     if config.run_dir.is_symlink() or (config.run_dir.exists() and not config.run_dir.is_dir()):
         raise ValueError("local calculation run directory must be a physical directory")
+    if config.activation_script is not None:
+        activation = Path(config.activation_script)
+        if (
+            not activation.is_absolute()
+            or activation.is_symlink()
+            or not activation.is_file()
+            or not os.access(activation, os.R_OK)
+        ):
+            raise ValueError("local activation script must be an absolute readable regular file")
     names = list(config.expected_artifacts)
     if not names or len(names) != len(set(names)):
         raise ValueError("local calculation expected artifacts must be unique")

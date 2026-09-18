@@ -105,8 +105,10 @@ diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-
 index 5ec02aaa2..6628e5298 100644
 --- a/packages/coding-agent/src/experimental/server.ts
 +++ b/packages/coding-agent/src/experimental/server.ts
-@@ -1,7 +1,7 @@
+@@ -1,7 +1,9 @@
++import { execFile } from "node:child_process";
  import { randomUUID } from "node:crypto";
++import { promisify } from "node:util";
 -import { chmod, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 +import { chmod, lstat, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
  import { homedir } from "node:os";
@@ -124,16 +126,48 @@ index 5ec02aaa2..6628e5298 100644
  import { SessionPluginSelectionConflictError, SessionWorkerManager } from "./session-worker-manager.ts";
  
  export const ENV_SERVER_DIR = "PI_SERVER_DIR";
-@@ -373,6 +373,60 @@ interface RunningServerBackend extends RunningServer {
+@@ -373,6 +375,92 @@ interface RunningServerBackend extends RunningServer {
  	refreshSessions(): Promise<void>;
  }
  
 +const WORKSPACE_ROOT_ENV = "TSPI_WORKSPACE_ROOT";
++const WORKSPACE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
++const execFileAsync = promisify(execFile);
 +
-+async function resolveSessionCwd(requested: string | undefined): Promise<string> {
++function resolveWorkspacePath(workspaceId: string): string {
++	if (!WORKSPACE_NAME.test(workspaceId)) throw new Error("workspaceId is invalid");
++	const rootValue = process.env[WORKSPACE_ROOT_ENV];
++	if (rootValue === undefined) throw new Error("TSPI_WORKSPACE_ROOT is not configured");
++	const root = resolvePath(rootValue);
++	const candidate = resolve(root, workspaceId);
++	const relativePath = relative(root, candidate);
++	if (relativePath !== workspaceId || relativePath.startsWith("..") || isAbsolute(relativePath)) {
++		throw new Error("workspaceId must name a direct workspace");
++	}
++	return candidate;
++}
++
++async function createWorkspaceRoot(workspaceId: string): Promise<WorkspaceSummary> {
++	const candidate = resolveWorkspacePath(workspaceId);
++	try {
++		await mkdir(candidate, { mode: 0o700 });
++	} catch (error) {
++		if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
++	}
++	const bootstrap = process.env.TSPI_WORKSPACE_BOOTSTRAP;
++	if (!bootstrap) throw new Error("TSPi workspace bootstrap command is not configured");
++	const python = process.env.TSPI_WORKSPACE_PYTHON || "python3";
++	await execFileAsync(python, [bootstrap, "bootstrap", "--root", candidate], { env: process.env });
++	const workspaces = await listWorkspaceRoots();
++	const result = workspaces.find((item) => item.workspaceId === workspaceId);
++	if (!result) throw new Error("workspace bootstrap did not register " + workspaceId);
++	return result;
++}
++
++async function resolveSessionCwd(requested: string | undefined, workspaceId?: string): Promise<string> {
 +	const rootValue = process.env[WORKSPACE_ROOT_ENV];
 +	const root = rootValue === undefined ? undefined : resolvePath(rootValue);
-+	const candidate = resolvePath(requested ?? process.cwd());
++	const candidate = workspaceId === undefined ? resolvePath(requested ?? process.cwd()) : resolveWorkspacePath(workspaceId);
 +	if (root !== undefined) {
 +		const relativePath = relative(root, candidate);
 +		if (
@@ -160,14 +194,14 @@ index 5ec02aaa2..6628e5298 100644
 +	return candidate;
 +}
 +
-+async function listWorkspaceRoots(_context: Context): Promise<WorkspaceSummary[]> {
++async function listWorkspaceRoots(_context?: Context): Promise<WorkspaceSummary[]> {
 +	const rootValue = process.env[WORKSPACE_ROOT_ENV];
 +	if (rootValue === undefined) return [];
 +	const root = resolvePath(rootValue);
 +	const entries = await readdir(root, { withFileTypes: true });
 +	const workspaces: WorkspaceSummary[] = [];
 +	for (const entry of entries) {
-+		if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
++		if (!entry.isDirectory() || entry.isSymbolicLink() || !WORKSPACE_NAME.test(entry.name)) continue;
 +		const workspaceRoot = resolve(root, entry.name);
 +		try {
 +			const info = await stat(workspaceRoot);
@@ -190,7 +224,7 @@ index 5ec02aaa2..6628e5298 100644
  		context: Context,
  	): Promise<JsonlSessionMetadata> => {
 -		const session = await repo.create({ ...createOptions, cwd: process.cwd() }, context);
-+		const cwd = await resolveSessionCwd(createOptions.cwd);
++		const cwd = await resolveSessionCwd(createOptions.cwd, createOptions.workspaceId);
 +		const session = await repo.create({ ...createOptions, cwd }, context);
  		try {
  			return session.metadata;
@@ -203,11 +237,12 @@ index 5ec02aaa2..6628e5298 100644
  	});
  	const closeStorage = async (): Promise<void> => {
  		const cleanup = await Promise.allSettled([repo.close(TODO_CONTEXT), executionEnv.cleanup(TODO_CONTEXT)]);
-@@ -420,6 +476,7 @@ async function startServerBackend(
+@@ -420,6 +476,8 @@ async function startServerBackend(
  			(await listSessions(context))
  				.map(summarize)
  				.sort((left, right) => left.sessionId.localeCompare(right.sessionId) || left.createdAt - right.createdAt),
 +		listWorkspaces: listWorkspaceRoots,
++		createWorkspace: createWorkspaceRoot,
  		create: async (createOptions, context) => summarize(await createSession(createOptions, context)),
  		remove: async (sessionId, context) => {
  			const metadata = await resolveSession(sessionId, context);
@@ -224,15 +259,16 @@ index 86cc76863..e64208efe 100644
  } from "./sessions.ts";
  
  export interface ExperimentalServerServices {
-@@ -24,6 +26,7 @@ export interface ExperimentalServerServices {
+@@ -24,6 +26,8 @@ export interface ExperimentalServerServices {
  
  export async function createExperimentalServerServices(options: {
  	list(context: Context): Promise<SessionSummary[]>;
 +	listWorkspaces(context: Context): Promise<WorkspaceSummary[]>;
++	createWorkspace(workspaceId: string, context: Context): Promise<WorkspaceSummary>;
  	create(createOptions: SessionCreateOptions, context: Context): Promise<SessionSummary>;
  	remove(sessionId: string, context: Context): Promise<void>;
  	prepareSessionPlugins(
-@@ -64,9 +67,13 @@ export async function createExperimentalServerServices(options: {
+@@ -64,9 +67,14 @@ export async function createExperimentalServerServices(options: {
  				const provider = new RemoteServiceProvider([
  					{ service: SessionDirectory, mode: "singleton" },
  					{ service: SessionManagement, mode: "singleton" },
@@ -242,6 +278,7 @@ index 86cc76863..e64208efe 100644
  				provider.provide(SessionDirectory, { state: directory });
 +				provider.provide(WorkspaceDirectory, {
 +					list: (context) => options.listWorkspaces(context),
++					create: (workspaceId, context) => serialize(() => options.createWorkspace(workspaceId, context)),
 +				});
  				provider.provide(PresentationPlugins, {
  					prepareSession: ({ sessionId, packagePaths }, context) =>
@@ -250,7 +287,7 @@ diff --git a/packages/coding-agent/src/experimental/services/sessions.ts b/packa
 index 79dbec2f5..7a7bb7333 100644
 --- a/packages/coding-agent/src/experimental/services/sessions.ts
 +++ b/packages/coding-agent/src/experimental/services/sessions.ts
-@@ -8,10 +8,14 @@ export interface SessionAddress {
+@@ -8,10 +8,16 @@ export interface SessionAddress {
  
  export interface SessionSummary extends SessionAddress {
  	createdAt: number;
@@ -262,10 +299,12 @@ index 79dbec2f5..7a7bb7333 100644
  	id?: string;
 +	/** Project directory for a multi-workspace host. */
 +	cwd?: string;
++	/** Installation workspace name. Prefer this over sending a filesystem path. */
++	workspaceId?: string;
  }
  
  export interface SessionDirectoryState {
-@@ -33,3 +37,15 @@ export interface SessionManagement {
+@@ -33,3 +37,16 @@ export interface SessionManagement {
  }
  
  export const SessionManagement = defineService<SessionManagement>("pi.session-management");
@@ -278,6 +317,7 @@ index 79dbec2f5..7a7bb7333 100644
 +
 +export interface WorkspaceDirectory {
 +	list(context: Context): Promise<WorkspaceSummary[]>;
++	create(workspaceId: string, context: Context): Promise<WorkspaceSummary>;
 +}
 +
 +export const WorkspaceDirectory = defineService<WorkspaceDirectory>("tspi.workspace-directory");

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="183mm" height="109.8mm" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
   <title id="title">TSPi research architecture</title>
-  <desc id="desc">An abstract, publication-ready architecture of the TSPi hypothesis-to-proof loop. The Root Agent directs a deterministic Research Kernel, which coordinates bounded capabilities, evidence promotion, validation, scientific outcomes, and read-only Web and Phone projections.</desc>
+  <desc id="desc">An abstract, publication-ready architecture of the TSPi research loop. The Root Agent reads scoped state, submits explicit Decisions through ts_change, invokes bounded capabilities, verifies evidence, and interprets Node and Claim results. The Research Kernel is the single transactional mutation authority; TS Web is read-only while Phone and terminal clients share the Pi session.</desc>
   <defs>
     <filter id="shadow" x="-15%" y="-15%" width="130%" height="145%">
       <feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#17384D" flood-opacity="0.11"/>
@@ -46,16 +46,16 @@
   <rect x="20" y="20" width="1160" height="680" rx="22" fill="#FBFCFB" stroke="#D9E4E6" stroke-width="1.6"/>
 
   <text x="48" y="61" class="title">TSPi research architecture</text>
-  <text x="48" y="87" class="subtitle">A provenance-preserving loop from scientific questions to validated, inspectable conclusions</text>
+  <text x="48" y="87" class="subtitle">A provenance-preserving loop from scientific questions to explicit, inspectable decisions</text>
 
   <!-- Decision feedback closes the scientific loop. -->
   <path d="M1150 580H1162V106H151V170" class="feedback"/>
-  <rect x="746" y="93" width="194" height="25" rx="12.5" fill="#FFF6F2"/>
-  <text x="843" y="110" class="note" text-anchor="middle" style="fill:#C0523F">decision · next question</text>
+  <rect x="700" y="93" width="300" height="25" rx="12.5" fill="#FFF6F2"/>
+  <text x="850" y="110" class="note" text-anchor="middle" style="fill:#C0523F">Root decision · next Node / branch / backtrack</text>
 
   <text x="48" y="151" class="section">SCIENTIFIC DIRECTION</text>
   <text x="330" y="136" class="section">DETERMINISTIC RESEARCH CORE</text>
-  <text x="900" y="151" class="section">READ-ONLY PROJECTIONS</text>
+  <text x="900" y="151" class="section">CLIENT SURFACES</text>
 
   <!-- Root Agent -->
   <g filter="url(#shadow)">
@@ -71,7 +71,9 @@
 
   <!-- Root proposal to the kernel. -->
   <path d="M258 235H330" class="navyFlow"/>
-  <text x="294" y="219" class="note" text-anchor="middle">typed proposal</text>
+  <text x="294" y="219" class="note" text-anchor="middle">ts_change</text>
+  <path d="M330 320H292V285H258" class="tealFlow"/>
+  <text x="294" y="339" class="note" text-anchor="middle">ts_state</text>
 
   <!-- Research Kernel -->
   <g filter="url(#shadow)">
@@ -80,32 +82,34 @@
   <circle cx="368" cy="185" r="17" fill="#CFECE8"/>
   <path d="M359 185h18M368 176v18" stroke="#208C86" stroke-width="2.7" stroke-linecap="round"/>
   <text x="396" y="192" class="label">Research Kernel</text>
-  <text x="365" y="218" class="body">single workspace · single mutation authority</text>
+  <text x="365" y="218" class="body">single mutation authority · atomic commit</text>
 
   <g>
     <rect x="365" y="240" width="130" height="112" rx="15" fill="#FFFFFF" stroke="#208C86" stroke-width="1.8"/>
     <circle cx="430" cy="270" r="16" fill="#D8F1ED"/>
     <path d="M420 276L430 264 440 276M420 276h20M430 264v-7" fill="none" stroke="#208C86" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="430" y="307" class="subLabel" text-anchor="middle">Research graph</text>
-    <text x="430" y="331" class="note" text-anchor="middle">Phase · Node · Claim</text>
+    <text x="430" y="307" class="subLabel" text-anchor="middle" style="font-size:15px">Research graph</text>
+    <text x="430" y="331" class="note" text-anchor="middle" style="font-size:12px">Phase / Node / Claim</text>
   </g>
   <g>
     <rect x="515" y="240" width="130" height="112" rx="15" fill="#FFFFFF" stroke="#6C63A8" stroke-width="1.8"/>
     <circle cx="580" cy="270" r="16" fill="#ECE9FA"/>
     <path d="M572 261h13l4 4v15h-17zM585 261v5h5M576 271h9M576 276h7" fill="none" stroke="#6C63A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     <text x="580" y="307" class="subLabel" text-anchor="middle">Provenance</text>
-    <text x="580" y="331" class="note" text-anchor="middle">Artifacts · ledger</text>
+    <text x="580" y="327" class="note" text-anchor="middle" style="font-size:12px">Artifacts + digests</text>
+    <text x="580" y="345" class="note" text-anchor="middle" style="font-size:12px">Attempts + logs</text>
   </g>
   <g>
     <rect x="665" y="240" width="130" height="112" rx="15" fill="#FFFFFF" stroke="#D6654D" stroke-width="1.8"/>
     <circle cx="730" cy="270" r="16" fill="#FBE6E1"/>
     <path d="M720 270l7 7 13-15" fill="none" stroke="#D6654D" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="730" y="307" class="subLabel" text-anchor="middle">Validation</text>
-    <text x="730" y="331" class="note" text-anchor="middle">ProofSpec · results</text>
+    <text x="730" y="307" class="subLabel" text-anchor="middle" style="font-size:13px">Validation / Gate</text>
+    <text x="730" y="327" class="note" text-anchor="middle" style="font-size:12px">ProofSpec · Result</text>
+    <text x="730" y="345" class="note" text-anchor="middle" style="font-size:11px">NodeGate / ClaimGate</text>
   </g>
   <line x1="365" y1="378" x2="795" y2="378" stroke="#A9D5D1" stroke-width="1.7"/>
   <circle cx="391" cy="408" r="7" fill="#208C86"/>
-  <text x="410" y="414" class="body">canonical state · immutable evidence · explicit decisions</text>
+  <text x="410" y="414" class="body">canonical records · immutable evidence · explicit decisions</text>
 
   <!-- Read-only projections -->
   <g filter="url(#shadow)">
@@ -126,13 +130,14 @@
   <rect x="928" y="327" width="16" height="26" rx="3" fill="none" stroke="#4F7E91" stroke-width="2.2"/>
   <circle cx="936" cy="349" r="1.7" fill="#4F7E91"/>
   <text x="966" y="338" class="label">Phone / terminal</text>
-  <text x="966" y="362" class="body">Session-scoped clients</text>
-  <rect x="1029" y="370" width="98" height="21" rx="10.5" fill="#E8F4F3"/>
-  <text x="1078" y="385" class="note" text-anchor="middle" fill="#20766F">READ ONLY</text>
+  <text x="966" y="362" class="body">Shared Pi session</text>
+  <rect x="1021" y="370" width="116" height="21" rx="10.5" fill="#E8F4F3"/>
+  <text x="1079" y="385" class="note" text-anchor="middle" fill="#20766F">AGENT + TOOLS</text>
 
-  <!-- Kernel projections. -->
+  <!-- Kernel context and client session surfaces. -->
   <path d="M830 210H900" class="tealFlow"/>
   <path d="M830 345H900" class="tealFlow"/>
+  <path d="M900 355H830" class="navyFlow"/>
 
   <text x="48" y="495" class="section">CAPABILITY + EVIDENCE PLANE</text>
 
@@ -140,8 +145,8 @@
   <g filter="url(#shadow)">
     <rect x="48" y="515" width="310" height="130" rx="18" fill="#FFFDF8" stroke="#D7AC45" stroke-width="1.8"/>
   </g>
-  <text x="70" y="548" class="label">Bounded capabilities</text>
-  <text x="70" y="570" class="body">typed action adapters</text>
+  <text x="70" y="548" class="label">Skills / plugins</text>
+  <text x="70" y="570" class="body">typed actions · ts_calc / analyze</text>
   <g class="note" text-anchor="middle">
     <circle cx="79" cy="606" r="18" fill="#F7E9BC"/><text x="79" y="611">G16</text>
     <circle cx="128" cy="606" r="18" fill="#F7E9BC"/><text x="128" y="611">xTB</text>
@@ -155,33 +160,33 @@
   <g filter="url(#shadow)">
     <rect x="415" y="515" width="325" height="130" rx="18" fill="#F8FAFD" stroke="#6C8FB3" stroke-width="1.8"/>
   </g>
-  <text x="437" y="548" class="label">Evidence path</text>
-  <text x="437" y="570" class="body">Artifact → Candidate → Observation → Proof</text>
-  <path d="M454 606C489 584 523 584 558 606S627 628 662 606S697 584 716 600" fill="none" stroke="#6C8FB3" stroke-width="2.8" stroke-linecap="round" marker-end="url(#arrowNavy)"/>
-  <circle cx="454" cy="606" r="8" fill="#FFFFFF" stroke="#6C8FB3" stroke-width="2.3"/>
-  <circle cx="558" cy="606" r="8" fill="#FFFFFF" stroke="#6C8FB3" stroke-width="2.3"/>
-  <circle cx="662" cy="606" r="8" fill="#FFFFFF" stroke="#6C8FB3" stroke-width="2.3"/>
-  <circle cx="716" cy="600" r="8" fill="#DDEAF4" stroke="#6C8FB3" stroke-width="2.3"/>
+  <text x="437" y="548" class="label">Evidence curation</text>
+  <text x="437" y="570" class="body">Artifact → Candidate → Root verifies</text>
+  <text x="437" y="592" class="body">Observation / Finding → Proof</text>
+  <path d="M454 625C489 607 523 607 558 625S627 643 662 625S697 607 716 619" fill="none" stroke="#6C8FB3" stroke-width="2.8" stroke-linecap="round" marker-end="url(#arrowNavy)"/>
+  <circle cx="454" cy="625" r="8" fill="#FFFFFF" stroke="#6C8FB3" stroke-width="2.3"/>
+  <circle cx="558" cy="625" r="8" fill="#FFFFFF" stroke="#6C8FB3" stroke-width="2.3"/>
+  <circle cx="662" cy="625" r="8" fill="#FFFFFF" stroke="#6C8FB3" stroke-width="2.3"/>
+  <circle cx="716" cy="619" r="8" fill="#DDEAF4" stroke="#6C8FB3" stroke-width="2.3"/>
 
   <!-- Scientific outcome -->
   <g filter="url(#shadow)">
     <rect x="800" y="515" width="350" height="130" rx="18" fill="url(#outcomeGradient)" stroke="#D6654D" stroke-width="1.8"/>
   </g>
-  <text x="822" y="548" class="label">Scientific outcome</text>
-  <text x="822" y="570" class="body">supported · open · blocked · stale</text>
-  <path d="M835 611h54l18-27 24 48 24-37 22 16 28-29 29 29h79" fill="none" stroke="#D6654D" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="835" cy="611" r="5.5" fill="#D6654D"/>
-  <circle cx="1113" cy="611" r="5.5" fill="#D6654D"/>
+  <text x="822" y="548" class="label">Root interpretation</text>
+  <text x="822" y="570" class="body">Node: completed · inconclusive · blocked</text>
+  <text x="822" y="592" class="body">Claim: supported · contradicted · open</text>
+  <text x="822" y="614" class="note">Acceptance · next Node · branch · backtrack</text>
 
   <!-- Hypothesis-to-proof data loop. -->
-  <path d="M410 445C410 477 236 473 205 515" class="navyFlow"/>
-  <text x="331" y="466" class="note" text-anchor="middle">typed action</text>
+  <path d="M153 320V430H205V515" class="navyFlow"/>
+  <text x="205" y="466" class="note" text-anchor="middle">skill / plugin call</text>
   <path d="M358 584H415" class="navyFlow"/>
   <text x="386" y="568" class="note" text-anchor="middle">artifacts</text>
   <path d="M578 515C578 483 596 477 596 445" class="tealFlow"/>
   <text x="622" y="476" class="note">promote</text>
   <path d="M756 445C764 480 902 478 931 515" class="tealFlow"/>
-  <text x="845" y="476" class="note" text-anchor="middle">validated state</text>
+  <text x="845" y="476" class="note" text-anchor="middle">GateResult</text>
 
   <!-- Legend -->
   <g transform="translate(48 672)">

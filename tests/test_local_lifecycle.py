@@ -41,3 +41,34 @@ def test_local_submit_is_idempotent_and_status_survives_worker_completion(tmp_pa
     assert copied == [artifact]
     assert manifest[0]["size"] == len(b"completed\n")
     assert (staging / artifact).read_text(encoding="utf-8") == "completed\n"
+
+
+def test_local_submit_sources_activation_script_before_exec(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    activation = tmp_path / "activate.sh"
+    activation.write_text("#!/usr/bin/env bash\nexport TSPI_TEST_ACTIVATED=ready\n", encoding="utf-8")
+    activation.chmod(0o755)
+    artifact = "activation.txt"
+    script = (
+        "import os; from pathlib import Path; "
+        f"Path({str(run_dir / artifact)!r}).write_text(os.environ['TSPI_TEST_ACTIVATED'], encoding='utf-8')"
+    )
+    config = LocalJobConfig(
+        intent_id="calc_2",
+        run_dir=run_dir,
+        command=(sys.executable, "-c", script),
+        input_paths=(),
+        expected_artifacts=(artifact,),
+        environment={},
+        activation_script=str(activation),
+    )
+
+    receipt = submit(config)
+    deadline = time.monotonic() + 10
+    observed = status(config, receipt)
+    while observed.get("state") == "running" and time.monotonic() < deadline:
+        time.sleep(0.05)
+        observed = status(config, receipt)
+
+    assert observed["state"] == "completed"
+    assert (run_dir / artifact).read_text(encoding="utf-8") == "ready"

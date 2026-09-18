@@ -555,7 +555,10 @@ TS Phone remains a companion interface:
 - the mobile app displays conversation, loop timeline, model/context metadata,
   and recovery state;
 - App Server Controller services own prompt, model, and abort operations;
-- Phone cannot submit arbitrary paths, shell commands, or direct state writes.
+- Phone prompts the same Agent as the terminal and therefore can use its full
+  `read`, `write`, `bash`, and TSPi tool set. The client does not upload
+  executable code or bypass the Agent/Kernel contracts with a separate raw
+  filesystem API.
 
 The package builder binds:
 

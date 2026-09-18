@@ -26,6 +26,9 @@ def run(config: dict[str, Any]) -> int:
     status_path = Path(str(config["status_path"]))
     command = [str(item) for item in config["command"]]
     environment = {str(key): str(value) for key, value in config.get("environment", {}).items()}
+    activation_script = config.get("activation_script")
+    if activation_script is not None:
+        activation_script = str(activation_script)
     child: subprocess.Popen[bytes] | None = None
     stop_requested = False
 
@@ -67,8 +70,26 @@ def run(config: dict[str, Any]) -> int:
             stdin = source.open("rb")
         stdout = Path(str(config["stdout_path"])).open("ab")
         stderr = Path(str(config["stderr_path"])).open("ab")
+        child_command = command
+        if activation_script:
+            activation = Path(activation_script)
+            if (
+                not activation.is_absolute()
+                or activation.is_symlink()
+                or not activation.is_file()
+                or not os.access(activation, os.R_OK)
+            ):
+                raise OSError("local worker activation script must be an absolute readable regular file")
+            child_command = [
+                "/bin/bash",
+                "-c",
+                'set -e; source "$1"; shift; exec "$@"',
+                "tspi-local-activation",
+                activation_script,
+                *command,
+            ]
         child = subprocess.Popen(
-            command,
+            child_command,
             cwd=str(config["run_dir"]),
             env={**os.environ, **environment},
             stdin=stdin if stdin is not None else subprocess.DEVNULL,

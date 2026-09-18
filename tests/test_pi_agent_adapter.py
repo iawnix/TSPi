@@ -80,6 +80,29 @@ process.stdout.write(JSON.stringify({{
     assert not any(name.startswith("ts_workspace_") or name.startswith("ts_subagent_") for name in EXPECTED_TOOLS)
 
 
+def test_model_icons_identify_known_providers_and_fall_back_for_unknown_models() -> None:
+    script = f"""
+import {{ tspiIcon, tspiIconStyle, tspiModelIconName, tspiModelIconLabel }} from {json.dumps((ROOT / 'extensions/shared/icons.ts').as_uri())};
+const models=[
+  {{provider:"deepseek",id:"deepseek-chat"}},
+  {{provider:"openai",id:"gpt-5.5"}},
+  {{provider:"zai-coding-cn",id:"glm-4.5"}},
+  {{provider:"volcengine",id:"doubao-seed-1.6"}},
+  {{provider:"custom",id:"local-model"}},
+  undefined,
+];
+process.stdout.write(JSON.stringify({{models:models.map((model)=>({{name:tspiModelIconName(model),label:tspiModelIconLabel(model,"unicode")}})),tspi:tspiIcon("deepseek","tspi"),fallback:tspiIcon("session","tspi"),style:tspiIconStyle("custom")}}));
+"""
+    result = _node_json(script)
+    assert [item["name"] for item in result["models"]] == ["deepseek", "gpt", "glm", "seeddance", "model", "model"]
+    assert result["models"][0]["label"].endswith("deepseek-chat")
+    assert result["models"][4]["label"].endswith("local-model")
+    assert result["models"][5]["label"].endswith("Default model")
+    assert ord(result["tspi"]) == 0xE800
+    assert result["fallback"] == "◆"
+    assert result["style"] == "tspi"
+
+
 def test_public_parameters_use_research_node_and_logical_artifact_vocabulary() -> None:
     script = f"""
 import review from {json.dumps((ROOT / 'extensions/ts-workflow-review/index.ts').as_uri())};

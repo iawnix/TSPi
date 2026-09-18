@@ -18,7 +18,14 @@ QBICS DMECP is not a registered capability. A backend is not public until it
 has a deterministic parser contract and task-validation tests; an input
 preparer alone is insufficient.
 
-Use the catalog to construct requests and `ts_remote doctor` to check readiness.
+Use the catalog to construct `ts_calc` requests. Select
+`execution_target.kind = "local"` or `"remote"` and, when a shared
+`compute.toml` is installed, the corresponding profile name; the lifecycle and
+result contract are the same. Run `ts_remote doctor` only to check readiness
+for a remote target.
+
+For example, a local request can bind `{"kind":"local","profile":"local"}`;
+the same capability can bind `{"kind":"remote","profile":"cluster_1w",...}`.
 
 ## Adapter Output
 
@@ -39,9 +46,12 @@ scientific-intent digests plus same-Node Attempt lineage. Any changed method,
 input, command-relevant parameter, or expected output needs a new recalculation
 intent.
 
-The current execution boundary is explicit: local targets support deterministic
-preparation and parsing only when `dry_run=true`; scheduler lifecycle actions
-use a configured remote target. Check the selected software profile before launching.
+The execution boundary is explicit but not remote-only: local targets support
+deterministic preparation when `dry_run=true` and start a bounded, durable
+Attempt-local worker when `dry_run=false`. Remote targets use the configured
+Torque/PBS profile only when `dry_run=false`; remote dry-runs generate and
+validate a submission plan without contacting the scheduler. Check the selected
+software profile before launching.
 
 ## Record Scientific Results
 

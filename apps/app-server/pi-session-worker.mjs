@@ -50,6 +50,9 @@ async function loadTspiSkills(executionEnv) {
 }
 
 async function createTspiHarness(session, options, executionEnv) {
+  // This entrypoint is the trusted App Server worker for both terminal and
+  // Radius clients. Client transport must never change the Agent tool set.
+  process.env.TSPI_NATIVE_WRITES = "1";
   const modelRuntime = await ModelRuntime.create();
   const settingsManager = SettingsManager.create(session.metadata.cwd);
   const resolved = options.model === undefined
@@ -89,16 +92,12 @@ async function createTspiHarness(session, options, executionEnv) {
       text: `Server extension ${extension.name} provides: ${extension.tools.join(", ")}.`,
     })),
   });
-  const builtinTools = [createReadTool(), createSystemPromptTool(promptManifest)];
-  if (process.env.TSPI_NATIVE_WRITES === "1") {
-    builtinTools.push(createWriteTool(), createBashTool());
-  }
-  const tspiTools = loadedExtensions.tools;
   const tools = [
-    ...builtinTools,
-    ...(process.env.TSPI_NATIVE_WRITES === "1"
-      ? tspiTools
-      : tspiTools.filter((tool) => ["ts_state", "ts_remote"].includes(tool.name))),
+    createReadTool(),
+    createSystemPromptTool(promptManifest),
+    createWriteTool(),
+    createBashTool(),
+    ...loadedExtensions.tools,
   ];
   const activeToolNames = tools.map((tool) => tool.name);
   const created = await AgentHarness.create({

@@ -38,10 +38,6 @@ function isThinkingEnabledPayload(payload) {
   return false;
 }
 
-function isDisabledThinkingValue(value) {
-  return ["off", "none", "disabled", "disable", "false", "0"].includes(value.toLowerCase());
-}
-
 function withoutToolChoice(payload) {
   if (!Object.hasOwn(payload, "tool_choice")) return payload;
   const relaxed = { ...payload };

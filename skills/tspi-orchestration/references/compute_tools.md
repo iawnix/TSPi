@@ -88,11 +88,15 @@ or `stopped` and Root has recorded any needed scientific interpretation.
 still pending. `collected` still requires parsing. A created or prepared intent
 has made no external change and does not by itself prevent abandoning the Node.
 
-The public launch path requires a configured `remote` execution target. A
-`local` target is available only to the deterministic kernel for `dry_run=true`
-preparation and parsing of an output that already exists; it never starts a
-local Gaussian, xTB, or scheduler process. `submit`, `status`, `tail`,
-`collect`, and `cancel` always require a prepared remote target.
+Execution target and `dry_run` are independent controls. With
+`executionTarget.kind=local`, `dry_run=true` prepares and validates the local
+plan without starting a program; `dry_run=false` starts the selected backend in
+the workspace's durable Attempt-local worker and supports the full
+`submit/status/tail/collect/cancel` lifecycle. With
+`executionTarget.kind=remote`, `dry_run=true` only prepares and validates the
+remote plan; `dry_run=false` submits through the configured Torque/PBS profile.
+The host still rejects arbitrary shell and keeps every command bound to the
+validated capability and immutable calculation intent.
 
 ## Inspect
 
