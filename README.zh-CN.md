@@ -26,7 +26,8 @@ cd TSPi
 `TSPI_ICON_STYLE=unicode` 或 `TSPI_ICON_STYLE=nerd` 可以覆盖自动选择。
 安装器会在可用时刷新 fontconfig 缓存；已经打开的终端可能需要重启后才能加载回退字体。
 
-详见[安装与运维](docs/INSTALLATION.zh-CN.md)，其中包含依赖、运行时、升级、回滚和恢复说明；
+详见[安装与运维](docs/INSTALLATION.zh-CN.md)（英文版：[Installation and Operations](docs/INSTALLATION.md)），
+其中包含依赖、运行时、升级、回滚和恢复说明；
 模型与 provider 边界见[模型兼容性](docs/MODEL_COMPATIBILITY.zh-CN.md)。
 
 ## App Server 与终端
@@ -91,4 +92,5 @@ npm run lint:public
 ```
 
 [维护者指南](docs/MAINTAINER_GUIDE.zh-CN.md)介绍包校验、App Server 生命周期和发布流程；
-英文版本见 [Architecture](docs/ARCHITECTURE.md)、[Terminal](docs/TERMINAL.md)。
+英文版本见 [Architecture](docs/ARCHITECTURE.md)、[Terminal](docs/TERMINAL.md) 和
+[Maintainer Guide](docs/MAINTAINER_GUIDE.md)。

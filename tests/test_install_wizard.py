@@ -38,6 +38,30 @@ def test_non_interactive_options_select_only_web_as_optional_component(tmp_path:
     assert not hasattr(args, "with_phone")
 
 
+def test_interactive_compute_backends_accepts_one_file_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = wizard.parse_args([
+        "--install-root", str(tmp_path / "install"),
+        "--without-web", "--service-scope", "none", "--email-provider", "smtp",
+    ])
+    args.workspace_root = str(tmp_path / "workspaces")
+    args.radius_gateway = "wss://radius.example.test"
+    args.conda_root = "/opt/conda"
+    prompts: list[str] = []
+    monkeypatch.setattr(wizard.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(wizard.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(wizard, "ask", lambda prompt, default="": prompts.append(prompt) or "")
+    monkeypatch.setattr(wizard, "ask_yes_no", lambda _prompt, default=True: default)
+
+    wizard.interactive_options(args)
+
+    assert prompts[0] == "Compute backend TOML path (blank preserves existing configuration)"
+    assert not any("backend TOML" in prompt or "remote" in prompt.lower() for prompt in prompts[1:])
+    assert args.compute_config is None
+
+
 def test_model_icon_options_are_mutually_exclusive(tmp_path: Path) -> None:
     root = tmp_path / "install"
     with_icons = wizard.parse_args(["--install-root", str(root), "--with-model-icons", "--non-interactive"])

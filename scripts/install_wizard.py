@@ -276,27 +276,9 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
         args.with_model_icons = ask_yes_no("Install TSPi model icon font", True)
     section("Compute backends")
     args.compute_config = ask(
-        "Unified compute.toml path (blank uses existing or separate files)",
+        "Compute backend TOML path (blank preserves existing configuration)",
         args.compute_config or "",
     ).strip() or None
-    if not args.compute_config:
-        args.local_config = ask(
-            "Local backend TOML (blank preserves existing configuration)",
-            args.local_config or "",
-        ).strip() or None
-        existing_remote = Path(args.install_root).expanduser() / ".pi" / "remote.toml"
-        args.remote_config = ask(
-            "Existing remote.toml path (blank preserves existing or configures below)",
-            args.remote_config or "",
-        ).strip() or None
-        if args.remote_config:
-            args.probe_remote = ask_yes_no("Run remote readiness checks during installation", False)
-        elif ask_yes_no(
-            "Configure a remote backend profile now",
-            False if existing_remote.is_file() else True,
-        ):
-            args._remote_config_content = _interactive_remote_config()
-            args.probe_remote = ask_yes_no("Run remote readiness checks during installation", False)
     section("Phone connection")
     if args.radius_gateway is None:
         args.radius_gateway = _existing_radius_gateway(Path(args.install_root))
@@ -401,14 +383,11 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Molecular rendering", "install and verify (xyzrender, Matplotlib)", tone="success")
     field("Pi App Server", "install pinned runtime and verify", tone="success")
     field("Local backend policy", "core Python/runtime only; native tools must be selected explicitly", tone="muted")
-    field("Unified compute config", args.compute_config or "preserve <install>/.pi/compute.toml if present", tone="muted")
-    field("Local backend profile", args.local_config or "preserve <install>/.pi/local.toml", tone="muted")
-    remote_plan = (
-        "generate interactively"
-        if getattr(args, "_remote_config_content", None)
-        else args.remote_config or "preserve <install>/.pi/remote.toml"
-    )
-    field("Remote backend profile", remote_plan, tone="muted")
+    field("Compute backend config", args.compute_config or "preserve <install>/.pi/compute.toml if present", tone="muted")
+    if args.local_config:
+        field("Legacy local backend file", args.local_config, tone="muted")
+    if args.remote_config:
+        field("Legacy remote backend file", args.remote_config, tone="muted")
     field("Remote readiness", "probe during installation" if args.probe_remote else "not probed", tone="success" if args.probe_remote else "muted")
     field(
         "App Server service",
@@ -725,95 +704,6 @@ def _validate_clawemail_install(root: Path) -> None:
             raise ValueError(f"ClawEmail {label} file is missing or unsafe: {path}")
         if stat.S_IMODE(path.stat().st_mode) != 0o600:
             raise ValueError(f"ClawEmail {label} file must have mode 0600: {path}")
-
-
-def _toml_array(values: list[str] | tuple[str, ...]) -> str:
-    return "[" + ", ".join(_toml_string(value) for value in values) + "]"
-
-
-def _csv_values(value: str, label: str) -> list[str]:
-    values = [item.strip() for item in value.split(",") if item.strip()]
-    if not values:
-        raise ValueError(f"{label} must contain at least one value")
-    return values
-
-
-def _interactive_remote_config() -> str:
-    """Collect a complete remote profile without ever asking for credentials."""
-
-    profile = ask("Remote profile name", "cluster_1w")
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", profile):
-        raise ValueError("remote profile name must contain only letters, numbers, '.', '_' or '-'")
-    ssh_host = ask("SSH host or alias", "agent.1w")
-    ssh_config = ask("SSH config path", str(Path.home() / ".ssh" / "config"))
-    scheduler = ask("Scheduler (torque)", "torque").lower()
-    remote_root = ask(
-        "Remote workspace root (absolute POSIX path)",
-        f"/home/{getpass.getuser()}/ts-remote-workspaces",
-    )
-    queues = _csv_values(ask("Allowed queues (comma separated)", "batch,fat,fata"), "allowed queues")
-    max_nodes = int(ask("Maximum nodes", "1"))
-    connect_timeout = int(ask("SSH connect timeout (seconds)", "15"))
-    command_timeout = int(ask("Remote command timeout (seconds)", "60"))
-    scheduler_commands = {
-        name: ask(f"Torque {name} command", name)
-        for name in ("qsub", "qstat", "qdel", "pbsnodes")
-    }
-    if any(not value or any(character.isspace() for character in value) for value in scheduler_commands.values()):
-        raise ValueError("Torque scheduler commands must be non-empty names without whitespace")
-
-    def software(name: str, command_default: str) -> tuple[tuple[str, ...], str | None, str | None, list[str], bool] | None:
-        if not ask_yes_no(f"Configure remote {name} profile", True):
-            return None
-        command_text = ask(f"{name} executable or command", command_default)
-        command = tuple(shlex.split(command_text))
-        if not command:
-            raise ValueError(f"{name} command must not be empty")
-        activation = ask(f"{name} activation script (blank if none)", "").strip() or None
-        scratch = ask(f"{name} scratch root (blank uses node TMPDIR)", "").strip() or None
-        queue_text = ask(f"{name} allowed queues (blank uses profile queues)", "").strip()
-        software_queues = _csv_values(queue_text, f"{name} allowed queues") if queue_text else queues
-        requires_gpu = ask_yes_no(f"{name} requires GPU", False)
-        return command, activation, scratch, software_queues, requires_gpu
-
-    gaussian = software("Gaussian", "g16")
-    xtb = software("xTB", "xtb")
-    crest = software("CREST", "crest")
-    ase_neb = software("ASE-NEB Python", "python")
-    ase_xtb = ask("ASE-NEB xTB executable", "xtb") if ase_neb is not None else None
-
-    profile_key = _toml_string(profile)
-    lines = [
-        f"default_profile = {_toml_string(profile)}",
-        "",
-        f"[profiles.{profile_key}]",
-        f"ssh_host = {_toml_string(ssh_host)}",
-        f"ssh_config = {_toml_string(ssh_config)}",
-        f"scheduler = {_toml_string(scheduler)}",
-        f"remote_root = {_toml_string(remote_root)}",
-        f"allowed_queues = {_toml_array(queues)}",
-        f"max_nodes = {max_nodes}",
-        f"connect_timeout_seconds = {connect_timeout}",
-        f"command_timeout_seconds = {command_timeout}",
-        "",
-        f"[profiles.{profile_key}.commands]",
-        *[f"{name} = {_toml_string(command)}" for name, command in scheduler_commands.items()],
-    ]
-    for name, value in (("gaussian", gaussian), ("xtb", xtb), ("crest", crest), ("ase_neb", ase_neb)):
-        if value is None:
-            continue
-        command, activation, scratch, software_queues, requires_gpu = value
-        lines.extend(["", f"[profiles.{profile_key}.software.{name}]", f"command = {_toml_array(command)}"])
-        if activation:
-            lines.append(f"activation_script = {_toml_string(activation)}")
-        if scratch:
-            lines.append(f"scratch_root = {_toml_string(scratch)}")
-        lines.append(f"allowed_queues = {_toml_array(software_queues)}")
-        lines.append(f"requires_gpu = {'true' if requires_gpu else 'false'}")
-        if name == "ase_neb":
-            assert ase_xtb is not None
-            lines.extend(["", f"[profiles.{profile_key}.software.{name}.environment]", f"TS_ASE_NEB_XTB = {_toml_string(ase_xtb)}"])
-    return "\n".join(lines) + "\n"
 
 
 def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:

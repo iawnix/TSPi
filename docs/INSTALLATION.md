@@ -80,30 +80,28 @@ installations that already have the project-listing portion receive the compatib
 incremental patch for project creation and `workspaceId` session binding before the
 Host is restarted.
 
-## Configure Remote Execution
+## Configure Remote Execution (Compute Backends)
 
 Local calculation runs the selected provider in a durable Attempt-local
 subprocess. Remote execution mirrors inputs temporarily and collects results
 back locally. Both are selected from the same compute profile model; only a
 remote profile carries SSH/Torque transport fields.
 
-The recommended installation file is `<install>/.pi/compute.toml`. A complete
-machine-oriented template is available at `config/compute.example.toml`.
-Import it with `--compute-config /absolute/path/compute.toml`.
+The installer accepts one TOML file for compute backends. During an interactive
+install, enter its path when prompted; for a non-interactive install, pass
+`--compute-config /absolute/path/compute.toml`. The project template is
+`config/compute.example.toml`. Copy it, edit the local and/or remote providers
+available on the target machine, and pass the edited file to the installer. The
+installed copy is `<install>/.pi/compute.toml` and is written with mode `0600`.
 
-The interactive installer can still create `<install>/.pi/remote.toml` field by field.
-It asks for the profile name, SSH host and config path, Torque/PBS queue policy,
-remote workspace root, timeouts, and the Gaussian, xTB, CREST, and ASE-NEB
-commands (including optional activation and scratch paths). SSH keys and other
-credentials stay in the SSH configuration; they are never copied into this
-TOML. To import a file that is already managed by an administrator, pass
-`--remote-config /absolute/path/remote.toml` instead. Both paths use the same
-validation and are installed with mode `0600`.
+Local and remote calculations share one public lifecycle through `ts_calc`; choose
+`execution_target.kind = "local"` or `"remote"` and, when using the unified file,
+its profile name in the calculation intent. SSH keys and other credentials stay in
+the SSH configuration and are never copied into this TOML. TSPi does not install
+Gaussian or other site-managed native chemistry software.
 
-The generated or imported profile is used for remote execution. Local and
-remote calculations share one public lifecycle through `ts_calc`; choose
-`execution_target.kind = "local"` or `"remote"` and, when using the unified
-file, its profile name in the calculation intent.
+Existing installations may continue to use the legacy `--local-config` and
+`--remote-config` files. New installations should use the unified template above.
 `ts_remote doctor` (also available as `./TSPi --check-remote`) is a read-only
 readiness check for the remote profile and is not a second calculation command.
 Add `--probe-remote` when installation should run `TSPi --check-remote` and fail
@@ -112,71 +110,16 @@ are ready. Without that flag the summary reports `not_probed` rather than
 claiming remote readiness.
 The current remote contract supports Torque/PBS only (`scheduler = "torque"`).
 The profile must describe SSH, a writable remote root, allowed queues, and the
-site-managed Gaussian/xTB/CREST/ASE-NEB commands. TSPi does not install remote
-software. Restrict the file to mode 0600, then run:
+site-managed Gaussian/xTB/CREST/ASE-NEB commands. Restrict the file to mode 0600,
+then run:
 
 ```bash
 ./TSPi --check-remote
 ```
 
-The resulting file has this shape (the installer fills in every value):
-
-```toml
-default_profile = "cluster_1w"
-
-[profiles."cluster_1w"]
-ssh_host = "agent.1w"
-ssh_config = "/home/me/.ssh/config"
-scheduler = "torque"
-remote_root = "/home/me/ts-remote-workspaces"
-allowed_queues = ["batch", "fat"]
-max_nodes = 1
-
-[profiles."cluster_1w".software.gaussian]
-command = ["g16"]
-activation_script = "/opt/gaussian/activate.sh"
-allowed_queues = ["batch", "fat"]
-```
-
-Additional scheduler commands and xTB/CREST/ASE-NEB software tables are
-generated when those fields are entered. Paths are resolved on the remote
-host; TSPi only checks their declared shape and performs the opt-in doctor
-probe.
-
-Remote execution code and software environments belong to the configured
-compute node; the App Server submits and records jobs but does not copy
-credentials into the mobile client.
-
-### Existing local backend file
-
-Core installation installs the managed Python, RDKit/ASE scientific runtime,
-and render tools. It does not download Gaussian or silently install arbitrary
-native chemistry programs. Use `--local-config /absolute/path/local.toml` to
-select existing executables; the file is copied to `<install>/.pi/local.toml`:
-
-```toml
-[backends.gaussian]
-command = "/opt/gaussian/g16"
-activation_script = "/opt/gaussian/activate.sh"
-
-[backends.xtb]
-command = "/opt/xtb/bin/xtb"
-activation_script = "/opt/xtb/activate.sh"
-
-[backends.crest]
-command = "/opt/crest/bin/crest"
-activation_script = "/opt/crest/activate.sh"
-
-[backends.ase_neb_xtb]
-command = "/opt/xtb/bin/xtb"
-activation_script = "/opt/xtb/activate.sh"
-```
-
-The installer reports command readiness for every local backend. An optional
-`activation_script` is sourced by the local worker before it starts the command.
-ASE-NEB reuses the managed Python runtime and only needs a working xTB
-executable. Gaussian license checks and site-specific native installation
-remain administrator work.
+Remote execution code and software environments belong to the configured compute
+node; the App Server submits and records jobs but does not copy credentials into
+the mobile client.
 
 ## Installation Logs
 

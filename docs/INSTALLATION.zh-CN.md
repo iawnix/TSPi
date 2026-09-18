@@ -44,24 +44,27 @@
 scripts/prepare_pi_source.py --install <root>
 ```
 
-## 配置远程执行
+## 配置计算后端
 
 本地计算在持久化 Attempt 子进程中执行；远程执行临时镜像输入并将结果收回本地。
 两者共享 `ts_calc` 的 `prepare -> submit -> inspect -> collect -> parse` 生命周期，
-只有 remote profile 包含 SSH/Torque 字段。推荐配置文件为
-`<install>/.pi/compute.toml`，模板位于 `config/compute.example.toml`：
+只有 remote profile 包含 SSH/Torque 字段。安装器统一接收一份计算后端 TOML 文件：
+交互安装时在提示处输入文件路径，非交互安装时使用
+`--compute-config /absolute/path/compute.toml`。项目模板位于
+`config/compute.example.toml`；复制后按目标机器修改 local/remote provider，再交给安装器。
+安装后的文件为 `<install>/.pi/compute.toml`，权限为 `0600`。
+
+已有安装仍兼容 `--local-config` 和 `--remote-config` 两种旧格式；新安装建议使用上面的
+统一模板。TSPi 不会下载 Gaussian 或其他站点管理的本地化学软件，SSH 凭据仍由 SSH
+配置管理，不会复制到该 TOML 文件中。
+
+当前远程合同只支持 Torque/PBS。配置必须声明 SSH、可写远程根目录、允许队列及站点
+管理的 Gaussian/xTB/CREST/ASE-NEB 命令；配置文件应保持 `0600`。可用下面的命令执行
+只读远程就绪性检查：
 
 ```bash
 ./TSPi --check-remote
 ```
-
-当前远程合同只支持 Torque/PBS。配置必须声明 SSH、可写远程根目录、允许队列及站点
-管理的 Gaussian/xTB/CREST/ASE-NEB 命令；TSPi 不安装远程软件。配置文件应保持
-`0600`，凭据留在 SSH 配置中。
-
-本地后端可通过 `--local-config /absolute/path/local.toml` 选择已有的 Gaussian、
-xTB、CREST 和 ASE-NEB 可执行文件。TSPi 不会下载 Gaussian，也不会静默安装任意
-本地化学程序。
 
 ## 安装日志、通知与 Host
 
