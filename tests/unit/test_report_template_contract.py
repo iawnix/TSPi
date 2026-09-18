@@ -16,14 +16,10 @@ def test_report_builder_contains_required_sections(tmp_path: Path) -> None:
     start_research_node(workspace)
     text = build_final_report(workspace)
     for phrase in [
-        "Executive Status",
         "Research Roadmap",
-        "Scientific Conclusions",
         "ResearchNode Records",
-        "Semantic Observations",
-        "Frozen Validation",
         "Findings",
-        "Claim Acceptance",
+        "Gates",
         "Operational Follow-up",
     ]:
         assert phrase in text
@@ -32,14 +28,10 @@ def test_report_builder_contains_required_sections(tmp_path: Path) -> None:
 def test_report_contract_keeps_acceptance_and_provenance_explicit() -> None:
     text = CONTRACT.read_text(encoding="utf-8")
     for phrase in [
-        "acceptance record",
-        "ProofSpecs",
-        "passing ValidationResults",
-        "Finding snapshot",
-        "stationary-point",
-        "reaction-coordinate",
-        "connectivity",
-        "registered Observation",
-        "source artifact",
+        "FactFindings",
+        "IssueFindings",
+        "Gate",
+        "Numerical Discipline",
+        "Package Integrity",
     ]:
         assert phrase in text

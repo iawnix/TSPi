@@ -13,7 +13,6 @@ from .errors import RemoteConfigurationError
 from .models import RemoteProfile, SchedulerCommands, SoftwareProfile
 
 
-CONFIG_ENV = "TS_REMOTE_CONFIG"
 COMPUTE_CONFIG_ENV = "TS_COMPUTE_CONFIG"
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -32,21 +31,19 @@ class RemoteConfig:
 
 
 def configured_path() -> Path:
-    raw = os.environ.get(CONFIG_ENV, "").strip()
-    if not raw:
-        raw = os.environ.get(COMPUTE_CONFIG_ENV, "").strip()
+    raw = os.environ.get(COMPUTE_CONFIG_ENV, "").strip()
     if not raw:
         install_root = os.environ.get("TSPI_INSTALL_ROOT", "").strip()
         candidate = Path(install_root) / ".pi" / "compute.toml" if install_root else None
         if candidate is not None and candidate.is_file():
             raw = str(candidate)
     if not raw:
-        raise RemoteConfigurationError(f"{CONFIG_ENV} or {COMPUTE_CONFIG_ENV} is not configured")
+        raise RemoteConfigurationError(f"{COMPUTE_CONFIG_ENV} is not configured")
     path = Path(raw).expanduser()
     if not path.is_absolute():
-        raise RemoteConfigurationError(f"{CONFIG_ENV} must be an absolute path")
+        raise RemoteConfigurationError(f"{COMPUTE_CONFIG_ENV} must be an absolute path")
     if path.is_symlink() or not path.is_file():
-        raise RemoteConfigurationError(f"{CONFIG_ENV} is not a regular file: {path}")
+        raise RemoteConfigurationError(f"{COMPUTE_CONFIG_ENV} is not a regular file: {path}")
     return path.resolve(strict=True)
 
 

@@ -10,7 +10,7 @@ Keep failure domains separate before deciding scientific meaning.
 3. Distinguish SSH/transfer, scheduler, remote bootstrap, software activation,
    scratch, program, output, parser, and collection failure.
 4. Collect all declared outputs that exist and verify them locally.
-5. Record scientifically meaningful negative or anomalous observations only
+5. Record scientifically meaningful negative or anomalous findings only
    when primary artifacts support them.
 6. Decide retry, recalculation, changed strategy, new Node, user escalation, or
    stop as the Root Agent.
@@ -36,10 +36,11 @@ Retry only an unchanged intent with proven retry safety. Recalculation preserves
 the source Node/intent and states changed parameters and purpose. Start a new Node
 when the scientific objective, hypothesis, method rationale, or branch changes.
 
-Program failure is normally an operational fact. It contradicts a Claim only
-when a frozen ProofSpec deliberately treats the verified observation as a
-scientific failure condition.
+Program failure is normally operational data. It contradicts a Claim only when
+Root verifies a scientific consequence and records an IssueFinding or
+FactFinding that supports that interpretation.
 
-Record durable summaries through the existing calculation record, Finding, and
-Node result. Do not invent an Observation merely to make an operational error
+Record durable summaries through the calculation record and Node. Create an
+IssueFinding only when the operational error has a documented scientific
+consequence; do not add a placeholder Finding merely to make a runtime error
 visible.

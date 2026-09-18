@@ -19,14 +19,14 @@ The package needs three distinct answers:
 1. Where is this part of the study in the human research narrative?
 2. Which bounded unit produced these calculations, files, and outcomes?
 3. Which scientific statement is being tested, supported, contradicted, or
-   accepted?
+   left open?
 
 One object cannot answer all three without duplicating state or turning labels
 into workflow policy.
 
 ## Decision
 
-The research kernel uses three orthogonal layers:
+The research kernel uses three orthogonal map object types:
 
 ```text
 ResearchPhase -> human navigation and roadmap grouping
@@ -52,14 +52,10 @@ backtracking. Retries that preserve the objective stay under
 `nodes/<node_id>/attempts/`; a changed question or deliverable starts another
 Node.
 
-The Node is also the user-visible research decision episode. Its opening
-Decision explains why that question is next; its terminal result records what
-changed. One canonical Decision may create at most one Phase, start at most one
-Node, and complete at most one Node. It may start and complete that same Node;
-closing an existing Node and starting another atomically requires the new Node
-to depend explicitly on the completed Node. Evidence registration, validation
-bookkeeping, tool calls, and retries remain inside Node History and do not
-become roadmap Nodes.
+The Node is the user-visible bounded research task. A ChangeSet may create or
+transition Nodes, and a new Node depends explicitly on any completed Node that
+motivated it. Evidence registration, tool calls, and retries remain operational
+records and do not become extra roadmap Nodes.
 
 ResearchNodes do not duplicate hypothesis text. Hypotheses, assumptions, and
 falsifiers belong to Claims so that several Nodes can test the same statement
@@ -76,7 +72,7 @@ recorded on the Gate and do not silently mutate the target status.
 
 The Root Agent selects scientific questions, methods, alternatives,
 counterexamples, backtracking, and stopping. The Research Kernel exclusively
-allocates IDs, validates refs and schemas, applies Decisions, and persists
+allocates IDs, validates refs and schemas, applies ChangeSets, and persists
 canonical state. Compute, Render, Report, remote control, imports, and
 notifications are deterministic tools. Compute and Review child sessions are
 bounded operational and advisory mechanisms, not scientific state owners.
@@ -92,7 +88,7 @@ another scientific state store. The canonical paths are `research_map.json`,
 
 - Only ResearchKernel ChangeSet apply mutates canonical scientific state after bootstrap.
 - Every Node references one existing Phase.
-- A primary Claim, when present, is also in the Node Claim scope.
+- A Claim may be referenced by many Nodes and a Node may reference many Claims.
 - Phase metadata never authorizes an operation.
 - Node and Claim DAGs are acyclic and serve different purposes.
 - One ChangeSet records explicit Node state transitions.

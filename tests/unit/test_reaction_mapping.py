@@ -13,7 +13,8 @@ from ts_agent.compute import (
     list_calculation_artifacts,
 )
 from ts_agent.workspace import validate_workspace
-from ts_agent.workspace.candidates import load_observation_candidate, ObservationCandidateError
+from ts_agent.research import ResearchKernel
+from ts_agent.workspace.candidates import load_finding_candidate, FindingCandidateError
 from ts_agent.reaction.mapping import validate_atom_mapping
 from ts_agent.compute.analysis import analysis_capabilities, resolve_analysis_capability, run_analysis
 
@@ -204,12 +205,7 @@ def test_mapping_requires_open_node(tmp_path: Path) -> None:
             "rationale": "Close the node before checking the write guard.",
             "basis_refs": [],
             "operations": [
-                {
-                    "op": "complete_node",
-                    "nodeRef": node_id,
-                    "outcome": "stopped",
-                    "summary": "Stopped for the contract test.",
-                }
+                {"type": "set_node_state", "node_id": node_id, "state": "closed", "outcome": "stopped", "summary": "Stopped for the contract test."}
             ],
         },
     )
@@ -240,22 +236,22 @@ def test_analysis_candidates_promote_through_existing_change_and_retain_sources(
     result = _analysis_result(workspace, node_id, reactant, product)
     selected = result["candidate_refs"][0]
     assert selected["conceptId"] == "reaction.mapping.element_bijection"
-    assert json.loads((workspace / "observations.json").read_text())["observations"] == []
+    assert not (workspace / "observations.json").exists()
     apply_change(workspace, {
         "rationale": "Use the checked element correspondence as evidence, without claiming mechanism identity.",
         "basis_refs": [selected["artifactId"]],
         "operations": [{
-            "op": "record_observation", "local_ref": "mapping", "nodeRef": node_id,
-            "candidate": {key: selected[key] for key in ("artifactId", "candidateId")},
-            "conceptId": selected["conceptId"], "subjectRef": "explicit_reaction_mapping",
-            "summary": "All supplied atoms have one element-preserving correspondence.",
+            "type": "create_finding", "id": "fnd_1", "node_id": node_id,
+            "kind": "fact", "statement": "All supplied atoms have one element-preserving correspondence.",
+            "value": True, "datatype": "boolean", "source_refs": [selected["artifactId"]],
+            "provenance": {"producer": "ts_agent.reaction.mapping.validate_atom_mapping", "candidate_id": selected["candidateId"]},
         }],
     })
-    observation = json.loads((workspace / "observations.json").read_text())["observations"][0]
-    assert observation["value"] is True
-    assert observation["qualifiers"]["producer_kind"] == "analysis"
-    assert set(observation["artifact_refs"]) == {reactant, product, selected["artifactId"]}
-    assert observation["provenance"]["producer_version"] == "ts.reaction.mapping/1"
+    research_map = ResearchKernel(workspace).load()
+    finding = research_map.findings["fnd_1"]
+    assert finding.kind.value == "fact"
+    assert finding.value is True
+    assert finding.source_refs == [selected["artifactId"]]
     assert validate_workspace(workspace)["valid"] is True
 
 
@@ -267,14 +263,14 @@ def test_analysis_candidate_rejects_tampering_stale_sources_and_wrong_node(tmp_p
     path = workspace / artifact["path"]
     if mutation in {"value", "type"}:
         document = json.loads(path.read_text())
-        document["observation_candidates"]["candidates"][0]["value"] = False if mutation == "value" else 1
+        document["finding_candidates"]["candidates"][0]["value"] = False if mutation == "value" else 1
         path.write_text(json.dumps(document))
         # Even rebinding to the altered artifact's new ID cannot promote it.
         artifact = next(item for item in list_calculation_artifacts(workspace)["artifacts"] if item["path"] == artifact["path"])
     elif mutation == "source":
         (workspace / f"nodes/{node_id}/inputs/reactant.xyz").write_text(_xyz("N", "changed"))
-    with pytest.raises(ObservationCandidateError):
-        load_observation_candidate(
+    with pytest.raises(FindingCandidateError):
+        load_finding_candidate(
             workspace, node_id="node_2" if mutation == "owner" else node_id,
             artifact_id=artifact["artifact_id"], artifact_sha256=None, candidate_id="candidate_1",
         )

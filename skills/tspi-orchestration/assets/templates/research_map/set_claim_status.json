@@ -1,0 +1,5 @@
+{
+  "type": "set_claim_status",
+  "claim_id": "claim_existing",
+  "status": "supported"
+}

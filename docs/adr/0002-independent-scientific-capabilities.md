@@ -29,13 +29,12 @@ parameters. The engine writes content-addressed Node-owned outputs plus a
 and generated files. Domain results distinguish valid, invalid, inconclusive
 and unsupported; successful execution never means scientific acceptance.
 
-Facts use `ts-analysis-observation-candidates/1`. The existing `ts_change`
-candidate operation promotes a selected fact after replaying its registered
-handler and checking input/output bindings. Historical mapping-validation
-artifacts retain their existing reader. Analysis never fabricates a calculation
-intent. Existing compute candidate contracts and Claim acceptance rules stay
-independent. Candidate replay assumes the installed capability version's
-deterministic algorithm; algorithm changes require a new capability version.
+Analysis outputs are transient parser candidates in Node-owned artifacts. The
+existing `ts_change` operation creates a selected `FactFinding` or
+`IssueFinding` only after replaying its registered handler and checking
+input/output bindings. Analysis never fabricates a calculation intent.
+Candidate replay assumes the installed capability version's deterministic
+algorithm; algorithm changes require a new capability version.
 
 `ts_manage` is a small operational pause/resume interface. Its Node-scoped
 receipt chain is outside canonical science. A shared workspace lock orders
@@ -46,7 +45,7 @@ Resuming a terminal Node is rejected; subsequent research uses a dependency.
 The tool is explicit because `ts_state` is read-only and `ts_change` is the
 scientific transaction API. No new scientific Node status was introduced.
 
-Reports and Web consume read-only projections. A chemical network contains
+Reports and Web consume the canonical ResearchMap serialization. A chemical network contains
 stoichiometric hyperedges and may contain cycles; the ResearchNode DAG retains
 its original provenance meaning and acyclicity.
 

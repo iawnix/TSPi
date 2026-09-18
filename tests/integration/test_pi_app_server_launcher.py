@@ -48,7 +48,7 @@ def _installation(tmp_path: Path) -> launcher.Installation:
         root=root,
         package_root=package,
         workspaces_root=root / "workspaces",
-        remote_config_default=root / ".pi/remote.toml",
+        compute_config_default=root / ".pi/compute.toml",
         notification_config_default=root / ".pi/notifications.toml",
         runtime_home=root / ".agents/runtime/tspi",
         runtime_manifest=root / ".agents/runtime/tspi/env.json",

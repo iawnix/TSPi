@@ -103,7 +103,7 @@ def test_interactive_defaults_run_safe_uninstall_and_preserve_data(tmp_path: Pat
     (root / ".pi/packages/tspi").mkdir(parents=True)
     workspace = root / "workspaces/ts_001"
     workspace.mkdir(parents=True)
-    config = root / ".pi/remote.toml"
+    config = root / ".pi/compute.toml"
     config.write_text("[remote]\n", encoding="utf-8")
     runtime = root / ".agents/envs/tspi/base/test"
     runtime.mkdir(parents=True)

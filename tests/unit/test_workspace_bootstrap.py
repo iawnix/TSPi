@@ -12,7 +12,7 @@ from ts_agent.workspace import (
     classify_workspace,
     init_workspace,
 )
-from ts_agent.workspace.state import REQUIRED_FILES
+from ts_agent.workspace.bootstrap import CANONICAL_FILES, CANONICAL_DIRS
 
 
 def test_bootstrap_initializes_fresh_workspace_and_preserves_inputs(tmp_path: Path) -> None:
@@ -23,7 +23,7 @@ def test_bootstrap_initializes_fresh_workspace_and_preserves_inputs(tmp_path: Pa
 
     result = bootstrap_workspace(workspace)
 
-    assert result["schema_version"] == "ts-workspace-bootstrap/4"
+    assert result["schema_version"] == "research-map-bootstrap/1"
     assert result["state"] == "initialized"
     assert result["created"] is True
     assert result["validation"]["valid"] is True
@@ -54,15 +54,16 @@ def test_bootstrap_existing_workspace_is_read_only_and_idempotent(tmp_path: Path
 def test_bootstrap_rejects_partial_workspace_without_filling_missing_files(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    partial = workspace / "research_state.json"
-    partial.write_text('{"schema_version":"ts-research-state/6"}\n', encoding="utf-8")
+    partial = workspace / "research_map.json"
+    partial.write_text('{"schema_version":"research-map/1"}\n', encoding="utf-8")
 
     with pytest.raises(WorkspaceBootstrapError, match="partial workspace") as caught:
         bootstrap_workspace(workspace)
 
     assert caught.value.state is WorkspaceBootstrapState.PARTIAL
     assert partial.is_file()
-    assert not any((workspace / name).exists() for name in REQUIRED_FILES if name != partial.name)
+    assert not any((workspace / name).exists() for name in CANONICAL_FILES if name != partial.name)
+    assert not any((workspace / name).exists() for name in CANONICAL_DIRS)
 
 
 def test_bootstrap_rejects_unsupported_layout_without_side_effects(tmp_path: Path) -> None:
@@ -74,18 +75,21 @@ def test_bootstrap_rejects_unsupported_layout_without_side_effects(tmp_path: Pat
     )
     (workspace / "nodes").mkdir()
 
-    with pytest.raises(WorkspaceBootstrapError, match="unsupported workspace layout") as caught:
+    with pytest.raises(WorkspaceBootstrapError, match="legacy workspace layout") as caught:
         bootstrap_workspace(workspace)
 
     assert caught.value.state is WorkspaceBootstrapState.UNSUPPORTED_LAYOUT
     assert not (workspace / "workspace.json").exists()
-    assert not (workspace / "observations.json").exists()
+    assert not (workspace / "research_map.json").exists()
 
 
 def test_bootstrap_rejects_invalid_complete_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     init_workspace(workspace)
-    (workspace / "claims.json").write_text("{}\n", encoding="utf-8")
+    (workspace / "workspace.json").write_text(
+        json.dumps({"schema_version": "research-workspace/unsupported"}),
+        encoding="utf-8",
+    )
 
     classification = classify_workspace(workspace)
     assert classification.state is WorkspaceBootstrapState.INVALID
@@ -95,10 +99,11 @@ def test_bootstrap_rejects_invalid_complete_workspace(tmp_path: Path) -> None:
 
 def test_bootstrap_rejects_symlinked_canonical_paths_before_writing(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    workspace.mkdir()
+    init_workspace(workspace)
     target = tmp_path / "external.json"
     target.write_text("{}\n", encoding="utf-8")
-    (workspace / "research_state.json").symlink_to(target)
+    (workspace / "research_map.json").unlink()
+    (workspace / "research_map.json").symlink_to(target)
 
     with pytest.raises(WorkspaceBootstrapError, match="symbolic link") as caught:
         bootstrap_workspace(workspace)

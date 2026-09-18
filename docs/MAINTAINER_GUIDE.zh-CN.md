@@ -26,14 +26,13 @@ Python 测试按 `tests/unit/`、`tests/contract/` 和 `tests/integration/` 分�
 
 ## 科学模型与验证规则
 
-规范文件包括 `workspace.json`、`research_state.json`、`phases.json`、`claims.json`、
-`claim_relations.json`、`research_nodes.json`、`observations.json`、`proof_specs.json`、
-`validation_results.json`、`findings.json` 和 `acceptances/`。显式 Gate 工作区可以额外
-使用 `gate_specs.json` 与 `gate_results.json`，旧工作区没有这两个文件仍然有效。
+规范文件只有 `workspace.json`、`research_map.json` 与 `transactions.jsonl`。
+`ResearchMap` 直接拥有 phase、claim、claim relation、node、typed finding、gate、focus
+和 revision；Node 的执行记录位于 `nodes/<node_id>/`，不是另一套科学 registry。
 
-验证必须是确定性的并绑定 revision。谓词只能读取声明的输入；被接受的 Claim 必须
-引用已记录的 Observation 或 Finding。不支持的文件应保留，并在 bootstrap 时返回明确
-错误。
+验证必须是确定性的并绑定 revision。Gate 评估声明的 map criteria 与 evidence ref；
+Root Agent 通过 ResearchMap ChangeSet 记录 Claim 或 Node 的解释。不支持的旧文件会在
+bootstrap 时明确拒绝。
 
 ## 工具合同维护
 
@@ -46,7 +45,7 @@ ID、命令和收集结果，不覆盖已有证据。
 可重放候选，并在确定性输出语义变化时提升版本。不要加入科学 successor routing。
 
 Node 暂停/恢复回执属于操作状态；提交和分析边界必须保留共享工作区锁，同时保持查看、
-收集和取消能力。应测试原生 App Server、extension 入口、wheel 安装、projection 和
+收集和取消能力。应测试原生 App Server、extension 入口、wheel 安装、直接渲染 ResearchMap 和
 源码篡改拒绝。当前证据以稳定的运维文档、源码测试和组件测试为准，不把一次性验收
 报告提交到仓库。
 
@@ -56,7 +55,7 @@ Node 暂停/恢复回执属于操作状态；提交和分析边界必须保留�
 - `docs/INSTALLATION.zh-CN.md`：安装、服务、升级和恢复。
 - `docs/TERMINAL.zh-CN.md`：原生 TUI/App Server 使用。
 - `skills/`：面向用户的科学流程和参考资料。
-- `contracts/ts-web/`：可选浏览器投影合同。
+- `contracts/ts-web/`：规范 ResearchMap 响应的浏览器传输合同。
 
 TS Phone 文档和移动发布工具由独立的 `ts-phone` 仓库维护。TSPi 不应重新引入 Phone
 server、bridge、REST/SSE 兼容层或终端 Host。

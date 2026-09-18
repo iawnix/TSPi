@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="183mm" height="109.8mm" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
   <title id="title">TSPi research architecture</title>
-  <desc id="desc">An abstract, publication-ready architecture of the TSPi research loop. The Root Agent reads scoped state, submits explicit Decisions through ts_change, invokes bounded capabilities, verifies evidence, and interprets Node and Claim results. The Research Kernel is the single transactional mutation authority; TS Web is read-only while Phone and terminal clients share the Pi session.</desc>
+  <desc id="desc">An abstract, publication-ready architecture of the TSPi research loop. The Root Agent reads the canonical ResearchMap, submits explicit ChangeSets through ts_change, invokes bounded capabilities, verifies evidence, and interprets Node and Claim results. The Research Kernel is the single transactional mutation authority; TS Web renders the same map while Phone and terminal clients share the Pi session.</desc>
   <defs>
     <filter id="shadow" x="-15%" y="-15%" width="130%" height="145%">
       <feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#17384D" flood-opacity="0.11"/>
@@ -103,15 +103,15 @@
     <rect x="665" y="240" width="130" height="112" rx="15" fill="#FFFFFF" stroke="#D6654D" stroke-width="1.8"/>
     <circle cx="730" cy="270" r="16" fill="#FBE6E1"/>
     <path d="M720 270l7 7 13-15" fill="none" stroke="#D6654D" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="730" y="307" class="subLabel" text-anchor="middle" style="font-size:13px">Validation / Gate</text>
-    <text x="730" y="327" class="note" text-anchor="middle" style="font-size:12px">ProofSpec · Result</text>
+    <text x="730" y="307" class="subLabel" text-anchor="middle" style="font-size:13px">Gate evaluation</text>
+    <text x="730" y="327" class="note" text-anchor="middle" style="font-size:12px">Criteria · evaluations</text>
     <text x="730" y="345" class="note" text-anchor="middle" style="font-size:11px">NodeGate / ClaimGate</text>
   </g>
   <line x1="365" y1="378" x2="795" y2="378" stroke="#A9D5D1" stroke-width="1.7"/>
   <circle cx="391" cy="408" r="7" fill="#208C86"/>
   <text x="410" y="414" class="body">canonical records · immutable evidence · explicit decisions</text>
 
-  <!-- Read-only projections -->
+  <!-- Clients consume the canonical ResearchMap -->
   <g filter="url(#shadow)">
     <rect x="900" y="170" width="250" height="108" rx="18" fill="#FFFFFF" stroke="#4F7E91" stroke-width="1.8"/>
   </g>
@@ -119,9 +119,9 @@
   <rect x="925" y="202" width="22" height="15" rx="2" fill="none" stroke="#4F7E91" stroke-width="2.2"/>
   <path d="M931 222h10M936 217v5" stroke="#4F7E91" stroke-width="2.2" stroke-linecap="round"/>
   <text x="966" y="211" class="label">TS Web</text>
-  <text x="966" y="235" class="body">Map · claims · proofs</text>
+  <text x="966" y="235" class="body">Map · claims · findings · gates</text>
   <rect x="1029" y="246" width="98" height="21" rx="10.5" fill="#E8F4F3"/>
-  <text x="1078" y="261" class="note" text-anchor="middle" fill="#20766F">READ ONLY</text>
+  <text x="1078" y="261" class="note" text-anchor="middle" fill="#20766F">CANONICAL MAP</text>
 
   <g filter="url(#shadow)">
     <rect x="900" y="300" width="250" height="100" rx="18" fill="#FFFFFF" stroke="#4F7E91" stroke-width="1.8"/>
@@ -162,7 +162,7 @@
   </g>
   <text x="437" y="548" class="label">Evidence curation</text>
   <text x="437" y="570" class="body">Artifact → Candidate → Root verifies</text>
-  <text x="437" y="592" class="body">Observation / Finding → Proof</text>
+  <text x="437" y="592" class="body">FactFinding / IssueFinding → Gate</text>
   <path d="M454 625C489 607 523 607 558 625S627 643 662 625S697 607 716 619" fill="none" stroke="#6C8FB3" stroke-width="2.8" stroke-linecap="round" marker-end="url(#arrowNavy)"/>
   <circle cx="454" cy="625" r="8" fill="#FFFFFF" stroke="#6C8FB3" stroke-width="2.3"/>
   <circle cx="558" cy="625" r="8" fill="#FFFFFF" stroke="#6C8FB3" stroke-width="2.3"/>
@@ -176,7 +176,7 @@
   <text x="822" y="548" class="label">Root interpretation</text>
   <text x="822" y="570" class="body">Node: completed · inconclusive · blocked</text>
   <text x="822" y="592" class="body">Claim: supported · contradicted · open</text>
-  <text x="822" y="614" class="note">Acceptance · next Node · branch · backtrack</text>
+  <text x="822" y="614" class="note">Gate verdict · next Node · branch · backtrack</text>
 
   <!-- Hypothesis-to-proof data loop. -->
   <path d="M153 320V430H205V515" class="navyFlow"/>
@@ -186,14 +186,14 @@
   <path d="M578 515C578 483 596 477 596 445" class="tealFlow"/>
   <text x="622" y="476" class="note">promote</text>
   <path d="M756 445C764 480 902 478 931 515" class="tealFlow"/>
-  <text x="845" y="476" class="note" text-anchor="middle">GateResult</text>
+  <text x="845" y="476" class="note" text-anchor="middle">gate evaluation</text>
 
   <!-- Legend -->
   <g transform="translate(48 672)">
     <line x1="0" y1="0" x2="31" y2="0" stroke="#365B70" stroke-width="2.8" marker-end="url(#arrowNavy)"/>
     <text x="44" y="5" class="note">actions / artifacts</text>
     <line x1="183" y1="0" x2="214" y2="0" stroke="#208C86" stroke-width="2.8" marker-end="url(#arrowTeal)"/>
-    <text x="227" y="5" class="note">evidence / projection</text>
+    <text x="227" y="5" class="note">evidence / map state</text>
     <line x1="408" y1="0" x2="439" y2="0" stroke="#D6654D" stroke-width="2.4" stroke-dasharray="8 7" marker-end="url(#arrowCoral)"/>
     <text x="452" y="5" class="note">decision feedback</text>
   </g>

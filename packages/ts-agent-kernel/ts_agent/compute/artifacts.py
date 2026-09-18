@@ -33,7 +33,7 @@ from ts_agent.workspace.transactions import workspace_lock
 from ts_agent.structures.api import compare_structures
 from ts_agent.structures.internals import read_xyz
 from ts_agent.structures.seed import StructureSeedError, generate_smiles_seed
-from ts_agent.reaction.mapping import mapping_observation_candidates, validate_atom_mapping
+from ts_agent.reaction.mapping import mapping_finding_candidates, validate_atom_mapping
 
 from .contracts import ComputeContractError
 
@@ -121,7 +121,7 @@ def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> di
     normalized = _validate_import_request(request)
     with workspace_lock(workspace):
         node = _node_record(workspace, normalized["node_id"])
-        if node.get("status") != "open":
+        if node.get("state") == "closed":
             raise ComputeContractError(
                 f"artifact import requires an open ResearchNode: {normalized['node_id']}"
             )
@@ -178,7 +178,7 @@ def create_structure_seed_artifact(root: str | Path, request: dict[str, Any]) ->
     with workspace_lock(workspace):
         require_dispatch_allowed(workspace, normalized["node_id"])
         node = _node_record(workspace, normalized["node_id"])
-        if node.get("status") != "open":
+        if node.get("state") == "closed":
             raise ComputeContractError(
                 f"structure seed generation requires an open ResearchNode: {normalized['node_id']}"
             )
@@ -244,7 +244,7 @@ def create_structure_comparison_artifact(root: str | Path, request: dict[str, An
         from ts_agent.workspace.dispatch import require_dispatch_allowed
         require_dispatch_allowed(workspace, normalized["node_id"])
         node = _node_record(workspace, normalized["node_id"])
-        if node.get("status") != "open":
+        if node.get("state") == "closed":
             raise ComputeContractError(
                 f"structure comparison requires an open ResearchNode: {normalized['node_id']}"
             )
@@ -333,7 +333,7 @@ def create_reaction_mapping_validation_artifact(root: str | Path, request: dict[
     ]
     with workspace_lock(workspace):
         node = _node_record(workspace, normalized["node_id"])
-        if node.get("status") != "open":
+        if node.get("state") == "closed":
             raise ComputeContractError(
                 f"reaction mapping validation requires an open ResearchNode: {normalized['node_id']}"
             )
@@ -369,7 +369,7 @@ def create_reaction_mapping_validation_artifact(root: str | Path, request: dict[
         validation = validate_atom_mapping(
             atom_sides["reactants"], atom_sides["products"], normalized["mapping"]
         )
-        candidates = mapping_observation_candidates(validation, normalized["node_id"], artifacts)
+        candidates = mapping_finding_candidates(validation, normalized["node_id"], artifacts)
         document = {
             "schema_version": REACTION_MAPPING_VALIDATE_ARTIFACT_SCHEMA_VERSION,
             "capability": "reaction.mapping.validate",
@@ -390,7 +390,7 @@ def create_reaction_mapping_validation_artifact(root: str | Path, request: dict[
             "pairs": validation["pairs"],
             "unmapped": validation["unmapped"],
             "diagnostics": validation["diagnostics"],
-            "observation_candidates": candidates,
+            "finding_candidates": candidates,
             "provenance": {
                 "producer": "ts_agent.reaction.mapping.validate_atom_mapping",
                 "producer_version": "1",
@@ -1134,7 +1134,7 @@ def _node_record(workspace: Path, node_id: str) -> dict[str, Any]:
         records = workspace_node_records(workspace)
     except WorkspaceArtifactError as exc:
         raise ComputeContractError(str(exc)) from exc
-    matches = [item for item in records if item.get("node_id") == node_id]
+    matches = [item for item in records if item.get("id") == node_id]
     if len(matches) != 1:
         raise ComputeContractError(f"unknown ResearchNode: {node_id}")
     return matches[0]

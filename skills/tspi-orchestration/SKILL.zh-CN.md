@@ -1,92 +1,90 @@
 ---
 name: tspi-orchestration
-description: 编排 TSPi 研究任务，管理工作区状态、Decision、证据、验证、子代理和运行恢复。
+description: 通过统一的 ResearchMap、研究命令和计算命令编排 TSPi 研究任务。
 ---
 
-# TSPi 编排与管理
+# TSPi 研究编排
 
 [English version](SKILL.md)
 
-使用本 Skill 组织研究问题、记录计算并验证 Claim。将每个问题表示为
-ResearchNode，并把结果关联到工作区的科学记录。当前问题需要方法知识或
-交付能力时，加载
-`tspi-transition-state-search`、`tspi-xtb`、`tspi-gaussian`、
-`tspi-connectivity`、`tspi-render`、`tspi-report` 或 `tspi-email`。
+当任务需要改变研究计划、解释科学结果或查询项目进展时使用本 Skill。
+一个项目只有一个规范的 `ResearchMap`。它是由类型化对象组成的数据结构，包含
+`ResearchPhase`、`ResearchClaim`、`ResearchNode`、`Finding`、`Gate`，以及
+Claim 关系、焦点和 revision。TS Web 与 Root 直接读取同一份 map，不维护第二套
+投影。
 
-## 研究记录
+Research Kernel 负责 map 的校验、引用、revision 和原子变更；它不选择科学方法，
+也不运行软件。Compute environment、Attempt 和 Artifact 是 Node 使用的运行记录，
+不是另一套研究状态模型。
 
-- Root Agent 选择问题、假设、方法、分支、停止条件和解释。
-- Research Kernel 负责 ID、Schema、引用、事务、路径、来源、Gate 编译/评估和验证；
-  不负责运行执行工具。
-- 通过 `ts_change` 提交科学状态变更。
-- 通过 Claim 关系、Node 依赖和标签理解已有工作，根据问题和现有证据选择下一任务。
-- 对照产物核验工具输出，再记录 Observation 或 Finding。
-- 解释 Claim 时结合 Review 建议和当前验证结果；评估前冻结 ProofSpec。
+## 研究循环
 
-## 任务循环
+1. 用 `ts_state mode=summary` 或 `mode=map` 读取当前 map。只有确实需要时才使用
+   `detail`、`locate`、`artifacts`、`capabilities`、`runs`。`/research` 提供同样的
+   研究读取；`/compute` 和 `ts_environment` 查询本地与远端计算环境。
+2. 明确一个研究问题及其不确定性，创建或复用 Phase、Claim 和一个有边界的
+   Node。Phase 只用于把相关 Node 分组导航，不承担生命周期。Node 状态是
+   `planned`、`active`、`paused`、`blocked`、`closed`；关闭时结果是
+   `completed`、`inconclusive` 或 `stopped`。
+3. 加载相应领域 Skill，选择有边界的方法，在所属 Node 下运行。计算和生成文件
+   必须绑定逻辑 Artifact ID。
+4. 先检查原始产物再写结论。Node 对已核验事实产出 `FactFinding`，对异常、限制、
+   冲突或未决问题产出 `IssueFinding`。Finding 属于 map，原始日志不属于 map。
+5. 只有需要明确收尾或评估标准时才创建 `Gate`。Node 的 Gate 使用 `scope=node`，
+   Claim 的 Gate 使用 `scope=claim`；评估结果为 `pass`、`fail`、`inconclusive`
+   或 `blocked`。
+6. 在检查事实和未解决问题后更新 Claim 状态（`proposed`、`supported`、
+   `contradicted`、`inconclusive`、`withdrawn`）和 Node 状态。Node 要以
+   `completed` 关闭时，已有的 NodeGate 必须先通过。
 
-1. 读取 `frontier`；已知上次的科学与运行修订时读取 `delta`。
-2. 写明一个未解决问题、假设、预测和反证条件。
-3. 创建或复用 ResearchPhase，启动一个对应具体决策的 ResearchNode，明确依赖、
-   Claim 范围和收尾意图；Gate 操作可用时再使用 NodeGate profile，并有意识地设置
-   focus。
-4. 加载相应领域 Skill，根据问题、不确定性、成本和现有产物选择方法。
-5. 在所属 Node 下运行具体工具操作，使用逻辑 artifact ID，并保持 Node
-   开放直到解释完成。
-6. 检查 parser candidate 和原始产物，通过 `ts_change` 将已核验值提升为
-   Observation 或 Finding。
-7. 对明确 Observation 引用冻结并评估 ProofSpec；这是 ClaimGate 的证据维度。需要
-   一等 Gate 时用 `freeze_gate` 冻结 profile，再用 `evaluate_gate` 产生绑定当前
-   revision 的 GateResult。
-8. 更新 Claim 状态；对已获支持且准备接受的 Claim 运行 `accept_claim`。存在显式
-   NodeGate 时，只有最新 GateResult 为 `pass` 才能完成 Node；没有显式 Gate 时仍
-   使用兼容的 Node completion projection。
-9. 重新编译上下文，把下一个实质问题记录为依赖 Node、新 Phase，或明确停止。
+## 规范写入
 
-一个 Node 对应一个可见问题和交付物。保持同一问题的重试仍是 Attempt；问题、
-交付物或假设范围改变时启动依赖 Node。回溯时创建依赖旧检查点的新 Node，并
-保留全部历史。Decision 的边界见 [agent_decision_protocol.md](references/agent_decision_protocol.md)。
+所有 map 变更都通过 `ts_change`。先用 `ts_state mode=operations` 查询实时操作目录，
+并严格使用返回字段。当前的小型操作集是：
 
-## 变更与验证
+```text
+create_phase       create_claim       create_node
+create_finding     create_gate        evaluate_gate
+set_node_state     set_claim_status   relate_claims
+set_focus
+```
 
-使用 `ts_state` 按范围读取，使用 `ts_change` 提交一次 Root Agent 发起的
-原子变更。遇到不熟悉的操作时先查询
-`ts_state mode=change_contract operation=<op>`，按返回字段填写请求。
-使用工具返回的 ID、路径和回执；Decision ID 由 Kernel 在提交变更时分配。
+每个操作都是一个 `ChangeSet` 中的显式项。新对象使用项目内新 ID，已有对象只使用
+map 返回的 ID，不能猜测已有 ID。提交时带简短 rationale；在并发或可能过期时带
+`expected_revision`，有来源时带 `basis_refs`。Kernel 会在隔离副本上校验后一次提交
+新的 map revision，失败不会留下半个变更。
 
-使用 `ts_state mode=capabilities capabilityKind=proof` 查询版本化 ProofSpec。
-编译器绑定模板、谓词注册表、内容和 Observation 摘要。只有 `pass` 满足
-ProofSpec；接受还要求当前覆盖完整且没有适用的开放阻断 Finding。
+保持模型轻量：Node 产出只使用 FactFinding 和 IssueFinding，有限评估使用 Gate
+criteria/evaluations，不再引入第二套证据协议。计算或 Review 的结果只有经
+Root 通过 `ts_change` 记录后才成为研究状态。
 
-## 计算与 Review
+## 计算与恢复
 
-启动 `ts_calc` 前使用 `mode=locate` 和 `mode=artifacts`，用 `artifactId` 和
-`inputRole` 绑定每个输入。Host 负责身份、路径、参数和外部效果。远程
-`completed` 仍需收集和 finalize。提交、取消或通知结果未知时，先检查回执和
-外部状态，再决定后续处理。
+选择计算前用 `ts_state mode=capabilities capabilityKind=compute`，查询注册分析时用
+`capabilityKind=analysis`。用 `mode=artifacts` 找到 Node 所属产物，用 `mode=runs`
+查看持久化执行历史。`ts_environment`（或 `/compute`）同时覆盖本地和远端 profile；
+远端只是 environment 的一种类型，不是另一套公开 API。调度器、传输、程序、解析和
+收集错误先作为运行证据处理，只有核对原始产物后才把科学后果记录为 IssueFinding。
 
-`ts_review` 在独立会话中评估一份 Claim 材料和选定产物批次。先调用 `ts_reply`，再通过
-`ts_change` 应用建议。区分调度器、传输、程序、解析器、科学、合同、产物、
-Review 供应商和投递失败，保留失败 Node 与 Attempt。
+`ts_review` 只提供建议。读取 dossier，用 `ts_reply` 回应，再通过 `ts_change` 记录
+Root 的解释。保留失败或不确定的 Node；问题或交付物改变时创建依赖 Node。
 
-## 合同参考路由
+## 参考路由
 
-按当前操作只读取所需合同：
+按当前任务只读取需要的参考：
 
-| 需要 | 参考文件 |
+| 需要 | 参考 |
 | --- | --- |
-| 公开术语 | [glossary.md](references/glossary.md)、[glossary.zh-CN.md](references/glossary.zh-CN.md) |
-| 状态、身份、DAG 和持久化 | [state_model.md](references/state_model.md)、[pathway_model.md](references/pathway_model.md)、[workspace_contract.md](references/workspace_contract.md) |
-| Decision 字段和提交纪律 | [decision_contract.md](references/decision_contract.md)、[agent_decision_protocol.md](references/agent_decision_protocol.md) |
-| 计算和后端执行合同 | [compute_tools.md](references/compute_tools.md)、[backend_contract.md](references/backend_contract.md) |
-| 远程、运行时和程序失败 | [remote_contract.md](references/remote_contract.md)、[runtime_environment.md](references/runtime_environment.md)、[program_runtime_failures.md](references/program_runtime_failures.md) |
-| Review 隔离与 Pi 上下文 | [pi_agent_adapter.md](references/pi_agent_adapter.md) |
-| 结构产物操作 | [artifact_tools.md](references/artifact_tools.md) |
+| 术语 | [glossary.md](references/glossary.md)、[glossary.zh-CN.md](references/glossary.zh-CN.md) |
+| map 模型与持久化 | [state_model.md](references/state_model.md)、[workspace_contract.md](references/workspace_contract.md)、[pathway_model.md](references/pathway_model.md) |
+| ChangeSet 字段与提交规则 | [decision_contract.md](references/decision_contract.md)、[agent_decision_protocol.md](references/agent_decision_protocol.md) |
+| 计算与分析工具 | [compute_tools.md](references/compute_tools.md)、[artifact_tools.md](references/artifact_tools.md)、[backend_contract.md](references/backend_contract.md) |
+| 环境与失败处理 | [remote_contract.md](references/remote_contract.md)、[runtime_environment.md](references/runtime_environment.md)、[program_runtime_failures.md](references/program_runtime_failures.md) |
+| Root/Pi 集成 | [pi_agent_adapter.md](references/pi_agent_adapter.md) |
+| 源码策略 | [package_sources.md](references/package_sources.md) |
 | 渲染 | [渲染接口](../tspi-render/references/render_contract.md) |
 | 报告 | [报告模板](../tspi-report/references/report_template.md) |
-| 通知投递 | [邮件投递](../tspi-email/references/email_delivery.md) |
-| 源码与安装源 | [package_sources.md](references/package_sources.md) |
+| 通知 | [邮件投递](../tspi-email/references/email_delivery.md) |
 
-方法和交付参考资料放在各自 Skill 中：搜索方法、xTB/CREST、Gaussian、
-端点和结构证据，以及渲染、报告和邮件通知分别使用对应的
-`tspi-*` Skill。
+过渡态搜索、xTB/CREST、Gaussian、连通性、机理、渲染、报告和邮件任务分别使用对应
+的领域 Skill。

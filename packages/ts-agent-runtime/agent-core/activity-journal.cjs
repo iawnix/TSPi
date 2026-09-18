@@ -113,17 +113,13 @@ function statusDocument(activityId, kind, operation, nodeRefs, status, startedAt
 }
 
 function validateNodeRefs(root, nodeRefs) {
-  const registryPath = resolve(root, "research_nodes.json");
-  if (!existsSync(registryPath) || lstatSync(registryPath).isSymbolicLink()) {
-    throw new Error("ResearchNode registry does not exist");
-  }
-  const registry = JSON.parse(readFileSync(registryPath, "utf8"));
-  if (!isPlainObject(registry) || registry.schema_version !== "ts-research-node-registry/2") {
-    throw new Error("deterministic activities require ts-research-node-registry/2");
-  }
+  const mapPath = resolve(root, "research_map.json");
+  if (!existsSync(mapPath) || lstatSync(mapPath).isSymbolicLink()) throw new Error("ResearchMap does not exist");
+  const map = JSON.parse(readFileSync(mapPath, "utf8"));
+  if (!isPlainObject(map) || map.schema_version !== "research-map/1") throw new Error("deterministic activities require research-map/1");
   const known = new Set(
-    Array.isArray(registry.nodes)
-      ? registry.nodes.filter(isPlainObject).map((node) => node.node_id).filter((value) => typeof value === "string")
+    Array.isArray(map.nodes)
+      ? map.nodes.filter(isPlainObject).map((node) => node.id).filter((value) => typeof value === "string")
       : [],
   );
   const unknown = nodeRefs.filter((value) => !known.has(value));

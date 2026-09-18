@@ -208,19 +208,13 @@ def workspace_root(root: str | Path) -> Path:
 
 
 def workspace_node_ids(workspace: Path) -> set[str]:
-    """Return validated ResearchNode identifiers from the canonical registry."""
+    """Return validated ResearchNode identifiers from the canonical ResearchMap."""
 
-    return {str(item["node_id"]) for item in workspace_node_records(workspace)}
+    return {str(item["id"]) for item in workspace_node_records(workspace)}
 
 
 def workspace_node_records(workspace: Path) -> list[dict[str, Any]]:
-    """Return validated ResearchNode records from the canonical registry.
-
-    Artifact and Compute callers often need the Node status as well as its ID.
-    Keep registry shape/identity checks in one place so malformed or duplicate
-    records fail closed consistently instead of surfacing as ``AttributeError``
-    or silently collapsing into a set.
-    """
+    """Return canonical serialized ResearchNode objects from the ResearchMap."""
 
     workspace = lexical_path(workspace)
     try:
@@ -237,15 +231,6 @@ def workspace_node_records(workspace: Path) -> list[dict[str, Any]]:
             raise WorkspaceArtifactError(f"ResearchMap contains duplicate node id: {node_id}")
         ids.add(node_id)
         item = node.to_dict()
-        item.update({
-            "schema_version": "ts-research-node/2",
-            "node_id": node.id,
-            "phase_ref": node.phase_id,
-            "claim_refs": list(node.claim_ids),
-            "dependency_refs": list(node.dependency_ids),
-            "status": "open" if node.state.value != "closed" else "closed",
-            "deliverable": node.metadata.get("deliverable", ""),
-        })
         records.append(item)
     return records
 

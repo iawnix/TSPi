@@ -17,6 +17,8 @@ from ts_agent.research import (
     ResearchModelError,
     ResearchNode,
     ResearchPhase,
+    ResearchKernel,
+    ResearchKernelError,
 )
 
 
@@ -139,3 +141,26 @@ def test_node_and_claim_cycles_are_rejected() -> None:
     research_map.add_claim_relation("claim_1", "claim_2", "supports")
     with pytest.raises(ResearchModelError, match="claim graph contains a cycle"):
         research_map.add_claim_relation("claim_2", "claim_1", "supports")
+
+
+def test_all_node_gates_must_pass_before_completed_outcome() -> None:
+    research_map = build_map()
+    research_map.add_gate(NodeGate(id="gate_1", created_at="2026-09-18T00:00:00Z", target_id="node_1"))
+    research_map.add_gate(NodeGate(id="gate_2", created_at="2026-09-18T00:00:00Z", target_id="node_1"))
+    research_map.evaluate_gate("gate_1", GateVerdict.PASS, checked_at="2026-09-18T00:00:00Z")
+    with pytest.raises(ResearchModelError, match="NodeGate"):
+        research_map.transition_node("node_1", NodeState.CLOSED, outcome=NodeOutcome.COMPLETED)
+    research_map.evaluate_gate("gate_2", GateVerdict.PASS, checked_at="2026-09-18T00:00:00Z")
+    research_map.transition_node("node_1", NodeState.CLOSED, outcome=NodeOutcome.COMPLETED)
+
+
+def test_kernel_rejects_unknown_changeset_and_operation_fields(tmp_path) -> None:
+    root = tmp_path / "workspace"
+    from ts_agent.workspace import init_workspace
+
+    init_workspace(root)
+    kernel = ResearchKernel(root)
+    with pytest.raises(ResearchKernelError, match="unsupported fields"):
+        kernel.apply({"operations": [{"type": "create_phase", "id": "phase_1", "title": "P"}], "unexpected": True})
+    with pytest.raises(ResearchKernelError, match="unsupported fields"):
+        kernel.apply({"operations": [{"type": "create_phase", "id": "phase_1", "title": "P", "old_field": True}]})

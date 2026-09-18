@@ -10,8 +10,8 @@ is `compute.environments`, exposed as `/compute` and `ts_environment`.
 `compute.toml` is the recommended shared policy file. Each profile declares a
 `kind` and a `software` table; `kind = "remote"` profiles additionally own SSH
 host/config, remote root, scheduler commands, queues, resource ceilings,
-activation, scratch policy, and server environment. Existing `remote.toml` remains
-accepted. A calculation request selects a named profile and resources within
+activation, scratch policy, and server environment. Local and remote profiles
+are defined in this one file; there is no separate remote registry. A calculation request selects a named profile and resources within
 its configured limits.
 
 Use the installation-level `TSPi --check-remote` command for read-only diagnostics:
@@ -55,4 +55,4 @@ manifest and works even when scheduler history is unavailable.
 - Resolve remote paths and commands from the installation profile and intent.
 - Use `TSPi --check-remote` to check scheduler and software readiness as well as SSH.
 - Check program termination and required outputs after scheduler completion.
-- Collect outputs, verify them locally, and parse them before recording Observations.
+- Collect outputs, verify them locally, and parse them before recording Findings.

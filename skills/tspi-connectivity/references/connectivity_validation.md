@@ -1,43 +1,28 @@
 # Connectivity Validation
 
 Connectivity asks whether a candidate path reaches the reactant and product
-basins declared by the target Claim. It is distinct from stationary-point and
-imaginary-mode validation.
+basins declared by a Claim. It is distinct from stationary-point and
+imaginary-mode checks.
 
-## Required Observations
+## Checklist
 
-The built-in `connectivity@1` template uses semantic concepts for one subject:
+For each direction, inspect normal program termination, path completion, the
+last geometry and gradient, endpoint optimization when needed, and endpoint
+assignment against the declared reactant or product Artifact. Keep direction,
+source path, endpoint optimization, and digest references explicit.
 
-- normal program termination;
-- bidirectional path completion;
-- no recorded path program failures;
-- reverse endpoint assignment equals the declared reactant ref;
-- forward endpoint assignment equals the declared product ref.
+Verify atom mapping, element counts, charge, multiplicity/state, relevant
+isotopes, bond changes, internal coordinates, stereochemistry, and any
+short-path or maximum-step limitation. Use `ts_compare` for deterministic
+geometry and stereochemical checks.
 
-Endpoint assignments use direction qualifiers. Record the source path and any
-endpoint optimization artifacts with exact digests.
+## Recording And Evaluation
 
-## Finite Paths
+Record verified assignments, mapping, RMSD, coordinates, and source references
+as `FactFinding`. Missing direction, endpoints, path completion, or identity
+evidence becomes an `IssueFinding` and keeps the Node or Claim inconclusive.
+Conflicting assignments are also an IssueFinding with both source refs.
 
-To assign a finite IRC endpoint to a basin, inspect the last
-geometry/gradient, optimize the endpoint when needed, compare it with reference
-basins using a valid atom map, and expose any short-path or maximum-step limit.
-An assignment with unresolved identity ambiguity should remain inconclusive or
-produce a blocking Finding.
-
-## Deterministic Evaluation
-
-Freeze the connectivity ProofSpec against the target Claim and declared
-reactant/product refs before evaluation. Select exact Observation refs. Missing
-direction, missing endpoints, conflicting assignments, or incomplete paths
-require further evidence or a Finding before acceptance.
-
-Add identity, stereochemistry, state-character, or electronic-structure
-ProofSpecs when the Claim needs them. They are additional dimensions under the
-same engine.
-
-## Acceptance
-
-The built-in `accepted-ts@3` profile requires stationary-point,
-reaction-coordinate, and connectivity dimensions. Acceptance also covers every
-other ProofSpec attached to the Claim and rejects open blocking Findings.
+Create a NodeGate or ClaimGate only when a criterion such as endpoint identity,
+path completion, or stereochemical retention needs a visible verdict. Evaluate
+it with the current evidence refs; the Gate does not change Claim status.

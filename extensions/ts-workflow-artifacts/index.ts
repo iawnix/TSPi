@@ -194,7 +194,7 @@ export default function (pi: ExtensionAPI) {
     description: "Compare two registered XYZ artifacts.",
     promptSnippet: "Compare molecular structures",
     promptGuidelines: [
-      "Use two art_* IDs and zero-based indices; register scientific Observations through a Decision.",
+      "Use two art_* IDs and zero-based indices; register verified scientific values as Findings through ts_change.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -388,7 +388,7 @@ export default function (pi: ExtensionAPI) {
     description: "Render registered molecular, reaction-path, or scientific-curve artifacts.",
     promptSnippet: "Render a workspace visualization or curve",
     promptGuidelines: [
-      "Use art_* IDs and a Node-owned output name; images are presentation artifacts, not Observations.",
+      "Use art_* IDs and a Node-owned output name; images are presentation artifacts, not scientific Findings.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({

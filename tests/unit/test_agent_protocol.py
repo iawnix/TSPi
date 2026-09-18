@@ -39,12 +39,12 @@ def _task() -> dict[str, object]:
         "inputs": {
             "review_snapshot": _binding(
                 "review-snapshot.json",
-                "ts-review-task-snapshot/3",
+                "ts-review-task-snapshot/4",
                 "b",
             ),
             "provider_input": _binding(
                 "provider-input.json",
-                "ts-review-provider-input/5",
+                "ts-review-provider-input/6",
                 "c",
             ),
         },

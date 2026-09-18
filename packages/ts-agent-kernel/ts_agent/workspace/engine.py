@@ -17,7 +17,7 @@ from .validator import validate_workspace
 
 WORKSPACE_FILE = "workspace.json"
 TRANSACTION_FILE = "transactions.jsonl"
-CANONICAL_DIRS = ("nodes", "operations", "scratch")
+CANONICAL_DIRS = ("nodes", "operations", "scratch", "inputs")
 LEGACY_FILES = (
     "research_state.json",
     "phases.json",

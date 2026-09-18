@@ -208,8 +208,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--web-auth-token",
         help="Explicit TS Web token (8-100 URL-safe characters; prefer --web-auth-token-file for secrets).",
     )
-    parser.add_argument("--remote-config", help="Existing remote.toml to install as .pi/remote.toml.")
-    parser.add_argument("--local-config", help="Existing local.toml to install as .pi/local.toml.")
     parser.add_argument("--compute-config", help="Unified compute.toml to install as .pi/compute.toml.")
     parser.add_argument("--probe-remote", action="store_true", help="Run the remote doctor and fail if the configured profile is not ready.")
     parser.add_argument("--conda-root")
@@ -380,10 +378,6 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Pi App Server", "install pinned runtime and verify", tone="success")
     field("Local backend policy", "core Python/runtime only; native tools must be selected explicitly", tone="muted")
     field("Compute backend config", args.compute_config or "preserve <install>/.pi/compute.toml if present", tone="muted")
-    if args.local_config:
-        field("Previous local backend file", args.local_config, tone="muted")
-    if args.remote_config:
-        field("Previous remote backend file", args.remote_config, tone="muted")
     field("Remote readiness", "probe during installation" if args.probe_remote else "not probed", tone="success" if args.probe_remote else "muted")
     field(
         "App Server service",
@@ -465,9 +459,6 @@ def validate_options(args: argparse.Namespace) -> None:
     if not args.install_root:
         raise ValueError("--install-root is required in non-interactive mode")
     args.install_root = str(validate_install_root(Path(args.install_root)))
-    generated_remote = getattr(args, "_remote_config_content", None)
-    if args.compute_config and (args.local_config or args.remote_config or generated_remote):
-        raise ValueError("--compute-config cannot be combined with --local-config or --remote-config")
     if args.compute_config:
         source = Path(args.compute_config).expanduser()
         if not source.is_absolute() or source.is_symlink() or not source.is_file():
@@ -477,14 +468,6 @@ def validate_options(args: argparse.Namespace) -> None:
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
             raise ValueError(f"invalid compute TOML configuration: {source}: {error}") from error
         _validate_compute_config(parsed_compute)
-    if generated_remote:
-        if args.remote_config:
-            raise ValueError("--remote-config cannot be combined with an interactive remote profile")
-        try:
-            generated = tomllib.loads(generated_remote)
-        except tomllib.TOMLDecodeError as error:
-            raise ValueError(f"invalid generated remote TOML configuration: {error}") from error
-        _validate_remote_config(generated, Path(args.install_root).resolve())
     if args.workspace_root is None:
         args.workspace_root = str(read_workspace_root(Path(args.install_root)))
     args.workspace_root = str(_validate_workspace_root(args.workspace_root, Path(args.install_root)))
@@ -1017,48 +1000,24 @@ def configure_backend_configs(args: argparse.Namespace) -> dict[str, dict[str, s
     root = Path(args.install_root).expanduser().resolve()
     result: dict[str, dict[str, str]] = {}
     compute_config = getattr(args, "compute_config", None)
-    if compute_config and (args.local_config or args.remote_config or getattr(args, "_remote_config_content", None)):
-        raise ValueError("--compute-config cannot be combined with local or remote backend configuration")
     if compute_config:
         result["compute"] = _copy_private_config(
             compute_config,
             root / ".pi" / "compute.toml",
             kind="compute",
         )
-        # Keep the summary shape stable for callers of older installer APIs.
-        result["remote"] = {"status": "preserved", "path": str(root / ".pi" / "remote.toml"), "doctor": "not_probed"}
-        result["local"] = {"status": "preserved", "path": str(root / ".pi" / "local.toml")}
         return result
-    if getattr(args, "_remote_config_content", None):
-        content = args._remote_config_content
-        try:
-            parsed = tomllib.loads(content)
-        except tomllib.TOMLDecodeError as error:
-            raise ValueError(f"invalid generated remote TOML configuration: {error}") from error
-        _validate_remote_config(parsed, Path(args.install_root).resolve())
-        destination = root / ".pi" / "remote.toml"
-        _write_private_config_bytes(content.encode("utf-8"), destination)
-        result["remote"] = {"status": "configured", "path": str(destination), "source": "interactive"}
-    elif args.remote_config:
-        result["remote"] = _copy_private_config(args.remote_config, root / ".pi" / "remote.toml", kind="remote")
-    else:
-        path = root / ".pi" / "remote.toml"
-        result["remote"] = {"status": "preserved" if path.is_file() else "not_configured", "path": str(path)}
-    result["remote"]["doctor"] = "not_probed"
-    if args.local_config:
-        result["local"] = _copy_private_config(args.local_config, root / ".pi" / "local.toml", kind="local")
-    else:
-        path = root / ".pi" / "local.toml"
-        result["local"] = {"status": "preserved" if path.is_file() else "not_configured", "path": str(path)}
+    destination = root / ".pi" / "compute.toml"
+    result["compute"] = {"status": "preserved" if destination.is_file() else "not_configured", "path": str(destination)}
     return result
 
 
 def probe_remote_backend(args: argparse.Namespace, configs: dict[str, dict[str, str]]) -> None:
     if not args.probe_remote:
         return
-    remote = configs["remote"]
-    if remote.get("status") == "not_configured":
-        raise ValueError("--probe-remote requires an installed remote configuration")
+    compute = configs.get("compute", {})
+    if compute.get("status") == "not_configured":
+        raise ValueError("--probe-remote requires an installed compute configuration with a remote profile")
     command = [str(Path(args.install_root) / "TSPi"), "--check-remote"]
     completed = subprocess.run(
         command,
@@ -1068,56 +1027,8 @@ def probe_remote_backend(args: argparse.Namespace, configs: dict[str, dict[str, 
         check=False,
     )
     if completed.returncode != 0:
-        remote["doctor"] = "failed"
         detail = (completed.stderr or completed.stdout).strip()
         raise RuntimeError(f"remote backend readiness check failed: {detail or 'unknown error'}")
-    remote["doctor"] = "ready"
-
-
-def local_backend_readiness(root: Path) -> dict[str, dict[str, object]]:
-    configured: dict[str, str] = {}
-    path = root / ".pi" / "local.toml"
-    compute_path = root / ".pi" / "compute.toml"
-    config_display = path
-    if compute_path.is_file():
-        config_display = compute_path
-    if path.is_file():
-        try:
-            raw = tomllib.loads(path.read_text(encoding="utf-8"))
-            table = raw.get("backends", raw.get("local", raw))
-            if isinstance(table, dict):
-                configured = {
-                    str(key): str(value.get("command")) if isinstance(value, dict) and isinstance(value.get("command"), str) else str(value)
-                    for key, value in table.items()
-                    if isinstance(value, str) or (isinstance(value, dict) and isinstance(value.get("command"), str))
-                }
-        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
-            return {"config": {"status": "invalid", "path": str(path)}}
-    if compute_path.is_file():
-        try:
-            raw = tomllib.loads(compute_path.read_text(encoding="utf-8"))
-            profiles = raw.get("profiles", {})
-            default_name = raw.get("default_profile")
-            profile = profiles.get(default_name) if isinstance(profiles, dict) else None
-            if not isinstance(profile, dict) or profile.get("kind") != "local":
-                local_profiles = [item for item in profiles.values() if isinstance(item, dict) and item.get("kind") == "local"] if isinstance(profiles, dict) else []
-                profile = local_profiles[0] if len(local_profiles) == 1 else None
-            software = profile.get("software", {}) if isinstance(profile, dict) else {}
-            if isinstance(software, dict):
-                configured.update({
-                    str(key): str(value.get("command"))
-                    for key, value in software.items()
-                    if isinstance(value, dict) and isinstance(value.get("command"), str)
-                })
-        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
-            return {"config": {"status": "invalid", "path": str(compute_path)}}
-    defaults = {"gaussian": "g16", "xtb": "xtb", "crest": "crest", "ase_neb_xtb": "xtb"}
-    result: dict[str, dict[str, object]] = {"config": {"status": "configured" if (path.is_file() or compute_path.is_file()) else "not_configured", "path": str(config_display)}}
-    for name, default in defaults.items():
-        command = configured.get(name, default)
-        resolved = shutil.which(command) if not Path(command).is_absolute() else command
-        result[name] = {"command": command, "available": bool(resolved and Path(resolved).is_file() and os.access(resolved, os.X_OK))}
-    return result
 
 
 def run_logged_install(
@@ -1372,8 +1283,6 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
         ".pi/email/service.env",
         ".pi/email/smtp-password",
         ".pi/compute.toml",
-        ".pi/local.toml",
-        ".pi/remote.toml",
     ]
     paths = {str(root / relative): _snapshot_file(root / relative) for relative in relative_paths}
     external_password = getattr(args, "email_password_file", None)
@@ -2157,10 +2066,9 @@ def build_component_summary(
             if args.with_web
             else None
         ),
-        "backends": {
-            "compute": backend_configs.get("compute") if backend_configs else {"status": "preserved" if (root / ".pi/compute.toml").is_file() else "not_configured", "path": str(root / ".pi/compute.toml")},
-            "local": local_backend_readiness(root),
-            "remote": backend_configs.get("remote") if backend_configs else {"status": "preserved" if (root / ".pi/remote.toml").is_file() else "not_configured", "path": str(root / ".pi/remote.toml"), "doctor": "not_probed"},
+        "compute": backend_configs.get("compute") if backend_configs else {
+            "status": "preserved" if (root / ".pi/compute.toml").is_file() else "not_configured",
+            "path": str(root / ".pi/compute.toml"),
         },
     }
 
@@ -2259,22 +2167,11 @@ def show_installed_summary(
     if isinstance(web, dict):
         note("Token values are not printed. Read the owner-only TS Web token file when pairing a browser.")
 
-    backends = components.get("backends")
-    if isinstance(backends, dict):
+    compute = components.get("compute")
+    if isinstance(compute, dict):
         section("Compute backends")
-        compute = backends.get("compute")
-        if isinstance(compute, dict):
-            field("Unified config", compute.get("path", "not configured"))
-        local = backends.get("local")
-        if isinstance(local, dict):
-            available = [name for name, value in local.items() if name != "config" and isinstance(value, dict) and value.get("available")]
-            field("Local", ", ".join(available) if available else "no optional executables detected", tone="success" if available else "warning")
-            field("Local config", local.get("config", {}).get("path") if isinstance(local.get("config"), dict) else "not configured")
-        remote = backends.get("remote")
-        if isinstance(remote, dict):
-            field("Remote", str(remote.get("status", "not configured")), tone="success" if remote.get("status") == "configured" else "muted")
-            field("Remote config", remote.get("path", "not configured"))
-            field("Remote doctor", remote.get("doctor", "not_probed"), tone="warning" if remote.get("doctor") == "not_probed" else "success")
+        field("Unified config", compute.get("path", "not configured"))
+        field("Status", compute.get("status", "not configured"), tone="success" if compute.get("status") in {"configured", "preserved"} else "warning")
 
 
 def _show_service(value: object) -> None:
@@ -2405,8 +2302,7 @@ def main(argv: list[str] | None = None) -> int:
             f"commit={installed.get('commit') or ''}",
             f"with_web={bool(args.with_web)}",
             f"service_scope={args.service_scope}",
-            f"remote_config={backend_configs.get('remote', {}).get('status', 'not_configured')}",
-            f"remote_doctor={backend_configs.get('remote', {}).get('doctor', 'not_probed')}",
+            f"compute_config={backend_configs.get('compute', {}).get('status', 'not_configured')}",
             f"phone_manifest={phone_connection.get('manifest', '') if isinstance(phone_connection, dict) else ''}",
             f"model_icons={model_icons.get('status', 'unknown') if isinstance(model_icons, dict) else 'unknown'}",
             f"web_token_file={credentials.get('web_http', {}).get('path', '') if isinstance(credentials.get('web_http'), dict) else ''}",

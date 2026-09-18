@@ -170,13 +170,11 @@ test("native analysis discovers contracts and journals explicit mapping results"
     assert.equal((await invoke(analyze, params)).verdict, "invalid");
     params.parameters.unknown = true;
     await assert.rejects(invoke(analyze, params), /analysis parameters/);
-    const operational = await invoke(state, { mode: "node", nodeRef: "node_1" });
-    assert.equal(operational.valid, true);
-    assert.equal(operational.activity_summaries[0].completed_count, 4);
-    assert.equal(operational.activity_summaries[0].failed_count, 1);
+    const nodeDetail = await invoke(state, { mode: "detail", kind: "node", id: "node_1" });
+    assert.equal(nodeDetail.schema_version, "research-detail/1");
+    assert.equal(nodeDetail.object.id, "node_1");
     assert.match(result.summary, /mapped atom pairs/);
-    const observations = JSON.parse(await readFile(join(workspace, "observations.json"), "utf8"));
-    assert.deepEqual(observations.observations, []);
+    assert.equal(await readFile(join(workspace, "research_map.json"), "utf8").then(Boolean), true);
     const generic = { operation: "run", nodeId: "node_1", capability: "reaction.parse", capabilityVersion: "1", inputArtifacts: {},
       parameters: { reaction_smiles: "O>>O", multiplicities: { reactants: [1], products: [1] } } };
     assert.equal((await invoke(state, { mode: "capabilities", capabilityKind: "analysis", query: "reaction.parse" })).ok, true);
@@ -184,7 +182,6 @@ test("native analysis discovers contracts and journals explicit mapping results"
     const manage = createManageTool();
     await invoke(manage, { operation: "pause", nodeId: "node_1", rationale: "Pause selected branch" });
     await assert.rejects(invoke(analyze, generic), /node_dispatch_paused/);
-    assert.equal((await invoke(state, { mode: "node", nodeRef: "node_1" })).node_dispatch[0].paused, true);
     await invoke(manage, { operation: "resume", nodeId: "node_1", rationale: "Continue selected branch" });
     assert.equal((await invoke(analyze, generic)).verdict, "valid");
   } finally {
@@ -223,35 +220,30 @@ test("native ts_import writes a semantic input basename", {
       rationale: "Create one bounded Node for semantic import naming.",
       operations: [
         {
-          op: "create_phase",
-          local_ref: "phase",
+          type: "create_phase",
+          id: "phase_1",
           title: "Semantic import naming",
           objective: "Verify that imported inputs retain a meaningful basename.",
         },
         {
-          op: "create_claim",
-          local_ref: "claim",
-          claimType: "test",
-          question: "Does native artifact import preserve the requested basename?",
+          type: "create_claim",
+          id: "claim_1",
           statement: "Native artifact import preserves a validated semantic basename.",
-          scope: "One bounded Gaussian input.",
-          uncertainty: "The import has not run yet.",
           predictions: ["The Node input is named named-candidate.gjf."],
           falsifiers: ["The Node input is named from a content hash."],
         },
         {
-          op: "start_node",
-          local_ref: "node",
-          phaseRef: "$phase",
+          type: "create_node",
+          id: "node_1",
+          phase_id: "phase_1",
           title: "Native semantic import",
           objective: "Import one Gaussian input under a semantic basename.",
-          deliverable: "A Node-owned named Gaussian input.",
-          primaryClaimRef: "$claim",
-          claimRefs: ["$claim"],
+          claim_ids: ["claim_1"],
+          dependency_ids: [],
         },
       ],
     }, () => {}, toolContext, undefined, context);
-    const nodeId = JSON.parse(changed.content[0].text).created_refs.nodes[0];
+    const nodeId = JSON.parse(changed.content[0].text).created_ids.find((id) => id.startsWith("node_"));
     const content = "#p hf/sto-3g sp\n\nH2\n\n0 1\nH 0 0 0\nH 0 0 0.74\n\n";
     const imported = await nativeTools.createImportTool().execute("import", {
       operation: "import",
@@ -339,7 +331,7 @@ test("native Pi server gives every client the complete Agent tool inventory", { 
     assert.ok(runtime.workerPids.has(summary.sessionId), "native Worker did not start");
     const state = await readExperimentalSessionState(runtime.sessionDir, summary.sessionId);
     assert.deepEqual(state.activeTools, [
-      "read", "sys_prompt", "write", "bash", "ts_state", "ts_change", "ts_remote",
+      "read", "sys_prompt", "write", "bash", "ts_state", "ts_change", "ts_environment",
       "ts_calc", "ts_review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze", "ts_manage", "ts_import",
       "ts_render", "ts_report", "ts_notify",
     ]);
@@ -370,7 +362,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     TS_AGENT_PYTHON: process.env.TS_AGENT_PYTHON,
     TSPI_NATIVE_WRITES: process.env.TSPI_NATIVE_WRITES,
     TS_RENDER_XYZRENDER: process.env.TS_RENDER_XYZRENDER,
-    TS_REMOTE_CONFIG: process.env.TS_REMOTE_CONFIG,
+    TS_COMPUTE_CONFIG: process.env.TS_COMPUTE_CONFIG,
     TS_NOTIFICATION_CONFIG: process.env.TS_NOTIFICATION_CONFIG,
     TSPI_NOTIFY_CAPTURE: process.env.TSPI_NOTIFY_CAPTURE,
     PATH: process.env.PATH,
@@ -397,21 +389,21 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     const changeTool = tools.ts_change;
     const toolContext = { cwd: workspace };
     const context = { abortSignal: new AbortController().signal };
-    const state = await stateTool.execute("state-1", { mode: "frontier" }, () => {}, toolContext, undefined, context);
+    const state = await stateTool.execute("state-1", { mode: "summary" }, () => {}, toolContext, undefined, context);
     const projection = JSON.parse(state.content[0].text);
-    assert.equal(projection.valid, true);
-    assert.ok(projection.workspace_id);
-    assert.deepEqual(projection.claims, []);
+    assert.equal(projection.schema_version, "research-summary/1");
+    assert.ok(projection.map_id);
+    assert.deepEqual(projection.progress.claim_count, 0);
     const contract = await stateTool.execute(
       "contract-1",
-      { mode: "change_contract", operation: "create_phase" },
+      { mode: "operations" },
       () => {},
       toolContext,
       undefined,
       context,
     );
     const contractPayload = JSON.parse(contract.content[0].text);
-    assert.equal(contractPayload.selected_operation, "create_phase");
+    assert.equal(contractPayload.selected_operation, null);
     const artifacts = await stateTool.execute(
       "artifacts-1",
       { mode: "artifacts" },
@@ -421,15 +413,6 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       context,
     );
     assert.equal(JSON.parse(artifacts.content[0].text).artifact_count, 0);
-    const proofCapabilities = await stateTool.execute(
-      "proof-capabilities-1",
-      { mode: "capabilities", capabilityKind: "proof" },
-      () => {},
-      toolContext,
-      undefined,
-      context,
-    );
-    assert.equal(JSON.parse(proofCapabilities.content[0].text).schema_version, "ts-proof-capabilities/1");
     await assert.rejects(
       stateTool.execute("capabilities-invalid", { mode: "capabilities" }, () => {}, toolContext, undefined, context),
       /state mode=capabilities requires capabilityKind/,
@@ -438,8 +421,8 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     const request = {
       rationale: "Create one bounded native-tool test phase.",
       operations: [{
-        op: "create_phase",
-        local_ref: "phase",
+        type: "create_phase",
+        id: "phase_1",
         title: "Native tool execution",
         objective: "Verify the native Harness mutation boundary.",
       }],
@@ -518,40 +501,35 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     const result = JSON.parse(changed.content[0].text);
     assert.equal(result.mutation_applied, true);
     assert.equal(result.operation_count, 1);
-    assert.deepEqual(result.created_refs.phases, ["phase_1"]);
-    const after = await stateTool.execute("state-2", { mode: "frontier" }, () => {}, toolContext, undefined, context);
+    assert.deepEqual(result.created_ids, ["phase_1"]);
+    const after = await stateTool.execute("state-2", { mode: "summary" }, () => {}, toolContext, undefined, context);
     const afterProjection = JSON.parse(after.content[0].text);
-    assert.equal(afterProjection.workspace_revision, result.workspace_revision);
+    assert.equal(afterProjection.revision, result.revision);
 
     const nodeChange = await changeTool.execute("create-node", {
       rationale: "Create one open ResearchNode for native deterministic artifact tests.",
       operations: [
         {
-          op: "create_claim",
-          local_ref: "claim",
-          claimType: "test",
-          question: "Do two rigidly translated hydrogen structures match?",
+          type: "create_claim",
+          id: "claim_1",
           statement: "Two bounded hydrogen structures can be compared.",
-          scope: "The two imported hydrogen XYZ structures.",
-          uncertainty: "The deterministic comparison has not run yet.",
           predictions: ["The aligned H-H distances agree."],
           falsifiers: ["The aligned H-H distances differ beyond the threshold."],
         },
         {
-          op: "start_node",
-          local_ref: "node",
-          phaseRef: "phase_1",
+          type: "create_node",
+          id: "node_1",
+          phase_id: "phase_1",
           title: "Native deterministic artifacts",
           objective: "Exercise native artifact generation and comparison.",
-          deliverable: "Auditable deterministic artifact journals.",
-          primaryClaimRef: "$claim",
-          claimRefs: ["$claim"],
+          claim_ids: ["claim_1"],
+          dependency_ids: [],
         },
-        { op: "set_focus", claimRefs: ["$claim"], nodeRefs: ["$node"] },
+        { type: "set_focus", claim_ids: ["claim_1"], node_ids: ["node_1"] },
       ],
     }, () => {}, toolContext, undefined, context);
     const nodeResult = JSON.parse(nodeChange.content[0].text);
-    const nodeId = nodeResult.created_refs.nodes[0];
+    const nodeId = nodeResult.created_ids.find((id) => id.startsWith("node_"));
     assert.equal(nodeId, "node_1");
 
     const referenceContent = "2\nreference\nH 0 0 0\nH 0 0 0.74\n";
@@ -646,10 +624,11 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     await writeFile(join(fakeBin, "ssh"), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
     const sshConfig = join(root, "ssh-config");
     await writeFile(sshConfig, "Host test-login\n  HostName test.invalid\n");
-    const remoteConfig = join(root, "remote.toml");
-    await writeFile(remoteConfig, [
+    const computeConfig = join(root, "compute.toml");
+    await writeFile(computeConfig, [
       "default_profile = \"cluster\"",
       "[profiles.cluster]",
+      "kind = \"remote\"",
       "ssh_host = \"test-login\"",
       `ssh_config = ${JSON.stringify(sshConfig)}`,
       "scheduler = \"torque\"",
@@ -663,21 +642,20 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       "allowed_queues = [\"batch\"]",
       "",
     ].join("\n"));
-    process.env.TS_REMOTE_CONFIG = remoteConfig;
+    process.env.TS_COMPUTE_CONFIG = computeConfig;
     process.env.PATH = `${fakeBin}:${previous.PATH}`;
     delete process.env.TSPI_NATIVE_WRITES;
-    const remote = JSON.parse((await tools.ts_remote.execute(
-      "remote-status",
-      { mode: "status" },
+    const environment = JSON.parse((await tools.ts_environment.execute(
+      "environment-show",
+      { mode: "show", name: "cluster" },
       () => {},
       toolContext,
       undefined,
       context,
     )).content[0].text);
-    assert.equal(remote.schema_version, "ts-remote-diagnostic/1");
-    assert.equal(remote.mode, "status");
-    assert.equal(remote.ok, true);
-    assert.equal(remote.connection.ok, true);
+    assert.equal(environment.schema_version, "compute-environment/1");
+    assert.equal(environment.environment.name, "cluster");
+    assert.equal(environment.environment.kind, "remote");
     assert.equal((await readdir(activityRoot)).length, activityCount);
     process.env.TSPI_NATIVE_WRITES = "1";
 

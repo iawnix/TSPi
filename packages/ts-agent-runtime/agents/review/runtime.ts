@@ -102,7 +102,7 @@ export interface InvalidReviewOutput {
   raw: unknown;
 }
 
-interface ProviderResponseObservation {
+interface ProviderResponseCapture {
   status?: number;
   contentType?: string;
 }
@@ -161,7 +161,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
       ? createReviewArtifactReadTool(options.workspaceRoot, artifactManifest, artifactReadCapture)
       : null;
     const toolChoiceState = { forceResult: false };
-    const providerResponse: ProviderResponseObservation = {};
+  const providerResponse: ProviderResponseCapture = {};
     const resourceLoader = await createIsolatedResourceLoader(
       systemPrompt,
       options.workspaceRoot,
@@ -301,7 +301,7 @@ async function createIsolatedResourceLoader(
   cwd: string,
   agentDir: string,
   settingsManager: SettingsManager,
-  providerResponse: ProviderResponseObservation,
+  providerResponse: ProviderResponseCapture,
   shouldForceResult: () => boolean,
 ): Promise<ResourceLoader> {
   const loader = new DefaultResourceLoader({
@@ -363,7 +363,7 @@ function buildTaskPrompt(providerInput: Record<string, unknown>, hasArtifacts: b
 async function repairMissingToolCall(
   session: Awaited<ReturnType<typeof createAgentSession>>["session"],
   model: Model<any>,
-  providerResponse: ProviderResponseObservation,
+  providerResponse: ProviderResponseCapture,
   options: ReviewRunOptions,
   timeoutMs: number,
   startedAt: number,

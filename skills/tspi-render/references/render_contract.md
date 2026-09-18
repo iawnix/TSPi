@@ -47,4 +47,4 @@ The schema is [curve-data.schema.json](../../../contracts/ts-render/curve-data.s
 Use rendering to inspect geometry, compare structures, animate modes, or
 communicate a mechanism. Establish bond changes, endpoint identity, and mode
 assignments from the corresponding structural and calculation data. Record
-verified values as Observations with primary source artifacts.
+verified values as Findings with primary source artifacts.

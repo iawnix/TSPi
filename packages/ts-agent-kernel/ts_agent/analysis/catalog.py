@@ -47,7 +47,7 @@ PATH_ROW = obj({"step": KEY, "direction": choice("forward", "reverse")}, ["step"
 def descriptor(name, summary, roles, parameters, *, optional=(), multiple=(), limitations=()):
     return {
         "capability": name, "version": "1", "capability_kind": "analysis", "summary": summary,
-        "input_roles": list(roles), "output_roles": ["analysis_artifact", "output_artifacts", "observation_candidates"],
+        "input_roles": list(roles), "output_roles": ["analysis_artifact", "output_artifacts", "finding_candidates"],
         "effects": ["local_prepare", "local_analysis"],
         "input_schema": obj({role: array(ARTIFACT, 64 if role in multiple else 1) for role in roles}, [r for r in roles if r not in optional]),
         "parameter_schema": parameters, "parsers": [name + "/1"],

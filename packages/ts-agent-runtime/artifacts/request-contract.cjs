@@ -122,7 +122,7 @@ function validateCreatedReportPackage(rootValue, packageRef, expectedManifestDig
     throw new Error("report package manifest digest mismatch");
   }
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
-  if (manifest.schema_version !== "ts-report-package/4") throw new Error("report package manifest schema is invalid");
+  if (manifest.schema_version !== "ts-report-package/5") throw new Error("report package manifest schema is invalid");
   if (manifest.workspace_revision !== expectedRevision) throw new Error("report package revision mismatch");
   if (manifest.operational_revision !== expectedOperationalRevision) throw new Error("report package operational revision mismatch");
   const listed = new Set((manifest.files || []).map((item) => item?.ref).filter((item) => typeof item === "string"));
@@ -137,11 +137,13 @@ function validateCreatedReportPackage(rootValue, packageRef, expectedManifestDig
 function requireAct(root, value) {
   const nodeId = requireString(value, "nodeId", 128);
   if (!NODE_ID.test(nodeId)) throw new Error("nodeId must be a ResearchNode ID");
-  const registry = JSON.parse(readFileSync(resolve(root, "research_nodes.json"), "utf8"));
-  const matches = Array.isArray(registry.nodes)
-    ? registry.nodes.filter((item) => isPlainObject(item) && item.node_id === nodeId)
+  const mapPath = resolve(root, "research_map.json");
+  if (!existsSync(mapPath) || lstatSync(mapPath).isSymbolicLink()) throw new Error("ResearchMap does not exist");
+  const map = JSON.parse(readFileSync(mapPath, "utf8"));
+  const matches = Array.isArray(map.nodes)
+    ? map.nodes.filter((item) => isPlainObject(item) && item.id === nodeId)
     : [];
-  if (matches.length !== 1) throw new Error(`unknown ResearchNode: ${nodeId}`);
+  if (map.schema_version !== "research-map/1" || matches.length !== 1) throw new Error(`unknown ResearchNode: ${nodeId}`);
   return nodeId;
 }
 
@@ -149,7 +151,9 @@ function requireWorkspaceRoot(value) {
   if (typeof value !== "string" || !value || !isAbsolute(value)) throw new Error("workspace root must be absolute");
   const root = realpathSync(value);
   const workspace = JSON.parse(readFileSync(resolve(root, "workspace.json"), "utf8"));
-  if (workspace.schema_version !== "ts-workspace/6") throw new Error("artifact tools require a supported workspace");
+  if (workspace.schema_version !== "research-workspace/1") throw new Error("artifact tools require a ResearchMap workspace");
+  const mapPath = resolve(root, "research_map.json");
+  if (!existsSync(mapPath) || lstatSync(mapPath).isSymbolicLink()) throw new Error("artifact tools require research_map.json");
   return root;
 }
 

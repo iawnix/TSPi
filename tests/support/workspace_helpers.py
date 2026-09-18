@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from ts_agent.io import sha256_json
-from ts_agent.workspace import change_workspace, init_workspace
-from ts_agent.workspace.context import build_review_snapshot
-from tests.support.kernel_helpers import complete_request
+from ts_agent.workspace import init_workspace
+from ts_agent.research import ResearchKernel
+from tests.support.kernel_helpers import apply_compiled_change, compile_change
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -18,7 +18,8 @@ _DIGEST_B = "sha256:" + "b" * 64
 
 
 def apply_change(root: Path, request: dict[str, Any]) -> dict[str, Any]:
-    return change_workspace(root, complete_request(request))
+    drafted = compile_change(root, request)
+    return apply_compiled_change(root, drafted["decision"])
 
 
 def bootstrap_workspace_fixture(root: Path) -> Path:
@@ -122,137 +123,29 @@ def start_research_node(
     claim_type: str = "test",
     claim_statement: str = "A bounded scientific claim requires evaluation.",
 ) -> dict[str, str]:
-    changed = apply_change(
-        root,
-        {
-            "rationale": "Create one Claim and one open ResearchNode for a test.",
-            "basis_refs": [],
-            "operations": [
-                {
-                    "op": "create_phase",
-                    "local_ref": "phase",
-                    "title": "Test phase",
-                    "objective": "Contain the bounded test research.",
-                },
-                {
-                    "op": "create_claim",
-                    "local_ref": "claim",
-                    "claimType": claim_type,
-                    "statement": claim_statement,
-                },
-                {
-                    "op": "start_node",
-                    "local_ref": "node",
-                    "phaseRef": "$phase",
-                    "title": title,
-                    "objective": objective,
-                    "deliverable": deliverable,
-                    "primaryClaimRef": "$claim",
-                    "claimRefs": ["$claim"],
-                },
-                {
-                    "op": "set_focus",
-                    "claimRefs": ["$claim"],
-                    "nodeRefs": ["$node"],
-                },
-            ],
-        },
-    )
+    changed = apply_change(root, {
+        "operations": [
+            {"type": "create_phase", "id": "phase_1", "title": "Test phase", "objective": "Contain the bounded test research."},
+            {"type": "create_claim", "id": "claim_1", "statement": claim_statement},
+            {"type": "create_node", "id": "node_1", "phase_id": "phase_1", "claim_ids": ["claim_1"], "title": title, "objective": objective, "dependency_ids": []},
+            {"type": "set_focus", "claim_ids": ["claim_1"], "node_ids": ["node_1"]},
+        ],
+    })
+    research_map = ResearchKernel(root).load()
+    node = next(node for node in research_map.nodes.values() if node.id in changed.get("created_ids", []))
+    claim = research_map.claims[node.claim_ids[0]]
+    phase = research_map.phases[node.phase_id] if node.phase_id else None
     return {
-        "phase_id": changed["allocated_refs"]["phase"],
-        "claim_id": changed["allocated_refs"]["claim"],
-        "node_id": changed["allocated_refs"]["node"],
+        "phase_id": phase.id if phase else "",
+        "claim_id": claim.id,
+        "node_id": node.id,
     }
 
 
 def accept_research_claim(root: Path) -> dict[str, str]:
-    changed = apply_change(
-        root,
-        {
-            "rationale": "Create and accept one deterministically validated Claim.",
-            "basis_refs": [],
-            "operations": [
-                {
-                    "op": "create_phase",
-                    "local_ref": "phase",
-                    "title": "Validation phase",
-                    "objective": "Validate and accept one bounded scientific Claim.",
-                },
-                {
-                    "op": "create_claim",
-                    "local_ref": "claim",
-                    "question": "Does the bounded observation support this Claim?",
-                    "claimType": "research",
-                    "statement": "A bounded claim is supported.",
-                    "scope": "The single deterministic test observation.",
-                    "uncertainty": "The observation has not yet been evaluated.",
-                    "predictions": ["test.confirmed is true."],
-                    "falsifiers": ["test.confirmed is false or unavailable."],
-                },
-                {
-                    "op": "start_node",
-                    "local_ref": "node",
-                    "phaseRef": "$phase",
-                    "title": "Bounded Claim validation",
-                    "objective": "Test the bounded Claim.",
-                    "deliverable": "One frozen validation result for the Claim.",
-                    "primaryClaimRef": "$claim",
-                    "claimRefs": ["$claim"],
-                },
-                {
-                    "op": "record_observation",
-                    "local_ref": "observation",
-                    "nodeRef": "$node",
-                    "conceptId": "test.confirmed",
-                    "subjectRef": "subject",
-                    "value": True,
-                    "datatype": "boolean",
-                    "summary": "The bounded condition was observed.",
-                    "provenance": {"producer": "test"},
-                },
-                {
-                    "op": "freeze_proof_spec",
-                    "local_ref": "spec",
-                    "nodeRef": "$node",
-                    "targetClaimRef": "$claim",
-                    "dimension": "test",
-                    "title": "Bounded Claim check",
-                    "definition": {
-                        "checks": [
-                            {
-                                "check_id": "confirmed",
-                                "predicate": "observation.equals",
-                                "parameters": {
-                                    "selector": {"concept_id": "test.confirmed", "subject_ref": "subject"},
-                                    "expected": True,
-                                },
-                                "blocking": True,
-                            }
-                        ],
-                        "success_policy": {"mode": "all_blocking"},
-                    },
-                },
-                {"op": "evaluate_proof", "local_ref": "result", "nodeRef": "$node", "proofRef": "$spec", "observationRefs": ["$observation"]},
-                {
-                    "op": "update_claim",
-                    "claimRef": "$claim",
-                    "status": "supported",
-                    "summary": "The frozen validation passed.",
-                    "observationRefs": ["$observation"],
-                    "validationResultRefs": ["$result"],
-                },
-                {
-                    "op": "accept_claim",
-                    "local_ref": "acceptance",
-                    "claimRef": "$claim",
-                    "profile": {"profileId": "research-claim", "version": "1"},
-                    "summary": "The bounded Claim passed its declared validation.",
-                },
-                {"op": "set_focus", "claimRefs": ["$claim"], "nodeRefs": ["$node"]},
-            ],
-        },
-    )
-    return changed["allocated_refs"]
+    refs = start_research_node(root, title="Bounded Claim validation", objective="Test the bounded Claim.")
+    apply_change(root, {"operations": [{"type": "create_finding", "id": "finding_1", "node_id": refs["node_id"], "claim_ids": [refs["claim_id"]], "statement": "The bounded condition was observed.", "kind": "fact", "value": True, "datatype": "boolean"}, {"type": "set_claim_status", "claim_id": refs["claim_id"], "status": "supported"}]})
+    return refs
 
 
 def build_review_bundle(
@@ -286,3 +179,32 @@ def build_review_bundle(
     )
     assert completed.returncode == 0, completed.stderr
     return json.loads(completed.stdout)
+
+
+def build_review_snapshot(root: Path, *, target_claim_ref: str) -> dict[str, Any]:
+    """Build the review adapter envelope directly from the canonical map."""
+
+    document = ResearchKernel(root).load().to_dict()
+    digest = sha256_json(document)
+    return {
+        "schema_version": "ts-review-snapshot/5",
+        "report_id": document["map_id"],
+        "workspace_revision": digest,
+        "snapshot_id": "ctx_" + digest.removeprefix("sha256:")[:24],
+        "target_claim_ref": target_claim_ref,
+        "phases": document["phases"],
+        "claims": document["claims"],
+        "claim_relations": document["claim_relations"],
+        "nodes": document["nodes"],
+        "findings": document["findings"],
+        "gates": document["gates"],
+        "dependency_refs": {
+            "phase_refs": [item["id"] for item in document["phases"]],
+            "claim_refs": [item["id"] for item in document["claims"]],
+            "relation_refs": [],
+            "node_refs": [item["id"] for item in document["nodes"]],
+            "finding_refs": [item["id"] for item in document["findings"]],
+            "gate_refs": [item["id"] for item in document["gates"]],
+        },
+        "omitted": {},
+    }

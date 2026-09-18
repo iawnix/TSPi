@@ -15,7 +15,7 @@ from .validator import validate_workspace
 
 BOOTSTRAP_SCHEMA = "research-map-bootstrap/1"
 CANONICAL_FILES = ("workspace.json", "research_map.json", "transactions.jsonl")
-CANONICAL_DIRS = ("nodes", "operations", "scratch")
+CANONICAL_DIRS = ("nodes", "operations", "scratch", "inputs")
 UNSUPPORTED_FILES = (
     "research_state.json",
     "phases.json",

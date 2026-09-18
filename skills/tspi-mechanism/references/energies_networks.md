@@ -61,4 +61,4 @@ It preserves stoichiometric participants and spectator pools while accumulating
 ΔG and local barrier heights on one reference. Its generated `energy_profile.json`
 uses the existing `ts-curve-data/1` contract and can be passed to `ts_render curve`.
 The profile is a selected comparison, not a claim of complete mechanism discovery.
-Reports and Node Web details link analyses back to source files and Observations.
+Reports and Node Web details link analyses back to source files and Findings.

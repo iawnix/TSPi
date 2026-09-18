@@ -58,11 +58,10 @@ scripts/prepare_pi_source.py --install <root>
 只有 remote profile 包含 SSH/Torque 字段。安装器统一接收一份计算后端 TOML 文件：
 交互安装时在提示处输入文件路径，非交互安装时使用
 `--compute-config /absolute/path/compute.toml`。项目模板位于
-`config/compute.example.toml`；复制后按目标机器修改 local/remote provider，再交给安装器。
+`config/compute.example.toml`；复制后按目标机器修改 local/remote profile，再交给安装器。
 安装后的文件为 `<install>/.pi/compute.toml`，权限为 `0600`。
 
-已有安装仍兼容 `--local-config` 和 `--remote-config` 两种旧格式；新安装建议使用上面的
-统一模板。`/compute` 和 `compute.environments` 会列出已配置的本地与远端 profile，
+`/compute` 和 `compute.environments` 会列出已配置的本地与远端 profile，
 TSPi 不会下载 Gaussian 或其他站点管理的本地化学软件，SSH 凭据仍由 SSH
 配置管理，不会复制到该 TOML 文件中。
 

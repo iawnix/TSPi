@@ -1,56 +1,37 @@
 # Report Contract
 
-Build the standard report from a valid workspace with `ts_report`. The
-renderer is `packages/ts-agent-kernel/ts_agent/report/builder.py`.
-Add any extra narrative as a separate report-package asset.
+Build the report from the current `ResearchMap` and registered logical
+Artifacts with `ts_report`. The report is a package of the map revision and
+the selected operational records; it is not a new state model.
 
-## Required Projection
+## Required Content
 
-The report package must expose, across `final_report.md` and its bound context
-files:
+Include:
 
-1. workspace identity, scientific revision, focus Claims/Nodes, and explicit
-   conclusion boundary;
-2. ResearchPhases and their grouped Nodes as the human roadmap;
+1. map identity, revision, focus Claims/Nodes, and conclusion boundary;
+2. Phases with their grouped Nodes;
 3. Claims and Claim relations, including alternatives and conflicts;
-4. ResearchNode DAG dependencies, objectives, Claim scope, outcomes, and open
-   questions;
-5. computational protocols and primary artifact refs;
-6. semantic Observations with values, units, qualifiers, provenance, and
-   digests;
-7. frozen ProofSpecs and deterministic ValidationResults;
-8. Findings, including resolved and open blocking items;
-9. immutable acceptance history, profile versions, and explicit current/stale
-   status;
-10. deterministic activities, activity integrity, unresolved compute controls,
-    pending Review dispositions, and notification state as operational follow-up;
-11. limitations, missing corrections, and open scientific questions.
-
-## Acceptance Language
-
-Cite the current acceptance record and its profile, ProofSpecs, passing ValidationResults,
-and Finding snapshot. A historical record whose inputs have changed must be
-labeled stale. Describe its current verification gaps alongside that history.
-
-For a classical TS, keep stationary-point, reaction-coordinate, and connectivity
-dimensions separate. Add identity, electronic structure, state-character,
-robustness, thermochemistry, or pathway validation when the Claim and scientific
-system require them.
+4. Node objectives, dependencies, states, outcomes, and open questions;
+5. calculation intents and primary Artifact references;
+6. FactFindings with values, units, provenance, and source references;
+7. IssueFindings, including open limitations and unresolved conflicts;
+8. Gates with criteria and their evaluations;
+9. operational follow-up such as pending runs, failed attempts, Review advice,
+   and notification status;
+10. missing corrections, uncertainty, and next research questions.
 
 ## Numerical Discipline
 
 Keep electronic energy, E+ZPE, enthalpy, and free energy distinct. Report units,
 reference state, temperature, pressure, standard-state correction, frequency
-scaling, conformer treatment, solvation/environment, dispersion, and missing
-corrections. Mark unavailable values as missing.
-
-Every numerical or structural statement cites a registered Observation and its
-source artifact. Review journals, activity records, scheduler state, and
-notification receipts remain operational provenance.
+scaling, conformer treatment, solvation, dispersion, and missing corrections.
+Mark unavailable values as missing. Every numerical or structural statement
+cites a FactFinding and its source Artifact; an IssueFinding carries the
+limitation when the evidence is incomplete.
 
 ## Package Integrity
 
-The report builder creates a new no-overwrite directory atomically. Its manifest
-binds `workspace_revision`, `operational_revision`, every file path, size, and
-SHA-256. `activities.json` records the deterministic activity projection. A
-package is usable only when its manifest matches the actual regular files.
+Each export creates a new package directory. Its manifest binds the source map
+revision, operational records, file paths, sizes, and SHA-256 digests. A
+package is usable only when the manifest matches the actual regular files. Do
+not edit a generated report and present it as a newer ResearchMap revision.

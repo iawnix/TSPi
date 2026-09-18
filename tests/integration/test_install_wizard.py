@@ -39,7 +39,7 @@ def test_non_interactive_options_select_only_web_as_optional_component(tmp_path:
 
 
 def test_interactive_web_token_reprompts_until_valid(monkeypatch: pytest.MonkeyPatch) -> None:
-    values = iter(("too-short", "a" * 8))
+    values = iter(("short", "a" * 8))
     monkeypatch.setattr(wizard.getpass, "getpass", lambda _prompt: next(values))
 
     assert wizard._ask_web_auth_token() == "a" * 8
@@ -603,16 +603,21 @@ def test_custom_smtp_provider_writes_explicit_host(tmp_path: Path) -> None:
 def test_remote_probe_records_readiness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     args = _options(tmp_path)
     args.probe_remote = True
-    configs = {"remote": {"status": "configured", "path": "/remote.toml", "doctor": "not_probed"}}
+    source = tmp_path / "compute.toml"
+    source.write_text(
+        """default_profile = \"local\"\n\n[profiles.local]\nkind = \"local\"\n""",
+        encoding="utf-8",
+    )
+    args.compute_config = str(source)
+    configs = wizard.configure_backend_configs(args)
     monkeypatch.setattr(
         wizard.subprocess,
         "run",
-        lambda command, **kwargs: subprocess.CompletedProcess(command, 0, stdout="ready\n", stderr=""),
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 1, stdout="", stderr="doctor unavailable\n"),
     )
 
-    wizard.probe_remote_backend(args, configs)
-
-    assert configs["remote"]["doctor"] == "ready"
+    with pytest.raises(RuntimeError, match="remote backend readiness check failed"):
+        wizard.probe_remote_backend(args, configs)
 
 
 def test_install_log_is_date_named_and_appends_same_day_runs(tmp_path: Path) -> None:
@@ -643,7 +648,7 @@ def test_logged_package_step_is_kept_in_date_named_log(tmp_path: Path) -> None:
     assert '"ok": true' in log.read_text(encoding="utf-8")
 
 
-def test_interactive_remote_toml_is_validated_and_written_private(tmp_path: Path) -> None:
+def test_compute_toml_is_validated_and_written_private(tmp_path: Path) -> None:
     root = tmp_path / "install"
     ssh_config = tmp_path / "ssh-config"
     ssh_config.write_text("Host cluster\n", encoding="utf-8")
@@ -651,22 +656,28 @@ def test_interactive_remote_toml_is_validated_and_written_private(tmp_path: Path
     args = wizard.parse_args([
         "--install-root", str(root), "--without-web", "--service-scope", "none", "--non-interactive",
     ])
-    args._remote_config_content = "\n".join([
-        'default_profile = "cluster"',
+    source = tmp_path / "compute.toml"
+    source.write_text("\n".join([
+        'default_profile = "local"',
+        '[profiles."local"]',
+        'kind = "local"',
+        '',
         '[profiles."cluster"]',
+        'kind = "remote"',
         'ssh_host = "cluster"',
         f'ssh_config = "{ssh_config}"',
         'scheduler = "torque"',
         'remote_root = "/srv/tspi"',
         'allowed_queues = ["batch"]',
         '',
-    ])
+    ]) + "\n", encoding="utf-8")
+    args.compute_config = str(source)
     wizard.validate_options(args)
     configs = wizard.configure_backend_configs(args)
 
-    destination = root / ".pi" / "remote.toml"
-    assert configs["remote"]["source"] == "interactive"
-    assert destination.read_text(encoding="utf-8") == args._remote_config_content
+    destination = root / ".pi" / "compute.toml"
+    assert configs["compute"]["status"] == "configured"
+    assert destination.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
     assert stat.S_IMODE(destination.stat().st_mode) == 0o600
 
 

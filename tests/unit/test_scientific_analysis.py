@@ -13,7 +13,7 @@ from ts_agent.analysis.catalog import DESCRIPTORS
 from ts_agent.analysis.thermochemistry import R_KJ, HARTREE_KJ_MOL
 from ts_agent.compute.analysis import run_analysis
 from ts_agent.compute.artifacts import list_calculation_artifacts
-from ts_agent.workspace.candidates import load_observation_candidate, ObservationCandidateError
+from ts_agent.workspace.candidates import load_finding_candidate, FindingCandidateError
 
 
 def source(**roles):
@@ -204,17 +204,17 @@ def test_public_analysis_artifact_replay_and_tamper(tmp_path):
     result = run_analysis(workspace, request(node, "reaction.parse", params))
     artifact = result["analysis_artifact"]
     assert not run_analysis(workspace, request(node, "reaction.parse", params))["created"]
-    loaded = load_observation_candidate(workspace, artifact_id=artifact["artifact_id"], artifact_sha256=None, candidate_id="candidate_1", node_id=node)
+    loaded = load_finding_candidate(workspace, artifact_id=artifact["artifact_id"], artifact_sha256=None, candidate_id="candidate_1", node_id=node)
     assert loaded["candidate"]["value"] is True
     mapping = run_analysis(workspace, request(node, "reaction.mapping.generate", {}, {"reaction": [artifact["artifact_id"]]}))
     assert mapping["verdict"] == "inconclusive"
     path = workspace / artifact["path"]
     document = json.loads(path.read_text())
-    document["observation_candidates"]["candidates"][0]["value"] = False
+    document["finding_candidates"]["candidates"][0]["value"] = False
     path.write_text(json.dumps(document))
     changed = next(row for row in list_calculation_artifacts(workspace)["artifacts"] if row["path"] == artifact["path"])
-    with pytest.raises(ObservationCandidateError, match="recomputed"):
-        load_observation_candidate(workspace, artifact_id=changed["artifact_id"], artifact_sha256=None, candidate_id="candidate_1", node_id=node)
+    with pytest.raises(FindingCandidateError, match="recomputed"):
+        load_finding_candidate(workspace, artifact_id=changed["artifact_id"], artifact_sha256=None, candidate_id="candidate_1", node_id=node)
 
 
 def test_catalog_schemas_closed_and_invalid_parameters_rejected(tmp_path):
@@ -241,18 +241,18 @@ def test_multiple_input_roles_replay_independent_of_json_key_order(tmp_path, leg
     document = json.loads(path.read_text())
     if legacy_order:
         document["source_artifacts"].reverse()
-        document["observation_candidates"]["source_artifacts"].reverse()
-        for row in document["observation_candidates"]["candidates"]:
+        document["finding_candidates"]["source_artifacts"].reverse()
+        for row in document["finding_candidates"]["candidates"]:
             row["source_artifact_ids"].reverse()
         path.write_text(json.dumps(document, sort_keys=True))
         artifact = next(a for a in list_calculation_artifacts(root)["artifacts"] if a["path"] == artifact["path"])
-    loaded = load_observation_candidate(root, artifact_id=artifact["artifact_id"], artifact_sha256=None, candidate_id="candidate_1", node_id=node)
+    loaded = load_finding_candidate(root, artifact_id=artifact["artifact_id"], artifact_sha256=None, candidate_id="candidate_1", node_id=node)
     assert len(loaded["source_artifacts"]) == 2
     document["source_artifacts"].append(document["source_artifacts"][0])
     path.write_text(json.dumps(document))
     changed = next(a for a in list_calculation_artifacts(root)["artifacts"] if a["path"] == artifact["path"])
-    with pytest.raises(ObservationCandidateError, match="source artifact binding"):
-        load_observation_candidate(root, artifact_id=changed["artifact_id"], artifact_sha256=None, candidate_id="candidate_1", node_id=node)
+    with pytest.raises(FindingCandidateError, match="source artifact binding"):
+        load_finding_candidate(root, artifact_id=changed["artifact_id"], artifact_sha256=None, candidate_id="candidate_1", node_id=node)
 
 
 def test_network_parallel_hyperedges_cycles_and_bounded_reachability():
@@ -286,49 +286,6 @@ def test_energy_profile_keeps_stoichiometric_pool_and_renderer_contract():
     Draft202012Validator(schema).validate(json.loads(profile["files"]["energy_profile.json"]))
     with pytest.raises(ValueError, match="unavailable"):
         evaluate("mechanism.energy_profile", source(network=network), {"path": [{"step": "isomerization"}], "initial_composition": {"P": 1}})
-
-
-def test_report_and_web_link_analyses_to_node_and_observation(tmp_path):
-    from tests.support.workspace_helpers import apply_change
-    from ts_agent.report.context import collect_report_context
-    from ts_agent.report.builder import render_final_report
-    from ts_agent.projection.normalize import node_payload
-    from ts_agent.workspace import validate_workspace
-
-    root = bootstrap_workspace_fixture(tmp_path / "workspace")
-    node = start_research_node(root)["node_id"]
-    result = run_analysis(root, request(node, "reaction.parse", {"reaction_smiles": "O>>O", "multiplicities": {"reactants": [1], "products": [1]}}))
-    candidate = result["candidate_refs"][0]
-    apply_change(root, {"rationale": "Record independently verified conservation", "basis_refs": [], "operations": [{"op": "record_observation", "local_ref": "balanced",
-        "nodeRef": node, "candidate": {"artifactId": candidate["artifactId"], "candidateId": candidate["candidateId"]}, "conceptId": "reaction.balanced", "subjectRef": "water_identity", "summary": "Element, isotope and charge totals are conserved."}]})
-    assert validate_workspace(root)["valid"]
-    context = collect_report_context(root)
-    row = context["scientific_analyses"]["analyses"][0]
-    assert row["node_id"] == node and row["observation_refs"]
-    assert candidate["artifactId"] in render_final_report(context)
-    web = node_payload(root, node)
-    assert web["scientific_analyses"]["analyses"][0]["artifact_id"] == candidate["artifactId"]
-
-
-def test_direct_observation_derives_digest_and_rejects_wrong_local_reference(tmp_path):
-    from tests.support.workspace_helpers import apply_change
-    from ts_agent.workspace.errors import ContractError
-
-    root = bootstrap_workspace_fixture(tmp_path / "workspace")
-    node = start_research_node(root)["node_id"]
-    result = run_analysis(root, request(node, "reaction.parse", {"reaction_smiles": "O>>O", "multiplicities": {"reactants": [1], "products": [1]}}))
-    artifact = result["analysis_artifact"]
-    operations = [{"op": "record_observation", "local_ref": "observed", "nodeRef": node,
-        "conceptId": "reaction.scope", "subjectRef": "water", "value": "closed", "datatype": "string", "summary": "Explicit closed-system scope",
-        "provenance": {"producer": "agent-inspection"}, "artifacts": [{"artifactId": artifact["artifact_id"]}]},
-        {"op": "record_finding", "local_ref": "limit", "findingType": "scope", "severity": "informational", "statement": "No mechanism accepted", "nodeRefs": [node], "basisObservationRefs": ["observed"]}]
-    change = {"rationale": "Record checked scope", "basis_refs": [], "operations": operations}
-    with pytest.raises(ContractError, match=r"\$observed"):
-        apply_change(root, change)
-    operations[1]["basisObservationRefs"] = ["$observed"]
-    apply_change(root, change)
-    observation = json.loads((root / "observations.json").read_text())["observations"][0]
-    assert observation["provenance"]["source_digests"] == {artifact["artifact_id"]: artifact["sha256"]}
 
 
 def test_ts_audit_rejects_bad_stationary_point_and_missing_connectivity():

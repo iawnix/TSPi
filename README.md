@@ -53,8 +53,7 @@ it is not a second Host or broker. See [Terminal](docs/TERMINAL.md),
 
 Configure software providers and execution platforms in the unified
 `.pi/compute.toml` (or pass one to the installer with `--compute-config`).
-Existing `.pi/local.toml` and `.pi/remote.toml` files remain supported. Verify a
-remote profile with:
+Local and remote profiles live in that same file. Verify a remote profile with:
 
 ```bash
 ./TSPi --check-remote

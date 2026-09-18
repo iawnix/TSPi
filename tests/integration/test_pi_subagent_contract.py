@@ -35,13 +35,13 @@ def test_review_task_is_graph_scoped_bounded_and_advisory(tmp_path: Path) -> Non
     assert task["scope"]["node_refs"] == [refs["node_id"]]
     assert task["scope"]["claim_refs"] == [refs["claim_id"]]
     assert set(task["inputs"]) == {"review_snapshot", "provider_input"}
-    assert snapshot["schema_version"] == "ts-review-task-snapshot/3"
-    assert provider["schema_version"] == "ts-review-provider-input/5"
+    assert snapshot["schema_version"] == "ts-review-task-snapshot/4"
+    assert provider["schema_version"] == "ts-review-provider-input/6"
     assert snapshot["artifact_manifest"] == []
     assert provider["artifact_manifest"] == []
-    assert provider["dossier"]["nodes"][0]["related_claim_refs"] == [refs["claim_id"]]
-    assert provider["dossier"]["nodes"][0]["phase_ref"] == refs["phase_id"]
-    assert provider["dossier"]["phases"][0]["phase_id"] == refs["phase_id"]
+    assert provider["dossier"]["nodes"][0]["claim_ids"] == [refs["claim_id"]]
+    assert provider["dossier"]["nodes"][0]["phase_id"] == refs["phase_id"]
+    assert provider["dossier"]["phases"][0]["id"] == refs["phase_id"]
     assert len(json.dumps(provider).encode()) < 32 * 1024
     serialized = json.dumps(provider)
     for retired in ('"act_id"', '"hypothesis"', '"evidence"', '"gate_results"', '"required_gates"'):
@@ -64,20 +64,16 @@ def test_review_request_accepts_only_claim_and_logical_artifact_ids() -> None:
     assert rows[2]["ok"] is False and "targetClaimRef" in rows[2]["error"]
 
 
-def test_review_packet_carries_compact_current_acceptance_state(tmp_path: Path) -> None:
+def test_review_packet_carries_compact_current_gate_state(tmp_path: Path) -> None:
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     refs = accept_research_claim(workspace)
-    bundle = build_review_bundle(
-        workspace,
-        {"claim_id": refs["claim"], "node_id": refs["node"]},
-        "sub_1",
-    )
+    bundle = build_review_bundle(workspace, refs, "sub_1")
 
-    acceptance = bundle["documents"]["provider_input"]["dossier"]["acceptances"][0]
-    assert acceptance["acceptance_id"] == refs["acceptance"]
-    assert acceptance["current"] is True
-    assert acceptance["stale_reasons"] == []
-    assert "claim_snapshot" not in acceptance
+    dossier = bundle["documents"]["provider_input"]["dossier"]
+    assert dossier["target_claim"]["id"] == refs["claim_id"]
+    assert dossier["target_claim"]["status"] == "supported"
+    assert dossier["findings"][0]["kind"] == "fact"
+    assert "acceptances" not in dossier
 
 
 def test_review_result_requires_array_risks_and_bound_basis_refs(tmp_path: Path) -> None:

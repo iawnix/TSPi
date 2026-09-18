@@ -1,28 +1,24 @@
 ---
 name: tspi-report
-description: Build TSPi research reports with conclusions, supporting evidence, calculation history, validation results, and visual assets.
+description: Build TSPi research reports from the canonical ResearchMap, calculation history, Findings, and visual Artifacts.
 ---
 
 # TSPi Reports
 
 [Chinese version](SKILL.zh-CN.md)
 
-Use this Skill for `ts_report`. Load `tspi-orchestration` for workspace state,
-artifact identity, validation, and Decision contracts. Load `tspi-render` when
-the report requires visual assets.
+Use this Skill for `ts_report`. Load `tspi-orchestration` for map and Artifact
+contracts and `tspi-render` when a report needs figures.
 
-## Operating Rules
+Build from a valid workspace and registered logical Artifact IDs. Show the
+current ResearchMap revision, Phases, Claims, Node states and outcomes,
+FactFindings, IssueFindings, Gate criteria/evaluations, open questions, and
+calculation history as distinct sections. Do not turn a runtime success into a
+Claim conclusion. Every numerical or structural statement cites the relevant
+Finding and source Artifact.
 
-- Build a report only from a complete valid workspace and registered logical
-  artifact IDs.
-- Keep scientific revision, operational revision, acceptance status, Findings,
-  limitations, and open questions distinct.
-- Record the current Node and Claim status through `ts_change` before building the report;
-  include ongoing work and open questions when reporting interim progress.
-- Cite current Observation, ProofSpec, ValidationResult, Finding, and source
-  artifact references for every scientific statement.
-- Create a new report package for each export and verify its files and revisions
-  against the manifest before returning it.
-
-Read [report_template.md](references/report_template.md) for the required projection, acceptance
-language, numerical discipline, and package-integrity rules.
+Before an export, use `ts_state` to read the current map and record any changed
+Node or Claim status with `ts_change`. Create a new report package per export;
+verify its files, manifest, source revision, and Artifact references before
+returning it. Read [report_template.md](references/report_template.md) for the
+package layout and numerical discipline.

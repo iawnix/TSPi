@@ -13,65 +13,31 @@ function reviewSnapshotFromMap(map, targetClaimRef) {
   const phases = records(map.phases);
   const nodes = records(map.nodes);
   const findings = records(map.findings);
-  const relations = records(map.claim_relations);
+  const gates = records(map.gates);
+  const relations = records(map.claim_relations).map((relation, index) => ({
+    ...relation,
+    id: relation.id || `relation_${index + 1}`,
+  }));
   const digest = `sha256:${createHash("sha256").update(JSON.stringify(map)).digest("hex")}`;
   return {
-    schema_version: "ts-review-snapshot/4",
+    schema_version: "ts-review-snapshot/5",
     report_id: typeof map.map_id === "string" ? map.map_id : null,
     workspace_revision: digest,
-    projection_id: `ctx_${digest.slice(-24)}`,
+    snapshot_id: `ctx_${digest.slice(-24)}`,
     target_claim_ref: targetClaimRef,
-    research_phases: phases.map((phase) => ({ phase_id: phase.id, title: phase.title, objective: phase.objective })),
-    claims: claims.map((claim) => ({
-      claim_id: claim.id,
-      statement: claim.statement,
-      status: claim.status,
-      predictions: claim.predictions,
-      falsifiers: claim.falsifiers,
-      node_refs: claim.node_ids,
-      finding_refs: claim.finding_ids,
-      gate_refs: claim.gate_ids,
-    })),
-    claim_relations: relations.map((relation, index) => ({
-      relation_id: relation.id || `relation_${index + 1}`,
-      source_claim_ref: relation.source_id,
-      target_claim_ref: relation.target_id,
-      relation_type: relation.relation,
-    })),
-    research_nodes: nodes.map((node) => ({
-      node_id: node.id,
-      phase_ref: node.phase_id,
-      title: node.title,
-      objective: node.objective,
-      status: node.state,
-      dependency_refs: node.dependency_ids,
-      claim_refs: node.claim_ids,
-      finding_refs: node.finding_ids,
-      artifact_refs: node.artifact_refs,
-    })),
-    observations: [],
-    proof_specs: [],
-    validation_results: [],
-    findings: findings.map((finding) => ({
-      finding_id: finding.id,
-      node_ref: finding.node_id,
-      statement: finding.statement,
-      severity: finding.severity || "informational",
-      claim_refs: finding.claim_ids,
-      basis_observation_refs: [],
-      resolution: finding.resolution,
-    })),
-    acceptances: [],
+    phases,
+    claims,
+    claim_relations: relations,
+    nodes,
+    findings,
+    gates,
     dependency_refs: {
       phase_refs: phases.map((phase) => String(phase.id)),
       claim_refs: claims.map((claim) => String(claim.id)),
-      relation_refs: relations.map((relation, index) => String(relation.id || `relation_${index + 1}`)),
+      relation_refs: relations.map((relation) => String(relation.id)),
       node_refs: nodes.map((node) => String(node.id)),
-      observation_refs: [],
-      proof_spec_refs: [],
-      validation_result_refs: [],
       finding_refs: findings.map((finding) => String(finding.id)),
-      acceptance_refs: [],
+      gate_refs: gates.map((gate) => String(gate.id)),
     },
     omitted: {},
   };

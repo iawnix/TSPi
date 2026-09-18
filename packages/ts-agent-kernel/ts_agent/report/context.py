@@ -1,31 +1,17 @@
-"""Validated report projection."""
+"""Canonical ResearchMap input for report generation."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Iterable
 
-from ts_agent.workspace.acceptance import project_acceptances
-from ts_agent.io import read_json
+from ts_agent.analysis.projection import analysis_projection
+from ts_agent.compute.artifacts import list_calculation_artifacts
+from ts_agent.io import sha256_json
+from ts_agent.research import ResearchKernel, ResearchKernelError
 from ts_agent.workspace.operational import operational_snapshot
-from ts_agent.workspace.revision import report_id_for_revision, workspace_revision_from_documents
-from ts_agent.workspace.trajectory import project_research_trajectory
-from ts_agent.workspace.state import (
-    CLAIMS_FILE,
-    CLAIM_RELATIONS_FILE,
-    OBSERVATIONS_FILE,
-    FINDINGS_FILE,
-    RESEARCH_PHASES_FILE,
-    RESEARCH_NODES_FILE,
-    RESEARCH_STATE_FILE,
-    STATE_FILES,
-    VALIDATION_RESULTS_FILE,
-    PROOF_SPECS_FILE,
-    WORKSPACE_FILE,
-    OPTIONAL_STATE_FILES,
-)
+from ts_agent.workspace.path_safety import lexical_path, path_has_symlink
 from ts_agent.workspace.validator import validate_workspace
-from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 def collect_report_context(
@@ -33,6 +19,12 @@ def collect_report_context(
     *,
     exclude_activity_refs: Iterable[str] = (),
 ) -> dict[str, Any]:
+    """Load one immutable report input directly from the ResearchKernel.
+
+    The report is a consumer of the same map that TS Web and the public
+    research commands return. It does not rebuild state from legacy registries.
+    """
+
     root_path = lexical_path(root)
     if path_has_symlink(root_path):
         raise ValueError(f"workspace root contains a symbolic link: {root_path}")
@@ -44,52 +36,39 @@ def collect_report_context(
             if item.get("severity") == "error"
         )
         raise ValueError(f"workspace is invalid: {messages or 'unknown validation failure'}")
-    documents = _read_state_documents(root_path)
-    revision = workspace_revision_from_documents(documents)
-    state = documents[RESEARCH_STATE_FILE]
-    acceptance_refs = list(state["acceptance_refs"])
-    acceptances = project_acceptances(
-        root_path,
-        acceptance_refs,
-        documents,
-        include_snapshots=True,
-    )
-    current_acceptances = [item for item in acceptances if item["current"]]
+    try:
+        research_map = ResearchKernel(root_path).load()
+    except ResearchKernelError as exc:
+        raise ValueError(str(exc)) from exc
+
+    map_document = research_map.to_dict()
+    workspace_revision = sha256_json(map_document)
     operations = operational_snapshot(root_path, exclude_activity_refs=exclude_activity_refs)
-    research_phases = list(documents[RESEARCH_PHASES_FILE]["phases"])
-    research_nodes = list(documents[RESEARCH_NODES_FILE]["nodes"])
-    from ts_agent.analysis.projection import analysis_projection
     analyses = analysis_projection(root_path)
-    for row in analyses["analyses"]:
-        row["observation_refs"] = [observation["observation_id"] for observation in documents[OBSERVATIONS_FILE]["observations"] if row["artifact_id"] in observation["artifact_refs"]]
+    artifact_catalog = list_calculation_artifacts(root_path).get("artifacts", [])
+
     return {
-        "scientific_analyses": analyses,
-        "schema_version": "ts-report-context/5",
+        "schema_version": "ts-report-context/6",
         "workspace_root": str(root_path),
-        "workspace_id": documents[WORKSPACE_FILE]["workspace_id"],
-        "workspace_revision": revision,
+        "workspace_id": research_map.map_id,
+        "map_id": research_map.map_id,
+        "title": research_map.title,
+        "created_at": research_map.created_at,
+        "workspace_revision": workspace_revision,
         "operational_revision": operations["operational_revision"],
-        "report_id": report_id_for_revision(revision),
+        "report_id": "rep_" + workspace_revision.removeprefix("sha256:")[:16],
+        "research_map": map_document,
         "focus": {
-            "claim_refs": list(state["focus_claim_refs"]),
-            "node_refs": list(state["focus_node_refs"]),
+            "claim_ids": list(research_map.focus_claim_ids),
+            "node_ids": list(research_map.focus_node_ids),
         },
-        "acceptance_summary": {
-            "record_refs": acceptance_refs,
-            "current_refs": [str(item["ref"]) for item in current_acceptances],
-            "stale_refs": [str(item["ref"]) for item in acceptances if not item["current"]],
-        },
-        "claims": list(documents[CLAIMS_FILE]["claims"]),
-        "claim_relations": list(documents[CLAIM_RELATIONS_FILE]["relations"]),
-        "research_phases": research_phases,
-        "research_nodes": research_nodes,
-        "research_trajectory": project_research_trajectory(root_path, research_phases, research_nodes),
-        "observations": list(documents[OBSERVATIONS_FILE]["observations"]),
-        "proof_specs": list(documents[PROOF_SPECS_FILE]["proofs"]),
-        "validation_results": list(documents[VALIDATION_RESULTS_FILE]["results"]),
-        "findings": list(documents[FINDINGS_FILE]["findings"]),
-        "acceptances": acceptances,
-        "current_acceptances": current_acceptances,
+        "phases": map_document["phases"],
+        "claims": map_document["claims"],
+        "claim_relations": map_document["claim_relations"],
+        "nodes": map_document["nodes"],
+        "findings": map_document["findings"],
+        "gates": map_document["gates"],
+        "progress": map_document["progress"],
         "deterministic_activities": operations["deterministic_activities"],
         "activity_summaries": operations["activity_summaries"],
         "node_dispatch": operations.get("node_dispatch", []),
@@ -103,41 +82,6 @@ def collect_report_context(
         "unresolved_controls": operations["unresolved_controls"],
         "pending_review_dispositions": operations["pending_review_dispositions"],
         "validation_findings": validation["findings"],
+        "scientific_analyses": analyses,
+        "artifacts": artifact_catalog,
     }
-
-
-def _read_state_documents(root: Path) -> dict[str, dict[str, Any]]:
-    """Read the canonical report inputs without following symbolic links.
-
-    ``validate_workspace`` checks the same paths first, but a report build is
-    still a separate read boundary.  Re-checking immediately before loading
-    the documents prevents a linked canonical file from being silently
-    imported if the workspace changes between validation and projection.
-    """
-
-    documents: dict[str, dict[str, Any]] = {}
-    for name in STATE_FILES:
-        path = root / name
-        if has_symlink_component(root, path) or path.is_symlink():
-            raise ValueError(f"workspace file contains a symbolic link: {name}")
-        try:
-            value = read_json(path)
-        except (OSError, ValueError) as exc:
-            raise ValueError(f"cannot read workspace file {name}: {exc}") from exc
-        if not isinstance(value, dict):
-            raise ValueError(f"workspace file is not an object: {name}")
-        documents[name] = value
-    for name in OPTIONAL_STATE_FILES:
-        path = root / name
-        if not path.exists():
-            continue
-        if has_symlink_component(root, path) or path.is_symlink():
-            raise ValueError(f"workspace file contains a symbolic link: {name}")
-        try:
-            value = read_json(path)
-        except (OSError, ValueError) as exc:
-            raise ValueError(f"cannot read workspace file {name}: {exc}") from exc
-        if not isinstance(value, dict):
-            raise ValueError(f"workspace file is not an object: {name}")
-        documents[name] = value
-    return documents

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .research import ResearchKernel
+from .workspace.operation_registry import operation_catalog
 
 
 RESEARCH_COMMANDS = frozenset({
@@ -69,13 +70,7 @@ def _research(action: str, root: str | Path, params: dict[str, Any]) -> dict[str
         kernel.load()
         return {"schema_version": "research-validation/1", "valid": True}
     if action == "operations":
-        return {
-            "schema_version": "research-operation-catalog/1",
-            "operations": [
-                {"type": name, "description": description}
-                for name, description in _RESEARCH_OPERATIONS
-            ],
-        }
+        return operation_catalog()
     if action == "detail":
         research_map = kernel.load().to_dict()
         kind = _string(params, "kind")
@@ -186,20 +181,6 @@ def _environment_catalog() -> dict[str, Any]:
         "default": config.default_profile,
         "environments": profiles,
     }
-
-
-_RESEARCH_OPERATIONS = (
-    ("create_phase", "add a ResearchPhase"),
-    ("create_claim", "add a ResearchClaim"),
-    ("create_node", "add a ResearchNode"),
-    ("create_finding", "record a Finding produced by a ResearchNode"),
-    ("create_gate", "add a Gate for a node or claim"),
-    ("evaluate_gate", "append a Gate evaluation"),
-    ("set_node_state", "transition a ResearchNode"),
-    ("set_claim_status", "change a ResearchClaim status"),
-    ("relate_claims", "add a directed claim relation"),
-    ("set_focus", "set the map focus"),
-)
 
 
 def _string(params: dict[str, Any], key: str) -> str:

@@ -8,6 +8,7 @@ from ts_agent.compute.artifacts import import_calculation_artifact, list_calcula
 from ts_agent.compute.contracts import ComputeContractError
 from ts_agent.compute.control import create_calculation_intent, prepare_calculation
 from ts_agent.io import read_json, write_json
+from ts_agent.research import ResearchKernel
 from tests.support.kernel_helpers import compile_change
 from ts_agent.workspace.engine import init_workspace
 from tests.support.kernel_helpers import apply_compiled_change
@@ -15,39 +16,24 @@ from ts_agent.workspace.node_contract import node_contract_digest, node_contract
 
 
 def _open_node(root: Path) -> str:
+    current = ResearchKernel(root).load()
+    phase_id = f"phase_{len(current.phases) + 1}"
+    claim_id = f"claim_{len(current.claims) + 1}"
+    node_id = f"node_{len(current.nodes) + 1}"
     drafted = compile_change(
         root,
         {
             "rationale": "Create one bounded calculation node.",
             "basis_refs": [],
             "operations": [
-                {
-                    "op": "create_phase",
-                    "local_ref": "phase",
-                    "title": "Candidate validation",
-                    "objective": "Evaluate one transition-state candidate.",
-                },
-                {
-                    "op": "create_claim",
-                    "local_ref": "claim",
-                    "claimType": "transition_state",
-                    "statement": "The candidate may be a transition state.",
-                },
-                {
-                    "op": "start_node",
-                    "local_ref": "calculation",
-                    "phaseRef": "$phase",
-                    "title": "Bounded research node",
-                    "deliverable": "One bounded research result.",
-                    "objective": "Evaluate the candidate with Gaussian.",
-                    "primaryClaimRef": "$claim",
-                    "claimRefs": ["$claim"],
-                },
+                {"type": "create_phase", "id": phase_id, "title": "Candidate validation", "objective": "Evaluate one transition-state candidate."},
+                {"type": "create_claim", "id": claim_id, "statement": "The candidate may be a transition state."},
+                {"type": "create_node", "id": node_id, "phase_id": phase_id, "claim_ids": [claim_id], "dependency_ids": [], "title": "Bounded research node", "objective": "Evaluate the candidate with Gaussian."},
             ],
         },
     )
     apply_compiled_change(root, drafted["decision"])
-    return drafted["allocated_refs"]["calculation"]
+    return drafted["allocated_refs"]["node"]
 
 
 def _gaussian_input(root: Path) -> Path:
@@ -101,29 +87,24 @@ def test_artifact_to_prepared_intent_is_research_node_scoped(tmp_path: Path) -> 
 
 def test_node_contract_digest_tracks_scope_but_not_runtime_state() -> None:
     node = {
-        "schema_version": "ts-research-node/2",
-        "node_id": "node_1",
-        "phase_ref": "phase_1",
+        "id": "node_1",
+        "phase_id": "phase_1",
         "title": "Locate one saddle",
         "objective": "Locate one first-order saddle for the selected elementary step.",
-        "deliverable": "One stationary-point assessment.",
-        "status": "open",
-        "dependency_refs": [],
-        "primary_claim_ref": "claim_1",
-        "claim_refs": ["claim_1"],
-        "observation_refs": [],
-        "finding_refs": [],
-        "result": None,
-        "created_by_decision": "dec_1",
+        "dependency_ids": [],
+        "claim_ids": ["claim_1"],
+        "state": "open",
+        "outcome": None,
         "created_at": "2026-08-28T00:00:00Z",
     }
     initial = node_contract_digest(node)
-    node["status"] = "completed"
-    node["observation_refs"] = ["obs_1"]
-    node["result"] = {"outcome": "completed"}
+    node["state"] = "closed"
+    node["outcome"] = "completed"
 
     assert node_contract_digest(node) == initial
-    assert "status" not in node_contract_snapshot(node)
+    snapshot = node_contract_snapshot(node)
+    assert "state" not in snapshot
+    assert "outcome" not in snapshot
 
     node["objective"] = "Determine whether the pathway is dynamically bifurcating."
     assert node_contract_digest(node) != initial
@@ -214,10 +195,9 @@ def test_current_intent_rejects_scientific_or_node_contract_drift(tmp_path: Path
         prepare_calculation(root, created["intent_ref"])
 
     second = create_calculation_intent(root, request)
-    registry_path = root / "research_nodes.json"
-    registry = read_json(registry_path)
-    registry["nodes"][0]["deliverable"] = "A different principal deliverable."
-    write_json(registry_path, registry)
+    research_map = ResearchKernel(root).load()
+    research_map.nodes[node_id].objective = "A different principal objective."
+    ResearchKernel(root).save(research_map)
     with pytest.raises(ComputeContractError, match="current ResearchNode contract"):
         prepare_calculation(root, second["intent_ref"])
 
@@ -321,12 +301,7 @@ def test_closed_research_node_cannot_create_a_calculation(tmp_path: Path) -> Non
             "rationale": "Close the bounded node.",
             "basis_refs": [],
             "operations": [
-                {
-                    "op": "complete_node",
-                    "nodeRef": node_id,
-                    "outcome": "completed",
-                    "summary": "No further calculation is needed.",
-                }
+                {"type": "set_node_state", "node_id": node_id, "state": "closed", "outcome": "completed", "summary": "No further calculation is needed."}
             ],
         },
     )

@@ -1,132 +1,58 @@
-# Workspace Contract
+# Research Workspace Contract
 
-## Contents
+## Canonical State
 
-- [Canonical Files](#canonical-files)
-- [Bootstrap](#bootstrap)
-- [Write Boundary](#write-boundary)
-- [Identity And Paths](#identity-and-paths)
-- [Integrity Invariants](#integrity-invariants)
-- [Operational State](#operational-state)
+Each research workspace owns `workspace.json`, one `research_map.json`,
+`transactions.jsonl`, the workspace input directory `inputs/`, and Node-owned
+directories under `nodes/<node_id>/`.
+The document contains the complete `ResearchMap`: phases, claims, nodes,
+findings, gates, Claim relations, focus, metadata, and revision. TS Web and
+Root consume this document directly. Compute Attempts and Artifacts may live in
+Node-owned directories, but they do not create a second scientific registry.
 
-## Canonical Files
+## Bootstrap And Identity
 
-A workspace stores scientific state in:
+Create the map through the Research CLI or host bootstrap. The map identity and
+object IDs are workspace-local. The Kernel rejects malformed JSON, duplicate
+IDs, unknown references, cycles, invalid enum values, and inconsistent reverse
+indexes. Keep all artifact references logical and workspace-relative; do not
+put absolute or remote paths in map objects.
 
-```text
-workspace.json
-research_state.json
-phases.json
-claims.json
-claim_relations.json
-research_nodes.json
-observations.json
-proof_specs.json
-validation_results.json
-findings.json
-acceptances/<acceptance_id>.json
-decisions/<decision_id>.json
-decision_log.jsonl
-transaction_log.jsonl
-```
-
-`research_state.json` contains focus Claim/Node refs and immutable acceptance
-history refs; it is not a workflow router. Current acceptance is derived rather
-than stored as a permanent Claim flag. `phases.json` groups Nodes for human
-navigation and carries no lifecycle or policy. ResearchNode artifacts live below
-`nodes/<node_id>/`. Reports and operational records are not canonical science.
-
-`gate_spec.schema.json` and `gate_result.schema.json` describe the staged,
-scoped Gate contract. `gate_specs.json` and `gate_results.json` are additive,
-lazily-created registries written only through `ts_change`; their absence is
-valid for protocol-6 workspaces. Existing ProofSpec, ValidationResult,
-Acceptance, and Node completion records remain the compatibility source for
-derived Gate projections.
-
-## Bootstrap
-
-TSPi bootstraps before starting the Root Agent:
-
-- a fresh workspace receives all canonical documents and required directories once;
-- a complete workspace is validated without canonical rewrites;
-- partial, invalid, symlinked, or unsupported canonical state fails closed.
-
-Bootstrap does not rewrite unsupported state. Begin a distinct workspace when
-the existing layout does not satisfy the active contract.
+Files from the removed registry layout are unsupported. The current map is only
+`research_map.json`; do not write a second registry or attempt an in-place
+migration. Bootstrap rejects an unsupported workspace without rewriting it.
 
 ## Write Boundary
 
-Only `ts_change` writes canonical state after bootstrap. Normal callers use:
+The normal flow is:
 
 ```text
-ts_state -> Root decision -> ts_change
+ts_state -> Root interpretation -> ts_change
 ```
 
-`ts_change` privately compiles the request, validates a complete copied
-post-state, and commits under the same lock. Do not edit canonical JSON, JSONL,
-acceptance files, or `.agents` identity by hand. Do not use Compute, Review,
-Report, UI, or remote tools as alternate writers.
+`research.change` loads the current map under a lock, applies the ordered
+ChangeSet to a detached copy, validates the complete post-state, increments the
+revision, and replaces `research_map.json` atomically. A rejected request does
+not change the prior revision. Do not edit the JSON or transaction log by hand.
 
-## Identity And Paths
+## Relationships
 
-The workspace has one immutable installation-derived identity. The Kernel owns
-scientific record IDs and Node artifact roots. Public calls use logical IDs,
-not constructed paths. Artifact catalog entries bind logical `art_...` IDs to
-workspace-relative regular files and SHA-256 values.
+- A Phase may list its Nodes; a Node may belong to one Phase.
+- A Node may cite Claims and earlier Node dependencies.
+- A Finding belongs to one producing Node and may cite Claims and source refs.
+- A Gate targets exactly one Node or Claim and is indexed by that target.
+- Node dependencies and Claim relations are acyclic.
+- Focus contains existing Claim and Node IDs only.
 
-Reject absolute artifact refs, traversal, symlink components, duplicate IDs,
-digest mismatch, unknown owners, and files outside the workspace. Remote paths
-are execution mirrors and never become canonical local refs.
+Node state and Claim status are independent. Closing a Node requires an outcome;
+closing it as `completed` also requires every attached NodeGate to have a latest
+`pass` evaluation. An open IssueFinding is visible progress information, not an
+implicit veto unless a Gate criterion says so.
 
-## Integrity Invariants
+## Runtime Records
 
-- ClaimRelation and ResearchNode dependency graphs are acyclic.
-- Every ResearchNode references one existing ResearchPhase; a primary Claim,
-  when present, is included in the Node Claim scope.
-- Every ref resolves to exactly one record of the expected kind.
-- An open ResearchNode has no terminal result; a terminal Node has one.
-- Activity request/status bindings, IDs, physical ownership, `node_refs`, and
-  terminal status/result combinations are consistent.
-- A ResearchNode cannot complete with a non-terminal owned Compute run,
-  running/pending activities, pending/unresolved compute controls, or an owned
-  calculation Attempt awaiting submission resolution, execution, collection,
-  or parsing. Failed activities require a non-success Node outcome.
-- Every Observation and Finding is indexed by its producing/referenced Nodes.
-- Observation datatype matches its value and artifact digests match files.
-- Every ProofSpec is content- and registry-digest bound.
-- Every ValidationResult recomputes exactly from its ProofSpec and selected
-  Observations.
-- Acceptance history snapshots a supported Claim, at least one ProofSpec, the
-  latest passing results, and applicable Findings. A shared projection marks a
-  record current only while those inputs still match canonical state.
-- Focus refs and acceptance indexes match existing canonical records.
-- Decision replay is idempotent only for identical content.
-- One Decision creates at most one Phase, starts at most one ResearchNode, and
-  completes at most one ResearchNode. Starting and completing that same Node is
-  valid; closing an existing Node and opening its successor in the same
-  transaction requires the successor to depend explicitly on the completed Node.
-
-## Operational State
-
-Calculation intents and attempts, remote guards/receipts, activity journals,
-Review runs/dispositions, report packages, notifications, Pi conversations,
-locks, and UI state are operational or derived. They may be cited as provenance
-only after verified primary artifacts are recorded as semantic Observations.
-
-New operational ownership is explicit:
-
-```text
-nodes/<node_id>/attempts/<calc_id>/runs/<sub_id>/  Compute
-reviews/<claim_id>/runs/<sub_id>/                Review
-nodes/<node_id>/activities/<op_id>/                deterministic tools
-operations/activities/<op_id>/                   workspace-level deterministic tools
-```
-
-`calc_n`, `sub_n`, and `op_n` are global workspace ordinals used for lookup,
-not scientific meaning. Canonical Claims and Observations remain single
-registries; the Web/locator derives their Claim-Node-Attempt neighborhood instead
-of duplicating records into operational directories.
-
-The foreground working message is transient presentation state. The Activity
-Journal, Review history, and compute controls are durable but do not mutate
-Claims by themselves.
+Calculation intents, Attempts, run journals, scheduler receipts, parser output,
+Review runs, rendered files, report packages, notifications, and UI state are
+operational records. They may be cited by a Finding through `source_refs` after
+Root verifies the primary Artifact. A successful execution never changes a
+Claim or Node automatically.

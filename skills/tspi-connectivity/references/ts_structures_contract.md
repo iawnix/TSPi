@@ -25,8 +25,8 @@ identity after alignment.
 
 Record mapping method, reference structure, selected atoms, RMSD, key internal
 coordinates, stereochemical verdict, and source artifact digests as semantic
-Observations. Use identity or stereochemical ProofSpecs when these values are
-acceptance-critical.
+Findings. Use identity or stereochemical Gates when these values are
+completion-critical.
 
 For endpoint identity, inspect fragment permutations, conformers, and
 stereochemistry alongside the global RMSD and rendered structure.

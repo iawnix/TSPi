@@ -122,7 +122,7 @@ def test_load_prepared_rejects_symlinked_nodes_root(tmp_path: Path) -> None:
     nodes.rename(outside)
     nodes.symlink_to(outside, target_is_directory=True)
 
-    with pytest.raises(ComputeContractError, match="workspace canonical paths cannot contain symbolic links"):
+    with pytest.raises(ComputeContractError, match="workspace canonical path uses a symbolic link"):
         preflight_calculation(workspace, "inspect", "node_1", intent_id="calc_1")
 
 
@@ -150,11 +150,18 @@ def _remote_request_target() -> dict[str, object]:
 def _configure_remote(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ssh_config = tmp_path / "ssh_config"
     ssh_config.write_text("Host test-login\n  HostName login.test\n", encoding="utf-8")
-    config = tmp_path / "remote.toml"
+    config = tmp_path / "compute.toml"
     config.write_text(
-        f'''default_profile = "test_cluster"
+        f'''default_profile = "local"
+
+[profiles.local]
+kind = "local"
+
+[profiles.local.software.gaussian]
+command = "g16"
 
 [profiles.test_cluster]
+kind = "remote"
 ssh_host = "test-login"
 ssh_config = "{ssh_config}"
 scheduler = "torque"
@@ -169,7 +176,7 @@ requires_gpu = false
 ''',
         encoding="utf-8",
     )
-    monkeypatch.setenv("TS_REMOTE_CONFIG", str(config))
+    monkeypatch.setenv("TS_COMPUTE_CONFIG", str(config))
 
 
 def _gaussian_log() -> str:
@@ -236,7 +243,7 @@ def test_local_non_dry_run_creates_a_runnable_attempt_intent(tmp_path: Path) -> 
 
     created = _create(workspace, node_id, dry_run=False)
 
-    assert created["execution_target"] == {"kind": "local"}
+    assert created["execution_target"] == {"kind": "local", "profile": "local"}
     assert (workspace / created["intent_ref"]).is_file()
 
 
@@ -605,10 +612,7 @@ def test_gaussian_parse_is_attempt_scoped_idempotent_and_scientifically_read_onl
     log = workspace / artifact_ref
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text(_gaussian_log(), encoding="utf-8")
-    scientific_before = {
-        name: (workspace / name).read_bytes()
-        for name in ("research_state.json", "claims.json", "observations.json", "validation_results.json")
-    }
+    scientific_before = (workspace / "research_map.json").read_bytes()
 
     result = parse_calculation(workspace, created["intent_id"], artifact_ref)
     assert result["state"] == "parsed"
@@ -619,10 +623,7 @@ def test_gaussian_parse_is_attempt_scoped_idempotent_and_scientifically_read_onl
     assert "validation_failures" not in result["parser_facts"]
     assert result["task_validation"] == {"status": "completed", "failures": []}
     assert "claim_status" not in result
-    assert scientific_before == {
-        name: (workspace / name).read_bytes()
-        for name in scientific_before
-    }
+    assert scientific_before == (workspace / "research_map.json").read_bytes()
     assert parse_calculation(workspace, created["intent_id"], artifact_ref) == result
 
     log.write_text(_gaussian_log() + "\nchanged\n", encoding="utf-8")

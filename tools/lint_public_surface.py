@@ -15,9 +15,9 @@ PUBLIC_PATTERNS = (
 )
 RULES = (
     (re.compile(r"\brequired_gates\b", re.I),
-     "retired field: describe the scoped GateSpec/GateResult contract"),
+     "retired field: describe the scoped Gate contract"),
     (re.compile(r"\bevidence\s+(?:layers?|roles?)\b", re.I),
-     "ambiguous evidence category: name Artifact, Observation, Finding, or ValidationResult"),
+     "ambiguous evidence category: name Artifact, FactFinding, or IssueFinding"),
     (re.compile(r"\bts-reviewers\b", re.I),
      "unregistered public name: use Review or ts_review"),
     (re.compile(r"\b(?:stage_router|gate_router)\b", re.I),

@@ -41,7 +41,7 @@ export default function (pi: ExtensionAPI) {
     description: "Run one isolated advisory Review of a target Claim.",
     promptSnippet: "Review one TS Claim independently",
     promptGuidelines: [
-      "Use at ambiguity, failure analysis, branch selection, or final audit; advice is not evidence or acceptance.",
+      "Use at ambiguity, failure analysis, branch selection, or final audit; advice is not evidence or a Claim conclusion.",
       `After success, call ${TS_PUBLIC_TOOL_NAMES.reply} before scientific mutation.`,
       "Select one Claim; optional artifact IDs must already be cited in its derived graph. Paths are forbidden.",
     ],

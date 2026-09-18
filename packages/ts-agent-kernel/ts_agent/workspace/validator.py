@@ -41,7 +41,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
             _finding(findings, "symlinked_canonical_file", f"canonical file is a symbolic link: {name}", name)
         elif not path.is_file():
             _finding(findings, "missing_canonical_file", f"canonical file is missing: {name}", name)
-    for name in ("nodes", "operations", "scratch"):
+    for name in ("nodes", "operations", "scratch", "inputs"):
         path = root_path / name
         if has_symlink_component(root_path, path) or path.is_symlink():
             _finding(findings, "symlinked_canonical_directory", f"canonical directory is a symbolic link: {name}", name)

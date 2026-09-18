@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
+from ts_agent.research import ResearchKernel
 from ts_agent.backends.base import BackendTask
 from ts_agent.backends.crest import prepare_crest
 from ts_agent.backends.xtb import (
@@ -594,8 +595,7 @@ def _workspace(tmp_path: Path) -> Path:
 
 
 def _intent(workspace: Path, backend: str, task_type: str) -> Path:
-    nodes = json.loads((workspace / "research_nodes.json").read_text(encoding="utf-8"))["nodes"]
-    node_id = nodes[0]["node_id"]
+    node_id = next(iter(ResearchKernel(workspace).load().nodes))
     catalog = list_calculation_artifacts(workspace)
     by_path = {item["path"]: item for item in catalog["artifacts"]}
     input_artifacts = [

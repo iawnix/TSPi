@@ -3,18 +3,16 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const WORKSPACE_MARKERS = [
-  "workspace.json",
-  "research_state.json",
-  "phases.json",
-  "claims.json",
-  "claim_relations.json",
-  "research_nodes.json",
-  "observations.json",
-  "proof_specs.json",
-  "validation_results.json",
-  "findings.json",
-];
+const WORKSPACE_MARKERS = ["workspace.json", "research_map.json", "transactions.jsonl"];
+
+function isResearchMapRoot(root) {
+  try {
+    const map = JSON.parse(fs.readFileSync(path.join(root, "research_map.json"), "utf8"));
+    return map.schema_version === "research-map/1" && typeof map.map_id === "string";
+  } catch (_error) {
+    return false;
+  }
+}
 
 function normalizePath(value, cwd = process.cwd()) {
   if (typeof value !== "string" || !value.trim()) return null;
@@ -23,9 +21,10 @@ function normalizePath(value, cwd = process.cwd()) {
 
 function isWorkspaceRoot(root) {
   if (!root || !WORKSPACE_MARKERS.every((name) => fs.existsSync(path.join(root, name)))) return false;
+  if (!isResearchMapRoot(root)) return false;
   try {
     const workspace = JSON.parse(fs.readFileSync(path.join(root, "workspace.json"), "utf8"));
-    return workspace.schema_version === "ts-workspace/6" && workspace.kernel_protocol === "ts-research-kernel/6";
+    return workspace.schema_version === "research-workspace/1" && workspace.kernel_protocol === "research-map/1";
   } catch (_error) {
     return false;
   }
@@ -50,114 +49,53 @@ function resolveWorkspaceRoot(inputRoot, cwd = process.cwd(), env = process.env)
 }
 
 function buildContextDetails(context) {
-  const focus = objectOrEmpty(context.focus);
-  const acceptance = objectOrEmpty(context.acceptance_summary);
-  const operational = objectOrEmpty(context.operational_summary);
+  const source = objectOrEmpty(context);
+  const map = objectOrEmpty(source.map || source.research_map || source);
+  const progress = objectOrEmpty(map.progress || source.progress);
   return {
-    projectionId: stringValue(context.projection_id),
-    reportId: stringValue(context.report_id),
-    workspaceId: stringValue(context.workspace_id),
-    workspaceRevision: stringValue(context.workspace_revision),
-    operationalRevision: stringValue(context.operational_revision),
-    mode: stringValue(context.mode) || "frontier",
-    valid: context.valid === true,
-    validationFindings: arrayOfObjects(context.validation_findings),
-    focusClaimRefs: arrayOfStrings(focus.claim_refs),
-    focusNodeRefs: arrayOfStrings(focus.node_refs),
-    acceptanceRecordRefs: arrayOfStrings(acceptance.record_refs),
-    currentAcceptanceRefs: arrayOfStrings(acceptance.current_refs),
-    staleAcceptanceRefs: arrayOfStrings(acceptance.stale_refs),
-    workspaceBrief: objectOrEmpty(context.workspace_brief),
-    researchPhases: arrayOfObjects(context.research_phases),
-    claims: arrayOfObjects(context.claims),
-    claimRelations: arrayOfObjects(context.claim_relations),
-    researchNodes: arrayOfObjects(context.research_nodes),
-    observations: arrayOfObjects(context.observations),
-    validationSpecs: arrayOfObjects(context.proof_specs),
-    validationResults: arrayOfObjects(context.validation_results),
-    findings: arrayOfObjects(context.findings),
-    acceptances: arrayOfObjects(context.acceptances),
-    openFindings: arrayOfObjects(context.open_findings),
-    incompleteValidation: arrayOfObjects(context.incomplete_validation),
-    pendingReviewDispositions: arrayOfObjects(context.pending_review_dispositions),
-    unresolvedControls: arrayOfObjects(context.unresolved_controls),
-    calculationAttempts: arrayOfObjects(context.calculation_attempts),
-    calculationAttemptIntegrityFindings: arrayOfObjects(context.calculation_attempt_integrity_findings),
-    operationalIntegrityFindings: arrayOfObjects(context.operational_integrity_findings),
-    recentDecisions: arrayOfObjects(context.recent_decisions),
-    omitted: objectOrEmpty(context.omitted),
-    retrieval: objectOrEmpty(context.retrieval),
-    operationalSummary: {
-      calculationFileCount: numberOrZero(operational.calculation_file_count),
-      activityCount: numberOrZero(operational.activity_count),
-      activityFailedCount: numberOrZero(operational.activity_failed_count),
-      activityRunningCount: numberOrZero(operational.activity_running_count),
-      agentRunCount: numberOrZero(operational.agent_run_count),
-      agentRunFailedCount: numberOrZero(operational.agent_run_failed_count),
-      agentRunPendingCount: numberOrZero(operational.agent_run_pending_count),
-      reviewDispositionPendingCount: numberOrZero(operational.review_disposition_pending_count),
-      controlUnresolvedCount: numberOrZero(operational.control_unresolved_count),
-      ambiguousSubmissionCount: numberOrZero(operational.ambiguous_submission_count),
-      calculationAttemptCount: numberOrZero(operational.calculation_attempt_count),
-      calculationAttemptBlockingCount: numberOrZero(operational.calculation_attempt_blocking_count),
-      calculationAttemptIntegrityErrorCount: numberOrZero(operational.calculation_attempt_integrity_error_count),
-    },
+    map,
+    mapId: stringValue(map.map_id),
+    title: stringValue(map.title),
+    revision: numberOrZero(map.revision),
+    valid: source.valid !== false,
+    phases: arrayOfObjects(map.phases),
+    claims: arrayOfObjects(map.claims),
+    nodes: arrayOfObjects(map.nodes),
+    findings: arrayOfObjects(map.findings),
+    gates: arrayOfObjects(map.gates),
+    claimRelations: arrayOfObjects(map.claim_relations),
+    focusClaimIds: arrayOfStrings(map.focus_claim_ids),
+    focusNodeIds: arrayOfStrings(map.focus_node_ids),
+    progress,
   };
 }
 
 function buildContextSummary(context, options = {}) {
   if (context && context.changed === false) {
-    return `TS context unchanged at ${context.workspace_revision || "unknown revision"}; operational revision ${context.operational_revision || "unknown"}.`;
+    return `ResearchMap unchanged at revision ${context.revision ?? "unknown"}.`;
   }
   const details = buildContextDetails(context);
   const maxItems = Number.isInteger(options.maxItems) ? options.maxItems : 4;
-  const op = details.operationalSummary;
-  const brief = details.workspaceBrief;
-  const phases = arrayOfObjects(brief.phases);
-  const nodes = arrayOfObjects(brief.nodes);
-  const claims = arrayOfObjects(brief.claims);
-  const briefFindings = arrayOfObjects(brief.open_findings);
-  const validationGaps = arrayOfObjects(brief.incomplete_validation);
-  const openNodes = nodes.filter((node) => node.status === "open");
+  const phases = details.phases;
+  const nodes = details.nodes;
+  const claims = details.claims;
+  const findings = details.findings;
+  const openNodes = nodes.filter((node) => node.state !== "closed");
+  const openFindings = findings.filter((finding) => finding.status === "open");
   const lines = [
-    "TS research context:",
-    `- context: mode=${details.mode}; valid=${details.valid}`,
-    `- delta_tokens: scientific_revision=${details.workspaceRevision || "(none)"}; operational_revision=${details.operationalRevision || "(none)"}`,
-    `- focus: claims=${formatList(details.focusClaimRefs, maxItems)}; nodes=${formatList(details.focusNodeRefs, maxItems)}`,
-    `- acceptance: current=${formatList(details.currentAcceptanceRefs, maxItems)}; history=${details.acceptanceRecordRefs.length}; stale=${details.staleAcceptanceRefs.length}`,
+    "ResearchMap context:",
+    `- map: ${details.mapId || "(unknown)"}; revision=${details.revision}; valid=${details.valid}`,
+    `- focus: claims=${formatList(details.focusClaimIds, maxItems)}; nodes=${formatList(details.focusNodeIds, maxItems)}`,
     `- phases: ${phases.length ? phases.slice(0, maxItems).map(formatPhase).join("; ") : "(none)"}`,
-    `- trajectory: ${formatTrajectory(nodes, maxItems)}`,
     `- open_nodes: ${openNodes.length ? openNodes.slice(0, maxItems).map(formatNode).join("; ") : "(none)"}`,
     `- claims: ${claims.length ? claims.slice(0, maxItems).map(formatClaim).join("; ") : "(none)"}`,
-    `- graph: relations=${details.claimRelations.length}; observations=${details.observations.length}; specs=${details.validationSpecs.length}; results=${details.validationResults.length}; findings=${details.findings.length}`,
-    `- operations: calculations=${op.calculationFileCount}; attempts=${op.calculationAttemptCount} (blocking=${op.calculationAttemptBlockingCount}, invalid=${op.calculationAttemptIntegrityErrorCount}); activities=${op.activityCount}; activity_failures=${op.activityFailedCount}; agent_runs=${op.agentRunCount}; agent_failures=${op.agentRunFailedCount}; agent_pending=${op.agentRunPendingCount}; pending_review_responses=${op.reviewDispositionPendingCount}; unresolved_controls=${op.controlUnresolvedCount}; ambiguous_submissions=${op.ambiguousSubmissionCount}`,
+    `- graph: relations=${details.claimRelations.length}; findings=${findings.length}; gates=${details.gates.length}`,
+    `- progress: nodes=${numberOrZero(details.progress.node_count)}; closed=${numberOrZero(details.progress.closed_node_count)}; findings=${numberOrZero(details.progress.finding_count)}; gates=${numberOrZero(details.progress.gate_count)}`,
   ];
-  if (validationGaps.length) {
-    lines.push(`- incomplete_validation: ${validationGaps.slice(0, maxItems).map(formatValidationGap).join("; ")}`);
+  if (openFindings.length) {
+    lines.push(`- open_findings: ${openFindings.slice(0, maxItems).map(formatFinding).join("; ")}`);
   }
-  if (briefFindings.length) {
-    lines.push(`- open_findings: ${briefFindings.slice(0, maxItems).map(formatFinding).join("; ")}`);
-  }
-  if (details.unresolvedControls.length) {
-    lines.push(`- unresolved_controls: ${details.unresolvedControls.slice(0, maxItems).map(formatControl).join("; ")}`);
-  }
-  if (details.pendingReviewDispositions.length) {
-    lines.push(`- pending_review_dispositions: ${details.pendingReviewDispositions.slice(0, maxItems).map((item) => `${item.task_id || "?"}/${formatList(arrayOfStrings(item.claim_refs), 3)}`).join("; ")}`);
-  }
-  if (details.validationFindings.length) {
-    lines.push(`- workspace_findings: ${details.validationFindings.slice(0, maxItems).map((item) => `${item.code || "finding"}:${item.message || ""}`).join("; ")}`);
-  }
-  if (details.calculationAttemptIntegrityFindings.length) {
-    lines.push(`- attempt_integrity: ${details.calculationAttemptIntegrityFindings.slice(0, maxItems).map((item) => `${item.scope || "attempt"}:${item.path || "?"} - ${item.message || ""}`).join("; ")}`);
-  }
-  if (details.operationalIntegrityFindings.length) {
-    lines.push(`- operational_integrity: ${details.operationalIntegrityFindings.slice(0, maxItems).map((item) => `${item.path || "?"} - ${item.message || ""}`).join("; ")}`);
-  }
-  if (Object.values(details.omitted).some((value) => numberOrZero(value) > 0)) {
-    lines.push(`- omitted: ${formatCounts(details.omitted)}; retrieve a claim, node, finding, validation, or bounded subgraph explicitly.`);
-  }
-  lines.push("- authority: the Root Agent chooses research strategy; Claims hold hypotheses and falsifiers; the kernel validates and atomically commits explicit operations.");
-  lines.push("- contract: draft, validate, and apply one ts-research-decision/3; never edit canonical registries directly.");
+  lines.push("- authority: the Root Agent chooses research strategy; the ResearchKernel validates and atomically commits ChangeSets.");
   return lines.join("\n");
 }
 
@@ -195,57 +133,21 @@ function toolText(text, details = {}) {
 }
 
 function formatNode(node) {
-  const rationale = truncateText(stringValue(node.decision_rationale), 120);
   const title = truncateText(stringValue(node.title), 100);
   const objective = truncateText(stringValue(node.objective), 180);
-  const deliverable = truncateText(stringValue(node.deliverable), 180);
-  const identity = `${node.node_id || "node"}@${node.phase_ref || "phase"}/${node.status || "?"}`;
-  const attempts = arrayOfObjects(node.attempts);
-  const attemptText = attempts.length
-    ? `; attempts=${attempts.slice(0, 8).map(formatAttempt).join(",")}${attempts.length > 8 ? `(+${attempts.length - 8})` : ""}`
-    : "";
-  return `${identity}: ${title || "Untitled Node"}; question=${objective || "(not recorded)"}; deliverable=${deliverable || "(not recorded)"}${attemptText}${rationale ? ` [decision=${rationale}]` : ""}`;
-}
-
-function formatAttempt(attempt) {
-  const id = attempt.intent_id || "calc";
-  const state = attempt.state || attempt.program_status || "unknown";
-  return `${id}/${state}${attempt.blocks_completion ? "!" : ""}`;
-}
-
-function formatTrajectory(nodes, maxItems) {
-  if (!nodes.length) return "(none)";
-  const visible = nodes.slice(-maxItems);
-  const prefix = nodes.length > visible.length ? `(+${nodes.length - visible.length} earlier) ` : "";
-  return prefix + visible.map((node) => {
-    const outcome = truncateText(stringValue(node.result_summary), 100);
-    return `${node.node_id || "node"}/${node.status || "?"}: ${node.title || node.objective || ""}${outcome ? ` => ${outcome}` : ""}`;
-  }).join(" -> ");
+  return `${node.id || "node"}/${node.state || "?"}: ${title || "Untitled Node"}; objective=${objective || "(not recorded)"}`;
 }
 
 function formatPhase(phase) {
-  return `${phase.phase_id || "phase"}:${phase.title || ""} (${phase.open_node_count || 0} open / ${phase.node_count || 0} total)`;
+  return `${phase.id || "phase"}:${phase.title || ""}`;
 }
 
 function formatClaim(claim) {
-  return `${claim.claim_id || "claim"}/${claim.status || "?"}: ${claim.statement || ""}`;
-}
-
-function formatValidationGap(item) {
-  return `${item.proof_id || item.proof_ref || "spec"}:${item.dimension || item.status || "unevaluated"}`;
+  return `${claim.id || "claim"}/${claim.status || "?"}: ${claim.statement || ""}`;
 }
 
 function formatFinding(item) {
-  return `${item.finding_id || "finding"}/${item.severity || "?"}: ${item.statement || item.summary || ""}`;
-}
-
-function formatControl(item) {
-  return `${item.node_id || "?"}/${item.intent_id || "?"}/${item.operation || "?"}:${item.error_class || item.state || "unresolved"}`;
-}
-
-function formatCounts(value) {
-  const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
-  return entries.length ? entries.map(([key, count]) => `${key}=${numberOrZero(count)}`).join(", ") : "(none)";
+  return `${item.id || "finding"}/${item.kind || "?"}: ${item.statement || ""}`;
 }
 
 function formatList(values, maxItems) {

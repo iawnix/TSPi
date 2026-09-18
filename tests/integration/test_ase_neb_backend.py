@@ -274,7 +274,16 @@ def test_ase_neb_parser_rejects_run_settings_that_differ_from_intent(
     }
 
 
-def test_ase_neb_compute_flow_prepares_and_parses_bound_artifacts(tmp_path: Path) -> None:
+def test_ase_neb_compute_flow_prepares_and_parses_bound_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    compute_config = tmp_path / "compute.toml"
+    compute_config.write_text(
+        """default_profile = \"local\"\n\n[profiles.local]\nkind = \"local\"\n\n[profiles.local.software.ase_neb_xtb]\ncommand = \"/bin/true\"\n""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TS_COMPUTE_CONFIG", str(compute_config))
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     node_id = start_research_node(
         workspace,

@@ -4,9 +4,9 @@ One compute profile describes where software is provided and how it is
 invoked.  ``kind = "local"`` profiles execute in the workspace host;
 ``kind = "remote"`` profiles additionally carry the SSH/scheduler contract.
 
-The loader is intentionally small and read-only.  Existing ``local.toml`` and
-``remote.toml`` remain supported by their respective compatibility loaders;
-new installations can use one ``compute.toml`` instead.
+The loader is intentionally small and read-only. Every execution target is
+selected from this one configuration; there are no legacy local or remote
+configuration fallbacks.
 """
 
 from __future__ import annotations
@@ -106,12 +106,8 @@ def load_config(path: str | Path | None = None) -> ComputeConfig:
 
 def _profile(name: str, raw: dict[str, Any], base: Path) -> ComputeProfile:
     kind = raw.get("kind")
-    if kind is None:
-        # A profile with SSH fields is unambiguously an older-style remote
-        # profile.  New files should declare kind explicitly.
-        kind = "remote" if any(key in raw for key in ("ssh_host", "ssh_config", "scheduler")) else "local"
     if kind not in {"local", "remote"}:
-        raise ComputeConfigurationError(f"profiles.{name}.kind must be local or remote")
+        raise ComputeConfigurationError(f"profiles.{name}.kind must explicitly be local or remote")
     software_raw = _mapping(raw.get("software"), f"profiles.{name}.software")
     software = {
         backend: _software(backend, _mapping(value, f"profiles.{name}.software.{backend}"), kind)

@@ -27,7 +27,7 @@ EXPECTED_TOOLS = {
     "ts_review",
     "ts_reply",
     "ts_calc",
-    "ts_remote",
+    "ts_environment",
     "ts_seed",
     "ts_compare",
     "ts_analyze",

@@ -31,7 +31,7 @@ const {
 const executeFile = promisify(execFile);
 const { nodeControlProperties, nodeControlArguments } = require("../../packages/ts-agent-runtime/artifacts/node-control.cjs");
 
-const MAP_MODES = ["map", "summary", "detail", "claim", "node", "finding", "operations"];
+const MAP_MODES = ["map", "summary", "detail", "claim", "node", "finding", "gate", "operations"];
 const CONTEXT_MODES = [...MAP_MODES, "locate", "artifacts", "capabilities", "runs"];
 const CAPABILITY_KINDS = ["compute", "analysis"];
 const IMPORT_FORMATS = ["gaussian_input", "xyz_structure", "xtb_control"];
@@ -161,9 +161,9 @@ export function createStateTool() {
         if (mode === "locate") {
           if (!params.query) throw new Error("state mode=locate requires query");
           args.push("--query", params.query);
-        } else if (mode === "claim" || mode === "node" || mode === "finding" || mode === "detail") {
+        } else if (mode === "claim" || mode === "node" || mode === "finding" || mode === "gate" || mode === "detail") {
           const kind = mode === "detail" ? params.kind : mode;
-          const id = mode === "detail" ? params.id : mode === "claim" ? params.claimRef : mode === "node" ? params.nodeRef : params.findingRef;
+          const id = mode === "detail" ? params.id : mode === "claim" ? params.claimRef : mode === "node" ? params.nodeRef : mode === "finding" ? params.findingRef : params.id;
           if (!kind || !id) throw new Error(`state mode=${mode} requires kind and id`);
           args.push("--kind", kind, "--id", id);
         } else if (mode === "runs") {

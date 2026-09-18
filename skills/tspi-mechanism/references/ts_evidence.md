@@ -39,5 +39,5 @@ Missing starting geometry, path, mode or endpoint evidence remains inconclusive;
 contradictions are invalid. No one chooses endpoint identities from a filename.
 
 The audit supports structural evidence only. Confirm method/electronic state,
-intended species, stereochemistry and applicable ProofSpec independently before
+intended species, stereochemistry and applicable Gate criteria independently before
 accepting an elementary-step Claim. Several Nodes may provide these facts.

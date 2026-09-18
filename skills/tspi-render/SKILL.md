@@ -7,30 +7,20 @@ description: Render molecular structures, trajectories, reaction mechanisms, and
 
 [Chinese version](SKILL.zh-CN.md)
 
-Use this Skill to turn structures and numerical data into figures with
-`ts_render`. Load `tspi-orchestration` for workspace and artifact operations.
-
-## Choose An Output
+Use this Skill with `ts_render` to turn registered structures and numerical
+Artifacts into figures. Load `tspi-orchestration` for Node ownership and map
+changes.
 
 | Operation | Inputs | Output |
 | --- | --- | --- |
-| `render` | One molecular structure | PNG molecular image |
-| `animate` | One trajectory | GIF animation |
-| `compare` | Two or more structures | PNG comparison panels |
-| `mechanism` | Three structures ordered reactant, transition state, product | PNG reaction diagram |
-| `curve`, `energy`, `scan`, `convergence` | One `ts-curve-data/1` JSON artifact | PNG scientific plot |
+| `render` | one molecular structure | PNG |
+| `animate` | one trajectory | GIF |
+| `compare` | two or more structures | PNG panels |
+| `mechanism` | reactant, transition state, product | PNG diagram |
+| `curve`, `energy`, `scan`, `convergence` | `ts-curve-data/1` JSON | PNG plot |
 
-## Rendering Workflow
-
-1. Resolve registered input IDs through `ts_state mode=artifacts`.
-2. Select the operation, owning ResearchNode, input order, and a new output
-   filename with the appropriate extension.
-3. For curves, check series names, axis labels, units, and numerical values
-   against the source data. Keep energy references and scan coordinates explicit.
-4. Run `ts_render` and inspect the figure, returned artifact ID, and digest.
-5. Record scientific values as Observations citing verified source artifacts;
-   use the generated figure in the response or a `tspi-report` report.
-
-Molecular rendering uses `xyzrender`; curve rendering uses Matplotlib.
-Input formats, curve examples, output paths, and error handling are described
-in [the render reference](references/render_contract.md).
+Resolve input IDs with `ts_state mode=artifacts`, choose the owning Node and a
+safe output name, run `ts_render`, and inspect the returned Artifact and digest.
+Check labels, units, references, and numerical values against the source. A
+figure is a presentation Artifact; record scientific numbers as
+`FactFinding` only when they were verified from the source data. Read [render_contract.md](references/render_contract.md).

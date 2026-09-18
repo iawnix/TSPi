@@ -44,13 +44,13 @@
         <mxCell id="14" value="&lt;b style='font-size:16px'&gt;Provenance&lt;/b&gt;&lt;br&gt;&lt;br&gt;Artifacts + digests&lt;br&gt;Attempts + logs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6C63A8;strokeWidth=2;fontColor=#12324A;fontSize=14;fontFamily=Inter;align=center;verticalAlign=middle;arcSize=13;" vertex="1" parent="1">
           <mxGeometry x="515" y="240" width="130" height="112" as="geometry"/>
         </mxCell>
-        <mxCell id="15" value="&lt;b style='font-size:13px'&gt;Validation / Gate&lt;/b&gt;&lt;br&gt;ProofSpec · Result&lt;br&gt;NodeGate / ClaimGate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6654D;strokeWidth=2;fontColor=#12324A;fontSize=14;fontFamily=Inter;align=center;verticalAlign=middle;arcSize=13;" vertex="1" parent="1">
+        <mxCell id="15" value="&lt;b style='font-size:13px'&gt;Gate evaluation&lt;/b&gt;&lt;br&gt;Criteria · evaluations&lt;br&gt;NodeGate / ClaimGate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6654D;strokeWidth=2;fontColor=#12324A;fontSize=14;fontFamily=Inter;align=center;verticalAlign=middle;arcSize=13;" vertex="1" parent="1">
           <mxGeometry x="665" y="240" width="130" height="112" as="geometry"/>
         </mxCell>
         <mxCell id="16" value="●  canonical records · immutable evidence · explicit decisions" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontColor=#208C86;fontSize=15;fontFamily=Inter;" vertex="1" parent="1">
           <mxGeometry x="365" y="386" width="430" height="38" as="geometry"/>
         </mxCell>
-        <mxCell id="17" value="&lt;b style='font-size:18px'&gt;TS Web&lt;/b&gt;&lt;br&gt;Map · claims · proofs&lt;br&gt;&lt;b style='color:#20766F'&gt;READ ONLY&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4F7E91;strokeWidth=2;fontColor=#12324A;fontSize=15;fontFamily=Inter;align=left;verticalAlign=middle;spacingLeft=24;arcSize=16;shadow=1;" vertex="1" parent="1">
+        <mxCell id="17" value="&lt;b style='font-size:18px'&gt;TS Web&lt;/b&gt;&lt;br&gt;Map · claims · findings · gates&lt;br&gt;&lt;b style='color:#20766F'&gt;CANONICAL MAP&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4F7E91;strokeWidth=2;fontColor=#12324A;fontSize=15;fontFamily=Inter;align=left;verticalAlign=middle;spacingLeft=24;arcSize=16;shadow=1;" vertex="1" parent="1">
           <mxGeometry x="900" y="170" width="250" height="108" as="geometry"/>
         </mxCell>
         <mxCell id="18" value="&lt;b style='font-size:18px'&gt;Phone / terminal&lt;/b&gt;&lt;br&gt;Shared Pi session&lt;br&gt;&lt;b style='color:#20766F'&gt;AGENT + TOOLS&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4F7E91;strokeWidth=2;fontColor=#12324A;fontSize=15;fontFamily=Inter;align=left;verticalAlign=middle;spacingLeft=24;arcSize=18;shadow=1;" vertex="1" parent="1">
@@ -59,10 +59,10 @@
         <mxCell id="19" value="&lt;b style='font-size:18px'&gt;Skills / plugins&lt;/b&gt;&lt;br&gt;typed actions · ts_calc / analyze&lt;br&gt;&lt;br&gt;Gaussian   xTB   CREST   ASE   remote" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFDF8;strokeColor=#D7AC45;strokeWidth=2;fontColor=#12324A;fontSize=14;fontFamily=Inter;align=left;verticalAlign=top;spacingLeft=18;spacingTop=13;arcSize=14;shadow=1;" vertex="1" parent="1">
           <mxGeometry x="48" y="515" width="310" height="130" as="geometry"/>
         </mxCell>
-        <mxCell id="20" value="&lt;b style='font-size:18px'&gt;Evidence curation&lt;/b&gt;&lt;br&gt;Artifact → Candidate → Root verifies&lt;br&gt;Observation / Finding → Proof&lt;br&gt;&lt;br&gt;○～～○～～○～～●" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFD;strokeColor=#6C8FB3;strokeWidth=2;fontColor=#12324A;fontSize=14;fontFamily=Inter;align=left;verticalAlign=top;spacingLeft=18;spacingTop=13;arcSize=14;shadow=1;" vertex="1" parent="1">
+        <mxCell id="20" value="&lt;b style='font-size:18px'&gt;Evidence curation&lt;/b&gt;&lt;br&gt;Artifact → Candidate → Root verifies&lt;br&gt;FactFinding / IssueFinding → Gate&lt;br&gt;&lt;br&gt;○～～○～～○～～●" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFD;strokeColor=#6C8FB3;strokeWidth=2;fontColor=#12324A;fontSize=14;fontFamily=Inter;align=left;verticalAlign=top;spacingLeft=18;spacingTop=13;arcSize=14;shadow=1;" vertex="1" parent="1">
           <mxGeometry x="415" y="515" width="325" height="130" as="geometry"/>
         </mxCell>
-        <mxCell id="21" value="&lt;b style='font-size:18px'&gt;Root interpretation&lt;/b&gt;&lt;br&gt;Node: completed · inconclusive · blocked&lt;br&gt;Claim: supported · contradicted · open&lt;br&gt;Acceptance · next Node · branch · backtrack" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF1EC;gradientColor=#FFFDFC;gradientDirection=north;strokeColor=#D6654D;strokeWidth=2;fontColor=#12324A;fontSize=15;fontFamily=Inter;align=left;verticalAlign=top;spacingLeft=18;spacingTop=13;arcSize=14;shadow=1;" vertex="1" parent="1">
+        <mxCell id="21" value="&lt;b style='font-size:18px'&gt;Root interpretation&lt;/b&gt;&lt;br&gt;Node: completed · inconclusive · blocked&lt;br&gt;Claim: supported · contradicted · open&lt;br&gt;Gate verdict · next Node · branch · backtrack" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF1EC;gradientColor=#FFFDFC;gradientDirection=north;strokeColor=#D6654D;strokeWidth=2;fontColor=#12324A;fontSize=15;fontFamily=Inter;align=left;verticalAlign=top;spacingLeft=18;spacingTop=13;arcSize=14;shadow=1;" vertex="1" parent="1">
           <mxGeometry x="800" y="515" width="350" height="130" as="geometry"/>
         </mxCell>
         <mxCell id="22" value="ts_change" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#365B70;strokeWidth=3;endArrow=classic;endFill=1;fontColor=#597384;fontSize=14;fontStyle=1;fontFamily=Inter;" edge="1" parent="1" source="11" target="12">
@@ -79,7 +79,7 @@
         <mxCell id="25" value="promote" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#208C86;strokeWidth=3;endArrow=classic;endFill=1;fontColor=#208C86;fontSize=14;fontStyle=1;fontFamily=Inter;exitX=0.5;exitY=0;entryX=0.53;entryY=1;" edge="1" parent="1" source="20" target="12">
           <mxGeometry relative="1" as="geometry"/>
         </mxCell>
-        <mxCell id="26" value="GateResult" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#208C86;strokeWidth=3;endArrow=classic;endFill=1;fontColor=#208C86;fontSize=14;fontStyle=1;fontFamily=Inter;exitX=0.85;exitY=1;entryX=0.37;entryY=0;" edge="1" parent="1" source="12" target="21">
+        <mxCell id="26" value="gate evaluation" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#208C86;strokeWidth=3;endArrow=classic;endFill=1;fontColor=#208C86;fontSize=14;fontStyle=1;fontFamily=Inter;exitX=0.85;exitY=1;entryX=0.37;entryY=0;" edge="1" parent="1" source="12" target="21">
           <mxGeometry relative="1" as="geometry">
             <Array as="points"><mxPoint x="756" y="480"/><mxPoint x="930" y="480"/></Array>
           </mxGeometry>
@@ -103,7 +103,7 @@
             <Array as="points"><mxPoint x="1162" y="580"/><mxPoint x="1162" y="106"/><mxPoint x="151" y="106"/></Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="30" value="━━▶ actions / artifacts     ━━▶ evidence / projection     - - ▶ decision feedback                                                         TSPi · abstract architecture · 2026" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#597384;fontSize=14;fontFamily=Inter;" vertex="1" parent="1">
+        <mxCell id="30" value="━━▶ actions / artifacts     ━━▶ evidence / map state     - - ▶ decision feedback                                                         TSPi · abstract architecture · 2026" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#597384;fontSize=14;fontFamily=Inter;" vertex="1" parent="1">
           <mxGeometry x="48" y="657" width="1102" height="28" as="geometry"/>
         </mxCell>
       </root>

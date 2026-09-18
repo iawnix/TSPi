@@ -1,110 +1,106 @@
 ---
 name: tspi-orchestration
-description: Coordinate auditable TSPi research tasks, workspace state, decisions, evidence, validation, subagents, and operational recovery.
+description: Coordinate TSPi research through the canonical ResearchMap and the shared research and compute command surfaces.
 ---
 
 # TSPi Orchestration
 
 [Chinese version](SKILL.zh-CN.md)
 
-Use this Skill to organize research questions, record calculations, and verify
-Claims. Represent each question as a ResearchNode and connect its results to
-the workspace's scientific records. Load a domain Skill when the active question
-needs method knowledge: `tspi-transition-state-search`, `tspi-xtb`, `tspi-gaussian`,
-`tspi-connectivity`, `tspi-render`, `tspi-report`, or
-`tspi-email`.
+Use this Skill when a task changes the research plan, interprets scientific
+results, or needs a current project status. `ResearchMap` is the authoritative
+state for one project. It is a typed aggregate containing `ResearchPhase`,
+`ResearchClaim`, `ResearchNode`, `Finding`, and `Gate` objects, plus claim
+relations, focus, and revision metadata. TS Web and Root read this same map
+serialization directly.
 
-## Research Records
+The Research Kernel owns map validation, references, revisions, and atomic
+changes. It does not select scientific methods or run software. Compute
+environments, Attempts, and Artifacts are runtime records used by Nodes, not a
+second research-state model.
 
-- Root chooses questions, hypotheses, methods, branches, stopping, and
-  interpretation.
-- The Research Kernel owns IDs, schemas, references, transactions, paths,
-  provenance, gate compilation/evaluation, and validation; it does not run
-  execution tools.
-- Submit scientific state changes through `ts_change`.
-- Use Claim relations, Node dependencies, and tags to understand prior work;
-  choose the next task from the question and available evidence.
-- Verify tool outputs against their artifacts before recording Observations
-  or Findings.
-- Use Review advice and current validation results when interpreting Claims.
-  Freeze ProofSpecs before evaluating them.
+## Research Loop
 
-## Task Loop
+1. Read the current map with `ts_state mode=summary` or `mode=map`. Use
+   `mode=detail`, `mode=locate`, `mode=artifacts`, `mode=capabilities`, or
+   `mode=runs` only when the question needs that detail. `/research` exposes the
+   same reads; `/compute` and `ts_environment` inspect local and remote compute
+   environments.
+2. State one research question and its uncertainty. Create or reuse a Phase,
+   Claim, and bounded Node. A Phase groups Nodes for navigation; it is
+   not a lifecycle state. Node state is `planned`, `active`, `paused`,
+   `blocked`, or `closed`, with a closed outcome of `completed`, `inconclusive`,
+   or `stopped`.
+3. Load the focused domain Skill, choose a bounded method, and run it under the
+   owning Node. Bind calculations and generated files to logical Artifact IDs.
+4. Inspect primary outputs before writing conclusions. A Node produces
+   `FactFinding` records for verified facts and `IssueFinding` records for
+   anomalies, limitations, conflicts, or unresolved questions. Findings are
+   part of the map; raw logs are not.
+5. Add a `Gate` only when an explicit completion or claim-evaluation criterion
+   is useful. Set `scope=node` for a NodeGate or `scope=claim` for a ClaimGate,
+   then append an evaluation with `pass`, `fail`, `inconclusive`, or `blocked`.
+6. Update Claim status (`proposed`, `supported`, `contradicted`,
+   `inconclusive`, or `withdrawn`) and Node state only after the evidence and
+   open issues have been considered. A NodeGate must pass before a Node can be
+   closed as `completed`.
 
-1. Read `frontier`, or `delta` when both prior revisions are known.
-2. State one unresolved question, assumptions, predictions, and falsifiers.
-3. Create or reuse a ResearchPhase and open one decision-sized ResearchNode
-   with explicit dependencies, Claim scope, and an explicit completion intent;
-   use a NodeGate profile when the Gate operation is available. Set focus
-   deliberately.
-4. Load the relevant domain Skill and select a method from the question,
-   uncertainty, cost, and available artifacts.
-5. Run bounded tools under the owning Node. Use logical artifact IDs and keep
-   the Node open through interpretation.
-6. Inspect parser candidates and primary outputs, then use `ts_change` to
-   promote verified values into Observations and Findings.
-7. Freeze and evaluate ProofSpecs over explicit Observation references; these
-   are ClaimGate evidence dimensions. When a first-class Gate is useful, use
-   `freeze_gate` and then `evaluate_gate` to persist a revision-bound result.
-8. Update Claim status. For a supported Claim ready for acceptance, run
-   `accept_claim`. If an explicit NodeGate exists, complete the Node only after
-   its latest GateResult is `pass`; otherwise use the compatibility projection.
-9. Recompile context and record the next material question as a dependent Node,
-   a new Phase, or an explicit stop.
+## Canonical Writes
 
-One Node is one visible question and deliverable. Retries that preserve that
-question remain Attempts. A changed question, deliverable, or hypothesis scope
-starts a dependent Node. Backtracking creates a new Node depending on an earlier
-checkpoint and preserves all history. See
-[agent_decision_protocol.md](references/agent_decision_protocol.md) for the exact Decision boundary.
+All map mutations go through `ts_change`. Query `ts_state mode=operations` for
+the live operation catalog and use the fields shown there. The current small
+operation set is:
 
-## Change And Validation
+```text
+create_phase       create_claim       create_node
+create_finding     create_gate        evaluate_gate
+set_node_state     set_claim_status   relate_claims
+set_focus
+```
 
-Use `ts_state` for bounded reads and `ts_change` for one Root-authored atomic
-change. Before an unfamiliar operation, query
-`ts_state mode=change_contract operation=<op>` and follow its exact fields.
-Use the IDs, paths, and receipts returned by tools; the Kernel allocates
-Decision IDs when it commits the change.
+Each operation is explicit and belongs to one `ChangeSet`. Use IDs returned by
+the map or allocate a new project-local ID for a new object; never guess an
+existing ID. Include a concise rationale, `expected_revision` when a stale
+write would be unsafe, and source references in `basis_refs` when available.
+The Kernel validates a detached copy and commits one new map revision, so a
+failed change cannot leave a partial map.
 
-Use `ts_state mode=capabilities capabilityKind=proof` for versioned ProofSpecs.
-The compiler binds the template, predicate registry, content, and Observation
-digests. Only `pass` satisfies a ProofSpec. Acceptance requires current passing
-coverage and no applicable open blocking Finding.
+Keep the model small: use only FactFinding and IssueFinding for Node outputs,
+and Gate criteria/evaluations for bounded review. Do not introduce a second
+evidence protocol. A calculation or Review result becomes
+research state only when Root records it through `ts_change`.
 
-## Calculations And Review
+## Compute And Recovery
 
-Use `mode=locate` and `mode=artifacts` before `ts_calc`; bind every input by
-`artifactId` and `inputRole`. The host owns identities, paths, arguments, and
-external effects. Remote `completed` still requires collection and finalize.
-If a submit, cancel, or notification result is unknown, inspect its receipts
-and external status before deciding how to proceed.
+Use `ts_state mode=capabilities capabilityKind=compute` before selecting a
+calculation, and `capabilityKind=analysis` for registered analysis operations.
+Use `ts_state mode=artifacts` to resolve Node-owned files and `mode=runs` to
+inspect durable execution history. `ts_environment` (or `/compute`) covers
+both local and remote profiles; remote is an environment kind, not a separate
+public API. Treat scheduler, transfer, program, parser, and collection errors
+as operational evidence. Record a scientific consequence as an IssueFinding
+only after checking the primary output.
 
-`ts_review` assesses one Claim dossier and a selected artifact batch in a fresh
-session. Call `ts_reply` before applying advice through `ts_change`. Distinguish scheduler,
-transfer, program, parser, scientific, contract, artifact, Review-provider,
-and delivery failures. Preserve failed Nodes and Attempts.
+`ts_review` is advisory. Read its dossier, answer with `ts_reply`, and record
+the Root interpretation in the map with `ts_change`. Preserve failed or inconclusive
+Nodes and start a dependent Node when the question or deliverable changes.
 
 ## Reference Routing
 
-Read only the contract needed for the active operation:
+Read only the reference needed for the active task:
 
 | Need | Reference |
 | --- | --- |
-| public vocabulary | [glossary.md](references/glossary.md), [glossary.zh-CN.md](references/glossary.zh-CN.md) |
-| state, identity, DAG, and persistence | [state_model.md](references/state_model.md), [pathway_model.md](references/pathway_model.md), [workspace_contract.md](references/workspace_contract.md) |
-| Decision fields and commit discipline | [decision_contract.md](references/decision_contract.md), [agent_decision_protocol.md](references/agent_decision_protocol.md) |
-| calculation and backend executor contracts | [compute_tools.md](references/compute_tools.md), [backend_contract.md](references/backend_contract.md) |
-| remote, runtime, and program failures | [remote_contract.md](references/remote_contract.md), [runtime_environment.md](references/runtime_environment.md), [program_runtime_failures.md](references/program_runtime_failures.md) |
-| Review isolation and Pi context | [pi_agent_adapter.md](references/pi_agent_adapter.md) |
-| structure artifacts | [artifact_tools.md](references/artifact_tools.md) |
+| vocabulary | [glossary.md](references/glossary.md), [glossary.zh-CN.md](references/glossary.zh-CN.md) |
+| map model and persistence | [state_model.md](references/state_model.md), [workspace_contract.md](references/workspace_contract.md), [pathway_model.md](references/pathway_model.md) |
+| ChangeSet fields and commit rules | [decision_contract.md](references/decision_contract.md), [agent_decision_protocol.md](references/agent_decision_protocol.md) |
+| calculation and analysis tools | [compute_tools.md](references/compute_tools.md), [artifact_tools.md](references/artifact_tools.md), [backend_contract.md](references/backend_contract.md) |
+| environments and failures | [remote_contract.md](references/remote_contract.md), [runtime_environment.md](references/runtime_environment.md), [program_runtime_failures.md](references/program_runtime_failures.md) |
+| Root/Pi integration | [pi_agent_adapter.md](references/pi_agent_adapter.md) |
+| package source policy | [package_sources.md](references/package_sources.md) |
 | rendering | [render contract](../tspi-render/references/render_contract.md) |
 | reports | [report template](../tspi-report/references/report_template.md) |
-| notification delivery | [email delivery](../tspi-email/references/email_delivery.md) |
-| authored versus installed sources | [package_sources.md](references/package_sources.md) |
+| notifications | [email delivery](../tspi-email/references/email_delivery.md) |
 
-Focused references live with their owning Skills. Use
-`tspi-transition-state-search` for candidate strategy, `tspi-xtb` for xTB/CREST,
-`tspi-gaussian` for Gaussian, and `tspi-connectivity` for endpoint and structure
-evidence. Use `tspi-render`,
-`tspi-report`, and `tspi-email` for visual output, report packaging, and fixed
-target notification delivery.
+Use the focused Skills for transition-state search, xTB/CREST, Gaussian,
+connectivity, mechanism analysis, rendering, reporting, and email delivery.

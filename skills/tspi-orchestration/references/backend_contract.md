@@ -39,7 +39,7 @@ requested task succeeded. The compute layer records program termination in
 `program_status` and evaluates capability-specific completion separately in
 `task_validation`. Neither field is a scientific verdict, and Gaussian
 single-point, optimization, and frequency tasks never inherit transition-state
-acceptance rules merely because they use the Gaussian parser.
+assessment rules merely because they use the Gaussian parser.
 
 The host freezes every launch in `ts-calculation-intent/7`, including Node and
 scientific-intent digests plus same-Node Attempt lineage. Any changed method,
@@ -55,6 +55,7 @@ software profile before launching.
 
 ## Record Scientific Results
 
-The Root verifies parser candidates against primary artifacts, chooses separate
-`concept_id` records, and applies a Decision. Evaluate mechanism, endpoint identity,
-mode assignment, and Claim acceptance with the relevant method Skill and ProofSpecs.
+The Root verifies parser output against primary artifacts, chooses separate
+Finding statements, and applies `ts_change`. Evaluate mechanism, endpoint
+identity, mode assignment, and Claim status with the relevant method Skill and
+Gate criteria when a visible verdict is useful.

@@ -25,8 +25,8 @@ clients can only invoke the resulting protocol services.
 The current `ts-workflow-native` entry is the canonical server tool set. Its
 implementation is shared by all attached clients, while the existing Pi
 presentation extensions remain client-only and are still available to
-`--standalone`. New workflow functionality must add one server entry and a
-corresponding client projection instead of adding a per-client broker.
+`--standalone`. New workflow functionality must add one server entry and use
+the shared command surface instead of adding a per-client broker.
 
 ## Provider Compatibility
 

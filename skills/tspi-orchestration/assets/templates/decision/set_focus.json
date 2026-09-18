@@ -1,5 +1,0 @@
-{
-  "op": "set_focus",
-  "claimRefs": ["${CLAIM_REF}"],
-  "nodeRefs": ["${NODE_REF}"]
-}

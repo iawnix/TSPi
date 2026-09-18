@@ -165,10 +165,12 @@ def _route(row: dict[str, Any], route: str, query: dict[str, str]) -> Any:
             "map": payload,
             "changed": True,
         }
-    if route in {"phases", "claims", "nodes", "findings", "gates"}:
+    if route in {"phases", "claims", "claim_relations", "nodes", "findings", "gates"}:
         return {"schema_version": "research-map-collection/1", "map_id": research_map.map_id, route: payload[route]}
     if route.startswith("claim/"):
         return _detail(payload, "claims", route[6:])
+    if route.startswith("phase/"):
+        return _detail(payload, "phases", route[6:])
     if route.startswith("node/"):
         return _detail(payload, "nodes", route[5:])
     if route.startswith("finding/"):

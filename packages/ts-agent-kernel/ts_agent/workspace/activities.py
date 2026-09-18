@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from ts_agent.io import read_json, sha256_json
+from ts_agent.research import ResearchKernel, ResearchKernelError
 from .refs import NODE_ID, ACTIVITY_ID
 from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 
@@ -526,26 +527,13 @@ def _read_optional_document(
 
 
 def _load_known_nodes(root: Path, findings: list[dict[str, Any]], required: bool) -> set[str]:
-    registry_path = root / "research_nodes.json"
-    if has_symlink_component(root, registry_path) or not registry_path.is_file() or registry_path.is_symlink():
-        if required:
-            _finding(findings, "activity_registry_unavailable", "ResearchNode registry is unavailable for activity validation", "research_nodes.json", [])
-        return set()
     try:
-        registry = read_json(registry_path)
-    except (OSError, ValueError):
+        research_map = ResearchKernel(root).load()
+    except ResearchKernelError:
         if required:
-            _finding(findings, "activity_registry_unavailable", "ResearchNode registry is not valid JSON", "research_nodes.json", [])
+            _finding(findings, "activity_registry_unavailable", "ResearchMap is unavailable for activity validation", "research_map.json", [])
         return set()
-    if not isinstance(registry, dict) or registry.get("schema_version") != "ts-research-node-registry/2":
-        if required:
-            _finding(findings, "activity_registry_unavailable", "ResearchNode registry does not use ts-research-node-registry/2", "research_nodes.json", [])
-        return set()
-    return {
-        str(row["node_id"])
-        for row in registry.get("nodes", [])
-        if isinstance(row, dict) and isinstance(row.get("node_id"), str)
-    }
+    return set(research_map.nodes)
 
 
 def _activity_summaries(

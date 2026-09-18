@@ -95,6 +95,14 @@ class ResearchPhase(ResearchObject):
     node_ids: list[str] = field(default_factory=list)
     type_name: ClassVar[str] = "research_phase"
 
+    def validate(self, research_map: "ResearchMap") -> None:
+        super().validate(research_map)
+        if not self.title or not isinstance(self.title, str):
+            raise ResearchModelError(f"phase {self.id} title must be a non-empty string")
+        if not isinstance(self.objective, str):
+            raise ResearchModelError(f"phase {self.id} objective must be a string")
+        _validate_string_list(self.node_ids, f"phase {self.id} node_ids")
+
     def to_dict(self) -> dict[str, Any]:
         return {
             **super().to_dict(),
@@ -114,6 +122,18 @@ class ResearchClaim(ResearchObject):
     finding_ids: list[str] = field(default_factory=list)
     gate_ids: list[str] = field(default_factory=list)
     type_name: ClassVar[str] = "research_claim"
+
+    def validate(self, research_map: "ResearchMap") -> None:
+        super().validate(research_map)
+        if not self.statement or not isinstance(self.statement, str):
+            raise ResearchModelError(f"claim {self.id} statement must be a non-empty string")
+        if not isinstance(self.status, ClaimStatus):
+            raise ResearchModelError(f"claim {self.id} has an invalid status")
+        _validate_string_list(self.predictions, f"claim {self.id} predictions")
+        _validate_string_list(self.falsifiers, f"claim {self.id} falsifiers")
+        _validate_string_list(self.node_ids, f"claim {self.id} node_ids")
+        _validate_string_list(self.finding_ids, f"claim {self.id} finding_ids")
+        _validate_string_list(self.gate_ids, f"claim {self.id} gate_ids")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -143,6 +163,28 @@ class ResearchNode(ResearchObject):
     outcome: NodeOutcome | None = None
     outcome_summary: str | None = None
     type_name: ClassVar[str] = "research_node"
+
+    def validate(self, research_map: "ResearchMap") -> None:
+        super().validate(research_map)
+        if not self.title or not isinstance(self.title, str):
+            raise ResearchModelError(f"node {self.id} title must be a non-empty string")
+        if not self.objective or not isinstance(self.objective, str):
+            raise ResearchModelError(f"node {self.id} objective must be a non-empty string")
+        if self.phase_id is not None and not isinstance(self.phase_id, str):
+            raise ResearchModelError(f"node {self.id} phase_id must be a string or null")
+        for field_name, values in (
+            ("claim_ids", self.claim_ids),
+            ("dependency_ids", self.dependency_ids),
+            ("finding_ids", self.finding_ids),
+            ("gate_ids", self.gate_ids),
+            ("attempt_refs", self.attempt_refs),
+            ("artifact_refs", self.artifact_refs),
+        ):
+            _validate_string_list(values, f"node {self.id} {field_name}")
+        if not isinstance(self.state, NodeState):
+            raise ResearchModelError(f"node {self.id} has an invalid state")
+        if self.outcome is not None and not isinstance(self.outcome, NodeOutcome):
+            raise ResearchModelError(f"node {self.id} has an invalid outcome")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -176,8 +218,16 @@ class Finding(ResearchObject):
 
     def validate(self, research_map: "ResearchMap") -> None:
         super().validate(research_map)
+        if not self.node_id or not isinstance(self.node_id, str):
+            raise ResearchModelError(f"finding {self.id} node_id must be a non-empty string")
+        if not self.statement or not isinstance(self.statement, str):
+            raise ResearchModelError(f"finding {self.id} statement must be a non-empty string")
         if not isinstance(self.kind, FindingKind):
             raise ResearchModelError(f"finding {self.id} has an invalid kind")
+        if not isinstance(self.status, FindingStatus):
+            raise ResearchModelError(f"finding {self.id} has an invalid status")
+        _validate_string_list(self.claim_ids, f"finding {self.id} claim_ids")
+        _validate_string_list(self.source_refs, f"finding {self.id} source_refs")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -201,6 +251,11 @@ class FactFinding(Finding):
     status: FindingStatus = FindingStatus.CONFIRMED
     type_name: ClassVar[str] = "fact_finding"
 
+    def validate(self, research_map: "ResearchMap") -> None:
+        super().validate(research_map)
+        if self.kind is not FindingKind.FACT:
+            raise ResearchModelError(f"FactFinding {self.id} must have kind=fact")
+
     def to_dict(self) -> dict[str, Any]:
         return {
             **super().to_dict(),
@@ -217,6 +272,11 @@ class IssueFinding(Finding):
     resolution: str | None = None
     kind: FindingKind = FindingKind.ISSUE
     type_name: ClassVar[str] = "issue_finding"
+
+    def validate(self, research_map: "ResearchMap") -> None:
+        super().validate(research_map)
+        if self.kind is not FindingKind.ISSUE:
+            raise ResearchModelError(f"IssueFinding {self.id} must have kind=issue")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -254,11 +314,23 @@ class Gate(ResearchObject):
 
     def validate(self, research_map: "ResearchMap") -> None:
         super().validate(research_map)
+        if not self.target_id or not isinstance(self.target_id, str):
+            raise ResearchModelError(f"gate {self.id} target_id must be a non-empty string")
+        if not isinstance(self.criteria, list) or any(not isinstance(item, dict) for item in self.criteria):
+            raise ResearchModelError(f"gate {self.id} criteria must be a list of objects")
         if not isinstance(self.scope, GateScope):
             raise ResearchModelError(f"gate {self.id} has an invalid scope")
         for evaluation in self.evaluations:
             if not isinstance(evaluation.verdict, GateVerdict):
                 raise ResearchModelError(f"gate {self.id} has an invalid evaluation verdict")
+            if not evaluation.checked_at or not isinstance(evaluation.checked_at, str):
+                raise ResearchModelError(f"gate {self.id} evaluation checked_at must be a non-empty string")
+            _validate_string_list(evaluation.evidence_refs, f"gate {self.id} evaluation evidence_refs")
+            if evaluation.input_revision is not None and (
+                not isinstance(evaluation.input_revision, int) or isinstance(evaluation.input_revision, bool)
+                or evaluation.input_revision < 0
+            ):
+                raise ResearchModelError(f"gate {self.id} evaluation input_revision must be a non-negative integer or null")
 
     def evaluate(
         self,
@@ -412,7 +484,10 @@ class ResearchMap:
                 for gate in self.gates.values()
                 if gate.scope is GateScope.NODE and gate.target_id == node_id
             ]
-            if node_gates and all(gate.latest() is None or gate.latest().verdict is not GateVerdict.PASS for gate in node_gates):
+            if node_gates and not all(
+                gate.latest() is not None and gate.latest().verdict is GateVerdict.PASS
+                for gate in node_gates
+            ):
                 raise ResearchModelError(f"node {node_id} cannot be completed before a NodeGate passes")
         node.state = state
         node.outcome = outcome
@@ -492,9 +567,40 @@ class ResearchMap:
             _require_refs(node.dependency_ids, self.nodes, f"node {node.id} dependency_ids")
             _require_refs(node.finding_ids, self.findings, f"node {node.id} finding_ids")
             _require_refs(node.gate_ids, self.gates, f"node {node.id} gate_ids")
+            if node.phase_id is not None and node.id not in self.phases[node.phase_id].node_ids:
+                raise ResearchModelError(f"node {node.id} is not indexed by phase {node.phase_id}")
+            for claim_id in node.claim_ids:
+                if node.id not in self.claims[claim_id].node_ids:
+                    raise ResearchModelError(f"node {node.id} is not indexed by claim {claim_id}")
+            for finding_id in node.finding_ids:
+                if self.findings[finding_id].node_id != node.id:
+                    raise ResearchModelError(f"finding {finding_id} is not owned by node {node.id}")
+            for gate_id in node.gate_ids:
+                gate = self.gates[gate_id]
+                if gate.scope is not GateScope.NODE or gate.target_id != node.id:
+                    raise ResearchModelError(f"gate {gate_id} is not attached to node {node.id}")
+        for claim in self.claims.values():
+            _require_refs(claim.node_ids, self.nodes, f"claim {claim.id} node_ids")
+            _require_refs(claim.finding_ids, self.findings, f"claim {claim.id} finding_ids")
+            _require_refs(claim.gate_ids, self.gates, f"claim {claim.id} gate_ids")
+            for node_id in claim.node_ids:
+                if claim.id not in self.nodes[node_id].claim_ids:
+                    raise ResearchModelError(f"claim {claim.id} is not indexed by node {node_id}")
+            for finding_id in claim.finding_ids:
+                if claim.id not in self.findings[finding_id].claim_ids:
+                    raise ResearchModelError(f"claim {claim.id} is not indexed by finding {finding_id}")
+            for gate_id in claim.gate_ids:
+                gate = self.gates[gate_id]
+                if gate.scope is not GateScope.CLAIM or gate.target_id != claim.id:
+                    raise ResearchModelError(f"gate {gate_id} is not attached to claim {claim.id}")
         for finding in self.findings.values():
             _require_refs([finding.node_id], self.nodes, f"finding {finding.id} node_id")
             _require_refs(finding.claim_ids, self.claims, f"finding {finding.id} claim_ids")
+            if finding.id not in self.nodes[finding.node_id].finding_ids:
+                raise ResearchModelError(f"finding {finding.id} is not indexed by node {finding.node_id}")
+            for claim_id in finding.claim_ids:
+                if finding.id not in self.claims[claim_id].finding_ids:
+                    raise ResearchModelError(f"finding {finding.id} is not indexed by claim {claim_id}")
         for gate in self.gates.values():
             target = self.nodes if gate.scope is GateScope.NODE else self.claims
             _require_refs([gate.target_id], target, f"gate {gate.id} target_id")
@@ -504,6 +610,20 @@ class ResearchMap:
                 raise ResearchModelError(f"gate {gate.id} is not indexed by claim {gate.target_id}")
         for phase in self.phases.values():
             _require_refs(phase.node_ids, self.nodes, f"phase {phase.id} node_ids")
+            for node_id in phase.node_ids:
+                if self.nodes[node_id].phase_id != phase.id:
+                    raise ResearchModelError(f"node {node_id} is not assigned to phase {phase.id}")
+        _require_refs(self.focus_claim_ids, self.claims, "ResearchMap focus_claim_ids")
+        _require_refs(self.focus_node_ids, self.nodes, "ResearchMap focus_node_ids")
+        for index, relation in enumerate(self.claim_relations):
+            if not isinstance(relation, Mapping):
+                raise ResearchModelError(f"claim relation {index} must be an object")
+            for key in ("source_id", "target_id", "relation"):
+                if not isinstance(relation.get(key), str) or not relation[key]:
+                    raise ResearchModelError(f"claim relation {index} {key} must be a non-empty string")
+            _require_refs([relation["source_id"], relation["target_id"]], self.claims, f"claim relation {index}")
+            if relation["source_id"] == relation["target_id"]:
+                raise ResearchModelError("claim relation cannot point to itself")
         self._validate_node_cycles()
         self._validate_claim_cycles()
 
@@ -676,6 +796,11 @@ def _require_refs(refs: Iterable[str], collection: Mapping[str, Any], label: str
     missing = sorted(set(refs) - set(collection))
     if missing:
         raise ResearchModelError(f"{label} references unknown ids: {', '.join(missing)}")
+
+
+def _validate_string_list(values: Any, label: str) -> None:
+    if not isinstance(values, list) or any(not isinstance(value, str) or not value for value in values):
+        raise ResearchModelError(f"{label} must be a list of non-empty strings")
 
 
 def _validate_acyclic(graph: Mapping[str, Iterable[str]], label: str) -> None:

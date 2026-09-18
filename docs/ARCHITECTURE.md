@@ -42,6 +42,7 @@ Each workspace has one canonical research object:
 ```text
 research_map.json
 nodes/<node_id>/          # Attempt and Artifact execution records
+inputs/                   # workspace-relative imported input artifacts
 transactions.jsonl        # Kernel change history
 ```
 
@@ -88,34 +89,21 @@ the current Findings support or contradict a Claim. Gates record evaluations,
 but never silently update a Node or Claim; the Root Agent submits that
 interpretation through a Map ChangeSet.
 
-## Decision Transaction
+## ChangeSets And Browser Clients
 
-Workflow extensions emit one typed decision at a time. The workspace engine
-validates the decision, checks references and optimistic revision, writes the
-canonical record atomically, and appends a bounded operational journal. A
-failed transaction leaves the previous revision untouched.
+Workflow extensions, Pi tools, the CLI, and slash commands all submit the same
+small ChangeSet envelope to `ResearchKernel`. The kernel validates operation
+fields, references, optimistic revision, and graph invariants before atomically
+writing `research_map.json` and appending `transactions.jsonl`. A failed
+ChangeSet leaves the previous revision untouched.
 
-## Validation Engine
-
-Validation templates and acceptance profiles live under
-`packages/ts-agent-kernel/ts_agent/validation/`. Predicates are deterministic,
-results record their input digest and template identity. Only explicit
-`FactFinding` and `IssueFinding` records enter the ResearchMap.
-
-## Context Compiler
-
-The orchestration skill compiles a bounded context from canonical workspace
-state, recent operations, and selected artifacts. It never invents a second
-state store and never rewrites unsupported records during bootstrap.
-
-## Read-Only Web And Browser Control
-
-TS Web reads the workspace files through `components/ts-web/`. It does not own
-Pi sessions or submit prompts. Its optional systemd unit is independent from
-the App Server instance. Browser control is a separate, explicitly started
-loopback adapter (`TSPi --gateway`) backed by Pi's `AgentController` and
-`Transcript`; it uses request IDs for idempotency and sequence cursors for
-reconnects. TS Phone uses the same underlying services through Pi Radius.
+TS Web reads the canonical map through `components/ts-web/`; it does not own Pi
+sessions or submit prompts. It is a browser client of the same map, not a
+separate protocol or scientific state store. Browser control is a separate,
+explicitly started loopback adapter (`TSPi --gateway`) backed by Pi's
+`AgentController` and `Transcript`; it uses request IDs for idempotency and
+sequence cursors for reconnects. TS Phone uses the same underlying services
+through Pi Radius.
 
 ## TSPi Lifecycle
 
@@ -134,12 +122,12 @@ containing a supported `workspace.json`.
 passes `TSPI_SESSION_CWD` when creating a session, so the session worker keeps
 the selected project's filesystem context. TS Phone uses the same services to
 list or create projects and to create or switch sessions without opening
-another Host connection. The old `--app-server --workspace <name>` mode remains
-only as a compatibility path.
+another Host connection. The launcher starts the selected workspace through the
+native App Server entrypoint; there is one current workspace launch path.
 
 The first client launch initializes a missing workspace through the same
-validated bootstrap used by compatibility mode. The Host never creates an
-unnamed workspace; a client must request a valid direct-child name explicitly.
+validated bootstrap. The Host never creates an unnamed workspace; a client must
+request a valid direct-child name explicitly.
 
 The launcher validates installation ownership, package identity, workspace
 path safety, and runtime configuration before executing Node/Pi. A second Host

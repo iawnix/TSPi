@@ -1,72 +1,48 @@
-# Root Decision Protocol
+# Root Agent Change Protocol
 
-## Normal Loop
+Root owns scientific judgment. The Kernel owns structural validity and atomic
+storage. Keep those responsibilities separate.
 
-1. Read a frontier or delta projection.
-2. Name the unresolved question and possible falsifiers.
-3. Select one decision-sized ResearchNode and explicit dependencies.
-4. Draft, validate, and apply the graph change.
-5. Run deterministic actions, then verify local primary artifacts.
-6. Record semantic Observations and Findings.
-7. Freeze and evaluate only the validation dimensions relevant to the Claim.
-8. Update the Claim and complete the Node with exact cited basis.
-9. Decide independently whether to branch, merge, backtrack, stop, or continue.
+## Before A Change
 
-The Kernel validates this record; it does not supply the strategy.
+Read the smallest useful `ts_state` result:
 
-## Node Boundary Test
+```text
+summary -> map -> detail/locate -> artifacts/capabilities/runs
+```
 
-Start a new Node when the unresolved question, principal deliverable,
-hypothesis scope, independent method branch, backtrack target, or synthesis goal
-changes. Keep retries and recalculations in the current Node only when success
-would answer the same question with the same deliverable. Several tools and
-method variations may serve one question, but
-candidate discovery, stationary-point assessment, connectivity, and final
-synthesis are not one umbrella Node merely because they concern one Claim.
+State the question, the current uncertainty, the Node that owns the work, and
+the source records supporting the proposed change. Reuse existing IDs. Create a
+new dependent Node when the question, deliverable, or Claim scope changes;
+retrying the same calculation remains an Attempt under the same Node.
 
-One Decision may start at most one Node and complete at most one Node. When the
-next question follows directly, close the current Node and open its dependent
-successor in the same atomic Decision. The dependency is required; unrelated
-close/open transitions use separate Decisions. Phase changes mark a new
-human-facing question family, not a fixed lifecycle stage.
+## During A Change
 
-## Failed Exploration And Backtracking
+Submit one `ts_change` request with a concrete rationale and ordered operations.
+Use `create_finding` for verified Node outputs and choose `kind=fact` or
+`kind=issue`. Keep a Finding's statement narrow and cite `source_refs` such as
+Artifact IDs. Use `create_gate` only for a criterion that needs to be visible
+in the map, then `evaluate_gate` with the current evidence references.
 
-Preserve the failed Node, operation, output, and Finding. Distinguish an
-operational failure from a scientific result. To resume from an earlier point,
-start a new Node that depends on the earlier checkpoint and state what changed.
-Do not copy or rewrite the failed branch.
+Do not infer a scientific conclusion from a successful tool return. Check the
+primary Artifact and execution record first. A scheduler or parser failure is
+operational information; record an IssueFinding only when its scientific impact
+has been established.
 
-Use multiple dependencies when a new Node combines conclusions or artifacts
-from several branches. Use Claim relations to preserve competing explanations;
-do not force alternatives into one linear Node chain.
+## After A Change
+
+Read the returned revision and, when useful, `research.summary`. A Node can be
+closed as `completed` only when its completion criteria are satisfied and every
+attached NodeGate has a passing latest evaluation. Use `inconclusive` or
+`stopped` when the question is not resolved. Update Claim status explicitly;
+Node state and Claim status do not imply one another.
+
+For a new question, create the successor Node with a dependency on the prior
+Node and set focus in the same or a subsequent ChangeSet. Preserve the old
+Node, Findings, Gates, Artifacts, and Attempts as history.
 
 ## Review
 
-Request Review only for a focused Claim. After successful Review, record one
-Root disposition before another scientific mutation:
-
-- `accept`: adopt the advice as a planning input;
-- `partially_accept`: identify accepted and rejected parts;
-- `reject`: cite why it does not change the plan;
-- `defer`: state which missing information prevents a response.
-
-Disposition is operational. Any scientific change still requires verified
-Observations and a normal Decision.
-
-## Acceptance
-
-Before `accept_claim`:
-
-1. confirm the Claim status is `supported` and at least one ProofSpec is attached;
-2. confirm the latest ValidationResult for each attached ProofSpec passes;
-3. confirm the profile's foundational dimensions are present;
-4. resolve every applicable blocking Finding;
-5. ensure the Claim statement, assumptions, and cited artifacts still match;
-6. describe residual scientific limitations in the acceptance summary.
-
-An existing record is historical, not current, after any accepted Claim,
-ProofSpec, latest result, profile, or relevant Finding snapshot changes.
-
-Negative, inconclusive, and error verdicts are durable boundaries. They do not
-automatically prescribe retry or abandonment.
+Review is advisory and never writes the map. Give Review only the Claim and
+Artifacts it needs, answer it through `ts_reply`, and record Root's accepted,
+rejected, or qualified interpretation with ordinary map operations.

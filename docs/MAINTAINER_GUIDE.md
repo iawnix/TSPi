@@ -30,21 +30,18 @@ must not be added to the default Python suite.
 
 ## Scientific Model
 
-The canonical workspace files are `workspace.json`, `research_state.json`,
-`phases.json`, `claims.json`, `claim_relations.json`, `research_nodes.json`,
-`observations.json`, `proof_specs.json`, `validation_results.json`,
-`findings.json`, and `acceptances/<acceptance_id>.json`. Phase is a research
-objective; node is an executable/evidence unit inside that objective.
-When a workspace uses explicit Gate operations, `gate_specs.json` and
-`gate_results.json` are additive registries for the shared NodeGate/ClaimGate
-contract; their absence remains valid for older workspaces.
+The canonical workspace files are `workspace.json`, `research_map.json`, and
+`transactions.jsonl`. `ResearchMap` owns phases, claims, claim relations,
+nodes, typed findings, gates, focus, and revision. Node execution records live
+under `nodes/<node_id>/` and are operational inputs to the map, not alternate
+scientific registries.
 
-## Validation Engine Rules
+## ResearchMap Validation Rules
 
-Validation is deterministic and revision-bound. Predicates may read only the
-declared inputs, and accepted claims must reference recorded observations or
-findings. Unsupported files are preserved and cause an explicit bootstrap
-error.
+Validation is deterministic and revision-bound. Gates evaluate declared map
+criteria and evidence references; Root Agent interpretation changes Claim or
+Node state through a ResearchMap ChangeSet. Unsupported legacy files are
+rejected explicitly during bootstrap.
 
 ## Deterministic Tool Contracts
 
@@ -64,7 +61,7 @@ schemas out of the always-loaded tools. Do not add scientific successor routing.
 Node pause/resume receipts are operational state. Preserve the shared workspace
 lock at submission and analysis boundaries; keep inspection, collection and
 cancellation available. Test native App Server and extension entrypoints, wheel
-installation, projections and source-tampering rejection. Use the stable
+installation, direct ResearchMap Web rendering and source-tampering rejection. Use the stable
 operations guide and focused test suites as the current evidence; one-off
 validation reports do not belong in the repository.
 
@@ -74,7 +71,7 @@ validation reports do not belong in the repository.
 - `docs/INSTALLATION.md` — installer, services, upgrades, and recovery.
 - `docs/TERMINAL.md` — native TUI/App Server usage.
 - `skills/` — user-facing scientific procedures and references.
-- `contracts/ts-web/` — optional browser projection schemas.
+- `contracts/ts-web/` — optional browser transport schemas for canonical map responses.
 
 TS Phone documentation and mobile release tooling are maintained in the
 independent `ts-phone` repository. TSPi must not reintroduce a Phone server,

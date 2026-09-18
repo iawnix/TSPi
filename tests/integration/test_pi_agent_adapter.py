@@ -15,7 +15,7 @@ EXPECTED_TOOLS = {
     "sys_prompt",
     "ts_state",
     "ts_change",
-    "ts_remote",
+    "ts_environment",
     "ts_review",
     "ts_reply",
     "ts_calc",
@@ -28,7 +28,7 @@ EXPECTED_TOOLS = {
     "ts_report",
     "ts_notify",
 }
-EXPECTED_COMMANDS = {"ts", "ts-check", "sys_prompt", "ts-remote", "ts-runs"}
+EXPECTED_COMMANDS = {"research", "compute", "runs", "debug"}
 
 
 def test_package_manifest_and_profile_expose_skill_family_five_extensions_one_theme() -> None:
@@ -76,7 +76,7 @@ process.stdout.write(JSON.stringify({{
     assert result["execution"]["ts_report"] == "deterministic_artifact"
     context = next(item for item in result["tools"] if item["name"] == "ts_state")
     assert "query" in context["properties"]
-    assert "operation" in context["properties"]
+    assert "mode" in context["properties"]
     assert not any(name.startswith("ts_workspace_") or name.startswith("ts_subagent_") for name in EXPECTED_TOOLS)
 
 
@@ -171,48 +171,28 @@ process.stdout.write(JSON.stringify({{rows,total:rows.reduce((sum,row)=>sum+row.
 def test_workspace_cli_compiles_frontier_and_focused_node(tmp_path: Path) -> None:
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     refs = start_research_node(workspace)
-    frontier = _workspace_cli("context", "--root", str(workspace), "--mode", "frontier")
-    node = _workspace_cli("context", "--root", str(workspace), "--mode", "node", "--node-ref", refs["node_id"])
-    assert frontier["schema_version"] == "ts-context-projection/3"
-    assert frontier["focus"]["node_refs"] == [refs["node_id"]]
-    assert frontier["workspace_brief"]["nodes"][0]["decision_rationale"]
-    assert frontier["workspace_brief"]["nodes"][0]["objective"]
-    assert frontier["workspace_brief"]["nodes"][0]["deliverable"]
-    assert frontier["workspace_brief"]["nodes"][0]["contract_digest"].startswith("sha256:")
-    assert "research_trajectory" not in frontier
-    assert node["research_nodes"][0]["node_id"] == refs["node_id"]
-    assert "node_index" not in frontier
-    assert "gate_results" not in frontier
+    summary = _api_cli("research.summary", workspace)
+    node = _api_cli("research.detail", workspace, "--kind", "node", "--id", refs["node_id"])
+    assert summary["schema_version"] == "research-summary/1"
+    assert summary["progress"]["node_count"] == 1
+    assert summary["focus_node_ids"] == [refs["node_id"]]
+    assert node["schema_version"] == "research-detail/1"
+    assert node["object"]["id"] == refs["node_id"]
+    assert node["object"]["type"] == "research_node"
 
 
 def test_context_summary_uses_unified_agent_run_counts() -> None:
     script = f"""
 import summary from {json.dumps((ROOT / 'extensions/ts-workflow-control/summary.cjs').as_uri())};
 const {{buildContextDetails,buildContextSummary}}=summary;
-const context={{valid:true,mode:"frontier",projection_id:"ctx_0123456789abcdef01234567",workspace_id:"ws_0123456789abcdef01234567",workspace_revision:"sha256:"+"a".repeat(64),operational_revision:"sha256:"+"b".repeat(64),operational_summary:{{
-  agent_run_count:3,agent_run_failed_count:1,agent_run_pending_count:1,
-  review_disposition_pending_count:1,calculation_attempt_count:1,
-  calculation_attempt_blocking_count:1,
-}},calculation_attempts:[{{node_id:"node_1",intent_id:"calc_1",state:"queued",program_status:"not_run",blocks_completion:true}}],workspace_brief:{{phases:[],claims:[],open_findings:[],incomplete_validation:[],nodes:[{{node_id:"node_1",phase_ref:"phase_1",status:"open",title:"Locate saddle",objective:"Locate one first-order saddle.",deliverable:"One verified TS candidate.",attempts:[{{intent_id:"calc_1",state:"queued",program_status:"not_run",blocks_completion:true}}]}}]}}}};
+    const context={{schema_version:"research-summary/1",map_id:"map_1",title:"Locate saddle",revision:3,progress:{{phase_count:1,claim_count:1,node_count:1,finding_count:0,gate_count:0,closed_node_count:0,open_issue_count:0}},focus_claim_ids:["claim_1"],focus_node_ids:["node_1"]}};
 process.stdout.write(JSON.stringify({{details:buildContextDetails(context),summary:buildContextSummary(context)}}));
 """
     result = _node_json(script)
-    operational = result["details"]["operationalSummary"]
-    assert operational["agentRunCount"] == 3
-    assert operational["agentRunFailedCount"] == 1
-    assert operational["agentRunPendingCount"] == 1
-    assert "agent_runs=3" in result["summary"]
-    assert "agent_failures=1" in result["summary"]
-    assert "attempts=1" in result["summary"]
-    assert "calc_1/queued!" in result["summary"]
-    assert "trajectory:" in result["summary"]
-    assert "reviews=" not in result["summary"]
-    assert "context: mode=frontier; valid=true" in result["summary"]
-    assert "delta_tokens:" in result["summary"]
-    assert "question=Locate one first-order saddle." in result["summary"]
-    assert "deliverable=One verified TS candidate." in result["summary"]
-    assert "ctx_0123456789abcdef01234567" not in result["summary"]
-    assert "ws_0123456789abcdef01234567" not in result["summary"]
+    assert result["details"]["mapId"] == "map_1"
+    assert result["details"]["focusNodeIds"] == ["node_1"]
+    assert "ResearchMap context:" in result["summary"]
+    assert "map_1" in result["summary"]
 
 
 def test_control_prompt_injection_states_authority_without_prescribing_sequence(tmp_path: Path) -> None:
@@ -226,11 +206,11 @@ process.stdout.write(JSON.stringify(result));
 """
     result = _node_json(script)
     prompt = result["systemPrompt"]
-    assert "TS workspace active" in prompt
+    assert "ResearchMap workspace active" in prompt
     assert "ts_state" in prompt
     assert "ts_change" in prompt
-    assert "Give each changed question" in prompt
-    assert "include set_focus with exact claimRefs/nodeRefs" in prompt
+    assert "ResearchPhase, ResearchNode, ResearchClaim, Finding, and Gate are map objects" in prompt
+    assert "Query ts_state mode=operations before using an unfamiliar map operation" in prompt
     assert "workflow phase" not in prompt.lower()
 
 
@@ -278,7 +258,7 @@ process.stdout.write(JSON.stringify({{manifest:JSON.parse(result.content[0].text
     assert by_origin["skill"][0]["inputs"] == [visible_path]
     assert hidden_path not in json.dumps(manifest)
     assert by_origin["extension"][0]["attribution"] == "exact"
-    assert "TS workspace active" in by_origin["extension"][0]["text"]
+    assert "ResearchMap workspace active" in by_origin["extension"][0]["text"]
     assert any(item.get("text") == "\n\nTHIRD PARTY EXTENSION" for item in by_origin["unknown"])
     assert not any("THIRD PARTY EXTENSION" in item.get("text", "") for item in by_origin["native"])
 
@@ -297,18 +277,18 @@ const ctx={{
   signal:undefined, getSystemPrompt:()=>"ACTIVE PROMPT",
   ui:{{notify:(message,level)=>notices.push({{message,level}})}},
 }};
-await commands.sys_prompt.handler("",ctx);
-await commands.sys_prompt.handler("unexpected",ctx);
-process.stdout.write(JSON.stringify({{entries,notices,description:commands.sys_prompt.description}}));
+await commands.debug.handler("prompt",ctx);
+await commands.debug.handler("unexpected",ctx);
+process.stdout.write(JSON.stringify({{entries,notices,description:commands.debug.description}}));
 """
     result = _node_json(script)
-    assert result["description"].startswith("Show the effective system prompt")
+    assert result["description"].startswith("Inspect TSPi runtime diagnostics")
     assert len(result["entries"]) == 1
     assert result["entries"][0]["type"] == "ts-system-prompt"
     manifest = result["entries"][0]["data"]["manifest"]
     assert manifest["schema_version"] == "tspi-system-prompt/2"
     assert manifest["effective"] == "ACTIVE PROMPT"
-    assert result["notices"] == [{"message": "/sys_prompt takes no arguments", "level": "warning"}]
+    assert result["notices"] == [{"message": "Usage: /debug prompt", "level": "warning"}]
 
 
 def test_extension_turn_refreshes_bounded_science_without_appending_history(tmp_path: Path) -> None:
@@ -320,11 +300,11 @@ const pi={{registerTool:(tool)=>tools[tool.name]=tool,registerCommand:()=>{{}},r
   on:(name,handler)=>handlers[name]=handler,
   exec:async (command,args)=>{{
     if (args[0].endsWith("ts_runtime.py")) return {{stdout:JSON.stringify({{configured:true,python_executable:{json.dumps(sys.executable)}}})}};
-    if (args[0].endsWith("ts_workspace.py") && args[1] === "context") {{
+    if (args[0].endsWith("ts_api.py") && args[1] === "research.summary") {{
       if (unavailable) throw new Error("private diagnostic");
       reads++;
-      return {{stdout:JSON.stringify({{mode:"frontier",valid:true,workspace_revision:"revision-"+reads,
-        workspace_brief:{{nodes:[{{node_id:"node_"+reads,title:"Current research",status:"open"}}]}}}})}};
+      return {{stdout:JSON.stringify({{schema_version:"research-summary/1",valid:true,revision:reads,
+        focus_claim_ids:["claim_"+reads],focus_node_ids:["node_"+reads],progress:{{node_count:reads}}}})}};
     }}
     throw new Error("unexpected command");
   }},
@@ -344,9 +324,9 @@ process.stdout.write(JSON.stringify({{first,second,failed,standalone,firstManife
 """
     result = _node_json(script)
     assert result["reads"] == 2
-    assert "revision-1" in result["first"]["systemPrompt"]
-    assert "revision-2" in result["second"]["systemPrompt"]
-    assert "revision-1" not in result["second"]["systemPrompt"]
+    assert '"revision": 1' in result["first"]["systemPrompt"]
+    assert '"revision": 2' in result["second"]["systemPrompt"]
+    assert '"revision": 1' not in result["second"]["systemPrompt"]
     assert "node_2" in result["second"]["systemPrompt"]
     assert "Current workspace snapshot is unavailable" in result["failed"]["systemPrompt"]
     assert "private diagnostic" not in result["failed"]["systemPrompt"]
@@ -364,7 +344,7 @@ process.stdout.write(JSON.stringify({{first,second,failed,standalone,firstManife
         assert manifest["provenance_complete"] is False
         extension = next(item for item in manifest["contributors"] if item["origin"] == "extension")
         assert extension["attribution"] == "exact"
-    assert "revision-1" in next(
+    assert '"revision": 1' in next(
         item for item in result["firstManifest"]["contributors"] if item["origin"] == "extension"
     )["text"]
     assert "Current workspace snapshot is unavailable" in next(
@@ -375,7 +355,7 @@ process.stdout.write(JSON.stringify({{first,second,failed,standalone,firstManife
     )["text"]
 
 
-def test_state_change_contract_routes_to_the_kernel_without_leaking_other_selectors(tmp_path: Path) -> None:
+def test_state_operations_routes_to_the_kernel_without_leaking_other_selectors(tmp_path: Path) -> None:
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     script = f"""
 import control from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
@@ -386,28 +366,26 @@ const pi={{
   exec:async (command,args)=>{{
     calls.push([command,args]);
     if (args[0].endsWith("ts_runtime.py")) return {{stdout:JSON.stringify({{configured:true,python_executable:{json.dumps(sys.executable)}}})}};
-    if (args[0].endsWith("ts_workspace.py") && args[1] === "change_contract") return {{stdout:JSON.stringify({{schema_version:"ts-change-operation-catalog/1",selected_operation:"set_focus",operations:[]}})}};
+    if (args[0].endsWith("ts_api.py") && args[1] === "research.operations") return {{stdout:JSON.stringify({{schema_version:"research-operation-catalog/1",operations:[]}})}};
     throw new Error("unexpected command");
   }},
 }};
 control(pi);
-const result=await globalThis.stateTool.execute("tool-1", {{mode:"change_contract",operation:"set_focus",root:{json.dumps(str(workspace))}}}, undefined, undefined, {{cwd:{json.dumps(str(workspace))}}});
+const result=await globalThis.stateTool.execute("tool-1", {{mode:"operations",root:{json.dumps(str(workspace))}}}, undefined, undefined, {{cwd:{json.dumps(str(workspace))}}});
 let rejected=false;
-try {{ await globalThis.stateTool.execute("tool-2", {{mode:"change_contract",operation:"set_focus",root:{json.dumps(str(workspace))},capabilityKind:"compute"}}, undefined, undefined, {{cwd:{json.dumps(str(workspace))}}}); }}
+try {{ await globalThis.stateTool.execute("tool-2", {{mode:"operations",root:{json.dumps(str(workspace))},capabilityKind:"compute"}}, undefined, undefined, {{cwd:{json.dumps(str(workspace))}}}); }}
 catch (error) {{ rejected=String(error.message).includes("does not accept capability selectors"); }}
 process.stdout.write(JSON.stringify({{result,calls,rejected}}));
 """
     result = _node_json(script)
-    assert result["result"]["details"]["contract"]["selected_operation"] == "set_focus"
-    workspace_calls = [args for command, args in result["calls"] if args and args[0].endswith("ts_workspace.py")]
-    assert workspace_calls and workspace_calls[-1][1:4] == ["change_contract", "--root", str(workspace)]
-    assert "--operation" in workspace_calls[-1]
-    assert workspace_calls[-1][workspace_calls[-1].index("--operation") + 1] == "set_focus"
+    assert result["result"]["details"]["result"]["schema_version"] == "research-operation-catalog/1"
+    workspace_calls = [args for command, args in result["calls"] if args and args[0].endswith("ts_api.py")]
+    assert workspace_calls and workspace_calls[-1][1:4] == ["research.operations", "--root", str(workspace)]
     assert result["rejected"] is True
 
 
 def test_ts_change_forwards_unknown_operation_to_kernel_for_explicit_registry_error(tmp_path: Path) -> None:
-    """The public envelope stays open; the Python registry owns support errors."""
+    """The public envelope stays open; the ResearchKernel owns support errors."""
 
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     script = f"""
@@ -429,20 +407,20 @@ const pi={{
 }};
 control(pi);
 let error="";
-try {{ await changeTool.execute("tool-1",{{root:{json.dumps(str(workspace))},rationale:"Probe registry ownership.",operations:[{{op:"future_science_operation",payload:"kept"}}]}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}}); }}
+try {{ await changeTool.execute("tool-1",{{root:{json.dumps(str(workspace))},rationale:"Probe kernel ownership.",operations:[{{type:"future_science_operation",payload:"kept"}}]}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}}); }}
 catch (caught) {{ error=String(caught.message||caught); }}
 process.stdout.write(JSON.stringify({{error,calls}}));
 """
     result = _node_json(script)
 
-    assert "unsupported change operation: future_science_operation" in result["error"]
+    assert "unsupported ResearchMap operation: future_science_operation" in result["error"]
     workspace_calls = [
         call for call in result["calls"]
-        if call["args"] and call["args"][0].endswith("ts_workspace.py")
+        if call["args"] and call["args"][0].endswith("ts_api.py")
     ]
     assert len(workspace_calls) == 1
-    assert workspace_calls[0]["args"][1] == "change"
-    assert workspace_calls[0]["request"]["operations"][0]["op"] == "future_science_operation"
+    assert workspace_calls[0]["args"][1] == "research.change"
+    assert workspace_calls[0]["request"]["operations"][0]["type"] == "future_science_operation"
     assert workspace_calls[0]["request"]["operations"][0]["payload"] == "kept"
 
 
@@ -458,6 +436,19 @@ def test_review_fallback_failure_uses_review_runtime_taxonomy() -> None:
 def _workspace_cli(*args: str) -> dict:
     completed = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "ts_workspace.py"), *args],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout)
+
+
+def _api_cli(command: str, root: Path, *args: str) -> dict:
+    completed = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "ts_api.py"), command, "--root", str(root), *args],
         cwd=ROOT,
         text=True,
         stdout=subprocess.PIPE,

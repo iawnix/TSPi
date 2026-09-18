@@ -6,9 +6,7 @@ import { resolve } from "node:path";
 import { runScientificReview } from "../../../packages/ts-agent-runtime/agents/review/runtime.ts";
 
 const require = createRequire(import.meta.url);
-const { bindAgentDocument } = require("../../../packages/ts-agent-runtime/agent-core/agent-protocol.cjs");
-const { buildProviderTaskPacket } = require("../../../packages/ts-agent-runtime/agents/review/task-packet.cjs");
-const { loadReviewerRole } = require("../../../packages/ts-agent-runtime/agents/review/roles.cjs");
+const { buildReviewTaskBundle } = require("../../../packages/ts-agent-runtime/agents/review/task-packet.cjs");
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-test-review-child", {
@@ -25,142 +23,59 @@ export default function (pi: ExtensionAPI) {
         ? `sha256:${createHash("sha256").update(artifactBytes).digest("hex")}`
         : null;
       const artifactId = artifactDigest ? `art_${artifactDigest.slice(7, 31)}` : null;
-      const observationId = artifactMode ? "obs_review_probe" : null;
-      const revision = `sha256:${"1".repeat(64)}`;
-      const scope = {
-        report_id: "rep_review_probe",
-        node_refs: [nodeId],
-        claim_refs: [claimId],
-      };
-      const reviewerRole = loadReviewerRole("general");
       const reviewSnapshot = {
-        schema_version: "ts-review-task-snapshot/3",
-        task_id: taskId,
-        operation: "claim_review",
-        scope,
-        workspace_revision: revision,
-        projection_id: `ctx_${"c".repeat(24)}`,
+        schema_version: "ts-review-snapshot/5",
+        report_id: "rep_review_probe",
+        workspace_revision: `sha256:${"1".repeat(64)}`,
+        snapshot_id: `ctx_${"c".repeat(24)}`,
         target_claim_ref: claimId,
-        research_phases: [{
-          phase_id: phaseId,
-          title: "Probe phase",
-          objective: "Contain the recording-provider Review probe.",
+        phases: [{
+          id: phaseId, type: "research_phase", created_at: "2026-09-18T00:00:00Z", metadata: {},
+          title: "Probe phase", objective: "Contain the recording-provider Review probe.", node_ids: [nodeId],
         }],
         claims: [{
-          claim_id: claimId,
-          claim_type: "mechanism",
-          statement: "The probe pathway is concerted.",
-          status: "proposed",
-          assumptions: [],
-          falsifiers: [],
-          observation_refs: observationId ? [observationId] : [],
-          proof_spec_refs: [],
-          validation_result_refs: [],
+          id: claimId, type: "research_claim", created_at: "2026-09-18T00:00:00Z", metadata: {},
+          statement: "The probe pathway is concerted.", status: "proposed", predictions: [], falsifiers: [],
+          node_ids: [nodeId], finding_ids: [], gate_ids: [],
         }],
         claim_relations: [],
-        research_nodes: [{
-          node_id: nodeId,
-          phase_ref: phaseId,
-          title: "Review probe",
-          objective: "Review the probe Claim.",
-          deliverable: "One bounded advisory result.",
-          status: "open",
-          dependency_refs: [],
-          primary_claim_ref: claimId,
-          claim_refs: [claimId],
-          related_claim_refs: [claimId],
-          observation_refs: observationId ? [observationId] : [],
-          finding_refs: [],
-          proof_spec_refs: [],
-          validation_result_refs: [],
-          result: null,
+        nodes: [{
+          id: nodeId, type: "research_node", created_at: "2026-09-18T00:00:00Z", metadata: {},
+          title: "Review probe", objective: "Review the probe Claim.", phase_id: phaseId,
+          claim_ids: [claimId], dependency_ids: [], finding_ids: [], gate_ids: [], attempt_refs: [],
+          artifact_refs: artifactId ? [artifactId] : [], state: "active", outcome: null, outcome_summary: null,
         }],
-        observations: observationId && artifactId && artifactDigest ? [{
-          observation_id: observationId,
-          created_by_node: nodeId,
-          concept_id: "program.normal_termination",
-          subject_ref: "calc_review_probe",
-          value: true,
-          datatype: "boolean",
-          unit: null,
-          qualifiers: {},
-          summary: "The recording-provider artifact terminated normally.",
-          artifact_refs: [artifactId],
-          provenance: {
-            producer: "pi-review-probe",
-            producer_version: "1",
-            source_digests: { [artifactId]: artifactDigest },
-          },
-        }] : [],
-        proof_specs: [],
-        validation_results: [],
-        findings: [],
-        acceptances: [],
+        findings: [], gates: [],
         dependency_refs: {
-          phase_refs: [phaseId],
-          claim_refs: [claimId],
-          relation_refs: [],
-          node_refs: [nodeId],
-          observation_refs: observationId ? [observationId] : [],
-          proof_spec_refs: [],
-          validation_result_refs: [],
-          finding_refs: [],
-          acceptance_refs: [],
+          phase_refs: [phaseId], claim_refs: [claimId], relation_refs: [], node_refs: [nodeId],
+          finding_refs: [], gate_refs: [],
         },
-        artifact_manifest: artifactId && artifactDigest && artifactBytes ? [{
-          artifact_id: artifactId,
-          path: artifactPath,
-          sha256: artifactDigest,
-          size_bytes: statSync(resolve(ctx.cwd, artifactPath)).size,
-          owner_node: null,
-          source_intent_id: null,
-          artifact_type: "text_document",
-          available_sections: ["document", "overview", "diagnostics", "head", "tail"],
-        }] : [],
-        basis_allowlist: [nodeId, claimId, ...(observationId ? [observationId] : []), ...(artifactId ? [artifactId] : [])].sort(),
         omitted: {},
-        reviewer_role: reviewerRole,
       };
-      const providerInput = buildProviderTaskPacket({
-        task_id: taskId,
-        objective: "Assess whether the current bounded graph supports the probe Claim.",
-        review_snapshot: reviewSnapshot,
-        reviewer_role: reviewerRole,
+      const artifactCatalog = artifactId && artifactDigest && artifactBytes ? [{
+        artifact_id: artifactId, path: artifactPath, sha256: artifactDigest,
+        size_bytes: statSync(resolve(ctx.cwd, artifactPath)).size, owner_node: nodeId, source_intent_id: null,
+      }] : [];
+      const bundle = buildReviewTaskBundle({
+        runId: taskId,
+        workspaceRoot: ctx.cwd,
+        request: {
+          targetClaimRef: claimId,
+          question: "Assess whether the current bounded graph supports the probe Claim.",
+          root: ctx.cwd,
+          artifactIds: artifactId ? [artifactId] : [],
+        },
+        reviewSnapshot,
+        artifactCatalog,
       });
-      const packet = {
-        schema_version: "ts-agent-task/2",
-        task_id: taskId,
-        role: "review",
-        authority: "advisory",
-        operation: "claim_review",
-        objective: providerInput.objective,
-        workspace: { root: ctx.cwd, report_id: scope.report_id, revision },
-        scope,
-        inputs: {
-          review_snapshot: bindAgentDocument(
-            "review-snapshot.json", "ts-review-task-snapshot/3", reviewSnapshot,
-          ),
-          provider_input: bindAgentDocument(
-            "provider-input.json", "ts-review-provider-input/5", providerInput,
-          ),
-        },
-        capabilities: artifactMode
-          ? ["ts_review_artifact_read", "ts_review_result"]
-          : ["ts_review_result"],
-        constraints: {
-          canonical_workspace_mutation: false,
-          scientific_decision: false,
-          recursive_delegation: false,
-          remote_authority: "execution_mirror",
-          external_side_effects: false,
-        },
-        output_contract: "ts-agent-result/1",
-      };
+      const packet = bundle.task;
+      const boundSnapshot = bundle.documents.review_snapshot;
+      const providerInput = bundle.documents.provider_input;
       try {
         const result = await runScientificReview({
           workspaceRoot: ctx.cwd,
           packet,
-          reviewSnapshot,
+          reviewSnapshot: boundSnapshot,
           providerInput,
           parentModel: { provider: "ts-recording", id: "recording-model" } as never,
           parentApiKey: "recording-key",

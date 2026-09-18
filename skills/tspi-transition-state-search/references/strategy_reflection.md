@@ -17,7 +17,7 @@ helps Root revise the hypothesis, method, or next research question.
 
 ## Response
 
-Preserve prior Nodes and artifacts. Record verified anomalies as Observations and
+Preserve prior Nodes and artifacts. Record verified anomalies as Findings and
 open Findings. Revise or relate Claims explicitly. Start a new ResearchNode with
 the earlier checkpoint(s) as dependencies and state the changed hypothesis,
 method, input, or discriminator.

@@ -1,6 +1,6 @@
 ---
 name: tspi-connectivity
-description: Validate reaction-path endpoint assignments, atom mappings, stereochemistry, and molecular basin identity from explicit structural evidence.
+description: Validate reaction-path endpoint assignments, atom mappings, stereochemistry, and molecular basin identity from structural evidence.
 ---
 
 # TSPi Connectivity
@@ -8,25 +8,21 @@ description: Validate reaction-path endpoint assignments, atom mappings, stereoc
 [Chinese version](SKILL.zh-CN.md)
 
 Use this Skill when deciding whether a candidate path reaches the declared
-reactant and product basins. Load `tspi-orchestration` for ProofSpec and
-artifact contracts and `tspi-gaussian` for Gaussian output validation.
+reactant and product basins. Load `tspi-orchestration` for map and Artifact
+contracts and `tspi-gaussian` for output checks.
 
-Evaluate connectivity alongside stationary-point and imaginary-mode validation.
-Assign finite IRC endpoints to molecular basins using atom mapping, bonding,
-stereochemistry, and geometry comparison.
+Preserve path direction and identify each endpoint. Inspect the last geometry
+and gradient, optimizing an endpoint when needed. Verify element counts, charge,
+multiplicity, isotopes, atom mapping, bond changes, internal coordinates, and
+stereochemistry. Use `ts_compare` for deterministic structure comparisons.
 
-## Evidence Rules
+Record verified endpoint identity, mapping, RMSD, key coordinates, and source
+Artifact references as `FactFinding`. Missing direction, endpoint, path
+completion, or identity evidence is an `IssueFinding` and keeps the Claim or
+Node inconclusive until resolved. Use a ClaimGate or NodeGate only when an
+explicit criterion needs a visible evaluation; do not invent a separate proof
+protocol.
 
-- Preserve path direction and declare which endpoint is reactant or product.
-- Inspect the last geometry and gradient; optimize an endpoint when necessary.
-- Verify element counts, charge, multiplicity/state, isotopes when relevant,
-  atom mapping, bond changes, internal coordinates, and stereochemistry.
-- Use the versioned `connectivity` ProofSpec with explicit Observation refs.
-  Missing direction, endpoint, path completion, or identity evidence remains
-  inconclusive or creates a blocking Finding.
-- Record mapping method, selected atoms, RMSD, key coordinates, source artifact
-  digests, and limitations as semantic Observations.
-
-Read [connectivity_validation.md](references/connectivity_validation.md) for the built-in connectivity
-dimension and [ts_structures_contract.md](references/ts_structures_contract.md) for deterministic
-`ts_compare` parameters and structural identity rules.
+Read [connectivity_validation.md](references/connectivity_validation.md) and
+[ts_structures_contract.md](references/ts_structures_contract.md) for the
+deterministic checklist and comparison parameters.

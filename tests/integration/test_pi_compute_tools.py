@@ -21,7 +21,7 @@ install(pi);
 process.stdout.write(JSON.stringify({{tools:tools.map((tool)=>tool.name),commands}}));
 """
     result = _node_json(script)
-    assert result == {"tools": ["ts_remote", "ts_calc"], "commands": ["ts-remote"]}
+    assert result == {"tools": ["ts_environment", "ts_calc"], "commands": ["compute"]}
 
 
 def test_compact_compute_schema_uses_logical_artifacts_and_host_enforces_operation_fields() -> None:

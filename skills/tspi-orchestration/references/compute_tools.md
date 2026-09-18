@@ -138,12 +138,12 @@ normal terminus; `task_validation` separately reports whether the requested
 capability produced its required outputs and convergence evidence. A normally
 terminated program can therefore have `task_validation.status=incomplete`.
 Root must verify the primary artifacts before recording individual semantic
-Observations through a Decision.
+Findings through `ts_change`.
 
 For a Node that was closed prematurely by an older runtime, continue inspect and
 finalize with the original `nodeId` and `intentId`. Never move or duplicate the
 Attempt. Use an open dependent recovery Node to record directly verified
-Observations with the original artifacts and digests; the parser-candidate
+Findings with the original artifacts and digests; the parser-candidate
 shortcut intentionally remains restricted to its owning Node.
 
 ## Cancel

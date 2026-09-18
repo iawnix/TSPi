@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from ts_agent.io import read_json, sha256_json
-from ts_agent.reaction.mapping import mapping_observation_candidates, validate_atom_mapping
+from ts_agent.reaction.mapping import mapping_finding_candidates, validate_atom_mapping
 
 from .artifacts import WorkspaceArtifactError, resolve_workspace_artifact_ids
-from .candidates import ObservationCandidateError
+from .candidates import FindingCandidateError
 from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
@@ -20,9 +20,9 @@ def load_analysis_candidate(
     workspace = lexical_path(root)
     path = workspace / artifact["path"]
     if path_has_symlink(workspace) or has_symlink_component(workspace, path):
-        raise ObservationCandidateError("analysis candidate uses a symbolic link")
+        raise FindingCandidateError("analysis candidate uses a symbolic link")
     if artifact["owner_node"] != node_id or path.stat().st_size > 4 * 1024 * 1024:
-        raise ObservationCandidateError("analysis candidate owner or size is invalid")
+        raise FindingCandidateError("analysis candidate owner or size is invalid")
     try:
         document = read_json(path)
         if document.get("schema_version") == "ts-scientific-analysis/1":
@@ -66,8 +66,8 @@ def load_analysis_candidate(
         if not isinstance(mapping, list) or len(mapping) > 4096:
             raise ValueError("analysis mapping limit exceeded")
         validation = validate_atom_mapping(atoms["reactants"], atoms["products"], mapping)
-        expected = mapping_observation_candidates(validation, node_id, sources)
-        if sha256_json(document["observation_candidates"]) != sha256_json(expected):
+        expected = mapping_finding_candidates(validation, node_id, sources)
+        if sha256_json(document["finding_candidates"]) != sha256_json(expected):
             raise ValueError("analysis candidate differs from recomputed source evidence")
         for field in ("valid", "complete", "verdict", "mapping_count", "pairs", "unmapped", "element_counts", "diagnostics"):
             if sha256_json(document[field]) != sha256_json(validation[field]):
@@ -89,7 +89,7 @@ def load_analysis_candidate(
             "candidate_artifact": artifact, "source_artifacts": sources,
         }
     except (OSError, ValueError, KeyError, TypeError, AttributeError, WorkspaceArtifactError) as exc:
-        raise ObservationCandidateError(f"invalid analysis candidate: {exc}") from exc
+        raise FindingCandidateError(f"invalid analysis candidate: {exc}") from exc
 
 
 def _load_scientific_candidate(workspace, artifact, node_id, candidate_id, document):
@@ -116,7 +116,7 @@ def _load_scientific_candidate(workspace, artifact, node_id, candidate_id, docum
     sources = [sources_by_id[s["artifact_id"]] for s in recorded]
     result = evaluate(document["capability"], inputs, document["parameters"])
     expected = candidates(document["capability"], node_id, result, sources)
-    if sha256_json(document["result"]) != sha256_json(normalized_result(result)) or sha256_json(document["observation_candidates"]) != sha256_json(expected):
+    if sha256_json(document["result"]) != sha256_json(normalized_result(result)) or sha256_json(document["finding_candidates"]) != sha256_json(expected):
         raise ValueError("analysis candidate differs from recomputed source evidence")
     generated = document["output_artifacts"]
     if set(generated) != set(result["files"]):

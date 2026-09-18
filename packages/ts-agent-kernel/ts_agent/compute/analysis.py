@@ -39,7 +39,7 @@ ANALYSIS_DESCRIPTORS: Final[tuple[dict[str, Any], ...]] = (
         "capability_kind": "analysis",
         "summary": "Check an explicit element-preserving atom bijection across ordered XYZ species.",
         "input_roles": ["reactants", "products"],
-        "output_roles": ["mapping_validation", "analysis_artifact", "observation_candidates"],
+        "output_roles": ["mapping_validation", "analysis_artifact", "finding_candidates"],
         "effects": ["local_prepare", "local_analysis"],
         "input_schema": {
             "type": "object",

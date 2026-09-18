@@ -141,7 +141,7 @@ def evaluate(capability: str, inputs: Inputs, parameters: dict) -> dict:
 
 def candidates(capability: str, node_id: str, result: dict, sources: list[dict]) -> dict:
     return {
-        "schema_version": "ts-analysis-observation-candidates/1", "node_id": node_id,
+        "schema_version": "ts-analysis-finding-candidates/1", "node_id": node_id,
         "capability": capability, "capability_version": "1",
         "parser": {"name": capability, "contract": result["schema_version"]},
         "source_artifacts": [{key: r[key] for key in ("artifact_id", "path", "sha256")} for r in sources],
@@ -190,7 +190,7 @@ def run_scientific_analysis(root: str | Path, request: dict) -> dict:
     with workspace_lock(workspace):
         from ts_agent.workspace.dispatch import require_dispatch_allowed
         require_dispatch_allowed(workspace, node_id)
-        if _node_record(workspace, node_id).get("status") != "open":
+        if _node_record(workspace, node_id).get("state") == "closed":
             raise ValueError("scientific analysis requires an open ResearchNode")
         inputs, sources = load_inputs(workspace, request["input_artifacts"])
         result = evaluate(capability, inputs, request["parameters"])
@@ -213,7 +213,7 @@ def run_scientific_analysis(root: str | Path, request: dict) -> dict:
                 "input_artifacts": request["input_artifacts"], "parameters": request["parameters"],
                 "source_artifacts": [{k: s[k] for k in ("artifact_id", "path", "sha256")} for s in sources],
                 "result": normalized_result(result), "output_artifacts": generated,
-                "observation_candidates": candidate_document,
+                "finding_candidates": candidate_document,
             }
             payload = (json.dumps(document, indent=2, sort_keys=True, allow_nan=False) + "\n").encode()
             if len(payload) > 4 * 1024 * 1024:

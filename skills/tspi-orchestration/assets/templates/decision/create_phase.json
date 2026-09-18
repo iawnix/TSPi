@@ -1,6 +1,0 @@
-{
-  "op": "create_phase",
-  "local_ref": "phase",
-  "title": "${PHASE_TITLE}",
-  "objective": "${PHASE_OBJECTIVE}"
-}

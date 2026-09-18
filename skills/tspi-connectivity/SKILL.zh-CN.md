@@ -1,28 +1,21 @@
 ---
 name: tspi-connectivity
-description: 根据明确的结构证据验证反应路径端点、原子映射、立体化学和分子盆地身份。
+description: 根据结构证据验证反应路径端点、原子映射、立体化学和分子盆地身份。
 ---
 
 # TSPi 连通性
 
 [English version](SKILL.md)
 
-当问题是候选路径是否到达声明的反应物和产物盆地时使用本 Skill。ProofSpec 和
-artifact 合同使用 `tspi-orchestration`，Gaussian 输出验证使用 `tspi-gaussian`。
+当问题是候选路径是否到达声明的反应物和产物盆地时使用本 Skill。ResearchMap 和
+Artifact 合同使用 `tspi-orchestration`，输出检查使用 `tspi-gaussian`。
 
-结合驻点和虚频验证评估连通性，通过原子映射、成键、立体化学和几何比较，
-将有限 IRC 端点归属到相应的分子盆地。
+保留路径方向并标明端点，检查最后几何和梯度，必要时优化端点。核对元素数量、电荷、
+多重度、同位素、原子映射、成键变化、内部坐标和立体化学；使用 `ts_compare` 做确定性
+结构比较。
 
-## 证据规则
+核验过的端点身份、映射、RMSD、关键坐标和来源 Artifact 记录为 `FactFinding`。缺少
+方向、端点、路径完成或身份证据时记录 `IssueFinding`，Claim 或 Node 保持不确定。只有
+确实需要可见标准时才创建 ClaimGate 或 NodeGate，不再引入单独的 proof 协议。
 
-- 保留路径方向，并明确哪个端点是反应物或产物。
-- 检查最后几何和梯度；必要时优化端点。
-- 核对元素数量、电荷、多重度/电子态、相关同位素、原子映射、成键变化、内部
-  坐标和立体化学。
-- 使用带版本的 `connectivity` ProofSpec 和明确 Observation 引用。缺少方向、
-  端点、路径完成或身份证据时保持 inconclusive，或产生阻断 Finding。
-- 将映射方法、选定原子、RMSD、关键坐标、原始 artifact 摘要和限制记录为语义
-  Observation。
-
-内置连通性维度见 [connectivity_validation.md](references/connectivity_validation.md)；确定性的 `ts_compare`
-参数和结构身份规则见 [ts_structures_contract.md](references/ts_structures_contract.md)。
+详见[连通性校验](references/connectivity_validation.md)和[结构合同](references/ts_structures_contract.md)。

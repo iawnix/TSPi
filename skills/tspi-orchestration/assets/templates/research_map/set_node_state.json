@@ -1,0 +1,5 @@
+{
+  "type": "set_node_state",
+  "node_id": "node_existing",
+  "state": "active"
+}

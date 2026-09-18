@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import {
   requireWorkspaceRoot,
   runComputeApiJson,
+  runComputeJson,
   runResearchChangeJson,
   runResearchJson,
 } from "../shared/workspace-cli.ts";
@@ -77,8 +78,8 @@ export default function (pi: ExtensionAPI) {
     const focus = [
       data?.focusClaims?.length ? `${data.focusClaims.length} claims` : undefined,
       data?.focusNodes?.length ? `${data.focusNodes.length} nodes` : undefined,
-    ].filter(Boolean).join(" · ") || "empty frontier";
-    let text = `${theme.fg("accent", "TS Context")}: ${theme.fg(data?.valid === true ? "success" : "warning", status)}`;
+    ].filter(Boolean).join(" · ") || "empty focus";
+    let text = `${theme.fg("accent", "ResearchMap")}: ${theme.fg(data?.valid === true ? "success" : "warning", status)}`;
     text += theme.fg("muted", ` · ${focus}`);
     if (expanded) text += `\n${theme.fg("dim", data?.summary || "Workspace context is unavailable")}`;
     text += expandHint(theme, expanded);
@@ -158,8 +159,8 @@ export default function (pi: ExtensionAPI) {
     description: "Read the canonical ResearchMap and related compute records.",
     promptSnippet: "Read bounded TS research state",
     promptGuidelines: [
-      "Start with frontier/delta; fetch focused graph objects only as needed.",
-      "Use locate with an ID or keyword to find Nodes, Attempts, and artifact paths.",
+      "Start with summary or map; fetch focused ResearchMap objects only as needed.",
+      "Use locate with an ID or keyword to find Phases, Claims, Nodes, Findings, Gates, and artifacts.",
       "Artifact IDs are logical; capability catalogs do not prove runtime readiness.",
     ],
     parameters: Type.Object({
@@ -174,6 +175,9 @@ export default function (pi: ExtensionAPI) {
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const mode = params.mode || "map";
+      if (params.capabilityKind !== undefined && mode !== "capabilities") {
+        throw new Error(`state mode=${mode} does not accept capability selectors`);
+      }
       if (["map", "summary", "validate", "operations"].includes(mode)) {
         const result = await runResearchJson(pi, mode as "map" | "summary" | "validate" | "operations", root, {}, signal);
         return toolText(JSON.stringify(result, null, 2), { result });
@@ -193,7 +197,17 @@ export default function (pi: ExtensionAPI) {
         return toolText(JSON.stringify(result, null, 2), { result });
       }
       if (mode === "capabilities") {
-        if (params.capabilityKind !== "compute") throw new Error("state mode=capabilities currently supports capabilityKind=compute");
+        if (params.capabilityKind === "analysis") {
+          const selector = params.query?.split("@");
+          if (selector && (selector.length > 2 || !selector[0] || (selector.length === 2 && !selector[1]))) {
+            throw new Error("analysis query must be <capability> or <capability>@<version>");
+          }
+          const result = selector
+            ? await runComputeJson(pi, "resolve-analysis-capability", root, ["--capability", selector[0], "--version", selector[1] || "1"], signal)
+            : await runComputeJson(pi, "analysis-capabilities", root, [], signal);
+          return toolText(JSON.stringify(result, null, 2), { result });
+        }
+        if (params.capabilityKind !== "compute") throw new Error("state mode=capabilities requires capabilityKind=compute or analysis");
         const result = await runComputeApiJson(pi, "capabilities", root, {}, signal);
         return toolText(JSON.stringify(result, null, 2), { result });
       }
@@ -208,12 +222,12 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.change,
     label: "TS Change",
-    description: "Compile, validate, and atomically apply one Root-authored canonical research change.",
+    description: "Validate and atomically apply one Root-authored ResearchMap ChangeSet.",
     promptSnippet: "Apply one auditable TS research change",
     promptGuidelines: [
-      "Use local_ref aliases; the Kernel allocates durable IDs.",
-      "Put strategy in rationale/typed operations; never invent IDs, paths, receipts, or edit registries.",
-      "One call privately compiles, dry-runs, and atomically applies under one lock.",
+      "Use the canonical operation catalog and explicit ResearchMap object IDs.",
+      "Put strategy in rationale and keep each operation typed; never edit the map file directly.",
+      "One ChangeSet is validated against the current revision and committed atomically under one lock.",
     ],
     parameters: Type.Object({
       rationale: Type.String({ minLength: 1, maxLength: 12000 }),

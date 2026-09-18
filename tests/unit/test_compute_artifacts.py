@@ -316,7 +316,7 @@ def test_structure_comparison_is_content_addressed_idempotent_and_operational(tm
     assert document["units"] == {"angle": "degree", "distance": "angstrom"}
     assert document["provenance"]["producer"] == "ts_agent.structures.compare_structures"
     assert document["metrics"]["heavy_atom_rmsd"] == 0.0
-    assert json.loads((workspace / "observations.json").read_text(encoding="utf-8"))["observations"] == []
+    assert not (workspace / "observations.json").exists()
 
 
 def test_structure_comparison_rejects_unregistered_shapes_and_invalid_parameters(tmp_path: Path) -> None:
@@ -452,36 +452,6 @@ def test_catalog_uses_workspace_and_research_node_ownership(tmp_path: Path) -> N
     assert shared["owner_node"] is None
     assert shared["input_roles"] == ["product", "reactant", "xyz"]
     assert list_calculation_artifacts(workspace, node_id=node_id)["artifacts"] == [owned]
-
-
-@pytest.mark.parametrize(
-    "nodes_value, message",
-    [
-        ({"schema_version": "ts-research-node-registry/2", "nodes": {}}, "nodes must be an array"),
-        ({"schema_version": "ts-research-node-registry/2", "nodes": ["node_1"]}, "invalid node record"),
-        ({"schema_version": "ts-research-node-registry/2", "nodes": [{"node_id": 1}]}, "invalid node record"),
-        (
-            {
-                "schema_version": "ts-research-node-registry/2",
-                "nodes": [{"node_id": "node_1"}, {"node_id": "node_1"}],
-            },
-            "duplicate node_id",
-        ),
-    ],
-)
-def test_catalog_rejects_malformed_research_node_registry_without_type_errors(
-    tmp_path: Path,
-    nodes_value: dict[str, object],
-    message: str,
-) -> None:
-    workspace, _node_id = _workspace(tmp_path)
-    (workspace / "research_nodes.json").write_text(
-        json.dumps(nodes_value) + "\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ComputeContractError, match=message):
-        list_calculation_artifacts(workspace)
 
 
 def test_binding_rejects_unknown_incompatible_and_incomplete_roles(tmp_path: Path) -> None:
@@ -738,10 +708,18 @@ def test_prepare_and_submit_reject_stale_input_binding(
     current_id = _artifact(list_calculation_artifacts(workspace), "inputs/source.gjf")["artifact_id"]
     ssh_config = tmp_path / "ssh_config"
     ssh_config.write_text("Host login.test\n  HostName login.test\n", encoding="utf-8")
-    remote_config = tmp_path / "remote.toml"
+    remote_config = tmp_path / "compute.toml"
     remote_config.write_text(
-        f'''default_profile = "cluster"
+        f'''default_profile = "local"
+
+[profiles.local]
+kind = "local"
+
+[profiles.local.software.gaussian]
+command = "g16"
+
 [profiles.cluster]
+kind = "remote"
 ssh_host = "login.test"
 ssh_config = "{ssh_config}"
 scheduler = "torque"
@@ -755,7 +733,7 @@ allowed_queues = ["batch"]
 ''',
         encoding="utf-8",
     )
-    monkeypatch.setenv("TS_REMOTE_CONFIG", str(remote_config))
+    monkeypatch.setenv("TS_COMPUTE_CONFIG", str(remote_config))
     stale_before_submit = create_calculation_intent(
         workspace,
         _request(

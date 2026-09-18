@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
             payload = execute("research.validate", args.root)
         else:
             request = _load_request(args.request_file)
-            payload = execute("research.change", args.root, request)
+            payload = execute("research.change", args.root, {"request": request})
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     except (CommandError, ResearchKernelError, OSError, ValueError, json.JSONDecodeError) as exc:

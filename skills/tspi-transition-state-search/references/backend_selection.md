@@ -9,7 +9,7 @@ Consider:
 
 - whether the method can represent charge, spin, excited state, metal center,
   multireference character, solvent, and constraints;
-- whether the task produces the observation needed to discriminate Claims;
+- whether the task produces the Finding needed to discriminate Claims;
 - candidate quality and atom mapping;
 - whether lower-cost exploration is scientifically informative rather than only
   cheaper;

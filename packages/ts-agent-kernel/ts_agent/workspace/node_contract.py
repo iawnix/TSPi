@@ -8,15 +8,12 @@ from ts_agent.io import sha256_json
 
 
 NODE_CONTRACT_FIELDS = (
-    "node_id",
-    "phase_ref",
+    "id",
+    "phase_id",
     "title",
     "objective",
-    "deliverable",
-    "dependency_refs",
-    "primary_claim_ref",
-    "claim_refs",
-    "created_by_decision",
+    "dependency_ids",
+    "claim_ids",
     "created_at",
 )
 
@@ -25,7 +22,7 @@ def node_contract_snapshot(node: dict[str, Any]) -> dict[str, Any]:
     """Return the immutable scope fields that define why a Node exists."""
 
     return {
-        "schema_version": "ts-node-contract/1",
+        "schema_version": "research-node-contract/1",
         **{field: node.get(field) for field in NODE_CONTRACT_FIELDS},
     }
 

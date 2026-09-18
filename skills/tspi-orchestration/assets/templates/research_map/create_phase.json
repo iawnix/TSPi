@@ -1,0 +1,6 @@
+{
+  "type": "create_phase",
+  "id": "phase_new",
+  "title": "${PHASE_TITLE}",
+  "objective": "${PHASE_OBJECTIVE}"
+}

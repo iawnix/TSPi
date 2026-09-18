@@ -104,6 +104,10 @@ class ResearchKernel:
 
         if not isinstance(change_set, dict):
             raise ResearchKernelError("ChangeSet must be an object")
+        allowed_fields = {"schema_version", "rationale", "basis_refs", "expected_revision", "operations"}
+        unknown_fields = sorted(set(change_set) - allowed_fields)
+        if unknown_fields:
+            raise ResearchKernelError("ChangeSet contains unsupported fields: " + ", ".join(unknown_fields))
         operations = change_set.get("operations")
         if not isinstance(operations, list) or not operations:
             raise ResearchKernelError("ChangeSet.operations must be a non-empty list")
@@ -168,15 +172,61 @@ class ResearchKernel:
 
 
 def create_research_map(root: str | Path, map_id: str, title: str, created_at: str) -> ResearchMap:
+    """Create a complete canonical workspace containing one ResearchMap."""
+
+    from ts_agent.io import write_json
+    from ts_agent.workspace.identity import ensure_workspace_identity
+    from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
+
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ResearchKernelError("workspace root cannot contain a symbolic link")
     research_map = ResearchMap(map_id=map_id, title=title, created_at=created_at)
-    kernel = ResearchKernel(root)
-    research_map_path = kernel.path
-    if research_map_path.exists():
-        raise ResearchKernelError(f"ResearchMap already exists: {research_map_path}")
+    kernel = ResearchKernel(root_path)
+    legacy_names = (
+        "research_state.json", "phases.json", "claims.json", "claim_relations.json",
+        "research_nodes.json", "observations.json", "proof_specs.json",
+        "validation_results.json", "findings.json", "gate_specs.json", "gate_results.json",
+        "decision_log.jsonl", "transaction_log.jsonl",
+    )
+    legacy = [name for name in legacy_names if (root_path / name).exists() or (root_path / name).is_symlink()]
+    if legacy:
+        raise ResearchKernelError("legacy research files are not supported: " + ", ".join(sorted(legacy)))
+    for name in ("workspace.json", MAP_FILE, TRANSACTION_FILE):
+        path = root_path / name
+        if has_symlink_component(root_path, path) or path.is_symlink():
+            raise ResearchKernelError(f"workspace path contains a symbolic link: {name}")
+        if path.exists():
+            raise ResearchKernelError(f"workspace already contains canonical state: {name}")
+    root_path.mkdir(parents=True, exist_ok=True)
+    for dirname in ("nodes", "operations", "scratch", "inputs"):
+        directory = root_path / dirname
+        if has_symlink_component(root_path, directory) or directory.is_symlink():
+            raise ResearchKernelError(f"workspace path contains a symbolic link: {dirname}")
+        if directory.exists() and not directory.is_dir():
+            raise ResearchKernelError(f"workspace path is not a directory: {dirname}")
+        directory.mkdir(parents=True, exist_ok=True)
+    identity = ensure_workspace_identity(root_path)
+    write_json(
+        root_path / "workspace.json",
+        {
+            "schema_version": "research-workspace/1",
+            "workspace_id": identity["workspace_id"],
+            "kernel_protocol": "research-map/1",
+            "created_at": created_at,
+        },
+    )
+    (root_path / TRANSACTION_FILE).touch(mode=0o600)
     return kernel.save(research_map)
 
 
 def _apply_operation(research_map: ResearchMap, operation: dict[str, Any]) -> list[str]:
+    from ts_agent.workspace.operation_registry import validate_input_operation_keys
+
+    try:
+        validate_input_operation_keys(operation)
+    except Exception as exc:
+        raise ResearchKernelError(str(exc)) from exc
     kind = operation.get("type")
     created_at = str(operation.get("created_at") or _now())
     if kind == "create_phase":
@@ -289,8 +339,12 @@ def _apply_operation(research_map: ResearchMap, operation: dict[str, Any]) -> li
         )
         return []
     if kind == "set_focus":
-        research_map.focus_claim_ids = _strings(operation.get("claim_ids", []), "claim_ids")
-        research_map.focus_node_ids = _strings(operation.get("node_ids", []), "node_ids")
+        claim_ids = _strings(operation.get("claim_ids", []), "claim_ids")
+        node_ids = _strings(operation.get("node_ids", []), "node_ids")
+        _require_existing(claim_ids, research_map.claims, "focus claim_ids")
+        _require_existing(node_ids, research_map.nodes, "focus node_ids")
+        research_map.focus_claim_ids = claim_ids
+        research_map.focus_node_ids = node_ids
         return []
     raise ResearchKernelError(f"unsupported ResearchMap operation: {kind}")
 
@@ -306,6 +360,12 @@ def _strings(value: Any, key: str) -> list[str]:
     if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value):
         raise ResearchKernelError(f"operation field {key} must be a list of non-empty strings")
     return [item.strip() for item in value]
+
+
+def _require_existing(refs: list[str], collection: dict[str, Any], label: str) -> None:
+    missing = sorted(set(refs) - set(collection))
+    if missing:
+        raise ResearchKernelError(f"{label} references unknown ids: {', '.join(missing)}")
 
 
 def _now() -> str:

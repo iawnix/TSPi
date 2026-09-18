@@ -39,7 +39,7 @@ When notifications are enabled, the request shape is:
 
 Allowed events are `progress`, `node_completed`, `calculation_failed`,
 `calculation_ambiguous`, and `study_completed`. Attachments must be existing
-regular files listed by the exact `ts-report-package/4` manifest under
+regular files listed by the exact `ts-report-package/5` manifest under
 `reports/<packageName>/`. A Render file below `nodes/` must first be included by
 logical artifact ID when building the report package.
 

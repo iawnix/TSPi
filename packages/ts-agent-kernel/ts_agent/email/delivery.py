@@ -22,7 +22,7 @@ from email.utils import formatdate
 from pathlib import Path
 from typing import Any
 
-from ts_agent.workspace.context import compile_context
+from ts_agent.report.context import collect_report_context
 
 from .artifacts import bounded_content, bounded_text, sha256_json, sha256_path, workspace_path, workspace_root
 from .errors import NotificationError
@@ -97,7 +97,7 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
         workspace,
         request.get("report_refs", []),
     )
-    workspace_report = compile_context(workspace, mode="frontier")
+    workspace_report = collect_report_context(workspace)
     workspace_id = bounded_text(workspace_report.get("workspace_id"), "workspace_id", 128)
     workspace_revision = bounded_text(
         workspace_report.get("workspace_revision"),
@@ -473,7 +473,7 @@ def _report_manifest_binding(workspace: Path, ref: str, path: Path) -> dict[str,
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"report package manifest is invalid: {manifest_ref}") from exc
-    if not isinstance(manifest, dict) or manifest.get("schema_version") != "ts-report-package/4":
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != "ts-report-package/5":
         raise ValueError(f"report package manifest has an unsupported schema: {manifest_ref}")
     files = manifest.get("files")
     if not isinstance(files, list):
@@ -715,7 +715,7 @@ def _revalidate_notification_inputs(
     current_config = load_notification_config(config.source)
     if current_config.digest != config.digest:
         raise ValueError("notification configuration changed after preflight")
-    current_report = compile_context(workspace, mode="frontier")
+    current_report = collect_report_context(workspace)
     if current_report.get("workspace_revision") != workspace_revision:
         raise ValueError("workspace revision changed after notification preflight")
     for record in attachment_records:

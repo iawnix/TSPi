@@ -34,7 +34,7 @@ def test_remote_diagnostic_modes_exclude_redundant_cluster_alias() -> None:
 def _profile(tmp_path: Path):
     ssh_config = tmp_path / "ssh_config"
     ssh_config.write_text("Host test-login\n  HostName login.test\n", encoding="utf-8")
-    config = tmp_path / "remote.toml"
+    config = tmp_path / "compute.toml"
     config.write_text(
         f'''default_profile = "cluster"
 
@@ -180,7 +180,7 @@ def test_remote_profile_rejects_unsafe_scratch_roots(tmp_path: Path, scratch_roo
 def test_scheduler_commands_default_to_remote_path_lookup(tmp_path: Path) -> None:
     ssh_config = tmp_path / "ssh_config"
     ssh_config.write_text("Host test-login\n  HostName login.test\n", encoding="utf-8")
-    config = tmp_path / "remote.toml"
+    config = tmp_path / "compute.toml"
     config.write_text(
         f'''default_profile = "cluster"
 

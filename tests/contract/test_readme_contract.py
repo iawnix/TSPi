@@ -79,10 +79,7 @@ def test_public_document_set_covers_install_architecture_and_maintenance() -> No
     for heading in [
         "## Component Responsibilities",
         "## Scientific State Model",
-        "## Decision Transaction",
-        "## Validation Engine",
-        "## Context Compiler",
-        "## Read-Only Web Projection",
+        "## ChangeSets And Browser Clients",
         "## TSPi Lifecycle",
         "## Isolated Agent Runtimes",
         "## Deterministic Tool Plane",
@@ -94,7 +91,7 @@ def test_public_document_set_covers_install_architecture_and_maintenance() -> No
     maintainer = MAINTAINER.read_text(encoding="utf-8")
     for heading in [
         "## Scientific Model",
-        "## Validation Engine Rules",
+        "## ResearchMap Validation Rules",
         "## Deterministic Tool Contracts",
         "## Documentation Ownership",
         "## Contract Change Matrix",
@@ -167,22 +164,14 @@ def test_workspace_docs_match_bootstrap_canonical_file_names() -> None:
 
     required = [
         "workspace.json",
-        "research_state.json",
-        "phases.json",
-        "claims.json",
-        "claim_relations.json",
-        "research_nodes.json",
-        "observations.json",
-        "proof_specs.json",
-        "validation_results.json",
-        "findings.json",
-        "acceptances/<acceptance_id>.json",
+        "research_map.json",
+        "transactions.jsonl",
+        "nodes/<node_id>/",
     ]
     for text in (architecture, contract):
         for name in required:
             assert name in text
-    assert "complete workspace is validated without canonical rewrites" in contract
-    assert "Bootstrap does not rewrite unsupported state" in contract
+    assert "Bootstrap rejects an unsupported workspace without rewriting it" in contract
 
 
 def test_skill_routes_details_through_focused_references() -> None:
@@ -244,52 +233,42 @@ def test_final_report_builder_projects_phase_node_and_scientific_objects() -> No
 
     for phrase in [
         "Research Roadmap",
-        "Scientific Conclusions",
         "ResearchNode Records",
-        "Semantic Observations",
-        "Frozen Validation",
-        "Claim Acceptance",
+        "## Findings",
+        "## Gates",
         "Operational Follow-up",
-        "phase['phase_id']",
-        "claim['claim_id']",
-        "node['node_id']",
-        "observation['observation_id']",
-        "spec['proof_id']",
-        "finding['finding_id']",
-        "acceptance['acceptance_id']",
+        "phase[\"id\"]",
+        "claim['id']",
+        "node['id']",
+        "finding['id']",
+        "gate['id']",
     ]:
         assert phrase in text
     for removed in ('"act_id"', "evidence_id", "gate_result_id", "required_gates"):
         assert removed not in text
 
 
-def test_decision_assets_are_generic_operation_examples() -> None:
-    decision_dir = TEMPLATES / "decision"
-    readme = (decision_dir / "README.md").read_text(encoding="utf-8")
-    files = {path.name for path in decision_dir.glob("*.json")}
+def test_research_map_assets_are_current_operation_examples() -> None:
+    map_dir = TEMPLATES / "research_map"
+    files = {path.name for path in map_dir.iterdir() if path.is_file()}
 
-    assert "not a prescribed research sequence" in readme
-    assert "operations` array accepted by" in readme
     assert files == {
-        "accept_claim.json",
-        "complete_node.json",
-        "create_phase.json",
+        "README.md",
         "create_claim.json",
-        "evaluate_proof.json",
+        "create_finding.json",
+        "create_gate.json",
+        "create_node.json",
+        "create_phase.json",
         "evaluate_gate.json",
-        "freeze_gate.json",
-        "freeze_proof_spec.json",
-        "record_finding.json",
-        "record_observation.json",
-        "record_observation_candidate.json",
         "relate_claims.json",
-        "resolve_finding.json",
+        "set_claim_status.json",
         "set_focus.json",
-        "start_node.json",
-        "update_claim.json",
+        "set_node_state.json",
     }
-    for path in decision_dir.glob("*.json"):
+    for path in map_dir.glob("*.json"):
         value = json.loads(path.read_text(encoding="utf-8"))
-        assert isinstance(value.get("op"), str)
+        assert isinstance(value.get("type"), str)
+        assert "op" not in value
+        assert "local_ref" not in value
         assert "decision_id" not in value
         assert "context_ref" not in value

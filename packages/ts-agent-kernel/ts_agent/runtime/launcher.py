@@ -110,13 +110,11 @@ class Installation:
     root: Path
     package_root: Path
     workspaces_root: Path
-    remote_config_default: Path
     notification_config_default: Path
     runtime_home: Path
     runtime_manifest: Path
     env_root: Path
     process_cache_root: Path
-    local_config_default: Path | None = None
     compute_config_default: Path | None = None
     model_icons_config: Path | None = None
 
@@ -143,7 +141,7 @@ The App Server Host is managed by systemd; use systemctl to start, stop, restart
 --gateway exposes one attached session as a loopback HTTP/SSE browser adapter.
 --standalone is an isolated maintenance mode and does not share App Server sessions.
 Remote computation uses the installation-owned .pi/compute.toml profile when
-present; .pi/remote.toml remains a compatible fallback.
+present. Local and remote profiles share this one configuration.
 Continue an exact conversation with --session-id <id>, or the latest with -c.
 TSPi loads only the validated Package selected by .pi/packages/tspi/current.
 Package development runs separately in the authored checkout.
@@ -258,13 +256,11 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
         root=root,
         package_root=expected_agent,
         workspaces_root=_configured_workspace_root(root),
-        remote_config_default=root / ".pi" / "remote.toml",
         notification_config_default=root / ".pi" / "notifications.toml",
         runtime_home=runtime_home,
         runtime_manifest=runtime_home / "env.json",
         env_root=root / ".agents" / "envs" / "tspi",
         process_cache_root=root / ".pi" / "runtime-cache",
-        local_config_default=root / ".pi" / "local.toml",
         compute_config_default=root / ".pi" / "compute.toml",
         model_icons_config=root / MODEL_ICON_CONFIG_RELATIVE,
     )
@@ -462,17 +458,15 @@ def _atomic_write_json(path: Path, value: dict) -> None:
 
 
 def configure_remote(installation: Installation) -> None:
-    configured = os.environ.get("TS_REMOTE_CONFIG")
+    configured = os.environ.get("TS_COMPUTE_CONFIG")
     if not configured:
         if installation.compute_config_default and installation.compute_config_default.is_file():
             configured = str(installation.compute_config_default)
-        elif installation.remote_config_default.is_file():
-            configured = str(installation.remote_config_default)
     if not configured:
-        os.environ.pop("TS_REMOTE_CONFIG", None)
+        os.environ.pop("TS_COMPUTE_CONFIG", None)
         os.environ["TS_REMOTE_DISPLAY_TARGET"] = "not configured"
         return
-    path = _require_config_file(configured, "TS_REMOTE_CONFIG")
+    path = _require_config_file(configured, "TS_COMPUTE_CONFIG")
     try:
         with path.open("rb") as handle:
             config = tomllib.load(handle)
@@ -491,7 +485,7 @@ def configure_remote(installation: Installation) -> None:
         scheduler = str(profile.get("scheduler", "torque")).title()
     except (OSError, TypeError, ValueError, tomllib.TOMLDecodeError) as exc:
         raise TSPiHostError(f"invalid remote configuration: {path}: {exc}") from exc
-    os.environ["TS_REMOTE_CONFIG"] = str(path)
+    os.environ["TS_COMPUTE_CONFIG"] = str(path)
     os.environ["TS_REMOTE_DISPLAY_TARGET"] = f"{host} · {scheduler}"
 
 
@@ -610,9 +604,9 @@ def _require_config_file(value: str, label: str) -> Path:
 
 
 def check_remote(installation: Installation) -> int:
-    configured = os.environ.get("TS_REMOTE_CONFIG")
+    configured = os.environ.get("TS_COMPUTE_CONFIG")
     if not configured:
-        expected = installation.compute_config_default or installation.remote_config_default
+        expected = installation.compute_config_default or installation.root / ".pi" / "compute.toml"
         print(f"TSPi: remote configuration is missing: {expected}", file=sys.stderr)
         return 1
     completed = subprocess.run(
@@ -676,10 +670,6 @@ def configure_process_environment(installation: Installation, workspace: Path, w
     os.environ["TSPI_INSTALL_ROOT"] = str(installation.root)
     os.environ["TS_WORKSPACE_ROOT"] = str(workspace)
     os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / ".pi" / "agent")
-    if installation.local_config_default and installation.local_config_default.is_file():
-        os.environ["TS_LOCAL_CONFIG"] = str(installation.local_config_default)
-    else:
-        os.environ.pop("TS_LOCAL_CONFIG", None)
     if installation.compute_config_default and installation.compute_config_default.is_file():
         os.environ["TS_COMPUTE_CONFIG"] = str(installation.compute_config_default)
     else:
@@ -702,10 +692,6 @@ def configure_host_process_environment(installation: Installation) -> None:
     os.environ["TS_WORKSPACE_ROOT"] = str(installation.workspaces_root)
     os.environ["TSPI_WORKSPACE_ROOT"] = str(installation.workspaces_root)
     os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / ".pi" / "agent")
-    if installation.local_config_default and installation.local_config_default.is_file():
-        os.environ["TS_LOCAL_CONFIG"] = str(installation.local_config_default)
-    else:
-        os.environ.pop("TS_LOCAL_CONFIG", None)
     python_cache = installation.process_cache_root / "python" / "host"
     pytest_cache = installation.process_cache_root / "pytest" / "host"
     for path in (installation.process_cache_root, python_cache.parent, pytest_cache.parent, python_cache, pytest_cache):

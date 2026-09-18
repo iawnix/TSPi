@@ -414,21 +414,21 @@ function agentRunOwnerRef(root, task, nodeRefs, ownerClaimRef) {
 }
 
 function workspaceContainsNode(root, nodeRef) {
-  const registryPath = resolve(root, "research_nodes.json");
-  if (!existsSync(registryPath) || lstatSync(registryPath).isSymbolicLink()) return false;
-  const registry = JSON.parse(readFileSync(registryPath, "utf8"));
-  return registry.schema_version === "ts-research-node-registry/2"
-    && Array.isArray(registry.nodes)
-    && registry.nodes.some((item) => isPlainObject(item) && item.node_id === nodeRef);
+  const mapPath = resolve(root, "research_map.json");
+  if (!existsSync(mapPath) || lstatSync(mapPath).isSymbolicLink()) return false;
+  const map = JSON.parse(readFileSync(mapPath, "utf8"));
+  return map.schema_version === "research-map/1"
+    && Array.isArray(map.nodes)
+    && map.nodes.some((item) => isPlainObject(item) && item.id === nodeRef);
 }
 
 function workspaceContainsClaim(root, claimRef) {
-  const registryPath = resolve(root, "claims.json");
-  if (!existsSync(registryPath) || lstatSync(registryPath).isSymbolicLink()) return false;
-  const registry = JSON.parse(readFileSync(registryPath, "utf8"));
-  return registry.schema_version === "ts-claim-registry/5"
-    && Array.isArray(registry.claims)
-    && registry.claims.some((item) => isPlainObject(item) && item.claim_id === claimRef);
+  const mapPath = resolve(root, "research_map.json");
+  if (!existsSync(mapPath) || lstatSync(mapPath).isSymbolicLink()) return false;
+  const map = JSON.parse(readFileSync(mapPath, "utf8"));
+  return map.schema_version === "research-map/1"
+    && Array.isArray(map.claims)
+    && map.claims.some((item) => isPlainObject(item) && item.id === claimRef);
 }
 
 function assertWithin(root, path) {

@@ -147,7 +147,7 @@ the App Server records.
 TSPi owns the semantic source for the canonical ResearchMap consumed by Web.
 The map is a public, versioned JSON boundary. The current
   `research-map/1` is the canonical ResearchMap payload. It replaces the old
-  workspace-view and graph pair; there is no compatibility projection layer.
+  workspace-view and graph pair; clients consume this serialization directly.
 
 The minimum Web boundary is:
 

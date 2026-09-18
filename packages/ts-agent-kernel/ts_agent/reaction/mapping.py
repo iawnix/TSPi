@@ -141,7 +141,7 @@ def _normalise_atoms(value: Any, label: str) -> list[list[str]]:
     return result
 
 
-def mapping_observation_candidates(
+def mapping_finding_candidates(
     validation: dict[str, Any], node_id: str, sources: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Derive small factual candidates without assigning reaction identity."""
@@ -152,7 +152,7 @@ def mapping_observation_candidates(
         ("mapping_count", "pair_count", "integer"),
     )
     return {
-        "schema_version": "ts-analysis-observation-candidates/1",
+        "schema_version": "ts-analysis-finding-candidates/1",
         "node_id": node_id,
         "capability": "reaction.mapping.validate",
         "capability_version": "1",

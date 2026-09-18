@@ -46,11 +46,11 @@ def set_node_dispatch(root: str | Path, node_id: str, operation: str, rationale:
     with workspace_lock(workspace):
         if not isinstance(node_id, str) or not NODE_ID.fullmatch(node_id):
             raise ContractError("node dispatch requires an exact node_id")
-        matches = [node for node in workspace_node_records(workspace) if node["node_id"] == node_id]
+        matches = [node for node in workspace_node_records(workspace) if node["id"] == node_id]
         if len(matches) != 1:
             raise ContractError(f"node dispatch requires an existing unique Node: {node_id}")
         node = matches[0]
-        if node["status"] != "open":
+        if node["state"] == "closed":
             raise ContractError("node dispatch management requires an open Node; continue terminal research in a new dependent Node")
         history = dispatch_history(workspace, node_id)
         if history and history[-1]["operation"] == operation:

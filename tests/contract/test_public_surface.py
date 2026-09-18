@@ -20,7 +20,7 @@ def test_retired_public_terms_report_their_line(term: str) -> None:
 def test_scientific_vocabulary_and_execution_terms_remain_open() -> None:
     assert lint_text("Reaction coordinate, catalytic cycle, and competing hypotheses.\n"
                      "A scheduler stage and transaction commit are operational details.\n"
-                     "A frozen ProofSpec evaluates Observations.") == []
+                     "A ClaimGate evaluates FactFindings.") == []
 
 
 def test_private_code_and_historical_docs_are_outside_public_lint(tmp_path: Path) -> None:

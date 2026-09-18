@@ -17,7 +17,7 @@ def test_capability_catalog_keeps_adapters_separate_from_readiness() -> None:
 
     assert catalog["schema_version"] == "ts-capability-catalog/1"
     assert catalog["readiness"]["state"] == "not_probed"
-    assert "ts_remote diagnostics" in catalog["readiness"]["meaning"]
+    assert "transport readiness" in catalog["readiness"]["meaning"]
     assert set(BACKEND_TASK_INPUT_ROLES) == {
         "gaussian",
         "xtb",

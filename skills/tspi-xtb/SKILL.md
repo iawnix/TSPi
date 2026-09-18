@@ -8,32 +8,17 @@ description: Run and interpret xTB and CREST calculations for conformers, geomet
 [Chinese version](SKILL.zh-CN.md)
 
 Use this Skill for xTB or CREST calculations. Load `tspi-orchestration` for
-calculation, artifact, and state contracts. Load `tspi-transition-state-search`
-when the task is choosing a candidate-generation strategy.
+calculation, Artifact, and ResearchMap contracts, and
+`tspi-transition-state-search` when choosing candidate generation.
 
-xTB provides approximate electronic-structure calculations for exploration and
-characterization. CREST supplies conformer ensembles through an xTB-based
-search. Assess transition-state and mechanism Claims using stationary-point,
-mode, and connectivity evidence at the chosen level of theory.
+Bind `xyz` and, for scans or MD, `control` inputs as logical Artifacts. Keep
+method, charge, unpaired electrons, solvent, accuracy, and optimization level
+in the calculation intent. Check SCC convergence, optimization status,
+frequency data, scan completeness, and trajectory completeness as applicable.
+Treat conformer count, energy table, and ensemble geometry as separate facts.
+Record verified values as `FactFinding`; record missing outputs, failures, or
+method limitations as `IssueFinding` when they affect the Node or Claim.
 
-## Operating Rules
-
-- Bind `xyz` and, for xTB scan/MD, `control` inputs as logical artifacts.
-- Choose method, charge, unpaired electrons, solvent model, accuracy, and
-  optimization level as part of the scientific intent. Record changes to these
-  settings as a recalculation with an updated intent.
-- Check the required output set and parser summary, including SCC convergence
-  when applicable, optimization status, frequency data, scan completeness, or
-  trajectory completeness.
-- Before remote xTB or CREST submission, require the configured software profile
-  to pass `TSPi --check-remote`. Treat a missing command, activation script, or
-  runtime dependency as an operational failure; do not install or repair cluster
-  software from a calculation job.
-- Treat conformer count, energy table, and ensemble geometry as separate facts.
-  Select a conformer through a stated Claim or Node rationale.
-- Promote only verified parser values and primary artifacts through `ts_change`.
-
-## References
-
-- Executor inputs, settings, and artifacts: [xtb_executor.md](references/xtb_executor.md)
-- CREST ensemble checks: [crest_ensemble.md](references/crest_ensemble.md)
+For remote work, select a configured environment with `ts_environment` or
+`/compute`; a missing command or activation script is an operational failure,
+not a reason to install software from the job. Read [xtb_executor.md](references/xtb_executor.md) and [crest_ensemble.md](references/crest_ensemble.md).

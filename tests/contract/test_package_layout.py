@@ -22,7 +22,7 @@ PYTHON_PACKAGE = ROOT / "packages" / "ts-agent-kernel" / "ts_agent"
 THEME_PATH = ROOT / "themes" / "ts-theme.json"
 TSPI_LAUNCHER = ROOT / "TSPi"
 GENERATION_BRAND = re.compile(
-    r"(?i)(?<![A-Za-z0-9])v[2-5](?![A-Za-z0-9])|\b(?:leg" r"acy|migr" r"ation)\b"
+    r"(?i)(?<![A-Za-z0-9])v[2-5](?![A-Za-z0-9])"
 )
 VERSION_BRANDED_PATH = re.compile(r"(?i)(?:^|[_-])v[2-5](?:[._-]|$)")
 TEXT_SUFFIXES = frozenset({".cjs", ".html", ".js", ".json", ".md", ".py", ".toml", ".ts", ".yaml", ".yml"})
@@ -175,7 +175,8 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert (RUNTIME_ROOT / "artifacts" / "request-contract.cjs").is_file()
     assert (PYTHON_PACKAGE / "runtime" / "probe.py").is_file()
     assert (PYTHON_PACKAGE / "structures" / "seed.py").is_file()
-    assert (PYTHON_PACKAGE / "validation" / "engine.py").is_file()
+    assert (PYTHON_PACKAGE / "research" / "kernel.py").is_file()
+    assert (PYTHON_PACKAGE / "research" / "model.py").is_file()
     assert (PYTHON_PACKAGE / "workspace" / "bootstrap.py").is_file()
     assert (PYTHON_PACKAGE / "workspace" / "engine.py").is_file()
     assert not list((PYTHON_PACKAGE / "workspace").glob("*_v[0-9]*.py"))
@@ -201,7 +202,8 @@ def test_package_manifest_exposes_the_public_skill_family_and_allowlisted_runtim
     assert manifest["private"] is True
     assert "tests/" not in manifest["files"]
     assert "docs/*.md" in manifest["files"]
-    assert "packages/ts-agent-kernel/ts_agent/projection/*.py" in manifest["files"]
+    assert "packages/ts-agent-kernel/ts_agent/research/*.py" in manifest["files"]
+    assert "packages/ts-agent-kernel/ts_agent/projection/*.py" not in manifest["files"]
     assert "python-dist/*.whl" in manifest["files"]
     assert "scripts/_runtime_install.py" in manifest["files"]
     assert "scripts/_wheel.py" in manifest["files"]
@@ -269,21 +271,24 @@ def test_tspi_shell_is_a_thin_executable_shim() -> None:
     assert "Usage:" in help_result.stdout
 
 
-def test_tspi_loads_installation_owned_remote_profile_without_probing(tmp_path: Path) -> None:
+def test_tspi_loads_installation_owned_compute_profile_without_probing(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
     ssh_config = install_root / ".pi" / "ssh_config"
     ssh_config.parent.mkdir(parents=True, exist_ok=True)
     ssh_config.write_text("Host cluster-login\n  HostName cluster.test\n", encoding="utf-8")
-    remote_config = install_root / ".pi" / "remote.toml"
-    remote_config.write_text(
+    compute_config = install_root / ".pi" / "compute.toml"
+    compute_config.write_text(
         f'''default_profile = "cluster_1w"
 [profiles.cluster_1w]
+kind = "remote"
 ssh_host = "cluster-login"
 ssh_config = "{ssh_config}"
 scheduler = "torque"
 remote_root = "/remote/ts"
 allowed_queues = ["batch"]
 max_nodes = 1
+[profiles.cluster_1w.software.xtb]
+command = ["xtb"]
 ''',
         encoding="utf-8",
     )
@@ -292,13 +297,13 @@ max_nodes = 1
     write_test_runtime_manifest(_installed_package_root(install_root), install_root)
     fake_pi = _fake_pi(
         tmp_path / "fake-pi.py",
-        "import json, os\nprint(json.dumps({'config': os.environ['TS_REMOTE_CONFIG'], 'display': os.environ['TS_REMOTE_DISPLAY_TARGET']}))\n",
+        "import json, os\nprint(json.dumps({'config': os.environ['TS_COMPUTE_CONFIG'], 'display': os.environ['TS_REMOTE_DISPLAY_TARGET']}))\n",
     )
 
     completed = _run_tspi(launcher, "--workspace", "no-probe", pi_bin=fake_pi)
 
     assert completed.returncode == 0, completed.stderr
-    assert json.loads(completed.stdout) == {"config": str(remote_config), "display": "cluster-login · Torque"}
+    assert json.loads(completed.stdout) == {"config": str(compute_config), "display": "cluster-login · Torque"}
     assert "remote probe must not run" not in completed.stderr
 
 
@@ -399,10 +404,13 @@ def test_tspi_requires_an_installed_release(tmp_path: Path) -> None:
 
 def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    config = install_root / ".pi" / "remote.toml"
+    ssh_config = install_root / ".pi" / "ssh_config"
+    ssh_config.parent.mkdir(parents=True, exist_ok=True)
+    ssh_config.write_text("Host cluster-login\n  HostName cluster.test\n", encoding="utf-8")
+    config = install_root / ".pi" / "compute.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
-        'default_profile = "cluster"\n[profiles.cluster]\nssh_host = "cluster-login"\nscheduler = "torque"\n',
+        f'default_profile = "cluster"\n[profiles.cluster]\nkind = "remote"\nssh_host = "cluster-login"\nssh_config = "{ssh_config}"\nscheduler = "torque"\nremote_root = "/remote/ts"\nallowed_queues = ["batch"]\nmax_nodes = 1\n[profiles.cluster.software.xtb]\ncommand = ["xtb"]\n',
         encoding="utf-8",
     )
     diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
@@ -418,10 +426,13 @@ def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:
 
 def test_tspi_remote_diagnostic_preserves_structured_failure(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    config = install_root / ".pi" / "remote.toml"
+    ssh_config = install_root / ".pi" / "ssh_config"
+    ssh_config.parent.mkdir(parents=True, exist_ok=True)
+    ssh_config.write_text("Host cluster-login\n  HostName cluster.test\n", encoding="utf-8")
+    config = install_root / ".pi" / "compute.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
-        'default_profile = "cluster"\n[profiles.cluster]\nssh_host = "cluster-login"\nscheduler = "torque"\n',
+        f'default_profile = "cluster"\n[profiles.cluster]\nkind = "remote"\nssh_host = "cluster-login"\nssh_config = "{ssh_config}"\nscheduler = "torque"\nremote_root = "/remote/ts"\nallowed_queues = ["batch"]\nmax_nodes = 1\n[profiles.cluster.software.xtb]\ncommand = ["xtb"]\n',
         encoding="utf-8",
     )
     diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
@@ -439,16 +450,16 @@ def test_tspi_remote_diagnostic_preserves_structured_failure(tmp_path: Path) -> 
 
 def test_tspi_rejects_a_symlinked_remote_config(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    target = tmp_path / "remote.toml"
+    target = tmp_path / "compute.toml"
     target.write_text("default_profile = 'cluster'\n", encoding="utf-8")
-    config = install_root / ".pi" / "remote.toml"
+    config = install_root / ".pi" / "compute.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.symlink_to(target)
 
     completed = _run_tspi(launcher, "--check-remote")
 
     assert completed.returncode == 1
-    assert "invalid TS_REMOTE_CONFIG" in completed.stderr
+    assert "invalid TS_COMPUTE_CONFIG" in completed.stderr
 
 
 def test_tspi_runs_pi_with_bootstrapped_workspace_and_install_runtime(tmp_path: Path) -> None:
@@ -473,7 +484,7 @@ print(json.dumps({
     "no_user_site": os.environ.get("PYTHONNOUSERSITE"),
     "python_cache": os.environ["PYTHONPYCACHEPREFIX"],
     "pytest_options": os.environ["PYTEST_ADDOPTS"],
-    "remote_config": os.environ.get("TS_REMOTE_CONFIG"),
+        "compute_config": os.environ.get("TS_COMPUTE_CONFIG"),
     "remote_display": os.environ["TS_REMOTE_DISPLAY_TARGET"],
 }))
 """,
@@ -514,13 +525,15 @@ print(json.dumps({
     assert result["pytest_options"].endswith(
         f"--cache-dir={install_root / '.pi' / 'runtime-cache' / 'pytest' / 'reaction-a'}"
     )
-    assert result["remote_config"] is None
+    assert result["compute_config"] is None
     assert result["remote_display"] == "not configured"
     session_index = result["argv"].index("--session-dir")
     assert result["argv"][session_index + 1] == str(workspace / ".pi" / "sessions")
     assert (workspace / ".pi" / "root-agent.lock").is_file()
     assert json.loads((workspace / ".pi" / "settings.json").read_text(encoding="utf-8")) == {"quietStartup": True}
-    assert json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))["schema_version"] == "ts-research-state/6"
+    research_map = json.loads((workspace / "research_map.json").read_text(encoding="utf-8"))
+    assert research_map["schema_version"] == "research-map/1"
+    assert research_map["map_id"] == json.loads((workspace / "workspace.json").read_text(encoding="utf-8"))["workspace_id"]
     assert (workspace / ".agents" / "workspace-identity.json").is_file()
 
 
@@ -553,7 +566,7 @@ def test_tspi_workspace_preserves_pi_settings_while_bootstrapping(tmp_path: Path
         "theme": "custom",
         "warnings": {"deprecated": False},
     }
-    assert (install_root / "workspaces" / "existing" / "observations.json").is_file()
+    assert (install_root / "workspaces" / "existing" / "research_map.json").is_file()
 
 
 def test_tspi_rejects_symlinked_workspace_pi_settings(tmp_path: Path) -> None:

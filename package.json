@@ -128,10 +128,6 @@
     "packages/ts-agent-kernel/ts_agent/report/*.py",
     "packages/ts-agent-kernel/ts_agent/runtime/*.py",
     "packages/ts-agent-kernel/ts_agent/structures/*.py",
-    "packages/ts-agent-kernel/ts_agent/validation/*.py",
-    "packages/ts-agent-kernel/ts_agent/validation/predicates/*.py",
-    "packages/ts-agent-kernel/ts_agent/validation/templates/builtin/*.json",
-    "packages/ts-agent-kernel/ts_agent/validation/acceptance_profiles/*.json",
     "packages/ts-agent-kernel/ts_agent/workspace/*.py",
     "packages/ts-agent-kernel/ts_agent/workspace/contracts/*.json",
     "python-dist/*.whl"

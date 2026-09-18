@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
 import re
 import subprocess
 import tempfile
@@ -179,7 +178,7 @@ def run_ase_neb(
     neb.interpolate(method=config.interpolation)
 
     if calculator_factory is None:
-        executable = os.environ.get("TS_ASE_NEB_XTB") or configured_backend_command("ase_neb_xtb", "xtb")
+        executable = configured_backend_command("ase_neb_xtb", "xtb")
 
         def calculator_factory(_index: int) -> Calculator:
             return XtbCliCalculator(

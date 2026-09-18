@@ -1,0 +1,7 @@
+{
+  "type": "evaluate_gate",
+  "gate_id": "gate_existing",
+  "verdict": "pass",
+  "message": "${EVALUATION_MESSAGE}",
+  "evidence_refs": ["finding_existing"]
+}

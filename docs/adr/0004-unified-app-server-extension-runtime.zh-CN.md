@@ -18,8 +18,8 @@
 Host context 创建的 protocol service。
 
 `ts-workflow-native` 是规范 server tool set，所有客户端共享其实现；现有 Pi presentation
-extension 仍然只属于 `--standalone`。新的 workflow 功能必须增加 server entry 和对应
-client projection，不得重新创建 per-client broker。
+extension 仍然只属于 `--standalone`。新的 workflow 功能必须增加 server entry 并复用
+shared command surface，不得重新创建 per-client broker。
 
 ## Provider 兼容性
 

@@ -54,8 +54,8 @@ broker。参阅[终端文档](docs/TERMINAL.zh-CN.md)、[中文架构](docs/ARCH
 ## 研究与远程计算
 
 安装时可以在统一的 `.pi/compute.toml` 中配置软件提供平台（使用
-`--compute-config` 导入已有文件）。旧的 `.pi/local.toml` 和
-`.pi/remote.toml` 仍然兼容。远程 profile 可用下面的命令验证：
+`--compute-config` 导入已有文件）。本地与远端 profile 都位于这一个文件中。
+远程 profile 可用下面的命令验证：
 
 ```bash
 ./TSPi --check-remote

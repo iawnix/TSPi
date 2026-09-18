@@ -35,7 +35,7 @@ geometries with an explicit arrangement and import the resulting XYZ.
 
 Use the initial geometry for follow-up optimization and characterization.
 Establish stationary-point, mode, and connectivity properties through Compute
-and the relevant ProofSpecs.
+and the relevant Gates.
 
 ## Compare Registered Structures
 
@@ -68,8 +68,8 @@ under `nodes/<node_id>/outputs/analysis/`. The document includes the expanded
 parameters, verdict, uncertainty, RMSD/internal-coordinate/stereochemical
 metrics, diagnostics, and provenance.
 
-This result is operational. Register any value used in a Claim or ProofSpec as a
-semantic Observation through a Decision, citing the verified analysis artifact.
+This result is operational. Register any value used in a Claim or Node outcome
+as a semantic Finding through `ts_change`, citing the verified analysis artifact.
 
 ## Import An Existing Input
 
@@ -107,4 +107,4 @@ Structure Seed, Structure Compare, and Import write deterministic activity
 journals whose `node_refs` are the only operation-to-Node link. Compute writes
 one `sub_n` run below its owning `calc_n` Attempt. Render, Report, and Notify
 have their own focused capability contracts. These records support diagnosis
-and reporting. Verify their underlying artifacts when recording Observations.
+and reporting. Verify their underlying artifacts when recording Findings.

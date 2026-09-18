@@ -38,17 +38,13 @@ def test_python_payload_digest_covers_code_and_runtime_data() -> None:
         "packages/ts-agent-kernel/ts_agent/__init__.py",
         "packages/ts-agent-kernel/ts_agent/compute/contracts/calculation_request.schema.json",
         "packages/ts-agent-kernel/ts_agent/path_safety.py",
-        "packages/ts-agent-kernel/ts_agent/validation/templates/builtin/classical-ts__1.json",
-        "packages/ts-agent-kernel/ts_agent/projection/provider.py",
-        "packages/ts-agent-kernel/ts_agent/projection/registry.py",
+        "packages/ts-agent-kernel/ts_agent/research/model.py",
+        "packages/ts-agent-kernel/ts_agent/research/kernel.py",
         "packages/ts-agent-kernel/ts_agent/workspace/artifacts.py",
         "packages/ts-agent-kernel/ts_agent/workspace/candidates.py",
-        "packages/ts-agent-kernel/ts_agent/workspace/claims.py",
-        "packages/ts-agent-kernel/ts_agent/workspace/contracts/change_request.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/attempt_intent_projection.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/attempt_result_projection.schema.json",
-        "packages/ts-agent-kernel/ts_agent/workspace/contracts/observation_candidates.schema.json",
-        "packages/ts-agent-kernel/ts_agent/workspace/contracts/proof_spec.schema.json",
+        "packages/ts-agent-kernel/ts_agent/workspace/contracts/finding_candidates.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/workspace.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/operational.py",
         "packages/ts-agent-kernel/ts_agent/workspace/operation_registry.py",
@@ -111,13 +107,13 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
                 "root=Path(ts_agent.__file__).resolve().parent; "
                 "print(json.dumps({'version': importlib.metadata.version('ts-agent-kernel'), "
                 "'schema': (root/'compute/contracts/calculation_request.schema.json').is_file(), "
-                "'candidate_schema': (root/'workspace/contracts/observation_candidates.schema.json').is_file(), "
+                "'candidate_schema': (root/'workspace/contracts/finding_candidates.schema.json').is_file(), "
                 "'candidate_module': (root/'workspace/candidates.py').is_file(), "
                 "'analysis_candidates': (root/'workspace/analysis_candidates.py').is_file(), "
                 "'reaction_mapping': (root/'reaction/mapping.py').is_file(), "
                 "'analysis_catalog': (root/'compute/analysis.py').is_file(), "
                 "'scientific_analysis': reaction['verdict'], "
-                "'projection_provider': (root/'projection/provider.py').is_file(), "
+                "'research_kernel': (root/'research/kernel.py').is_file(), "
                 "'web': (root/'web/static/app.js').is_file()}))"
             ),
         ],
@@ -138,6 +134,6 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
         "reaction_mapping": True,
         "analysis_catalog": True,
         "scientific_analysis": "valid",
-        "projection_provider": True,
+        "research_kernel": True,
         "web": False,
     }

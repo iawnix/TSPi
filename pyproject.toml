@@ -37,10 +37,6 @@ exclude = ["ts_agent.web", "ts_agent.web.*"]
 [tool.setuptools.package-data]
 "ts_agent.compute" = ["contracts/*.json"]
 "ts_agent.remote" = ["*.toml"]
-"ts_agent.validation" = [
-  "acceptance_profiles/*.json",
-  "templates/builtin/*.json",
-]
 "ts_agent.workspace" = ["contracts/*.json"]
 
 [tool.pytest.ini_options]

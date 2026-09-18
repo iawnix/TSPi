@@ -20,7 +20,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True)
     parser.add_argument("--output")
-    parser.add_argument("--package-dir", help="Write final_report.md, report_context.json, assets/, and email_summary.md.")
+    parser.add_argument("--package-dir", help="Write a ResearchMap-bound report package.")
     parser.add_argument("--exclude-activity-ref", action="append", default=[], help="Exclude the caller's in-flight report activity from the snapshot.")
     parser.add_argument("--asset-artifact-id", action="append", default=[], help="Copy one logical PNG/GIF artifact into the report package assets/ directory.")
     parser.add_argument("--json", action="store_true", help="Print the report package result as JSON.")

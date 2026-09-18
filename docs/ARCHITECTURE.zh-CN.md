@@ -35,6 +35,7 @@ system prompt 和经过验证的 server extension inventory。该 inventory 会�
 ```text
 research_map.json
 nodes/<node_id>/          # Attempt / Artifact 等执行记录
+inputs/                   # 工作区相对路径的输入 artifact
 transactions.jsonl        # Kernel 变更历史
 ```
 
@@ -106,7 +107,8 @@ TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、
 
 `TSPi --workspace <name>` 是连接 Host 的 Pi 原生 TUI 客户端，并在创建会话时传递
 `TSPI_SESSION_CWD`。TS Phone 通过同一组 service 列出或创建项目，并创建或切换会话，
-无需为每个项目再次连接或启动 Host。旧的 `--app-server --workspace <name>` 仅作为兼容路径。
+无需为每个项目再次连接或启动 Host。启动器通过原生 App Server 入口进入选定项目，
+不再维护第二套工作区启动路径。
 
 第一次执行 `TSPi --workspace <name>` 时，如果项目不存在，客户端会通过同一套经过校验
 的 bootstrap 初始化它；Host 不会创建未命名项目，必须由客户端明确指定合法名称。
@@ -132,10 +134,8 @@ cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
 
 ## 其他契约
 
-验证模板和 acceptance profile 位于
-`packages/ts-agent-kernel/ts_agent/validation/`，其中模板在
-`packages/ts-agent-kernel/ts_agent/validation/templates/`、profile 在
-`packages/ts-agent-kernel/ts_agent/validation/acceptance_profiles/`；`ts_calc` 对
+ChangeSet 的操作定义位于 `ResearchKernel` 使用的 ResearchMap operation catalog；
+`ts_calc` 对
 `execution_target.kind=local` 和 `execution_target.kind=remote` 使用同一套
 `prepare -> submit -> inspect -> collect -> parse` 生命周期。Research Kernel
 工作区始终是唯一规范存储：本地执行在 Attempt 的 execution 目录暂存输入并把输出

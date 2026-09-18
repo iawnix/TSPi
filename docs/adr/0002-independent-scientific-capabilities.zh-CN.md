@@ -16,7 +16,7 @@
 分析能力通过版本化 registry 公开。每项能力声明输入/输出 schema、适用范围、参数
 限制、生成文件和候选事实；实现位于 Kernel 的 `analysis/`，但能力不能选择下一步，
 也不能接受 Claim。结果绑定 Node、输入 digest 和生成文件，选定事实必须由 Root Agent
-核验后通过 `ts_change` 提升为 Observation 或 Finding。
+核验后通过 `ts_change` 创建 `FactFinding` 或 `IssueFinding`。
 
 `ts_manage` 的暂停/恢复是独立的操作回执链，不增加科学状态枚举；在途作业仍可查看、
 收集、解析和精确取消。`ts_calc` 对 local 和 remote 使用同一套生命周期，未知提交或
@@ -26,7 +26,7 @@
 
 支持的能力包括反应解析与守恒、映射候选、结构准备、Gaussian/IRC 证据、热化学、
 势垒、TST、受限分支比较和化学网络/能量曲线。分析文件写入 Node-owned artifact
-目录，候选事实可重算并绑定来源；报告和 Web 只读取 projection。
+目录，候选事实可重算并绑定来源；报告和 Web 直接读取规范 ResearchMap 序列化。
 
 首版不声称支持任意相关电子能解析、同位素 RRHO/KIE、构象系综或微观动力学。远程
 smoke 只证明软件衔接和传输，不证明真实反应机理。当前验证以源码、组件、包安装和

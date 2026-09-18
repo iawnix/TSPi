@@ -12,7 +12,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages/ts-agent-kernel"))
-from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
+from ts_agent.workspace import bootstrap_workspace
+from ts_agent.research import ResearchKernel
 from tests.unit.test_scientific_analysis import request
 from ts_agent.compute import import_calculation_artifact, create_calculation_intent, prepare_calculation, submit_calculation, calculation_status, collect_calculation, parse_calculation
 from ts_agent.compute.analysis import run_analysis
@@ -26,13 +27,33 @@ def xyz(root, node, name, content):
         "format": "xyz_structure", "input_name": name, "content": content, "charge": 0, "multiplicity": 1})["artifact"]["artifact_id"]
 
 
+def ensure_research_node(root, title: str, objective: str) -> str:
+    research_map = ResearchKernel(root).load()
+    existing = next((node for node in research_map.nodes.values() if node.title == title), None)
+    if existing is not None:
+        return existing.id
+    ordinal = len(research_map.nodes) + 1
+    phase_id = f"phase_{len(research_map.phases) + 1}"
+    claim_id = f"claim_{len(research_map.claims) + 1}"
+    node_id = f"node_{ordinal}"
+    ResearchKernel(root).apply({
+        "expected_revision": research_map.revision,
+        "operations": [
+            {"type": "create_phase", "id": phase_id, "title": "Remote integration smoke"},
+            {"type": "create_claim", "id": claim_id, "statement": f"The {title} software interface is usable."},
+            {"type": "create_node", "id": node_id, "title": title, "objective": objective, "phase_id": phase_id, "claim_ids": [claim_id]},
+        ],
+    })
+    return node_id
+
+
 def launch(root, profile, retry_capability=None):
     if root.exists():
         manifest = read_json(root / "smoke_manifest.json")
         if manifest["profile"] != profile:
             raise ValueError("existing smoke is bound to another profile")
     else:
-        bootstrap_workspace_fixture(root)
+        bootstrap_workspace(root)
         manifest = {"schema_version": "ts-scientific-remote-smoke/1", "profile": profile, "purpose": "real small-system integration smoke; no mechanism acceptance", "attempts": []}
     water = "3\nWater integration probe\nO 0 0 0\nH 0.757 0 0.586\nH -0.757 0 0.586\n"
     for capability in ("gaussian.opt_freq", "xtb.sp", "crest.conformer_search", "ase.neb"):
@@ -45,8 +66,7 @@ def launch(root, profile, retry_capability=None):
             status = calculation_status(root, previous[-1]["intent_id"])
             if status["state"] != "completed":
                 raise ValueError("prior job must be confirmed completed before the explicit integration retry")
-        existing = [node for node in read_json(root / "research_nodes.json")["nodes"] if node["title"] == capability + " integration smoke"]
-        node = existing[0]["node_id"] if existing else start_research_node(root, title=capability + " integration smoke", objective="Verify selected software interface on a small molecule.", claim_type="software_integration")["node_id"]
+        node = ensure_research_node(root, capability + " integration smoke", "Verify selected software interface on a small molecule.")
         geometry = xyz(root, node, "water.xyz", water)
         parameters = {"charge": 0, "uhf": 0, "method": "gfn2"}
         inputs = [{"input_role": "xyz", "artifact_id": geometry}]

@@ -113,18 +113,13 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "config/pi-multi-workspace-create.patch" in names
     assert "config/pi-system-prompt.patch" in names
     assert "scripts/prepare_pi_source.py" in names
-    assert "packages/ts-agent-kernel/ts_agent/projection/provider.py" in names
     assert not any(name.startswith("packages/ts-agent-kernel/ts_agent/web/") for name in names)
     assert "packages/ts-agent-kernel/ts_agent/workspace/artifacts.py" in names
     assert "packages/ts-agent-kernel/ts_agent/workspace/candidates.py" in names
-    assert "packages/ts-agent-kernel/ts_agent/workspace/claims.py" in names
-    assert "packages/ts-agent-kernel/ts_agent/workspace/contracts/change_request.schema.json" in names
-    assert "packages/ts-agent-kernel/ts_agent/workspace/contracts/observation_candidates.schema.json" in names
-    assert "packages/ts-agent-kernel/ts_agent/workspace/contracts/proof_spec.schema.json" in names
-    assert "packages/ts-agent-kernel/ts_agent/workspace/contracts/proof_spec_registry.schema.json" in names
+    assert "packages/ts-agent-kernel/ts_agent/workspace/contracts/finding_candidates.schema.json" in names
     assert "packages/ts-agent-kernel/ts_agent/compute/capabilities.py" in names
-    assert "packages/ts-agent-kernel/ts_agent/validation/templates/builtin/classical-ts__1.json" in names
-    assert "packages/ts-agent-kernel/ts_agent/validation/acceptance_profiles/accepted-ts__3.json" in names
+    assert "packages/ts-agent-kernel/ts_agent/research/model.py" in names
+    assert "packages/ts-agent-kernel/ts_agent/research/kernel.py" in names
     assert distribution == build_result["python_distribution"]
     assert distribution["name"] == "ts-agent-kernel"
     assert distribution["version"] == json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
@@ -154,13 +149,11 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "config" / "pi-multi-workspace-create.patch").is_file()
     assert (package_root / "config" / "pi-system-prompt.patch").is_file()
     assert (package_root / "scripts" / "prepare_pi_source.py").is_file()
-    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "projection" / "provider.py").is_file()
     assert not (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web").exists()
     assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "artifacts.py").is_file()
     assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "candidates.py").is_file()
-    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "claims.py").is_file()
-    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "contracts" / "observation_candidates.schema.json").is_file()
-    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "contracts" / "proof_spec.schema.json").is_file()
+    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "contracts" / "finding_candidates.schema.json").is_file()
+    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "research" / "model.py").is_file()
     installed_wheel = package_root / distribution["path"]
     assert installed_wheel.is_file()
     assert inspect_wheel(installed_wheel)["payload_sha256"] == distribution["payload_sha256"]

@@ -53,7 +53,7 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
     )
 
     request = {
-        "schema_version": "ts-web-provider-request/1",
+        "schema_version": "research-web-request/1",
         "request_id": "schema-check",
         "operation": "catalog",
         "workspace_id": None,
@@ -63,7 +63,7 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
     Draft202012Validator(request_schema).validate(request)
     Draft202012Validator(response_schema).validate(
         {
-            "schema_version": "ts-web-provider/1",
+            "schema_version": "ts-research-provider/1",
             "request_id": "schema-check",
             "ok": True,
             "payload": {"workspaces": []},
@@ -75,9 +75,8 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
             "release_id": "0.17.0-sha256-0123456789abcdef",
             "component": {"name": "ts-web", "version": "0.17.0"},
             "protocols": {
-                "provider": "ts-web-provider/1",
-                "projection": "ts-web-workspace/6",
-                "graph": "ts-explorer-graph/6",
+                "provider": "ts-research-provider/1",
+                "map": "research-map/1",
                 "theme": "ts-theme/1",
             },
             "entrypoint": {"path": "bin/ts-web"},
@@ -96,7 +95,7 @@ def test_provider_json_lines_does_not_reuse_a_previous_request_id(tmp_path: Path
     state_dir = tmp_path / "state"
     provider = ROOT / "scripts" / "ts_web_provider.py"
     first = {
-        "schema_version": "ts-web-provider-request/1",
+        "schema_version": "research-web-request/1",
         "request_id": "first",
         "operation": "catalog",
         "workspace_id": None,

@@ -1,0 +1,12 @@
+{
+  "type": "create_finding",
+  "id": "finding_new",
+  "node_id": "node_existing",
+  "claim_ids": ["claim_existing"],
+  "source_refs": ["art_existing"],
+  "statement": "${FINDING_STATEMENT}",
+  "kind": "fact",
+  "value": "${VALUE}",
+  "datatype": "string",
+  "provenance": {"producer": "${PRODUCER}"}
+}

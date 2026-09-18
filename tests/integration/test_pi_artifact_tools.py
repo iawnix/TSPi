@@ -199,7 +199,7 @@ process.stdout.write(JSON.stringify({{entries,updates,rejection}}));
     failed_status = json.loads((failed_activity / "status.json").read_text(encoding="utf-8"))
     assert failed_request["request"]["parameters"] == {"rmsd_threshold": 0.5}
     assert failed_status["status"] == "failed"
-    assert json.loads((workspace / "observations.json").read_text(encoding="utf-8"))["observations"] == []
+    assert not (workspace / "observations.json").exists()
 
 
 def test_public_reaction_analysis_validates_explicit_mapping(tmp_path: Path) -> None:
@@ -241,13 +241,14 @@ process.stdout.write(JSON.stringify(entries));
     assert request["kind"] == "scientific_analysis"
     assert "parameters" not in request["request"]
     assert request["request"]["submitted_sha256"].startswith("sha256:")
-    assert json.loads((workspace / "observations.json").read_text())["observations"] == []
-    from ts_agent.projection.normalize import node_payload
+    assert not (workspace / "observations.json").exists()
+    from ts_agent.workspace.operational import operational_snapshot
 
-    node = node_payload(workspace, refs["node_id"])["research_node"]
+    snapshot = operational_snapshot(workspace)
     assert any(
-        item["kind"] == "scientific_analysis" and "mapped atom pairs" in item["summary"]
-        for item in node["activities"]
+        item["kind"] == "scientific_analysis"
+        and "mapped atom pairs" in (item.get("summary") or "")
+        for item in snapshot["deterministic_activities"]
     )
 
 

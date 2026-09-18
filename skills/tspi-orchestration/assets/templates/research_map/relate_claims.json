@@ -1,0 +1,6 @@
+{
+  "type": "relate_claims",
+  "source_id": "claim_existing",
+  "target_id": "claim_other",
+  "relation": "supports"
+}

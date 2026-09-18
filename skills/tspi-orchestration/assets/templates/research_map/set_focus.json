@@ -1,0 +1,5 @@
+{
+  "type": "set_focus",
+  "claim_ids": ["claim_existing"],
+  "node_ids": ["node_existing"]
+}

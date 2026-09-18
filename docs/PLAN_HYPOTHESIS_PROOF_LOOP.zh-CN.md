@@ -1,58 +1,70 @@
-# TSPi 假设—证据循环重构规划
+# ResearchMap 设计说明
 
 [English](PLAN_HYPOTHESIS_PROOF_LOOP.md) | 简体中文
 
-本文件是英文规划的中文 companion，记录设计边界和实现里程碑；它不是当前运行状态
-的验收报告。当前实现由一个安装级原生 Pi App Server Host 服务多个工作区，TS Phone
-是独立的 Radius 客户端。
+本文记录当前简化后的研究模型，不是第二套协议，也不是兼容层计划。
 
-## 要解决的问题
+## 规范状态
 
-TSPi 不应把“假设 -> 固定计算序列”写成中央路由器。Root Agent 根据科学问题提出
-可验证的 Claim、方法和预算；Kernel 检查类型、引用、权限、状态和副作用；确定性
-执行器记录产物；解析器产生候选观察；Root Agent 解释证据并选择继续、分支、回溯或停止。
+一个项目只拥有一个 `research_map.json`。`ResearchMap` 是类型化聚合，包含
+`ResearchPhase`、`ResearchClaim`、`ResearchNode`、`Finding` 和 `Gate`。其中
+`FactFinding`、`IssueFinding` 是同一个 `Finding` 结构的特化，`NodeGate`、
+`ClaimGate` 是同一个 `Gate` 结构的特化。反向索引和图依赖都属于 map，并由模型
+统一校验。
 
 ```text
-Root Agent 提出问题 -> ResearchNode -> 能力执行 -> 产物/候选观察
-                  -> Root 核验 -> ProofSpec/Gate -> 下一项研究决定
+ResearchClaim -> ResearchNode -> Finding
+       ^               |          |
+       |               +-------- Gate
+       +---------------------- ClaimGate / NodeGate
 ```
 
-## 三层职责
+`ResearchPhase` 只是可选的分组和导航，不拥有另一套状态机。Node 使用明确的
+`state`（`planned`、`active`、`paused`、`blocked`、`closed`）和关闭结果；Claim
+有独立的 status。Node 只有在所有关联 NodeGate 的最新评估都是 `pass` 时，才能以
+`completed` 结果关闭。
 
-- Scientific Agent：拥有问题、假设、预测、反证条件、方法选择、解释和下一步策略。
-- Research Kernel：拥有 ID、schema、引用、revision、事务、provenance、digest、验证
-  和只读 projection；不拥有科学策略。
-- Capability/Skill/Plugin：执行计算、解析、渲染、报告、远程控制和通知；不拥有规范
-  科学状态。
+## Kernel 边界
 
-固定协议 envelope 包含记录类型、ID、引用、类型表示、artifact 角色、能力和事务元数据；
-科学概念、假设、解释和分支理由属于 Root Agent 的开放 payload。
+`ResearchKernel` 是唯一的变更权威。调用方提交带期望 revision 的 ChangeSet 和有序
+操作。Kernel 在隔离副本上校验操作目录、引用、反向索引、循环和状态转换，然后原子
+写入 map 并追加事务回执。失败请求不会改变旧 revision。
 
-## 假设—证据循环
+统一命令面为：
 
-1. 读取有界 frontier/delta，区分科学记录和运行记录。
-2. 注册问题、假设、预测和反证条件。
-3. 创建一个目标和交付物明确的 ResearchNode。
-4. 提议带 schema 的 capability request，由 Kernel preflight。
-5. 执行并写入 Attempt、Activity 和 artifact digest。
-6. 解析为候选观察，不把原始输出直接视为证据。
-7. Root 对照产物核验并通过 `ts_change` 提升 Observation 或 Finding。
-8. 冻结 ProofSpec，产生绑定 revision 的验证结果或 GateResult。
-9. 由 Root 记录 Claim 解释和下一个依赖 Node。
+```text
+research.map        完整 map
+research.summary    进展和 focus
+research.detail     一个 map 对象
+research.locate     在 map 对象中搜索
+research.validate   校验 map
+research.operations 操作目录
+research.change     应用一个 ChangeSet
+```
 
-ProofSpec 是版本化、可证伪的证据标准，不是对化学机理的永久数学证明。NodeGate
-只允许一个 bounded Node 收尾；ClaimGate 汇总证据辅助 Claim 解释，二者都不会自动
-替 Root Agent 修改科学结论。
+CLI、Pi tools、slash command、Root Agent 和 TS Web 使用同一组命令。`/research` 只是
+命令服务的交互写法，不是另一套 API。`/compute` 通过 `compute.environments` 和
+`compute.environment` 查询统一的本地/远端环境目录。
 
-## Web、Phone 与发布
+## 执行与 Finding
 
-TS Web 直接读取 ResearchMap；它可以展示轨迹、证据、Gate、Finding 和
-运行详情，但不提供科学写入，也不推断下一步。TS Phone 连接同一 Pi session，不创建
-第二个 broker 或工作流 runtime。发布顺序依次冻结合同、实现通用能力、完善观察和
-验证、接入 Web/Phone projection，最后构建并安装经过 manifest 校验的 package。
+Skill 描述流程和能力，Backend 实现软件，Platform 描述本地、容器或 HPC 环境。
+一份 `compute.toml` 同时保存 local/remote profile，由 profile 的 `kind` 决定传输
+细节。Calculation Attempt 和 Artifact 是 Node 所有的操作记录。解析器或分析能力可以
+产生临时候选结果，但只有显式 ChangeSet 才会在 map 中创建 `FactFinding` 或
+`IssueFinding`。工具成功不会自动修改 Claim 或关闭 Node。
 
-## 风险控制
+## 客户端与报告
 
-Kernel 拒绝 malformed value、过期引用、未知能力、危险 effect 和不安全路径；它不会
-因为科学词汇陌生而拒绝 Claim。Capability registry、digest、replay、隔离 Compute
-和 advisory Review 用来控制执行和证据风险，但不替代 Root Agent 的科学判断。
+`ResearchMap.to_dict()` 是 TS Web、Root Agent 和报告直接消费的规范序列化。客户端可以
+为了展示进行筛选和分组，但不创建第二个科学状态模型或 registry。操作记录与 map 分开展示。
+Gate 保存 criteria 和评估历史，不会静默修改目标对象。
+
+## 交付检查
+
+- 研究状态只保留 `research_map.json`、`transactions.jsonl` 和 Node 的执行目录；
+- 新的 map 行为应加入模型和 ChangeSet 操作，并配套聚焦测试；
+- 更新 `skills/tspi-orchestration/assets/templates/research_map/` 下的操作示例；
+- 同步 shared command catalog 和 slash-command/client 调用方；
+- local/remote 计算统一放在一份 `compute.toml` profile 目录后面；
+- 删除过时 registry、proof、acceptance 和 projection 模板，不添加别名。

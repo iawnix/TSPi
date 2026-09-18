@@ -106,8 +106,6 @@ its profile name in the calculation intent. SSH keys and other credentials stay 
 the SSH configuration and are never copied into this TOML. TSPi does not install
 Gaussian or other site-managed native chemistry software.
 
-Existing installations may continue to use the previous `--local-config` and
-`--remote-config` files. New installations should use the unified template above.
 `/compute` and the `compute.environments` command list the configured local and
 remote profiles. Remote scheduler checks remain available to the execution
 layer when a remote calculation is prepared; they are not a separate

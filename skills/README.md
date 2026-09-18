@@ -8,7 +8,7 @@ the research workflow; load a focused Skill when its method or output is needed.
 
 | Skill | Use it for |
 | --- | --- |
-| [tspi-orchestration](tspi-orchestration/SKILL.md) | Research questions, workspace records, Claim validation, and recovery |
+| [tspi-orchestration](tspi-orchestration/SKILL.md) | ResearchMap questions, Findings, Gates, and recovery |
 | [tspi-transition-state-search](tspi-transition-state-search/SKILL.md) | Candidate construction, QST, scans, NEB, conformers, and search strategy |
 | [tspi-xtb](tspi-xtb/SKILL.md) | xTB calculations and CREST conformer searches |
 | [tspi-gaussian](tspi-gaussian/SKILL.md) | Gaussian inputs, optimization, frequencies, and IRC |
@@ -19,8 +19,8 @@ the research workflow; load a focused Skill when its method or output is needed.
 | [tspi-email](tspi-email/SKILL.md) | Configured research notifications and report delivery |
 
 For example, a Gaussian transition-state study uses orchestration to organize
-the question, transition-state search to choose a strategy, Gaussian and
-connectivity to evaluate the result, and render/report to present it.
+the question and Node, transition-state search to choose a strategy, Gaussian
+and connectivity to produce Findings, and render/report to present them.
 Initial structures from SMILES and input imports are covered in
 [artifact tools](tspi-orchestration/references/artifact_tools.md).
 

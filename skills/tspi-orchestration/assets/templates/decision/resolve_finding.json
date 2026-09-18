@@ -1,7 +1,0 @@
-{
-  "op": "resolve_finding",
-  "findingRef": "${FINDING_REF}",
-  "status": "resolved",
-  "summary": "${RESOLUTION_SUMMARY}",
-  "basisObservationRefs": ["${OBSERVATION_REF}"]
-}

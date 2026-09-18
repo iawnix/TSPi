@@ -163,9 +163,9 @@ process.stdout.write(formatTsSubagentHistoryMarkdown([record]));
 def test_ui_tracks_current_tools_and_history_covers_compute_and_review() -> None:
     source = UI.read_text(encoding="utf-8")
     assert "setWidget" not in source
-    assert 'pi.registerCommand("ts-runs"' in source
+    assert 'pi.registerCommand("runs"' in source
     assert "TS Subagent History" in source
-    assert "Compute and Review subagent runs" in source
+    assert "Browse active and recorded Compute and Review runs." in source
     assert "ts-workspace-compute-operator-run" not in source
     assert "ts-workspace-artifact-operator-run" not in source
     assert "ts_subagent_render" not in source

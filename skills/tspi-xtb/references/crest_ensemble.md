@@ -28,5 +28,5 @@ an empty conformer ensemble.
 
 Use relative energy to rank conformers within the declared CREST calculation.
 Evaluate free energies and barriers with their required corrections. Preserve the
-ensemble and selection rationale as artifacts and Observations so another
+ensemble and selection rationale as artifacts and Findings so another
 method can reproduce or challenge the choice.

@@ -43,12 +43,11 @@ function buildArtifactManifest({ workspaceRoot, artifactIds, reviewSnapshot, art
   if (!artifactIds.length) return [];
   if (!Array.isArray(artifactCatalog)) throw new Error("Review artifact catalog must be an array");
   const root = realpathSync(workspaceRoot);
-  const allowed = observationArtifactDigests(reviewSnapshot);
+  const allowed = researchMapArtifactRefs(reviewSnapshot);
   const catalog = new Map(artifactCatalog.filter(isPlainObject).map((item) => [item.artifact_id, item]));
 
   const manifest = artifactIds.map((artifactId) => {
-    const expectedDigest = allowed.get(artifactId);
-    if (!expectedDigest) throw new Error(`Review artifact is outside the Claim dependency graph: ${artifactId}`);
+    if (!allowed.has(artifactId)) throw new Error(`Review artifact is outside the Claim dependency graph: ${artifactId}`);
     const item = catalog.get(artifactId);
     if (!isPlainObject(item)) throw new Error(`Review artifact is unavailable in the workspace catalog: ${artifactId}`);
     const artifactPath = normalizeRelativeRef(item.path);
@@ -59,7 +58,6 @@ function buildArtifactManifest({ workspaceRoot, artifactIds, reviewSnapshot, art
       sha256: requireDigest(item.sha256, `artifact ${artifactId} sha256`),
       size_bytes: requireNonnegativeInteger(item.size_bytes, `artifact ${artifactId} size_bytes`),
     });
-    if (file.sha256 !== expectedDigest) throw new Error(`Review artifact digest differs from its Observation: ${artifactId}`);
     return {
       artifact_id: artifactId,
       path: artifactPath,
@@ -76,14 +74,10 @@ function buildArtifactManifest({ workspaceRoot, artifactIds, reviewSnapshot, art
 
 function validateArtifactManifestOwnership(value, reviewSnapshot) {
   const manifest = validateArtifactManifest(value);
-  const allowed = observationArtifactDigests(reviewSnapshot);
+  const allowed = researchMapArtifactRefs(reviewSnapshot);
   for (const item of manifest) {
-    const expectedDigest = allowed.get(item.artifact_id);
-    if (!expectedDigest) {
+    if (!allowed.has(item.artifact_id)) {
       throw new Error(`Review artifact is outside the Claim dependency graph: ${item.artifact_id}`);
-    }
-    if (expectedDigest !== item.sha256) {
-      throw new Error(`Review artifact digest differs from its Observation: ${item.artifact_id}`);
     }
   }
   return manifest;
@@ -191,23 +185,19 @@ function validateReadRequests(value, manifest) {
   });
 }
 
-function observationArtifactDigests(snapshot) {
-  if (!isPlainObject(snapshot) || !Array.isArray(snapshot.observations)) {
-    throw new Error("Review artifact selection requires snapshot Observations");
+function researchMapArtifactRefs(snapshot) {
+  if (!isPlainObject(snapshot) || !Array.isArray(snapshot.nodes) || !Array.isArray(snapshot.findings)) {
+    throw new Error("Review artifact selection requires ResearchMap Nodes and Findings");
   }
-  const allowed = new Map();
-  for (const observation of snapshot.observations) {
-    if (!isPlainObject(observation)) continue;
-    const digests = isPlainObject(observation.provenance?.source_digests)
-      ? observation.provenance.source_digests
-      : {};
-    for (const artifactId of Array.isArray(observation.artifact_refs) ? observation.artifact_refs : []) {
-      const digest = digests[artifactId];
-      if (typeof digest !== "string") throw new Error(`Observation artifact has no source digest: ${artifactId}`);
-      if (allowed.has(artifactId) && allowed.get(artifactId) !== digest) {
-        throw new Error(`Observation artifact has conflicting digests: ${artifactId}`);
-      }
-      allowed.set(artifactId, requireDigest(digest, `Observation artifact ${artifactId} digest`));
+  const allowed = new Set();
+  for (const node of snapshot.nodes) {
+    for (const artifactId of Array.isArray(node?.artifact_refs) ? node.artifact_refs : []) {
+      if (typeof artifactId === "string" && artifactId) allowed.add(artifactId);
+    }
+  }
+  for (const finding of snapshot.findings) {
+    for (const artifactId of Array.isArray(finding?.source_refs) ? finding.source_refs : []) {
+      if (typeof artifactId === "string" && artifactId) allowed.add(artifactId);
     }
   }
   return allowed;

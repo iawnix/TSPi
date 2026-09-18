@@ -318,8 +318,6 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
                 root / ".pi/ts-phone",
                 root / ".pi/ts-phone-state",
                 root / ".pi/ts-web",
-                root / ".pi/remote.toml",
-                root / ".pi/local.toml",
                 root / ".pi/compute.toml",
                 root / ".pi/notifications.toml",
                 root / "uninstall.sh",
