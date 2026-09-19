@@ -12,7 +12,7 @@ Capability 是执行描述，不是研究状态。它声明有界输入、输出
 | phase、claim、node、finding、gate | `ResearchMap` 与 `ResearchKernel` |
 | 流程和能力指导 | Skill |
 | 软件调用与解析 | Backend |
-| 本地/容器/HPC 放置 | Compute `Platform` profile |
+| 本地/容器/HPC 放置 | Compute Environment；远端细节由 `Platform` 描述 |
 | attempt、artifact、scheduler 回执 | workspace 操作记录 |
 | 浏览器展示 | 直接读取 `ResearchMap.to_dict()` 的 TS Web |
 
@@ -22,9 +22,9 @@ Capability 是执行描述，不是研究状态。它声明有界输入、输出
 
 ## 统一计算
 
-安装目录只维护一份 `.pi/compute.toml`。profile 目录同时包含
+安装目录只维护一份 `.pi/compute.toml`。environments 目录同时包含
 `kind = "local"` 和 `kind = "remote"`，两者使用同一套
-`prepare -> submit -> inspect -> collect -> parse` 生命周期；remote profile 额外带
+`prepare -> submit -> inspect -> collect -> parse` 生命周期；remote environment 额外带
 SSH 和 scheduler 字段。`/compute list` 与 `/compute show <name>` 查询同一目录，
 本地和远端不再使用两套公开词汇。
 

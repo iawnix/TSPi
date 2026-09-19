@@ -41,7 +41,7 @@ def submit(config: RemoteJobConfig, *, client: SSHClient | None = None) -> Remot
         script_digest = submission_script_digest(config, rendered_script=script)
     except Exception as exc:
         raise RemotePreSubmitError("pre_submit_preparation", exc) from exc
-    remote = client or SSHClient(config.profile)
+    remote = client or SSHClient(config.platform)
     staged: list[TransferRecord] = []
     try:
         ensure_directory(remote, config.remote_dir)
@@ -76,7 +76,7 @@ def submit(config: RemoteJobConfig, *, client: SSHClient | None = None) -> Remot
                 config.submission_id,
                 config.script_name,
                 script_digest,
-                config.profile.commands.qsub,
+                config.platform.commands.qsub,
             ],
             check=False,
         )
@@ -139,8 +139,8 @@ def receipt_from_submission_record(
         intent_id=config.intent_id,
         intent_digest=config.intent_digest,
         node_id=config.node_id,
-        profile=config.profile.name,
-        scheduler=config.profile.scheduler,
+        environment=config.platform.name,
+        scheduler=config.platform.scheduler,
         scheduler_id=job_id,
         remote_dir=config.remote_dir,
         script_sha256=expected_digest,
@@ -154,7 +154,7 @@ def read_submission_record(
     *,
     client: SSHClient | None = None,
 ) -> dict[str, Any]:
-    remote = client or SSHClient(config.profile)
+    remote = client or SSHClient(config.platform)
     text = remote.read_text(f"{config.remote_dir}/.ts-remote/submission.env", max_bytes=16 * 1024)
     record = _parse_record(text)
     if record.get("schema_version") != "ts-remote-submission/1":
@@ -171,14 +171,14 @@ def status(
     client: SSHClient | None = None,
 ) -> RemoteJobStatus:
     validated = validate_job_id(job_id)
-    remote = client or SSHClient(config.profile)
+    remote = client or SSHClient(config.platform)
     program_text = remote.read_text(
         f"{config.remote_dir}/{config.program_status_name}",
         check=False,
         max_bytes=64 * 1024,
     )
     program = parse_program_status(program_text) if program_text.strip() else {}
-    qstat = remote.run([config.profile.commands.qstat, "-f", validated], check=False)
+    qstat = remote.run([config.platform.commands.qstat, "-f", validated], check=False)
     scheduler_state: str | None = None
     scheduler_exit: int | None = None
     scheduler_error: str | None = None
@@ -229,7 +229,7 @@ def tail(
     *,
     client: SSHClient | None = None,
 ) -> str:
-    remote = client or SSHClient(config.profile)
+    remote = client or SSHClient(config.platform)
     result = remote.run(
         ["tail", "-n", str(max(1, lines)), "--", f"{config.remote_dir}/{artifact}"],
         check=False,
@@ -251,7 +251,7 @@ def collect(
     *,
     client: SSHClient | None = None,
 ) -> tuple[list[str], list[dict[str, Any]]]:
-    remote = client or SSHClient(config.profile)
+    remote = client or SSHClient(config.platform)
     downloaded: list[str] = []
     manifest: list[dict[str, Any]] = []
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -273,10 +273,10 @@ def cancel(
     client: SSHClient | None = None,
 ) -> dict[str, Any]:
     validated = validate_job_id(job_id)
-    remote = client or SSHClient(config.profile)
+    remote = client or SSHClient(config.platform)
     result = remote.run_script(
         _cancel_script(),
-        [config.remote_dir, config.submission_id, validated, config.profile.commands.qdel],
+        [config.remote_dir, config.submission_id, validated, config.platform.commands.qdel],
         check=False,
     )
     try:

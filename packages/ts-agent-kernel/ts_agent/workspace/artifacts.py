@@ -19,7 +19,7 @@ from ts_agent.io import read_json
 from ts_agent.research import ResearchKernel, ResearchKernelError
 
 from .errors import ContractError
-from .path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .refs import CALCULATION_ID, NODE_ID
 
 

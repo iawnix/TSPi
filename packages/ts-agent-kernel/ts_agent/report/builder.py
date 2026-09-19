@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from ts_agent.workspace.artifacts import resolve_workspace_artifact_ids
-from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from ts_agent.io import write_json as write_json_atomic, write_text_atomic
 
 from .context import collect_report_context
@@ -42,6 +42,8 @@ def build_report_package(
     if reports_root.exists() and not reports_root.is_dir():
         raise ValueError("workspace reports path is not a directory")
     context = collect_report_context(root_path, exclude_activity_refs=exclude_activity_refs)
+    research_map = context["research_map"]
+    status = context["runtime_status"]
     if package_dir.exists():
         raise ValueError(f"report package already exists: {package_dir}")
     package_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -55,31 +57,31 @@ def build_report_package(
             "assets": asset_records,
         })
         _write_json(staging / "report_context.json", context)
-        _write_json(staging / "research_map.json", context["research_map"])
+        _write_json(staging / "research_map.json", research_map)
         _write_json(staging / "claim_graph.json", {
-            "claims": context["claims"],
-            "relations": context["claim_relations"],
+            "claims": research_map["claims"],
+            "relations": research_map["claim_relations"],
         })
         _write_json(staging / "research_roadmap.json", _research_roadmap(context))
         _write_json(staging / "activities.json", {
-            "activities": context["deterministic_activities"],
-            "activity_summaries": context["activity_summaries"],
-            "activity_integrity_findings": context["activity_integrity_findings"],
-            "operational_integrity_findings": context.get("operational_integrity_findings", []),
-            "calculation_attempt_integrity_findings": context.get(
+            "activities": status["deterministic_activities"],
+            "activity_summaries": status["activity_summaries"],
+            "activity_integrity_findings": status["activity_integrity_findings"],
+            "runtime_integrity_findings": status.get("runtime_integrity_findings", []),
+            "calculation_attempt_integrity_findings": status.get(
                 "calculation_attempt_integrity_findings", []
             ),
-            "excluded_activity_refs": context["excluded_activity_refs"],
+            "excluded_activity_refs": status["excluded_activity_refs"],
         })
-        _write_json(staging / "scientific_analyses.json", context.get("scientific_analyses", {}))
-        _write_json(staging / "findings.json", {"findings": context["findings"]})
-        _write_json(staging / "gates.json", {"gates": context["gates"]})
+        _write_json(staging / "analysis_results.json", context.get("analysis_results", {}))
+        _write_json(staging / "findings.json", {"findings": research_map["findings"]})
+        _write_json(staging / "gates.json", {"gates": research_map["gates"]})
         write_text_atomic(staging / "final_report.md", render_final_report(context))
         write_text_atomic(staging / "email_summary.md", render_email_summary(context))
         manifest = _package_manifest(
             staging,
             context["workspace_revision"],
-            context["operational_revision"],
+            status["runtime_revision"],
         )
         _write_json(staging / "package_manifest.json", manifest)
         manifest_digest = _sha256_file(staging / "package_manifest.json")
@@ -100,7 +102,7 @@ def build_report_package(
         "manifest": str(package_dir / "package_manifest.json"),
         "manifest_digest": manifest_digest,
         "workspace_revision": str(context["workspace_revision"]),
-        "operational_revision": str(context["operational_revision"]),
+        "runtime_revision": str(status["runtime_revision"]),
         "asset_artifact_ids": [record["artifact_id"] for record in asset_records],
         "asset_refs": [f"{package_dir.relative_to(root_path).as_posix()}/{record['ref']}" for record in asset_records],
     }
@@ -156,16 +158,17 @@ def _copy_report_assets(
 def _research_roadmap(context: dict[str, Any]) -> dict[str, Any]:
     """Return the canonical map grouped for report navigation."""
 
+    research_map = context["research_map"]
     nodes_by_phase: dict[str, list[dict[str, Any]]] = {}
-    for node in context["nodes"]:
+    for node in research_map["nodes"]:
         nodes_by_phase.setdefault(str(node.get("phase_id") or "unassigned"), []).append(node)
     return {
         "schema_version": "research-roadmap/1",
-        "map_id": context["map_id"],
-        "revision": context["research_map"]["revision"],
+        "map_id": research_map["map_id"],
+        "revision": research_map["revision"],
         "phases": [
             {**phase, "nodes": nodes_by_phase.get(str(phase["id"]), [])}
-            for phase in context["phases"]
+            for phase in research_map["phases"]
         ],
         "unassigned_nodes": nodes_by_phase.get("unassigned", []),
     }
@@ -174,12 +177,14 @@ def _research_roadmap(context: dict[str, Any]) -> dict[str, Any]:
 def render_final_report(context: dict[str, Any]) -> str:
     """Render the current ResearchMap without introducing report state."""
 
-    focus_claims = set(context["focus"]["claim_ids"])
-    focus_nodes = set(context["focus"]["node_ids"])
-    phase_by_id = {item["id"]: item for item in context["phases"]}
+    research_map = context["research_map"]
+    status = context["runtime_status"]
+    focus_claims = set(research_map["focus_claim_ids"])
+    focus_nodes = set(research_map["focus_node_ids"])
+    phase_by_id = {item["id"]: item for item in research_map["phases"]}
     activity_summaries = {
         item["node_id"]: item
-        for item in context.get("activity_summaries", [])
+        for item in status.get("activity_summaries", [])
         if isinstance(item, dict) and isinstance(item.get("node_id"), str)
     }
     lines = [
@@ -189,22 +194,22 @@ def render_final_report(context: dict[str, Any]) -> str:
         "",
         "| Field | Value |",
         "| --- | --- |",
-        f"| Map | `{context['map_id']}` - {_escape(context['title'])} |",
+        f"| Map | `{research_map['map_id']}` - {_escape(research_map['title'])} |",
         f"| Revision | `{context['workspace_revision']}` |",
-        f"| Operational revision | `{context['operational_revision']}` |",
+        f"| Runtime revision | `{status['runtime_revision']}` |",
         f"| Focus Claims | `{', '.join(sorted(focus_claims)) or 'none'}` |",
         f"| Focus Nodes | `{', '.join(sorted(focus_nodes)) or 'none'}` |",
-        f"| Phases / Claims / Nodes / Findings / Gates | {len(context['phases'])} / {len(context['claims'])} / {len(context['nodes'])} / {len(context['findings'])} / {len(context['gates'])} |",
+        f"| Phases / Claims / Nodes / Findings / Gates | {len(research_map['phases'])} / {len(research_map['claims'])} / {len(research_map['nodes'])} / {len(research_map['findings'])} / {len(research_map['gates'])} |",
         "",
-        _executive_sentence(context["claims"], focus_claims),
+        _executive_sentence(research_map["claims"], focus_claims),
         "",
         "## Research Roadmap",
     ]
-    for phase in context["phases"]:
+    for phase in research_map["phases"]:
         phase_id = phase["id"]
         marker = " (focus)" if any(
             node.get("phase_id") == phase_id and node.get("id") in focus_nodes
-            for node in context["nodes"]
+            for node in research_map["nodes"]
         ) else ""
         lines.extend([
             "",
@@ -215,7 +220,7 @@ def render_final_report(context: dict[str, Any]) -> str:
             "| ResearchNode | State | Objective | Dependencies | Outcome |",
             "| --- | --- | --- | --- | --- |",
         ])
-        phase_nodes = [node for node in context["nodes"] if node.get("phase_id") == phase_id]
+        phase_nodes = [node for node in research_map["nodes"] if node.get("phase_id") == phase_id]
         for node in phase_nodes:
             activity = activity_summaries.get(node["id"], {})
             outcome = node.get("outcome_summary") or node.get("outcome") or "pending"
@@ -231,7 +236,7 @@ def render_final_report(context: dict[str, Any]) -> str:
         if not phase_nodes:
             lines.append("| _none_ |  |  |  |  |")
 
-    unassigned = [node for node in context["nodes"] if node.get("phase_id") is None]
+    unassigned = [node for node in research_map["nodes"] if node.get("phase_id") is None]
     if unassigned:
         lines.extend(["", "### Unassigned Nodes", "", "| Node | State | Objective |", "| --- | --- | --- |"])
         lines.extend(
@@ -240,25 +245,25 @@ def render_final_report(context: dict[str, Any]) -> str:
         )
 
     lines.extend(["", "## Claims", "", "| Claim | Status | Statement | Predictions | Falsifiers |", "| --- | --- | --- | --- | --- |"])
-    for claim in context["claims"]:
+    for claim in research_map["claims"]:
         lines.append(
             f"| `{claim['id']}`{' (focus)' if claim['id'] in focus_claims else ''} | `{claim['status']}` | "
             f"{_escape(claim['statement'])} | {_markdown_items(claim.get('predictions', []))} | "
             f"{_markdown_items(claim.get('falsifiers', []))} |"
         )
     lines.extend(["", "### Claim Relations", "", "| Source | Relation | Target |", "| --- | --- | --- |"])
-    for relation in context["claim_relations"]:
+    for relation in research_map["claim_relations"]:
         lines.append(
             f"| `{relation.get('source_id')}` | `{relation.get('relation')}` | `{relation.get('target_id')}` |"
         )
-    if not context["claim_relations"]:
+    if not research_map["claim_relations"]:
         lines.append("| _none_ |  |  |")
 
     lines.extend(["", "## ResearchNode Records", ""])
-    for node in context["nodes"]:
+    for node in research_map["nodes"]:
         phase = phase_by_id.get(node.get("phase_id"))
-        node_findings = [item for item in context["findings"] if item.get("node_id") == node["id"]]
-        node_gates = [item for item in context["gates"] if item.get("target_id") == node["id"]]
+        node_findings = [item for item in research_map["findings"] if item.get("node_id") == node["id"]]
+        node_gates = [item for item in research_map["gates"] if item.get("target_id") == node["id"]]
         lines.extend([
             f"### `{node['id']}` - {_escape(node['title'])}",
             "",
@@ -274,44 +279,44 @@ def render_final_report(context: dict[str, Any]) -> str:
         ])
 
     lines.extend(["## Findings", "", "| Finding | Kind | Status | Node | Claims | Statement |", "| --- | --- | --- | --- | --- | --- |"])
-    for finding in context["findings"]:
+    for finding in research_map["findings"]:
         lines.append(
             f"| `{finding['id']}` | `{finding['kind']}` | `{finding['status']}` | `{finding['node_id']}` | "
             f"`{', '.join(finding.get('claim_ids', [])) or 'none'}` | {_escape(finding['statement'])} |"
         )
-    if not context["findings"]:
+    if not research_map["findings"]:
         lines.append("| _none_ |  |  |  |  |  |")
 
     lines.extend(["", "## Gates", "", "| Gate | Scope | Target | Criteria | Latest verdict |", "| --- | --- | --- | --- | --- |"])
-    for gate in context["gates"]:
+    for gate in research_map["gates"]:
         latest = gate.get("evaluations", [])[-1] if gate.get("evaluations") else None
         lines.append(
             f"| `{gate['id']}` | `{gate['scope']}` | `{gate['target_id']}` | "
             f"{len(gate.get('criteria', []))} | `{latest.get('verdict') if latest else 'not evaluated'}` |"
         )
-    if not context["gates"]:
+    if not research_map["gates"]:
         lines.append("| _none_ |  |  |  |  |")
 
     lines.extend(["", "## Operational Follow-up", ""])
-    for row in context.get("node_dispatch", []):
+    for row in status.get("node_dispatch", []):
         lines.append(f"- Node `{row.get('node_id')}` dispatch: {'paused' if row.get('paused') else 'resumed'}.")
     for key, label in (
         ("unresolved_controls", "unresolved compute controls"),
         ("pending_review_dispositions", "pending Review responses"),
         ("activity_integrity_findings", "activity integrity errors"),
-        ("operational_integrity_findings", "operational integrity errors"),
+        ("runtime_integrity_findings", "operational integrity errors"),
         ("calculation_attempt_integrity_findings", "Attempt integrity errors"),
     ):
-        if context.get(key):
-            lines.append(f"- {len(context[key])} {label} remain.")
-    for finding in context["findings"]:
+        if status.get(key):
+            lines.append(f"- {len(status[key])} {label} remain.")
+    for finding in research_map["findings"]:
         if finding.get("status") == "open":
             lines.append(f"- Open Finding `{finding['id']}`: {_escape(finding['statement'])}")
     if len(lines) and lines[-1] == "":
         lines.append("- No unresolved operational record or open Finding is recorded.")
     lines.extend(["", "The Root Agent chooses research strategy; the ResearchKernel owns canonical map mutation and Gate evaluation."])
 
-    analyses = context.get("scientific_analyses", {})
+    analyses = context.get("analysis_results", {})
     if analyses.get("analyses"):
         lines.extend(["", "## Scientific Analysis Artifacts", "", "| Node | Capability | Verdict | Source Artifact |", "| --- | --- | --- | --- |"])
         lines.extend(
@@ -322,20 +327,21 @@ def render_final_report(context: dict[str, Any]) -> str:
 
 
 def render_email_summary(context: dict[str, Any]) -> str:
-    focus = set(context["focus"]["claim_ids"])
-    focus_rows = [item for item in context["claims"] if item["id"] in focus]
+    research_map = context["research_map"]
+    focus = set(research_map["focus_claim_ids"])
+    focus_rows = [item for item in research_map["claims"] if item["id"] in focus]
     states = ", ".join(f"{item['id']}={item['status']}" for item in focus_rows) or "no focus Claim"
     return "\n".join([
         "Subject: TS research workspace update",
         "",
         f"ResearchMap status: {states}.",
         "",
-        f"Map: {context['map_id']}",
+        f"Map: {research_map['map_id']}",
         f"Revision: {context['workspace_revision']}",
         "Focus Claims:",
         *(f"- {item['id']}: {item['status']} - {item['statement']}" for item in focus_rows),
         "",
-        f"Open Findings: {sum(item.get('status') == 'open' for item in context['findings'])}",
+        f"Open Findings: {sum(item.get('status') == 'open' for item in research_map['findings'])}",
         "Main report: final_report.md",
         "",
     ])
@@ -348,7 +354,7 @@ def _executive_sentence(claims: list[dict[str, Any]], focus: set[str]) -> str:
     return "No focus Claim is selected; this report records the current ResearchMap."
 
 
-def _package_manifest(package_dir: Path, revision: str, operational_revision: str) -> dict[str, Any]:
+def _package_manifest(package_dir: Path, revision: str, runtime_revision: str) -> dict[str, Any]:
     files = []
     for path in sorted(package_dir.rglob("*")):
         if has_symlink_component(package_dir, path) or path.is_symlink():
@@ -367,7 +373,7 @@ def _package_manifest(package_dir: Path, revision: str, operational_revision: st
     return {
         "schema_version": "ts-report-package/5",
         "workspace_revision": revision,
-        "operational_revision": operational_revision,
+        "runtime_revision": runtime_revision,
         "files": files,
     }
 

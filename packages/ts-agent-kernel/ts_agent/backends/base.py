@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-from ts_agent.compute.config import ComputeConfigurationError, load_config
+from ts_agent.platforms import EnvironmentConfigurationError, load_config
 
 
 @dataclass(frozen=True)
@@ -38,20 +38,20 @@ class Backend(ABC):
         """Return ResearchNode-scoped metadata without mutating canonical state."""
 
 
-def configured_backend_command(provider: str) -> str:
-    """Resolve one executable from the selected local compute profile."""
+def configured_backend_command(backend_name: str) -> str:
+    """Resolve one executable from the selected local compute environment."""
 
     try:
         config = load_config()
-        profile = config.profile(kind="local")
-        software = profile.software.get(provider)
-    except ComputeConfigurationError:
+        environment = config.environment(kind="local")
+        backend = environment.backends.get(backend_name)
+    except EnvironmentConfigurationError:
         raise
-    if software is None or not software.command:
-        raise ComputeConfigurationError(
-            f"local compute profile {profile.name!r} does not configure software.{provider}"
+    if backend is None or not backend.command:
+        raise EnvironmentConfigurationError(
+            f"local compute environment {environment.name!r} does not configure backend.{backend_name}"
         )
-    return software.command[0]
+    return backend.command[0]
 
 
 __all__ = ["Backend", "BackendTask", "PreparedTask", "configured_backend_command"]

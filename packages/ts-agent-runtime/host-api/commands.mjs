@@ -1,57 +1,29 @@
+import { readFileSync } from "node:fs";
+
 const RESEARCH_KINDS = Object.freeze(["phase", "claim", "node", "finding", "gate"]);
 
-const definitions = [
-  ["research.map", "research", "read", []],
-  ["research.summary", "research", "read", []],
-  ["research.detail", "research", "read", ["kind", "id"]],
-  ["research.locate", "research", "read", ["query"]],
-  ["research.validate", "research", "read", []],
-  ["research.operations", "research", "read", []],
-  ["research.change", "research", "write", ["request"]],
-  ["compute.environments", "compute", "read", []],
-  ["compute.environment", "compute", "read", ["name"]],
-  ["compute.capabilities", "compute", "read", []],
-  ["compute.artifacts", "compute", "read", []],
-  ["compute.runs", "compute", "read", []],
-];
+const catalog = JSON.parse(readFileSync(
+  new URL("../../ts-agent-kernel/ts_agent/command_catalog.json", import.meta.url),
+  "utf8",
+));
+if (catalog.schema_version !== "tspi-command-catalog/1" || !Array.isArray(catalog.commands)) {
+  throw new Error("invalid TSPi command catalog");
+}
 
-export const COMMAND_DEFINITIONS = Object.freeze(Object.fromEntries(definitions.map(
-  ([id, domain, effect, required]) => [id, Object.freeze({
-    id,
-    domain,
-    effect,
-    required: Object.freeze(required),
+export const COMMAND_DEFINITIONS = Object.freeze(Object.fromEntries(catalog.commands.map(
+  ({ id, domain, effect, required }) => [id, Object.freeze({
+    id, domain, effect, required: Object.freeze([...required]),
   })],
 )));
 
 export const COMMAND_IDS = Object.freeze(Object.keys(COMMAND_DEFINITIONS));
 
-export const SLASH_COMMAND_DEFINITIONS = Object.freeze({
-  research: Object.freeze({
-    name: "research",
-    description: "Read or validate the current ResearchMap.",
-    usage: "/research [summary|map|detail <kind> <id>|locate <query>|validate|operations]",
-    completions: Object.freeze(["summary", "map", "detail", "locate", "validate", "operations"]),
-  }),
-  compute: Object.freeze({
-    name: "compute",
-    description: "Inspect configured local and remote compute environments.",
-    usage: "/compute [list|show <environment>]",
-    completions: Object.freeze(["list", "show"]),
-  }),
-  runs: Object.freeze({
-    name: "runs",
-    description: "Browse active and recorded Compute and Review runs.",
-    usage: "/runs",
-    completions: Object.freeze([]),
-  }),
-  debug: Object.freeze({
-    name: "debug",
-    description: "Inspect TSPi runtime diagnostics.",
-    usage: "/debug prompt",
-    completions: Object.freeze(["prompt"]),
-  }),
-});
+export const SLASH_COMMAND_DEFINITIONS = Object.freeze(Object.fromEntries(
+  Object.entries(catalog.slash_commands).map(([key, definition]) => [key, Object.freeze({
+    ...definition,
+    completions: Object.freeze([...definition.completions]),
+  })]),
+));
 
 export const SLASH_COMMAND_NAMES = Object.freeze(
   Object.values(SLASH_COMMAND_DEFINITIONS).map((definition) => `/${definition.name}`),

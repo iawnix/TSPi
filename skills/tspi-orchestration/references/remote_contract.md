@@ -7,12 +7,12 @@ is `compute.environments`, exposed as `/compute` and `ts_environment`.
 
 ## Installation-Owned Policy
 
-`compute.toml` is the recommended shared policy file. Each profile declares a
-`kind` and a `software` table; `kind = "remote"` profiles additionally own SSH
+`compute.toml` is the recommended shared policy file. Each environment declares a
+`kind` and a `backends` table; `kind = "remote"` environments additionally own SSH
 host/config, remote root, scheduler commands, queues, resource ceilings,
-activation, scratch policy, and server environment. Local and remote profiles
-are defined in this one file; there is no separate remote registry. A calculation request selects a named profile and resources within
-its configured limits.
+activation, scratch policy, and process environment. Local and remote environments
+are defined in this one file; there is no separate remote registry. A calculation
+request selects a named environment and resources within its configured limits.
 
 Use the installation-level `TSPi --check-remote` command for read-only diagnostics:
 
@@ -25,12 +25,12 @@ Run `TSPi --check-remote` before the first remote calculation or after
 configuration changes.
 For `ase_neb`, `doctor` additionally imports ASE and the TSPi runner with the
 configured Python and executes the configured xTB program's version probe. The
-profile is ready only when all three components are available.
+environment is ready only when all three components are available.
 
 ## Isolation
 
 Remote directories are derived from workspace identity, ResearchNode, and
-intent. The upload manifest binds regular files, sizes, SHA-256, command, profile,
+intent. The upload manifest binds regular files, sizes, SHA-256, command, environment,
 resources, expected artifacts, and submission ID. Remote files provide the
 execution copy; collection downloads declared outputs into the local workspace.
 
@@ -52,7 +52,7 @@ manifest and works even when scheduler history is unavailable.
 ## Verify Results
 
 - Reconcile an unknown submit or cancel result before another control action.
-- Resolve remote paths and commands from the installation profile and intent.
+- Resolve remote paths and commands from the configured environment and intent.
 - Use `TSPi --check-remote` to check scheduler and software readiness as well as SSH.
 - Check program termination and required outputs after scheduler completion.
 - Collect outputs, verify them locally, and parse them before recording Findings.

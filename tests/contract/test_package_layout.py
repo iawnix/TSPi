@@ -293,8 +293,8 @@ def test_tspi_loads_installation_owned_compute_profile_without_probing(tmp_path:
     ssh_config.write_text("Host cluster-login\n  HostName cluster.test\n", encoding="utf-8")
     compute_config = install_root / ".pi" / "compute.toml"
     compute_config.write_text(
-        f'''default_profile = "cluster_1w"
-[profiles.cluster_1w]
+        f'''default_environment = "cluster_1w"
+[environments.cluster_1w]
 kind = "remote"
 ssh_host = "cluster-login"
 ssh_config = "{ssh_config}"
@@ -302,7 +302,7 @@ scheduler = "torque"
 remote_root = "/remote/ts"
 allowed_queues = ["batch"]
 max_nodes = 1
-[profiles.cluster_1w.software.xtb]
+[environments.cluster_1w.backends.xtb]
 command = ["xtb"]
 ''',
         encoding="utf-8",
@@ -425,7 +425,7 @@ def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:
     config = install_root / ".pi" / "compute.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
-        f'default_profile = "cluster"\n[profiles.cluster]\nkind = "remote"\nssh_host = "cluster-login"\nssh_config = "{ssh_config}"\nscheduler = "torque"\nremote_root = "/remote/ts"\nallowed_queues = ["batch"]\nmax_nodes = 1\n[profiles.cluster.software.xtb]\ncommand = ["xtb"]\n',
+        f'default_environment = "cluster"\n[environments.cluster]\nkind = "remote"\nssh_host = "cluster-login"\nssh_config = "{ssh_config}"\nscheduler = "torque"\nremote_root = "/remote/ts"\nallowed_queues = ["batch"]\nmax_nodes = 1\n[environments.cluster.backends.xtb]\ncommand = ["xtb"]\n',
         encoding="utf-8",
     )
     diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
@@ -447,7 +447,7 @@ def test_tspi_remote_diagnostic_preserves_structured_failure(tmp_path: Path) -> 
     config = install_root / ".pi" / "compute.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
-        f'default_profile = "cluster"\n[profiles.cluster]\nkind = "remote"\nssh_host = "cluster-login"\nssh_config = "{ssh_config}"\nscheduler = "torque"\nremote_root = "/remote/ts"\nallowed_queues = ["batch"]\nmax_nodes = 1\n[profiles.cluster.software.xtb]\ncommand = ["xtb"]\n',
+        f'default_environment = "cluster"\n[environments.cluster]\nkind = "remote"\nssh_host = "cluster-login"\nssh_config = "{ssh_config}"\nscheduler = "torque"\nremote_root = "/remote/ts"\nallowed_queues = ["batch"]\nmax_nodes = 1\n[environments.cluster.backends.xtb]\ncommand = ["xtb"]\n',
         encoding="utf-8",
     )
     diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
@@ -466,7 +466,7 @@ def test_tspi_remote_diagnostic_preserves_structured_failure(tmp_path: Path) -> 
 def test_tspi_rejects_a_symlinked_remote_config(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
     target = tmp_path / "compute.toml"
-    target.write_text("default_profile = 'cluster'\n", encoding="utf-8")
+    target.write_text("default_environment = 'cluster'\n", encoding="utf-8")
     config = install_root / ".pi" / "compute.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.symlink_to(target)

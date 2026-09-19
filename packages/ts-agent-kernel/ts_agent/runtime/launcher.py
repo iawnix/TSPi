@@ -127,7 +127,7 @@ Options:
   --workspace <name>   Open a research workspace.
   --session-id <id>   Continue one exact conversation.
   -c, --continue      Continue the latest conversation.
-  --check-remote      Check the configured remote compute profile.
+  --check-remote      Check the configured remote compute environment.
   -h, --help          Show this help.
 
 The terminal connects to the installation Host managed by
@@ -457,19 +457,19 @@ def configure_remote(installation: Installation) -> None:
     try:
         with path.open("rb") as handle:
             config = tomllib.load(handle)
-        profile_name = config.get("default_profile")
-        profiles = config.get("profiles", {})
-        profile = profiles.get(profile_name, {}) if isinstance(profiles, dict) else {}
-        if isinstance(profile, dict) and profile.get("kind") == "local" and isinstance(profiles, dict):
-            remote_profiles = [
-                item for item in profiles.values()
+        environment_name = config.get("default_environment")
+        environments = config.get("environments", {})
+        environment = environments.get(environment_name, {}) if isinstance(environments, dict) else {}
+        if isinstance(environment, dict) and environment.get("kind") == "local" and isinstance(environments, dict):
+            remote_environments = [
+                item for item in environments.values()
                 if isinstance(item, dict) and item.get("kind") == "remote"
             ]
-            profile = remote_profiles[0] if remote_profiles else profile
-        if not isinstance(profile, dict):
-            raise ValueError("default profile must be a table")
-        host = profile.get("ssh_host", profile_name or "configured")
-        scheduler = str(profile.get("scheduler", "torque")).title()
+            environment = remote_environments[0] if remote_environments else environment
+        if not isinstance(environment, dict):
+            raise ValueError("default environment must be a table")
+        host = environment.get("ssh_host", environment_name or "configured")
+        scheduler = str(environment.get("scheduler", "torque")).title()
     except (OSError, TypeError, ValueError, tomllib.TOMLDecodeError) as exc:
         raise TSPiHostError(f"invalid remote configuration: {path}: {exc}") from exc
     os.environ["TS_COMPUTE_CONFIG"] = str(path)

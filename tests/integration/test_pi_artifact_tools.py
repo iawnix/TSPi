@@ -242,9 +242,9 @@ process.stdout.write(JSON.stringify(entries));
     assert "parameters" not in request["request"]
     assert request["request"]["submitted_sha256"].startswith("sha256:")
     assert not (workspace / "observations.json").exists()
-    from ts_agent.workspace.operational import operational_snapshot
+    from ts_agent.workspace.operational import runtime_status
 
-    snapshot = operational_snapshot(workspace)
+    snapshot = runtime_status(workspace)
     assert any(
         item["kind"] == "scientific_analysis"
         and "mapped atom pairs" in (item.get("summary") or "")
@@ -388,7 +388,7 @@ def test_report_package_is_verified_against_manifest_and_workspace_revision(tmp_
         "reports/study-report",
         digest,
         built["workspace_revision"],
-        built["operational_revision"],
+        built["runtime_revision"],
     )
     assert result["package_ref"] == "reports/study-report"
     assert result["manifest_digest"] == digest
@@ -405,7 +405,7 @@ def test_report_package_is_verified_against_manifest_and_workspace_revision(tmp_
         "reports/study-report",
         digest,
         built["workspace_revision"],
-        built["operational_revision"],
+        built["runtime_revision"],
         check=False,
     )
     assert isinstance(rejected, subprocess.CompletedProcess)

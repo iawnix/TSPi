@@ -35,13 +35,13 @@ const TASK_KEYS = [
 ];
 const DOCUMENT_BINDING_KEYS = ["ref", "schema_version", "sha256", "bytes"];
 const REVIEW_INPUT_DOCUMENTS = Object.freeze({
-  review_snapshot: Object.freeze({
-    ref: "review-snapshot.json",
-    schema_version: "ts-review-task-snapshot/4",
+  research_map: Object.freeze({
+    ref: "research-map.json",
+    schema_version: "research-map/1",
   }),
-  provider_input: Object.freeze({
-    ref: "provider-input.json",
-    schema_version: "ts-review-provider-input/6",
+  review_context: Object.freeze({
+    ref: "review-context.json",
+    schema_version: "ts-review-context/1",
   }),
 });
 const RESULT_KEYS = [

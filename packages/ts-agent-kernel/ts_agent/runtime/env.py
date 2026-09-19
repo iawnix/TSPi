@@ -88,30 +88,10 @@ def seed_installation_runtime_from_entrypoint(
     """Bind runtime paths for a script invoked through an installed release."""
 
     stable = Path(os.path.abspath(os.fspath(Path(entrypoint).expanduser())))
-    installation_root = _legacy_installation_root(stable)
-    if installation_root is None:
-        installation_root = _suite_installation_root(stable)
+    installation_root = _suite_installation_root(stable)
     if installation_root is None:
         return None
     return seed_installation_runtime(installation_root, environ=environ)
-
-
-def _legacy_installation_root(stable: Path) -> Path | None:
-    """Recognize the former ``packages/ts-agent/current`` entrypoint shape."""
-
-    selected = stable.parent.parent
-    package_home = selected.parent
-    packages_root = package_home.parent
-    pi_root = packages_root.parent
-    if (
-        stable.parent.name != "scripts"
-        or selected.name != "current"
-        or package_home.name != "ts-agent"
-        or packages_root.name != "packages"
-        or pi_root.name != ".pi"
-    ):
-        return None
-    return pi_root.parent
 
 
 def _suite_installation_root(stable: Path) -> Path | None:

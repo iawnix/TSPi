@@ -209,7 +209,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Explicit TS Web token (8-100 URL-safe characters; prefer --web-auth-token-file for secrets).",
     )
     parser.add_argument("--compute-config", help="Unified compute.toml to install as .pi/compute.toml.")
-    parser.add_argument("--probe-remote", action="store_true", help="Run the remote doctor and fail if the configured profile is not ready.")
+    parser.add_argument("--probe-remote", action="store_true", help="Run the remote doctor and fail if the configured environment is not ready.")
     parser.add_argument("--conda-root")
     parser.add_argument("--service-scope", choices=("none", "user", "system"))
     parser.add_argument("--service-user", help="Unix account used by systemd services (required for system scope).")
@@ -217,7 +217,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--enable-services", action="store_true")
     parser.add_argument("--start-services", action="store_true")
     email = parser.add_argument_group("email notifications")
-    email.add_argument("--email-provider", choices=sorted(EMAIL_PROVIDERS))
+    email.add_argument("--email-binding", choices=sorted(EMAIL_PROVIDERS))
     email.add_argument("--email-preset", choices=sorted(SMTP_PRESETS))
     email.add_argument("--email-host", help="SMTP hostname; required with --email-preset custom.")
     email.add_argument("--email-recipient")
@@ -302,16 +302,16 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
 
 
 def configure_email_interactively(args: argparse.Namespace) -> None:
-    if args.email_provider is not None:
+    if args.email_binding is not None:
         return
     root = Path(args.install_root)
     existing = root / ".pi" / "notifications.toml"
     prompt = "Reconfigure email notifications" if existing.is_file() else "Configure email notifications"
     if not ask_yes_no(prompt, False):
         return
-    args.email_provider = ask("Email provider (smtp or clawemail)", "smtp").lower()
+    args.email_binding = ask("Email binding (smtp or clawemail)", "smtp").lower()
     args.email_recipient = _ask_email_address("Notification recipient")
-    if args.email_provider == "clawemail":
+    if args.email_binding == "clawemail":
         args.clawemail_root = ask("ClawEmail installation root")
         return
     args.email_preset = ask("SMTP mailbox preset (163, qq, or custom)", "qq").lower()
@@ -386,9 +386,9 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     )
 
     section("Email notifications")
-    if args.email_provider is None:
+    if args.email_binding is None:
         field("Configuration", "preserve existing" if (Path(args.install_root) / ".pi/notifications.toml").is_file() else "not configured", tone="muted")
-    elif args.email_provider == "clawemail":
+    elif args.email_binding == "clawemail":
         field("Provider", "ClawEmail", tone="success")
         field("Recipient", args.email_recipient)
         field("ClawEmail root", args.clawemail_root)
@@ -599,14 +599,14 @@ def validate_email_options(args: argparse.Namespace) -> None:
         args.email_password_env,
         args.email_password_file,
     )
-    if args.email_provider is None:
+    if args.email_binding is None:
         if any(value is not None for value in values):
-            raise ValueError("email options require --email-provider")
+            raise ValueError("email options require --email-binding")
         return
-    if args.email_provider not in EMAIL_PROVIDERS:
-        raise ValueError("--email-provider must be smtp or clawemail")
+    if args.email_binding not in EMAIL_PROVIDERS:
+        raise ValueError("--email-binding must be smtp or clawemail")
     _validate_email_address(args.email_recipient, "--email-recipient")
-    if args.email_provider == "clawemail":
+    if args.email_binding == "clawemail":
         clawemail_path = Path(args.clawemail_root).expanduser() if isinstance(args.clawemail_root, str) else None
         if (
             clawemail_path is None
@@ -704,13 +704,13 @@ def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
 
     root = Path(args.install_root).expanduser().resolve()
     config_path = root / ".pi" / "notifications.toml"
-    if args.email_provider is None:
+    if args.email_binding is None:
         return {
             "status": "preserved" if config_path.is_file() else "not_configured",
             "path": str(config_path),
         }
 
-    if args.email_provider == "clawemail":
+    if args.email_binding == "clawemail":
         content = "\n".join(
             [
                 "[notifications.email]",
@@ -721,7 +721,7 @@ def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
             ]
         )
         _write_private_text(config_path, content)
-        return {"status": "configured", "provider": "clawemail", "path": str(config_path)}
+        return {"status": "configured", "binding": "clawemail", "path": str(config_path)}
 
     password_file: Path | None = None
     if args.email_password_file is not None:
@@ -733,7 +733,7 @@ def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
     lines = [
         "[notifications.email]",
         "enabled = true",
-        "provider = \"smtp\"",
+        "binding = \"smtp\"",
         f"preset = {_toml_string(args.email_preset)}",
         f"port = {args.email_port}",
         f"security = {_toml_string(args.email_security)}",
@@ -758,7 +758,7 @@ def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
     _write_private_text(config_path, "\n".join(lines))
     return {
         "status": "configured",
-        "provider": "smtp",
+        "binding": "smtp",
         "preset": args.email_preset,
         "credential": credential,
         "environment_file": str(root / ".pi" / "email" / "service.env") if args.email_password_env else None,
@@ -857,71 +857,69 @@ def _copy_private_config(source_value: str, destination: Path, *, kind: str) -> 
 
 
 def _validate_compute_config(parsed: dict[str, object]) -> None:
-    """Validate the shared profile shape before installing it."""
-    profiles = parsed.get("profiles")
-    default = parsed.get("default_profile")
-    if not isinstance(profiles, dict) or not profiles or not isinstance(default, str) or default not in profiles:
-        raise ValueError("compute config must define default_profile and at least one profile")
-    kinds: set[str] = set()
-    for name, profile in profiles.items():
+    """Validate the shared environment shape before installing it."""
+    environments = parsed.get("environments")
+    default = parsed.get("default_environment")
+    if not isinstance(environments, dict) or not environments or not isinstance(default, str) or default not in environments:
+        raise ValueError("compute config must define default_environment and at least one environment")
+    for name, environment in environments.items():
         if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", name):
-            raise ValueError(f"invalid compute profile name: {name!r}")
-        if not isinstance(profile, dict) or profile.get("kind") not in {"local", "remote"}:
-            raise ValueError(f"compute profile {name!r} must declare kind=local or kind=remote")
-        kinds.add(str(profile["kind"]))
-        software = profile.get("software", {})
-        if not isinstance(software, dict):
-            raise ValueError(f"compute profile {name!r} software must be a table")
-        for backend, item in software.items():
+            raise ValueError(f"invalid compute environment name: {name!r}")
+        if not isinstance(environment, dict) or environment.get("kind") not in {"local", "remote"}:
+            raise ValueError(f"compute environment {name!r} must declare kind=local or kind=remote")
+        backends = environment.get("backends", {})
+        if not isinstance(backends, dict):
+            raise ValueError(f"compute environment {name!r} backends must be a table")
+        for backend, item in backends.items():
             if not isinstance(backend, str) or not isinstance(item, dict):
-                raise ValueError(f"compute profile {name!r} has an invalid software provider")
+                raise ValueError(f"compute environment {name!r} has an invalid backend binding")
             command = item.get("command")
-            valid_command = isinstance(command, str) and bool(command.strip()) if profile["kind"] == "local" else (
+            valid_command = isinstance(command, str) and bool(command.strip()) if environment["kind"] == "local" else (
                 isinstance(command, list) and bool(command) and all(isinstance(value, str) and value for value in command)
             )
             if not valid_command:
-                expected = "string" if profile["kind"] == "local" else "string array"
-                raise ValueError(f"compute profile {name!r} software.{backend}.command must be a {expected}")
+                expected = "string" if environment["kind"] == "local" else "string array"
+                raise ValueError(f"compute environment {name!r} backends.{backend}.command must be a {expected}")
             activation = item.get("activation_script")
             if activation is not None and (not isinstance(activation, str) or not activation.startswith("/")):
-                raise ValueError(f"compute profile {name!r} software.{backend}.activation_script must be absolute")
-        if profile["kind"] == "remote":
-            _validate_remote_config({"default_profile": name, "profiles": {name: profile}}, Path("/"))
+                raise ValueError(f"compute environment {name!r} backends.{backend}.activation_script must be absolute")
+        if environment["kind"] == "remote":
+            _validate_remote_config({"default_environment": name, "environments": {name: environment}}, Path("/"))
 
 
 def _validate_remote_config(parsed: dict[str, object], base: Path) -> None:
-    profiles = parsed.get("profiles")
-    default = parsed.get("default_profile")
-    if not isinstance(profiles, dict) or not profiles or not isinstance(default, str) or default not in profiles:
-        raise ValueError("remote config must define default_profile and at least one profile")
-    for name, profile in profiles.items():
+    environments = parsed.get("environments")
+    default = parsed.get("default_environment")
+    if not isinstance(environments, dict) or not environments or not isinstance(default, str) or default not in environments:
+        raise ValueError("remote config must define default_environment and at least one environment")
+    for name, environment in environments.items():
         if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", name):
-            raise ValueError(f"invalid remote profile name: {name!r}")
-        if not isinstance(profile, dict) or profile.get("scheduler", "torque") != "torque":
-            raise ValueError(f"remote profile {name!r} must use scheduler=torque")
-        ssh_host = profile.get("ssh_host")
+            raise ValueError(f"invalid remote environment name: {name!r}")
+        if not isinstance(environment, dict) or environment.get("scheduler", "torque") != "torque":
+            raise ValueError(f"remote environment {name!r} must use scheduler=torque")
+        ssh_host = environment.get("ssh_host")
         if not isinstance(ssh_host, str):
-            raise ValueError(f"remote profile {name!r} is missing ssh_host or remote_root")
+            raise ValueError(f"remote environment {name!r} is missing ssh_host or remote_root")
         if any(character.isspace() for character in ssh_host):
-            raise ValueError(f"remote profile {name!r} has an invalid ssh_host")
-        remote_root = profile.get("remote_root")
+            raise ValueError(f"remote environment {name!r} has an invalid ssh_host")
+        remote_root = environment.get("remote_root")
         if not isinstance(remote_root, str):
-            raise ValueError(f"remote profile {name!r} is missing ssh_host or remote_root")
+            raise ValueError(f"remote environment {name!r} is missing ssh_host or remote_root")
         if (
             not remote_root.startswith("/")
             or remote_root == "/"
             or ".." in Path(remote_root).parts
             or any(not re.fullmatch(r"[A-Za-z0-9_.-]+", part) for part in Path(remote_root).parts[1:])
         ):
-            raise ValueError(f"remote profile {name!r} has an invalid remote_root")
-        queues = profile.get("allowed_queues")
+            raise ValueError(f"remote environment {name!r} has an invalid remote_root")
+        queues = environment.get("allowed_queues")
         if not isinstance(queues, list) or not queues or any(
             not isinstance(queue, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", queue)
             for queue in queues
         ):
-            raise ValueError(f"remote profile {name!r} must define allowed_queues")
+            raise ValueError(f"remote environment {name!r} must define allowed_queues")
         for key in ("max_nodes", "connect_timeout_seconds", "command_timeout_seconds"):
-            value = profile.get(key, 1 if key == "max_nodes" else (15 if key == "connect_timeout_seconds" else 60))
+            value = environment.get(key, 1 if key == "max_nodes" else (15 if key == "connect_timeout_seconds" else 60))
             maximum = {"max_nodes": None, "connect_timeout_seconds": 300, "command_timeout_seconds": 3600}[key]
             if (
                 isinstance(value, bool)
@@ -929,10 +927,10 @@ def _validate_remote_config(parsed: dict[str, object], base: Path) -> None:
                 or value < 1
                 or (maximum is not None and value > maximum)
             ):
-                raise ValueError(f"remote profile {name!r} has an invalid {key}")
-        commands = profile.get("commands", {})
+                raise ValueError(f"remote environment {name!r} has an invalid {key}")
+        commands = environment.get("commands", {})
         if not isinstance(commands, dict):
-            raise ValueError(f"remote profile {name!r} commands must be a table")
+            raise ValueError(f"remote environment {name!r} commands must be a table")
         for command_name in ("qsub", "qstat", "qdel", "pbsnodes"):
             command_value = commands.get(command_name, command_name)
             if (
@@ -940,21 +938,21 @@ def _validate_remote_config(parsed: dict[str, object], base: Path) -> None:
                 or not command_value
                 or any(character.isspace() for character in command_value)
             ):
-                raise ValueError(f"remote profile {name!r} has an invalid scheduler command: {command_name}")
-        software = profile.get("software", {})
-        if not isinstance(software, dict):
-            raise ValueError(f"remote profile {name!r} software must be a table")
-        for backend, item in software.items():
+                raise ValueError(f"remote environment {name!r} has an invalid scheduler command: {command_name}")
+        backends = environment.get("backends", {})
+        if not isinstance(backends, dict):
+            raise ValueError(f"remote environment {name!r} backends must be a table")
+        for backend, item in backends.items():
             if not isinstance(backend, str) or not isinstance(item, dict):
-                raise ValueError(f"remote profile {name!r} has an invalid software profile")
+                raise ValueError(f"remote environment {name!r} has an invalid backend binding")
             command = item.get("command")
             if not isinstance(command, list) or not command or any(not isinstance(value, str) or not value for value in command):
-                raise ValueError(f"remote profile {name!r} software.{backend} must define command")
-            software_queues = item.get("allowed_queues", queues)
-            if not isinstance(software_queues, list) or not software_queues or any(
-                not isinstance(queue, str) or queue not in queues for queue in software_queues
+                raise ValueError(f"remote environment {name!r} backends.{backend} must define command")
+            backend_queues = item.get("allowed_queues", queues)
+            if not isinstance(backend_queues, list) or not backend_queues or any(
+                not isinstance(queue, str) or queue not in queues for queue in backend_queues
             ):
-                raise ValueError(f"remote profile {name!r} software.{backend} has invalid allowed_queues")
+                raise ValueError(f"remote environment {name!r} backends.{backend} has invalid allowed_queues")
             for path_key in ("activation_script", "scratch_root"):
                 path_value = item.get(path_key)
                 if path_value is not None and (
@@ -964,15 +962,15 @@ def _validate_remote_config(parsed: dict[str, object], base: Path) -> None:
                     or ".." in Path(path_value).parts
                     or any(not re.fullmatch(r"[A-Za-z0-9_.-]+", part) for part in Path(path_value).parts[1:])
                 ):
-                    raise ValueError(f"remote profile {name!r} software.{backend}.{path_key} must be a safe absolute path")
-        ssh_config = profile.get("ssh_config")
+                    raise ValueError(f"remote environment {name!r} backends.{backend}.{path_key} must be a safe absolute path")
+        ssh_config = environment.get("ssh_config")
         if not isinstance(ssh_config, str) or not ssh_config:
-            raise ValueError(f"remote profile {name!r} is missing ssh_config")
+            raise ValueError(f"remote environment {name!r} is missing ssh_config")
         ssh_path = Path(os.path.expandvars(os.path.expanduser(ssh_config)))
         if not ssh_path.is_absolute():
-            raise ValueError(f"remote profile {name!r} ssh_config must be an absolute path")
+            raise ValueError(f"remote environment {name!r} ssh_config must be an absolute path")
         if ssh_path.is_symlink() or not ssh_path.is_file():
-            raise ValueError(f"remote profile {name!r} ssh_config is not a regular file: {ssh_path}")
+            raise ValueError(f"remote environment {name!r} ssh_config is not a regular file: {ssh_path}")
 
 
 def _write_private_config_bytes(raw: bytes, destination: Path) -> None:
@@ -1017,7 +1015,7 @@ def probe_remote_backend(args: argparse.Namespace, configs: dict[str, dict[str, 
         return
     compute = configs.get("compute", {})
     if compute.get("status") == "not_configured":
-        raise ValueError("--probe-remote requires an installed compute configuration with a remote profile")
+        raise ValueError("--probe-remote requires an installed compute configuration with a remote environment")
     command = [str(Path(args.install_root) / "TSPi"), "--check-remote"]
     completed = subprocess.run(
         command,
@@ -1028,7 +1026,7 @@ def probe_remote_backend(args: argparse.Namespace, configs: dict[str, dict[str, 
     )
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
-        raise RuntimeError(f"remote backend readiness check failed: {detail or 'unknown error'}")
+        raise RuntimeError(f"remote environment readiness check failed: {detail or 'unknown error'}")
 
 
 def run_logged_install(
@@ -1704,7 +1702,7 @@ def web_unit(args: argparse.Namespace) -> str:
     wanted_by = "multi-user.target" if args.service_scope == "system" else "default.target"
     command_values: list[object] = [
         root / "TSWeb",
-        "--provider",
+        "--binding",
         root / ".pi/packages/tspi/current/agent/scripts/ts_web_provider.py",
         "serve",
         "--state-dir",

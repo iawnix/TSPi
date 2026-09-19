@@ -1,0 +1,43 @@
+{
+  "schema_version": "tspi-command-catalog/1",
+  "commands": [
+    {"id": "research.map", "domain": "research", "effect": "read", "required": []},
+    {"id": "research.summary", "domain": "research", "effect": "read", "required": []},
+    {"id": "research.detail", "domain": "research", "effect": "read", "required": ["kind", "id"]},
+    {"id": "research.locate", "domain": "research", "effect": "read", "required": ["query"]},
+    {"id": "research.validate", "domain": "research", "effect": "read", "required": []},
+    {"id": "research.operations", "domain": "research", "effect": "read", "required": []},
+    {"id": "research.change", "domain": "research", "effect": "write", "required": ["request"]},
+    {"id": "compute.environments", "domain": "compute", "effect": "read", "required": []},
+    {"id": "compute.environment", "domain": "compute", "effect": "read", "required": ["name"]},
+    {"id": "compute.capabilities", "domain": "compute", "effect": "read", "required": []},
+    {"id": "compute.artifacts", "domain": "compute", "effect": "read", "required": []},
+    {"id": "compute.runs", "domain": "compute", "effect": "read", "required": []}
+  ],
+  "slash_commands": {
+    "research": {
+      "name": "research",
+      "description": "Read or validate the current ResearchMap.",
+      "usage": "/research [summary|map|detail <kind> <id>|locate <query>|validate|operations]",
+      "completions": ["summary", "map", "detail", "locate", "validate", "operations"]
+    },
+    "compute": {
+      "name": "compute",
+      "description": "Inspect configured local and remote compute environments.",
+      "usage": "/compute [list|show <environment>]",
+      "completions": ["list", "show"]
+    },
+    "runs": {
+      "name": "runs",
+      "description": "Browse active and recorded Compute and Review runs.",
+      "usage": "/runs",
+      "completions": []
+    },
+    "debug": {
+      "name": "debug",
+      "description": "Inspect TSPi runtime diagnostics.",
+      "usage": "/debug prompt",
+      "completions": ["prompt"]
+    }
+  }
+}

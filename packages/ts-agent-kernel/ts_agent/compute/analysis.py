@@ -12,7 +12,7 @@ from typing import Any, Final
 
 from jsonschema import Draft202012Validator
 
-from .contracts import ComputeContractError
+from .errors import ComputeContractError
 from ts_agent.analysis.catalog import DESCRIPTORS
 
 

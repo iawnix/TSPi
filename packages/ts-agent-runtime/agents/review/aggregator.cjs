@@ -20,7 +20,7 @@ function aggregateReviewResults({ task, reviewerResults }) {
   return {
     schema_version: "ts-review-aggregate/1",
     task_id: normalizedTask.task_id,
-    target_claim_ref: normalizedTask.scope.claim_refs[0] || null,
+    target_claim_id: normalizedTask.scope.claim_refs[0] || null,
     outcome,
     reviewer_roles: rows.map((row) => row.reviewer_role).sort(),
     reviews: rows.map((row) => ({

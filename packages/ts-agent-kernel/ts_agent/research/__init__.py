@@ -22,7 +22,7 @@ from .model import (
     ClaimGate,
     NodeGate,
 )
-from .kernel import ResearchKernel, ResearchKernelError, create_research_map
+from .kernel import ResearchKernel, ResearchKernelError
 
 __all__ = [
     "ClaimGate",
@@ -42,7 +42,6 @@ __all__ = [
     "ResearchClaim",
     "ResearchKernel",
     "ResearchKernelError",
-    "create_research_map",
     "ResearchMap",
     "ResearchModelError",
     "ResearchNode",

@@ -171,55 +171,6 @@ class ResearchKernel:
                 handle.close()
 
 
-def create_research_map(root: str | Path, map_id: str, title: str, created_at: str) -> ResearchMap:
-    """Create a complete canonical workspace containing one ResearchMap."""
-
-    from ts_agent.io import write_json
-    from ts_agent.workspace.identity import ensure_workspace_identity
-    from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
-
-    root_path = lexical_path(root)
-    if path_has_symlink(root_path):
-        raise ResearchKernelError("workspace root cannot contain a symbolic link")
-    research_map = ResearchMap(map_id=map_id, title=title, created_at=created_at)
-    kernel = ResearchKernel(root_path)
-    legacy_names = (
-        "research_state.json", "phases.json", "claims.json", "claim_relations.json",
-        "research_nodes.json", "observations.json", "proof_specs.json",
-        "validation_results.json", "findings.json", "gate_specs.json", "gate_results.json",
-        "decision_log.jsonl", "transaction_log.jsonl",
-    )
-    legacy = [name for name in legacy_names if (root_path / name).exists() or (root_path / name).is_symlink()]
-    if legacy:
-        raise ResearchKernelError("legacy research files are not supported: " + ", ".join(sorted(legacy)))
-    for name in ("workspace.json", MAP_FILE, TRANSACTION_FILE):
-        path = root_path / name
-        if has_symlink_component(root_path, path) or path.is_symlink():
-            raise ResearchKernelError(f"workspace path contains a symbolic link: {name}")
-        if path.exists():
-            raise ResearchKernelError(f"workspace already contains canonical state: {name}")
-    root_path.mkdir(parents=True, exist_ok=True)
-    for dirname in ("nodes", "operations", "scratch", "inputs"):
-        directory = root_path / dirname
-        if has_symlink_component(root_path, directory) or directory.is_symlink():
-            raise ResearchKernelError(f"workspace path contains a symbolic link: {dirname}")
-        if directory.exists() and not directory.is_dir():
-            raise ResearchKernelError(f"workspace path is not a directory: {dirname}")
-        directory.mkdir(parents=True, exist_ok=True)
-    identity = ensure_workspace_identity(root_path)
-    write_json(
-        root_path / "workspace.json",
-        {
-            "schema_version": "research-workspace/1",
-            "workspace_id": identity["workspace_id"],
-            "kernel_protocol": "research-map/1",
-            "created_at": created_at,
-        },
-    )
-    (root_path / TRANSACTION_FILE).touch(mode=0o600)
-    return kernel.save(research_map)
-
-
 def _apply_operation(research_map: ResearchMap, operation: dict[str, Any]) -> list[str]:
     from ts_agent.workspace.operation_registry import validate_input_operation_keys
 

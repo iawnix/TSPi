@@ -394,13 +394,13 @@ export function createReportTool() {
         assertReportBuilderPaths(root, refs, raw);
         const manifestDigest = requireDigest(raw.manifest_digest, "report manifest digest");
         const revision = requireDigest(raw.workspace_revision, "report workspace revision");
-        const operationalRevision = requireDigest(raw.operational_revision, "report operational revision");
+        const runtimeRevision = requireDigest(raw.runtime_revision, "report runtime revision");
         const verified = validateCreatedReportPackage(
           root,
           request.packageRef,
           manifestDigest,
           revision,
-          operationalRevision,
+          runtimeRevision,
         );
         const result = {
           schema_version: "ts-report-result/2",
@@ -413,7 +413,7 @@ export function createReportTool() {
           manifest_ref: refs.manifest_ref,
           manifest_digest: verified.manifest_digest,
           workspace_revision: revision,
-          operational_revision: operationalRevision,
+          runtime_revision: runtimeRevision,
           file_count: verified.file_count,
           asset_artifact_ids: request.assetArtifactIds,
           asset_refs: requireReportAssetRefs(raw.asset_refs, request.packageRef, request.assetArtifactIds.length),

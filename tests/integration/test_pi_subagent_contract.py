@@ -25,8 +25,8 @@ def test_review_task_is_graph_scoped_bounded_and_advisory(tmp_path: Path) -> Non
     refs = start_research_node(workspace, claim_statement="The pathway is concerted.")
     bundle = build_review_bundle(workspace, refs, "sub_1")
     task = bundle["task"]
-    snapshot = bundle["documents"]["review_snapshot"]
-    provider = bundle["documents"]["provider_input"]
+    research_map = bundle["documents"]["research_map"]
+    review_context = bundle["documents"]["review_context"]
 
     assert task["schema_version"] == "ts-agent-task/2"
     assert task["role"] == "review"
@@ -34,16 +34,16 @@ def test_review_task_is_graph_scoped_bounded_and_advisory(tmp_path: Path) -> Non
     assert task["capabilities"] == ["ts_review_result"]
     assert task["scope"]["node_refs"] == [refs["node_id"]]
     assert task["scope"]["claim_refs"] == [refs["claim_id"]]
-    assert set(task["inputs"]) == {"review_snapshot", "provider_input"}
-    assert snapshot["schema_version"] == "ts-review-task-snapshot/4"
-    assert provider["schema_version"] == "ts-review-provider-input/6"
-    assert snapshot["artifact_manifest"] == []
-    assert provider["artifact_manifest"] == []
-    assert provider["dossier"]["nodes"][0]["claim_ids"] == [refs["claim_id"]]
-    assert provider["dossier"]["nodes"][0]["phase_id"] == refs["phase_id"]
-    assert provider["dossier"]["phases"][0]["id"] == refs["phase_id"]
-    assert len(json.dumps(provider).encode()) < 32 * 1024
-    serialized = json.dumps(provider)
+    assert set(task["inputs"]) == {"research_map", "review_context"}
+    assert research_map["schema_version"] == "research-map/1"
+    assert review_context["schema_version"] == "ts-review-context/1"
+    assert review_context["target_claim_id"] == refs["claim_id"]
+    assert review_context["artifact_manifest"] == []
+    assert research_map["nodes"][0]["claim_ids"] == [refs["claim_id"]]
+    assert research_map["nodes"][0]["phase_id"] == refs["phase_id"]
+    assert research_map["phases"][0]["id"] == refs["phase_id"]
+    assert len(json.dumps({"research_map": research_map, "review_context": review_context}).encode()) < 32 * 1024
+    serialized = json.dumps(bundle["documents"])
     for retired in ('"act_id"', '"hypothesis"', '"evidence"', '"gate_results"', '"required_gates"'):
         assert retired not in serialized
 
@@ -52,16 +52,16 @@ def test_review_request_accepts_only_claim_and_logical_artifact_ids() -> None:
     script = (
         f"const helper=require({json.dumps(str(TASK_PACKET))});"
         "const values=["
-        "{targetClaimRef:'claim_1',question:'Review this.',artifactIds:['art_'+ 'b'.repeat(24)]},"
-        "{targetClaimRef:'claim_1',question:'Review this.',artifactIds:['../output.log']},"
-        "{targetClaimRef:'clm_'+ 'a'.repeat(24),question:'Review this.',artifactIds:[]}];"
+        "{targetClaimId:'claim_1',question:'Review this.',artifactIds:['art_'+ 'b'.repeat(24)]},"
+        "{targetClaimId:'claim_1',question:'Review this.',artifactIds:['../output.log']},"
+        "{targetClaimId:'clm_'+ 'a'.repeat(24),question:'Review this.',artifactIds:[]}];"
         "const out=values.map(v=>{try{return {ok:true,value:helper.validateSubagentRequest(v)}}"
         "catch(error){return {ok:false,error:error.message}}});process.stdout.write(JSON.stringify(out));"
     )
     rows = json.loads(_node(script).stdout)
     assert rows[0]["ok"] is True
     assert rows[1]["ok"] is False and "artifactIds" in rows[1]["error"]
-    assert rows[2]["ok"] is False and "targetClaimRef" in rows[2]["error"]
+    assert rows[2]["ok"] is False and "targetClaimId" in rows[2]["error"]
 
 
 def test_review_packet_carries_compact_current_gate_state(tmp_path: Path) -> None:
@@ -69,11 +69,10 @@ def test_review_packet_carries_compact_current_gate_state(tmp_path: Path) -> Non
     refs = accept_research_claim(workspace)
     bundle = build_review_bundle(workspace, refs, "sub_1")
 
-    dossier = bundle["documents"]["provider_input"]["dossier"]
-    assert dossier["target_claim"]["id"] == refs["claim_id"]
-    assert dossier["target_claim"]["status"] == "supported"
-    assert dossier["findings"][0]["kind"] == "fact"
-    assert "acceptances" not in dossier
+    research_map = bundle["documents"]["research_map"]
+    assert next(item for item in research_map["claims"] if item["id"] == refs["claim_id"])["status"] == "supported"
+    assert research_map["findings"][0]["kind"] == "fact"
+    assert "acceptances" not in research_map
 
 
 def test_review_result_requires_array_risks_and_bound_basis_refs(tmp_path: Path) -> None:
@@ -81,23 +80,23 @@ def test_review_result_requires_array_risks_and_bound_basis_refs(tmp_path: Path)
     refs = start_research_node(workspace)
     bundle = build_review_bundle(workspace, refs, "sub_1")
     task = bundle["task"]
-    snapshot = bundle["documents"]["review_snapshot"]
-    basis = snapshot["basis_allowlist"][0]
+    review_context = bundle["documents"]["review_context"]
+    basis = review_context["basis_allowlist"][0]
     valid = _result(task, basis)
 
-    accepted = _validate_result(tmp_path, task, snapshot, valid)
+    accepted = _validate_result(tmp_path, task, review_context, valid)
     assert accepted.returncode == 0, accepted.stderr
     assert json.loads(accepted.stdout)["facts"][0]["basis_refs"] == [basis]
 
     risks_string = json.loads(json.dumps(valid))
     risks_string["payload"]["options"][0]["risks"] = "one risk"
-    rejected = _validate_result(tmp_path, task, snapshot, risks_string)
+    rejected = _validate_result(tmp_path, task, review_context, risks_string)
     assert rejected.returncode == 2
     assert "risks must be an array" in rejected.stderr
 
     outside = json.loads(json.dumps(valid))
     outside["facts"][0]["basis_refs"] = ["obs_outside"]
-    rejected = _validate_result(tmp_path, task, snapshot, outside)
+    rejected = _validate_result(tmp_path, task, review_context, outside)
     assert rejected.returncode == 2
     assert "outside task packet" in rejected.stderr
 
@@ -114,7 +113,7 @@ import {{ Compile }} from "typebox/compile";
 import {{ createReviewResultCapture, createReviewResultTool }} from {json.dumps(RESULT_TOOL.as_uri())};
 const bundle=JSON.parse(readFileSync(process.argv[1],"utf8"));
 const capture=createReviewResultCapture();
-const tool=createReviewResultTool(bundle.task,bundle.documents.review_snapshot,capture);
+const tool=createReviewResultTool(bundle.task,bundle.documents.review_context,capture);
 const validator=Compile(tool.parameters);
 const base={{outcome:"partial",summary:"Bounded result",facts:[],missing_evidence:[],conflicts:[],options:[],limitations:[]}};
 process.stdout.write(JSON.stringify({{
@@ -263,13 +262,13 @@ def _result(task: dict, basis_ref: str) -> dict:
     }
 
 
-def _validate_result(tmp_path: Path, task: dict, snapshot: dict, result: dict) -> subprocess.CompletedProcess[str]:
+def _validate_result(tmp_path: Path, task: dict, review_context: dict, result: dict) -> subprocess.CompletedProcess[str]:
     input_path = tmp_path / "review-result.json"
-    input_path.write_text(json.dumps({"task": task, "snapshot": snapshot, "result": result}), encoding="utf-8")
+    input_path.write_text(json.dumps({"task": task, "review_context": review_context, "result": result}), encoding="utf-8")
     script = (
         f"const fs=require('node:fs');const helper=require({json.dumps(str(OUTPUT_SCHEMA))});"
         "const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
-        "try{process.stdout.write(JSON.stringify(helper.validateReviewResult(value.result,value.task,value.snapshot)));}"
+        "try{process.stdout.write(JSON.stringify(helper.validateReviewResult(value.result,value.task,value.review_context)));}"
         "catch(error){process.stderr.write(error.message);process.exitCode=2;}"
     )
     return _node(script, str(input_path))

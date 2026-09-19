@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ts_agent.io import now_iso, read_json, sha256_json, write_json
 from .errors import ContractError
-from .path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .refs import NODE_ID
 from .transactions import workspace_lock
 
@@ -72,7 +72,8 @@ def set_node_dispatch(root: str | Path, node_id: str, operation: str, rationale:
     return {**record, "replayed": False}
 
 
-def dispatch_projection(root: str | Path, node_ids: list[str]) -> list[dict]:
+def dispatch_status(root: str | Path, node_ids: list[str]) -> list[dict]:
+    """Return the current execution hold status for each ResearchNode."""
     workspace = lexical_path(root)
     rows = []
     for node_id in node_ids:

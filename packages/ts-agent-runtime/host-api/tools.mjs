@@ -121,7 +121,7 @@ export function createPublicToolContracts(Type) {
       parameters: Type.Optional(calculationParameters),
       executionTarget: Type.Optional(Type.Object({
         kind: literalUnion(["local", "remote"]),
-        profile: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" })),
+        environment: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" })),
         resources: Type.Optional(remoteResources),
       }, { additionalProperties: false })),
       tailArtifact: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
@@ -135,7 +135,7 @@ export function createPublicToolContracts(Type) {
       promptSnippet: "Run one calculation lifecycle operation",
     }),
     review: contract("review", "TS Review", "Run one isolated, bounded advisory Review of a target Claim.", Type.Object({
-      targetClaimRef: Type.String({ pattern: "^claim_[1-9][0-9]*$", maxLength: 128, description: "Scientific Claim that the Review must assess." }),
+      targetClaimId: Type.String({ pattern: "^claim_[1-9][0-9]*$", maxLength: 128, description: "Scientific Claim that the Review must assess." }),
       question: Type.String({ minLength: 1, maxLength: 4000 }),
       reviewerRole: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9_-]{0,63}$" })),
       artifactIds: Type.Optional(Type.Array(artifactId, { maxItems: 4, uniqueItems: true })),

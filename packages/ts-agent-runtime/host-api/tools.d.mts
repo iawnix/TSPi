@@ -42,7 +42,7 @@ export interface ComputeToolParams extends WorkspaceToolParams {
   timeoutSeconds?: number;
 }
 export interface ReviewToolParams extends WorkspaceToolParams {
-  targetClaimRef: string;
+  targetClaimId: string;
   question: string;
   reviewerRole?: string;
   artifactIds?: string[];

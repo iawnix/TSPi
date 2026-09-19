@@ -1,9 +1,9 @@
-"""Read-only projection of noncanonical runtime state.
+"""Read noncanonical execution and agent runtime state.
 
-Canonical scientific state lives in the workspace registries. Calculation attempts,
+Canonical scientific state lives in ResearchMap. Calculation attempts,
 deterministic tool activities, Compute/Review runs, and control receipts are
 durable operational records, but they never become scientific support merely
-because they appear in this projection.
+because they appear in runtime status.
 """
 
 from __future__ import annotations
@@ -17,9 +17,8 @@ from typing import Any, Iterable
 
 from .activities import activity_completion_blockers, build_activity_index
 from ts_agent.io import read_json, sha256_json
-from .path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .refs import NODE_ID, ACTIVITY_ID, CALCULATION_ID, CLAIM_ID, SUBAGENT_RUN_ID
-from .schema_validation import SchemaValidationError, validate_contract
 
 
 # A scheduler reaching ``completed`` is not the same as a Compute Attempt
@@ -33,14 +32,14 @@ _TERMINAL_ATTEMPT_STATES = frozenset({"failed", "stopped", "parsed"})
 _COMPLETION_SAFE_ATTEMPT_STATES = frozenset({"prepared", *_TERMINAL_ATTEMPT_STATES})
 
 
-def operational_snapshot(
+def runtime_status(
     root: str | Path,
     *,
     exclude_activity_refs: Iterable[str] = (),
 ) -> dict[str, Any]:
     root_path = lexical_path(root)
     if path_has_symlink(root_path):
-        return _empty_operational_snapshot({
+        return _empty_runtime_status({
             "code": "workspace_path_symlink",
             "scope": "workspace",
             "path": ".",
@@ -52,16 +51,16 @@ def operational_snapshot(
         exclude_activity_refs=exclude_activity_refs,
     )
     excluded = set(activity_index["excluded_activity_refs"])
-    operational_integrity_findings: list[dict[str, Any]] = []
+    runtime_integrity_findings: list[dict[str, Any]] = []
     files = _operational_files(
         root_path,
         excluded_activity_refs=excluded,
-        integrity_findings=operational_integrity_findings,
+        integrity_findings=runtime_integrity_findings,
     )
     activities = activity_index["activities"]
     agent_runs = agent_run_index(
         root_path,
-        integrity_findings=operational_integrity_findings,
+        integrity_findings=runtime_integrity_findings,
     )
     pending_review_dispositions = review_disposition_obligations(agent_runs)
     review_disposition_count = sum(1 for row in agent_runs if row.get("root_disposition"))
@@ -69,7 +68,7 @@ def operational_snapshot(
     control_effects = _control_effects(
         root_path,
         files,
-        integrity_findings=operational_integrity_findings,
+        integrity_findings=runtime_integrity_findings,
     )
     calculation_attempts = calculation_attempt_index(root_path)
     calculation_attempt_integrity_findings = _calculation_attempt_integrity_findings(
@@ -93,17 +92,18 @@ def operational_snapshot(
     file_digests = _safe_operational_file_digests(
         root_path,
         files,
-        operational_integrity_findings,
+        runtime_integrity_findings,
     )
-    from .dispatch import dispatch_projection
-    dispatch = dispatch_projection(root_path, [p.name for p in (root_path / "nodes").iterdir() if NODE_ID.fullmatch(p.name)] if (root_path / "nodes").is_dir() else [])
+    from .dispatch import dispatch_status
+    dispatch = dispatch_status(root_path, [p.name for p in (root_path / "nodes").iterdir() if NODE_ID.fullmatch(p.name)] if (root_path / "nodes").is_dir() else [])
     return {
+        "schema_version": "ts-runtime-status/1",
         "node_dispatch": dispatch,
-        "operational_revision": sha256_json(
+        "runtime_revision": sha256_json(
             {
                 "files": file_digests,
                 "activity_integrity_findings": activity_index["integrity_findings"],
-                "operational_integrity_findings": operational_integrity_findings,
+                "runtime_integrity_findings": runtime_integrity_findings,
                 "excluded_activity_refs": activity_index["excluded_activity_refs"],
                 "calculation_attempts": calculation_attempts,
                 "calculation_attempt_integrity_findings": calculation_attempt_integrity_findings,
@@ -112,7 +112,7 @@ def operational_snapshot(
         "deterministic_activities": activities,
         "activity_summaries": activity_index["activity_summaries"],
         "activity_integrity_findings": activity_index["integrity_findings"],
-        "operational_integrity_findings": operational_integrity_findings,
+        "runtime_integrity_findings": runtime_integrity_findings,
         "excluded_activity_refs": activity_index["excluded_activity_refs"],
         "calculation_attempt_integrity_findings": calculation_attempt_integrity_findings,
         "agent_runs": agent_runs,
@@ -124,7 +124,7 @@ def operational_snapshot(
         "ambiguous_cancellations": ambiguous_cancellations,
         "retryable_controls": retryable_controls,
         "calculation_attempts": calculation_attempts,
-        "operational_summary": {
+        "runtime_summary": {
             "paused_node_count": sum(row.get("paused") is True for row in dispatch),
             "tracked_file_count": len(file_digests),
             "calculation_file_count": sum(
@@ -146,7 +146,7 @@ def operational_snapshot(
             "ambiguous_cancellation_count": len(ambiguous_cancellations),
             "control_retryable_count": len(retryable_controls),
             # Synthetic parent rows are diagnostics, not Attempts.  Keep them
-            # out of the entity count so projections cannot imply a fake
+            # out of the entity count so runtime status cannot imply a fake
             # ``calc_*`` record exists.
             "calculation_attempt_count": len(concrete_attempts),
             "calculation_attempt_blocking_count": sum(
@@ -160,7 +160,7 @@ def operational_snapshot(
 
 
 def node_completion_blockers(
-    snapshot: dict[str, Any],
+    status: dict[str, Any],
     *,
     node_id: str,
     outcome: str,
@@ -169,8 +169,8 @@ def node_completion_blockers(
 
     blockers = activity_completion_blockers(
         {
-            "activities": snapshot.get("deterministic_activities", []),
-            "integrity_findings": snapshot.get("activity_integrity_findings", []),
+            "activities": status.get("deterministic_activities", []),
+            "integrity_findings": status.get("activity_integrity_findings", []),
         },
         node_id=node_id,
         outcome=outcome,
@@ -178,13 +178,13 @@ def node_completion_blockers(
     control_blocked_intents = {
         str(row.get("intent_id"))
         for key in ("pending_controls", "unresolved_controls")
-        for row in snapshot.get(key, [])
+        for row in status.get(key, [])
         if isinstance(row, dict) and row.get("node_id") == node_id and row.get("intent_id")
     }
     # A Compute run is only one part of an Attempt lifecycle.  The child run
     # can finish after submitting a remote job while the scheduler job remains
     # queued/running, so inspect the durable Attempt status as well.
-    for row in snapshot.get("calculation_attempts", []):
+    for row in status.get("calculation_attempts", []):
         if not isinstance(row, dict) or row.get("node_id") != node_id:
             continue
         ref = str(row.get("path") or row.get("intent_id") or node_id)
@@ -206,8 +206,8 @@ def node_completion_blockers(
     # Operational records are separate from scientific state, but an unsafe
     # path must still prevent a Node from being declared complete.  The file
     # scanner records symlink/non-file matches instead of silently dropping
-    # them from the control projection.
-    for finding in snapshot.get("operational_integrity_findings", []):
+    # them from the current runtime status.
+    for finding in status.get("runtime_integrity_findings", []):
         if not isinstance(finding, dict) or node_id not in _string_list(finding.get("node_refs")):
             continue
         ref = str(finding.get("path") or node_id)
@@ -217,7 +217,7 @@ def node_completion_blockers(
             "message": str(finding.get("message") or f"unsafe operational path: {ref}"),
         })
 
-    for row in snapshot.get("agent_runs", []):
+    for row in status.get("agent_runs", []):
         if (
             not isinstance(row, dict)
             or row.get("role") != "compute"
@@ -232,7 +232,7 @@ def node_completion_blockers(
                 "ref": ref,
                 "message": f"Compute run is still {state}: {ref}",
             })
-    for row in snapshot.get("pending_controls", []):
+    for row in status.get("pending_controls", []):
         if isinstance(row, dict) and row.get("node_id") == node_id:
             ref = str(row.get("guard_ref") or row.get("intent_id") or node_id)
             blockers.append({
@@ -240,7 +240,7 @@ def node_completion_blockers(
                 "ref": ref,
                 "message": f"pending compute control must finish before Node completion: {ref}",
             })
-    for row in snapshot.get("unresolved_controls", []):
+    for row in status.get("unresolved_controls", []):
         if isinstance(row, dict) and row.get("node_id") == node_id:
             ref = str(row.get("result_ref") or row.get("intent_id") or node_id)
             blockers.append({
@@ -359,7 +359,7 @@ def _discover_agent_run_paths(
 
     A recursive glob can silently walk through a linked ``runs`` parent, and
     it emits no row when a linked run directory is empty.  Explicitly inspect
-    each managed level so the operational projection can report the unsafe
+    each managed level so runtime status can report the unsafe
     path and never read a document outside the workspace.
     """
 
@@ -486,12 +486,12 @@ def _discover_agent_run_paths(
 def _calculation_attempt_integrity_findings(
     rows: Iterable[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Project Attempt integrity errors without inventing Attempt entities.
+    """Report Attempt integrity errors without inventing Attempt entities.
 
     ``calculation_attempt_index`` may contain a synthetic row for an unsafe
     ``attempts/`` parent.  Such a row has no ``intent_id`` and must remain a
     parent-scope diagnostic rather than being rendered as ``calc_*``.  Concrete
-    Attempt errors are included in the same projection so every consumer can
+    Attempt errors are included in the same status so every consumer can
     inspect one complete, consistently shaped diagnostic stream.
     """
 
@@ -717,17 +717,18 @@ def _append_operational_finding(
     })
 
 
-def _empty_operational_snapshot(finding: dict[str, Any]) -> dict[str, Any]:
-    """Return a bounded, read-free projection for an unsafe workspace root."""
+def _empty_runtime_status(finding: dict[str, Any]) -> dict[str, Any]:
+    """Return bounded status for an unsafe workspace root."""
 
     findings = [finding]
     return {
+        "schema_version": "ts-runtime-status/1",
         "node_dispatch": [],
-        "operational_revision": sha256_json({"workspace_path_finding": finding}),
+        "runtime_revision": sha256_json({"workspace_path_finding": finding}),
         "deterministic_activities": [],
         "activity_summaries": [],
         "activity_integrity_findings": findings,
-        "operational_integrity_findings": [],
+        "runtime_integrity_findings": [],
         "excluded_activity_refs": [],
         "calculation_attempt_integrity_findings": [],
         "agent_runs": [],
@@ -739,7 +740,7 @@ def _empty_operational_snapshot(finding: dict[str, Any]) -> dict[str, Any]:
         "ambiguous_cancellations": [],
         "retryable_controls": [],
         "calculation_attempts": [],
-        "operational_summary": {
+        "runtime_summary": {
             "paused_node_count": 0,
             "tracked_file_count": 0,
             "calculation_file_count": 0,
@@ -779,7 +780,7 @@ def calculation_attempt_index(root: str | Path) -> list[dict[str, Any]]:
     # Discover the parent and children explicitly instead of relying on one
     # recursive glob.  ``Path.glob`` follows a symlinked ``attempts`` parent
     # and silently returns no rows for an empty/inaccessible target; both cases
-    # must remain visible to the completion guard and read-only projections.
+    # must remain visible to the completion guard and runtime status.
     attempt_dirs = _discover_attempt_paths(root_path)
 
     rows: list[dict[str, Any]] = []
@@ -1024,15 +1025,6 @@ def _attempt_intent_errors(
 ) -> list[str]:
     errors: list[str] = []
     try:
-        validate_contract("attempt_intent_projection.schema.json", intent)
-    except SchemaValidationError as exc:
-        errors.append(str(exc))
-    # The workspace projection schema deliberately documents the fields that
-    # the operational index reads.  The Compute contract remains authoritative
-    # for the complete immutable intent (including closed fields and capability
-    # bindings), so validate it here as well rather than allowing a permissive
-    # projection schema to make malformed intents look executable.
-    try:
         from ts_agent.calculation_contracts import (
             CalculationContractError,
             validate_calculation_contract,
@@ -1080,12 +1072,6 @@ def _attempt_result_errors(
 ) -> list[str]:
     if not intent:
         return [f"{label} cannot be bound without intent.json"]
-    try:
-        validate_contract("attempt_result_projection.schema.json", document)
-    except SchemaValidationError as exc:
-        return [str(exc)]
-    # Keep the binding rule in the Compute contract module so the writer,
-    # control path, operational index, and Web projection cannot drift apart.
     try:
         from ts_agent.calculation_contracts import (
             CalculationContractError,
@@ -1366,7 +1352,7 @@ def _safe_operational_file_digests(
     Enumeration and hashing are separate filesystem operations.  A file can
     disappear or be replaced by a link in between them; that condition must
     become a visible operational finding rather than an exception or an
-    external file digest in ``operational_revision``.
+    external file digest in ``runtime_revision``.
     """
 
     findings_seen = _finding_key_set(integrity_findings)

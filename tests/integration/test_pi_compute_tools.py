@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from ts_agent.compute.contracts import validate_compute_contract
+from ts_agent.calculation_contracts import validate_calculation_contract
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,7 +32,7 @@ import {{ Compile }} from "typebox/compile";
 let compute;const pi={{registerTool:(tool)=>{{if(tool.name==="ts_calc")compute=tool}},registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{emit:()=>{{}}}}}};
 install(pi);const check=Compile(compute.parameters);
 const base={{nodeId:"node_1"}};
-const launch={{...base,operation:"launch",purpose:"Single point",capability:"gaussian.sp",capabilityVersion:"1",attemptKind:"primary",inputArtifacts:[{{inputRole:"gjf",artifactId:"art_"+"b".repeat(24)}}],executionTarget:{{kind:"remote",profile:"cluster_1w",resources:{{queue:"batch",nodes:1,ncpus:8,memory:"16gb",walltime:"01:00:00",ngpus:0}}}}}};
+const launch={{...base,operation:"launch",purpose:"Single point",capability:"gaussian.sp",capabilityVersion:"1",attemptKind:"primary",inputArtifacts:[{{inputRole:"gjf",artifactId:"art_"+"b".repeat(24)}}],executionTarget:{{kind:"remote",environment:"cluster_1w",resources:{{queue:"batch",nodes:1,ncpus:8,memory:"16gb",walltime:"01:00:00",ngpus:0}}}}}};
 const localLaunch={{...launch,executionTarget:{{kind:"local"}}}};
 const invalidInspect={{...base,operation:"inspect",intentId:"calc_1",purpose:"bad"}};
 let hostError="";
@@ -120,7 +120,7 @@ def test_untyped_control_exception_requires_reconciliation_and_stays_schema_vali
     )
     payload = json.loads(_node(script).stdout)
     result = payload["result"]
-    validate_compute_contract("calculation_result.schema.json", result)
+    validate_calculation_contract("calculation_result.schema.json", result)
     assert payload["action"]["result"]["action_status"] == "unknown"
     assert result["state"] == "unknown"
     assert result["error_class"] == "submission_ambiguous"

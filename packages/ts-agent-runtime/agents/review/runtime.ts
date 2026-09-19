@@ -23,7 +23,7 @@ const {
   headerValue,
   stripIncompatibleThinkingToolChoice,
 } = require("../../agent-core/provider-turn.cjs");
-const { validateReviewTaskBundle } = require("./task-packet.cjs");
+const { buildReviewPromptPayload, validateReviewTaskBundle } = require("./task-packet.cjs");
 const { loadReviewerRole } = require("./roles.cjs");
 import {
   createReviewResultCapture,
@@ -54,8 +54,8 @@ const activeRunIds = new Set<string>();
 interface ReviewRunOptions {
   workspaceRoot: string;
   packet: Record<string, unknown>;
-  reviewSnapshot: Record<string, unknown>;
-  providerInput: Record<string, unknown>;
+  researchMap: Record<string, unknown>;
+  reviewContext: Record<string, unknown>;
   parentModel: Model<any>;
   parentApiKey?: string;
   thinkingLevel: ThinkingLevel;
@@ -123,13 +123,13 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
   try {
     const timeoutMs = normalizeTimeout(options.timeoutMs);
     const bundle = validateReviewTaskBundle(options.packet, {
-      review_snapshot: options.reviewSnapshot,
-      provider_input: options.providerInput,
+      research_map: options.researchMap,
+      review_context: options.reviewContext,
     });
     options.packet = bundle.task;
-    options.reviewSnapshot = bundle.documents.review_snapshot;
-    options.providerInput = bundle.documents.provider_input;
-    const reviewerRoleBinding = (options.reviewSnapshot as { reviewer_role?: { role_id?: string } }).reviewer_role;
+    options.researchMap = bundle.documents.research_map;
+    options.reviewContext = bundle.documents.review_context;
+    const reviewerRoleBinding = (options.reviewContext as { reviewer_role?: { role_id?: string } }).reviewer_role;
     const reviewerRole = loadReviewerRole(reviewerRoleBinding?.role_id || "general");
     const systemPrompt = loadSystemPrompt(String(options.packet.operation || ""), reviewerRole);
     const agentDir = getAgentDir();
@@ -148,12 +148,12 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
       retry: { enabled: false },
     });
     const capture = createReviewResultCapture();
-    const artifactManifest = Array.isArray(options.reviewSnapshot.artifact_manifest)
-      ? options.reviewSnapshot.artifact_manifest
+    const artifactManifest = Array.isArray(options.reviewContext.artifact_manifest)
+      ? options.reviewContext.artifact_manifest
       : [];
     const resultTool = createReviewResultTool(
       options.packet,
-      options.reviewSnapshot,
+      options.reviewContext,
       capture,
       artifactReadCapture,
     );
@@ -219,7 +219,12 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
           }
         });
         try {
-          await promptWithDeadline(session, buildTaskPrompt(options.providerInput, Boolean(artifactTool)), {
+          const promptPayload = buildReviewPromptPayload(
+            options.packet,
+            options.researchMap,
+            options.reviewContext,
+          );
+          await promptWithDeadline(session, buildTaskPrompt(promptPayload, Boolean(artifactTool)), {
             timeoutMs,
             signal: options.signal,
             onLifecycle: options.onLifecycle,
@@ -353,11 +358,11 @@ function loadSystemPrompt(operation: string, reviewerRole: { role_id: string; ti
   return `${core}\n\nReviewer role (${reviewerRole.role_id}, revision ${reviewerRole.prompt_revision}): ${reviewerRole.title}.\nSpecialty: ${reviewerRole.specialty}.\nRole boundary: ${reviewerRole.description}\n\nReview mode instructions:\n${role}`;
 }
 
-function buildTaskPrompt(providerInput: Record<string, unknown>, hasArtifacts: boolean): string {
+function buildTaskPrompt(promptPayload: Record<string, unknown>, hasArtifacts: boolean): string {
   const artifactInstruction = hasArtifacts
     ? ` You may call ${ARTIFACT_READ_TOOL_NAME} once with a bounded batch if the logical artifact manifest is needed; otherwise submit directly.`
     : "";
-  return `Review this bounded TS workspace task packet.${artifactInstruction} Submit the result exactly once through ${REVIEW_RESULT_TOOL_NAME}; free text is not a result.\n\n${JSON.stringify(providerInput)}`;
+  return `Review this ResearchMap task.${artifactInstruction} Submit the result exactly once through ${REVIEW_RESULT_TOOL_NAME}; free text is not a result.\n\n${JSON.stringify(promptPayload)}`;
 }
 
 async function repairMissingToolCall(

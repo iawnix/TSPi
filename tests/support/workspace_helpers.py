@@ -161,11 +161,11 @@ def build_review_bundle(
         "runId": task_id,
         "workspaceRoot": str(root),
         "request": {
-            "targetClaimRef": refs["claim_id"],
+            "targetClaimId": refs["claim_id"],
             "question": question,
             "artifactIds": artifact_ids or [],
         },
-        "reviewSnapshot": build_review_snapshot(root, target_claim_ref=refs["claim_id"]),
+        "researchMap": ResearchKernel(root).load().to_dict(),
         "artifactCatalog": artifact_catalog or [],
     }
     request_path = root.parent / f"{task_id}.json"
@@ -179,32 +179,3 @@ def build_review_bundle(
     )
     assert completed.returncode == 0, completed.stderr
     return json.loads(completed.stdout)
-
-
-def build_review_snapshot(root: Path, *, target_claim_ref: str) -> dict[str, Any]:
-    """Build the review adapter envelope directly from the canonical map."""
-
-    document = ResearchKernel(root).load().to_dict()
-    digest = sha256_json(document)
-    return {
-        "schema_version": "ts-review-snapshot/5",
-        "report_id": document["map_id"],
-        "workspace_revision": digest,
-        "snapshot_id": "ctx_" + digest.removeprefix("sha256:")[:24],
-        "target_claim_ref": target_claim_ref,
-        "phases": document["phases"],
-        "claims": document["claims"],
-        "claim_relations": document["claim_relations"],
-        "nodes": document["nodes"],
-        "findings": document["findings"],
-        "gates": document["gates"],
-        "dependency_refs": {
-            "phase_refs": [item["id"] for item in document["phases"]],
-            "claim_refs": [item["id"] for item in document["claims"]],
-            "relation_refs": [],
-            "node_refs": [item["id"] for item in document["nodes"]],
-            "finding_refs": [item["id"] for item in document["findings"]],
-            "gate_refs": [item["id"] for item in document["gates"]],
-        },
-        "omitted": {},
-    }

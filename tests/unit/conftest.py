@@ -4,26 +4,26 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def unified_compute_profile(tmp_path, monkeypatch):
-    """Give unit tests an explicit local profile without production fallbacks."""
+def unified_compute_environment(tmp_path, monkeypatch):
+    """Give unit tests an explicit local environment without production fallbacks."""
 
     config = tmp_path / "compute.toml"
     config.write_text(
-        """default_profile = \"local\"
+        """default_environment = \"local\"
 
-[profiles.local]
+[environments.local]
 kind = \"local\"
 
-[profiles.local.software.gaussian]
+[environments.local.backends.gaussian]
 command = \"g16\"
 
-[profiles.local.software.xtb]
+[environments.local.backends.xtb]
 command = \"xtb\"
 
-[profiles.local.software.crest]
+[environments.local.backends.crest]
 command = \"crest\"
 
-[profiles.local.software.ase_neb_xtb]
+[environments.local.backends.ase_neb_xtb]
 command = \"xtb\"
 """,
         encoding="utf-8",

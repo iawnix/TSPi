@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "scripts" / "ts_workspace.py"
-RESEARCH_CLI = ROOT / "scripts" / "ts_research.py"
+API = ROOT / "scripts" / "ts_api.py"
 
 
 def _run(script: Path, *args: str) -> dict:
@@ -43,18 +43,18 @@ def test_workspace_cli_roundtrip_uses_research_map(tmp_path: Path) -> None:
     }
     request_file = tmp_path / "change.json"
     request_file.write_text(json.dumps(request), encoding="utf-8")
-    changed = _run(CLI, "change", "--root", str(workspace), "--request-file", str(request_file))
+    changed = _run(API, "research.change", "--root", str(workspace), "--request-file", str(request_file))
     assert changed["revision"] == 1
-    shown = _run(CLI, "show", "--root", str(workspace))
+    shown = _run(API, "research.map", "--root", str(workspace))
     assert shown["schema_version"] == "research-map/1"
     assert shown["focus_claim_ids"] == ["claim_1"]
     assert _run(CLI, "validate_workspace", "--root", str(workspace))["valid"] is True
 
 
-def test_research_cli_exposes_canonical_operation_catalog(tmp_path: Path) -> None:
+def test_canonical_api_exposes_research_operation_catalog(tmp_path: Path) -> None:
     workspace = tmp_path / "research"
-    _run(RESEARCH_CLI, "init", "--root", str(workspace), "--map-id", "map_1", "--title", "Operation catalog")
-    catalog = _run(RESEARCH_CLI, "operations", "--root", str(workspace))
+    _run(CLI, "init_workspace", "--root", str(workspace))
+    catalog = _run(API, "research.operations", "--root", str(workspace))
     assert catalog["schema_version"] == "research-operation-catalog/1"
     assert {item["type"] for item in catalog["operations"]} == {
         "create_phase", "create_claim", "create_node", "create_finding", "create_gate",

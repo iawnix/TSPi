@@ -109,7 +109,7 @@ def test_provider_manifest_omits_physical_path(tmp_path: Path) -> None:
     payload.write_text(json.dumps(manifest), encoding="utf-8")
     script = (
         f"const fs=require('node:fs');const access=require({json.dumps(str(ACCESS))});"
-        "process.stdout.write(JSON.stringify(access.providerArtifactManifest(JSON.parse(fs.readFileSync(process.argv[1],'utf8')))));"
+        "process.stdout.write(JSON.stringify(access.reviewArtifactReferences(JSON.parse(fs.readFileSync(process.argv[1],'utf8')))));"
     )
     completed = _node(script, str(payload))
     provider = json.loads(completed.stdout)

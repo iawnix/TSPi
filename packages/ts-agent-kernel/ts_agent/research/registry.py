@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Sequence
 
 from ts_agent.io import now_iso, read_json, write_json
-from ts_agent.workspace.path_safety import lexical_path, path_has_symlink
+from ts_agent.path_safety import lexical_path, path_has_symlink
 
 
 def ensure_state_dir(state_dir: str | Path, *, source_root: str | Path | None = None) -> Path:

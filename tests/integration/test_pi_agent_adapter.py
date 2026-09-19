@@ -220,7 +220,7 @@ process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(tools).map
     assert "nodeId" in schemas["ts_render"]
     assert "inputArtifactIds" in schemas["ts_render"]
     assert "packageName" in schemas["ts_report"]
-    assert "targetClaimRef" in schemas["ts_review"]
+    assert "targetClaimId" in schemas["ts_review"]
     public_fields = {field for fields in schemas.values() for field in fields}
     assert "actId" not in public_fields
     assert "inputRefs" not in public_fields

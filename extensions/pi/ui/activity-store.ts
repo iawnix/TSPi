@@ -227,7 +227,7 @@ function fallbackSubagentStatus(event: ToolExecutionStartEvent, now: number): Ts
     started_at: timestampValue,
     updated_at: timestampValue,
     node_refs: nodeId ? [nodeId] : undefined,
-    target_ref: role === "compute" ? stringValue(args.intentId) : stringValue(args.targetClaimRef),
+    target_ref: role === "compute" ? stringValue(args.intentId) : stringValue(args.targetClaimId),
   };
 }
 

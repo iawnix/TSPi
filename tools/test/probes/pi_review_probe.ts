@@ -23,12 +23,13 @@ export default function (pi: ExtensionAPI) {
         ? `sha256:${createHash("sha256").update(artifactBytes).digest("hex")}`
         : null;
       const artifactId = artifactDigest ? `art_${artifactDigest.slice(7, 31)}` : null;
-      const reviewSnapshot = {
-        schema_version: "ts-review-snapshot/5",
-        report_id: "rep_review_probe",
-        workspace_revision: `sha256:${"1".repeat(64)}`,
-        snapshot_id: `ctx_${"c".repeat(24)}`,
-        target_claim_ref: claimId,
+      const researchMap = {
+        schema_version: "research-map/1",
+        map_id: "rep_review_probe",
+        title: "Review probe",
+        created_at: "2026-09-18T00:00:00Z",
+        revision: 0,
+        metadata: {},
         phases: [{
           id: phaseId, type: "research_phase", created_at: "2026-09-18T00:00:00Z", metadata: {},
           title: "Probe phase", objective: "Contain the recording-provider Review probe.", node_ids: [nodeId],
@@ -45,12 +46,8 @@ export default function (pi: ExtensionAPI) {
           claim_ids: [claimId], dependency_ids: [], finding_ids: [], gate_ids: [], attempt_refs: [],
           artifact_refs: artifactId ? [artifactId] : [], state: "active", outcome: null, outcome_summary: null,
         }],
-        findings: [], gates: [],
-        dependency_refs: {
-          phase_refs: [phaseId], claim_refs: [claimId], relation_refs: [], node_refs: [nodeId],
-          finding_refs: [], gate_refs: [],
-        },
-        omitted: {},
+        findings: [], gates: [], focus_claim_ids: [claimId], focus_node_ids: [nodeId],
+        progress: {},
       };
       const artifactCatalog = artifactId && artifactDigest && artifactBytes ? [{
         artifact_id: artifactId, path: artifactPath, sha256: artifactDigest,
@@ -60,23 +57,23 @@ export default function (pi: ExtensionAPI) {
         runId: taskId,
         workspaceRoot: ctx.cwd,
         request: {
-          targetClaimRef: claimId,
+          targetClaimId: claimId,
           question: "Assess whether the current bounded graph supports the probe Claim.",
           root: ctx.cwd,
           artifactIds: artifactId ? [artifactId] : [],
         },
-        reviewSnapshot,
+        researchMap,
         artifactCatalog,
       });
       const packet = bundle.task;
-      const boundSnapshot = bundle.documents.review_snapshot;
-      const providerInput = bundle.documents.provider_input;
+      const boundMap = bundle.documents.research_map;
+      const reviewContext = bundle.documents.review_context;
       try {
         const result = await runScientificReview({
           workspaceRoot: ctx.cwd,
           packet,
-          reviewSnapshot: boundSnapshot,
-          providerInput,
+          researchMap: boundMap,
+          reviewContext,
           parentModel: { provider: "ts-recording", id: "recording-model" } as never,
           parentApiKey: "recording-key",
           thinkingLevel: "off",

@@ -24,7 +24,6 @@ import { runScientificReview } from "../../../packages/ts-agent-runtime/agents/r
 const require = createRequire(import.meta.url);
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const { buildReviewTaskBundle, validateSubagentRequest } = require(resolve(EXTENSION_DIR, "..", "..", "..", "packages", "ts-agent-runtime", "agents", "review", "task-packet.cjs"));
-const { reviewSnapshotFromMap } = require(resolve(EXTENSION_DIR, "..", "..", "..", "packages", "ts-agent-runtime", "agents", "review", "research-map-adapter.cjs"));
 const {
   beginAgentRun,
   completeAgentRun,
@@ -61,7 +60,7 @@ export function registerReviewTools(pi: ExtensionAPI) {
         throw new Error("No parent model is selected for TS subagent delegation");
       }
       const request = validateSubagentRequest({
-        targetClaimRef: params.targetClaimRef,
+        targetClaimId: params.targetClaimId,
         question: params.question,
         reviewerRole: params.reviewerRole,
         root: params.root,
@@ -74,20 +73,19 @@ export function registerReviewTools(pi: ExtensionAPI) {
         task_id: taskId,
         role: "review",
         operation: "claim_review",
-        target_ref: params.targetClaimRef,
+        target_ref: params.targetClaimId,
         reviewer_role: request.reviewerRole,
       }, onUpdate);
       reportStatus("queued");
       const researchMap = await runtime.command("research.map", root, {}, signal);
-      const reviewSnapshot = reviewSnapshotFromMap(researchMap, request.targetClaimRef);
-        const artifactCatalog = request.artifactIds.length
-          ? (await runtime.command("compute.artifacts", root, {}, signal)).artifacts
-          : [];
+      const artifactCatalog = request.artifactIds.length
+        ? (await runtime.command("compute.artifacts", root, {}, signal)).artifacts
+        : [];
       const bundle = buildReviewTaskBundle({
         runId: taskId,
         workspaceRoot: root,
         request,
-        reviewSnapshot,
+        researchMap,
         artifactCatalog,
       });
       const packet = bundle.task;
@@ -97,7 +95,7 @@ export function registerReviewTools(pi: ExtensionAPI) {
       });
       const journal = beginAgentRun(root, packet, {
         documents: bundle.documents,
-        ownerClaimRef: request.targetClaimRef,
+        ownerClaimRef: request.targetClaimId,
       });
       const persisted = readAgentRunInputs(journal);
       try {
@@ -107,8 +105,8 @@ export function registerReviewTools(pi: ExtensionAPI) {
         const result = await runScientificReview({
           workspaceRoot: root,
           packet: persisted.task,
-          reviewSnapshot: persisted.documents.review_snapshot,
-          providerInput: persisted.documents.provider_input,
+          researchMap: persisted.documents.research_map,
+          reviewContext: persisted.documents.review_context,
           parentModel: ctx.model,
           parentApiKey: parentAuth?.ok ? parentAuth.apiKey : undefined,
           thinkingLevel: pi.getThinkingLevel(),

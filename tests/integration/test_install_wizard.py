@@ -58,7 +58,7 @@ def test_interactive_compute_backends_accepts_one_file_path(
 ) -> None:
     args = wizard.parse_args([
         "--install-root", str(tmp_path / "install"),
-        "--without-web", "--service-scope", "none", "--email-provider", "smtp",
+        "--without-web", "--service-scope", "none", "--email-binding", "smtp",
     ])
     args.workspace_root = str(tmp_path / "workspaces")
     args.radius_gateway = "wss://radius.example.test"
@@ -86,7 +86,7 @@ def test_interactive_smtp_uses_sender_as_from_without_a_redundant_prompt(
     ])
     prompts: list[str] = []
     values = {
-        "Email provider (smtp or clawemail)": "smtp",
+        "Email binding (smtp or clawemail)": "smtp",
         "Notification recipient": "receiver@example.org",
         "SMTP mailbox preset (163, qq, or custom)": "qq",
         "SMTP port": "465",
@@ -255,7 +255,7 @@ def test_non_interactive_smtp_options_write_only_a_secure_credential_reference(t
         "--without-web",
         "--service-scope", "none",
         "--non-interactive",
-        "--email-provider", "smtp",
+        "--email-binding", "smtp",
         "--email-preset", "qq",
         "--email-recipient", "receiver@example.org",
         "--email-address", "sender@qq.com",
@@ -266,7 +266,7 @@ def test_non_interactive_smtp_options_write_only_a_secure_credential_reference(t
     result = wizard.configure_notification_config(args)
 
     config = root / ".pi/notifications.toml"
-    assert result["provider"] == "smtp"
+    assert result["binding"] == "smtp"
     assert stat.S_IMODE(config.stat().st_mode) == 0o600
     assert stat.S_IMODE(password_file.stat().st_mode) == 0o600
     content = config.read_text(encoding="utf-8")
@@ -284,7 +284,7 @@ def test_interactive_smtp_password_is_written_to_the_default_private_file(tmp_pa
         "--without-web",
         "--service-scope", "none",
         "--non-interactive",
-        "--email-provider", "smtp",
+        "--email-binding", "smtp",
         "--email-preset", "163",
         "--email-recipient", "receiver@example.org",
         "--email-username", "sender@163.com",
@@ -318,7 +318,7 @@ def test_clawemail_options_write_compatible_configuration(tmp_path: Path) -> Non
         "--without-web",
         "--service-scope", "none",
         "--non-interactive",
-        "--email-provider", "clawemail",
+        "--email-binding", "clawemail",
         "--email-recipient", "receiver@example.org",
         "--clawemail-root", str(clawemail),
     ])
@@ -597,7 +597,7 @@ def test_custom_smtp_provider_writes_explicit_host(tmp_path: Path) -> None:
     args = wizard.parse_args([
         "--install-root", str(tmp_path / "install"),
         "--without-web", "--service-scope", "none", "--non-interactive",
-        "--email-provider", "smtp", "--email-preset", "custom",
+        "--email-binding", "smtp", "--email-preset", "custom",
         "--email-host", "mail.example.test", "--email-port", "587",
         "--email-security", "starttls", "--email-recipient", "receiver@example.org",
         "--email-username", "sender@example.org", "--email-password-file", str(password_file),
@@ -616,7 +616,7 @@ def test_remote_probe_records_readiness(tmp_path: Path, monkeypatch: pytest.Monk
     args.probe_remote = True
     source = tmp_path / "compute.toml"
     source.write_text(
-        """default_profile = \"local\"\n\n[profiles.local]\nkind = \"local\"\n""",
+        """default_environment = \"local\"\n\n[environments.local]\nkind = \"local\"\n""",
         encoding="utf-8",
     )
     args.compute_config = str(source)
@@ -627,7 +627,7 @@ def test_remote_probe_records_readiness(tmp_path: Path, monkeypatch: pytest.Monk
         lambda command, **kwargs: subprocess.CompletedProcess(command, 1, stdout="", stderr="doctor unavailable\n"),
     )
 
-    with pytest.raises(RuntimeError, match="remote backend readiness check failed"):
+    with pytest.raises(RuntimeError, match="remote environment readiness check failed"):
         wizard.probe_remote_backend(args, configs)
 
 
@@ -669,11 +669,11 @@ def test_compute_toml_is_validated_and_written_private(tmp_path: Path) -> None:
     ])
     source = tmp_path / "compute.toml"
     source.write_text("\n".join([
-        'default_profile = "local"',
-        '[profiles."local"]',
+        'default_environment = "local"',
+        '[environments."local"]',
         'kind = "local"',
         '',
-        '[profiles."cluster"]',
+        '[environments."cluster"]',
         'kind = "remote"',
         'ssh_host = "cluster"',
         f'ssh_config = "{ssh_config}"',

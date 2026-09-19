@@ -14,7 +14,7 @@ from typing import Any, Iterable
 from ts_agent.io import read_json, sha256_json
 from ts_agent.research import ResearchKernel, ResearchKernelError
 from .refs import NODE_ID, ACTIVITY_ID
-from .path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 UNSUPPORTED_UUID_ACTIVITY_ID = re.compile(

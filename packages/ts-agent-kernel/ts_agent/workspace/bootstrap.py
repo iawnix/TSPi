@@ -9,7 +9,7 @@ from typing import Any
 
 from .engine import init_workspace
 from .identity import IDENTITY_REF, read_workspace_identity
-from .path_safety import lexical_path, path_has_symlink
+from ts_agent.path_safety import lexical_path, path_has_symlink
 from .validator import validate_workspace
 
 

@@ -90,26 +90,26 @@ Host is restarted.
 
 ## Configure Remote Execution (Compute Backends)
 
-Local calculation runs the selected provider in a durable Attempt-local
+Local calculation runs the selected backend in a durable Attempt-local
 subprocess. Remote execution mirrors inputs temporarily and collects results
-back locally. Both are selected from the same compute profile model; only a
-remote profile carries SSH/Torque transport fields.
+back locally. Both are selected from the same compute environment model; only a
+remote environment carries SSH/Torque transport fields.
 
 The installer accepts one TOML file for compute backends. During an interactive
 install, enter its path when prompted; for a non-interactive install, pass
 `--compute-config /absolute/path/compute.toml`. The project template is
-`config/compute.example.toml`. Copy it, edit the local and/or remote providers
+`config/compute.example.toml`. Copy it, edit the local and/or remote backend bindings
 available on the target machine, and pass the edited file to the installer. The
 installed copy is `<install>/.pi/compute.toml` and is written with mode `0600`.
 
 Local and remote calculations share one public lifecycle through `ts_calc`; choose
 `execution_target.kind = "local"` or `"remote"` and, when using the unified file,
-its profile name in the calculation intent. SSH keys and other credentials stay in
+its environment name in the calculation intent. SSH keys and other credentials stay in
 the SSH configuration and are never copied into this TOML. TSPi does not install
 Gaussian or other site-managed native chemistry software.
 
 `/compute` and the `compute.environments` command list the configured local and
-remote profiles. Remote scheduler checks remain available to the execution
+remote environments. Remote scheduler checks remain available to the execution
 layer when a remote calculation is prepared; they are not a separate
 remote-only command surface.
 Add `--probe-remote` when installation should run `TSPi --check-remote` and fail
@@ -117,7 +117,7 @@ unless SSH, the scheduler, writable remote root, and configured software probes
 are ready. Without that flag the summary reports `not_probed` rather than
 claiming remote readiness.
 The current remote contract supports Torque/PBS only (`scheduler = "torque"`).
-The profile must describe SSH, a writable remote root, allowed queues, and the
+The environment must describe SSH, a writable remote root, allowed queues, and the
 site-managed Gaussian/xTB/CREST/ASE-NEB commands. Restrict the file to mode 0600,
 then run:
 
@@ -156,7 +156,7 @@ non-interactive install, the same configuration can be supplied explicitly:
 ./install.sh \
   --install-root "$HOME/.local/share/tspi" \
   --non-interactive --yes --service-scope user \
-  --email-provider smtp --email-preset qq \
+  --email-binding smtp --email-preset qq \
   --email-recipient receiver@example.com \
   --email-address sender@qq.com \
   --email-password-file "$HOME/.config/tspi/qq-smtp-password"

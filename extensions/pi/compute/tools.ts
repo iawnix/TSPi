@@ -68,7 +68,7 @@ type ComputeRequest = {
   intentDigest?: string;
   intentRef?: string;
   executionKind?: string;
-  profile?: string;
+  environment?: string;
   remoteDir?: string;
   jobId?: string;
   executionSummary?: Record<string, unknown>;
@@ -100,7 +100,7 @@ export function registerComputeTools(pi: ExtensionAPI) {
     const mode = data?.mode || "list";
     const configured = result.configured === true || Boolean(result.environment);
     const label = theme.fg(configured ? "success" : "warning", configured ? "configured" : "unconfigured");
-    const count = Array.isArray(result.environments) ? ` · ${result.environments.length} profiles` : "";
+    const count = Array.isArray(result.environments) ? ` · ${result.environments.length} environments` : "";
     let text = `${theme.fg("accent", `TS Compute Environment ${mode}`)}: ${label}${theme.fg("muted", count)}`;
     const expandKey = theme.fg("dim", keyText("app.tools.expand"));
     if (expanded) {
@@ -184,7 +184,7 @@ export function registerComputeTools(pi: ExtensionAPI) {
         request.intentDigest = binding.intentDigest;
         request.intentRef = binding.intentRef;
         request.executionKind = binding.executionKind;
-        request.profile = binding.profile;
+        request.environment = binding.environment;
         request.remoteDir = binding.remoteDir;
         request.jobId = binding.jobId;
         request.executionSummary = binding.executionSummary;
@@ -540,7 +540,7 @@ async function preflightComputeRequest(
     intentRef: raw.intent_ref as string,
     intentDigest: raw.intent_digest as string,
     executionKind: requireBindingString(raw.execution_kind, "execution_kind"),
-    profile: typeof raw.profile === "string" ? raw.profile : undefined,
+    environment: typeof raw.environment === "string" ? raw.environment : undefined,
     remoteDir: typeof raw.remote_dir === "string" ? raw.remote_dir : undefined,
     jobId: typeof raw.job_id === "string" ? raw.job_id : undefined,
     executionSummary: isPlainObject(raw.execution_summary) ? raw.execution_summary : {},
@@ -593,13 +593,16 @@ function validateExecutionTarget(target: Record<string, unknown> | undefined): v
     throw new Error("launch requires executionTarget.kind=local or remote");
   }
   if (target.kind === "local") {
-    if (Object.keys(target).some((key) => key !== "kind")) {
-      throw new Error("local executionTarget only accepts kind");
+    if (Object.keys(target).some((key) => key !== "kind" && key !== "environment")) {
+      throw new Error("local executionTarget only accepts kind and environment");
+    }
+    if (target.environment !== undefined && typeof target.environment !== "string") {
+      throw new Error("local executionTarget.environment must be a string");
     }
     return;
   }
-  if (typeof target.profile !== "string" || !isPlainObject(target.resources)) {
-    throw new Error("remote executionTarget requires profile and resources");
+  if (typeof target.environment !== "string" || !isPlainObject(target.resources)) {
+    throw new Error("remote executionTarget requires environment and resources");
   }
 }
 
@@ -624,13 +627,16 @@ function buildCalculationRequest(request: ComputeRequest): Record<string, unknow
   const target = request.executionTarget;
   validateExecutionTarget(target);
   const executionTarget: Record<string, unknown> = target.kind === "local"
-    ? { kind: "local" }
+    ? {
+        kind: "local",
+        ...(typeof target.environment === "string" ? { environment: target.environment } : {}),
+      }
     : (() => {
         if (target.kind !== "remote") throw new Error("executionTarget.kind must be local or remote");
         const resources = isPlainObject(target.resources) ? target.resources : {};
         return {
           kind: "remote",
-          profile: target.profile,
+          environment: target.environment,
           resources: {
             queue: resources.queue,
             nodes: resources.nodes,

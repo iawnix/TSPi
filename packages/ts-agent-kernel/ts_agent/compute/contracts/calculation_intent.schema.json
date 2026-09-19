@@ -106,17 +106,17 @@
           "required": ["kind"],
           "properties": {
             "kind": {"const": "local"},
-            "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"}
+            "environment": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"}
           },
           "additionalProperties": false
         },
         {
           "type": "object",
-          "required": ["kind", "authority", "profile", "workspace_id", "remote_dir", "resources"],
+          "required": ["kind", "authority", "environment", "workspace_id", "remote_dir", "resources"],
           "properties": {
             "kind": {"const": "remote"},
             "authority": {"const": "execution_mirror"},
-            "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+            "environment": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
             "workspace_id": {"type": "string", "pattern": "^ws_[0-9a-f]{24}$"},
             "remote_dir": {"type": "string", "minLength": 1, "maxLength": 4096},
             "resources": {"$ref": "#/$defs/remote_resources"}

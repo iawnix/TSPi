@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ts_agent.io import now_iso
-from .path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 IDENTITY_REF = ".agents/workspace-identity.json"

@@ -1,33 +1,32 @@
 # Unified compute configuration.
-# Copy to the installation-owned .pi/compute.toml and edit the providers
-# available on each execution platform. A profile is one software provider
-# platform; kind controls how jobs reach it.
+# Copy to the installation-owned .pi/compute.toml and edit the backend bindings
+# available in each compute environment. The kind selects the execution platform.
 
-default_profile = "local"
+default_environment = "local"
 
-[profiles.local]
+[environments.local]
 kind = "local"
 
-[profiles.local.software.gaussian]
+[environments.local.backends.gaussian]
 command = "/home/iaw/soft/gaussian/current/g16/g16"
 activation_script = "/home/iaw/soft/gaussian/activate_gaussian16.sh"
 
-[profiles.local.software.xtb]
+[environments.local.backends.xtb]
 command = "/home/iaw/soft/xtb/current/bin/xtb"
 activation_script = "/home/iaw/soft/xtb/current/activate_xtb.sh"
 
-[profiles.local.software.ase_neb_xtb]
+[environments.local.backends.ase_neb_xtb]
 command = "/home/iaw/soft/xtb/current/bin/xtb"
 activation_script = "/home/iaw/soft/xtb/current/activate_xtb.sh"
 
-[profiles.local.software.crest]
+[environments.local.backends.crest]
 command = "/home/iaw/soft/crest/current/bin/crest"
 activation_script = "/home/iaw/soft/crest/activate_crest.sh"
 
-# Add one or more remote software platforms below. Commands are arrays
+# Add one or more remote environments below. Commands are arrays
 # because the remote scheduler script may need fixed command arguments.
 #
-# [profiles.cluster_1w]
+# [environments.cluster_1w]
 # kind = "remote"
 # ssh_host = "agent.1w"
 # ssh_config = "/home/me/.ssh/config"
@@ -36,11 +35,11 @@ activation_script = "/home/iaw/soft/crest/activate_crest.sh"
 # allowed_queues = ["batch", "fat"]
 # max_nodes = 1
 #
-# [profiles.cluster_1w.software.gaussian]
+# [environments.cluster_1w.backends.gaussian]
 # command = ["g16"]
 # activation_script = "/home/me/soft/gaussian/activate.sh"
 # allowed_queues = ["batch", "fat"]
 #
-# [profiles.cluster_1w.software.xtb]
+# [environments.cluster_1w.backends.xtb]
 # command = ["xtb"]
 # allowed_queues = ["batch", "fat"]

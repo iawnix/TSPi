@@ -28,14 +28,14 @@ from ts_agent.workspace.artifacts import (
     workspace_root,
 )
 from ts_agent.workspace.refs import NODE_ID
-from ts_agent.workspace.path_safety import has_symlink_component
+from ts_agent.path_safety import has_symlink_component
 from ts_agent.workspace.transactions import workspace_lock
 from ts_agent.structures.api import compare_structures
 from ts_agent.structures.internals import read_xyz
 from ts_agent.structures.seed import StructureSeedError, generate_smiles_seed
 from ts_agent.reaction.mapping import mapping_finding_candidates, validate_atom_mapping
 
-from .contracts import ComputeContractError
+from .errors import ComputeContractError
 
 
 CATALOG_SCHEMA_VERSION = "ts-artifact-catalog/3"

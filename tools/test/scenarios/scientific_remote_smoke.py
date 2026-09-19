@@ -1,4 +1,4 @@
-"""Opt-in real backend smoke in an isolated workspace using a selected profile.
+"""Opt-in real backend smoke in an isolated workspace using a selected environment.
 
 Launch once; advance polls existing Attempts and collects/parses settled jobs.
 This checks software integration, not the validity of a reaction mechanism.
@@ -47,14 +47,14 @@ def ensure_research_node(root, title: str, objective: str) -> str:
     return node_id
 
 
-def launch(root, profile, retry_capability=None):
+def launch(root, environment, retry_capability=None):
     if root.exists():
         manifest = read_json(root / "smoke_manifest.json")
-        if manifest["profile"] != profile:
-            raise ValueError("existing smoke is bound to another profile")
+        if manifest["environment"] != environment:
+            raise ValueError("existing smoke is bound to another environment")
     else:
         bootstrap_workspace(root)
-        manifest = {"schema_version": "ts-scientific-remote-smoke/1", "profile": profile, "purpose": "real small-system integration smoke; no mechanism acceptance", "attempts": []}
+        manifest = {"schema_version": "ts-scientific-remote-smoke/1", "environment": environment, "purpose": "real small-system integration smoke; no mechanism acceptance", "attempts": []}
     water = "3\nWater integration probe\nO 0 0 0\nH 0.757 0 0.586\nH -0.757 0 0.586\n"
     for capability in ("gaussian.opt_freq", "xtb.sp", "crest.conformer_search", "ase.neb"):
         previous = [record for record in manifest["attempts"] if record["capability"] == capability]
@@ -82,7 +82,7 @@ def launch(root, profile, retry_capability=None):
             parameters.update({"images": 3, "max_steps": 20, "fmax": 0.5, "interpolation": "linear"})
         intent = create_calculation_intent(root, {"schema_version": "ts-calculation-request/5", "node_id": node, "purpose": "Bounded small-system release integration smoke", "attempt_kind": "primary", "lineage": None,
             "capability": capability, "capability_version": "1", "input_artifacts": inputs, "parameters": parameters,
-            "execution_target": {"kind": "remote", "profile": profile, "resources": {"queue": "batch", "nodes": 1, "ncpus": 2, "memory": "1gb", "walltime": "00:10:00", "ngpus": 0, "mpiprocs": None, "ompthreads": 2}}, "dry_run": False})
+            "execution_target": {"kind": "remote", "environment": environment, "resources": {"queue": "batch", "nodes": 1, "ncpus": 2, "memory": "1gb", "walltime": "00:10:00", "ngpus": 0, "mpiprocs": None, "ompthreads": 2}}, "dry_run": False})
         record = {"node": node, "intent_id": intent["intent_id"], "capability": capability}
         if previous:
             record["retry_of"] = previous[-1]["intent_id"]
@@ -136,12 +136,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("launch", "advance"))
     parser.add_argument("root", type=Path)
-    parser.add_argument("--profile")
+    parser.add_argument("--environment")
     parser.add_argument("--retry-capability", choices=("crest.conformer_search",), help="Explicitly retry a settled smoke after fixing its recorded output-capture error")
     args = parser.parse_args()
     if args.operation == "launch":
-        if not args.profile:
-            parser.error("launch requires --profile")
-        launch(args.root, args.profile, args.retry_capability)
+        if not args.environment:
+            parser.error("launch requires --environment")
+        launch(args.root, args.environment, args.retry_capability)
     else:
         advance(args.root)

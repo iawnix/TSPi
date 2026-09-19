@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Sequence
 from urllib.parse import unquote
 
-from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 from .kernel import ResearchKernel, ResearchKernelError
 from .registry import (

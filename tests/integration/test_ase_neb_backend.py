@@ -280,7 +280,7 @@ def test_ase_neb_compute_flow_prepares_and_parses_bound_artifacts(
 ) -> None:
     compute_config = tmp_path / "compute.toml"
     compute_config.write_text(
-        """default_profile = \"local\"\n\n[profiles.local]\nkind = \"local\"\n\n[profiles.local.software.ase_neb_xtb]\ncommand = \"/bin/true\"\n""",
+        """default_environment = \"local\"\n\n[environments.local]\nkind = \"local\"\n\n[environments.local.backends.ase_neb_xtb]\ncommand = \"/bin/true\"\n""",
         encoding="utf-8",
     )
     monkeypatch.setenv("TS_COMPUTE_CONFIG", str(compute_config))

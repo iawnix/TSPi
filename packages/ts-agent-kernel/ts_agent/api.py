@@ -7,6 +7,8 @@ second research-state vocabulary of their own.
 
 from __future__ import annotations
 
+import json
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -14,22 +16,25 @@ from .research import ResearchKernel
 from .workspace.operation_registry import operation_catalog
 
 
-RESEARCH_COMMANDS = frozenset({
-    "research.map",
-    "research.summary",
-    "research.detail",
-    "research.locate",
-    "research.validate",
-    "research.operations",
-    "research.change",
-})
-COMPUTE_COMMANDS = frozenset({
-    "compute.environments",
-    "compute.environment",
-    "compute.capabilities",
-    "compute.artifacts",
-    "compute.runs",
-})
+def _load_command_catalog() -> dict[str, Any]:
+    value = json.loads(files("ts_agent").joinpath("command_catalog.json").read_text(encoding="utf-8"))
+    if value.get("schema_version") != "tspi-command-catalog/1" or not isinstance(value.get("commands"), list):
+        raise RuntimeError("invalid TSPi command catalog")
+    return value
+
+
+COMMAND_CATALOG = _load_command_catalog()
+COMMAND_DEFINITIONS = {
+    str(item["id"]): item
+    for item in COMMAND_CATALOG["commands"]
+    if isinstance(item, dict) and isinstance(item.get("id"), str)
+}
+RESEARCH_COMMANDS = frozenset(
+    command for command, definition in COMMAND_DEFINITIONS.items() if definition.get("domain") == "research"
+)
+COMPUTE_COMMANDS = frozenset(
+    command for command, definition in COMMAND_DEFINITIONS.items() if definition.get("domain") == "compute"
+)
 COMMANDS = RESEARCH_COMMANDS | COMPUTE_COMMANDS
 
 
@@ -45,6 +50,10 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
     value = params if params is not None else {}
     if not isinstance(value, dict):
         raise CommandError("command params must be an object")
+    required = COMMAND_DEFINITIONS[command].get("required", [])
+    missing = [key for key in required if value.get(key) is None or value.get(key) == ""]
+    if missing:
+        raise CommandError(f"{command} requires {', '.join(missing)}")
     if command.startswith("research."):
         return _research(command.removeprefix("research."), root, value)
     return _compute(command.removeprefix("compute."), root, value)
@@ -112,7 +121,7 @@ def _compute(action: str, root: str | Path, params: dict[str, Any]) -> dict[str,
     if action == "environment":
         name = _string(params, "name")
         catalog = _environment_catalog()
-        item = next((profile for profile in catalog["environments"] if profile["name"] == name), None)
+        item = next((environment for environment in catalog["environments"] if environment["name"] == name), None)
         if item is None:
             raise CommandError(f"unknown compute environment: {name}")
         return {"schema_version": "compute-environment/1", "environment": item}
@@ -125,24 +134,24 @@ def _compute(action: str, root: str | Path, params: dict[str, Any]) -> dict[str,
 
         return list_calculation_artifacts(root, node_id=params.get("node_id"))
     if action == "runs":
-        from .workspace.operational import operational_snapshot
+        from .workspace.operational import runtime_status
 
-        snapshot = operational_snapshot(root)
+        status = runtime_status(root)
         return {
             "schema_version": "compute-runs/1",
-            "runs": snapshot.get("agent_runs", []),
-            "attempts": snapshot.get("calculation_attempts", []),
-            "summary": snapshot.get("operational_summary", {}),
+            "runs": status.get("agent_runs", []),
+            "attempts": status.get("calculation_attempts", []),
+            "summary": status.get("runtime_summary", {}),
         }
     raise CommandError(f"unsupported compute command: {action}")
 
 
 def _environment_catalog() -> dict[str, Any]:
-    from .compute.config import ComputeConfigurationError, load_config
+    from .platforms import EnvironmentConfigurationError, load_config
 
     try:
         config = load_config()
-    except ComputeConfigurationError as exc:
+    except EnvironmentConfigurationError as exc:
         return {
             "schema_version": "compute-environment-catalog/1",
             "configured": False,
@@ -150,36 +159,37 @@ def _environment_catalog() -> dict[str, Any]:
             "default": None,
             "environments": [],
         }
-    profiles = []
-    for profile in sorted(config.profiles.values(), key=lambda item: item.name):
-        remote = profile.remote
-        profiles.append({
-            "name": profile.name,
-            "kind": profile.kind,
-            "default": profile.name == config.default_profile,
-            "software": {
+    environments = []
+    for environment in sorted(config.environments.values(), key=lambda item: item.name):
+        platform = environment.platform
+        environments.append({
+            "name": environment.name,
+            "kind": environment.kind,
+            "default": environment.name == config.default_environment,
+            "backends": {
                 backend: {
-                    "command": list(provider.command),
-                    "activation_script": provider.activation_script,
-                    "scratch_root": provider.scratch_root,
-                    "environment_keys": sorted(provider.environment),
+                    "command": list(binding.command),
+                    "activation_script": binding.activation_script,
+                    "scratch_root": binding.scratch_root,
+                    "environment_keys": sorted(binding.environment),
                 }
-                for backend, provider in sorted(profile.software.items())
+                for backend, binding in sorted(environment.backends.items())
             },
-            "remote": {
-                "ssh_host": remote.ssh_host,
-                "scheduler": remote.scheduler,
-                "remote_root": remote.remote_root,
-                "allowed_queues": list(remote.allowed_queues),
-                "max_nodes": remote.max_nodes,
-            } if remote else None,
+            "platform": {
+                "kind": "ssh_torque",
+                "ssh_host": platform.ssh_host,
+                "scheduler": platform.scheduler,
+                "remote_root": platform.remote_root,
+                "allowed_queues": list(platform.allowed_queues),
+                "max_nodes": platform.max_nodes,
+            } if platform else {"kind": "local"},
         })
     return {
         "schema_version": "compute-environment-catalog/1",
         "configured": True,
         "source": str(config.source),
-        "default": config.default_profile,
-        "environments": profiles,
+        "default": config.default_environment,
+        "environments": environments,
     }
 
 
@@ -191,9 +201,15 @@ def _string(params: dict[str, Any], key: str) -> str:
 
 
 def _json_text(value: Any) -> str:
-    import json
-
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
-__all__ = ["COMMANDS", "COMPUTE_COMMANDS", "CommandError", "RESEARCH_COMMANDS", "execute"]
+__all__ = [
+    "COMMAND_CATALOG",
+    "COMMAND_DEFINITIONS",
+    "COMMANDS",
+    "COMPUTE_COMMANDS",
+    "CommandError",
+    "RESEARCH_COMMANDS",
+    "execute",
+]

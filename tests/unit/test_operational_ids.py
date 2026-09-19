@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from ts_agent.workspace import init_workspace
-from ts_agent.workspace.operational import operational_snapshot
+from ts_agent.workspace.operational import runtime_status
 from ts_agent.workspace.operational_ids import allocate_operational_id
 
 
@@ -53,16 +53,16 @@ def test_operational_allocator_never_reuses_reserved_ordinals(tmp_path: Path) ->
     assert allocate_operational_id(workspace, "sub")["identifier"] == "sub_3"
 
 
-def test_operational_id_state_is_part_of_the_operational_revision(tmp_path: Path) -> None:
+def test_operational_id_state_is_part_of_the_runtime_revision(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     init_workspace(workspace)
-    before = operational_snapshot(workspace)
+    before = runtime_status(workspace)
 
     allocate_operational_id(workspace, "op")
-    after = operational_snapshot(workspace)
+    after = runtime_status(workspace)
 
-    assert after["operational_revision"] != before["operational_revision"]
-    assert after["operational_summary"]["tracked_file_count"] == 1
+    assert after["runtime_revision"] != before["runtime_revision"]
+    assert after["runtime_summary"]["tracked_file_count"] == 1
 
 
 def test_operational_allocator_serializes_concurrent_callers(tmp_path: Path) -> None:

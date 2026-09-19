@@ -5,12 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Iterable
 
-from ts_agent.analysis.projection import analysis_projection
+from ts_agent.analysis.results import analysis_results
 from ts_agent.compute.artifacts import list_calculation_artifacts
 from ts_agent.io import sha256_json
 from ts_agent.research import ResearchKernel, ResearchKernelError
-from ts_agent.workspace.operational import operational_snapshot
-from ts_agent.workspace.path_safety import lexical_path, path_has_symlink
+from ts_agent.workspace.operational import runtime_status
+from ts_agent.path_safety import lexical_path, path_has_symlink
 from ts_agent.workspace.validator import validate_workspace
 
 
@@ -43,45 +43,18 @@ def collect_report_context(
 
     map_document = research_map.to_dict()
     workspace_revision = sha256_json(map_document)
-    operations = operational_snapshot(root_path, exclude_activity_refs=exclude_activity_refs)
-    analyses = analysis_projection(root_path)
+    status = runtime_status(root_path, exclude_activity_refs=exclude_activity_refs)
+    analyses = analysis_results(root_path)
     artifact_catalog = list_calculation_artifacts(root_path).get("artifacts", [])
 
     return {
-        "schema_version": "ts-report-context/6",
+        "schema_version": "ts-report-context/7",
         "workspace_root": str(root_path),
-        "workspace_id": research_map.map_id,
-        "map_id": research_map.map_id,
-        "title": research_map.title,
-        "created_at": research_map.created_at,
         "workspace_revision": workspace_revision,
-        "operational_revision": operations["operational_revision"],
         "report_id": "rep_" + workspace_revision.removeprefix("sha256:")[:16],
         "research_map": map_document,
-        "focus": {
-            "claim_ids": list(research_map.focus_claim_ids),
-            "node_ids": list(research_map.focus_node_ids),
-        },
-        "phases": map_document["phases"],
-        "claims": map_document["claims"],
-        "claim_relations": map_document["claim_relations"],
-        "nodes": map_document["nodes"],
-        "findings": map_document["findings"],
-        "gates": map_document["gates"],
-        "progress": map_document["progress"],
-        "deterministic_activities": operations["deterministic_activities"],
-        "activity_summaries": operations["activity_summaries"],
-        "node_dispatch": operations.get("node_dispatch", []),
-        "activity_integrity_findings": operations["activity_integrity_findings"],
-        "operational_integrity_findings": operations.get("operational_integrity_findings", []),
-        "calculation_attempt_integrity_findings": operations.get(
-            "calculation_attempt_integrity_findings", []
-        ),
-        "excluded_activity_refs": operations["excluded_activity_refs"],
-        "operational_summary": operations["operational_summary"],
-        "unresolved_controls": operations["unresolved_controls"],
-        "pending_review_dispositions": operations["pending_review_dispositions"],
+        "runtime_status": status,
         "validation_findings": validation["findings"],
-        "scientific_analyses": analyses,
+        "analysis_results": analyses,
         "artifacts": artifact_catalog,
     }

@@ -47,8 +47,8 @@ export interface TsSubagentRecord {
 
 export interface TsSubagentRunDocuments {
   task?: Record<string, unknown>;
-  reviewSnapshot?: Record<string, unknown>;
-  providerInput?: Record<string, unknown>;
+  researchMap?: Record<string, unknown>;
+  reviewContext?: Record<string, unknown>;
   actions?: Record<string, unknown>;
   result?: Record<string, unknown>;
   run?: Record<string, unknown>;
@@ -149,8 +149,8 @@ export function readTsSubagentRunDocuments(root: string, runRef?: string): TsSub
   }
   return {
     task: readBoundJson(runDir, "task.json"),
-    reviewSnapshot: readBoundJson(runDir, "review-snapshot.json"),
-    providerInput: readBoundJson(runDir, "provider-input.json"),
+    researchMap: readBoundJson(runDir, "research-map.json"),
+    reviewContext: readBoundJson(runDir, "review-context.json"),
     actions: readBoundJson(runDir, "actions.json"),
     result: readBoundJson(runDir, "result.json"),
     run: readBoundJson(runDir, "run.json"),
@@ -223,8 +223,8 @@ export function renderTsSubagentDetails(
   if (refs.length > 0) addSection(lines, "Artifacts", refs.join("\n"), safeWidth);
   const fileNames: Record<keyof TsSubagentRunDocuments, string> = {
     task: "task.json",
-    reviewSnapshot: "review-snapshot.json",
-    providerInput: "provider-input.json",
+    researchMap: "research-map.json",
+    reviewContext: "review-context.json",
     actions: "actions.json",
     result: "result.json",
     run: "run.json",

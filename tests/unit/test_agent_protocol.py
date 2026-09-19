@@ -37,14 +37,14 @@ def _task() -> dict[str, object]:
             "claim_refs": ["claim_1"],
         },
         "inputs": {
-            "review_snapshot": _binding(
-                "review-snapshot.json",
-                "ts-review-task-snapshot/4",
+            "research_map": _binding(
+                "research-map.json",
+                "research-map/1",
                 "b",
             ),
-            "provider_input": _binding(
-                "provider-input.json",
-                "ts-review-provider-input/6",
+            "review_context": _binding(
+                "review-context.json",
+                "ts-review-context/1",
                 "c",
             ),
         },

@@ -4,7 +4,7 @@ const { validateAgentResult, validateAgentTask } = require("../../agent-core/age
 
 const MAX_OUTPUT_BYTES = 16 * 1024;
 
-function parseAndValidateReviewResult(text, packet, reviewSnapshot) {
+function parseAndValidateReviewResult(text, packet, reviewContext) {
   if (typeof text !== "string" || !text.trim()) throw new Error("review agent output is empty");
   if (Buffer.byteLength(text, "utf8") > MAX_OUTPUT_BYTES) {
     throw new Error(`review agent output exceeds ${MAX_OUTPUT_BYTES} bytes`);
@@ -15,10 +15,10 @@ function parseAndValidateReviewResult(text, packet, reviewSnapshot) {
   } catch (error) {
     throw new Error(`review agent output must be JSON only: ${error instanceof Error ? error.message : String(error)}`);
   }
-  return validateReviewResult(value, packet, reviewSnapshot);
+  return validateReviewResult(value, packet, reviewContext);
 }
 
-function validateReviewResult(value, packet, reviewSnapshot, readArtifactIds = []) {
+function validateReviewResult(value, packet, reviewContext, readArtifactIds = []) {
   let serialized;
   try {
     serialized = JSON.stringify(value);
@@ -34,18 +34,18 @@ function validateReviewResult(value, packet, reviewSnapshot, readArtifactIds = [
   if (result.program !== null) throw new Error("review result cannot contain program state");
   if (result.artifact_refs.length) throw new Error("review result cannot create artifacts");
 
-  if (!isPlainObject(reviewSnapshot) || reviewSnapshot.schema_version !== "ts-review-task-snapshot/4") {
-    throw new Error("Review result validation requires the bound ResearchMap snapshot");
+  if (!isPlainObject(reviewContext) || reviewContext.schema_version !== "ts-review-context/1") {
+    throw new Error("Review result validation requires the bound Review context");
   }
-  if (reviewSnapshot.task_id !== task.task_id || reviewSnapshot.operation !== task.operation) {
-    throw new Error("Review ResearchMap snapshot does not match task");
+  if (reviewContext.task_id !== task.task_id || reviewContext.operation !== task.operation) {
+    throw new Error("Review context does not match task");
   }
   const basisAllowlist = new Set(
-    Array.isArray(reviewSnapshot.basis_allowlist) ? reviewSnapshot.basis_allowlist : [],
+    Array.isArray(reviewContext.basis_allowlist) ? reviewContext.basis_allowlist : [],
   );
   const artifactBasisRefs = new Set(
-    Array.isArray(reviewSnapshot.artifact_manifest)
-      ? reviewSnapshot.artifact_manifest.map((item) => item?.artifact_id).filter((item) => typeof item === "string")
+    Array.isArray(reviewContext.artifact_manifest)
+      ? reviewContext.artifact_manifest.map((item) => item?.artifact_id).filter((item) => typeof item === "string")
       : [],
   );
   if (!Array.isArray(readArtifactIds) || readArtifactIds.some((item) => typeof item !== "string" || !artifactBasisRefs.has(item))) {

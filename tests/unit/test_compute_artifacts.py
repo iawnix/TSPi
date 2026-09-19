@@ -710,15 +710,15 @@ def test_prepare_and_submit_reject_stale_input_binding(
     ssh_config.write_text("Host login.test\n  HostName login.test\n", encoding="utf-8")
     remote_config = tmp_path / "compute.toml"
     remote_config.write_text(
-        f'''default_profile = "local"
+        f'''default_environment = "local"
 
-[profiles.local]
+[environments.local]
 kind = "local"
 
-[profiles.local.software.gaussian]
+[environments.local.backends.gaussian]
 command = "g16"
 
-[profiles.cluster]
+[environments.cluster]
 kind = "remote"
 ssh_host = "login.test"
 ssh_config = "{ssh_config}"
@@ -727,7 +727,7 @@ remote_root = "/remote/ts"
 allowed_queues = ["batch"]
 max_nodes = 1
 
-[profiles.cluster.software.gaussian]
+[environments.cluster.backends.gaussian]
 command = ["g16"]
 allowed_queues = ["batch"]
 ''',
@@ -742,7 +742,7 @@ allowed_queues = ["batch"]
             dry_run=False,
             execution_target={
                 "kind": "remote",
-                "profile": "cluster",
+                "environment": "cluster",
                 "resources": {
                     "queue": "batch",
                     "nodes": 1,

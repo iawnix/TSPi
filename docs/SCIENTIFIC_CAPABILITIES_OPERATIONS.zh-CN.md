@@ -44,5 +44,5 @@ python3 tools/test/runner.py fast -- -q
 python3 tools/test/runner.py source -- -q
 ```
 
-远端 smoke 需要 `TS_COMPUTE_CONFIG` 指向包含管理员远端 profile 的统一 compute TOML。
+远端 smoke 需要 `TS_COMPUTE_CONFIG` 指向包含管理员远端环境的统一 compute TOML。
 它只验证传输和 parser 集成，小分子作业不能作为真实机理证据。

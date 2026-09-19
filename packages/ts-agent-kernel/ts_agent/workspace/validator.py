@@ -9,7 +9,7 @@ from ts_agent.io import read_json
 from ts_agent.research import ResearchKernel, ResearchKernelError
 
 from .identity import read_workspace_identity
-from .path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 WORKSPACE_SCHEMA = "research-workspace/1"

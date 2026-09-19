@@ -51,18 +51,18 @@ it is not a second Host or broker. See [Terminal](docs/TERMINAL.md),
 
 ## Research and remote execution
 
-Configure software providers and execution platforms in the unified
+Configure Backends and Compute environments in the unified
 `.pi/compute.toml` (or pass one to the installer with `--compute-config`).
-Local and remote profiles live in that same file. Verify a remote profile with:
+Local and remote environments live in that same file. Verify a remote environment with:
 
 ```bash
 ./TSPi --check-remote
 ```
 
 `ts_calc` is the single calculation lifecycle for both local and remote
-targets. A compute profile contains a `kind` (`local` or `remote`) and its
-software table; only remote profiles add SSH/Torque fields. `/compute` and the
-`ts_environment` tool inspect the complete profile catalog; readiness checks
+targets. A compute environment contains a `kind` (`local` or `remote`) and its
+`backends` table; only remote environments add SSH/Torque fields. `/compute` and the
+`ts_environment` tool inspect the complete environment catalog; readiness checks
 run as part of the bound calculation preflight.
 
 The skills cover Gaussian, xTB, CREST, ASE-NEB, structure validation,

@@ -12,7 +12,7 @@ from .errors import RemoteConfigurationError, RemoteError
 from .models import (
     RemoteJobConfig,
     RemoteResources,
-    SoftwareProfile,
+    RemoteBackendBinding,
     validate_artifact_name,
     validate_remote_path,
 )
@@ -27,27 +27,27 @@ _CALCULATION_ID = re.compile(r"^calc_[1-9][0-9]*$")
 
 def validate_job(config: RemoteJobConfig) -> None:
     resources = config.resources.validate()
-    profile = config.profile.validate()
+    platform = config.platform.validate()
     _validate_remote_binding(config)
-    if resources.queue not in profile.allowed_queues:
+    if resources.queue not in platform.allowed_queues:
         raise RemoteConfigurationError(
-            f"queue {resources.queue!r} is not allowed by profile {profile.name}"
+            f"queue {resources.queue!r} is not allowed by platform {platform.name}"
         )
-    if resources.nodes > profile.max_nodes:
+    if resources.nodes > platform.max_nodes:
         raise RemoteConfigurationError(
-            f"requested nodes={resources.nodes} exceeds profile max_nodes={profile.max_nodes}"
+            f"requested nodes={resources.nodes} exceeds platform max_nodes={platform.max_nodes}"
         )
     try:
-        software = profile.software[config.backend]
+        backend = platform.backends[config.backend]
     except KeyError as exc:
         raise RemoteConfigurationError(
-            f"profile {profile.name} does not register backend {config.backend}"
+            f"platform {platform.name} does not register backend {config.backend}"
         ) from exc
-    if software.allowed_queues and resources.queue not in software.allowed_queues:
+    if backend.allowed_queues and resources.queue not in backend.allowed_queues:
         raise RemoteConfigurationError(
             f"backend {config.backend} is not allowed on queue {resources.queue}"
         )
-    if software.requires_gpu and resources.ngpus < 1:
+    if backend.requires_gpu and resources.ngpus < 1:
         raise RemoteConfigurationError(f"backend {config.backend} requires GPU resources")
     if resources.ngpus:
         raise RemoteConfigurationError("GPU resource syntax is not enabled for the Torque adapter")
@@ -71,7 +71,7 @@ def validate_job(config: RemoteJobConfig) -> None:
         raise RemoteConfigurationError("remote control and output filenames overlap")
     if set(input_names) & (set(expected_names) | control_names | capture_names):
         raise RemoteConfigurationError("remote inputs overlap generated control or output names")
-    for key, value in {**software.environment, **config.environment}.items():
+    for key, value in {**backend.environment, **config.environment}.items():
         if not _ENV_NAME.fullmatch(key) or "\x00" in value:
             raise RemoteConfigurationError(f"invalid remote environment entry: {key!r}")
 
@@ -81,7 +81,7 @@ def _validate_remote_binding(config: RemoteJobConfig) -> None:
         raise RemoteConfigurationError("node_id must be a ResearchNode ID")
     if _CALCULATION_ID.fullmatch(config.intent_id) is None:
         raise RemoteConfigurationError("intent_id must be a calculation Attempt ID")
-    root = PurePosixPath(validate_remote_path(config.profile.remote_root, label="remote_root"))
+    root = PurePosixPath(validate_remote_path(config.platform.remote_root, label="remote_root"))
     remote = PurePosixPath(validate_remote_path(config.remote_dir, label="remote_dir"))
     try:
         relative = remote.relative_to(root)
@@ -104,8 +104,8 @@ def _validate_remote_binding(config: RemoteJobConfig) -> None:
 
 def render_job_script(config: RemoteJobConfig) -> str:
     validate_job(config)
-    software = config.profile.software[config.backend]
-    command = [*software.command, *config.command[1:]]
+    backend = config.platform.backends[config.backend]
+    command = [*backend.command, *config.command[1:]]
     job_name = _job_name(config.intent_id)
     lines = [
         "#!/usr/bin/env bash",
@@ -121,16 +121,16 @@ def render_job_script(config: RemoteJobConfig) -> str:
         "umask 077",
         f"cd -- {shlex.quote(config.remote_dir)}",
     ]
-    environment = {**software.environment, **config.environment}
+    environment = {**backend.environment, **config.environment}
     if config.resources.ompthreads is not None and "OMP_NUM_THREADS" not in environment:
         environment["OMP_NUM_THREADS"] = str(config.resources.ompthreads)
     for key, value in sorted(environment.items()):
         lines.append(f"export {key}={shlex.quote(value)}")
-    manages_scratch = config.backend == "gaussian" or software.scratch_root is not None
+    manages_scratch = config.backend == "gaussian" or backend.scratch_root is not None
     if manages_scratch:
-        lines.extend(_scratch_setup(config, software))
-    if software.activation_script:
-        lines.extend(_activation_wrapper(config, software.activation_script))
+        lines.extend(_scratch_setup(config, backend))
+    if backend.activation_script:
+        lines.extend(_activation_wrapper(config, backend.activation_script))
     if manages_scratch:
         lines.extend(_restore_scratch_environment(config.backend))
     lines.append("set -u")
@@ -238,11 +238,11 @@ def resource_dict(resources: RemoteResources) -> dict[str, Any]:
     }
 
 
-def _scratch_setup(config: RemoteJobConfig, software: SoftwareProfile) -> list[str]:
+def _scratch_setup(config: RemoteJobConfig, backend: RemoteBackendBinding) -> list[str]:
     status = shlex.quote(config.program_status_name)
     stderr = shlex.quote(config.stderr_name)
     prefix = f"ts-{config.backend}."
-    configured_base = shlex.quote(software.scratch_root) if software.scratch_root else "${TMPDIR:-/tmp}"
+    configured_base = shlex.quote(backend.scratch_root) if backend.scratch_root else "${TMPDIR:-/tmp}"
     backend_exports = (
         ['export GAUSS_SCRDIR="$ts_remote_scratch_dir"']
         if config.backend == "gaussian"

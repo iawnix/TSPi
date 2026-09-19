@@ -472,7 +472,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     assert.equal(tools.ts_notify.replay, "never");
     await assert.rejects(
       tools.ts_review.execute("review-disabled", {
-        targetClaimRef: "claim_1",
+        targetClaimId: "claim_1",
         question: "Review the bounded Claim.",
       }, () => {}, toolContext, undefined, context),
       /ts_review requires the guarded TSPi App Server Root Agent/,
@@ -626,8 +626,8 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     await writeFile(sshConfig, "Host test-login\n  HostName test.invalid\n");
     const computeConfig = join(root, "compute.toml");
     await writeFile(computeConfig, [
-      "default_profile = \"cluster\"",
-      "[profiles.cluster]",
+      "default_environment = \"cluster\"",
+      "[environments.cluster]",
       "kind = \"remote\"",
       "ssh_host = \"test-login\"",
       `ssh_config = ${JSON.stringify(sshConfig)}`,
@@ -637,7 +637,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       "max_nodes = 1",
       "connect_timeout_seconds = 1",
       "command_timeout_seconds = 1",
-      "[profiles.cluster.software.xtb]",
+      "[environments.cluster.backends.xtb]",
       "command = [\"xtb\"]",
       "allowed_queues = [\"batch\"]",
       "",
@@ -673,7 +673,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       parameters: { charge: 0, uhf: 0 },
       executionTarget: {
         kind: "remote",
-        profile: "cluster",
+        environment: "cluster",
         resources: {
           queue: "batch",
           nodes: 1,
@@ -751,7 +751,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       outcome: "partial",
       summary: "The Claim is bounded but still lacks a completed validation result.",
       facts: [{
-        statement: "The target Claim is present in the supplied dependency snapshot.",
+        statement: "The target Claim is present in the supplied ResearchMap.",
         status: "observed",
         basis_refs: ["claim_1"],
       }],
@@ -762,7 +762,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         discriminator: "A completed validation result supports or contradicts the Claim.",
         risks: ["The current evidence may remain inconclusive."],
       }],
-      limitations: ["The review used only the bounded graph snapshot."],
+      limitations: ["The review used only the supplied ResearchMap and allowlisted artifacts."],
     };
     faux.setResponses([piAi.fauxAssistantMessage(
       piAi.fauxToolCall("ts_review_result", validReviewSubmission),
@@ -770,7 +770,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     )]);
     const reviewUpdates = [];
     const review = await tools.ts_review.execute("review-native", {
-      targetClaimRef: "claim_1",
+      targetClaimId: "claim_1",
       question: "Does the bounded record currently justify accepting this Claim?",
       reviewerRole: "general",
     }, (update, options) => reviewUpdates.push({ update, options }), toolContext, undefined, context);
@@ -812,7 +812,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       ),
     ]);
     const repairedReview = await tools.ts_review.execute("review-native-repair", {
-      targetClaimRef: "claim_1",
+      targetClaimId: "claim_1",
       question: "Return the same assessment through the required result tool.",
       reviewerRole: "general",
     }, () => {}, toolContext, undefined, context);
@@ -837,7 +837,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     ]);
     await assert.rejects(
       tools.ts_review.execute("review-native-invalid", {
-        targetClaimRef: "claim_1",
+        targetClaimId: "claim_1",
         question: "Reject a schema-invalid result without leaving an open run.",
         reviewerRole: "general",
       }, () => {}, toolContext, undefined, context),

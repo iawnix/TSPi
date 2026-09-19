@@ -98,7 +98,11 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
         request.get("report_refs", []),
     )
     workspace_report = collect_report_context(workspace)
-    workspace_id = bounded_text(workspace_report.get("workspace_id"), "workspace_id", 128)
+    workspace_id = bounded_text(
+        workspace_report.get("research_map", {}).get("map_id"),
+        "workspace_id",
+        128,
+    )
     workspace_revision = bounded_text(
         workspace_report.get("workspace_revision"),
         "workspace_revision",

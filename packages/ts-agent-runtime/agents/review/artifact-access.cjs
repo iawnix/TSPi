@@ -39,11 +39,11 @@ const SECTIONS_BY_TYPE = Object.freeze({
   text_document: Object.freeze(["document", "overview", "diagnostics", ...COMMON_SECTIONS]),
 });
 
-function buildArtifactManifest({ workspaceRoot, artifactIds, reviewSnapshot, artifactCatalog }) {
+function buildArtifactManifest({ workspaceRoot, artifactIds, researchMap, artifactCatalog }) {
   if (!artifactIds.length) return [];
   if (!Array.isArray(artifactCatalog)) throw new Error("Review artifact catalog must be an array");
   const root = realpathSync(workspaceRoot);
-  const allowed = researchMapArtifactRefs(reviewSnapshot);
+  const allowed = researchMapArtifactRefs(researchMap);
   const catalog = new Map(artifactCatalog.filter(isPlainObject).map((item) => [item.artifact_id, item]));
 
   const manifest = artifactIds.map((artifactId) => {
@@ -72,9 +72,9 @@ function buildArtifactManifest({ workspaceRoot, artifactIds, reviewSnapshot, art
   return validateArtifactManifest(manifest);
 }
 
-function validateArtifactManifestOwnership(value, reviewSnapshot) {
+function validateArtifactManifestOwnership(value, researchMap) {
   const manifest = validateArtifactManifest(value);
-  const allowed = researchMapArtifactRefs(reviewSnapshot);
+  const allowed = researchMapArtifactRefs(researchMap);
   for (const item of manifest) {
     if (!allowed.has(item.artifact_id)) {
       throw new Error(`Review artifact is outside the Claim dependency graph: ${item.artifact_id}`);
@@ -123,7 +123,7 @@ function validateArtifactManifest(value) {
   });
 }
 
-function providerArtifactManifest(value) {
+function reviewArtifactReferences(value) {
   return validateArtifactManifest(value).map((item) => ({
     artifact_id: item.artifact_id,
     artifact_type: item.artifact_type,
@@ -185,17 +185,18 @@ function validateReadRequests(value, manifest) {
   });
 }
 
-function researchMapArtifactRefs(snapshot) {
-  if (!isPlainObject(snapshot) || !Array.isArray(snapshot.nodes) || !Array.isArray(snapshot.findings)) {
+function researchMapArtifactRefs(researchMap) {
+  if (!isPlainObject(researchMap) || researchMap.schema_version !== "research-map/1"
+      || !Array.isArray(researchMap.nodes) || !Array.isArray(researchMap.findings)) {
     throw new Error("Review artifact selection requires ResearchMap Nodes and Findings");
   }
   const allowed = new Set();
-  for (const node of snapshot.nodes) {
+  for (const node of researchMap.nodes) {
     for (const artifactId of Array.isArray(node?.artifact_refs) ? node.artifact_refs : []) {
       if (typeof artifactId === "string" && artifactId) allowed.add(artifactId);
     }
   }
-  for (const finding of snapshot.findings) {
+  for (const finding of researchMap.findings) {
     for (const artifactId of Array.isArray(finding?.source_refs) ? finding.source_refs : []) {
       if (typeof artifactId === "string" && artifactId) allowed.add(artifactId);
     }
@@ -483,8 +484,8 @@ module.exports = {
   MAX_TOTAL_EXCERPT_BYTES,
   SECTIONS_BY_TYPE,
   buildArtifactManifest,
-  providerArtifactManifest,
   readArtifactSections,
+  reviewArtifactReferences,
   validateArtifactManifest,
   validateArtifactManifestOwnership,
 };

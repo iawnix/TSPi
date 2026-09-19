@@ -19,18 +19,18 @@ has a deterministic parser contract and task-validation tests; an input
 preparer alone is insufficient.
 
 Use the catalog to construct `ts_calc` requests. Select
-`execution_target.kind = "local"` or `"remote"` and, when a shared
-`compute.toml` is installed, the corresponding profile name; the lifecycle and
-  result contract are the same. Remote readiness is checked during calculation
-  preflight; it is not a separate calculation API.
+`executionTarget.kind = "local"` or `"remote"` and, when a shared
+`compute.toml` is installed, the corresponding environment name; the lifecycle
+and result contract are the same. Remote readiness is checked during calculation
+preflight; it is not a separate calculation API.
 
-For example, a local request can bind `{"kind":"local","profile":"local"}`;
-the same capability can bind `{"kind":"remote","profile":"cluster_1w",...}`.
+For example, a local request can bind `{"kind":"local","environment":"local"}`;
+the same capability can bind `{"kind":"remote","environment":"cluster_1w",...}`.
 
 ## Adapter Output
 
 Preparation must declare exact generated files, commands, expected artifacts,
-software profile, and parser contract without accepting arbitrary shell. Parse
+Backend binding, Compute environment, and parser contract without accepting arbitrary shell. Parse
 must report structured program facts and provenance while retaining missing,
 ambiguous, and failure states.
 
@@ -49,9 +49,9 @@ intent.
 The execution boundary is explicit but not remote-only: local targets support
 deterministic preparation when `dry_run=true` and start a bounded, durable
 Attempt-local worker when `dry_run=false`. Remote targets use the configured
-Torque/PBS profile only when `dry_run=false`; remote dry-runs generate and
+remote environment only when `dry_run=false`; remote dry-runs generate and
 validate a submission plan without contacting the scheduler. Check the selected
-software profile before launching.
+environment and Backend binding before launching.
 
 ## Record Scientific Results
 

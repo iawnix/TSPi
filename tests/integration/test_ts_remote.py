@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from ts_agent.remote.client import CommandResult
-from ts_agent.remote.config import load_config
+from ts_agent.platforms import EnvironmentConfigurationError, load_config
 from ts_agent.remote.diagnostics import MODES, _doctor, diagnose
 from ts_agent.remote.errors import (
     RemoteConfigurationError,
@@ -27,18 +27,19 @@ from ts_agent.remote.transfer import upload_verified
 
 def test_remote_diagnostic_modes_exclude_redundant_cluster_alias() -> None:
     assert MODES == {"status", "doctor", "queues", "nodes"}
-    with pytest.raises(RemoteError, match="unsupported ts_remote diagnostic mode: cluster"):
+    with pytest.raises(RemoteError, match="unsupported compute environment diagnostic mode: cluster"):
         diagnose("cluster")
 
 
-def _profile(tmp_path: Path):
+def _platform(tmp_path: Path):
     ssh_config = tmp_path / "ssh_config"
     ssh_config.write_text("Host test-login\n  HostName login.test\n", encoding="utf-8")
     config = tmp_path / "compute.toml"
     config.write_text(
-        f'''default_profile = "cluster"
+        f'''default_environment = "cluster"
 
-[profiles.cluster]
+[environments.cluster]
+kind = "remote"
 ssh_host = "test-login"
 ssh_config = "{ssh_config}"
 scheduler = "torque"
@@ -46,13 +47,13 @@ remote_root = "/remote/ts"
 allowed_queues = ["batch"]
 max_nodes = 1
 
-[profiles.cluster.commands]
+[environments.cluster.commands]
 qsub = "/opt/torque/bin/qsub"
 qstat = "/opt/torque/bin/qstat"
 qdel = "/opt/torque/bin/qdel"
 pbsnodes = "/opt/torque/bin/pbsnodes"
 
-[profiles.cluster.software.gaussian]
+[environments.cluster.backends.gaussian]
 command = ["/opt/g16/g16"]
 activation_script = "/opt/g16/activate.sh"
 allowed_queues = ["batch"]
@@ -60,7 +61,9 @@ requires_gpu = false
 ''',
         encoding="utf-8",
     )
-    return load_config(config).profile("cluster")
+    environment = load_config(config).environment("cluster", kind="remote")
+    assert environment.platform is not None
+    return environment.platform
 
 
 def _job(tmp_path: Path) -> RemoteJobConfig:
@@ -72,7 +75,7 @@ def _job(tmp_path: Path) -> RemoteJobConfig:
         intent_digest="sha256:" + "a" * 64,
         node_id="node_1",
         backend="gaussian",
-        profile=_profile(tmp_path),
+        platform=_platform(tmp_path),
         remote_dir="/remote/ts/workspaces/ws_0123456789abcdef01234567/runs/node_1/calc_1",
         resources=RemoteResources(
             queue="batch",
@@ -124,37 +127,38 @@ def _executable_job(
     )
     executable.chmod(0o755)
     base = _job(tmp_path)
-    software = replace(
-        base.profile.software["gaussian"],
+    backend = replace(
+        base.platform.backends["gaussian"],
         command=(str(executable),),
         activation_script=str(activation),
         scratch_root=str(scratch_root),
     )
-    profile = replace(
-        base.profile,
+    platform = replace(
+        base.platform,
         remote_root=str(remote_root),
-        software={"gaussian": software},
+        backends={"gaussian": backend},
     )
     return replace(
         base,
-        profile=profile,
+        platform=platform,
         remote_dir=str(remote_dir),
         input_paths=(remote_dir / "candidate.gjf",),
     ), remote_dir
 
 
-def test_remote_profile_is_installation_owned_and_strict(tmp_path: Path) -> None:
-    profile = _profile(tmp_path)
+def test_remote_platform_is_installation_owned_and_strict(tmp_path: Path) -> None:
+    platform = _platform(tmp_path)
 
-    assert profile.ssh_host == "test-login"
-    assert profile.scheduler == "torque"
-    assert profile.software["gaussian"].command == ("/opt/g16/g16",)
-    assert profile.software["gaussian"].scratch_root is None
+    assert platform.ssh_host == "test-login"
+    assert platform.scheduler == "torque"
+    assert platform.backends["gaussian"].command == ("/opt/g16/g16",)
+    assert platform.backends["gaussian"].scratch_root is None
 
     invalid = tmp_path / "invalid.toml"
     invalid.write_text(
-        '''default_profile = "cluster"
-[profiles.cluster]
+        '''default_environment = "cluster"
+[environments.cluster]
+kind = "remote"
 ssh_host = "test-login"
 ssh_config = "missing"
 scheduler = "slurm"
@@ -164,27 +168,19 @@ max_nodes = 1
 ''',
         encoding="utf-8",
     )
-    with pytest.raises(RemoteConfigurationError):
+    with pytest.raises(EnvironmentConfigurationError):
         load_config(invalid)
 
 
-@pytest.mark.parametrize("scratch_root", ["/", "relative/scratch"])
-def test_remote_profile_rejects_unsafe_scratch_roots(tmp_path: Path, scratch_root: str) -> None:
-    profile = _profile(tmp_path)
-    gaussian = replace(profile.software["gaussian"], scratch_root=scratch_root)
-
-    with pytest.raises(RemoteConfigurationError, match="scratch_root must be a non-root absolute POSIX path"):
-        replace(profile, software={"gaussian": gaussian}).validate()
-
-
-def test_scheduler_commands_default_to_remote_path_lookup(tmp_path: Path) -> None:
+def test_environment_selects_the_only_requested_kind_when_default_differs(tmp_path: Path) -> None:
     ssh_config = tmp_path / "ssh_config"
     ssh_config.write_text("Host test-login\n  HostName login.test\n", encoding="utf-8")
     config = tmp_path / "compute.toml"
     config.write_text(
-        f'''default_profile = "cluster"
+        f'''default_environment = "cluster"
 
-[profiles.cluster]
+[environments.cluster]
+kind = "remote"
 ssh_host = "test-login"
 ssh_config = "{ssh_config}"
 scheduler = "torque"
@@ -192,7 +188,47 @@ remote_root = "/remote/ts"
 allowed_queues = ["batch"]
 max_nodes = 1
 
-[profiles.cluster.software.xtb]
+[environments.local]
+kind = "local"
+
+[environments.local.backends.xtb]
+command = "/bin/true"
+''',
+        encoding="utf-8",
+    )
+
+    environments = load_config(config)
+
+    assert environments.environment(kind="remote").name == "cluster"
+    assert environments.environment(kind="local").name == "local"
+
+
+@pytest.mark.parametrize("scratch_root", ["/", "relative/scratch"])
+def test_remote_platform_rejects_unsafe_scratch_roots(tmp_path: Path, scratch_root: str) -> None:
+    platform = _platform(tmp_path)
+    gaussian = replace(platform.backends["gaussian"], scratch_root=scratch_root)
+
+    with pytest.raises(RemoteConfigurationError, match="scratch_root must be a non-root absolute POSIX path"):
+        replace(platform, backends={"gaussian": gaussian}).validate()
+
+
+def test_scheduler_commands_default_to_remote_path_lookup(tmp_path: Path) -> None:
+    ssh_config = tmp_path / "ssh_config"
+    ssh_config.write_text("Host test-login\n  HostName login.test\n", encoding="utf-8")
+    config = tmp_path / "compute.toml"
+    config.write_text(
+        f'''default_environment = "cluster"
+
+[environments.cluster]
+kind = "remote"
+ssh_host = "test-login"
+ssh_config = "{ssh_config}"
+scheduler = "torque"
+remote_root = "/remote/ts"
+allowed_queues = ["batch"]
+max_nodes = 1
+
+[environments.cluster.backends.xtb]
 command = ["xtb"]
 allowed_queues = ["batch"]
 requires_gpu = false
@@ -200,7 +236,9 @@ requires_gpu = false
         encoding="utf-8",
     )
 
-    commands = load_config(config).profile("cluster").commands
+    environment = load_config(config).environment("cluster", kind="remote")
+    assert environment.platform is not None
+    commands = environment.platform.commands
 
     assert commands.qsub == "qsub"
     assert commands.qstat == "qstat"
@@ -647,8 +685,8 @@ def test_collection_refuses_to_overwrite_local_artifact(tmp_path: Path) -> None:
     assert destination.read_text(encoding="utf-8") == "existing\n"
 
 
-def test_doctor_is_unhealthy_when_storage_or_software_is_unavailable(tmp_path: Path) -> None:
-    profile = _profile(tmp_path)
+def test_doctor_is_unhealthy_when_storage_or_backend_is_unavailable(tmp_path: Path) -> None:
+    platform = _platform(tmp_path)
 
     class Client:
         def run(self, argv, *, check=True):
@@ -661,23 +699,23 @@ def test_doctor_is_unhealthy_when_storage_or_software_is_unavailable(tmp_path: P
             del check
             return CommandResult(("ssh",), 0, "", "")
 
-    checks = _doctor(Client(), profile)
+    checks = _doctor(Client(), platform)
 
     assert checks["remote_root_writable"] is False
-    assert checks["software"]["gaussian"]["command_available"] is True
-    assert checks["software"]["gaussian"]["runtime_dependencies_available"] is None
+    assert checks["backends"]["gaussian"]["command_available"] is True
+    assert checks["backends"]["gaussian"]["runtime_dependencies_available"] is None
     assert checks["ok"] is False
 
 
 def test_doctor_checks_ase_neb_python_ase_and_xtb_runtime(tmp_path: Path) -> None:
-    profile = _profile(tmp_path)
-    ase_software = replace(
-        profile.software["gaussian"],
+    platform = _platform(tmp_path)
+    ase_backend = replace(
+        platform.backends["gaussian"],
         command=("/opt/ase-neb/bin/python",),
         activation_script=None,
         environment={"TS_ASE_NEB_XTB": "/opt/xtb/bin/xtb"},
     )
-    profile = replace(profile, software={"ase_neb": ase_software})
+    platform = replace(platform, backends={"ase_neb": ase_backend})
 
     class Client:
         calls = 0
@@ -694,26 +732,26 @@ def test_doctor_checks_ase_neb_python_ase_and_xtb_runtime(tmp_path: Path) -> Non
             assert args == ["", "/opt/ase-neb/bin/python", "/opt/xtb/bin/xtb"]
             return CommandResult(("ssh",), 1, "", "ASE import failed")
 
-    checks = _doctor(Client(), profile)
+    checks = _doctor(Client(), platform)
 
-    assert checks["software"]["ase_neb"]["command_available"] is True
-    assert checks["software"]["ase_neb"]["runtime_dependencies_available"] is False
+    assert checks["backends"]["ase_neb"]["command_available"] is True
+    assert checks["backends"]["ase_neb"]["runtime_dependencies_available"] is False
     assert checks["ok"] is False
 
 
-def test_torque_renders_ase_neb_profile_python_and_xtb_environment(tmp_path: Path) -> None:
+def test_torque_renders_ase_neb_platform_python_and_xtb_environment(tmp_path: Path) -> None:
     base = _job(tmp_path)
-    ase_software = replace(
-        base.profile.software["gaussian"],
+    ase_backend = replace(
+        base.platform.backends["gaussian"],
         command=("/opt/ase-neb/bin/python",),
         activation_script=None,
         environment={"TS_ASE_NEB_XTB": "/opt/xtb/bin/xtb"},
     )
-    profile = replace(base.profile, software={"ase_neb": ase_software})
+    platform = replace(base.platform, backends={"ase_neb": ase_backend})
     config = replace(
         base,
         backend="ase_neb",
-        profile=profile,
+        platform=platform,
         command=("/local/python", "-m", "ts_agent.backends.ase_neb_runner", "--images", "7"),
         expected_artifacts=("ase_neb.out", "neb.traj", "neb_path.xyz", "neb_summary.json"),
         stdout_name="ase_neb.out",

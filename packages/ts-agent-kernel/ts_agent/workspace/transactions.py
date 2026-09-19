@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Iterator
 
 from .errors import ContractError
-from .path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 WORKSPACE_LOCK = ".ts-workspace.lock"

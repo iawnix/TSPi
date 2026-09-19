@@ -56,6 +56,6 @@ python3 tools/test/runner.py source -- -q
 ```
 
 Remote smoke tests require an explicit `TS_COMPUTE_CONFIG` pointing to a
-unified compute TOML with an administrator-configured remote profile. They
+unified compute TOML with an administrator-configured remote environment. They
 validate transport and parser integration only; a small molecule job is not
 evidence for a chemical mechanism.

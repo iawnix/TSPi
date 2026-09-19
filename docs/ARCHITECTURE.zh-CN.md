@@ -141,8 +141,9 @@ ChangeSet 的操作定义位于 `ResearchKernel` 使用的 ResearchMap operation
 `prepare -> submit -> inspect -> collect -> parse` 生命周期。Research Kernel
 工作区始终是唯一规范存储：本地执行在 Attempt 的 execution 目录暂存输入并把输出
 收集回工作区，远程目录只是临时执行镜像，TS Web 不需要访问远程文件系统。推荐的
-`compute.toml` 将 local/remote 软件提供平台放在同一份 profile 目录中，只有 remote
-profile 增加 SSH/Torque 字段。`/compute` 和 `compute.environments` 使用同一份配置查询。
+`compute.toml` 将 local/remote 计算环境放在同一份 environments 目录中，每个环境在
+backends 下绑定软件；只有 remote 环境增加 SSH/Torque 字段。`/compute` 和
+`compute.environments` 使用同一份配置查询。
 远程计算和产物记录使用显式 schema。TS Web 只读取工作区
 文件，不拥有 Pi session。入口、skill、
 扩展和测试位置与[英文架构](ARCHITECTURE.md)一致。

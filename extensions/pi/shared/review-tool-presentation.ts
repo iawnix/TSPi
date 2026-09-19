@@ -13,7 +13,7 @@ export function renderTsReviewCall(
   const identity = compact([
     `${tspiIcon("running")} ${tspiIcon("roleReview")} Review`,
     firstStringFromArray(args.nodeRefs),
-    stringValue(args.targetClaimRef),
+    stringValue(args.targetClaimId),
     stringValue(args.operation) || "claim_review",
   ]);
   return new Text(theme.fg("accent", identity), 1, 0);

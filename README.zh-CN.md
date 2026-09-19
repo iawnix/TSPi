@@ -54,18 +54,18 @@ broker。参阅[终端文档](docs/TERMINAL.zh-CN.md)、[中文架构](docs/ARCH
 
 ## 研究与远程计算
 
-安装时可以在统一的 `.pi/compute.toml` 中配置软件提供平台（使用
-`--compute-config` 导入已有文件）。本地与远端 profile 都位于这一个文件中。
-远程 profile 可用下面的命令验证：
+安装时可以在统一的 `.pi/compute.toml` 中配置 Backend 与 Compute environment（使用
+`--compute-config` 导入已有文件）。本地与远端 environment 都位于这一个文件中。
+远端 environment 可用下面的命令验证：
 
 ```bash
 ./TSPi --check-remote
 ```
 
-`ts_calc` 是 local 和 remote 共用的唯一计算生命周期入口。每个 compute
-profile 都有 `kind = "local"` 或 `"remote"` 以及对应的软件表；只有
-remote profile 额外包含 SSH/Torque 字段。`/compute` 和 `ts_environment` 工具
-查询完整的 local/remote profile；远端就绪性检查属于已绑定计算的 preflight，
+`ts_calc` 是 local 和 remote 共用的唯一计算生命周期入口。每个 Compute
+environment 都有 `kind = "local"` 或 `"remote"` 以及对应的 `backends` 表；只有
+remote environment 额外包含 SSH/Torque 字段。`/compute` 和 `ts_environment` 工具
+查询完整的 local/remote environment；远端就绪性检查属于已绑定计算的 preflight，
 不再单独形成一套 remote 命令。
 
 Skill 覆盖 Gaussian、xTB、CREST、ASE-NEB、结构验证、渲染、报告和邮件投递。详见

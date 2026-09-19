@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .refs import ACTIVITY_ID, CALCULATION_ID, SUBAGENT_RUN_ID
-from .path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 STATE_SCHEMA = "ts-operational-id-state/1"

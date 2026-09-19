@@ -7,8 +7,9 @@ import pytest
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
-from ts_agent.research import ResearchKernel, create_research_map
+from ts_agent.research import ResearchKernel
 from ts_agent.research.web import ResearchWebError, handle_request, register_sources
+from ts_agent.workspace import init_workspace
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -93,7 +94,7 @@ def test_research_map_contract_rejects_private_provider_fields() -> None:
 def test_provider_map_route_returns_the_canonical_research_map(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     state_dir = tmp_path / "state"
-    create_research_map(workspace, "map_contract", "Contract map", "2026-09-19T00:00:00Z")
+    init_workspace(workspace)
     workspace_id = register_sources(state_dir, [workspace])[0]["workspace_id"]
 
     payload = handle_request(

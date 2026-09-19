@@ -24,12 +24,10 @@ import {
 
 const require = createRequire(import.meta.url);
 const {
+  buildReviewPromptPayload,
   buildReviewTaskBundle,
   validateSubagentRequest,
 } = require("../../packages/ts-agent-runtime/agents/review/task-packet.cjs");
-const { reviewSnapshotFromMap } = require(
-  "../../packages/ts-agent-runtime/agents/review/research-map-adapter.cjs",
-);
 const {
   beginAgentRun,
   completeAgentRun,
@@ -57,7 +55,7 @@ export function createReviewTool(runtime) {
       requireNativeWrites("ts_review");
       requireReviewRuntime(runtime);
       const request = validateSubagentRequest({
-        targetClaimRef: params.targetClaimRef,
+        targetClaimId: params.targetClaimId,
         question: params.question,
         reviewerRole: params.reviewerRole,
         artifactIds: params.artifactIds,
@@ -69,7 +67,7 @@ export function createReviewTool(runtime) {
       let packet;
       publishProgress(onUpdate, toolCallId, taskId, request, "queued");
       try {
-        publishProgress(onUpdate, toolCallId, taskId, request, "snapshotting");
+        publishProgress(onUpdate, toolCallId, taskId, request, "loading");
         const researchMap = await runJsonCli(
           packageScript("ts_api.py"),
           ["research.map", "--root", root],
@@ -77,7 +75,6 @@ export function createReviewTool(runtime) {
           context?.abortSignal,
           60_000,
         );
-        const reviewSnapshot = reviewSnapshotFromMap(researchMap, request.targetClaimRef);
         const artifactCatalog = request.artifactIds.length
           ? (await runJsonCli(
               packageScript("ts_api.py"),
@@ -91,21 +88,21 @@ export function createReviewTool(runtime) {
           runId: taskId,
           workspaceRoot: root,
           request,
-          reviewSnapshot,
+          researchMap,
           artifactCatalog,
         });
         packet = bundle.task;
         journal = beginAgentRun(root, packet, {
           documents: bundle.documents,
-          ownerClaimRef: request.targetClaimRef,
+          ownerClaimRef: request.targetClaimId,
         });
         const persisted = readAgentRunInputs(journal);
         const reviewed = await runNativeReview({
           runtime,
           root,
           packet: persisted.task,
-          reviewSnapshot: persisted.documents.review_snapshot,
-          providerInput: persisted.documents.provider_input,
+          researchMap: persisted.documents.research_map,
+          reviewContext: persisted.documents.review_context,
           timeoutMs: (params.timeoutSeconds || 90) * 1000,
           context,
           onState: (state) => publishProgress(onUpdate, toolCallId, taskId, request, state, journal.runRef),
@@ -185,12 +182,12 @@ async function runNativeReview(options) {
   const invalidOutputs = [];
   const resultCapture = createReviewResultCapture();
   const artifactCapture = createReviewArtifactReadCapture();
-  const artifactManifest = Array.isArray(options.reviewSnapshot.artifact_manifest)
-    ? options.reviewSnapshot.artifact_manifest
+  const artifactManifest = Array.isArray(options.reviewContext.artifact_manifest)
+    ? options.reviewContext.artifact_manifest
     : [];
   const resultTool = createReviewResultTool(
     options.packet,
-    options.reviewSnapshot,
+    options.reviewContext,
     resultCapture,
     artifactCapture,
   );
@@ -216,7 +213,7 @@ async function runNativeReview(options) {
       thinkingLevel: options.runtime.thinkingLevel,
       tools,
       activeToolNames: tools.map((tool) => tool.name),
-      systemPrompt: reviewSystemPrompt(options.reviewSnapshot),
+      systemPrompt: reviewSystemPrompt(options.reviewContext),
       retry: { enabled: false, maxRetries: 0, baseDelayMs: 0 },
       compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 },
       toolExecution: "sequential",
@@ -243,7 +240,12 @@ async function runNativeReview(options) {
     });
     options.onState("running");
     options.onState("waiting");
-    const first = await lane.prompt(reviewTaskPrompt(options.providerInput, Boolean(artifactTool)), undefined, childContext);
+    const promptPayload = buildReviewPromptPayload(
+      options.packet,
+      options.researchMap,
+      options.reviewContext,
+    );
+    const first = await lane.prompt(reviewTaskPrompt(promptPayload, Boolean(artifactTool)), undefined, childContext);
     requireCompletedReviewRun(first);
     if (!resultCapture.accepted && resultCapture.attemptCount === 0) {
       recordInvalidOutput(invalidOutputs, {
@@ -309,7 +311,7 @@ async function runNativeReview(options) {
         result_attempts: resultCapture.attemptCount
           + invalidOutputs.filter((item) => item.validation_stage === "missing_tool_call").length,
         artifact_read_count: artifactCapture.actions.length,
-        reviewer_role: options.reviewSnapshot.reviewer_role.role_id,
+        reviewer_role: options.reviewContext.reviewer_role.role_id,
       },
     };
   } catch (error) {
@@ -343,19 +345,19 @@ async function lastAssistantText(lane, context) {
     .join("\n");
 }
 
-function reviewSystemPrompt(snapshot) {
-  const role = loadReviewerRole(snapshot.reviewer_role?.role_id || "general");
+function reviewSystemPrompt(context) {
+  const role = loadReviewerRole(context.reviewer_role?.role_id || "general");
   const root = resolve(packageRoot(), "packages/ts-agent-runtime/agents/review/prompts");
   const core = readFileSync(resolve(root, "core.md"), "utf8").trim();
   const task = readFileSync(resolve(root, "claim-review.md"), "utf8").trim();
   return `${core}\n\nReviewer role (${role.role_id}, revision ${role.prompt_revision}): ${role.title}.\nSpecialty: ${role.specialty}.\nRole boundary: ${role.description}\n\nReview mode instructions:\n${task}`;
 }
 
-function reviewTaskPrompt(providerInput, hasArtifacts) {
+function reviewTaskPrompt(promptPayload, hasArtifacts) {
   const artifactInstruction = hasArtifacts
     ? " You may call ts_review_artifact_read once with a bounded batch if needed; otherwise submit directly."
     : "";
-  return `Review this bounded TSPi task packet.${artifactInstruction} Submit exactly once through ${REVIEW_RESULT_TOOL_NAME}; free text is not a result.\n\n${JSON.stringify(providerInput)}`;
+  return `Review this ResearchMap task.${artifactInstruction} Submit exactly once through ${REVIEW_RESULT_TOOL_NAME}; free text is not a result.\n\n${JSON.stringify(promptPayload)}`;
 }
 
 function toolResultText(result) {
@@ -385,14 +387,14 @@ function recordInvalidOutput(invalidOutputs, output) {
 
 function publishProgress(onUpdate, toolCallId, taskId, request, state, runRef) {
   onUpdate?.({
-    content: [{ type: "text", text: `TS Review ${request.targetClaimRef}: ${state}` }],
+    content: [{ type: "text", text: `TS Review ${request.targetClaimId}: ${state}` }],
     details: {
       run: {
         tool_call_id: toolCallId,
         task_id: taskId,
         role: "review",
         operation: "claim_review",
-        target_ref: request.targetClaimRef,
+        target_ref: request.targetClaimId,
         reviewer_role: request.reviewerRole,
         state,
         run_ref: runRef || null,

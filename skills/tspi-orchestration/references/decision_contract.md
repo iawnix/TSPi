@@ -41,5 +41,5 @@ JSON file, transaction log, or TS Web data directly.
 entry: use `FactFinding` for a value that supports a scientific statement and
 `IssueFinding` for a limitation, anomaly, conflict, or unresolved question.
 `create_gate` and `evaluate_gate` are the complete Gate lifecycle; there is no
-separate profile/spec/result protocol. Claim status and Gate verdict are
+separate validation-specification-result protocol. Claim status and Gate verdict are
 independent: a Gate evaluation does not silently change a Claim.

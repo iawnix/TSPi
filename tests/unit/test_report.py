@@ -31,9 +31,10 @@ def test_report_reads_the_canonical_research_map(tmp_path: Path) -> None:
     context = collect_report_context(root)
     text = build_final_report(root)
 
-    assert context["schema_version"] == "ts-report-context/6"
+    assert context["schema_version"] == "ts-report-context/7"
     assert context["research_map"]["schema_version"] == "research-map/1"
-    assert context["focus"] == {"claim_ids": ["claim_1"], "node_ids": ["node_1"]}
+    assert context["research_map"]["focus_claim_ids"] == ["claim_1"]
+    assert context["research_map"]["focus_node_ids"] == ["node_1"]
     assert "## Findings" in text
     assert "## Gates" in text
     assert "Three candidates were retained." in text

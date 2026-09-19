@@ -40,15 +40,16 @@ def test_python_payload_digest_covers_code_and_runtime_data() -> None:
         "packages/ts-agent-kernel/ts_agent/path_safety.py",
         "packages/ts-agent-kernel/ts_agent/research/model.py",
         "packages/ts-agent-kernel/ts_agent/research/kernel.py",
+        "packages/ts-agent-kernel/ts_agent/command_catalog.json",
+        "packages/ts-agent-kernel/ts_agent/analysis/results.py",
+        "packages/ts-agent-kernel/ts_agent/compute/errors.py",
+        "packages/ts-agent-kernel/ts_agent/platforms/config.py",
         "packages/ts-agent-kernel/ts_agent/workspace/artifacts.py",
         "packages/ts-agent-kernel/ts_agent/workspace/candidates.py",
-        "packages/ts-agent-kernel/ts_agent/workspace/contracts/attempt_intent_projection.schema.json",
-        "packages/ts-agent-kernel/ts_agent/workspace/contracts/attempt_result_projection.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/finding_candidates.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/contracts/workspace.schema.json",
         "packages/ts-agent-kernel/ts_agent/workspace/operational.py",
         "packages/ts-agent-kernel/ts_agent/workspace/operation_registry.py",
-        "packages/ts-agent-kernel/ts_agent/workspace/path_safety.py",
     }
 
     assert all((ROOT / path).is_file() for path in expected_paths)

@@ -48,6 +48,11 @@ from ts_agent.backends.xtb import (
 )
 from ts_agent.backends.xtb_scan import parse_xtb_scan_control
 from ts_agent.backends.xyz import xyz_frame_metadata
+from ts_agent.calculation_contracts import (
+    CalculationContractError,
+    validate_calculation_contract,
+    validate_calculation_result_binding,
+)
 from ts_agent.remote import lifecycle as remote_lifecycle
 from ts_agent.remote.errors import (
     RemoteCancellationAmbiguous,
@@ -61,7 +66,7 @@ from ts_agent.io import now_iso, read_json, sha256_json, write_json
 from ts_agent.workspace.operational_ids import allocate_operational_id
 from ts_agent.workspace.identity import WorkspaceIdentityError, workspace_id
 from ts_agent.workspace.node_contract import node_contract_digest
-from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from ts_agent.workspace.artifacts import WorkspaceArtifactError, workspace_node_records, workspace_root as canonical_workspace_root
 
 from .artifacts import resolve_artifact_ref, resolve_input_artifacts, verify_input_bindings
@@ -74,20 +79,39 @@ from .capabilities import (
     resolve_capability,
     validate_capability_parameters,
 )
-from .contracts import (
-    ComputeContractError,
-    validate_calculation_result_binding,
-    validate_compute_contract,
-)
+from .errors import ComputeContractError
 from .task_validation import parsed_program_outcome, validate_parsed_task
 from . import local_lifecycle
-from .config import ComputeConfigurationError, SoftwareProvider, load_config as load_compute_config
+from ts_agent.platforms import (
+    BackendBinding,
+    EnvironmentConfigurationError,
+    load_config as load_environment_config,
+)
 
 
 INTENT_SCHEMA = "calculation_intent.schema.json"
 REQUEST_SCHEMA = "calculation_request.schema.json"
 RESULT_SCHEMA = "calculation_result.schema.json"
 MAX_TAIL_BYTES = 32 * 1024
+
+
+def _validate_calculation_document(schema_name: str, document: Any) -> None:
+    try:
+        validate_calculation_contract(schema_name, document)
+    except CalculationContractError as exc:
+        raise ComputeContractError(str(exc)) from exc
+
+
+def _validate_result_binding(
+    intent: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    label: str,
+) -> None:
+    try:
+        validate_calculation_result_binding(intent, result, label=label)
+    except CalculationContractError as exc:
+        raise ComputeContractError(str(exc)) from exc
 BACKEND_PREPARERS: dict[str, Callable[[BackendTask], PreparedTask]] = {
     "gaussian": prepare_gaussian,
     "xtb": prepare_xtb,
@@ -108,7 +132,7 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
     """Materialize one semantic request as an immutable attempt intent."""
 
     workspace = _workspace_root(root)
-    validate_compute_contract(REQUEST_SCHEMA, request)
+    _validate_calculation_document(REQUEST_SCHEMA, request)
     _validate_execution_mode(request["execution_target"], request["dry_run"])
     node_id = str(request["node_id"])
     capability = str(request["capability"])
@@ -320,7 +344,7 @@ def preflight_calculation(
         "intent_digest": sha256_json(intent),
         "artifact_ref": artifact_ref,
         "execution_kind": execution_policy["kind"],
-        "profile": execution_policy.get("profile"),
+        "environment": execution_policy.get("environment"),
         "remote_dir": execution_policy.get("remote_dir"),
         "job_id": status.get("job_id") if status else None,
         "state": status.get("state") if status else None,
@@ -480,7 +504,7 @@ def submit_calculation(
                 job_id=ambiguous_job_id,
             ),
             provenance={
-                "profile": policy["profile"],
+                "environment": policy["environment"],
                 "scheduler": "torque",
                 "remote_dir": policy["remote_dir"],
                 "observed_at": now_iso(),
@@ -524,7 +548,7 @@ def submit_calculation(
             job_id=receipt.scheduler_id,
         ),
         provenance={
-            "profile": policy["profile"],
+            "environment": policy["environment"],
             "scheduler": receipt.scheduler,
             "remote_dir": policy["remote_dir"],
             "submitted_at": receipt.submitted_at,
@@ -570,7 +594,7 @@ def calculation_status(
     exit_status = observed.exit_status
     provenance = {
         "observed_at": now_iso(),
-        "profile": policy["profile"],
+        "environment": policy["environment"],
         "scheduler": "torque",
         "remote_dir": policy["remote_dir"],
         "submission_id": config.submission_id,
@@ -738,7 +762,7 @@ def collect_calculation(
         artifact_refs=artifact_refs,
         provenance={
             "collected_at": now_iso(),
-            "profile": policy["profile"],
+            "environment": policy["environment"],
             "scheduler": "torque",
             "remote_dir": policy["remote_dir"],
             "requested_artifacts": selected,
@@ -1117,7 +1141,7 @@ def cancel_calculation(
     try:
         cancellation = remote_lifecycle.cancel(remote_config, job_id)
         provenance = {
-            "profile": policy["profile"],
+            "environment": policy["environment"],
             "scheduler": "torque",
             "remote_dir": policy["remote_dir"],
             "cancelled_at": cancellation.get("updated_at", now_iso()),
@@ -1143,7 +1167,7 @@ def cancel_calculation(
                 job_id=job_id,
             ),
             provenance={
-                "profile": policy["profile"],
+                "environment": policy["environment"],
                 "scheduler": "torque",
                 "remote_dir": policy["remote_dir"],
                 "observed_at": now_iso(),
@@ -1454,42 +1478,34 @@ def _materialize_execution_target(
     intent_id: str,
 ) -> dict[str, Any]:
     if request_target["kind"] == "local":
-        profile_name = request_target.get("profile")
-        if profile_name is not None:
-            if not isinstance(profile_name, str) or not profile_name:
-                raise ComputeContractError("local execution profile must be a non-empty string")
+        environment_name = request_target.get("environment")
+        if environment_name is not None:
+            if not isinstance(environment_name, str) or not environment_name:
+                raise ComputeContractError("local execution environment must be a non-empty string")
             try:
-                _compute_profile(profile_name, kind="local")
-            except ComputeConfigurationError as exc:
-                raise ComputeContractError(f"invalid local compute profile: {exc}") from exc
-            return {"kind": "local", "profile": profile_name}
-        # Keep the compact compatibility target valid.  The default local profile is
-        # resolved and captured during preparation when a unified config is
-        # installed.
+                _compute_environment(environment_name, kind="local")
+            except EnvironmentConfigurationError as exc:
+                raise ComputeContractError(f"invalid local compute environment: {exc}") from exc
+            return {"kind": "local", "environment": environment_name}
+        # Resolve and capture the configured local environment during preparation.
         try:
-            configured = load_compute_config()
-        except ComputeConfigurationError:
+            configured = load_environment_config()
+        except EnvironmentConfigurationError:
             return {"kind": "local"}
-        default_profile = configured.profiles.get(configured.default_profile)
-        if default_profile is not None and default_profile.kind == "local":
-            return {"kind": "local", "profile": configured.default_profile}
-        local_profiles = [
-            profile.name for profile in configured.profiles.values() if profile.kind == "local"
-        ]
-        if len(local_profiles) == 1:
-            return {"kind": "local", "profile": local_profiles[0]}
-        raise ComputeContractError(
-            "local execution requires profile when compute.toml has no unambiguous local default"
-        )
+        try:
+            environment = configured.environment(kind="local")
+        except EnvironmentConfigurationError as exc:
+            raise ComputeContractError(f"local execution requires an environment: {exc}") from exc
+        return {"kind": "local", "environment": environment.name}
     try:
-        profile = _remote_profile(str(request_target["profile"]))
+        platform = _remote_platform(str(request_target["environment"]))
         resources = RemoteResources.from_mapping(request_target["resources"])
         identity = workspace_id(workspace, create=True)
-    except (ComputeConfigurationError, RemoteConfigurationError, WorkspaceIdentityError) as exc:
+    except (EnvironmentConfigurationError, RemoteConfigurationError, WorkspaceIdentityError) as exc:
         raise ComputeContractError(f"cannot materialize remote execution target: {exc}") from exc
-    _validate_profile_resources(profile, resources)
+    _validate_platform_resources(platform, resources)
     remote_dir = str(
-        PurePosixPath(profile.remote_root)
+        PurePosixPath(platform.remote_root)
         / "workspaces"
         / identity
         / "runs"
@@ -1499,7 +1515,7 @@ def _materialize_execution_target(
     return {
         "kind": "remote",
         "authority": "execution_mirror",
-        "profile": profile.name,
+        "environment": platform.name,
         "workspace_id": identity,
         "remote_dir": remote_dir,
         "resources": asdict(resources),
@@ -1565,7 +1581,7 @@ def _prepared_task_for_intent(
         require_inputs=verify_inputs,
     )
     _validate_required_backend_artifacts(intent, normalized)
-    return _apply_compute_profile(workspace, intent, normalized)
+    return _apply_compute_environment(workspace, intent, normalized)
 
 
 def _prepared_task_dict(prepared: PreparedTask) -> dict[str, Any]:
@@ -1576,103 +1592,92 @@ def _prepared_task_dict(prepared: PreparedTask) -> dict[str, Any]:
     return value
 
 
-def _backend_provider_name(backend: str) -> str:
+def _backend_binding_name(backend: str) -> str:
     return "ase_neb_xtb" if backend == "ase_neb" else backend
 
 
-def _backend_provider_names(backend: str) -> tuple[str, ...]:
+def _backend_binding_names(backend: str) -> tuple[str, ...]:
     if backend == "ase_neb":
         return ("ase_neb_xtb", "ase_neb")
     return (backend,)
 
 
-def _compute_profile(name: str | None = None, *, kind: str | None = None):
-    """Load one profile from the unified compute configuration."""
-    return load_compute_config().profile(name, kind=kind)
+def _compute_environment(name: str | None = None, *, kind: str | None = None):
+    """Load one environment from the unified compute configuration."""
+    return load_environment_config().environment(name, kind=kind)
 
 
-def _remote_profile(name: str):
-    """Resolve a remote profile from the unified compute configuration."""
-    profile = load_compute_config().profile(name, kind="remote")
-    if profile.remote is None:
-        raise ComputeConfigurationError(f"compute profile {name!r} has no remote contract")
-    return profile.remote
+def _remote_platform(name: str):
+    """Resolve a remote environment from the unified compute configuration."""
+    environment = load_environment_config().environment(name, kind="remote")
+    if environment.platform is None:
+        raise EnvironmentConfigurationError(f"compute environment {name!r} has no remote contract")
+    return environment.platform
 
 
-def _software_provider(workspace: Path, intent: dict[str, Any], backend: str) -> SoftwareProvider | None:
+def _backend_binding(workspace: Path, intent: dict[str, Any], backend: str) -> BackendBinding | None:
     target = intent.get("execution_target") or {}
     kind = str(target.get("kind"))
-    profile_name = target.get("profile") if isinstance(target.get("profile"), str) else None
-    provider_name = _backend_provider_name(backend)
-    provider_names = _backend_provider_names(backend)
+    environment_name = target.get("environment") if isinstance(target.get("environment"), str) else None
+    binding_name = _backend_binding_name(backend)
+    binding_names = _backend_binding_names(backend)
     if kind == "remote":
-        profile = _remote_profile(str(profile_name))
+        platform = _remote_platform(str(environment_name))
         value = next(
-            (profile.software.get(name) for name in provider_names if profile.software.get(name)),
+            (platform.backends.get(name) for name in binding_names if platform.backends.get(name)),
             None,
         )
         if value is None:
-            raise ComputeConfigurationError(
-                f"remote profile {profile.name!r} does not configure software.{provider_name}"
+            raise EnvironmentConfigurationError(
+                f"remote environment {platform.name!r} does not configure backend.{binding_name}"
             )
-        return SoftwareProvider(
+        return BackendBinding(
             command=value.command,
             activation_script=value.activation_script,
             scratch_root=value.scratch_root,
             environment=dict(value.environment),
         )
-    configured = load_compute_config()
-    if profile_name is None:
-        default_profile = configured.profiles.get(configured.default_profile)
-        if default_profile is not None and default_profile.kind == "local":
-            profile = default_profile
-        else:
-            local_profiles = [item for item in configured.profiles.values() if item.kind == "local"]
-            if len(local_profiles) != 1:
-                raise ComputeConfigurationError("local execution has no unambiguous profile")
-            profile = local_profiles[0]
-    else:
-        profile = configured.profile(profile_name, kind="local")
+    environment = load_environment_config().environment(environment_name, kind="local")
     value = next(
-        (profile.software.get(name) for name in provider_names if profile.software.get(name)),
+        (environment.backends.get(name) for name in binding_names if environment.backends.get(name)),
         None,
     )
     if value is None:
-        raise ComputeConfigurationError(
-            f"local profile {profile.name!r} does not configure software.{provider_name}"
+        raise EnvironmentConfigurationError(
+            f"local environment {environment.name!r} does not configure backend.{binding_name}"
         )
     return value
 
 
-def _apply_compute_profile(
+def _apply_compute_environment(
     workspace: Path,
     intent: dict[str, Any],
     prepared: PreparedTask,
 ) -> PreparedTask:
     try:
-        provider = _software_provider(workspace, intent, prepared.backend)
-    except (ComputeConfigurationError, RemoteConfigurationError) as exc:
-        raise ComputeContractError(f"invalid compute software provider: {exc}") from exc
-    if provider is None or not provider.command:
+        binding = _backend_binding(workspace, intent, prepared.backend)
+    except (EnvironmentConfigurationError, RemoteConfigurationError) as exc:
+        raise ComputeContractError(f"invalid compute backend binding: {exc}") from exc
+    if binding is None or not binding.command:
         return prepared
     command = list(prepared.command)
     if prepared.backend == "ase_neb":
-        # The ASE runner launches xTB itself; bind that provider via the
-        # prepared environment. A remote profile also selects its Python.
+        # The ASE runner launches xTB itself; bind that backend via the
+        # prepared environment. A remote environment also selects its Python.
         environment = {
             **prepared.environment,
-            **provider.environment,
+            **binding.environment,
         }
-        environment.setdefault("TS_ASE_NEB_XTB", provider.command[0])
+        environment.setdefault("TS_ASE_NEB_XTB", binding.command[0])
         if intent.get("execution_target", {}).get("kind") == "remote":
-            # On a remote platform the provider command names the remote
+            # On a remote platform the backend binding names the remote
             # Python runtime that owns ASE and the runner module.
-            command = list(provider.command) + command[1:]
+            command = list(binding.command) + command[1:]
     else:
-        command = list(provider.command) + command[1:]
-        environment = {**prepared.environment, **provider.environment}
+        command = list(binding.command) + command[1:]
+        environment = {**prepared.environment, **binding.environment}
     activation = (
-        provider.activation_script
+        binding.activation_script
         if intent.get("execution_target", {}).get("kind") == "local"
         else prepared.activation_script
     )
@@ -1724,26 +1729,26 @@ def _normalize_prepared_task(
 
 def _validate_execution_target(target: dict[str, Any]) -> dict[str, Any]:
     if target["kind"] == "local":
-        profile_name = target.get("profile")
-        if profile_name is not None:
-            if not isinstance(profile_name, str) or not profile_name:
-                raise ComputeContractError("local execution profile must be a non-empty string")
+        environment_name = target.get("environment")
+        if environment_name is not None:
+            if not isinstance(environment_name, str) or not environment_name:
+                raise ComputeContractError("local execution environment must be a non-empty string")
             try:
-                _compute_profile(profile_name, kind="local")
-            except ComputeConfigurationError as exc:
-                raise ComputeContractError(f"invalid local compute profile: {exc}") from exc
-            return {"kind": "local", "profile": profile_name}
+                _compute_environment(environment_name, kind="local")
+            except EnvironmentConfigurationError as exc:
+                raise ComputeContractError(f"invalid local compute environment: {exc}") from exc
+            return {"kind": "local", "environment": environment_name}
         return {"kind": "local"}
     try:
-        profile = _remote_profile(str(target["profile"]))
+        platform = _remote_platform(str(target["environment"]))
         resources = RemoteResources.from_mapping(target["resources"])
-    except (KeyError, ComputeConfigurationError, RemoteConfigurationError) as exc:
+    except (KeyError, EnvironmentConfigurationError, RemoteConfigurationError) as exc:
         raise ComputeContractError(f"invalid remote execution target: {exc}") from exc
-    _validate_profile_resources(profile, resources)
+    _validate_platform_resources(platform, resources)
     return {
         "kind": "remote",
         "authority": "execution_mirror",
-        "profile": profile.name,
+        "environment": platform.name,
         "workspace_id": str(target["workspace_id"]),
         "remote_dir": str(target["remote_dir"]),
         "resources": asdict(resources),
@@ -1768,9 +1773,9 @@ def _execution_policy_for_prepare(
         identity = workspace_id(workspace, create=create_identity)
     except WorkspaceIdentityError as exc:
         raise ComputeContractError(f"cannot bind remote calculation to workspace identity: {exc}") from exc
-    profile = _remote_profile(str(policy["profile"]))
+    platform = _remote_platform(str(policy["environment"]))
     expected_dir = str(
-        PurePosixPath(profile.remote_root)
+        PurePosixPath(platform.remote_root)
         / "workspaces"
         / identity
         / "runs"
@@ -1814,11 +1819,11 @@ def _remote_job_config(
         raise ComputeContractError("expected remote artifacts have colliding basenames")
     _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
     try:
-        profile = _remote_profile(str(target["profile"]))
+        platform = _remote_platform(str(target["environment"]))
         resources = RemoteResources.from_mapping(target["resources"])
-    except (ComputeConfigurationError, RemoteConfigurationError) as exc:
+    except (EnvironmentConfigurationError, RemoteConfigurationError) as exc:
         raise ComputeContractError(f"invalid prepared remote execution target: {exc}") from exc
-    _validate_profile_resources(profile, resources)
+    _validate_platform_resources(platform, resources)
     command = tuple(_rewritten_remote_command(prepared_task))
     config = RemoteJobConfig(
         submission_id=_remote_submission_id(str(target["workspace_id"]), str(intent["intent_id"])),
@@ -1826,7 +1831,7 @@ def _remote_job_config(
         intent_digest=sha256_json(intent),
         node_id=str(intent["node_id"]),
         backend=str(intent["backend"]),
-        profile=profile,
+        platform=platform,
         remote_dir=str(target["remote_dir"]),
         resources=resources,
         command=command,
@@ -1836,16 +1841,6 @@ def _remote_job_config(
         environment={str(key): str(value) for key, value in prepared_task.get("environment", {}).items()},
         stdout_name=_remote_stdout_name(prepared),
     )
-    # Preserve the script binding of CREST jobs submitted before its capture
-    # filename was fixed. Only the exact historical script digest is accepted.
-    receipt_path = workspace / _receipt_ref(intent)
-    if config.backend == "crest" and receipt_path.exists():
-        if has_symlink_component(workspace, receipt_path) or receipt_path.is_symlink():
-            raise ComputeContractError("remote receipt cannot be a symbolic link")
-        receipt = _read_object(receipt_path, "remote receipt")
-        historical = replace(config, stdout_name="remote_job.stdout")
-        if receipt.get("script_sha256") == remote_lifecycle.submission_script_digest(historical):
-            return historical
     return config
 
 
@@ -1857,7 +1852,7 @@ def _prepared_execution_policy(prepared: dict[str, Any]) -> dict[str, Any]:
 
 
 def _require_remote_execution(policy: dict[str, Any], operation: str) -> None:
-    if policy.get("kind") != "remote" or not isinstance(policy.get("profile"), str):
+    if policy.get("kind") != "remote" or not isinstance(policy.get("environment"), str):
         raise ComputeContractError(
             f"{operation} requires a prepared remote execution target"
         )
@@ -1871,7 +1866,7 @@ def _execution_summary(
     resources = policy["resources"]
     return {
         "kind": "remote",
-        "profile": policy["profile"],
+        "environment": policy["environment"],
         "scheduler": "torque",
         "workspace_id": policy["workspace_id"],
         "remote_dir": policy["remote_dir"],
@@ -1957,14 +1952,14 @@ def _receipt_ref(intent: dict[str, Any]) -> str:
     return f"{base}/remote_receipt.json"
 
 
-def _validate_profile_resources(profile: Any, resources: RemoteResources) -> None:
-    if resources.queue not in profile.allowed_queues:
+def _validate_platform_resources(platform: Any, resources: RemoteResources) -> None:
+    if resources.queue not in platform.allowed_queues:
         raise ComputeContractError(
-            f"queue {resources.queue!r} is not allowed by remote compute profile {profile.name}"
+            f"queue {resources.queue!r} is not allowed by remote compute environment {platform.name}"
         )
-    if resources.nodes > profile.max_nodes:
+    if resources.nodes > platform.max_nodes:
         raise ComputeContractError(
-            f"requested nodes={resources.nodes} exceeds profile max_nodes={profile.max_nodes}"
+            f"requested nodes={resources.nodes} exceeds environment max_nodes={platform.max_nodes}"
         )
 
 
@@ -2004,8 +1999,8 @@ def _reconcile_remote_submit(
             job_id=job_id,
         ),
         provenance={
-            "profile": config.profile.name,
-            "scheduler": config.profile.scheduler,
+            "environment": config.platform.name,
+            "scheduler": config.platform.scheduler,
             "remote_dir": config.remote_dir,
             "receipt_ref": receipt_ref,
             "submission_id": config.submission_id,
@@ -2214,7 +2209,7 @@ def _validate_intent(intent: dict[str, Any]) -> None:
     schema_version = intent.get("schema_version")
     if schema_version != "ts-calculation-intent/7":
         raise ComputeContractError(f"unsupported calculation intent schema_version: {schema_version}")
-    validate_compute_contract(INTENT_SCHEMA, intent)
+    _validate_calculation_document(INTENT_SCHEMA, intent)
     _validate_execution_mode(intent["execution_target"], intent["dry_run"])
     descriptor = _resolve_capability_contract(
         str(intent["capability"]),
@@ -2770,7 +2765,7 @@ def _control_allows_same_submission_retry(result: dict[str, Any]) -> bool:
 
 
 def _validate_bound_result(intent: dict[str, Any], result: dict[str, Any], label: str) -> None:
-    validate_calculation_result_binding(intent, result, label=label)
+    _validate_result_binding(intent, result, label=label)
 
 
 def _reuse_collected_result(
@@ -2880,7 +2875,7 @@ def _result(
         result["task_validation"] = task_validation
     if control is not None:
         result["control"] = control
-    validate_compute_contract(RESULT_SCHEMA, result)
+    _validate_calculation_document(RESULT_SCHEMA, result)
     return result
 
 
@@ -2949,7 +2944,7 @@ def _collection_program_status(
     if not isinstance(provenance, dict) or any(
         provenance.get(key) != expected
         for key, expected in {
-            "profile": policy["profile"],
+            "environment": policy["environment"],
             "scheduler": "torque",
             "remote_dir": remote_dir,
         }.items()
@@ -2971,7 +2966,7 @@ def _collection_program_status(
             "node_id": intent["node_id"],
             "intent_id": intent["intent_id"],
             "intent_digest": sha256_json(intent),
-            "profile": policy["profile"],
+            "environment": policy["environment"],
             "scheduler": "torque",
             "remote_dir": remote_dir,
             "scheduler_id": submitted.get("job_id"),

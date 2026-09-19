@@ -76,12 +76,12 @@ Use `ts_state mode=capabilities capabilityKind=compute` before selecting a
 calculation, and `capabilityKind=analysis` for registered analysis operations.
 Use `ts_state mode=artifacts` to resolve Node-owned files and `mode=runs` to
 inspect durable execution history. `ts_environment` (or `/compute`) covers
-both local and remote profiles; remote is an environment kind, not a separate
+both local and remote environments; remote is an environment kind, not a separate
 public API. Treat scheduler, transfer, program, parser, and collection errors
 as operational evidence. Record a scientific consequence as an IssueFinding
 only after checking the primary output.
 
-`ts_review` is advisory. Read its dossier, answer with `ts_reply`, and record
+`ts_review` is advisory. Read its ResearchMap-based result, answer with `ts_reply`, and record
 the Root interpretation in the map with `ts_change`. Preserve failed or inconclusive
 Nodes and start a dependent Node when the question or deliverable changes.
 

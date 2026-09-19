@@ -9,7 +9,7 @@ from tests.support.workspace_helpers import (
     calculation_result_fixture,
     start_research_node,
 )
-from ts_agent.workspace.operational import node_completion_blockers, operational_snapshot
+from ts_agent.workspace.operational import node_completion_blockers, runtime_status
 from ts_agent.workspace.engine import init_workspace
 
 
@@ -18,7 +18,7 @@ def _write(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
-def test_operational_snapshot_separates_activities_reviews_and_controls(tmp_path: Path) -> None:
+def test_runtime_status_separates_activities_reviews_and_controls(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
     start_research_node(root)
@@ -86,7 +86,7 @@ def test_operational_snapshot_separates_activities_reviews_and_controls(tmp_path
         },
     )
 
-    report = operational_snapshot(root)
+    report = runtime_status(root)
 
     assert report["deterministic_activities"][0]["node_refs"] == ["node_1"]
     assert report["deterministic_activities"][0]["summary"] == "Submission completed."
@@ -95,7 +95,7 @@ def test_operational_snapshot_separates_activities_reviews_and_controls(tmp_path
     assert report["unresolved_controls"][0]["node_id"] == "node_1"
     assert report["unresolved_controls"][0]["intent_id"] == "calc_1"
     assert report["pending_controls"] == []
-    assert report["operational_summary"] == {
+    assert report["runtime_summary"] == {
         "paused_node_count": 0,
         "tracked_file_count": 8,
         "calculation_file_count": 2,
@@ -120,7 +120,7 @@ def test_operational_snapshot_separates_activities_reviews_and_controls(tmp_path
     }
 
 
-def test_operational_snapshot_ignores_unsupported_node_paths(tmp_path: Path) -> None:
+def test_runtime_status_ignores_unsupported_node_paths(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     _write(root / "nodes" / "n001" / "attempts" / "calc_old" / "submit_guard.json", {})
     _write(root / "nodes" / "n001" / "agent-runs" / "sub_old" / "task.json", {"role": "review"})
@@ -142,12 +142,12 @@ def test_operational_snapshot_ignores_unsupported_node_paths(tmp_path: Path) -> 
         },
     )
 
-    report = operational_snapshot(root)
+    report = runtime_status(root)
 
     assert report["deterministic_activities"] == []
     assert report["agent_runs"] == []
     assert report["pending_controls"] == []
-    assert report["operational_summary"]["tracked_file_count"] == 0
+    assert report["runtime_summary"]["tracked_file_count"] == 0
 
 
 def test_pending_compute_run_blocks_node_completion_without_duplicate_activity(tmp_path: Path) -> None:
@@ -166,7 +166,7 @@ def test_pending_compute_run_blocks_node_completion_without_duplicate_activity(t
         "inputs": {"intent_id": "calc_1", "backend": "gaussian"},
     })
 
-    pending = operational_snapshot(root)
+    pending = runtime_status(root)
     assert pending["deterministic_activities"] == []
     assert node_completion_blockers(pending, node_id="node_1", outcome="completed") == [{
         "code": "compute_run_not_terminal",
@@ -179,7 +179,7 @@ def test_pending_compute_run_blocks_node_completion_without_duplicate_activity(t
         "status": "failed",
         "error": {"code": "provider_failed", "message": "Provider failed."},
     })
-    terminal = operational_snapshot(root)
+    terminal = runtime_status(root)
     assert node_completion_blockers(terminal, node_id="node_1", outcome="inconclusive") == []
 
 
@@ -216,14 +216,14 @@ def test_retryable_pre_submit_failure_is_not_an_unresolved_control(tmp_path: Pat
         },
     })
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     assert [row["intent_id"] for row in snapshot["retryable_controls"]] == ["calc_1"]
     assert snapshot["retryable_controls"][0]["classification"] == "retryable"
     assert [row["intent_id"] for row in snapshot["unresolved_controls"]] == ["calc_2"]
     assert snapshot["unresolved_controls"][0]["classification"] == "unresolved"
-    assert snapshot["operational_summary"]["control_retryable_count"] == 1
-    assert snapshot["operational_summary"]["control_unresolved_count"] == 1
+    assert snapshot["runtime_summary"]["control_retryable_count"] == 1
+    assert snapshot["runtime_summary"]["control_unresolved_count"] == 1
     assert node_completion_blockers(snapshot, node_id="node_1", outcome="completed") == []
     assert node_completion_blockers(snapshot, node_id="node_2", outcome="completed")[0]["code"] == "unresolved_compute_control"
 
@@ -246,7 +246,7 @@ def test_incomplete_retry_receipt_fails_closed_as_unresolved(tmp_path: Path) -> 
         },
     })
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     assert snapshot["retryable_controls"] == []
     assert snapshot["unresolved_controls"][0]["intent_id"] == "calc_1"
@@ -273,7 +273,7 @@ def test_nonterminal_calculation_attempt_blocks_node_completion(tmp_path: Path) 
         ),
     )
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     assert snapshot["calculation_attempts"] == [{
         "node_id": "node_1",
@@ -313,7 +313,7 @@ def test_parsed_calculation_attempt_releases_node_completion_guard(tmp_path: Pat
         ),
     )
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     assert snapshot["calculation_attempts"][0]["terminal"] is True
     assert snapshot["calculation_attempts"][0]["blocks_completion"] is False
@@ -339,7 +339,7 @@ def test_executed_calculation_attempt_without_prepared_binding_fails_closed(tmp_
         ),
     )
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     row = snapshot["calculation_attempts"][0]
     assert row["terminal"] is False
@@ -361,7 +361,7 @@ def test_prepared_attempt_without_external_effect_does_not_block_completion(tmp_
     attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
     _write(attempt / "intent.json", calculation_intent_fixture("node_1", "calc_1"))
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     assert snapshot["calculation_attempts"][0]["state"] == "prepared"
     assert snapshot["calculation_attempts"][0]["terminal"] is False
@@ -377,7 +377,7 @@ def test_empty_calculation_attempt_directory_is_visible_and_blocks_completion(tm
     })
     (root / "nodes" / "node_1" / "attempts" / "calc_1").mkdir(parents=True)
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     assert snapshot["calculation_attempts"] == [{
         "node_id": "node_1",
@@ -408,7 +408,7 @@ def test_calculation_attempt_intent_uses_authoritative_compute_contract(tmp_path
     intent["retired_field"] = "must be rejected"
     _write(attempt / "intent.json", intent)
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     row = snapshot["calculation_attempts"][0]
     assert row["blocks_completion"] is True
@@ -426,7 +426,7 @@ def test_malformed_calculation_attempt_status_fails_closed(tmp_path: Path) -> No
     (attempt / "status.json").parent.mkdir(parents=True, exist_ok=True)
     (attempt / "status.json").write_text("not-json", encoding="utf-8")
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     row = snapshot["calculation_attempts"][0]
     assert row["terminal"] is False
@@ -450,13 +450,13 @@ def test_incomplete_terminal_result_cannot_release_completion_guard(tmp_path: Pa
         "program_status": "completed",
     })
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     row = snapshot["calculation_attempts"][0]
     assert row["state"] == "parsed"
     assert row["terminal"] is False
     assert row["blocks_completion"] is True
-    assert "attempt_result_projection.schema.json validation failed" in row["integrity_error"]
+    assert "calculation_result.schema.json validation failed" in row["integrity_error"]
 
 
 def test_invalid_prepared_binding_blocks_node_completion(tmp_path: Path) -> None:
@@ -477,7 +477,7 @@ def test_invalid_prepared_binding_blocks_node_completion(tmp_path: Path) -> None
         "execution_policy": {"kind": "local"},
     })
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     assert "intent_digest does not match" in snapshot["calculation_attempts"][0]["integrity_error"]
     assert node_completion_blockers(
@@ -499,12 +499,12 @@ def test_symlinked_attempt_directory_fails_closed(tmp_path: Path) -> None:
     attempt.parent.mkdir(parents=True, exist_ok=True)
     attempt.symlink_to(target, target_is_directory=True)
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     assert snapshot["calculation_attempts"][0]["integrity_error"] == (
         "Attempt path must be a physical directory"
     )
-    assert snapshot["operational_summary"]["calculation_attempt_integrity_error_count"] == 1
+    assert snapshot["runtime_summary"]["calculation_attempt_integrity_error_count"] == 1
 
 
 def test_symlinked_attempt_parent_fails_closed(tmp_path: Path) -> None:
@@ -520,7 +520,7 @@ def test_symlinked_attempt_parent_fails_closed(tmp_path: Path) -> None:
     attempts.parent.mkdir(parents=True, exist_ok=True)
     attempts.symlink_to(outside_attempts, target_is_directory=True)
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     assert snapshot["calculation_attempts"][0]["integrity_error"] == (
         "Attempt parent path contains a symbolic-link component"
@@ -528,7 +528,7 @@ def test_symlinked_attempt_parent_fails_closed(tmp_path: Path) -> None:
     # The parent diagnostic is not a synthetic calc entity in the public
     # Attempt count, but it remains visible through the dedicated stream.
     assert snapshot["calculation_attempts"][0]["intent_id"] is None
-    assert snapshot["operational_summary"]["calculation_attempt_count"] == 0
+    assert snapshot["runtime_summary"]["calculation_attempt_count"] == 0
     assert snapshot["calculation_attempt_integrity_findings"] == [{
         "code": "calculation_attempt_integrity",
         "scope": "attempt_parent",
@@ -565,7 +565,7 @@ def test_symlinked_attempt_output_is_not_read_as_workspace_state(tmp_path: Path)
     )
     (attempt / "outputs").symlink_to(outside_outputs, target_is_directory=True)
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     row = snapshot["calculation_attempts"][0]
     assert row["state"] == "unknown"
@@ -594,7 +594,7 @@ def test_agent_run_index_does_not_read_run_through_symlinked_attempt_parent(tmp_
     attempts.parent.mkdir(parents=True, exist_ok=True)
     attempts.symlink_to(tmp_path / "outside-attempts", target_is_directory=True)
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     assert snapshot["agent_runs"] == []
     assert snapshot["calculation_attempts"][0]["intent_id"] is None
@@ -621,11 +621,11 @@ def test_agent_run_index_reports_symlinked_review_runs_parent(tmp_path: Path) ->
     runs.parent.mkdir(parents=True, exist_ok=True)
     runs.symlink_to(outside, target_is_directory=True)
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     assert snapshot["agent_runs"] == []
     assert {
-        finding["path"] for finding in snapshot["operational_integrity_findings"]
+        finding["path"] for finding in snapshot["runtime_integrity_findings"]
     } >= {"reviews/claim_1/runs"}
 
 
@@ -661,7 +661,7 @@ def test_unresolved_control_suppresses_duplicate_attempt_state_blocker(tmp_path:
     })
 
     blockers = node_completion_blockers(
-        operational_snapshot(root),
+        runtime_status(root),
         node_id="node_1",
         outcome="blocked",
     )
@@ -683,10 +683,10 @@ def test_symlinked_control_result_is_visible_and_blocks_node_completion(tmp_path
     outside.write_text(json.dumps({"state": "submitted"}), encoding="utf-8")
     (attempt / "submit_result.json").symlink_to(outside)
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     assert snapshot["unresolved_controls"] == []
-    assert snapshot["operational_integrity_findings"] == [{
+    assert snapshot["runtime_integrity_findings"] == [{
         "code": "operational_path_integrity",
         "path": "nodes/node_1/attempts/calc_1/submit_result.json",
         "node_refs": ["node_1"],
@@ -709,10 +709,10 @@ def test_malformed_control_result_is_not_treated_as_absent(tmp_path: Path) -> No
     result.parent.mkdir(parents=True, exist_ok=True)
     result.write_text("not-json", encoding="utf-8")
 
-    snapshot = operational_snapshot(root)
+    snapshot = runtime_status(root)
 
     assert snapshot["unresolved_controls"] == []
-    assert snapshot["operational_integrity_findings"][0]["path"] == (
+    assert snapshot["runtime_integrity_findings"][0]["path"] == (
         "nodes/node_1/attempts/calc_1/submit_result.json"
     )
     assert node_completion_blockers(

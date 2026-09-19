@@ -68,16 +68,16 @@
           "required": ["kind"],
           "properties": {
             "kind": {"const": "local"},
-            "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"}
+            "environment": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"}
           },
           "additionalProperties": false
         },
         {
           "type": "object",
-          "required": ["kind", "profile", "resources"],
+          "required": ["kind", "environment", "resources"],
           "properties": {
             "kind": {"const": "remote"},
-            "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+            "environment": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
             "resources": {"$ref": "calculation_intent.schema.json#/$defs/remote_resources"}
           },
           "additionalProperties": false

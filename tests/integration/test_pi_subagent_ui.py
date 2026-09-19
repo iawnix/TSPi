@@ -13,7 +13,6 @@ DETAILS = ROOT / "extensions" / "pi" / "ui" / "agent-details.ts"
 HISTORY = ROOT / "extensions" / "pi" / "ui" / "subagent-history.ts"
 UI = ROOT / "extensions" / "pi" / "ui" / "index.ts"
 UI_EXTENSION = ROOT / "extensions" / "pi" / "ui" / "extension.ts"
-COMMANDS = ROOT / "packages" / "ts-agent-runtime" / "host-api" / "commands.mjs"
 
 
 def test_subagent_status_reporter_is_monotonic_and_supports_both_roles() -> None:
@@ -42,7 +41,7 @@ def test_activity_store_unifies_review_and_deterministic_tools_without_losing_id
 import {{ createTsActivityStore,reduceTsToolActivity,summarizeTsActivities,sortedTsActivities,pruneTsActivities }} from {json.dumps(STORE.as_uri())};
 const store=createTsActivityStore();
 const start=(id,name,args,now)=>reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId:id,toolName:name,args}},now);
-start("review","ts_review",{{targetClaimRef:"claim_1"}},1000);
+start("review","ts_review",{{targetClaimId:"claim_1"}},1000);
 reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:1,tool_call_id:"review",task_id:"sub_1",role:"review",operation:"claim_review",state:"waiting",started_at:new Date(1000).toISOString(),updated_at:new Date(2000).toISOString(),node_refs:["node_1"],claim_refs:["claim_1"],wait_reason:"model_response"}}}}}},2000);
 start("compute","ts_calc",{{operation:"launch",capability:"gaussian",nodeId:"node_1"}},3000);
 start("structure","ts_seed",{{operation:"generate",optimization:"uff",nodeId:"node_1"}},3250);
@@ -75,7 +74,7 @@ import {{ createTsActivityStore,reduceTsToolActivity }} from {json.dumps(STORE.a
 import {{ collectTsSubagentRecords,renderTsSubagentDetails,subagentRunLabel,subagentSelectionLabel,subagentSelectionParts }} from {json.dumps(DETAILS.as_uri())};
 const store=createTsActivityStore();
 const toolCallId="call_028def15-cbb5-42b4-bbfc-cfbd256c4a0b";
-reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId,toolName:"ts_review",args:{{targetClaimRef:"claim_1"}}}},1000);
+reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId,toolName:"ts_review",args:{{targetClaimId:"claim_1"}}}},1000);
 const report={{agent_runs:[
   {{task_id:"sub_1",role:"review",authority:"advisory",operation:"claim_review",status:"completed",result_outcome:"success",node_refs:["node_1"],claim_refs:["claim_2"],run_ref:"reviews/claim_2/runs/sub_1",summary:"Completed review.",started_at:"2026-08-16T00:00:00Z",finished_at:"2026-08-16T00:02:14Z"}},
   {{task_id:"sub_2",role:"compute",authority:"operational",operation:"finalize",capability:"gaussian",intent_id:"calc_1",status:"completed",result_outcome:"success",node_refs:["node_2"],claim_refs:[],run_ref:"nodes/node_2/attempts/calc_1/runs/sub_2",summary:"Collected and parsed.",started_at:"2026-08-16T00:00:53Z",finished_at:"2026-08-16T00:01:00Z"}},
@@ -164,11 +163,11 @@ process.stdout.write(formatTsSubagentHistoryMarkdown([record]));
 
 def test_ui_tracks_current_tools_and_history_covers_compute_and_review() -> None:
     source = UI_EXTENSION.read_text(encoding="utf-8")
-    commands = COMMANDS.read_text(encoding="utf-8")
+    catalog = json.loads((ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "command_catalog.json").read_text(encoding="utf-8"))
     assert "setWidget" not in source
     assert 'pi.registerCommand("runs"' in source
     assert "TS Subagent History" in source
-    assert "Browse active and recorded Compute and Review runs." in commands
+    assert catalog["slash_commands"]["runs"]["description"] == "Browse active and recorded Compute and Review runs."
     assert "ts-workspace-compute-operator-run" not in source
     assert "ts-workspace-artifact-operator-run" not in source
     assert "ts_subagent_render" not in source

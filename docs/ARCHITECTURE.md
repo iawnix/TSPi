@@ -180,11 +180,12 @@ kill an in-flight local calculation; environments without a user systemd
 manager use the process-group fallback and should avoid restarting the parent
 service during a calculation.
 
-`compute.toml` keeps local and remote software providers in one profile catalog;
-only remote profiles add SSH/Torque fields. The canonical
-`compute.environments` query exposes both kinds of profile. Pi tools and the
+`compute.toml` keeps local and remote compute environments in one catalog, with
+backend bindings under each environment; only remote environments add
+SSH/Torque fields. The canonical `compute.environments` query exposes both
+kinds of environment. Pi tools and the
 `/compute` command use that query; scheduler diagnostics remain an
-implementation detail of a remote profile rather than the name of the whole
+implementation detail of a remote environment rather than the name of the whole
 environment API.
 
 ## Run Journals And Result Delivery

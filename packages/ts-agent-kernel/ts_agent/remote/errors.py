@@ -4,11 +4,11 @@ from __future__ import annotations
 
 
 class RemoteError(RuntimeError):
-    """Base error for profile, SSH, transfer, and scheduler failures."""
+    """Base error for platform, SSH, transfer, and scheduler failures."""
 
 
 class RemoteConfigurationError(RemoteError):
-    """The installation-owned remote profile is missing or invalid."""
+    """The installation-owned remote platform is missing or invalid."""
 
 
 class RemoteCommandError(RemoteError):

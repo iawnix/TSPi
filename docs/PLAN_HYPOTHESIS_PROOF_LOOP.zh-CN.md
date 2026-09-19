@@ -49,7 +49,7 @@ CLI、Pi tools、slash command、Root Agent 和 TS Web 使用同一组命令。`
 ## 执行与 Finding
 
 Skill 描述流程和能力，Backend 实现软件，Platform 描述本地、容器或 HPC 环境。
-一份 `compute.toml` 同时保存 local/remote profile，由 profile 的 `kind` 决定传输
+一份 `compute.toml` 同时保存 local/remote environment，由 environment 的 `kind` 决定传输
 细节。Calculation Attempt 和 Artifact 是 Node 所有的操作记录。解析器或分析能力可以
 产生临时候选结果，但只有显式 ChangeSet 才会在 map 中创建 `FactFinding` 或
 `IssueFinding`。工具成功不会自动修改 Claim 或关闭 Node。
@@ -65,7 +65,7 @@ Gate 保存 criteria 和评估历史，不会静默修改目标对象。
 - 研究状态只保留 `research_map.json`、`transactions.jsonl` 和 Node 的执行目录；
 - 新的 map 行为应加入模型和 ChangeSet 操作，并配套聚焦测试；
 - 每个新的 map 行为都要更新 Kernel 操作目录和聚焦测试；
-- 更新 `packages/ts-agent-runtime/host-api/commands.mjs` 或 `packages/ts-agent-runtime/host-api/tools.mjs`，slash command
+- 更新 `packages/ts-agent-kernel/ts_agent/command_catalog.json` 或 `packages/ts-agent-runtime/host-api/tools.mjs`，slash command
   和 host adapter 直接消费这些定义；
-- local/remote 计算统一放在一份 `compute.toml` profile 目录后面；
+- local/remote 计算统一放在一份 `compute.toml` environments 目录后面；
 - 删除过时 registry、proof、acceptance 和 projection 模板，不添加别名。

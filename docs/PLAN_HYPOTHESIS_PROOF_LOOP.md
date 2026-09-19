@@ -56,7 +56,7 @@ catalog through `compute.environments` and `compute.environment`.
 
 Skills describe procedures and capabilities. Backends implement software.
 Platforms describe local, container, or HPC execution environments. One
-`compute.toml` contains both local and remote profiles; a profile's `kind`
+`compute.toml` contains both local and remote environments; an environment's `kind`
 selects transport details. Calculation Attempts and Artifacts remain
 Node-owned operational records. A parser or analysis may produce transient
 candidate output, but only an explicit ChangeSet creates a `FactFinding` or
@@ -76,9 +76,9 @@ criteria and evaluation history; they do not silently update their target.
   directories as research workspace state;
 - add new map behavior as a model and ChangeSet operation, with focused tests;
 - update the Kernel operation catalog and focused tests for every new map behavior;
-- update `packages/ts-agent-runtime/host-api/commands.mjs` or `packages/ts-agent-runtime/host-api/tools.mjs`; slash
+- update `packages/ts-agent-kernel/ts_agent/command_catalog.json` or `packages/ts-agent-runtime/host-api/tools.mjs`; slash
   commands and host adapters consume those definitions directly;
-- keep local and remote compute behavior behind the one `compute.toml` profile
+- keep local and remote compute behavior behind the one `compute.toml` environment
   catalog;
 - remove obsolete registry, proof, acceptance, and projection templates rather
   than adding aliases.

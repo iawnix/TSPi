@@ -14,7 +14,7 @@ not route to a successor node.
 | phases, claims, nodes, findings, gates | `ResearchMap` and `ResearchKernel` |
 | procedure and capability guidance | Skills |
 | software invocation and parsing | Backends |
-| local/container/HPC placement | Compute `Platform` profiles |
+| local/container/HPC placement | Compute Environment, with `Platform` for remote details |
 | attempts, artifacts, scheduler receipts | workspace operational records |
 | browser display | TS Web reading `ResearchMap.to_dict()` |
 
@@ -25,7 +25,7 @@ is another map record and never implies a Claim status transition.
 
 ## Unified Compute
 
-The installation owns one `.pi/compute.toml`. Its profile catalog contains
+The installation owns one `.pi/compute.toml`. Its environment catalog contains
 `kind = "local"` and `kind = "remote"` entries. Both use the same
 `prepare -> submit -> inspect -> collect -> parse` lifecycle; remote entries
 add SSH and scheduler fields. `/compute list` and `/compute show <name>` query

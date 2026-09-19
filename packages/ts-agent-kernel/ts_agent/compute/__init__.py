@@ -1,18 +1,17 @@
 """Typed operational control plane for transition-state calculations.
 
-The package intentionally keeps its public convenience imports lazy.  Read-only
-workspace projections need the lightweight contract validator, but should not
+The package intentionally keeps its public convenience imports lazy. Runtime
+status needs the lightweight contract validator, but should not
 import optional scientific stacks (NumPy/RDKit) merely to inspect an Attempt.
-Keeping the heavy artifact/control modules behind ``__getattr__`` preserves the
-historic ``from ts_agent.compute import ...`` API without coupling the kernel's
-state reader to backend dependencies.
+Keeping the heavy artifact/control modules behind ``__getattr__`` avoids coupling
+the runtime state reader to backend dependencies.
 """
 
 from importlib import import_module
 from typing import Any
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
-    "ComputeContractError": (".contracts", "ComputeContractError"),
+    "ComputeContractError": (".errors", "ComputeContractError"),
     "cancel_calculation": (".control", "cancel_calculation"),
     "calculation_status": (".control", "calculation_status"),
     "calculation_tail": (".control", "calculation_tail"),

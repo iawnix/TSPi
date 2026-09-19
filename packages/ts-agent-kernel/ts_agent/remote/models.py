@@ -26,7 +26,7 @@ class SchedulerCommands:
 
 
 @dataclass(frozen=True)
-class SoftwareProfile:
+class RemoteBackendBinding:
     command: tuple[str, ...]
     activation_script: str | None = None
     scratch_root: str | None = None
@@ -36,7 +36,7 @@ class SoftwareProfile:
 
 
 @dataclass(frozen=True)
-class RemoteProfile:
+class RemotePlatform:
     name: str
     ssh_host: str
     ssh_config: Path
@@ -47,38 +47,38 @@ class RemoteProfile:
     connect_timeout_seconds: int
     command_timeout_seconds: int
     commands: SchedulerCommands
-    software: dict[str, SoftwareProfile]
+    backends: dict[str, RemoteBackendBinding]
 
-    def validate(self) -> "RemoteProfile":
+    def validate(self) -> "RemotePlatform":
         if not _NAME.fullmatch(self.name):
-            raise RemoteConfigurationError(f"invalid remote profile name: {self.name!r}")
+            raise RemoteConfigurationError(f"invalid remote platform name: {self.name!r}")
         if not self.ssh_host or any(character.isspace() for character in self.ssh_host):
-            raise RemoteConfigurationError(f"invalid ssh_host for profile {self.name}")
+            raise RemoteConfigurationError(f"invalid ssh_host for platform {self.name}")
         if not self.ssh_config.is_absolute() or not self.ssh_config.is_file():
             raise RemoteConfigurationError(
-                f"ssh_config is not an absolute readable file for profile {self.name}: {self.ssh_config}"
+                f"ssh_config is not an absolute readable file for platform {self.name}: {self.ssh_config}"
             )
         if self.scheduler != "torque":
             raise RemoteConfigurationError("ts_remote currently supports scheduler=torque only")
         validate_remote_path(self.remote_root, label="remote_root")
         if not self.allowed_queues or any(not _QUEUE.fullmatch(item) for item in self.allowed_queues):
-            raise RemoteConfigurationError(f"profile {self.name} has an invalid queue allowlist")
+            raise RemoteConfigurationError(f"platform {self.name} has an invalid queue allowlist")
         if self.max_nodes < 1:
             raise RemoteConfigurationError("max_nodes must be positive")
         if not 1 <= self.connect_timeout_seconds <= 300:
             raise RemoteConfigurationError("connect_timeout_seconds must be between 1 and 300")
         if not 1 <= self.command_timeout_seconds <= 3600:
             raise RemoteConfigurationError("command_timeout_seconds must be between 1 and 3600")
-        for backend, software in self.software.items():
-            if not _NAME.fullmatch(backend) or not software.command:
-                raise RemoteConfigurationError(f"invalid software profile: {backend!r}")
-            if software.activation_script is not None:
-                validate_remote_path(software.activation_script, label=f"software.{backend}.activation_script")
-            if software.scratch_root is not None:
-                validate_remote_path(software.scratch_root, label=f"software.{backend}.scratch_root")
-            if software.allowed_queues and not set(software.allowed_queues).issubset(self.allowed_queues):
+        for backend, binding in self.backends.items():
+            if not _NAME.fullmatch(backend) or not binding.command:
+                raise RemoteConfigurationError(f"invalid backend binding: {backend!r}")
+            if binding.activation_script is not None:
+                validate_remote_path(binding.activation_script, label=f"backends.{backend}.activation_script")
+            if binding.scratch_root is not None:
+                validate_remote_path(binding.scratch_root, label=f"backends.{backend}.scratch_root")
+            if binding.allowed_queues and not set(binding.allowed_queues).issubset(self.allowed_queues):
                 raise RemoteConfigurationError(
-                    f"software.{backend}.allowed_queues must be a subset of profile queues"
+                    f"backends.{backend}.allowed_queues must be a subset of environment queues"
                 )
         return self
 
@@ -134,7 +134,7 @@ class RemoteJobConfig:
     intent_digest: str
     node_id: str
     backend: str
-    profile: RemoteProfile
+    platform: RemotePlatform
     remote_dir: str
     resources: RemoteResources
     command: tuple[str, ...]
@@ -155,7 +155,7 @@ class RemoteReceipt:
     intent_id: str
     intent_digest: str
     node_id: str
-    profile: str
+    environment: str
     scheduler: str
     scheduler_id: str
     remote_dir: str

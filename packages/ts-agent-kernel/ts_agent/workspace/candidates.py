@@ -24,7 +24,7 @@ from .artifacts import (
     resolve_workspace_artifact_ids,
 )
 from .errors import ContractError
-from .path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .schema_validation import SchemaValidationError, validate_contract
 
 

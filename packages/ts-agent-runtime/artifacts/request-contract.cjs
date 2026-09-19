@@ -107,7 +107,7 @@ function validateCreatedRenderOutput(rootValue, outputRef) {
   return { ref, size_bytes: statSync(path).size, sha256: sha256Bytes(readFileSync(path)) };
 }
 
-function validateCreatedReportPackage(rootValue, packageRef, expectedManifestDigest, expectedRevision, expectedOperationalRevision) {
+function validateCreatedReportPackage(rootValue, packageRef, expectedManifestDigest, expectedRevision, expectedRuntimeRevision) {
   const root = requireWorkspaceRoot(rootValue);
   const ref = requireString(packageRef, "report package ref", 4096);
   const packagePath = resolve(root, ...ref.split("/"));
@@ -124,7 +124,7 @@ function validateCreatedReportPackage(rootValue, packageRef, expectedManifestDig
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
   if (manifest.schema_version !== "ts-report-package/5") throw new Error("report package manifest schema is invalid");
   if (manifest.workspace_revision !== expectedRevision) throw new Error("report package revision mismatch");
-  if (manifest.operational_revision !== expectedOperationalRevision) throw new Error("report package operational revision mismatch");
+  if (manifest.runtime_revision !== expectedRuntimeRevision) throw new Error("report package runtime revision mismatch");
   const listed = new Set((manifest.files || []).map((item) => item?.ref).filter((item) => typeof item === "string"));
   const actual = collectRegularFileRefs(packagePath);
   actual.delete("package_manifest.json");

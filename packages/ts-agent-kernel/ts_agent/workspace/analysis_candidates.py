@@ -11,7 +11,7 @@ from ts_agent.reaction.mapping import mapping_finding_candidates, validate_atom_
 
 from .artifacts import WorkspaceArtifactError, resolve_workspace_artifact_ids
 from .candidates import FindingCandidateError
-from .path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 def load_analysis_candidate(

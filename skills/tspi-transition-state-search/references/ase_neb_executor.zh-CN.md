@@ -25,13 +25,13 @@ calculator。参数类型与边界以能力目录为准，主要参数包括 `im
 
 ## 运行时就绪条件
 
-远程 `ase_neb` 软件 profile 必须选择由运维人员管理的版本化环境中的 Python
+远端 environment 的 `ase_neb` Backend binding 必须选择由运维人员管理的版本化环境中的 Python
 解释器。该解释器必须能导入 ASE、NumPy，以及与准备计算的 TSPi 版本一致的
-`ts_agent.backends.ase_neb_runner`。在 profile 环境中将 `TS_ASE_NEB_XTB`
+`ts_agent.backends.ase_neb_runner`。在 Backend binding 的环境变量中将 `TS_ASE_NEB_XTB`
 设为已验证的 xTB 可执行文件，不依赖交互式 shell 的 `PATH`。
 
-部署或修改 profile 后、首次提交 NEB 前运行 `TSPi --check-remote`。解释器缺失、
+部署或修改 environment 后、首次提交 NEB 前运行 `TSPi --check-remote`。解释器缺失、
 导入失败、runner 版本不一致或 xTB 探测失败都属于运维失败，不能作为反应路径
 证据。不得从计算作业中安装包，也不得把软件安装到研究工作区。按照
 [ASE NEB 部署流程](../../../docs/INSTALLATION.md#deploy-the-ase-neb-runtime-with-pixi)
-操作，并且只有登录节点和计算节点冒烟检查都通过后才能切换软件 profile。
+操作，并且只有登录节点和计算节点冒烟检查都通过后才能切换 Backend binding。

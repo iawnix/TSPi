@@ -23,11 +23,11 @@ export function createReviewResultCapture(): ReviewResultCapture {
 
 export function createReviewResultTool(
   packet: Record<string, unknown>,
-  reviewSnapshot: Record<string, unknown>,
+  reviewContext: Record<string, unknown>,
   capture: ReviewResultCapture,
   artifactReadCapture?: ReviewArtifactReadCapture,
 ): ToolDefinition {
-  const parameters = createReviewResultSchema(reviewSnapshot);
+  const parameters = createReviewResultSchema(reviewContext);
   const strictValidator = Compile(parameters);
   return {
     name: REVIEW_RESULT_TOOL_NAME,
@@ -52,7 +52,7 @@ export function createReviewResultTool(
       const validated = validateReviewResult(
         buildReviewResult(params, packet),
         packet,
-        reviewSnapshot,
+        reviewContext,
         artifactReadCapture ? [...artifactReadCapture.readArtifactIds] : [],
       ) as ReviewResult;
       capture.accepted = validated;
@@ -65,8 +65,8 @@ export function createReviewResultTool(
   };
 }
 
-export function createReviewResultSchema(reviewSnapshot: Record<string, unknown>) {
-  const allowedBasisRefs = stringList(reviewSnapshot.basis_allowlist, "review_snapshot.basis_allowlist");
+export function createReviewResultSchema(reviewContext: Record<string, unknown>) {
+  const allowedBasisRefs = stringList(reviewContext.basis_allowlist, "review_context.basis_allowlist");
 
   const StrictObject = (properties: Record<string, any>) =>
     Type.Object(properties, { additionalProperties: false });

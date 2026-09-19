@@ -1,42 +1,46 @@
-"""Read-only diagnostics for configured SSH/Torque profiles."""
+"""Read-only diagnostics for configured SSH/Torque environments."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from .client import SSHClient
-from .config import load_config
 from .errors import RemoteError
-from .models import RemoteProfile
+from .models import RemotePlatform
 from .torque import parse_nodes, parse_records
 
 
 MODES = frozenset({"status", "doctor", "queues", "nodes"})
 
 
-def diagnose(mode: str, *, profile_name: str | None = None) -> dict[str, Any]:
+def diagnose(mode: str, *, environment_name: str | None = None) -> dict[str, Any]:
     if mode not in MODES:
-        raise RemoteError(f"unsupported ts_remote diagnostic mode: {mode}")
+        raise RemoteError(f"unsupported compute environment diagnostic mode: {mode}")
+    from ts_agent.platforms import load_config
+
     config = load_config()
-    profile = config.profile(profile_name or config.default_profile)
-    client = SSHClient(profile)
+    environment = config.environment(environment_name, kind="remote")
+    platform = environment.platform
+    if platform is None:
+        raise RemoteError(f"compute environment has no remote platform: {environment.name}")
+    client = SSHClient(platform)
     result: dict[str, Any] = {
-        "schema_version": "ts-remote-diagnostic/1",
+        "schema_version": "compute-environment-diagnostic/1",
         "mode": mode,
-        "profile": _profile_summary(profile),
+        "environment": _environment_summary(environment.name, platform),
     }
     try:
         connection = client.run(["true"])
-        result["connection"] = {"ok": connection.returncode == 0, "ssh_host": profile.ssh_host}
+        result["connection"] = {"ok": connection.returncode == 0, "ssh_host": platform.ssh_host}
         if mode == "status":
             result["ok"] = True
             return result
         if mode in {"queues", "doctor"}:
-            result["queues"] = _queues(client, profile)
+            result["queues"] = _queues(client, platform)
         if mode in {"nodes", "doctor"}:
-            result["nodes"] = _nodes(client, profile)
+            result["nodes"] = _nodes(client, platform)
         if mode == "doctor":
-            result["checks"] = _doctor(client, profile)
+            result["checks"] = _doctor(client, platform)
         result["ok"] = result.get("checks", {}).get("ok", True)
         return result
     except Exception as exc:
@@ -45,12 +49,12 @@ def diagnose(mode: str, *, profile_name: str | None = None) -> dict[str, Any]:
         return result
 
 
-def _queues(client: SSHClient, profile: RemoteProfile) -> list[dict[str, Any]]:
-    output = client.run([profile.commands.qstat, "-Qf"]).stdout
+def _queues(client: SSHClient, platform: RemotePlatform) -> list[dict[str, Any]]:
+    output = client.run([platform.commands.qstat, "-Qf"]).stdout
     return [
         {
             "name": name,
-            "allowed_for_submission": name in profile.allowed_queues,
+            "allowed_for_submission": name in platform.allowed_queues,
             "enabled": raw.get("enabled"),
             "started": raw.get("started"),
             "total_jobs": _number_or_text(raw.get("total_jobs")),
@@ -60,8 +64,8 @@ def _queues(client: SSHClient, profile: RemoteProfile) -> list[dict[str, Any]]:
     ]
 
 
-def _nodes(client: SSHClient, profile: RemoteProfile) -> list[dict[str, Any]]:
-    output = client.run([profile.commands.pbsnodes, "-a"]).stdout
+def _nodes(client: SSHClient, platform: RemotePlatform) -> list[dict[str, Any]]:
+    output = client.run([platform.commands.pbsnodes, "-a"]).stdout
     return [
         {
             "name": name,
@@ -74,14 +78,14 @@ def _nodes(client: SSHClient, profile: RemoteProfile) -> list[dict[str, Any]]:
     ]
 
 
-def _doctor(client: SSHClient, profile: RemoteProfile) -> dict[str, Any]:
-    root = client.run(["test", "-d", profile.remote_root, "-a", "-w", profile.remote_root], check=False)
-    version = client.run([profile.commands.qstat, "--version"], check=False)
-    software: dict[str, Any] = {}
-    for name, item in sorted(profile.software.items()):
+def _doctor(client: SSHClient, platform: RemotePlatform) -> dict[str, Any]:
+    root = client.run(["test", "-d", platform.remote_root, "-a", "-w", platform.remote_root], check=False)
+    version = client.run([platform.commands.qstat, "--version"], check=False)
+    backends: dict[str, Any] = {}
+    for name, item in sorted(platform.backends.items()):
         executable = item.command[0]
         command_check = client.run_script(
-            _software_check_script(),
+            _backend_check_script(),
             [item.activation_script or "", executable],
             check=False,
         )
@@ -101,7 +105,7 @@ def _doctor(client: SSHClient, profile: RemoteProfile) -> dict[str, Any]:
             if item.activation_script
             else None
         )
-        software[name] = {
+        backends[name] = {
             "command_available": command_check.returncode == 0,
             "activation_script_available": activation_check.returncode == 0 if activation_check else None,
             "runtime_dependencies_available": (
@@ -114,18 +118,18 @@ def _doctor(client: SSHClient, profile: RemoteProfile) -> dict[str, Any]:
         "remote_root_writable": root.returncode == 0,
         "scheduler": "torque",
         "scheduler_version": (version.stdout or version.stderr).strip(),
-        "software": software,
+        "backends": backends,
     }
     checks["ok"] = checks["remote_root_writable"] and all(
         item["command_available"]
         and item["activation_script_available"] is not False
         and item["runtime_dependencies_available"] is not False
-        for item in software.values()
+        for item in backends.values()
     )
     return checks
 
 
-def _software_check_script() -> str:
+def _backend_check_script() -> str:
     return r'''set -eo pipefail
 activation=$1
 executable=$2
@@ -154,14 +158,14 @@ fi
 '''
 
 
-def _profile_summary(profile: RemoteProfile) -> dict[str, Any]:
+def _environment_summary(name: str, platform: RemotePlatform) -> dict[str, Any]:
     return {
-        "name": profile.name,
-        "ssh_host": profile.ssh_host,
-        "scheduler": profile.scheduler,
-        "remote_root": profile.remote_root,
-        "allowed_queues": list(profile.allowed_queues),
-        "max_nodes": profile.max_nodes,
+        "name": name,
+        "ssh_host": platform.ssh_host,
+        "scheduler": platform.scheduler,
+        "remote_root": platform.remote_root,
+        "allowed_queues": list(platform.allowed_queues),
+        "max_nodes": platform.max_nodes,
     }
 
 

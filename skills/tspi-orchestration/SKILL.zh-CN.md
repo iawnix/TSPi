@@ -62,11 +62,11 @@ Root 通过 `ts_change` 记录后才成为研究状态。
 
 选择计算前用 `ts_state mode=capabilities capabilityKind=compute`，查询注册分析时用
 `capabilityKind=analysis`。用 `mode=artifacts` 找到 Node 所属产物，用 `mode=runs`
-查看持久化执行历史。`ts_environment`（或 `/compute`）同时覆盖本地和远端 profile；
+查看持久化执行历史。`ts_environment`（或 `/compute`）同时覆盖本地和远端 environment；
 远端只是 environment 的一种类型，不是另一套公开 API。调度器、传输、程序、解析和
 收集错误先作为运行证据处理，只有核对原始产物后才把科学后果记录为 IssueFinding。
 
-`ts_review` 只提供建议。读取 dossier，用 `ts_reply` 回应，再通过 `ts_change` 记录
+`ts_review` 只提供建议。读取基于 ResearchMap 的结果，用 `ts_reply` 回应，再通过 `ts_change` 记录
 Root 的解释。保留失败或不确定的 Node；问题或交付物改变时创建依赖 Node。
 
 ## 参考路由

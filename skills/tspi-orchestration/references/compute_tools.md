@@ -65,7 +65,7 @@ Launch accepts the complete semantic request and remote execution target:
   "parameters": {"method": "M062X", "basis": "6-31G(d)"},
   "executionTarget": {
     "kind": "remote",
-    "profile": "cluster_1w",
+    "environment": "cluster_1w",
     "resources": {
       "queue": "batch", "nodes": 1, "ncpus": 8,
       "memory": "16gb", "walltime": "24:00:00", "ngpus": 0
@@ -94,7 +94,7 @@ plan without starting a program; `dry_run=false` starts the selected backend in
 the workspace's durable Attempt-local worker and supports the full
 `submit/status/tail/collect/cancel` lifecycle. With
 `executionTarget.kind=remote`, `dry_run=true` only prepares and validates the
-remote plan; `dry_run=false` submits through the configured Torque/PBS profile.
+remote plan; `dry_run=false` submits through the configured remote environment.
 The host still rejects arbitrary shell and keeps every command bound to the
 validated capability and immutable calculation intent.
 

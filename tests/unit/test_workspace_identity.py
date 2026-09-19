@@ -8,7 +8,7 @@ import pytest
 
 from ts_agent.workspace import ensure_workspace_identity, init_workspace, read_workspace_identity, validate_workspace
 from ts_agent.workspace.identity import IDENTITY_REF, WorkspaceIdentityError
-from ts_agent.workspace.operational import operational_snapshot
+from ts_agent.workspace.operational import runtime_status
 from ts_agent.research import ResearchKernel
 
 
@@ -35,17 +35,17 @@ def test_concurrent_identity_creation_converges_on_one_id(tmp_path: Path) -> Non
     assert {path.name for path in (workspace / ".agents").iterdir()} == {"workspace-identity.json"}
 
 
-def test_identity_recreation_does_not_change_scientific_or_operational_revision(tmp_path: Path) -> None:
+def test_identity_recreation_does_not_change_scientific_or_runtime_revision(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     init_workspace(workspace)
     scientific_before = ResearchKernel(workspace).load().revision
-    operational_before = operational_snapshot(workspace)["operational_revision"]
+    operational_before = runtime_status(workspace)["runtime_revision"]
     (workspace / IDENTITY_REF).unlink()
 
     ensure_workspace_identity(workspace)
 
     assert ResearchKernel(workspace).load().revision == scientific_before
-    assert operational_snapshot(workspace)["operational_revision"] == operational_before
+    assert runtime_status(workspace)["runtime_revision"] == operational_before
 
 
 def test_missing_identity_invalidates_runtime_without_changing_scientific_state(tmp_path: Path) -> None:

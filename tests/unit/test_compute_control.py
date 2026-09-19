@@ -30,7 +30,7 @@ from ts_agent.compute import (
     prepare_calculation,
     submit_calculation,
 )
-from ts_agent.compute.contracts import validate_compute_contract
+from ts_agent.calculation_contracts import CalculationContractError, validate_calculation_contract
 from ts_agent.remote import lifecycle as remote_lifecycle
 from ts_agent.remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguous, RemoteSubmissionRejected
 from ts_agent.remote.models import RemoteJobStatus, RemoteReceipt
@@ -142,7 +142,7 @@ def _remote_resources() -> dict[str, object]:
 def _remote_request_target() -> dict[str, object]:
     return {
         "kind": "remote",
-        "profile": "test_cluster",
+        "environment": "test_cluster",
         "resources": _remote_resources(),
     }
 
@@ -152,9 +152,9 @@ def _configure_remote(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ssh_config.write_text("Host test-login\n  HostName login.test\n", encoding="utf-8")
     config = tmp_path / "compute.toml"
     config.write_text(
-        f'''default_profile = "test_cluster"
+        f'''default_environment = "test_cluster"
 
-[profiles.test_cluster]
+[environments.test_cluster]
 kind = "remote"
 ssh_host = "test-login"
 ssh_config = "{ssh_config}"
@@ -163,7 +163,7 @@ remote_root = "/remote/ts"
 allowed_queues = ["workq"]
 max_nodes = 1
 
-[profiles.test_cluster.software.gaussian]
+[environments.test_cluster.backends.gaussian]
 command = ["g16"]
 allowed_queues = ["workq"]
 requires_gpu = false
@@ -206,7 +206,7 @@ def _receipt_for(config) -> RemoteReceipt:
         intent_id=config.intent_id,
         intent_digest=config.intent_digest,
         node_id=config.node_id,
-        profile=config.profile.name,
+        environment=config.platform.name,
         scheduler="torque",
         scheduler_id="123.cluster",
         remote_dir=config.remote_dir,
@@ -237,7 +237,7 @@ def test_local_non_dry_run_creates_a_runnable_attempt_intent(tmp_path: Path) -> 
 
     created = _create(workspace, node_id, dry_run=False)
 
-    assert created["execution_target"] == {"kind": "local", "profile": "local"}
+    assert created["execution_target"] == {"kind": "local", "environment": "local"}
     assert (workspace / created["intent_ref"]).is_file()
 
 
@@ -727,15 +727,15 @@ def test_compute_result_contract_rejects_scientific_verdict_fields() -> None:
         "provenance": {},
         "claim_status": "supported",
     }
-    with pytest.raises(ComputeContractError, match="Additional properties"):
-        validate_compute_contract("calculation_result.schema.json", result)
+    with pytest.raises(CalculationContractError, match="Additional properties"):
+        validate_calculation_contract("calculation_result.schema.json", result)
 
     del result["claim_status"]
     result["parser_facts"] = {"claim_status": "supported"}
-    with pytest.raises(ComputeContractError, match="claim_status"):
-        validate_compute_contract("calculation_result.schema.json", result)
+    with pytest.raises(CalculationContractError, match="claim_status"):
+        validate_calculation_contract("calculation_result.schema.json", result)
 
     result["parser_facts"] = {}
     result["intent_id"] = "calc_test"
-    with pytest.raises(ComputeContractError, match="does not match"):
-        validate_compute_contract("calculation_result.schema.json", result)
+    with pytest.raises(CalculationContractError, match="does not match"):
+        validate_calculation_contract("calculation_result.schema.json", result)

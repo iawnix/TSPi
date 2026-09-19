@@ -11,7 +11,7 @@ from ts_agent.research.kernel import MAP_FILE
 
 from .errors import ContractError
 from .identity import WorkspaceIdentityError, ensure_workspace_identity
-from .path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .validator import validate_workspace
 
 
