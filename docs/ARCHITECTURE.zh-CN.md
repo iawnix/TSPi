@@ -59,8 +59,9 @@ ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
 
 `ResearchKernel` 负责加载、校验、事务提交和持久化 `ResearchMap`。`ResearchMap.to_dict()`
 是给 TS Web 和 Root Agent 的规范序列化，不是第二个科学状态。Root Agent 选择问题、
-方法、分支和停止条件；Skill/Capability 选择执行方式；Backend 实现软件适配；Platform
-提供本地、容器或 HPC 环境。工具成功不等于科学结论成立。
+方法、分支和停止条件；Skill 描述研究流程，Capability 描述可调用操作，Backend 实现
+科学软件或执行器。Compute Environment 是绑定 Backend 的命名 `local` 或 `remote`
+执行环境；Platform 只提供远端环境的传输和调度细节。工具成功不等于科学结论成立。
 
 ### NodeGate 与 ClaimGate
 
@@ -136,9 +137,17 @@ cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
 ## 其他契约
 
 ChangeSet 的操作定义位于 `ResearchKernel` 使用的 ResearchMap operation catalog；
-`ts_calc` 对
-`execution_target.kind=local` 和 `execution_target.kind=remote` 使用同一套
-`prepare -> submit -> inspect -> collect -> parse` 生命周期。Research Kernel
+`ts_calc` 对 local/remote 使用相同的四个公开操作：
+
+```text
+launch   -> prepare, submit
+inspect  -> status, optional tail
+finalize -> collect, parse
+cancel   -> cancel
+```
+
+右侧是 child runtime 的内部动作，不是额外的公开操作。对于
+`execution_target.kind=local` 和 `execution_target.kind=remote`，Research Kernel
 工作区始终是唯一规范存储：本地执行在 Attempt 的 execution 目录暂存输入并把输出
 收集回工作区，远程目录只是临时执行镜像，TS Web 不需要访问远程文件系统。推荐的
 `compute.toml` 将 local/remote 计算环境放在同一份 environments 目录中，每个环境在

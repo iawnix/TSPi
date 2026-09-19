@@ -55,7 +55,8 @@ scripts/prepare_pi_source.py --install <root>
 ## 配置计算后端
 
 本地计算在持久化 Attempt 子进程中执行；远程执行临时镜像输入并将结果收回本地。
-两者共享 `ts_calc` 的 `prepare -> submit -> inspect -> collect -> parse` 生命周期，
+两者共享 `ts_calc` 的 `launch`、`inspect`、`finalize`、`cancel` 公开操作；这些操作
+分别封装 prepare/submit、status/可选 tail、collect/parse 和 cancel 内部动作。
 只有 remote 环境包含 SSH/Torque 字段。安装器统一接收一份计算后端 TOML 文件：
 交互安装时在提示处输入文件路径，非交互安装时使用
 `--compute-config /absolute/path/compute.toml`。项目模板位于
@@ -73,7 +74,7 @@ TSPi 不会下载 Gaussian 或其他站点管理的本地化学软件，SSH 凭�
 
 ## 安装日志、通知与 Host
 
-安装日志位于安装目录的 `.pi/tspi/logs/`。通知配置只保存投递所需的非秘密元数据，
+安装日志位于安装目录的 `.pi/logs/`。通知配置只保存投递所需的非秘密元数据，
 SMTP 或其他凭据由受管环境提供。
 
 使用 systemd 启动唯一的安装级 Host：

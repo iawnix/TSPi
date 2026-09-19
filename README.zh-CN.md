@@ -69,7 +69,7 @@ remote environment 额外包含 SSH/Torque 字段。`/compute` 和 `ts_environme
 不再单独形成一套 remote 命令。
 
 Skill 覆盖 Gaussian、xTB、CREST、ASE-NEB、结构验证、渲染、报告和邮件投递。详见
-[Skill 目录](skills/README.zh-CN.md) 与 [术语表](skills/tspi-orchestration/references/glossary.zh-CN.md)。
+[Skill 目录](skills/README.zh-CN.md) 与 [术语表](skills/tspi-research-kernel/references/glossary.zh-CN.md)。
 
 ## 浏览器查看
 

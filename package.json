@@ -3,7 +3,7 @@
   "version": "0.17.0",
   "private": true,
   "type": "module",
-  "description": "Pi package for Phase-guided transition-state research with a ResearchNode DAG, deterministic validation, and bounded Compute and Review subagents.",
+  "description": "Pi package for ResearchMap-driven transition-state research, deterministic validation, and bounded Compute and Review subagents.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/iawnix/TSPi.git"
@@ -153,15 +153,21 @@
   },
   "pi": {
     "skills": [
+      "./skills/tspi-research-kernel",
       "./skills/tspi-orchestration",
-      "./skills/tspi-transition-state-search",
+      "./skills/tspi-ts-candidate-generation",
+      "./skills/tspi-ts-validation",
+      "./skills/tspi-irc",
+      "./skills/tspi-energetics",
+      "./skills/tspi-method-selection",
       "./skills/tspi-xtb",
+      "./skills/tspi-crest",
+      "./skills/tspi-qbics",
       "./skills/tspi-gaussian",
-      "./skills/tspi-connectivity",
-      "./skills/tspi-mechanism",
-      "./skills/tspi-render",
       "./skills/tspi-report",
-      "./skills/tspi-email"
+      "./skills/tspi-render",
+      "./skills/tspi-email",
+      "./skills/tspi-mechanism-reasoning"
     ],
     "themes": [
       "./themes/ts-theme.json"

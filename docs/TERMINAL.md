@@ -50,7 +50,7 @@ The TS Phone client must advertise these services; an older Phone build that
 only knows project/session listing will need a client update before it shows
 the create actions.
 
-Phone is an interactive Pi client, not a read-only projection. A Phone prompt
+Phone is an interactive Pi client, not merely a viewer. A Phone prompt
 runs in the selected workspace on the App Server machine and has the same
 `read`, `write`, `bash`, and package tool inventory as a terminal prompt in that
 session. The client transport does not filter commands; normal Host account,

@@ -9,16 +9,19 @@ the selected operational records; it is not a new state model.
 Include:
 
 1. map identity, revision, focus Claims/Nodes, and conclusion boundary;
-2. Phases with their grouped Nodes;
+2. optional Phase grouping when the map contains Phases;
 3. Claims and Claim relations, including alternatives and conflicts;
-4. Node objectives, dependencies, states, outcomes, and open questions;
+4. Node objectives, dependencies, states, outcomes, and unresolved questions;
 5. calculation intents and primary Artifact references;
 6. FactFindings with values, units, provenance, and source references;
-7. IssueFindings, including open limitations and unresolved conflicts;
+7. IssueFindings, including unresolved limitations and conflicts;
 8. Gates with criteria and their evaluations;
 9. operational follow-up such as pending runs, failed attempts, Review advice,
    and notification status;
 10. missing corrections, uncertainty, and next research questions.
+
+Do not synthesize a Phase for an ungrouped Node. Phase is optional navigation,
+so reports must preserve meaningful order without requiring it.
 
 ## Numerical Discipline
 

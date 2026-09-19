@@ -16,11 +16,16 @@
 操作记录，不改变 Node 的科学状态；暂停期间仍可查看、收集、解析和精确取消作业。重启
 后再次提交前必须先核对最新回执。
 
-`ts_calc` 对 local/remote 使用同一套生命周期：
+`ts_calc` 对 local/remote 使用相同的公开操作：
 
 ```text
-prepare -> submit -> inspect -> collect -> parse -> finalize
+launch   -> prepare, submit
+inspect  -> status, optional tail
+finalize -> collect, parse
+cancel   -> cancel
 ```
+
+右侧是 child runtime 内部动作，调用方不把它们当作第二套公开生命周期。
 
 远端完成不代表收集成功；提交或取消结果不确定时，必须先 inspect 再重试。
 

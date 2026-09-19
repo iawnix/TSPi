@@ -69,9 +69,9 @@ def test_package_root_detection_uses_package_markers_with_nested_skill(tmp_path:
     source_file.parent.mkdir(parents=True)
     source_file.write_text("export {};\n", encoding="utf-8")
     (package / "scripts").mkdir()
-    skill = package / "skills" / "tspi-orchestration" / "SKILL.md"
+    skill = package / "skills" / "tspi-research-kernel" / "SKILL.md"
     skill.parent.mkdir(parents=True)
-    skill.write_text("---\nname: tspi-orchestration\ndescription: test\n---\n", encoding="utf-8")
+    skill.write_text("---\nname: tspi-research-kernel\ndescription: test\n---\n", encoding="utf-8")
     (package / "package.json").write_text("{}\n", encoding="utf-8")
 
     assert package_root_from_file(source_file) == package

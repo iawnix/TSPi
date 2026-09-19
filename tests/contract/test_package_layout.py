@@ -15,7 +15,8 @@ from tests.support.runtime_helpers import write_test_runtime_manifest, write_tes
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL_ROOT = ROOT / "skills" / "tspi-orchestration"
+SKILL_ROOT = ROOT / "skills" / "tspi-research-kernel"
+ORCHESTRATION_SKILL_ROOT = ROOT / "skills" / "tspi-orchestration"
 RUNTIME_ROOT = ROOT / "packages" / "ts-agent-runtime"
 AGENTS_ROOT = RUNTIME_ROOT / "agents"
 PYTHON_PACKAGE = ROOT / "packages" / "ts-agent-kernel" / "ts_agent"
@@ -108,17 +109,23 @@ def test_public_skill_uses_nested_pi_skill_layout() -> None:
     assert not (ROOT / "templates").exists()
 
 
-def test_public_skill_family_has_one_orchestration_five_method_and_three_delivery_skills() -> None:
+def test_public_skill_family_matches_the_fifteen_owned_capabilities() -> None:
     expected = {
+        "tspi-research-kernel",
         "tspi-orchestration",
-        "tspi-transition-state-search",
+        "tspi-ts-candidate-generation",
+        "tspi-ts-validation",
+        "tspi-irc",
+        "tspi-energetics",
+        "tspi-method-selection",
         "tspi-xtb",
+        "tspi-crest",
+        "tspi-qbics",
         "tspi-gaussian",
-        "tspi-connectivity",
-        "tspi-mechanism",
-        "tspi-render",
         "tspi-report",
+        "tspi-render",
         "tspi-email",
+        "tspi-mechanism-reasoning",
     }
     actual = {path.name for path in (ROOT / "skills").iterdir() if path.is_dir()}
     assert actual == expected
@@ -205,8 +212,8 @@ def test_child_agent_sources_do_not_embed_skills_or_artifact_operators() -> None
     assert not list(AGENTS_ROOT.rglob("SKILL.md"))
     assert not (AGENTS_ROOT / "artifacts").exists()
     assert {path.name for path in AGENTS_ROOT.iterdir()} == {"compute", "review"}
-    assert (SKILL_ROOT / "references" / "compute_tools.md").is_file()
-    assert (SKILL_ROOT / "references" / "artifact_tools.md").is_file()
+    assert (ORCHESTRATION_SKILL_ROOT / "references" / "compute_tools.md").is_file()
+    assert (ORCHESTRATION_SKILL_ROOT / "references" / "artifact_tools.md").is_file()
 
 
 def test_package_manifest_exposes_the_public_skill_family_and_allowlisted_runtime() -> None:

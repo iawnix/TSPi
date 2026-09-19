@@ -17,11 +17,6 @@ from .errors import ContractError
 class OperationContract:
     required: frozenset[str]
     optional: frozenset[str] = frozenset()
-    template_name: str | None = None
-
-    def template_ref(self, operation: str) -> str:
-        filename = self.template_name or f"{operation}.json"
-        return f"skills/tspi-orchestration/assets/templates/research_map/{filename}"
 
 
 INPUT_OPERATION_CONTRACTS: dict[str, OperationContract] = {
@@ -110,7 +105,6 @@ def operation_catalog(operation: str | None = None) -> dict[str, object]:
         "operations": [
             {
                 "type": name,
-                "template_ref": INPUT_OPERATION_CONTRACTS[name].template_ref(name),
                 "required_fields": sorted(INPUT_OPERATION_CONTRACTS[name].required),
                 "optional_fields": sorted(INPUT_OPERATION_CONTRACTS[name].optional),
             }

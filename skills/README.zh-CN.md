@@ -2,25 +2,31 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi 提供九个 Skill，用于规划研究、运行计算、检查结果，以及制作图像和报告。
-编排 Skill 管理研究流程；需要具体方法或输出时，加载相应的专用 Skill。
+TSPi 提供 15 个职责明确的 Skill。Research Kernel Skill 管理规范 ResearchMap 合同；
+编排 Skill 选择下一项有边界的任务；科学与交付 Skill 各自处理一种方法或输出问题，不再
+重复定义状态。
 
-| Skill | 用途 |
+| Skill | 职责 |
 | --- | --- |
-| [tspi-orchestration](tspi-orchestration/SKILL.zh-CN.md) | ResearchMap、Finding、Gate 和恢复 |
-| [tspi-transition-state-search](tspi-transition-state-search/SKILL.zh-CN.md) | 候选构造、QST、扫描、NEB、构象和搜索策略 |
-| [tspi-xtb](tspi-xtb/SKILL.zh-CN.md) | xTB 计算与 CREST 构象搜索 |
-| [tspi-gaussian](tspi-gaussian/SKILL.zh-CN.md) | Gaussian 输入、优化、频率和 IRC |
-| [tspi-connectivity](tspi-connectivity/SKILL.zh-CN.md) | IRC 端点、原子映射、立体化学和结构比较 |
-| [tspi-mechanism](tspi-mechanism/SKILL.zh-CN.md) | 反应定义、显式原子映射、基元步骤和机理比较 |
-| [tspi-render](tspi-render/SKILL.zh-CN.md) | 分子图像、动画、结构对比图和科学曲线 |
-| [tspi-report](tspi-report/SKILL.zh-CN.md) | 包含证据、计算历史和图像的研究报告 |
-| [tspi-email](tspi-email/SKILL.zh-CN.md) | 按配置发送研究通知和报告 |
+| [tspi-research-kernel](tspi-research-kernel/SKILL.zh-CN.md) | ResearchMap 读取、校验、Finding、Gate 与原子变更 |
+| [tspi-orchestration](tspi-orchestration/SKILL.zh-CN.md) | 任务规划、分支、恢复、评审与停止 |
+| [tspi-ts-candidate-generation](tspi-ts-candidate-generation/SKILL.zh-CN.md) | TS 候选构造、扫描、QST、NEB 与采样 |
+| [tspi-ts-validation](tspi-ts-validation/SKILL.zh-CN.md) | 鞍点、振动模式、结构、电子态与立体化学验证 |
+| [tspi-irc](tspi-irc/SKILL.zh-CN.md) | 双向路径与端点身份 |
+| [tspi-energetics](tspi-energetics/SKILL.zh-CN.md) | 能量、热校正、势垒、有限动力学与能量剖面 |
+| [tspi-method-selection](tspi-method-selection/SKILL.zh-CN.md) | 科学方法、Backend capability 与计算环境选择 |
+| [tspi-xtb](tspi-xtb/SKILL.zh-CN.md) | 已注册的 xTB 计算 |
+| [tspi-crest](tspi-crest/SKILL.zh-CN.md) | CREST 构象集合 |
+| [tspi-qbics](tspi-qbics/SKILL.zh-CN.md) | QBICS 方法建议与实时 capability 发现 |
+| [tspi-gaussian](tspi-gaussian/SKILL.zh-CN.md) | Gaussian 输入、执行、解析与输出检查 |
+| [tspi-report](tspi-report/SKILL.zh-CN.md) | 绑定 ResearchMap revision 的研究报告 |
+| [tspi-render](tspi-render/SKILL.zh-CN.md) | 分子图像、动画、对比图与科学曲线 |
+| [tspi-email](tspi-email/SKILL.zh-CN.md) | 按配置发送通知与报告 |
+| [tspi-mechanism-reasoning](tspi-mechanism-reasoning/SKILL.zh-CN.md) | 机理假设、映射、基元步骤与替代路径 |
 
-例如，Gaussian 过渡态研究使用编排 Skill 组织问题和 Node，使用过渡态搜索 Skill 选择策略，
-通过 Gaussian 和连通性 Skill 产出 Finding，最后使用渲染与报告 Skill 展示研究成果。
-从 SMILES 生成初始结构和导入输入文件的方法见
-[结构与产物工具](tspi-orchestration/references/artifact_tools.md)。
+一个过渡态研究可以调用多个 Skill，但它们各自保持清楚边界：候选生成产生结构，TS 验证
+建立鞍点证据，IRC 归属端点，能量学比较校正后的物理量。Root 通过 Kernel 把核验后的
+输出记录到同一个 ResearchMap。
 
-每个 Skill 都有内容对应的英文和中文入口。详细工具字段和方法参考资料由相应
-Skill 链接，常用术语见[术语表](tspi-orchestration/references/glossary.zh-CN.md)。
+每个 Skill 都有内容对应的英文和中文入口，详细流程由相应 Skill 链接。常用术语见
+[术语表](tspi-research-kernel/references/glossary.zh-CN.md)。

@@ -2,28 +2,35 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi includes nine Skills for planning research, running calculations, checking
-results, and preparing figures and reports. The orchestration Skill manages
-the research workflow; load a focused Skill when its method or output is needed.
+TSPi provides 15 focused Skills. The Research Kernel Skill owns the canonical
+ResearchMap contract; orchestration chooses the next bounded task; scientific
+and delivery Skills handle one method or output concern without redefining
+state.
 
-| Skill | Use it for |
+| Skill | Responsibility |
 | --- | --- |
-| [tspi-orchestration](tspi-orchestration/SKILL.md) | ResearchMap questions, Findings, Gates, and recovery |
-| [tspi-transition-state-search](tspi-transition-state-search/SKILL.md) | Candidate construction, QST, scans, NEB, conformers, and search strategy |
-| [tspi-xtb](tspi-xtb/SKILL.md) | xTB calculations and CREST conformer searches |
-| [tspi-gaussian](tspi-gaussian/SKILL.md) | Gaussian inputs, optimization, frequencies, and IRC |
-| [tspi-connectivity](tspi-connectivity/SKILL.md) | IRC endpoints, atom mapping, stereochemistry, and structure comparison |
-| [tspi-mechanism](tspi-mechanism/SKILL.md) | Reaction definitions, explicit atom mappings, elementary steps, and mechanism comparisons |
-| [tspi-render](tspi-render/SKILL.md) | Molecular images, animations, comparison panels, and scientific curves |
-| [tspi-report](tspi-report/SKILL.md) | Research reports with evidence, calculation history, and figures |
-| [tspi-email](tspi-email/SKILL.md) | Configured research notifications and report delivery |
+| [tspi-research-kernel](tspi-research-kernel/SKILL.md) | ResearchMap reads, validation, Findings, Gates, and atomic changes |
+| [tspi-orchestration](tspi-orchestration/SKILL.md) | Task planning, branches, recovery, review, and stopping |
+| [tspi-ts-candidate-generation](tspi-ts-candidate-generation/SKILL.md) | TS candidate construction, scans, QST, NEB, and sampling |
+| [tspi-ts-validation](tspi-ts-validation/SKILL.md) | Saddle, mode, structure, electronic-state, and stereochemical validation |
+| [tspi-irc](tspi-irc/SKILL.md) | Bidirectional paths and endpoint identity |
+| [tspi-energetics](tspi-energetics/SKILL.md) | Energies, thermal corrections, barriers, bounded kinetics, and profiles |
+| [tspi-method-selection](tspi-method-selection/SKILL.md) | Scientific method, Backend capability, and compute environment selection |
+| [tspi-xtb](tspi-xtb/SKILL.md) | Registered xTB calculations |
+| [tspi-crest](tspi-crest/SKILL.md) | CREST conformer ensembles |
+| [tspi-qbics](tspi-qbics/SKILL.md) | QBICS method guidance and live capability discovery |
+| [tspi-gaussian](tspi-gaussian/SKILL.md) | Gaussian input, execution, parsing, and output checks |
+| [tspi-report](tspi-report/SKILL.md) | Revision-bound research reports |
+| [tspi-render](tspi-render/SKILL.md) | Molecular images, animations, comparisons, and scientific curves |
+| [tspi-email](tspi-email/SKILL.md) | Configured notifications and report delivery |
+| [tspi-mechanism-reasoning](tspi-mechanism-reasoning/SKILL.md) | Mechanism hypotheses, mappings, elementary steps, and alternatives |
 
-For example, a Gaussian transition-state study uses orchestration to organize
-the question and Node, transition-state search to choose a strategy, Gaussian
-and connectivity to produce Findings, and render/report to present them.
-Initial structures from SMILES and input imports are covered in
-[artifact tools](tspi-orchestration/references/artifact_tools.md).
+A transition-state study may invoke several Skills, but each keeps its own
+boundary: candidate generation creates a structure, TS validation establishes
+saddle evidence, IRC assigns endpoints, and energetics compares corrected
+quantities. Root records their verified outputs in the same ResearchMap through
+the Kernel.
 
-Each Skill has matching English and Chinese entrypoints. Detailed tool fields
-and method references are linked from the relevant Skill; shared terminology
-is in the [glossary](tspi-orchestration/references/glossary.md).
+Each Skill has matching English and Chinese entrypoints. Detailed procedures
+are linked from the relevant Skill. Shared terminology is in the
+[glossary](tspi-research-kernel/references/glossary.md).

@@ -25,15 +25,21 @@ CONTRACT_FILES = [
 
 
 SKILL_NAMES = [
+    "tspi-research-kernel",
     "tspi-orchestration",
-    "tspi-transition-state-search",
+    "tspi-ts-candidate-generation",
+    "tspi-ts-validation",
+    "tspi-irc",
+    "tspi-energetics",
+    "tspi-method-selection",
     "tspi-xtb",
+    "tspi-crest",
+    "tspi-qbics",
     "tspi-gaussian",
-    "tspi-connectivity",
-    "tspi-mechanism",
-    "tspi-render",
     "tspi-report",
+    "tspi-render",
     "tspi-email",
+    "tspi-mechanism-reasoning",
 ]
 SKILL_ENTRIES = [f"./skills/{name}" for name in SKILL_NAMES]
 SKILL_ENTRY_FILES = [
@@ -188,7 +194,7 @@ REQUIRED_TARBALL_FILES = frozenset(
         *SKILL_ENTRY_FILES,
         "skills/README.md",
         "skills/README.zh-CN.md",
-        "skills/tspi-orchestration/references/glossary.zh-CN.md",
+        "skills/tspi-research-kernel/references/glossary.zh-CN.md",
         "skills/tspi-render/references/render_contract.md",
         "skills/tspi-report/references/report_template.md",
         "skills/tspi-email/references/email_delivery.md",
@@ -311,7 +317,7 @@ REQUIRED_RUNTIME_FILES = frozenset(
         *SKILL_ENTRY_FILES,
         "skills/README.md",
         "skills/README.zh-CN.md",
-        "skills/tspi-orchestration/references/glossary.zh-CN.md",
+        "skills/tspi-research-kernel/references/glossary.zh-CN.md",
         "skills/tspi-render/references/render_contract.md",
         "skills/tspi-report/references/report_template.md",
         "skills/tspi-email/references/email_delivery.md",

@@ -21,7 +21,10 @@ if (!model || !runtime.hasConfiguredAuth(provider)) throw new Error("Configured 
 const scratch = await mkdtemp(join(tmpdir(), "tspi-mechanism-eval-"));
 process.env.TSPI_NATIVE_WRITES = "1";
 process.env.TSPI_PACKAGE_ROOT = repository;
-const skills = await readFile(join(repository, "skills/tspi-mechanism/SKILL.md"), "utf8");
+const skills = (await Promise.all([
+  "tspi-mechanism-reasoning", "tspi-ts-candidate-generation", "tspi-ts-validation",
+  "tspi-irc", "tspi-energetics",
+].map(name => readFile(join(repository, `skills/${name}/SKILL.md`), "utf8")))).join("\n\n");
 const tools = [createStateTool(), createAnalyzeTool(), createDispatchTool(), createChangeTool(), {
   name: "read", description: "Read an existing workspace artifact or packaged Skill reference.",
   parameters: Type.Object({ path: Type.String() }, { additionalProperties: false }),

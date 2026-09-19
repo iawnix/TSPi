@@ -52,10 +52,12 @@ transitions, applies optimistic revisions, and atomically persists the map. It
 does not select a method, run a Backend, submit a remote job, or infer a Claim
 status from tool success.
 
-Skills describe procedures and capabilities. Backends implement software.
-Platforms provide execution environments. These execution records can point
-back to a Node through `attempt_refs` and `artifact_refs`, but they are not
-additional scientific object types in the map.
+Skills describe procedures and capabilities. Backends implement scientific
+software or executors. A Compute Environment is a named local or remote
+execution environment with Backend bindings; Platform configuration provides
+remote transport and scheduler details. These execution records can point back
+to a Node through `attempt_refs` and `artifact_refs`, but they are not additional
+scientific object types in the map.
 
 ## Invariants
 

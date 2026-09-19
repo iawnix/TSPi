@@ -43,8 +43,9 @@ Kernel 校验引用和依赖环、执行 Node 状态转换、处理乐观 revisi
 ResearchMap。它不选择方法、不运行 Backend、不提交远程任务，也不根据工具成功
 推断 Claim 状态。
 
-Skill 描述流程和能力，Backend 实现具体软件，Platform 提供执行环境。Attempt 和
-Artifact 可以通过引用关联 Node，但不会自动成为 map 中的科学对象。
+Skill 描述流程和能力，Backend 实现具体科学软件或执行器。Compute Environment 是
+绑定 Backend 的命名本地或远端执行环境，Platform 提供远端传输和调度细节。Attempt
+和 Artifact 可以通过引用关联 Node，但不会自动成为 map 中的科学对象。
 
 ## 不变量
 

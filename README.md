@@ -67,7 +67,7 @@ run as part of the bound calculation preflight.
 
 The skills cover Gaussian, xTB, CREST, ASE-NEB, structure validation,
 rendering, reports, and email delivery. See the [Skill Catalog](skills/README.md)
-and [Glossary](skills/tspi-orchestration/references/glossary.md).
+and [Glossary](skills/tspi-research-kernel/references/glossary.md).
 
 ## Browser explorer
 

@@ -42,6 +42,29 @@ def test_report_reads_the_canonical_research_map(tmp_path: Path) -> None:
     assert "ProofSpec" not in text
 
 
+def test_report_renders_a_node_without_a_phase(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    change_workspace(root, {
+        "expected_revision": 0,
+        "operations": [
+            {"type": "create_claim", "id": "claim_1", "statement": "A saddle exists."},
+            {
+                "type": "create_node",
+                "id": "node_1",
+                "title": "Validate candidate",
+                "objective": "Test the candidate without a navigation group.",
+                "claim_ids": ["claim_1"],
+            },
+        ],
+    })
+
+    text = build_final_report(root)
+
+    assert "### Unassigned Nodes" in text
+    assert "`node_1`" in text
+
+
 def test_report_package_contains_only_canonical_scientific_records(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)

@@ -40,16 +40,16 @@ ts_state mode=capabilities capabilityKind=compute
 The artifact catalog supplies logical `art_...` IDs, paths, SHA-256, owners,
 and compatible roles. The capability catalog supplies the capability ID/version,
 parameter shape, input/output roles, and parser contract. It does not prove live
-software or remote health.
+software or environment health.
 
-If a fresh workspace has no suitable input, start an open ResearchNode. Use
+If a fresh workspace has no suitable input, start a non-closed ResearchNode. Use
 `ts_seed` for one connected SMILES or `ts_import` for
 bounded Gaussian, XYZ, or xTB control text. The host returns the logical ID;
 callers never create an `art_*` value or workspace path.
 
 ## Launch
 
-Launch accepts the complete semantic request and remote execution target:
+Launch accepts the complete semantic request and selected execution target:
 
 ```json
 {
@@ -77,10 +77,9 @@ Launch accepts the complete semantic request and remote execution target:
 Before the child starts, the host creates and validates a new
 `ts-calculation-intent/7`, binds the current Node contract, resolves paths and
 digests, allocates expected artifacts, and freezes the scientific and execution
-bindings. Older intent schemas are unsupported and are not converted. The
-child then calls prepare and, only after known prepare success, submit. Submit
-is single-use. An unknown effect ends the lifecycle with reconciliation
-required.
+bindings. The child then calls prepare and, only after known prepare success,
+submit. Submit is single-use. An unknown effect ends the lifecycle with
+reconciliation required.
 
 Keep the owning ResearchNode open until the Attempt reaches `parsed`, `failed`,
 or `stopped` and Root has recorded any needed scientific interpretation.
@@ -132,23 +131,17 @@ Finalize collects an allowed output set and parses one collected artifact:
 ```
 
 Parse runs only after collection completes. Collection verifies the immutable
-remote manifest and does not depend on Torque history. Parser facts are
-operational output. `program_status` reports whether the executable reached its
+artifact manifest; a remote collection does not depend on scheduler history.
+Parser facts are operational output. `program_status` reports whether the executable reached its
 normal terminus; `task_validation` separately reports whether the requested
 capability produced its required outputs and convergence evidence. A normally
 terminated program can therefore have `task_validation.status=incomplete`.
 Root must verify the primary artifacts before recording individual semantic
 Findings through `ts_change`.
 
-For a Node that was closed prematurely by an older runtime, continue inspect and
-finalize with the original `nodeId` and `intentId`. Never move or duplicate the
-Attempt. Use an open dependent recovery Node to record directly verified
-Findings with the original artifacts and digests; the parser-candidate
-shortcut intentionally remains restricted to its owning Node.
-
 ## Cancel
 
-Cancel targets one bound remote intent:
+Cancel targets one bound intent:
 
 ```json
 {"operation":"cancel","nodeId":"node_1","intentId":"calc_1"}
@@ -197,7 +190,7 @@ intent after that prior lifecycle has ended safely.
 The model fills only `summary` and `limitations` in `ts_compute_result`. The
 host derives action outcome, program state, artifacts, facts, provenance, and
 reconciliation flags from the typed action journal. A structured tool return is
-not proof of remote success. Program failure is not Claim contradiction, and
+not proof of execution success. Program failure is not Claim contradiction, and
 parser failure is not program failure.
 
 If a submit or cancel action loses its typed client result, it is recorded as

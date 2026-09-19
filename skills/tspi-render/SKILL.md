@@ -8,7 +8,7 @@ description: Render molecular structures, trajectories, reaction mechanisms, and
 [Chinese version](SKILL.zh-CN.md)
 
 Use this Skill with `ts_render` to turn registered structures and numerical
-Artifacts into figures. Load `tspi-orchestration` for Node ownership and map
+Artifacts into figures. Use `tspi-research-kernel` for Node ownership and map
 changes.
 
 | Operation | Inputs | Output |

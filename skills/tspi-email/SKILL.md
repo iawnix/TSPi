@@ -7,8 +7,9 @@ description: Send configured email notifications for TSPi research events and re
 
 [Chinese version](SKILL.zh-CN.md)
 
-Use this Skill for `ts_notify` and configured email delivery. Load
-`tspi-orchestration` for operational, report, artifact, and state contracts.
+Use this Skill for `ts_notify` and configured email delivery. Use
+`tspi-research-kernel` for research state and `tspi-orchestration` for
+operational, report, and Artifact context.
 Notifications communicate recorded research outcomes and link to their reports.
 The installation may use the existing ClawEmail transport or the built-in SMTP
 transport. SMTP presets currently cover 163 and QQ mailboxes.

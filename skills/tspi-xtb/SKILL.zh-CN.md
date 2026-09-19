@@ -1,20 +1,19 @@
 ---
 name: tspi-xtb
-description: 运行和解释 xTB 与 CREST 的构象、几何、频率、扫描、分子动力学和预筛选计算。
+description: 运行和评估已注册的 xTB 单点、优化、频率、扫描、分子动力学与预筛计算。
 ---
 
-# TSPi xTB 与 CREST
+# TSPi xTB
 
 [English version](SKILL.md)
 
-当任务涉及 xTB 或 CREST 时使用本 Skill。计算、Artifact 和 ResearchMap 合同使用
-`tspi-orchestration`；候选生成策略使用 `tspi-transition-state-search`。
+使用本 Skill 处理已注册的 xTB capability。CREST 构象搜索由 `tspi-crest` 负责；是否
+选择 xTB 而非其他方法由 `tspi-method-selection` 负责。
 
-用逻辑 Artifact 绑定 `xyz`，扫描或 MD 还要绑定 `control`。在计算意图中记录方法、电荷、
-未成对电子、溶剂、精度和优化级别。检查 SCC 收敛、优化状态、频率、扫描和轨迹完整性。
-构象数量、能量表和集合几何分别作为事实处理；核验值记录为 `FactFinding`，影响结论的
-缺失输出、失败或方法限制记录为 `IssueFinding`。
+将 XYZ 以及扫描或分子动力学所需的 control 输入绑定为逻辑 Artifact。在 calculation
+intent 中明确方法、电荷、未成对电子数、溶剂模型、精度、优化设置与约束。按任务检查
+SCC 收敛、优化状态、频率数据、扫描完整性和轨迹完整性。
 
-远端任务使用 `ts_environment` 或 `/compute` 选择环境；命令或激活脚本缺失属于运行失败，
-不要在计算作业中安装软件。详见 [xTB 执行器](references/xtb_executor.md) 和
-[CREST 集合](references/crest_ensemble.md)。
+优化几何、能量、频率集合、扫描序列与轨迹是不同结果。记录 Finding 前检查原始输出。
+扫描极大值或 xTB 虚频只能提供后续验证的候选，不能证明其为过渡态。详见
+[xtb_executor.md](references/xtb_executor.md)。

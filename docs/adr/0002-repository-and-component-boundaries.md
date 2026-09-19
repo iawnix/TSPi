@@ -5,7 +5,7 @@
 - Status: accepted, implemented (Web boundary extracted; Suite `/3` retired)
 - Date: 2026-09-10
 - Scope: TSPi, `ts-phone`, and the optional `ts-web` component
-- Related: [Architecture](../ARCHITECTURE.md), [Maintainer Guide](../MAINTAINER_GUIDE.md), [Hypothesis-Proof Loop Plan](../PLAN_HYPOTHESIS_PROOF_LOOP.md)
+- Related: [Architecture](../ARCHITECTURE.md), [Maintainer Guide](../MAINTAINER_GUIDE.md), [ResearchMap Design](../RESEARCH_MAP_DESIGN.md)
 
 ## Context
 
@@ -29,10 +29,10 @@ The current problems are:
    boundary instead of using Pi's native App Server protocol.
 5. Public Skill terminology and internal implementation terminology are not
    governed by one vocabulary policy.
-6. The Review runtime has good isolation, but `ts-reviewers` is not yet a
-   role-based reviewer system. The source test entrypoint also performs a
-   relatively expensive wheel and runtime preparation for ordinary Python
-   feedback.
+6. The Review runtime must keep role selection, task packets, aggregation, and
+   Root disposition inside one explicit advisory boundary. The source test
+   entrypoint also performs a relatively expensive wheel and runtime preparation
+   for ordinary Python feedback.
 
 These are architecture and change-control problems. They should not be solved
 by a broad directory move or a global terminology replacement before the
@@ -47,7 +47,7 @@ contracts are explicit.
 | `ts-web` | Client, registry, server, and static UI under `components/ts-web/`; it consumes the canonical ResearchMap through `research-map-provider/1` | The component can be archived and installed independently from Agent |
 | Phone transport | TS Phone speaks Pi protocol v8 through the authenticated Radius session relay; no TSPi Phone server or bridge is installed | Pi owns the session transport and TS Phone owns only its presentation adapter |
 | Release boundary | TSPi emits `tspi-package-release/4` with required Agent and optional independent Web descriptor | The suite contains the runtime; TS Phone is released separately |
-| Review | One isolated advisory Review runtime exists; no reviewer pool, role selection, aggregation, or conflict protocol exists | Improve the contract before adding more reviewer prompts or agents |
+| Review | One isolated advisory Review request accepts `reviewerRole`; the `general` role has a versioned descriptor, and a deterministic aggregator preserves individual results, failures, and disagreements | Role and aggregation contracts exist, but public execution remains one bounded request rather than parallel reviewer orchestration |
 | Testing | `tools/test/runner.py` selects the manifest lane; the source lane builds a wheel and temporary overlay before running Python tests | Fast edit feedback and release-backed validation use explicit, reproducible environments |
 
 ## Decision
@@ -57,7 +57,8 @@ contracts are explicit.
 **TSPi** remains the product and the name of the required core repository.
 The TSPi repository owns:
 
-- the Root Agent integration and public Skill family, led by `tspi-orchestration`;
+- the public Skill family, led by `tspi-research-kernel` for state and
+  `tspi-orchestration` for task planning;
 - the deterministic Research Kernel and canonical workspace contract;
 - deterministic compute, artifact, report, remote, and notification mechanisms;
 - the TSPi ResearchMap provider for canonical workspace data;
@@ -145,9 +146,10 @@ must not introduce a second broker, event journal, or semantic definition of
 the App Server records.
 
 TSPi owns the semantic source for the canonical ResearchMap consumed by Web.
-The map is a public, versioned JSON boundary. The current
-  `research-map/1` is the canonical ResearchMap payload. It replaces the old
-  workspace-view and graph pair; clients consume this serialization directly.
+The provider uses `research-map-provider/1`, while `research-map/1` is the
+canonical map payload. The `/map` response contains workspace metadata plus
+that direct ResearchMap serialization. It does not construct separate view and
+graph models.
 
 The minimum Web boundary is:
 
@@ -157,9 +159,10 @@ TSPi ResearchMap provider
     -> ts-web canonical-map client and UI
 ```
 
-The contract must include protocol version, workspace identity, scientific and
-operational revision identities, bounded view data, graph data, and explicit
-error/stale semantics. It must not expose physical paths or provide mutation
+The contract includes its protocol version, workspace metadata, the canonical
+ResearchMap and its scientific revision, plus explicit error semantics. Catalog,
+collection, and object-detail routes are transport conveniences over the same
+map. The provider must not expose physical workspace paths or provide mutation
 routes merely because the current server has local filesystem access.
 
 Compatibility tests should run against a checked-in fixture or a released
@@ -237,7 +240,7 @@ should use the following concepts:
 | --- | --- |
 | ResearchPhase | human navigation grouping only |
 | ResearchNode | one bounded research decision episode |
-| Claim | scientific statement, assumptions, and falsifiers |
+| Claim | scientific statement, predictions, falsifiers, and status |
 | Finding | Node output, specialized as FactFinding or IssueFinding |
 | Gate | common Node/Claim completion and assessment contract |
 | ChangeSet | the canonical map mutation request |
@@ -261,29 +264,37 @@ test fixture, or documentation that intentionally describes a retired field.
 Add a terminology contract test for public Skill and README surfaces before
 removing compatibility fixtures.
 
-### 7. Reviewers and subagent evolution
+### 7. Reviewers and subagent boundary
 
-`packages/ts-agent-runtime/agents/review/` remains the implementation location for the current
-isolated advisory runtime. The next boundary is a contract, not a collection
-of additional prompts.
+`packages/ts-agent-runtime/agents/review/` is the implementation location for
+the isolated advisory runtime. A public request may choose `reviewerRole`; the
+current package ships the versioned `general` descriptor. The runtime builds a
+typed task packet for that role and records its prompt revision, inherited model
+policy, artifact budget, and advisory authority.
 
-The future `ts-reviewers` subsystem should have:
+The deterministic aggregator accepts validated reviewer results, preserves each
+result and classified failure, and reports conflicting opinions without turning
+them into consensus. Its contract and conflict behavior are tested. These
+pieces do not imply a reviewer pool: public execution still launches one bounded
+Review request, and Root must explicitly dispose of its advice before any
+canonical scientific mutation.
+
+The established reviewer contract includes:
 
 - a versioned reviewer role descriptor;
-- explicit specialty, prompt revision, model policy, token/artifact budget,
+- explicit specialty, prompt revision, model policy, artifact/result budget,
   and authority declaration;
-- deterministic task projection per role;
-- bounded parallel execution with durable per-run journals;
+- a deterministic typed task packet per role;
+- durable per-run records for bounded execution;
 - a deterministic aggregator that preserves each review and reports
   disagreement rather than hiding it;
 - one explicit Root disposition before canonical scientific mutation;
 - failure classification that distinguishes provider failure, invalid output,
   unavailable evidence, and reviewer disagreement.
 
-The initial role may remain `general`. Adding role descriptors must not imply
-that independent models or providers are available; model selection is a
-runtime configuration and must be recorded when it differs from the parent
-model.
+Additional roles or parallel orchestration are separate future changes. Adding
+role descriptors must not imply that independent models or providers are
+available; the current role inherits the parent model and disallows override.
 
 The following remain prohibited:
 
@@ -363,13 +374,13 @@ for local changes.
 - remove duplicated release lists after the manifest check is authoritative;
 - keep generated artifacts out of source packages.
 
-### Phase 5: formalize reviewer roles
+### Phase 5: formalize reviewer roles (partially completed)
 
-- write and validate the role descriptor;
-- implement one role through the existing isolated runtime;
-- add bounded parallel execution and aggregation only after single-role
-  journals and failure semantics are stable;
-- add role disagreement fixtures and explicit Root disposition tests.
+- completed: write and validate the `general` role descriptor;
+- completed: expose role selection through the existing isolated runtime;
+- completed: add deterministic aggregation and disagreement fixtures;
+- remaining: add bounded multi-role orchestration only if required, without
+  changing the one-request advisory authority boundary.
 
 ## Non-Goals
 

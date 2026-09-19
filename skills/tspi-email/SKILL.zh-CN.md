@@ -7,8 +7,9 @@ description: 按配置发送 TSPi 研究事件和报告的邮件通知，并跟�
 
 [English version](SKILL.md)
 
-使用本 Skill 处理 `ts_notify` 和配置的邮件投递。运行时、报告、产物和状态合同使用
-`tspi-orchestration`。通知传达已记录的研究结果，并关联相应报告。安装级配置可以选择
+使用本 Skill 处理 `ts_notify` 和配置的邮件投递。研究状态使用
+`tspi-research-kernel`，运行、报告与 Artifact 上下文使用 `tspi-orchestration`。通知传达
+已记录的研究结果，并关联相应报告。安装级配置可以选择
 兼容的 ClawEmail 传输，或内置 SMTP 传输；SMTP 当前支持 163 和 QQ 邮箱预设。
 
 ## 操作规则

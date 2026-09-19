@@ -89,7 +89,7 @@
     <circle cx="908" cy="310" r="14" fill="#F6E0DB"/>
     <path d="M899 310l6 6 11-13" fill="none" stroke="#C45B48" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
     <text x="934" y="316" class="subheading">Gate evaluation</text>
-    <text x="898" y="353" class="small-strong">Gate criteria &#8594; evaluations</text>
+    <text x="898" y="353" class="small-strong">Gate criteria -&gt; evaluations</text>
     <text x="898" y="376" class="small">NodeGate: close a Node</text>
     <text x="898" y="399" class="small">ClaimGate: test a Claim</text>
   </g>
@@ -110,8 +110,8 @@
   <rect x="1218" y="204" width="20" height="14" rx="2" fill="none" stroke="#4E7C90" stroke-width="2"/>
   <path d="M1223 223h10m-5-5v5" stroke="#4E7C90" stroke-width="2" stroke-linecap="round"/>
   <text x="1259" y="220" class="heading">Research Map</text>
-  <text x="1218" y="267" class="body">Claim &#8594; Node &#8594; Finding &#8594; Gate</text>
-  <text x="1218" y="294" class="body">dependencies &#183; outcomes &#183; stale history</text>
+  <text x="1218" y="267" class="body">Claim -&gt; Node -&gt; Finding -&gt; Gate</text>
+  <text x="1218" y="294" class="body">dependencies &#183; outcomes &#183; revision history</text>
   <line x1="1218" y1="320" x2="1490" y2="320" stroke="#D5E2E5" stroke-width="1"/>
   <text x="1218" y="351" class="small-strong">canonical map state</text>
   <text x="1218" y="376" class="small">same ResearchMap used by the Kernel</text>
@@ -132,13 +132,13 @@
   <text x="86" y="785" class="small">geometry generation &#183; TS optimization</text>
   <text x="86" y="809" class="small">frequencies &#183; IRC &#183; competing paths</text>
   <rect x="86" y="835" width="287" height="29" rx="14.5" fill="#F6E9BE"/>
-  <text x="229.5" y="855" class="small-strong" text-anchor="middle">tool success &#8800; scientific proof</text>
+  <text x="229.5" y="855" class="small-strong" text-anchor="middle">tool success != scientific proof</text>
 
   <g class="card">
     <rect x="548" y="688" width="485" height="205" rx="16" fill="#F4F8FC" stroke="#6A8EAF" stroke-width="1.8"/>
   </g>
   <text x="575" y="727" class="heading">Evidence curation</text>
-  <text x="575" y="756" class="body">artifact &#8594; candidate &#8594; verified semantic record</text>
+  <text x="575" y="756" class="body">artifact -&gt; candidate -&gt; verified semantic record</text>
   <g>
     <circle cx="594" cy="814" r="9" fill="#FFFFFF" stroke="#6A8EAF" stroke-width="2"/>
     <circle cx="774" cy="814" r="9" fill="#FFFFFF" stroke="#6A8EAF" stroke-width="2"/>
@@ -154,9 +154,9 @@
   </g>
   <text x="1123" y="727" class="heading">Scientific interpretation</text>
   <text x="1123" y="756" class="body">NodeGate closes work; ClaimGate evaluates meaning</text>
-  <text x="1123" y="791" class="small-strong">supported &#183; refuted &#183; open &#183; stale</text>
-  <text x="1123" y="823" class="small">Root updates the Claim or creates a dependent Node</text>
-  <text x="1123" y="849" class="small">failed attempts remain visible history</text>
+  <text x="1123" y="791" class="small-strong">Node outcome: completed &#183; inconclusive &#183; stopped</text>
+  <text x="1123" y="823" class="small">Claim status changes only through a ChangeSet</text>
+  <text x="1123" y="849" class="small">Root chooses the next Node, branch, or backtrack</text>
 
   <!-- Plane connectors -->
   <path d="M530 600C530 638 300 638 272 688" class="flow"/>

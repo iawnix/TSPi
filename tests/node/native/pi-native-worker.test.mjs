@@ -81,19 +81,25 @@ test("Pi Agent Core loads the packaged TSPi skill catalog", async () => {
   const loaded = await loadSkills(env, join(process.cwd(), "skills"), TODO_CONTEXT);
   assert.deepEqual(loaded.diagnostics, []);
   assert.deepEqual(loaded.skills.map((skill) => skill.name), [
-    "tspi-connectivity",
+    "tspi-crest",
     "tspi-email",
+    "tspi-energetics",
     "tspi-gaussian",
-    "tspi-mechanism",
+    "tspi-irc",
+    "tspi-mechanism-reasoning",
+    "tspi-method-selection",
     "tspi-orchestration",
+    "tspi-qbics",
     "tspi-render",
     "tspi-report",
-    "tspi-transition-state-search",
+    "tspi-research-kernel",
+    "tspi-ts-candidate-generation",
+    "tspi-ts-validation",
     "tspi-xtb",
   ]);
   const prompt = formatSkillsForSystemPrompt(loaded.skills);
   assert.match(prompt, /<available_skills>/);
-  assert.doesNotMatch(prompt, /tspi-qbics/);
+  assert.match(prompt, /tspi-qbics/);
 });
 
 function kernelPython() {

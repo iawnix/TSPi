@@ -16,18 +16,25 @@ TERMINAL_ZH = ROOT / "docs" / "TERMINAL.zh-CN.md"
 INSTALLATION = ROOT / "docs" / "INSTALLATION.md"
 MAINTAINER = ROOT / "docs" / "MAINTAINER_GUIDE.md"
 ADR = ROOT / "docs" / "adr" / "0001-phase-node-research-kernel.md"
-SKILL_ROOT = ROOT / "skills" / "tspi-orchestration"
+SKILL_ROOT = ROOT / "skills" / "tspi-research-kernel"
 SKILL = SKILL_ROOT / "SKILL.md"
 REFERENCES = SKILL_ROOT / "references"
+ORCHESTRATION_ROOT = ROOT / "skills" / "tspi-orchestration"
 FOCUSED_SKILLS = {
-    "tspi-transition-state-search": ROOT / "skills" / "tspi-transition-state-search",
+    "tspi-orchestration": ORCHESTRATION_ROOT,
+    "tspi-ts-candidate-generation": ROOT / "skills" / "tspi-ts-candidate-generation",
+    "tspi-ts-validation": ROOT / "skills" / "tspi-ts-validation",
+    "tspi-irc": ROOT / "skills" / "tspi-irc",
+    "tspi-energetics": ROOT / "skills" / "tspi-energetics",
+    "tspi-method-selection": ROOT / "skills" / "tspi-method-selection",
     "tspi-xtb": ROOT / "skills" / "tspi-xtb",
+    "tspi-crest": ROOT / "skills" / "tspi-crest",
+    "tspi-qbics": ROOT / "skills" / "tspi-qbics",
     "tspi-gaussian": ROOT / "skills" / "tspi-gaussian",
-    "tspi-connectivity": ROOT / "skills" / "tspi-connectivity",
-    "tspi-mechanism": ROOT / "skills" / "tspi-mechanism",
     "tspi-render": ROOT / "skills" / "tspi-render",
     "tspi-report": ROOT / "skills" / "tspi-report",
     "tspi-email": ROOT / "skills" / "tspi-email",
+    "tspi-mechanism-reasoning": ROOT / "skills" / "tspi-mechanism-reasoning",
 }
 
 
@@ -181,29 +188,30 @@ def test_skill_routes_details_through_focused_references() -> None:
         "references/state_model.md",
         "references/workspace_contract.md",
         "references/decision_contract.md",
+        "references/glossary.md",
+        "references/glossary.zh-CN.md",
+    ]:
+        assert ref in text
+    orchestration = (ORCHESTRATION_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    for ref in (
         "references/compute_tools.md",
         "references/pi_agent_adapter.md",
         "references/agent_decision_protocol.md",
         "references/artifact_tools.md",
         "references/package_sources.md",
-        "references/remote_contract.md",
-    ]:
-        assert ref in text
-    for ref in (
-        "tspi-render/references/render_contract.md",
-        "tspi-report/references/report_template.md",
-        "tspi-email/references/email_delivery.md",
+        "references/program_runtime_failures.md",
     ):
-        assert ref in text
+        assert ref in orchestration
 
 
 def test_skill_progressive_disclosure_routes_every_reference() -> None:
-    skill = SKILL.read_text(encoding="utf-8")
-    for path in sorted(REFERENCES.glob("*.md")):
-        assert f"references/{path.name}" in skill, path
-        lines = path.read_text(encoding="utf-8").splitlines()
-        if len(lines) > 100:
-            assert "## Contents" in lines, path
+    for root in [SKILL_ROOT, *FOCUSED_SKILLS.values()]:
+        skill = (root / "SKILL.md").read_text(encoding="utf-8")
+        for path in sorted((root / "references").glob("*.md")):
+            assert f"references/{path.name}" in skill, path
+            lines = path.read_text(encoding="utf-8").splitlines()
+            if len(lines) > 100:
+                assert "## Contents" in lines, path
 
 
 def test_focused_skills_have_bilingual_entrypoints_and_route_their_references() -> None:
@@ -221,13 +229,13 @@ def test_focused_skills_have_bilingual_entrypoints_and_route_their_references() 
 
 
 def test_compute_reference_uses_the_registered_gaussian_input_role() -> None:
-    compute = (REFERENCES / "compute_tools.md").read_text(encoding="utf-8")
+    compute = (ORCHESTRATION_ROOT / "references" / "compute_tools.md").read_text(encoding="utf-8")
 
     assert '"inputRole": "gjf"' in compute
     assert '"inputRole": "structure"' not in compute
 
 
-def test_final_report_builder_projects_phase_node_and_scientific_objects() -> None:
+def test_final_report_builder_renders_phase_node_and_scientific_objects() -> None:
     text = (ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "report" / "builder.py").read_text(encoding="utf-8")
 
     for phrase in [
@@ -248,4 +256,4 @@ def test_final_report_builder_projects_phase_node_and_scientific_objects() -> No
 
 
 def test_static_research_map_templates_are_removed() -> None:
-    assert not (SKILL_ROOT / "assets" / "templates" / "research_map").exists()
+    assert not list((ROOT / "skills").glob("*/assets/templates/research_map"))

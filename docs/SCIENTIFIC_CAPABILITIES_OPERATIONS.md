@@ -21,11 +21,17 @@ not change the scientific Node state. Inspection, collection, parsing, and
 exact cancellation remain available while a Node is paused. A restart must
 reconcile the latest receipt before another submission.
 
-Use `ts_calc` for the common local/remote lifecycle:
+Use the same public `ts_calc` operations for local and remote environments:
 
 ```text
-prepare -> submit -> inspect -> collect -> parse -> finalize
+launch   -> prepare, submit
+inspect  -> status, optional tail
+finalize -> collect, parse
+cancel   -> cancel
 ```
+
+The actions on the right are private child-runtime steps. Callers do not invoke
+them as a second public lifecycle.
 
 Remote completion is not proof that collection succeeded. Unknown submission or
 cancellation outcomes must be inspected before retrying.

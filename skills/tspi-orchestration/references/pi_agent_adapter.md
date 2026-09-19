@@ -1,7 +1,7 @@
 # Pi Runtime Adapter
 
 Pi is a transport and interaction host for TSPi. Python owns the deterministic
-Research Kernel and compute services; Pi does not maintain a second state model.
+Research Kernel and compute services; Pi reads the canonical ResearchMap.
 
 ## Public Surface
 
@@ -33,7 +33,7 @@ read the current `ResearchMap`; after a write, use the returned revision or
 the prompt, but it cannot write the map. The Root Agent remains responsible for
 method selection, interpretation, and stopping.
 
-`ts_state` modes are `map`, `summary`, `detail`, `locate`, `operations`,
+`ts_state` modes are `map`, `summary`, `detail`, `locate`, `validate`, `operations`,
 `artifacts`, `capabilities`, and `runs`. `capabilityKind=compute` lists
 calculation capabilities; `capabilityKind=analysis` resolves analysis methods.
 Use `kind` and `id` for a focused map object. Do not invent a second context

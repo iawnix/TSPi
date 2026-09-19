@@ -1,24 +1,23 @@
 ---
 name: tspi-xtb
-description: Run and interpret xTB and CREST calculations for conformers, geometry, frequencies, scans, molecular dynamics, and prescreening.
+description: Run and assess registered xTB single-point, optimization, frequency, scan, molecular-dynamics, and prescreening calculations.
 ---
 
-# TSPi xTB And CREST
+# TSPi xTB
 
 [Chinese version](SKILL.zh-CN.md)
 
-Use this Skill for xTB or CREST calculations. Load `tspi-orchestration` for
-calculation, Artifact, and ResearchMap contracts, and
-`tspi-transition-state-search` when choosing candidate generation.
+Use this Skill for registered xTB capabilities. CREST conformer searches belong
+to `tspi-crest`; selecting xTB instead of another method belongs to
+`tspi-method-selection`.
 
-Bind `xyz` and, for scans or MD, `control` inputs as logical Artifacts. Keep
-method, charge, unpaired electrons, solvent, accuracy, and optimization level
-in the calculation intent. Check SCC convergence, optimization status,
-frequency data, scan completeness, and trajectory completeness as applicable.
-Treat conformer count, energy table, and ensemble geometry as separate facts.
-Record verified values as `FactFinding`; record missing outputs, failures, or
-method limitations as `IssueFinding` when they affect the Node or Claim.
+Bind XYZ and, for scans or molecular dynamics, control inputs as logical
+Artifacts. Keep method, charge, unpaired electrons, solvent model, accuracy,
+optimization settings, and constraints explicit in the calculation intent.
+Check SCC convergence, optimization status, frequency data, scan completeness,
+and trajectory completeness as appropriate.
 
-For remote work, select a configured environment with `ts_environment` or
-`/compute`; a missing command or activation script is an operational failure,
-not a reason to install software from the job. Read [xtb_executor.md](references/xtb_executor.md) and [crest_ensemble.md](references/crest_ensemble.md).
+Treat an optimized geometry, energy, frequency set, scan series, and trajectory
+as separate results. Inspect primary outputs before recording Findings. A scan
+maximum or xTB imaginary mode is a candidate for further validation, not proof
+of a transition state. Read [xtb_executor.md](references/xtb_executor.md).

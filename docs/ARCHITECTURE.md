@@ -71,9 +71,11 @@ ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
 `ResearchMap.to_dict()` is canonical serialization for TS Web and Root Agent,
 not a second scientific model. The Root Agent chooses questions, methods,
 branches, and stopping conditions. Skills describe research procedures,
-Capabilities describe callable operations, Backends implement software, and
-Platforms provide local, container, or HPC execution environments. Tool
-success never becomes a scientific conclusion by itself.
+Capabilities describe callable operations, and Backends implement scientific
+software or executors. A Compute Environment is a named `local` or `remote`
+execution environment with Backend bindings; Platform configuration supplies
+the transport and scheduler details for a remote environment. Tool success
+never becomes a scientific conclusion by itself.
 
 ### NodeGate And ClaimGate
 
@@ -92,7 +94,7 @@ interpretation through a Map ChangeSet.
 
 ## ChangeSets And Browser Clients
 
-Pi extensions, tools, the CLI, and slash commands all submit the same
+Pi extensions, host tools, and slash commands all submit the same
 small ChangeSet envelope to `ResearchKernel`. The kernel validates operation
 fields, references, optimistic revision, and graph invariants before atomically
 writing `research_map.json` and appending `transactions.jsonl`. A failed
@@ -169,10 +171,19 @@ next action from tool exit codes. See [ADR 0003](adr/0003-minimal-research-kerne
 Public tools validate input paths against the workspace root, normalize
 artifacts, and return machine-readable errors. Scientific backends are
 selected by capability and parse only their own output formats. `ts_calc` uses
-one lifecycle (`prepare -> submit -> inspect -> collect -> parse`) for either
-`execution_target.kind=local` or `remote`: the Research Kernel workspace is
-always canonical, while a remote directory is only a temporary execution
-mirror. Local runs stage inputs under the Attempt's execution directory and
+the same four public operations for local and remote environments:
+
+```text
+launch   -> prepare, submit
+inspect  -> status, optional tail
+finalize -> collect, parse
+cancel   -> cancel
+```
+
+These right-hand actions are private child-runtime steps, not additional public
+operations. For either `execution_target.kind=local` or `remote`, the Research
+Kernel workspace is always canonical, while a remote directory is only a
+temporary execution mirror. Local runs stage inputs under the Attempt's execution directory and
 collect outputs back into the same workspace paths, so TS Web needs no remote
 filesystem access. Local workers are launched in an independent transient
 systemd user service when available, so restarting the App Server Host does not

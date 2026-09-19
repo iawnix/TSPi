@@ -27,7 +27,7 @@ For one connected molecule described by SMILES:
 
 `optimization` is `none` or `uff`. The host fixes RDKit ETKDGv3 parameters and
 random seed, adds explicit hydrogens, checks formal charge and electron-count
-parity, and writes content-addressed XYZ plus provenance under the open Node.
+parity, and writes content-addressed XYZ plus provenance under the non-closed Node.
 The activity request retains a SMILES digest, not the body. The provenance
 records canonical SMILES, RDKit version, parameters, metadata, output digest,
 and limitations. Use one connected SMILES; prepare multi-fragment encounter
@@ -73,7 +73,7 @@ as a semantic Finding through `ts_change`, citing the verified analysis artifact
 
 ## Import An Existing Input
 
-After starting an open ResearchNode, create one bounded input with a semantic
+After starting a non-closed ResearchNode, create one bounded input with a semantic
 basename. The host owns its Node-local directory:
 
 ```json
