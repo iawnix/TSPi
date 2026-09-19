@@ -1,18 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tspi.iawnix.xyz/schema/ts-web-provider-request-v1.json",
-  "title": "TSPi TS Web provider request",
+  "$id": "https://tspi.iawnix.xyz/schema/research-map-provider-request-v1.json",
+  "title": "ResearchMap provider request",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "request_id", "operation", "query"],
   "properties": {
-    "schema_version": { "const": "research-web-request/1" },
+    "schema_version": { "const": "research-map-provider/1" },
     "request_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,160}$" },
     "operation": { "enum": ["catalog", "route", "remove"] },
     "workspace_id": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$" },
     "route": { "type": ["string", "null"], "maxLength": 256 },
     "query": {
       "type": "object",
+      "propertyNames": { "type": "string", "maxLength": 80 },
       "additionalProperties": { "type": "string", "maxLength": 4096 },
       "maxProperties": 16
     }

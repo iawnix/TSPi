@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tspi.iawnix.xyz/schema/ts-web-error-v1.json",
-  "title": "TS Web ResearchMap transport error",
+  "$id": "https://tspi.iawnix.xyz/schema/research-map-error-v1.json",
+  "title": "ResearchMap transport error",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "error", "retryable"],
   "properties": {
-    "schema_version": { "const": "ts-web-error/1" },
+    "schema_version": { "const": "research-map-error/1" },
     "error": { "type": "string", "minLength": 1, "maxLength": 4000 },
     "retryable": { "type": "boolean" }
   }

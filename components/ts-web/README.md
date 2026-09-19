@@ -5,7 +5,7 @@ the HTTP transport, browser assets, workspace registry commands, and the
 ResearchMap client. It does not import `ts_agent` or own scientific state.
 
 The component talks to the TSPi Agent through the versioned
-`ts-research-provider/1` JSON-lines protocol. TSPi keeps physical workspace
+`research-map-provider/1` JSON-lines protocol. TSPi keeps physical workspace
 locations and loads the canonical ResearchMap. The Web response contains
 canonical workspace data only.
 

@@ -4,7 +4,7 @@
 浏览器资源、工作区注册命令和 ResearchMap 客户端，不导入 `ts_agent`，也不拥有
 科研状态。
 
-该组件通过版本化的 `ts-research-provider/1` JSON-lines 协议与 TSPi Agent 通信。
+该组件通过版本化的 `research-map-provider/1` JSON-lines 协议与 TSPi Agent 通信。
 物理工作区位置由 TSPi 保存，Web 响应直接包含规范的 ResearchMap 数据。
 
 组件以带 manifest 的独立归档发布。TSPi Package 可以不安装它；选择安装时，

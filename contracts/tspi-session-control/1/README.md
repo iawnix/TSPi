@@ -21,7 +21,7 @@ used. A repeated request id with a different payload is a protocol error.
 4. Subscribe to events from the remembered cursor. The first event after every
    reconnect is a coherent `snapshot`; later events have monotonically
    increasing `sequence` values.
-5. On a sequence gap, discard the local projection and request a new snapshot.
+5. On a sequence gap, discard the local session cache and request a new snapshot.
 
 The optional Web adapter is intentionally a thin transport. It does not start
 Pi, create workers, or introduce a second session broker. TS Phone should use

@@ -8,6 +8,7 @@ research model or renames domain objects for a client.
 from __future__ import annotations
 
 import posixpath
+import re
 import stat
 from pathlib import Path
 from typing import Any, Sequence
@@ -27,8 +28,11 @@ from .registry import (
 )
 
 
-PROVIDER_PROTOCOL = "ts-research-provider/1"
+PROVIDER_PROTOCOL = "research-map-provider/1"
+ERROR_SCHEMA = "research-map-error/1"
 WORKSPACE_LIST_SCHEMA = "research-workspace-list/1"
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,160}$")
+WORKSPACE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
 
 class ResearchWebError(ValueError):
@@ -88,8 +92,8 @@ def provider_error_payload(request_id: str, error: Exception, *, retryable: bool
         "request_id": request_id,
         "ok": False,
         "error": {
-            "schema_version": "research-web-error/1",
-            "error": str(error)[:4000],
+            "schema_version": ERROR_SCHEMA,
+            "error": str(error)[:4000] or "ResearchMap provider error",
             "retryable": bool(getattr(error, "retryable", False) if retryable is None else retryable),
         },
     }
@@ -99,11 +103,23 @@ def _request_object(value: object) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ResearchWebError("provider request must be an object")
     expected = {"schema_version", "request_id", "operation", "workspace_id", "route", "query"}
-    if set(value) - expected or value.get("schema_version") != "research-web-request/1":
+    required = {"schema_version", "request_id", "operation", "query"}
+    if set(value) - expected or required - set(value) or value.get("schema_version") != PROVIDER_PROTOCOL:
         raise ResearchWebError("unsupported provider request schema")
     request_id = value.get("request_id")
-    if not isinstance(request_id, str) or not request_id or len(request_id) > 160:
+    if not isinstance(request_id, str) or REQUEST_ID_PATTERN.fullmatch(request_id) is None:
         raise ResearchWebError("provider request_id must be a bounded string")
+    if value.get("operation") not in {"catalog", "route", "remove"}:
+        raise ResearchWebError("unsupported provider operation")
+    workspace_id = value.get("workspace_id")
+    if workspace_id is not None and (
+        not isinstance(workspace_id, str) or WORKSPACE_ID_PATTERN.fullmatch(workspace_id) is None
+    ):
+        raise ResearchWebError("invalid provider workspace_id")
+    route = value.get("route")
+    if route is not None and (not isinstance(route, str) or len(route) > 256):
+        raise ResearchWebError("invalid provider route")
+    _query_object(value.get("query"))
     return value
 
 
@@ -130,25 +146,24 @@ def _catalog(state_dir: Path) -> dict[str, Any]:
     }
 
 
-def _summary(row: dict[str, Any]) -> dict[str, Any]:
+def _summary(row: dict[str, Any], research_map: Any | None = None) -> dict[str, Any]:
     source_root = str(row.get("source_root") or "")
     workspace_id = str(row.get("workspace_id") or "")
     label = str(row.get("label") or (Path(source_root).name if source_root else workspace_id))
     base = {
         "workspace_id": workspace_id,
         "label": label,
-        "source_root": None,
         "available": False,
         "valid": False,
-        "kernel_protocol": "research-map/1",
         "revision": None,
         "progress": {},
     }
-    try:
-        research_map = ResearchKernel(source_root).load()
-    except (ResearchKernelError, OSError, ValueError) as error:
-        base["load_error"] = _sanitize(str(error), source_root)
-        return base
+    if research_map is None:
+        try:
+            research_map = ResearchKernel(source_root).load()
+        except (ResearchKernelError, OSError, ValueError) as error:
+            base["load_error"] = _sanitize(str(error), source_root)
+            return base
     base.update({"available": True, "valid": True, "revision": research_map.revision, "progress": research_map.progress()})
     return base
 
@@ -156,14 +171,11 @@ def _summary(row: dict[str, Any]) -> dict[str, Any]:
 def _route(row: dict[str, Any], route: str, query: dict[str, str]) -> Any:
     research_map = _load_map(row["source_root"])
     payload = research_map.to_dict()
-    if route in {"", "map", "snapshot"}:
-        if route == "snapshot" and query.get("revision") == str(research_map.revision):
-            return {"changed": False, "revision": research_map.revision}
+    if route in {"", "map"}:
         return {
             "schema_version": "research-map-response/1",
-            "workspace": _summary(row),
+            "workspace": _summary(row, research_map),
             "map": payload,
-            "changed": True,
         }
     if route in {"phases", "claims", "claim_relations", "nodes", "findings", "gates"}:
         return {"schema_version": "research-map-collection/1", "map_id": research_map.map_id, route: payload[route]}
@@ -226,7 +238,7 @@ def _read_node_file(source_root: str, relative: str, research_map: Any) -> dict[
 
 
 def _safe_id(value: object, label: str) -> str:
-    if not isinstance(value, str) or not value or value in {".", ".."} or "/" in value or "\\" in value:
+    if not isinstance(value, str) or WORKSPACE_ID_PATTERN.fullmatch(value) is None:
         raise ResearchWebError(f"unsafe {label} id")
     return value
 

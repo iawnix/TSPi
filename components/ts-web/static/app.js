@@ -88,7 +88,7 @@ async function loadCatalog() {
 }
 
 async function loadMap() {
-  const payload = await api(`/api/workspace/${encodeURIComponent(state.workspaceId)}/snapshot`);
+  const payload = await api(`/api/workspace/${encodeURIComponent(state.workspaceId)}/map`);
   if (!payload.map) throw new Error("Provider did not return a ResearchMap.");
   state.map = payload.map;
   try { localStorage.setItem("research-map-workspace", state.workspaceId); } catch (_error) {}

@@ -93,7 +93,7 @@ def _make_handler(provider: ProviderClient, *, auth_token: str | None = None):
                         {
                             "ok": True,
                             "protocol": "research-map/1",
-                            "provider_protocol": "ts-research-provider/1",
+                            "provider_protocol": "research-map-provider/1",
                             "canonical": "ResearchMap",
                             "read_only": True,
                         }
@@ -143,8 +143,8 @@ def _make_handler(provider: ProviderClient, *, auth_token: str | None = None):
         ) -> None:
             self._send_json(
                 {
-                    "schema_version": "ts-web-error/1",
-                    "error": message[:4000],
+                    "schema_version": "research-map-error/1",
+                    "error": message[:4000] or "ResearchMap request failed",
                     "retryable": retryable,
                 },
                 status=status,

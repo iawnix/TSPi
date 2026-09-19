@@ -44,7 +44,7 @@ contracts are explicit.
 | --- | --- | --- |
 | TSPi | Owns the kernel, Pi package, Web implementation, release assembly, and installation boundary | It is the natural required core repository and product release owner |
 | `ts-phone` | Independent repository with the Flutter presentation client and mobile release tooling | It remains independently developed; its runtime dependency is the Pi App Server protocol |
-| `ts-web` | Client, registry, server, and static UI under `components/ts-web/`; it consumes the canonical ResearchMap through `ts-research-provider/1` | The component can be archived and installed independently from Agent |
+| `ts-web` | Client, registry, server, and static UI under `components/ts-web/`; it consumes the canonical ResearchMap through `research-map-provider/1` | The component can be archived and installed independently from Agent |
 | Phone transport | TS Phone speaks Pi protocol v8 through the authenticated Radius session relay; no TSPi Phone server or bridge is installed | Pi owns the session transport and TS Phone owns only its presentation adapter |
 | Release boundary | TSPi emits `tspi-package-release/4` with required Agent and optional independent Web descriptor | The suite contains the runtime; TS Phone is released separately |
 | Review | One isolated advisory Review runtime exists; no reviewer pool, role selection, aggregation, or conflict protocol exists | Improve the contract before adding more reviewer prompts or agents |
@@ -340,7 +340,7 @@ for local changes.
 ### Phase 2: extract the Web boundary (completed)
 
 - expose the canonical ResearchMap behind the versioned
-  `ts-research-provider/1` request/response contract;
+  `research-map-provider/1` request/response contract;
 - make the Web client under `components/ts-web/` consume only that contract;
 - add archive and source tests proving the client has no `ts_agent` imports;
 - package the Web UI as an independently validated optional component.

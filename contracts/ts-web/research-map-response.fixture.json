@@ -1,6 +1,5 @@
 {
   "schema_version": "research-map-response/1",
-  "changed": true,
   "workspace": {
     "workspace_id": "ws_fixture",
     "label": "fixture",
@@ -31,6 +30,7 @@
     "claim_relations": [],
     "focus_claim_ids": [],
     "focus_node_ids": [],
+    "metadata": {},
     "progress": {
       "phase_count": 0,
       "claim_count": 0,

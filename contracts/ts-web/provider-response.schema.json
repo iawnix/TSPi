@@ -1,16 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tspi.iawnix.xyz/schema/ts-web-provider-response-v1.json",
-  "title": "TSPi TS Web provider response envelope",
+  "$id": "https://tspi.iawnix.xyz/schema/research-map-provider-response-v1.json",
+  "title": "ResearchMap provider response envelope",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "request_id", "ok"],
   "properties": {
-    "schema_version": { "const": "ts-research-provider/1" },
+    "schema_version": { "const": "research-map-provider/1" },
     "request_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,160}$" },
     "ok": { "type": "boolean" },
     "payload": {},
-    "error": { "$ref": "error.schema.json" }
+    "error": { "$ref": "https://tspi.iawnix.xyz/schema/research-map-error-v1.json" }
   },
   "oneOf": [
     { "properties": { "ok": { "const": true } }, "required": ["payload"] },

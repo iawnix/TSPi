@@ -4,7 +4,7 @@
   "private": true,
   "description": "Optional read-only TS Web explorer component",
   "protocols": {
-    "provider": "ts-research-provider/1",
+    "provider": "research-map-provider/1",
     "map": "research-map/1",
     "theme": "ts-theme/1"
   }

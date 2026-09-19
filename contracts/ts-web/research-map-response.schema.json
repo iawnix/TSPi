@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tspi.iawnix.xyz/schema/research-map-response-v1.json",
+  "title": "Canonical ResearchMap response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "workspace", "map"],
+  "properties": {
+    "schema_version": { "const": "research-map-response/1" },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspace_id", "label", "available", "valid", "revision", "progress"],
+      "properties": {
+        "workspace_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$" },
+        "label": { "type": "string", "minLength": 1 },
+        "available": { "const": true },
+        "valid": { "const": true },
+        "revision": { "type": "integer", "minimum": 0 },
+        "progress": { "$ref": "#/$defs/progress" }
+      }
+    },
+    "map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "map_id",
+        "title",
+        "created_at",
+        "revision",
+        "phases",
+        "claims",
+        "nodes",
+        "findings",
+        "gates",
+        "claim_relations",
+        "focus_claim_ids",
+        "focus_node_ids",
+        "metadata",
+        "progress"
+      ],
+      "properties": {
+        "schema_version": { "const": "research-map/1" },
+        "map_id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "created_at": { "type": "string", "minLength": 1 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "phases": { "type": "array", "items": { "type": "object" } },
+        "claims": { "type": "array", "items": { "type": "object" } },
+        "nodes": { "type": "array", "items": { "type": "object" } },
+        "findings": { "type": "array", "items": { "type": "object" } },
+        "gates": { "type": "array", "items": { "type": "object" } },
+        "claim_relations": { "type": "array", "items": { "type": "object" } },
+        "focus_claim_ids": { "type": "array", "items": { "type": "string" } },
+        "focus_node_ids": { "type": "array", "items": { "type": "string" } },
+        "metadata": { "type": "object" },
+        "progress": { "$ref": "#/$defs/progress" }
+      }
+    }
+  },
+  "$defs": {
+    "progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase_count",
+        "claim_count",
+        "node_count",
+        "finding_count",
+        "gate_count",
+        "closed_node_count",
+        "open_issue_count"
+      ],
+      "properties": {
+        "phase_count": { "type": "integer", "minimum": 0 },
+        "claim_count": { "type": "integer", "minimum": 0 },
+        "node_count": { "type": "integer", "minimum": 0 },
+        "finding_count": { "type": "integer", "minimum": 0 },
+        "gate_count": { "type": "integer", "minimum": 0 },
+        "closed_node_count": { "type": "integer", "minimum": 0 },
+        "open_issue_count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

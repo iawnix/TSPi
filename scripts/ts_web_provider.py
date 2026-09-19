@@ -16,7 +16,7 @@ from _bootstrap import bootstrap_python_package
 bootstrap_python_package(ROOT, entrypoint=ENTRYPOINT)
 
 from ts_agent.research.web import (  # noqa: E402
-    PROVIDER_PROTOCOL,
+    REQUEST_ID_PATTERN,
     ResearchWebError,
     handle_request,
     provider_error_payload,
@@ -79,7 +79,9 @@ def _serve_protocol(state_dir: str, workspace_roots: list[str] | None) -> int:
 
 def _request_id(value: object) -> str:
     if isinstance(value, dict) and isinstance(value.get("request_id"), str):
-        return value["request_id"][:160] or "unknown"
+        request_id = value["request_id"][:160]
+        if REQUEST_ID_PATTERN.fullmatch(request_id) is not None:
+            return request_id
     return "unknown"
 
 

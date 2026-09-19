@@ -53,7 +53,7 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
     )
 
     request = {
-        "schema_version": "research-web-request/1",
+        "schema_version": "research-map-provider/1",
         "request_id": "schema-check",
         "operation": "catalog",
         "workspace_id": None,
@@ -63,7 +63,7 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
     Draft202012Validator(request_schema).validate(request)
     Draft202012Validator(response_schema).validate(
         {
-            "schema_version": "ts-research-provider/1",
+            "schema_version": "research-map-provider/1",
             "request_id": "schema-check",
             "ok": True,
             "payload": {"workspaces": []},
@@ -75,7 +75,7 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
             "release_id": "0.17.0-sha256-0123456789abcdef",
             "component": {"name": "ts-web", "version": "0.17.0"},
             "protocols": {
-                "provider": "ts-research-provider/1",
+                "provider": "research-map-provider/1",
                 "map": "research-map/1",
                 "theme": "ts-theme/1",
             },
@@ -95,7 +95,7 @@ def test_provider_json_lines_does_not_reuse_a_previous_request_id(tmp_path: Path
     state_dir = tmp_path / "state"
     provider = ROOT / "scripts" / "ts_web_provider.py"
     first = {
-        "schema_version": "research-web-request/1",
+        "schema_version": "research-map-provider/1",
         "request_id": "first",
         "operation": "catalog",
         "workspace_id": None,
@@ -118,3 +118,4 @@ def test_provider_json_lines_does_not_reuse_a_previous_request_id(tmp_path: Path
     assert [response["request_id"] for response in responses] == ["first", "unknown"]
     assert responses[0]["ok"] is True
     assert responses[1]["ok"] is False
+    assert responses[1]["error"]["schema_version"] == "research-map-error/1"

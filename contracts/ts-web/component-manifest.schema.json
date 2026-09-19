@@ -22,7 +22,7 @@
       "additionalProperties": false,
       "required": ["provider", "map", "theme"],
       "properties": {
-        "provider": { "const": "ts-research-provider/1" },
+        "provider": { "const": "research-map-provider/1" },
         "map": { "const": "research-map/1" },
         "theme": { "const": "ts-theme/1" }
       }

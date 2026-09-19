@@ -46,7 +46,7 @@ class ProviderClient:
         query: dict[str, str] | None = None,
     ) -> Any:
         request = {
-            "schema_version": "research-web-request/1",
+            "schema_version": "research-map-provider/1",
             "request_id": uuid.uuid4().hex,
             "operation": operation,
             "workspace_id": workspace_id,
@@ -79,7 +79,7 @@ class ProviderClient:
             response = json.loads(lines[0])
         except json.JSONDecodeError as error:
             raise ProviderClientError("ResearchMap provider returned invalid JSON", retryable=True) from error
-        if not isinstance(response, dict) or response.get("schema_version") != "ts-research-provider/1":
+        if not isinstance(response, dict) or response.get("schema_version") != "research-map-provider/1":
             raise ProviderClientError("ResearchMap provider protocol version is incompatible")
         if response.get("request_id") != request["request_id"]:
             raise ProviderClientError("ResearchMap provider response identity is invalid")
