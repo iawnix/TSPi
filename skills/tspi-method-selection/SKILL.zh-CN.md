@@ -20,8 +20,8 @@ description: 为有边界的研究问题选择科学方法、已注册 Backend c
 
 ## 参考资料
 
-- [method_selection.md](references/method_selection.md)：科学判据。
-- [backend_contract.md](references/backend_contract.md)：Backend 与 capability 边界。
-- [compute_environments.md](references/compute_environments.md)：命名的本地/远端环境及远端
+- [method_selection.zh-CN.md](references/method_selection.zh-CN.md)：科学判据。
+- [backend_contract.zh-CN.md](references/backend_contract.zh-CN.md)：Backend 与 capability 边界。
+- [compute_environments.zh-CN.md](references/compute_environments.zh-CN.md)：命名的本地/远端环境及远端
   Platform 细节。
-- [runtime_environment.md](references/runtime_environment.md)：安装级科学运行时诊断。
+- [runtime_environment.zh-CN.md](references/runtime_environment.zh-CN.md)：安装级科学运行时诊断。

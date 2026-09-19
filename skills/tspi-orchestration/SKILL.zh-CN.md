@@ -29,10 +29,13 @@ Review 只提供有边界的反方审查，不拥有规范状态。本地与远�
 
 ## 参考资料
 
-- 分支、恢复和停止决策见 [agent_decision_protocol.md](references/agent_decision_protocol.md)。
-- 公共执行和 Artifact 调用见 [compute_tools.md](references/compute_tools.md) 与
-  [artifact_tools.md](references/artifact_tools.md)。
+- 分支、恢复和停止决策见
+  [agent_decision_protocol.zh-CN.md](references/agent_decision_protocol.zh-CN.md)。
+- 公共执行和 Artifact 调用见 [compute_tools.zh-CN.md](references/compute_tools.zh-CN.md) 与
+  [artifact_tools.zh-CN.md](references/artifact_tools.zh-CN.md)。
 - Attempt 失败或效果未知时见
-  [program_runtime_failures.md](references/program_runtime_failures.md)。
-- Root 工具和 slash command 见 [pi_agent_adapter.md](references/pi_agent_adapter.md)。
-- 仅在检查已安装包源码时读取 [package_sources.md](references/package_sources.md)。
+  [program_runtime_failures.zh-CN.md](references/program_runtime_failures.zh-CN.md)。
+- Root 工具和 slash command 见
+  [pi_agent_adapter.zh-CN.md](references/pi_agent_adapter.zh-CN.md)。
+- 仅在检查已安装包源码时读取
+  [package_sources.zh-CN.md](references/package_sources.zh-CN.md)。

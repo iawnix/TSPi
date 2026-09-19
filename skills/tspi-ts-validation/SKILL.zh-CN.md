@@ -18,6 +18,7 @@ description: 根据鞍点、目标振动模式、结构、电子态与立体化�
 明确验收条件需要留下评估时才使用 Gate。
 
 鞍点与振动模式证据见
-[transition_state_validation.md](references/transition_state_validation.md)，路径计算后的
-盆地身份判据见 [connectivity_validation.md](references/connectivity_validation.md)，映射、
-对齐与立体化学比较见 [structure_validation.md](references/structure_validation.md)。
+[transition_state_validation.zh-CN.md](references/transition_state_validation.zh-CN.md)，路径
+计算后的盆地身份判据见
+[connectivity_validation.zh-CN.md](references/connectivity_validation.zh-CN.md)，映射、对齐
+与立体化学比较见 [structure_validation.zh-CN.md](references/structure_validation.zh-CN.md)。

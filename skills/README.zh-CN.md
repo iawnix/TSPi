@@ -28,5 +28,6 @@ TSPi 提供 15 个职责明确的 Skill。Research Kernel Skill 管理规范 Res
 建立鞍点证据，IRC 归属端点，能量学比较校正后的物理量。Root 通过 Kernel 把核验后的
 输出记录到同一个 ResearchMap。
 
-每个 Skill 都有内容对应的英文和中文入口，详细流程由相应 Skill 链接。常用术语见
+每个 Skill 都有内容对应的英文和中文入口，每份详细参考文档也同时维护英文与简体中文
+版本；两种语言的入口只链接同语言参考文档。常用术语见
 [术语表](tspi-research-kernel/references/glossary.zh-CN.md)。

@@ -35,5 +35,4 @@ NodeGate must have a latest `pass` evaluation before a Node closes with the
 - [decision_contract.md](references/decision_contract.md): ChangeSet operations.
 - [workspace_contract.md](references/workspace_contract.md): persistence and
   workspace ownership.
-- [glossary.md](references/glossary.md) and
-  [glossary.zh-CN.md](references/glossary.zh-CN.md): public terminology.
+- [glossary.md](references/glossary.md): public terminology.

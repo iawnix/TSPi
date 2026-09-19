@@ -18,4 +18,4 @@ job section，并分别评估终止状态、SCF、优化收敛、频率证据、
 
 核对原始文件后再记录解析结果。正常终止不等于任务验证，两者也都不等于科学结论。明确
 记录 SCF 不稳定、自旋污染、态歧义、缺失校正与方法敏感性。详见
-[gaussian_validation.md](references/gaussian_validation.md)。
+[gaussian_validation.zh-CN.md](references/gaussian_validation.zh-CN.md)。

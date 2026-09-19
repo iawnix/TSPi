@@ -15,4 +15,5 @@ Gaussian Skill 负责检查 Gaussian 文件，本 Skill 负责路径的化学含
 的目标 Artifact，通过原子映射、关键内坐标、立体化学和确定性结构比较核验每个端点。
 
 按方向分别记录路径和端点事实。缺失或矛盾的端点证据属于 IssueFinding，但不会隐式
-改变 Node 或 Claim 状态。详见 [irc_validation.md](references/irc_validation.md)。
+改变 Node 或 Claim 状态。详见
+[irc_validation.zh-CN.md](references/irc_validation.zh-CN.md)。

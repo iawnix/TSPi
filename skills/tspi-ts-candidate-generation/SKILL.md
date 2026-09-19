@@ -26,5 +26,4 @@ they inform the research question.
 
 Read [candidate_generation.md](references/candidate_generation.md) for method
 criteria. For the registered ASE/xTB NEB executor, read
-[ase_neb_executor.md](references/ase_neb_executor.md) or
-[ase_neb_executor.zh-CN.md](references/ase_neb_executor.zh-CN.md).
+[ase_neb_executor.md](references/ase_neb_executor.md).

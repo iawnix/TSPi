@@ -17,4 +17,5 @@ Finding 和来源 Artifact。只有存在 Phase 时才按 Phase 分组；没有 
 有效。
 
 导出前用 `ts_state` 读取最新 map，必要时通过 `ts_change` 记录 Node 或 Claim 状态。每次
-导出创建新的报告包，并检查文件、manifest、源 revision 和 Artifact 引用。详见[报告模板](references/report_template.md)。
+导出创建新的报告包，并检查文件、manifest、源 revision 和 Artifact 引用。详见
+[报告合同](references/report_template.zh-CN.md)。

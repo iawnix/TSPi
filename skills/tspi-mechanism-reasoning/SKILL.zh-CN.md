@@ -20,8 +20,11 @@ Node，不要改写既有研究记录。
 
 ## 参考资料
 
-- 物种、映射与输入准备见 [reaction_mapping.md](references/reaction_mapping.md) 和
-  [molecular_preparation.md](references/molecular_preparation.md)。
-- 路径 Claim 与化学连通性见 [pathway_model.md](references/pathway_model.md)。
-- 可区分假设与 falsifier 见 [mechanism_reflection.md](references/mechanism_reflection.md)。
-- 重复或意外结果后的重新框定见 [strategy_reflection.md](references/strategy_reflection.md)。
+- 物种、映射与输入准备见
+  [reaction_mapping.zh-CN.md](references/reaction_mapping.zh-CN.md) 和
+  [molecular_preparation.zh-CN.md](references/molecular_preparation.zh-CN.md)。
+- 路径 Claim 与化学连通性见 [pathway_model.zh-CN.md](references/pathway_model.zh-CN.md)。
+- 可区分假设与 falsifier 见
+  [mechanism_reflection.zh-CN.md](references/mechanism_reflection.zh-CN.md)。
+- 重复或意外结果后的重新框定见
+  [strategy_reflection.zh-CN.md](references/strategy_reflection.zh-CN.md)。

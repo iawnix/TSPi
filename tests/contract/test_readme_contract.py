@@ -189,7 +189,6 @@ def test_skill_routes_details_through_focused_references() -> None:
         "references/workspace_contract.md",
         "references/decision_contract.md",
         "references/glossary.md",
-        "references/glossary.zh-CN.md",
     ]:
         assert ref in text
     orchestration = (ORCHESTRATION_ROOT / "SKILL.md").read_text(encoding="utf-8")
@@ -206,12 +205,30 @@ def test_skill_routes_details_through_focused_references() -> None:
 
 def test_skill_progressive_disclosure_routes_every_reference() -> None:
     for root in [SKILL_ROOT, *FOCUSED_SKILLS.values()]:
-        skill = (root / "SKILL.md").read_text(encoding="utf-8")
-        for path in sorted((root / "references").glob("*.md")):
-            assert f"references/{path.name}" in skill, path
+        english_skill = (root / "SKILL.md").read_text(encoding="utf-8")
+        chinese_skill = (root / "SKILL.zh-CN.md").read_text(encoding="utf-8")
+        references = sorted((root / "references").glob("*.md"))
+        english_references = [path for path in references if not path.name.endswith(".zh-CN.md")]
+        chinese_references = [path for path in references if path.name.endswith(".zh-CN.md")]
+
+        expected_chinese_names = {
+            f"{path.stem}.zh-CN.md" for path in english_references
+        }
+        assert {path.name for path in chinese_references} == expected_chinese_names, root
+
+        for path in english_references:
+            translated = path.with_name(f"{path.stem}.zh-CN.md")
+            assert translated.is_file(), path
+            assert f"references/{path.name}" in english_skill, path
+            assert f"references/{translated.name}" in chinese_skill, translated
+            assert f"references/{translated.name}" not in english_skill, translated
+            assert f"references/{path.name}" not in chinese_skill, path
+
+        for path in references:
             lines = path.read_text(encoding="utf-8").splitlines()
             if len(lines) > 100:
-                assert "## Contents" in lines, path
+                contents_heading = "## 内容" if path.name.endswith(".zh-CN.md") else "## Contents"
+                assert contents_heading in lines, path
 
 
 def test_focused_skills_have_bilingual_entrypoints_and_route_their_references() -> None:
@@ -220,12 +237,18 @@ def test_focused_skills_have_bilingual_entrypoints_and_route_their_references() 
         chinese = root / "SKILL.zh-CN.md"
         assert english.is_file()
         assert chinese.is_file()
-        assert f"name: {name}" in english.read_text(encoding="utf-8")
-        assert f"name: {name}" in chinese.read_text(encoding="utf-8")
-        for entrypoint in (english, chinese):
-            skill_text = entrypoint.read_text(encoding="utf-8")
-            for reference in root.glob("references/*.md"):
-                assert f"references/{reference.name}" in skill_text, (entrypoint, reference)
+        english_skill = english.read_text(encoding="utf-8")
+        chinese_skill = chinese.read_text(encoding="utf-8")
+        assert f"name: {name}" in english_skill
+        assert f"name: {name}" in chinese_skill
+        for reference in root.glob("references/*.md"):
+            target = f"references/{reference.name}"
+            if reference.name.endswith(".zh-CN.md"):
+                assert target in chinese_skill, (chinese, reference)
+                assert target not in english_skill, (english, reference)
+            else:
+                assert target in english_skill, (english, reference)
+                assert target not in chinese_skill, (chinese, reference)
 
 
 def test_compute_reference_uses_the_registered_gaussian_input_role() -> None:

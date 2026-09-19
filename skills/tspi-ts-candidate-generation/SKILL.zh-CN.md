@@ -17,6 +17,6 @@ description: 通过化学构造、扫描、QST、NEB 或构象与取向采样生
 不要把扫描极大值、NEB 图像、插值结构或受限结构当作已验证鞍点。候选结构本身可记录
 为事实；失败或畸变的搜索只有在影响研究问题时才记录为 IssueFinding。
 
-方法判据见 [candidate_generation.md](references/candidate_generation.md)。使用已注册的
-ASE/xTB NEB 执行器时，读取 [ase_neb_executor.md](references/ase_neb_executor.md) 或
+方法判据见 [candidate_generation.zh-CN.md](references/candidate_generation.zh-CN.md)。
+使用已注册的 ASE/xTB NEB 执行器时，读取
 [ase_neb_executor.zh-CN.md](references/ase_neb_executor.zh-CN.md)。

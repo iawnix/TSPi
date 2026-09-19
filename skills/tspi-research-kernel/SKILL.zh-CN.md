@@ -26,8 +26,7 @@ Kernel 会在提交一个新 revision 前校验引用、反向索引、图的无
 
 ## 参考资料
 
-- [state_model.md](references/state_model.md)：对象、状态与不变量。
-- [decision_contract.md](references/decision_contract.md)：ChangeSet 操作。
-- [workspace_contract.md](references/workspace_contract.md)：持久化与 workspace 所有权。
-- [glossary.md](references/glossary.md) 与
-  [glossary.zh-CN.md](references/glossary.zh-CN.md)：公共术语。
+- [state_model.zh-CN.md](references/state_model.zh-CN.md)：对象、状态与不变量。
+- [decision_contract.zh-CN.md](references/decision_contract.zh-CN.md)：ChangeSet 操作。
+- [workspace_contract.zh-CN.md](references/workspace_contract.zh-CN.md)：持久化与 workspace 所有权。
+- [glossary.zh-CN.md](references/glossary.zh-CN.md)：公共术语。

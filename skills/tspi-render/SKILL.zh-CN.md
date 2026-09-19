@@ -20,4 +20,5 @@ description: 将分子结构、轨迹、反应机理和科学曲线渲染为 TSP
 
 通过 `ts_state mode=artifacts` 找到输入，选择所属 Node 和安全的输出名，运行
 `ts_render` 并检查返回 Artifact 与摘要。核对标签、单位、参考点和源数据；只有核验过的
-科学数值才记录为 `FactFinding`。详见[渲染合同](references/render_contract.md)。
+科学数值才记录为 `FactFinding`。详见
+[渲染合同](references/render_contract.zh-CN.md)。

@@ -31,6 +31,7 @@ saddle evidence, IRC assigns endpoints, and energetics compares corrected
 quantities. Root records their verified outputs in the same ResearchMap through
 the Kernel.
 
-Each Skill has matching English and Chinese entrypoints. Detailed procedures
-are linked from the relevant Skill. Shared terminology is in the
+Each Skill has matching English and Chinese entrypoints. Every detailed
+reference also has an English and Simplified Chinese version; each entrypoint
+links only to references in the same language. Shared terminology is in the
 [glossary](tspi-research-kernel/references/glossary.md).

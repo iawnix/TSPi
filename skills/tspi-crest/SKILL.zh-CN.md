@@ -15,4 +15,5 @@ CREST 搜索之外的 xTB 计算由 `tspi-xtb` 负责。
 的每个成员保持原子数、顺序与身份。
 
 将集合大小、相对能量表、所选几何和选择理由记录为不同事实。调度器成功但缺失主要输出
-属于运行故障，不是空构象集合。详见 [crest_ensemble.md](references/crest_ensemble.md)。
+属于运行故障，不是空构象集合。详见
+[crest_ensemble.zh-CN.md](references/crest_ensemble.zh-CN.md)。

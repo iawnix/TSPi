@@ -24,4 +24,4 @@ description: 按配置发送 TSPi 研究事件和报告的邮件通知，并跟�
 - 本 Skill 只负责发送通知，不使用 POP3 或 IMAP。
 
 请求格式、附件规则、回执身份和失败语义见
-[email_delivery.md](references/email_delivery.md)。
+[email_delivery.zh-CN.md](references/email_delivery.zh-CN.md)。

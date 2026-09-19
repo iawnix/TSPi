@@ -16,4 +16,4 @@ description: 评估电子能、ZPE 与热校正、自由能和反应能、势垒
 数值与局限应分别记录为引用来源 Artifact 的 Finding。
 
 支持的热化学、势垒、速率、分支、网络与剖面合同见
-[energetics.md](references/energetics.md)。
+[energetics.zh-CN.md](references/energetics.zh-CN.md)。
