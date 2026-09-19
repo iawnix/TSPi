@@ -19,7 +19,6 @@ ADR = ROOT / "docs" / "adr" / "0001-phase-node-research-kernel.md"
 SKILL_ROOT = ROOT / "skills" / "tspi-orchestration"
 SKILL = SKILL_ROOT / "SKILL.md"
 REFERENCES = SKILL_ROOT / "references"
-TEMPLATES = SKILL_ROOT / "assets" / "templates"
 FOCUSED_SKILLS = {
     "tspi-transition-state-search": ROOT / "skills" / "tspi-transition-state-search",
     "tspi-xtb": ROOT / "skills" / "tspi-xtb",
@@ -248,27 +247,5 @@ def test_final_report_builder_projects_phase_node_and_scientific_objects() -> No
         assert removed not in text
 
 
-def test_research_map_assets_are_current_operation_examples() -> None:
-    map_dir = TEMPLATES / "research_map"
-    files = {path.name for path in map_dir.iterdir() if path.is_file()}
-
-    assert files == {
-        "README.md",
-        "create_claim.json",
-        "create_finding.json",
-        "create_gate.json",
-        "create_node.json",
-        "create_phase.json",
-        "evaluate_gate.json",
-        "relate_claims.json",
-        "set_claim_status.json",
-        "set_focus.json",
-        "set_node_state.json",
-    }
-    for path in map_dir.glob("*.json"):
-        value = json.loads(path.read_text(encoding="utf-8"))
-        assert isinstance(value.get("type"), str)
-        assert "op" not in value
-        assert "local_ref" not in value
-        assert "decision_id" not in value
-        assert "context_ref" not in value
+def test_static_research_map_templates_are_removed() -> None:
+    assert not (SKILL_ROOT / "assets" / "templates" / "research_map").exists()

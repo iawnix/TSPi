@@ -75,8 +75,9 @@ criteria and evaluation history; they do not silently update their target.
 - keep only `research_map.json`, `transactions.jsonl`, and Node-owned execution
   directories as research workspace state;
 - add new map behavior as a model and ChangeSet operation, with focused tests;
-- update the operation template under `skills/tspi-orchestration/assets/templates/research_map/`;
-- update the shared command catalog and both slash-command/client callers;
+- update the Kernel operation catalog and focused tests for every new map behavior;
+- update `extensions/core/commands.mjs` or `extensions/core/tools.mjs`; slash
+  commands and host adapters consume those definitions directly;
 - keep local and remote compute behavior behind the one `compute.toml` profile
   catalog;
 - remove obsolete registry, proof, acceptance, and projection templates rather

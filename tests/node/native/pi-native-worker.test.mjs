@@ -390,10 +390,10 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     const toolContext = { cwd: workspace };
     const context = { abortSignal: new AbortController().signal };
     const state = await stateTool.execute("state-1", { mode: "summary" }, () => {}, toolContext, undefined, context);
-    const projection = JSON.parse(state.content[0].text);
-    assert.equal(projection.schema_version, "research-summary/1");
-    assert.ok(projection.map_id);
-    assert.deepEqual(projection.progress.claim_count, 0);
+    const summary = JSON.parse(state.content[0].text);
+    assert.equal(summary.schema_version, "research-summary/1");
+    assert.ok(summary.map_id);
+    assert.deepEqual(summary.progress.claim_count, 0);
     const contract = await stateTool.execute(
       "contract-1",
       { mode: "operations" },
@@ -499,12 +499,12 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     process.env.TSPI_NATIVE_WRITES = "1";
     const changed = await changeTool.execute("change-enabled", request, () => {}, toolContext, undefined, context);
     const result = JSON.parse(changed.content[0].text);
-    assert.equal(result.mutation_applied, true);
+    assert.equal(result.schema_version, "research-change-result/1");
     assert.equal(result.operation_count, 1);
     assert.deepEqual(result.created_ids, ["phase_1"]);
     const after = await stateTool.execute("state-2", { mode: "summary" }, () => {}, toolContext, undefined, context);
-    const afterProjection = JSON.parse(after.content[0].text);
-    assert.equal(afterProjection.revision, result.revision);
+    const afterSummary = JSON.parse(after.content[0].text);
+    assert.equal(afterSummary.revision, result.revision);
 
     const nodeChange = await changeTool.execute("create-node", {
       rationale: "Create one open ResearchNode for native deterministic artifact tests.",

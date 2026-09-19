@@ -48,7 +48,7 @@ import ui from {json.dumps((ROOT / 'extensions/ts-workflow-ui/index.ts').as_uri(
 import review from {json.dumps((ROOT / 'extensions/ts-workflow-review/index.ts').as_uri())};
 import compute from {json.dumps((ROOT / 'extensions/ts-workflow-compute/index.ts').as_uri())};
 import artifacts from {json.dumps((ROOT / 'extensions/ts-workflow-artifacts/index.ts').as_uri())};
-import {{ TS_PUBLIC_TOOL_EXECUTION }} from {json.dumps((ROOT / 'extensions/shared/tool-catalog.ts').as_uri())};
+import {{ PUBLIC_TOOL_EXECUTION }} from {json.dumps((ROOT / 'extensions/core/tools.mjs').as_uri())};
 const tools=[];const commands=[];const handlers={{}};
 const pi={{
   registerTool:(tool)=>tools.push(tool),registerCommand:(name)=>commands.push(name),
@@ -59,7 +59,7 @@ const pi={{
 for (const install of [control,ui,review,compute,artifacts]) install(pi);
 process.stdout.write(JSON.stringify({{
   tools:tools.map((tool)=>({{name:tool.name,properties:Object.keys(tool.parameters?.properties||{{}})}})),
-  commands,execution:TS_PUBLIC_TOOL_EXECUTION,
+  commands,execution:PUBLIC_TOOL_EXECUTION,
 }}));
 """
     result = _node_json(script)
@@ -78,6 +78,68 @@ process.stdout.write(JSON.stringify({{
     assert "query" in context["properties"]
     assert "mode" in context["properties"]
     assert not any(name.startswith("ts_workspace_") or name.startswith("ts_subagent_") for name in EXPECTED_TOOLS)
+
+
+def test_pi_and_native_public_tools_share_names_and_parameter_schemas() -> None:
+    script = f"""
+import control from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+import review from {json.dumps((ROOT / 'extensions/ts-workflow-review/index.ts').as_uri())};
+import compute from {json.dumps((ROOT / 'extensions/ts-workflow-compute/index.ts').as_uri())};
+import artifacts from {json.dumps((ROOT / 'extensions/ts-workflow-artifacts/index.ts').as_uri())};
+import {{ createTspiTools }} from {json.dumps((ROOT / 'apps/app-server/pi-native-tools.mjs').as_uri())};
+import {{ createSystemPromptTool }} from {json.dumps((ROOT / 'apps/app-server/system-prompt.mjs').as_uri())};
+const extensionTools=[];
+const pi={{
+  registerTool:(tool)=>extensionTools.push(tool),registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},
+  on:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{on:()=>()=>{{}}}},
+}};
+for (const install of [control,review,compute,artifacts]) install(pi);
+const nativeTools=[createSystemPromptTool({{}}),...createTspiTools()];
+const schemas=(tools)=>Object.fromEntries(tools.map((tool)=>[tool.name,JSON.parse(JSON.stringify(tool.parameters))]));
+process.stdout.write(JSON.stringify({{extension:schemas(extensionTools),native:schemas(nativeTools)}}));
+"""
+    result = _node_json(script)
+
+    assert set(result["extension"]) == EXPECTED_TOOLS
+    assert set(result["native"]) == EXPECTED_TOOLS
+    assert result["extension"] == result["native"]
+
+
+def test_slash_commands_map_to_canonical_commands_and_reject_removed_aliases() -> None:
+    script = f"""
+import {{ parseSlashCommand }} from {json.dumps((ROOT / 'extensions/core/commands.mjs').as_uri())};
+import {{ createPublicToolContracts }} from {json.dumps((ROOT / 'extensions/core/tools.mjs').as_uri())};
+import {{ Type }} from "typebox";
+const cases=[
+  ["research",""],
+  ["research","detail node node_1"],
+  ["research","locate activation barrier"],
+  ["compute",""],
+  ["compute","show local"],
+  ["runs",""],
+].map(([name,input])=>parseSlashCommand(name,input));
+let removedAlias;
+try {{ parseSlashCommand("research","find activation barrier"); }}
+catch (error) {{ removedAlias={{name:error.name,message:error.message}}; }}
+function constants(schema) {{
+  if (Object.hasOwn(schema||{{}},"const")) return [schema.const];
+  return [...(schema?.anyOf||[]),...(schema?.oneOf||[])].flatMap(constants);
+}}
+const stateModes=constants(createPublicToolContracts(Type).state.parameters.properties.mode);
+process.stdout.write(JSON.stringify({{cases,removedAlias,stateModes}}));
+"""
+    result = _node_json(script)
+
+    assert result["cases"] == [
+        {"command": "research.summary", "params": {}},
+        {"command": "research.detail", "params": {"kind": "node", "id": "node_1"}},
+        {"command": "research.locate", "params": {"query": "activation barrier"}},
+        {"command": "compute.environments", "params": {}},
+        {"command": "compute.environment", "params": {"name": "local"}},
+        {"command": "compute.runs", "params": {}},
+    ]
+    assert result["removedAlias"]["name"] == "CommandUsageError"
+    assert all(alias not in result["stateModes"] for alias in ("claim", "node", "finding", "gate"))
 
 
 def test_model_icons_identify_known_providers_and_fall_back_for_unknown_models() -> None:
@@ -425,7 +487,7 @@ process.stdout.write(JSON.stringify({{error,calls}}));
 
 
 def test_review_fallback_failure_uses_review_runtime_taxonomy() -> None:
-    source = (ROOT / "extensions" / "ts-workflow-review" / "index.ts").read_text(encoding="utf-8")
+    source = (ROOT / "extensions" / "ts-workflow-review" / "tools.ts").read_text(encoding="utf-8")
 
     assert 'failure_class: "review_runtime_failed"' in source
     assert 'failure_stage: "review_runtime"' in source

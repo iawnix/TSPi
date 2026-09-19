@@ -64,7 +64,8 @@ Gate 保存 criteria 和评估历史，不会静默修改目标对象。
 
 - 研究状态只保留 `research_map.json`、`transactions.jsonl` 和 Node 的执行目录；
 - 新的 map 行为应加入模型和 ChangeSet 操作，并配套聚焦测试；
-- 更新 `skills/tspi-orchestration/assets/templates/research_map/` 下的操作示例；
-- 同步 shared command catalog 和 slash-command/client 调用方；
+- 每个新的 map 行为都要更新 Kernel 操作目录和聚焦测试；
+- 更新 `extensions/core/commands.mjs` 或 `extensions/core/tools.mjs`，slash command
+  和 host adapter 直接消费这些定义；
 - local/remote 计算统一放在一份 `compute.toml` profile 目录后面；
 - 删除过时 registry、proof、acceptance 和 projection 模板，不添加别名。

@@ -12,6 +12,8 @@ STORE = ROOT / "extensions" / "ts-workflow-ui" / "activity-store.ts"
 DETAILS = ROOT / "extensions" / "ts-workflow-ui" / "agent-details.ts"
 HISTORY = ROOT / "extensions" / "ts-workflow-ui" / "subagent-history.ts"
 UI = ROOT / "extensions" / "ts-workflow-ui" / "index.ts"
+UI_EXTENSION = ROOT / "extensions" / "ts-workflow-ui" / "extension.ts"
+COMMANDS = ROOT / "extensions" / "core" / "commands.mjs"
 
 
 def test_subagent_status_reporter_is_monotonic_and_supports_both_roles() -> None:
@@ -161,11 +163,12 @@ process.stdout.write(formatTsSubagentHistoryMarkdown([record]));
 
 
 def test_ui_tracks_current_tools_and_history_covers_compute_and_review() -> None:
-    source = UI.read_text(encoding="utf-8")
+    source = UI_EXTENSION.read_text(encoding="utf-8")
+    commands = COMMANDS.read_text(encoding="utf-8")
     assert "setWidget" not in source
     assert 'pi.registerCommand("runs"' in source
     assert "TS Subagent History" in source
-    assert "Browse active and recorded Compute and Review runs." in source
+    assert "Browse active and recorded Compute and Review runs." in commands
     assert "ts-workspace-compute-operator-run" not in source
     assert "ts-workspace-artifact-operator-run" not in source
     assert "ts_subagent_render" not in source

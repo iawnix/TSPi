@@ -1,7 +1,0 @@
-{
-  "type": "create_gate",
-  "id": "gate_new",
-  "scope": "node",
-  "target_id": "node_existing",
-  "criteria": [{"kind": "${CRITERION_KIND}"}]
-}

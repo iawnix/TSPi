@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .base import Backend, BackendTask, PreparedTask, configured_backend_command
+from .base import Backend, BackendTask, PreparedTask
 from .xtb_scan import parse_xtb_scan_artifact
 from .xyz import xyz_frame_metadata
 
@@ -54,7 +54,7 @@ def prepare_xtb(task: BackendTask) -> PreparedTask:
         raise ValueError(f"unsupported xTB {task.task_type} settings: {unknown}")
 
     xyz = task.inputs["xyz"]
-    command = [configured_backend_command("xtb", "xtb"), xyz]
+    command = ["xtb", xyz]
     if task.task_type == "sp":
         command.append("--sp")
     elif task.task_type == "opt":

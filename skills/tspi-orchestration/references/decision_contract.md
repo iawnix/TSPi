@@ -6,9 +6,6 @@ one object containing `rationale`, optional `basisRefs`, optional
 `ts_state mode=operations` for the current catalog before using an unfamiliar
 operation.
 
-Canonical snippets are in
-`assets/templates/research_map/`; they are examples, not a required sequence.
-
 ## Operations
 
 Each operation uses `type` and an explicit project-local `id` for objects it

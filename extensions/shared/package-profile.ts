@@ -1,4 +1,4 @@
-import { TS_COMMAND_NAMES } from "./command-catalog.ts";
+import { SLASH_COMMAND_NAMES } from "../core/commands.mjs";
 
 export const TS_PACKAGE_PROFILE = Object.freeze({
   displayName: "TSPi",
@@ -24,5 +24,5 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
     Object.freeze({ name: "artifacts", path: "./extensions/ts-workflow-artifacts/index.ts" }),
   ]),
   theme: Object.freeze({ name: "ts-theme", path: "./themes/ts-theme.json" }),
-  commands: TS_COMMAND_NAMES,
+  commands: SLASH_COMMAND_NAMES,
 });

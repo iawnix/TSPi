@@ -6,7 +6,7 @@ import argparse
 import json
 import re
 import sys
-from .base import Backend, BackendTask, PreparedTask, configured_backend_command
+from .base import Backend, BackendTask, PreparedTask
 from pathlib import Path
 from typing import List, Tuple
 
@@ -49,7 +49,7 @@ def prepare_gaussian(task: BackendTask) -> PreparedTask:
     return PreparedTask(
         backend="gaussian",
         node_id=task.node_id,
-        command=[configured_backend_command("gaussian", "g16"), gjf],
+        command=["g16", gjf],
         input_paths=[gjf],
         expected_artifacts=[output],
     )

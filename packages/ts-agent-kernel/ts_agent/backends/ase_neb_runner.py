@@ -178,7 +178,7 @@ def run_ase_neb(
     neb.interpolate(method=config.interpolation)
 
     if calculator_factory is None:
-        executable = configured_backend_command("ase_neb_xtb", "xtb")
+        executable = configured_backend_command("ase_neb_xtb")
 
         def calculator_factory(_index: int) -> Calculator:
             return XtbCliCalculator(

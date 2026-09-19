@@ -152,13 +152,7 @@ def _configure_remote(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ssh_config.write_text("Host test-login\n  HostName login.test\n", encoding="utf-8")
     config = tmp_path / "compute.toml"
     config.write_text(
-        f'''default_profile = "local"
-
-[profiles.local]
-kind = "local"
-
-[profiles.local.software.gaussian]
-command = "g16"
+        f'''default_profile = "test_cluster"
 
 [profiles.test_cluster]
 kind = "remote"

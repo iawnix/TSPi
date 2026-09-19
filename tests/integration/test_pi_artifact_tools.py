@@ -783,9 +783,9 @@ def test_json_adapter_preserves_plain_command_error_without_syntax_noise() -> No
 
 
 def test_notification_adapter_preserves_structured_failure_semantics() -> None:
-    workspace_cli = ROOT / "extensions" / "shared" / "workspace-cli.ts"
+    pi_runtime = ROOT / "extensions" / "adapters" / "pi-runtime.ts"
     script = f"""
-import {{ runNotifyUserJson }} from {json.dumps(workspace_cli.as_uri())};
+import {{ PiRuntime }} from {json.dumps(pi_runtime.as_uri())};
 process.env.TS_AGENT_PYTHON = process.execPath;
 const payload = {{
   schema_version: "ts-user-notification-error/1",
@@ -801,7 +801,7 @@ const payload = {{
 }};
 const pi = {{exec: async () => ({{stdout: JSON.stringify(payload)}})}};
 try {{
-  await runNotifyUserJson(pi, "/tmp/workspace", {{schema_version:"ts-user-notification/1"}});
+  await new PiRuntime(pi).notify("/tmp/workspace", {{schema_version:"ts-user-notification/1"}});
 }} catch (error) {{
   process.stdout.write(JSON.stringify({{
     name: error.name,

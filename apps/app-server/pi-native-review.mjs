@@ -11,6 +11,7 @@ import {
   withAbortSignal,
 } from "@earendil-works/pi-agent-core";
 import Type from "./pi-runtime-deps.mjs";
+import { createPublicToolContracts, PUBLIC_TOOL_NAMES } from "../../extensions/core/tools.mjs";
 import {
   createReviewArtifactReadCapture,
   createReviewArtifactReadTool,
@@ -47,32 +48,11 @@ const executeFile = promisify(execFile);
 
 const MAX_RESULT_ATTEMPTS = 2;
 const ROOT_DISPOSITIONS = ["accepted", "partially_accepted", "rejected", "deferred"];
-const TS_REVIEW_PARAMETERS = Type.Object({
-  targetClaimRef: Type.String({ pattern: "^claim_[1-9][0-9]*$", maxLength: 128 }),
-  question: Type.String({ minLength: 1, maxLength: 4000 }),
-  reviewerRole: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9_-]{0,63}$" })),
-  artifactIds: Type.Optional(Type.Array(
-    Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
-    { maxItems: 4, uniqueItems: true },
-  )),
-  timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 180 })),
-}, { additionalProperties: false });
-const TS_REPLY_PARAMETERS = Type.Object({
-  taskId: Type.String({ pattern: "^sub_[1-9][0-9]*$", maxLength: 128 }),
-  reviewRunRef: Type.String({ minLength: 1, maxLength: 512 }),
-  disposition: Type.Union(ROOT_DISPOSITIONS.map((value) => Type.Literal(value))),
-  response: Type.String({ minLength: 1, maxLength: 4000 }),
-  nextSteps: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 8 })),
-}, { additionalProperties: false });
+const TOOL_CONTRACTS = createPublicToolContracts(Type);
 
 export function createReviewTool(runtime) {
   return {
-    name: "ts_review",
-    label: "TS Review",
-    description: "Run one isolated, bounded advisory review of a target Claim.",
-    parameters: TS_REVIEW_PARAMETERS,
-    executionMode: "sequential",
-    replay: "never",
+    ...TOOL_CONTRACTS.review,
     async execute(toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_review");
       requireReviewRuntime(runtime);
@@ -82,7 +62,7 @@ export function createReviewTool(runtime) {
         reviewerRole: params.reviewerRole,
         artifactIds: params.artifactIds,
       });
-      const root = toolContext.cwd;
+      const root = params.root || toolContext.cwd;
       const taskId = await allocateOperationalId(root, context?.abortSignal);
       let journal;
       let runRef;
@@ -142,7 +122,7 @@ export function createReviewTool(runtime) {
           required: true,
           task_id: packet.task_id,
           review_run_ref: runRef,
-          tool: "ts_reply",
+          tool: PUBLIC_TOOL_NAMES.reply,
           allowed_dispositions: ROOT_DISPOSITIONS,
         };
         publishProgress(onUpdate, toolCallId, taskId, request, "completed", runRef);
@@ -183,15 +163,10 @@ export function createReviewTool(runtime) {
 
 export function createReplyTool() {
   return {
-    name: "ts_reply",
-    label: "TS Review Response",
-    description: "Record Root's write-once disposition for a completed advisory Review.",
-    parameters: TS_REPLY_PARAMETERS,
-    executionMode: "sequential",
-    replay: "never",
+    ...TOOL_CONTRACTS.reply,
     async execute(_toolCallId, params, _onUpdate, toolContext) {
       requireNativeWrites("ts_reply");
-      const disposition = writeReviewRootDisposition(toolContext.cwd, {
+      const disposition = writeReviewRootDisposition(params.root || toolContext.cwd, {
         task_id: params.taskId,
         review_run_ref: params.reviewRunRef,
         disposition: params.disposition,

@@ -49,7 +49,13 @@ export function createSystemPromptTool(
   manifestOrResolver:
     | SystemPromptManifest
     | ((ctx: { getSystemPrompt(): string } | undefined) => SystemPromptManifest | Promise<SystemPromptManifest>),
-  options?: { name?: string },
+  contract: {
+    name: "sys_prompt";
+    label: string;
+    description: string;
+    promptSnippet: string;
+    parameters: TSchema;
+  },
 ): {
   name: string;
   label: string;

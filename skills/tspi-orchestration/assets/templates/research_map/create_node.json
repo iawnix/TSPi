@@ -1,9 +1,0 @@
-{
-  "type": "create_node",
-  "id": "node_new",
-  "title": "${NODE_TITLE}",
-  "objective": "${NODE_OBJECTIVE}",
-  "phase_id": "phase_existing",
-  "claim_ids": ["claim_existing"],
-  "dependency_ids": []
-}

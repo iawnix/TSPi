@@ -1,7 +1,5 @@
 import { createHash } from "node:crypto";
-import Type from "../../apps/app-server/pi-runtime-deps.mjs";
 
-const SYS_PROMPT_PARAMETERS = Type.Object({}, { additionalProperties: false });
 const ORIGINS = new Set(["native", "skill", "extension", "unknown"]);
 const ATTRIBUTIONS = new Set(["exact", "structured", "observed", "unattributed"]);
 const RUNTIMES = new Set(["native-app-server", "pi-extension"]);
@@ -78,16 +76,15 @@ export function createSystemPromptManifest({
   });
 }
 
-export function createSystemPromptTool(manifestOrResolver, { name = "sys_prompt" } = {}) {
+export function createSystemPromptTool(manifestOrResolver, contract) {
+  if (!contract || contract.name !== "sys_prompt" || !contract.parameters) {
+    throw new TypeError("system prompt tool requires the canonical sys_prompt contract");
+  }
   const resolveManifest = typeof manifestOrResolver === "function"
     ? manifestOrResolver
     : () => manifestOrResolver;
   return {
-    name,
-    label: "System Prompt",
-    description: "Read the exact effective system prompt, attributable contributors, and explicit provenance gaps.",
-    promptSnippet: "Inspect the effective system prompt and its provenance",
-    parameters: SYS_PROMPT_PARAMETERS,
+    ...contract,
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       const manifest = await resolveManifest(ctx);
       assertManifest(manifest);

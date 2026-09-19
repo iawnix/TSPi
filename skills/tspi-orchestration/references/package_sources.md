@@ -8,9 +8,7 @@ Use sources in this order:
 2. `ts_state` for the live ResearchMap, artifacts, capabilities, and operation
    catalog;
 3. `SKILL.md` for the research workflow;
-4. one focused `references/*.md` file when its topic is active;
-5. reusable files under `assets/templates/research_map/` for canonical
-   ChangeSet snippets or custom reports.
+4. one focused `references/*.md` file when its topic is active.
 
 For a tool's accepted fields, query its live contract. The package-source reader
 routes implementation lookups to the relevant public reference during research.
@@ -24,5 +22,5 @@ scheduler history, reports, and conversations to locate the underlying evidence.
 ## Maintenance
 
 Maintainers work in the authored Git checkout, where schemas and runtime code
-define behavior. Update docs, templates, tests, and clients together with
-the owning contract, then build and install a new release.
+define behavior. Update docs, tests, and clients together with the owning
+contract, then build and install a new release.

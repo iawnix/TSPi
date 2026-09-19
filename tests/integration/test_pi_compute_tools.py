@@ -10,6 +10,7 @@ from ts_agent.compute.contracts import validate_compute_contract
 ROOT = Path(__file__).resolve().parents[2]
 TS_LOADER = ROOT / "tests" / "support" / "typescript_loader.mjs"
 COMPUTE = ROOT / "extensions" / "ts-workflow-compute" / "index.ts"
+COMPUTE_TOOLS = ROOT / "extensions" / "ts-workflow-compute" / "tools.ts"
 ACTION_LOG = ROOT / "extensions" / "ts-workflow-compute" / "action-log.cjs"
 
 
@@ -61,7 +62,7 @@ process.stdout.write(JSON.stringify({{
 
 
 def test_compute_extension_delegates_fixed_plan_with_one_run_journal_owner() -> None:
-    source = COMPUTE.read_text(encoding="utf-8")
+    source = COMPUTE_TOOLS.read_text(encoding="utf-8")
     assert "createAgentSession" not in source
     assert "runComputeOperator" in source
     assert "buildComputeTask" in source

@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
+import { commandArguments, createCommandService } from "../../extensions/core/commands.mjs";
+import { createPublicToolContracts } from "../../extensions/core/tools.mjs";
 import { createComputeTool } from "./pi-native-compute.mjs";
 import { createNotifyTool } from "./pi-native-notify.mjs";
 import { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
@@ -18,95 +20,20 @@ const require = createRequire(import.meta.url);
 const { beginActivity, completeActivity, failActivity } = require(
   "../../packages/ts-agent-runtime/agent-core/activity-journal.cjs",
 );
-const { analysisProperties, analysisRequest, analysisRequestSummary, validateAnalysisResult } = require(
+const { analysisRequest, analysisRequestSummary, validateAnalysisResult } = require(
   "../../packages/ts-agent-runtime/artifacts/analysis-contract.cjs",
 );
 const {
-  RENDER_OPERATIONS,
   validateCreatedRenderOutput,
   validateCreatedReportPackage,
   validateRenderRequest,
   validateReportRequest,
 } = require("../../packages/ts-agent-runtime/artifacts/request-contract.cjs");
 const executeFile = promisify(execFile);
-const { nodeControlProperties, nodeControlArguments } = require("../../packages/ts-agent-runtime/artifacts/node-control.cjs");
+const { nodeControlArguments } = require("../../packages/ts-agent-runtime/artifacts/node-control.cjs");
 
-const MAP_MODES = ["map", "summary", "detail", "claim", "node", "finding", "gate", "operations"];
-const CONTEXT_MODES = [...MAP_MODES, "locate", "artifacts", "capabilities", "runs"];
-const CAPABILITY_KINDS = ["compute", "analysis"];
-const IMPORT_FORMATS = ["gaussian_input", "xyz_structure", "xtb_control"];
-const STRUCTURE_OPTIMIZATIONS = ["none", "uff"];
-const TS_STATE_PARAMETERS = Type.Object({
-  mode: Type.Optional(Type.Union(CONTEXT_MODES.map((mode) => Type.Literal(mode)))),
-  query: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-  claimRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-  nodeRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-  findingRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-  kind: Type.Optional(Type.Union(["phase", "claim", "node", "finding", "gate"].map((kind) => Type.Literal(kind)))),
-  id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-  capabilityKind: Type.Optional(Type.Union(CAPABILITY_KINDS.map((kind) => Type.Literal(kind)))),
-}, { additionalProperties: false });
-const CHANGE_OPERATION = Type.Object({
-  type: Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9_]*$" }),
-}, { additionalProperties: true, maxProperties: 24 });
-const TS_CHANGE_PARAMETERS = Type.Object({
-  rationale: Type.String({ minLength: 1, maxLength: 12_000 }),
-  operations: Type.Array(CHANGE_OPERATION, { minItems: 1, maxItems: 128 }),
-  basisRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 256, uniqueItems: true })),
-  expectedRevision: Type.Optional(Type.Integer({ minimum: 0 })),
-}, { additionalProperties: false });
-const TS_SEED_PARAMETERS = Type.Object({
-  operation: Type.Literal("generate"),
-  nodeId: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
-  smiles: Type.String({ minLength: 1, maxLength: 4_096 }),
-  charge: Type.Integer({ minimum: -20, maximum: 20 }),
-  multiplicity: Type.Integer({ minimum: 1, maximum: 21 }),
-  optimization: Type.Union(STRUCTURE_OPTIMIZATIONS.map((value) => Type.Literal(value))),
-}, { additionalProperties: false });
-const STRUCTURE_COMPARISON_PARAMETERS = Type.Object({}, {
-  additionalProperties: true,
-  maxProperties: 8,
-});
-const TS_COMPARE_PARAMETERS = Type.Object({
-  operation: Type.Literal("compare"),
-  nodeId: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
-  referenceArtifactId: Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
-  targetArtifactId: Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
-  parameters: Type.Optional(STRUCTURE_COMPARISON_PARAMETERS),
-}, { additionalProperties: false });
-const TS_IMPORT_PARAMETERS = Type.Object({
-  operation: Type.Literal("import"),
-  nodeId: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
-  format: Type.Union(IMPORT_FORMATS.map((value) => Type.Literal(value))),
-  inputName: Type.String({
-    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
-    description: "Semantic input basename with the extension required by the selected format.",
-  }),
-  content: Type.String({ minLength: 1, maxLength: 131_072 }),
-  charge: Type.Optional(Type.Integer({ minimum: -20, maximum: 20 })),
-  multiplicity: Type.Optional(Type.Integer({ minimum: 1, maximum: 21 })),
-}, { additionalProperties: false });
-const TS_RENDER_PARAMETERS = Type.Object({
-  operation: Type.Union(RENDER_OPERATIONS.map((value) => Type.Literal(value))),
-  nodeId: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
-  inputArtifactIds: Type.Array(
-    Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
-    { minItems: 1, maxItems: 8, uniqueItems: true },
-  ),
-  outputName: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
-}, { additionalProperties: false });
-const TS_REPORT_PARAMETERS = Type.Object({
-  operation: Type.Literal("build"),
-  packageName: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
-  assetArtifactIds: Type.Optional(Type.Array(
-    Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
-    { maxItems: 8, uniqueItems: true },
-  )),
-}, { additionalProperties: false });
-const TS_ENVIRONMENT_PARAMETERS = Type.Object({
-  mode: Type.Optional(Type.Union(["list", "show"].map((value) => Type.Literal(value)))),
-  name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-}, { additionalProperties: false });
+const TOOL_CONTRACTS = createPublicToolContracts(Type);
+const NATIVE_COMMANDS = createCommandService({ execute: executeNativeCommand });
 
 class RenderExecutionError extends Error {
   constructor(failure) {
@@ -122,87 +49,53 @@ class RenderExecutionError extends Error {
 
 export function createStateTool() {
   return {
-    name: "ts_state",
-    label: "TS State",
-    description: "Read the canonical ResearchMap and related compute records.",
-    parameters: TS_STATE_PARAMETERS,
+    ...TOOL_CONTRACTS.state,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       const mode = params.mode || "map";
-      const root = toolContext.cwd;
-      let script;
-      let args;
+      const root = params.root || toolContext.cwd;
       if (mode === "artifacts") {
-        script = packageScript("ts_api.py");
-        args = ["compute.artifacts", "--root", root];
-        if (params.nodeRef) args.push("--node-id", params.nodeRef);
-      } else if (mode === "capabilities") {
+        return toolResult(await NATIVE_COMMANDS.execute("compute.artifacts", root, { nodeId: params.nodeRef }, context?.abortSignal));
+      }
+      if (mode === "capabilities") {
         if (!params.capabilityKind) throw new Error("state mode=capabilities requires capabilityKind=compute or analysis");
         if (params.capabilityKind === "compute") {
-          script = packageScript("ts_api.py");
-          args = ["compute.capabilities", "--root", root];
-        } else if (params.capabilityKind === "analysis") {
+          return toolResult(await NATIVE_COMMANDS.execute("compute.capabilities", root, {}, context?.abortSignal));
+        }
+        if (params.capabilityKind === "analysis") {
           const selector = params.query?.split("@");
           if (selector && (selector.length > 2 || !selector[0] || (selector.length === 2 && !selector[1]))) {
             throw new Error("analysis query must be <capability> or <capability>@<version>");
           }
-          script = packageScript("ts_compute.py");
-          args = selector
+          const args = selector
             ? ["resolve-analysis-capability", "--root", root, "--capability", selector[0], "--version", selector[1] || "1"]
             : ["analysis-capabilities", "--root", root];
-        } else {
-          throw new Error("ResearchMap has no separate proof or gate capability registry");
+          return toolResult(await runJsonCli(packageScript("ts_compute.py"), args, root, context?.abortSignal));
         }
-      } else {
-        script = packageScript("ts_api.py");
-        let command = mode === "map" || mode === "summary" || mode === "operations"
-          ? `research.${mode}`
-          : mode === "locate" ? "research.locate" : "research.detail";
-        args = [command, "--root", root];
-        if (mode === "locate") {
-          if (!params.query) throw new Error("state mode=locate requires query");
-          args.push("--query", params.query);
-        } else if (mode === "claim" || mode === "node" || mode === "finding" || mode === "gate" || mode === "detail") {
-          const kind = mode === "detail" ? params.kind : mode;
-          const id = mode === "detail" ? params.id : mode === "claim" ? params.claimRef : mode === "node" ? params.nodeRef : mode === "finding" ? params.findingRef : params.id;
-          if (!kind || !id) throw new Error(`state mode=${mode} requires kind and id`);
-          args.push("--kind", kind, "--id", id);
-        } else if (mode === "runs") {
-          command = "compute.runs";
-          args[0] = command;
-        }
+        throw new Error("state mode=capabilities requires capabilityKind=compute or analysis");
       }
-      let result = await runJsonCli(script, args, root, context?.abortSignal);
-      return {
-        content: [{ type: "text", text: JSON.stringify(result) }],
-        details: { mode },
-      };
+      if (mode === "runs") return toolResult(await NATIVE_COMMANDS.execute("compute.runs", root, {}, context?.abortSignal));
+      const command = `research.${mode}`;
+      const commandParams = mode === "detail"
+        ? { kind: params.kind, id: params.id }
+        : mode === "locate" ? { query: params.query } : {};
+      const result = await NATIVE_COMMANDS.execute(command, root, commandParams, context?.abortSignal);
+      return { ...toolResult(result), details: { mode, result } };
     },
   };
 }
 
 export function createChangeTool() {
   return {
-    name: "ts_change",
-    label: "TS Change",
-    description: "Compile, validate, and atomically apply one auditable TSPi research change.",
-    parameters: TS_CHANGE_PARAMETERS,
-    executionMode: "sequential",
+    ...TOOL_CONTRACTS.change,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_change");
-      const result = await runPrivateRequest(
-        "tspi-native-change-",
-        packageScript("ts_api.py"),
-        "research.change",
-        toolContext.cwd,
-        {
+      const result = await NATIVE_COMMANDS.execute("research.change", params.root || toolContext.cwd, { request: {
           schema_version: "ts-change-request/1",
           rationale: params.rationale,
           expected_revision: params.expectedRevision,
           basis_refs: params.basisRefs || [],
           operations: params.operations,
-        },
-        context?.abortSignal,
-      );
+        } }, context?.abortSignal);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }],
         details: { operationCount: params.operations.length },
@@ -213,18 +106,14 @@ export function createChangeTool() {
 
 export function createEnvironmentTool() {
   return {
-    name: "ts_environment",
-    label: "TS Environment",
-    description: "Inspect configured local and remote compute environments.",
-    parameters: TS_ENVIRONMENT_PARAMETERS,
-    executionMode: "sequential",
+    ...TOOL_CONTRACTS.environment,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       const mode = params.mode || "list";
       if (mode === "show" && !params.name) throw new Error("environment show requires name");
-      const result = await runCanonicalApi(
+      const result = await NATIVE_COMMANDS.execute(
         mode === "show" ? "compute.environment" : "compute.environments",
-        toolContext.cwd,
-        mode === "show" ? ["--name", params.name] : [],
+        params.root || toolContext.cwd,
+        mode === "show" ? { name: params.name } : {},
         context?.abortSignal,
       );
       return toolResult(result);
@@ -234,15 +123,11 @@ export function createEnvironmentTool() {
 
 export function createSeedTool() {
   return {
-    name: "ts_seed",
-    label: "TS Structure Seed",
-    description: "Generate a Node-owned RDKit XYZ seed.",
-    parameters: TS_SEED_PARAMETERS,
-    executionMode: "sequential",
+    ...TOOL_CONTRACTS.seed,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_seed");
       return runDeterministicArtifact({
-        root: toolContext.cwd,
+        root: params.root || toolContext.cwd,
         kind: "structure_seed",
         operation: "generate",
         nodeId: params.nodeId,
@@ -277,16 +162,12 @@ export function createSeedTool() {
 
 export function createCompareTool() {
   return {
-    name: "ts_compare",
-    label: "TS Structure Compare",
-    description: "Compare two registered XYZ artifacts.",
-    parameters: TS_COMPARE_PARAMETERS,
-    executionMode: "sequential",
+    ...TOOL_CONTRACTS.compare,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_compare");
       const comparisonParameters = serializeStructureComparisonParameters(params.parameters);
       return runDeterministicArtifact({
-        root: toolContext.cwd,
+        root: params.root || toolContext.cwd,
         kind: "structure_compare",
         operation: "compare",
         nodeId: params.nodeId,
@@ -316,15 +197,11 @@ export function createCompareTool() {
 
 export function createAnalyzeTool() {
   return {
-    name: "ts_analyze",
-    label: "TS Scientific Analysis",
-    description: "Run a registered local scientific analysis. Discover input roles and parameters with ts_state capabilityKind=analysis.",
-    parameters: Type.Object(analysisProperties(Type), { additionalProperties: false }),
-    executionMode: "sequential",
+    ...TOOL_CONTRACTS.analyze,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_analyze");
       return runDeterministicArtifact({
-        root: toolContext.cwd,
+        root: params.root || toolContext.cwd,
         kind: "scientific_analysis",
         operation: "run",
         nodeId: params.nodeId,
@@ -345,14 +222,11 @@ export function createAnalyzeTool() {
 
 export function createManageTool() {
   return {
-    name: "ts_manage",
-    label: "TS Node Dispatch",
-    description: "Pause or resume new calculation/analysis dispatch for an open Node. In-flight jobs remain independently inspectable and cancellable with ts_calc.",
-    parameters: Type.Object(nodeControlProperties(Type), { additionalProperties: false }),
-    executionMode: "sequential",
+    ...TOOL_CONTRACTS.manage,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_manage");
-      const result = await runJsonCli(packageScript("ts_compute.py"), ["node-dispatch", "--root", toolContext.cwd, ...nodeControlArguments(params)], toolContext.cwd, context?.abortSignal);
+      const root = params.root || toolContext.cwd;
+      const result = await runJsonCli(packageScript("ts_compute.py"), ["node-dispatch", "--root", root, ...nodeControlArguments(params)], root, context?.abortSignal);
       return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
     },
   };
@@ -360,15 +234,11 @@ export function createManageTool() {
 
 export function createImportTool() {
   return {
-    name: "ts_import",
-    label: "TS Artifact Import",
-    description: "Import one validated Node-owned calculation input under a semantic basename.",
-    parameters: TS_IMPORT_PARAMETERS,
-    executionMode: "sequential",
+    ...TOOL_CONTRACTS.importArtifact,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_import");
       return runDeterministicArtifact({
-        root: toolContext.cwd,
+        root: params.root || toolContext.cwd,
         kind: "artifact_import",
         operation: "import",
         nodeId: params.nodeId,
@@ -403,14 +273,10 @@ export function createImportTool() {
 
 export function createRenderTool() {
   return {
-    name: "ts_render",
-    label: "TS Render",
-    description: "Render registered molecular, reaction-path, or scientific-curve artifacts.",
-    parameters: TS_RENDER_PARAMETERS,
-    executionMode: "sequential",
+    ...TOOL_CONTRACTS.render,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_render");
-      const root = toolContext.cwd;
+      const root = params.root || toolContext.cwd;
       const resolved = await resolveArtifacts(root, params.inputArtifactIds, context?.abortSignal);
       const request = validateRenderRequest(root, {
         operation: params.operation,
@@ -479,14 +345,10 @@ export function createRenderTool() {
 
 export function createReportTool() {
   return {
-    name: "ts_report",
-    label: "TS Report",
-    description: "Build a revision-bound report package.",
-    parameters: TS_REPORT_PARAMETERS,
-    executionMode: "sequential",
+    ...TOOL_CONTRACTS.report,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_report");
-      const root = toolContext.cwd;
+      const root = params.root || toolContext.cwd;
       const assetArtifactIds = params.assetArtifactIds || [];
       const resolvedAssets = assetArtifactIds.length
         ? await resolveArtifacts(root, assetArtifactIds, context?.abortSignal)
@@ -725,6 +587,21 @@ async function runCanonicalApi(command, cwd, extraArgs, parentSignal, timeoutMs 
   }
   if (signal.aborted) throw new Error(`canonical command ${command} was cancelled`);
   return parseJsonObject(completed.stdout) || (() => { throw new Error(`canonical command ${command} returned invalid JSON`); })();
+}
+
+async function executeNativeCommand({ command, root, params, signal }) {
+  if (command === "research.change") {
+    return runPrivateRequest(
+      "tspi-native-change-",
+      packageScript("ts_api.py"),
+      command,
+      root,
+      params.request,
+      signal,
+      60_000,
+    );
+  }
+  return runCanonicalApi(command, root, commandArguments(command, params), signal);
 }
 
 async function resolveArtifacts(root, artifactIds, signal) {

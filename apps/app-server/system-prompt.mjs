@@ -1,11 +1,17 @@
 import { formatSkillsForSystemPrompt } from "@earendil-works/pi-agent-core";
+import Type from "./pi-runtime-deps.mjs";
+import { createPublicToolContracts } from "../../extensions/core/tools.mjs";
 import {
   createPromptContributor,
   createSystemPromptManifest as createManifest,
-  createSystemPromptTool,
+  createSystemPromptTool as createTool,
 } from "../../extensions/shared/system-prompt.mjs";
 
-export { createSystemPromptTool } from "../../extensions/shared/system-prompt.mjs";
+const SYSTEM_PROMPT_CONTRACT = createPublicToolContracts(Type).systemPrompt;
+
+export function createSystemPromptTool(manifestOrResolver) {
+  return createTool(manifestOrResolver, SYSTEM_PROMPT_CONTRACT);
+}
 
 export function createSystemPromptManifest({ native, skills, extensions = [] }) {
   const contributors = [promptContributor("native", native)];

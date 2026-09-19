@@ -38,13 +38,8 @@ class Backend(ABC):
         """Return ResearchNode-scoped metadata without mutating canonical state."""
 
 
-def configured_backend_command(provider: str, _default: str | None = None) -> str:
-    """Resolve one executable from the selected local compute profile.
-
-    The second argument is accepted only for call-site readability during the
-    backend transition; no default executable is used when configuration is
-    absent or incomplete.
-    """
+def configured_backend_command(provider: str) -> str:
+    """Resolve one executable from the selected local compute profile."""
 
     try:
         config = load_config()

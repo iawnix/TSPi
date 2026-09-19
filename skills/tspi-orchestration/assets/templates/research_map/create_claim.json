@@ -1,8 +1,0 @@
-{
-  "type": "create_claim",
-  "id": "claim_new",
-  "statement": "${CLAIM_STATEMENT}",
-  "status": "proposed",
-  "predictions": ["${PREDICTION}"],
-  "falsifiers": ["${FALSIFIER}"]
-}

@@ -4,41 +4,21 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
+import { createPublicToolContracts } from "../../extensions/core/tools.mjs";
 
 const executeFile = promisify(execFile);
-const EVENTS = [
-  "progress",
-  "node_completed",
-  "calculation_failed",
-  "calculation_ambiguous",
-  "study_completed",
-];
-const TS_NOTIFY_PARAMETERS = Type.Object({
-  operation: Type.Literal("send"),
-  event: Type.Union(EVENTS.map((value) => Type.Literal(value))),
-  subject: Type.String({ minLength: 1, maxLength: 300 }),
-  summary: Type.String({ minLength: 1, maxLength: 20_000 }),
-  reportRefs: Type.Optional(Type.Array(
-    Type.String({ minLength: 1, maxLength: 4096 }),
-    { maxItems: 8, uniqueItems: true },
-  )),
-}, { additionalProperties: false });
+const TOOL_CONTRACTS = createPublicToolContracts(Type);
 
 export function createNotifyTool() {
   return {
-    name: "ts_notify",
-    label: "TS Notify",
-    description: "Deliver one fixed research event to the installation-configured notification target.",
-    parameters: TS_NOTIFY_PARAMETERS,
-    executionMode: "sequential",
-    replay: "never",
+    ...TOOL_CONTRACTS.notify,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites();
       onUpdate?.({
         content: [{ type: "text", text: `TS Notify ${params.event}: sending` }],
         details: { notification: { event: params.event, state: "sending" } },
       }, { checkpoint: true });
-      const result = await runNotification(toolContext.cwd, {
+      const result = await runNotification(params.root || toolContext.cwd, {
         schema_version: "ts-user-notification/1",
         event: params.event,
         subject: params.subject,
