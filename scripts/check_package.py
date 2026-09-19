@@ -29,11 +29,11 @@ PACKAGE_NAME = "@iawnix/ts-agent"
 PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 THEME_ENTRIES = ["./themes/ts-theme.json"]
 EXTENSION_ENTRIES = [
-    "./extensions/ts-workflow-control",
-    "./extensions/ts-workflow-ui/index.ts",
-    "./extensions/ts-workflow-review/index.ts",
-    "./extensions/ts-workflow-compute/index.ts",
-    "./extensions/ts-workflow-artifacts/index.ts",
+    "./extensions/pi/research/index.ts",
+    "./extensions/pi/ui/index.ts",
+    "./extensions/pi/review/index.ts",
+    "./extensions/pi/compute/index.ts",
+    "./extensions/pi/artifacts/index.ts",
 ]
 REMOVED_PREFIXES = (
     "agent-core/",
@@ -170,7 +170,7 @@ def validate_python_project() -> None:
 
 def validate_version_surfaces() -> None:
     lock = json.loads((ROOT / "package-lock.json").read_text(encoding="utf-8"))
-    profile_text = (ROOT / "extensions" / "shared" / "package-profile.ts").read_text(
+    profile_text = (ROOT / "extensions" / "profile.ts").read_text(
         encoding="utf-8"
     )
     profile_match = re.search(r'(?m)^\s*version:\s*"([^"]+)",\s*$', profile_text)

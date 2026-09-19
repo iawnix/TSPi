@@ -2,7 +2,7 @@ import type { ToolCallEvent, ToolCallEventResult } from "@earendil-works/pi-codi
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, relative, resolve } from "node:path";
-import { PACKAGE_ROOT } from "../adapters/pi-runtime.ts";
+import { PACKAGE_ROOT } from "../runtime.ts";
 
 export const PACKAGE_SOURCE_READ_TOOLS = ["read", "grep", "find", "ls"] as const;
 export const PACKAGE_USAGE_GUIDELINE =

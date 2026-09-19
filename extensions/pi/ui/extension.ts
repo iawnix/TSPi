@@ -6,8 +6,8 @@ import { Text, truncateToWidth, type TUI } from "@earendil-works/pi-tui";
 import { TspiEditor } from "./editor.ts";
 import { createTspiStartupHeader } from "./startup.ts";
 import { fitColumns, formatCwd } from "./render-utils.ts";
-import { PUBLIC_TOOL_NAMES } from "../core/tools.mjs";
-import { parseSlashCommand, SLASH_COMMAND_DEFINITIONS } from "../core/commands.mjs";
+import { PUBLIC_TOOL_NAMES } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { parseSlashCommand, SLASH_COMMAND_DEFINITIONS } from "../../../packages/ts-agent-runtime/host-api/commands.mjs";
 import {
   subscribeTsActivity,
 } from "../shared/activity-events.ts";
@@ -40,7 +40,7 @@ import {
   type TsSubagentRecord,
 } from "./agent-details.ts";
 import { SubagentHistoryBrowser } from "./subagent-history.ts";
-import { PiRuntime, requireWorkspaceRoot } from "../adapters/pi-runtime.ts";
+import { PiRuntime, requireWorkspaceRoot } from "../runtime.ts";
 
 type ForegroundState = "idle" | "thinking" | "compacting" | "error";
 export function formatTsSubagentHistory(

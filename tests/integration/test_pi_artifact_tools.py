@@ -21,7 +21,7 @@ from ts_agent.report import build_report_package
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "packages" / "ts-agent-runtime" / "artifacts" / "request-contract.cjs"
 TS_LOADER = ROOT / "tests" / "support" / "typescript_loader.mjs"
-ARTIFACT_EXTENSION = ROOT / "extensions" / "ts-workflow-artifacts" / "index.ts"
+ARTIFACT_EXTENSION = ROOT / "extensions" / "pi" / "artifacts" / "index.ts"
 
 
 def test_public_import_tool_materializes_seed_without_journaling_body(tmp_path: Path) -> None:
@@ -765,7 +765,7 @@ def test_notification_preserves_bounded_provider_diagnostic_without_retrying(
 
 def test_json_adapter_preserves_plain_command_error_without_syntax_noise() -> None:
     script = (
-        f"const summary=require({json.dumps(str(ROOT / 'extensions' / 'ts-workflow-control' / 'summary.cjs'))});"
+        f"const summary=require({json.dumps(str(ROOT / 'extensions' / 'pi' / 'shared' / 'tool-runtime.cjs'))});"
         "try{summary.parseJsonOutput({stderr:'error: not authorized'});}"
         "catch(error){process.stdout.write(error.message);process.exitCode=2;}"
     )
@@ -783,7 +783,7 @@ def test_json_adapter_preserves_plain_command_error_without_syntax_noise() -> No
 
 
 def test_notification_adapter_preserves_structured_failure_semantics() -> None:
-    pi_runtime = ROOT / "extensions" / "adapters" / "pi-runtime.ts"
+    pi_runtime = ROOT / "extensions" / "pi" / "runtime.ts"
     script = f"""
 import {{ PiRuntime }} from {json.dumps(pi_runtime.as_uri())};
 process.env.TS_AGENT_PYTHON = process.execPath;

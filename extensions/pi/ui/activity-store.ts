@@ -1,6 +1,6 @@
 import type { ToolExecutionEndEvent, ToolExecutionStartEvent, ToolExecutionUpdateEvent } from "@earendil-works/pi-coding-agent";
 import type { TsActivityEvent, TsEnvironmentActivity } from "../shared/activity-events.ts";
-import { PUBLIC_TOOL_NAMES } from "../core/tools.mjs";
+import { PUBLIC_TOOL_NAMES } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
 import {
   isTsSubagentStatus,
   TS_SUBAGENT_STATUS_SCHEMA,

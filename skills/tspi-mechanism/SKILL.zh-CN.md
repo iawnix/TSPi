@@ -23,7 +23,7 @@ Skill。ResearchMap 由编排 Skill 管理；本 Skill 负责选择化学方法�
 物种身份、基元步骤连通性、过渡态、热化学和动力学分开研究。竞争机理使用独立 Claim
 和 Claim relation。化学网络可以有环路，但 ResearchNode 依赖图仍必须无环。
 
-`ts_manage` 只暂停或恢复 Node 的运行派发，不改变 ResearchMap；科学状态使用
+`ts_dispatch` 只暂停或恢复 Node 的运行派发，不改变 ResearchMap；科学状态使用
 `ts_change` 的 `set_node_state`。方法细节见[反应映射](references/reaction_mapping.md)、
 [分子准备](references/molecular_preparation.md)、[TS 证据](references/ts_evidence.md)和
 [热化学与网络](references/energies_networks.md)。

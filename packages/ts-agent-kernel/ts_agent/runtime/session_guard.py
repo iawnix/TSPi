@@ -8,7 +8,6 @@ import json
 import os
 import re
 import stat
-import uuid
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
@@ -228,8 +227,13 @@ def _uses_workspace_sessions(process: Path, workspace: Path, arguments: list[byt
     return False
 
 
-def select_session(workspace: Path, arguments: list[str], *, default_continue: bool = False) -> tuple[str, list[str]]:
-    """Resolve an exact ID before Pi opens it; never let Pi select a second file."""
+def select_session(
+    workspace: Path,
+    arguments: list[str],
+    *,
+    default_continue: bool = False,
+) -> tuple[str | None, list[str]]:
+    """Resolve persisted sessions before Pi opens them; leave new IDs to Pi."""
     selectors: list[tuple[str, str | None]] = []
     remaining: list[str] = []
     index = 0
@@ -255,13 +259,15 @@ def select_session(workspace: Path, arguments: list[str], *, default_continue: b
     if not selectors and default_continue:
         selectors.append(("--continue", None))
     sessions = _session_headers(workspace)
-    selected_id: str
+    selected_id: str | None
     if not selectors:
-        selected_id = str(uuid.uuid4())
+        selected_id = None
     else:
         option, value = selectors[0]
         if option == "--continue":
-            selected_id = max(sessions, key=lambda row: row[2])[0] if sessions else str(uuid.uuid4())
+            selected_id = max(sessions, key=lambda row: row[2])[0] if sessions else None
+            if selected_id is None:
+                remaining.append("--continue")
         elif option == "--session":
             candidate = Path(value or "").expanduser()
             if not candidate.is_absolute():
@@ -272,8 +278,10 @@ def select_session(workspace: Path, arguments: list[str], *, default_continue: b
             selected_id = matches[0][0]
         else:
             selected_id = value or ""
-    if not SESSION_ID.fullmatch(selected_id):
+    if selected_id is not None and not SESSION_ID.fullmatch(selected_id):
         raise SessionGuardError("invalid session ID")
+    if selected_id is None:
+        return None, remaining
     return selected_id, [*remaining, "--session-id", selected_id]
 
 

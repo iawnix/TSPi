@@ -2,7 +2,7 @@
 
 [English](ARCHITECTURE.md) | [简体中文](ARCHITECTURE.zh-CN.md)
 
-TSPi packages scientific skills and workflow extensions on top of Pi. One
+TSPi packages scientific skills and runtime adapters on top of Pi. One
 installation Host serves all direct-child workspaces through one native Pi App
 Server; there is no separate TS Phone broker or per-workspace service
 requirement.
@@ -16,8 +16,9 @@ requirement.
   scheduler jobs; the configured remote adapter supplies transport and
   readiness operations. Rendering, reporting, and email remain
   Skill/Plugin tools.
-- `extensions/` contains the client-only Pi presentation extensions and the
-  package-owned server workflow extension set. The App Server loads only the
+- `extensions/pi/` contains Pi research, compute, review, artifact, and UI
+  adapters. `extensions/server/` contains the package-owned server tool entry.
+  The App Server loads only the
   allowlisted, digest-verified entries in `extensions/server/extensions.json`;
   it never evaluates code supplied by a client.
 - `components/ts-web/` is an optional read-only browser client that renders the
@@ -91,7 +92,7 @@ interpretation through a Map ChangeSet.
 
 ## ChangeSets And Browser Clients
 
-Workflow extensions, Pi tools, the CLI, and slash commands all submit the same
+Pi extensions, tools, the CLI, and slash commands all submit the same
 small ChangeSet envelope to `ResearchKernel`. The kernel validates operation
 fields, references, optimistic revision, and graph invariants before atomically
 writing `research_map.json` and appending `transactions.jsonl`. A failed
@@ -134,7 +135,7 @@ path safety, and runtime configuration before executing Node/Pi. A second Host
 for the same installation fails on the Host Root lock rather than creating a
 parallel history.
 
-The systemd user unit sets `TSPI_SERVER_EXTENSIONS=ts-workflow-native` so the
+The systemd user unit sets `TSPI_SERVER_EXTENSIONS=tspi-server-tools` so the
 release's server tool inventory is deterministic. A development host may set a
 different allowlist, but every selected entry must remain inside the selected
 Package release and match its recorded SHA-256 digest.
@@ -154,7 +155,7 @@ inputs, digests and generated files. Selected facts enter the existing
 scientific successor or accepts a Claim. Chemical networks use stoichiometric
 hyperedges and may contain cycles, independently of the ResearchNode DAG.
 
-`ts_manage` writes Node-scoped pause/resume receipts outside canonical science.
+`ts_dispatch` writes Node-scoped pause/resume receipts outside canonical science.
 A shared lock orders pauses against new analysis and submission guards. In-flight
 jobs remain inspectable, collectable and cancellable. Reports and TS Web expose
 these execution records separately from the canonical map. See [ADR 0002](adr/0002-independent-scientific-capabilities.md)

@@ -31,7 +31,7 @@ EXPECTED_TOOLS = {
     "ts_seed",
     "ts_compare",
     "ts_analyze",
-    "ts_manage",
+    "ts_dispatch",
     "ts_import",
     "ts_render",
     "ts_report",

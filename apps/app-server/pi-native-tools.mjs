@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
-import { commandArguments, createCommandService } from "../../extensions/core/commands.mjs";
-import { createPublicToolContracts } from "../../extensions/core/tools.mjs";
+import { commandArguments, createCommandService } from "../../packages/ts-agent-runtime/host-api/commands.mjs";
+import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
 import { createComputeTool } from "./pi-native-compute.mjs";
 import { createNotifyTool } from "./pi-native-notify.mjs";
 import { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
@@ -220,11 +220,11 @@ export function createAnalyzeTool() {
   };
 }
 
-export function createManageTool() {
+export function createDispatchTool() {
   return {
-    ...TOOL_CONTRACTS.manage,
+    ...TOOL_CONTRACTS.dispatch,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("ts_manage");
+      requireNativeWrites("ts_dispatch");
       const root = params.root || toolContext.cwd;
       const result = await runJsonCli(packageScript("ts_compute.py"), ["node-dispatch", "--root", root, ...nodeControlArguments(params)], root, context?.abortSignal);
       return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
@@ -446,7 +446,7 @@ export function createTspiTools(options = {}) {
     createSeedTool(),
     createCompareTool(),
     createAnalyzeTool(),
-    createManageTool(),
+    createDispatchTool(),
     createImportTool(),
     createRenderTool(),
     createReportTool(),

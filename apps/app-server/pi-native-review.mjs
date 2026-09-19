@@ -11,7 +11,7 @@ import {
   withAbortSignal,
 } from "@earendil-works/pi-agent-core";
 import Type from "./pi-runtime-deps.mjs";
-import { createPublicToolContracts, PUBLIC_TOOL_NAMES } from "../../extensions/core/tools.mjs";
+import { createPublicToolContracts, PUBLIC_TOOL_NAMES } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
 import {
   createReviewArtifactReadCapture,
   createReviewArtifactReadTool,

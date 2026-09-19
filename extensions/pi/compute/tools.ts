@@ -2,30 +2,32 @@ import { keyText, type ExtensionAPI, type ToolDefinition } from "@earendil-works
 import { Type } from "typebox";
 import { Text } from "@earendil-works/pi-tui";
 import { createRequire } from "node:module";
-import { PiRuntime, requireWorkspaceRoot } from "../adapters/pi-runtime.ts";
-import { parseSlashCommand, slashCompletions, SLASH_COMMAND_DEFINITIONS } from "../core/commands.mjs";
+import { PiRuntime, requireWorkspaceRoot } from "../runtime.ts";
+import { parseSlashCommand, slashCompletions, SLASH_COMMAND_DEFINITIONS } from "../../../packages/ts-agent-runtime/host-api/commands.mjs";
 import {
   createPublicToolContracts,
   type ComputeToolParams,
+  type DispatchToolParams,
   type EnvironmentToolParams,
-} from "../core/tools.mjs";
+} from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
 import {
   createSubagentStatusReporter,
   terminalStateForReport,
   terminalStatusForError,
 } from "../shared/subagent-status.ts";
-import { runComputeOperator } from "../../packages/ts-agent-runtime/agents/compute/runtime.ts";
+import { runComputeOperator } from "../../../packages/ts-agent-runtime/agents/compute/runtime.ts";
 
 const require = createRequire(import.meta.url);
-const { toolText } = require("../ts-workflow-control/summary.cjs");
+const { toolText } = require("../shared/tool-runtime.cjs");
 const {
   beginAgentRun,
   completeAgentRun,
   readAgentRunInputs,
   settleFailedAgentRun,
-} = require("../../packages/ts-agent-runtime/agent-core/run-journal.cjs");
-const { classifyUpstreamModelFailure } = require("../../packages/ts-agent-runtime/agent-core/failure-taxonomy.cjs");
-const { buildComputeTask } = require("../../packages/ts-agent-runtime/agents/compute/task-packet.cjs");
+} = require("../../../packages/ts-agent-runtime/agent-core/run-journal.cjs");
+const { classifyUpstreamModelFailure } = require("../../../packages/ts-agent-runtime/agent-core/failure-taxonomy.cjs");
+const { buildComputeTask } = require("../../../packages/ts-agent-runtime/agents/compute/task-packet.cjs");
+const { nodeControlArguments } = require("../../../packages/ts-agent-runtime/artifacts/node-control.cjs");
 const {
   completeAction,
   extractComputeToolResult,
@@ -33,7 +35,7 @@ const {
   formatFailedActionError,
   reserveAction,
   sanitizeActionError,
-} = require("./action-log.cjs");
+} = require("../../../packages/ts-agent-runtime/agents/compute/action-log.cjs");
 const OPERATIONS = ["launch", "inspect", "finalize", "cancel"] as const;
 const ATTEMPT_KINDS = ["primary", "retry", "recalculation"] as const;
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
@@ -120,6 +122,15 @@ export function registerComputeTools(pi: ExtensionAPI) {
         name: params.name,
       }, signal);
       return toolText(JSON.stringify(result, null, 2), { result });
+    },
+  });
+
+  pi.registerTool({
+    ...TOOL_CONTRACTS.dispatch,
+    async execute(_toolCallId, params: DispatchToolParams, signal, _onUpdate, ctx) {
+      const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      const result = await runtime.compute("node-dispatch", root, nodeControlArguments(params), signal);
+      return toolText(JSON.stringify(result), { dispatch: result });
     },
   });
 

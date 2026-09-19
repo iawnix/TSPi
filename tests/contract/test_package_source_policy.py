@@ -6,8 +6,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-POLICY = ROOT / "extensions" / "shared" / "package-source-policy.ts"
-CONTROL = ROOT / "extensions" / "ts-workflow-control" / "index.ts"
+POLICY = ROOT / "extensions" / "pi" / "shared" / "package-source-policy.ts"
+RESEARCH = ROOT / "extensions" / "pi" / "research" / "index.ts"
 TS_LOADER = ROOT / "tests" / "support" / "typescript_loader.mjs"
 
 
@@ -46,9 +46,9 @@ process.stdout.write(JSON.stringify({{
     assert "Installed TS research runtime" in result["systemPrompt"]
 
 
-def test_control_extension_applies_one_policy_to_root_entrypoints() -> None:
+def test_research_extension_applies_one_policy_to_root_entrypoints() -> None:
     script = f"""
-import installControl from {json.dumps(CONTROL.as_uri())};
+import installResearch from {json.dumps(RESEARCH.as_uri())};
 const handlers = {{}};
 const pi = {{
   on: (name, handler) => handlers[name] = handler,
@@ -56,7 +56,7 @@ const pi = {{
   registerTool: () => {{}},
   registerCommand: () => {{}},
 }};
-installControl(pi);
+installResearch(pi);
 const ctx = {{ cwd: "/tmp/no-ts-workspace" }};
 const before = await handlers.before_agent_start({{ systemPrompt: "base" }}, ctx);
 const blocked = await handlers.tool_call({{

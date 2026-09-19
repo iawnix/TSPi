@@ -38,7 +38,8 @@
 
 可选模型图标字体可通过 `--with-model-icons` 安装，使用
 `--without-model-icons` 禁用。字体属于用户数据目录，不是科学运行时依赖；
-`TSPI_ICON_STYLE=unicode` 或 `nerd` 可显式覆盖选择。
+`TSPI_ICON_STYLE=unicode` 或 `nerd` 可显式覆盖选择。模型字形使用补充私用区，避免被
+终端主 Nerd Font 中已有的同码位字形遮蔽。
 
 ## 受管 Python 运行时
 

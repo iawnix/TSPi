@@ -24,6 +24,7 @@ cd TSPi
 `--without-model-icons` 禁用。字体安装在 `$XDG_DATA_HOME/fonts/tspi`（未设置时为
 `$HOME/.local/share/fonts/tspi`），未安装时仍使用 Nerd Font/Unicode 回退；设置
 `TSPI_ICON_STYLE=unicode` 或 `TSPI_ICON_STYLE=nerd` 可以覆盖自动选择。
+模型字形使用补充私用区，不会被终端主 Nerd Font 中已有的图标码位遮蔽。
 安装器会在可用时刷新 fontconfig 缓存；已经打开的终端可能需要重启后才能加载回退字体。
 
 详见[安装与运维](docs/INSTALLATION.zh-CN.md)（英文版：[Installation and Operations](docs/INSTALLATION.md)），

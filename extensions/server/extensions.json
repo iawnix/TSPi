@@ -2,10 +2,10 @@
   "schema_version": "tspi-server-extensions/1",
   "extensions": [
     {
-      "name": "ts-workflow-native",
-      "entry": "extensions/server/ts-workflow-native.mjs",
+      "name": "tspi-server-tools",
+      "entry": "extensions/server/tspi-tools.mjs",
       "scope": "server",
-      "sha256": "sha256:92d2dd0fab72f9275f03736aa7cb95b3dfd1f5ac38aa3fe0d036268547824eac",
+      "sha256": "sha256:c0657b5a184d54bbdd86534f4e1406fe60254a745ebd95d27c72e0984125197f",
       "tools": [
         "ts_state",
         "ts_change",
@@ -16,7 +16,7 @@
         "ts_seed",
         "ts_compare",
         "ts_analyze",
-        "ts_manage",
+        "ts_dispatch",
         "ts_import",
         "ts_render",
         "ts_report",

@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
-import { createPublicToolContracts } from "../../extensions/core/tools.mjs";
+import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -25,7 +25,7 @@ const {
   failAction,
   reserveAction,
   sanitizeActionError,
-} = require("../../extensions/ts-workflow-compute/action-log.cjs");
+} = require("../../packages/ts-agent-runtime/agents/compute/action-log.cjs");
 const executeFile = promisify(execFile);
 
 const OPERATIONS = ["launch", "inspect", "finalize", "cancel"];

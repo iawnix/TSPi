@@ -98,14 +98,14 @@ const UNICODE_ICONS: Readonly<Record<TspiIconName, string>> = Object.freeze({
   waiting: "◐",
 });
 
-// Model icons live in the optional TSPi Model Icons font.  The Private Use
-// Area values are intentionally independent from Nerd Font's glyph assignments.
+// Model icons use the Supplementary Private Use Area so a terminal's primary
+// Nerd Font cannot shadow the optional TSPi fallback font.
 const TSPI_MODEL_ICONS: Readonly<Partial<Record<TspiIconName, string>>> = Object.freeze({
-  model: "\uE804",
-  deepseek: "\uE800",
-  gpt: "\uE801",
-  glm: "\uE802",
-  seeddance: "\uE803",
+  model: "\u{F0004}",
+  deepseek: "\u{F0000}",
+  gpt: "\u{F0001}",
+  glm: "\u{F0002}",
+  seeddance: "\u{F0003}",
 });
 
 export function tspiIconStyle(value = process.env.TSPI_ICON_STYLE): TspiIconStyle {

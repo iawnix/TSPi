@@ -64,6 +64,8 @@ marker at `<install>/.pi/tspi/model-icons.json`. It is not necessary to install
 Nerd Font: TSPi falls back to the existing Nerd Font glyphs for other icons and
 to ordinary Unicode when `TSPI_ICON_STYLE=unicode` is set. An explicit
 `TSPI_ICON_STYLE=nerd` or `unicode` always overrides the installer choice.
+Model glyphs use the supplementary private-use range so glyphs already present
+in a terminal's primary Nerd Font cannot shadow the TSPi font.
 The installer refreshes the fontconfig cache when `fc-cache` is available;
 already-open terminals may need to be restarted to reload their fallback fonts.
 
@@ -204,7 +206,7 @@ given an explicit `--service-user`; the installer sets `HOME`, `PI_CODING_AGENT_
 and a private runtime directory so its Host identity and Pi authorization are
 usable by the same account as the service user. The user unit
 explicitly enables the selected Package server extension set
-(`TSPI_SERVER_EXTENSIONS=ts-workflow-native`). The App Server verifies the
+(`TSPI_SERVER_EXTENSIONS=tspi-server-tools`). The App Server verifies the
 manifest and entry digest at each Worker startup. Do not place client code or
 an ad-hoc path in this allowlist; development-only experiments belong in
 `--standalone`.

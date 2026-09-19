@@ -8,19 +8,20 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { PiRuntime, requireWorkspaceRoot } from "../adapters/pi-runtime.ts";
+import { PiRuntime, requireWorkspaceRoot } from "../runtime.ts";
 import {
   parseSlashCommand,
   slashCompletions,
   SLASH_COMMAND_DEFINITIONS,
   type CommandId,
-} from "../core/commands.mjs";
+} from "../../../packages/ts-agent-runtime/host-api/commands.mjs";
 import {
   createPublicToolContracts,
   PUBLIC_TOOL_NAMES,
   type ChangeToolParams,
+  type NotifyToolParams,
   type StateToolParams,
-} from "../core/tools.mjs";
+} from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
 import { guardPackageSourceRead, packageSourceSystemPrompt } from "../shared/package-source-policy.ts";
 import { registerSessionGuard } from "../shared/session-guard.ts";
 import {
@@ -30,11 +31,11 @@ import {
   sha256Text,
   type SystemPromptContributor,
   type SystemPromptManifest,
-} from "../shared/system-prompt.mjs";
+} from "../../../packages/ts-agent-runtime/host-api/system-prompt.mjs";
 
 const require = createRequire(import.meta.url);
-const { resolveWorkspaceRoot, toolText } = require("./summary.cjs");
-const CONTROL_EXTENSION_SOURCE = fileURLToPath(import.meta.url);
+const { resolveWorkspaceRoot, toolText } = require("../shared/tool-runtime.cjs");
+const RESEARCH_EXTENSION_SOURCE = fileURLToPath(import.meta.url);
 const PACKAGE_POLICY_SOURCE = fileURLToPath(new URL("../shared/package-source-policy.ts", import.meta.url));
 
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
@@ -59,7 +60,7 @@ type PromptObservation = {
   options: BuildSystemPromptOptions;
 };
 
-export function registerControlExtension(pi: ExtensionAPI) {
+export function registerResearchExtension(pi: ExtensionAPI) {
   const runtime = new PiRuntime(pi);
   let promptObservation: PromptObservation | undefined;
   registerSessionGuard(pi);
@@ -209,6 +210,27 @@ export function registerControlExtension(pi: ExtensionAPI) {
     },
   });
 
+  const notificationTarget = configuredNotificationTarget();
+  pi.registerTool({
+    ...TOOL_CONTRACTS.notify,
+    description: `Notify the configured target: ${notificationTarget}.`,
+    promptSnippet: "Send a research update",
+    promptGuidelines: [
+      "Use for material events; delivery failure never changes scientific state or permits automatic replay.",
+    ],
+    async execute(_toolCallId, params: NotifyToolParams, signal, _onUpdate, ctx) {
+      const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      const result = await runtime.notify(root, {
+        schema_version: "ts-user-notification/1",
+        event: params.event,
+        subject: params.subject,
+        summary: params.summary,
+        report_refs: params.reportRefs || [],
+      }, signal);
+      return toolText(JSON.stringify(result, null, 2), { result });
+    },
+  });
+
   pi.registerCommand("research", {
     description: SLASH_COMMAND_DEFINITIONS.research.description,
     getArgumentCompletions: (prefix) => slashCompletions("research", prefix),
@@ -267,6 +289,13 @@ export function registerControlExtension(pi: ExtensionAPI) {
   });
 }
 
+function configuredNotificationTarget(): string {
+  const value = process.env.TS_NOTIFICATION_DISPLAY_TARGET?.trim();
+  if (value === "disabled" || value === "not configured") return value;
+  if (value && value.length <= 320 && /^[^@\s]+@[^@\s]+$/.test(value)) return value;
+  return "not configured";
+}
+
 function createPiExtensionPromptManifest(
   observation: PromptObservation | undefined,
   effective: string,
@@ -300,7 +329,7 @@ function createPiExtensionPromptManifest(
 
   const extensionIsEffective = effective.includes(observation.extensionText);
   contributors.push(createPromptContributor("extension", {
-    source: CONTROL_EXTENSION_SOURCE,
+    source: RESEARCH_EXTENSION_SOURCE,
     attribution: extensionIsEffective ? "exact" : "observed",
     inputs: [PACKAGE_POLICY_SOURCE],
     text: observation.extensionText,
@@ -313,7 +342,7 @@ function createPiExtensionPromptManifest(
     source: "pi:before-tspi-extension-chain",
     attribution: "unattributed",
     metadata: {
-      boundary: "before_ts_workflow_control",
+      boundary: "before_tspi_research",
       observed_sha256: sha256Text(observation.beforeTspi),
     },
     note: "Pi does not expose whether earlier handlers changed the prompt before TSPi received it.",

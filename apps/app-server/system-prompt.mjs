@@ -1,11 +1,11 @@
 import { formatSkillsForSystemPrompt } from "@earendil-works/pi-agent-core";
 import Type from "./pi-runtime-deps.mjs";
-import { createPublicToolContracts } from "../../extensions/core/tools.mjs";
+import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
 import {
   createPromptContributor,
   createSystemPromptManifest as createManifest,
   createSystemPromptTool as createTool,
-} from "../../extensions/shared/system-prompt.mjs";
+} from "../../packages/ts-agent-runtime/host-api/system-prompt.mjs";
 
 const SYSTEM_PROMPT_CONTRACT = createPublicToolContracts(Type).systemPrompt;
 

@@ -7,13 +7,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TS_LOADER = ROOT / "tests" / "support" / "typescript_loader.mjs"
-STATUS = ROOT / "extensions" / "shared" / "subagent-status.ts"
-STORE = ROOT / "extensions" / "ts-workflow-ui" / "activity-store.ts"
-DETAILS = ROOT / "extensions" / "ts-workflow-ui" / "agent-details.ts"
-HISTORY = ROOT / "extensions" / "ts-workflow-ui" / "subagent-history.ts"
-UI = ROOT / "extensions" / "ts-workflow-ui" / "index.ts"
-UI_EXTENSION = ROOT / "extensions" / "ts-workflow-ui" / "extension.ts"
-COMMANDS = ROOT / "extensions" / "core" / "commands.mjs"
+STATUS = ROOT / "extensions" / "pi" / "shared" / "subagent-status.ts"
+STORE = ROOT / "extensions" / "pi" / "ui" / "activity-store.ts"
+DETAILS = ROOT / "extensions" / "pi" / "ui" / "agent-details.ts"
+HISTORY = ROOT / "extensions" / "pi" / "ui" / "subagent-history.ts"
+UI = ROOT / "extensions" / "pi" / "ui" / "index.ts"
+UI_EXTENSION = ROOT / "extensions" / "pi" / "ui" / "extension.ts"
+COMMANDS = ROOT / "packages" / "ts-agent-runtime" / "host-api" / "commands.mjs"
 
 
 def test_subagent_status_reporter_is_monotonic_and_supports_both_roles() -> None:

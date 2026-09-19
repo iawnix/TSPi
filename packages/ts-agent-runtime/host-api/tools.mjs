@@ -1,9 +1,9 @@
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { analysisProperties } = require("../../packages/ts-agent-runtime/artifacts/analysis-contract.cjs");
-const { nodeControlProperties } = require("../../packages/ts-agent-runtime/artifacts/node-control.cjs");
-const { RENDER_OPERATIONS } = require("../../packages/ts-agent-runtime/artifacts/request-contract.cjs");
+const { analysisProperties } = require("../artifacts/analysis-contract.cjs");
+const { nodeControlProperties } = require("../artifacts/node-control.cjs");
+const { RENDER_OPERATIONS } = require("../artifacts/request-contract.cjs");
 
 const TOOL_ROWS = [
   ["systemPrompt", "sys_prompt", "deterministic_runtime"],
@@ -16,7 +16,7 @@ const TOOL_ROWS = [
   ["seed", "ts_seed", "deterministic_artifact"],
   ["compare", "ts_compare", "deterministic_artifact"],
   ["analyze", "ts_analyze", "deterministic_artifact"],
-  ["manage", "ts_manage", "deterministic_operational"],
+  ["dispatch", "ts_dispatch", "deterministic_operational"],
   ["importArtifact", "ts_import", "deterministic_artifact"],
   ["render", "ts_render", "deterministic_artifact"],
   ["report", "ts_report", "deterministic_artifact"],
@@ -154,7 +154,7 @@ export function createPublicToolContracts(Type) {
       nextSteps: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 8 })),
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential", replay: "never" }),
-    manage: contract("manage", "TS Node Dispatch", "Pause or resume new calculation and analysis dispatch for an open Node.", Type.Object({
+    dispatch: contract("dispatch", "TS Node Dispatch", "Pause or resume new calculation and analysis dispatch for an open Node.", Type.Object({
       ...nodeControlProperties(Type),
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential" }),

@@ -90,6 +90,18 @@ def test_select_session_uses_exact_workspace_history(tmp_path: Path) -> None:
         assert history.read_text(encoding="utf-8") == original
 
 
+def test_select_session_leaves_new_identity_to_pi(tmp_path: Path) -> None:
+    (tmp_path / ".pi/sessions").mkdir(parents=True)
+
+    identity, forwarded = select_session(tmp_path, ["--model", "gpt-5.5"])
+    continued_identity, continued = select_session(tmp_path, ["--continue"])
+
+    assert identity is None
+    assert forwarded == ["--model", "gpt-5.5"]
+    assert continued_identity is None
+    assert continued == ["--continue"]
+
+
 @pytest.mark.parametrize("arguments", [
     ["--resume"],
     ["--fork", "old-session"],

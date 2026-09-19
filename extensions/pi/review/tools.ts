@@ -3,13 +3,13 @@ import { Type } from "typebox";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PiRuntime, requireWorkspaceRoot } from "../adapters/pi-runtime.ts";
+import { PiRuntime, requireWorkspaceRoot } from "../runtime.ts";
 import {
   createPublicToolContracts,
   PUBLIC_TOOL_NAMES,
   type ReplyToolParams,
   type ReviewToolParams,
-} from "../core/tools.mjs";
+} from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
 import {
   createSubagentStatusReporter,
   terminalStateForReport,
@@ -19,12 +19,12 @@ import {
   renderTsReviewCall,
   renderTsReviewResult,
 } from "../shared/review-tool-presentation.ts";
-import { runScientificReview } from "../../packages/ts-agent-runtime/agents/review/runtime.ts";
+import { runScientificReview } from "../../../packages/ts-agent-runtime/agents/review/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
-const { buildReviewTaskBundle, validateSubagentRequest } = require(resolve(EXTENSION_DIR, "..", "..", "packages", "ts-agent-runtime", "agents", "review", "task-packet.cjs"));
-const { reviewSnapshotFromMap } = require(resolve(EXTENSION_DIR, "..", "..", "packages", "ts-agent-runtime", "agents", "review", "research-map-adapter.cjs"));
+const { buildReviewTaskBundle, validateSubagentRequest } = require(resolve(EXTENSION_DIR, "..", "..", "..", "packages", "ts-agent-runtime", "agents", "review", "task-packet.cjs"));
+const { reviewSnapshotFromMap } = require(resolve(EXTENSION_DIR, "..", "..", "..", "packages", "ts-agent-runtime", "agents", "review", "research-map-adapter.cjs"));
 const {
   beginAgentRun,
   completeAgentRun,
@@ -32,9 +32,9 @@ const {
   settleFailedAgentRun,
   writeInvalidReviewOutput,
   writeReviewRootDisposition,
-} = require(resolve(EXTENSION_DIR, "..", "..", "packages", "ts-agent-runtime", "agent-core", "run-journal.cjs"));
-const { classifyUpstreamModelFailure } = require(resolve(EXTENSION_DIR, "..", "..", "packages", "ts-agent-runtime", "agent-core", "failure-taxonomy.cjs"));
-const { toolText } = require("../ts-workflow-control/summary.cjs");
+} = require(resolve(EXTENSION_DIR, "..", "..", "..", "packages", "ts-agent-runtime", "agent-core", "run-journal.cjs"));
+const { classifyUpstreamModelFailure } = require(resolve(EXTENSION_DIR, "..", "..", "..", "packages", "ts-agent-runtime", "agent-core", "failure-taxonomy.cjs"));
+const { toolText } = require("../shared/tool-runtime.cjs");
 
 const ROOT_DISPOSITIONS = ["accepted", "partially_accepted", "rejected", "deferred"] as const;
 const TOOL_CONTRACTS = createPublicToolContracts(Type);

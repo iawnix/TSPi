@@ -6,7 +6,7 @@ import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import Type from "typebox";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { createStateTool, createAnalyzeTool, createManageTool, createChangeTool } from "../../../apps/app-server/pi-native-tools.mjs";
+import { createStateTool, createAnalyzeTool, createDispatchTool, createChangeTool } from "../../../apps/app-server/pi-native-tools.mjs";
 
 const repository = fileURLToPath(new URL("../../..", import.meta.url));
 const [provider, modelId, repetitionsText = "3", outputPath] = process.argv.slice(2);
@@ -22,7 +22,7 @@ const scratch = await mkdtemp(join(tmpdir(), "tspi-mechanism-eval-"));
 process.env.TSPI_NATIVE_WRITES = "1";
 process.env.TSPI_PACKAGE_ROOT = repository;
 const skills = await readFile(join(repository, "skills/tspi-mechanism/SKILL.md"), "utf8");
-const tools = [createStateTool(), createAnalyzeTool(), createManageTool(), createChangeTool(), {
+const tools = [createStateTool(), createAnalyzeTool(), createDispatchTool(), createChangeTool(), {
   name: "read", description: "Read an existing workspace artifact or packaged Skill reference.",
   parameters: Type.Object({ path: Type.String() }, { additionalProperties: false }),
   async execute(id, params, update, ctx) {
@@ -71,7 +71,7 @@ while (pending.length) {
       row.calls.push(record);
       const size = Buffer.byteLength(JSON.stringify(call.arguments));
       row.tool_argument_bytes += size;
-      if (["ts_state", "ts_change", "ts_manage"].includes(call.name)) row.administrative_argument_bytes += size;
+      if (["ts_state", "ts_change", "ts_dispatch"].includes(call.name)) row.administrative_argument_bytes += size;
       let result, isError = false;
       try {
         const tool = tools.find(tool => tool.name === call.name);
@@ -89,7 +89,7 @@ while (pending.length) {
   const successful = row.calls.filter(call => !call.isError);
   row.capability_coverage = expected.every(capability => successful.some(call => call.name === "ts_analyze" && call.arguments.capability === capability));
   row.completed = row.capability_coverage && !!row.final && !row.transport_error;
-  if (caseId === "node_management") row.completed &&= ["pause", "resume"].every(operation => successful.some(call => call.name === "ts_manage" && call.arguments.operation === operation && call.arguments.nodeId === fixture.node));
+  if (caseId === "node_management") row.completed &&= ["pause", "resume"].every(operation => successful.some(call => call.name === "ts_dispatch" && call.arguments.operation === operation && call.arguments.nodeId === fixture.node));
   if (caseId === "ambiguous_mapping") row.completed &&= successful.some(call => call.name === "read" && call.arguments.path.endsWith("mapping.json")) && !successful.some(call => call.arguments?.parameters?.candidate_index !== undefined);
   report.runs.push(row);
   const snapshot = JSON.stringify(report, null, 2) + "\n";

@@ -2,7 +2,7 @@
 
 [English](ARCHITECTURE.md) | [简体中文](ARCHITECTURE.zh-CN.md)
 
-TSPi 在 Pi 之上提供计算化学 skill 和工作流扩展。一个安装目录只运行一个原生
+TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装目录只运行一个原生
 Pi App Server Host，由它服务配置的 workspace root 下的所有直接子工作区；不再需要单独
 的 TS Phone broker 或每个工作区一个 service。
 
@@ -14,7 +14,8 @@ Pi App Server Host，由它服务配置的 workspace root 下的所有直接子�
   `ts_calc` 对 local 和 remote 使用同一套计算生命周期；统一的
   `compute.environments` 查询同时返回两类环境。渲染、报告和邮件仍由
   Skill/Plugin 工具提供。
-- `extensions/` 同时包含客户端展示扩展和包内的 server workflow 扩展。App Server
+- `extensions/pi/` 包含 Pi 的 research、compute、review、artifact 和 UI 适配器；
+  `extensions/server/` 包含包内 server 工具入口。App Server
   只加载 `extensions/server/extensions.json` 中经过 allowlist 和 SHA-256 校验的
   条目，不执行客户端提交的代码。
 - `components/ts-web/` 是可选的只读浏览器客户端，直接渲染 Kernel 序列化的
@@ -85,7 +86,7 @@ Claim。Gate 记录结果，但不会自动修改 Node 或 Claim；解释和状�
 入口重算校验后登记。能力不选择下一科学步骤，不接受 Claim。化学网络使用带计量
 的超边并允许有环，独立于研究 Node DAG。
 
-`ts_manage` 的暂停/恢复回执位于操作层，不改变 Node 科学状态。共享锁协调暂停
+`ts_dispatch` 的暂停/恢复回执位于操作层，不改变 Node 科学状态。共享锁协调暂停
 与分析、提交 guard 的边界；在途作业仍可查看、收集和取消。报告和 TS Web 消费
 规范 ResearchMap 数据。详见 [ADR 0002](adr/0002-independent-scientific-capabilities.md) 和
 [能力运维文档](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。

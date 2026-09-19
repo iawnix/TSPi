@@ -36,7 +36,7 @@ input/output bindings. Analysis never fabricates a calculation intent.
 Candidate replay assumes the installed capability version's deterministic
 algorithm; algorithm changes require a new capability version.
 
-`ts_manage` is a small operational pause/resume interface. Its Node-scoped
+`ts_dispatch` is a small operational pause/resume interface. Its Node-scoped
 receipt chain is outside canonical science. A shared workspace lock orders
 pause against analysis and the durable submission-guard claim. Operations
 already past that boundary are in flight; pause does not promise cancellation.

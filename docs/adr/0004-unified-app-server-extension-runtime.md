@@ -22,7 +22,7 @@ invalid factories, and tool-name collisions with built-ins or other entries.
 The App Server passes the host-owned tool context to the selected factories;
 clients can only invoke the resulting protocol services.
 
-The current `ts-workflow-native` entry is the canonical server tool set. Its
+The `tspi-server-tools` entry is the canonical server tool set. Its
 implementation is shared by all attached clients, while the existing Pi
 presentation extensions remain client-only and are still available to
 `--standalone`. New workflow functionality must add one server entry and use

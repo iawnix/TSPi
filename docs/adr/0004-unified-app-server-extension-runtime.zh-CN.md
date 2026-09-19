@@ -17,7 +17,7 @@
 名称、非法 factory 以及和内建工具或其他 extension 的名称冲突。客户端只能调用由
 Host context 创建的 protocol service。
 
-`ts-workflow-native` 是规范 server tool set，所有客户端共享其实现；现有 Pi presentation
+`tspi-server-tools` 是规范 server tool set，所有客户端共享其实现；现有 Pi presentation
 extension 仍然只属于 `--standalone`。新的 workflow 功能必须增加 server entry 并复用
 shared command surface，不得重新创建 per-client broker。
 

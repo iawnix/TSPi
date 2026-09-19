@@ -35,6 +35,6 @@ thermochemistry, and kinetics as separate questions. Use independent Claims
 and Claim relations for competing mechanisms. Chemical reaction networks may
 contain cycles; that does not relax the acyclic ResearchNode dependency rule.
 
-Use `ts_manage` only for operational pause/resume of a Node's dispatch. It does
+Use `ts_dispatch` only for operational pause/resume of a Node's dispatch. It does
 not change the ResearchMap; use `ts_change` with `set_node_state` for scientific
 state. Read [reaction mapping](references/reaction_mapping.md), [molecular preparation](references/molecular_preparation.md), [TS evidence](references/ts_evidence.md), and [energies and networks](references/energies_networks.md) for method details.

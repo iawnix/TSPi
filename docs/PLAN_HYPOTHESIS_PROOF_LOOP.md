@@ -76,7 +76,7 @@ criteria and evaluation history; they do not silently update their target.
   directories as research workspace state;
 - add new map behavior as a model and ChangeSet operation, with focused tests;
 - update the Kernel operation catalog and focused tests for every new map behavior;
-- update `extensions/core/commands.mjs` or `extensions/core/tools.mjs`; slash
+- update `packages/ts-agent-runtime/host-api/commands.mjs` or `packages/ts-agent-runtime/host-api/tools.mjs`; slash
   commands and host adapters consume those definitions directly;
 - keep local and remote compute behavior behind the one `compute.toml` profile
   catalog;

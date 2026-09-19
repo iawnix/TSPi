@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from fontTools.ttLib import TTFont
 
 from scripts import install_wizard as wizard
 from scripts.install_from_github import install_uninstaller
@@ -123,6 +124,16 @@ def test_model_icon_options_are_mutually_exclusive(tmp_path: Path) -> None:
             "--without-model-icons",
             "--non-interactive",
         ])
+
+
+def test_bundled_model_icon_font_avoids_the_nerd_font_private_use_range() -> None:
+    with TTFont(ROOT / "assets/fonts/tspi-model-icons.ttf") as font:
+        codepoints = set(font.getBestCmap() or {})
+        revision = font["head"].fontRevision
+
+    assert codepoints == set(range(0xF0000, 0xF0005))
+    assert not codepoints.intersection(range(0xE000, 0xF900))
+    assert revision == 2.0
 
 
 def test_model_icon_font_install_writes_private_marker_and_handles_missing_fc_cache(

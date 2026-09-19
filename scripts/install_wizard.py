@@ -1671,7 +1671,7 @@ Environment=TSPI_SYSTEMD_HOST=1
 Environment={_systemd_quote('TSPI_WORKSPACE_ROOT=' + str(workspace_root))}
 Environment={_systemd_quote('TSPI_APP_SERVER_RUNTIME_DIR=' + ('/run/tspi' if args.service_scope == 'system' else str(Path(runtime_dir) / 'tspi')))}
 {f'Environment={_systemd_quote("PI_RADIUS_GATEWAY=" + args.radius_gateway)}' if getattr(args, "radius_gateway", None) else ''}
-Environment=TSPI_SERVER_EXTENSIONS=ts-workflow-native
+Environment=TSPI_SERVER_EXTENSIONS=tspi-server-tools
 {f'User={_systemd_value(service_user)}' if args.service_scope == 'system' else ''}
 {f'Group={_systemd_value(args.service_group)}' if getattr(args, 'service_group', None) and args.service_scope == 'system' else ''}
 {_notification_environment_directive(args)}

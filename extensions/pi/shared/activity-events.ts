@@ -2,7 +2,7 @@ import type { EventBus } from "@earendil-works/pi-coding-agent";
 
 export const TS_ACTIVITY_STATES = ["running", "completed", "failed"] as const;
 export const TS_ENVIRONMENT_ACTIVITY_MODES = ["list", "show"] as const;
-export const TS_ACTIVITY_EVENT_CHANNEL = "ts-workflow:activity/1";
+export const TS_ACTIVITY_EVENT_CHANNEL = "tspi:activity/1";
 
 export type TsPublishedActivityState = typeof TS_ACTIVITY_STATES[number];
 export type TsEnvironmentActivityMode = typeof TS_ENVIRONMENT_ACTIVITY_MODES[number];

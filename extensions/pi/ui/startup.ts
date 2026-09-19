@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
-import { TS_PACKAGE_PROFILE } from "../shared/package-profile.ts";
+import { TS_PACKAGE_PROFILE } from "../../profile.ts";
 import {
   borderLine,
   boxedLine,

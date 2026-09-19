@@ -1,4 +1,4 @@
-import { SLASH_COMMAND_NAMES } from "../core/commands.mjs";
+import { SLASH_COMMAND_NAMES } from "../packages/ts-agent-runtime/host-api/commands.mjs";
 
 export const TS_PACKAGE_PROFILE = Object.freeze({
   displayName: "TSPi",
@@ -17,11 +17,11 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
     Object.freeze({ name: "tspi-email", path: "./skills/tspi-email" }),
   ]),
   extensions: Object.freeze([
-    Object.freeze({ name: "control", path: "./extensions/ts-workflow-control" }),
-    Object.freeze({ name: "ui", path: "./extensions/ts-workflow-ui/index.ts" }),
-    Object.freeze({ name: "review", path: "./extensions/ts-workflow-review/index.ts" }),
-    Object.freeze({ name: "compute", path: "./extensions/ts-workflow-compute/index.ts" }),
-    Object.freeze({ name: "artifacts", path: "./extensions/ts-workflow-artifacts/index.ts" }),
+    Object.freeze({ name: "research", path: "./extensions/pi/research/index.ts" }),
+    Object.freeze({ name: "ui", path: "./extensions/pi/ui/index.ts" }),
+    Object.freeze({ name: "review", path: "./extensions/pi/review/index.ts" }),
+    Object.freeze({ name: "compute", path: "./extensions/pi/compute/index.ts" }),
+    Object.freeze({ name: "artifacts", path: "./extensions/pi/artifacts/index.ts" }),
   ]),
   theme: Object.freeze({ name: "ts-theme", path: "./themes/ts-theme.json" }),
   commands: SLASH_COMMAND_NAMES,

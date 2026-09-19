@@ -4,29 +4,26 @@ import { mkdirSync, rmdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import { PiRuntime, requireWorkspaceRoot } from "../adapters/pi-runtime.ts";
+import { PiRuntime, requireWorkspaceRoot } from "../runtime.ts";
 import {
   createPublicToolContracts,
   type AnalyzeToolParams,
   type CompareToolParams,
   type ImportToolParams,
-  type ManageToolParams,
-  type NotifyToolParams,
   type RenderToolParams,
   type ReportToolParams,
   type SeedToolParams,
-} from "../core/tools.mjs";
+} from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
 
 const require = createRequire(import.meta.url);
-const { nodeControlArguments } = require("../../packages/ts-agent-runtime/artifacts/node-control.cjs");
-const { toolText } = require("../ts-workflow-control/summary.cjs");
-const { beginActivity, completeActivity, failActivity } = require("../../packages/ts-agent-runtime/agent-core/activity-journal.cjs");
+const { toolText } = require("../shared/tool-runtime.cjs");
+const { beginActivity, completeActivity, failActivity } = require("../../../packages/ts-agent-runtime/agent-core/activity-journal.cjs");
 const {
   validateCreatedRenderOutput,
   validateCreatedReportPackage,
   validateRenderRequest,
   validateReportRequest,
-} = require("../../packages/ts-agent-runtime/artifacts/request-contract.cjs");
+} = require("../../../packages/ts-agent-runtime/artifacts/request-contract.cjs");
 
 type ResolvedArtifact = {
   artifact_id: string;
@@ -76,7 +73,7 @@ class RenderExecutionError extends Error {
 }
 
 const { analysisRequest, analysisRequestSummary, validateAnalysisResult } = require(
-  "../../packages/ts-agent-runtime/artifacts/analysis-contract.cjs",
+  "../../../packages/ts-agent-runtime/artifacts/analysis-contract.cjs",
 );
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
 type AnalysisParameters = {
@@ -91,15 +88,6 @@ type AnalysisParameters = {
 
 export function registerArtifactTools(pi: ExtensionAPI) {
   const runtime = new PiRuntime(pi);
-  pi.registerTool({
-    ...TOOL_CONTRACTS.manage,
-    async execute(_toolCallId, params: ManageToolParams, signal, _onUpdate, ctx) {
-      const result = await runtime.compute("node-dispatch", requireWorkspaceRoot(params.root, ctx.cwd), nodeControlArguments(params), signal);
-      return toolText(JSON.stringify(result), { dispatch: result });
-    },
-  });
-  const notificationTarget = configuredNotificationTarget();
-
   pi.registerTool({
     ...TOOL_CONTRACTS.seed,
     promptSnippet: "Generate a 3D seed",
@@ -462,26 +450,6 @@ export function registerArtifactTools(pi: ExtensionAPI) {
       }
     },
   });
-
-  pi.registerTool({
-    ...TOOL_CONTRACTS.notify,
-    description: `Notify the configured target: ${notificationTarget}.`,
-    promptSnippet: "Send a research update",
-    promptGuidelines: [
-      "Use for material events; delivery failure never changes scientific state or permits automatic replay.",
-    ],
-    async execute(_toolCallId, params: NotifyToolParams, signal, _onUpdate, ctx) {
-      const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      const result = await runtime.notify(root, {
-        schema_version: "ts-user-notification/1",
-        event: params.event,
-        subject: params.subject,
-        summary: params.summary,
-        report_refs: params.reportRefs || [],
-      }, signal);
-      return toolText(JSON.stringify(result, null, 2), { result });
-    },
-  });
 }
 
 async function resolveArtifacts(
@@ -635,11 +603,4 @@ function requireDigest(value: unknown, label: string): string {
     throw new Error(`${label} is missing or invalid`);
   }
   return value;
-}
-
-function configuredNotificationTarget(): string {
-  const value = process.env.TS_NOTIFICATION_DISPLAY_TARGET?.trim();
-  if (value === "disabled" || value === "not configured") return value;
-  if (value && value.length <= 320 && /^[^@\s]+@[^@\s]+$/.test(value)) return value;
-  return "not configured";
 }

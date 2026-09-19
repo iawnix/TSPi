@@ -9,10 +9,10 @@ import {
   createCommandService,
   type CommandId,
   type CommandTransportInvocation,
-} from "../core/commands.mjs";
+} from "../../packages/ts-agent-runtime/host-api/commands.mjs";
 
 const require = createRequire(import.meta.url);
-const { parseJsonOutput, resolveWorkspaceRoot } = require("../ts-workflow-control/summary.cjs");
+const { parseJsonOutput, resolveWorkspaceRoot } = require("./shared/tool-runtime.cjs");
 
 const ADAPTER_DIR = dirname(fileURLToPath(import.meta.url));
 export const PACKAGE_ROOT = resolve(ADAPTER_DIR, "..", "..");

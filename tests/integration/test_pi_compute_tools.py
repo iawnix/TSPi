@@ -9,9 +9,9 @@ from ts_agent.compute.contracts import validate_compute_contract
 
 ROOT = Path(__file__).resolve().parents[2]
 TS_LOADER = ROOT / "tests" / "support" / "typescript_loader.mjs"
-COMPUTE = ROOT / "extensions" / "ts-workflow-compute" / "index.ts"
-COMPUTE_TOOLS = ROOT / "extensions" / "ts-workflow-compute" / "tools.ts"
-ACTION_LOG = ROOT / "extensions" / "ts-workflow-compute" / "action-log.cjs"
+COMPUTE = ROOT / "extensions" / "pi" / "compute" / "index.ts"
+COMPUTE_TOOLS = ROOT / "extensions" / "pi" / "compute" / "tools.ts"
+ACTION_LOG = ROOT / "packages" / "ts-agent-runtime" / "agents" / "compute" / "action-log.cjs"
 
 
 def test_compute_extension_registers_bounded_subagent_and_read_only_remote_tools() -> None:
@@ -22,7 +22,7 @@ install(pi);
 process.stdout.write(JSON.stringify({{tools:tools.map((tool)=>tool.name),commands}}));
 """
     result = _node_json(script)
-    assert result == {"tools": ["ts_environment", "ts_calc"], "commands": ["compute"]}
+    assert result == {"tools": ["ts_environment", "ts_dispatch", "ts_calc"], "commands": ["compute"]}
 
 
 def test_compact_compute_schema_uses_logical_artifacts_and_host_enforces_operation_fields() -> None:

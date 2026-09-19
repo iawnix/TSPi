@@ -1,6 +1,6 @@
 export type PublicToolKey =
   | "systemPrompt" | "state" | "change" | "environment" | "review"
-  | "compute" | "reply" | "seed" | "compare" | "analyze" | "manage"
+  | "compute" | "reply" | "seed" | "compare" | "analyze" | "dispatch"
   | "importArtifact" | "render" | "report" | "notify";
 
 export const PUBLIC_TOOL_NAMES: Readonly<Record<PublicToolKey, string>>;
@@ -55,7 +55,7 @@ export interface ReplyToolParams extends WorkspaceToolParams {
   response: string;
   nextSteps?: string[];
 }
-export interface ManageToolParams extends WorkspaceToolParams {
+export interface DispatchToolParams extends WorkspaceToolParams {
   operation: "pause" | "resume";
   nodeId: string;
   rationale: string;

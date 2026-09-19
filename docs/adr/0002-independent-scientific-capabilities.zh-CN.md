@@ -18,7 +18,7 @@
 也不能接受 Claim。结果绑定 Node、输入 digest 和生成文件，选定事实必须由 Root Agent
 核验后通过 `ts_change` 创建 `FactFinding` 或 `IssueFinding`。
 
-`ts_manage` 的暂停/恢复是独立的操作回执链，不增加科学状态枚举；在途作业仍可查看、
+`ts_dispatch` 的暂停/恢复是独立的操作回执链，不增加科学状态枚举；在途作业仍可查看、
 收集、解析和精确取消。`ts_calc` 对 local 和 remote 使用同一套生命周期，未知提交或
 取消结果必须先检查再重试。
 

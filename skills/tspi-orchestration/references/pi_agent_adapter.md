@@ -12,6 +12,7 @@ ts_state         bounded ResearchMap and compute reads
 ts_change        one atomic ResearchMap ChangeSet
 ts_environment   local and remote compute environment catalog
 ts_calc          one bounded calculation lifecycle
+ts_dispatch      pause or resume new work dispatch for one Node
 ts_analyze       registered local analysis
 ts_seed/import   Node-owned structure and input artifacts
 ts_compare       deterministic structure comparison
@@ -28,7 +29,7 @@ and `/debug prompt`. They are interaction syntax, not a second API.
 
 The conversation is not scientific state. Before interpreting a previous turn,
 read the current `ResearchMap`; after a write, use the returned revision or
-`ts_state mode=summary`. The control extension may include a bounded summary in
+`ts_state mode=summary`. The research extension may include a bounded summary in
 the prompt, but it cannot write the map. The Root Agent remains responsible for
 method selection, interpretation, and stopping.
 

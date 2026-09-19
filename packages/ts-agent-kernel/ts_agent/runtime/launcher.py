@@ -120,31 +120,18 @@ class Installation:
 
 
 USAGE = """Usage:
-  ./TSPi --workspace <name> [--session-id <id> | -c]
+  TSPi --workspace <name> [--session-id <id> | -c] [Pi arguments...]
+  TSPi --check-remote
 
-Advanced compatibility and maintenance modes:
-  ./TSPi --standalone --workspace <name> [Pi arguments...]
-  ./TSPi --service-host [server arguments...]
-  ./TSPi --app-server --workspace <name> [server arguments...]
-  ./TSPi --app-client --connect <unix://PATH|radius://SERVER_ID> [--workspace <name>] [client arguments...]
-  ./TSPi --gateway --workspace <name> --session-id <id> [gateway arguments...]
-  ./TSPi --check-remote
+Options:
+  --workspace <name>   Open a research workspace.
+  --session-id <id>   Continue one exact conversation.
+  -c, --continue      Continue the latest conversation.
+  --check-remote      Check the configured remote compute profile.
+  -h, --help          Show this help.
 
-The terminal and TS Phone are presentation clients of one installation Host.
-The Host owns one Pi App Server and serves every workspace below the configured workspace root.
-Start the Host once before connecting local or Radius clients.
-Exit detaches the terminal; /abort stops generation, not remote calculations.
-The App Server Host is managed by systemd; use systemctl to start, stop, restart, or inspect it.
---app-server is retained as a compatibility per-workspace mode.
---app-client is the transport-level client for an explicit Unix or Radius endpoint. A
-  local Unix client may select or initialize a workspace with --workspace.
---gateway exposes one attached session as a loopback HTTP/SSE browser adapter.
---standalone is an isolated maintenance mode and does not share App Server sessions.
-Remote computation uses the installation-owned .pi/compute.toml profile when
-present. Local and remote profiles share this one configuration.
-Continue an exact conversation with --session-id <id>, or the latest with -c.
-TSPi loads only the validated Package selected by .pi/packages/tspi/current.
-Package development runs separately in the authored checkout.
+The terminal connects to the installation Host managed by
+ts-app-server-tspi.service. Exiting the terminal only detaches this client.
 """
 
 
@@ -1156,15 +1143,15 @@ def build_pi_command(
         str(package / "themes" / "ts-theme.json"),
         "--no-prompt-templates",
         "-e",
-        str(package / "extensions" / "ts-workflow-control" / "index.ts"),
+        str(package / "extensions" / "pi" / "research" / "index.ts"),
         "-e",
-        str(package / "extensions" / "ts-workflow-ui" / "index.ts"),
+        str(package / "extensions" / "pi" / "ui" / "index.ts"),
         "-e",
-        str(package / "extensions" / "ts-workflow-review" / "index.ts"),
+        str(package / "extensions" / "pi" / "review" / "index.ts"),
         "-e",
-        str(package / "extensions" / "ts-workflow-compute" / "index.ts"),
+        str(package / "extensions" / "pi" / "compute" / "index.ts"),
         "-e",
-        str(package / "extensions" / "ts-workflow-artifacts" / "index.ts"),
+        str(package / "extensions" / "pi" / "artifacts" / "index.ts"),
         "--approve",
         "--session-dir",
         str(workspace / ".pi" / "sessions"),
@@ -1326,9 +1313,13 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         if request.session_id:
             arguments.extend(["--session-id", request.session_id])
         session_id, arguments = select_session(workspace, arguments, default_continue=False)
-        descriptors.append(acquire_session_guard(installation.root, workspace, session_id, mode))
+        if session_id is not None:
+            descriptors.append(acquire_session_guard(installation.root, workspace, session_id, mode))
         os.environ["TS_SESSION_GUARD"] = SESSION_GUARD_CONTRACT
-        os.environ["TS_SESSION_ID"] = session_id
+        if session_id is None:
+            os.environ.pop("TS_SESSION_ID", None)
+        else:
+            os.environ["TS_SESSION_ID"] = session_id
         os.environ["TS_SESSION_WRITER_PID"] = str(os.getpid())
         command = build_pi_command(installation, workspace, request, session_args=arguments)
         exec_pi(command, workspace)

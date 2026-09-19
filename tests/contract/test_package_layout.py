@@ -162,18 +162,15 @@ def test_current_sources_do_not_use_generation_branded_language_or_paths() -> No
 
 
 def test_agent_sources_have_explicit_ownership_boundaries() -> None:
-    assert (ROOT / "extensions" / "core" / "commands.mjs").is_file()
-    assert (ROOT / "extensions" / "core" / "tools.mjs").is_file()
-    assert (ROOT / "extensions" / "adapters" / "pi-runtime.ts").is_file()
-    assert (ROOT / "extensions" / "ts-workflow-control" / "extension.ts").is_file()
-    assert (ROOT / "extensions" / "ts-workflow-ui" / "extension.ts").is_file()
+    assert (RUNTIME_ROOT / "host-api" / "commands.mjs").is_file()
+    assert (RUNTIME_ROOT / "host-api" / "tools.mjs").is_file()
+    assert (ROOT / "extensions" / "pi" / "runtime.ts").is_file()
+    assert (ROOT / "extensions" / "pi" / "research" / "extension.ts").is_file()
+    assert (ROOT / "extensions" / "pi" / "ui" / "extension.ts").is_file()
     for name in ("artifacts", "compute", "review"):
-        assert (ROOT / "extensions" / f"ts-workflow-{name}" / "tools.ts").is_file()
-    assert not (ROOT / "extensions" / "shared" / "tool-catalog.ts").exists()
-    assert not (ROOT / "extensions" / "shared" / "command-catalog.ts").exists()
-    assert not (ROOT / "extensions" / "shared" / "workspace-cli.ts").exists()
-    assert not (ROOT / "extensions" / "ts-workflow-context").exists()
-    assert not (ROOT / "extensions" / "ts-workflow-subagent").exists()
+        assert (ROOT / "extensions" / "pi" / name / "tools.ts").is_file()
+    for removed in ("adapters", "core", "shared", "ts-workflow-control", "ts-workflow-ui", "ts-workflow-review", "ts-workflow-compute", "ts-workflow-artifacts"):
+        assert not (ROOT / "extensions" / removed).exists()
     for name in ("agent-protocol.cjs", "fact-kinds.cjs", "failure-taxonomy.cjs", "run-journal.cjs", "session-lifecycle.cjs"):
         assert (RUNTIME_ROOT / "agent-core" / name).is_file()
     assert (AGENTS_ROOT / "review" / "runtime.ts").is_file()
@@ -187,8 +184,8 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
 
 
 def test_pi_extension_entrypoints_only_install_owned_modules() -> None:
-    for name in ("control", "ui", "review", "compute", "artifacts"):
-        source = (ROOT / "extensions" / f"ts-workflow-{name}" / "index.ts").read_text(encoding="utf-8")
+    for name in ("research", "ui", "review", "compute", "artifacts"):
+        source = (ROOT / "extensions" / "pi" / name / "index.ts").read_text(encoding="utf-8")
         assert len(source.splitlines()) <= 10
         assert "registerTool" not in source
         assert "registerCommand" not in source
@@ -547,6 +544,7 @@ print(json.dumps({
     assert result["remote_display"] == "not configured"
     session_index = result["argv"].index("--session-dir")
     assert result["argv"][session_index + 1] == str(workspace / ".pi" / "sessions")
+    assert "--session-id" not in result["argv"]
     assert (workspace / ".pi" / "root-agent.lock").is_file()
     assert json.loads((workspace / ".pi" / "settings.json").read_text(encoding="utf-8")) == {"quietStartup": True}
     research_map = json.loads((workspace / "research_map.json").read_text(encoding="utf-8"))

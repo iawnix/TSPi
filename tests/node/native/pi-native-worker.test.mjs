@@ -129,7 +129,7 @@ test("native analysis discovers contracts and journals explicit mapping results"
       cwd: process.cwd(),
       env: { ...process.env, PYTHONPATH: join(process.cwd(), "packages/ts-agent-kernel") },
     });
-    const { createAnalyzeTool, createImportTool, createStateTool, createManageTool } = await import("../../../apps/app-server/pi-native-tools.mjs");
+    const { createAnalyzeTool, createImportTool, createStateTool, createDispatchTool } = await import("../../../apps/app-server/pi-native-tools.mjs");
     const context = { abortSignal: new AbortController().signal };
     const invoke = async (tool, params) => JSON.parse((await tool.execute(
       "analysis-test", params, undefined, { cwd: workspace }, undefined, context,
@@ -179,10 +179,10 @@ test("native analysis discovers contracts and journals explicit mapping results"
       parameters: { reaction_smiles: "O>>O", multiplicities: { reactants: [1], products: [1] } } };
     assert.equal((await invoke(state, { mode: "capabilities", capabilityKind: "analysis", query: "reaction.parse" })).ok, true);
     assert.equal((await invoke(analyze, generic)).verdict, "valid");
-    const manage = createManageTool();
-    await invoke(manage, { operation: "pause", nodeId: "node_1", rationale: "Pause selected branch" });
+    const dispatch = createDispatchTool();
+    await invoke(dispatch, { operation: "pause", nodeId: "node_1", rationale: "Pause selected branch" });
     await assert.rejects(invoke(analyze, generic), /node_dispatch_paused/);
-    await invoke(manage, { operation: "resume", nodeId: "node_1", rationale: "Continue selected branch" });
+    await invoke(dispatch, { operation: "resume", nodeId: "node_1", rationale: "Continue selected branch" });
     assert.equal((await invoke(analyze, generic)).verdict, "valid");
   } finally {
     for (const [name, value] of Object.entries(previous)) {
@@ -332,7 +332,7 @@ test("native Pi server gives every client the complete Agent tool inventory", { 
     const state = await readExperimentalSessionState(runtime.sessionDir, summary.sessionId);
     assert.deepEqual(state.activeTools, [
       "read", "sys_prompt", "write", "bash", "ts_state", "ts_change", "ts_environment",
-      "ts_calc", "ts_review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze", "ts_manage", "ts_import",
+      "ts_calc", "ts_review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze", "ts_dispatch", "ts_import",
       "ts_render", "ts_report", "ts_notify",
     ]);
   } finally {

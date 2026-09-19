@@ -22,7 +22,7 @@ EXPECTED_TOOLS = {
     "ts_seed",
     "ts_compare",
     "ts_analyze",
-    "ts_manage",
+    "ts_dispatch",
     "ts_import",
     "ts_render",
     "ts_report",
@@ -43,12 +43,12 @@ def test_package_manifest_and_profile_expose_skill_family_five_extensions_one_th
 
 def test_loaded_extension_inventory_has_two_bounded_child_agents_and_direct_host_tools() -> None:
     script = f"""
-import control from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
-import ui from {json.dumps((ROOT / 'extensions/ts-workflow-ui/index.ts').as_uri())};
-import review from {json.dumps((ROOT / 'extensions/ts-workflow-review/index.ts').as_uri())};
-import compute from {json.dumps((ROOT / 'extensions/ts-workflow-compute/index.ts').as_uri())};
-import artifacts from {json.dumps((ROOT / 'extensions/ts-workflow-artifacts/index.ts').as_uri())};
-import {{ PUBLIC_TOOL_EXECUTION }} from {json.dumps((ROOT / 'extensions/core/tools.mjs').as_uri())};
+import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
+import ui from {json.dumps((ROOT / 'extensions/pi/ui/index.ts').as_uri())};
+import review from {json.dumps((ROOT / 'extensions/pi/review/index.ts').as_uri())};
+import compute from {json.dumps((ROOT / 'extensions/pi/compute/index.ts').as_uri())};
+import artifacts from {json.dumps((ROOT / 'extensions/pi/artifacts/index.ts').as_uri())};
+import {{ PUBLIC_TOOL_EXECUTION }} from {json.dumps((ROOT / 'packages/ts-agent-runtime/host-api/tools.mjs').as_uri())};
 const tools=[];const commands=[];const handlers={{}};
 const pi={{
   registerTool:(tool)=>tools.push(tool),registerCommand:(name)=>commands.push(name),
@@ -56,7 +56,7 @@ const pi={{
   appendEntry:()=>{{}},sendMessage:()=>{{}},getThinkingLevel:()=>"high",
   events:{{on:()=>()=>{{}}}},exec:async()=>({{code:0,stdout:"{{}}",stderr:""}}),
 }};
-for (const install of [control,ui,review,compute,artifacts]) install(pi);
+for (const install of [research,ui,review,compute,artifacts]) install(pi);
 process.stdout.write(JSON.stringify({{
   tools:tools.map((tool)=>({{name:tool.name,properties:Object.keys(tool.parameters?.properties||{{}})}})),
   commands,execution:PUBLIC_TOOL_EXECUTION,
@@ -80,12 +80,41 @@ process.stdout.write(JSON.stringify({{
     assert not any(name.startswith("ts_workspace_") or name.startswith("ts_subagent_") for name in EXPECTED_TOOLS)
 
 
+def test_pi_extensions_register_only_their_owned_tools() -> None:
+    script = f"""
+import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
+import review from {json.dumps((ROOT / 'extensions/pi/review/index.ts').as_uri())};
+import compute from {json.dumps((ROOT / 'extensions/pi/compute/index.ts').as_uri())};
+import artifacts from {json.dumps((ROOT / 'extensions/pi/artifacts/index.ts').as_uri())};
+function collect(install) {{
+  const tools=[];
+  const pi={{
+    registerTool:(tool)=>tools.push(tool.name),registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},
+    on:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{on:()=>()=>{{}}}},
+  }};
+  install(pi);
+  return tools;
+}}
+process.stdout.write(JSON.stringify({{
+  research:collect(research),review:collect(review),compute:collect(compute),artifacts:collect(artifacts),
+}}));
+"""
+    result = _node_json(script)
+
+    assert set(result["research"]) == {"sys_prompt", "ts_state", "ts_change", "ts_notify"}
+    assert set(result["review"]) == {"ts_review", "ts_reply"}
+    assert set(result["compute"]) == {"ts_environment", "ts_dispatch", "ts_calc"}
+    assert set(result["artifacts"]) == {
+        "ts_seed", "ts_import", "ts_compare", "ts_analyze", "ts_render", "ts_report"
+    }
+
+
 def test_pi_and_native_public_tools_share_names_and_parameter_schemas() -> None:
     script = f"""
-import control from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
-import review from {json.dumps((ROOT / 'extensions/ts-workflow-review/index.ts').as_uri())};
-import compute from {json.dumps((ROOT / 'extensions/ts-workflow-compute/index.ts').as_uri())};
-import artifacts from {json.dumps((ROOT / 'extensions/ts-workflow-artifacts/index.ts').as_uri())};
+import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
+import review from {json.dumps((ROOT / 'extensions/pi/review/index.ts').as_uri())};
+import compute from {json.dumps((ROOT / 'extensions/pi/compute/index.ts').as_uri())};
+import artifacts from {json.dumps((ROOT / 'extensions/pi/artifacts/index.ts').as_uri())};
 import {{ createTspiTools }} from {json.dumps((ROOT / 'apps/app-server/pi-native-tools.mjs').as_uri())};
 import {{ createSystemPromptTool }} from {json.dumps((ROOT / 'apps/app-server/system-prompt.mjs').as_uri())};
 const extensionTools=[];
@@ -93,7 +122,7 @@ const pi={{
   registerTool:(tool)=>extensionTools.push(tool),registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},
   on:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{on:()=>()=>{{}}}},
 }};
-for (const install of [control,review,compute,artifacts]) install(pi);
+for (const install of [research,review,compute,artifacts]) install(pi);
 const nativeTools=[createSystemPromptTool({{}}),...createTspiTools()];
 const schemas=(tools)=>Object.fromEntries(tools.map((tool)=>[tool.name,JSON.parse(JSON.stringify(tool.parameters))]));
 process.stdout.write(JSON.stringify({{extension:schemas(extensionTools),native:schemas(nativeTools)}}));
@@ -107,8 +136,8 @@ process.stdout.write(JSON.stringify({{extension:schemas(extensionTools),native:s
 
 def test_slash_commands_map_to_canonical_commands_and_reject_removed_aliases() -> None:
     script = f"""
-import {{ parseSlashCommand }} from {json.dumps((ROOT / 'extensions/core/commands.mjs').as_uri())};
-import {{ createPublicToolContracts }} from {json.dumps((ROOT / 'extensions/core/tools.mjs').as_uri())};
+import {{ parseSlashCommand }} from {json.dumps((ROOT / 'packages/ts-agent-runtime/host-api/commands.mjs').as_uri())};
+import {{ createPublicToolContracts }} from {json.dumps((ROOT / 'packages/ts-agent-runtime/host-api/tools.mjs').as_uri())};
 import {{ Type }} from "typebox";
 const cases=[
   ["research",""],
@@ -144,7 +173,7 @@ process.stdout.write(JSON.stringify({{cases,removedAlias,stateModes}}));
 
 def test_model_icons_identify_known_providers_and_fall_back_for_unknown_models() -> None:
     script = f"""
-import {{ tspiIcon, tspiIconStyle, tspiModelIconName, tspiModelIconLabel }} from {json.dumps((ROOT / 'extensions/shared/icons.ts').as_uri())};
+import {{ tspiIcon, tspiIconStyle, tspiModelIconName, tspiModelIconLabel }} from {json.dumps((ROOT / 'extensions/pi/shared/icons.ts').as_uri())};
 const models=[
   {{provider:"deepseek",id:"deepseek-chat"}},
   {{provider:"openai",id:"gpt-5.5"}},
@@ -160,16 +189,16 @@ process.stdout.write(JSON.stringify({{models:models.map((model)=>({{name:tspiMod
     assert result["models"][0]["label"].endswith("deepseek-chat")
     assert result["models"][4]["label"].endswith("local-model")
     assert result["models"][5]["label"].endswith("Default model")
-    assert ord(result["tspi"]) == 0xE800
+    assert ord(result["tspi"]) == 0xF0000
     assert result["fallback"] == "◆"
     assert result["style"] == "tspi"
 
 
 def test_public_parameters_use_research_node_and_logical_artifact_vocabulary() -> None:
     script = f"""
-import review from {json.dumps((ROOT / 'extensions/ts-workflow-review/index.ts').as_uri())};
-import compute from {json.dumps((ROOT / 'extensions/ts-workflow-compute/index.ts').as_uri())};
-import artifacts from {json.dumps((ROOT / 'extensions/ts-workflow-artifacts/index.ts').as_uri())};
+import review from {json.dumps((ROOT / 'extensions/pi/review/index.ts').as_uri())};
+import compute from {json.dumps((ROOT / 'extensions/pi/compute/index.ts').as_uri())};
+import artifacts from {json.dumps((ROOT / 'extensions/pi/artifacts/index.ts').as_uri())};
 const tools={{}};const pi={{registerTool:(tool)=>tools[tool.name]=tool,registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},on:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{on:()=>()=>{{}}}}}};
 for (const install of [review,compute,artifacts]) install(pi);
 function propertyKeys(schema, found=new Set()) {{
@@ -201,13 +230,13 @@ process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(tools).map
 def test_root_skill_and_public_tool_contracts_stay_within_context_budget() -> None:
     skill_bytes = len((ROOT / "skills/tspi-orchestration/SKILL.md").read_bytes())
     script = f"""
-import control from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
-import review from {json.dumps((ROOT / 'extensions/ts-workflow-review/index.ts').as_uri())};
-import compute from {json.dumps((ROOT / 'extensions/ts-workflow-compute/index.ts').as_uri())};
-import artifacts from {json.dumps((ROOT / 'extensions/ts-workflow-artifacts/index.ts').as_uri())};
-import {{ packageSourceSystemPrompt }} from {json.dumps((ROOT / 'extensions/shared/package-source-policy.ts').as_uri())};
+import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
+import review from {json.dumps((ROOT / 'extensions/pi/review/index.ts').as_uri())};
+import compute from {json.dumps((ROOT / 'extensions/pi/compute/index.ts').as_uri())};
+import artifacts from {json.dumps((ROOT / 'extensions/pi/artifacts/index.ts').as_uri())};
+import {{ packageSourceSystemPrompt }} from {json.dumps((ROOT / 'extensions/pi/shared/package-source-policy.ts').as_uri())};
 const tools=[];const pi={{registerTool:(tool)=>tools.push(tool),registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},on:()=>{{}},events:{{on:()=>()=>{{}}}}}};
-for (const install of [control,review,compute,artifacts]) install(pi);
+for (const install of [research,review,compute,artifacts]) install(pi);
 const rows=tools.map((tool)=>{{
   const schema=Buffer.byteLength(JSON.stringify(tool.parameters));
   const prose=Buffer.byteLength(String(tool.description||""))+Buffer.byteLength(String(tool.promptSnippet||""))+Buffer.byteLength(JSON.stringify(tool.promptGuidelines||[]));
@@ -223,7 +252,7 @@ process.stdout.write(JSON.stringify({{rows,total:rows.reduce((sum,row)=>sum+row.
     # Preserve the previous surface budget; new analyses share one small
     # envelope with domain schemas loaded through the capability catalog.
     analysis_bytes = by_name["ts_analyze"]["total"]
-    management_bytes = by_name["ts_manage"]["total"]
+    management_bytes = by_name["ts_dispatch"]["total"]
     assert analysis_bytes <= 900
     assert management_bytes <= 500
     assert measured["total"] - analysis_bytes - management_bytes <= 13_000
@@ -245,7 +274,7 @@ def test_workspace_cli_compiles_frontier_and_focused_node(tmp_path: Path) -> Non
 
 def test_context_summary_uses_unified_agent_run_counts() -> None:
     script = f"""
-import summary from {json.dumps((ROOT / 'extensions/ts-workflow-control/summary.cjs').as_uri())};
+import summary from {json.dumps((ROOT / 'extensions/pi/shared/tool-runtime.cjs').as_uri())};
 const {{buildContextDetails,buildContextSummary}}=summary;
     const context={{schema_version:"research-summary/1",map_id:"map_1",title:"Locate saddle",revision:3,progress:{{phase_count:1,claim_count:1,node_count:1,finding_count:0,gate_count:0,closed_node_count:0,open_issue_count:0}},focus_claim_ids:["claim_1"],focus_node_ids:["node_1"]}};
 process.stdout.write(JSON.stringify({{details:buildContextDetails(context),summary:buildContextSummary(context)}}));
@@ -257,10 +286,10 @@ process.stdout.write(JSON.stringify({{details:buildContextDetails(context),summa
     assert "map_1" in result["summary"]
 
 
-def test_control_prompt_injection_states_authority_without_prescribing_sequence(tmp_path: Path) -> None:
+def test_research_prompt_injection_states_authority_without_prescribing_sequence(tmp_path: Path) -> None:
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     script = f"""
-import install from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+import install from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
 const handlers={{}};const pi={{registerTool:()=>{{}},registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},on:(name,handler)=>handlers[name]=handler}};
 install(pi);
 const result=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
@@ -281,7 +310,7 @@ def test_sys_prompt_reports_exact_pi_prompt_and_honest_extension_provenance(tmp_
     visible_path = str(tmp_path / "skills" / "visible" / "SKILL.md")
     hidden_path = str(tmp_path / "skills" / "hidden" / "SKILL.md")
     script = f"""
-import install from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+import install from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
 import {{ formatSkillsForPrompt }} from "@earendil-works/pi-coding-agent";
 const handlers={{}};const tools={{}};
 const pi={{
@@ -327,7 +356,7 @@ process.stdout.write(JSON.stringify({{manifest:JSON.parse(result.content[0].text
 
 def test_sys_prompt_command_renders_the_same_manifest_as_the_tool() -> None:
     script = f"""
-import install from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+import install from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
 const commands={{}}; const entries=[]; const notices=[];
 const pi={{
   registerTool:()=>{{}}, registerCommand:(name,command)=>commands[name]=command,
@@ -356,7 +385,7 @@ process.stdout.write(JSON.stringify({{entries,notices,description:commands.debug
 def test_extension_turn_refreshes_bounded_science_without_appending_history(tmp_path: Path) -> None:
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     script = f"""
-import install from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+import install from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
 const handlers={{}}; const tools={{}}; let reads=0; let unavailable=false;
 const pi={{registerTool:(tool)=>tools[tool.name]=tool,registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},
   on:(name,handler)=>handlers[name]=handler,
@@ -420,7 +449,7 @@ process.stdout.write(JSON.stringify({{first,second,failed,standalone,firstManife
 def test_state_operations_routes_to_the_kernel_without_leaking_other_selectors(tmp_path: Path) -> None:
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     script = f"""
-import control from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
 const calls=[];
 const pi={{
   registerTool:(tool)=>{{ if (tool.name === "ts_state") globalThis.stateTool=tool; }},
@@ -432,7 +461,7 @@ const pi={{
     throw new Error("unexpected command");
   }},
 }};
-control(pi);
+research(pi);
 const result=await globalThis.stateTool.execute("tool-1", {{mode:"operations",root:{json.dumps(str(workspace))}}}, undefined, undefined, {{cwd:{json.dumps(str(workspace))}}});
 let rejected=false;
 try {{ await globalThis.stateTool.execute("tool-2", {{mode:"operations",root:{json.dumps(str(workspace))},capabilityKind:"compute"}}, undefined, undefined, {{cwd:{json.dumps(str(workspace))}}}); }}
@@ -453,7 +482,7 @@ def test_ts_change_forwards_unknown_operation_to_kernel_for_explicit_registry_er
     script = f"""
 import {{ readFileSync }} from "node:fs";
 import {{ spawnSync }} from "node:child_process";
-import control from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
 process.env.TS_AGENT_PYTHON = {json.dumps(sys.executable)};
 const calls=[]; let changeTool;
 const pi={{
@@ -467,7 +496,7 @@ const pi={{
     return {{code:result.status,stdout:result.stdout,stderr:result.stderr}};
   }},
 }};
-control(pi);
+research(pi);
 let error="";
 try {{ await changeTool.execute("tool-1",{{root:{json.dumps(str(workspace))},rationale:"Probe kernel ownership.",operations:[{{type:"future_science_operation",payload:"kept"}}]}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}}); }}
 catch (caught) {{ error=String(caught.message||caught); }}
@@ -487,7 +516,7 @@ process.stdout.write(JSON.stringify({{error,calls}}));
 
 
 def test_review_fallback_failure_uses_review_runtime_taxonomy() -> None:
-    source = (ROOT / "extensions" / "ts-workflow-review" / "tools.ts").read_text(encoding="utf-8")
+    source = (ROOT / "extensions" / "pi" / "review" / "tools.ts").read_text(encoding="utf-8")
 
     assert 'failure_class: "review_runtime_failed"' in source
     assert 'failure_stage: "review_runtime"' in source

@@ -184,7 +184,7 @@ function truncateText(value, maximum) {
 function main(argv) {
   const contextFlag = argv.indexOf("--context");
   if (contextFlag < 0 || !argv[contextFlag + 1]) {
-    console.error("usage: node summary.cjs --context <context.json>");
+    console.error("usage: node tool-runtime.cjs --context <context.json>");
     return 2;
   }
   const context = JSON.parse(fs.readFileSync(argv[contextFlag + 1], "utf8"));

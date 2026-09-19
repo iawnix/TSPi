@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
-import { createPublicToolContracts } from "../../extensions/core/tools.mjs";
+import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
 
 const executeFile = promisify(execFile);
 const TOOL_CONTRACTS = createPublicToolContracts(Type);

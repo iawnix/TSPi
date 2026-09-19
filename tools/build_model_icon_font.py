@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Build the small, dependency-light TSPi model icon font.
 
-The font intentionally uses Private Use Area codepoints.  It is kept separate
-from Nerd Font so TSPi can render branded model indicators without requiring a
-large system font package or assuming a particular terminal font collection.
+The font intentionally uses Supplementary Private Use Area codepoints. Nerd
+Fonts heavily occupy the Basic Private Use Area, so putting these glyphs there
+would let a terminal's primary font shadow TSPi's fallback font.
 """
 
 from __future__ import annotations
@@ -21,11 +21,11 @@ DESCENT = -200
 ADVANCE = 1000
 
 GLYPH_CODES = {
-    "tspi-deepseek": 0xE800,
-    "tspi-gpt": 0xE801,
-    "tspi-glm": 0xE802,
-    "tspi-seeddance": 0xE803,
-    "tspi-model": 0xE804,
+    "tspi-deepseek": 0xF0000,
+    "tspi-gpt": 0xF0001,
+    "tspi-glm": 0xF0002,
+    "tspi-seeddance": 0xF0003,
+    "tspi-model": 0xF0004,
 }
 
 
@@ -132,12 +132,13 @@ def build(output: Path) -> None:
             "fullName": "TSPi Model Icons Regular",
             "uniqueFontIdentifier": "TSPi Model Icons Regular",
             "psName": "TSPi-Model-Icons-Regular",
-            "version": "Version 1.0",
+            "version": "Version 2.0",
         }
     )
     builder.setupPost(keepGlyphNames=True)
     builder.setupMaxp()
     # Avoid embedding the build clock in the checked-in binary.
+    builder.font["head"].fontRevision = 2.0
     builder.font["head"].created = 2082840000
     builder.font["head"].modified = 2082840000
     output.parent.mkdir(parents=True, exist_ok=True)
