@@ -110,7 +110,8 @@ TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、
 `TSPi --workspace <name>` 是连接 Host 的 Pi 原生 TUI 客户端，并在创建会话时传递
 `TSPI_SESSION_CWD`。TS Phone 通过同一组 service 列出或创建项目，并创建或切换会话，
 无需为每个项目再次连接或启动 Host。启动器通过原生 App Server 入口进入选定项目，
-不再维护第二套工作区启动路径。
+不再维护第二套工作区启动路径。若 user service 尚未运行，终端启动器会通过 systemd
+启动它并有限等待唯一 Host 的 Unix socket；不会回退为第二个前台 Host。
 
 第一次执行 `TSPi --workspace <name>` 时，如果项目不存在，客户端会通过同一套经过校验
 的 bootstrap 初始化它；Host 不会创建未命名项目，必须由客户端明确指定合法名称。

@@ -5,13 +5,14 @@
 TSPi 终端是连接安装级 Host 的 Pi 原生 TUI。Host 是唯一的会话所有者；终端和
 TS Phone 都只是它的客户端，一个 Host 可以服务多个项目。
 
-## 启动 Host
+## 打开工作区
 
-先由 systemd 启动安装级 Host，再连接某个项目的 TUI：
+直接连接项目。Host 未运行时，TSPi 会通过 systemd user service 启动唯一的安装级
+Host，并在 Unix socket 就绪后连接 TUI：
 
 ```bash
-systemctl --user start ts-app-server-tspi.service
 ./TSPi --workspace reaction-a
+./TSPi --workspace reaction-a -c
 ```
 
 使用 `systemctl --user stop|restart|status ts-app-server-tspi.service` 管理 Host 生命周期。
@@ -21,9 +22,9 @@ Host 身份位于 `.pi/app-server-host/server-id`；私有 Unix socket
 
 ## 会话和操作
 
-TUI 使用 Pi 原生 session directory。使用 Pi 标准命令创建、选择、重命名和删除会话。
-`--session-id <id>` 连接指定会话，`--continue` 选择最近会话。退出 TUI 只会断开当前
-客户端，不会停止 App Server。
+不带会话选项时创建新会话。`-c` 或 `--continue` 选择当前 workspace 最近的会话；
+`--session-id <id>` 连接当前 workspace 中的指定会话。TUI 使用 Pi 原生 session
+directory；退出 TUI 只会断开当前客户端，不会停止 App Server。
 
 Ctrl+C 中断当前本地 turn，`/abort` 向 App Server 请求中止当前 agent run。断线后不会
 自动重发 prompt；请先检查历史，再决定是否重试。
@@ -61,8 +62,8 @@ adapter 使用版本化的 `tspi-session-control/1` 请求合约和 SSE transcri
 
 ## 故障排查
 
-- `workspace is unavailable`：先完成项目 bootstrap，再确认 Host 服务正在运行。
-- `App Server is not running`：启动单一 Host service 或上面的命令。
+- `workspace is unavailable`：检查 workspace 名称及 workspace root 配置。
+- `could not start ts-app-server-tspi.service`：使用 `systemctl --user status` 检查 user service。
 - `another Root Agent already owns workspace`：复用现有 Host，不要为同一安装启动第二个。
 - App Server UUID 变化表示指向了不同安装或工作区，请在手机端有意更新连接配置。
 

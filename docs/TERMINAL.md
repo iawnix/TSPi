@@ -6,13 +6,15 @@ The TSPi terminal is Pi's native TUI attached to the installation Host. The
 Host is the only session owner; the terminal and TS Phone are equal clients of
 it. One Host can serve every project below the configured workspace root.
 
-## Start the Host
+## Open a workspace
 
-Start the installation Host with systemd, then attach the TUI to a project:
+Connect to a project directly. If the Host is not running, TSPi starts the one
+installation-wide systemd user service and waits for its Unix socket before
+attaching the TUI:
 
 ```bash
-systemctl --user start ts-app-server-tspi.service
 ./TSPi --workspace reaction-a
+./TSPi --workspace reaction-a -c
 ```
 
 Use `systemctl --user stop|restart|status ts-app-server-tspi.service` to manage
@@ -25,10 +27,11 @@ directory).
 
 ## Sessions and controls
 
-The TUI uses Pi's native session directory. Create, select, rename, and remove
-sessions with the standard Pi commands. `--session-id <id>` attaches a precise
-session; `--continue` selects the most recent session. Exiting the TUI detaches
-only that client and leaves the App Server running.
+With no session option, TSPi creates a new conversation. `-c` or `--continue`
+selects the latest conversation in the current workspace; `--session-id <id>`
+attaches a precise conversation in that workspace. The TUI uses Pi's native
+session directory. Exiting it detaches only that client and leaves the App
+Server running.
 
 Ctrl+C interrupts the current local turn. `/abort` requests an App Server abort
 for the active agent run. A prompt is never resent automatically after a
@@ -73,9 +76,9 @@ second Worker. Phone clients should continue using Pi Radius directly.
 
 ## Troubleshooting
 
-- `workspace is unavailable`: bootstrap the project, then ensure the Host
-  service is running.
-- `App Server is not running`: start the single Host service or command above.
+- `workspace is unavailable`: inspect the workspace name and configured workspace root.
+- `could not start ts-app-server-tspi.service`: inspect the user service with
+  `systemctl --user status`.
 - `another Root Agent already owns workspace`: use the existing Host; do not
   start a second Host for the installation.
 - A changed App Server UUID means a different installation or workspace; update

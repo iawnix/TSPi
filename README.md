@@ -29,21 +29,19 @@ documented in [Model Compatibility](docs/MODEL_COMPATIBILITY.md).
 ## App Server and terminal
 
 One installation-wide Pi App Server Host owns sessions, transcript history,
-model state, and the Root lock for all workspaces:
-
-```bash
-systemctl --user start ts-app-server-tspi.service
-```
-
-Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for the
-Host lifecycle. `--host` is an internal service entrypoint and is not part of
-normal operation.
-
-The default TSPi command is the local terminal client of that server:
+model state, and the Root lock for all workspaces. Open a workspace directly;
+TSPi starts the user service and waits for the Host when it is not running:
 
 ```bash
 ./TSPi --workspace reaction-a
+./TSPi --workspace reaction-a -c
 ```
+
+The first command creates a conversation; the second continues the latest
+conversation in that workspace.
+Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for the
+Host lifecycle. `--host` is an internal service entrypoint and is not part of
+normal operation.
 
 The TS Phone Flutter app connects to the same App Server through Pi Radius;
 it is not a second Host or broker. See [Terminal](docs/TERMINAL.md),

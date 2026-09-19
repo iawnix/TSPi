@@ -12,6 +12,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import uuid
 from dataclasses import dataclass
@@ -82,6 +83,10 @@ PROXY_VARIABLES = (
     "ALL_PROXY",
 )
 PROXY_SCHEMES = {"http", "https", "socks", "socks5"}
+APP_SERVER_SERVICE = "ts-app-server-tspi.service"
+HOST_START_TIMEOUT_SECONDS = 15
+HOST_READY_TIMEOUT_SECONDS = 10.0
+HOST_READY_POLL_SECONDS = 0.1
 
 
 class TSPiHostError(RuntimeError):
@@ -91,15 +96,18 @@ class TSPiHostError(RuntimeError):
         self.code = code
 
 
+class TSPiHostUnavailableError(TSPiHostError):
+    """The installation Host has not created a usable endpoint yet."""
+
+
 @dataclass(frozen=True)
 class LaunchRequest:
     workspace_name: str | None
     check_remote: bool
     session_id: str | None
+    continue_latest: bool
     show_help: bool
     pi_args: tuple[str, ...]
-    app_server: bool = False
-    app_client: bool = False
     gateway: bool = False
     standalone: bool = False
     host: bool = False
@@ -131,7 +139,8 @@ Options:
   -h, --help          Show this help.
 
 The terminal connects to the installation Host managed by
-ts-app-server-tspi.service. Exiting the terminal only detaches this client.
+ts-app-server-tspi.service, starting the user service when needed. Exiting the
+terminal only detaches this client.
 """
 
 
@@ -140,10 +149,9 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
     show_help = False
     workspace_name: str | None = None
     session_id: str | None = None
+    continue_latest = False
     pi_args: list[str] = []
     standalone = False
-    app_server = False
-    app_client = False
     gateway = False
     host = False
     index = 0
@@ -156,10 +164,11 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
             check_remote = True
         elif value == "--standalone":
             standalone = True
-        elif value == "--app-server":
-            app_server = True
-        elif value == "--app-client":
-            app_client = True
+        elif value in {"--app-server", "--app-client"}:
+            raise TSPiHostError(
+                f"{value} was removed; use TSPi --workspace <name> to connect to the installation Host",
+                exit_code=2,
+            )
         elif value == "--gateway":
             gateway = True
         elif value in {"--host", "--service-host"}:
@@ -190,19 +199,22 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
             session_id = argv[index]
         elif value.startswith("--session-id="):
             session_id = value.removeprefix("--session-id=")
+        elif value in {"-c", "--continue"}:
+            continue_latest = True
         elif value in {"-h", "--help"}:
             show_help = True
         else:
             pi_args.append(value)
         index += 1
+    if session_id and continue_latest:
+        raise TSPiHostError("--session-id and --continue cannot be combined", exit_code=2)
     return LaunchRequest(
         workspace_name=workspace_name,
         check_remote=check_remote,
         session_id=session_id,
+        continue_latest=continue_latest,
         show_help=show_help,
         pi_args=tuple(pi_args),
-        app_server=app_server,
-        app_client=app_client,
         gateway=gateway,
         standalone=standalone,
         host=host,
@@ -404,8 +416,7 @@ def resolve_existing_workspace(installation: Installation, workspace_name: str) 
     if container.is_symlink() or requested.is_symlink() or not requested.is_dir():
         raise TSPiHostError(
             f"workspace is unavailable: {requested}\n"
-            f"Create the workspace and start the installation Host first:\n"
-            f"  systemctl --user start ts-app-server-tspi.service\n"
+            "Create it first with TSPi --workspace <name>.\n"
             "If this installation was upgraded unsuccessfully, rerun install.sh."
         )
     workspace = requested.resolve()
@@ -764,34 +775,6 @@ def _resolve_pi_binary() -> Path:
     return path
 
 
-def build_app_server_command(
-    installation: Installation,
-    workspace: Path,
-    request: LaunchRequest,
-) -> list[str]:
-    for option in ("--directory", "--server-id", "--session-dir", "--workspace"):
-        if _has_cli_option(request.pi_args, option):
-            raise TSPiHostError(f"{option} is managed by the TSPi App Server launcher", exit_code=2)
-    state_root = _prepare_app_server_state(workspace)
-    server_id = _app_server_id(workspace, create=True)
-    socket_directory = _app_server_socket_directory(workspace, create=True)
-    command = [
-        _node_binary(),
-        str(_app_server_entry(installation)),
-        "server",
-        "--workspace",
-        str(workspace),
-        "--directory",
-        str(socket_directory),
-        "--server-id",
-        server_id,
-        "--session-dir",
-        str(state_root / "sessions"),
-    ]
-    command.extend(request.pi_args)
-    return command
-
-
 def build_host_server_command(installation: Installation, request: LaunchRequest) -> list[str]:
     """Build the one installation-wide Pi App Server command."""
     for option in ("--directory", "--server-id", "--session-dir", "--workspace"):
@@ -817,80 +800,98 @@ def build_host_server_command(installation: Installation, request: LaunchRequest
     return command
 
 
-def build_app_client_command(
-    installation: Installation,
-    request: LaunchRequest,
-    workspace: Path | None = None,
-) -> list[str]:
-    command = [_node_binary(), str(_app_server_entry(installation)), "client"]
-    if workspace is not None:
-        server_id = _app_server_id(workspace, create=False)
-        socket_directory = _app_server_socket_directory(workspace, create=False)
-        socket_path = socket_directory / f"{server_id}.sock"
-        try:
-            socket_mode = socket_path.stat().st_mode
-        except OSError as exc:
-            raise TSPiHostError(
-                f"Compatibility App Server is not running for workspace {workspace.name}; "
-                f"start the installation Host with: systemctl --user start ts-app-server-tspi.service"
-            ) from exc
-        if not stat.S_ISSOCK(socket_mode):
-            raise TSPiHostError(f"App Server endpoint is not a Unix socket: {socket_path}")
-        command.extend([
-            "--directory",
-            str(socket_directory),
-            "--connect",
-            f"unix://{socket_path}",
-        ])
-    if request.session_id:
-        command.extend(["--session-id", request.session_id])
-    command.extend(request.pi_args)
-    return command
-
-
-def build_host_client_command(installation: Installation, request: LaunchRequest) -> list[str]:
-    """Build a terminal client command connected to the installation Host."""
+def resolve_host_socket(installation: Installation) -> Path:
+    """Resolve the one installation Host endpoint without hiding invalid state."""
     server_id = _host_server_id(installation, create=False)
-    socket_directory = _host_socket_directory(installation, create=False)
-    socket_path = socket_directory / f"{server_id}.sock"
+    socket_path = _host_socket_directory(installation, create=False) / f"{server_id}.sock"
     try:
         socket_mode = socket_path.stat().st_mode
+    except FileNotFoundError as exc:
+        raise TSPiHostUnavailableError("TSPi Host is not running") from exc
     except OSError as exc:
-        raise TSPiHostError(
-            "TSPi Host is not running; start it with: systemctl --user start ts-app-server-tspi.service"
-        ) from exc
+        raise TSPiHostError(f"cannot inspect TSPi Host endpoint: {socket_path}: {exc}") from exc
     if not stat.S_ISSOCK(socket_mode):
         raise TSPiHostError(f"TSPi Host endpoint is not a Unix socket: {socket_path}")
+    return socket_path
+
+
+def ensure_host_running(installation: Installation) -> Path:
+    """Return the Host socket, starting the managed user service when absent."""
+    try:
+        return resolve_host_socket(installation)
+    except TSPiHostUnavailableError:
+        pass
+
+    systemctl = shutil.which("systemctl")
+    if systemctl is None:
+        raise TSPiHostError(
+            f"TSPi Host is not running and systemctl is unavailable; start {APP_SERVER_SERVICE}"
+        )
+    command = [systemctl, "--user", "start", APP_SERVER_SERVICE]
+    try:
+        completed = subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=HOST_START_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise TSPiHostError(f"timed out starting {APP_SERVER_SERVICE}") from exc
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "systemctl returned no diagnostic"
+        raise TSPiHostError(f"could not start {APP_SERVER_SERVICE}: {detail}")
+
+    deadline = time.monotonic() + HOST_READY_TIMEOUT_SECONDS
+    while True:
+        try:
+            return resolve_host_socket(installation)
+        except TSPiHostUnavailableError:
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(HOST_READY_POLL_SECONDS)
+    raise TSPiHostError(
+        f"{APP_SERVER_SERVICE} started but the Host did not become ready within "
+        f"{HOST_READY_TIMEOUT_SECONDS:g} seconds; inspect it with systemctl --user status {APP_SERVER_SERVICE}"
+    )
+
+
+def build_host_client_command(
+    installation: Installation,
+    request: LaunchRequest,
+    *,
+    socket_path: Path | None = None,
+) -> list[str]:
+    """Build a terminal client command connected to the installation Host."""
+    endpoint = socket_path or resolve_host_socket(installation)
     command = [
         _node_binary(),
         str(_app_server_entry(installation)),
         "client",
         "--directory",
-        str(socket_directory),
+        str(endpoint.parent),
         "--connect",
-        f"unix://{socket_path}",
+        f"unix://{endpoint}",
     ]
     if request.session_id:
         command.extend(["--session-id", request.session_id])
+    elif request.continue_latest:
+        command.append("--continue")
     command.extend(request.pi_args)
     return command
 
 
-def build_gateway_command(installation: Installation, request: LaunchRequest) -> list[str]:
+def build_gateway_command(
+    installation: Installation,
+    request: LaunchRequest,
+    *,
+    socket_path: Path | None = None,
+) -> list[str]:
     """Build a browser adapter attached to an existing installation Host session."""
     if not request.session_id:
         raise TSPiHostError("--gateway requires --session-id", exit_code=2)
-    server_id = _host_server_id(installation, create=False)
-    socket_directory = _host_socket_directory(installation, create=False)
-    socket_path = socket_directory / f"{server_id}.sock"
-    try:
-        socket_mode = socket_path.stat().st_mode
-    except OSError as exc:
-        raise TSPiHostError(
-            "TSPi Host is not running; start it with: systemctl --user start ts-app-server-tspi.service"
-        ) from exc
-    if not stat.S_ISSOCK(socket_mode):
-        raise TSPiHostError(f"TSPi Host endpoint is not a Unix socket: {socket_path}")
+    endpoint = socket_path or resolve_host_socket(installation)
     command = [
         _node_binary(),
         str(_app_server_entry(installation)),
@@ -898,7 +899,7 @@ def build_gateway_command(installation: Installation, request: LaunchRequest) ->
         "--workspace",
         str(installation.workspaces_root / request.workspace_name),
         "--connect",
-        f"unix://{socket_path}",
+        f"unix://{endpoint}",
         "--session-id",
         request.session_id,
     ]
@@ -918,18 +919,6 @@ def _app_server_entry(installation: Installation) -> Path:
     if entry.is_symlink() or not entry.is_file():
         raise TSPiHostError("selected Package has no native Pi App Server entrypoint")
     return entry
-
-
-def _prepare_app_server_state(workspace: Path) -> Path:
-    state_root = workspace / ".pi" / "app-server"
-    for path in (workspace / ".pi", state_root, state_root / "sessions"):
-        if path.is_symlink():
-            raise TSPiHostError(f"App Server state path cannot be a symbolic link: {path}")
-        path.mkdir(mode=0o700, exist_ok=True)
-        if not path.is_dir():
-            raise TSPiHostError(f"App Server state path is not a directory: {path}")
-        path.chmod(0o700)
-    return state_root
 
 
 def _prepare_host_state(installation: Installation) -> tuple[Path, Path]:
@@ -977,44 +966,6 @@ def _prepare_host_state(installation: Installation) -> tuple[Path, Path]:
     return host_workspace, state_root
 
 
-def _app_server_id(workspace: Path, *, create: bool) -> str:
-    path = workspace / ".pi/app-server/server-id"
-    if create:
-        _prepare_app_server_state(workspace)
-        if not path.exists() and not path.is_symlink():
-            value = str(uuid.uuid4())
-            try:
-                descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-            except FileExistsError:
-                pass
-            else:
-                with os.fdopen(descriptor, "w", encoding="ascii") as handle:
-                    handle.write(value + "\n")
-                    handle.flush()
-                    os.fsync(handle.fileno())
-    try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    except OSError as exc:
-        raise TSPiHostError(
-            f"Compatibility App Server is not initialized for workspace {workspace.name}; "
-            f"start the installation Host with: systemctl --user start ts-app-server-tspi.service"
-        ) from exc
-    with os.fdopen(descriptor, "r", encoding="ascii") as handle:
-        info = os.fstat(handle.fileno())
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_uid != os.getuid()
-            or stat.S_IMODE(info.st_mode) != 0o600
-            or info.st_nlink != 1
-            or info.st_size > 64
-        ):
-            raise TSPiHostError(f"App Server identity must be an owner-only regular file: {path}")
-        server_id = handle.read(65).strip()
-    if not APP_SERVER_ID.fullmatch(server_id):
-        raise TSPiHostError(f"invalid App Server identity: {path}")
-    return server_id
-
-
 def _host_server_id(installation: Installation, *, create: bool) -> str:
     host_workspace, state_root = _prepare_host_state(installation)
     path = state_root / "server-id"
@@ -1031,10 +982,10 @@ def _host_server_id(installation: Installation, *, create: bool) -> str:
                 os.fsync(handle.fileno())
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError as exc:
+        raise TSPiHostUnavailableError("TSPi Host is not initialized") from exc
     except OSError as exc:
-        raise TSPiHostError(
-            "TSPi Host is not initialized; start it with: systemctl --user start ts-app-server-tspi.service"
-        ) from exc
+        raise TSPiHostError(f"cannot read TSPi Host identity: {path}: {exc}") from exc
     with os.fdopen(descriptor, "r", encoding="ascii") as handle:
         info = os.fstat(handle.fileno())
         if (
@@ -1051,7 +1002,7 @@ def _host_server_id(installation: Installation, *, create: bool) -> str:
     return server_id
 
 
-def _app_server_socket_directory(workspace: Path, *, create: bool) -> Path:
+def _private_socket_directory(identity_root: Path, *, create: bool) -> Path:
     configured = os.environ.get("TSPI_APP_SERVER_RUNTIME_DIR", "").strip()
     if configured:
         base = Path(configured).expanduser()
@@ -1065,7 +1016,7 @@ def _app_server_socket_directory(workspace: Path, *, create: bool) -> Path:
         if candidate.is_dir():
             bases.append(candidate / "tspi")
         bases.append(Path(tempfile.gettempdir()) / f"tspi-{os.getuid()}")
-    key = hashlib.sha256(os.fsencode(workspace.resolve())).hexdigest()[:16]
+    key = hashlib.sha256(os.fsencode(identity_root.resolve())).hexdigest()[:16]
     last_error: OSError | None = None
     for base in bases:
         directory = base / key
@@ -1100,25 +1051,11 @@ def _app_server_socket_directory(workspace: Path, *, create: bool) -> Path:
 
 def _host_socket_directory(installation: Installation, *, create: bool) -> Path:
     host_workspace, _state_root = _prepare_host_state(installation)
-    return _app_server_socket_directory(host_workspace, create=create)
+    return _private_socket_directory(host_workspace, create=create)
 
 
 def _has_cli_option(arguments: tuple[str, ...], option: str) -> bool:
     return any(value == option or value.startswith(f"{option}=") for value in arguments)
-
-
-def _app_client_endpoint(request: LaunchRequest) -> str | None:
-    arguments = request.pi_args
-    for index, value in enumerate(arguments):
-        if value == "--connect" and index + 1 < len(arguments):
-            return arguments[index + 1]
-        if value.startswith("--connect="):
-            return value.split("=", 1)[1]
-    return None
-
-
-def _launch_access_mode(request: LaunchRequest) -> str:
-    return "controller"
 
 
 def build_pi_command(
@@ -1169,7 +1106,8 @@ def launch_terminal(installation: Installation, request: LaunchRequest, workspac
     if request.session_id and not SESSION_ID.fullmatch(request.session_id):
         raise TSPiHostError("invalid session identity", exit_code=2)
     os.environ["TSPI_SESSION_CWD"] = str(workspace)
-    exec_pi(build_host_client_command(installation, request), workspace)
+    socket_path = ensure_host_running(installation)
+    exec_pi(build_host_client_command(installation, request, socket_path=socket_path), workspace)
 
 
 def launch(argv: list[str], *, package_root: str | Path, install_root: str | Path) -> int:
@@ -1185,14 +1123,14 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
             exit_code=2,
         )
     normalize_proxy_environment()
-    if (request.host or request.app_server or request.app_client or request.gateway) and (request.standalone or request.check_remote):
+    if (request.host or request.gateway) and (request.standalone or request.check_remote):
         raise TSPiHostError("App Server modes cannot be combined with another launch mode", exit_code=2)
-    if sum(bool(value) for value in (request.host, request.app_server, request.app_client, request.gateway)) > 1:
-        raise TSPiHostError("--host, --app-server, --app-client, and --gateway cannot be combined", exit_code=2)
-    if request.host and (request.workspace_name or request.session_id):
-        raise TSPiHostError("--host does not accept --workspace or --session-id", exit_code=2)
-    if request.app_server and request.session_id:
-        raise TSPiHostError("--session-id belongs to --app-client, not --app-server", exit_code=2)
+    if request.host and request.gateway:
+        raise TSPiHostError("--host and --gateway cannot be combined", exit_code=2)
+    if request.host and (request.workspace_name or request.session_id or request.continue_latest):
+        raise TSPiHostError("--host does not accept workspace or session selection", exit_code=2)
+    if request.check_remote and (request.workspace_name or request.session_id or request.continue_latest):
+        raise TSPiHostError("--check-remote does not accept workspace or session selection", exit_code=2)
     if request.gateway and not request.workspace_name:
         raise TSPiHostError("--gateway requires --workspace", exit_code=2)
     if request.gateway and not request.session_id:
@@ -1200,34 +1138,13 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     installation = resolve_installation(package_root, install_root)
     os.environ["TSPI_INSTALL_ROOT"] = str(installation.root)
     configure_model_icon_environment(installation)
-    if request.app_client:
-        workspace = None
-        if request.workspace_name:
-            endpoint = _app_client_endpoint(request)
-            if endpoint is not None and endpoint.startswith("radius://"):
-                raise TSPiHostError(
-                    "--workspace with a Radius client must be selected from the remote WorkspaceDirectory; "
-                    "use TS Phone or a workspace-aware client",
-                    exit_code=2,
-                )
-            workspace = prepare_workspace(installation, request.workspace_name)
-            from ts_agent.workspace.bootstrap import WorkspaceBootstrapError, bootstrap_workspace
-
-            try:
-                bootstrap_workspace(workspace)
-            except WorkspaceBootstrapError as exc:
-                raise TSPiHostError(str(exc)) from exc
-            configure_process_environment(installation, workspace, request.workspace_name)
-            os.environ["TSPI_SESSION_CWD"] = str(workspace)
-        exec_pi(build_app_client_command(installation, request), workspace or installation.root)
     try:
         require_guarded_installation(installation.root)
     except SessionGuardError as exc:
         raise TSPiHostError(str(exc), code=exc.code) from exc
 
     default_client = not (
-        request.standalone or request.host or request.app_server or request.app_client
-        or request.gateway or request.check_remote
+        request.standalone or request.host or request.gateway or request.check_remote
     )
     if default_client:
         if not request.workspace_name:
@@ -1285,16 +1202,14 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         # as the TUI. Bind the requested workspace explicitly so an ID shared
         # by multiple projects cannot resolve against the Host's private cwd.
         os.environ["TSPI_SESSION_CWD"] = str(workspace)
-        exec_pi(build_gateway_command(installation, request), workspace)
-    if request.app_server and not request.workspace_name:
-        raise TSPiHostError("--app-server requires --workspace", exit_code=2)
+        socket_path = ensure_host_running(installation)
+        exec_pi(build_gateway_command(installation, request, socket_path=socket_path), workspace)
     if not request.workspace_name:
         raise TSPiHostError(f"a research workspace is required\n{USAGE}", exit_code=2)
     configure_notifications(installation)
     if not WORKSPACE_NAME.fullmatch(request.workspace_name):
         raise TSPiHostError("invalid workspace name")
     workspace = installation.workspaces_root / request.workspace_name
-    mode = _launch_access_mode(request)
     descriptors: list[int] = []
     try:
         descriptors.append(acquire_directory_guard(installation.root, workspace))
@@ -1307,14 +1222,14 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
             bootstrap_workspace(workspace)
         except WorkspaceBootstrapError as exc:
             raise TSPiHostError(str(exc)) from exc
-        if request.app_server:
-            exec_pi(build_app_server_command(installation, workspace, request), workspace)
         arguments = list(request.pi_args)
         if request.session_id:
             arguments.extend(["--session-id", request.session_id])
+        elif request.continue_latest:
+            arguments.append("--continue")
         session_id, arguments = select_session(workspace, arguments, default_continue=False)
         if session_id is not None:
-            descriptors.append(acquire_session_guard(installation.root, workspace, session_id, mode))
+            descriptors.append(acquire_session_guard(installation.root, workspace, session_id, "controller"))
         os.environ["TS_SESSION_GUARD"] = SESSION_GUARD_CONTRACT
         if session_id is None:
             os.environ.pop("TS_SESSION_ID", None)

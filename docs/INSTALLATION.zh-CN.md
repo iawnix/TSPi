@@ -77,10 +77,12 @@ TSPi 不会下载 Gaussian 或其他站点管理的本地化学软件，SSH 凭�
 安装日志位于安装目录的 `.pi/logs/`。通知配置只保存投递所需的非秘密元数据，
 SMTP 或其他凭据由受管环境提供。
 
-使用 systemd 启动唯一的安装级 Host：
+安装器可以启用并启动唯一的安装级 Host。日常使用直接打开 workspace；user service
+未运行时，TSPi 会自动启动并等待它就绪：
 
 ```bash
-systemctl --user enable --now ts-app-server-tspi.service
+./TSPi --workspace reaction-a
+./TSPi --workspace reaction-a -c
 ```
 
 一个 Host 可以服务 workspace root 下的多个直接子工作区。终端和 TS Phone 连接同一

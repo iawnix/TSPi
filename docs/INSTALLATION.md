@@ -190,11 +190,12 @@ only sends mail.
 
 ## Start The Installation Host
 
-Start one Host for the installation. It owns a single Pi App Server and serves
-all validated workspaces below the installation workspace root:
+The installation owns one Pi App Server Host for all validated workspaces below
+the installation workspace root. The installer can enable and start it, and a
+normal terminal launch starts the user service when needed:
 
 ```bash
-systemctl --user start ts-app-server-tspi.service
+./TSPi --workspace reaction-a
 ```
 
 Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for the
@@ -211,10 +212,11 @@ manifest and entry digest at each Worker startup. Do not place client code or
 an ad-hoc path in this allowlist; development-only experiments belong in
 `--standalone`.
 
-Attach the native terminal to a project in another shell:
+Create a new conversation or continue the latest conversation in a project:
 
 ```bash
 ./TSPi --workspace reaction-a
+./TSPi --workspace reaction-a -c
 ```
 
 The Host identity is `<install>/.pi/app-server-host/server-id`; its native
@@ -240,11 +242,9 @@ TS Web is the read-only client in this architecture.
 
 The first `./TSPi --workspace <name>` invocation creates a 0700 workspace and
 canonical scientific files when the named project does not exist. The Host's
-WorkspaceDirectory exposes the same operation to TS Phone. The same validated
-bootstrap is used by the compatibility
-`./TSPi --app-server --workspace <name>` mode. The Host itself does not create
-unnamed projects, and bootstrap validates existing JSON and refuses unsupported
-state rather than rewriting it.
+WorkspaceDirectory exposes the same operation to TS Phone. The Host itself does
+not create unnamed projects, and bootstrap validates existing JSON and refuses
+unsupported state rather than rewriting it.
 
 ## Run The Research Explorer
 

@@ -116,7 +116,7 @@ stable server UUID, acquires the Host Root lock, and starts Pi's native App
 Server. Its session directory is `.pi/app-server-host/sessions/`;
 `.pi/app-server-host/workspace/` is only the Host's private Pi control cwd, not a
 research project.
-each session is created with a project cwd under the configured workspace root
+Each session is created with a project cwd under the configured workspace root
 (default `<install>/workspaces`), enforced by `TSPI_WORKSPACE_ROOT`. The
 workspace-directory service exposes only validated direct-child workspaces
 containing a supported `workspace.json`.
@@ -126,7 +126,10 @@ passes `TSPI_SESSION_CWD` when creating a session, so the session worker keeps
 the selected project's filesystem context. TS Phone uses the same services to
 list or create projects and to create or switch sessions without opening
 another Host connection. The launcher starts the selected workspace through the
-native App Server entrypoint; there is one current workspace launch path.
+native App Server entrypoint; there is one current workspace launch path. When
+the user service is not running, the terminal launcher starts it through
+systemd and waits for the one Host socket instead of creating a foreground
+fallback Host.
 
 The first client launch initializes a missing workspace through the same
 validated bootstrap. The Host never creates an unnamed workspace; a client must

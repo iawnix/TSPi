@@ -9,8 +9,9 @@
 
 安装级 systemd App Server 是生产环境唯一的 Root Agent runtime。终端命令
 `TSPi --workspace <name>` 是连接它的 Pi 原生客户端；TS Phone 和 Web 也附着到其会话，
-不会启动第二个 workflow runtime，也不会上传可执行 extension。`--standalone` 仅用于
-开发和恢复。
+不会启动第二个 workflow runtime，也不会上传可执行 extension。使用默认 user service
+时，Host socket 不存在会由终端启动器启动该 service，并等待同一个安装级 Host；不会
+创建第二个前台 Host。`--standalone` 仅用于开发和恢复。
 
 服务工具由 `extensions/server/extensions.json` 选择，每个 descriptor 绑定 scope、
 工具清单、权限和 SHA-256 digest。loader 拒绝 package 外路径、符号链接、未知 allowlist

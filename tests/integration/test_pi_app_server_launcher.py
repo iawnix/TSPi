@@ -33,10 +33,6 @@ def test_normalize_proxy_environment_accepts_host_port_and_drops_invalid(
     assert "ALL_PROXY" not in os.environ
 
 
-class _ExecCalled(RuntimeError):
-    pass
-
-
 def _installation(tmp_path: Path) -> launcher.Installation:
     package = tmp_path / "package"
     entry = package / "apps/app-server/pi-app-server.mjs"
@@ -158,48 +154,6 @@ def test_invalid_model_icon_marker_does_not_enable_tspi_style(tmp_path: Path, mo
     assert "TSPI_ICON_STYLE" not in os.environ
 
 
-def test_app_server_command_owns_workspace_state_and_forwards_pi_options(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    installation = _installation(tmp_path)
-    workspace = installation.root / "workspaces/reaction-a"
-    (workspace / ".pi").mkdir(parents=True)
-    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
-    server_id = "123e4567-e89b-42d3-a456-426614174000"
-    socket_directory = tmp_path / "sockets"
-    monkeypatch.setattr(launcher, "_app_server_id", lambda *_args, **_kwargs: server_id)
-    monkeypatch.setattr(launcher, "_app_server_socket_directory", lambda *_args, **_kwargs: socket_directory)
-    request = launcher.parse_launch_request([
-        "--app-server", "--workspace", "reaction-a", "--source-root", "/opt/pi-source", "--provider", "anthropic",
-    ])
-
-    command = launcher.build_app_server_command(installation, workspace, request)
-
-    state_root = workspace / ".pi/app-server"
-    assert command == [
-        "/usr/bin/node",
-        str(installation.package_root / "apps/app-server/pi-app-server.mjs"),
-        "server",
-        "--workspace",
-        str(workspace),
-        "--directory",
-        str(socket_directory),
-        "--server-id",
-        server_id,
-        "--session-dir",
-        str(state_root / "sessions"),
-        "--source-root",
-        "/opt/pi-source",
-        "--provider",
-        "anthropic",
-    ]
-    assert request.app_server is True
-    for path in (state_root, state_root / "sessions"):
-        assert path.is_dir()
-        assert stat.S_IMODE(path.stat().st_mode) == 0o700
-
-
 def test_host_command_owns_installation_state_and_workspace_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -242,6 +196,21 @@ def test_launcher_usage_keeps_internal_transport_modes_out_of_daily_help() -> No
         assert internal_mode not in launcher.USAGE
 
 
+def test_session_selection_is_workspace_scoped_and_explicit() -> None:
+    new_session = launcher.parse_launch_request(["--workspace", "reaction-a"])
+    latest = launcher.parse_launch_request(["--workspace", "reaction-a", "-c", "--provider", "anthropic"])
+
+    assert new_session.continue_latest is False
+    assert new_session.session_id is None
+    assert latest.continue_latest is True
+    assert latest.pi_args == ("--provider", "anthropic")
+
+    with pytest.raises(launcher.TSPiHostError, match="cannot be combined"):
+        launcher.parse_launch_request([
+            "--workspace", "reaction-a", "--continue", "--session-id", "session-1",
+        ])
+
+
 def test_host_state_prepares_private_pi_workspace_before_root_lock(tmp_path: Path) -> None:
     installation = _installation(tmp_path)
 
@@ -261,7 +230,7 @@ def test_host_state_rejects_an_insecure_installation_pi_directory(tmp_path: Path
         launcher._prepare_host_state(installation)
 
 
-def test_host_client_requires_one_host_socket(
+def test_host_endpoint_requires_one_unix_socket(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -269,46 +238,58 @@ def test_host_client_requires_one_host_socket(
     monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
     monkeypatch.setattr(launcher, "_host_server_id", lambda *_args, **_kwargs: "123e4567-e89b-42d3-a456-426614174000")
     monkeypatch.setattr(launcher, "_host_socket_directory", lambda *_args, **_kwargs: tmp_path / "missing-socket")
-    with pytest.raises(launcher.TSPiHostError, match="TSPi Host is not running"):
-        launcher.build_host_client_command(installation, launcher.parse_launch_request(["--workspace", "reaction-a"]))
+    with pytest.raises(launcher.TSPiHostUnavailableError, match="TSPi Host is not running"):
+        launcher.resolve_host_socket(installation)
 
 
-@pytest.mark.parametrize("endpoint", ["unix:///run/tspi.sock", "radius://123e4567-e89b-42d3-a456-426614174000"])
-def test_explicit_app_client_forwards_native_connection_arguments(
+def test_missing_host_is_started_once_and_waited_until_ready(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    endpoint: str,
 ) -> None:
     installation = _installation(tmp_path)
-    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
-    request = launcher.parse_launch_request([
-        "--app-client", "--connect", endpoint, "--session-id", "session-1", "--continue",
-    ])
+    endpoint = tmp_path / "host.sock"
+    resolutions = 0
 
-    assert launcher.build_app_client_command(installation, request) == [
-        "/usr/bin/node",
-        str(installation.package_root / "apps/app-server/pi-app-server.mjs"),
-        "client",
-        "--session-id",
-        "session-1",
-        "--connect",
-        endpoint,
-        "--continue",
-    ]
+    def resolve(_installation: launcher.Installation) -> Path:
+        nonlocal resolutions
+        resolutions += 1
+        if resolutions == 1:
+            raise launcher.TSPiHostUnavailableError("not running")
+        return endpoint
+
+    commands: list[list[str]] = []
+    monkeypatch.setattr(launcher, "resolve_host_socket", resolve)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/systemctl" if name == "systemctl" else None)
+    monkeypatch.setattr(
+        launcher.subprocess,
+        "run",
+        lambda command, **_kwargs: commands.append(command) or subprocess.CompletedProcess(command, 0, "", ""),
+    )
+
+    assert launcher.ensure_host_running(installation) == endpoint
+    assert commands == [["/usr/bin/systemctl", "--user", "start", launcher.APP_SERVER_SERVICE]]
+    assert resolutions == 2
 
 
-def test_explicit_unix_client_can_select_a_workspace() -> None:
-    request = launcher.parse_launch_request([
-        "--app-client",
-        "--connect",
-        "unix:///run/tspi.sock",
-        "--workspace",
-        "reaction-a",
-    ])
+def test_host_start_failure_preserves_systemd_diagnostic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = _installation(tmp_path)
+    monkeypatch.setattr(
+        launcher,
+        "resolve_host_socket",
+        lambda _installation: (_ for _ in ()).throw(launcher.TSPiHostUnavailableError("not running")),
+    )
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/systemctl" if name == "systemctl" else None)
+    monkeypatch.setattr(
+        launcher.subprocess,
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 1, "", "unit failed"),
+    )
 
-    assert request.app_client is True
-    assert request.workspace_name == "reaction-a"
-    assert launcher._app_client_endpoint(request) == "unix:///run/tspi.sock"
+    with pytest.raises(launcher.TSPiHostError, match="unit failed"):
+        launcher.ensure_host_running(installation)
 
 
 def test_gateway_attaches_one_host_session_with_http_options(
@@ -354,30 +335,24 @@ def test_gateway_attaches_one_host_session_with_http_options(
     ]
 
 
-def test_default_terminal_connects_to_workspace_unix_socket(
+def test_default_terminal_connects_to_host_and_continues_latest_workspace_session(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     installation = _installation(tmp_path)
-    workspace = installation.workspaces_root / "reaction-a"
-    state = workspace / ".pi/app-server"
-    state.mkdir(parents=True)
     server_id = "123e4567-e89b-42d3-a456-426614174000"
-    identity = state / "server-id"
-    identity.write_text(server_id + "\n", encoding="ascii")
-    identity.chmod(0o600)
     server = Path(f"/tmp/tspi-test-{os.getpid()}")
     server.mkdir(mode=0o700, exist_ok=True)
-    monkeypatch.setattr(launcher, "_app_server_socket_directory", lambda *_args, **_kwargs: server)
+    monkeypatch.setattr(launcher, "_host_server_id", lambda *_args, **_kwargs: server_id)
+    monkeypatch.setattr(launcher, "_host_socket_directory", lambda *_args, **_kwargs: server)
     endpoint = server / f"{server_id}.sock"
     listener = socket.socket(socket.AF_UNIX)
     listener.bind(str(endpoint))
     monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
     try:
-        command = launcher.build_app_client_command(
+        command = launcher.build_host_client_command(
             installation,
             launcher.parse_launch_request(["--workspace", "reaction-a", "-c"]),
-            workspace,
         )
     finally:
         listener.close()
@@ -392,122 +367,20 @@ def test_default_terminal_connects_to_workspace_unix_socket(
         str(server),
         "--connect",
         f"unix://{endpoint}",
-        "-c",
+        "--continue",
     ]
-
-
-def test_app_server_acquires_root_ownership_before_exec(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    installation = _installation(tmp_path)
-    workspace = installation.workspaces_root / "reaction-a"
-    (workspace / ".pi").mkdir(parents=True)
-    monkeypatch.setattr(launcher, "resolve_installation", lambda *_args: installation)
-    monkeypatch.setattr(launcher, "require_guarded_installation", lambda *_args: None)
-    monkeypatch.setattr(launcher, "configure_runtime_environment", lambda *_args: None)
-    monkeypatch.setattr(launcher, "ensure_runtime_python", lambda *_args, **_kwargs: Path("/managed/python"))
-    monkeypatch.setattr(launcher, "bind_runtime_process_environment", lambda *_args: None)
-    monkeypatch.setattr(launcher, "configure_remote", lambda *_args: None)
-    monkeypatch.setattr(launcher, "configure_notifications", lambda *_args: None)
-    monkeypatch.setattr(launcher, "configure_process_environment", lambda *_args: None)
-    monkeypatch.setattr(launcher, "prepare_workspace", lambda *_args: workspace)
-    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
-    acquired: list[str] = []
-
-    def lock(label: str) -> int:
-        acquired.append(label)
-        return os.open(tmp_path / f"{label}.lock", os.O_RDWR | os.O_CREAT, 0o600)
-
-    monkeypatch.setattr(launcher, "acquire_directory_guard", lambda *_args: lock("directory"))
-    monkeypatch.setattr(launcher, "acquire_root_agent_lock", lambda *_args: lock("root"))
-    bootstrap_calls: list[Path] = []
-    monkeypatch.setattr("ts_agent.workspace.bootstrap.bootstrap_workspace", bootstrap_calls.append)
-
-    def fake_exec(_command: list[str], cwd: Path) -> None:
-        assert cwd == workspace
-        raise _ExecCalled
-
-    monkeypatch.setattr(launcher, "exec_pi", fake_exec)
-    with pytest.raises(_ExecCalled):
-        launcher.launch(
-            ["--app-server", "--workspace", "reaction-a", "--source-root", "/opt/pi-source"],
-            package_root=tmp_path / "unused-package",
-            install_root=tmp_path / "unused-install",
-        )
-    assert acquired == ["directory", "root"]
-    assert bootstrap_calls == [workspace]
-
-
-def test_installed_app_server_is_the_exclusive_workspace_owner(tmp_path: Path) -> None:
-    installation, installed_launcher = _copy_launcher(tmp_path)
-    package = (installation / ".pi/packages/tspi/current/agent").resolve()
-    entry = package / "apps/app-server/pi-app-server.mjs"
-    entry.parent.mkdir(parents=True)
-    entry.write_text("// fixture entry\n", encoding="utf-8")
-    fake_node = tmp_path / "node"
-    fake_node.write_text(
-        "#!/usr/bin/env python3\n"
-        "import json, os, sys\n"
-        "print(json.dumps({'ready': True, 'args': sys.argv[1:]}), flush=True)\n"
-        "if os.environ.get('HOLD_APP_SERVER') == '1': sys.stdin.buffer.read(1)\n",
-        encoding="utf-8",
-    )
-    fake_node.chmod(0o755)
-    command = [str(installed_launcher), "--app-server", "--workspace", "reaction-a"]
-    base_env = {**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"}
-    holder = subprocess.Popen(
-        command,
-        cwd=installation,
-        env={**base_env, "HOLD_APP_SERVER": "1"},
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    try:
-        assert holder.stdout is not None
-        assert json.loads(holder.stdout.readline())["ready"] is True
-        conflict = subprocess.run(
-            command,
-            cwd=installation,
-            env={**base_env, "HOLD_APP_SERVER": "0"},
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-            timeout=20,
-        )
-        assert conflict.returncode != 0
-        assert "another Root Agent already owns workspace" in conflict.stderr
-    finally:
-        if holder.stdin is not None:
-            holder.stdin.close()
-        holder.wait(timeout=10)
-
-    replacement = subprocess.run(
-        command,
-        cwd=installation,
-        env={**base_env, "HOLD_APP_SERVER": "0"},
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-        timeout=20,
-    )
-    assert replacement.returncode == 0, replacement.stderr
 
 
 @pytest.mark.parametrize(
     ("arguments", "message"),
     [
         (["--host"], "managed by systemd"),
-        (["--app-server", "--app-client"], "cannot be combined"),
-        (["--app-client", "--allow-writes"], "was removed"),
-        (["--app-server", "--session-id", "session-1"], "belongs to --app-client"),
+        (["--app-server"], "was removed"),
+        (["--app-client"], "was removed"),
+        (["--workspace", "reaction-a", "-c", "--session-id", "session-1"], "cannot be combined"),
     ],
 )
-def test_invalid_app_server_modes_fail_before_installation_resolution(
+def test_invalid_launch_modes_fail_before_installation_resolution(
     arguments: list[str],
     message: str,
 ) -> None:

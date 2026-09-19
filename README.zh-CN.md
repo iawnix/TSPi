@@ -33,20 +33,17 @@ cd TSPi
 
 ## App Server 与终端
 
-整个安装目录运行一个 Pi App Server Host，由它为所有工作区独占会话、对话历史、模型状态和 Root 锁：
-
-```bash
-systemctl --user start ts-app-server-tspi.service
-```
-
-使用 `systemctl --user stop|restart|status ts-app-server-tspi.service` 管理
-Host 生命周期。`--host` 只是服务内部入口，不用于日常启动。
-
-普通 TSPi 命令是该 App Server 的本地终端客户端：
+整个安装目录运行一个 Pi App Server Host，由它为所有工作区独占会话、对话历史、模型状态和 Root 锁。
+直接打开工作区即可；如果 user service 尚未运行，TSPi 会启动它并等待 Host 就绪：
 
 ```bash
 ./TSPi --workspace reaction-a
+./TSPi --workspace reaction-a -c
 ```
+
+第一条命令创建新会话，第二条命令继续该工作区最近的会话。
+使用 `systemctl --user stop|restart|status ts-app-server-tspi.service` 管理
+Host 生命周期。`--host` 只是服务内部入口，不用于日常启动。
 
 TS Phone Flutter 应用通过 Pi Radius 连接同一个 App Server，不再存在第二套 Host 或
 broker。参阅[终端文档](docs/TERMINAL.zh-CN.md)、[中文架构](docs/ARCHITECTURE.zh-CN.md)、
