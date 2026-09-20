@@ -24,6 +24,9 @@ def test_pi_source_pin_is_explicit_and_valid() -> None:
     create_patch = (ROOT / "config" / "pi-multi-workspace-create.patch").read_text(encoding="utf-8")
     assert "createWorkspace(workspaceId" in create_patch
     assert "WorkspaceDirectory" in create_patch
+    workspace_patch = (ROOT / "config" / "pi-research-workspace.patch").read_text(encoding="utf-8")
+    assert "research-workspace/1" in workspace_patch
+    assert "service_invalid_value" in workspace_patch
     resolver_patch = (ROOT / "config" / "pi-source-resolver.patch").read_text(encoding="utf-8")
     assert "source-resolver.ts" in resolver_patch
     assert "resolveTypeboxPath" in resolver_patch
@@ -100,6 +103,35 @@ def test_multi_workspace_patch_upgrades_a_list_only_checkout(tmp_path, monkeypat
     prepare_pi_source.apply_multi_workspace_patch(source)
 
     assert calls == [["git", "-C", str(source), "apply", str(prepare_pi_source.MULTI_WORKSPACE_CREATE_PATCH_PATH)]]
+
+
+def test_research_workspace_patch_upgrades_an_existing_patched_checkout(tmp_path, monkeypatch):
+    from scripts import prepare_pi_source
+
+    source = tmp_path / "pi"
+    server = source / "packages/coding-agent/src/experimental/server.ts"
+    server.parent.mkdir(parents=True)
+    server.write_text(
+        'if (identity?.schema_version !== "ts-workspace/6") continue;\n'
+        'throw new Error(`Session cwd is not a supported TSPi workspace: ${candidate}`);\n',
+        encoding="utf-8",
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        prepare_pi_source.subprocess,
+        "run",
+        lambda command, **_kwargs: calls.append(command),
+    )
+
+    prepare_pi_source.apply_research_workspace_patch(source)
+
+    assert calls == [[
+        "git",
+        "-C",
+        str(source),
+        "apply",
+        str(prepare_pi_source.RESEARCH_WORKSPACE_PATCH_PATH),
+    ]]
 
 
 def test_pi_source_verify_rejects_a_list_only_workspace_patch(tmp_path, monkeypatch):

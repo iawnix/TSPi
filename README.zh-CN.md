@@ -45,8 +45,10 @@ cd TSPi
 使用 `systemctl --user stop|restart|status ts-app-server-tspi.service` 管理
 Host 生命周期。`--host` 只是服务内部入口，不用于日常启动。
 
-TS Phone Flutter 应用通过 Pi Radius 连接同一个 App Server，不再存在第二套 Host 或
-broker。参阅[终端文档](docs/TERMINAL.zh-CN.md)、[中文架构](docs/ARCHITECTURE.zh-CN.md)、
+TS Phone Flutter 应用通过 TSPi Link 连接同一个 App Server。Phone 和 Host 分别向
+TSPi Relay 建立出站 WSS；Relay 只负责设备授权与不透明字节转发，不管理会话或研究状态。
+参阅 [TSPi Link](docs/TSPi_LINK.zh-CN.md)、[终端文档](docs/TERMINAL.zh-CN.md)、
+[中文架构](docs/ARCHITECTURE.zh-CN.md)、
 [TS Phone 客户端说明](https://github.com/iawnix/ts-phone/blob/main/README.zh-CN.md)。
 
 ## 研究与远程计算

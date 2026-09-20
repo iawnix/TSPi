@@ -17,6 +17,9 @@ import sys
 import tempfile
 import threading
 import tomllib
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -213,7 +216,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--conda-root")
     parser.add_argument("--service-scope", choices=("none", "user", "system"))
     parser.add_argument("--service-user", help="Unix account used by systemd services (required for system scope).")
-    parser.add_argument("--radius-gateway", default=os.environ.get("PI_RADIUS_GATEWAY"), help="Pi Radius gateway endpoint for TS Phone clients.")
+    parser.add_argument("--phone-access", choices=("disabled", "link"), help="TS Phone access mode.")
+    parser.add_argument("--link-url", default=os.environ.get("TSPI_LINK_URL"), help="TSPi Relay HTTPS origin.")
+    parser.add_argument("--link-enrollment-code", help="Single-use Host enrollment code issued by TSPi Relay.")
     parser.add_argument("--enable-services", action="store_true")
     parser.add_argument("--start-services", action="store_true")
     email = parser.add_argument_group("email notifications")
@@ -278,12 +283,18 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
         args.compute_config or "",
     ).strip() or None
     section("Phone connection")
-    if args.radius_gateway is None:
-        args.radius_gateway = _existing_radius_gateway(Path(args.install_root))
-    args.radius_gateway = ask(
-        "Pi Radius gateway (blank to configure later)",
-        args.radius_gateway or "",
-    ).strip() or None
+    existing_link = _existing_link_configuration(Path(args.install_root))
+    if args.phone_access is None:
+        args.phone_access = "link" if ask_yes_no("Enable TS Phone through TSPi Relay", existing_link is not None) else "disabled"
+    if args.phone_access == "link":
+        args.link_url = ask(
+            "TSPi Relay URL",
+            args.link_url or (existing_link[0] if existing_link else ""),
+        ).strip()
+        token_exists = (Path(args.install_root) / ".pi/app-server-host/host.token").is_file()
+        enrolled_for_url = token_exists and existing_link is not None and args.link_url.rstrip("/") == existing_link[0]
+        if not enrolled_for_url and args.link_enrollment_code is None:
+            args.link_enrollment_code = ask("Host enrollment code").strip()
     section("Runtime and services")
     args.conda_root = args.conda_root or ask("Conda root (blank for auto-detect)", detect_conda_root())
     if args.service_scope is None:
@@ -362,8 +373,10 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Conda root", args.conda_root or "auto-detect")
     if args.service_scope == "system":
         field("Installation owner", f"{args.service_user} (private package/runtime/state tree)", tone="warning")
-    field("Pi Radius gateway", args.radius_gateway or "not configured", tone="muted" if not args.radius_gateway else "success")
-    field("Phone tool access", "same Agent and tools as terminal", tone="success")
+    field("Phone access", "TSPi Relay" if args.phone_access == "link" else "disabled", tone="success" if args.phone_access == "link" else "muted")
+    if args.phone_access == "link":
+        field("TSPi Relay", args.link_url, tone="success")
+        field("Phone tool access", "same Agent and tools as terminal", tone="success")
     field(
         "Model icon font",
         "install optional TSPi font" if args.with_model_icons else "use Nerd Font/Unicode fallback",
@@ -471,8 +484,11 @@ def validate_options(args: argparse.Namespace) -> None:
     if args.workspace_root is None:
         args.workspace_root = str(read_workspace_root(Path(args.install_root)))
     args.workspace_root = str(_validate_workspace_root(args.workspace_root, Path(args.install_root)))
-    if args.radius_gateway is None:
-        args.radius_gateway = _existing_radius_gateway(Path(args.install_root))
+    existing_link = _existing_link_configuration(Path(args.install_root))
+    if args.phone_access is None:
+        args.phone_access = "link" if existing_link is not None else "disabled"
+    if args.link_url is None and existing_link is not None:
+        args.link_url = existing_link[0]
     if args.with_web is None:
         args.with_web = True
     if args.with_model_icons is None:
@@ -524,13 +540,14 @@ def validate_options(args: argparse.Namespace) -> None:
         current_user = pwd.getpwuid(os.getuid()).pw_name
         if args.service_user != current_user:
             raise ValueError("--service-user is only supported with --service-scope system")
-    if args.radius_gateway is not None and (
-        not isinstance(args.radius_gateway, str)
-        or not args.radius_gateway.strip()
-        or any(character.isspace() or ord(character) < 32 for character in args.radius_gateway)
-        or len(args.radius_gateway) > 512
-    ):
-        raise ValueError("--radius-gateway must be a non-empty endpoint without whitespace")
+    if args.phone_access == "link":
+        args.link_url = _validate_link_url(args.link_url)
+        token_file = Path(args.install_root) / ".pi/app-server-host/host.token"
+        enrolled_for_url = token_file.is_file() and existing_link is not None and existing_link[0] == args.link_url
+        if not enrolled_for_url and not args.link_enrollment_code:
+            raise ValueError("--link-enrollment-code is required when enrolling a new TSPi Host")
+    elif args.link_url or args.link_enrollment_code:
+        raise ValueError("--link-url and --link-enrollment-code require --phone-access link")
     if args.service_scope != "none" and shutil.which("systemctl") is None:
         raise ValueError("service configuration requires systemctl; choose --service-scope none")
     validate_email_options(args)
@@ -575,16 +592,37 @@ def configure_workspace_root(args: argparse.Namespace) -> dict[str, str]:
     return {"status": "configured", "path": str(config), "workspace_root": str(workspace_root)}
 
 
-def _existing_radius_gateway(root: Path) -> str | None:
-    manifest = root / ".pi/app-server-host/phone-connection.json"
+def _existing_link_configuration(root: Path) -> tuple[str, str] | None:
+    manifest = root / ".pi/app-server-host/link.json"
     if not manifest.is_file() or manifest.is_symlink():
         return None
     try:
         value = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
-    gateway = value.get("radius_gateway") if isinstance(value, dict) else None
-    return gateway if isinstance(gateway, str) and gateway else None
+    if not isinstance(value, dict) or value.get("schema_version") != "tspi-link/1":
+        return None
+    relay_url = value.get("relay_url")
+    host_id = value.get("host_id")
+    if not isinstance(relay_url, str) or not isinstance(host_id, str):
+        return None
+    return relay_url, host_id
+
+
+def _validate_link_url(value: object) -> str:
+    if not isinstance(value, str) or not value or len(value) > 512:
+        raise ValueError("--link-url must be a TSPi Relay origin")
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError("--link-url must be a TSPi Relay origin") from exc
+    loopback = parsed.hostname in {"127.0.0.1", "::1", "localhost"}
+    if not parsed.hostname or (parsed.scheme != "https" and not (loopback and parsed.scheme == "http")):
+        raise ValueError("--link-url must use HTTPS except on loopback")
+    if parsed.username or parsed.password or parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        raise ValueError("--link-url must contain only scheme, host, and port")
+    return value.rstrip("/")
 
 
 def validate_email_options(args: argparse.Namespace) -> None:
@@ -733,7 +771,7 @@ def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
     lines = [
         "[notifications.email]",
         "enabled = true",
-        "binding = \"smtp\"",
+        "provider = \"smtp\"",
         f"preset = {_toml_string(args.email_preset)}",
         f"port = {args.email_port}",
         f"security = {_toml_string(args.email_security)}",
@@ -1274,7 +1312,8 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
         "uninstall.sh",
         ".pi/tspi/workspace-root.json",
         ".pi/app-server-host/server-id",
-        ".pi/app-server-host/phone-connection.json",
+        ".pi/app-server-host/link.json",
+        ".pi/app-server-host/host.token",
         ".pi/ts-web/auth.token",
         ".pi/tspi/model-icons.json",
         ".pi/notifications.toml",
@@ -1600,40 +1639,86 @@ def ensure_host_identity(root: Path) -> Path:
 
 
 def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
-    """Write a secret-free manifest consumed when pairing the Phone client."""
+    """Enroll the installation Host and write its private TSPi Link files."""
 
     root = Path(args.install_root).resolve()
+    state = root / ".pi/app-server-host"
+    state.mkdir(mode=0o700, parents=True, exist_ok=True)
+    state.chmod(0o700)
+    manifest = state / "link.json"
+    token_file = state / "host.token"
+    legacy = state / "phone-connection.json"
+    legacy.unlink(missing_ok=True)
+    if args.phone_access == "disabled":
+        manifest.unlink(missing_ok=True)
+        token_file.unlink(missing_ok=True)
+        return {
+            "status": "disabled",
+            "manifest": str(manifest),
+            "relay_url": None,
+            "protocol": "tspi-link.v1",
+            "tool_access": "same_as_terminal",
+        }
+
     identity = ensure_host_identity(root)
-    server_id = identity.read_text(encoding="ascii").strip()
-    manifest = root / ".pi/app-server-host/phone-connection.json"
+    host_id = identity.read_text(encoding="ascii").strip()
+    existing = _existing_link_configuration(root)
+    if args.link_enrollment_code:
+        enrollment = _redeem_link_enrollment(args.link_url, args.link_enrollment_code, host_id)
+        if enrollment.get("hostId") != host_id or enrollment.get("protocol") != "tspi-link.v1":
+            raise RuntimeError("TSPi Relay returned a mismatched Host enrollment")
+        host_token = enrollment.get("hostToken")
+        if not isinstance(host_token, str) or re.fullmatch(r"tsph_[A-Za-z0-9_-]{40,80}", host_token) is None:
+            raise RuntimeError("TSPi Relay returned an invalid Host token")
+        _write_private_text(token_file, host_token + "\n")
+    elif not token_file.is_file() or existing is None or existing[0] != args.link_url:
+        raise RuntimeError("a Host enrollment code is required for this TSPi Relay")
+
     payload = {
-        "schema_version": "tspi-phone-connection/1",
-        "transport": "pi-radius",
-        "protocol_version": 8,
-        "session_relay_service": "pi-session-relay.client.v1",
-        "workspace_service": {
-            "service_id": "tspi.workspace-directory",
-            "members": ["list", "create"],
-        },
-        "session_service": {
-            "service_id": "pi.session-management",
-            "workspace_binding": "workspaceId",
-        },
-        "server_id": server_id,
-        "radius_gateway": args.radius_gateway or None,
-        "workspace_root": str(Path(args.workspace_root)),
-        "tool_access": "same_as_terminal",
-        "credentials": "mobile_secure_store",
+        "schema_version": "tspi-link/1",
+        "protocol": "tspi-link.v1",
+        "relay_url": args.link_url,
+        "host_id": host_id,
     }
     _write_private_text(manifest, json.dumps(payload, indent=2, sort_keys=True) + "\n")
     return {
-        "status": "configured" if args.radius_gateway else "awaiting_gateway",
+        "status": "configured",
         "manifest": str(manifest),
-        "server_id": server_id,
-        "radius_gateway": args.radius_gateway,
-        "protocol_version": 8,
+        "relay_url": args.link_url,
+        "host_id": host_id,
+        "protocol": "tspi-link.v1",
         "tool_access": "same_as_terminal",
     }
+
+
+def _redeem_link_enrollment(relay_url: str, code: str, host_id: str) -> dict[str, object]:
+    payload = json.dumps({"code": code, "hostId": host_id, "name": "TSPi Host"}, separators=(",", ":")).encode("utf-8")
+    request = urllib.request.Request(
+        urllib.parse.urljoin(relay_url + "/", "v1/enrollments/redeem"),
+        data=payload,
+        method="POST",
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            raw = response.read(64 * 1024 + 1)
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = json.loads(exc.read(16 * 1024)).get("message", exc.reason)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+            detail = exc.reason
+        raise RuntimeError(f"TSPi Relay rejected Host enrollment ({exc.code}): {detail}") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError(f"could not reach TSPi Relay at {relay_url}: {exc}") from exc
+    if len(raw) > 64 * 1024:
+        raise RuntimeError("TSPi Relay enrollment response is too large")
+    try:
+        value = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("TSPi Relay returned invalid enrollment JSON") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError("TSPi Relay enrollment response must be an object")
+    return value
 
 
 def app_server_unit(args: argparse.Namespace) -> str:
@@ -1668,7 +1753,6 @@ Environment={_systemd_quote('PI_CODING_AGENT_DIR=' + str(root / '.pi/agent'))}
 Environment=TSPI_SYSTEMD_HOST=1
 Environment={_systemd_quote('TSPI_WORKSPACE_ROOT=' + str(workspace_root))}
 Environment={_systemd_quote('TSPI_APP_SERVER_RUNTIME_DIR=' + ('/run/tspi' if args.service_scope == 'system' else str(Path(runtime_dir) / 'tspi')))}
-{f'Environment={_systemd_quote("PI_RADIUS_GATEWAY=" + args.radius_gateway)}' if getattr(args, "radius_gateway", None) else ''}
 Environment=TSPI_SERVER_EXTENSIONS=tspi-server-tools
 {f'User={_systemd_value(service_user)}' if args.service_scope == 'system' else ''}
 {f'Group={_systemd_value(args.service_group)}' if getattr(args, 'service_group', None) and args.service_scope == 'system' else ''}
@@ -2035,15 +2119,15 @@ def build_component_summary(
             "server_id": str(server_id_path),
             "server_uuid": server_id,
             "server_id_path": str(server_id_path),
-            "radius_gateway": args.radius_gateway or "not configured",
+            "link_url": args.link_url if args.phone_access == "link" else "not configured",
             "workspace_root": str(workspace_root),
             "start": "systemctl --user start ts-app-server-tspi.service",
         },
         "phone": phone_connection or {
-            "status": "not_configured",
-            "manifest": str(root / ".pi/app-server-host/phone-connection.json"),
-            "radius_gateway": args.radius_gateway,
-            "protocol_version": 8,
+            "status": "disabled",
+            "manifest": str(root / ".pi/app-server-host/link.json"),
+            "relay_url": args.link_url,
+            "protocol": "tspi-link.v1",
             "tool_access": "same_as_terminal",
         },
         "model_icons": model_icons or {
@@ -2138,7 +2222,7 @@ def show_installed_summary(
     field("Runtime", app_server["runtime"])
     field("Manual start", app_server["start"])
     field("Server ID", app_server.get("server_uuid") or f"not initialized - {app_server['server_id_path']}")
-    field("Radius gateway", app_server.get("radius_gateway", "not configured"))
+    field("TSPi Relay", app_server.get("link_url", "not configured"))
     field("Workspace root", app_server["workspace_root"])
     _show_service(app_server.get("service"))
     note("One Host serves all workspaces below the workspace root. The terminal and TS Phone attach once and switch projects.")
@@ -2157,7 +2241,7 @@ def show_installed_summary(
         _show_credential("HTTP token", credentials["web_http"], reveal=True)
 
     note("TS Phone is a separate App Server client and is no longer installed as a local service.")
-    note("Phone pairing uses the Host Server ID and Pi Radius authorization; it is distinct from the TS Web HTTP token.")
+    note("Phone pairing uses a short-lived TSPi Link code; it is distinct from the TS Web HTTP token.")
     phone = components.get("phone")
     if isinstance(phone, dict):
         field("Phone connection manifest", phone.get("manifest", "not configured"))

@@ -61,7 +61,7 @@ def test_interactive_compute_backends_accepts_one_file_path(
         "--without-web", "--service-scope", "none", "--email-binding", "smtp",
     ])
     args.workspace_root = str(tmp_path / "workspaces")
-    args.radius_gateway = "wss://radius.example.test"
+    args.phone_access = "disabled"
     args.conda_root = "/opt/conda"
     prompts: list[str] = []
     monkeypatch.setattr(wizard.sys.stdin, "isatty", lambda: True)
@@ -183,7 +183,7 @@ def test_model_icon_font_can_be_disabled_without_removing_shared_font(tmp_path: 
     assert json.loads((install_root / ".pi/tspi/model-icons.json").read_text(encoding="utf-8"))["enabled"] is False
 
 
-def test_update_preserves_workspace_root_and_radius_gateway_defaults(tmp_path: Path) -> None:
+def test_update_preserves_workspace_root_and_link_defaults(tmp_path: Path) -> None:
     root = tmp_path / "install"
     workspace_root = tmp_path / "research"
     workspace_config = root / ".pi/tspi/workspace-root.json"
@@ -192,9 +192,15 @@ def test_update_preserves_workspace_root_and_radius_gateway_defaults(tmp_path: P
         "schema_version": "tspi-workspace-root/1",
         "workspace_root": str(workspace_root),
     }), encoding="utf-8")
-    phone = root / ".pi/app-server-host/phone-connection.json"
+    phone = root / ".pi/app-server-host/link.json"
     phone.parent.mkdir(parents=True)
-    phone.write_text(json.dumps({"radius_gateway": "wss://radius.example.test"}), encoding="utf-8")
+    phone.write_text(json.dumps({
+        "schema_version": "tspi-link/1",
+        "protocol": "tspi-link.v1",
+        "relay_url": "https://relay.example.test",
+        "host_id": "123e4567-e89b-42d3-a456-426614174000",
+    }), encoding="utf-8")
+    (phone.parent / "host.token").write_text("tsph_" + "a" * 43, encoding="utf-8")
     args = wizard.parse_args([
         "--install-root", str(root), "--without-web", "--service-scope", "none", "--non-interactive",
     ])
@@ -202,7 +208,8 @@ def test_update_preserves_workspace_root_and_radius_gateway_defaults(tmp_path: P
     wizard.validate_options(args)
 
     assert args.workspace_root == str(workspace_root)
-    assert args.radius_gateway == "wss://radius.example.test"
+    assert args.phone_access == "link"
+    assert args.link_url == "https://relay.example.test"
 
 
 def test_install_configuration_rollback_restores_owned_files_and_removes_new_release(
@@ -218,7 +225,7 @@ def test_install_configuration_rollback_restores_owned_files_and_removes_new_rel
         "--without-web", "--service-scope", "none", "--non-interactive",
     ])
     wizard.validate_options(args)
-    phone = root / ".pi/app-server-host/phone-connection.json"
+    phone = root / ".pi/app-server-host/link.json"
     phone.parent.mkdir(parents=True)
     phone.write_text("old-phone\n", encoding="utf-8")
     release = root / ".pi/packages/tspi/releases/old"
@@ -270,6 +277,8 @@ def test_non_interactive_smtp_options_write_only_a_secure_credential_reference(t
     assert stat.S_IMODE(config.stat().st_mode) == 0o600
     assert stat.S_IMODE(password_file.stat().st_mode) == 0o600
     content = config.read_text(encoding="utf-8")
+    assert 'provider = "smtp"' in content
+    assert "binding =" not in content
     assert 'preset = "qq"' in content
     assert f'password_file = "{password_file}"' in content
     assert "from_address" not in content
@@ -535,7 +544,7 @@ def test_component_summary_exposes_app_server_and_phone_connection(tmp_path: Pat
     assert components["app_server"]["server_id"].endswith("/.pi/app-server-host/server-id")
     assert components["app_server"]["start"] == "systemctl --user start ts-app-server-tspi.service"
     assert components["phone"]["tool_access"] == "same_as_terminal"
-    assert components["phone"]["protocol_version"] == 8
+    assert components["phone"]["protocol"] == "tspi-link.v1"
 
 
 def test_custom_workspace_root_flows_into_host_and_web_services(tmp_path: Path) -> None:
@@ -568,26 +577,58 @@ def test_workspace_root_rejects_an_installation_ancestor(tmp_path: Path) -> None
         wizard.validate_options(args)
 
 
-def test_phone_manifest_is_secret_free_and_keeps_terminal_tool_access(tmp_path: Path) -> None:
+def test_link_manifest_is_secret_free_and_host_token_is_private(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     args = _options(tmp_path)
     root = Path(args.install_root)
     (root / ".pi/tspi").mkdir(parents=True)
     wizard.configure_workspace_root(args)
-    args.radius_gateway = "wss://radius.example.test"
+    args.phone_access = "link"
+    args.link_url = "https://relay.example.test"
+    args.link_enrollment_code = "ABCD-EFGH-IJKL"
+    host_id = wizard.ensure_host_identity(root).read_text(encoding="ascii").strip()
+    monkeypatch.setattr(wizard, "_redeem_link_enrollment", lambda *_args: {
+        "hostId": host_id,
+        "protocol": "tspi-link.v1",
+        "hostToken": "tsph_" + "a" * 43,
+    })
 
     result = wizard.configure_phone_connection(args)
 
     manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
-    assert manifest["radius_gateway"] == "wss://radius.example.test"
-    assert manifest["tool_access"] == "same_as_terminal"
-    assert manifest["protocol_version"] == 8
-    assert manifest["workspace_service"] == {
-        "service_id": "tspi.workspace-directory",
-        "members": ["list", "create"],
-    }
-    assert manifest["session_service"]["workspace_binding"] == "workspaceId"
+    assert manifest["relay_url"] == "https://relay.example.test"
+    assert manifest["protocol"] == "tspi-link.v1"
+    assert result["tool_access"] == "same_as_terminal"
     assert "token" not in manifest
     assert "secret" not in manifest
+    token_file = root / ".pi/app-server-host/host.token"
+    assert token_file.read_text(encoding="utf-8").strip().startswith("tsph_")
+    assert stat.S_IMODE(token_file.stat().st_mode) == 0o600
+
+
+def test_changing_relay_requires_a_new_host_enrollment(tmp_path: Path) -> None:
+    args = _options(tmp_path)
+    root = Path(args.install_root)
+    state = root / ".pi/app-server-host"
+    state.mkdir(parents=True)
+    (state / "link.json").write_text(json.dumps({
+        "schema_version": "tspi-link/1",
+        "protocol": "tspi-link.v1",
+        "relay_url": "https://old-relay.example.test",
+        "host_id": "123e4567-e89b-42d3-a456-426614174000",
+    }), encoding="utf-8")
+    (state / "host.token").write_text("tsph_" + "a" * 43, encoding="ascii")
+    args.phone_access = "link"
+    args.link_url = "https://new-relay.example.test"
+    args.link_enrollment_code = None
+
+    with pytest.raises(RuntimeError, match="enrollment code is required"):
+        wizard.configure_phone_connection(args)
+
+
+@pytest.mark.parametrize("relay_url", ["https://", "https://relay.example.test:invalid"])
+def test_link_url_must_be_a_valid_origin(relay_url: str) -> None:
+    with pytest.raises(ValueError, match="link-url"):
+        wizard._validate_link_url(relay_url)
 
 
 def test_custom_smtp_provider_writes_explicit_host(tmp_path: Path) -> None:

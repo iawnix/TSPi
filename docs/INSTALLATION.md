@@ -224,15 +224,25 @@ session directory is `<install>/.pi/app-server-host/sessions`. Each session
 still runs with the selected project's own cwd and is restricted to a direct
 child of the configured workspace root.
 
-TS Phone connects once to this Host through Pi Radius, lists the available
-projects, creates a project when needed, and creates or switches sessions
-inside that connection. The installer
-prints the Host UUID and configured `PI_RADIUS_GATEWAY` (when present) as the
-pairing checklist. It also writes the secret-free
-`.pi/app-server-host/phone-connection.json` manifest with protocol version,
-Host ID, Radius endpoint, workspace root, and `same_as_terminal` tool access.
-Phone credentials are held by the mobile secure store and are unrelated to the
-TS Web HTTP token.
+TS Phone connects to this Host through TSPi Link. During installation, enable
+Phone access and provide the HTTPS TSPi Relay origin plus a single-use Host
+enrollment code created by the Relay administrator. The installer writes
+`.pi/app-server-host/link.json` and the owner-only
+`.pi/app-server-host/host.token`. The Host then maintains an outbound WSS
+connection; no App Server port is exposed to the Relay or Internet.
+
+After the Host is online, create and manage Phone authorization with:
+
+```bash
+./TSPi phone pair
+./TSPi phone devices
+./TSPi phone revoke <device-id>
+```
+
+`phone pair` prints the configured Relay URL and an eight-character code that
+expires after five minutes and can be used once. TS Phone redeems it for a
+revocable device credential held in platform secure storage. Phone credentials
+and the Host token are unrelated to the TS Web HTTP token.
 
 Phone is a normal interactive Pi client. Its prompts run on the App Server
 machine and use the same `read`, `write`, `bash`, and TSPi tools as the terminal;
@@ -261,7 +271,7 @@ If TS Web was selected, start it with:
 Use `--web-host 0.0.0.0 --allow-remote` only with an authenticated token file;
 the installer rejects a non-loopback bind without both explicit settings. TS
 Web is read-only and does not own Pi sessions. Its bearer token is separate
-from Pi Radius credentials.
+from TSPi Link Host and device credentials.
 
 The installer generates a random TS Web token when the token file is missing.
 For a selected token, pass `--web-auth-token` (8-100 URL-safe characters) or

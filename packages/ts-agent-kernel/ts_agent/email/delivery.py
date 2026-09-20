@@ -230,6 +230,7 @@ def load_notification_config(path: str | Path | None = None) -> EmailNotificatio
     if set(notifications) != {"email"}:
         raise ValueError("notification configuration must contain only [notifications.email]")
     email = _mapping(notifications.get("email"), "notifications.email")
+    email = _normalize_notification_provider(email)
     enabled = email.get("enabled")
     if not isinstance(enabled, bool):
         raise ValueError("notifications.email.enabled must be true or false")
@@ -266,6 +267,17 @@ def load_notification_config(path: str | Path | None = None) -> EmailNotificatio
         )
 
     return _load_smtp_config(source, email, enabled=enabled, recipient=recipient)
+
+
+def _normalize_notification_provider(email: dict[str, Any]) -> dict[str, Any]:
+    """Read configs emitted with the short-lived installer-only binding key."""
+    if "binding" not in email:
+        return email
+    if "provider" in email:
+        raise ValueError("notifications.email cannot set both provider and binding")
+    normalized = dict(email)
+    normalized["provider"] = normalized.pop("binding")
+    return normalized
 
 
 def _load_smtp_config(

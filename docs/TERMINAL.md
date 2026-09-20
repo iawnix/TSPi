@@ -39,11 +39,21 @@ disconnect; inspect the transcript before trying again.
 
 ## Phone access
 
-TS Phone connects once to this Host through Pi Radius using protocol v8. It can
-list or create projects and create or switch sessions without another service
-per project. It does not connect to the terminal process and does not require
-a local HTTP service,
-bridge secret, reverse proxy, or `TSPhoneServer`/`TSPhoneCtl` binary.
+TS Phone connects to this Host through TSPi Link. Both the Phone and Host open
+outbound WSS connections to the configured TSPi Relay, so the App Server does
+not expose an inbound public port. The Relay authorizes devices and forwards
+opaque App Server bytes; it does not own projects, sessions, or transcripts.
+
+Create a five-minute, single-use pairing code on the Host:
+
+```bash
+./TSPi phone pair
+```
+
+Enter the printed Relay URL and code in TS Phone. Use `./TSPi phone devices`
+to list authorized devices and `./TSPi phone revoke <device-id>` to revoke one.
+The Phone can then list or create projects and create or switch sessions. It
+does not connect to the terminal process or require a per-project service.
 
 The Host exposes `WorkspaceDirectory.list/create` for project selection and
 creation. A new session is requested through `SessionManagement.create` with
@@ -72,7 +82,7 @@ the Host is running:
 
 The adapter exposes the versioned `tspi-session-control/1` request contract and
 an SSE transcript stream. It attaches to the Host session and never starts a
-second Worker. Phone clients should continue using Pi Radius directly.
+second Worker. Phone clients use TSPi Link directly.
 
 ## Troubleshooting
 
@@ -81,8 +91,9 @@ second Worker. Phone clients should continue using Pi Radius directly.
   `systemctl --user status`.
 - `another Root Agent already owns workspace`: use the existing Host; do not
   start a second Host for the installation.
-- A changed App Server UUID means a different installation or workspace; update
-  the phone connection deliberately.
+- `TSPi Link is not configured`: enroll the Host with the installer before
+  creating a Phone pairing.
+- A changed Host UUID means a different installation; pair the phone again.
 
 See [Architecture](ARCHITECTURE.md) and [Installation](INSTALLATION.md) for
 storage, runtime, and recovery details.

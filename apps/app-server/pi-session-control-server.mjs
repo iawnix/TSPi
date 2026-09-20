@@ -9,8 +9,8 @@ const MAX_BODY_BYTES = 2 * 1024 * 1024;
 /**
  * Start a small Web adapter for one already-running Pi App Server session.
  *
- * TS Phone should continue using Pi Radius directly. This adapter exists for
- * browser clients that cannot speak Radius; it never owns a session or starts
+ * TS Phone uses TSPi Link directly. This adapter exists for browser clients;
+ * it never owns a session or starts
  * another worker. Its only state is the bounded request/event facade over the
  * attached Pi services.
  */

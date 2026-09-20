@@ -3,7 +3,7 @@
 `tspi-session-control/1` is the transport-neutral command contract for one
 Pi App Server session. The App Server remains the only owner of the session,
 agent lane, transcript, and workspace Root lock. A client may carry these
-messages over Pi Radius (the TS Phone path) or the optional local HTTP/SSE
+messages over TSPi Link (the TS Phone path) or the optional local HTTP/SSE
 adapter in `apps/app-server/pi-session-control-server.mjs` (the browser path).
 
 The contract deliberately has no scientific state or workspace file writes.
@@ -24,8 +24,8 @@ used. A repeated request id with a different payload is a protocol error.
 5. On a sequence gap, discard the local session cache and request a new snapshot.
 
 The optional Web adapter is intentionally a thin transport. It does not start
-Pi, create workers, or introduce a second session broker. TS Phone should use
-the native Pi Radius protocol directly when available.
+Pi, create workers, or introduce a second session broker. TS Phone uses the
+native Pi App Server byte stream through TSPi Link.
 
 ## HTTP adapter routes
 

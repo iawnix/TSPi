@@ -45,7 +45,7 @@ contracts are explicit.
 | TSPi | Owns the kernel, Pi package, Web implementation, release assembly, and installation boundary | It is the natural required core repository and product release owner |
 | `ts-phone` | Independent repository with the Flutter presentation client and mobile release tooling | It remains independently developed; its runtime dependency is the Pi App Server protocol |
 | `ts-web` | Client, registry, server, and static UI under `components/ts-web/`; it consumes the canonical ResearchMap through `research-map-provider/1` | The component can be archived and installed independently from Agent |
-| Phone transport | TS Phone speaks Pi protocol v8 through the authenticated Radius session relay; no TSPi Phone server or bridge is installed | Pi owns the session transport and TS Phone owns only its presentation adapter |
+| Phone transport | TS Phone carries Pi protocol v8 through TSPi Link; the Relay authorizes devices and forwards opaque bytes | TSPi owns the Link transport while Pi App Server remains the session authority |
 | Release boundary | TSPi emits `tspi-package-release/4` with required Agent and optional independent Web descriptor | The suite contains the runtime; TS Phone is released separately |
 | Review | One isolated advisory Review request accepts `reviewerRole`; the `general` role has a versioned descriptor, and a deterministic aggregator preserves individual results, failures, and disagreements | Role and aggregation contracts exist, but public execution remains one bounded request rather than parallel reviewer orchestration |
 | Testing | `tools/test/runner.py` selects the manifest lane; the source lane builds a wheel and temporary overlay before running Python tests | Fast edit feedback and release-backed validation use explicit, reproducible environments |
@@ -139,8 +139,9 @@ scientific or control protocol.
 
 ### 3. Protocol ownership
 
-Pi owns the App Server protocol, Chord service contracts, and Radius relay
-transport. TS Phone owns a typed presentation adapter that maps native Pi
+Pi owns the App Server protocol and Chord service contracts. TSPi owns Link
+enrollment, authorization, and opaque byte forwarding. TS Phone owns a typed
+presentation adapter that maps native Pi
 session, transcript, model, prompt, and abort services into its mobile UI. It
 must not introduce a second broker, event journal, or semantic definition of
 the App Server records.
@@ -206,7 +207,7 @@ move one boundary at a time while retaining stable entrypoint shims.
 The first staged move places the Python kernel under
 `packages/ts-agent-kernel/` and the TypeScript runtime under
 `packages/ts-agent-runtime/`. The native App Server lives under `apps/`; the
-terminal is Pi's client mode and TS Phone is an external Radius client. Stable
+terminal is Pi's client mode and TS Phone is an external TSPi Link client. Stable
 package entrypoints and release manifests now point at these explicit
 locations. The remaining `scripts/` transition is intentionally separate so
 installed command names stay stable while mechanisms move into named tools.

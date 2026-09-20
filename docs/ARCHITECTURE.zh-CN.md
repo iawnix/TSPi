@@ -9,6 +9,8 @@ Pi App Server Host，由它服务配置的 workspace root 下的所有直接子�
 ## 组件职责
 
 - `apps/app-server/` 启动 Pi 原生 App Server 和 session worker。
+- `services/tspi-relay/` 负责 TSPi Link 的 Host 注册、手机配对、设备授权和不透明字节
+  转发；它不提供 App Server 或研究 API。
 - `packages/ts-agent-kernel/ts_agent/` 管理 `ResearchMap`、引用完整性、验证和事务。
   计算控制面负责本地子进程的持久化生命周期，并通过配置好的
   `ts_calc` 对 local 和 remote 使用同一套计算生命周期；统一的
@@ -21,7 +23,7 @@ Pi App Server Host，由它服务配置的 workspace root 下的所有直接子�
 - `components/ts-web/` 是可选的只读浏览器客户端，直接渲染 Kernel 序列化的
   `ResearchMap`；浏览器控制通过显式启动的
   `TSPi --gateway` 适配器附着到已有 Host session，不会创建第二个 Worker。
-- TS Phone 是独立 Flutter 客户端，通过 Pi Radius 连接 App Server。
+- TS Phone 是独立 Flutter 客户端，通过 TSPi Link 连接 App Server。
 
 App Server 独占 session directory、对话历史、模型状态、prompt 操作和工作区 Root
 锁；本地 TUI 与 TS Phone 连接同一个 owner，并共享 `read`、`write`、`bash` 和全部
@@ -116,12 +118,24 @@ TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、
 第一次执行 `TSPi --workspace <name>` 时，如果项目不存在，客户端会通过同一套经过校验
 的 bootstrap 初始化它；Host 不会创建未命名项目，必须由客户端明确指定合法名称。
 
-## 手机连接
+## TSPi Link
 
-TS Phone 使用 Pi protocol v8 和 `pi-session-relay.client.v1`，通过
-`wss://<radius>/v1/session-relays/<server-id>/connect` 一次连接 Host。项目目录和
-会话列表由 Host 的 workspace/session services 提供，手机不维护第二套状态机或
-Host bridge。
+```text
+TS Phone -- 出站 WSS --> TSPi Relay <-- 出站 WSS -- TSPi Host
+                                                    |
+                                                Unix socket
+                                                    |
+                                              Pi App Server
+```
+
+两条网络连接都使用 `/v1/link` 和 `tspi-link.v1` WebSocket 子协议，但使用不同角色的
+Bearer 凭据。短期 Host enrollment code 生成 Host 凭据；短期 Phone pairing code
+生成可撤销的设备凭据。Relay 只把已授权设备映射到 Host，并原样转发 Pi App Server
+字节流，不解析其中的会话消息。
+
+Relay 不拥有 workspace、session、transcript、工具或计算状态；这些仍由 App Server
+独占。WSS 分别保护两条网络链路，但 Link 1 不提供应用层端到端加密，因此 Relay 必须
+部署在可信基础设施上。
 
 ## 浏览器控制
 

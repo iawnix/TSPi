@@ -311,6 +311,8 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
             managed.extend([
                 root / ".pi/tspi",
                 root / ".pi/app-server-host/server-id",
+                root / ".pi/app-server-host/link.json",
+                root / ".pi/app-server-host/host.token",
                 root / ".pi/app-server-host/phone-connection.json",
                 root / ".pi/app-server-host/workspace",
                 root / ".pi/agent",

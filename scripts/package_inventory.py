@@ -21,6 +21,7 @@ CONTRACT_FILES = [
     "contracts/tspi-session-control/1/session-control-request.schema.json",
     "contracts/tspi-session-control/1/session-control-response.schema.json",
     "contracts/tspi-session-control/1/session-event.schema.json",
+    "contracts/tspi-link/1/README.md",
 ]
 
 
@@ -60,6 +61,16 @@ APP_SERVER_FILES = [
     "apps/app-server/pi-session-worker.mjs",
     "apps/app-server/pi-runtime-deps.mjs",
     "apps/app-server/system-prompt.mjs",
+    "apps/app-server/tspi-link-host.mjs",
+]
+
+LINK_RELAY_FILES = [
+    "services/tspi-relay/cli.mjs",
+    "services/tspi-relay/protocol.mjs",
+    "services/tspi-relay/server.mjs",
+    "services/tspi-relay/store.mjs",
+    "services/tspi-relay/package.json",
+    "services/tspi-relay/package-lock.json",
 ]
 
 ANALYSIS_FILES = [
@@ -81,6 +92,7 @@ PACKAGE_FILES = [
     "config/pi-worker-entry.patch",
     "config/pi-multi-workspace.patch",
     "config/pi-multi-workspace-create.patch",
+    "config/pi-research-workspace.patch",
     "config/pi-system-prompt.patch",
     "config/pi-source-resolver.patch",
     "config/pi-model-data.patch",
@@ -137,6 +149,9 @@ PACKAGE_FILES = [
     "packages/ts-agent-runtime/host-api/*.d.mts",
     "packages/ts-agent-runtime/host-api/*.mjs",
     "apps/app-server/*.mjs",
+    "services/tspi-relay/*.mjs",
+    "services/tspi-relay/package.json",
+    "services/tspi-relay/package-lock.json",
     "packages/ts-agent-kernel/ts_agent/*.py",
     "packages/ts-agent-kernel/ts_agent/*.json",
     "packages/ts-agent-kernel/ts_agent/backends/*.py",
@@ -165,6 +180,8 @@ REQUIRED_TARBALL_FILES = frozenset(
         "packages/ts-agent-kernel/ts_agent/workspace/dispatch.py",
         "packages/ts-agent-runtime/artifacts/node-control.cjs",
         *CONTRACT_FILES,
+        *LINK_RELAY_FILES,
+        *APP_SERVER_FILES,
         "package.json",
         "README.zh-CN.md",
         "pyproject.toml",

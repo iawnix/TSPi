@@ -59,8 +59,46 @@ if (mode === "gateway") {
 const child = spawn(process.execPath, ["--import", join(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts"), ...args], {
   cwd: workspaceRoot || sourceRoot, env: childEnv, stdio: "inherit",
 });
-for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(signal, () => child.kill(signal));
-child.once("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
+const link = mode === "server" ? startLinkHost(wrapper, forwarded, childEnv) : undefined;
+let exiting = false;
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(signal, () => {
+  exiting = true;
+  link?.kill(signal);
+  child.kill(signal);
+});
+child.once("exit", (code, signal) => {
+  exiting = true;
+  link?.kill("SIGTERM");
+  process.exit(code ?? (signal ? 1 : 0));
+});
+link?.once("exit", (code, signal) => {
+  if (exiting) return;
+  process.stderr.write(`TSPi Link Host exited unexpectedly (${code ?? signal ?? "unknown"})\n`);
+  child.kill("SIGTERM");
+});
+
+function startLinkHost(wrapper, forwarded, env) {
+  const relayUrl = process.env.TSPI_LINK_URL?.trim();
+  const tokenFile = process.env.TSPI_LINK_HOST_TOKEN_FILE?.trim();
+  if (!relayUrl && !tokenFile) return undefined;
+  if (!relayUrl || !tokenFile) throw new Error("TSPI_LINK_URL and TSPI_LINK_HOST_TOKEN_FILE must be configured together");
+  const serverId = forwardedOption(forwarded, "--server-id");
+  if (!wrapper.directory || !serverId) throw new Error("TSPi Link Host requires the managed App Server directory and identity");
+  return spawn(process.execPath, [
+    join(packageRoot, "apps/app-server/tspi-link-host.mjs"),
+    "--relay-url", relayUrl,
+    "--token-file", tokenFile,
+    "--socket-path", join(resolve(wrapper.directory), `${serverId}.sock`),
+  ], { cwd: workspaceRoot || sourceRoot, env, stdio: "inherit" });
+}
+
+function forwardedOption(arguments_, name) {
+  for (let index = 0; index < arguments_.length; index += 1) {
+    if (arguments_[index] === name) return arguments_[index + 1];
+    if (arguments_[index].startsWith(`${name}=`)) return arguments_[index].slice(name.length + 1);
+  }
+  return undefined;
+}
 
 function parseWrapperArguments(arguments_) {
   const mode = arguments_[0] || "server";

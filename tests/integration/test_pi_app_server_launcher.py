@@ -211,6 +211,20 @@ def test_session_selection_is_workspace_scoped_and_explicit() -> None:
         ])
 
 
+def test_phone_management_commands_are_parsed_before_workspace_selection() -> None:
+    pairing = launcher.parse_launch_request(["phone", "pair"])
+    devices = launcher.parse_launch_request(["phone", "devices"])
+    revoke = launcher.parse_launch_request(["phone", "revoke", "223e4567-e89b-42d3-a456-426614174000"])
+
+    assert pairing.phone_action == "pair"
+    assert devices.phone_action == "devices"
+    assert revoke.phone_action == "revoke"
+    assert revoke.phone_device_id == "223e4567-e89b-42d3-a456-426614174000"
+
+    with pytest.raises(launcher.TSPiHostError, match="usage: TSPi phone"):
+        launcher.parse_launch_request(["phone", "revoke"])
+
+
 def test_host_state_prepares_private_pi_workspace_before_root_lock(tmp_path: Path) -> None:
     installation = _installation(tmp_path)
 

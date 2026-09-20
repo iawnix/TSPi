@@ -3,7 +3,7 @@
  *
  * Pi owns the session, lane, and transcript. This module only adapts the
  * existing AgentController and Transcript services to a small, versioned
- * request/event contract that a Radius client (or another local client) can
+ * request/event contract that a Web client (or another local client) can
  * carry. It intentionally does not open a second HTTP/WebSocket server.
  */
 

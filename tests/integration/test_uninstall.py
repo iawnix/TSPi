@@ -44,9 +44,9 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     web_token = root / ".pi/ts-web/auth.token"
     web_token.parent.mkdir(parents=True)
     web_token.write_text("w" * 43)
-    phone_connection = root / ".pi/app-server-host/phone-connection.json"
+    phone_connection = root / ".pi/app-server-host/link.json"
     phone_connection.parent.mkdir(parents=True)
-    phone_connection.write_text('{"schema_version":"tspi-phone-connection/1"}\n', encoding="utf-8")
+    phone_connection.write_text('{"schema_version":"tspi-link/1"}\n', encoding="utf-8")
     download = root / "downloads/client.apk"
     download.parent.mkdir()
     download.write_bytes(b"apk")
@@ -332,8 +332,10 @@ def test_purge_removes_unified_host_sessions_and_credentials(tmp_path: Path) -> 
     host_session.parent.mkdir(parents=True)
     host_session.write_text("session\n", encoding="utf-8")
     (root / ".pi/app-server-host/server-id").write_text("server\n", encoding="utf-8")
-    phone_connection = root / ".pi/app-server-host/phone-connection.json"
+    phone_connection = root / ".pi/app-server-host/link.json"
     phone_connection.write_text("{}\n", encoding="utf-8")
+    host_token = root / ".pi/app-server-host/host.token"
+    host_token.write_text("secret\n", encoding="utf-8")
     (root / ".pi/agent/auth.json").parent.mkdir(parents=True)
     (root / ".pi/agent/auth.json").write_text("{}\n", encoding="utf-8")
     (root / ".pi/email/smtp-password").parent.mkdir(parents=True)
@@ -345,5 +347,6 @@ def test_purge_removes_unified_host_sessions_and_credentials(tmp_path: Path) -> 
     assert not host_session.exists()
     assert not (root / ".pi/app-server-host/server-id").exists()
     assert not phone_connection.exists()
+    assert not host_token.exists()
     assert not (root / ".pi/agent").exists()
     assert not (root / ".pi/email").exists()

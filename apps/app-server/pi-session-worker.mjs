@@ -51,7 +51,7 @@ async function loadTspiSkills(executionEnv) {
 
 async function createTspiHarness(session, options, executionEnv) {
   // This entrypoint is the trusted App Server worker for both terminal and
-  // Radius clients. Client transport must never change the Agent tool set.
+  // Link clients. Client transport must never change the Agent tool set.
   process.env.TSPI_NATIVE_WRITES = "1";
   const modelRuntime = await ModelRuntime.create();
   const settingsManager = SettingsManager.create(session.metadata.cwd);

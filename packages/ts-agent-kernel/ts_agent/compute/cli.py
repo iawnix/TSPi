@@ -104,9 +104,9 @@ def main(argv: list[str] | None = None) -> int:
     dispatch.add_argument("--operation", choices=("pause", "resume"), required=True)
     dispatch.add_argument("--rationale", required=True)
 
-    environment_diagnostic = sub.add_parser("environment-diagnostic")
-    environment_diagnostic.add_argument("--mode", choices=sorted(REMOTE_DIAGNOSTIC_MODES), default="status")
-    environment_diagnostic.add_argument("--environment")
+    remote_diagnostic = sub.add_parser("remote-diagnostic")
+    remote_diagnostic.add_argument("--mode", choices=sorted(REMOTE_DIAGNOSTIC_MODES), default="status")
+    remote_diagnostic.add_argument("--environment")
 
     environments = sub.add_parser("environments", help="list configured local and remote compute environments")
     environments.add_argument("--root", required=True)
@@ -169,7 +169,7 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return resolve_analysis_capability(args.capability, args.version)
     if args.command == "resolve-capability":
         return resolve_capability_result(args.capability, args.version)
-    if args.command == "environment-diagnostic":
+    if args.command == "remote-diagnostic":
         return diagnose_remote(args.mode, environment_name=args.environment)
     if args.command == "environments":
         from ts_agent.api import execute

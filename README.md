@@ -43,9 +43,12 @@ Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for the
 Host lifecycle. `--host` is an internal service entrypoint and is not part of
 normal operation.
 
-The TS Phone Flutter app connects to the same App Server through Pi Radius;
-it is not a second Host or broker. See [Terminal](docs/TERMINAL.md),
-[Architecture](docs/ARCHITECTURE.md), and the [TS Phone client guide](https://github.com/iawnix/ts-phone/blob/main/README.md).
+The TS Phone Flutter app reaches the same App Server through TSPi Link. The
+Phone and Host both open outbound WSS connections to a TSPi Relay; the Relay
+handles device authorization and opaque byte forwarding, not sessions or
+research state. See [TSPi Link](docs/TSPi_LINK.md),
+[Terminal](docs/TERMINAL.md), [Architecture](docs/ARCHITECTURE.md), and the
+[TS Phone client guide](https://github.com/iawnix/ts-phone/blob/main/README.md).
 
 ## Research and remote execution
 

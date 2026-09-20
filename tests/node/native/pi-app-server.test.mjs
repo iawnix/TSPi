@@ -322,26 +322,29 @@ test("native Pi app server exposes direct workspaces and binds session cwd", { s
   const workspaceRoot = join(root, "workspaces");
   const projectA = join(workspaceRoot, "project-a");
   const projectB = join(workspaceRoot, "project-b");
+  const legacyProject = join(workspaceRoot, "legacy-project");
   await mkdir(join(root, "agent"), { recursive: true });
   await mkdir(projectA, { recursive: true });
   await mkdir(projectB, { recursive: true });
+  await mkdir(legacyProject, { recursive: true });
   const bootstrapPython = join(root, "bootstrap-python.mjs");
   await writeFile(bootstrapPython, `#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const workspace = process.argv.at(-1);
 mkdirSync(workspace, { recursive: true, mode: 0o700 });
-writeFileSync(join(workspace, "workspace.json"), JSON.stringify({ schema_version: "ts-workspace/6" }));
+writeFileSync(join(workspace, "workspace.json"), JSON.stringify({ schema_version: "research-workspace/1" }));
 `, { mode: 0o700 });
   await writeFile(join(root, "agent", "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test-key" } }), { mode: 0o600 });
   for (const [directory, workspaceId] of [[projectA, "ws_aaaaaaaaaaaaaaaaaaaaaaaa"], [projectB, "ws_bbbbbbbbbbbbbbbbbbbbbbbb"]]) {
     await writeFile(join(directory, "workspace.json"), JSON.stringify({
-      schema_version: "ts-workspace/6",
+      schema_version: "research-workspace/1",
       workspace_id: workspaceId,
       kernel_protocol: "ts-research-kernel/6",
       created_at: "2026-09-17T00:00:00+00:00",
     }));
   }
+  await writeFile(join(legacyProject, "workspace.json"), JSON.stringify({ schema_version: "ts-workspace/6" }));
   await mkdir(join(projectA, "nested"));
   await symlink(projectA, join(workspaceRoot, "project-a-alias"));
   const server = await startNativeServer(root, { workspaceRoot, python: bootstrapPython });
@@ -371,7 +374,7 @@ writeFileSync(join(workspace, "workspace.json"), JSON.stringify({ schema_version
     const projectC = join(workspaceRoot, "project-c");
     const createdWorkspace = await services.use(WorkspaceDirectory).create("project-c", backgroundContext);
     assert.deepEqual(createdWorkspace, { workspaceId: "project-c", name: "project-c", root: projectC });
-    assert.equal(JSON.parse(await readFile(join(projectC, "workspace.json"))).schema_version, "ts-workspace/6");
+    assert.equal(JSON.parse(await readFile(join(projectC, "workspace.json"))).schema_version, "research-workspace/1");
     await assert.rejects(services.use(WorkspaceDirectory).create("../outside", backgroundContext));
 
     const created = await services.use(SessionManagement).create({ cwd: projectA }, backgroundContext);
@@ -381,6 +384,10 @@ writeFileSync(join(workspace, "workspace.json"), JSON.stringify({ schema_version
     await assert.rejects(services.use(SessionManagement).create({ cwd: workspaceRoot }, backgroundContext));
     await assert.rejects(services.use(SessionManagement).create({ cwd: join(projectA, "nested") }, backgroundContext));
     await assert.rejects(services.use(SessionManagement).create({ cwd: join(workspaceRoot, "project-a-alias") }, backgroundContext));
+    await assert.rejects(
+      services.use(SessionManagement).create({ cwd: legacyProject }, backgroundContext),
+      /Session cwd is not a supported TSPi workspace/,
+    );
   } finally {
     await services?.dispose(backgroundContext).catch(() => {});
     await serverClient?.dispose().catch(() => {});

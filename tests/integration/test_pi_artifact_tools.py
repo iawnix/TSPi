@@ -608,6 +608,19 @@ def test_smtp_notification_accepts_a_custom_host_profile(tmp_path: Path) -> None
     assert loaded.smtp_security == "starttls"
 
 
+def test_smtp_notification_accepts_transitional_installer_binding(tmp_path: Path) -> None:
+    config = _smtp_notification_install(tmp_path, preset="qq")
+    config.write_text(
+        config.read_text(encoding="utf-8").replace('provider = "smtp"', 'binding = "smtp"'),
+        encoding="utf-8",
+    )
+
+    loaded = email_delivery.load_notification_config(config)
+
+    assert loaded.provider == "smtp"
+    assert loaded.smtp_preset == "qq"
+
+
 def test_notification_rejects_removed_act_event_and_unsafe_report_ref(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

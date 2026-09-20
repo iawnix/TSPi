@@ -360,8 +360,10 @@ def test_tspi_loads_installation_owned_notification_config(
     assert json.loads(completed.stdout) == {"config": str(config), "display": expected}
 
 
+@pytest.mark.parametrize("provider_field", ["provider", "binding"])
 def test_tspi_loads_smtp_notification_config_without_clawemail(
     tmp_path: Path,
+    provider_field: str,
 ) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
     config = install_root / ".pi" / "notifications.toml"
@@ -369,7 +371,7 @@ def test_tspi_loads_smtp_notification_config_without_clawemail(
     config.write_text(
         "[notifications.email]\n"
         "enabled = true\n"
-        'provider = "smtp"\n'
+        f'{provider_field} = "smtp"\n'
         'preset = "163"\n'
         'recipient = "researcher@example.org"\n'
         'username = "researcher@163.com"\n'
@@ -436,13 +438,25 @@ def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
-    diagnostic.write_text("print('{\"ok\": true}')\n", encoding="utf-8")
+    invocation = tmp_path / "diagnostic-argv.json"
+    diagnostic.write_text(
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        f"Path({str(invocation)!r}).write_text(json.dumps(sys.argv[1:]), encoding='utf-8')\n"
+        "print('{\"ok\": true}')\n",
+        encoding="utf-8",
+    )
     write_test_runtime_manifest(_installed_package_root(install_root), install_root)
 
     completed = _run_tspi(launcher, "--check-remote")
 
     assert completed.returncode == 0, completed.stderr
     assert "remote check passed (cluster-login · Torque)" in completed.stdout
+    assert json.loads(invocation.read_text(encoding="utf-8")) == [
+        "remote-diagnostic",
+        "--mode",
+        "doctor",
+    ]
     assert not (install_root / "workspaces").exists()
 
 

@@ -1,0 +1,16 @@
+{
+  "name": "@iawnix/tspi-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Authenticated WebSocket relay for TSPi Hosts and TS Phone devices.",
+  "bin": {
+    "tspi-relay": "./cli.mjs"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "ws": "8.21.2"
+  }
+}

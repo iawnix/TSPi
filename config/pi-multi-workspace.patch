@@ -186,9 +186,9 @@ index 5ec02aaa2..6628e5298 100644
 +	if (root !== undefined) {
 +		try {
 +			const identity = JSON.parse(await readFile(join(candidate, "workspace.json"), "utf8"));
-+			if (identity?.schema_version !== "ts-workspace/6") throw new Error("unsupported workspace schema");
++			if (identity?.schema_version !== "research-workspace/1") throw new Error("unsupported workspace schema");
 +		} catch {
-+			throw new Error(`Session cwd is not a supported TSPi workspace: ${candidate}`);
++			throw new RoutedServerError("service_invalid_value", `Session cwd is not a supported TSPi workspace: ${candidate}`);
 +		}
 +	}
 +	return candidate;
@@ -207,7 +207,7 @@ index 5ec02aaa2..6628e5298 100644
 +			const info = await stat(workspaceRoot);
 +			if (!info.isDirectory()) continue;
 +			const identity = JSON.parse(await readFile(join(workspaceRoot, "workspace.json"), "utf8"));
-+			if (identity?.schema_version !== "ts-workspace/6") continue;
++			if (identity?.schema_version !== "research-workspace/1") continue;
 +		} catch {
 +			continue;
 +		}

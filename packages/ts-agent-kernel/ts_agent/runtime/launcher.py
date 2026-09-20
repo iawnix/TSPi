@@ -111,6 +111,8 @@ class LaunchRequest:
     gateway: bool = False
     standalone: bool = False
     host: bool = False
+    phone_action: str | None = None
+    phone_device_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -130,6 +132,9 @@ class Installation:
 USAGE = """Usage:
   TSPi --workspace <name> [--session-id <id> | -c] [Pi arguments...]
   TSPi --check-remote
+  TSPi phone pair
+  TSPi phone devices
+  TSPi phone revoke <device-id>
 
 Options:
   --workspace <name>   Open a research workspace.
@@ -145,6 +150,12 @@ terminal only detaches this client.
 
 
 def parse_launch_request(argv: list[str]) -> LaunchRequest:
+    if argv[:1] == ["phone"]:
+        if len(argv) == 2 and argv[1] in {"pair", "devices"}:
+            return LaunchRequest(None, False, None, False, False, (), phone_action=argv[1])
+        if len(argv) == 3 and argv[1] == "revoke":
+            return LaunchRequest(None, False, None, False, False, (), phone_action="revoke", phone_device_id=argv[2])
+        raise TSPiHostError("usage: TSPi phone pair|devices|revoke <device-id>", exit_code=2)
     check_remote = False
     show_help = False
     workspace_name: str | None = None
@@ -176,7 +187,10 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         elif value == "--allow-writes":
             raise TSPiHostError("--allow-writes was removed; App Server is the guarded writable Root Agent", exit_code=2)
         elif value in {"--phone", "--phone-worker", "--phone-access"} or value.startswith("--phone-access="):
-            raise TSPiHostError(f"{value.split('=', 1)[0]} was removed; TS Phone connects directly to App Server", exit_code=2)
+            raise TSPiHostError(
+                f"{value.split('=', 1)[0]} was removed; configure TSPi Link during installation",
+                exit_code=2,
+            )
         elif value in {
             "--lifecycle-preflight",
             "--lifecycle-guard",
@@ -510,6 +524,7 @@ def configure_notifications(installation: Installation) -> None:
         email = notifications["email"]
         if not isinstance(email, dict):
             raise ValueError("notifications.email must be a table")
+        email = _normalize_notification_provider(email)
         enabled = email["enabled"]
         recipient = email["recipient"]
         if not isinstance(enabled, bool):
@@ -592,6 +607,17 @@ def configure_notifications(installation: Installation) -> None:
         raise TSPiHostError(f"invalid notification configuration: {path}: {exc}") from exc
     os.environ["TS_NOTIFICATION_CONFIG"] = str(path)
     os.environ["TS_NOTIFICATION_DISPLAY_TARGET"] = recipient if enabled else "disabled"
+
+
+def _normalize_notification_provider(email: dict) -> dict:
+    """Accept the transitional installer key while retaining one canonical schema."""
+    if "binding" not in email:
+        return email
+    if "provider" in email:
+        raise ValueError("notifications.email cannot set both provider and binding")
+    normalized = dict(email)
+    normalized["provider"] = normalized.pop("binding")
+    return normalized
 
 
 def _require_config_file(value: str, label: str) -> Path:
@@ -690,6 +716,12 @@ def configure_host_process_environment(installation: Installation) -> None:
     os.environ["TS_WORKSPACE_ROOT"] = str(installation.workspaces_root)
     os.environ["TSPI_WORKSPACE_ROOT"] = str(installation.workspaces_root)
     os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / ".pi" / "agent")
+    from .link import LinkError, configure_link_environment
+
+    try:
+        configure_link_environment(installation.root)
+    except LinkError as exc:
+        raise TSPiHostError(str(exc)) from exc
     python_cache = installation.process_cache_root / "python" / "host"
     pytest_cache = installation.process_cache_root / "pytest" / "host"
     for path in (installation.process_cache_root, python_cache.parent, pytest_cache.parent, python_cache, pytest_cache):
@@ -1142,6 +1174,29 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         require_guarded_installation(installation.root)
     except SessionGuardError as exc:
         raise TSPiHostError(str(exc), code=exc.code) from exc
+
+    if request.phone_action:
+        from .link import (
+            LinkError,
+            create_phone_pairing,
+            format_devices,
+            format_pairing,
+            list_phone_devices,
+            revoke_phone_device,
+        )
+
+        try:
+            if request.phone_action == "pair":
+                print(format_pairing(create_phone_pairing(installation.root)), end="")
+            elif request.phone_action == "devices":
+                print(format_devices(list_phone_devices(installation.root)), end="")
+            else:
+                assert request.phone_device_id is not None
+                revoke_phone_device(installation.root, request.phone_device_id)
+                print(f"Revoked Phone device {request.phone_device_id}")
+        except LinkError as exc:
+            raise TSPiHostError(str(exc)) from exc
+        return 0
 
     default_client = not (
         request.standalone or request.host or request.gateway or request.check_remote

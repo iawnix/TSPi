@@ -15,6 +15,7 @@ PIN_PATH = ROOT / "config" / "pi-source.json"
 PATCH_PATH = ROOT / "config" / "pi-worker-entry.patch"
 MULTI_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace.patch"
 MULTI_WORKSPACE_CREATE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace-create.patch"
+RESEARCH_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-research-workspace.patch"
 SYSTEM_PROMPT_PATCH_PATH = ROOT / "config" / "pi-system-prompt.patch"
 SOURCE_RESOLVER_PATCH_PATH = ROOT / "config" / "pi-source-resolver.patch"
 MODEL_DATA_PATCH_PATH = ROOT / "config" / "pi-model-data.patch"
@@ -66,6 +67,8 @@ def verify(source: Path) -> str:
         "workspaceId session binding": "workspaceId?: string" in sessions and "createOptions.workspaceId" in server,
         "workspace creation": "createWorkspace: createWorkspaceRoot" in server,
         "workspace create service": "createWorkspace(workspaceId: string" in services and "create: (workspaceId, context)" in services,
+        "ResearchMap workspace schema": 'identity?.schema_version !== "research-workspace/1"' in server,
+        "workspace validation diagnostic": 'new RoutedServerError("service_invalid_value", `Session cwd is not a supported TSPi workspace:' in server,
     }
     missing = [label for label, present in multi_workspace_markers.items() if not present]
     if missing:
@@ -135,6 +138,25 @@ def apply_multi_workspace_patch(source: Path) -> None:
             ) from exc
 
 
+def apply_research_workspace_patch(source: Path) -> None:
+    """Upgrade already-patched Pi trees to the canonical ResearchMap identity."""
+    server_path = source / "packages" / "coding-agent" / "src" / "experimental" / "server.ts"
+    server = server_path.read_text(encoding="utf-8")
+    if (
+        'identity?.schema_version !== "research-workspace/1"' in server
+        and 'new RoutedServerError("service_invalid_value", `Session cwd is not a supported TSPi workspace:' in server
+    ):
+        return
+    try:
+        subprocess.run(
+            ["git", "-C", str(source), "apply", str(RESEARCH_WORKSPACE_PATCH_PATH)],
+            check=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PiSourceError(f"failed to apply TSPi ResearchMap workspace patch: {exc}") from exc
+
+
 def apply_system_prompt_patch(source: Path) -> None:
     slash_commands_path = (
         source
@@ -190,6 +212,7 @@ def clone(destination: Path) -> Path:
         raise PiSourceError(f"failed to clone pinned Pi source: {exc}") from exc
     apply_worker_patch(destination)
     apply_multi_workspace_patch(destination)
+    apply_research_workspace_patch(destination)
     apply_system_prompt_patch(destination)
     apply_source_resolver_patch(destination)
     apply_model_data_patch(destination)
@@ -204,6 +227,7 @@ def install(install_root: Path) -> Path:
     if destination.exists():
         apply_worker_patch(destination)
         apply_multi_workspace_patch(destination)
+        apply_research_workspace_patch(destination)
         apply_system_prompt_patch(destination)
         apply_source_resolver_patch(destination)
         apply_model_data_patch(destination)

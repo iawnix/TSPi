@@ -88,6 +88,24 @@ SMTP 或其他凭据由受管环境提供。
 一个 Host 可以服务 workspace root 下的多个直接子工作区。终端和 TS Phone 连接同一
 session Worker，不创建第二个 Agent runtime。
 
+## TS Phone 与 TSPi Link
+
+安装时启用 Phone access，并填写 TSPi Relay 的 HTTPS 地址以及 Relay 管理员生成的
+一次性 Host enrollment code。安装器会写入 `.pi/app-server-host/link.json` 和仅安装
+用户可读的 `.pi/app-server-host/host.token`。Host 只向 Relay 建立出站 WSS，不需要把
+App Server 端口暴露到公网。
+
+Host 上线后，使用下面的命令管理手机授权：
+
+```bash
+./TSPi phone pair
+./TSPi phone devices
+./TSPi phone revoke <device-id>
+```
+
+`phone pair` 输出 Relay URL 和 8 位配对码。配对码有效期五分钟且只能使用一次；手机
+兑换得到的可撤销设备凭据保存在平台安全存储中。Link 凭据与 TS Web HTTP token 相互独立。
+
 ## 工作区初始化与 TS Web
 
 首次运行 `./TSPi --workspace <name>` 时，客户端会在配置的 workspace root 下创建并

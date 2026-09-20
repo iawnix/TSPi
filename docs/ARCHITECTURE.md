@@ -10,6 +10,9 @@ requirement.
 ## Component Responsibilities
 
 - `apps/app-server/` starts Pi's native App Server and session worker.
+- `services/tspi-relay/` owns TSPi Link enrollment, pairing, device
+  authorization, and opaque byte forwarding. It has no App Server or research
+  APIs.
 - `packages/ts-agent-kernel/ts_agent/` owns the `ResearchMap`, reference
   integrity, validation, and transactions. Its
   `ts_calc` control plane uses one lifecycle for local subprocesses and remote
@@ -26,7 +29,7 @@ requirement.
   `apps/app-server/pi-session-control-server.mjs` adapter exposes the same Host
   session to a browser over the versioned session-control contract; it attaches
   to an existing session and never owns a second Worker.
-- TS Phone is an independent Flutter client that connects through Pi Radius.
+- TS Phone is an independent Flutter client that connects through TSPi Link.
 
 The App Server owns session directory, transcript history, model state, prompt
 operations, and the workspace Root lock. The local TUI and TS Phone connect to
@@ -106,7 +109,28 @@ separate protocol or scientific state store. Browser control is a separate,
 explicitly started loopback adapter (`TSPi --gateway`) backed by Pi's
 `AgentController` and `Transcript`; it uses request IDs for idempotency and
 sequence cursors for reconnects. TS Phone uses the same underlying services
-through Pi Radius.
+through TSPi Link.
+
+## TSPi Link
+
+```text
+TS Phone -- outbound WSS --> TSPi Relay <-- outbound WSS -- TSPi Host
+                                                        |
+                                                  Unix socket
+                                                        |
+                                                  Pi App Server
+```
+
+Both network-facing legs use `/v1/link` with the `tspi-link.v1` WebSocket
+subprotocol and distinct bearer credentials. A short-lived Host enrollment
+code creates the Host credential; a short-lived Phone pairing code creates a
+revocable device credential. The Relay maps an authorized device to its Host
+and forwards the native Pi App Server byte stream without parsing it.
+
+The Relay owns no workspace, session, transcript, tool, or compute state. The
+App Server remains the only owner of those records. WSS protects both network
+legs, but Link 1 does not provide application-level end-to-end encryption; the
+Relay must run on trusted infrastructure.
 
 ## TSPi Lifecycle
 

@@ -1,0 +1,24 @@
+diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-agent/src/experimental/server.ts
+--- a/packages/coding-agent/src/experimental/server.ts
++++ b/packages/coding-agent/src/experimental/server.ts
+@@ -430,9 +430,9 @@ async function resolveSessionCwd(requested: string | undefined, workspaceId?: st
+ 	if (root !== undefined) {
+ 		try {
+ 			const identity = JSON.parse(await readFile(join(candidate, "workspace.json"), "utf8"));
+-			if (identity?.schema_version !== "ts-workspace/6") throw new Error("unsupported workspace schema");
++			if (identity?.schema_version !== "research-workspace/1") throw new Error("unsupported workspace schema");
+ 		} catch {
+-			throw new Error(`Session cwd is not a supported TSPi workspace: ${candidate}`);
++			throw new RoutedServerError("service_invalid_value", `Session cwd is not a supported TSPi workspace: ${candidate}`);
+ 		}
+ 	}
+ 	return candidate;
+@@ -451,7 +451,7 @@ async function listWorkspaceRoots(_context?: Context): Promise<WorkspaceSummary[
+ 			const info = await stat(workspaceRoot);
+ 			if (!info.isDirectory()) continue;
+ 			const identity = JSON.parse(await readFile(join(workspaceRoot, "workspace.json"), "utf8"));
+-			if (identity?.schema_version !== "ts-workspace/6") continue;
++			if (identity?.schema_version !== "research-workspace/1") continue;
+ 		} catch {
+ 			continue;
+ 		}

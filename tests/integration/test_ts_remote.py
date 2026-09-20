@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from ts_agent.compute.cli import main as compute_cli_main
 from ts_agent.remote.client import CommandResult
 from ts_agent.platforms import EnvironmentConfigurationError, load_config
 from ts_agent.remote.diagnostics import MODES, _doctor, diagnose
@@ -29,6 +30,29 @@ def test_remote_diagnostic_modes_exclude_redundant_cluster_alias() -> None:
     assert MODES == {"status", "doctor", "queues", "nodes"}
     with pytest.raises(RemoteError, match="unsupported compute environment diagnostic mode: cluster"):
         diagnose("cluster")
+
+
+def test_compute_cli_routes_remote_diagnostic_to_named_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[tuple[str, str | None]] = []
+
+    def diagnose_remote(mode: str, *, environment_name: str | None = None) -> dict[str, object]:
+        calls.append((mode, environment_name))
+        return {"ok": True}
+
+    monkeypatch.setattr("ts_agent.compute.cli.diagnose_remote", diagnose_remote)
+
+    assert compute_cli_main([
+        "remote-diagnostic",
+        "--mode",
+        "doctor",
+        "--environment",
+        "cluster_1w",
+    ]) == 0
+    assert calls == [("doctor", "cluster_1w")]
+    assert json.loads(capsys.readouterr().out) == {"ok": True}
 
 
 def _platform(tmp_path: Path):
