@@ -56,6 +56,17 @@ class ResearchKernel:
         with self._lock():
             return self._load_unlocked()
 
+    def load_read_only(self) -> ResearchMap:
+        """Load a map without creating the workspace lock file.
+
+        Read-only consumers, such as TS Web, may be given a filesystem view
+        where the workspace cannot be modified.  Map writes use an atomic
+        replace, so reading the canonical document directly is safe without
+        acquiring the write-capable lock used by the mutation boundary.
+        """
+
+        return self._load_unlocked()
+
     def _load_unlocked(self) -> ResearchMap:
         try:
             value = json.loads(self.path.read_text(encoding="utf-8"))

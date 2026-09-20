@@ -105,7 +105,7 @@ def _is_workspace(path: Path) -> bool:
     if not (path / "workspace.json").is_file() or not (path / "research_map.json").is_file():
         return False
     try:
-        return validate_workspace(path).get("valid") is True
+        return validate_workspace(path, read_only=True).get("valid") is True
     except (OSError, ValueError):
         return False
 

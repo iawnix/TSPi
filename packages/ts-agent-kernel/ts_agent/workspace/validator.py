@@ -16,7 +16,13 @@ WORKSPACE_SCHEMA = "research-workspace/1"
 VALIDATION_SCHEMA = "research-map-validation/1"
 
 
-def validate_workspace(root: str | Path) -> dict[str, Any]:
+def validate_workspace(root: str | Path, *, read_only: bool = False) -> dict[str, Any]:
+    """Validate a workspace, optionally without creating its lock file.
+
+    ``read_only=True`` is intended for discovery and inspection services whose
+    filesystem view deliberately forbids writes to the workspace.
+    """
+
     root_path = lexical_path(root)
     findings: list[dict[str, str]] = []
     if path_has_symlink(root_path):
@@ -65,7 +71,9 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         _validate_identity(root_path, workspace, findings)
 
     try:
-        ResearchKernel(root_path).load()
+        kernel = ResearchKernel(root_path)
+        loader = kernel.load_read_only if read_only else kernel.load
+        loader()
     except ResearchKernelError as exc:
         _finding(findings, "invalid_research_map", str(exc), "research_map.json")
     return _result(findings)

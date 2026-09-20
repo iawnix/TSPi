@@ -57,6 +57,18 @@ def test_missing_identity_invalidates_runtime_without_changing_scientific_state(
     assert "invalid_workspace_identity" in {finding["code"] for finding in validation["findings"]}
 
 
+def test_read_only_validation_does_not_create_a_workspace_lock(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace)
+    (workspace / ".research-map.lock").unlink()
+    workspace.chmod(0o555)
+    try:
+        assert validate_workspace(workspace, read_only=True)["valid"] is True
+    finally:
+        workspace.chmod(0o755)
+    assert not (workspace / ".research-map.lock").exists()
+
+
 def test_invalid_and_symlinked_identity_are_rejected(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     init_workspace(workspace)

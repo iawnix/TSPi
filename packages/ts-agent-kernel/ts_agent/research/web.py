@@ -160,7 +160,7 @@ def _summary(row: dict[str, Any], research_map: Any | None = None) -> dict[str, 
     }
     if research_map is None:
         try:
-            research_map = ResearchKernel(source_root).load()
+            research_map = ResearchKernel(source_root).load_read_only()
         except (ResearchKernelError, OSError, ValueError) as error:
             base["load_error"] = _sanitize(str(error), source_root)
             return base
@@ -196,7 +196,7 @@ def _route(row: dict[str, Any], route: str, query: dict[str, str]) -> Any:
 
 def _load_map(source_root: str) -> Any:
     try:
-        return ResearchKernel(source_root).load()
+        return ResearchKernel(source_root).load_read_only()
     except ResearchKernelError as error:
         raise ResearchWebError(str(error), retryable=True) from error
 

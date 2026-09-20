@@ -8,6 +8,7 @@ from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
 from ts_agent.research import ResearchKernel
+from ts_agent.research.registry import reconcile_workspace_registry
 from ts_agent.research.web import ResearchWebError, handle_request, register_sources
 from ts_agent.workspace import init_workspace
 
@@ -119,3 +120,36 @@ def test_provider_map_route_returns_the_canonical_research_map(tmp_path: Path) -
                 route="snapshot",
             ),
         )
+
+
+def test_workspace_discovery_supports_read_only_workspace_roots(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    state_dir = tmp_path / "state"
+    init_workspace(workspace)
+    (workspace / ".research-map.lock").unlink()
+    workspace.chmod(0o555)
+    try:
+        rows = reconcile_workspace_registry(state_dir, [tmp_path])
+    finally:
+        workspace.chmod(0o755)
+    assert [row["source_root"] for row in rows] == [str(workspace)]
+
+
+def test_provider_serves_catalog_and_map_from_read_only_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    state_dir = tmp_path / "state"
+    init_workspace(workspace)
+    workspace_id = register_sources(state_dir, [workspace])[0]["workspace_id"]
+    (workspace / ".research-map.lock").unlink()
+    workspace.chmod(0o555)
+    try:
+        catalog = handle_request(state_dir, _provider_request())
+        assert catalog["workspaces"][0]["available"] is True
+        payload = handle_request(
+            state_dir,
+            _provider_request(operation="route", workspace_id=workspace_id, route="map"),
+        )
+        map_document = json.loads((workspace / "research_map.json").read_text(encoding="utf-8"))
+        assert payload["map"]["map_id"] == map_document["map_id"]
+    finally:
+        workspace.chmod(0o755)
