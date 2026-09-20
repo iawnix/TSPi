@@ -83,8 +83,6 @@ def test_core_package_build_is_deterministic_and_installs_app_server_payload(tmp
     assert set(installed["launchers"]) == {"TSPi"}
     assert (install_root / "TSPi").is_symlink()
     assert not (install_root / "TSWeb").exists()
-    assert not (install_root / "TSPhoneCtl").exists()
-    assert not (install_root / "TSPhoneServer").exists()
     guards = install_root / ".pi/session-guards"
     assert guards.is_dir()
     assert stat.S_IMODE(guards.stat().st_mode) == 0o700

@@ -10,7 +10,7 @@ requirement.
 ## Component Responsibilities
 
 - `apps/app-server/` starts Pi's native App Server and session worker.
-- `services/tspi-relay/` owns TSPi Link enrollment, pairing, device
+- `services/tspi-link-relay/` owns TSPi Link enrollment, pairing, device
   authorization, and opaque byte forwarding. It has no App Server or research
   APIs.
 - `packages/ts-agent-kernel/ts_agent/` owns the `ResearchMap`, reference
@@ -114,7 +114,7 @@ through TSPi Link.
 ## TSPi Link
 
 ```text
-TS Phone -- outbound WSS --> TSPi Relay <-- outbound WSS -- TSPi Host
+TS Phone -- outbound WSS --> TSPi Link Relay <-- outbound WSS -- TSPi Host
                                                         |
                                                   Unix socket
                                                         |
@@ -127,10 +127,15 @@ code creates the Host credential; a short-lived Phone pairing code creates a
 revocable device credential. The Relay maps an authorized device to its Host
 and forwards the native Pi App Server byte stream without parsing it.
 
-The Relay owns no workspace, session, transcript, tool, or compute state. The
+The TSPi Link Relay owns no workspace, session, transcript, tool, or compute state. The
 App Server remains the only owner of those records. WSS protects both network
 legs, but Link 1 does not provide application-level end-to-end encryption; the
 Relay must run on trusted infrastructure.
+
+The Link Relay is installed and upgraded by the standalone `install-link-relay.sh`
+installer on its public or private network host. The local TSPi installer only
+enrolls its Host against an existing Link Relay and never installs a local Phone
+broker or transport service.
 
 ## TSPi Lifecycle
 

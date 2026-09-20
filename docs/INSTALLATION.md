@@ -3,8 +3,8 @@
 [English](INSTALLATION.md) | [简体中文](INSTALLATION.zh-CN.md)
 
 This guide installs the TSPi Agent package and its optional TS Web browser.
-TS Phone is a separate Flutter application; no TS Phone server, bridge secret,
-or local HTTP broker is installed.
+TS Phone is a separate Flutter application. TSPi installs only the Host-side
+Link client; the public TSPi Link Relay has its own standalone installer.
 
 ## Prerequisites
 
@@ -227,8 +227,8 @@ still runs with the selected project's own cwd and is restricted to a direct
 child of the configured workspace root.
 
 TS Phone connects to this Host through TSPi Link. During installation, enable
-Phone access and provide the HTTPS TSPi Relay origin plus a single-use Host
-enrollment code created by the Relay administrator. The installer writes
+Phone access and provide the HTTPS TSPi Link Relay origin plus a single-use Host
+enrollment code created by the Link Relay administrator. The installer writes
 `.pi/app-server-host/link.json` and the owner-only
 `.pi/app-server-host/host.token`. The Host then maintains an outbound WSS
 connection; no App Server port is exposed to the Relay or Internet.
@@ -241,7 +241,7 @@ After the Host is online, create and manage Phone authorization with:
 ./TSPi phone revoke <device-id>
 ```
 
-`phone pair` prints the configured Relay URL and an eight-character code that
+`phone pair` prints the configured TSPi Link Relay URL and an eight-character code that
 expires after five minutes and can be used once. TS Phone redeems it for a
 revocable device credential held in platform secure storage. Phone credentials
 and the Host token are unrelated to the TS Web HTTP token.
@@ -328,5 +328,5 @@ systemctl status ts-app-server-tspi.service         # system scope
 Run `./uninstall.sh`. The default preserves the configured workspace root, Pi session history,
 credentials, and configuration. Removing the installation root is explicit;
 the uninstaller also stops and removes matching App Server and TS Web services
-in the configured scope. There are no Phone server files or bridge secrets to
-clean up.
+in the configured scope. The standalone Link Relay has its own installation and
+service lifecycle; it is not removed by the local TSPi uninstaller.

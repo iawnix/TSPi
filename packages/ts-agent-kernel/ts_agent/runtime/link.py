@@ -76,7 +76,7 @@ def list_phone_devices(install_root: Path) -> list[dict[str, Any]]:
     response = _relay_request(config, "GET", "/v1/devices")
     devices = response.get("devices")
     if not isinstance(devices, list) or not all(isinstance(item, dict) for item in devices):
-        raise LinkError("TSPi Relay returned an invalid device list")
+        raise LinkError("TSPi Link Relay returned an invalid device list")
     return devices
 
 
@@ -99,9 +99,9 @@ def format_pairing(result: dict[str, Any]) -> str:
         or not isinstance(relay_url, str)
         or not isinstance(host_id, str)
     ):
-        raise LinkError("TSPi Relay returned an invalid pairing")
+        raise LinkError("TSPi Link Relay returned an invalid pairing")
     expires = datetime.fromtimestamp(expires_at / 1000).astimezone().isoformat(timespec="seconds")
-    return f"Pairing code: {code}\nRelay: {relay_url}\nHost: {host_id}\nExpires: {expires}\n"
+    return f"Pairing code: {code}\nTSPi Link Relay: {relay_url}\nHost: {host_id}\nExpires: {expires}\n"
 
 
 def format_devices(devices: list[dict[str, Any]]) -> str:
@@ -143,19 +143,19 @@ def _relay_request(
             raw = response.read(64 * 1024 + 1)
     except urllib.error.HTTPError as exc:
         detail = _http_error_detail(exc)
-        raise LinkError(f"TSPi Relay rejected the request ({exc.code}): {detail}") from exc
+        raise LinkError(f"TSPi Link Relay rejected the request ({exc.code}): {detail}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise LinkError(f"could not reach TSPi Relay at {config.relay_url}: {exc}") from exc
+        raise LinkError(f"could not reach TSPi Link Relay at {config.relay_url}: {exc}") from exc
     if not expect_body:
         return {}
     if len(raw) > 64 * 1024:
-        raise LinkError("TSPi Relay response is too large")
+        raise LinkError("TSPi Link Relay response is too large")
     try:
         value = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise LinkError("TSPi Relay returned invalid JSON") from exc
+        raise LinkError("TSPi Link Relay returned invalid JSON") from exc
     if not isinstance(value, dict):
-        raise LinkError("TSPi Relay response must be a JSON object")
+        raise LinkError("TSPi Link Relay response must be a JSON object")
     return value
 
 
@@ -195,15 +195,15 @@ def _read_private_text(path: Path, label: str) -> str:
 
 def _validate_relay_url(value: object) -> str:
     if not isinstance(value, str) or len(value) > 512:
-        raise LinkError("TSPi Relay URL is invalid")
+        raise LinkError("TSPi Link Relay URL is invalid")
     try:
         parsed = urllib.parse.urlsplit(value)
         _ = parsed.port
     except ValueError as exc:
-        raise LinkError("TSPi Relay URL is invalid") from exc
+        raise LinkError("TSPi Link Relay URL is invalid") from exc
     loopback = parsed.hostname in {"127.0.0.1", "::1", "localhost"}
     if not parsed.hostname or (parsed.scheme != "https" and not (loopback and parsed.scheme == "http")):
-        raise LinkError("TSPi Relay URL must use HTTPS except on loopback")
+        raise LinkError("TSPi Link Relay URL must use HTTPS except on loopback")
     if parsed.username or parsed.password or parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
-        raise LinkError("TSPi Relay URL must contain only scheme, host, and port")
+        raise LinkError("TSPi Link Relay URL must contain only scheme, host, and port")
     return value.rstrip("/")

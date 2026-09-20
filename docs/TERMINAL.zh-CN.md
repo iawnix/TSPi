@@ -32,7 +32,7 @@ Ctrl+C 中断当前本地 turn，`/abort` 向 App Server 请求中止当前 agen
 
 ## 手机访问
 
-TS Phone 通过 TSPi Link 连接 Host。Phone 和 Host 都只向配置的 TSPi Relay 建立
+TS Phone 通过 TSPi Link 连接 Host。Phone 和 Host 都只向配置的 TSPi Link Relay 建立
 出站 WSS，因此 App Server 不需要暴露公网入站端口。Relay 只授权设备并转发不透明的
 App Server 字节，不拥有项目、会话或对话历史。
 
@@ -42,7 +42,7 @@ App Server 字节，不拥有项目、会话或对话历史。
 ./TSPi phone pair
 ```
 
-在 TS Phone 中输入输出的 Relay URL 和配对码。使用 `./TSPi phone devices` 查看已授权
+在 TS Phone 中输入输出的 TSPi Link Relay URL 和配对码。使用 `./TSPi phone devices` 查看已授权
 设备，使用 `./TSPi phone revoke <device-id>` 撤销设备。配对后，Phone 可以列出或创建
 项目并创建或切换会话；它不连接终端进程，也不需要每个项目单独部署服务。
 

@@ -11,9 +11,9 @@ import {
   MAX_PAYLOAD_BYTES,
   decodeHostData,
   encodeHostData,
-} from "../../../services/tspi-relay/protocol.mjs";
-import { createRelayServer } from "../../../services/tspi-relay/server.mjs";
-import { RelayStore } from "../../../services/tspi-relay/store.mjs";
+} from "../../../services/tspi-link-relay/protocol.mjs";
+import { createRelayServer } from "../../../services/tspi-link-relay/server.mjs";
+import { RelayStore } from "../../../services/tspi-link-relay/store.mjs";
 
 const cleanups = [];
 afterEach(async () => {

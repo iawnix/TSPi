@@ -46,7 +46,7 @@ for development or recovery. `--host` is an internal service entrypoint and is
 not part of normal operation.
 
 The TS Phone Flutter app reaches the same App Server through TSPi Link. The
-Phone and Host both open outbound WSS connections to a TSPi Relay; the Relay
+Phone and Host both open outbound WSS connections to a TSPi Link Relay; the Relay
 handles device authorization and opaque byte forwarding, not sessions or
 research state. See [TSPi Link](docs/TSPi_LINK.md),
 [Terminal](docs/TERMINAL.md), [Architecture](docs/ARCHITECTURE.md), and the

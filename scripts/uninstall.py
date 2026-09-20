@@ -24,13 +24,8 @@ SERVICE_NAMES = (
     "ts-app-server-tspi.service",
     "ts-app-server-tspi@.service",
     "ts-web-tspi.service",
-    # Remove service units left by pre-App-Server installations.
-    "ts-phone-tspi.service",
-    "ts-phone.service",
-    "ts-web.service",
 )
-# Retired Phone entrypoints are included only so upgrades can remove them.
-ENTRYPOINTS = ("TSPi", "TSWeb", "TSPhoneCtl", "TSPhoneServer")
+ENTRYPOINTS = ("TSPi", "TSWeb")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -68,7 +63,7 @@ def validate_root(path: Path) -> Path:
     resolved = path.expanduser().resolve()
     if resolved == Path("/") or resolved == Path.home() or resolved == Path.home().parent:
         raise ValueError(f"refusing to remove broad path: {resolved}")
-    for relative in (".pi", ".pi/tspi", ".pi/packages", ".pi/ts-phone", ".agents", ".agents/runtime", ".agents/envs"):
+    for relative in (".pi", ".pi/tspi", ".pi/packages", ".agents", ".agents/runtime", ".agents/envs"):
         if (resolved / relative).is_symlink():
             raise ValueError(f"installation state directory cannot be a symbolic link: {resolved / relative}")
     installation_identity(resolved)
@@ -141,8 +136,6 @@ def service_belongs_to_root(name: str, root: Path, scope: str) -> bool:
         key, _, value = line.partition("=")
         value = value.strip().strip('"')
         if key == "WorkingDirectory" and value == root_value:
-            return True
-        if key == "EnvironmentFile" and value == f"{root_value}/.pi/ts-phone/server.env":
             return True
     return False
 
@@ -259,7 +252,6 @@ def prune_empty_parents(root: Path) -> None:
         ".pi/app-server-host/workspace",
         ".pi/app-server-host/sessions",
         ".pi/app-server-host",
-        ".pi/ts-phone",
         ".pi/packages",
         ".pi",
         ".agents/runtime",
@@ -303,9 +295,6 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
             # Remove state left by the retired shared session process.
             root / ".pi/session-host",
             root / ".pi/ts-web-state",
-            root / ".pi/ts-phone/ts-phone.service",
-            root / ".pi/ts-phone/current",
-            root / ".pi/ts-phone/releases",
         ]
         if args.purge_config:
             managed.extend([
@@ -313,12 +302,9 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
                 root / ".pi/app-server-host/server-id",
                 root / ".pi/app-server-host/link.json",
                 root / ".pi/app-server-host/host.token",
-                root / ".pi/app-server-host/phone-connection.json",
                 root / ".pi/app-server-host/workspace",
                 root / ".pi/agent",
                 root / ".pi/email",
-                root / ".pi/ts-phone",
-                root / ".pi/ts-phone-state",
                 root / ".pi/ts-web",
                 root / ".pi/compute.toml",
                 root / ".pi/notifications.toml",
@@ -331,8 +317,6 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
                 workspace_root,
                 root / ".pi/app-server-host/sessions",
             ])
-        if args.purge_all:
-            managed.append(root / "ts-phone")
         removed.extend(remove_paths(managed))
         prune_empty_parents(root)
         if args.remove_root:

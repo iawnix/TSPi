@@ -14,7 +14,7 @@ if (command === "serve") {
     publicUrl: required(options, "public-url"),
   });
   const address = await relay.start();
-  process.stdout.write(`TSPi Relay listening on ${typeof address === "string" ? address : `${address.address}:${address.port}`}\n`);
+  process.stdout.write(`TSPi Link Relay listening on ${typeof address === "string" ? address : `${address.address}:${address.port}`}\n`);
   let stopping = false;
   const stop = async () => {
     if (stopping) return;
@@ -65,7 +65,7 @@ function integer(value, label) {
 function usage() {
   process.stderr.write(
     "Usage:\n" +
-      "  tspi-relay serve --state <relay.db> --public-url <https://relay.example> [--listen 127.0.0.1] [--port 8788]\n" +
-      "  tspi-relay enrollment create --state <relay.db> [--ttl 600]\n",
+      "  tspi-link-relay serve --state <relay.db> --public-url <https://relay.example> [--listen 127.0.0.1] [--port 8788]\n" +
+      "  tspi-link-relay enrollment create --state <relay.db> [--ttl 600]\n",
   );
 }

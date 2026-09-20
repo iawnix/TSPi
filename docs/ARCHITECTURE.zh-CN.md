@@ -9,7 +9,7 @@ Pi App Server Host，由它服务配置的 workspace root 下的所有直接子�
 ## 组件职责
 
 - `apps/app-server/` 启动 Pi 原生 App Server 和 session worker。
-- `services/tspi-relay/` 负责 TSPi Link 的 Host 注册、手机配对、设备授权和不透明字节
+- `services/tspi-link-relay/` 负责 TSPi Link 的 Host 注册、手机配对、设备授权和不透明字节
   转发；它不提供 App Server 或研究 API。
 - `packages/ts-agent-kernel/ts_agent/` 管理 `ResearchMap`、引用完整性、验证和事务。
   计算控制面负责本地子进程的持久化生命周期，并通过配置好的
@@ -122,7 +122,7 @@ scope 可以是 user 或 system；scope 为 none 时禁用受管 Host。
 ## TSPi Link
 
 ```text
-TS Phone -- 出站 WSS --> TSPi Relay <-- 出站 WSS -- TSPi Host
+TS Phone -- 出站 WSS --> TSPi Link Relay <-- 出站 WSS -- TSPi Host
                                                     |
                                                 Unix socket
                                                     |
@@ -134,9 +134,13 @@ Bearer 凭据。短期 Host enrollment code 生成 Host 凭据；短期 Phone pa
 生成可撤销的设备凭据。Relay 只把已授权设备映射到 Host，并原样转发 Pi App Server
 字节流，不解析其中的会话消息。
 
-Relay 不拥有 workspace、session、transcript、工具或计算状态；这些仍由 App Server
+TSPi Link Relay 不拥有 workspace、session、transcript、工具或计算状态；这些仍由 App Server
 独占。WSS 分别保护两条网络链路，但 Link 1 不提供应用层端到端加密，因此 Relay 必须
 部署在可信基础设施上。
+
+Link Relay 使用独立的 `install-link-relay.sh` 安装器，在公网或私有网络节点上单独安装和
+升级。本地 TSPi 安装器只负责把当前 Host 注册到已有 Link Relay，不安装本地 Phone broker
+或额外的本地传输服务。
 
 ## 浏览器控制
 

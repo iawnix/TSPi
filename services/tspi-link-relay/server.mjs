@@ -33,7 +33,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
         sendJson(response, status, { error: error.code, message: error.message });
         return;
       }
-      logger.error?.(`TSPi Relay request failed: ${safeMessage(error)}`);
+      logger.error?.(`TSPi Link Relay request failed: ${safeMessage(error)}`);
       sendJson(response, 500, { error: "internal_error", message: "relay request failed" });
     });
   });
@@ -41,7 +41,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
 
   server.on("upgrade", (request, socket, head) => {
     void handleUpgrade(request, socket, head).catch((error) => {
-      logger.warn?.(`TSPi Relay WebSocket rejected: ${safeMessage(error)}`);
+      logger.warn?.(`TSPi Link Relay WebSocket rejected: ${safeMessage(error)}`);
       rejectUpgrade(socket, error instanceof HttpError ? error.status : 401, "WebSocket connection rejected");
     });
   });
@@ -123,7 +123,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
     if (previous) previous.socket.close(4001, "Host connection replaced");
     const active = { socket, identity, connections: new Map() };
     hosts.set(identity.hostId, active);
-    logger.info?.(`TSPi Relay Host connected: ${identity.hostId}`);
+    logger.info?.(`TSPi Link Relay Host connected: ${identity.hostId}`);
     socket.on("message", (data, isBinary) => {
       try {
         if (isBinary) {
@@ -137,7 +137,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
         const device = active.connections.get(control.connectionId);
         if (device) device.socket.close(control.code ?? 1000, "Host closed Link connection");
       } catch (error) {
-        logger.warn?.(`TSPi Relay closed malformed Host connection: ${safeMessage(error)}`);
+        logger.warn?.(`TSPi Link Relay closed malformed Host connection: ${safeMessage(error)}`);
         socket.close(4000, "invalid Link frame");
       }
     });
@@ -146,7 +146,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
       if (current) hosts.delete(identity.hostId);
       for (const device of active.connections.values()) device.socket.close(1012, "TSPi Host disconnected");
       active.connections.clear();
-      if (current) logger.info?.(`TSPi Relay Host disconnected: ${identity.hostId}`);
+      if (current) logger.info?.(`TSPi Link Relay Host disconnected: ${identity.hostId}`);
     });
   }
 
@@ -174,7 +174,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
         if (!isBinary) throw new Error("device Link messages must be binary");
         sendBinary(host.socket, encodeHostData(connectionId, data));
       } catch (error) {
-        logger.warn?.(`TSPi Relay closed malformed device connection: ${safeMessage(error)}`);
+        logger.warn?.(`TSPi Link Relay closed malformed device connection: ${safeMessage(error)}`);
         socket.close(4000, "invalid Link frame");
       }
     });
@@ -200,7 +200,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
     },
     async close() {
       clearInterval(heartbeat);
-      for (const socket of webSockets.clients) socket.close(1001, "TSPi Relay stopping");
+      for (const socket of webSockets.clients) socket.close(1001, "TSPi Link Relay stopping");
       await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
       webSockets.close();
       store.close();
@@ -268,10 +268,10 @@ function normalizePublicUrl(value) {
   const url = new URL(value);
   const loopback = ["127.0.0.1", "::1", "localhost"].includes(url.hostname);
   if (url.protocol !== "https:" && !(loopback && url.protocol === "http:")) {
-    throw new Error("Relay public URL must use HTTPS except on loopback");
+    throw new Error("TSPi Link Relay public URL must use HTTPS except on loopback");
   }
   if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
-    throw new Error("Relay public URL must contain only scheme, host, and port");
+    throw new Error("TSPi Link Relay public URL must contain only scheme, host, and port");
   }
   return url.origin;
 }

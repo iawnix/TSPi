@@ -13,7 +13,7 @@ import {
   decodeHostData,
   encodeControl,
   encodeHostData,
-} from "../../services/tspi-relay/protocol.mjs";
+} from "../../services/tspi-link-relay/protocol.mjs";
 
 const options = parseArguments(process.argv.slice(2));
 const createWebSocket = await resolveWebSocketFactory();
@@ -162,9 +162,9 @@ function linkWebSocketUrl(value) {
   const loopback = ["127.0.0.1", "::1", "localhost"].includes(url.hostname);
   if (url.protocol === "https:") url.protocol = "wss:";
   else if (url.protocol === "http:" && loopback) url.protocol = "ws:";
-  else throw new Error("TSPi Relay URL must use HTTPS except on loopback");
+  else throw new Error("TSPi Link Relay URL must use HTTPS except on loopback");
   if (url.username || url.password || !["", "/"].includes(url.pathname) || url.search || url.hash) {
-    throw new Error("TSPi Relay URL must contain only scheme, host, and port");
+    throw new Error("TSPi Link Relay URL must contain only scheme, host, and port");
   }
   url.pathname = LINK_PATH;
   url.search = "";

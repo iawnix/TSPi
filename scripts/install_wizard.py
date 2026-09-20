@@ -219,8 +219,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--service-scope", choices=("none", "user", "system"))
     parser.add_argument("--service-user", help="Unix account used by systemd services (required for system scope).")
     parser.add_argument("--phone-access", choices=("disabled", "link"), help="TS Phone access mode.")
-    parser.add_argument("--link-url", default=os.environ.get("TSPI_LINK_URL"), help="TSPi Relay HTTPS origin.")
-    parser.add_argument("--link-enrollment-code", help="Single-use Host enrollment code issued by TSPi Relay.")
+    parser.add_argument("--link-url", default=os.environ.get("TSPI_LINK_URL"), help="TSPi Link Relay HTTPS origin.")
+    parser.add_argument("--link-enrollment-code", help="Single-use Host enrollment code issued by TSPi Link Relay.")
     parser.add_argument("--enable-services", action="store_true")
     parser.add_argument("--start-services", action="store_true")
     email = parser.add_argument_group("email notifications")
@@ -287,10 +287,10 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
     section("Phone connection")
     existing_link = _existing_link_configuration(Path(args.install_root))
     if args.phone_access is None:
-        args.phone_access = "link" if ask_yes_no("Enable TS Phone through TSPi Relay", existing_link is not None) else "disabled"
+        args.phone_access = "link" if ask_yes_no("Enable TS Phone through TSPi Link Relay", existing_link is not None) else "disabled"
     if args.phone_access == "link":
         args.link_url = ask(
-            "TSPi Relay URL",
+            "TSPi Link Relay URL",
             args.link_url or (existing_link[0] if existing_link else ""),
         ).strip()
         token_exists = (Path(args.install_root) / ".pi/app-server-host/host.token").is_file()
@@ -375,9 +375,9 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Conda root", args.conda_root or "auto-detect")
     if args.service_scope == "system":
         field("Installation owner", f"{args.service_user} (private package/runtime/state tree)", tone="warning")
-    field("Phone access", "TSPi Relay" if args.phone_access == "link" else "disabled", tone="success" if args.phone_access == "link" else "muted")
+    field("Phone access", "TSPi Link Relay" if args.phone_access == "link" else "disabled", tone="success" if args.phone_access == "link" else "muted")
     if args.phone_access == "link":
-        field("TSPi Relay", args.link_url, tone="success")
+        field("TSPi Link Relay", args.link_url, tone="success")
         field("Phone tool access", "same Agent and tools as terminal", tone="success")
     field(
         "Model icon font",
@@ -640,12 +640,12 @@ def _existing_link_configuration(root: Path) -> tuple[str, str] | None:
 
 def _validate_link_url(value: object) -> str:
     if not isinstance(value, str) or not value or len(value) > 512:
-        raise ValueError("--link-url must be a TSPi Relay origin")
+        raise ValueError("--link-url must be a TSPi Link Relay origin")
     try:
         parsed = urllib.parse.urlsplit(value)
         _ = parsed.port
     except ValueError as exc:
-        raise ValueError("--link-url must be a TSPi Relay origin") from exc
+        raise ValueError("--link-url must be a TSPi Link Relay origin") from exc
     loopback = parsed.hostname in {"127.0.0.1", "::1", "localhost"}
     if not parsed.hostname or (parsed.scheme != "https" and not (loopback and parsed.scheme == "http")):
         raise ValueError("--link-url must use HTTPS except on loopback")
@@ -1677,8 +1677,6 @@ def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
     state.chmod(0o700)
     manifest = state / "link.json"
     token_file = state / "host.token"
-    legacy = state / "phone-connection.json"
-    legacy.unlink(missing_ok=True)
     if args.phone_access == "disabled":
         manifest.unlink(missing_ok=True)
         token_file.unlink(missing_ok=True)
@@ -1696,13 +1694,13 @@ def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
     if args.link_enrollment_code:
         enrollment = _redeem_link_enrollment(args.link_url, args.link_enrollment_code, host_id)
         if enrollment.get("hostId") != host_id or enrollment.get("protocol") != "tspi-link.v1":
-            raise RuntimeError("TSPi Relay returned a mismatched Host enrollment")
+            raise RuntimeError("TSPi Link Relay returned a mismatched Host enrollment")
         host_token = enrollment.get("hostToken")
         if not isinstance(host_token, str) or re.fullmatch(r"tsph_[A-Za-z0-9_-]{40,80}", host_token) is None:
-            raise RuntimeError("TSPi Relay returned an invalid Host token")
+            raise RuntimeError("TSPi Link Relay returned an invalid Host token")
         _write_private_text(token_file, host_token + "\n")
     elif not token_file.is_file() or existing is None or existing[0] != args.link_url:
-        raise RuntimeError("a Host enrollment code is required for this TSPi Relay")
+        raise RuntimeError("a Host enrollment code is required for this TSPi Link Relay")
 
     payload = {
         "schema_version": "tspi-link/1",
@@ -1737,17 +1735,17 @@ def _redeem_link_enrollment(relay_url: str, code: str, host_id: str) -> dict[str
             detail = json.loads(exc.read(16 * 1024)).get("message", exc.reason)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
             detail = exc.reason
-        raise RuntimeError(f"TSPi Relay rejected Host enrollment ({exc.code}): {detail}") from exc
+        raise RuntimeError(f"TSPi Link Relay rejected Host enrollment ({exc.code}): {detail}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise RuntimeError(f"could not reach TSPi Relay at {relay_url}: {exc}") from exc
+        raise RuntimeError(f"could not reach TSPi Link Relay at {relay_url}: {exc}") from exc
     if len(raw) > 64 * 1024:
-        raise RuntimeError("TSPi Relay enrollment response is too large")
+        raise RuntimeError("TSPi Link Relay enrollment response is too large")
     try:
         value = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("TSPi Relay returned invalid enrollment JSON") from exc
+        raise RuntimeError("TSPi Link Relay returned invalid enrollment JSON") from exc
     if not isinstance(value, dict):
-        raise RuntimeError("TSPi Relay enrollment response must be an object")
+        raise RuntimeError("TSPi Link Relay enrollment response must be an object")
     return value
 
 
@@ -2254,7 +2252,7 @@ def show_installed_summary(
     field("Runtime", app_server["runtime"])
     field("Manual start", app_server["start"])
     field("Server ID", app_server.get("server_uuid") or f"not initialized - {app_server['server_id_path']}")
-    field("TSPi Relay", app_server.get("link_url", "not configured"))
+    field("TSPi Link Relay", app_server.get("link_url", "not configured"))
     field("Workspace root", app_server["workspace_root"])
     _show_service(app_server.get("service"))
     note("One Host serves all workspaces below the workspace root. The terminal and TS Phone attach once and switch projects.")

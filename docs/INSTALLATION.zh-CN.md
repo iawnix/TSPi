@@ -3,7 +3,7 @@
 [English](INSTALLATION.md) | 简体中文
 
 本指南安装 TSPi Agent 及可选的 TS Web 只读浏览器。TS Phone 是独立的 Flutter
-应用；TSPi 不安装 TS Phone server、bridge secret 或本地 HTTP broker。
+应用。TSPi 本地安装只包含 Host 侧 Link 客户端；公网 TSPi Link Relay 使用独立安装器。
 
 ## 前置条件
 
@@ -90,7 +90,7 @@ session Worker，不创建第二个 Agent runtime。
 
 ## TS Phone 与 TSPi Link
 
-安装时启用 Phone access，并填写 TSPi Relay 的 HTTPS 地址以及 Relay 管理员生成的
+安装时启用 Phone access，并填写 TSPi Link Relay 的 HTTPS 地址以及 Relay 管理员生成的
 一次性 Host enrollment code。安装器会写入 `.pi/app-server-host/link.json` 和仅安装
 用户可读的 `.pi/app-server-host/host.token`。Host 只向 Relay 建立出站 WSS，不需要把
 App Server 端口暴露到公网。
@@ -103,7 +103,7 @@ Host 上线后，使用下面的命令管理手机授权：
 ./TSPi phone revoke <device-id>
 ```
 
-`phone pair` 输出 Relay URL 和 8 位配对码。配对码有效期五分钟且只能使用一次；手机
+`phone pair` 输出 TSPi Link Relay URL 和 8 位配对码。配对码有效期五分钟且只能使用一次；手机
 兑换得到的可撤销设备凭据保存在平台安全存储中。Link 凭据与 TS Web HTTP token 相互独立。
 
 ## 工作区初始化与 TS Web

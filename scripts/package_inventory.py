@@ -70,12 +70,12 @@ APP_SERVER_FILES = [
 ]
 
 LINK_RELAY_FILES = [
-    "services/tspi-relay/cli.mjs",
-    "services/tspi-relay/protocol.mjs",
-    "services/tspi-relay/server.mjs",
-    "services/tspi-relay/store.mjs",
-    "services/tspi-relay/package.json",
-    "services/tspi-relay/package-lock.json",
+    "services/tspi-link-relay/cli.mjs",
+    "services/tspi-link-relay/protocol.mjs",
+    "services/tspi-link-relay/server.mjs",
+    "services/tspi-link-relay/store.mjs",
+    "services/tspi-link-relay/package.json",
+    "services/tspi-link-relay/package-lock.json",
 ]
 
 ANALYSIS_FILES = [
@@ -86,6 +86,8 @@ ANALYSIS_FILES = [
 
 PACKAGE_FILES = [
     "TSPi",
+    "install-link-relay.sh",
+    "uninstall-link-relay.sh",
     "README.md",
     "README.zh-CN.md",
     "pyproject.toml",
@@ -118,6 +120,8 @@ PACKAGE_FILES = [
     "extensions/server/*.mjs",
     "extensions/server/*.json",
     "scripts/install_env.py",
+    "scripts/install_link_relay.py",
+    "scripts/uninstall_link_relay.py",
     "scripts/install_package.py",
     "scripts/install_from_github.py",
     "scripts/install_release.py",
@@ -155,9 +159,9 @@ PACKAGE_FILES = [
     "packages/ts-agent-runtime/host-api/*.d.mts",
     "packages/ts-agent-runtime/host-api/*.mjs",
     "apps/app-server/*.mjs",
-    "services/tspi-relay/*.mjs",
-    "services/tspi-relay/package.json",
-    "services/tspi-relay/package-lock.json",
+    "services/tspi-link-relay/*.mjs",
+    "services/tspi-link-relay/package.json",
+    "services/tspi-link-relay/package-lock.json",
     "packages/ts-agent-kernel/ts_agent/*.py",
     "packages/ts-agent-kernel/ts_agent/*.json",
     "packages/ts-agent-kernel/ts_agent/backends/*.py",
@@ -192,6 +196,8 @@ REQUIRED_TARBALL_FILES = frozenset(
         "README.zh-CN.md",
         "pyproject.toml",
         "TSPi",
+        "install-link-relay.sh",
+        "uninstall-link-relay.sh",
         "docs/ARCHITECTURE.md",
         "docs/INSTALLATION.md",
         "docs/MAINTAINER_GUIDE.md",
@@ -202,6 +208,8 @@ REQUIRED_TARBALL_FILES = frozenset(
         "requirements-runtime.txt",
         "assets/fonts/tspi-model-icons.ttf",
         "scripts/install_env.py",
+        "scripts/install_link_relay.py",
+        "scripts/uninstall_link_relay.py",
         "scripts/install_package.py",
         "scripts/install_from_github.py",
         "scripts/install_release.py",

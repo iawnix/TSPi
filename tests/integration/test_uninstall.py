@@ -38,9 +38,6 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     root = tmp_path / "install"
     (root / ".pi/packages/tspi").mkdir(parents=True)
     (root / "workspaces/ts_001").mkdir(parents=True)
-    (root / ".pi/ts-phone-state").mkdir(parents=True)
-    bridge_secret = root / ".pi/ts-phone-state/bridge.secret"
-    bridge_secret.write_text("b" * 43)
     web_token = root / ".pi/ts-web/auth.token"
     web_token.parent.mkdir(parents=True)
     web_token.write_text("w" * 43)
@@ -56,8 +53,6 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
 
     assert result["ok"] is True
     assert (root / "workspaces/ts_001").is_dir()
-    assert (root / ".pi/ts-phone-state").is_dir()
-    assert bridge_secret.read_text() == "b" * 43
     assert web_token.read_text() == "w" * 43
     assert phone_connection.is_file()
     assert download.read_bytes() == b"apk"
@@ -150,11 +145,8 @@ def test_uninstall_purge_removes_the_dedicated_installation_root(tmp_path: Path)
     root = tmp_path / "install"
     (root / ".pi/packages/tspi").mkdir(parents=True)
     (root / "workspaces/ts_001").mkdir(parents=True)
-    (root / ".pi/ts-phone-state").mkdir(parents=True)
     (root / "TSPi").symlink_to(".pi/packages/tspi/current")
     install_uninstaller(root, Path(__file__).resolve().parents[2])
-    (root / ".pi/ts-phone/releases/phone-commit").mkdir(parents=True)
-    (root / ".pi/ts-phone/current").symlink_to("releases/phone-commit")
     download = root / "downloads/client.apk"
     download.parent.mkdir()
     download.write_bytes(b"apk")
@@ -220,58 +212,6 @@ def test_installed_uninstaller_removes_an_immutable_partial_release(tmp_path: Pa
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout)["ok"] is True
     assert not root.exists()
-
-
-def test_phone_uninstall_removes_builds_and_keeps_conversations_and_credentials(tmp_path: Path) -> None:
-    root = tmp_path / "install"
-    (root / ".pi/packages/tspi").mkdir(parents=True)
-    phone = root / ".pi/ts-phone"
-    (phone / "releases/commit/services/server/dist").mkdir(parents=True)
-    (phone / "current").symlink_to("releases/commit")
-    (phone / "server.env").write_text("TS_PHONE_PORT=22113\n")
-    state = root / ".pi/ts-phone-state"
-    state.mkdir()
-    (state / "auth.token").write_text("test-token")
-    sessions = root / "workspaces/study/.pi/sessions"
-    sessions.mkdir(parents=True)
-    (sessions / "session.jsonl").write_text("{}\n")
-    (root / "TSPhoneServer").symlink_to(".pi/packages/tspi/current/agent/TSPi")
-    result = uninstall(_args(root))
-    assert result["ok"] is True
-    assert not (phone / "current").is_symlink()
-    assert not (phone / "releases").exists()
-    assert (phone / "server.env").read_text() == "TS_PHONE_PORT=22113\n"
-    assert (state / "auth.token").read_text() == "test-token"
-    assert (sessions / "session.jsonl").read_text() == "{}\n"
-
-
-def test_uninstall_does_not_stop_another_installations_phone_service(tmp_path: Path, monkeypatch) -> None:
-    root = tmp_path / "install"
-    other = tmp_path / "install-other"
-    (root / ".pi/packages/tspi").mkdir(parents=True)
-    owner = tmp_path / "owner"
-    units = owner / ".config/systemd/user"
-    units.mkdir(parents=True)
-    unit = units / "ts-phone-tspi.service"
-    unit.write_text(f"[Service]\nWorkingDirectory={other}\nEnvironmentFile={other}/.pi/ts-phone/server.env\n")
-    monkeypatch.setattr(Path, "home", lambda: owner)
-    calls = []
-    monkeypatch.setattr(uninstaller.subprocess, "run", lambda *args, **kwargs: calls.append(args))
-    uninstall(_args(root, service_scope="user"))
-    assert unit.is_file()
-    assert not calls
-
-
-def test_phone_cleanup_does_not_follow_an_external_state_directory(tmp_path: Path) -> None:
-    root = tmp_path / "install"
-    (root / ".pi/packages/tspi").mkdir(parents=True)
-    external = tmp_path / "external-phone"
-    (external / "releases/keep").mkdir(parents=True)
-    (root / ".pi/ts-phone").symlink_to(external)
-    with pytest.raises(ValueError, match="symbolic link"):
-        uninstall(_args(root))
-    assert (external / "releases/keep").is_dir()
-    assert (root / ".pi/packages/tspi").is_dir()
 
 
 def test_uninstall_rejects_a_source_checkout_without_installation_metadata(tmp_path: Path) -> None:

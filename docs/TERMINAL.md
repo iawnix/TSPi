@@ -42,7 +42,7 @@ disconnect; inspect the transcript before trying again.
 ## Phone access
 
 TS Phone connects to this Host through TSPi Link. Both the Phone and Host open
-outbound WSS connections to the configured TSPi Relay, so the App Server does
+outbound WSS connections to the configured TSPi Link Relay, so the App Server does
 not expose an inbound public port. The Relay authorizes devices and forwards
 opaque App Server bytes; it does not own projects, sessions, or transcripts.
 
@@ -52,7 +52,7 @@ Create a five-minute, single-use pairing code on the Host:
 ./TSPi phone pair
 ```
 
-Enter the printed Relay URL and code in TS Phone. Use `./TSPi phone devices`
+Enter the printed TSPi Link Relay URL and code in TS Phone. Use `./TSPi phone devices`
 to list authorized devices and `./TSPi phone revoke <device-id>` to revoke one.
 The Phone can then list or create projects and create or switch sessions. It
 does not connect to the terminal process or require a per-project service.

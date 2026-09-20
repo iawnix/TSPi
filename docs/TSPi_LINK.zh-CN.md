@@ -6,38 +6,51 @@ TSPi Link 让 TS Phone 在不暴露 App Server 端口的情况下连接安装级
 传输边界，不是第二套应用服务器：
 
 ```text
-TS Phone -- WSS --> TSPi Relay <-- WSS -- TSPi Host -- Unix socket -- App Server
+TS Phone -- WSS --> TSPi Link Relay <-- WSS -- TSPi Host -- Unix socket -- App Server
 ```
 
 Relay 只管理 Host 注册、Phone 配对、设备撤销和不透明字节转发。workspace、session、
 transcript、模型、工具、ResearchMap 和计算状态始终只由 App Server 管理。
 
-## 运行 Relay
+## 安装 TSPi Link Relay
 
-安装 Relay 固定版本的依赖，并把运行状态放在源码目录之外：
+TSPi Link Relay 是部署在公网或私有网络节点上的独立服务，不由本地 TSPi Host 安装器
+安装。在 Relay 机器上的 TSPi checkout 中运行：
 
 ```bash
-npm --prefix services/tspi-relay ci
-node services/tspi-relay/cli.mjs serve \
-  --state /var/lib/tspi-relay/relay.db \
+./install-link-relay.sh \
   --public-url https://link.example.com \
-  --listen 127.0.0.1 --port 8788
+  --listen 127.0.0.1 --port 8788 \
+  --service-scope system --enable-services --start-services
 ```
 
-在 loopback 监听端口前配置 TLS 反向代理。代理必须保留 WebSocket upgrade 和请求体，
-且不得记录 `Authorization` header 或 Link payload，并应限制 enrollment 与 pairing
-端点的请求频率。公网 URL 必须使用 HTTPS；只有 loopback 开发环境允许明文 HTTP。
+安装器会创建 `tspi-link-relay.service`，在独立安装目录中安装锁定的 npm 依赖，把 SQLite
+状态保存到 `/var/lib/tspi-link-relay`，并输出一次性的 Host enrollment code。loopback
+监听器前还需要单独配置 TLS 反向代理。代理必须保留 WebSocket upgrade 和请求体，不得
+记录 `Authorization` header 或 Link payload，并应限制 enrollment 与 pairing 端点的请求频率。
+
+公网 URL 必须使用 HTTPS；只有 loopback 开发环境允许明文 HTTP。
+
+删除独立服务时，卸载器会停止并移除 service 注册；默认保留已注册 Host、Phone
+和设备凭据：
+
+```bash
+./uninstall-link-relay.sh --service-scope system --non-interactive --yes
+```
+
+只有明确加入 `--purge-state` 时，才会删除 Relay 数据库以及全部注册凭据。
 
 ## 注册 Host
 
-在 Relay 机器上创建有效期十分钟、只能使用一次的 enrollment code：
+安装器会输出有效期十分钟、只能使用一次的 enrollment code。之后可以用已安装的 CLI
+生成新的 code：
 
 ```bash
-node services/tspi-relay/cli.mjs enrollment create \
-  --state /var/lib/tspi-relay/relay.db
+node /opt/tspi-link-relay/current/service/cli.mjs enrollment create \
+  --state /var/lib/tspi-link-relay/relay.db
 ```
 
-在 Host 上运行 TSPi 安装器，选择 `TSPi Relay` Phone access，并输入 Relay URL 和
+在 Host 上运行 TSPi 安装器，选择 `TSPi Link Relay` Phone access，并输入 Relay URL 和
 enrollment code。安装器把 Host 凭据写入 owner-only 的
 `.pi/app-server-host/host.token`。之后 App Server service 会自动维持出站 Link 连接。
 
