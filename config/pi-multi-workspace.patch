@@ -118,6 +118,8 @@ index 5ec02aaa2..6628e5298 100644
  import type { FacetBundleArtifact } from "@earendil-works/chord/node";
  import {
 @@ -45,7 +45,7 @@ import {
+ import { RadiusRelayAuthResolver } from "./radius-auth.ts";
+ import { RadiusRelayHost, type RadiusRelayHostStatus } from "./radius-relay.ts";
  import { createExperimentalServerServices } from "./services/server.ts";
 -import type { SessionCreateOptions, SessionSummary } from "./services/sessions.ts";
 +import type { SessionCreateOptions, SessionSummary, WorkspaceSummary } from "./services/sessions.ts";
