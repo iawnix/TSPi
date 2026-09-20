@@ -25,6 +25,8 @@ FINDING_ID = re.compile(FINDING_ID_PATTERN)
 GATE_ID_PATTERN = r"^gate_[1-9][0-9]*$"
 GATE_ID = re.compile(GATE_ID_PATTERN)
 ARTIFACT_ID = re.compile(r"^art_[0-9a-f]{24}$")
+MONITOR_ID = re.compile(r"^mon_[0-9a-f]{24}$")
+MONITOR_EVENT_ID = re.compile(r"^evt_[0-9a-f]{32}$")
 
 
 class WorkspaceRefError(ValueError):

@@ -21,6 +21,10 @@ CONTRACT_FILES = [
     "contracts/tspi-session-control/1/session-control-request.schema.json",
     "contracts/tspi-session-control/1/session-control-response.schema.json",
     "contracts/tspi-session-control/1/session-event.schema.json",
+    "contracts/tspi-monitor/1/README.md",
+    "contracts/tspi-monitor/1/monitor.schema.json",
+    "contracts/tspi-monitor/1/event.schema.json",
+    "contracts/tspi-monitor/1/delivery.schema.json",
     "contracts/tspi-link/1/README.md",
 ]
 
@@ -51,6 +55,7 @@ SKILL_ENTRY_FILES = [
 
 APP_SERVER_FILES = [
     "apps/app-server/pi-app-server.mjs",
+    "apps/app-server/pi-monitor-worker.mjs",
     "apps/app-server/server-extension-loader.mjs",
     "apps/app-server/pi-native-compute.mjs",
     "apps/app-server/pi-native-notify.mjs",
@@ -134,6 +139,7 @@ PACKAGE_FILES = [
     "scripts/ts_runtime.py",
     "scripts/ts_web_provider.py",
     "scripts/ts_api.py",
+    "scripts/ts_monitor.py",
     "scripts/ts_workspace.py",
     "skills/",
     "themes/*.json",

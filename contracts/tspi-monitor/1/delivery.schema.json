@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tspi.iawnix.xyz/contracts/tspi-monitor/1/delivery.schema.json",
+  "title": "TSPi Monitor Delivery",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "monitor_id", "session_id", "wake_policy", "notify_policy", "status", "attempts", "request_id", "created_at", "claimed_at", "delivered_at", "last_error"],
+  "properties": {
+    "schema_version": {"const": "ts-monitor-delivery/1"},
+    "event_id": {"type": "string", "pattern": "^evt_[a-f0-9]{32}$"},
+    "monitor_id": {"type": "string", "pattern": "^mon_[a-f0-9]{24}$"},
+    "session_id": {"type": ["string", "null"], "minLength": 1},
+    "wake_policy": {"enum": ["none", "next_run"]},
+    "notify_policy": {"enum": ["none", "user"]},
+    "status": {"enum": ["pending", "delivering", "delivered"]},
+    "attempts": {"type": "integer", "minimum": 0},
+    "request_id": {"type": "string", "pattern": "^monitor:[A-Za-z0-9._:-]{1,120}$"},
+    "created_at": {"type": "string", "minLength": 1},
+    "claimed_at": {"type": ["string", "null"]},
+    "delivered_at": {"type": ["string", "null"]},
+    "last_error": {"type": ["string", "null"]}
+  }
+}

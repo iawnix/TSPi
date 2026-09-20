@@ -176,3 +176,38 @@ backends 下绑定软件；只有 remote 环境增加 SSH/Torque 字段。`/comp
 可用 user systemd 时，本地 worker 会进入独立的临时 service，因此重启 App Server Host
 通常不会终止正在运行的本地计算；没有 user systemd 时使用进程组回退方案，重启父
 service 前应先检查计算状态。
+
+## Monitor 与 automation 生命周期
+
+Monitor 是 App Server 的 control plane sibling worker，不是 Root session，也不是每个
+workspace 的独立 daemon。一个安装级 App Server Host 启动一个 Monitor worker；worker
+可以扫描配置 workspace root 下的多个直接子工作区。每个 workspace 只保存自己的
+durable monitor records：
+
+```text
+operations/monitors/<monitor_id>/
+  registration.json   # calc intent + intent digest + optional session binding
+  state.json          # last observed semantic state
+  events/<event_id>.json
+  deliveries/<event_id>.json
+```
+
+Monitor registration、event 和 delivery 使用 `ts-compute-monitor/1`、
+`ts-compute-monitor-event/1`、`ts-monitor-delivery/1` 合同。worker 的 tick 直接读取
+Compute Kernel 的 durable status：`completed` 只表示程序或 scheduler 已结束，`parsed`
+才表示收集和解析完成；`unknown` 保持不确定性。状态没有变化时不会重复产生事件。
+
+事件 delivery 默认通过绑定 session 的 `next_run` 排队唤醒 Root，不打断当前推理。稳定
+request id 为 `monitor:<event_id>`；session 不存在、workspace 不匹配或 App Server
+重启时 delivery 保持 pending，可由后续 worker 恢复。Root 被唤醒后必须重新读取
+`ts_state`，再显式执行 `ts_calc inspect`，并自行决定是否 `finalize` 或通过 `ts_change`
+写入 Finding/Gate/Node 状态。Monitor 不自动 finalize、不修改 ResearchMap、不做科学判断。
+
+边界可以概括为：
+
+```text
+Workspace records <-> App Server Monitor worker -> Session next_run -> Root Agent
+       ^                     |                         |
+       |                     +-- user notification     +-- ts_state / ts_calc / ts_change
+       +-- Compute/remote durable status
+```

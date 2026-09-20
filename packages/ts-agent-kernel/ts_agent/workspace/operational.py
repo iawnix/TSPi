@@ -18,7 +18,7 @@ from typing import Any, Iterable
 from .activities import activity_completion_blockers, build_activity_index
 from ts_agent.io import read_json, sha256_json
 from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
-from .refs import NODE_ID, ACTIVITY_ID, CALCULATION_ID, CLAIM_ID, SUBAGENT_RUN_ID
+from .refs import NODE_ID, ACTIVITY_ID, CALCULATION_ID, CLAIM_ID, MONITOR_EVENT_ID, MONITOR_ID, SUBAGENT_RUN_ID
 
 
 # A scheduler reaching ``completed`` is not the same as a Compute Attempt
@@ -617,6 +617,10 @@ def _operational_files(
         "nodes/*/activities/*/*.json",
         "nodes/*/dispatch/*.json",
         "operations/activities/*/*.json",
+        "operations/monitors/*/registration.json",
+        "operations/monitors/*/state.json",
+        "operations/monitors/*/events/*.json",
+        "operations/monitors/*/deliveries/*.json",
         "nodes/*/attempts/*/runs/*/*.json",
         "reviews/*/runs/*/*.json",
     )
@@ -1188,8 +1192,22 @@ def _is_current_operational_path(parts: tuple[str, ...]) -> bool:
     return bool(
         len(parts) >= 4
         and parts[0] == "operations"
-        and parts[1] == "activities"
-        and ACTIVITY_ID.fullmatch(parts[2])
+        and (
+            (parts[1] == "activities" and ACTIVITY_ID.fullmatch(parts[2]))
+            or (
+                parts[1] == "monitors"
+                and MONITOR_ID.fullmatch(parts[2])
+                and (
+                    (len(parts) == 4 and parts[3] in {"registration.json", "state.json"})
+                    or (
+                        len(parts) == 5
+                        and parts[3] in {"events", "deliveries"}
+                        and MONITOR_EVENT_ID.fullmatch(Path(parts[4]).stem)
+                        and parts[4].endswith(".json")
+                    )
+                )
+            )
+        )
     )
 
 

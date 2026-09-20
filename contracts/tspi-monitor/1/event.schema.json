@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tspi.iawnix.xyz/contracts/tspi-monitor/1/event.schema.json",
+  "title": "TSPi Compute Monitor Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "monitor_id", "workspace_id", "node_id", "intent_id", "intent_digest", "session_id", "wake_policy", "notify_policy", "previous_state", "state", "program_status", "job_id", "exit_status", "error_class", "error", "observed_at", "status"],
+  "properties": {
+    "schema_version": {"const": "ts-compute-monitor-event/1"},
+    "event_id": {"type": "string", "pattern": "^evt_[a-f0-9]{32}$"},
+    "monitor_id": {"type": "string", "pattern": "^mon_[a-f0-9]{24}$"},
+    "workspace_id": {"type": "string", "minLength": 1},
+    "node_id": {"type": "string", "minLength": 1},
+    "intent_id": {"type": "string", "pattern": "^calc_[1-9][0-9]*$"},
+    "intent_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "session_id": {"type": ["string", "null"], "minLength": 1},
+    "wake_policy": {"enum": ["none", "next_run"]},
+    "notify_policy": {"enum": ["none", "user"]},
+    "previous_state": {"type": ["string", "null"]},
+    "state": {"enum": ["prepared", "running", "completed", "parsed", "failed", "stopped", "unknown"]},
+    "program_status": {"type": ["string", "null"]},
+    "job_id": {"type": ["string", "null"]},
+    "exit_status": {"type": ["integer", "null"]},
+    "error_class": {"type": ["string", "null"]},
+    "error": {"type": ["string", "null"]},
+    "observed_at": {"type": "string", "minLength": 1},
+    "status": {"type": "object"}
+  }
+}

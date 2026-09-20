@@ -58,6 +58,7 @@ export function createComputeTool() {
       let stage = "pre_action";
       let journal;
       let runRef;
+      let monitor;
       publishProgress(onUpdate, taskId, request, "queued", undefined, toolCallId);
       try {
         const binding = await preflightComputeRequest(root, request, signal, (value) => {
@@ -95,6 +96,9 @@ export function createComputeTool() {
         await executeComputePlan(root, request, actions, signal, (state, action) => {
           publishProgress(onUpdate, taskId, request, state, action, toolCallId);
         });
+        if (request.operation === "launch" && lastActionCompleted(actions)) {
+          monitor = await registerComputeMonitor(root, request, toolContext.sessionId, signal);
+        }
         const outcome = actionOutcome(actions);
         const result = buildComputeResult({
           summary: `Compute ${request.operation} finished with action outcome ${outcome}.`,
@@ -121,7 +125,7 @@ export function createComputeTool() {
         publishProgress(onUpdate, taskId, request, "completed", undefined, toolCallId, runRef);
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-          details: { result, run: { ...metadata, run_ref: runRef } },
+          details: { result, monitor, run: { ...metadata, run_ref: runRef } },
         };
       } catch (error) {
         const compactActions = compactCompletedActions(actions);
@@ -141,6 +145,22 @@ export function createComputeTool() {
       }
     },
   };
+}
+
+async function registerComputeMonitor(root, request, sessionId, signal) {
+  const args = [
+    "register",
+    "--root", root,
+    "--node-id", request.nodeId,
+    "--intent-id", request.intentId,
+    "--intent-digest", request.intentDigest,
+  ];
+  if (typeof sessionId === "string" && sessionId) args.push("--session-id", sessionId);
+  try {
+    return await runJsonCli(packageScript("ts_monitor.py"), args, root, signal, 60_000);
+  } catch (error) {
+    return { schema_version: "ts-compute-monitor-registration-error/1", error: errorMessage(error) };
+  }
 }
 
 async function preflightComputeRequest(root, request, signal, onStage) {
@@ -375,6 +395,10 @@ function cliErrorMessage(stderr) {
     if (typeof value?.error === "string" && value.error.trim()) return value.error.trim();
   } catch (_error) {}
   return stderr.trim().slice(-4000);
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function validateComputeRequest(request) {

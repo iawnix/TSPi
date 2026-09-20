@@ -60,15 +60,20 @@ const child = spawn(process.execPath, ["--import", join(sourceRoot, "packages/co
   cwd: workspaceRoot || sourceRoot, env: childEnv, stdio: "inherit",
 });
 const link = mode === "server" ? startLinkHost(wrapper, forwarded, childEnv) : undefined;
+const monitor = mode === "server" && workspaceRoot
+  ? startMonitorWorker(wrapper, forwarded, childEnv, workspaceRoot, packageRoot)
+  : undefined;
 let exiting = false;
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(signal, () => {
   exiting = true;
   link?.kill(signal);
+  monitor?.kill(signal);
   child.kill(signal);
 });
 child.once("exit", (code, signal) => {
   exiting = true;
   link?.kill("SIGTERM");
+  monitor?.kill("SIGTERM");
   process.exit(code ?? (signal ? 1 : 0));
 });
 link?.once("exit", (code, signal) => {
@@ -90,6 +95,19 @@ function startLinkHost(wrapper, forwarded, env) {
     "--token-file", tokenFile,
     "--socket-path", join(resolve(wrapper.directory), `${serverId}.sock`),
   ], { cwd: workspaceRoot || sourceRoot, env, stdio: "inherit" });
+}
+
+function startMonitorWorker(wrapper, forwarded, env, workspaceRoot, packageRoot) {
+  if (process.env.TSPI_MONITOR_DISABLED === "1") return undefined;
+  const args = [
+    join(packageRoot, "apps/app-server/pi-monitor-worker.mjs"),
+    "--workspace-root", workspaceRoot,
+  ];
+  const serverId = forwardedOption(forwarded, "--server-id");
+  if (wrapper.directory && serverId) {
+    args.push("--server-directory", resolve(wrapper.directory), "--server-id", serverId);
+  }
+  return spawn(process.execPath, args, { cwd: workspaceRoot, env, stdio: "inherit" });
 }
 
 function forwardedOption(arguments_, name) {

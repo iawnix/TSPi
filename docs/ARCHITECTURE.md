@@ -219,6 +219,36 @@ kill an in-flight local calculation; environments without a user systemd
 manager use the process-group fallback and should avoid restarting the parent
 service during a calculation.
 
+## Monitor and automation lifecycle
+
+The Monitor is an App Server control-plane sibling worker. It is not part of a
+Root session and it is not a daemon owned by an individual workspace. One
+installation Host runs one worker, which can scan the direct-child workspaces
+under its configured workspace root. Each workspace persists its own monitor
+records under `operations/monitors/<monitor_id>/`:
+
+```text
+registration.json   # intent binding, digest, and optional session binding
+state.json          # last semantic observation
+events/<event_id>.json
+deliveries/<event_id>.json
+```
+
+The registration, event, and delivery envelopes are versioned by
+`ts-compute-monitor/1`, `ts-compute-monitor-event/1`, and
+`ts-monitor-delivery/1`. A tick calls the Compute Kernel status API directly.
+`completed` means that the program or scheduler ended; `parsed` means that
+collection and parsing completed. `unknown` remains uncertainty, and an
+unchanged observation does not create another event.
+
+The worker normally delivers an event to the bound session with `next_run`,
+which does not interrupt an active Root turn. Its request id is
+`monitor:<event_id>`. A missing session or an App Server restart leaves the
+delivery pending and allows a later worker pass to retry it. Root must reread
+`ts_state`, run `ts_calc inspect`, and decide whether to collect, parse, or
+write `ResearchMap` state. The Monitor never calls `finalize`, writes
+`ResearchMap`, or makes a scientific decision.
+
 `compute.toml` keeps local and remote compute environments in one catalog, with
 backend bindings under each environment; only remote environments add
 SSH/Torque fields. The canonical `compute.environments` query exposes both
@@ -243,5 +273,6 @@ are separate from the scientific operation journal.
 - Skills and extension manifests: `skills/`, `package.json`, and
   `extensions/server/extensions.json`.
 - TS Web contracts: `contracts/ts-web/`.
+- Monitor contracts: `contracts/tspi-monitor/1/`.
 - App Server lifecycle tests: `tests/integration/test_pi_app_server_launcher.py` and
   `tests/node/native/pi-app-server.test.mjs`.

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tspi.iawnix.xyz/contracts/tspi-monitor/1/monitor.schema.json",
+  "title": "TSPi Compute Monitor Registration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "monitor_id", "workspace_id", "node_id", "intent_id", "intent_digest", "session_id", "wake_policy", "notify_policy", "enabled", "created_at"],
+  "properties": {
+    "schema_version": {"const": "ts-compute-monitor/1"},
+    "monitor_id": {"type": "string", "pattern": "^mon_[a-f0-9]{24}$"},
+    "workspace_id": {"type": "string", "minLength": 1},
+    "node_id": {"type": "string", "minLength": 1},
+    "intent_id": {"type": "string", "pattern": "^calc_[1-9][0-9]*$"},
+    "intent_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "session_id": {"type": ["string", "null"], "minLength": 1},
+    "wake_policy": {"enum": ["none", "next_run"]},
+    "notify_policy": {"enum": ["none", "user"]},
+    "enabled": {"type": "boolean"},
+    "created_at": {"type": "string", "minLength": 1}
+  }
+}
