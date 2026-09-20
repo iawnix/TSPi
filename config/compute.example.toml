@@ -23,23 +23,49 @@ activation_script = "/home/iaw/soft/xtb/current/activate_xtb.sh"
 command = "/home/iaw/soft/crest/current/bin/crest"
 activation_script = "/home/iaw/soft/crest/activate_crest.sh"
 
-# Add one or more remote environments below. Commands are arrays
-# because the remote scheduler script may need fixed command arguments.
-#
-# [environments.cluster_1w]
-# kind = "remote"
-# ssh_host = "agent.1w"
-# ssh_config = "/home/me/.ssh/config"
-# scheduler = "torque"
-# remote_root = "/home/me/ts-remote-workspaces"
-# allowed_queues = ["batch", "fat"]
-# max_nodes = 1
-#
-# [environments.cluster_1w.backends.gaussian]
-# command = ["g16"]
-# activation_script = "/home/me/soft/gaussian/activate.sh"
-# allowed_queues = ["batch", "fat"]
-#
-# [environments.cluster_1w.backends.xtb]
-# command = ["xtb"]
-# allowed_queues = ["batch", "fat"]
+# Local remains the default. Select the remote explicitly with
+# execution_target.kind = "remote" and environment = "cluster_1w".
+# Remote paths below must exist on the remote host.
+# Commands are arrays because the remote scheduler script may need fixed arguments.
+
+[environments.cluster_1w]
+kind = "remote"
+ssh_host = "agent.1w"
+ssh_config = "/home/iaw/.ssh/config"
+scheduler = "torque"
+remote_root = "/home/agent/1w-data2/ts-remote-workspaces"
+allowed_queues = ["batch", "fat", "fata"]
+max_nodes = 1
+connect_timeout_seconds = 15
+command_timeout_seconds = 60
+
+[environments.cluster_1w.commands]
+qsub = "qsub"
+qstat = "qstat"
+qdel = "qdel"
+pbsnodes = "pbsnodes"
+
+[environments.cluster_1w.backends.gaussian]
+command = ["g16"]
+activation_script = "/home/agent/soft/gaussian/activate_gaussian16.sh"
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false
+
+[environments.cluster_1w.backends.xtb]
+command = ["/home/agent/soft/xtb/current/bin/xtb"]
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false
+
+[environments.cluster_1w.backends.crest]
+command = ["/home/agent/soft/crest/current/bin/crest"]
+activation_script = "/home/agent/soft/crest/activate_crest.sh"
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false
+
+[environments.cluster_1w.backends.ase_neb]
+command = ["/home/agent/soft/ase-neb/current/.pixi/envs/default/bin/python"]
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false
+
+[environments.cluster_1w.backends.ase_neb.environment]
+TS_ASE_NEB_XTB = "/home/agent/soft/xtb/current/bin/xtb"
