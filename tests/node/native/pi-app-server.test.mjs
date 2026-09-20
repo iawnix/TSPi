@@ -333,16 +333,56 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const workspace = process.argv.at(-1);
 mkdirSync(workspace, { recursive: true, mode: 0o700 });
-writeFileSync(join(workspace, "workspace.json"), JSON.stringify({ schema_version: "research-workspace/1" }));
+const workspaceId = "ws_" + "c".repeat(24);
+mkdirSync(join(workspace, ".agents"), { recursive: true, mode: 0o700 });
+writeFileSync(join(workspace, ".agents/workspace-identity.json"), JSON.stringify({
+  schema_version: "ts-workspace-identity/1",
+  workspace_id: workspaceId,
+  created_at: "2026-09-17T00:00:00+00:00",
+}));
+writeFileSync(join(workspace, "workspace.json"), JSON.stringify({
+  schema_version: "research-workspace/1",
+  workspace_id: workspaceId,
+  kernel_protocol: "research-map/1",
+  created_at: "2026-09-17T00:00:00+00:00",
+}));
+writeFileSync(join(workspace, "research_map.json"), JSON.stringify({
+  schema_version: "research-map/1",
+  map_id: workspaceId,
+  title: "Native workspace",
+  created_at: "2026-09-17T00:00:00+00:00",
+  revision: 0,
+  phases: [], claims: [], nodes: [], findings: [], gates: [],
+  claim_relations: [], focus_claim_ids: [], focus_node_ids: [], metadata: {},
+}));
+writeFileSync(join(workspace, "transactions.jsonl"), "");
+for (const directory of ["nodes", "operations", "scratch", "inputs"]) mkdirSync(join(workspace, directory));
 `, { mode: 0o700 });
   await writeFile(join(root, "agent", "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test-key" } }), { mode: 0o600 });
   for (const [directory, workspaceId] of [[projectA, "ws_aaaaaaaaaaaaaaaaaaaaaaaa"], [projectB, "ws_bbbbbbbbbbbbbbbbbbbbbbbb"]]) {
+    await mkdir(join(directory, ".agents"), { recursive: true });
+    await writeFile(join(directory, ".agents/workspace-identity.json"), JSON.stringify({
+      schema_version: "ts-workspace-identity/1",
+      workspace_id: workspaceId,
+      created_at: "2026-09-17T00:00:00+00:00",
+    }));
     await writeFile(join(directory, "workspace.json"), JSON.stringify({
       schema_version: "research-workspace/1",
       workspace_id: workspaceId,
-      kernel_protocol: "ts-research-kernel/6",
+      kernel_protocol: "research-map/1",
       created_at: "2026-09-17T00:00:00+00:00",
     }));
+    await writeFile(join(directory, "research_map.json"), JSON.stringify({
+      schema_version: "research-map/1",
+      map_id: workspaceId,
+      title: directory.split("/").at(-1),
+      created_at: "2026-09-17T00:00:00+00:00",
+      revision: 0,
+      phases: [], claims: [], nodes: [], findings: [], gates: [],
+      claim_relations: [], focus_claim_ids: [], focus_node_ids: [], metadata: {},
+    }));
+    await writeFile(join(directory, "transactions.jsonl"), "");
+    for (const name of ["nodes", "operations", "scratch", "inputs"]) await mkdir(join(directory, name));
   }
   await writeFile(join(legacyProject, "workspace.json"), JSON.stringify({ schema_version: "ts-workspace/6" }));
   await mkdir(join(projectA, "nested"));

@@ -72,6 +72,8 @@ SMTP_SECURITY = {"ssl", "starttls"}
 WORKSPACE_ROOT_SCHEMA = "tspi-workspace-root/1"
 MODEL_ICON_CONFIG_SCHEMA = "tspi-model-icons/1"
 MODEL_ICON_CONFIG_RELATIVE = Path(".pi/tspi/model-icons.json")
+SERVICE_CONFIG_SCHEMA = "tspi-service/1"
+SERVICE_CONFIG_RELATIVE = Path(".pi/tspi/service.json")
 EMAIL_ADDRESS = re.compile(r"^[^@\s]+@[^@\s]+$")
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 PROXY_VARIABLES = (
@@ -127,6 +129,8 @@ class Installation:
     process_cache_root: Path
     compute_config_default: Path | None = None
     model_icons_config: Path | None = None
+    service_scope: str = "user"
+    host_runtime_dir: Path | None = None
 
 
 USAGE = """Usage:
@@ -144,8 +148,8 @@ Options:
   -h, --help          Show this help.
 
 The terminal connects to the installation Host managed by
-ts-app-server-tspi.service, starting the user service when needed. Exiting the
-terminal only detaches this client.
+ts-app-server-tspi.service, starting its configured service when needed. Exiting
+the terminal only detaches this client.
 """
 
 
@@ -238,7 +242,7 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
 def resolve_installation(package_root: str | Path, install_root: str | Path) -> Installation:
     requested_install = Path(install_root).expanduser()
     if requested_install.is_symlink():
-        raise TSPiLauncherError(f"installation root cannot be a symbolic link: {requested_install}")
+        raise TSPiHostError(f"installation root cannot be a symbolic link: {requested_install}")
     if not requested_install.is_dir():
         raise TSPiHostError(f"installation root is not a directory: {requested_install}")
     root = requested_install.resolve()
@@ -265,6 +269,7 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
         raise TSPiHostError(f"launcher Agent does not match the selected TSPi Package: {expected_agent}")
     _validate_suite_identity(suite_root, expected_agent)
     runtime_home = root / ".agents" / "runtime" / "tspi"
+    service_scope, host_runtime_dir = _configured_service(root)
     return Installation(
         root=root,
         package_root=expected_agent,
@@ -276,7 +281,39 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
         process_cache_root=root / ".pi" / "runtime-cache",
         compute_config_default=root / ".pi" / "compute.toml",
         model_icons_config=root / MODEL_ICON_CONFIG_RELATIVE,
+        service_scope=service_scope,
+        host_runtime_dir=host_runtime_dir,
     )
+
+
+def _configured_service(root: Path) -> tuple[str, Path | None]:
+    path = root / SERVICE_CONFIG_RELATIVE
+    if not path.exists() and not path.is_symlink():
+        return "user", None
+    if path.is_symlink() or not path.is_file():
+        raise TSPiHostError(f"service configuration is unsafe: {path}")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise TSPiHostError(f"service configuration is invalid: {path}: {exc}") from exc
+    if not isinstance(value, dict) or set(value) != {"schema_version", "scope", "runtime_dir"}:
+        raise TSPiHostError(f"service configuration is invalid: {path}")
+    if value.get("schema_version") != SERVICE_CONFIG_SCHEMA:
+        raise TSPiHostError(f"service configuration is invalid: {path}")
+    scope = value.get("scope")
+    runtime_value = value.get("runtime_dir")
+    if scope not in {"none", "user", "system"}:
+        raise TSPiHostError(f"service configuration is invalid: {path}")
+    if scope == "none":
+        if runtime_value is not None:
+            raise TSPiHostError(f"service configuration is invalid: {path}")
+        return scope, None
+    if not isinstance(runtime_value, str) or not runtime_value.startswith("/") or "\x00" in runtime_value:
+        raise TSPiHostError(f"service configuration is invalid: {path}")
+    runtime_dir = Path(runtime_value)
+    if runtime_dir == Path("/") or runtime_dir.is_symlink():
+        raise TSPiHostError(f"service runtime directory is invalid: {runtime_dir}")
+    return scope, runtime_dir
 
 
 def _configured_workspace_root(root: Path) -> Path:
@@ -848,18 +885,24 @@ def resolve_host_socket(installation: Installation) -> Path:
 
 
 def ensure_host_running(installation: Installation) -> Path:
-    """Return the Host socket, starting the managed user service when absent."""
+    """Return the Host socket, starting the configured service when absent."""
     try:
         return resolve_host_socket(installation)
     except TSPiHostUnavailableError:
         pass
+
+    if installation.service_scope == "none":
+        raise TSPiHostError(
+            "TSPi Host service is disabled; configure a systemd service or use --standalone"
+        )
 
     systemctl = shutil.which("systemctl")
     if systemctl is None:
         raise TSPiHostError(
             f"TSPi Host is not running and systemctl is unavailable; start {APP_SERVER_SERVICE}"
         )
-    command = [systemctl, "--user", "start", APP_SERVER_SERVICE]
+    scope = [] if installation.service_scope == "system" else ["--user"]
+    command = [systemctl, *scope, "start", APP_SERVER_SERVICE]
     try:
         completed = subprocess.run(
             command,
@@ -885,7 +928,7 @@ def ensure_host_running(installation: Installation) -> Path:
             time.sleep(HOST_READY_POLL_SECONDS)
     raise TSPiHostError(
         f"{APP_SERVER_SERVICE} started but the Host did not become ready within "
-        f"{HOST_READY_TIMEOUT_SECONDS:g} seconds; inspect it with systemctl --user status {APP_SERVER_SERVICE}"
+        f"{HOST_READY_TIMEOUT_SECONDS:g} seconds; inspect it with systemctl {' '.join(scope + ['status', APP_SERVER_SERVICE])}"
     )
 
 
@@ -1034,8 +1077,15 @@ def _host_server_id(installation: Installation, *, create: bool) -> str:
     return server_id
 
 
-def _private_socket_directory(identity_root: Path, *, create: bool) -> Path:
+def _private_socket_directory(
+    identity_root: Path,
+    *,
+    create: bool,
+    configured_runtime_dir: Path | None = None,
+) -> Path:
     configured = os.environ.get("TSPI_APP_SERVER_RUNTIME_DIR", "").strip()
+    if not configured and configured_runtime_dir is not None:
+        configured = str(configured_runtime_dir)
     if configured:
         base = Path(configured).expanduser()
         if not base.is_absolute():
@@ -1083,7 +1133,11 @@ def _private_socket_directory(identity_root: Path, *, create: bool) -> Path:
 
 def _host_socket_directory(installation: Installation, *, create: bool) -> Path:
     host_workspace, _state_root = _prepare_host_state(installation)
-    return _private_socket_directory(host_workspace, create=create)
+    return _private_socket_directory(
+        host_workspace,
+        create=create,
+        configured_runtime_dir=installation.host_runtime_dir,
+    )
 
 
 def _has_cli_option(arguments: tuple[str, ...], option: str) -> bool:
@@ -1148,10 +1202,15 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         print(USAGE, end="")
         return 0
     if request.host and "--service-host" not in argv and os.environ.get("TSPI_SYSTEMD_HOST") != "1":
+        try:
+            service_scope, _runtime_dir = _configured_service(Path(install_root).expanduser().resolve())
+        except TSPiHostError:
+            service_scope = "user"
+        scope = [] if service_scope == "system" else ["--user"]
         raise TSPiHostError(
             "TSPi Host is managed by systemd; use:\n"
-            "  systemctl --user start ts-app-server-tspi.service\n"
-            "  systemctl --user status ts-app-server-tspi.service",
+            f"  systemctl {' '.join(scope + ['start', APP_SERVER_SERVICE])}\n"
+            f"  systemctl {' '.join(scope + ['status', APP_SERVER_SERVICE])}",
             exit_code=2,
         )
     normalize_proxy_environment()

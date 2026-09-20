@@ -67,7 +67,10 @@ def verify(source: Path) -> str:
         "workspaceId session binding": "workspaceId?: string" in sessions and "createOptions.workspaceId" in server,
         "workspace creation": "createWorkspace: createWorkspaceRoot" in server,
         "workspace create service": "createWorkspace(workspaceId: string" in services and "create: (workspaceId, context)" in services,
-        "ResearchMap workspace schema": 'identity?.schema_version !== "research-workspace/1"' in server,
+        "ResearchMap workspace schema": (
+            "isSupportedWorkspaceIdentity" in server
+            or 'identity?.schema_version !== "research-workspace/1"' in server
+        ),
         "workspace validation diagnostic": 'new RoutedServerError("service_invalid_value", `Session cwd is not a supported TSPi workspace:' in server,
     }
     missing = [label for label, present in multi_workspace_markers.items() if not present]
@@ -142,7 +145,7 @@ def apply_research_workspace_patch(source: Path) -> None:
     """Upgrade already-patched Pi trees to the canonical ResearchMap identity."""
     server_path = source / "packages" / "coding-agent" / "src" / "experimental" / "server.ts"
     server = server_path.read_text(encoding="utf-8")
-    if (
+    if "isSupportedWorkspaceIdentity" in server or (
         'identity?.schema_version !== "research-workspace/1"' in server
         and 'new RoutedServerError("service_invalid_value", `Session cwd is not a supported TSPi workspace:' in server
     ):

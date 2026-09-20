@@ -30,7 +30,7 @@ documented in [Model Compatibility](docs/MODEL_COMPATIBILITY.md).
 
 One installation-wide Pi App Server Host owns sessions, transcript history,
 model state, and the Root lock for all workspaces. Open a workspace directly;
-TSPi starts the user service and waits for the Host when it is not running:
+TSPi starts the configured service and waits for the Host when it is not running:
 
 ```bash
 ./TSPi --workspace reaction-a
@@ -39,9 +39,11 @@ TSPi starts the user service and waits for the Host when it is not running:
 
 The first command creates a conversation; the second continues the latest
 conversation in that workspace.
-Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for the
-Host lifecycle. `--host` is an internal service entrypoint and is not part of
-normal operation.
+Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for a
+user-scoped installation, or omit `--user` for a system-scoped installation.
+With service scope `none`, the managed Host is disabled; use `--standalone` only
+for development or recovery. `--host` is an internal service entrypoint and is
+not part of normal operation.
 
 The TS Phone Flutter app reaches the same App Server through TSPi Link. The
 Phone and Host both open outbound WSS connections to a TSPi Relay; the Relay

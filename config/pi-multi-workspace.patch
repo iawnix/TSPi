@@ -126,13 +126,80 @@ index 5ec02aaa2..6628e5298 100644
  import { SessionPluginSelectionConflictError, SessionWorkerManager } from "./session-worker-manager.ts";
  
  export const ENV_SERVER_DIR = "PI_SERVER_DIR";
-@@ -373,6 +375,92 @@ interface RunningServerBackend extends RunningServer {
+@@ -373,6 +375,152 @@ interface RunningServerBackend extends RunningServer {
  	refreshSessions(): Promise<void>;
  }
  
 +const WORKSPACE_ROOT_ENV = "TSPI_WORKSPACE_ROOT";
 +const WORKSPACE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
++const WORKSPACE_IDENTITY_SCHEMA = "ts-workspace-identity/1";
 +const execFileAsync = promisify(execFile);
++const WORKSPACE_FILE_MARKERS = Object.freeze([
++	["workspace.json", "file"],
++	["research_map.json", "file"],
++	["transactions.jsonl", "file"],
++	[".agents/workspace-identity.json", "file"],
++	["nodes", "directory"],
++	["operations", "directory"],
++	["scratch", "directory"],
++	["inputs", "directory"],
++]);
++
++function isSupportedWorkspaceIdentity(identity: unknown): boolean {
++	if (!identity || typeof identity !== "object" || Array.isArray(identity)) return false;
++	const value = identity as Record<string, unknown>;
++	return value.schema_version === "research-workspace/1"
++		&& value.kernel_protocol === "research-map/1"
++		&& typeof value.workspace_id === "string"
++		&& /^ws_[0-9a-f]{24}$/u.test(value.workspace_id)
++		&& typeof value.created_at === "string"
++		&& value.created_at.length > 0;
++}
++
++function isSupportedImmutableIdentity(identity: unknown, workspaceId: string): boolean {
++	if (!identity || typeof identity !== "object" || Array.isArray(identity)) return false;
++	const value = identity as Record<string, unknown>;
++	return value.schema_version === WORKSPACE_IDENTITY_SCHEMA
++		&& value.workspace_id === workspaceId
++		&& typeof value.created_at === "string"
++		&& value.created_at.length > 0;
++}
++
++function isSupportedResearchMap(value: unknown): boolean {
++	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
++	const map = value as Record<string, unknown>;
++	return map.schema_version === "research-map/1"
++		&& typeof map.map_id === "string"
++		&& map.map_id.length > 0
++		&& typeof map.title === "string"
++		&& map.title.length > 0
++		&& typeof map.created_at === "string"
++		&& map.created_at.length > 0
++		&& Number.isInteger(map.revision)
++		&& (map.revision as number) >= 0
++		&& ["phases", "claims", "nodes", "findings", "gates", "claim_relations", "focus_claim_ids", "focus_node_ids"].every(
++			(key) => Array.isArray(map[key]),
++		)
++		&& !!map.metadata && typeof map.metadata === "object" && !Array.isArray(map.metadata);
++}
++
++async function isSupportedWorkspace(root: string): Promise<boolean> {
++	try {
++		const identity = JSON.parse(await readFile(join(root, "workspace.json"), "utf8"));
++		if (!isSupportedWorkspaceIdentity(identity)) return false;
++		const immutableIdentity = JSON.parse(await readFile(join(root, ".agents/workspace-identity.json"), "utf8"));
++		if (!isSupportedImmutableIdentity(immutableIdentity, (identity as Record<string, unknown>).workspace_id as string)) return false;
++		const researchMap = JSON.parse(await readFile(join(root, "research_map.json"), "utf8"));
++		if (!isSupportedResearchMap(researchMap)) return false;
++		for (const [name, kind] of WORKSPACE_FILE_MARKERS) {
++			const info = await lstat(join(root, name));
++			if (info.isSymbolicLink() || (kind === "file" ? !info.isFile() : !info.isDirectory())) return false;
++		}
++		return true;
++	} catch {
++		return false;
++	}
++}
 +
 +function resolveWorkspacePath(workspaceId: string): string {
 +	if (!WORKSPACE_NAME.test(workspaceId)) throw new Error("workspaceId is invalid");
@@ -183,13 +250,8 @@ index 5ec02aaa2..6628e5298 100644
 +	if (!info.isDirectory() || info.isSymbolicLink()) {
 +		throw new Error(`Session cwd must be a regular directory: ${candidate}`);
 +	}
-+	if (root !== undefined) {
-+		try {
-+			const identity = JSON.parse(await readFile(join(candidate, "workspace.json"), "utf8"));
-+			if (identity?.schema_version !== "research-workspace/1") throw new Error("unsupported workspace schema");
-+		} catch {
-+			throw new RoutedServerError("service_invalid_value", `Session cwd is not a supported TSPi workspace: ${candidate}`);
-+		}
++	if (root !== undefined && !(await isSupportedWorkspace(candidate))) {
++		throw new RoutedServerError("service_invalid_value", `Session cwd is not a supported TSPi workspace: ${candidate}`);
 +	}
 +	return candidate;
 +}
@@ -205,9 +267,7 @@ index 5ec02aaa2..6628e5298 100644
 +		const workspaceRoot = resolve(root, entry.name);
 +		try {
 +			const info = await stat(workspaceRoot);
-+			if (!info.isDirectory()) continue;
-+			const identity = JSON.parse(await readFile(join(workspaceRoot, "workspace.json"), "utf8"));
-+			if (identity?.schema_version !== "research-workspace/1") continue;
++			if (!info.isDirectory() || !(await isSupportedWorkspace(workspaceRoot))) continue;
 +		} catch {
 +			continue;
 +		}

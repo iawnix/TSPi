@@ -53,6 +53,9 @@ export function createStateTool() {
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       const mode = params.mode || "map";
       const root = params.root || toolContext.cwd;
+      if (params.capabilityKind !== undefined && mode !== "capabilities") {
+        throw new Error(`state mode=${mode} does not accept capability selectors`);
+      }
       if (mode === "artifacts") {
         return toolResult(await NATIVE_COMMANDS.execute("compute.artifacts", root, { nodeId: params.nodeRef }, context?.abortSignal));
       }
@@ -79,7 +82,7 @@ export function createStateTool() {
         ? { kind: params.kind, id: params.id }
         : mode === "locate" ? { query: params.query } : {};
       const result = await NATIVE_COMMANDS.execute(command, root, commandParams, context?.abortSignal);
-      return { ...toolResult(result), details: { mode, result } };
+      return { ...toolResult(result), details: { result } };
     },
   };
 }
@@ -96,9 +99,15 @@ export function createChangeTool() {
           basis_refs: params.basisRefs || [],
           operations: params.operations,
         } }, context?.abortSignal);
+      const summary = await NATIVE_COMMANDS.execute(
+        "research.summary",
+        params.root || toolContext.cwd,
+        {},
+        context?.abortSignal,
+      );
       return {
-        content: [{ type: "text", text: JSON.stringify(result) }],
-        details: { operationCount: params.operations.length },
+        content: [{ type: "text", text: `${JSON.stringify(result, null, 2)}\n\n${JSON.stringify(summary, null, 2)}` }],
+        details: { result, summary },
       };
     },
   };

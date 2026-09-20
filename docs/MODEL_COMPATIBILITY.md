@@ -35,7 +35,8 @@ normal login or `auth.json`/environment mechanisms. Select a model with Pi
 settings before restarting the Host:
 
 ```bash
-systemctl --user restart ts-app-server-tspi.service
+systemctl --user restart ts-app-server-tspi.service  # user scope
+systemctl restart ts-app-server-tspi.service         # system scope
 ```
 
 Before production use, run one real session that exercises `read`, `write`,

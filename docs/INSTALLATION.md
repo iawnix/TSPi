@@ -12,7 +12,7 @@ or local HTTP broker is installed.
 - Python 3.11+, Conda/Mamba, and a writable user installation directory.
 - A prepared Pi source checkout at the pinned revision (the installer can
   download and patch it automatically).
-- Optional: systemd user services and a configured TS Web port. Conda/Mamba is
+- Optional: a systemd user or system service and a configured TS Web port. Conda/Mamba is
   required when the managed scientific runtime is created; it is not an
   optional backend dependency.
 
@@ -192,14 +192,16 @@ only sends mail.
 
 The installation owns one Pi App Server Host for all validated workspaces below
 the installation workspace root. The installer can enable and start it, and a
-normal terminal launch starts the user service when needed:
+normal terminal launch starts the configured service when needed:
 
 ```bash
 ./TSPi --workspace reaction-a
 ```
 
-Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for the
-Host lifecycle. The generated unit invokes TSPi's internal service entrypoint;
+Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for a
+user-scoped installation, or omit `--user` for a system-scoped installation.
+With service scope `none`, the managed Host is disabled and `--standalone` is
+reserved for development or recovery. The generated unit invokes TSPi's internal service entrypoint;
 ordinary users do not run `TSPi --host`.
 
 The default and recommended scope is a systemd user unit. A system unit must be
@@ -313,15 +315,18 @@ normally interrupt them; check the calculation status after recovery. A
 terminal or phone reconnect first receives a fresh session snapshot; prompts
 are never resent automatically after an uncertain transport failure.
 
-Inspect the latest installer log under `<install>/.pi/logs/` and verify:
+Inspect the latest installer log under `<install>/.pi/logs/` and verify with the
+scope selected during installation:
 
 ```bash
-systemctl --user status ts-app-server-tspi.service
+systemctl --user status ts-app-server-tspi.service  # user scope
+systemctl status ts-app-server-tspi.service         # system scope
 ```
 
 ## Uninstall
 
 Run `./uninstall.sh`. The default preserves the configured workspace root, Pi session history,
 credentials, and configuration. Removing the installation root is explicit;
-the uninstaller also stops and removes matching App Server and TS Web user
-services. There are no Phone server files or bridge secrets to clean up.
+the uninstaller also stops and removes matching App Server and TS Web services
+in the configured scope. There are no Phone server files or bridge secrets to
+clean up.

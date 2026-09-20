@@ -7,6 +7,7 @@ import shutil
 import socket
 import stat
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -283,6 +284,37 @@ def test_missing_host_is_started_once_and_waited_until_ready(
     assert launcher.ensure_host_running(installation) == endpoint
     assert commands == [["/usr/bin/systemctl", "--user", "start", launcher.APP_SERVER_SERVICE]]
     assert resolutions == 2
+
+
+def test_missing_host_uses_system_scope_when_installation_configures_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = replace(
+        _installation(tmp_path),
+        service_scope="system",
+        host_runtime_dir=Path("/run/tspi"),
+    )
+    endpoint = tmp_path / "host.sock"
+    monkeypatch.setattr(
+        launcher,
+        "resolve_host_socket",
+        lambda _installation: (_ for _ in ()).throw(launcher.TSPiHostUnavailableError("not running"))
+        if not endpoint.exists()
+        else endpoint,
+    )
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/systemctl" if name == "systemctl" else None)
+    commands: list[list[str]] = []
+
+    def start(command, **_kwargs):
+        commands.append(command)
+        endpoint.touch()
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(launcher.subprocess, "run", start)
+
+    assert launcher.ensure_host_running(installation) == endpoint
+    assert commands == [["/usr/bin/systemctl", "start", launcher.APP_SERVER_SERVICE]]
 
 
 def test_host_start_failure_preserves_systemd_diagnostic(

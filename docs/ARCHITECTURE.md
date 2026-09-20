@@ -151,9 +151,10 @@ the selected project's filesystem context. TS Phone uses the same services to
 list or create projects and to create or switch sessions without opening
 another Host connection. The launcher starts the selected workspace through the
 native App Server entrypoint; there is one current workspace launch path. When
-the user service is not running, the terminal launcher starts it through
-systemd and waits for the one Host socket instead of creating a foreground
-fallback Host.
+the configured systemd service is not running, the terminal launcher starts it
+through systemd and waits for the one Host socket instead of creating a
+foreground fallback Host. Service scope may be user or system; scope `none`
+disables the managed Host.
 
 The first client launch initializes a missing workspace through the same
 validated bootstrap. The Host never creates an unnamed workspace; a client must
@@ -164,7 +165,7 @@ path safety, and runtime configuration before executing Node/Pi. A second Host
 for the same installation fails on the Host Root lock rather than creating a
 parallel history.
 
-The systemd user unit sets `TSPI_SERVER_EXTENSIONS=tspi-server-tools` so the
+The selected systemd unit sets `TSPI_SERVER_EXTENSIONS=tspi-server-tools` so the
 release's server tool inventory is deterministic. A development host may set a
 different allowlist, but every selected entry must remain inside the selected
 Package release and match its recorded SHA-256 digest.
@@ -213,7 +214,7 @@ Kernel workspace is always canonical, while a remote directory is only a
 temporary execution mirror. Local runs stage inputs under the Attempt's execution directory and
 collect outputs back into the same workspace paths, so TS Web needs no remote
 filesystem access. Local workers are launched in an independent transient
-systemd user service when available, so restarting the App Server Host does not
+systemd service when available, so restarting the App Server Host does not
 kill an in-flight local calculation; environments without a user systemd
 manager use the process-group fallback and should avoid restarting the parent
 service during a calculation.

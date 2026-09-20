@@ -10,7 +10,7 @@
 - Linux、Git 和 Node.js 22.19+。
 - Python 3.11+、Conda/Mamba，以及可写的用户安装目录。
 - `config/pi-source.json` 指定版本的 Pi 源码 checkout；安装器也可以自动下载并修补。
-- 可选的 systemd user service 和 TS Web 端口。创建受管科学运行时需要 Conda/Mamba。
+- 可选的 systemd user 或 system service 和 TS Web 端口。创建受管科学运行时需要 Conda/Mamba。
 
 启动脚本默认使用公开 HTTPS 仓库；Git 传输中断时会有限重试，仍失败则回退到普通
 浅克隆。私有 GitHub 仓库可显式传入 SSH 地址：
@@ -77,7 +77,7 @@ TSPi 不会下载 Gaussian 或其他站点管理的本地化学软件，SSH 凭�
 安装日志位于安装目录的 `.pi/logs/`。通知配置只保存投递所需的非秘密元数据，
 SMTP 或其他凭据由受管环境提供。
 
-安装器可以启用并启动唯一的安装级 Host。日常使用直接打开 workspace；user service
+安装器可以启用并启动唯一的安装级 Host。日常使用直接打开 workspace；配置的 service
 未运行时，TSPi 会自动启动并等待它就绪：
 
 ```bash

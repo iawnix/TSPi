@@ -9,16 +9,18 @@ it. One Host can serve every project below the configured workspace root.
 ## Open a workspace
 
 Connect to a project directly. If the Host is not running, TSPi starts the one
-installation-wide systemd user service and waits for its Unix socket before
-attaching the TUI:
+installation-wide service selected during installation (user or system scope)
+and waits for its Unix socket before attaching the TUI:
 
 ```bash
 ./TSPi --workspace reaction-a
 ./TSPi --workspace reaction-a -c
 ```
 
-Use `systemctl --user stop|restart|status ts-app-server-tspi.service` to manage
-the Host lifecycle.
+Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for a
+user-scoped installation, or omit `--user` for a system-scoped installation.
+With service scope `none`, the managed Host is disabled and `--standalone` is
+reserved for development or recovery.
 
 The Host identity is kept at
 `.pi/app-server-host/server-id`; its private Unix socket is
@@ -87,8 +89,8 @@ second Worker. Phone clients use TSPi Link directly.
 ## Troubleshooting
 
 - `workspace is unavailable`: inspect the workspace name and configured workspace root.
-- `could not start ts-app-server-tspi.service`: inspect the user service with
-  `systemctl --user status`.
+- `could not start ts-app-server-tspi.service`: inspect the configured service
+  with `systemctl --user status` (user scope) or `systemctl status` (system scope).
 - `another Root Agent already owns workspace`: use the existing Host; do not
   start a second Host for the installation.
 - `TSPi Link is not configured`: enroll the Host with the installer before

@@ -7,15 +7,16 @@ TS Phone 都只是它的客户端，一个 Host 可以服务多个项目。
 
 ## 打开工作区
 
-直接连接项目。Host 未运行时，TSPi 会通过 systemd user service 启动唯一的安装级
-Host，并在 Unix socket 就绪后连接 TUI：
+直接连接项目。Host 未运行时，TSPi 会通过安装时选择的 systemd service（user 或
+system scope）启动唯一的安装级 Host，并在 Unix socket 就绪后连接 TUI：
 
 ```bash
 ./TSPi --workspace reaction-a
 ./TSPi --workspace reaction-a -c
 ```
 
-使用 `systemctl --user stop|restart|status ts-app-server-tspi.service` 管理 Host 生命周期。
+user scope 使用 `systemctl --user stop|restart|status ts-app-server-tspi.service`，
+system scope 去掉 `--user`；scope 为 none 时受管 Host 被禁用，`--standalone` 仅用于开发或恢复。
 
 Host 身份位于 `.pi/app-server-host/server-id`；私有 Unix socket
 位于 `$XDG_RUNTIME_DIR/tspi/`（也可以通过安装配置指定运行目录）。
@@ -72,7 +73,7 @@ adapter 使用版本化的 `tspi-session-control/1` 请求合约和 SSE transcri
 ## 故障排查
 
 - `workspace is unavailable`：检查 workspace 名称及 workspace root 配置。
-- `could not start ts-app-server-tspi.service`：使用 `systemctl --user status` 检查 user service。
+- `could not start ts-app-server-tspi.service`：根据 scope 使用 `systemctl --user status` 或 `systemctl status` 检查 service。
 - `another Root Agent already owns workspace`：复用现有 Host，不要为同一安装启动第二个。
 - `TSPi Link is not configured`：先通过安装器注册 Host，再创建 Phone 配对码。
 - Host UUID 变化表示指向了不同安装，请重新配对手机。

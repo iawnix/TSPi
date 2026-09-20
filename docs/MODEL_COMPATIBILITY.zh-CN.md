@@ -31,7 +31,8 @@ Server，终端与 TS Phone 连接同一个 session Worker，因此共享同一�
 可通过 Pi 设置选择默认模型，然后重启 Host：
 
 ```bash
-systemctl --user restart ts-app-server-tspi.service
+systemctl --user restart ts-app-server-tspi.service  # user scope
+systemctl restart ts-app-server-tspi.service         # system scope
 ```
 
 生产使用前，应执行一次真实会话并实际调用 `read`、`write`、`bash` 和至少一个 TSPi

@@ -8,6 +8,7 @@ from typing import Sequence
 
 from ts_agent.io import now_iso, read_json, write_json
 from ts_agent.path_safety import lexical_path, path_has_symlink
+from ts_agent.workspace.validator import validate_workspace
 
 
 def ensure_state_dir(state_dir: str | Path, *, source_root: str | Path | None = None) -> Path:
@@ -101,7 +102,12 @@ def workspace_id_for(source_root: str | Path) -> str:
 
 
 def _is_workspace(path: Path) -> bool:
-    return (path / "workspace.json").is_file() and (path / "research_map.json").is_file()
+    if not (path / "workspace.json").is_file() or not (path / "research_map.json").is_file():
+        return False
+    try:
+        return validate_workspace(path).get("valid") is True
+    except (OSError, ValueError):
+        return False
 
 
 def _valid_row(row: object) -> bool:

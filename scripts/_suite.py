@@ -45,7 +45,6 @@ WEB_COMPONENT_FILES = frozenset(
         "ts_web/__init__.py",
         "ts_web/cli.py",
         "ts_web/provider.py",
-        "ts_web/registry.py",
         "ts_web/reloader.py",
         "ts_web/server.py",
         "static/index.html",

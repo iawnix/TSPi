@@ -12,10 +12,10 @@ The installation-wide systemd App Server is the only production Root Agent
 runtime. Clients attach to its sessions; they do not start a second workflow
 runtime or upload executable extensions. The terminal command
 `TSPi --workspace <name>` remains a Pi client and therefore keeps Pi's native
-TUI. With the default user service, the launcher starts that service when its
-Host socket is absent and waits for the same installation Host; it never starts
-a second foreground Host. `--standalone` is reserved for development and
-recovery.
+TUI. With a configured user or system service, the launcher starts that service
+when its Host socket is absent and waits for the same installation Host; it
+never starts a second foreground Host. With service scope `none`, the managed
+Host is disabled. `--standalone` is reserved for development and recovery.
 
 Server tools are selected by `extensions/server/extensions.json` and loaded by
 `apps/app-server/server-extension-loader.mjs`. Each descriptor binds a scope,

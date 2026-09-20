@@ -367,10 +367,33 @@ def test_web_service_uses_installed_launcher_and_workspace_root(tmp_path: Path) 
 
     assert f"WorkingDirectory={root}" in unit
     assert f'ExecStart="{root / "TSWeb"}"' in unit
+    assert '"--provider"' in unit
+    assert '"--binding"' not in unit
     assert str(root / "workspaces") in unit
     assert str(root / ".pi/ts-web/auth.token") in unit
     assert f'ReadOnlyPaths="{root / "workspaces"}"' in unit
     assert f'ReadWritePaths="{root / "workspaces"}"' not in unit
+
+
+def test_service_readiness_treats_restart_loop_as_failed() -> None:
+    assert wizard._service_readiness({"active": "activating"}, probed=True) == "failed"
+
+
+def test_service_runtime_configuration_records_scope_and_socket_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = _options(tmp_path)
+    runtime_parent = tmp_path / "xdg-runtime"
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime_parent))
+
+    configured = wizard.configure_service_runtime(args)
+
+    assert configured["scope"] == "user"
+    document = json.loads((Path(args.install_root) / ".pi/tspi/service.json").read_text(encoding="utf-8"))
+    assert document["schema_version"] == "tspi-service/1"
+    assert document["scope"] == "user"
+    assert document["runtime_dir"] == str(runtime_parent / "tspi")
 
 
 def test_prepare_app_server_runtime_uses_installed_release_script(

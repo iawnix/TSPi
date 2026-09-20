@@ -72,6 +72,8 @@ SMTP_PRESETS = {
 }
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 WEB_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
+SERVICE_CONFIG_SCHEMA = "tspi-service/1"
+SERVICE_CONFIG_RELATIVE = Path(".pi/tspi/service.json")
 
 
 def detect_conda_root() -> str:
@@ -590,6 +592,33 @@ def configure_workspace_root(args: argparse.Namespace) -> dict[str, str]:
     workspace_root.chmod(0o700)
     config = write_workspace_root(root, workspace_root)
     return {"status": "configured", "path": str(config), "workspace_root": str(workspace_root)}
+
+
+def configure_service_runtime(args: argparse.Namespace) -> dict[str, str | None]:
+    """Persist the service scope and socket runtime selected by the installer."""
+
+    root = Path(args.install_root).resolve()
+    scope = args.service_scope or "none"
+    if scope == "none":
+        runtime_dir: str | None = None
+    elif scope == "system":
+        runtime_dir = "/run/tspi"
+    else:
+        service_user = getattr(args, "service_user", None) or pwd.getpwuid(os.getuid()).pw_name
+        service_uid = pwd.getpwnam(service_user).pw_uid
+        runtime_parent = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{service_uid}"
+        runtime_dir = str(Path(runtime_parent) / "tspi")
+    document = {
+        "schema_version": SERVICE_CONFIG_SCHEMA,
+        "scope": scope,
+        "runtime_dir": runtime_dir,
+    }
+    destination = root / SERVICE_CONFIG_RELATIVE
+    _write_private_config_bytes(
+        (json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+        destination,
+    )
+    return {"status": "configured", "path": str(destination), "scope": scope, "runtime_dir": runtime_dir}
 
 
 def _existing_link_configuration(root: Path) -> tuple[str, str] | None:
@@ -1311,6 +1340,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
         "TSWeb",
         "uninstall.sh",
         ".pi/tspi/workspace-root.json",
+        ".pi/tspi/service.json",
         ".pi/app-server-host/server-id",
         ".pi/app-server-host/link.json",
         ".pi/app-server-host/host.token",
@@ -1786,7 +1816,7 @@ def web_unit(args: argparse.Namespace) -> str:
     wanted_by = "multi-user.target" if args.service_scope == "system" else "default.target"
     command_values: list[object] = [
         root / "TSWeb",
-        "--binding",
+        "--provider",
         root / ".pi/packages/tspi/current/agent/scripts/ts_web_provider.py",
         "serve",
         "--state-dir",
@@ -2121,7 +2151,9 @@ def build_component_summary(
             "server_id_path": str(server_id_path),
             "link_url": args.link_url if args.phone_access == "link" else "not configured",
             "workspace_root": str(workspace_root),
-            "start": "systemctl --user start ts-app-server-tspi.service",
+            "start": "systemctl "
+            + ("" if args.service_scope == "system" else "--user ")
+            + "start ts-app-server-tspi.service",
         },
         "phone": phone_connection or {
             "status": "disabled",
@@ -2161,7 +2193,7 @@ def _service_readiness(service: object, *, probed: bool) -> str:
     active = service.get("active")
     if active == "active":
         return "running"
-    return "failed" if probed and active in {"failed", "inactive", "unknown"} else "configured"
+    return "failed" if probed and active != "active" else "configured"
 
 
 def show_installed_summary(
@@ -2313,6 +2345,8 @@ def main(argv: list[str] | None = None) -> int:
             model_icons = configure_model_icons(args, installed)
             activity.update("Configuring the workspace root")
             workspace_config = configure_workspace_root(args)
+            activity.update("Recording the App Server service scope")
+            service_config = configure_service_runtime(args)
             activity.update("Installing the Pi App Server runtime")
             app_server_runtime = prepare_app_server_runtime(Path(args.install_root))
             ensure_host_identity(Path(args.install_root))
@@ -2368,6 +2402,7 @@ def main(argv: list[str] | None = None) -> int:
             "notifications": notifications,
             "backend_configs": backend_configs,
             "workspace_config": workspace_config,
+            "service_config": service_config,
             "phone_connection": phone_connection,
             "model_icons": model_icons,
             "verified_release": verified["release_id"],
