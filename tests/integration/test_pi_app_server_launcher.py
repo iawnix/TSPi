@@ -39,6 +39,9 @@ def _installation(tmp_path: Path) -> launcher.Installation:
     entry = package / "apps/app-server/pi-app-server.mjs"
     entry.parent.mkdir(parents=True)
     entry.write_text("// test entry\n", encoding="utf-8")
+    theme = package / "themes/ts-theme.json"
+    theme.parent.mkdir(parents=True)
+    theme.write_text(json.dumps({"name": "ts-theme"}) + "\n", encoding="utf-8")
     root = tmp_path / "install"
     root.mkdir()
     return launcher.Installation(
@@ -55,6 +58,73 @@ def _installation(tmp_path: Path) -> launcher.Installation:
     )
 
 
+def test_agent_pi_settings_registers_release_theme_without_touching_model_settings(
+    tmp_path: Path,
+) -> None:
+    installation = _installation(tmp_path)
+    settings = installation.root / launcher.PI_AGENT_SETTINGS_RELATIVE
+    settings.parent.mkdir(parents=True)
+    settings.write_text(
+        json.dumps({"defaultProvider": "CPA", "defaultModel": "gpt-5.6-sol"}) + "\n",
+        encoding="utf-8",
+    )
+
+    launcher._configure_agent_pi_settings(installation)
+
+    assert json.loads(settings.read_text(encoding="utf-8")) == {
+        "defaultProvider": "CPA",
+        "defaultModel": "gpt-5.6-sol",
+        "theme": "ts-theme",
+        "themes": [str(installation.package_root / launcher.TSPI_THEME_RELATIVE)],
+    }
+
+
+def test_agent_pi_settings_preserves_custom_theme_and_deduplicates_release_theme(
+    tmp_path: Path,
+) -> None:
+    installation = _installation(tmp_path)
+    settings = installation.root / launcher.PI_AGENT_SETTINGS_RELATIVE
+    settings.parent.mkdir(parents=True)
+    theme_path = str(installation.package_root / launcher.TSPI_THEME_RELATIVE)
+    settings.write_text(
+        json.dumps({"theme": "lab-dark", "themes": [theme_path, "./custom-theme.json"]}) + "\n",
+        encoding="utf-8",
+    )
+
+    launcher._configure_agent_pi_settings(installation)
+
+    assert json.loads(settings.read_text(encoding="utf-8")) == {
+        "theme": "lab-dark",
+        "themes": [theme_path, "./custom-theme.json"],
+    }
+
+
+def test_agent_pi_settings_rejects_invalid_json_and_symlinks(tmp_path: Path) -> None:
+    installation = _installation(tmp_path)
+    settings = installation.root / launcher.PI_AGENT_SETTINGS_RELATIVE
+    settings.parent.mkdir(parents=True)
+    settings.write_text("not json\n", encoding="utf-8")
+
+    with pytest.raises(launcher.TSPiHostError, match="invalid Pi agent settings"):
+        launcher._configure_agent_pi_settings(installation)
+
+    settings.unlink()
+    target = tmp_path / "settings-target.json"
+    target.write_text("{}\n", encoding="utf-8")
+    settings.symlink_to(target)
+
+    with pytest.raises(launcher.TSPiHostError, match="Pi agent settings cannot be a symbolic link"):
+        launcher._configure_agent_pi_settings(installation)
+
+
+def test_agent_pi_settings_rejects_missing_release_theme(tmp_path: Path) -> None:
+    installation = _installation(tmp_path)
+    (installation.package_root / launcher.TSPI_THEME_RELATIVE).unlink()
+
+    with pytest.raises(launcher.TSPiHostError, match="TSPi theme is unavailable"):
+        launcher._configure_agent_pi_settings(installation)
+
+
 def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     install_root = tmp_path / "tspi-install"
     package_home = install_root / ".pi/packages/tspi"
@@ -65,6 +135,8 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
         json.dumps({"name": "@iawnix/ts-agent", "version": PACKAGE_VERSION}) + "\n",
         encoding="utf-8",
     )
+    (package_root / "themes").mkdir()
+    shutil.copy2(ROOT / "themes" / "ts-theme.json", package_root / "themes" / "ts-theme.json")
     write_test_suite_manifest(suite_root, version=PACKAGE_VERSION)
     shutil.copy2(ROOT / "TSPi", package_root / "TSPi")
     (package_root / "TSPi").chmod(0o755)
@@ -195,6 +267,11 @@ def test_launcher_usage_keeps_internal_transport_modes_out_of_daily_help() -> No
     assert "ts-app-server-tspi.service" in launcher.USAGE
     for internal_mode in ("--service-host", "--app-server", "--app-client", "--gateway", "--standalone"):
         assert internal_mode not in launcher.USAGE
+
+
+def test_standalone_is_removed_and_points_to_host_client() -> None:
+    with pytest.raises(launcher.TSPiHostError, match="--standalone was removed"):
+        launcher.parse_launch_request(["--standalone", "--workspace", "reaction-a"])
 
 
 def test_session_selection_is_workspace_scoped_and_explicit() -> None:

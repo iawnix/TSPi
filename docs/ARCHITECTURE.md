@@ -19,11 +19,16 @@ requirement.
   scheduler jobs; the configured remote adapter supplies transport and
   readiness operations. Rendering, reporting, and email remain
   Skill/Plugin tools.
-- `extensions/pi/` contains Pi research, compute, review, artifact, and UI
-  adapters. `extensions/server/` contains the package-owned server tool entry.
-  The App Server loads only the
-  allowlisted, digest-verified entries in `extensions/server/extensions.json`;
-  it never evaluates code supplied by a client.
+- `extensions/pi/` contains two Pi-facing integration layers. The legacy
+  research, compute, review, artifact, and ExtensionAPI UI adapters remain for
+  direct `pi` compatibility. `extensions/pi/tui-package/` is the native TSPi
+  presentation facet for `ExperimentalClientTui`; it supplies the Header,
+  Footer, Editor, theme rendering, and `/runs` browser through Pi's
+  `PresentationLayout` service. `TSPi --workspace` loads the latter package,
+  but does not load the legacy ExtensionAPI UI adapters.
+  `extensions/server/` contains the package-owned server tool entry. The App
+  Server loads only the allowlisted, digest-verified entries in
+  `extensions/server/extensions.json`; it never evaluates code supplied by a client.
 - `components/ts-web/` is an optional read-only browser client that renders the
   serialized canonical `ResearchMap`. The optional
   `apps/app-server/pi-session-control-server.mjs` adapter exposes the same Host

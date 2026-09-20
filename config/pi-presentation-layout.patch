@@ -1,0 +1,284 @@
+diff --git a/packages/coding-agent/src/experimental/services/presentation-layout.ts b/packages/coding-agent/src/experimental/services/presentation-layout.ts
+new file mode 100644
+index 000000000..000000000
+--- /dev/null
++++ b/packages/coding-agent/src/experimental/services/presentation-layout.ts
+@@ -0,0 +1,28 @@
++import { defineService } from "@earendil-works/chord";
++import type { Component, EditorTheme, TUI } from "@earendil-works/pi-tui";
++import type { KeybindingsManager } from "../../core/keybindings.ts";
++import type { CustomEditor } from "../../modes/interactive/components/custom-editor.ts";
++import type { Theme } from "../../modes/interactive/theme/theme.ts";
++
++/** Context supplied to process-local presentation components. */
++export interface PresentationLayoutContext {
++	readonly tui: TUI;
++	readonly theme: Theme;
++	readonly editorTheme: EditorTheme;
++	readonly keybindings: KeybindingsManager;
++	readonly cwd: string;
++	requestRender(): void;
++}
++
++export type PresentationComponentFactory = (context: PresentationLayoutContext) => Component;
++export type PresentationEditorFactory = (context: PresentationLayoutContext) => CustomEditor;
++
++/** Process-local layout capabilities owned by ExperimentalClientTui. */
++export interface PresentationLayout {
++	getContext(): PresentationLayoutContext;
++	setHeader(factory: PresentationComponentFactory | undefined): void;
++	setFooter(factory: PresentationComponentFactory | undefined): void;
++	setEditor(factory: PresentationEditorFactory | undefined): void;
++	setTitle(title: string): void;
++	requestRender(): void;
++}
++
++export const PresentationLayout = defineService<PresentationLayout>("pi.local.presentation-layout", { local: true });
+
+diff --git a/packages/coding-agent/src/experimental/client-tui.ts b/packages/coding-agent/src/experimental/client-tui.ts
+index 0f0915dba..8beef38c2 100644
+--- a/packages/coding-agent/src/experimental/client-tui.ts
++++ b/packages/coding-agent/src/experimental/client-tui.ts
+@@ -40,6 +40,11 @@ import type {
+ 	SessionServiceSource,
+ } from "./services/connection.ts";
+ import { PresentationPlugins } from "./services/plugins.ts";
++import {
++	PresentationLayout,
++	type PresentationComponentFactory,
++	type PresentationEditorFactory,
++} from "./services/presentation-layout.ts";
+ import { PresentationUI } from "./services/presentation-ui.ts";
+ import { SessionDirectory, SessionManagement, type SessionSummary } from "./services/sessions.ts";
+ import { SlashCommands } from "./services/slash-commands.ts";
+@@ -93,11 +98,13 @@ export class ExperimentalClientTui implements Component {
+ 	readonly #requestRender: () => void;
+ 	readonly #finish: () => void;
+ 	readonly #documentContainer = new Container();
++	readonly #headerContainer = new Container();
+ 	readonly #sessionHeading = new Text("", 1, 0);
+ 	readonly #pendingMessagesContainer = new Container();
+ 	readonly #statusContainer = new Container();
+ 	readonly #editorContainer = new Container();
+-	readonly #footerComponent = new Text("", 1, 0);
++	readonly #footerContainer = new Container();
++	readonly #defaultFooter = new Text("", 1, 0);
+ 	readonly #layoutRoot: Component;
+ 	readonly #sharedFacets: LoadedFacets;
+ 	readonly #keybindings = KeybindingsManager.create();
+@@ -107,7 +114,10 @@ export class ExperimentalClientTui implements Component {
+ 	#session: SessionFeature | undefined;
+ 	#slashCommands: SlashCommands | undefined;
+ 	#controller: AgentController | undefined;
+-	readonly #chatInput: CustomEditor;
++	#chatInput: CustomEditor;
++	#headerComponent: Component | undefined;
++	#footerComponent: Component | undefined;
++	#editorFactory: PresentationEditorFactory | undefined;
+ 	#selectList: SelectList | undefined;
+ 	#selection: PendingSelection | undefined;
+ 	#screen: "select" | "chat" = "chat";
+@@ -127,31 +137,55 @@ export class ExperimentalClientTui implements Component {
+ 		this.#finish = finish;
+ 		this.#sharedFacets = loadedFacets;
+ 		setKeybindings(this.#keybindings);
+-		this.#chatInput = new CustomEditor(ui, getEditorTheme(), this.#keybindings, { paddingX: 1 });
+-		this.#chatInput.onSubmit = (message) => void this.#runPrompt(message);
+-		this.#chatInput.onEscape = () => this.#interrupt();
+-		this.#chatInput.onCtrlD = finish;
+-		this.#chatInput.onAction("app.clear", finish);
+-		this.#chatInput.onAction("app.model.select", () => void this.#executeSlashCommand("model", ""));
+-		this.#chatInput.onAction("app.message.followUp", () => {
+-			const text = this.#chatInput.getText().trim();
+-			if (text.length === 0) return;
+-			this.#chatInput.setText("");
+-			void this.#queueFollowUp(text);
+-		});
++		this.#chatInput = this.#createEditor();
+ 		this.#editorContainer.addChild(this.#chatInput);
++		this.#footerContainer.addChild(this.#defaultFooter);
+ 		this.#layoutRoot = createChatViewport({
++			header: this.#headerContainer,
+ 			document: this.#documentContainer,
+ 			pendingMessages: this.#pendingMessagesContainer,
+ 			status: this.#statusContainer,
+ 			editor: this.#editorContainer,
+-			footer: this.#footerComponent,
++			footer: this.#footerContainer,
+ 			scrollbarTrackStyle: (text) => theme.fg("scrollbarTrack", text),
+ 			scrollbarThumbStyle: (text) => theme.fg("scrollbarThumb", text),
+ 		}).root;
+ 		this.#rebuild();
+ 	}
+ 
++	#createEditor(): CustomEditor {
++		const editor = this.#editorFactory === undefined
++			? new CustomEditor(this.#ui, getEditorTheme(), this.#keybindings, { paddingX: 1 })
++			: this.#editorFactory(this.#layoutContext());
++		this.#bindEditor(editor);
++		return editor;
++	}
++
++	#bindEditor(editor: CustomEditor): void {
++		editor.onSubmit = (message) => void this.#runPrompt(message);
++		editor.onEscape = () => this.#interrupt();
++		editor.onCtrlD = this.#finish;
++		editor.onAction("app.clear", this.#finish);
++		editor.onAction("app.model.select", () => void this.#executeSlashCommand("model", ""));
++		editor.onAction("app.message.followUp", () => {
++			const text = editor.getText().trim();
++			if (text.length === 0) return;
++			editor.setText("");
++			void this.#queueFollowUp(text);
++		});
++	}
++
++	#layoutContext() {
++		return {
++			tui: this.#ui,
++			theme,
++			editorTheme: getEditorTheme(),
++			keybindings: this.#keybindings,
++			cwd: process.cwd(),
++			requestRender: this.#requestRender,
++		};
++	}
++
+ 	static async create(options: {
+ 		readonly command: ClientCommand;
+ 		readonly ui: TUI;
+@@ -185,11 +219,12 @@ export class ExperimentalClientTui implements Component {
+ 
+ 	render(width: number): string[] {
+ 		return [
++			...this.#headerContainer.render(width),
+ 			...this.#documentContainer.render(width),
+ 			...this.#pendingMessagesContainer.render(width),
+ 			...this.#statusContainer.render(width),
+ 			...this.#editorContainer.render(width),
+-			...this.#footerComponent.render(width),
++			...this.#footerContainer.render(width),
+ 		];
+ 	}
+ 
+@@ -266,6 +301,14 @@ export class ExperimentalClientTui implements Component {
+ 		const presentationBridgeFacet = defineFacet({
+ 			id: "@pi/presentation-bridge",
+ 			setup: (env) => {
++				env.provide(PresentationLayout, {
++					getContext: () => this.#layoutContext(),
++					setHeader: (factory) => this.#setHeader(factory),
++					setFooter: (factory) => this.#setFooter(factory),
++					setEditor: (factory) => this.#setEditor(factory),
++					setTitle: (title) => this.#ui.terminal.setTitle(title),
++					requestRender: this.#requestRender,
++				});
+ 				env.provide(PresentationUI, {
+ 					select: (title, items, selectedValue) =>
+ 						this.#select(
+@@ -365,6 +408,39 @@ export class ExperimentalClientTui implements Component {
+ 		if (errors.length > 1) throw new AggregateError(errors, "Failed to dispose experimental TUI facets");
+ 	}
+ 
++	#setHeader(factory: PresentationComponentFactory | undefined): void {
++		this.#disposeComponent(this.#headerComponent);
++		this.#headerComponent = factory === undefined ? undefined : factory(this.#layoutContext());
++		this.#headerContainer.clear();
++		if (this.#headerComponent !== undefined) this.#headerContainer.addChild(this.#headerComponent);
++		this.#rebuild();
++	}
++
++	#setFooter(factory: PresentationComponentFactory | undefined): void {
++		this.#disposeComponent(this.#footerComponent);
++		this.#footerComponent = factory === undefined ? undefined : factory(this.#layoutContext());
++		this.#footerContainer.clear();
++		this.#footerContainer.addChild(this.#footerComponent ?? this.#defaultFooter);
++		this.#rebuild();
++	}
++
++	#setEditor(factory: PresentationEditorFactory | undefined): void {
++		const previous = this.#chatInput;
++		this.#editorFactory = factory;
++		this.#chatInput = this.#createEditor();
++		this.#disposeComponent(previous);
++		this.#editorContainer.clear();
++		this.#editorContainer.addChild(this.#chatInput);
++		this.#updateAutocomplete();
++		this.#rebuild();
++	}
++
++	#disposeComponent(component: Component | undefined): void {
++		if (component === undefined) return;
++		const disposable = component as Component & { dispose?: () => void };
++		disposable.dispose?.();
++	}
++
+ 	#rebuild(): void {
+ 		this.#sessionHeading.setText(
+ 			this.#sessionId === undefined || this.#selectedServerId === undefined
+@@ -376,7 +452,7 @@ export class ExperimentalClientTui implements Component {
+ 			this.#statusContainer.addChild(new Text(theme.fg("dim", this.#status), 1, 0));
+ 		}
+ 		if (this.#chatView !== undefined) this.#statusContainer.addChild(this.#chatView.status);
+-		this.#footerComponent.setText(theme.fg("dim", this.#footer()));
++		if (this.#footerComponent === undefined) this.#defaultFooter.setText(theme.fg("dim", this.#footer()));
+ 		this.#editorContainer.clear();
+ 		if (this.#screen === "select" && this.#selection !== undefined) {
+ 			this.#chatInput.focused = false;
+
+diff --git a/packages/coding-agent/src/experimental/plugin.ts b/packages/coding-agent/src/experimental/plugin.ts
+index b1c855147..3a9fe2ab6 100644
+--- a/packages/coding-agent/src/experimental/plugin.ts
++++ b/packages/coding-agent/src/experimental/plugin.ts
+@@ -8,9 +8,16 @@ export {
+ 	type AgentQueueResponse,
+ } from "./services/agent-controller.ts";
+ export { type PresentationSelectItem, PresentationUI } from "./services/presentation-ui.ts";
++export {
++	PresentationLayout,
++	type PresentationComponentFactory,
++	type PresentationEditorFactory,
++	type PresentationLayoutContext,
++} from "./services/presentation-layout.ts";
+ export {
+ 	type SlashCommandCompletion,
+ 	type SlashCommandContribution,
+ 	type SlashCommandRunResult,
+ 	SlashCommands,
+ } from "./services/slash-commands.ts";
++export { Transcript, type TranscriptState } from "./services/transcript.ts";
+diff --git a/packages/coding-agent/src/modes/interactive/chat-viewport.ts b/packages/coding-agent/src/modes/interactive/chat-viewport.ts
+index f3619b1fd..53a4c8572 100644
+--- a/packages/coding-agent/src/modes/interactive/chat-viewport.ts
++++ b/packages/coding-agent/src/modes/interactive/chat-viewport.ts
+@@ -1,6 +1,7 @@
+ import { type Component, ScrollView, type ScrollViewScrollbar, VStack } from "@earendil-works/pi-tui";
+ 
+ export interface ChatViewportOptions {
++	readonly header?: Component;
+ 	readonly document: Component;
+ 	readonly pendingMessages: Component;
+ 	readonly status: Component;
+@@ -36,11 +37,18 @@ export function createChatViewport(options: ChatViewportOptions): ChatViewport {
+ 		...(options.widgetsBelow === undefined ? [] : [{ component: options.widgetsBelow, shrink: 1, minSize: 0 }]),
+ 		{ component: options.footer, shrink: 1, minSize: 1 },
+ 	]);
++	const rootChildren = options.header === undefined
++		? [
++				{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
++				{ component: dock, basis: "auto" as const, grow: 0, shrink: 1, minSize: 1 },
++			]
++		: [
++				{ component: options.header, basis: "auto" as const, grow: 0, shrink: 1, minSize: 0 },
++				{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
++				{ component: dock, basis: "auto" as const, grow: 0, shrink: 1, minSize: 1 },
++			];
+ 	return {
+ 		transcript,
+-		root: new VStack([
+-			{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+-			{ component: dock, basis: "auto", grow: 0, shrink: 1, minSize: 1 },
+-		]),
++		root: new VStack(rootChildren),
+ 	};
+ }

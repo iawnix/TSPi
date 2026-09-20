@@ -1,4 +1,4 @@
-"""Lifecycle launcher for one installed TSPi App Server or standalone Pi process."""
+"""Lifecycle launcher for one installed TSPi App Server and its clients."""
 
 from __future__ import annotations
 
@@ -30,12 +30,9 @@ from .env import (
     package_root_from_file,
 )
 from .session_guard import (
-    CONTRACT as SESSION_GUARD_CONTRACT,
     SessionGuardError,
     acquire_directory_guard,
-    acquire_session_guard,
     require_guarded_installation,
-    select_session,
 )
 
 
@@ -74,6 +71,9 @@ MODEL_ICON_CONFIG_SCHEMA = "tspi-model-icons/1"
 MODEL_ICON_CONFIG_RELATIVE = Path(".pi/tspi/model-icons.json")
 SERVICE_CONFIG_SCHEMA = "tspi-service/1"
 SERVICE_CONFIG_RELATIVE = Path(".pi/tspi/service.json")
+PI_AGENT_SETTINGS_RELATIVE = Path(".pi/agent/settings.json")
+TSPI_THEME_RELATIVE = Path("themes/ts-theme.json")
+TSPI_THEME_NAME = "ts-theme"
 EMAIL_ADDRESS = re.compile(r"^[^@\s]+@[^@\s]+$")
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 PROXY_VARIABLES = (
@@ -111,7 +111,6 @@ class LaunchRequest:
     show_help: bool
     pi_args: tuple[str, ...]
     gateway: bool = False
-    standalone: bool = False
     host: bool = False
     phone_action: str | None = None
     phone_device_id: str | None = None
@@ -166,7 +165,6 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
     session_id: str | None = None
     continue_latest = False
     pi_args: list[str] = []
-    standalone = False
     gateway = False
     host = False
     index = 0
@@ -178,7 +176,10 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         if value == "--check-remote":
             check_remote = True
         elif value == "--standalone":
-            standalone = True
+            raise TSPiHostError(
+                "--standalone was removed; use TSPi --workspace <name> to connect to the installation Host",
+                exit_code=2,
+            )
         elif value in {"--app-server", "--app-client"}:
             raise TSPiHostError(
                 f"{value} was removed; use TSPi --workspace <name> to connect to the installation Host",
@@ -234,7 +235,6 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         show_help=show_help,
         pi_args=tuple(pi_args),
         gateway=gateway,
-        standalone=standalone,
         host=host,
     )
 
@@ -491,6 +491,73 @@ def _configure_workspace_pi_settings(path: Path) -> None:
     _atomic_write_json(path, settings)
 
 
+def _configure_agent_pi_settings(installation: Installation) -> None:
+    """Register the release theme for Pi's experimental client.
+
+    The Host client creates its TUI from the installation-wide agent directory,
+    rather than from the legacy extension entrypoint. Keep this registration
+    additive so user model/provider settings and explicitly selected custom
+    themes remain untouched.
+    """
+
+    installation_pi = installation.root / ".pi"
+    if installation_pi.is_symlink():
+        raise TSPiHostError(f"Pi agent settings parent cannot be a symbolic link: {installation_pi}")
+    agent_root = installation.root / PI_AGENT_SETTINGS_RELATIVE.parent
+    if agent_root.is_symlink():
+        raise TSPiHostError(f"Pi agent settings directory cannot be a symbolic link: {agent_root}")
+    if not agent_root.exists():
+        try:
+            agent_root.mkdir(mode=0o700, parents=True)
+        except OSError as exc:
+            raise TSPiHostError(f"Pi agent settings directory is unavailable: {agent_root}: {exc}") from exc
+    if not agent_root.is_dir():
+        raise TSPiHostError(f"Pi agent settings path is not a directory: {agent_root}")
+
+    theme_path = installation.package_root / TSPI_THEME_RELATIVE
+    if theme_path.is_symlink() or not theme_path.is_file():
+        raise TSPiHostError(f"selected Package TSPi theme is unavailable: {theme_path}")
+    try:
+        theme_document = json.loads(theme_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise TSPiHostError(f"selected Package TSPi theme is invalid: {theme_path}: {exc}") from exc
+    if not isinstance(theme_document, dict) or theme_document.get("name") != TSPI_THEME_NAME:
+        raise TSPiHostError(f"selected Package TSPi theme is invalid: {theme_path}")
+
+    path = installation.root / PI_AGENT_SETTINGS_RELATIVE
+    if path.is_symlink():
+        raise TSPiHostError(f"Pi agent settings cannot be a symbolic link: {path}")
+    if path.exists() and not path.is_file():
+        raise TSPiHostError(f"Pi agent settings must be a regular file: {path}")
+    try:
+        settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise TSPiHostError(f"invalid Pi agent settings: {path}: {exc}") from exc
+    if not isinstance(settings, dict):
+        raise TSPiHostError(f"Pi agent settings must contain a JSON object: {path}")
+
+    themes = settings.get("themes", [])
+    if not isinstance(themes, list) or any(not isinstance(theme, str) for theme in themes):
+        raise TSPiHostError(f"Pi agent settings themes must be an array of strings: {path}")
+    theme_value = str(theme_path)
+    changed = False
+    if theme_value not in themes:
+        themes = [*themes, theme_value]
+        settings["themes"] = themes
+        changed = True
+
+    selected_theme = settings.get("theme")
+    if selected_theme is not None and not isinstance(selected_theme, str):
+        raise TSPiHostError(f"Pi agent setting 'theme' must be a string: {path}")
+    if selected_theme in {None, "dark", "light"}:
+        if selected_theme != TSPI_THEME_NAME:
+            settings["theme"] = TSPI_THEME_NAME
+            changed = True
+
+    if changed:
+        _atomic_write_json(path, settings)
+
+
 def _atomic_write_json(path: Path, value: dict) -> None:
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
@@ -731,6 +798,7 @@ def configure_process_environment(installation: Installation, workspace: Path, w
     os.environ["TSPI_INSTALL_ROOT"] = str(installation.root)
     os.environ["TS_WORKSPACE_ROOT"] = str(workspace)
     os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / ".pi" / "agent")
+    _configure_agent_pi_settings(installation)
     if installation.compute_config_default and installation.compute_config_default.is_file():
         os.environ["TS_COMPUTE_CONFIG"] = str(installation.compute_config_default)
     else:
@@ -828,22 +896,6 @@ def _local_timestamp() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def _resolve_pi_binary() -> Path:
-    requested = os.environ.get("PI_BIN", "").strip()
-    if requested:
-        candidate = shutil.which(requested) if not Path(requested).is_absolute() else requested
-        display = requested
-    else:
-        candidate = shutil.which("pi")
-        display = "pi"
-    if not candidate:
-        raise TSPiHostError(f"Pi executable not found: {display}", exit_code=127)
-    path = Path(candidate).expanduser().resolve()
-    if not path.is_file() or not os.access(path, os.X_OK):
-        raise TSPiHostError(f"Pi executable not found: {display}", exit_code=127)
-    return path
-
-
 def build_host_server_command(installation: Installation, request: LaunchRequest) -> list[str]:
     """Build the one installation-wide Pi App Server command."""
     for option in ("--directory", "--server-id", "--session-dir", "--workspace"):
@@ -893,7 +945,7 @@ def ensure_host_running(installation: Installation) -> Path:
 
     if installation.service_scope == "none":
         raise TSPiHostError(
-            "TSPi Host service is disabled; configure a systemd service or use --standalone"
+            "TSPi Host service is disabled; configure a systemd service before opening a workspace"
         )
 
     systemctl = shutil.which("systemctl")
@@ -1144,44 +1196,6 @@ def _has_cli_option(arguments: tuple[str, ...], option: str) -> bool:
     return any(value == option or value.startswith(f"{option}=") for value in arguments)
 
 
-def build_pi_command(
-    installation: Installation,
-    workspace: Path,
-    request: LaunchRequest,
-    *,
-    session_args: list[str] | None = None,
-) -> list[str]:
-    pi_args = list(request.pi_args)
-    if session_args is not None:
-        pi_args = session_args
-    package = installation.package_root
-    return [
-        str(_resolve_pi_binary()),
-        "--no-extensions",
-        "--no-skills",
-        "--skill",
-        str(package / "skills"),
-        "--no-themes",
-        "--theme",
-        str(package / "themes" / "ts-theme.json"),
-        "--no-prompt-templates",
-        "-e",
-        str(package / "extensions" / "pi" / "research" / "index.ts"),
-        "-e",
-        str(package / "extensions" / "pi" / "ui" / "index.ts"),
-        "-e",
-        str(package / "extensions" / "pi" / "review" / "index.ts"),
-        "-e",
-        str(package / "extensions" / "pi" / "compute" / "index.ts"),
-        "-e",
-        str(package / "extensions" / "pi" / "artifacts" / "index.ts"),
-        "--approve",
-        "--session-dir",
-        str(workspace / ".pi" / "sessions"),
-        *pi_args,
-    ]
-
-
 def exec_pi(command: list[str], workspace: Path) -> NoReturn:
     os.chdir(workspace)
     os.execve(command[0], command, dict(os.environ))
@@ -1214,7 +1228,7 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
             exit_code=2,
         )
     normalize_proxy_environment()
-    if (request.host or request.gateway) and (request.standalone or request.check_remote):
+    if (request.host or request.gateway) and request.check_remote:
         raise TSPiHostError("App Server modes cannot be combined with another launch mode", exit_code=2)
     if request.host and request.gateway:
         raise TSPiHostError("--host and --gateway cannot be combined", exit_code=2)
@@ -1257,9 +1271,7 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
             raise TSPiHostError(str(exc)) from exc
         return 0
 
-    default_client = not (
-        request.standalone or request.host or request.gateway or request.check_remote
-    )
+    default_client = not (request.host or request.gateway or request.check_remote)
     if default_client:
         if not request.workspace_name:
             raise TSPiHostError(f"a research workspace is required\n{USAGE}", exit_code=2)
@@ -1274,6 +1286,8 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
             bind_runtime_process_environment(python)
         except RuntimeEnvironmentError as exc:
             raise TSPiHostError(str(exc)) from exc
+        configure_remote(installation)
+        configure_notifications(installation)
         workspace = prepare_workspace(installation, request.workspace_name)
         from ts_agent.workspace.bootstrap import WorkspaceBootstrapError, bootstrap_workspace
 
@@ -1318,45 +1332,7 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         os.environ["TSPI_SESSION_CWD"] = str(workspace)
         socket_path = ensure_host_running(installation)
         exec_pi(build_gateway_command(installation, request, socket_path=socket_path), workspace)
-    if not request.workspace_name:
-        raise TSPiHostError(f"a research workspace is required\n{USAGE}", exit_code=2)
-    configure_notifications(installation)
-    if not WORKSPACE_NAME.fullmatch(request.workspace_name):
-        raise TSPiHostError("invalid workspace name")
-    workspace = installation.workspaces_root / request.workspace_name
-    descriptors: list[int] = []
-    try:
-        descriptors.append(acquire_directory_guard(installation.root, workspace))
-        workspace = prepare_workspace(installation, request.workspace_name)
-        configure_process_environment(installation, workspace, request.workspace_name)
-        descriptors.append(acquire_root_agent_lock(workspace))
-        from ts_agent.workspace.bootstrap import WorkspaceBootstrapError, bootstrap_workspace
-
-        try:
-            bootstrap_workspace(workspace)
-        except WorkspaceBootstrapError as exc:
-            raise TSPiHostError(str(exc)) from exc
-        arguments = list(request.pi_args)
-        if request.session_id:
-            arguments.extend(["--session-id", request.session_id])
-        elif request.continue_latest:
-            arguments.append("--continue")
-        session_id, arguments = select_session(workspace, arguments, default_continue=False)
-        if session_id is not None:
-            descriptors.append(acquire_session_guard(installation.root, workspace, session_id, "controller"))
-        os.environ["TS_SESSION_GUARD"] = SESSION_GUARD_CONTRACT
-        if session_id is None:
-            os.environ.pop("TS_SESSION_ID", None)
-        else:
-            os.environ["TS_SESSION_ID"] = session_id
-        os.environ["TS_SESSION_WRITER_PID"] = str(os.getpid())
-        command = build_pi_command(installation, workspace, request, session_args=arguments)
-        exec_pi(command, workspace)
-    except SessionGuardError as exc:
-        raise TSPiHostError(str(exc), code=exc.code) from exc
-    finally:
-        for descriptor in reversed(descriptors):
-            os.close(descriptor)
+    raise TSPiHostError(f"a research workspace is required\n{USAGE}", exit_code=2)
 
 
 def main(

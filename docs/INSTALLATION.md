@@ -200,8 +200,8 @@ normal terminal launch starts the configured service when needed:
 
 Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for a
 user-scoped installation, or omit `--user` for a system-scoped installation.
-With service scope `none`, the managed Host is disabled and `--standalone` is
-reserved for development or recovery. The generated unit invokes TSPi's internal service entrypoint;
+With service scope `none`, the managed Host is disabled; configure a user or
+system service before opening a workspace. The generated unit invokes TSPi's internal service entrypoint;
 ordinary users do not run `TSPi --host`.
 
 The default and recommended scope is a systemd user unit. A system unit must be
@@ -211,8 +211,8 @@ usable by the same account as the service user. The user unit
 explicitly enables the selected Package server extension set
 (`TSPI_SERVER_EXTENSIONS=tspi-server-tools`). The App Server verifies the
 manifest and entry digest at each Worker startup. Do not place client code or
-an ad-hoc path in this allowlist; development-only experiments belong in
-`--standalone`.
+an ad-hoc path in this allowlist; development-only experiments belong in a
+separate validated Package release.
 
 Create a new conversation or continue the latest conversation in a project:
 

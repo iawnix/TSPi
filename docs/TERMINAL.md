@@ -19,8 +19,8 @@ and waits for its Unix socket before attaching the TUI:
 
 Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for a
 user-scoped installation, or omit `--user` for a system-scoped installation.
-With service scope `none`, the managed Host is disabled and `--standalone` is
-reserved for development or recovery.
+With service scope `none`, the managed Host is disabled; configure a user or
+system service before opening a workspace.
 
 The Host identity is kept at
 `.pi/app-server-host/server-id`; its private Unix socket is

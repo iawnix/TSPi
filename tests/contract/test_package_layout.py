@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -48,6 +50,11 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
         '{"name":"@iawnix/ts-agent","version":"0.10.0"}\n',
         encoding="utf-8",
     )
+    (package_root / "themes").mkdir()
+    shutil.copy2(ROOT / "themes" / "ts-theme.json", package_root / "themes" / "ts-theme.json")
+    app_server = package_root / "apps" / "app-server" / "pi-app-server.mjs"
+    app_server.parent.mkdir(parents=True)
+    app_server.write_text("// test app server entry\n", encoding="utf-8")
     write_test_suite_manifest(suite_root)
     shutil.copy2(TSPI_LAUNCHER, package_root / "TSPi")
     (package_root / "TSPi").chmod(0o755)
@@ -66,6 +73,10 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     (package_home / "current").symlink_to("releases/test-suite")
     launcher = install_root / "TSPi"
     launcher.symlink_to(".pi/packages/tspi/current/agent/TSPi")
+    fake_node = install_root / "fake-bin" / "node"
+    fake_node.parent.mkdir(parents=True)
+    fake_node.write_text("#!/bin/sh\nexec \"$PI_BIN\" \"$@\"\n", encoding="utf-8")
+    fake_node.chmod(0o755)
     return install_root, launcher
 
 
@@ -86,16 +97,50 @@ def _run_tspi(
     env: dict[str, str] | None = None,
     input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [str(launcher), "--standalone", *args],
-        cwd=launcher.parent,
-        env={**os.environ, "PI_BIN": str(pi_bin), **(env or {})},
-        input=input_text,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    install_root = launcher.parent
+    runtime_key = hashlib.sha256(os.fsencode(str(install_root))).hexdigest()[:12]
+    runtime_dir = Path("/tmp") / f"tspi-test-{runtime_key}"
+    runtime_dir.mkdir(mode=0o700, exist_ok=True)
+    host_state = install_root / ".pi" / "app-server-host"
+    host_workspace = host_state / "workspace"
+    (host_workspace / ".pi").mkdir(parents=True, exist_ok=True, mode=0o700)
+    (install_root / ".pi").chmod(0o700)
+    host_state.chmod(0o700)
+    host_workspace.chmod(0o700)
+    (host_workspace / ".pi").chmod(0o700)
+    server_id = "123e4567-e89b-42d3-a456-426614174000"
+    identity = host_state / "server-id"
+    identity.write_text(server_id + "\n", encoding="ascii")
+    identity.chmod(0o600)
+    socket_dir = runtime_dir / hashlib.sha256(os.fsencode(host_workspace.resolve())).hexdigest()[:16]
+    socket_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    endpoint = socket_dir / f"{server_id}.sock"
+    endpoint.unlink(missing_ok=True)
+    listener = socket.socket(socket.AF_UNIX)
+    listener.bind(str(endpoint))
+    environment = {
+        **os.environ,
+        "PATH": f"{install_root / 'fake-bin'}:{os.environ.get('PATH', '')}",
+        "TSPI_APP_SERVER_RUNTIME_DIR": str(runtime_dir),
+        "PI_BIN": str(pi_bin),
+        **(env or {}),
+    }
+    try:
+        return subprocess.run(
+            [str(launcher), *args],
+            cwd=launcher.parent,
+            env=environment,
+            input=input_text,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    finally:
+        listener.close()
+        endpoint.unlink(missing_ok=True)
+        socket_dir.rmdir()
+        runtime_dir.rmdir()
 
 
 def test_public_skill_uses_nested_pi_skill_layout() -> None:
@@ -498,7 +543,7 @@ def test_tspi_rejects_a_symlinked_remote_config(tmp_path: Path) -> None:
     assert "invalid TS_COMPUTE_CONFIG" in completed.stderr
 
 
-def test_tspi_runs_pi_with_bootstrapped_workspace_and_install_runtime(tmp_path: Path) -> None:
+def test_tspi_runs_host_client_with_bootstrapped_workspace_and_install_runtime(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
     fake_pi = _fake_pi(
         tmp_path / "fake-pi.py",
@@ -563,10 +608,10 @@ print(json.dumps({
     )
     assert result["compute_config"] is None
     assert result["remote_display"] == "not configured"
-    session_index = result["argv"].index("--session-dir")
-    assert result["argv"][session_index + 1] == str(workspace / ".pi" / "sessions")
+    assert result["argv"][1] == "client"
+    assert "--connect" in result["argv"]
     assert "--session-id" not in result["argv"]
-    assert (workspace / ".pi" / "root-agent.lock").is_file()
+    assert not (workspace / ".pi" / "root-agent.lock").exists()
     assert json.loads((workspace / ".pi" / "settings.json").read_text(encoding="utf-8")) == {"quietStartup": True}
     research_map = json.loads((workspace / "research_map.json").read_text(encoding="utf-8"))
     assert research_map["schema_version"] == "research-map/1"
@@ -663,12 +708,16 @@ def test_tspi_requires_a_safe_workspace_name(tmp_path: Path) -> None:
 
 def test_tspi_root_lock_rejects_a_second_writer(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
+    (install_root / ".pi").mkdir(mode=0o700, exist_ok=True)
+    (install_root / ".pi").chmod(0o700)
     blocking_pi = _fake_pi(
         tmp_path / "blocking-pi.py",
         "print('ready', flush=True)\ninput()\n",
     )
-    command = [str(launcher), "--standalone", "--workspace", "lock-test"]
+    command = [str(launcher), "--host"]
     env = {**os.environ, "PI_BIN": str(blocking_pi)}
+    env["TSPI_SYSTEMD_HOST"] = "1"
+    env["PATH"] = f"{install_root / 'fake-bin'}:{env.get('PATH', '')}"
     holder = subprocess.Popen(
         command,
         cwd=install_root,
@@ -693,26 +742,13 @@ def test_tspi_root_lock_rejects_a_second_writer(tmp_path: Path) -> None:
         )
         assert contender.returncode == 1
         assert "another Root Agent already owns workspace" in contender.stderr
-        independent = subprocess.run(
-            [str(launcher), "--standalone", "--workspace", "independent-test"],
-            cwd=install_root,
-            env=env,
-            input="release\n",
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
-        assert independent.returncode == 0, independent.stderr
-        assert independent.stdout.strip() == "ready"
     finally:
         assert holder.stdin is not None
         holder.stdin.write("release\n")
         holder.stdin.flush()
         holder.communicate(timeout=5)
 
-    assert (install_root / "workspaces" / "lock-test" / ".pi" / "root-agent.lock").is_file()
-    assert (install_root / "workspaces" / "independent-test" / ".pi" / "root-agent.lock").is_file()
+    assert (install_root / ".pi" / "app-server-host" / "workspace" / ".pi" / "root-agent.lock").is_file()
 
 
 def test_ts_theme_loads_with_pi_theme_loader() -> None:

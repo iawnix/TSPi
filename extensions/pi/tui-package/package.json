@@ -1,0 +1,11 @@
+{
+  "name": "@iawnix/tspi-presentation",
+  "version": "0.17.0",
+  "private": true,
+  "type": "module",
+  "peerDependencies": {
+    "@earendil-works/chord": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}

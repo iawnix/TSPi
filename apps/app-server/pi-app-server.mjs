@@ -24,7 +24,11 @@ const processSource = join(sourceRoot, "packages/coding-agent/src/experimental/p
 if (!readFileSync(processSource, "utf8").includes("PI_SESSION_WORKER_ENTRY")) {
   throw new Error("Pi source is missing the TSPi Worker entrypoint patch; run prepare_pi_source.py --apply-worker-patch");
 }
-const args = [join(sourceRoot, "packages/coding-agent/src/experimental/cli.ts"), mode, ...forwarded];
+const presentationPackage = join(packageRoot, "extensions/pi/tui-package");
+const piForwarded = mode === "server" || mode === "client"
+  ? ["-e", presentationPackage, ...forwarded]
+  : forwarded;
+const args = [join(sourceRoot, "packages/coding-agent/src/experimental/cli.ts"), mode, ...piForwarded];
 const workspaceRoot = wrapper.workspace ? resolve(wrapper.workspace) : undefined;
 if (workspaceRoot) {
   if (!existsSync(workspaceRoot)) throw new Error(`TSPi workspace does not exist: ${workspaceRoot}`);

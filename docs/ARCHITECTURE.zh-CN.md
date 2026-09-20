@@ -16,10 +16,14 @@ Pi App Server Host，由它服务配置的 workspace root 下的所有直接子�
   `ts_calc` 对 local 和 remote 使用同一套计算生命周期；统一的
   `compute.environments` 查询同时返回两类环境。渲染、报告和邮件仍由
   Skill/Plugin 工具提供。
-- `extensions/pi/` 包含 Pi 的 research、compute、review、artifact 和 UI 适配器；
-  `extensions/server/` 包含包内 server 工具入口。App Server
-  只加载 `extensions/server/extensions.json` 中经过 allowlist 和 SHA-256 校验的
-  条目，不执行客户端提交的代码。
+- `extensions/pi/` 包含两层面向 Pi 的集成。legacy research、compute、review、artifact
+  和 ExtensionAPI UI 适配器继续为直接 `pi` 启动保留；`extensions/pi/tui-package/`
+  是 `ExperimentalClientTui` 使用的原生 TSPi presentation facet，通过 Pi 的
+  `PresentationLayout` service 提供 Header、Footer、Editor、theme 渲染和 `/runs`
+  浏览器。`TSPi --workspace` 会加载后者，但不会加载 legacy ExtensionAPI UI 适配器。
+  `extensions/server/` 包含包内 server 工具入口。App Server 只加载
+  `extensions/server/extensions.json` 中经过 allowlist 和 SHA-256 校验的条目，不执行
+  客户端提交的代码。
 - `components/ts-web/` 是可选的只读浏览器客户端，直接渲染 Kernel 序列化的
   `ResearchMap`；浏览器控制通过显式启动的
   `TSPi --gateway` 适配器附着到已有 Host session，不会创建第二个 Worker。

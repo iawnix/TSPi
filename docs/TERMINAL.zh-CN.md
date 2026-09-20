@@ -16,7 +16,7 @@ system scope）启动唯一的安装级 Host，并在 Unix socket 就绪后连�
 ```
 
 user scope 使用 `systemctl --user stop|restart|status ts-app-server-tspi.service`，
-system scope 去掉 `--user`；scope 为 none 时受管 Host 被禁用，`--standalone` 仅用于开发或恢复。
+system scope 去掉 `--user`；scope 为 none 时受管 Host 被禁用，需先配置 user 或 system service。
 
 Host 身份位于 `.pi/app-server-host/server-id`；私有 Unix socket
 位于 `$XDG_RUNTIME_DIR/tspi/`（也可以通过安装配置指定运行目录）。

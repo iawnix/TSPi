@@ -15,7 +15,7 @@ runtime or upload executable extensions. The terminal command
 TUI. With a configured user or system service, the launcher starts that service
 when its Host socket is absent and waits for the same installation Host; it
 never starts a second foreground Host. With service scope `none`, the managed
-Host is disabled. `--standalone` is reserved for development and recovery.
+Host is disabled; configure a user or system service before opening a workspace.
 
 Server tools are selected by `extensions/server/extensions.json` and loaded by
 `apps/app-server/server-extension-loader.mjs`. Each descriptor binds a scope,
@@ -26,9 +26,9 @@ The App Server passes the host-owned tool context to the selected factories;
 clients can only invoke the resulting protocol services.
 
 The `tspi-server-tools` entry is the canonical server tool set. Its
-implementation is shared by all attached clients, while the existing Pi
-presentation extensions remain client-only and are still available to
-`--standalone`. New workflow functionality must add one server entry and use
+implementation is shared by all attached clients. The legacy Pi presentation
+extensions remain only for direct `pi` compatibility; the TSPi workspace client
+uses Pi's ExperimentalClientTui. New workflow functionality must add one server entry and use
 the shared command surface instead of adding a per-client broker.
 
 ## Provider Compatibility
@@ -45,6 +45,5 @@ the named choice.
 - One session transcript and one Root lock are shared by TUI, Phone, and Web.
 - A disconnected TUI can be replaced by another authenticated client without
   replaying an uncertain prompt or remote action.
-- Standalone mode is intentionally not session-synchronized with the Host.
 - Package release validation includes the loader, manifest, and server entry,
   so a service cannot silently run an unvalidated extension.
