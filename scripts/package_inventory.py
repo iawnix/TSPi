@@ -55,6 +55,7 @@ SKILL_ENTRY_FILES = [
 
 APP_SERVER_FILES = [
     "apps/app-server/pi-app-server.mjs",
+    "apps/app-server/pi-native-client.mjs",
     "apps/app-server/pi-monitor-worker.mjs",
     "apps/app-server/server-extension-loader.mjs",
     "apps/app-server/pi-native-compute.mjs",

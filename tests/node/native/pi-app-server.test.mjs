@@ -8,6 +8,16 @@ import test from "node:test";
 
 const sourceRoot = process.env.TSPI_PI_SOURCE;
 
+test("Host wrapper routes client mode through the remote-native Pi client", async () => {
+  const wrapper = await readFile("apps/app-server/pi-app-server.mjs", "utf8");
+  const client = await readFile("apps/app-server/pi-native-client.mjs", "utf8");
+  assert.match(wrapper, /join\(packageRoot, "apps\/app-server\/pi-native-client\.mjs"\)/);
+  assert.doesNotMatch(wrapper, /presentationPackage/);
+  assert.match(client, /experimental\/client-runtime\.ts/);
+  assert.match(client, /createInteractiveTui/);
+  assert.doesNotMatch(client, /ExperimentalClientTui/);
+});
+
 async function startNativeServer(root, { workspaceRoot, python } = {}) {
   const child = spawn(process.execPath, [
     "apps/app-server/pi-app-server.mjs", "server", "--source-root", sourceRoot,

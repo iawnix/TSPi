@@ -21,11 +21,13 @@ requirement.
   Skill/Plugin tools.
 - `extensions/pi/` contains two Pi-facing integration layers. The legacy
   research, compute, review, artifact, and ExtensionAPI UI adapters remain for
-  direct `pi` compatibility. `extensions/pi/tui-package/` is the native TSPi
-  presentation facet for `ExperimentalClientTui`; it supplies the Header,
-  Footer, Editor, theme rendering, and `/runs` browser through Pi's
-  `PresentationLayout` service. `TSPi --workspace` loads the latter package,
-  but does not load the legacy ExtensionAPI UI adapters.
+  direct `pi` compatibility. `extensions/pi/tui-package/` is an optional
+  presentation facet that can be passed explicitly with `-e`; `TSPi
+  --workspace` does not replace Pi's client TUI or load this facet automatically.
+  The terminal uses Pi's own remote client presentation. The Host/Worker loads
+  and executes TSPi research tools, skills, and the system prompt on the server;
+  the terminal invokes them through the same session instead of loading a second
+  tool runtime.
   `extensions/server/` contains the package-owned server tool entry. The App
   Server loads only the allowlisted, digest-verified entries in
   `extensions/server/extensions.json`; it never evaluates code supplied by a client.
@@ -155,7 +157,7 @@ Each session is created with a project cwd under the configured workspace root
 workspace-directory service exposes only validated direct-child workspaces
 containing a supported `workspace.json`.
 
-`TSPi --workspace <name>` is the native TUI client. It connects to the Host and
+`TSPi --workspace <name>` is Pi's client TUI. It connects to the Host and
 passes `TSPI_SESSION_CWD` when creating a session, so the session worker keeps
 the selected project's filesystem context. TS Phone uses the same services to
 list or create projects and to create or switch sessions without opening

@@ -69,7 +69,7 @@ validation reports do not belong in the repository.
 
 - `docs/ARCHITECTURE.md` — runtime and scientific boundaries.
 - `docs/INSTALLATION.md` — installer, services, upgrades, and recovery.
-- `docs/TERMINAL.md` — native TUI/App Server usage.
+- `docs/TERMINAL.md` — Pi client TUI/App Server usage.
 - `skills/` — user-facing scientific procedures and references.
 - `contracts/ts-web/` — optional browser transport schemas for canonical map responses.
 

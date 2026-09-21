@@ -53,7 +53,7 @@ Node 暂停/恢复回执属于操作状态；提交和分析边界必须保留�
 
 - `docs/ARCHITECTURE.zh-CN.md`：运行时和科学边界。
 - `docs/INSTALLATION.zh-CN.md`：安装、服务、升级和恢复。
-- `docs/TERMINAL.zh-CN.md`：原生 TUI/App Server 使用。
+- `docs/TERMINAL.zh-CN.md`：Pi client TUI/App Server 使用。
 - `skills/`：面向用户的科学流程和参考资料。
 - `contracts/ts-web/`：规范 ResearchMap 响应的浏览器传输合同。
 

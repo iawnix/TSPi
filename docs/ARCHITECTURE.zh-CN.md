@@ -18,9 +18,10 @@ Pi App Server Host，由它服务配置的 workspace root 下的所有直接子�
   Skill/Plugin 工具提供。
 - `extensions/pi/` 包含两层面向 Pi 的集成。legacy research、compute、review、artifact
   和 ExtensionAPI UI 适配器继续为直接 `pi` 启动保留；`extensions/pi/tui-package/`
-  是 `ExperimentalClientTui` 使用的原生 TSPi presentation facet，通过 Pi 的
-  `PresentationLayout` service 提供 Header、Footer、Editor、theme 渲染和 `/runs`
-  浏览器。`TSPi --workspace` 会加载后者，但不会加载 legacy ExtensionAPI UI 适配器。
+  只是可显式传入 `-e` 的可选 presentation facet。`TSPi --workspace` 不会替换 Pi
+  client 的 TUI，也不会自动加载这个 facet；终端使用 Pi 自己的 remote client。
+  Host/Worker 在服务器侧加载并执行 TSPi 的 research tools、skills 和 system prompt，
+  终端通过同一个 session 调用它们，不会重复加载第二份工具运行时。
   `extensions/server/` 包含包内 server 工具入口。App Server 只加载
   `extensions/server/extensions.json` 中经过 allowlist 和 SHA-256 校验的条目，不执行
   客户端提交的代码。
@@ -113,7 +114,7 @@ TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、
 并由 `TSPI_WORKSPACE_ROOT` 限制。
 `tspi.workspace-directory` 只暴露包含受支持 `workspace.json` 的直接子工作区。
 
-`TSPi --workspace <name>` 是连接 Host 的 Pi 原生 TUI 客户端，并在创建会话时传递
+`TSPi --workspace <name>` 是连接 Host 的 Pi client TUI，并在创建会话时传递
 `TSPI_SESSION_CWD`。TS Phone 通过同一组 service 列出或创建项目，并创建或切换会话，
 无需为每个项目再次连接或启动 Host。启动器通过原生 App Server 入口进入选定项目，
 不再维护第二套工作区启动路径。若配置的 systemd service 尚未运行，终端启动器会通过

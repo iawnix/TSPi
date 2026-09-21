@@ -1202,7 +1202,7 @@ def exec_pi(command: list[str], workspace: Path) -> NoReturn:
 
 
 def launch_terminal(installation: Installation, request: LaunchRequest, workspace: Path) -> NoReturn:
-    """Attach Pi's native TUI to the installation Host without owning session state."""
+    """Attach Pi's remote client TUI to the installation Host without owning session state."""
     if request.session_id and not SESSION_ID.fullmatch(request.session_id):
         raise TSPiHostError("invalid session identity", exit_code=2)
     os.environ["TSPI_SESSION_CWD"] = str(workspace)

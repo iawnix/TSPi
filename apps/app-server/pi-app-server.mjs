@@ -18,17 +18,23 @@ const sourceRoot = resolve(configuredRoot);
 if (!existsSync(join(sourceRoot, "packages/coding-agent/src/experimental/cli.ts"))) {
   throw new Error(`Pi source does not contain the experimental CLI: ${sourceRoot}`);
 }
+if (!existsSync(join(sourceRoot, "packages/coding-agent/src/experimental/client-runtime.ts"))) {
+  throw new Error(`Pi source does not contain the remote client runtime: ${sourceRoot}`);
+}
 const commit = execFileSync("git", ["-C", sourceRoot, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 if (commit !== pin.commit) throw new Error(`Pi source commit mismatch: expected ${pin.commit}, found ${commit}`);
 const processSource = join(sourceRoot, "packages/coding-agent/src/experimental/process.ts");
 if (!readFileSync(processSource, "utf8").includes("PI_SESSION_WORKER_ENTRY")) {
   throw new Error("Pi source is missing the TSPi Worker entrypoint patch; run prepare_pi_source.py --apply-worker-patch");
 }
-const presentationPackage = join(packageRoot, "extensions/pi/tui-package");
-const piForwarded = mode === "server" || mode === "client"
-  ? ["-e", presentationPackage, ...forwarded]
-  : forwarded;
-const args = [join(sourceRoot, "packages/coding-agent/src/experimental/cli.ts"), mode, ...piForwarded];
+// The Host owns sessions, workers, tools, and replicated state.  The terminal
+// is a first-class remote client and owns only Pi's native presentation/input
+// loop.  Server mode still uses Pi's server entrypoint; client mode is routed
+// through the package-owned remote-native client so it cannot accidentally
+// instantiate the experimental CLI presentation.
+const args = mode === "client"
+  ? [join(packageRoot, "apps/app-server/pi-native-client.mjs"), ...forwarded]
+  : [join(sourceRoot, "packages/coding-agent/src/experimental/cli.ts"), mode, ...forwarded];
 const workspaceRoot = wrapper.workspace ? resolve(wrapper.workspace) : undefined;
 if (workspaceRoot) {
   if (!existsSync(workspaceRoot)) throw new Error(`TSPi workspace does not exist: ${workspaceRoot}`);

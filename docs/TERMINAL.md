@@ -2,9 +2,12 @@
 
 [English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
 
-The TSPi terminal is Pi's native TUI attached to the installation Host. The
+The TSPi terminal is Pi's client TUI attached to the installation Host. The
 Host is the only session owner; the terminal and TS Phone are equal clients of
-it. One Host can serve every project below the configured workspace root.
+it. One Host can serve every project below the configured workspace root. The
+terminal entrypoint does not replace Pi's client UI or load the TSPi presentation
+facet automatically. The Host/Worker loads the research tools, skills, and system
+prompt on the server, and the terminal uses them through the current session.
 
 ## Open a workspace
 
@@ -35,9 +38,15 @@ attaches a precise conversation in that workspace. The TUI uses Pi's native
 session directory. Exiting it detaches only that client and leaves the App
 Server running.
 
-Ctrl+C interrupts the current local turn. `/abort` requests an App Server abort
+Ctrl+C interrupts the current turn. `/abort` requests an App Server abort
 for the active agent run. A prompt is never resent automatically after a
 disconnect; inspect the transcript before trying again.
+
+`Running turn` means that the Host accepted the prompt and the Agent Lane is
+active. It is not a second model or service. Model tokens, tool calls, and the
+final message are replicated through the same session transcript. If the status
+remains unchanged, inspect Host logs and session events instead of starting
+another terminal Host.
 
 ## Phone access
 

@@ -11,7 +11,7 @@
 The installation-wide systemd App Server is the only production Root Agent
 runtime. Clients attach to its sessions; they do not start a second workflow
 runtime or upload executable extensions. The terminal command
-`TSPi --workspace <name>` remains a Pi client and therefore keeps Pi's native
+`TSPi --workspace <name>` remains a Pi client and therefore keeps Pi's client
 TUI. With a configured user or system service, the launcher starts that service
 when its Host socket is absent and waits for the same installation Host; it
 never starts a second foreground Host. With service scope `none`, the managed
@@ -28,8 +28,9 @@ clients can only invoke the resulting protocol services.
 The `tspi-server-tools` entry is the canonical server tool set. Its
 implementation is shared by all attached clients. The legacy Pi presentation
 extensions remain only for direct `pi` compatibility; the TSPi workspace client
-uses Pi's ExperimentalClientTui. New workflow functionality must add one server entry and use
-the shared command surface instead of adding a per-client broker.
+uses Pi's own remote client TUI and does not have its layout replaced by TSPi.
+New workflow functionality must add one server entry and use the shared command
+surface instead of adding a per-client broker.
 
 ## Provider Compatibility
 

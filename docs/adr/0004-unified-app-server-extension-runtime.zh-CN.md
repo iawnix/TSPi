@@ -8,7 +8,7 @@
 ## 决定
 
 安装级 systemd App Server 是生产环境唯一的 Root Agent runtime。终端命令
-`TSPi --workspace <name>` 是连接它的 Pi 原生客户端；TS Phone 和 Web 也附着到其会话，
+`TSPi --workspace <name>` 是连接它的 Pi client；TS Phone 和 Web 也附着到其会话，
 不会启动第二个 workflow runtime，也不会上传可执行 extension。配置 user 或 system
 service 时，Host socket 不存在会由终端启动器启动该 service，并等待同一个安装级 Host；
 不会创建第二个前台 Host。scope 为 none 时禁用受管 Host，需先配置 user 或 system service。
@@ -19,8 +19,8 @@ service 时，Host socket 不存在会由终端启动器启动该 service，并�
 Host context 创建的 protocol service。
 
 `tspi-server-tools` 是规范 server tool set，所有连接客户端共享其实现。legacy Pi presentation
-extension 仅为直接 `pi` 兼容性保留；TSPi workspace 客户端使用 Pi 的 ExperimentalClientTui。
-新的 workflow 功能必须增加 server entry 并复用
+extension 仅为直接 `pi` 兼容性保留；TSPi workspace 客户端使用 Pi 自己的 remote client TUI，
+不会由 TSPi 自动替换其布局。新的 workflow 功能必须增加 server entry 并复用
 shared command surface，不得重新创建 per-client broker。
 
 ## Provider 兼容性
