@@ -18,8 +18,10 @@ Pi App Server Host，由它服务配置的 workspace root 下的所有直接子�
   Skill/Plugin 工具提供。
 - `extensions/pi/` 包含两层面向 Pi 的集成。legacy research、compute、review、artifact
   和 ExtensionAPI UI 适配器继续为直接 `pi` 启动保留；`extensions/pi/tui-package/`
-  只是可显式传入 `-e` 的可选 presentation facet。`TSPi --workspace` 不会替换 Pi
-  client 的 TUI，也不会自动加载这个 facet；终端使用 Pi 自己的 remote client。
+  是 presentation facet。TSPi 启动器把它传给原生 Pi client；client 请求后由 Host 构建
+  session facet bundle。直接运行 `pi` 时仍可显式使用 `-e`。终端保留 Pi 自己的 remote
+  client TUI 实现，facet 通过 Pi 的 presentation 和 slash-command registry 提供布局、补全
+  和命令，不替换输入循环。
   Host/Worker 在服务器侧加载并执行 TSPi 的 research tools、skills 和 system prompt，
   终端通过同一个 session 调用它们，不会重复加载第二份工具运行时。
   `extensions/server/` 包含包内 server 工具入口。App Server 只加载

@@ -27,14 +27,21 @@ const processSource = join(sourceRoot, "packages/coding-agent/src/experimental/p
 if (!readFileSync(processSource, "utf8").includes("PI_SESSION_WORKER_ENTRY")) {
   throw new Error("Pi source is missing the TSPi Worker entrypoint patch; run prepare_pi_source.py --apply-worker-patch");
 }
-// The Host owns sessions, workers, tools, and replicated state.  The terminal
-// is a first-class remote client and owns only Pi's native presentation/input
-// loop.  Server mode still uses Pi's server entrypoint; client mode is routed
-// through the package-owned remote-native client so it cannot accidentally
-// instantiate the experimental CLI presentation.
+// The Host owns sessions, workers, tools, and replicated state. The terminal
+// is a first-class remote client and delegates its interactive presentation to
+// Pi's native client TUI. Presentation facets are requested by the client and
+// loaded into the session worker profile by the Host; they are not a Host-wide
+// default plugin profile.
+const presentationPackage = join(packageRoot, "extensions/pi/tui-package");
+const hasPresentationPackage = forwarded.some((value, index) =>
+  (value === "-e" || value === "--plugin") && forwarded[index + 1] === presentationPackage,
+);
+const piForwarded = mode === "client"
+  ? (hasPresentationPackage ? forwarded : ["-e", presentationPackage, ...forwarded])
+  : forwarded;
 const args = mode === "client"
-  ? [join(packageRoot, "apps/app-server/pi-native-client.mjs"), ...forwarded]
-  : [join(sourceRoot, "packages/coding-agent/src/experimental/cli.ts"), mode, ...forwarded];
+  ? [join(packageRoot, "apps/app-server/pi-native-client.mjs"), ...piForwarded]
+  : [join(sourceRoot, "packages/coding-agent/src/experimental/cli.ts"), mode, ...piForwarded];
 const workspaceRoot = wrapper.workspace ? resolve(wrapper.workspace) : undefined;
 if (workspaceRoot) {
   if (!existsSync(workspaceRoot)) throw new Error(`TSPi workspace does not exist: ${workspaceRoot}`);
@@ -67,7 +74,9 @@ if (mode === "gateway") {
   process.exit(0);
 }
 const child = spawn(process.execPath, ["--import", join(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts"), ...args], {
-  cwd: workspaceRoot || sourceRoot, env: childEnv, stdio: "inherit",
+  cwd: mode === "client" ? (process.env.TSPI_SESSION_CWD || process.cwd()) : (workspaceRoot || sourceRoot),
+  env: childEnv,
+  stdio: "inherit",
 });
 const link = mode === "server" ? startLinkHost(wrapper, forwarded, childEnv) : undefined;
 const monitor = mode === "server" && workspaceRoot

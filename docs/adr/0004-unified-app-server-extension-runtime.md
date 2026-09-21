@@ -27,10 +27,13 @@ clients can only invoke the resulting protocol services.
 
 The `tspi-server-tools` entry is the canonical server tool set. Its
 implementation is shared by all attached clients. The legacy Pi presentation
-extensions remain only for direct `pi` compatibility; the TSPi workspace client
-uses Pi's own remote client TUI and does not have its layout replaced by TSPi.
-New workflow functionality must add one server entry and use the shared command
-surface instead of adding a per-client broker.
+extensions remain available for direct `pi` compatibility. TSPi's presentation
+facet is selected by the launcher and delivered to Pi's native remote client
+through the server-produced facet bundle. It may contribute layout components
+and slash commands, but Pi's client TUI remains the owner of input, completion,
+selectors, transcript rendering, and busy-state handling. New workflow
+functionality must add one server entry and use the shared command surface
+instead of adding a per-client broker.
 
 ## Provider Compatibility
 

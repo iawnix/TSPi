@@ -12,41 +12,23 @@ test("Host wrapper routes client mode through the remote-native Pi client", asyn
   const wrapper = await readFile("apps/app-server/pi-app-server.mjs", "utf8");
   const client = await readFile("apps/app-server/pi-native-client.mjs", "utf8");
   assert.match(wrapper, /join\(packageRoot, "apps\/app-server\/pi-native-client\.mjs"\)/);
-  assert.doesNotMatch(wrapper, /presentationPackage/);
-  assert.match(client, /experimental\/client-runtime\.ts/);
-  assert.match(client, /createInteractiveTui/);
-  assert.doesNotMatch(client, /ExperimentalClientTui/);
+  assert.match(wrapper, /const presentationPackage = join\(packageRoot, "extensions\/pi\/tui-package"\)/);
+  assert.match(wrapper, /const piForwarded = mode === "client"/);
+  assert.match(client, /experimental\/client-tui\.ts/);
+  assert.match(client, /runClientTui/);
+  assert.doesNotMatch(client, /class RemoteTranscript/);
+  assert.doesNotMatch(client, /CombinedAutocompleteProvider/);
 });
 
-test("native TTY client scopes session selection and creation to the workspace cwd", async () => {
+test("native client binds the interactive process to the workspace cwd", { skip: !sourceRoot }, async () => {
+  const wrapper = await readFile("apps/app-server/pi-app-server.mjs", "utf8");
   const client = await readFile("apps/app-server/pi-native-client.mjs", "utf8");
-  const prepareStart = client.indexOf("async function prepareSession");
-  const prepareEnd = client.indexOf("\nasync function changeModel", prepareStart);
-  assert.ok(prepareStart >= 0);
-  assert.ok(prepareEnd > prepareStart);
-  const prepare = client.slice(prepareStart, prepareEnd);
-  const newStart = client.indexOf("async function startNewSession");
-  const newEnd = client.indexOf("\nasync function resumeSession", newStart);
-  const resumeEnd = client.indexOf("\nfunction report", newEnd);
-  assert.ok(newStart >= 0);
-  assert.ok(newEnd > newStart);
-  assert.ok(resumeEnd > newEnd);
-  const newSession = client.slice(newStart, newEnd);
-  const resume = client.slice(newEnd, resumeEnd);
-
-  assert.match(client, /function sessionCreateOptions\(id\)/);
-  assert.match(client, /function sessionMatchesCwd\(summary\)/);
   assert.match(client, /const cwd = process\.env\.TSPI_SESSION_CWD\?\.trim\(\);/);
-  assert.match(client, /\{ cwd \}/);
-  assert.match(client, /summary\.cwd === cwd/);
-  assert.match(prepare, /item\.sessionId === command\.sessionId && sessionMatchesCwd\(item\)/);
-  assert.match(prepare, /create\(sessionCreateOptions\(command\.sessionId\)/);
-  assert.match(prepare, /\.filter\(sessionMatchesCwd\)/);
-  assert.match(prepare, /create\(sessionCreateOptions\(\)/);
-  assert.doesNotMatch(prepare, /management\.create\(\{\}/);
-  assert.match(newSession, /management\.create\(sessionCreateOptions\(\)/);
-  assert.doesNotMatch(newSession, /management\.create\(\{\}/);
-  assert.match(resume, /const sessions = \(services\.directory\.state\.value\?\.sessions \|\| \[\]\)\.filter\(sessionMatchesCwd\)/);
+  assert.match(client, /process\.chdir\(resolvedCwd\)/);
+  assert.match(wrapper, /cwd: mode === "client" \? \(process\.env\.TSPI_SESSION_CWD \|\| process\.cwd\(\)\)/);
+  const piSource = await readFile(`${sourceRoot}/packages/coding-agent/src/experimental/client-tui.ts`, "utf8");
+  assert.match(piSource, /const sessionCwd = process\.env\.TSPI_SESSION_CWD\?\.trim\(\);/);
+  assert.match(piSource, /summary\.cwd === sessionCwd/);
 });
 
 async function startNativeServer(root, { workspaceRoot, python } = {}) {
@@ -205,19 +187,22 @@ test("native Pi app server starts from the pinned source entrypoint", { skip: !s
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
+  let errors = "";
   let serverClient;
   let services;
   let backgroundContext;
   child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => { output += chunk; });
+  child.stderr.on("data", (chunk) => { errors += chunk; });
   try {
     await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`native server did not start: ${output}`)), 15_000);
+      const timer = setTimeout(() => reject(new Error(`native server did not start: ${output}${errors}`)), 15_000);
       child.stdout.on("data", () => {
         if (/^Server: [0-9a-f-]+\nSocket: .+\.sock/m.test(output)) { clearTimeout(timer); resolve(); }
       });
       child.once("error", reject);
-      child.once("exit", (code) => { if (code !== null && code !== 0) reject(new Error(`native server exited ${code}: ${output}`)); });
+      child.once("exit", (code) => { if (code !== null && code !== 0) reject(new Error(`native server exited ${code}: ${output}${errors}`)); });
     });
     const socket = output.match(/^Socket: (.+)$/m)?.[1];
     assert.ok(socket);

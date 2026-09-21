@@ -19,9 +19,11 @@ service 时，Host socket 不存在会由终端启动器启动该 service，并�
 Host context 创建的 protocol service。
 
 `tspi-server-tools` 是规范 server tool set，所有连接客户端共享其实现。legacy Pi presentation
-extension 仅为直接 `pi` 兼容性保留；TSPi workspace 客户端使用 Pi 自己的 remote client TUI，
-不会由 TSPi 自动替换其布局。新的 workflow 功能必须增加 server entry 并复用
-shared command surface，不得重新创建 per-client broker。
+extension 继续为直接运行 `pi` 提供兼容性；TSPi 启动器会选择自己的 presentation facet，
+由 Host 构建 facet bundle，再交给 Pi 原生 remote client 加载。facet 可以贡献布局组件和
+slash command，但输入、补全、选择器、transcript 渲染及忙碌状态仍由 Pi client TUI
+负责。新的 workflow 功能必须增加 server entry 并复用 shared command surface，不得重新
+创建 per-client broker。
 
 ## Provider 兼容性
 

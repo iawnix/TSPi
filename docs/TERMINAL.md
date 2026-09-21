@@ -2,12 +2,13 @@
 
 [English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
 
-The TSPi terminal is Pi's client TUI attached to the installation Host. The
+The TSPi terminal is Pi's native client TUI attached to the installation Host.
 Host is the only session owner; the terminal and TS Phone are equal clients of
 it. One Host can serve every project below the configured workspace root. The
-terminal entrypoint does not replace Pi's client UI or load the TSPi presentation
-facet automatically. The Host/Worker loads the research tools, skills, and system
-prompt on the server, and the terminal uses them through the current session.
+launcher supplies TSPi's presentation facet to Pi's native registries, so
+slash commands and argument completion stay in the same command path as Pi.
+The Host/Worker loads the research tools, skills, and system prompt on the
+server, and the terminal uses them through the current session.
 
 ## Open a workspace
 
@@ -47,6 +48,11 @@ active. It is not a second model or service. Model tokens, tool calls, and the
 final message are replicated through the same session transcript. If the status
 remains unchanged, inspect Host logs and session events instead of starting
 another terminal Host.
+
+Type `/` to use Pi's dynamic command catalog and argument completion. Built-in
+commands such as `/model`, `/thinking`, and `/compact`, together with TSPi's
+`/runs` and `/sys_prompt`, are registered through the same catalog. The footer is
+status output, not a command palette; commands must be entered in the editor.
 
 ## Phone access
 

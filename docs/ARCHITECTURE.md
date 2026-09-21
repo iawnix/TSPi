@@ -21,13 +21,15 @@ requirement.
   Skill/Plugin tools.
 - `extensions/pi/` contains two Pi-facing integration layers. The legacy
   research, compute, review, artifact, and ExtensionAPI UI adapters remain for
-  direct `pi` compatibility. `extensions/pi/tui-package/` is an optional
-  presentation facet that can be passed explicitly with `-e`; `TSPi
-  --workspace` does not replace Pi's client TUI or load this facet automatically.
-  The terminal uses Pi's own remote client presentation. The Host/Worker loads
-  and executes TSPi research tools, skills, and the system prompt on the server;
-  the terminal invokes them through the same session instead of loading a second
-  tool runtime.
+  direct `pi` compatibility. `extensions/pi/tui-package/` is a presentation
+  facet. The TSPi launcher supplies it to the native Pi client; the client
+  requests it and the Host builds the session facet bundle. Direct `pi` users
+  can still pass it explicitly with `-e`. The terminal keeps Pi's own remote
+  client TUI implementation, so the facet contributes through Pi's
+  presentation and slash-command registries instead of replacing the input
+  loop. The Host/Worker loads and executes TSPi research
+  tools, skills, and the system prompt on the server; the terminal invokes them
+  through the same session instead of loading a second tool runtime.
   `extensions/server/` contains the package-owned server tool entry. The App
   Server loads only the allowlisted, digest-verified entries in
   `extensions/server/extensions.json`; it never evaluates code supplied by a client.

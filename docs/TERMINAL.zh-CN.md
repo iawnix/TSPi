@@ -2,10 +2,12 @@
 
 [English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
 
-TSPi 终端是连接安装级 Host 的 Pi client TUI。Host 是唯一的会话所有者；终端和
-TS Phone 都只是它的客户端，一个 Host 可以服务多个项目。终端入口不会替换 Pi 的
-client UI，也不会自动加载 TSPi presentation extension。研究 tools、skills 和
-system prompt 由 Host/Worker 在服务器侧加载，终端通过当前 session 使用它们。
+TSPi 终端使用 Pi 原生 remote client TUI，并连接安装级 Host。Host 是唯一的会话所有者；
+终端和 TS Phone 都只是它的客户端，一个 Host 可以服务多个项目。启动器会把 TSPi
+presentation facet 交给 Pi 的 presentation 和 slash-command registry，因此命令补全、
+选择器、transcript 和忙碌状态都沿用 Pi 的原生输入路径；facet 只贡献布局和 TSPi
+命令，不接管输入循环。研究 tools、skills 和 system prompt 由 Host/Worker 在服务器侧
+加载，终端通过当前 session 使用它们。
 
 ## 打开工作区
 
@@ -35,6 +37,10 @@ Ctrl+C 中断当前 turn，`/abort` 向 App Server 请求中止当前 agent run�
 `Running turn` 表示 Host 已接受 prompt、Agent Lane 正在运行；它不是第二个模型或第二
 个服务。模型 token、tool call 和最终消息通过同一个 session 的复制 transcript 返回。
 如果状态长时间不变，应检查 Host 日志和 session 事件，而不是再次启动一个终端 Host。
+
+输入 `/` 使用 Pi 的动态命令目录和参数补全。`/model`、`/thinking`、`/compact` 等
+内建命令以及 TSPi 的 `/runs`、`/sys_prompt` 会从同一个 registry 注册；底部状态栏
+不是命令列表，不能通过点击或复制状态栏文字执行命令。
 
 ## 手机访问
 
