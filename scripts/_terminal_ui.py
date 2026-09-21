@@ -7,6 +7,15 @@ import sys
 import threading
 from typing import TextIO
 
+try:
+    import getpass
+    import termios
+    import tty
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    getpass = None  # type: ignore[assignment]
+    termios = None  # type: ignore[assignment]
+    tty = None  # type: ignore[assignment]
+
 # Python only wires GNU readline into ``input`` when the module is imported.
 # Keep this optional so the installer remains usable on platforms without it.
 try:
@@ -104,6 +113,53 @@ def ask_yes_no(prompt: str, default: bool = True) -> bool:
         if value in {"n", "no"}:
             return False
         note("Please answer y or n.", tone="warning")
+
+
+def ask_secret(prompt: str) -> str:
+    """Read a secret while showing one ``*`` per typed character on a TTY."""
+
+    input_stream = sys.stdin
+    output_stream = sys.stdout
+    if (
+        termios is None
+        or tty is None
+        or not getattr(input_stream, "isatty", lambda: False)()
+        or not getattr(output_stream, "isatty", lambda: False)()
+    ):
+        if getpass is None:  # pragma: no cover - defensive fallback
+            return input(f"  {prompt}: ")
+        return getpass.getpass(f"  {prompt}: ")
+
+    output_stream.write(f"  {prompt}: ")
+    output_stream.flush()
+    original = termios.tcgetattr(input_stream.fileno())
+    value: list[str] = []
+    try:
+        tty.setcbreak(input_stream.fileno())
+        while True:
+            character = input_stream.read(1)
+            if character in {"\n", "\r"}:
+                output_stream.write("\n")
+                output_stream.flush()
+                return "".join(value)
+            if character in {"\x03", "\x04"}:
+                output_stream.write("\n")
+                output_stream.flush()
+                if character == "\x03":
+                    raise KeyboardInterrupt
+                return ""
+            if character in {"\x08", "\x7f"}:
+                if value:
+                    value.pop()
+                    output_stream.write("\b \b")
+                    output_stream.flush()
+                continue
+            if character.isprintable():
+                value.append(character)
+                output_stream.write("*")
+                output_stream.flush()
+    finally:
+        termios.tcsetattr(input_stream.fileno(), termios.TCSADRAIN, original)
 
 
 class Spinner:

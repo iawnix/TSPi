@@ -30,6 +30,7 @@ try:
     from ._terminal_ui import (
         Spinner,
         ask_text as ask,
+        ask_secret,
         ask_yes_no,
         failure,
         field,
@@ -47,6 +48,7 @@ except ImportError:
     from _terminal_ui import (
         Spinner,
         ask_text as ask,
+        ask_secret,
         ask_yes_no,
         failure,
         field,
@@ -314,36 +316,245 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
     return args
 
 
-def configure_email_interactively(args: argparse.Namespace) -> None:
-    if args.email_binding is not None:
+def _load_existing_menu_defaults(args: argparse.Namespace) -> None:
+    """Load persisted values so reopening the installer is an edit operation."""
+
+    root = Path(args.install_root).expanduser()
+    if args.workspace_root is None:
+        args.workspace_root = str(read_workspace_root(root))
+    if args.with_web is None:
+        args.with_web = (root / "TSWeb").exists() or not (root / ".pi/packages/tspi/install-state.json").is_file()
+    if args.web_port is None:
+        args.web_port = 8766
+    if args.with_model_icons is None:
+        marker = root / ".pi/tspi/model-icons.json"
+        try:
+            document = json.loads(marker.read_text(encoding="utf-8"))
+            args.with_model_icons = bool(document.get("enabled")) if isinstance(document, dict) else False
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            args.with_model_icons = not (root / ".pi/packages/tspi/install-state.json").is_file()
+    if args.phone_access is None:
+        args.phone_access = "link" if _existing_link_configuration(root) else "disabled"
+    if args.link_url is None:
+        existing_link = _existing_link_configuration(root)
+        args.link_url = existing_link[0] if existing_link else None
+    service_config = root / ".pi/tspi/service.json"
+    if args.service_scope is None:
+        try:
+            document = json.loads(service_config.read_text(encoding="utf-8"))
+            scope = document.get("scope") if isinstance(document, dict) else None
+            args.service_scope = scope if scope in {"none", "user", "system"} else None
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            args.service_scope = None
+    if args.service_scope is None:
+        args.service_scope = "none"
+    if args.service_scope == "system" and not args.service_user:
+        unit = Path("/etc/systemd/system/ts-app-server-tspi.service")
+        try:
+            for line in unit.read_text(encoding="utf-8").splitlines():
+                if line.startswith("User=") and line.removeprefix("User=").strip():
+                    args.service_user = line.removeprefix("User=").strip()
+                    break
+        except OSError:
+            pass
+    if args.service_scope != "none" and not args.enable_services:
+        args.enable_services = True
+    if args.service_scope != "none" and not args.start_services:
+        args.start_services = False
+    _load_existing_email_defaults(args, root)
+
+
+def _load_existing_email_defaults(args: argparse.Namespace, root: Path) -> None:
+    config = root / ".pi/notifications.toml"
+    try:
+        document = tomllib.loads(config.read_text(encoding="utf-8"))
+        email = document.get("notifications", {}).get("email", {})
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, AttributeError):
         return
+    if not isinstance(email, dict) or not email.get("enabled"):
+        return
+    provider = email.get("provider", "smtp")
+    if provider == "clawemail":
+        args.email_binding = "clawemail"
+        args.email_recipient = email.get("recipient")
+        args.clawemail_root = email.get("clawemail_root")
+        return
+    args.email_binding = "smtp"
+    args.email_recipient = email.get("recipient")
+    args.email_preset = email.get("preset", "qq")
+    args.email_host = email.get("host")
+    args.email_port = email.get("port", 465)
+    args.email_security = email.get("security", "ssl")
+    args.email_username = email.get("username")
+    args.email_password_env = email.get("password_env")
+    args.email_password_file = email.get("password_file")
+
+
+def _menu_choice(args: argparse.Namespace) -> str:
+    root = Path(args.install_root)
+    section("Installer menu")
+    field("Installation", args.install_root, tone="accent")
+    field("Workspace", args.workspace_root or "not set")
+    field("TS Web", "enabled" if args.with_web else "disabled")
+    field("Phone", "Link Relay" if args.phone_access == "link" else "disabled")
+    field("Services", args.service_scope or "none")
+    field("Email", args.email_binding or ("configured" if (root / ".pi/notifications.toml").is_file() else "not configured"))
+    print()
+    print("  1) Installation and workspace")
+    print("  2) TS Web")
+    print("  3) Compute backends")
+    print("  4) Phone connection")
+    print("  5) Runtime and services")
+    print("  6) Email notifications")
+    print("  7) Model icon font")
+    print("  8) Review and install")
+    print("  9) Quit")
+    return ask("Select a configuration area", "8").strip()
+
+
+def _configure_menu_web(args: argparse.Namespace) -> None:
+    args.with_web = ask_yes_no("Install TS Web", bool(args.with_web))
+    if not args.with_web:
+        args.web_port = None
+        args.web_auth_token = None
+        args.allow_remote = False
+        return
+    args.web_port = int(ask("TS Web port", str(args.web_port or 8766)))
+    args.web_host = ask("TS Web listen address", args.web_host or "127.0.0.1")
+    if args.web_host not in {"127.0.0.1", "::1", "localhost"}:
+        args.allow_remote = ask_yes_no("Allow remote TS Web clients", bool(args.allow_remote))
+    else:
+        args.allow_remote = False
+    if ask_yes_no("Replace the TS Web access token", False):
+        args.web_auth_token = _ask_web_auth_token()
+
+
+def _configure_menu_phone(args: argparse.Namespace) -> None:
+    enabled = ask_yes_no("Enable TS Phone through TSPi Link Relay", args.phone_access == "link")
+    if not enabled:
+        args.phone_access = "disabled"
+        args.link_url = None
+        args.link_enrollment_code = None
+        return
+    args.phone_access = "link"
+    existing_link = _existing_link_configuration(Path(args.install_root))
+    args.link_url = ask("TSPi Link Relay URL", args.link_url or (existing_link[0] if existing_link else "")).strip()
+    token_file = Path(args.install_root) / ".pi/app-server-host/host.token"
+    enrolled_for_url = token_file.is_file() and existing_link is not None and args.link_url.rstrip("/") == existing_link[0]
+    if not enrolled_for_url:
+        args.link_enrollment_code = ask("Host enrollment code", args.link_enrollment_code or "").strip()
+    else:
+        args.link_enrollment_code = None
+
+
+def _configure_menu_runtime(args: argparse.Namespace) -> None:
+    args.conda_root = ask("Conda root (blank for auto-detect)", args.conda_root or detect_conda_root()).strip()
+    current_scope = args.service_scope or "none"
+    while True:
+        scope = ask("Service scope (none, user, or system)", current_scope).strip().lower()
+        if scope in {"none", "user", "system"}:
+            args.service_scope = scope
+            break
+        note("Choose none, user, or system.", tone="warning")
+    if args.service_scope == "system" and not args.service_user:
+        args.service_user = os.environ.get("SUDO_USER") or ask("Service user", "")
+    if args.service_scope == "none":
+        args.enable_services = False
+        args.start_services = False
+    else:
+        args.enable_services = ask_yes_no("Enable services", bool(args.enable_services))
+        args.start_services = ask_yes_no("Start services now", bool(args.start_services))
+
+
+def interactive_menu_options(args: argparse.Namespace) -> argparse.Namespace:
+    """Collect configuration through a repeatable menu before installation."""
+
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise RuntimeError("interactive installation requires a TTY; use --non-interactive")
+    args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/tspi"))
+    args.install_root = str(Path(args.install_root).expanduser())
+    _load_existing_menu_defaults(args)
+    while True:
+        choice = _menu_choice(args)
+        if choice in {"8", ""}:
+            return args
+        if choice == "9":
+            args._installer_cancelled = True
+            return args
+        if choice == "1":
+            args.workspace_root = ask("Workspace root", args.workspace_root or str(read_workspace_root(Path(args.install_root))))
+        elif choice == "2":
+            _configure_menu_web(args)
+        elif choice == "3":
+            args.compute_config = ask(
+                "Compute backend TOML path (blank preserves existing configuration)",
+                args.compute_config or "",
+            ).strip() or None
+        elif choice == "4":
+            _configure_menu_phone(args)
+        elif choice == "5":
+            _configure_menu_runtime(args)
+        elif choice == "6":
+            configure_email_interactively(args, force=True)
+        elif choice == "7":
+            args.with_model_icons = ask_yes_no("Install TSPi model icon font", bool(args.with_model_icons))
+        else:
+            note("Choose a menu number from 1 to 9.", tone="warning")
+
+
+def configure_email_interactively(args: argparse.Namespace, *, force: bool = False) -> None:
+    if args.email_binding is not None and not force:
+        return
+    args.__dict__.pop("_email_password", None)
+    args.__dict__.pop("_clear_email", None)
     root = Path(args.install_root)
     existing = root / ".pi" / "notifications.toml"
     prompt = "Reconfigure email notifications" if existing.is_file() else "Configure email notifications"
     if not ask_yes_no(prompt, False):
+        if force and existing.is_file() and ask_yes_no("Disable email notifications", False):
+            args.email_binding = None
+            _clear_email_options(args)
+            args._clear_email = True
         return
-    args.email_binding = ask("Email binding (smtp or clawemail)", "smtp").lower()
-    args.email_recipient = _ask_email_address("Notification recipient")
+    args.email_binding = ask("Email binding (smtp or clawemail)", getattr(args, "email_binding", None) or "smtp").lower()
+    args.email_recipient = _ask_email_address("Notification recipient", getattr(args, "email_recipient", None) or "")
     if args.email_binding == "clawemail":
-        args.clawemail_root = ask("ClawEmail installation root")
+        _clear_smtp_options(args)
+        args.clawemail_root = ask("ClawEmail installation root", getattr(args, "clawemail_root", None) or "")
         return
-    args.email_preset = ask("SMTP mailbox preset (163, qq, or custom)", "qq").lower()
+    args.clawemail_root = None
+    args.email_preset = ask("SMTP mailbox preset (163, qq, or custom)", getattr(args, "email_preset", None) or "qq").lower()
     if args.email_preset == "custom":
-        args.email_host = ask("SMTP hostname")
-    args.email_port = int(ask("SMTP port", "465"))
-    args.email_security = ask("SMTP security (ssl or starttls)", "ssl").lower()
-    args.email_username = _ask_email_address("SMTP sender email address")
+        args.email_host = ask("SMTP hostname", getattr(args, "email_host", None) or "")
+    elif args.email_preset in SMTP_PRESETS:
+        args.email_host = None
+    args.email_port = int(ask("SMTP port", str(getattr(args, "email_port", None) or 465)))
+    args.email_security = ask("SMTP security (ssl or starttls)", getattr(args, "email_security", None) or "ssl").lower()
+    args.email_username = _ask_email_address("SMTP sender email address", getattr(args, "email_username", None) or "")
     if ask_yes_no("Read SMTP authorization code from an environment variable", False):
         args.email_password_env = ask("Password environment variable", "TSPI_EMAIL_PASSWORD")
+        args.email_password_file = None
         return
     default_password_file = root / ".pi" / "email" / "smtp-password"
-    args.email_password_file = ask("SMTP authorization-code file", str(default_password_file))
+    args.email_password_env = None
+    args.email_password_file = ask("SMTP authorization-code file", getattr(args, "email_password_file", None) or str(default_password_file))
     password_path = Path(args.email_password_file).expanduser()
-    if not password_path.exists():
-        password = getpass.getpass("SMTP authorization code (hidden): ").strip()
+    if not password_path.exists() or ask_yes_no("Replace the SMTP authorization code", False):
+        password = _read_secret("SMTP authorization code (hidden)").strip()
         if not password:
             raise ValueError("SMTP authorization code must not be empty")
         args._email_password = password
+
+
+def _clear_smtp_options(args: argparse.Namespace) -> None:
+    for name in ("email_preset", "email_host", "email_username", "email_port", "email_security", "email_password_env", "email_password_file"):
+        setattr(args, name, None)
+
+
+def _clear_email_options(args: argparse.Namespace) -> None:
+    args.email_recipient = None
+    args.clawemail_root = None
+    _clear_smtp_options(args)
 
 
 def _ask_email_address(prompt: str, default: str = "") -> str:
@@ -442,9 +653,7 @@ def _ask_web_auth_token() -> str | None:
     """Read a custom token without delaying validation until installation."""
 
     while True:
-        value = getpass.getpass(
-            "TS Web access token (8-100 URL-safe characters; blank generates one): "
-        ).strip()
+        value = _read_secret("TS Web access token (8-100 URL-safe characters; blank generates one)").strip()
         if not value:
             return None
         if WEB_TOKEN_PATTERN.fullmatch(value):
@@ -453,6 +662,14 @@ def _ask_web_auth_token() -> str | None:
             "Token must contain 8-100 URL-safe characters: A-Z, a-z, 0-9, _ or -.",
             tone="warning",
         )
+
+
+def _read_secret(prompt: str) -> str:
+    """Use visible masked input on a TTY and retain injectable getpass in tests."""
+
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        return ask_secret(prompt)
+    return getpass.getpass(prompt + ": ")
 
 
 def _service_plan(args: argparse.Namespace, *, template: bool = False) -> str:
@@ -771,6 +988,11 @@ def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
 
     root = Path(args.install_root).expanduser().resolve()
     config_path = root / ".pi" / "notifications.toml"
+    if getattr(args, "_clear_email", False):
+        if config_path.is_symlink():
+            raise ValueError(f"notification file cannot be a symbolic link: {config_path}")
+        config_path.unlink(missing_ok=True)
+        return {"status": "disabled", "path": str(config_path)}
     if args.email_binding is None:
         return {
             "status": "preserved" if config_path.is_file() else "not_configured",
@@ -2322,7 +2544,10 @@ def main(argv: list[str] | None = None) -> int:
             show_preflight(checks, require_conda=False)
         require_preflight(checks, require_conda=False)
         if not args.non_interactive:
-            args = interactive_options(args)
+            args = interactive_menu_options(args)
+            if getattr(args, "_installer_cancelled", False):
+                note("Installation cancelled.", tone="warning")
+                return 0
         validate_options(args)
         if not args.conda_root:
             require_preflight(checks)

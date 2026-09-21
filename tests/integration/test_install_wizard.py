@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import io
 import stat
 import subprocess
 from pathlib import Path
@@ -9,6 +10,7 @@ import pytest
 from fontTools.ttLib import TTFont
 
 from scripts import install_wizard as wizard
+from scripts import _terminal_ui as terminal_ui
 from scripts.install_from_github import install_uninstaller
 
 
@@ -50,6 +52,104 @@ def test_interactive_web_token_blank_uses_generated_token(monkeypatch: pytest.Mo
     monkeypatch.setattr(wizard.getpass, "getpass", lambda _prompt: "   ")
 
     assert wizard._ask_web_auth_token() is None
+
+
+def test_secret_input_shows_stars_without_echoing_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeInput(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+        def fileno(self) -> int:
+            return 0
+
+    class FakeOutput(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    fake_input = FakeInput("ab\x7fc\n")
+    fake_output = FakeOutput()
+    fake_termios = type(
+        "FakeTermios",
+        (),
+        {"TCSADRAIN": 0, "tcgetattr": staticmethod(lambda _fd: object()), "tcsetattr": staticmethod(lambda *_args: None)},
+    )
+    fake_tty = type("FakeTTY", (), {"setcbreak": staticmethod(lambda _fd: None)})
+    monkeypatch.setattr(terminal_ui.sys, "stdin", fake_input)
+    monkeypatch.setattr(terminal_ui.sys, "stdout", fake_output)
+    monkeypatch.setattr(terminal_ui, "termios", fake_termios)
+    monkeypatch.setattr(terminal_ui, "tty", fake_tty)
+
+    assert terminal_ui.ask_secret("Secret") == "ac"
+    rendered = fake_output.getvalue()
+    assert rendered.count("*") == 3
+    assert "abc" not in rendered
+
+
+def test_interactive_menu_can_edit_multiple_sections_before_install(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "install"
+    workspace = tmp_path / "research"
+    args = wizard.parse_args(["--install-root", str(root)])
+    choices = iter(("1", str(workspace), "2", "8777", "127.0.0.1", "8"))
+    monkeypatch.setattr(wizard.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(wizard.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(wizard, "ask", lambda _prompt, default="": next(choices))
+    monkeypatch.setattr(wizard, "ask_yes_no", lambda _prompt, default=True: default)
+
+    wizard.interactive_menu_options(args)
+
+    assert args.workspace_root == str(workspace)
+    assert args.with_web is True
+    assert args.web_port == 8777
+    assert args.web_host == "127.0.0.1"
+
+
+def test_menu_defaults_read_existing_configuration(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    workspace = tmp_path / "research"
+    marker = root / ".pi/tspi/model-icons.json"
+    marker.parent.mkdir(parents=True)
+    marker.write_text(json.dumps({"enabled": True}), encoding="utf-8")
+    (root / ".pi/tspi/workspace-root.json").write_text(
+        json.dumps({"schema_version": "tspi-workspace-root/1", "workspace_root": str(workspace)}),
+        encoding="utf-8",
+    )
+    (root / "TSWeb").write_text("launcher", encoding="utf-8")
+    args = wizard.parse_args(["--install-root", str(root)])
+
+    wizard._load_existing_menu_defaults(args)
+
+    assert args.workspace_root == str(workspace)
+    assert args.with_web is True
+    assert args.with_model_icons is True
+
+
+def test_interactive_menu_can_disable_existing_email_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "install"
+    config = root / ".pi/notifications.toml"
+    config.parent.mkdir(parents=True)
+    config.write_text("[notifications.email]\nenabled = true\n", encoding="utf-8")
+    args = wizard.parse_args(["--install-root", str(root)])
+    args.email_binding = "smtp"
+    args.email_recipient = "receiver@example.org"
+    args.email_preset = "qq"
+    args.email_username = "sender@qq.com"
+    args.email_port = 465
+    args.email_security = "ssl"
+    answers = iter((False, True))
+    monkeypatch.setattr(wizard, "ask_yes_no", lambda _prompt, _default=False: next(answers))
+
+    wizard.configure_email_interactively(args, force=True)
+
+    assert args.email_binding is None
+    assert args.email_recipient is None
+    assert wizard.configure_notification_config(args)["status"] == "disabled"
+    assert not config.exists()
 
 
 def test_interactive_compute_backends_accepts_one_file_path(
