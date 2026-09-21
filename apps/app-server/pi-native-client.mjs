@@ -48,6 +48,19 @@ const { ToolExecutionComponent } = toolModule;
 const { WorkingStatusIndicator } = statusModule;
 const { createAllToolRenderers } = renderersModule;
 
+function sessionCreateOptions(id) {
+  const cwd = process.env.TSPI_SESSION_CWD?.trim();
+  return {
+    ...(id === undefined ? {} : { id }),
+    ...(cwd === undefined || cwd.length === 0 ? {} : { cwd }),
+  };
+}
+
+function sessionMatchesCwd(summary) {
+  const cwd = process.env.TSPI_SESSION_CWD?.trim();
+  return cwd === undefined || cwd.length === 0 || summary.cwd === cwd;
+}
+
 async function runPrintClient(command) {
   let streamedText = false;
   const result = await runClient(command, {
@@ -286,16 +299,22 @@ async function prepareSession(runtime, command) {
   const candidates = await Promise.all(runtime.servers.map(activateBuiltinClientServices));
   let selected;
   if (command.sessionId) {
-    const matches = candidates.filter((candidate) => (candidate.directory.state.value?.sessions || []).some((item) => item.sessionId === command.sessionId));
+    const matches = candidates.filter((candidate) => (candidate.directory.state.value?.sessions || []).some(
+      (item) => item.sessionId === command.sessionId && sessionMatchesCwd(item),
+    ));
     if (matches.length > 1) throw new Error(`Session ${command.sessionId} is available from more than one server`);
     selected = matches[0];
     if (!selected) {
       if (candidates.length !== 1) throw new Error(`No discovered server contains session ${command.sessionId}`);
       selected = candidates[0];
-      await selected.management.create({ id: command.sessionId }, BACKGROUND_CONTEXT);
+      await selected.management.create(sessionCreateOptions(command.sessionId), BACKGROUND_CONTEXT);
     }
   } else if (command.continue || command.resume) {
-    selected = candidates.flatMap((candidate) => candidate.directory.state.value?.sessions || []).sort((a, b) => b.createdAt - a.createdAt).map((item) => candidates.find((candidate) => candidate.route.serverId === item.serverId)).find(Boolean);
+    selected = candidates.flatMap((candidate) => candidate.directory.state.value?.sessions || [])
+      .filter(sessionMatchesCwd)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((item) => candidates.find((candidate) => candidate.route.serverId === item.serverId))
+      .find(Boolean);
   }
   if (!selected) {
     if (candidates.length !== 1) throw new Error("Starting a Session requires exactly one server");
@@ -304,8 +323,9 @@ async function prepareSession(runtime, command) {
   const sessionId = command.sessionId
     ? command.sessionId
     : command.continue || command.resume
-      ? selected?.directory.state.value?.sessions?.sort((a, b) => b.createdAt - a.createdAt)[0]?.sessionId || (await selected.management.create({}, BACKGROUND_CONTEXT)).sessionId
-      : (await selected.management.create({}, BACKGROUND_CONTEXT)).sessionId;
+      ? selected?.directory.state.value?.sessions?.filter(sessionMatchesCwd).sort((a, b) => b.createdAt - a.createdAt)[0]?.sessionId
+        || (await selected.management.create(sessionCreateOptions(), BACKGROUND_CONTEXT)).sessionId
+      : (await selected.management.create(sessionCreateOptions(), BACKGROUND_CONTEXT)).sessionId;
   await selected.plugins.prepareSession({ sessionId, packagePaths: command.pluginPackages || null }, BACKGROUND_CONTEXT);
   await selected.management.attach(sessionId, BACKGROUND_CONTEXT);
   return { ...selected, sessionId };
@@ -330,7 +350,7 @@ async function changeThinking(services, args, showStatus) {
 }
 
 async function startNewSession(services, showStatus) {
-  const summary = await services.management.create({}, BACKGROUND_CONTEXT);
+  const summary = await services.management.create(sessionCreateOptions(), BACKGROUND_CONTEXT);
   await services.plugins.prepareSession({ sessionId: summary.sessionId, packagePaths: null }, BACKGROUND_CONTEXT);
   await services.management.attach(summary.sessionId, BACKGROUND_CONTEXT);
   services.sessionId = summary.sessionId;
@@ -338,7 +358,7 @@ async function startNewSession(services, showStatus) {
 }
 
 async function resumeSession(services, requestedId, showStatus) {
-  const sessions = services.directory.state.value?.sessions || [];
+  const sessions = (services.directory.state.value?.sessions || []).filter(sessionMatchesCwd);
   const target = requestedId
     ? sessions.find((item) => item.sessionId === requestedId)
     : [...sessions].sort((left, right) => right.createdAt - left.createdAt).find((item) => item.sessionId !== services.sessionId);

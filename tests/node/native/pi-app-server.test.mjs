@@ -18,6 +18,37 @@ test("Host wrapper routes client mode through the remote-native Pi client", asyn
   assert.doesNotMatch(client, /ExperimentalClientTui/);
 });
 
+test("native TTY client scopes session selection and creation to the workspace cwd", async () => {
+  const client = await readFile("apps/app-server/pi-native-client.mjs", "utf8");
+  const prepareStart = client.indexOf("async function prepareSession");
+  const prepareEnd = client.indexOf("\nasync function changeModel", prepareStart);
+  assert.ok(prepareStart >= 0);
+  assert.ok(prepareEnd > prepareStart);
+  const prepare = client.slice(prepareStart, prepareEnd);
+  const newStart = client.indexOf("async function startNewSession");
+  const newEnd = client.indexOf("\nasync function resumeSession", newStart);
+  const resumeEnd = client.indexOf("\nfunction report", newEnd);
+  assert.ok(newStart >= 0);
+  assert.ok(newEnd > newStart);
+  assert.ok(resumeEnd > newEnd);
+  const newSession = client.slice(newStart, newEnd);
+  const resume = client.slice(newEnd, resumeEnd);
+
+  assert.match(client, /function sessionCreateOptions\(id\)/);
+  assert.match(client, /function sessionMatchesCwd\(summary\)/);
+  assert.match(client, /const cwd = process\.env\.TSPI_SESSION_CWD\?\.trim\(\);/);
+  assert.match(client, /\{ cwd \}/);
+  assert.match(client, /summary\.cwd === cwd/);
+  assert.match(prepare, /item\.sessionId === command\.sessionId && sessionMatchesCwd\(item\)/);
+  assert.match(prepare, /create\(sessionCreateOptions\(command\.sessionId\)/);
+  assert.match(prepare, /\.filter\(sessionMatchesCwd\)/);
+  assert.match(prepare, /create\(sessionCreateOptions\(\)/);
+  assert.doesNotMatch(prepare, /management\.create\(\{\}/);
+  assert.match(newSession, /management\.create\(sessionCreateOptions\(\)/);
+  assert.doesNotMatch(newSession, /management\.create\(\{\}/);
+  assert.match(resume, /const sessions = \(services\.directory\.state\.value\?\.sessions \|\| \[\]\)\.filter\(sessionMatchesCwd\)/);
+});
+
 async function startNativeServer(root, { workspaceRoot, python } = {}) {
   const child = spawn(process.execPath, [
     "apps/app-server/pi-app-server.mjs", "server", "--source-root", sourceRoot,
