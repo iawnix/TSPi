@@ -1,0 +1,11 @@
+diff --git a/packages/coding-agent/src/experimental/services/agent-controller-provider.ts b/packages/coding-agent/src/experimental/services/agent-controller-provider.ts
+--- a/packages/coding-agent/src/experimental/services/agent-controller-provider.ts
++++ b/packages/coding-agent/src/experimental/services/agent-controller-provider.ts
+@@ -77,6 +77,6 @@ export function createAgentController(lane: AgentLane): AgentControllerService {
+ 		},
+ 		startPrompt: (request, context) => {
+ 			const [message, images] = toTextPrompt(request);
+-			return admitAndDrive({ kind: "prompt", prompt: message, ...(images === undefined ? {} : { images }) }, context);
++			return admitAndDrive({ kind: "prompt", ...(request.operationId === undefined ? {} : { operationId: request.operationId }), prompt: message, ...(images === undefined ? {} : { images }) }, context);
+ 		},
+ 		startQueued,

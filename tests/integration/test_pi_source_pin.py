@@ -24,6 +24,8 @@ def test_pi_source_pin_is_explicit_and_valid() -> None:
     create_patch = (ROOT / "config" / "pi-multi-workspace-create.patch").read_text(encoding="utf-8")
     assert "createWorkspace(workspaceId" in create_patch
     assert "WorkspaceDirectory" in create_patch
+    session_list_patch = (ROOT / "config" / "pi-workspace-session-list.patch").read_text(encoding="utf-8")
+    assert ".filter(sessionMatchesCwd)" in session_list_patch
     workspace_patch = (ROOT / "config" / "pi-research-workspace.patch").read_text(encoding="utf-8")
     assert "research-workspace/1" in workspace_patch
     assert "service_invalid_value" in workspace_patch
@@ -35,6 +37,11 @@ def test_pi_source_pin_is_explicit_and_valid() -> None:
     assert "tspi.system-prompt" in system_prompt_patch
     model_data_patch = (ROOT / "config" / "pi-model-data.patch").read_text(encoding="utf-8")
     assert "kimi-code-plan-global" in model_data_patch
+    renderer_patch = (ROOT / "config" / "pi-tool-renderers.patch").read_text(encoding="utf-8")
+    assert "setToolRenderers" in renderer_patch
+    assert "PresentationToolRenderers" in renderer_patch
+    assert "#builtInRenderers" in renderer_patch
+    assert "#toolRendererRegistration !== registration" in renderer_patch
 
 
 def test_prepare_pi_source_verifies_a_matching_checkout() -> None:
@@ -132,6 +139,38 @@ def test_research_workspace_patch_upgrades_an_existing_patched_checkout(tmp_path
         "apply",
         str(prepare_pi_source.RESEARCH_WORKSPACE_PATCH_PATH),
     ]]
+
+
+def test_workspace_session_list_patch_is_idempotent(tmp_path, monkeypatch):
+    from scripts import prepare_pi_source
+
+    source = tmp_path / "pi"
+    client = source / "packages/coding-agent/src/experimental/client.ts"
+    client.parent.mkdir(parents=True)
+    client.write_text(".filter(sessionMatchesCwd)\n", encoding="utf-8")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(prepare_pi_source.subprocess, "run", lambda command, **_kwargs: calls.append(command))
+
+    prepare_pi_source.apply_workspace_session_list_patch(source)
+
+    assert calls == []
+
+
+def test_tool_renderer_patch_is_idempotent_for_an_upgraded_checkout(tmp_path, monkeypatch):
+    from scripts import prepare_pi_source
+
+    source = tmp_path / "pi"
+    layout = source / "packages/coding-agent/src/experimental/services"
+    chat = source / "packages/coding-agent/src/experimental"
+    layout.mkdir(parents=True)
+    (layout / "presentation-layout.ts").write_text("setToolRenderers\n", encoding="utf-8")
+    (chat / "client-tui-chat.ts").write_text("#builtInRenderers\n", encoding="utf-8")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(prepare_pi_source.subprocess, "run", lambda command, **_kwargs: calls.append(command))
+
+    prepare_pi_source.apply_tool_renderers_patch(source)
+
+    assert calls == []
 
 
 def test_pi_source_verify_rejects_a_list_only_workspace_patch(tmp_path, monkeypatch):

@@ -1,8 +1,9 @@
 # Maintainer Guide
 
-TSPi is a Pi package with a native App Server launcher. Keep the package
-boundaries explicit: App Server owns sessions, the Python kernel owns
-scientific state, and optional TS Web only reads workspaces.
+TSPi is a Pi package with an installation Host and a native Pi client launcher.
+Keep the package boundaries explicit: the Pi Harness worker owns sessions and
+turns, Host owns routing and receipts, the Python kernel owns scientific state,
+and optional TS Web only reads workspaces.
 
 ## Development Setup
 
@@ -15,11 +16,23 @@ npm run lint:public
 ```
 
 The full suite uses `python3 tools/test/runner.py source -- -q`. Use
-`python3 tools/test/runner.py list` to inspect all lanes. Native App Server
-checks use `npm run test:native-pi` and require `TSPI_PI_SOURCE` pointing at the
-prepared Pi checkout. Remote smoke and live model evaluation are opt-in lanes;
-they require explicit external configuration and are never part of the default
-suite.
+`python3 tools/test/runner.py list` to inspect all lanes. The native lane
+exercises the Harness Host, native Pi client, history isolation/import, Monitor
+delivery, TSPi Link, and the pinned Pi extension/provider boundaries. Run it with
+a prepared checkout
+whose commit matches `config/pi-source.json`:
+
+```bash
+export TSPI_PI_SOURCE=/path/to/prepared/pi
+npm run test:native-pi
+```
+
+The default Harness path does not require tmux. `TSPI_HOST_BACKEND=ordinary`
+and `TSPI_TMUX` are retained only for the isolated migration/debug compatibility
+lane; they must not be used as a Harness fallback. Do not substitute an unpinned
+or modified Pi checkout to make the lane pass. Remote smoke and live
+model evaluation are opt-in lanes; they require explicit external configuration
+and are never part of the default suite.
 
 The authoritative lane and path definition is `tools/test/manifest.toml`,
 dispatched by `tools/test/runner.py`. Python tests are grouped under
@@ -60,28 +73,31 @@ schemas out of the always-loaded tools. Do not add scientific successor routing.
 
 Node pause/resume receipts are operational state. Preserve the shared workspace
 lock at submission and analysis boundaries; keep inspection, collection and
-cancellation available. Test native App Server and extension entrypoints, wheel
-installation, direct ResearchMap Web rendering and source-tampering rejection. Use the stable
-operations guide and focused test suites as the current evidence; one-off
-validation reports do not belong in the repository.
+cancellation available. Test the native Harness client and extension entrypoints,
+history import guards, Monitor retry/acknowledgement behavior, wheel
+installation, direct ResearchMap Web rendering, and source-tampering rejection.
+Use the stable operations guide and focused test suites as the current evidence;
+one-off validation reports do not belong in the repository.
 
 ## Documentation Ownership
 
 - `docs/ARCHITECTURE.md` — runtime and scientific boundaries.
 - `docs/INSTALLATION.md` — installer, services, upgrades, and recovery.
-- `docs/TERMINAL.md` — Pi client TUI/App Server usage.
+- `docs/TERMINAL.md` — native Pi TUI, Host, Phone, and Monitor usage; the ordinary
+  compatibility mode is documented separately.
 - `skills/` — user-facing scientific procedures and references.
 - `contracts/ts-web/` — optional browser transport schemas for canonical map responses.
 
 TS Phone documentation and mobile release tooling are maintained in the
-independent `ts-phone` repository. TSPi must not reintroduce a Phone server,
-bridge, REST/SSE compatibility layer, or terminal Host.
+independent `ts-phone` repository. TSPi owns the small authenticated Host bridge
+and optional browser gateway; it must not add a second Pi renderer, Phone
+broker, or alternate session owner.
 
 ## Contract Change Matrix
 
 | Change | Required updates |
 | --- | --- |
-| App Server protocol or service | `apps/app-server/`, launcher tests, TS Phone client, architecture docs |
+| TSPi Host protocol or service | `apps/app-server/`, launcher tests, TS Phone client, architecture docs |
 | Workspace schema | kernel contract, bootstrap, validation tests, workspace references |
 | Scientific backend | backend parser, capability registry, focused skill reference, tests |
 | Scientific analysis | analysis registry/handler, replay validation, scientific counterexamples, report/Web transport, wheel inventory |
@@ -91,7 +107,7 @@ bridge, REST/SSE compatibility layer, or terminal Host.
 
 ## Release Procedure
 
-1. Run the fast and full Python suites plus native App Server tests.
+1. Run the fast and full Python suites plus the native Harness/Host lane.
 2. Build and validate the Agent release with `npm run release:agent`.
 3. Build the optional Web component when requested by the release plan.
 4. Build the suite package with `npm run release:build` and inspect its manifest.

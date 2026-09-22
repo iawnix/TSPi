@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-agent-core";
 import { loadServerExtensions } from "./server-extension-loader.mjs";
 import { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
+import { createPackageSourceReadGuard } from "./pi-harness-policy.mjs";
 
 export {
   createAnalyzeTool,
@@ -112,6 +113,14 @@ async function createTspiHarness(session, options, executionEnv) {
     systemPrompt: promptManifest.effective,
   }, TODO_CONTEXT);
   try {
+    // Keep the package-source policy in the worker-owned Harness.  Registering
+    // it here means every attached presentation shares the same guard, and a
+    // phone/monitor client cannot bypass the ordinary TUI extension policy.
+    created.harness.hooks.on(
+      "before_tool",
+      createPackageSourceReadGuard({ packageRoot: loadedSkills.packageRoot, cwd: session.metadata.cwd }),
+      { id: "tspi.package-source-read" },
+    );
     const lane = await created.harness.lane("main", TODO_CONTEXT);
     return {
       harness: created.harness,
@@ -134,7 +143,7 @@ async function createTspiHarness(session, options, executionEnv) {
 }
 
 function tspiSystemPrompt(cwd) {
-  return `You are the TSPi research agent for ${cwd}. ResearchMap in the Research Kernel is authoritative for scientific state. Use ts_state before reasoning from workspace records. Use ts_change for canonical writes; include a concrete rationale and auditable operations. Use ts_environment to inspect configured local and remote compute environments, and ts_calc for one preflight-bound calculation lifecycle. Monitor events may arrive through session next_run; treat them as operational evidence, reread ts_state, and inspect the bound Attempt before acting. A completed scheduler state is not the same as a parsed calculation. Use ts_seed or ts_import for validated calculation inputs; give ts_import a concise semantic input basename with the correct format extension. Use ts_compare for deterministic structure comparisons, ts_render for registered visual artifacts, and ts_report for revision-bound report packages. Use ts_review for isolated advisory assessment, then record Root's disposition with ts_reply before applying its advice. Use ts_notify only for material configured delivery events. Use sys_prompt when the effective system prompt or its provenance must be inspected. Do not invent identifiers, artifact paths, or calculation results. Treat tool output as evidence, preserve uncertainty, and keep Claims, Findings, Gate evaluations, and conclusions distinct.`;
+  return `You are the TSPi research agent for ${cwd}. ResearchMap in the Research Kernel is authoritative for scientific state. Use ts_state before reasoning from workspace records. Use ts_change for canonical writes; include a concrete rationale and auditable operations. Use ts_environment to inspect configured local and remote compute environments, and ts_calc for one preflight-bound calculation lifecycle. Monitor events may arrive through session next_run; treat them as operational evidence, reread ts_state, and inspect the bound Attempt before acting. A completed scheduler state is not the same as a parsed calculation. Use ts_seed or ts_import for validated calculation inputs; give ts_import a concise semantic input basename with the correct format extension. Use ts_compare for deterministic structure comparisons, ts_render for registered visual artifacts, and ts_report for revision-bound report packages. Use ts_review for isolated advisory assessment, then record Root's disposition with ts_reply before applying its advice. Use ts_notify only for material configured delivery events. Use sys_prompt when the effective system prompt or its provenance must be inspected. Use registered schemas, bounded state/capability catalogs, and public skills references; do not inspect installed package implementation or tests as research documentation. Do not invent identifiers, artifact paths, or calculation results. Treat tool output as evidence, preserve uncertainty, and keep Claims, Findings, Gate evaluations, and conclusions distinct.`;
 }
 
 if (isDirectInternalProcessEntry(import.meta.url)) {

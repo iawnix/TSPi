@@ -31,11 +31,11 @@ EXPECTED_TOOLS = {
 EXPECTED_COMMANDS = {"research", "compute", "runs", "debug"}
 
 
-def test_package_manifest_and_profile_expose_skill_family_five_extensions_one_theme() -> None:
+def test_package_manifest_and_profile_expose_skill_family_six_extensions_one_theme() -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     validate_version_surfaces()
     assert package["pi"]["skills"] == SKILL_ENTRIES
-    assert len(package["pi"]["extensions"]) == 5
+    assert len(package["pi"]["extensions"]) == 6
     assert package["pi"]["themes"] == ["./themes/ts-theme.json"]
     assert any("packages/ts-agent-runtime/agents/compute" in item for item in package["files"])
     assert all("packages/ts-agent-runtime/agents/artifacts" not in item for item in package["files"])
@@ -59,6 +59,7 @@ const pi={{
 for (const install of [research,ui,review,compute,artifacts]) install(pi);
 process.stdout.write(JSON.stringify({{
   tools:tools.map((tool)=>({{name:tool.name,properties:Object.keys(tool.parameters?.properties||{{}})}})),
+  renderers:tools.map((tool)=>({{name:tool.name,call:typeof tool.renderCall==="function",result:typeof tool.renderResult==="function"}})),
   commands,execution:PUBLIC_TOOL_EXECUTION,
 }}));
 """
@@ -78,6 +79,8 @@ process.stdout.write(JSON.stringify({{
     assert "query" in context["properties"]
     assert "mode" in context["properties"]
     assert not any(name.startswith("ts_workspace_") or name.startswith("ts_subagent_") for name in EXPECTED_TOOLS)
+    renderer_rows = {item["name"]: item for item in result["renderers"]}
+    assert all(renderer_rows[name]["call"] and renderer_rows[name]["result"] for name in EXPECTED_TOOLS if name != "sys_prompt")
 
 
 def test_pi_extensions_register_only_their_owned_tools() -> None:
@@ -284,6 +287,17 @@ process.stdout.write(JSON.stringify({{details:buildContextDetails(context),summa
     assert result["details"]["focusNodeIds"] == ["node_1"]
     assert "ResearchMap context:" in result["summary"]
     assert "map_1" in result["summary"]
+
+    hidden = _node_json(f"""
+import summary from {json.dumps((ROOT / 'extensions/pi/shared/tool-runtime.cjs').as_uri())};
+process.stdout.write(JSON.stringify(summary.buildContextSummary({{
+  map_id: "ws_004cf854bc974a06a54c0a39",
+  revision: 1,
+  progress: {{}},
+}})));
+""")
+    assert "ws_004cf854bc974a06a54c0a39" not in hidden
+    assert "- map: workspace;" in hidden
 
 
 def test_research_prompt_injection_states_authority_without_prescribing_sequence(tmp_path: Path) -> None:

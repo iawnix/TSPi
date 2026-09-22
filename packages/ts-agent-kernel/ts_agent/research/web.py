@@ -71,7 +71,10 @@ def handle_request(
     source_root = row.get("source_root")
     if not isinstance(source_root, str) or not source_root:
         raise ResearchWebError(f"workspace {workspace_id} has no registered location")
-    return _route({**row, "workspace_id": workspace_id, "source_root": source_root}, route.strip("/"), query)
+    # ``workspace_id`` may be a legacy registry alias.  Keep the canonical ID
+    # from the resolved row in response envelopes so one workspace has one
+    # public identity even when an old client still routes by its former ID.
+    return _route({**row, "source_root": source_root}, route.strip("/"), query)
 
 
 def register_sources(

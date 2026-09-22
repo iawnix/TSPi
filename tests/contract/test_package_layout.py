@@ -37,6 +37,20 @@ ALLOWED_CONTRACT_OR_THIRD_PARTY_LABELS = (
     "https://tsphone.iawnix.xyz/schema/bridge-" + "v" + "3.json",
     "https://tsphone.iawnix.xyz/schema/events-" + "v" + "3.json",
     "/api/" + "v" + "4/version",
+    # These are storage/protocol version labels, not generation branding.
+    "v3 history",
+    "v3 session",
+    "v3 transcript",
+    "v3 会话",
+    "v3 历史",
+    "v3 文件",
+    "v4 histories",
+    "v4 历史",
+    "Experimental/v4",
+    "实验性/v4",
+    "native v3",
+    "原生 v3",
+    "ordinary Pi v3",
 )
 
 
@@ -55,6 +69,51 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     app_server = package_root / "apps" / "app-server" / "pi-app-server.mjs"
     app_server.parent.mkdir(parents=True)
     app_server.write_text("// test app server entry\n", encoding="utf-8")
+    # The launcher validates the pinned ordinary Pi checkout before it execs
+    # Node.  Keep this fixture self-contained by creating a tiny local Git
+    # checkout with the two paths the normal CLI requires.  The fake `node`
+    # below still runs the test Pi, so no real Pi dependency is needed here.
+    source_staging = install_root / ".pi" / "pi-source-fixture"
+    (source_staging / "packages" / "coding-agent" / "src" / "experimental").mkdir(parents=True)
+    (source_staging / "packages" / "coding-agent" / "src" / "cli.ts").write_text(
+        "export {};\n", encoding="utf-8"
+    )
+    (source_staging / "packages" / "coding-agent" / "src" / "experimental" / "source-resolver.ts").write_text(
+        "export {};\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "-C", str(source_staging), "init", "--quiet"], check=True)
+    subprocess.run(["git", "-C", str(source_staging), "add", "."], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(source_staging),
+            "-c",
+            "user.name=TSPi test fixture",
+            "-c",
+            "user.email=tspi-fixture@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "fixture ordinary Pi source",
+        ],
+        check=True,
+    )
+    pi_commit = subprocess.run(
+        ["git", "-C", str(source_staging), "rev-parse", "HEAD"],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+    source = install_root / ".pi" / "runtime-cache" / "pi" / pi_commit
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source_staging.rename(source)
+    (package_root / "config").mkdir()
+    pi_pin = json.loads((ROOT / "config" / "pi-source.json").read_text(encoding="utf-8"))
+    pi_pin["commit"] = pi_commit
+    (package_root / "config" / "pi-source.json").write_text(
+        json.dumps(pi_pin, indent=2) + "\n", encoding="utf-8"
+    )
     write_test_suite_manifest(suite_root)
     shutil.copy2(TSPI_LAUNCHER, package_root / "TSPi")
     (package_root / "TSPi").chmod(0o755)
@@ -608,9 +667,20 @@ print(json.dumps({
     )
     assert result["compute_config"] is None
     assert result["remote_display"] == "not configured"
-    assert result["argv"][1] == "client"
-    assert "--connect" in result["argv"]
+    # The default path is the Host adapter, which selects/creates the durable
+    # Harness session before exec'ing Pi's native remote client. It must not
+    # start an ordinary local Pi loop or a second session writer.
+    assert result["argv"][0].endswith("/apps/app-server/tspi-terminal-client.mjs")
+    socket_path = result["argv"][result["argv"].index("--socket-path") + 1]
+    assert socket_path.endswith(".sock")
+    assert result["argv"][result["argv"].index("--workspace-id") + 1] == "reaction-a"
+    assert result["argv"][result["argv"].index("--workspace-root") + 1] == str(workspace)
+    assert result["argv"][result["argv"].index("--package-root") + 1].endswith("/agent")
+    assert "--connect" not in result["argv"]
+    assert "--session-dir" not in result["argv"]
     assert "--session-id" not in result["argv"]
+    # The remote client does not take the ordinary local writer lock; the
+    # installation Host/Pi server owns the durable session lifecycle instead.
     assert not (workspace / ".pi" / "root-agent.lock").exists()
     assert json.loads((workspace / ".pi" / "settings.json").read_text(encoding="utf-8")) == {"quietStartup": True}
     research_map = json.loads((workspace / "research_map.json").read_text(encoding="utf-8"))

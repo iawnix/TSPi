@@ -5,16 +5,21 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { tspiIcon } from "./icons.ts";
+import {
+  collectArtifactDisplayLabels,
+  createDisplayRefFormatter,
+} from "./ref-presentation.ts";
 
 export function renderTsReviewCall(
   args: Record<string, unknown>,
   theme: Theme,
 ): Text {
+  const formatter = createDisplayRefFormatter();
   const identity = compact([
     `${tspiIcon("running")} ${tspiIcon("roleReview")} Review`,
-    firstStringFromArray(args.nodeRefs),
-    stringValue(args.targetClaimId),
-    stringValue(args.operation) || "claim_review",
+    formatter.format(firstStringFromArray(args.nodeRefs), "node_ref"),
+    formatter.format(stringValue(args.targetClaimId), "claim_ref"),
+    formatter.format(stringValue(args.operation) || "claim_review"),
   ]);
   return new Text(theme.fg("accent", identity), 1, 0);
 }
@@ -26,6 +31,9 @@ export function renderTsReviewResult(
   isError: boolean,
 ): Text {
   if (options.isPartial) return new Text("", 0, 0);
+  const formatter = createDisplayRefFormatter({
+    artifactLabels: collectArtifactDisplayLabels([result.details]),
+  });
   const outcome = resultOutcome(result.details);
   const state = presentationState(outcome, isError);
   const label = state === "completed" ? "completed" : outcomeLabel(outcome, state === "failed");
@@ -33,9 +41,9 @@ export function renderTsReviewResult(
   const summary = compact([
     `${tspiIcon(state)} Review agent`,
     label,
-    resultReference(result.details),
+    formatter.format(resultReference(result.details), "run_ref"),
   ]);
-  const raw = options.expanded ? textContent(result) : undefined;
+  const raw = options.expanded ? formatter.formatText(textContent(result) || "") : undefined;
   return new Text(
     raw ? `${theme.fg(color, summary)}\n${theme.fg("dim", raw)}` : theme.fg(color, summary),
     1,

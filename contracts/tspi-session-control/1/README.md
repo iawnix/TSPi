@@ -1,55 +1,50 @@
 # TSPi Session Control Contract
 
-`tspi-session-control/1` is the transport-neutral command contract for one
-Pi App Server session. The App Server remains the only owner of the session,
-agent lane, transcript, and workspace Root lock. A client may carry these
-messages over TSPi Link (the TS Phone path) or the optional local HTTP/SSE
-adapter in `apps/app-server/pi-session-control-server.mjs` (the browser path).
+`tspi-session-control/1` is a compatibility contract for the optional browser
+adapter. The current source of truth for Phone and Host clients is
+`tspi-host/1` (`apps/app-server/tspi-host.mjs`); this contract gives a browser a
+stable, session-bound HTTP shape without creating another Pi runtime.
 
-The contract deliberately has no scientific state or workspace file writes.
-`AgentController` is the authority for prompt admission, busy responses,
-queueing, and aborts. `Transcript` is the authority for ordered session
-events. Clients must treat `request_id` as an idempotency key and must not
-resubmit a request after reconnect unless the same request id and payload are
-used. A repeated request id with a different payload is a protocol error.
+The ordinary Pi process remains the owner of the agent loop, transcript, model,
+tools, and workspace lock. The adapter only attaches to an existing Host
+session. It must never start Pi, execute client-supplied extensions, or write
+scientific files directly.
 
 ## Request lifecycle
 
-1. Attach to a session through Pi's `SessionManagement` service.
-2. Fetch or receive a snapshot and remember its `cursor`.
-3. Submit `prompt`, `queue`, or `abort` with a fresh `request_id`.
-4. Subscribe to events from the remembered cursor. The first event after every
-   reconnect is a coherent `snapshot`; later events have monotonically
-   increasing `sequence` values.
-5. On a sequence gap, discard the local session cache and request a new snapshot.
-
-The optional Web adapter is intentionally a thin transport. It does not start
-Pi, create workers, or introduce a second session broker. TS Phone uses the
-native Pi App Server byte stream through TSPi Link.
+1. Attach to one existing session and fetch `session/read` as a coherent snapshot.
+2. Keep the returned `epoch` and `sequence` watermark.
+3. Submit `input/send`, `turn/interrupt`, or a supported Monitor operation with
+   an idempotent `request_id`; input also requires `client_message_id`.
+4. Reconnect by fetching a new snapshot. A request whose outcome is uncertain
+   is not automatically replayed.
+5. Treat `accepted` as admission to Pi, not as completion of the agent turn.
 
 ## HTTP adapter routes
 
-When enabled by an operator, the adapter exposes one attached session:
+The adapter binds loopback by default. A non-loopback bind requires a bearer
+token and an explicit origin policy.
 
 | Method | Route | Meaning |
 | --- | --- | --- |
 | `GET` | `/health` | protocol and attached-session readiness |
-| `GET` | `/v1/session/{session_id}/snapshot` | coherent snapshot and cursor |
-| `POST` | `/v1/session/{session_id}/requests` | one control request JSON body |
-| `GET` | `/v1/session/{session_id}/events?after_sequence=N` | SSE snapshot/event stream |
+| `GET` | `/v1/session/{session_id}/snapshot` | Host `session/read` result |
+| `POST` | `/rpc` | allowlisted Host RPC method and params |
+| `POST` | `/v1/session/{session_id}/requests` | legacy prompt/abort translation |
+| `GET` | `/v1/session/{session_id}/events` | SSE snapshot and Host notifications |
 
-The adapter binds loopback by default. A non-loopback bind requires a bearer
-token. Deployments that expose it outside localhost must also provide TLS and
-an origin policy.
+The adapter binds workspace and session from its startup arguments, rejects
+cross-session parameters and unsolicited browser origins, bounds request and
+SSE buffers, and closes when its Host connection closes.
 
-For a local browser adapter, attach it to the already-running Host with:
+Example:
 
 ```bash
-TSPi gateway \
-  --connect /run/user/$UID/tspi/<server-id>.sock \
-  --session-id <session-id> \
-  --port 8767
+node apps/app-server/tspi-browser-gateway.mjs \
+  --connect unix:///run/user/$UID/tspi/<server-id>.sock \
+  --workspace /absolute/workspaces/reaction-a \
+  --session-id <session-id> --port 8767
 ```
 
-This command exits if the Host cannot be reached or the session is not
-available. It does not start a Host and it does not create a session.
+This command exits if the Host or session is unavailable. It does not create a
+session or start a worker.

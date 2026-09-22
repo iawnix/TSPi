@@ -2,20 +2,18 @@
 
 [English](0004-unified-app-server-extension-runtime.md) | [简体中文](0004-unified-app-server-extension-runtime.zh-CN.md)
 
-- Status: accepted
+- Status: accepted; [ADR 0005](0005-ordinary-pi-host-bridge.md) is retained only
+  for the isolated ordinary migration/debug mode
 - Date: 2026-09-17
 - Scope: TSPi App Server, terminal TUI, Phone, and Web clients
 
 ## Decision
 
-The installation-wide systemd App Server is the only production Root Agent
-runtime. Clients attach to its sessions; they do not start a second workflow
-runtime or upload executable extensions. The terminal command
-`TSPi --workspace <name>` remains a Pi client and therefore keeps Pi's client
-TUI. With a configured user or system service, the launcher starts that service
-when its Host socket is absent and waits for the same installation Host; it
-never starts a second foreground Host. With service scope `none`, the managed
-Host is disabled; configure a user or system service before opening a workspace.
+An installation-wide Pi App Server owns the Root Agent runtime, and clients
+attach to its sessions. The Pi `SessionWorker`/`AgentHarness` is the runtime
+owner; TSPi Host is the routing, receipt, Monitor, and Link control plane. The
+terminal is Pi's official native remote client, while Phone and Monitor use
+Host adapters to address the same worker lane.
 
 Server tools are selected by `extensions/server/extensions.json` and loaded by
 `apps/app-server/server-extension-loader.mjs`. Each descriptor binds a scope,
@@ -25,15 +23,9 @@ invalid factories, and tool-name collisions with built-ins or other entries.
 The App Server passes the host-owned tool context to the selected factories;
 clients can only invoke the resulting protocol services.
 
-The `tspi-server-tools` entry is the canonical server tool set. Its
-implementation is shared by all attached clients. The legacy Pi presentation
-extensions remain available for direct `pi` compatibility. TSPi's presentation
-facet is selected by the launcher and delivered to Pi's native remote client
-through the server-produced facet bundle. It may contribute layout components
-and slash commands, but Pi's client TUI remains the owner of input, completion,
-selectors, transcript rendering, and busy-state handling. New workflow
-functionality must add one server entry and use the shared command surface
-instead of adding a per-client broker.
+The worker loads the digest-verified server tool facet plus package skills,
+hooks, policy, and system prompt. Presentation facets remain client-side and
+cannot change this worker-owned tool set.
 
 ## Provider Compatibility
 
@@ -46,8 +38,5 @@ the named choice.
 
 ## Consequences
 
-- One session transcript and one Root lock are shared by TUI, Phone, and Web.
-- A disconnected TUI can be replaced by another authenticated client without
-  replaying an uncertain prompt or remote action.
-- Package release validation includes the loader, manifest, and server entry,
-  so a service cannot silently run an unvalidated extension.
+ADR 0005 documents only the explicitly selected ordinary compatibility mode;
+it is not a fallback for this runtime.

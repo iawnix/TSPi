@@ -20,6 +20,7 @@ const SCRIPTS = Object.freeze({
   api: resolve(PACKAGE_ROOT, "scripts", "ts_api.py"),
   workspace: resolve(PACKAGE_ROOT, "scripts", "ts_workspace.py"),
   compute: resolve(PACKAGE_ROOT, "scripts", "ts_compute.py"),
+  monitor: resolve(PACKAGE_ROOT, "scripts", "ts_monitor.py"),
   render: resolve(PACKAGE_ROOT, "scripts", "ts_render.py"),
   report: resolve(PACKAGE_ROOT, "scripts", "ts_report.py"),
   email: resolve(PACKAGE_ROOT, "scripts", "ts_email.py"),
@@ -55,6 +56,10 @@ export class PiRuntime {
 
   compute(command: string, root: string, args: string[], signal?: AbortSignal, timeoutMs = 60_000) {
     return this.runScript("compute", [command, "--root", root, ...args], root, signal, timeoutMs);
+  }
+
+  monitor(command: string, root: string, args: string[] = [], signal?: AbortSignal) {
+    return this.runScript("monitor", [command, "--root", root, ...args], root, signal);
   }
 
   artifactImport(root: string, request: unknown, signal?: AbortSignal) {

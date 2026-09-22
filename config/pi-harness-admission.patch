@@ -1,0 +1,99 @@
+diff --git a/packages/coding-agent/src/experimental/services/agent-controller-provider.ts b/packages/coding-agent/src/experimental/services/agent-controller-provider.ts
+index 04fb2693c..2a36490d1 100644
+--- a/packages/coding-agent/src/experimental/services/agent-controller-provider.ts
++++ b/packages/coding-agent/src/experimental/services/agent-controller-provider.ts
+@@ -1,4 +1,4 @@
+-import type { AgentLane, OperationResultRecord, SuspendedRun } from "@earendil-works/pi-agent-core";
++import type { AgentLane, OperationRequest, OperationResultRecord, SuspendedRun } from "@earendil-works/pi-agent-core";
+ import type { ImageContent } from "@earendil-works/pi-ai";
+ import type {
+ 	AgentController as AgentControllerService,
+@@ -20,15 +20,67 @@ export function createAgentController(lane: AgentLane): AgentControllerService {
+ 			? { accepted: true, entryId: result.value.entryId, error: null }
+ 			: { accepted: false, entryId: null, error: toAgentError(result.error) };
+ 	};
++	const admitAndDrive = async (
++		request: OperationRequest,
++		context: Parameters<AgentControllerService["prompt"]>[1],
++	): Promise<AgentOperationResponse> => {
++		const admission = await lane.accept(request, context);
++		if (!admission.ok) {
++			return { accepted: false, operationId: operationId(admission.error), error: toAgentError(admission.error) };
++		}
++		const admitted = admission.value;
++		// Admission is the durable commit point. The drive is intentionally
++		// detached so RPC callers receive the operation id immediately.
++		void lane.drive({ operationId: admitted.operationId, waitForRetry: true }, context).catch(() => {});
++		return { accepted: true, operationId: admitted.operationId, error: null };
++	};
++	const startQueued = async (
++		context: Parameters<AgentControllerService["prompt"]>[1],
++	): Promise<AgentOperationResponse> => {
++		const execution = await lane.inspectExecution(context);
++		if (execution.current !== null) {
++			const operationId = execution.current.id;
++			// Recover a suspended operation after a worker restart. If another
++			// local drive owns it, the lane serializes the observation.
++			void lane.resume(context).catch(() => {});
++			return { accepted: true, operationId, error: null };
++		}
++		// Do not manufacture an empty operation when recovery is requested for
++		// an idle lane with no durable queue. A caller may retry after a later
++		// nextRun admission has committed an inbox entry.
++		const watch = await lane.watch(context);
++		try {
++			if (watch.snapshot.operation !== null) {
++				const operationId = watch.snapshot.operation.id;
++				void lane.resume(context).catch(() => {});
++				return { accepted: true, operationId, error: null };
++			}
++			if (watch.snapshot.queues.length === 0) {
++				return {
++					accepted: false,
++					operationId: null,
++					error: { code: "nothing_queued", message: "Lane has no durable queued input" },
++				};
++			}
++		} finally {
++			watch.unsubscribe();
++		}
++		return admitAndDrive({ kind: "prompt", prompt: "" }, context);
++	};
+ 
+ 	return {
+ 		async prompt(request, context) {
+ 			const [message, images] = toTextPrompt(request);
+ 			const result = await lane.prompt(message, images, context);
+ 			return result.ok
+-				? toOperationResponse(result.value)
+-				: { accepted: false, operationId: operationId(result.error), error: toAgentError(result.error) };
++			? toOperationResponse(result.value)
++			: { accepted: false, operationId: operationId(result.error), error: toAgentError(result.error) };
++		},
++		startPrompt: (request, context) => {
++			const [message, images] = toTextPrompt(request);
++			return admitAndDrive({ kind: "prompt", ...(request.operationId === undefined ? {} : { operationId: request.operationId }), prompt: message, ...(images === undefined ? {} : { images }) }, context);
+ 		},
++		startQueued,
+ 		async requestAbort(operationId, context) {
+ 			const result = await lane.requestAbort(operationId, context);
+ 			if (!result.ok) throw new Error(result.error.message);
+diff --git a/packages/coding-agent/src/experimental/services/agent-controller.ts b/packages/coding-agent/src/experimental/services/agent-controller.ts
+index fc74962ad..31f0bb8bc 100644
+--- a/packages/coding-agent/src/experimental/services/agent-controller.ts
++++ b/packages/coding-agent/src/experimental/services/agent-controller.ts
+@@ -8,4 +8,5 @@ export interface AgentPromptRequest {
+ export interface AgentPromptRequest {
++	operationId?: string;
+ 	message: string;
+ 	images: AgentPromptImage[] | null;
+ }
+@@ -38,6 +39,8 @@ export interface AgentNavigationRequest {
+ /** Presentation-safe command facade over the worker-owned main AgentLane. */
+ export interface AgentController {
+ 	prompt(request: AgentPromptRequest, context: Context): Promise<AgentOperationResponse>;
++	startPrompt(request: AgentPromptRequest, context: Context): Promise<AgentOperationResponse>;
++	startQueued(context: Context): Promise<AgentOperationResponse>;
+ 	requestAbort(operationId: string, context: Context): Promise<void>;
+ 	steer(request: AgentPromptRequest, context: Context): Promise<AgentQueueResponse>;
+ 	followUp(request: AgentPromptRequest, context: Context): Promise<AgentQueueResponse>;

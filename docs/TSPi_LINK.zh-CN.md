@@ -2,15 +2,16 @@
 
 [English](TSPi_LINK.md) | 简体中文
 
-TSPi Link 让 TS Phone 在不暴露 App Server 端口的情况下连接安装级 Host。它只是一层
+TSPi Link 让 TS Phone 在不暴露 Pi 或 Host 公网端口的情况下连接安装级 Host。它只是一层
 传输边界，不是第二套应用服务器：
 
 ```text
-TS Phone -- WSS --> TSPi Link Relay <-- WSS -- TSPi Host -- Unix socket -- App Server
+TS Phone -- WSS --> TSPi Link Relay <-- WSS -- TSPi Host -- Unix socket -- Pi App Server / Harness
 ```
 
-Relay 只管理 Host 注册、Phone 配对、设备撤销和不透明字节转发。workspace、session、
-transcript、模型、工具、ResearchMap 和计算状态始终只由 App Server 管理。
+Relay 只管理 Host 注册、Phone 配对、设备撤销和不透明帧转发。Host 管理路由与客户端
+访问；Pi Harness worker 拥有 session、transcript、模型和工具。Relay 不拥有 workspace、
+ResearchMap 或计算状态。
 
 ## 安装 TSPi Link Relay
 
@@ -52,7 +53,7 @@ node /opt/tspi-link-relay/current/service/cli.mjs enrollment create \
 
 在 Host 上运行 TSPi 安装器，选择 `TSPi Link Relay` Phone access，并输入 Relay URL 和
 enrollment code。安装器把 Host 凭据写入 owner-only 的
-`.pi/app-server-host/host.token`。之后 App Server service 会自动维持出站 Link 连接。
+`.pi/app-server-host/host.token`。之后 Host service 会自动维持出站 Link 连接。
 
 ## 配对与撤销手机
 
@@ -72,7 +73,7 @@ TSPi phone revoke <device-id>
 
 Host 和设备 token 都是随机 256-bit 值，Relay 只保存它们的 SHA-256 hash。长期 token
 不会进入配对码或 systemd 环境变量。WSS 分别保护两条网络链路，但 Link 1 不增加应用
-层端到端加密；Relay 运营者可以观察转发的 App Server 字节，因此应使用可信基础设施
+层端到端加密；Relay 运营者可以观察转发的 `tspi-host/1` NDJSON，因此应使用可信基础设施
 或私有网络。
 
 线协议见 [`contracts/tspi-link/1/README.md`](../contracts/tspi-link/1/README.md)。

@@ -15,6 +15,45 @@ import { tspiIconLabel, tspiModelIconLabel } from "../../shared/icons.ts";
 import { TspiPresentationEditor } from "./editor.ts";
 import { createTspiPresentationHeader } from "./header.ts";
 import { RunHistoryBrowser, runRecords } from "./runs.ts";
+import {
+  NATIVE_PRESENTATION_TOOL_NAMES,
+  renderTsNativeCall,
+  renderTsNativeResult,
+} from "../../shared/native-tool-presentation.ts";
+import {
+  renderTsArtifactCall,
+  renderTsArtifactResult,
+  type ArtifactToolKind,
+} from "../../shared/artifact-tool-presentation.ts";
+import { renderTsReviewCall, renderTsReviewResult } from "../../shared/review-tool-presentation.ts";
+
+const PRESENTATION_TOOL_RENDERERS = Object.freeze({
+  ...Object.fromEntries(
+    (["seed", "compare", "analyze", "import", "render", "report"] as ArtifactToolKind[]).map((kind) => [
+      `ts_${kind === "import" ? "import" : kind}`,
+      {
+        renderCall: (args: Record<string, unknown>, theme: any) => renderTsArtifactCall(kind, args, theme),
+        renderResult: (result: any, options: any, theme: any, context: any) =>
+          renderTsArtifactResult(kind, result, options, theme, context.isError),
+      },
+    ]),
+  ),
+  ts_review: {
+    renderCall: (args: Record<string, unknown>, theme: any) => renderTsReviewCall(args, theme),
+    renderResult: (result: any, options: any, theme: any, context: any) =>
+      renderTsReviewResult(result, options, theme, context.isError),
+  },
+  ...Object.fromEntries(
+    NATIVE_PRESENTATION_TOOL_NAMES.map((toolName) => [
+      toolName,
+      {
+        renderCall: (args: Record<string, unknown>, theme: any) => renderTsNativeCall(toolName, args, theme),
+        renderResult: (result: any, options: any, theme: any, context: any) =>
+          renderTsNativeResult(toolName, result, options, theme, context.isError),
+      },
+    ]),
+  ),
+});
 
 const execFileAsync = promisify(execFile);
 
@@ -100,8 +139,13 @@ export default defineFacet({
     const ui = env.use(PresentationUI);
     const commands = env.use(SlashCommands);
     const transcript = env.use(Transcript);
+    const rendererOnly = process.env.TSPI_PRESENTATION_RENDERERS_ONLY === "1";
     let latestSnapshot: any;
     env.onActivate(() => {
+      if (rendererOnly) {
+        env.own(layout.setToolRenderers(PRESENTATION_TOOL_RENDERERS));
+        return;
+      }
       latestSnapshot = transcript.state.value?.snapshot;
       const context = layout.getContext();
       const workspaceRoot = process.env.TS_WORKSPACE_ROOT || context.cwd;
@@ -122,6 +166,7 @@ export default defineFacet({
       ));
       layout.setFooter((footerContext) => new TspiFooter(footerContext, transcript));
       layout.setEditor((editorContext) => new TspiPresentationEditor(editorContext));
+      const removeToolRenderers = layout.setToolRenderers(PRESENTATION_TOOL_RENDERERS);
       layout.setTitle(`TSPi · ${formatCwd(workspaceRoot)}`);
       const removeRuns = commands.replace({
         name: "runs",
@@ -136,6 +181,7 @@ export default defineFacet({
         layout.setHeader(undefined);
         layout.setFooter(undefined);
         layout.setEditor(undefined);
+        removeToolRenderers();
       });
     });
   },

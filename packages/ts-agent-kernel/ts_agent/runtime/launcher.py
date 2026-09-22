@@ -112,6 +112,7 @@ class LaunchRequest:
     pi_args: tuple[str, ...]
     gateway: bool = False
     host: bool = False
+    native_runtime: bool = False
     phone_action: str | None = None
     phone_device_id: str | None = None
 
@@ -146,9 +147,11 @@ Options:
   --check-remote      Check the configured remote compute environment.
   -h, --help          Show this help.
 
-The terminal connects to the installation Host managed by
-ts-app-server-tspi.service, starting its configured service when needed. Exiting
-the terminal only detaches this client.
+The terminal runs Pi's native experimental client TUI against an installation-
+owned AgentHarness server. Session history is isolated under the installation
+Host state; Phone and monitor requests address the same Pi lane. Set
+TSPI_HOST_BACKEND=ordinary only for the legacy ordinary-Pi bridge/tmux mode.
+The managed Host service is ts-app-server-tspi.service.
 """
 
 
@@ -167,6 +170,7 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
     pi_args: list[str] = []
     gateway = False
     host = False
+    native_runtime = False
     index = 0
     while index < len(argv):
         value = argv[index]
@@ -189,6 +193,8 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
             gateway = True
         elif value in {"--host", "--service-host"}:
             host = True
+        elif value == "--native-runtime":
+            native_runtime = True
         elif value == "--allow-writes":
             raise TSPiHostError("--allow-writes was removed; App Server is the guarded writable Root Agent", exit_code=2)
         elif value in {"--phone", "--phone-worker", "--phone-access"} or value.startswith("--phone-access="):
@@ -236,6 +242,7 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         pi_args=tuple(pi_args),
         gateway=gateway,
         host=host,
+        native_runtime=native_runtime,
     )
 
 
@@ -491,42 +498,13 @@ def _configure_workspace_pi_settings(path: Path) -> None:
     _atomic_write_json(path, settings)
 
 
-def _configure_agent_pi_settings(installation: Installation) -> None:
-    """Register the release theme for Pi's experimental client.
-
-    The Host client creates its TUI from the installation-wide agent directory,
-    rather than from the legacy extension entrypoint. Keep this registration
-    additive so user model/provider settings and explicitly selected custom
-    themes remain untouched.
-    """
-
-    installation_pi = installation.root / ".pi"
-    if installation_pi.is_symlink():
-        raise TSPiHostError(f"Pi agent settings parent cannot be a symbolic link: {installation_pi}")
-    agent_root = installation.root / PI_AGENT_SETTINGS_RELATIVE.parent
-    if agent_root.is_symlink():
-        raise TSPiHostError(f"Pi agent settings directory cannot be a symbolic link: {agent_root}")
-    if not agent_root.exists():
-        try:
-            agent_root.mkdir(mode=0o700, parents=True)
-        except OSError as exc:
-            raise TSPiHostError(f"Pi agent settings directory is unavailable: {agent_root}: {exc}") from exc
-    if not agent_root.is_dir():
-        raise TSPiHostError(f"Pi agent settings path is not a directory: {agent_root}")
-
-    theme_path = installation.package_root / TSPI_THEME_RELATIVE
-    if theme_path.is_symlink() or not theme_path.is_file():
-        raise TSPiHostError(f"selected Package TSPi theme is unavailable: {theme_path}")
-    try:
-        theme_document = json.loads(theme_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise TSPiHostError(f"selected Package TSPi theme is invalid: {theme_path}: {exc}") from exc
-    if not isinstance(theme_document, dict) or theme_document.get("name") != TSPI_THEME_NAME:
-        raise TSPiHostError(f"selected Package TSPi theme is invalid: {theme_path}")
-
+def _restore_native_pi_settings(installation: Installation) -> None:
+    """Remove appearance settings written by older TSPi launchers."""
     path = installation.root / PI_AGENT_SETTINGS_RELATIVE
     if path.is_symlink():
         raise TSPiHostError(f"Pi agent settings cannot be a symbolic link: {path}")
+    if not path.exists():
+        return
     if path.exists() and not path.is_file():
         raise TSPiHostError(f"Pi agent settings must be a regular file: {path}")
     try:
@@ -536,22 +514,39 @@ def _configure_agent_pi_settings(installation: Installation) -> None:
     if not isinstance(settings, dict):
         raise TSPiHostError(f"Pi agent settings must contain a JSON object: {path}")
 
-    themes = settings.get("themes", [])
-    if not isinstance(themes, list) or any(not isinstance(theme, str) for theme in themes):
-        raise TSPiHostError(f"Pi agent settings themes must be an array of strings: {path}")
-    theme_value = str(theme_path)
     changed = False
-    if theme_value not in themes:
-        themes = [*themes, theme_value]
-        settings["themes"] = themes
-        changed = True
-
     selected_theme = settings.get("theme")
     if selected_theme is not None and not isinstance(selected_theme, str):
         raise TSPiHostError(f"Pi agent setting 'theme' must be a string: {path}")
-    if selected_theme in {None, "dark", "light"}:
-        if selected_theme != TSPI_THEME_NAME:
-            settings["theme"] = TSPI_THEME_NAME
+    if selected_theme == TSPI_THEME_NAME:
+        settings["theme"] = "dark"
+        changed = True
+
+    themes = settings.get("themes")
+    if themes is not None:
+        if not isinstance(themes, list) or any(not isinstance(theme, str) for theme in themes):
+            raise TSPiHostError(f"Pi agent settings themes must be an array of strings: {path}")
+        current_theme_path = str(installation.package_root / TSPI_THEME_RELATIVE)
+        package_home = (installation.root / ".pi/packages/tspi").resolve()
+
+        def is_managed_theme(theme: str) -> bool:
+            if theme == current_theme_path:
+                return True
+            candidate = Path(theme).expanduser()
+            if not candidate.is_absolute():
+                return False
+            try:
+                relative = candidate.resolve().relative_to(package_home)
+            except (OSError, ValueError):
+                return False
+            return relative.parts[-3:] == ("agent", "themes", "ts-theme.json")
+
+        filtered_themes = [theme for theme in themes if not is_managed_theme(theme)]
+        if filtered_themes != themes:
+            if filtered_themes:
+                settings["themes"] = filtered_themes
+            else:
+                settings.pop("themes")
             changed = True
 
     if changed:
@@ -798,7 +793,9 @@ def configure_process_environment(installation: Installation, workspace: Path, w
     os.environ["TSPI_INSTALL_ROOT"] = str(installation.root)
     os.environ["TS_WORKSPACE_ROOT"] = str(workspace)
     os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / ".pi" / "agent")
-    _configure_agent_pi_settings(installation)
+    # Do not inherit the retired replacement renderer into ordinary Pi.
+    os.environ.pop("TSPI_CUSTOM_UI", None)
+    _restore_native_pi_settings(installation)
     if installation.compute_config_default and installation.compute_config_default.is_file():
         os.environ["TS_COMPUTE_CONFIG"] = str(installation.compute_config_default)
     else:
@@ -821,6 +818,7 @@ def configure_host_process_environment(installation: Installation) -> None:
     os.environ["TS_WORKSPACE_ROOT"] = str(installation.workspaces_root)
     os.environ["TSPI_WORKSPACE_ROOT"] = str(installation.workspaces_root)
     os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / ".pi" / "agent")
+    os.environ.pop("TSPI_CUSTOM_UI", None)
     from .link import LinkError, configure_link_environment
 
     try:
@@ -897,10 +895,12 @@ def _local_timestamp() -> str:
 
 
 def build_host_server_command(installation: Installation, request: LaunchRequest) -> list[str]:
-    """Build the one installation-wide Pi App Server command."""
+    """Build the installation Host; its registry scans actual workspaces."""
     for option in ("--directory", "--server-id", "--session-dir", "--workspace"):
         if _has_cli_option(request.pi_args, option):
             raise TSPiHostError(f"{option} is managed by the TSPi Host launcher", exit_code=2)
+    if request.pi_args:
+        raise TSPiHostError("Pi arguments belong to TSPi --workspace, not the Host service", exit_code=2)
     host_workspace, state_root = _prepare_host_state(installation)
     server_id = _host_server_id(installation, create=True)
     socket_directory = _host_socket_directory(installation, create=True)
@@ -909,13 +909,13 @@ def build_host_server_command(installation: Installation, request: LaunchRequest
         str(_app_server_entry(installation)),
         "server",
         "--workspace",
-        str(host_workspace),
+        str(installation.workspaces_root),
         "--directory",
         str(socket_directory),
         "--server-id",
         server_id,
-        "--session-dir",
-        str(state_root / "sessions"),
+        "--state-root",
+        str(state_root),
     ]
     command.extend(request.pi_args)
     return command
@@ -990,23 +990,124 @@ def build_host_client_command(
     *,
     socket_path: Path | None = None,
 ) -> list[str]:
-    """Build a terminal client command connected to the installation Host."""
+    """Attach a real Pi terminal, without introducing another TUI renderer."""
     endpoint = socket_path or resolve_host_socket(installation)
     command = [
         _node_binary(),
-        str(_app_server_entry(installation)),
-        "client",
-        "--directory",
-        str(endpoint.parent),
-        "--connect",
-        f"unix://{endpoint}",
+        str(installation.package_root / "apps/app-server/tspi-terminal-client.mjs"),
+        "--socket-path", str(endpoint),
+        "--workspace-id", str(request.workspace_name),
+        "--workspace-root", str(installation.workspaces_root / str(request.workspace_name)),
+        "--state-root", str(installation.root / ".pi/app-server-host"),
+        "--install-root", str(installation.root),
+        "--package-root", str(installation.package_root),
     ]
+    if request.session_id:
+        command.extend(["--session-id", request.session_id])
+    elif request.continue_latest:
+        command.append("--continue")
+    command.extend(["--", *request.pi_args])
+    return command
+
+
+def build_harness_client_command(installation: Installation, request: LaunchRequest) -> list[str]:
+    """Attach Pi's own experimental client TUI to the persistent harness."""
+    pin = json.loads((installation.package_root / "config/pi-source.json").read_text(encoding="utf-8"))
+    source = Path(os.environ.get("TSPI_PI_SOURCE") or installation.root / ".pi/runtime-cache/pi" / pin["commit"])
+    entry = source / "packages/coding-agent/src/experimental/source-resolver.ts"
+    client = installation.package_root / "apps/app-server/pi-native-client.mjs"
+    if not entry.is_file() or not client.is_file():
+        raise TSPiHostError("Pi harness client source is unavailable; prepare the pinned Pi source or reinstall TSPi")
+    command = [_node_binary(), "--import", str(entry), str(client)]
     if request.session_id:
         command.extend(["--session-id", request.session_id])
     elif request.continue_latest:
         command.append("--continue")
     command.extend(request.pi_args)
     return command
+
+
+def build_native_pi_command(installation: Installation, request: LaunchRequest, workspace: Path) -> list[str]:
+    """Use Pi's normal CLI and InteractiveMode, including its normal extensions."""
+    pin = json.loads((installation.package_root / "config/pi-source.json").read_text(encoding="utf-8"))
+    source = Path(os.environ.get("TSPI_PI_SOURCE") or installation.root / ".pi/runtime-cache/pi" / pin["commit"])
+    entry = source / "packages/coding-agent/src/cli.ts"
+    resolver = source / "packages/coding-agent/src/experimental/source-resolver.ts"
+    if not entry.is_file() or not resolver.is_file():
+        raise TSPiHostError("ordinary Pi source is unavailable; prepare the pinned Pi source or reinstall TSPi")
+    try:
+        commit = subprocess.run(["git", "-C", str(source), "rev-parse", "HEAD"], check=True,
+                                text=True, capture_output=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise TSPiHostError("cannot verify the ordinary Pi source checkout") from exc
+    if commit != pin["commit"]:
+        raise TSPiHostError("ordinary Pi source commit does not match config/pi-source.json")
+    command = [_node_binary(), "--import", str(resolver), str(entry)]
+    sessions = workspace / ".pi/sessions"
+    if _has_cli_option(request.pi_args, "--session-dir"):
+        raise TSPiHostError("--session-dir is bound to the workspace by TSPi", exit_code=2)
+    for index, argument in enumerate(request.pi_args):
+        option, separator, value = argument.partition("=")
+        if option in {"--session", "--fork"} and (separator or index + 1 < len(request.pi_args)):
+            candidate = value if separator else request.pi_args[index + 1]
+            if "/" in candidate or candidate.endswith(".jsonl"):
+                path = Path(candidate).expanduser()
+                path = path if path.is_absolute() else workspace / path
+                if path.resolve().parent != sessions.resolve():
+                    raise TSPiHostError("session files must belong to this workspace's .pi/sessions directory", exit_code=2)
+    command.extend(["--session-dir", str(sessions)])
+    if request.session_id:
+        command.extend(["--session-id", request.session_id])
+    elif request.continue_latest:
+        command.append("--continue")
+    # The package's optional UI extension is intentionally not selected here.
+    # TSPi must leave Pi's native InteractiveMode presentation untouched; users
+    # can still load that facet explicitly when invoking Pi directly.
+    for name in ("research", "review", "compute", "artifacts", "bridge"):
+        command.extend(["-e", str(installation.package_root / "extensions/pi" / name / "index.ts")])
+    command.extend(["--skill", str(installation.package_root / "skills")])
+    command.extend(request.pi_args)
+    return command
+
+
+def launch_native_pi(installation: Installation, request: LaunchRequest, workspace: Path) -> NoReturn:
+    # The workspace lock survives exec, while normal /new, /resume and /fork
+    # remain available inside this one Pi process.
+    descriptors = [acquire_directory_guard(installation.root, workspace)]
+    try:
+        descriptors.append(acquire_root_agent_lock(workspace))
+        os.environ["TSPI_WORKSPACE_ID"] = str(request.workspace_name)
+        os.environ["TSPI_SESSION_CWD"] = str(workspace)
+        os.environ["TSPI_HOST_SOCKET"] = str(_host_socket_directory(installation, create=True) / f"{_host_server_id(installation, create=True)}.sock")
+        os.environ["TSPI_BRIDGE_TOKEN_FILE"] = str(installation.root / ".pi/app-server-host/bridge-token")
+        os.environ.pop("TSPI_CUSTOM_UI", None)
+        os.environ.pop("PI_EXPERIMENTAL", None)
+        os.environ.pop("TS_SESSION_GUARD", None)
+        os.environ.pop("TS_SESSION_WRITER_PID", None)
+        exec_pi(build_native_pi_command(installation, request, workspace), workspace)
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
+def launch_harness_client(installation: Installation, request: LaunchRequest, workspace: Path) -> NoReturn:
+    """Run Pi's native remote TUI against the installation-owned harness."""
+    if request.session_id and not SESSION_ID.fullmatch(request.session_id):
+        raise TSPiHostError("invalid session identity", exit_code=2)
+    os.environ["TSPI_SESSION_CWD"] = str(workspace)
+    os.environ["TSPI_PI_SOURCE"] = str(
+        Path(os.environ.get("TSPI_PI_SOURCE") or installation.root / ".pi/runtime-cache/pi" / json.loads(
+            (installation.package_root / "config/pi-source.json").read_text(encoding="utf-8")
+        )["commit"]).resolve()
+    )
+    os.environ["PI_SERVER_DIR"] = str(installation.root / ".pi/app-server-host/pi-server")
+    os.environ["PI_EXPERIMENTAL"] = "1"
+    os.environ["TSPI_PACKAGE_ROOT"] = str(installation.package_root)
+    os.environ["PI_SESSION_WORKER_ENTRY"] = str(installation.package_root / "apps/app-server/pi-session-worker.mjs")
+    os.environ["TSPI_WORKSPACE_ROOT"] = str(installation.workspaces_root)
+    os.environ["TSPI_NATIVE_WRITES"] = "1"
+    os.environ.pop("TSPI_CUSTOM_UI", None)
+    exec_pi(build_harness_client_command(installation, request), workspace)
 
 
 def build_gateway_command(
@@ -1021,8 +1122,7 @@ def build_gateway_command(
     endpoint = socket_path or resolve_host_socket(installation)
     command = [
         _node_binary(),
-        str(_app_server_entry(installation)),
-        "gateway",
+        str(installation.package_root / "apps/app-server/tspi-browser-gateway.mjs"),
         "--workspace",
         str(installation.workspaces_root / request.workspace_name),
         "--connect",
@@ -1202,12 +1302,66 @@ def exec_pi(command: list[str], workspace: Path) -> NoReturn:
 
 
 def launch_terminal(installation: Installation, request: LaunchRequest, workspace: Path) -> NoReturn:
-    """Attach Pi's remote client TUI to the installation Host without owning session state."""
+    """Run the Host-mediated native Pi client by default.
+
+    The Harness Host is the only owner of the Pi server and session worker.
+    The terminal process is just Pi's official experimental client, connected
+    to the descriptor selected by ``tspi-terminal-client.mjs``.  Ordinary mode
+    remains an explicit migration/debug path and is never a Harness fallback.
+    """
     if request.session_id and not SESSION_ID.fullmatch(request.session_id):
         raise TSPiHostError("invalid session identity", exit_code=2)
     os.environ["TSPI_SESSION_CWD"] = str(workspace)
-    socket_path = ensure_host_running(installation)
+    if os.environ.get("TSPI_HOST_BACKEND", "harness").strip().lower() != "ordinary":
+        try:
+            socket_path = ensure_host_running(installation)
+        except TSPiHostError as exc:
+            raise TSPiHostError(f"Pi harness Host is unavailable: {exc}") from exc
+        # The adapter performs session/list + create/resume through Host, then
+        # starts Pi's own native client against the returned Unix descriptor.
+        pin = json.loads((installation.package_root / "config/pi-source.json").read_text(encoding="utf-8"))
+        source = Path(os.environ.get("TSPI_PI_SOURCE") or installation.root / ".pi/runtime-cache/pi" / pin["commit"]).resolve()
+        if not (source / "packages/coding-agent/src/experimental/source-resolver.ts").is_file():
+            raise TSPiHostError("prepared Pi Harness source is unavailable; reinstall the pinned Pi runtime")
+        os.environ["TSPI_PI_SOURCE"] = str(source)
+        os.environ["PI_EXPERIMENTAL"] = "1"
+        os.environ["TSPI_PACKAGE_ROOT"] = str(installation.package_root)
+        os.environ["PI_SESSION_WORKER_ENTRY"] = str(installation.package_root / "apps/app-server/pi-session-worker.mjs")
+        os.environ["TSPI_WORKSPACE_ROOT"] = str(installation.workspaces_root)
+        os.environ["TSPI_NATIVE_WRITES"] = "1"
+        exec_pi(build_host_client_command(installation, request, socket_path=socket_path), workspace)
+    if request.native_runtime or not sys.stdin.isatty() or not sys.stdout.isatty():
+        launch_native_pi(installation, request, workspace)
+    tmux = os.environ.get("TSPI_TMUX") or shutil.which("tmux")
+    if not tmux:
+        managed_tmux = installation.env_root / "bin/tmux"
+        if managed_tmux.is_file():
+            tmux = str(managed_tmux)
+    if not tmux or not _probe_tmux(tmux):
+        print("TSPi: tmux is unavailable; running Pi in the foreground.", file=sys.stderr)
+        launch_native_pi(installation, request, workspace)
+    os.environ["TSPI_TMUX"] = tmux
+    try:
+        socket_path = ensure_host_running(installation)
+    except TSPiHostError as exc:
+        print(f"TSPi: {exc}; running Pi in the foreground.", file=sys.stderr)
+        launch_native_pi(installation, request, workspace)
     exec_pi(build_host_client_command(installation, request, socket_path=socket_path), workspace)
+
+
+def _probe_tmux(binary: str) -> bool:
+    """Check the exact tmux binary before asking Host to create a session."""
+    try:
+        completed = subprocess.run(
+            [binary, "-V"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
 
 
 def launch(argv: list[str], *, package_root: str | Path, install_root: str | Path) -> int:

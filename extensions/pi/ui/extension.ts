@@ -15,6 +15,7 @@ import {
   tspiIconLabel,
   tspiModelIconLabel,
 } from "../shared/icons.ts";
+import { createDisplayRefFormatter } from "../shared/ref-presentation.ts";
 import {
   formatElapsed,
   formatLocalDateTime,
@@ -48,6 +49,7 @@ export function formatTsSubagentHistory(
   data: Record<string, unknown>,
   expanded = false,
 ): string[] {
+  const formatter = createDisplayRefFormatter();
   const role = stringValue(data.role) === "compute" ? "compute" : "review";
   const operation = stringValue(data.operation) || "operation";
   const failed = entryType.endsWith("-failed");
@@ -56,12 +58,12 @@ export function formatTsSubagentHistory(
   const action = subagentActionLabel({ role, operation, capability: stringValue(data.capability) });
   const lines = [`TS ${subagentRoleLabel(role)} · ${action} · ${outcome}${duration}`];
   const context = compact([
-    stringValue(data.task_id),
-    Array.isArray(data.node_refs) ? firstString(data.node_refs[0]) : undefined,
-    failed ? stringValue(data.failure_class) : undefined,
+    formatter.format(stringValue(data.task_id), "task_ref"),
+    Array.isArray(data.node_refs) ? formatter.format(firstString(data.node_refs[0]), "node_ref") : undefined,
+    failed ? formatter.formatText(stringValue(data.failure_class) || "") : undefined,
   ]);
   if (context) lines.push(context);
-  if (expanded) lines.push(JSON.stringify(data, null, 2));
+  if (expanded) lines.push(formatter.formatText(JSON.stringify(data, null, 2)));
   return lines;
 }
 
@@ -82,6 +84,7 @@ export function registerUiExtension(pi: ExtensionAPI) {
   };
 
   const updateWorkingMessage = (ctx: ExtensionContext) => {
+    if (process.env.TSPI_CUSTOM_UI !== "1") return;
     if (foregroundState === "idle") {
       ctx.ui.setWorkingMessage();
       return;
@@ -117,7 +120,7 @@ export function registerUiExtension(pi: ExtensionAPI) {
   };
 
   const installUi = (ctx: ExtensionContext) => {
-    if (ctx.mode !== "tui") return;
+    if (ctx.mode !== "tui" || process.env.TSPI_CUSTOM_UI !== "1") return;
     const workspaceRoot = process.env.TS_WORKSPACE_ROOT || ctx.cwd;
     disposeHeader();
     ctx.ui.setHeader((tui) => {
@@ -227,7 +230,7 @@ export function registerUiExtension(pi: ExtensionAPI) {
     disposeHeader();
     clearTsActivityStore(activityStore);
     activeTools.clear();
-    if (ctx.mode === "tui") {
+    if (ctx.mode === "tui" && process.env.TSPI_CUSTOM_UI === "1") {
       ctx.ui.setHeader(undefined);
       ctx.ui.setFooter(undefined);
       ctx.ui.setEditorComponent(undefined);
@@ -298,6 +301,7 @@ export function formatTsSubagentHistoryMarkdown(records: TsSubagentRecord[]): st
   const visible = records.slice(0, 100);
   const lines = ["# TS Subagent History", "", `${records.length} recorded subagent run${records.length === 1 ? "" : "s"}.`];
   for (const record of visible) {
+    const formatter = createDisplayRefFormatter();
     const run = subagentRunLabel(record);
     const role = subagentRoleLabel(record.role);
     const state = subagentStateLabel(record);
@@ -306,20 +310,20 @@ export function formatTsSubagentHistoryMarkdown(records: TsSubagentRecord[]): st
     const updated = updatedSource ? formatLocalDateTime(updatedSource) || updatedSource : undefined;
     lines.push(
       "",
-      `## \`${inlineCode(run)}\` · ${role} · ${markdownText(state)}`,
+      `## \`${inlineCode(formatter.format(run, "task_ref"))}\` · ${role} · ${markdownText(state)}`,
       "",
-      `- Owner: \`${inlineCode(subagentOwnerLabel(record))}\``,
+      `- Owner: \`${inlineCode(formatter.format(subagentOwnerLabel(record), "owner_ref"))}\``,
       `- Action: ${markdownText(subagentActionLabel(record))}`,
     );
     if (elapsed) lines.push(`- Elapsed: \`${inlineCode(elapsed)}\``);
-    if (record.node_refs.length > 0) lines.push(`- Node scope: ${record.node_refs.map((value) => `\`${inlineCode(value)}\``).join(", ")}`);
-    if (record.claim_refs.length > 0) lines.push(`- Claim scope: ${record.claim_refs.map((value) => `\`${inlineCode(value)}\``).join(", ")}`);
+    if (record.node_refs.length > 0) lines.push(`- Node scope: ${record.node_refs.map((value) => `\`${inlineCode(formatter.format(value, "node_ref"))}\``).join(", ")}`);
+    if (record.claim_refs.length > 0) lines.push(`- Claim scope: ${record.claim_refs.map((value) => `\`${inlineCode(formatter.format(value, "claim_ref"))}\``).join(", ")}`);
     if (updated) lines.push(`- Updated: ${markdownText(updated)}`);
     if (record.summary) {
-      lines.push("", "Outcome", "", ...record.summary.slice(0, 2_000).split("\n").map((line) => `> ${markdownText(line)}`));
+      lines.push("", "Outcome", "", ...formatter.formatText(record.summary.slice(0, 2_000)).split("\n").map((line) => `> ${markdownText(line)}`));
     }
-    if (record.error_message) lines.push("", "Error", "", `> ${markdownText(compact([record.error_code, record.error_message]))}`);
-    if (record.run_ref) lines.push("", `Audit journal: \`${inlineCode(record.run_ref)}\``);
+    if (record.error_message) lines.push("", "Error", "", `> ${markdownText(formatter.formatText(compact([record.error_code, record.error_message])))}`);
+    if (record.run_ref) lines.push("", `Audit journal: \`${inlineCode(formatter.format(record.run_ref, "run_ref"))}\``);
   }
   if (records.length > visible.length) lines.push("", `_${records.length - visible.length} older runs omitted._`);
   return lines.join("\n");

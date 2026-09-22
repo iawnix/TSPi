@@ -84,7 +84,7 @@ function buildContextSummary(context, options = {}) {
   const openFindings = findings.filter((finding) => finding.status === "open");
   const lines = [
     "ResearchMap context:",
-    `- map: ${details.mapId || "(unknown)"}; revision=${details.revision}; valid=${details.valid}`,
+    `- map: ${formatMapLabel(details)}; revision=${details.revision}; valid=${details.valid}`,
     `- focus: claims=${formatList(details.focusClaimIds, maxItems)}; nodes=${formatList(details.focusNodeIds, maxItems)}`,
     `- phases: ${phases.length ? phases.slice(0, maxItems).map(formatPhase).join("; ") : "(none)"}`,
     `- open_nodes: ${openNodes.length ? openNodes.slice(0, maxItems).map(formatNode).join("; ") : "(none)"}`,
@@ -97,6 +97,17 @@ function buildContextSummary(context, options = {}) {
   }
   lines.push("- authority: the Root Agent chooses research strategy; the ResearchKernel validates and atomically commits ChangeSets.");
   return lines.join("\n");
+}
+
+function formatMapLabel(details) {
+  const title = truncateText(details.title, 100);
+  const mapId = details.mapId;
+  if (!title) return mapId && /^ws_[0-9a-f]{12,}$/i.test(mapId) ? "workspace" : (mapId || "(unknown)");
+  // Canonical workspace IDs are useful in audit details, but a map summary is
+  // a human-facing context line. Keep synthetic/non-workspace map IDs visible
+  // for compatibility while letting a real workspace title carry the label.
+  if (mapId && !/^ws_[0-9a-f]{12,}$/i.test(mapId)) return `${title} (${mapId})`;
+  return title;
 }
 
 function parseJsonOutput(result) {

@@ -22,6 +22,51 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "packages" / "ts-agent-runtime" / "artifacts" / "request-contract.cjs"
 TS_LOADER = ROOT / "tests" / "support" / "typescript_loader.mjs"
 ARTIFACT_EXTENSION = ROOT / "extensions" / "pi" / "artifacts" / "index.ts"
+ARTIFACT_PRESENTATION = ROOT / "extensions" / "pi" / "shared" / "artifact-tool-presentation.ts"
+
+
+def test_artifact_tool_presentation_uses_short_refs_without_mutating_result_text() -> None:
+    script = f"""
+import {{ renderTsArtifactCall,renderTsArtifactResult }} from {json.dumps(ARTIFACT_PRESENTATION.as_uri())};
+const theme={{fg:(_color,value)=>value}};
+const first="art_"+"a".repeat(24);
+const second="art_"+"b".repeat(24);
+const digest="sha256:"+"c".repeat(64);
+const raw={{schema_version:"ts-structure-compare-result/1",operation:"compare",node_id:"node_1",output_artifact_id:first,artifact_refs:[second],digest}};
+const result={{content:[{{type:"text",text:JSON.stringify(raw)}}],details:{{result:{{...raw,artifact:{{artifact_id:first,path:"nodes/node_1/inputs/ethanimine_Z.xyz"}}}}}}}};
+const call=renderTsArtifactCall("compare",{{operation:"compare",nodeId:"node_1",referenceArtifactId:first,targetArtifactId:second}},theme).render(120).join("\\n");
+const rendered=renderTsArtifactResult("compare",result,{{expanded:true,isPartial:false}},theme,false).render(120).join("\\n");
+process.stdout.write(JSON.stringify({{call,rendered,raw:result.content[0].text}}));
+"""
+    completed = subprocess.run(
+        ["node", "--experimental-loader", str(TS_LOADER), "--input-type=module", "--eval", script],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=30,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    value = json.loads(completed.stdout)
+    assert value["raw"] == json.dumps(
+        {
+            "schema_version": "ts-structure-compare-result/1",
+            "operation": "compare",
+            "node_id": "node_1",
+            "output_artifact_id": "art_" + "a" * 24,
+            "artifact_refs": ["art_" + "b" * 24],
+            "digest": "sha256:" + "c" * 64,
+        },
+        separators=(",", ":"),
+    )
+    assert "art_" + "a" * 24 not in value["call"]
+    assert "art_" + "b" * 24 not in value["call"]
+    assert "art_" + "a" * 24 not in value["rendered"]
+    assert "art_" + "b" * 24 not in value["rendered"]
+    assert "c" * 64 not in value["rendered"]
+    assert "ethanimine_Z.xyz" in value["rendered"]
+    assert "artifact 2" in value["rendered"]
 
 
 def test_public_import_tool_materializes_seed_without_journaling_body(tmp_path: Path) -> None:

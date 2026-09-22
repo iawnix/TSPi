@@ -14,6 +14,10 @@ import {
   type ReportToolParams,
   type SeedToolParams,
 } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
+import {
+  renderTsArtifactCall,
+  renderTsArtifactResult,
+} from "../shared/artifact-tool-presentation.ts";
 
 const require = createRequire(import.meta.url);
 const { toolText } = require("../shared/tool-runtime.cjs");
@@ -90,6 +94,8 @@ export function registerArtifactTools(pi: ExtensionAPI) {
   const runtime = new PiRuntime(pi);
   pi.registerTool({
     ...TOOL_CONTRACTS.seed,
+    renderCall: (args, theme) => renderTsArtifactCall("seed", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsArtifactResult("seed", result, options, theme, context.isError),
     promptSnippet: "Generate a 3D seed",
     promptGuidelines: [
       "Declare one connected SMILES, charge, multiplicity, and optimization; output is an initial geometry only.",
@@ -149,6 +155,8 @@ export function registerArtifactTools(pi: ExtensionAPI) {
 
   pi.registerTool({
     ...TOOL_CONTRACTS.compare,
+    renderCall: (args, theme) => renderTsArtifactCall("compare", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsArtifactResult("compare", result, options, theme, context.isError),
     promptSnippet: "Compare molecular structures",
     promptGuidelines: [
       "Use two art_* IDs and zero-based indices; register verified scientific values as Findings through ts_change.",
@@ -204,6 +212,8 @@ export function registerArtifactTools(pi: ExtensionAPI) {
 
   pi.registerTool({
     ...TOOL_CONTRACTS.analyze,
+    renderCall: (args, theme) => renderTsArtifactCall("analyze", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsArtifactResult("analyze", result, options, theme, context.isError),
     promptSnippet: "Analyze registered artifacts",
     promptGuidelines: [
       "Discover input roles and parameters via ts_state mode=capabilities capabilityKind=analysis; record selected facts with ts_change.",
@@ -251,6 +261,8 @@ export function registerArtifactTools(pi: ExtensionAPI) {
 
   pi.registerTool({
     ...TOOL_CONTRACTS.importArtifact,
+    renderCall: (args, theme) => renderTsArtifactCall("import", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsArtifactResult("import", result, options, theme, context.isError),
     promptSnippet: "Import a calculation input",
     promptGuidelines: [
       "Choose a concise semantic inputName with the format's extension; use bounded Gaussian, XYZ, or xTB control text and reuse the returned art_* ID.",
@@ -310,6 +322,8 @@ export function registerArtifactTools(pi: ExtensionAPI) {
 
   pi.registerTool({
     ...TOOL_CONTRACTS.render,
+    renderCall: (args, theme) => renderTsArtifactCall("render", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsArtifactResult("render", result, options, theme, context.isError),
     promptSnippet: "Render a workspace visualization or curve",
     promptGuidelines: [
       "Use art_* IDs and a Node-owned output name; images are presentation artifacts, not scientific Findings.",
@@ -377,6 +391,8 @@ export function registerArtifactTools(pi: ExtensionAPI) {
 
   pi.registerTool({
     ...TOOL_CONTRACTS.report,
+    renderCall: (args, theme) => renderTsArtifactCall("report", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsArtifactResult("report", result, options, theme, context.isError),
     promptSnippet: "Build a validated report",
     promptGuidelines: [
       "Choose a package name and optional art_* assets; reports do not mutate the workspace.",

@@ -2,7 +2,7 @@
 
 [English](0002-repository-and-component-boundaries.md) | [简体中文](0002-repository-and-component-boundaries.zh-CN.md)
 
-- Status: accepted, implemented (Web boundary extracted; Suite `/3` retired)
+- Status: superseded for runtime/session transport by [ADR 0004](0004-unified-app-server-extension-runtime.md); repository and Web boundary decisions remain historical
 - Date: 2026-09-10
 - Scope: TSPi, `ts-phone`, and the optional `ts-web` component
 - Related: [Architecture](../ARCHITECTURE.md), [Maintainer Guide](../MAINTAINER_GUIDE.md), [ResearchMap Design](../RESEARCH_MAP_DESIGN.md)
@@ -26,7 +26,7 @@ The current problems are:
 3. The Web client needs an independent source and release boundary while the
    TSPi provider retains ownership of private workspace and operational data.
 4. The former Phone bridge duplicated the session transport and authority
-   boundary instead of using Pi's native App Server protocol.
+   boundary; this historical concern is resolved by the Harness/Host split in ADR 0004.
 5. Public Skill terminology and internal implementation terminology are not
    governed by one vocabulary policy.
 6. The Review runtime must keep role selection, task packets, aggregation, and
@@ -43,9 +43,9 @@ contracts are explicit.
 | Area | Current fact | Consequence |
 | --- | --- | --- |
 | TSPi | Owns the kernel, Pi package, Web implementation, release assembly, and installation boundary | It is the natural required core repository and product release owner |
-| `ts-phone` | Independent repository with the Flutter presentation client and mobile release tooling | It remains independently developed; its runtime dependency is the Pi App Server protocol |
+| `ts-phone` | Independent repository with the Flutter presentation client and mobile release tooling | It remains independently developed; its runtime dependency is the versioned TSPi Host transport |
 | `ts-web` | Client, registry, server, and static UI under `components/ts-web/`; it consumes the canonical ResearchMap through `research-map-provider/1` | The component can be archived and installed independently from Agent |
-| Phone transport | TS Phone carries Pi protocol v8 through TSPi Link; the Relay authorizes devices and forwards opaque bytes | TSPi owns the Link transport while Pi App Server remains the session authority |
+| Phone transport | TS Phone carries `tspi-host/1` through TSPi Link; the Relay authorizes devices and forwards opaque bytes | TSPi owns Link transport and Host routing while the Pi Harness worker remains the session authority |
 | Release boundary | TSPi emits `tspi-package-release/4` with required Agent and optional independent Web descriptor | The suite contains the runtime; TS Phone is released separately |
 | Review | One isolated advisory Review request accepts `reviewerRole`; the `general` role has a versioned descriptor, and a deterministic aggregator preserves individual results, failures, and disagreements | Role and aggregation contracts exist, but public execution remains one bounded request rather than parallel reviewer orchestration |
 | Testing | `tools/test/runner.py` selects the manifest lane; the source lane builds a wheel and temporary overlay before running Python tests | Fast edit feedback and release-backed validation use explicit, reproducible environments |
@@ -139,9 +139,9 @@ scientific or control protocol.
 
 ### 3. Protocol ownership
 
-Pi owns the App Server protocol and Chord service contracts. TSPi owns Link
-enrollment, authorization, and opaque byte forwarding. TS Phone owns a typed
-presentation adapter that maps native Pi
+The Pi Harness worker owns its native session and tool contracts. TSPi owns
+Host routing plus Link enrollment, authorization, and opaque byte forwarding.
+TS Phone owns a typed presentation adapter that maps the Pi Harness
 session, transcript, model, prompt, and abort services into its mobile UI. It
 must not introduce a second broker, event journal, or semantic definition of
 the App Server records.

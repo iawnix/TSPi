@@ -1,0 +1,152 @@
+diff --git a/packages/coding-agent/src/experimental/client-tui-chat.ts b/packages/coding-agent/src/experimental/client-tui-chat.ts
+index 7584ae658b9996f7e33d5c5ffcad15796b1f6587..a613046bae396dfb3ca862e4023766b4dea5e02b 100644
+--- a/packages/coding-agent/src/experimental/client-tui-chat.ts
++++ b/packages/coding-agent/src/experimental/client-tui-chat.ts
+@@ -19,25 +19,35 @@ function userMessageText(message: AgentMessage): string {
+ 
+ /** Snapshot-driven transcript used by the service-only experimental presentation. */
+ export class ExperimentalChatView {
+-	static readonly #renderers: Record<string, ToolRenderers> = createAllToolRenderers();
++	static readonly #builtInRenderers: Record<string, ToolRenderers> = createAllToolRenderers();
+ 
+ 	readonly transcript = new Container();
+ 	readonly pendingMessages = new Container();
+ 	readonly status = new Container();
+ 	readonly #ui: TUI;
+ 	readonly #cwd: string;
++	#renderers: Readonly<Record<string, ToolRenderers>>;
+ 	readonly #tools = new Map<string, ToolExecutionComponent>();
++	#snapshot: LaneSnapshot | undefined;
+ 	#renderedEntryIds: string[] = [];
+ 	#streaming: AssistantMessageComponent | undefined;
+ 	#indicator: StatusIndicator | undefined;
+ 	#working = false;
+ 
+-	constructor(ui: TUI, cwd: string) {
++	constructor(ui: TUI, cwd: string, renderers?: Readonly<Record<string, ToolRenderers>>) {
+ 		this.#ui = ui;
+ 		this.#cwd = cwd;
++		this.#renderers = { ...ExperimentalChatView.#builtInRenderers, ...renderers };
++	}
++
++	/** Replace process-local renderers and rebuild the current transcript. */
++	setRenderers(renderers?: Readonly<Record<string, ToolRenderers>>): void {
++		this.#renderers = { ...ExperimentalChatView.#builtInRenderers, ...renderers };
++		if (this.#snapshot !== undefined) this.refreshTheme(this.#snapshot);
+ 	}
+ 
+ 	apply(snapshot: LaneSnapshot): void {
++		this.#snapshot = snapshot;
+ 		this.#syncTranscript(snapshot.transcript);
+ 		this.#syncStreaming(snapshot.operation?.streamingMessage);
+ 		for (const tool of snapshot.operation?.runningTools ?? []) {
+@@ -156,7 +166,7 @@ export class ExperimentalChatView {
+ 			toolCallId,
+ 			args ?? {},
+ 			{},
+-			ExperimentalChatView.#renderers[toolName],
++			this.#renderers[toolName],
+ 			this.#ui,
+ 			this.#cwd,
+ 		);
+diff --git a/packages/coding-agent/src/experimental/client-tui.ts b/packages/coding-agent/src/experimental/client-tui.ts
+index 01d98e44587a7eb08db283e0ec9445b0ae6e2cd5..93ac1dc09b96be6bc42f21787e9b1f5e8345dc4f 100644
+--- a/packages/coding-agent/src/experimental/client-tui.ts
++++ b/packages/coding-agent/src/experimental/client-tui.ts
+@@ -44,6 +44,7 @@ import {
+ 	PresentationLayout,
+ 	type PresentationComponentFactory,
+ 	type PresentationEditorFactory,
++	type PresentationToolRenderers,
+ } from "./services/presentation-layout.ts";
+ import { PresentationUI } from "./services/presentation-ui.ts";
+ import { SessionDirectory, SessionManagement, type SessionSummary } from "./services/sessions.ts";
+@@ -118,6 +119,8 @@ export class ExperimentalClientTui implements Component {
+ 	#headerComponent: Component | undefined;
+ 	#footerComponent: Component | undefined;
+ 	#editorFactory: PresentationEditorFactory | undefined;
++	#toolRenderers: PresentationToolRenderers | undefined;
++	#toolRendererRegistration: symbol | undefined;
+ 	#selectList: SelectList | undefined;
+ 	#selection: PendingSelection | undefined;
+ 	#screen: "select" | "chat" = "chat";
+@@ -306,6 +309,7 @@ export class ExperimentalClientTui implements Component {
+ 					setHeader: (factory) => this.#setHeader(factory),
+ 					setFooter: (factory) => this.#setFooter(factory),
+ 					setEditor: (factory) => this.#setEditor(factory),
++					setToolRenderers: (renderers) => this.#setToolRenderers(renderers),
+ 					setTitle: (title) => this.#ui.terminal.setTitle(title),
+ 					requestRender: this.#requestRender,
+ 				});
+@@ -435,6 +439,21 @@ export class ExperimentalClientTui implements Component {
+ 		this.#rebuild();
+ 	}
+ 
++	#setToolRenderers(renderers: PresentationToolRenderers): () => void {
++		const registration = Symbol();
++		this.#toolRendererRegistration = registration;
++		this.#toolRenderers = renderers;
++		this.#chatView?.setRenderers(renderers);
++		this.#requestRender();
++		return () => {
++			if (this.#toolRendererRegistration !== registration) return;
++			this.#toolRendererRegistration = undefined;
++			this.#toolRenderers = undefined;
++			this.#chatView?.setRenderers(undefined);
++			this.#requestRender();
++		};
++	}
++
+ 	#disposeComponent(component: Component | undefined): void {
+ 		if (component === undefined) return;
+ 		const disposable = component as Component & { dispose?: () => void };
+@@ -569,7 +588,7 @@ export class ExperimentalClientTui implements Component {
+ 
+ 	async #openLane(feature: SessionFeature): Promise<void> {
+ 		await this.#closeLane();
+-		const view = new ExperimentalChatView(this.#ui, process.cwd());
++		const view = new ExperimentalChatView(this.#ui, process.cwd(), this.#toolRenderers);
+ 		this.#chatView = view;
+ 		this.#documentContainer.addChild(this.#sessionHeading);
+ 		this.#documentContainer.addChild(view.transcript);
+diff --git a/packages/coding-agent/src/experimental/plugin.ts b/packages/coding-agent/src/experimental/plugin.ts
+index 212f19946d2f608b094cbfb3f789e1989404f7c0..9777df8e76313e0b19c63d733b77f7cfdd5f4e99 100644
+--- a/packages/coding-agent/src/experimental/plugin.ts
++++ b/packages/coding-agent/src/experimental/plugin.ts
+@@ -13,6 +13,7 @@ export {
+ 	type PresentationComponentFactory,
+ 	type PresentationEditorFactory,
+ 	type PresentationLayoutContext,
++	type PresentationToolRenderers,
+ } from "./services/presentation-layout.ts";
+ export {
+ 	type SlashCommandCompletion,
+diff --git a/packages/coding-agent/src/experimental/services/presentation-layout.ts b/packages/coding-agent/src/experimental/services/presentation-layout.ts
+index 9ef00d698849681a67283bb4470b7ecc15c0df47..37fc6f777a209146edeb6c055a19a1efe1d38f49 100644
+--- a/packages/coding-agent/src/experimental/services/presentation-layout.ts
++++ b/packages/coding-agent/src/experimental/services/presentation-layout.ts
+@@ -3,6 +3,7 @@ import type { Component, EditorTheme, TUI } from "@earendil-works/pi-tui";
+ import type { KeybindingsManager } from "../../core/keybindings.ts";
+ import type { CustomEditor } from "../../modes/interactive/components/custom-editor.ts";
+ import type { Theme } from "../../modes/interactive/theme/theme.ts";
++import type { ToolRenderers } from "../../modes/interactive/components/tool-execution.ts";
+ 
+ /** Context supplied to process-local presentation components. */
+ export interface PresentationLayoutContext {
+@@ -16,6 +17,8 @@ export interface PresentationLayoutContext {
+ 
+ export type PresentationComponentFactory = (context: PresentationLayoutContext) => Component;
+ export type PresentationEditorFactory = (context: PresentationLayoutContext) => CustomEditor;
++/** Tool renderers supplied by a process-local presentation facet. */
++export type PresentationToolRenderers = Readonly<Record<string, ToolRenderers>>;
+ 
+ /** Process-local layout capabilities owned by ExperimentalClientTui. */
+ export interface PresentationLayout {
+@@ -23,6 +26,7 @@ export interface PresentationLayout {
+ 	setHeader(factory: PresentationComponentFactory | undefined): void;
+ 	setFooter(factory: PresentationComponentFactory | undefined): void;
+ 	setEditor(factory: PresentationEditorFactory | undefined): void;
++	setToolRenderers(renderers: PresentationToolRenderers): () => void;
+ 	setTitle(title: string): void;
+ 	requestRender(): void;
+ }

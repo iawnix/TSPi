@@ -58,7 +58,7 @@ def _installation(tmp_path: Path) -> launcher.Installation:
     )
 
 
-def test_agent_pi_settings_registers_release_theme_without_touching_model_settings(
+def test_native_pi_settings_leave_unmanaged_values_unchanged(
     tmp_path: Path,
 ) -> None:
     installation = _installation(tmp_path)
@@ -69,44 +69,64 @@ def test_agent_pi_settings_registers_release_theme_without_touching_model_settin
         encoding="utf-8",
     )
 
-    launcher._configure_agent_pi_settings(installation)
+    launcher._restore_native_pi_settings(installation)
 
     assert json.loads(settings.read_text(encoding="utf-8")) == {
         "defaultProvider": "CPA",
         "defaultModel": "gpt-5.6-sol",
-        "theme": "ts-theme",
-        "themes": [str(installation.package_root / launcher.TSPI_THEME_RELATIVE)],
     }
 
 
-def test_agent_pi_settings_preserves_custom_theme_and_deduplicates_release_theme(
+def test_native_pi_settings_remove_launcher_managed_theme(
     tmp_path: Path,
 ) -> None:
     installation = _installation(tmp_path)
     settings = installation.root / launcher.PI_AGENT_SETTINGS_RELATIVE
     settings.parent.mkdir(parents=True)
-    theme_path = str(installation.package_root / launcher.TSPI_THEME_RELATIVE)
     settings.write_text(
-        json.dumps({"theme": "lab-dark", "themes": [theme_path, "./custom-theme.json"]}) + "\n",
+        json.dumps(
+            {
+                "theme": "ts-theme",
+                "themes": [str(installation.package_root / launcher.TSPI_THEME_RELATIVE)],
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
 
-    launcher._configure_agent_pi_settings(installation)
+    launcher._restore_native_pi_settings(installation)
+
+    assert json.loads(settings.read_text(encoding="utf-8")) == {"theme": "dark"}
+
+
+def test_native_pi_settings_preserve_custom_theme_and_remove_old_release_theme(
+    tmp_path: Path,
+) -> None:
+    installation = _installation(tmp_path)
+    settings = installation.root / launcher.PI_AGENT_SETTINGS_RELATIVE
+    settings.parent.mkdir(parents=True)
+    theme_path = installation.root / ".pi/packages/tspi/releases/old/agent/themes/ts-theme.json"
+    settings.write_text(
+        json.dumps({"theme": "lab-dark", "themes": [str(theme_path), "./custom-theme.json"]}) + "\n",
+        encoding="utf-8",
+    )
+
+    launcher._restore_native_pi_settings(installation)
 
     assert json.loads(settings.read_text(encoding="utf-8")) == {
         "theme": "lab-dark",
-        "themes": [theme_path, "./custom-theme.json"],
+        "themes": ["./custom-theme.json"],
     }
 
 
-def test_agent_pi_settings_rejects_invalid_json_and_symlinks(tmp_path: Path) -> None:
+def test_native_pi_settings_reject_invalid_json_and_symlinks(tmp_path: Path) -> None:
     installation = _installation(tmp_path)
     settings = installation.root / launcher.PI_AGENT_SETTINGS_RELATIVE
     settings.parent.mkdir(parents=True)
     settings.write_text("not json\n", encoding="utf-8")
 
     with pytest.raises(launcher.TSPiHostError, match="invalid Pi agent settings"):
-        launcher._configure_agent_pi_settings(installation)
+        launcher._restore_native_pi_settings(installation)
 
     settings.unlink()
     target = tmp_path / "settings-target.json"
@@ -114,15 +134,46 @@ def test_agent_pi_settings_rejects_invalid_json_and_symlinks(tmp_path: Path) -> 
     settings.symlink_to(target)
 
     with pytest.raises(launcher.TSPiHostError, match="Pi agent settings cannot be a symbolic link"):
-        launcher._configure_agent_pi_settings(installation)
+        launcher._restore_native_pi_settings(installation)
 
 
-def test_agent_pi_settings_rejects_missing_release_theme(tmp_path: Path) -> None:
+def test_native_pi_settings_do_not_require_the_release_theme(tmp_path: Path) -> None:
     installation = _installation(tmp_path)
     (installation.package_root / launcher.TSPI_THEME_RELATIVE).unlink()
 
-    with pytest.raises(launcher.TSPiHostError, match="TSPi theme is unavailable"):
-        launcher._configure_agent_pi_settings(installation)
+    launcher._restore_native_pi_settings(installation)
+
+    assert not (installation.root / launcher.PI_AGENT_SETTINGS_RELATIVE).exists()
+
+
+def test_tspi_launcher_disables_retired_custom_renderer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = _installation(tmp_path)
+    workspace = installation.workspaces_root / "reaction-a"
+    workspace.mkdir(parents=True)
+    monkeypatch.setenv("TSPI_CUSTOM_UI", "1")
+    original_environment = dict(os.environ)
+
+    try:
+        launcher.configure_process_environment(installation, workspace, "reaction-a")
+        assert "TSPI_CUSTOM_UI" not in os.environ
+    finally:
+        os.environ.clear()
+        os.environ.update(original_environment)
+
+
+def test_tmux_probe_checks_the_selected_binary(tmp_path: Path) -> None:
+    working = tmp_path / "tmux-ok"
+    working.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    working.chmod(0o755)
+    broken = tmp_path / "tmux-broken"
+    broken.write_text("#!/bin/sh\nexit 127\n", encoding="utf-8")
+    broken.chmod(0o755)
+
+    assert launcher._probe_tmux(str(working)) is True
+    assert launcher._probe_tmux(str(broken)) is False
 
 
 def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
@@ -237,7 +288,7 @@ def test_host_command_owns_installation_state_and_workspace_root(
     socket_directory = tmp_path / "sockets"
     monkeypatch.setattr(launcher, "_host_server_id", lambda *_args, **_kwargs: server_id)
     monkeypatch.setattr(launcher, "_host_socket_directory", lambda *_args, **_kwargs: socket_directory)
-    request = launcher.parse_launch_request(["--host", "--provider", "anthropic"])
+    request = launcher.parse_launch_request(["--host"])
 
     command = launcher.build_host_server_command(installation, request)
 
@@ -247,15 +298,13 @@ def test_host_command_owns_installation_state_and_workspace_root(
         str(installation.package_root / "apps/app-server/pi-app-server.mjs"),
         "server",
         "--workspace",
-        str(state_root / "workspace"),
+        str(installation.workspaces_root),
         "--directory",
         str(socket_directory),
         "--server-id",
         server_id,
-        "--session-dir",
-        str(state_root / "sessions"),
-        "--provider",
-        "anthropic",
+        "--state-root",
+        str(state_root),
     ]
     assert request.host is True
     assert (installation.root / "workspaces").is_dir()
@@ -422,7 +471,8 @@ def test_gateway_attaches_one_host_session_with_http_options(
     installation = _installation(tmp_path)
     monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
     server_id = "123e4567-e89b-42d3-a456-426614174000"
-    socket_directory = Path(f"/tmp/tspi-gateway-{os.getpid()}")
+    # AF_UNIX paths are capped at 108 bytes; keep the test socket root short.
+    socket_directory = tmp_path.parent.parent / f"tspi-gateway-{os.getpid()}"
     socket_directory.mkdir()
     monkeypatch.setattr(launcher, "_host_server_id", lambda *_args, **_kwargs: server_id)
     monkeypatch.setattr(launcher, "_host_socket_directory", lambda *_args, **_kwargs: socket_directory)
@@ -443,8 +493,7 @@ def test_gateway_attaches_one_host_session_with_http_options(
     assert request.gateway is True
     assert command == [
         "/usr/bin/node",
-        str(installation.package_root / "apps/app-server/pi-app-server.mjs"),
-        "gateway",
+        str(installation.package_root / "apps/app-server/tspi-browser-gateway.mjs"),
         "--workspace",
         str(installation.workspaces_root / "reaction-a"),
         "--connect",
@@ -464,7 +513,8 @@ def test_default_terminal_connects_to_host_and_continues_latest_workspace_sessio
 ) -> None:
     installation = _installation(tmp_path)
     server_id = "123e4567-e89b-42d3-a456-426614174000"
-    server = Path(f"/tmp/tspi-test-{os.getpid()}")
+    # AF_UNIX paths are capped at 108 bytes; keep the test socket root short.
+    server = tmp_path.parent.parent / f"tspi-client-{os.getpid()}"
     server.mkdir(mode=0o700, exist_ok=True)
     monkeypatch.setattr(launcher, "_host_server_id", lambda *_args, **_kwargs: server_id)
     monkeypatch.setattr(launcher, "_host_socket_directory", lambda *_args, **_kwargs: server)
@@ -484,14 +534,82 @@ def test_default_terminal_connects_to_host_and_continues_latest_workspace_sessio
 
     assert command == [
         "/usr/bin/node",
-        str(installation.package_root / "apps/app-server/pi-app-server.mjs"),
-        "client",
-        "--directory",
-        str(server),
-        "--connect",
-        f"unix://{endpoint}",
+        str(installation.package_root / "apps/app-server/tspi-terminal-client.mjs"),
+        "--socket-path", str(endpoint),
+        "--workspace-id", "reaction-a",
+        "--workspace-root", str(installation.workspaces_root / "reaction-a"),
+        "--state-root", str(installation.root / ".pi/app-server-host"),
+        "--install-root", str(installation.root),
+        "--package-root", str(installation.package_root),
         "--continue",
+        "--",
     ]
+
+
+def test_native_pi_command_uses_ordinary_cli_and_workspace_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = _installation(tmp_path)
+    source = tmp_path / "pi-source"
+    (source / "packages/coding-agent/src/experimental").mkdir(parents=True)
+    (source / "packages/coding-agent/src/cli.ts").write_text("", encoding="utf-8")
+    (source / "packages/coding-agent/src/experimental/source-resolver.ts").write_text("", encoding="utf-8")
+    (installation.package_root / "config").mkdir()
+    (installation.package_root / "config/pi-source.json").write_text(json.dumps({"commit": "a" * 40}), encoding="utf-8")
+    workspace = installation.root / "workspaces" / "reaction-a"
+    (workspace / ".pi/sessions").mkdir(parents=True)
+    monkeypatch.setenv("TSPI_PI_SOURCE", str(source))
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
+    monkeypatch.setattr(
+        launcher.subprocess,
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, "a" * 40 + "\n", ""),
+    )
+    request = launcher.parse_launch_request(["--workspace", "reaction-a", "--session-id", "native-1", "--thinking", "high"])
+
+    command = launcher.build_native_pi_command(installation, request, workspace)
+
+    assert command[:5] == [
+        "/usr/bin/node",
+        "--import",
+        str(source / "packages/coding-agent/src/experimental/source-resolver.ts"),
+        str(source / "packages/coding-agent/src/cli.ts"),
+        "--session-dir",
+    ]
+    assert str(workspace / ".pi/sessions") in command
+    assert ["--session-id", "native-1"] == command[command.index("--session-id") : command.index("--session-id") + 2]
+    assert command[-2:] == ["--thinking", "high"]
+    assert all(path in command for path in [
+        str(installation.package_root / "extensions/pi/research/index.ts"),
+        str(installation.package_root / "extensions/pi/bridge/index.ts"),
+    ])
+
+
+def test_native_pi_command_rejects_history_paths_outside_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = _installation(tmp_path)
+    source = tmp_path / "pi-source"
+    (source / "packages/coding-agent/src/experimental").mkdir(parents=True)
+    (source / "packages/coding-agent/src/cli.ts").write_text("", encoding="utf-8")
+    (source / "packages/coding-agent/src/experimental/source-resolver.ts").write_text("", encoding="utf-8")
+    (installation.package_root / "config").mkdir()
+    (installation.package_root / "config/pi-source.json").write_text(json.dumps({"commit": "b" * 40}), encoding="utf-8")
+    workspace = installation.root / "workspaces" / "reaction-a"
+    (workspace / ".pi/sessions").mkdir(parents=True)
+    monkeypatch.setenv("TSPI_PI_SOURCE", str(source))
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
+    monkeypatch.setattr(
+        launcher.subprocess,
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, "b" * 40 + "\n", ""),
+    )
+    request = launcher.parse_launch_request(["--workspace", "reaction-a", "--session", "/tmp/foreign.jsonl"])
+
+    with pytest.raises(launcher.TSPiHostError, match="workspace's .pi/sessions"):
+        launcher.build_native_pi_command(installation, request, workspace)
 
 
 @pytest.mark.parametrize(

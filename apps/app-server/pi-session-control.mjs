@@ -37,6 +37,10 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
   }
 
   const requestCache = new Map();
+  // Keep a tombstone for known pre-admission failures. The request can be
+  // retried with the same fingerprint, but the id cannot be reused for a new
+  // payload.
+  const retryableFailures = new Map();
   const listeners = new Set();
   const eventHistory = [];
   let state;
@@ -118,7 +122,7 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
     async prompt(request) {
       ensureOpen();
       const parsed = validatePrompt(request, sessionId);
-      const fingerprint = JSON.stringify({ message: parsed.message, images: parsed.images });
+      const fingerprint = JSON.stringify({ message: parsed.message, images: parsed.images, operation_id: parsed.operation_id ?? null });
       const cached = requestCache.get(parsed.request_id);
       if (cached) {
         if (cached.fingerprint !== fingerprint) {
@@ -126,10 +130,16 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
         }
         return cached.result;
       }
+      consumeRetryableFailure(parsed.request_id, fingerprint);
+      const admit = typeof agent.startPrompt === "function" ? agent.startPrompt.bind(agent) : agent.prompt.bind(agent);
       const result = Promise.resolve()
-        .then(() => agent.prompt({ message: parsed.message, images: parsed.images }, context))
+        .then(() => admit({
+          message: parsed.message,
+          images: parsed.images,
+          ...(parsed.operation_id === undefined ? {} : { operationId: parsed.operation_id }),
+        }, context))
         .then((response) => operationResponse(parsed, response));
-      requestCache.set(parsed.request_id, { fingerprint, result });
+      rememberRequest(parsed.request_id, fingerprint, result);
       return result;
     },
 
@@ -172,10 +182,11 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
         }
         return cached.result;
       }
+      consumeRetryableFailure(parsed.request_id, fingerprint);
       const result = Promise.resolve()
         .then(() => agent[method]({ message: parsed.message, images: parsed.images }, context))
         .then((response) => queueResponse(parsed, response));
-      requestCache.set(parsed.request_id, { fingerprint, result });
+      rememberRequest(parsed.request_id, fingerprint, result);
       return result;
     },
 
@@ -211,6 +222,7 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
       closed = true;
       listeners.clear();
       requestCache.clear();
+      retryableFailures.clear();
       eventHistory.length = 0;
       unsubscribeTranscript();
     },
@@ -235,6 +247,38 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
   function ensureOpen() {
     if (closed) throw protocolError("closed", "Session control is closed");
   }
+
+  function rememberRequest(requestId, fingerprint, result) {
+    const entry = { fingerprint, result };
+    requestCache.set(requestId, entry);
+    // An explicit pre-admission rejection is safe to retry. An uncertain
+    // result or an exception stays cached so a reconnect cannot duplicate a
+    // side effect whose commit boundary was not observed.
+    void result.then((response) => {
+      if (response?.accepted === true) {
+        retryableFailures.delete(requestId);
+        return;
+      }
+      if (!isRetryableAdmissionError(response?.error?.code)) return;
+      if (requestCache.get(requestId) !== entry) return;
+      requestCache.delete(requestId);
+      retryableFailures.set(requestId, { fingerprint });
+    }, (error) => {
+      if (!isRetryableAdmissionError(error?.code)) return;
+      if (requestCache.get(requestId) !== entry) return;
+      requestCache.delete(requestId);
+      retryableFailures.set(requestId, { fingerprint });
+    });
+  }
+
+  function consumeRetryableFailure(requestId, fingerprint) {
+    const previous = retryableFailures.get(requestId);
+    if (!previous) return;
+    if (previous.fingerprint !== fingerprint) {
+      throw protocolError("request_id_reused", "request_id was already used for a different request");
+    }
+    retryableFailures.delete(requestId);
+  }
 }
 
 function validateRequest(value, sessionId) {
@@ -254,6 +298,9 @@ function validatePrompt(value, sessionId) {
   const parsed = validateRequest(value, sessionId);
   if (parsed.action !== "prompt" || typeof parsed.message !== "string" || parsed.message.length === 0 || parsed.message.length > MAX_MESSAGE_LENGTH) {
     throw protocolError("invalid_prompt", "prompt requires a non-empty message within the size limit");
+  }
+  if (parsed.operation_id !== undefined && !validAdmissionId(parsed.operation_id)) {
+    throw protocolError("invalid_prompt", "operation_id must be a non-empty identifier within the size limit");
   }
   return { ...parsed, images: validateImages(parsed.images) };
 }
@@ -289,27 +336,58 @@ function validateImages(images) {
 }
 
 function operationResponse(request, response) {
+  const operationId = validAdmissionId(response?.operationId);
+  const accepted = response?.accepted === true && operationId !== null;
+  const error = accepted
+    ? response?.error ?? null
+    : response?.accepted === true && operationId === null
+      ? { code: "admission_uncertain", message: "Pi reported prompt acceptance without an operation id" }
+      : response?.error ?? { code: "rejected", message: "AgentController rejected the prompt" };
   return {
     schema_version: SESSION_CONTROL_PROTOCOL,
     request_id: request.request_id,
     session_id: request.session_id,
     action: "prompt",
-    accepted: response?.accepted === true,
-    operation_id: response?.operationId ?? null,
-    error: response?.error ?? (response?.accepted === true ? null : { code: "rejected", message: "AgentController rejected the prompt" }),
+    accepted,
+    operation_id: operationId,
+    error,
   };
 }
 
 function queueResponse(request, response) {
+  const entryId = validAdmissionId(response?.entryId);
+  const accepted = response?.accepted === true && entryId !== null;
+  const error = accepted
+    ? response?.error ?? null
+    : response?.accepted === true && entryId === null
+      ? { code: "admission_uncertain", message: "Pi reported queue acceptance without an entry id" }
+      : response?.error ?? { code: "rejected", message: "AgentController rejected the queued message" };
   return {
     schema_version: SESSION_CONTROL_PROTOCOL,
     request_id: request.request_id,
     session_id: request.session_id,
     action: "queue",
-    accepted: response?.accepted === true,
-    entry_id: response?.entryId ?? null,
-    error: response?.error ?? (response?.accepted === true ? null : { code: "rejected", message: "AgentController rejected the queued message" }),
+    accepted,
+    entry_id: entryId,
+    error,
   };
+}
+
+function validAdmissionId(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 256 ? value : null;
+}
+
+const RETRYABLE_ADMISSION_ERRORS = new Set([
+  "scheduler_busy",
+  "scheduler_lock_busy",
+  "admission_unavailable",
+  "lane_busy",
+  "closed",
+  "session_closed",
+]);
+
+function isRetryableAdmissionError(code) {
+  return typeof code === "string" && RETRYABLE_ADMISSION_ERRORS.has(code);
 }
 
 function assertSessionId(value) {

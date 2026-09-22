@@ -16,6 +16,10 @@ import {
   sortedTsSubagentActivities,
   type TsActivityStore,
 } from "./activity-store.ts";
+import {
+  collectArtifactDisplayLabels,
+  createDisplayRefFormatter,
+} from "../shared/ref-presentation.ts";
 
 const SAFE_RUN_REF = /^(?:nodes\/node_[1-9][0-9]*\/attempts\/calc_[1-9][0-9]*|reviews\/claim_[1-9][0-9]*)\/runs\/sub_[1-9][0-9]*$/;
 const CANONICAL_TASK_ID = /^sub_[1-9][0-9]*$/;
@@ -167,9 +171,12 @@ export function renderTsSubagentDetails(
   const result = documents.result || {};
   const run = documents.run || {};
   const metadata = isPlainObject(run.metadata) ? run.metadata : {};
-  const summary = stringValue(result.summary) || record.summary;
+  const formatter = createDisplayRefFormatter({
+    artifactLabels: collectArtifactDisplayLabels([result, documents.actions || {}, run]),
+  });
+  const summary = displayValue(formatter, stringValue(result.summary) || record.summary);
   const title = compact([
-    subagentRunLabel(record),
+    formatter.format(subagentRunLabel(record), "task_ref"),
     subagentRoleLabel(record.role),
     subagentStateLabel(record),
   ]);
@@ -177,9 +184,9 @@ export function renderTsSubagentDetails(
   if (summary) addSection(lines, "Outcome", summary, safeWidth);
 
   const error = isPlainObject(run.error) ? run.error : {};
-  const errorText = stringValue(error.message) || record.error_message;
+  const errorText = displayValue(formatter, stringValue(error.message) || record.error_message);
   if (errorText) {
-    const code = stringValue(error.code) || record.error_code;
+    const code = displayValue(formatter, stringValue(error.code) || record.error_code);
     addSection(lines, "Error", code ? `${code}: ${errorText}` : errorText, safeWidth);
   }
 
@@ -190,7 +197,7 @@ export function renderTsSubagentDetails(
     ["Failure stage", "failure_stage"],
   ] as const) {
     const value = findFirstString([metadata, result, documents.actions || {}], key);
-    if (value) resultFields.push([label, value]);
+    if (value) resultFields.push([label, formatter.formatText(value)]);
   }
   if (resultFields.length > 0) {
     lines.push("", "Result");
@@ -198,17 +205,18 @@ export function renderTsSubagentDetails(
   }
 
   lines.push("", "Scope");
-  const owner = subagentOwnerLabel(record);
+  const ownerRef = subagentOwnerLabel(record);
+  const owner = formatter.format(ownerRef, "owner_ref");
   addField(lines, "Owner", owner, safeWidth);
-  if (record.node_refs.length > 1 || (record.node_refs[0] && record.node_refs[0] !== owner)) {
-    addField(lines, "Node scope", record.node_refs.join(", "), safeWidth);
+  if (record.node_refs.length > 1 || (record.node_refs[0] && record.node_refs[0] !== ownerRef)) {
+    addField(lines, "Node scope", record.node_refs.map((value) => formatter.format(value, "node_ref")).join(", "), safeWidth);
   }
-  if (record.claim_refs.length > 1 || (record.claim_refs[0] && record.claim_refs[0] !== owner)) {
-    addField(lines, "Claim scope", record.claim_refs.join(", "), safeWidth);
+  if (record.claim_refs.length > 1 || (record.claim_refs[0] && record.claim_refs[0] !== ownerRef)) {
+    addField(lines, "Claim scope", record.claim_refs.map((value) => formatter.format(value, "claim_ref")).join(", "), safeWidth);
   }
   addField(lines, "Action", subagentActionLabel(record), safeWidth);
   if (record.role === "compute" && readableCalculationRef(record.target_ref)) {
-    addField(lines, "Calculation", record.target_ref || "", safeWidth);
+    addField(lines, "Calculation", formatter.format(record.target_ref || "", "calculation_ref"), safeWidth);
   }
   const started = record.started_at ? formatLocalDateTime(record.started_at) : undefined;
   const finished = record.finished_at ? formatLocalDateTime(record.finished_at) : undefined;
@@ -218,9 +226,9 @@ export function renderTsSubagentDetails(
   if (elapsed) addField(lines, "Elapsed", elapsed, safeWidth);
 
   const actions = actionSummaries(documents.actions);
-  if (actions.length > 0) addSection(lines, "Actions", actions.join("\n"), safeWidth);
+  if (actions.length > 0) addSection(lines, "Actions", formatter.formatText(actions.join("\n")), safeWidth);
   const refs = collectRefs([result, documents.actions || {}]);
-  if (refs.length > 0) addSection(lines, "Artifacts", refs.join("\n"), safeWidth);
+  if (refs.length > 0) addSection(lines, "Artifacts", refs.map((value) => formatter.format(value, "artifact_ref")).join("\n"), safeWidth);
   const fileNames: Record<keyof TsSubagentRunDocuments, string> = {
     task: "task.json",
     researchMap: "research-map.json",
@@ -235,7 +243,7 @@ export function renderTsSubagentDetails(
   if (record.run_ref || files.length > 0) {
     lines.push("", "Audit");
     addField(lines, "Authority", record.authority, safeWidth);
-    if (record.run_ref) addField(lines, "Journal", record.run_ref, safeWidth);
+    if (record.run_ref) addField(lines, "Journal", formatter.format(record.run_ref, "run_ref"), safeWidth);
     if (files.length > 0) addField(lines, "Files", files.join(", "), safeWidth);
   }
   return lines;
@@ -299,6 +307,13 @@ function addSection(lines: string[], label: string, value: string, width: number
   for (const sourceLine of value.split("\n")) {
     for (const line of wrapTextWithAnsi(sourceLine, Math.max(1, width - 2))) lines.push(`  ${line}`);
   }
+}
+
+function displayValue(
+  formatter: ReturnType<typeof createDisplayRefFormatter>,
+  value?: string,
+): string | undefined {
+  return value ? formatter.formatText(value) : undefined;
 }
 
 function actionSummaries(document: Record<string, unknown> | undefined): string[] {

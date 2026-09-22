@@ -58,13 +58,32 @@ if (!parsed.ok) {
     // native presentation so settings, plugins, and session creation all use
     // the same workspace identity.
     bindWorkspaceCwd();
-    if (parsed.command.prompt !== undefined || process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
-      await runPrintClient(parsed.command);
+    // Pi persists presentation package selections per session. For a local
+    // Host, an omitted `-e` must therefore mean an explicit empty selection;
+    // otherwise `--continue` can resurrect an older TSPi custom TUI. Radius
+    // does not accept local package paths, so it keeps Pi's undefined value.
+    const command = parsed.command.pluginPackages === undefined && parsed.command.connect?.transport !== "radius"
+      ? { ...parsed.command, pluginPackages: [] }
+      : parsed.command;
+    if (command.prompt !== undefined || process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
+      await runPrintClient(command);
     } else {
       // Pi owns the complete interactive surface: slash-command registry,
       // argument completions, selectors, transcript rendering, and busy-state
-      // input handling. TSPi only supplies the remote server directory.
-      await runClientTui(parsed.command, { directory: process.env.PI_SERVER_DIR });
+      // input handling. TSPi only supplies a client facet for its shared
+      // command contract; it does not provide another editor or agent loop.
+      const [{ createStaticFacetLoader }, { createTspiNativeClientFacet }] = await Promise.all([
+        fromSource("packages/chord/src/index.ts"),
+        import("./tspi-native-client-facet.mjs"),
+      ]);
+      const commandFacet = await createTspiNativeClientFacet({
+        sourceRoot,
+        packageRoot: process.env.TSPI_PACKAGE_ROOT,
+      });
+      await runClientTui(command, {
+        directory: process.env.PI_SERVER_DIR,
+        facetLoader: createStaticFacetLoader([commandFacet]),
+      });
     }
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);

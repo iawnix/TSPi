@@ -17,7 +17,7 @@ cd TSPi
 ```
 
 核心安装始终包含 Agent、科学运行时和分子渲染；TS Web 是可选组件。安装器配置
-整个安装目录共用的 App Server Host；不再安装 TS Phone 守护进程。
+整个安装目录共用的 TSPi Host；不再安装 TS Phone 守护进程。
 
 安装器还会询问是否安装可选的 TSPi 模型图标字体。交互安装默认安装；非交互安装
 默认不写入用户字体目录，可显式传入 `--with-model-icons`，或用
@@ -31,21 +31,27 @@ cd TSPi
 其中包含依赖、运行时、升级、回滚和恢复说明；
 模型与 provider 边界见[模型兼容性](docs/MODEL_COMPATIBILITY.zh-CN.md)。
 
-## App Server 与终端
+## Host 与终端
 
-整个安装目录运行一个 Pi App Server Host，由它为所有工作区独占会话、对话历史、模型状态和 Root 锁。
-直接打开工作区即可；如果 user service 尚未运行，TSPi 会启动它并等待 Host 就绪：
+整个安装目录运行一个 TSPi Host，负责认证路由、幂等回执、会话发现和 Monitor 管理。
+每个 workspace 由一个固定版本 Pi `SessionWorker`/`AgentHarness` lane 拥有。lane
+拥有 agent loop、模型、工具、transcript 和 Root lock；终端、Phone、Monitor 都是同一
+lane 的客户端。直接打开工作区即可：
 
 ```bash
 ./TSPi --workspace reaction-a
 ./TSPi --workspace reaction-a -c
 ```
 
-第一条命令创建新会话，第二条命令继续该工作区最近的会话。
+第一条命令创建 Harness 会话，第二条命令继续该工作区最近的可写会话。TSPi 先向 Host
+取得本地 Pi connection descriptor，再启动 Pi 官方 native remote client/TUI。默认路径不
+使用 tmux、PTY scraping，也不会创建第二个 agent loop。Host 不可用时会明确报错；普通 Pi
+只在显式设置 `TSPI_HOST_BACKEND=ordinary` 的迁移/调试模式中使用。
 使用 `systemctl --user stop|restart|status ts-app-server-tspi.service` 管理
-Host 生命周期。`--host` 只是服务内部入口，不用于日常启动。
+Host 生命周期。scope 为 none 时，必须由运维人员启动 Host，普通 workspace、Phone 和
+Monitor 入口才可用。`--host` 只是服务内部入口，不用于日常启动。
 
-TS Phone Flutter 应用通过 TSPi Link 连接同一个 App Server。Phone 和 Host 分别向
+TS Phone Flutter 应用通过 TSPi Link 连接同一个 Host 和 Pi Harness lane。Phone 和 Host 分别向
 TSPi Link Relay 建立出站 WSS；Relay 只负责设备授权与不透明字节转发，不管理会话或研究状态。
 参阅 [TSPi Link](docs/TSPi_LINK.zh-CN.md)、[终端文档](docs/TERMINAL.zh-CN.md)、
 [中文架构](docs/ARCHITECTURE.zh-CN.md)、

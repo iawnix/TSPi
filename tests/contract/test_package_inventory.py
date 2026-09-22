@@ -36,4 +36,6 @@ def test_required_release_members_are_in_the_npm_allowlist() -> None:
 
     assert "contracts/ts-render/curve-data.schema.json" in package_inventory.REQUIRED_RUNTIME_FILES
     assert "apps/app-server/system-prompt.mjs" in package_inventory.REQUIRED_RUNTIME_FILES
+    assert "docs/adr/0005-ordinary-pi-host-bridge.md" in package_inventory.REQUIRED_TARBALL_FILES
+    assert "docs/adr/0005-ordinary-pi-host-bridge.md" in package_inventory.REQUIRED_RUNTIME_FILES
     assert set(package_inventory.APP_SERVER_FILES) <= package_inventory.REQUIRED_RUNTIME_FILES

@@ -15,6 +15,10 @@ import {
   terminalStateForReport,
   terminalStatusForError,
 } from "../shared/subagent-status.ts";
+import {
+  renderTsNativeCall,
+  renderTsNativeResult,
+} from "../shared/native-tool-presentation.ts";
 import { runComputeOperator } from "../../../packages/ts-agent-runtime/agents/compute/runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -114,6 +118,8 @@ export function registerComputeTools(pi: ExtensionAPI) {
 
   pi.registerTool({
     ...TOOL_CONTRACTS.environment,
+    renderCall: (args, theme) => renderTsNativeCall("ts_environment", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsNativeResult("ts_environment", result, options, theme, context.isError),
     async execute(_toolCallId, params: EnvironmentToolParams, signal, _onUpdate, ctx) {
       const mode = params.mode || "list";
       if (mode === "show" && !params.name) throw new Error("environment show requires name");
@@ -127,6 +133,8 @@ export function registerComputeTools(pi: ExtensionAPI) {
 
   pi.registerTool({
     ...TOOL_CONTRACTS.dispatch,
+    renderCall: (args, theme) => renderTsNativeCall("ts_dispatch", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsNativeResult("ts_dispatch", result, options, theme, context.isError),
     async execute(_toolCallId, params: DispatchToolParams, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const result = await runtime.compute("node-dispatch", root, nodeControlArguments(params), signal);
@@ -136,6 +144,8 @@ export function registerComputeTools(pi: ExtensionAPI) {
 
   pi.registerTool({
     ...TOOL_CONTRACTS.compute,
+    renderCall: (args, theme) => renderTsNativeCall("ts_calc", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsNativeResult("ts_calc", result, options, theme, context.isError),
     async execute(toolCallId, params: ComputeToolParams, signal, onUpdate, ctx) {
       const input = params as unknown as ComputeRequest & { root?: string };
       validatePublicComputeParameters(input);
@@ -170,6 +180,9 @@ export function registerComputeTools(pi: ExtensionAPI) {
       const actions: ActionLog = [];
       let agentJournal: ReturnType<typeof beginAgentRun> | undefined;
       let completedRunRef: string | undefined;
+      let stagedMonitor: { monitor_id: string } | undefined;
+      let monitor: unknown;
+      let monitorWarning: string | undefined;
       let executionStage: ComputeExecutionStage = "pre_action";
       try {
         const binding = await preflightComputeRequest(
@@ -188,6 +201,17 @@ export function registerComputeTools(pi: ExtensionAPI) {
         request.remoteDir = binding.remoteDir;
         request.jobId = binding.jobId;
         request.executionSummary = binding.executionSummary;
+        if (request.operation === "launch") {
+          // Persist the session binding before any submission. If the process
+          // exits after scheduler acceptance, the Host monitor can finish this
+          // registration from the durable calculation receipt/guard.
+          stagedMonitor = await runtime.monitor("stage", root, [
+            "--node-id", request.nodeId,
+            "--intent-id", binding.intentId,
+            "--intent-digest", binding.intentDigest,
+            "--session-id", ctx.sessionManager.getSessionId(),
+          ], signal);
+        }
         const packet = buildComputeTask({
           runId: taskId,
           workspaceRoot: root,
@@ -226,6 +250,17 @@ export function registerComputeTools(pi: ExtensionAPI) {
           signal,
           onLifecycle: reportStatus,
         });
+        if (stagedMonitor && executed.actions.some((action) =>
+          action.tool === "ts_workspace_compute_submit" && ["completed", "unknown"].includes(String(action.result?.action_status)))) {
+          try {
+            await runtime.monitor("reconcile", root, ["--force"]);
+            monitor = await runtime.monitor("status", root, ["--monitor-id", stagedMonitor.monitor_id]);
+          } catch (error) {
+            monitorWarning = `Calculation submission has a durable monitor request (${stagedMonitor.monitor_id}), but registration is pending: ${error instanceof Error ? error.message : String(error)}. The Host will retry registration; do not resubmit the calculation.`;
+            ctx.ui.notify(monitorWarning, "warning");
+            monitor = { monitor_id: stagedMonitor.monitor_id, status: "registration_pending", error: monitorWarning };
+          }
+        }
         executionStage = "result_journal";
         completedRunRef = completeAgentRun(agentJournal, {
           actions: executed.actions,
@@ -236,10 +271,13 @@ export function registerComputeTools(pi: ExtensionAPI) {
         executionStage = "result_delivery";
         pi.appendEntry("ts-workspace-subagent-run", metadata);
         reportStatus(terminalStateForReport(executed.result), { run_ref: completedRunRef });
-        return toolText(JSON.stringify(executed.result, null, 2), {
+        const output = toolText(JSON.stringify(executed.result, null, 2), {
           result: executed.result,
           run: metadata,
+          monitor,
         });
+        if (monitorWarning) output.content.push({ type: "text", text: monitorWarning });
+        return output;
       } catch (error) {
         const completedActions = compactCompletedActions(actions);
         const computeFailure = classifyComputeFailure(completedActions, executionStage);

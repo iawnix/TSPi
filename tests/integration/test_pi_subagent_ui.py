@@ -133,6 +133,66 @@ process.stdout.write(JSON.stringify(renderTsSubagentDetails(record,documents,80)
     assert any("calc_4" in line for line in lines)
     assert any("PROGRAM_OUTPUT_MISSING" in line for line in lines)
     assert any("Journal" in line for line in lines)
+    rendered = "\n".join(lines)
+    assert "art_0123456789abcdef01234567" not in rendered
+    assert "artifact 1" in rendered
+
+
+def test_display_formatter_keeps_canonical_refs_out_of_human_facing_text() -> None:
+    formatter_module = ROOT / "extensions" / "pi" / "shared" / "ref-presentation.ts"
+    script = f"""
+import {{ collectArtifactDisplayLabels,createDisplayRefFormatter }} from {json.dumps(formatter_module.as_uri())};
+const workspace="ws_004cf854bc974a06a54c0a39";
+const artifact="art_42ad60b4e2fdbecd54a9350a";
+const seed="structure_seed_6e325d0e95b42fb46543db0c8f3c9fd49d88455248502656032c43874b9c08b7.xyz";
+const digest="sha256:"+"a".repeat(64);
+const values=[{{artifact_id:artifact,path:"nodes/node_1/inputs/ethanimine_Z.xyz"}}];
+const formatter=createDisplayRefFormatter({{workspaceLabel:"ts_001",artifactLabels:collectArtifactDisplayLabels(values)}});
+const raw=[workspace,artifact,seed,digest].join(" | ");
+const embedded=`submission_${{workspace}}_x /tmp/${{workspace}}/job_${{artifact}}_output`;
+const ordinary=`news_${{workspace.slice(3)}} and cart_${{artifact.slice(4)}}`;
+process.stdout.write(JSON.stringify({{raw,display:formatter.formatText(raw),embedded:formatter.formatText(embedded),ordinary:formatter.formatText(ordinary),refs:[workspace,artifact,seed,digest].map((value)=>formatter.format(value))}}));
+"""
+    result = _node_json(script)
+    assert result["raw"].startswith("ws_004cf854bc974a06a54c0a39")
+    assert "ws_004cf854bc974a06a54c0a39" not in result["display"]
+    assert "art_42ad60b4e2fdbecd54a9350a" not in result["display"]
+    assert "6e325d0e95b42fb46543db0c8f3c9fd49d88455248502656032c43874b9c08b7" not in result["display"]
+    assert "a" * 64 not in result["display"]
+    assert result["display"] == "ts_001 | ethanimine_Z.xyz | structure seed 1.xyz | content digest 1"
+    assert result["refs"] == ["ts_001", "ethanimine_Z.xyz", "structure seed 1.xyz", "content digest 1"]
+    assert result["embedded"] == "submission_ts_001_x /tmp/ts_001/job_ethanimine_Z.xyz_output"
+    assert result["ordinary"] == "news_004cf854bc974a06a54c0a39 and cart_42ad60b4e2fdbecd54a9350a"
+
+
+def test_native_tool_renderer_hides_canonical_refs_without_mutating_payload() -> None:
+    renderer = ROOT / "extensions" / "pi" / "shared" / "native-tool-presentation.ts"
+    script = f"""
+import {{ renderTsNativeCall,renderTsNativeResult }} from {json.dumps(renderer.as_uri())};
+const theme={{fg:(_color,value)=>value}};
+const workspace="ws_004cf854bc974a06a54c0a39";
+const artifact="art_42ad60b4e2fdbecd54a9350a";
+const seed="structure_seed_6e325d0e95b42fb46543db0c8f3c9fd49d88455248502656032c43874b9c08b7.xyz";
+const raw={{schema_version:"research-summary/1",map_id:workspace,artifact_id:artifact,seed_path:seed,status:"completed"}};
+const result={{content:[{{type:"text",text:JSON.stringify(raw)}}],details:{{result:raw}}}};
+const call=renderTsNativeCall("ts_state",{{mode:"summary",nodeId:"node_1"}},theme).render(120).join("\\n");
+const rendered=renderTsNativeResult("ts_state",result,{{expanded:true,isPartial:false}},theme,false).render(120).join("\\n");
+process.stdout.write(JSON.stringify({{call,rendered,raw:result.content[0].text}}));
+"""
+    result = _node_json(script)
+    assert result["raw"] == json.dumps(
+        {
+            "schema_version": "research-summary/1",
+            "map_id": "ws_004cf854bc974a06a54c0a39",
+            "artifact_id": "art_42ad60b4e2fdbecd54a9350a",
+            "seed_path": "structure_seed_6e325d0e95b42fb46543db0c8f3c9fd49d88455248502656032c43874b9c08b7.xyz",
+            "status": "completed",
+        },
+        separators=(",", ":"),
+    )
+    for value in ("ws_004cf854bc974a06a54c0a39", "art_42ad60b4e2fdbecd54a9350a", "6e325d0e95b42fb46543db0c8f3c9fd49d88455248502656032c43874b9c08b7"):
+        assert value not in result["call"]
+        assert value not in result["rendered"]
 
 
 def test_rpc_subagent_history_uses_run_owner_action_and_audit_sections() -> None:

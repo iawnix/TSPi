@@ -20,32 +20,38 @@ cd TSPi
 
 The core installation always includes the Agent, scientific runtime, and
 molecular rendering. TS Web is optional. The installer configures one
-installation-wide App Server Host; there is no TS Phone daemon to install.
+installation-wide TSPi Host; there is no TS Phone daemon to install.
 
 See [Installation and Operations](docs/INSTALLATION.md) for prerequisites,
 runtime setup, upgrades, rollback, and recovery. Model/provider behavior is
 documented in [Model Compatibility](docs/MODEL_COMPATIBILITY.md).
 
-## App Server and terminal
+## Host and terminal
 
-One installation-wide Pi App Server Host owns sessions, transcript history,
-model state, and the Root lock for all workspaces. Open a workspace directly;
-TSPi starts the configured service and waits for the Host when it is not running:
+One installation-wide TSPi Host provides authenticated routing, idempotency,
+session discovery, and Monitor supervision. Each workspace is owned by one
+pinned Pi `SessionWorker`/`AgentHarness` lane. The lane owns the agent loop,
+model, tools, transcript, and Root lock; the terminal, Phone, and Monitor are
+clients of that same lane. Open a workspace directly:
 
 ```bash
 ./TSPi --workspace reaction-a
 ./TSPi --workspace reaction-a -c
 ```
 
-The first command creates a conversation; the second continues the latest
-conversation in that workspace.
+The first command creates a Harness conversation; the second continues the
+latest writable conversation in that workspace. TSPi asks Host for a local Pi
+connection descriptor and then starts Pi's official native remote client/TUI.
+The default path has no tmux, PTY scraping, or second agent loop. If the Host
+is unavailable, TSPi reports the failure; ordinary Pi is available only through
+the explicit `TSPI_HOST_BACKEND=ordinary` migration/debug mode.
 Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for a
 user-scoped installation, or omit `--user` for a system-scoped installation.
-With service scope `none`, the managed Host is disabled; configure a user or
-system service before opening a workspace. `--host` is an internal service
-entrypoint and is not part of normal operation.
+With service scope `none`, the managed Host is disabled and normal workspace,
+Phone, and Monitor entrypoints are unavailable until an operator starts Host.
+`--host` is an internal service entrypoint and is not part of normal operation.
 
-The TS Phone Flutter app reaches the same App Server through TSPi Link. The
+The TS Phone Flutter app reaches the same Host and Pi Harness lane through TSPi Link. The
 Phone and Host both open outbound WSS connections to a TSPi Link Relay; the Relay
 handles device authorization and opaque byte forwarding, not sessions or
 research state. See [TSPi Link](docs/TSPi_LINK.md),

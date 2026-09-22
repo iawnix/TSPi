@@ -41,14 +41,20 @@ paths = [
 
 [suites.native-pi]
 kind = "node-native"
-environment = "Node.js 22 + prepared TSPI_PI_SOURCE"
-description = "Native Pi App Server, worker, extension loader, and provider tests."
+environment = "Node.js 22 + pinned Pi checkout (TSPI_PI_SOURCE)"
+description = "Pi Harness server, native TUI client, recovery, history, Monitor, and compatibility checks."
 paths = [
   "tests/node/native/pi-app-server.test.mjs",
+  "tests/node/native/pi-harness-policy.test.mjs",
   "tests/node/native/pi-native-worker.test.mjs",
+  "tests/node/native/pi-session-control.test.mjs",
+  "tests/node/native/tspi-host.test.mjs",
+  "tests/node/native/tspi-history.test.mjs",
+  "tests/node/native/tspi-ordinary-pi.test.mjs",
+  "tests/node/fast/pi-monitor-worker.test.mjs",
+  "tests/node/native/tspi-link-relay.test.mjs",
   "tests/node/native/server-extension-loader.test.mjs",
   "tests/node/native/provider-turn.test.mjs",
-  "tests/node/native/tspi-link-relay.test.mjs",
 ]
 
 [suites.package]

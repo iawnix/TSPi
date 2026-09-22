@@ -15,11 +15,17 @@ PIN_PATH = ROOT / "config" / "pi-source.json"
 PATCH_PATH = ROOT / "config" / "pi-worker-entry.patch"
 MULTI_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace.patch"
 MULTI_WORKSPACE_CREATE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace-create.patch"
+WORKSPACE_SESSION_LIST_PATCH_PATH = ROOT / "config" / "pi-workspace-session-list.patch"
 RESEARCH_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-research-workspace.patch"
 SYSTEM_PROMPT_PATCH_PATH = ROOT / "config" / "pi-system-prompt.patch"
 SOURCE_RESOLVER_PATCH_PATH = ROOT / "config" / "pi-source-resolver.patch"
 MODEL_DATA_PATCH_PATH = ROOT / "config" / "pi-model-data.patch"
 PRESENTATION_LAYOUT_PATCH_PATH = ROOT / "config" / "pi-presentation-layout.patch"
+TOOL_RENDERERS_PATCH_PATH = ROOT / "config" / "pi-tool-renderers.patch"
+HARNESS_ADMISSION_PATCH_PATH = ROOT / "config" / "pi-harness-admission.patch"
+HARNESS_ADMISSION_QUEUE_PATCH_PATH = ROOT / "config" / "pi-harness-admission-queue.patch"
+HARNESS_OPERATION_REQUEST_PATCH_PATH = ROOT / "config" / "pi-harness-operation-request.patch"
+HARNESS_OPERATION_FORWARD_PATCH_PATH = ROOT / "config" / "pi-harness-operation-forward.patch"
 
 
 class PiSourceError(RuntimeError):
@@ -63,6 +69,8 @@ def verify(source: Path) -> str:
     server = server_path.read_text(encoding="utf-8")
     services_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "server.ts"
     services = services_path.read_text(encoding="utf-8")
+    client_path = source / "packages" / "coding-agent" / "src" / "experimental" / "client.ts"
+    client = client_path.read_text(encoding="utf-8") if client_path.is_file() else ""
     multi_workspace_markers = {
         "workspace service": "tspi.workspace-directory" in sessions,
         "workspaceId session binding": "workspaceId?: string" in sessions and "createOptions.workspaceId" in server,
@@ -73,6 +81,7 @@ def verify(source: Path) -> str:
             or 'identity?.schema_version !== "research-workspace/1"' in server
         ),
         "workspace validation diagnostic": 'new RoutedServerError("service_invalid_value", `Session cwd is not a supported TSPi workspace:' in server,
+        "workspace-scoped session listing": ".filter(sessionMatchesCwd)" in client,
     }
     missing = [label for label, present in multi_workspace_markers.items() if not present]
     if missing:
@@ -97,6 +106,22 @@ def verify(source: Path) -> str:
     layout_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "presentation-layout.ts"
     if "pi.local.presentation-layout" not in layout_path.read_text(encoding="utf-8"):
         raise PiSourceError(f"Pi source is missing the TSPi presentation layout patch: {source}")
+    renderer_layout = layout_path.read_text(encoding="utf-8")
+    renderer_client = (source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui.ts").read_text(encoding="utf-8")
+    renderer_chat = (source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui-chat.ts").read_text(encoding="utf-8")
+    if "setToolRenderers" not in renderer_layout or "PresentationToolRenderers" not in renderer_client or "#builtInRenderers" not in renderer_chat:
+        raise PiSourceError(f"Pi source is missing the TSPi native tool renderer patch: {source}")
+    controller_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "agent-controller.ts"
+    provider_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "agent-controller-provider.ts"
+    provider = provider_path.read_text(encoding="utf-8")
+    if (
+        "startPrompt(request" not in controller_path.read_text(encoding="utf-8")
+        or "operationId?: string" not in controller_path.read_text(encoding="utf-8")
+        or "const admitAndDrive" not in provider
+        or "nothing_queued" not in provider
+        or "const watch = await lane.watch(context)" not in provider
+    ):
+        raise PiSourceError(f"Pi source is missing the non-blocking TSPi Harness admission patch: {source}")
     return commit
 
 
@@ -143,6 +168,21 @@ def apply_multi_workspace_patch(source: Path) -> None:
             raise PiSourceError(
                 f"failed to upgrade TSPi multi-workspace patch ({patch_path.name}): {fallback}"
             ) from exc
+
+
+def apply_workspace_session_list_patch(source: Path) -> None:
+    """Keep non-interactive session discovery within the selected workspace."""
+    client_path = source / "packages" / "coding-agent" / "src" / "experimental" / "client.ts"
+    if ".filter(sessionMatchesCwd)" in client_path.read_text(encoding="utf-8"):
+        return
+    try:
+        subprocess.run(
+            ["git", "-C", str(source), "apply", str(WORKSPACE_SESSION_LIST_PATCH_PATH)],
+            check=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PiSourceError(f"failed to apply workspace-scoped session list patch: {exc}") from exc
 
 
 def apply_research_workspace_patch(source: Path) -> None:
@@ -216,6 +256,79 @@ def apply_presentation_layout_patch(source: Path) -> None:
         raise PiSourceError(f"failed to apply Pi presentation layout patch: {exc}") from exc
 
 
+def apply_tool_renderers_patch(source: Path) -> None:
+    """Upgrade a prepared Pi tree with process-local native tool renderers."""
+    layout_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "presentation-layout.ts"
+    chat_path = source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui-chat.ts"
+    if layout_path.is_file() and chat_path.is_file():
+        layout = layout_path.read_text(encoding="utf-8")
+        chat = chat_path.read_text(encoding="utf-8")
+        if "setToolRenderers" in layout and "#builtInRenderers" in chat:
+            return
+    try:
+        subprocess.run(["git", "-C", str(source), "apply", str(TOOL_RENDERERS_PATCH_PATH)], check=True, text=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PiSourceError(f"failed to apply Pi native tool renderer patch: {exc}") from exc
+
+
+def apply_harness_admission_patch(source: Path) -> None:
+    """Expose durable accept-then-drive methods to Host clients.
+
+    The patch is deliberately kept in the TSPi repository and applied only to
+    the pinned checkout. This prevents an arbitrary local Pi tree from being
+    loaded as the Harness runtime.
+    """
+    controller_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "agent-controller.ts"
+    provider_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "agent-controller-provider.ts"
+    provider = provider_path.read_text(encoding="utf-8")
+    controller = controller_path.read_text(encoding="utf-8")
+    has_admission = "const admitAndDrive" in provider and "startQueued" in provider
+    has_queue_upgrade = "nothing_queued" in provider and "const watch = await lane.watch(context)" in provider
+    if not has_admission:
+        try:
+            subprocess.run(["git", "-C", str(source), "apply", str(HARNESS_ADMISSION_PATCH_PATH)], check=True, text=True)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise PiSourceError(f"failed to apply TSPi Harness admission patch: {exc}") from exc
+        provider = provider_path.read_text(encoding="utf-8")
+        controller = controller_path.read_text(encoding="utf-8")
+        has_admission = True
+        has_queue_upgrade = "nothing_queued" in provider and "const watch = await lane.watch(context)" in provider
+    if has_admission and not has_queue_upgrade:
+        try:
+            subprocess.run(
+                ["git", "-C", str(source), "apply", str(HARNESS_ADMISSION_QUEUE_PATCH_PATH)],
+                check=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise PiSourceError(f"failed to upgrade TSPi Harness queue admission patch: {exc}") from exc
+
+    # The first Harness patch already carries the operation-id field. Keep the
+    # operation hint as two small upgrades so a checkout prepared by an older
+    # release (including one that already has the queue patch) can be repaired
+    # without reapplying the whole multi-file patch.
+    controller = controller_path.read_text(encoding="utf-8")
+    if "operationId?: string" not in controller:
+        try:
+            subprocess.run(
+                ["git", "-C", str(source), "apply", str(HARNESS_OPERATION_REQUEST_PATCH_PATH)],
+                check=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise PiSourceError(f"failed to apply TSPi Harness operation request patch: {exc}") from exc
+    provider = provider_path.read_text(encoding="utf-8")
+    if "request.operationId === undefined" not in provider:
+        try:
+            subprocess.run(
+                ["git", "-C", str(source), "apply", str(HARNESS_OPERATION_FORWARD_PATCH_PATH)],
+                check=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise PiSourceError(f"failed to apply TSPi Harness operation forwarding patch: {exc}") from exc
+
+
 def clone(destination: Path) -> Path:
     pin = _pin()
     if destination.exists():
@@ -229,11 +342,14 @@ def clone(destination: Path) -> Path:
         raise PiSourceError(f"failed to clone pinned Pi source: {exc}") from exc
     apply_worker_patch(destination)
     apply_multi_workspace_patch(destination)
+    apply_workspace_session_list_patch(destination)
     apply_research_workspace_patch(destination)
     apply_system_prompt_patch(destination)
     apply_source_resolver_patch(destination)
     apply_model_data_patch(destination)
     apply_presentation_layout_patch(destination)
+    apply_tool_renderers_patch(destination)
+    apply_harness_admission_patch(destination)
     verify(destination)
     return destination
 
@@ -245,11 +361,14 @@ def install(install_root: Path) -> Path:
     if destination.exists():
         apply_worker_patch(destination)
         apply_multi_workspace_patch(destination)
+        apply_workspace_session_list_patch(destination)
         apply_research_workspace_patch(destination)
         apply_system_prompt_patch(destination)
         apply_source_resolver_patch(destination)
         apply_model_data_patch(destination)
         apply_presentation_layout_patch(destination)
+        apply_tool_renderers_patch(destination)
+        apply_harness_admission_patch(destination)
         verify(destination)
         if not (destination / "node_modules").is_dir():
             _install_dependencies(destination)

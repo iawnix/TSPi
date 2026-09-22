@@ -25,6 +25,10 @@ import {
 import { guardPackageSourceRead, packageSourceSystemPrompt } from "../shared/package-source-policy.ts";
 import { registerSessionGuard } from "../shared/session-guard.ts";
 import {
+  renderTsNativeCall,
+  renderTsNativeResult,
+} from "../shared/native-tool-presentation.ts";
+import {
   createPromptContributor,
   createSystemPromptManifest,
   createSystemPromptTool,
@@ -147,6 +151,8 @@ export function registerResearchExtension(pi: ExtensionAPI) {
 
   pi.registerTool({
     ...TOOL_CONTRACTS.state,
+    renderCall: (args, theme) => renderTsNativeCall("ts_state", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsNativeResult("ts_state", result, options, theme, context.isError),
     async execute(_toolCallId, params: StateToolParams, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const mode = params.mode || "map";
@@ -196,6 +202,8 @@ export function registerResearchExtension(pi: ExtensionAPI) {
 
   pi.registerTool({
     ...TOOL_CONTRACTS.change,
+    renderCall: (args, theme) => renderTsNativeCall("ts_change", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsNativeResult("ts_change", result, options, theme, context.isError),
     async execute(_toolCallId, params: ChangeToolParams, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const result = await runtime.command("research.change", root, { request: {
@@ -213,6 +221,8 @@ export function registerResearchExtension(pi: ExtensionAPI) {
   const notificationTarget = configuredNotificationTarget();
   pi.registerTool({
     ...TOOL_CONTRACTS.notify,
+    renderCall: (args, theme) => renderTsNativeCall("ts_notify", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsNativeResult("ts_notify", result, options, theme, context.isError),
     description: `Notify the configured target: ${notificationTarget}.`,
     promptSnippet: "Send a research update",
     promptGuidelines: [

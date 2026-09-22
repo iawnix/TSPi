@@ -13,11 +13,18 @@ declare module "@earendil-works/pi-coding-agent/experimental/plugin" {
   }
   export type PresentationComponentFactory = (context: PresentationLayoutContext) => Component;
   export type PresentationEditorFactory = (context: PresentationLayoutContext) => CustomEditor;
+  export interface PresentationToolRenderer {
+    renderShell?: "default" | "self";
+    renderCall?: (args: any, theme: Theme, context: any) => Component;
+    renderResult?: (result: any, options: { expanded: boolean; isPartial: boolean }, theme: Theme, context: any) => Component;
+  }
+  export type PresentationToolRenderers = Readonly<Record<string, PresentationToolRenderer>>;
   export interface PresentationLayout {
     getContext(): PresentationLayoutContext;
     setHeader(factory: PresentationComponentFactory | undefined): void;
     setFooter(factory: PresentationComponentFactory | undefined): void;
     setEditor(factory: PresentationEditorFactory | undefined): void;
+    setToolRenderers(renderers: PresentationToolRenderers): () => void;
     setTitle(title: string): void;
     requestRender(): void;
   }

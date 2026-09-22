@@ -1,27 +1,33 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 
 const sourceRoot = process.env.TSPI_PI_SOURCE;
 
-test("Host wrapper routes client mode through the remote-native Pi client", async () => {
-  const wrapper = await readFile("apps/app-server/pi-app-server.mjs", "utf8");
+test("Host wrapper routes client mode through Pi's native client without injecting a presentation facet", async () => {
+  const wrapper = await readFile("apps/app-server/pi-experimental-app-server.mjs", "utf8");
   const client = await readFile("apps/app-server/pi-native-client.mjs", "utf8");
   assert.match(wrapper, /join\(packageRoot, "apps\/app-server\/pi-native-client\.mjs"\)/);
-  assert.match(wrapper, /const presentationPackage = join\(packageRoot, "extensions\/pi\/tui-package"\)/);
-  assert.match(wrapper, /const piForwarded = mode === "client"/);
+  assert.match(wrapper, /const piForwarded = forwarded;/);
+  assert.match(wrapper, /\[join\(packageRoot, "apps\/app-server\/pi-native-client\.mjs"\), \.\.\.piForwarded\]/);
+  assert.doesNotMatch(wrapper, /extensions\/pi\/tui-package/);
+  assert.doesNotMatch(wrapper, /TSPI_PRESENTATION_RENDERERS_ONLY/);
+  assert.doesNotMatch(wrapper, /injectPresentationPackage/);
   assert.match(client, /experimental\/client-tui\.ts/);
   assert.match(client, /runClientTui/);
+  assert.match(client, /parsed\.command\.pluginPackages === undefined/);
+  assert.match(client, /connect\?\.transport !== "radius"/);
+  assert.match(client, /pluginPackages: \[\]/);
   assert.doesNotMatch(client, /class RemoteTranscript/);
   assert.doesNotMatch(client, /CombinedAutocompleteProvider/);
 });
 
 test("native client binds the interactive process to the workspace cwd", { skip: !sourceRoot }, async () => {
-  const wrapper = await readFile("apps/app-server/pi-app-server.mjs", "utf8");
+  const wrapper = await readFile("apps/app-server/pi-experimental-app-server.mjs", "utf8");
   const client = await readFile("apps/app-server/pi-native-client.mjs", "utf8");
   assert.match(client, /const cwd = process\.env\.TSPI_SESSION_CWD\?\.trim\(\);/);
   assert.match(client, /process\.chdir\(resolvedCwd\)/);
@@ -33,7 +39,7 @@ test("native client binds the interactive process to the workspace cwd", { skip:
 
 async function startNativeServer(root, { workspaceRoot, python } = {}) {
   const child = spawn(process.execPath, [
-    "apps/app-server/pi-app-server.mjs", "server", "--source-root", sourceRoot,
+    "apps/app-server/pi-experimental-app-server.mjs", "server", "--source-root", sourceRoot,
     "--directory", join(root, "server"), "--workspace", root, "--session-dir", join(root, "sessions"),
   ], {
     cwd: process.cwd(), env: {
@@ -89,12 +95,22 @@ async function stopNativeServer(child) {
 }
 
 async function runNativeClient(root, ...arguments_) {
+  return runNativeClientWithEnv(root, {}, ...arguments_);
+}
+
+async function runNativeClientWithEnv(root, environment, ...arguments_) {
   return await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [
-      "apps/app-server/pi-app-server.mjs", "client", "--source-root", sourceRoot, ...arguments_,
+      "apps/app-server/pi-experimental-app-server.mjs", "client", "--source-root", sourceRoot, ...arguments_,
     ], {
       cwd: process.cwd(),
-      env: { ...process.env, PI_EXPERIMENTAL: "1", PI_OFFLINE: "1", PI_CODING_AGENT_DIR: join(root, "agent") },
+      env: {
+        ...process.env,
+        PI_EXPERIMENTAL: "1",
+        PI_OFFLINE: "1",
+        PI_CODING_AGENT_DIR: join(root, "agent"),
+        ...environment,
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -110,7 +126,7 @@ async function runNativeClient(root, ...arguments_) {
 
 async function startNativeGateway(root, socket, sessionId, workspaceRoot = root) {
   const child = spawn(process.execPath, [
-    "apps/app-server/pi-app-server.mjs", "gateway", "--source-root", sourceRoot,
+    "apps/app-server/pi-experimental-app-server.mjs", "gateway", "--source-root", sourceRoot,
     "--workspace", workspaceRoot,
     "--connect", `unix://${socket}`, "--session-id", sessionId,
     "--port", "0", "--auth-token", "gateway-test-token",
@@ -160,14 +176,14 @@ test("native Pi app server rejects mode-incompatible arguments", { skip: !source
     },
   ];
   for (const fixture of cases) {
-    const result = spawnSync(process.execPath, ["apps/app-server/pi-app-server.mjs", ...fixture.args], {
+    const result = spawnSync(process.execPath, ["apps/app-server/pi-experimental-app-server.mjs", ...fixture.args], {
       cwd: process.cwd(),
       encoding: "utf8",
     });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, new RegExp(fixture.message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-  const gateway = spawnSync(process.execPath, ["apps/app-server/pi-app-server.mjs", "gateway", "--source-root", sourceRoot], {
+  const gateway = spawnSync(process.execPath, ["apps/app-server/pi-experimental-app-server.mjs", "gateway", "--source-root", sourceRoot], {
     cwd: process.cwd(),
     encoding: "utf8",
   });
@@ -180,7 +196,7 @@ test("native Pi app server starts from the pinned source entrypoint", { skip: !s
   await mkdir(join(root, "agent"), { recursive: true });
   await writeFile(join(root, "agent", "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test-key" } }), { mode: 0o600 });
   const child = spawn(process.execPath, [
-    "apps/app-server/pi-app-server.mjs", "server", "--source-root", sourceRoot,
+    "apps/app-server/pi-experimental-app-server.mjs", "server", "--source-root", sourceRoot,
     "--directory", join(root, "server"), "--workspace", root, "--session-dir", join(root, "sessions"),
   ], {
     cwd: process.cwd(), env: { ...process.env, PI_EXPERIMENTAL: "1", PI_OFFLINE: "1", PI_CODING_AGENT_DIR: join(root, "agent") },
@@ -211,6 +227,9 @@ test("native Pi app server starts from the pinned source entrypoint", { skip: !s
     const { Client } = await fromSource("packages/client/src/index.ts");
     const { createUnixTransportFactory } = await fromSource("packages/client/src/unix.ts");
     const { SessionManagement } = await fromSource("packages/coding-agent/src/experimental/services/sessions.ts");
+    const { readSessionPluginPackageProfile, writeSessionPluginPackageProfile } = await fromSource(
+      "packages/coding-agent/src/experimental/plugins/package.ts",
+    );
     const { createServerServiceBinding } = await fromSource("packages/coding-agent/test/experimental-service-binding.ts");
     const serverId = output.match(/^Server: ([0-9a-f-]+)$/m)?.[1];
     assert.ok(serverId);
@@ -221,9 +240,24 @@ test("native Pi app server starts from the pinned source entrypoint", { skip: !s
     services = createServerServiceBinding(serverClient, { services: [SessionManagement] });
     await services.ready(backgroundContext);
     const session = await services.use(SessionManagement).create({ id: "cli-attach" }, backgroundContext);
+    const sessionFiles = (await readdir(join(root, "sessions"), { recursive: true }))
+      .filter((path) => path.endsWith(".jsonl"));
+    assert.equal(sessionFiles.length, 1);
+    const sessionPath = join(root, "sessions", sessionFiles[0]);
+    const legacyPresentationPackage = resolve("extensions/pi/tui-package");
+    await writeSessionPluginPackageProfile(
+      join(root, "server"),
+      serverId,
+      sessionPath,
+      [legacyPresentationPackage],
+    );
+    assert.deepEqual(
+      await readSessionPluginPackageProfile(join(root, "server"), serverId, sessionPath),
+      [legacyPresentationPackage],
+    );
     const client = await new Promise((resolve, reject) => {
       const result = spawn(process.execPath, [
-        "apps/app-server/pi-app-server.mjs", "client", "--source-root", sourceRoot,
+        "apps/app-server/pi-experimental-app-server.mjs", "client", "--source-root", sourceRoot,
         "--connect", `unix://${socket}`, "--session-id", session.sessionId,
       ], {
         cwd: process.cwd(),
@@ -240,6 +274,10 @@ test("native Pi app server starts from the pinned source entrypoint", { skip: !s
       result.once("exit", (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error(`native client exited ${code}: ${stderr}`)));
     });
     assert.match(client.stdout, new RegExp(`^[0-9a-f-]+\\t${session.sessionId}\\tattached\\n$`));
+    assert.deepEqual(
+      await readSessionPluginPackageProfile(join(root, "server"), serverId, sessionPath),
+      [],
+    );
   } finally {
     await services?.dispose(backgroundContext).catch(() => {});
     await serverClient?.dispose().catch(() => {});
@@ -445,8 +483,17 @@ for (const directory of ["nodes", "operations", "scratch", "inputs"]) mkdirSync(
 
     const created = await services.use(SessionManagement).create({ cwd: projectA }, backgroundContext);
     assert.equal(created.cwd, projectA);
+    const projectBSession = await services.use(SessionManagement).create({ cwd: projectB }, backgroundContext);
+    assert.equal(projectBSession.cwd, projectB);
     const workspaceSession = await services.use(SessionManagement).create({ workspaceId: "project-c" }, backgroundContext);
     assert.equal(workspaceSession.cwd, projectC);
+    const projectAList = await runNativeClientWithEnv(
+      root,
+      { TSPI_SESSION_CWD: projectA },
+      "--connect", `unix://${server.socket}`,
+    );
+    assert.equal(projectAList.stdout, `${server.serverId}\t${created.sessionId}\n`);
+    assert.doesNotMatch(projectAList.stdout, new RegExp(projectBSession.sessionId));
     await assert.rejects(services.use(SessionManagement).create({ cwd: workspaceRoot }, backgroundContext));
     await assert.rejects(services.use(SessionManagement).create({ cwd: join(projectA, "nested") }, backgroundContext));
     await assert.rejects(services.use(SessionManagement).create({ cwd: join(workspaceRoot, "project-a-alias") }, backgroundContext));

@@ -2,28 +2,24 @@
 
 [English](0004-unified-app-server-extension-runtime.md) | 简体中文
 
-- 状态：已接受
+- 状态：已接受；[ADR 0005](0005-ordinary-pi-host-bridge.zh-CN.md) 只保留给隔离的普通
+  Pi 迁移/调试模式
 - 日期：2026-09-17
 
 ## 决定
 
-安装级 systemd App Server 是生产环境唯一的 Root Agent runtime。终端命令
-`TSPi --workspace <name>` 是连接它的 Pi client；TS Phone 和 Web 也附着到其会话，
-不会启动第二个 workflow runtime，也不会上传可执行 extension。配置 user 或 system
-service 时，Host socket 不存在会由终端启动器启动该 service，并等待同一个安装级 Host；
-不会创建第二个前台 Host。scope 为 none 时禁用受管 Host，需先配置 user 或 system service。
+安装级 Pi App Server 拥有 Root Agent runtime，客户端附着它的 session。Pi
+`SessionWorker`/`AgentHarness` 是 runtime owner；TSPi Host 是路由、回执、Monitor 和
+Link control plane。终端使用 Pi 官方 native remote client，Phone 和 Monitor 通过
+Host adapter 访问同一个 worker lane。
 
 服务工具由 `extensions/server/extensions.json` 选择，每个 descriptor 绑定 scope、
 工具清单、权限和 SHA-256 digest。loader 拒绝 package 外路径、符号链接、未知 allowlist
 名称、非法 factory 以及和内建工具或其他 extension 的名称冲突。客户端只能调用由
 Host context 创建的 protocol service。
 
-`tspi-server-tools` 是规范 server tool set，所有连接客户端共享其实现。legacy Pi presentation
-extension 继续为直接运行 `pi` 提供兼容性；TSPi 启动器会选择自己的 presentation facet，
-由 Host 构建 facet bundle，再交给 Pi 原生 remote client 加载。facet 可以贡献布局组件和
-slash command，但输入、补全、选择器、transcript 渲染及忙碌状态仍由 Pi client TUI
-负责。新的 workflow 功能必须增加 server entry 并复用 shared command surface，不得重新
-创建 per-client broker。
+worker 加载经过 digest 校验的 server tool facet，以及 package skills、hooks、策略和
+system prompt。presentation facet 只在 client 侧生效，不能改变 worker 拥有的工具集合。
 
 ## Provider 兼容性
 
@@ -33,6 +29,4 @@ Compute 和 Review runtime 仍校验结果 tool call。对声明 DeepSeek 风格
 
 ## 后果
 
-TUI、Phone 和 Web 共享一份 session transcript 与 Root lock；客户端断开后可由另一个
-认证客户端接替，不需要重放不确定 prompt 或远程操作。发布验证必须覆盖 loader、manifest
-和 server entry。
+ADR 0005 只描述显式选择的普通兼容模式，不能作为本运行时的 fallback。

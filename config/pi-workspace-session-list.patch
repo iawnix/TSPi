@@ -1,0 +1,14 @@
+diff --git a/packages/coding-agent/src/experimental/client.ts b/packages/coding-agent/src/experimental/client.ts
+--- a/packages/coding-agent/src/experimental/client.ts
++++ b/packages/coding-agent/src/experimental/client.ts
+@@ -44,7 +44,9 @@ export async function runClient(command: ClientCommand, options: RunClientOptions = {}): Promise<ClientResult> {
+ 				kind: "list",
+ 				sessions: discovered
+ 					.flatMap(({ route, directory }) =>
+-						directory.state.value!.sessions.map(({ sessionId }) => ({ serverId: route.serverId, sessionId })),
++						directory.state.value!.sessions
++							.filter(sessionMatchesCwd)
++							.map(({ sessionId }) => ({ serverId: route.serverId, sessionId })),
+ 					)
+ 					.sort(
+ 						(left, right) =>

@@ -1,164 +1,139 @@
-import { execFileSync, spawn } from "node:child_process";
-import { existsSync, lstatSync, readFileSync } from "node:fs";
-import { resolve, join, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { startTspiHost } from "./tspi-host.mjs";
+import { createTspiHarnessBackend } from "./tspi-harness-backend.mjs";
 
-const { mode, wrapper, forwarded } = parseWrapperArguments(process.argv.slice(2));
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const pinPath = join(packageRoot, "config/pi-source.json");
-const pin = JSON.parse(readFileSync(pinPath, "utf8"));
-const managedSource = process.env.TSPI_INSTALL_ROOT
-  ? join(resolve(process.env.TSPI_INSTALL_ROOT), ".pi/runtime-cache/pi", pin.commit)
-  : undefined;
-const configuredRoot = wrapper.sourceRoot || process.env.TSPI_PI_SOURCE || managedSource;
-if (!configuredRoot) {
-  throw new Error("managed Pi source is unavailable; reinstall TSPi or pass --source-root");
+const packageRoot = resolve(process.env.TSPI_PACKAGE_ROOT || fileURLToPath(new URL("../..", import.meta.url)));
+const args = process.argv.slice(2);
+const mode = args.shift() || "server";
+if (mode !== "server") throw new Error("Use TSPi --workspace for the Pi client; this entrypoint starts the Host.");
+const options = {};
+for (let index = 0; index < args.length; index++) {
+  const match = /^--([^=]+)=(.*)$/u.exec(args[index]);
+  const key = match?.[1] || args[index].slice(2);
+  if (!["workspace", "directory", "server-id", "state-root", "session-dir", "source-root", "provider", "model"].includes(key)) throw new Error(`Unknown Host option: ${args[index]}`);
+  options[key] = match?.[2] || args[++index];
 }
-const sourceRoot = resolve(configuredRoot);
-if (!existsSync(join(sourceRoot, "packages/coding-agent/src/experimental/cli.ts"))) {
-  throw new Error(`Pi source does not contain the experimental CLI: ${sourceRoot}`);
+const installRoot = process.env.TSPI_INSTALL_ROOT;
+if (!installRoot || !options.directory || !options["server-id"]) throw new Error("Host requires an installation, directory and server identity.");
+const stateRoot = resolve(options["state-root"] || join(installRoot, ".pi/app-server-host"));
+const workspaceRoot = resolve(process.env.TSPI_WORKSPACE_ROOT || options.workspace || join(installRoot, "workspaces"));
+const socketPath = join(resolve(options.directory), `${options["server-id"]}.sock`);
+// The TSPi Host owns <directory>/<server-id>.sock. Pi's experimental server
+// uses the same server-id-derived socket name, so keep its coordinator and
+// public socket in a private child directory to avoid endpoint collisions.
+const piServerDirectory = join(resolve(options.directory), "pi");
+mkdirSync(piServerDirectory, { recursive: true, mode: 0o700 });
+const python = process.env.TS_AGENT_PYTHON || "python3";
+const provider = options.provider ?? process.env.TSPI_PROVIDER;
+const model = options.model ?? process.env.TSPI_MODEL;
+if ((provider === undefined) !== (model === undefined)) throw new Error("TSPI_PROVIDER and TSPI_MODEL must be provided together");
+if (Boolean(process.env.TSPI_LINK_URL) !== Boolean(process.env.TSPI_LINK_HOST_TOKEN_FILE)) {
+  throw new Error("Both TSPi Link URL and Host token file are required.");
 }
-if (!existsSync(join(sourceRoot, "packages/coding-agent/src/experimental/client-runtime.ts"))) {
-  throw new Error(`Pi source does not contain the remote client runtime: ${sourceRoot}`);
-}
-const commit = execFileSync("git", ["-C", sourceRoot, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-if (commit !== pin.commit) throw new Error(`Pi source commit mismatch: expected ${pin.commit}, found ${commit}`);
-const processSource = join(sourceRoot, "packages/coding-agent/src/experimental/process.ts");
-if (!readFileSync(processSource, "utf8").includes("PI_SESSION_WORKER_ENTRY")) {
-  throw new Error("Pi source is missing the TSPi Worker entrypoint patch; run prepare_pi_source.py --apply-worker-patch");
-}
-// The Host owns sessions, workers, tools, and replicated state. The terminal
-// is a first-class remote client and delegates its interactive presentation to
-// Pi's native client TUI. Presentation facets are requested by the client and
-// loaded into the session worker profile by the Host; they are not a Host-wide
-// default plugin profile.
-const presentationPackage = join(packageRoot, "extensions/pi/tui-package");
-const hasPresentationPackage = forwarded.some((value, index) =>
-  (value === "-e" || value === "--plugin") && forwarded[index + 1] === presentationPackage,
-);
-const piForwarded = mode === "client"
-  ? (hasPresentationPackage ? forwarded : ["-e", presentationPackage, ...forwarded])
-  : forwarded;
-const args = mode === "client"
-  ? [join(packageRoot, "apps/app-server/pi-native-client.mjs"), ...piForwarded]
-  : [join(sourceRoot, "packages/coding-agent/src/experimental/cli.ts"), mode, ...piForwarded];
-const workspaceRoot = wrapper.workspace ? resolve(wrapper.workspace) : undefined;
-if (workspaceRoot) {
-  if (!existsSync(workspaceRoot)) throw new Error(`TSPi workspace does not exist: ${workspaceRoot}`);
-  const workspaceStat = lstatSync(workspaceRoot);
-  if (!workspaceStat.isDirectory() || workspaceStat.isSymbolicLink()) {
-    throw new Error(`TSPi workspace must be a regular directory: ${workspaceRoot}`);
-  }
-}
-if (mode === "server" && !workspaceRoot) throw new Error("native TSPi server requires --workspace");
-if (mode === "client" && workspaceRoot) throw new Error("--workspace is not valid in client mode");
-const childEnv = {
-  ...process.env,
-  PI_EXPERIMENTAL: "1",
-  TSPI_PI_SOURCE: sourceRoot,
-  TSPI_PACKAGE_ROOT: process.env.TSPI_PACKAGE_ROOT || packageRoot,
-  PI_SESSION_WORKER_ENTRY: join(packageRoot, "apps/app-server/pi-session-worker.mjs"),
-  TSPI_WORKSPACE_BOOTSTRAP: join(packageRoot, "scripts/ts_workspace.py"),
-  TSPI_WORKSPACE_PYTHON: process.env.TS_AGENT_PYTHON || "python3",
-  TSPI_NATIVE_WRITES: "1",
-};
-if (wrapper.directory) childEnv.PI_SERVER_DIR = resolve(wrapper.directory);
-if (mode === "gateway") {
-  // The gateway attaches to Pi's TypeScript source services directly. Install
-  // Pi's source aliases before importing the runtime so package imports cannot
-  // fall through to an unrelated globally installed Pi release.
-  Object.assign(process.env, childEnv);
-  await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts")).href);
-  const { runGatewayCli } = await import("./pi-session-control-server.mjs");
-  await runGatewayCli({ sourceRoot, workspaceRoot, arguments_: forwarded });
-  process.exit(0);
-}
-const child = spawn(process.execPath, ["--import", join(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts"), ...args], {
-  cwd: mode === "client" ? (process.env.TSPI_SESSION_CWD || process.cwd()) : (workspaceRoot || sourceRoot),
-  env: childEnv,
-  stdio: "inherit",
-});
-const link = mode === "server" ? startLinkHost(wrapper, forwarded, childEnv) : undefined;
-const monitor = mode === "server" && workspaceRoot
-  ? startMonitorWorker(wrapper, forwarded, childEnv, workspaceRoot, packageRoot)
-  : undefined;
-let exiting = false;
-for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(signal, () => {
-  exiting = true;
-  link?.kill(signal);
-  monitor?.kill(signal);
-  child.kill(signal);
-});
-child.once("exit", (code, signal) => {
-  exiting = true;
-  link?.kill("SIGTERM");
-  monitor?.kill("SIGTERM");
-  process.exit(code ?? (signal ? 1 : 0));
-});
-link?.once("exit", (code, signal) => {
-  if (exiting) return;
-  process.stderr.write(`TSPi Link Host exited unexpectedly (${code ?? signal ?? "unknown"})\n`);
-  child.kill("SIGTERM");
-});
-
-function startLinkHost(wrapper, forwarded, env) {
-  const relayUrl = process.env.TSPI_LINK_URL?.trim();
-  const tokenFile = process.env.TSPI_LINK_HOST_TOKEN_FILE?.trim();
-  if (!relayUrl && !tokenFile) return undefined;
-  if (!relayUrl || !tokenFile) throw new Error("TSPI_LINK_URL and TSPI_LINK_HOST_TOKEN_FILE must be configured together");
-  const serverId = forwardedOption(forwarded, "--server-id");
-  if (!wrapper.directory || !serverId) throw new Error("TSPi Link Host requires the managed App Server directory and identity");
-  return spawn(process.execPath, [
-    join(packageRoot, "apps/app-server/tspi-link-host.mjs"),
-    "--relay-url", relayUrl,
-    "--token-file", tokenFile,
-    "--socket-path", join(resolve(wrapper.directory), `${serverId}.sock`),
-  ], { cwd: workspaceRoot || sourceRoot, env, stdio: "inherit" });
-}
-
-function startMonitorWorker(wrapper, forwarded, env, workspaceRoot, packageRoot) {
-  if (process.env.TSPI_MONITOR_DISABLED === "1") return undefined;
-  const args = [
-    join(packageRoot, "apps/app-server/pi-monitor-worker.mjs"),
-    "--workspace-root", workspaceRoot,
-  ];
-  const serverId = forwardedOption(forwarded, "--server-id");
-  if (wrapper.directory && serverId) {
-    args.push("--server-directory", resolve(wrapper.directory), "--server-id", serverId);
-  }
-  return spawn(process.execPath, args, { cwd: workspaceRoot, env, stdio: "inherit" });
-}
-
-function forwardedOption(arguments_, name) {
-  for (let index = 0; index < arguments_.length; index += 1) {
-    if (arguments_[index] === name) return arguments_[index + 1];
-    if (arguments_[index].startsWith(`${name}=`)) return arguments_[index].slice(name.length + 1);
-  }
-  return undefined;
-}
-
-function parseWrapperArguments(arguments_) {
-  const mode = arguments_[0] || "server";
-  if (mode !== "server" && mode !== "client" && mode !== "gateway") throw new Error("mode must be server, client, or gateway");
-  const wrapper = { sourceRoot: undefined, directory: undefined, workspace: undefined };
-  const forwarded = [];
-  for (let index = 1; index < arguments_.length; index += 1) {
-    const argument = arguments_[index];
-    const match = /^--(source-root|directory|workspace)=(.*)$/u.exec(argument);
-    if (match) {
-      const key = match[1] === "source-root" ? "sourceRoot" : match[1];
-      if (!match[2] || wrapper[key] !== undefined) throw new Error(`--${match[1]} requires one value`);
-      wrapper[key] = match[2];
-      continue;
+mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
+const backendMode = (process.env.TSPI_HOST_BACKEND || "harness").trim().toLowerCase();
+let sessionBackend;
+let host;
+try {
+  if (backendMode === "harness") {
+    const pin = JSON.parse(readFileSync(join(packageRoot, "config/pi-source.json"), "utf8"));
+    const sourceRoot = resolve(options["source-root"] || process.env.TSPI_PI_SOURCE || join(installRoot, ".pi/runtime-cache/pi", pin.commit));
+    if (!existsSync(join(sourceRoot, "packages/coding-agent/src/experimental/server.ts"))) {
+      throw new Error(`managed Pi experimental source is unavailable: ${sourceRoot}`);
     }
-    if (["--source-root", "--directory", "--workspace"].includes(argument)) {
-      const key = argument === "--source-root" ? "sourceRoot" : argument.slice(2);
-      const value = arguments_[++index];
-      if (!value || wrapper[key] !== undefined) throw new Error(`${argument} requires one value`);
-      wrapper[key] = value;
-      continue;
-    }
-    forwarded.push(argument);
+    process.env.TSPI_PI_SOURCE = sourceRoot;
+    sessionBackend = await createTspiHarnessBackend({
+      sourceRoot,
+      packageRoot,
+      installRoot,
+      workspaceRoot,
+      // Pi puts several UUID-bearing Unix sockets below this directory. The
+      // launcher-provided hashed runtime directory is deliberately short so
+      // the resulting paths stay below the POSIX AF_UNIX limit.
+      serverDirectory: piServerDirectory,
+      sessionDir: resolve(options["session-dir"] || join(stateRoot, "sessions")),
+      stateRoot,
+      serverId: options["server-id"],
+      provider,
+      model,
+    });
+  } else if (backendMode !== "ordinary") {
+    throw new Error(`Unsupported TSPI_HOST_BACKEND: ${backendMode}`);
   }
-  return { mode, wrapper, forwarded };
+  const sessionLifecycle = sessionBackend
+    ? undefined
+    : (await import("./tspi-terminal-runtime.mjs")).createSessionLifecycle({ installRoot, packageRoot, stateRoot, socketPath });
+  host = await startTspiHost({
+    socketPath, workspaceRoot, stateRoot, installRoot, packageRoot, python, serverId: options["server-id"],
+    sessionBackend,
+    sessionLifecycle,
+  });
+} catch (error) {
+  try { await sessionBackend?.close?.(); } catch { /* startup cleanup is best effort */ }
+  throw error;
 }
+
+let stopping = false;
+let stopPromise;
+const workers = new Map();
+const timers = new Set();
+function supervise(name, entry, argv) {
+  let failures = 0;
+  const health = (value) => {
+    const path = join(stateRoot, `${name}-supervisor.json`);
+    const temporary = `${path}.${process.pid}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify({ ...value, updated_at: new Date().toISOString() })}\n`, { mode: 0o600 });
+    renameSync(temporary, path);
+  };
+  const start = () => {
+    if (stopping) return;
+    const child = spawn(process.execPath, [join(packageRoot, entry), ...argv], { cwd: stateRoot, env: process.env, stdio: "inherit" });
+    workers.set(name, child);
+    health({ state: "running", pid: child.pid, restarts: failures });
+    let finished = false;
+    const failed = (detail) => {
+      if (finished) return;
+      finished = true;
+      workers.delete(name);
+      if (stopping) { health({ state: "stopped" }); return; }
+      failures++;
+      health({ state: "restarting", restarts: failures, error: detail });
+      process.stderr.write(`TSPi ${name}: ${detail}; restarting\n`);
+      const timer = setTimeout(() => { timers.delete(timer); start(); }, Math.min(30_000, 1000 * 2 ** Math.min(failures - 1, 5)));
+      timers.add(timer);
+    };
+    child.once("error", (error) => failed(error.message));
+    child.once("exit", (code, signal) => failed(`exited ${code ?? signal}`));
+  };
+  start();
+}
+
+if (process.env.TSPI_MONITOR_DISABLED !== "1") supervise("monitor", "apps/app-server/pi-monitor-worker.mjs", [
+  "--workspace-root", workspaceRoot, "--host-socket", socketPath, "--state-root", stateRoot,
+]);
+if (process.env.TSPI_LINK_URL || process.env.TSPI_LINK_HOST_TOKEN_FILE) {
+  supervise("link", "apps/app-server/tspi-link-host.mjs", [
+    "--relay-url", process.env.TSPI_LINK_URL, "--token-file", process.env.TSPI_LINK_HOST_TOKEN_FILE, "--socket-path", socketPath,
+  ]);
+}
+
+async function stop() {
+  if (stopPromise) return stopPromise;
+  stopping = true;
+  stopPromise = (async () => {
+    for (const timer of timers) clearTimeout(timer);
+    const exits = [...workers.values()].map((child) => new Promise((done) => {
+      const timer = setTimeout(() => { child.kill("SIGKILL"); done(); }, 5000);
+      timer.unref();
+      child.once("exit", () => { clearTimeout(timer); done(); });
+      child.kill("SIGTERM");
+    }));
+    await Promise.allSettled(exits);
+    await host.close();
+  })();
+  return stopPromise;
+}
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(signal, () => { void stop(); });

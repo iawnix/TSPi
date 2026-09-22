@@ -2,92 +2,79 @@
 
 [English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
 
-TSPi 终端使用 Pi 原生 remote client TUI，并连接安装级 Host。Host 是唯一的会话所有者；
-终端和 TS Phone 都只是它的客户端，一个 Host 可以服务多个项目。启动器会把 TSPi
-presentation facet 交给 Pi 的 presentation 和 slash-command registry，因此命令补全、
-选择器、transcript 和忙碌状态都沿用 Pi 的原生输入路径；facet 只贡献布局和 TSPi
-命令，不接管输入循环。研究 tools、skills 和 system prompt 由 Host/Worker 在服务器侧
-加载，终端通过当前 session 使用它们。
+`TSPi --workspace <name>` 启动的是 Pi 官方的远程 `ExperimentalClientTui`，不会替换
+Pi 的 header、editor、命令目录、transcript、extension 或输入循环。选中的 workspace
+绑定到安装级 Pi Harness format-4 会话；`<workspace>/.pi/sessions/` 中的旧 format-3 文件只用于只读
+兼容展示。
+
+## 运行边界
+
+```text
+Pi App Server / SessionWorker  <->  TSPi Host  <->  TS Phone/Web
+       AgentHarness、历史、工具          Host RPC       Link/HTTP
+                 ^                         ^
+             Pi 原生 TUI                 Monitor
+```
+
+Pi Harness worker 拥有 agent loop、模型、工具、transcript 和 durable format-4 lane。Host
+负责路由、认证、幂等回执、scheduler lease、会话发现以及 Monitor supervisor。Pi 原生
+TUI、Phone、Monitor 都是同一个 lane 的客户端，不会启动第二个 agent loop。
 
 ## 打开工作区
-
-直接连接项目。Host 未运行时，TSPi 会通过安装时选择的 systemd service（user 或
-system scope）启动唯一的安装级 Host，并在 Unix socket 就绪后连接 TUI：
 
 ```bash
 ./TSPi --workspace reaction-a
 ./TSPi --workspace reaction-a -c
 ```
 
-user scope 使用 `systemctl --user stop|restart|status ts-app-server-tspi.service`，
-system scope 去掉 `--user`；scope 为 none 时受管 Host 被禁用，需先配置 user 或 system service。
+启动器先确保安装级 Host 在线，再请求 session descriptor，直接把 Pi 官方 native client
+连接到 Pi App Server socket。默认路径没有 tmux、PTY scraping 或 ordinary bridge。同一
+workspace 的第二个终端会连接同一个 format-4 session；客户端关闭不会停止 worker，也不会打断
+当前 turn。`TSPI_HOST_BACKEND=ordinary` 只保留给迁移/调试检查。
 
-Host 身份位于 `.pi/app-server-host/server-id`；私有 Unix socket
-位于 `$XDG_RUNTIME_DIR/tspi/`（也可以通过安装配置指定运行目录）。
+Host 是安装级服务，会扫描 workspace root 下的直接子工作区。通常使用：
+
+```bash
+systemctl --user start ts-app-server-tspi.service
+systemctl --user status ts-app-server-tspi.service
+```
+
+system service 去掉 `--user`。Host 私有 socket 位于配置的 runtime 目录，bridge token
+位于 `.pi/app-server-host/`。
 
 ## 会话和操作
 
-不带会话选项时创建新会话。`-c` 或 `--continue` 选择当前 workspace 最近的会话；
-`--session-id <id>` 连接当前 workspace 中的指定会话。TUI 使用 Pi 原生 session
-directory；退出 TUI 只会断开当前客户端，不会停止 App Server。
+`/new`、`/resume`、`/fork`、`/model`、`/settings` 以及 extension 命令仍然是 Pi
+原生命令。`-c` 选择当前 workspace 最近的可写 format-4 session，`--session-id <id>` 选择
+指定 session。Phone/Web 的 prompt 通过 Host `input/send` 进入同一个 lane，并使用持久
+回执和稳定的 `client_message_id`。
 
-Ctrl+C 中断当前 turn，`/abort` 向 App Server 请求中止当前 agent run。断线后不会
-自动重发 prompt；请先检查历史，再决定是否重试。
+分离、打断和退出不是同一件事：终端 detach 只是客户端断开；`Esc` 或 Host 的
+`turn/interrupt` 请求打断当前 turn；`/quit` 才结束 Pi。连接在提交后丢失时 Host 会
+报告 `uncertain`，不会悄悄重放 prompt；磁盘上的 `dispatching` 回执在 Pi 到达
+`submitted/observed` 边界前也不会报告为 accepted。应先检查会话，再用同一个业务 ID 重试。
 
-`Running turn` 表示 Host 已接受 prompt、Agent Lane 正在运行；它不是第二个模型或第二
-个服务。模型 token、tool call 和最终消息通过同一个 session 的复制 transcript 返回。
-如果状态长时间不变，应检查 Host 日志和 session 事件，而不是再次启动一个终端 Host。
+## Phone、浏览器与 Monitor
 
-输入 `/` 使用 Pi 的动态命令目录和参数补全。`/model`、`/thinking`、`/compact` 等
-内建命令以及 TSPi 的 `/runs`、`/sys_prompt` 会从同一个 registry 注册；底部状态栏
-不是命令列表，不能通过点击或复制状态栏文字执行命令。
+TS Phone 通过 TSPi Link 使用版本化 `tspi-host/1` NDJSON 方法。Relay 只转发不透明
+帧，不拥有 session 或 ResearchMap。可选 browser gateway 只附着一个已经存在的会话，
+通过 loopback HTTP/SSE 提供 snapshot 和事件，不启动 Pi 或 worker。
 
-## 手机访问
+Host 为 workspace root 启动一个 Monitor worker。Monitor 轮询持久化 Compute 状态，在
+workspace 内写入 event/delivery 回执；wake 与用户通知分别确认，带租约和退避。wake
+只是“已接受的输入”，不代表 agent 已完成；Root Agent 仍须重新读取状态并检查计算。
+Monitor 不会自动 finalize，也不会修改 ResearchMap。
 
-TS Phone 通过 TSPi Link 连接 Host。Phone 和 Host 都只向配置的 TSPi Link Relay 建立
-出站 WSS，因此 App Server 不需要暴露公网入站端口。Relay 只授权设备并转发不透明的
-App Server 字节，不拥有项目、会话或对话历史。
+`workspace.json` 保存类似 `ws_<hex>` 的稳定科学身份，而 Host RPC 使用
+`reaction-a` 这样的直接目录名。Monitor 会先验证 canonical identity，再做路由转换，
+避免跨项目投递。
 
-在 Host 上创建一个有效期五分钟、只能使用一次的配对码：
+## 旧历史
 
-```bash
-./TSPi phone pair
-```
+安装级 `.pi/app-server-host/sessions/` 是唯一规范 format-4 存储。workspace
+`.pi/sessions/*.jsonl` 的 v3 历史可以列出和读取，但不能 resume 或 prompt。使用
+`apps/app-server/tspi-history.mjs --source ... --import`（或 Host 的 `session/import`）
+显式导入；源文件按 digest 校验且不修改，安装级 Host state 会写 provenance 报告。未知、
+残缺、活动或冲突历史会拒绝，而不会静默重放。
 
-在 TS Phone 中输入输出的 TSPi Link Relay URL 和配对码。使用 `./TSPi phone devices` 查看已授权
-设备，使用 `./TSPi phone revoke <device-id>` 撤销设备。配对后，Phone 可以列出或创建
-项目并创建或切换会话；它不连接终端进程，也不需要每个项目单独部署服务。
-
-Host 提供 `WorkspaceDirectory.list/create` 用于项目列表和创建；新会话通过
-`SessionManagement.create({ workspaceId })` 请求。Host 会把名称解析为经过验证的
-直接子工作区，并在 session summary 中记录其 cwd。
-TS Phone 客户端也必须声明并使用这两个 service；只支持列表和切换的旧版 Phone
-需要更新后才会显示创建操作。
-
-Phone 是可交互的 Pi 客户端，不是只读投影。手机提交的 prompt 在 App Server 所在
-机器的目标工作区执行，与同一 session 的终端共享 `read`、`write`、`bash` 和全部
-包内工具。传输层不会按 Phone 身份过滤命令；Host 账户、工作区、能力合约和操作系统
-权限仍然正常生效。
-
-## 浏览器控制
-
-TS Web 默认直接读取 canonical ResearchMap。如果浏览器需要控制一个已经存在的 Pi 会话，
-在 Host 运行时启动可选的 loopback adapter：
-
-```bash
-./TSPi --gateway --workspace reaction-a --session-id <session-id> \
-  --port 8767 --auth-token '<private-token>'
-```
-
-adapter 使用版本化的 `tspi-session-control/1` 请求合约和 SSE transcript 流，
-只附着到 Host 会话，不会启动第二个 Worker。Phone 客户端直接使用 TSPi Link。
-
-## 故障排查
-
-- `workspace is unavailable`：检查 workspace 名称及 workspace root 配置。
-- `could not start ts-app-server-tspi.service`：根据 scope 使用 `systemctl --user status` 或 `systemctl status` 检查 service。
-- `another Root Agent already owns workspace`：复用现有 Host，不要为同一安装启动第二个。
-- `TSPi Link is not configured`：先通过安装器注册 Host，再创建 Phone 配对码。
-- Host UUID 变化表示指向了不同安装，请重新配对手机。
-
-详见[中文架构](ARCHITECTURE.zh-CN.md)和[安装说明](INSTALLATION.zh-CN.md)。
+详见[架构](ARCHITECTURE.zh-CN.md)和[安装说明](INSTALLATION.zh-CN.md)。

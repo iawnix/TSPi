@@ -34,6 +34,7 @@ EXTENSION_ENTRIES = [
     "./extensions/pi/review/index.ts",
     "./extensions/pi/compute/index.ts",
     "./extensions/pi/artifacts/index.ts",
+    "./extensions/pi/bridge/index.ts",
 ]
 REMOVED_PREFIXES = (
     "agent-core/",

@@ -3,8 +3,8 @@
 [English](MODEL_COMPATIBILITY.md) | [简体中文](MODEL_COMPATIBILITY.zh-CN.md)
 
 Model access is managed by Pi. TSPi focuses on the research workflow: each
-installation runs one App Server, and the terminal and TS Phone attach to the
-same session Worker and model configuration.
+installation has one Host, and the terminal, TS Phone, and Monitor attach to
+the same Pi Harness lane and model configuration.
 
 Custom models use Pi's `models.json` and normal authentication mechanisms. TSPi
 does not maintain a separate model catalog, credential store, or provider API

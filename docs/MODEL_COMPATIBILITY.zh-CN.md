@@ -2,8 +2,8 @@
 
 [English](MODEL_COMPATIBILITY.md) | [简体中文](MODEL_COMPATIBILITY.zh-CN.md)
 
-模型接入由 Pi 统一管理。TSPi 专注于研究工作流：每个安装目录运行一个 App
-Server，终端与 TS Phone 连接同一个 session Worker，因此共享同一套模型配置。
+模型接入由 Pi 统一管理。TSPi 专注于研究工作流：每个安装目录运行一个 Host，终端、
+TS Phone 与 Monitor 连接同一个 Pi Harness lane，因此共享同一套模型配置。
 
 自定义模型按照 Pi 的 `models.json` 和常规认证机制配置。TSPi 不另外维护模型目录、
 凭据存储或 provider API adapter。

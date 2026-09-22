@@ -1,0 +1,38 @@
+diff --git a/packages/coding-agent/src/experimental/services/agent-controller-provider.ts b/packages/coding-agent/src/experimental/services/agent-controller-provider.ts
+--- a/packages/coding-agent/src/experimental/services/agent-controller-provider.ts
++++ b/packages/coding-agent/src/experimental/services/agent-controller-provider.ts
+@@ -37,13 +37,33 @@ export function createAgentController(lane: AgentLane): AgentControllerService {
+ 	const startQueued = async (
+ 		context: Parameters<AgentControllerService["prompt"]>[1],
+ 	): Promise<AgentOperationResponse> => {
+ 		const execution = await lane.inspectExecution(context);
+ 		if (execution.current !== null) {
+ 			const operationId = execution.current.id;
+ 			// Recover a suspended operation after a worker restart. If another
+ 			// local drive owns it, the lane serializes the observation.
+ 			void lane.resume(context).catch(() => {});
+ 			return { accepted: true, operationId, error: null };
+ 		}
+-		return admitAndDrive({ kind: "prompt", prompt: "" }, context);
++		// Do not manufacture an empty operation when recovery is requested for
++		// an idle lane with no durable queue. A caller may retry after a later
++		// nextRun admission has committed an inbox entry.
++		const watch = await lane.watch(context);
++		try {
++			if (watch.snapshot.operation !== null) {
++				const operationId = watch.snapshot.operation.id;
++				void lane.resume(context).catch(() => {});
++				return { accepted: true, operationId, error: null };
++			}
++			if (watch.snapshot.queues.length === 0) {
++				return {
++					accepted: false,
++					operationId: null,
++					error: { code: "nothing_queued", message: "Lane has no durable queued input" },
++				};
++			}
++		} finally {
++			watch.unsubscribe();
++		}
++		return admitAndDrive({ kind: "prompt", prompt: "" }, context);
+ 	};

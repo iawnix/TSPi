@@ -111,6 +111,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "config/pi-source.json" in names
     assert "config/pi-worker-entry.patch" in names
     assert "config/pi-multi-workspace-create.patch" in names
+    assert "config/pi-workspace-session-list.patch" in names
     assert "config/pi-research-workspace.patch" in names
     assert "config/pi-system-prompt.patch" in names
     assert "scripts/prepare_pi_source.py" in names
@@ -148,6 +149,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "config" / "pi-source.json").is_file()
     assert (package_root / "config" / "pi-worker-entry.patch").is_file()
     assert (package_root / "config" / "pi-multi-workspace-create.patch").is_file()
+    assert (package_root / "config" / "pi-workspace-session-list.patch").is_file()
     assert (package_root / "config" / "pi-research-workspace.patch").is_file()
     assert (package_root / "config" / "pi-system-prompt.patch").is_file()
     assert (package_root / "scripts" / "prepare_pi_source.py").is_file()

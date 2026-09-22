@@ -2,7 +2,7 @@
 
 [English](0002-repository-and-component-boundaries.md) | 简体中文
 
-- 状态：已接受并已实现主要边界
+- 状态：运行时/会话传输已由 [ADR 0004](0004-unified-app-server-extension-runtime.zh-CN.md) 取代；仓库与 Web 边界内容保留为历史决定
 
 ## 决定
 
@@ -23,8 +23,8 @@ components/ts-web/  -> 浏览器 ResearchMap client 和 HTTP/UI
 
 ## 协议与发布
 
-Pi 拥有 App Server 和 Chord 协议；TSPi 拥有 Link 的注册、授权和字节转发协议；
-TS Phone 是连接原生 Pi session 的展示适配器。TSPi 拥有 TS Web 使用的 ResearchMap
+Pi Harness worker 拥有自己的原生 session 和工具契约；TSPi 拥有 Host 路由以及 Link 的注册、
+授权和字节转发协议；TS Phone 是连接同一 Harness session 的展示适配器。TSPi 拥有 TS Web 使用的 ResearchMap
 合同。每个可选组件通过
 显式 descriptor 绑定版本、协议、能力、入口和 artifact digest；能力描述不能授予科学
 变更权。省略 Web descriptor 表示组件不可用，不应从源码路径静默嵌入。

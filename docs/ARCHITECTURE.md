@@ -3,16 +3,20 @@
 [English](ARCHITECTURE.md) | [简体中文](ARCHITECTURE.zh-CN.md)
 
 TSPi packages scientific skills and runtime adapters on top of Pi. One
-installation Host serves all direct-child workspaces through one native Pi App
-Server; there is no separate TS Phone broker or per-workspace service
-requirement.
+installation Host serves all direct-child workspaces, while each active
+workspace has one pinned Pi `SessionWorker`/`AgentHarness` lane. The terminal,
+Phone, and Monitor are clients of that lane; none owns a second agent loop or
+replacement UI.
 
 ## Component Responsibilities
 
-- `apps/app-server/` starts Pi's native App Server and session worker.
+- `apps/app-server/` contains the `tspi-host/1` control plane, the installation
+  Pi App Server owner, native remote-client launcher, Monitor worker, browser
+  adapter, and history migration tools. The pinned Pi worker loads TSPi's
+  worker facet (tools, skills, hooks, policy, and system prompt).
 - `services/tspi-link-relay/` owns TSPi Link enrollment, pairing, device
-  authorization, and opaque byte forwarding. It has no App Server or research
-  APIs.
+  authorization, and opaque frame forwarding. It has no workspace, session, or
+  research APIs and does not decode Host RPC.
 - `packages/ts-agent-kernel/ts_agent/` owns the `ResearchMap`, reference
   integrity, validation, and transactions. Its
   `ts_calc` control plane uses one lifecycle for local subprocesses and remote
@@ -22,31 +26,29 @@ requirement.
 - `extensions/pi/` contains two Pi-facing integration layers. The legacy
   research, compute, review, artifact, and ExtensionAPI UI adapters remain for
   direct `pi` compatibility. `extensions/pi/tui-package/` is a presentation
-  facet. The TSPi launcher supplies it to the native Pi client; the client
-  requests it and the Host builds the session facet bundle. Direct `pi` users
-  can still pass it explicitly with `-e`. The terminal keeps Pi's own remote
-  client TUI implementation, so the facet contributes through Pi's
-  presentation and slash-command registries instead of replacing the input
-  loop. The Host/Worker loads and executes TSPi research
-  tools, skills, and the system prompt on the server; the terminal invokes them
-  through the same session instead of loading a second tool runtime.
+  facet available only when a caller explicitly selects it with `-e`. The TSPi
+  launcher does not select a presentation facet or register the TSPi theme, so
+  Pi retains its own header, editor, command registry, transcript shell, and
+  input loop.
   `extensions/server/` contains the package-owned server tool entry. The App
   Server loads only the allowlisted, digest-verified entries in
-  `extensions/server/extensions.json`; it never evaluates code supplied by a client.
+  `extensions/server/extensions.json`; the worker also loads package skills,
+  hooks, policy, and system prompt once for every transport. It never evaluates
+  code supplied by a client.
 - `components/ts-web/` is an optional read-only browser client that renders the
   serialized canonical `ResearchMap`. The optional
-  `apps/app-server/pi-session-control-server.mjs` adapter exposes the same Host
+  `apps/app-server/tspi-browser-gateway.mjs` adapter exposes the same Host
   session to a browser over the versioned session-control contract; it attaches
-  to an existing session and never owns a second Worker.
+  to an existing session and never owns a second Worker. The older
+  `pi-session-control-server.mjs` entrypoint remains a legacy compatibility path.
 - TS Phone is an independent Flutter client that connects through TSPi Link.
 
-The App Server owns session directory, transcript history, model state, prompt
-operations, and the workspace Root lock. The local TUI and TS Phone connect to
-that same owner and receive the same `read`, `write`, `bash`, and package tool
-inventory; client transport is not an authorization role. Workers load the
-package's model-visible skills, the native system prompt, and the selected
-server extension inventory. The inventory is included in `sys_prompt`
-provenance so a client can audit which tool set is active.
+Pi's App Server owns the session directory, transcript history, model state,
+prompt loop, and worker lane. The Host owns routing, authentication,
+idempotency receipts, scheduler leases, and client subscriptions. The native
+Pi TUI, Phone, and Monitor address the same lane and therefore see the same
+`read`, `write`, `bash`, and package tool inventory; transport is not an
+authorization role.
 
 ## Scientific State Model
 
@@ -54,6 +56,7 @@ Each workspace has one canonical research object:
 
 ```text
 research_map.json
+workspace.json           # validated workspace identity and schema marker
 nodes/<node_id>/          # Attempt and Artifact execution records
 inputs/                   # workspace-relative imported input artifacts
 transactions.jsonl        # Kernel change history
@@ -125,19 +128,24 @@ through TSPi Link.
 ```text
 TS Phone -- outbound WSS --> TSPi Link Relay <-- outbound WSS -- TSPi Host
                                                         |
-                                                  Unix socket
+                                                  Unix socket / RPC
                                                         |
-                                                  Pi App Server
+                              Pi App Server -> SessionWorker + AgentHarness
+                                  ^                    ^             ^
+                                  |                    |             |
+                         native Pi TUI              Phone         Monitor
 ```
 
 Both network-facing legs use `/v1/link` with the `tspi-link.v1` WebSocket
 subprotocol and distinct bearer credentials. A short-lived Host enrollment
 code creates the Host credential; a short-lived Phone pairing code creates a
 revocable device credential. The Relay maps an authorized device to its Host
-and forwards the native Pi App Server byte stream without parsing it.
+and forwards framed `tspi-host/1` NDJSON bytes without parsing them. This is
+deliberately a TSPi transport contract, not Pi's experimental remote protocol.
 
-The TSPi Link Relay owns no workspace, session, transcript, tool, or compute state. The
-App Server remains the only owner of those records. WSS protects both network
+The TSPi Link Relay owns no workspace, session, transcript, tool, or compute state.
+The Host owns routing and access control; the Pi Harness worker remains the
+owner of its session, transcript, model, and tools. WSS protects both network
 legs, but Link 1 does not provide application-level end-to-end encryption; the
 Relay must run on trusted infrastructure.
 
@@ -148,27 +156,21 @@ broker or transport service.
 
 ## TSPi Lifecycle
 
-The `ts-app-server-tspi.service` unit invokes TSPi's internal Host entrypoint.
-It creates the installation Host state at `.pi/app-server-host/`, generates one
-stable server UUID, acquires the Host Root lock, and starts Pi's native App
-Server. Its session directory is `.pi/app-server-host/sessions/`;
-`.pi/app-server-host/workspace/` is only the Host's private Pi control cwd, not a
-research project.
-Each session is created with a project cwd under the configured workspace root
-(default `<install>/workspaces`), enforced by `TSPI_WORKSPACE_ROOT`. The
-workspace-directory service exposes only validated direct-child workspaces
-containing a supported `workspace.json`.
+The `ts-app-server-tspi.service` unit invokes TSPi's Host entrypoint and creates
+installation state at `.pi/app-server-host/`, including one stable server ID,
+the Host socket, format-4 sessions, receipts, scheduler leases, and Monitor health.
+The Pi App Server is the runtime owner below that Host. Its format-4 sessions
+are stored in `.pi/app-server-host/sessions/<encoded-cwd>/`; workspace
+`.pi/sessions` files are format-3 compatibility history only.
 
-`TSPi --workspace <name>` is Pi's client TUI. It connects to the Host and
-passes `TSPI_SESSION_CWD` when creating a session, so the session worker keeps
-the selected project's filesystem context. TS Phone uses the same services to
-list or create projects and to create or switch sessions without opening
-another Host connection. The launcher starts the selected workspace through the
-native App Server entrypoint; there is one current workspace launch path. When
-the configured systemd service is not running, the terminal launcher starts it
-through systemd and waits for the one Host socket instead of creating a
-foreground fallback Host. Service scope may be user or system; scope `none`
-disables the managed Host.
+`TSPi --workspace <name>` bootstraps the selected workspace, asks Host for
+`session/list` plus `session/create`/`session/resume`, and then execs Pi's
+official `ExperimentalClientTui` against the returned local connection
+descriptor. `/new`, `/resume`, `/fork`, slash commands, completion, rendering,
+and input handling remain Pi-owned. Phone uses Host RPC and Monitor submits a
+durable `next_run` entry to the same lane. Disconnecting a client does not stop
+the worker or its current turn. `TSPI_HOST_BACKEND=ordinary` is an explicit
+migration/debug mode only; it is not a Harness fallback.
 
 The first client launch initializes a missing workspace through the same
 validated bootstrap. The Host never creates an unnamed workspace; a client must
@@ -179,10 +181,9 @@ path safety, and runtime configuration before executing Node/Pi. A second Host
 for the same installation fails on the Host Root lock rather than creating a
 parallel history.
 
-The selected systemd unit sets `TSPI_SERVER_EXTENSIONS=tspi-server-tools` so the
-release's server tool inventory is deterministic. A development host may set a
-different allowlist, but every selected entry must remain inside the selected
-Package release and match its recorded SHA-256 digest.
+The selected release, worker facet, server-extension allowlist, and pinned Pi
+source are deterministic and package-validated. Presentation facets remain
+client-side and optional; they cannot change the worker's tool inventory.
 
 ## Isolated Agent Runtimes
 
@@ -263,6 +264,10 @@ delivery pending and allows a later worker pass to retry it. Root must reread
 write `ResearchMap` state. The Monitor never calls `finalize`, writes
 `ResearchMap`, or makes a scientific decision.
 
+Host `monitor/event` notifications are live only. Host primes its event cursor
+on startup instead of replaying historical files after a restart; Phone clients
+refresh `monitor/status` and the durable delivery outbox when reconnecting.
+
 `compute.toml` keeps local and remote compute environments in one catalog, with
 backend bindings under each environment; only remote environments add
 SSH/Torque fields. The canonical `compute.environments` query exposes both
@@ -275,12 +280,12 @@ environment API.
 
 Each operation writes an immutable request/result pair and a content-addressed
 artifact record. Remote jobs are identified by scheduler and job ID; retries
-are explicit and never overwrite prior evidence. App Server transcript events
+are explicit and never overwrite prior evidence. Pi transcript events
 are separate from the scientific operation journal.
 
 ## Contract Locations
 
-- Pi App Server entrypoints: `apps/app-server/*.mjs`.
+- Host and client adapter entrypoints: `apps/app-server/*.mjs`.
 - Installation/runtime launcher: `TSPi`, `scripts/tspi_launcher.py`, and
   `packages/ts-agent-kernel/ts_agent/runtime/launcher.py`.
 - Scientific contracts: `packages/ts-agent-kernel/ts_agent/**`.
@@ -288,5 +293,6 @@ are separate from the scientific operation journal.
   `extensions/server/extensions.json`.
 - TS Web contracts: `contracts/ts-web/`.
 - Monitor contracts: `contracts/tspi-monitor/1/`.
-- App Server lifecycle tests: `tests/integration/test_pi_app_server_launcher.py` and
-  `tests/node/native/pi-app-server.test.mjs`.
+- Host lifecycle and native Harness integration tests: `tests/integration/test_pi_app_server_launcher.py`,
+  `tests/node/native/tspi-host.test.mjs`, `tests/node/native/tspi-history.test.mjs`, and
+  `tests/node/native/tspi-ordinary-pi.test.mjs`.

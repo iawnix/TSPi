@@ -1,6 +1,7 @@
 import type { KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import { fitColumns } from "../../ui/render-utils.ts";
+import { createDisplayRefFormatter } from "../../shared/ref-presentation.ts";
 
 export interface TspiRunRecord {
   readonly task_id: string;
@@ -90,6 +91,7 @@ export class RunHistoryBrowser implements Component {
 
   private renderList(width: number): string[] {
     const safeWidth = Math.max(16, Math.floor(width));
+    const formatter = createDisplayRefFormatter();
     const page = Math.floor(this.selected / 8);
     const pages = Math.max(1, Math.ceil(this.records.length / 8));
     const start = page * 8;
@@ -103,8 +105,8 @@ export class RunHistoryBrowser implements Component {
       const record = this.records[index];
       if (!record) { lines.push(""); continue; }
       const prefix = index === this.selected ? "→ " : "  ";
-      const left = `${prefix}${record.task_id} · ${roleLabel(record.role)} · ${record.operation}`;
-      const right = record.status || record.result_outcome || "pending";
+      const left = `${prefix}${formatter.format(record.task_id, "task_ref")} · ${roleLabel(record.role)} · ${formatter.formatText(record.operation)}`;
+      const right = formatter.formatText(record.status || record.result_outcome || "pending");
       const line = fitColumns(left, right, safeWidth);
       lines.push(index === this.selected ? this.theme.bg("selectedBg", this.theme.fg("text", line)) : this.theme.fg("text", line));
     }
@@ -127,17 +129,18 @@ export class RunHistoryBrowser implements Component {
 }
 
 function details(record: TspiRunRecord, width: number): string[] {
-  const lines = [`${record.task_id} · ${roleLabel(record.role)} · ${record.status || record.result_outcome || "pending"}`];
-  if (record.summary) lines.push("", "Outcome", ...record.summary.split("\n").map((line) => `  ${line}`));
-  if (record.error_message) lines.push("", "Error", `  ${record.error_code ? `${record.error_code}: ` : ""}${record.error_message}`);
-  lines.push("", "Scope", `  Action: ${record.operation}`);
-  if (record.capability) lines.push(`  Capability: ${record.capability}`);
-  if (record.intent_id) lines.push(`  Calculation: ${record.intent_id}`);
-  if (record.node_refs.length) lines.push(`  Nodes: ${record.node_refs.join(", ")}`);
-  if (record.claim_refs.length) lines.push(`  Claims: ${record.claim_refs.join(", ")}`);
+  const formatter = createDisplayRefFormatter();
+  const lines = [`${formatter.format(record.task_id, "task_ref")} · ${roleLabel(record.role)} · ${formatter.formatText(record.status || record.result_outcome || "pending")}`];
+  if (record.summary) lines.push("", "Outcome", ...formatter.formatText(record.summary).split("\n").map((line) => `  ${line}`));
+  if (record.error_message) lines.push("", "Error", `  ${record.error_code ? `${formatter.formatText(record.error_code)}: ` : ""}${formatter.formatText(record.error_message)}`);
+  lines.push("", "Scope", `  Action: ${formatter.formatText(record.operation)}`);
+  if (record.capability) lines.push(`  Capability: ${formatter.formatText(record.capability)}`);
+  if (record.intent_id) lines.push(`  Calculation: ${formatter.format(record.intent_id, "calculation_ref")}`);
+  if (record.node_refs.length) lines.push(`  Nodes: ${record.node_refs.map((value) => formatter.format(value, "node_ref")).join(", ")}`);
+  if (record.claim_refs.length) lines.push(`  Claims: ${record.claim_refs.map((value) => formatter.format(value, "claim_ref")).join(", ")}`);
   if (record.started_at) lines.push(`  Started: ${record.started_at}`);
   if (record.finished_at) lines.push(`  Finished: ${record.finished_at}`);
-  if (record.run_ref) lines.push("", `Audit journal: ${record.run_ref}`);
+  if (record.run_ref) lines.push("", `Audit journal: ${formatter.format(record.run_ref, "run_ref")}`);
   return lines.map((line) => truncateToWidth(line, width, ""));
 }
 

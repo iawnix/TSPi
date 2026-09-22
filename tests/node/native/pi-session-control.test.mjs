@@ -95,6 +95,105 @@ test("session control deduplicates retries and exposes the Pi operation response
   control.close();
 });
 
+test("session control never treats an identifier-less positive admission as accepted", async () => {
+  const transcript = fakeTranscript();
+  const agent = fakeAgent();
+  agent.startPrompt = async () => ({ accepted: true, operationId: null, error: null });
+  agent.nextRun = async () => ({ accepted: true, entryId: "", error: null });
+  const control = createSessionControl({ sessionId: "session-a", agent, transcript });
+
+  const prompt = await control.dispatch({
+    schema_version: SESSION_CONTROL_PROTOCOL,
+    request_id: "malformed-prompt",
+    session_id: "session-a",
+    action: "prompt",
+    message: "admit me",
+  });
+  assert.deepEqual(prompt, {
+    schema_version: SESSION_CONTROL_PROTOCOL,
+    request_id: "malformed-prompt",
+    session_id: "session-a",
+    action: "prompt",
+    accepted: false,
+    operation_id: null,
+    error: { code: "admission_uncertain", message: "Pi reported prompt acceptance without an operation id" },
+  });
+
+  const queue = await control.dispatch({
+    schema_version: SESSION_CONTROL_PROTOCOL,
+    request_id: "malformed-queue",
+    session_id: "session-a",
+    action: "queue",
+    mode: "next_run",
+    message: "queue me",
+  });
+  assert.deepEqual(queue, {
+    schema_version: SESSION_CONTROL_PROTOCOL,
+    request_id: "malformed-queue",
+    session_id: "session-a",
+    action: "queue",
+    accepted: false,
+    entry_id: null,
+    error: { code: "admission_uncertain", message: "Pi reported queue acceptance without an entry id" },
+  });
+  control.close();
+});
+
+test("session control retries a known pre-admission lane rejection with the same request id", async () => {
+  const transcript = fakeTranscript();
+  const agent = fakeAgent();
+  let attempts = 0;
+  agent.nextRun = async () => {
+    attempts += 1;
+    if (attempts === 1) return { accepted: false, entryId: null, error: { code: "lane_busy", message: "try again" } };
+    return { accepted: true, entryId: "next-accepted", error: null };
+  };
+  const control = createSessionControl({ sessionId: "session-a", agent, transcript });
+  const base = {
+    schema_version: SESSION_CONTROL_PROTOCOL,
+    request_id: "retryable-queue",
+    session_id: "session-a",
+    action: "queue",
+    mode: "next_run",
+    message: "wake me",
+  };
+  const rejected = await control.dispatch(base);
+  assert.equal(rejected.accepted, false);
+  assert.equal(rejected.error.code, "lane_busy");
+  await assert.rejects(
+    control.dispatch({ ...base, message: "different payload" }),
+    (error) => error.code === "request_id_reused",
+  );
+  const accepted = await control.dispatch(base);
+  assert.equal(accepted.accepted, true);
+  assert.equal(accepted.entry_id, "next-accepted");
+  assert.equal(attempts, 2);
+  control.close();
+});
+
+test("session control forwards a caller-owned operation hint to non-blocking admission", async () => {
+  const transcript = fakeTranscript();
+  const agent = fakeAgent();
+  const seen = [];
+  agent.startPrompt = async (request) => {
+    seen.push(request);
+    return { accepted: true, operationId: request.operationId, error: null };
+  };
+  const control = createSessionControl({ sessionId: "session-a", agent, transcript });
+  const response = await control.dispatch({
+    schema_version: SESSION_CONTROL_PROTOCOL,
+    request_id: "hinted-prompt",
+    session_id: "session-a",
+    action: "prompt",
+    operation_id: "tspi-operation-hint",
+    message: "admit me once",
+  });
+  assert.equal(response.accepted, true);
+  assert.equal(response.operation_id, "tspi-operation-hint");
+  assert.equal(seen[0].operationId, "tspi-operation-hint");
+  control.close();
+});
+
 test("session control forwards abort and queue operations to one AgentController", async () => {
   const transcript = fakeTranscript();
   const agent = fakeAgent();

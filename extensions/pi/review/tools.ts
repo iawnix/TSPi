@@ -19,6 +19,10 @@ import {
   renderTsReviewCall,
   renderTsReviewResult,
 } from "../shared/review-tool-presentation.ts";
+import {
+  renderTsNativeCall,
+  renderTsNativeResult,
+} from "../shared/native-tool-presentation.ts";
 import { runScientificReview } from "../../../packages/ts-agent-runtime/agents/review/runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -179,6 +183,8 @@ export function registerReviewTools(pi: ExtensionAPI) {
 
   pi.registerTool({
     ...TOOL_CONTRACTS.reply,
+    renderCall: (args, theme) => renderTsNativeCall("ts_reply", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsNativeResult("ts_reply", result, options, theme, context.isError),
     promptSnippet: "Record a TS Review disposition",
     promptGuidelines: [
       `Call after every successful ${PUBLIC_TOOL_NAMES.review} and before scientific mutation.`,

@@ -2,16 +2,17 @@
 
 [English](TSPi_LINK.md) | [简体中文](TSPi_LINK.zh-CN.md)
 
-TSPi Link connects TS Phone to an installation Host without exposing the App
-Server. It is a transport boundary, not a second application server:
+TSPi Link connects TS Phone to an installation Host without exposing a public
+Pi or Host socket. It is a transport boundary, not a second application server:
 
 ```text
-TS Phone -- WSS --> TSPi Link Relay <-- WSS -- TSPi Host -- Unix socket -- App Server
+TS Phone -- WSS --> TSPi Link Relay <-- WSS -- TSPi Host -- Unix socket -- Pi App Server / Harness
 ```
 
 The Relay owns Host enrollment, Phone pairing, device revocation, and opaque
-byte forwarding. The App Server remains the sole owner of workspaces, sessions,
-transcripts, models, tools, ResearchMap, and compute state.
+frame forwarding. The Host owns routing and client access; the Pi Harness
+worker owns sessions, transcripts, models, and tools. The Relay never owns
+workspaces, ResearchMap, or compute state.
 
 ## Install TSPi Link Relay
 
@@ -59,8 +60,8 @@ node /opt/tspi-link-relay/current/service/cli.mjs enrollment create \
 
 Run the TSPi installer on the Host, select `TSPi Link Relay` Phone access, and enter
 the Relay URL and enrollment code. The installer stores the Host credential in
-`.pi/app-server-host/host.token` with owner-only permissions. The App Server
-service then maintains the outbound Link connection automatically.
+`.pi/app-server-host/host.token` with owner-only permissions. The Host service
+then maintains the outbound Link connection automatically.
 
 ## Pair And Revoke Phones
 
@@ -83,7 +84,8 @@ Host and device tokens are random 256-bit values stored as SHA-256 hashes by
 the Relay. Long-lived tokens are never put in pairing codes or systemd
 environment variables. WSS protects both network legs, but Link 1 does not add
 application-level end-to-end encryption. A Relay operator can observe the
-forwarded App Server bytes, so use trusted infrastructure or a private network.
+forwarded `tspi-host/1` NDJSON bytes, so use trusted infrastructure or a private
+network.
 
 The wire contract is documented in
 [`contracts/tspi-link/1/README.md`](../contracts/tspi-link/1/README.md).

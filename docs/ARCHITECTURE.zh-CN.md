@@ -2,15 +2,18 @@
 
 [English](ARCHITECTURE.md) | [简体中文](ARCHITECTURE.zh-CN.md)
 
-TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装目录只运行一个原生
-Pi App Server Host，由它服务配置的 workspace root 下的所有直接子工作区；不再需要单独
-的 TS Phone broker 或每个工作区一个 service。
+TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装目录运行一个 Host，
+服务 workspace root 下的直接子工作区；每个活动 session 由固定版本 Pi App Server 中
+一个 `SessionWorker`/`AgentHarness` lane 拥有。终端、Phone、Monitor 都是客户端，不会
+启动第二个 agent loop。Host 是 control plane，不是第二个 TUI。
 
 ## 组件职责
 
-- `apps/app-server/` 启动 Pi 原生 App Server 和 session worker。
-- `services/tspi-link-relay/` 负责 TSPi Link 的 Host 注册、手机配对、设备授权和不透明字节
-  转发；它不提供 App Server 或研究 API。
+- `apps/app-server/` 提供 `tspi-host/1` control plane、安装级 Pi App Server owner、
+  native remote client launcher、Monitor worker、browser adapter 和历史迁移工具。固定
+  源码的 Pi worker 加载 TSPi tools、skills、hooks、策略和 system prompt。
+- `services/tspi-link-relay/` 负责 TSPi Link 注册、配对、设备授权和不透明帧转发；它不拥有
+  workspace/session/research，也不解析 Host RPC。
 - `packages/ts-agent-kernel/ts_agent/` 管理 `ResearchMap`、引用完整性、验证和事务。
   计算控制面负责本地子进程的持久化生命周期，并通过配置好的
   `ts_calc` 对 local 和 remote 使用同一套计算生命周期；统一的
@@ -18,25 +21,22 @@ Pi App Server Host，由它服务配置的 workspace root 下的所有直接子�
   Skill/Plugin 工具提供。
 - `extensions/pi/` 包含两层面向 Pi 的集成。legacy research、compute、review、artifact
   和 ExtensionAPI UI 适配器继续为直接 `pi` 启动保留；`extensions/pi/tui-package/`
-  是 presentation facet。TSPi 启动器把它传给原生 Pi client；client 请求后由 Host 构建
-  session facet bundle。直接运行 `pi` 时仍可显式使用 `-e`。终端保留 Pi 自己的 remote
-  client TUI 实现，facet 通过 Pi 的 presentation 和 slash-command registry 提供布局、补全
-  和命令，不替换输入循环。
-  Host/Worker 在服务器侧加载并执行 TSPi 的 research tools、skills 和 system prompt，
-  终端通过同一个 session 调用它们，不会重复加载第二份工具运行时。
+  是仅在调用方用 `-e` 显式选择时才加载的 presentation facet。TSPi 启动器默认不选择
+  presentation facet 或注册 TSPi 主题，因此 header、editor、命令目录、transcript 外壳和
+  输入循环均由 Pi 自己提供。
   `extensions/server/` 包含包内 server 工具入口。App Server 只加载
   `extensions/server/extensions.json` 中经过 allowlist 和 SHA-256 校验的条目，不执行
-  客户端提交的代码。
+  客户端提交的代码；worker 还统一加载 package skills、hooks、策略和 system prompt，
+  所有 transport 使用同一份工具 runtime。
 - `components/ts-web/` 是可选的只读浏览器客户端，直接渲染 Kernel 序列化的
   `ResearchMap`；浏览器控制通过显式启动的
   `TSPi --gateway` 适配器附着到已有 Host session，不会创建第二个 Worker。
-- TS Phone 是独立 Flutter 客户端，通过 TSPi Link 连接 App Server。
+- TS Phone 是独立 Flutter 客户端，通过 TSPi Link 连接 Host。
 
-App Server 独占 session directory、对话历史、模型状态、prompt 操作和工作区 Root
-锁；本地 TUI 与 TS Phone 连接同一个 owner，并共享 `read`、`write`、`bash` 和全部
-包内工具，客户端传输方式不是权限角色。Worker 会加载包中对模型可见的 skill、原生
-system prompt 和经过验证的 server extension inventory。该 inventory 会写入
-`sys_prompt` provenance，客户端可以审计本次会话使用的工具集合。
+Pi App Server 独占 session directory、对话历史、模型状态、prompt loop 和 worker lane。
+Host 负责路由、认证、幂等回执、scheduler lease 和客户端订阅。Pi 原生 TUI、Phone、
+Monitor 都连接同一个 lane，因此共享 `read`、`write`、`bash` 和包内工具；传输方式不是
+权限角色。
 
 ## 科学状态模型
 
@@ -108,20 +108,18 @@ TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、
 
 ## App Server 生命周期
 
-`ts-app-server-tspi.service` 调用 TSPi 的内部 Host 入口，在 `.pi/app-server-host/`
-创建安装级 Host 状态并写入一个稳定 UUID，
-获取 Host Root 锁并启动 Pi App Server。`.pi/app-server-host/sessions/` 保存全部会话；
-`.pi/app-server-host/workspace/` 只是 Host 的私有 Pi 控制 cwd，不是研究项目。
-每个会话创建时带有配置的 workspace root（默认 `<install>/workspaces`）下项目的 cwd，
-并由 `TSPI_WORKSPACE_ROOT` 限制。
-`tspi.workspace-directory` 只暴露包含受支持 `workspace.json` 的直接子工作区。
+`ts-app-server-tspi.service` 调用 TSPi Host 入口，在 `.pi/app-server-host/` 创建安装级
+状态，包括稳定 server ID、Host socket、format-4 session repository、bridge token、请求回执、
+scheduler lease 和 Monitor 健康文件。`tspi.workspace-directory` 只暴露包含受支持
+`workspace.json` 的直接子工作区。
 
-`TSPi --workspace <name>` 是连接 Host 的 Pi client TUI，并在创建会话时传递
-`TSPI_SESSION_CWD`。TS Phone 通过同一组 service 列出或创建项目，并创建或切换会话，
-无需为每个项目再次连接或启动 Host。启动器通过原生 App Server 入口进入选定项目，
-不再维护第二套工作区启动路径。若配置的 systemd service 尚未运行，终端启动器会通过
-systemd 启动它并有限等待唯一 Host 的 Unix socket；不会回退为第二个前台 Host。服务
-scope 可以是 user 或 system；scope 为 none 时禁用受管 Host。
+`TSPi --workspace <name>` 先 bootstrap 工作区，再向 Host 请求 `session/list` 和
+`session/create`/`session/resume`，最后把 Pi 官方 `ExperimentalClientTui` 直接连接到
+返回的本地 descriptor。`/new`、`/resume`、`/fork`、slash command、completion、渲染和
+输入循环仍由 Pi 提供；Phone 通过 Host RPC，Monitor 通过 durable `next_run` entry 访问
+同一个 lane。workspace `.pi/sessions` 的 format-3 历史只读，显式 import 才能进入安装级
+format-4。
+`TSPI_HOST_BACKEND=ordinary` 仅是迁移/调试模式，不是 Harness fallback。
 
 第一次执行 `TSPi --workspace <name>` 时，如果项目不存在，客户端会通过同一套经过校验
 的 bootstrap 初始化它；Host 不会创建未命名项目，必须由客户端明确指定合法名称。
@@ -133,17 +131,20 @@ TS Phone -- 出站 WSS --> TSPi Link Relay <-- 出站 WSS -- TSPi Host
                                                     |
                                                 Unix socket
                                                     |
-                                              Pi App Server
+                              Pi App Server -> SessionWorker + AgentHarness
+                                  ^                    ^             ^
+                                  |                    |             |
+                           Pi 原生 TUI              Phone         Monitor
 ```
 
 两条网络连接都使用 `/v1/link` 和 `tspi-link.v1` WebSocket 子协议，但使用不同角色的
 Bearer 凭据。短期 Host enrollment code 生成 Host 凭据；短期 Phone pairing code
-生成可撤销的设备凭据。Relay 只把已授权设备映射到 Host，并原样转发 Pi App Server
-字节流，不解析其中的会话消息。
+生成可撤销的设备凭据。Relay 只把已授权设备映射到 Host，并原样转发带帧的
+`tspi-host/1` NDJSON，不解析会话消息；这不是 Pi 实验性 remote 协议。
 
-TSPi Link Relay 不拥有 workspace、session、transcript、工具或计算状态；这些仍由 App Server
-独占。WSS 分别保护两条网络链路，但 Link 1 不提供应用层端到端加密，因此 Relay 必须
-部署在可信基础设施上。
+TSPi Link Relay 不拥有 workspace、session、transcript、工具或计算状态。Host 负责路由和
+访问控制；Pi Harness worker 拥有 session、transcript、模型和工具。WSS 分别保护
+两条网络链路，但 Link 1 不提供应用层端到端加密，因此 Relay 必须部署在可信基础设施上。
 
 Link Relay 使用独立的 `install-link-relay.sh` 安装器，在公网或私有网络节点上单独安装和
 升级。本地 TSPi 安装器只负责把当前 Host 注册到已有 Link Relay，不安装本地 Phone broker
@@ -213,6 +214,10 @@ request id 为 `monitor:<event_id>`；session 不存在、workspace 不匹配或
 重启时 delivery 保持 pending，可由后续 worker 恢复。Root 被唤醒后必须重新读取
 `ts_state`，再显式执行 `ts_calc inspect`，并自行决定是否 `finalize` 或通过 `ts_change`
 写入 Finding/Gate/Node 状态。Monitor 不自动 finalize、不修改 ResearchMap、不做科学判断。
+
+Host 的 `monitor/event` 通知只是实时投影，不是持久化重放日志。Host 启动时会先建立已有
+事件文件的游标，因此重启不会重复推送旧事件；Phone 重连时应通过 `monitor/status` 和
+持久化 delivery outbox 恢复状态。
 
 边界可以概括为：
 

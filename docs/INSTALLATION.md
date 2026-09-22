@@ -190,9 +190,11 @@ only sends mail.
 
 ## Start The Installation Host
 
-The installation owns one Pi App Server Host for all validated workspaces below
-the installation workspace root. The installer can enable and start it, and a
-normal terminal launch starts the configured service when needed:
+The installation owns one TSPi Host for all validated workspaces below the
+installation workspace root. The Host is a control plane and the installation
+Pi App Server owns one pinned `SessionWorker`/`AgentHarness` lane per active
+session. The installer can enable and start the Host, and a normal terminal
+launch starts the configured service when needed:
 
 ```bash
 ./TSPi --workspace reaction-a
@@ -200,19 +202,17 @@ normal terminal launch starts the configured service when needed:
 
 Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for a
 user-scoped installation, or omit `--user` for a system-scoped installation.
-With service scope `none`, the managed Host is disabled; configure a user or
-system service before opening a workspace. The generated unit invokes TSPi's internal service entrypoint;
-ordinary users do not run `TSPi --host`.
+With service scope `none`, the managed Host is disabled; Phone and background
+Monitor are unavailable. Configure a user or system service when Host-backed
+features are needed. The generated unit invokes TSPi's internal service
+entrypoint; ordinary users do not run `TSPi --host`.
 
 The default and recommended scope is a systemd user unit. A system unit must be
 given an explicit `--service-user`; the installer sets `HOME`, `PI_CODING_AGENT_DIR`,
-and a private runtime directory so its Host identity and Pi authorization are
-usable by the same account as the service user. The user unit
-explicitly enables the selected Package server extension set
-(`TSPI_SERVER_EXTENSIONS=tspi-server-tools`). The App Server verifies the
-manifest and entry digest at each Worker startup. Do not place client code or
-an ad-hoc path in this allowlist; development-only experiments belong in a
-separate validated Package release.
+and a private runtime directory so the Host identity and local Pi connection
+are usable by the same account as the service user. The Host worker facet,
+server-extension allowlist, and native client are selected from the validated
+Package release.
 
 Create a new conversation or continue the latest conversation in a project:
 
@@ -221,10 +221,17 @@ Create a new conversation or continue the latest conversation in a project:
 ./TSPi --workspace reaction-a -c
 ```
 
-The Host identity is `<install>/.pi/app-server-host/server-id`; its native
-session directory is `<install>/.pi/app-server-host/sessions`. Each session
-still runs with the selected project's own cwd and is restricted to a direct
-child of the configured workspace root.
+The Host identity is `<install>/.pi/app-server-host/server-id`; request receipts,
+scheduler leases, Monitor health, and the canonical Pi format-4 session repository
+live below the same directory. format-4 files are grouped by cwd under
+`.pi/app-server-host/sessions/`. Workspace `.pi/sessions` files are legacy format-3
+history and remain read-only until an explicit import. A workspace is restricted
+to a validated direct child of the configured workspace root.
+
+The default terminal path uses Pi's official native remote client over the
+local descriptor returned by Host. It does not require tmux or PTY scraping.
+Host restart preserves format-4 transcript, operation/queue IDs, receipts, and
+Monitor outbox state; reconnecting clients resume from a Host epoch/cursor.
 
 TS Phone connects to this Host through TSPi Link. During installation, enable
 Phone access and provide the HTTPS TSPi Link Relay origin plus a single-use Host
@@ -246,9 +253,33 @@ expires after five minutes and can be used once. TS Phone redeems it for a
 revocable device credential held in platform secure storage. Phone credentials
 and the Host token are unrelated to the TS Web HTTP token.
 
-Phone is a normal interactive Pi client. Its prompts run on the App Server
-machine and use the same `read`, `write`, `bash`, and TSPi tools as the terminal;
+Phone is a normal interactive Pi client. Its prompts run through the same Pi
+Harness lane and use the same `read`, `write`, `bash`, and TSPi tools as the terminal;
 TS Web is the read-only client in this architecture.
+
+## Monitor operations
+
+The Host starts one Monitor worker for the configured workspace root. It polls
+durable Compute status and writes registrations, events, and delivery receipts
+inside each workspace. `monitor/list`, `monitor/status`, `monitor/enable`, and
+`monitor/disable` expose health and backlog. Wake and notification channels have
+separate leases, retries, and receipts. A wake means that Pi accepted a prompt;
+it does not mean that the agent turn completed. The Root Agent must reread
+`ts_state` and inspect the calculation before changing ResearchMap.
+
+The stable `ws_<hex>` identity in `workspace.json` is verified before Monitor
+maps it to the Host route name (the direct-child directory). This prevents a
+foreign event from being delivered to another project.
+
+## Legacy history migration
+
+Workspace format-3 histories remain read-only. Inspect them with
+`apps/app-server/tspi-history.mjs`; pass `--import` and an explicit `--source`
+to create a new installation-level format-4 session. The source is hash-checked and
+preserved, and a provenance report is written under
+`.pi/app-server-host/history-imports/`. Active operations, torn files,
+unsupported records, and ambiguous workspace ownership are rejected rather than
+replayed.
 
 ## Workspace Bootstrap
 

@@ -1,0 +1,80 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { deliverMonitorEvent, parseMonitorArguments } from "../../../apps/app-server/pi-monitor-worker.mjs";
+
+async function fixture(t) {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "tspi-monitor-worker-test-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const workspace = join(temporaryRoot, "ts_001");
+  await mkdir(workspace);
+  const canonicalId = "ws_" + "a".repeat(24);
+  await writeFile(join(workspace, "workspace.json"), JSON.stringify({ schema_version: "research-workspace/1", workspace_id: canonicalId }));
+  const event = { event_id: "evt_1", monitor_id: "mon_1", workspace_id: canonicalId, node_id: "node_1", intent_id: "calc_1", state: "completed" };
+  const delivery = { event_id: event.event_id, session_id: "existing-session", request_id: "monitor:evt_1" };
+  const completed = new Set();
+  const receipts = [];
+  return { workspace, event, delivery, completed, receipts,
+    async runJson(command, _workspace, args) {
+      if (command === "event") return event;
+      const channel = args[args.indexOf("--channel") + 1];
+      if (command === "claim") return { ...delivery, claimed: !completed.has(channel), claim_token: `token-${channel}` };
+      assert.equal(command, "complete");
+      assert.equal(args[args.indexOf("--claim-token") + 1], `token-${channel}`);
+      const delivered = args.includes("--delivered");
+      receipts.push({ channel, delivered });
+      if (delivered) completed.add(channel);
+      return {};
+    },
+  };
+}
+
+test("notification retries preserve the wake acknowledgement and original session binding", async (t) => {
+  const state = await fixture(t);
+  const wakes = [];
+  let notifications = 0;
+  const dependencies = { ...state,
+    async sendWake(params) { wakes.push(params); return { accepted: true }; },
+    async sendNotification() { if (++notifications === 1) throw new Error("mail unavailable"); },
+  };
+  assert.deepEqual(await deliverMonitorEvent(dependencies), ["notify: mail unavailable"]);
+  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: true }, { channel: "notify", delivered: false }]);
+  assert.deepEqual(await deliverMonitorEvent(dependencies), []);
+  assert.equal(wakes.length, 1);
+  assert.equal(notifications, 2);
+  assert.equal(wakes[0].workspace_id, "ts_001");
+  assert.equal(wakes[0].session_id, "existing-session");
+  assert.equal(wakes[0].client_message_id, "monitor:evt_1");
+  assert.equal(wakes[0].mode, "auto");
+  assert.equal(wakes[0].source, "monitor");
+});
+
+test("an offline session leaves wake retryable while notification can complete", async (t) => {
+  const state = await fixture(t);
+  const errors = await deliverMonitorEvent({ ...state,
+    async sendWake() { throw Object.assign(new Error("session offline"), { code: "session_offline", retryable: true }); },
+    async sendNotification() {},
+  });
+  assert.deepEqual(errors, ["wake: session offline"]);
+  assert.deepEqual([...state.completed], ["notify"]);
+  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }, { channel: "notify", delivered: true }]);
+});
+
+test("an uncertain Host wake remains retryable", async (t) => {
+  const state = await fixture(t);
+  const errors = await deliverMonitorEvent({ ...state,
+    async sendWake() { return { accepted: true, state: "uncertain" }; },
+    async sendNotification() {},
+  });
+  assert.deepEqual(errors, ["wake: Host returned an uncertain monitor wake"]);
+  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }, { channel: "notify", delivered: true }]);
+});
+
+test("managed monitor options require a Host endpoint", () => {
+  assert.deepEqual(parseMonitorArguments(["--workspace-root", "/workspaces", "--host-socket", "/state/host.sock", "--state-root", "/state", "--interval-ms=1000", "--once"]), {
+    workspaceRoot: "/workspaces", hostSocket: "/state/host.sock", stateRoot: "/state", intervalMs: 1000, once: true,
+  });
+  assert.throws(() => parseMonitorArguments(["--workspace-root", "/workspaces"]), /host-socket/);
+});

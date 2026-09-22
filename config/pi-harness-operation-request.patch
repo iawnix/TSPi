@@ -1,0 +1,12 @@
+diff --git a/packages/coding-agent/src/experimental/services/agent-controller.ts b/packages/coding-agent/src/experimental/services/agent-controller.ts
+index fc74962ad..d9bc1bbf1 100644
+--- a/packages/coding-agent/src/experimental/services/agent-controller.ts
++++ b/packages/coding-agent/src/experimental/services/agent-controller.ts
+@@ -7,6 +7,7 @@ export interface AgentPromptImage {
+ }
+ 
+ export interface AgentPromptRequest {
++	operationId?: string;
+ 	message: string;
+ 	images: AgentPromptImage[] | null;
+ }
