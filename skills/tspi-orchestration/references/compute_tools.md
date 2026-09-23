@@ -87,7 +87,7 @@ or `stopped` and Root has recorded any needed scientific interpretation.
 still pending. `collected` still requires parsing. A created or prepared intent
 has made no external change and does not by itself prevent abandoning the Node.
 
-When `launch` returns after submission, end the turn. The App Server Monitor polls
+When `launch` returns after submission, including an uncertain result, end the turn. The App Server Monitor polls
 the bound Attempt and queues a `next_run` wake when its state changes. Do not call
 `bash sleep`, `wait`, or a manual status loop while waiting; use `inspect` after
 the Monitor wake or an explicit later request.
