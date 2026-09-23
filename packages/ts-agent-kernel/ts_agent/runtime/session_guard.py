@@ -66,9 +66,17 @@ def guard_installation_upgrade(installation: Path) -> Iterator[None]:
     if installation_is_guarded(installation):
         yield
         return
-    from .launcher import WORKSPACE_NAME, TSPiHostError, acquire_root_agent_lock
+    from .launcher import (
+        WORKSPACE_NAME,
+        TSPiHostError,
+        _configured_workspace_root,
+        acquire_root_agent_lock,
+    )
 
-    container = installation / "workspaces"
+    try:
+        container = _configured_workspace_root(installation)
+    except TSPiHostError as exc:
+        raise SessionGuardError(f"cannot resolve workspace root during guard upgrade: {exc}") from exc
     if container.is_symlink():
         raise SessionGuardError("workspace container cannot be a symbolic link")
     with ExitStack() as guards:
@@ -82,12 +90,38 @@ def guard_installation_upgrade(installation: Path) -> Iterator[None]:
             directory = acquire_directory_guard(installation, workspace, exclusive=True)
             guards.callback(os.close, directory)
             try:
+                _ensure_workspace_pi_root(workspace)
                 root = acquire_root_agent_lock(workspace)
             except TSPiHostError as exc:
                 raise SessionGuardError(f"cannot verify Root lock in {workspace.name} during guard upgrade") from exc
             guards.callback(os.close, root)
             assert_no_unguarded_writers(workspace)
         yield
+
+
+def _ensure_workspace_pi_root(workspace: Path) -> Path:
+    """Create the workspace Pi state directory before opening its Root lock.
+
+    Workspaces created by older TSPi releases may contain research data without
+    the newer ``.pi`` directory.  ``os.open(..., O_CREAT)`` cannot create the
+    lock's parent, so initialize that one directory while preserving the
+    symlink and type checks used by normal workspace startup.
+    """
+
+    pi_root = workspace / ".pi"
+    if pi_root.is_symlink():
+        raise SessionGuardError(f"workspace Pi state path cannot be a symbolic link: {pi_root}")
+    try:
+        pi_root.mkdir(mode=0o700, exist_ok=True)
+    except OSError as exc:
+        raise SessionGuardError(f"cannot create workspace Pi state directory: {pi_root}") from exc
+    if not pi_root.is_dir():
+        raise SessionGuardError(f"workspace Pi state path is not a directory: {pi_root}")
+    try:
+        pi_root.chmod(0o700)
+    except OSError as exc:
+        raise SessionGuardError(f"cannot secure workspace Pi state directory: {pi_root}") from exc
+    return pi_root
 
 
 def guard_directory(installation: Path, workspace: Path) -> Path:

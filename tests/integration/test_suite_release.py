@@ -15,6 +15,7 @@ from scripts._wheel import release_wheel
 from scripts.build_package import build_package
 from scripts.install_package import install_package
 from tests.integration.test_release_install import _synthetic_release
+from ts_agent.workspace import init_workspace
 
 
 @pytest.fixture(autouse=True)
@@ -90,6 +91,27 @@ def test_core_package_build_is_deterministic_and_installs_app_server_payload(tmp
     package_root = Path(installed["package_root"])
     assert (package_root / "agent/apps/app-server/pi-app-server.mjs").is_file()
     assert not (package_root / "phone").exists()
+
+
+def test_package_install_migrates_research_workspace_without_pi_state(tmp_path: Path) -> None:
+    agent_manifest, _agent_release = _synthetic_release(tmp_path / "agent", marker="bare-workspace")
+    built = build_package(
+        output_dir=tmp_path / "package",
+        agent_manifest_path=agent_manifest,
+        allow_dirty=True,
+        include_web=False,
+    )
+
+    install_root = tmp_path / "install"
+    workspace = install_root / "workspaces" / "ts_001"
+    init_workspace(workspace)
+    assert not (workspace / ".pi").exists()
+
+    installed = install_package(Path(built["manifest"]), None, install_root, allow_dirty=True)
+
+    assert installed["ok"] is True
+    assert (workspace / ".pi" / "root-agent.lock").is_file()
+    assert stat.S_IMODE((workspace / ".pi").stat().st_mode) == 0o700
 
 
 def test_optional_web_launcher_is_removed_when_rolling_back_to_core_only(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from ts_agent.runtime.session_guard import (
     require_guarded_installation,
     select_session,
 )
+from ts_agent.workspace import init_workspace
 
 
 def _install_state(root: Path) -> Path:
@@ -74,6 +76,42 @@ def test_upgrade_holds_workspace_directory_and_root_locks(
             acquire_directory_guard(tmp_path, workspace)
         assert error.value.code == "session_writer_active"
     assert inspected == [workspace]
+
+
+def test_upgrade_prepares_pi_state_for_research_workspace_without_pi_directory(
+    tmp_path: Path,
+) -> None:
+    """Web-created ResearchMap workspaces may not have Pi state yet."""
+
+    workspace = tmp_path / "workspaces" / "ts_001"
+    init_workspace(workspace)
+    pi_root = workspace / ".pi"
+    assert not pi_root.exists()
+
+    with guard_installation_upgrade(tmp_path):
+        assert pi_root.is_dir()
+        assert stat.S_IMODE(pi_root.stat().st_mode) == 0o700
+        assert (pi_root / "root-agent.lock").is_file()
+
+
+def test_upgrade_uses_persisted_external_workspace_root(tmp_path: Path) -> None:
+    external_root = tmp_path / "research-projects"
+    workspace = external_root / "ts_001"
+    init_workspace(workspace)
+    control = tmp_path / ".pi" / "tspi"
+    control.mkdir(parents=True)
+    (control / "workspace-root.json").write_text(
+        json.dumps({
+            "schema_version": "tspi-workspace-root/1",
+            "workspace_root": str(external_root),
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    with guard_installation_upgrade(tmp_path):
+        assert (workspace / ".pi" / "root-agent.lock").is_file()
+
+    assert not (tmp_path / "workspaces").exists()
 
 
 def test_select_session_uses_exact_workspace_history(tmp_path: Path) -> None:
