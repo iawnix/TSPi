@@ -275,7 +275,7 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
     if args.with_web is None:
         args.with_web = ask_yes_no("Install TS Web", True)
     if args.with_web:
-        args.web_port = int(ask("TS Web port", str(args.web_port or 8766)))
+        args.web_port = _ask_int("TS Web port", args.web_port or 8766, minimum=1, maximum=65535)
         args.web_host = ask("TS Web listen address", args.web_host or "127.0.0.1")
         if args.web_host not in {"127.0.0.1", "::1", "localhost"}:
             args.allow_remote = ask_yes_no("Allow remote TS Web clients", False)
@@ -421,7 +421,7 @@ def _configure_menu_web(args: argparse.Namespace) -> None:
         args.web_auth_token = None
         args.allow_remote = False
         return
-    args.web_port = int(ask("TS Web port", str(args.web_port or 8766)))
+    args.web_port = _ask_int("TS Web port", args.web_port or 8766, minimum=1, maximum=65535)
     args.web_host = ask("TS Web listen address", args.web_host or "127.0.0.1")
     if args.web_host not in {"127.0.0.1", "::1", "localhost"}:
         args.allow_remote = ask_yes_no("Allow remote TS Web clients", bool(args.allow_remote))
@@ -429,6 +429,31 @@ def _configure_menu_web(args: argparse.Namespace) -> None:
         args.allow_remote = False
     if ask_yes_no("Replace the TS Web access token", False):
         args.web_auth_token = _ask_web_auth_token()
+
+
+def _ask_int(
+    prompt: str,
+    default: int,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
+    """Read a bounded integer without aborting the interactive wizard."""
+
+    while True:
+        raw = ask(prompt, str(default)).strip()
+        try:
+            value = int(raw)
+        except ValueError:
+            note("Please enter a whole number.", tone="warning")
+            continue
+        if minimum is not None and value < minimum:
+            note(f"Please enter a number of at least {minimum}.", tone="warning")
+            continue
+        if maximum is not None and value > maximum:
+            note(f"Please enter a number no greater than {maximum}.", tone="warning")
+            continue
+        return value
 
 
 def _configure_menu_phone(args: argparse.Namespace) -> None:
@@ -468,14 +493,23 @@ def _configure_menu_runtime(args: argparse.Namespace) -> None:
         args.start_services = ask_yes_no("Start services now", bool(args.start_services))
 
 
-def interactive_menu_options(args: argparse.Namespace) -> argparse.Namespace:
-    """Collect configuration through a repeatable menu before installation."""
+def _initialize_interactive_menu(args: argparse.Namespace) -> None:
+    """Initialize interactive defaults once for the lifetime of one wizard run."""
 
+    if getattr(args, "_installer_menu_initialized", False):
+        return
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise RuntimeError("interactive installation requires a TTY; use --non-interactive")
     args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/tspi"))
     args.install_root = str(Path(args.install_root).expanduser())
     _load_existing_menu_defaults(args)
+    args._installer_menu_initialized = True
+
+
+def interactive_menu_options(args: argparse.Namespace) -> argparse.Namespace:
+    """Collect configuration through a repeatable menu before installation."""
+
+    _initialize_interactive_menu(args)
     while True:
         choice = _menu_choice(args)
         if choice in {"8", ""}:
@@ -530,7 +564,12 @@ def configure_email_interactively(args: argparse.Namespace, *, force: bool = Fal
         args.email_host = ask("SMTP hostname", getattr(args, "email_host", None) or "")
     elif args.email_preset in SMTP_PRESETS:
         args.email_host = None
-    args.email_port = int(ask("SMTP port", str(getattr(args, "email_port", None) or 465)))
+    args.email_port = _ask_int(
+        "SMTP port",
+        getattr(args, "email_port", None) or 465,
+        minimum=1,
+        maximum=65535,
+    )
     args.email_security = ask("SMTP security (ssl or starttls)", getattr(args, "email_security", None) or "ssl").lower()
     args.email_username = _ask_email_address("SMTP sender email address", getattr(args, "email_username", None) or "")
     if ask_yes_no("Read SMTP authorization code from an environment variable", False):
@@ -615,7 +654,15 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
 
     section("Email notifications")
     if args.email_binding is None:
-        field("Configuration", "preserve existing" if (Path(args.install_root) / ".pi/notifications.toml").is_file() else "not configured", tone="muted")
+        if getattr(args, "_clear_email", False):
+            configuration = "disable existing"
+        else:
+            configuration = (
+                "preserve existing"
+                if (Path(args.install_root) / ".pi/notifications.toml").is_file()
+                else "not configured"
+            )
+        field("Configuration", configuration, tone="muted")
     elif args.email_binding == "clawemail":
         field("Provider", "ClawEmail", tone="success")
         field("Recipient", args.email_recipient)
@@ -645,6 +692,8 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
             _service_plan(args),
             tone="success" if args.service_scope != "none" else "muted",
         )
+    note("Press Enter/Y to install, N to return to the configuration menu, or choose 9 to quit.")
+
 
 def _planned_credential(path: Path) -> str:
     action = "validate and preserve" if path.exists() or path.is_symlink() else "create"
@@ -2683,6 +2732,44 @@ def _show_credential(label: str, credential: dict[str, str], *, reveal: bool) ->
         field("Read token", shlex.join(["cat", "--", path]))
 
 
+def _prepare_installation(args: argparse.Namespace, checks: list[dict[str, object]]) -> dict[str, str | None]:
+    """Validate the selected configuration and describe the pending operation.
+
+    This stage is intentionally read-only. Rollback snapshots and installation
+    side effects are deferred until the user confirms the displayed plan.
+    """
+
+    validate_options(args)
+    if not args.conda_root:
+        require_preflight(checks)
+    installation = inspect_installation(Path(args.install_root))
+    validate_service_ownership(args)
+    return installation
+
+
+def _interactive_prepare_installation(
+    args: argparse.Namespace,
+    checks: list[dict[str, object]],
+) -> tuple[argparse.Namespace, dict[str, str | None] | None]:
+    """Keep the configuration menu open until the plan is accepted or quit."""
+
+    while True:
+        args = interactive_menu_options(args)
+        if getattr(args, "_installer_cancelled", False):
+            note("Installation cancelled. No changes were made.", tone="warning")
+            return args, None
+        try:
+            installation = _prepare_installation(args, checks)
+        except (OSError, RuntimeError, ValueError) as error:
+            note(f"Configuration needs attention: {error}", tone="warning")
+            note("Returning to the installer menu so you can correct it.", tone="muted")
+            continue
+        show_install_plan(args, installation)
+        if args.yes or ask_yes_no("Proceed with installation", True):
+            return args, installation
+        note("No changes applied. Returning to installer menu.", tone="warning")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     previous_release: dict[str, object] | None = None
@@ -2699,24 +2786,16 @@ def main(argv: list[str] | None = None) -> int:
         if interactive:
             show_preflight(checks, require_conda=False)
         require_preflight(checks, require_conda=False)
-        if not args.non_interactive:
-            args = interactive_menu_options(args)
-            if getattr(args, "_installer_cancelled", False):
-                note("Installation cancelled.", tone="warning")
+        if interactive:
+            args, installation = _interactive_prepare_installation(args, checks)
+            if installation is None:
                 return 0
-        validate_options(args)
-        if not args.conda_root:
-            require_preflight(checks)
-        installation = inspect_installation(Path(args.install_root))
+        else:
+            installation = _prepare_installation(args, checks)
+
         installation_root = Path(args.install_root)
         previous_release = snapshot_active_release(installation_root)
         previous_configuration = snapshot_install_configuration(installation_root, args)
-        validate_service_ownership(args)
-        if not args.non_interactive:
-            show_install_plan(args, installation)
-            if not args.yes and not ask_yes_no("Proceed with installation", True):
-                note("Installation cancelled.", tone="warning")
-                return 0
         install_uninstaller(Path(args.install_root), ROOT)
         installed = run_install(args)
         with Spinner("Finalizing installation", stream=sys.stderr, enabled=not args.json) as activity:

@@ -107,6 +107,167 @@ def test_interactive_menu_can_edit_multiple_sections_before_install(
     assert args.web_host == "127.0.0.1"
 
 
+def test_review_decline_returns_to_menu_instead_of_exiting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = wizard.parse_args(["--install-root", str(tmp_path / "install")])
+    choices = iter(("8", "9"))
+    prepared: list[object] = []
+
+    monkeypatch.setattr(wizard.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(wizard.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(wizard, "ask", lambda _prompt, default="": next(choices))
+    monkeypatch.setattr(wizard, "ask_yes_no", lambda _prompt, default=True: False)
+    monkeypatch.setattr(
+        wizard,
+        "_prepare_installation",
+        lambda current, _checks: prepared.append(current) or {"operation": "install", "release_id": None},
+    )
+    monkeypatch.setattr(wizard, "show_install_plan", lambda *_args: None)
+
+    returned, installation = wizard._interactive_prepare_installation(args, [])
+
+    assert returned is args
+    assert installation is None
+    assert len(prepared) == 1
+    assert "No changes applied. Returning to installer menu." in capsys.readouterr().out
+
+
+def test_main_does_not_snapshot_or_install_after_review_decline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "install"
+    choices = iter(("8", "9"))
+
+    monkeypatch.setattr(wizard.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(wizard.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(wizard, "ask", lambda _prompt, default="": next(choices))
+    monkeypatch.setattr(wizard, "ask_yes_no", lambda _prompt, default=True: False)
+    monkeypatch.setattr(wizard, "collect_preflight", lambda: [])
+    monkeypatch.setattr(wizard, "show_preflight", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(wizard, "require_preflight", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        wizard,
+        "_prepare_installation",
+        lambda _args, _checks: {"operation": "install", "release_id": None},
+    )
+    monkeypatch.setattr(wizard, "show_install_plan", lambda *_args: None)
+    monkeypatch.setattr(wizard, "snapshot_active_release", lambda *_args: pytest.fail("snapshot must wait for confirmation"))
+    monkeypatch.setattr(wizard, "snapshot_install_configuration", lambda *_args: pytest.fail("snapshot must wait for confirmation"))
+    monkeypatch.setattr(wizard, "install_uninstaller", lambda *_args: pytest.fail("install must wait for confirmation"))
+
+    assert wizard.main(["--install-root", str(root)]) == 0
+
+
+def test_review_decline_preserves_edits_for_next_review(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "install"
+    workspace = tmp_path / "research"
+    args = wizard.parse_args(["--install-root", str(root)])
+    choices = iter(("8", "1", str(workspace), "8"))
+    confirmations = iter((False, True))
+    reviewed_workspaces: list[str] = []
+
+    monkeypatch.setattr(wizard.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(wizard.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(wizard, "ask", lambda _prompt, default="": next(choices))
+    monkeypatch.setattr(wizard, "ask_yes_no", lambda _prompt, default=True: next(confirmations))
+
+    def prepare(current: object, _checks: list[dict[str, object]]) -> dict[str, str | None]:
+        reviewed_workspaces.append(str(getattr(current, "workspace_root")))
+        return {"operation": "install", "release_id": None}
+
+    monkeypatch.setattr(wizard, "_prepare_installation", prepare)
+    monkeypatch.setattr(wizard, "show_install_plan", lambda *_args: None)
+
+    returned, installation = wizard._interactive_prepare_installation(args, [])
+
+    assert installation == {"operation": "install", "release_id": None}
+    assert returned.workspace_root == str(workspace)
+    assert reviewed_workspaces[-1] == str(workspace)
+    assert len(reviewed_workspaces) == 2
+
+
+def test_review_validation_error_returns_to_menu_for_correction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = wizard.parse_args(["--install-root", str(tmp_path / "install")])
+    workspace = tmp_path / "research"
+    choices = iter(("8", "1", str(workspace), "8"))
+    attempts = 0
+
+    monkeypatch.setattr(wizard.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(wizard.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(wizard, "ask", lambda _prompt, default="": next(choices))
+    monkeypatch.setattr(wizard, "ask_yes_no", lambda _prompt, default=True: True)
+
+    def prepare(current: object, _checks: list[dict[str, object]]) -> dict[str, str | None]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ValueError("invalid workspace")
+        return {"operation": "install", "release_id": None}
+
+    monkeypatch.setattr(wizard, "_prepare_installation", prepare)
+    monkeypatch.setattr(wizard, "show_install_plan", lambda *_args: None)
+
+    returned, installation = wizard._interactive_prepare_installation(args, [])
+
+    assert installation == {"operation": "install", "release_id": None}
+    assert returned.workspace_root == str(workspace)
+    assert attempts == 2
+    assert "Configuration needs attention: invalid workspace" in capsys.readouterr().out
+
+
+def test_review_does_not_reload_email_defaults_after_disable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "install"
+    config = root / ".pi/notifications.toml"
+    config.parent.mkdir(parents=True)
+    config.write_text("[notifications.email]\nenabled = true\n", encoding="utf-8")
+    args = wizard.parse_args(["--install-root", str(root)])
+    choices = iter(("6", "8", "8"))
+    answers = iter((False, True, False, True))
+    reviewed_email: list[tuple[object, object]] = []
+
+    monkeypatch.setattr(wizard.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(wizard.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(wizard, "ask", lambda _prompt, default="": next(choices))
+    monkeypatch.setattr(wizard, "ask_yes_no", lambda _prompt, default=False: next(answers))
+
+    def prepare(current: object, _checks: list[dict[str, object]]) -> dict[str, str | None]:
+        reviewed_email.append((getattr(current, "email_binding"), getattr(current, "_clear_email", False)))
+        return {"operation": "update", "release_id": "old"}
+
+    monkeypatch.setattr(wizard, "_prepare_installation", prepare)
+    monkeypatch.setattr(wizard, "show_install_plan", lambda *_args: None)
+
+    returned, installation = wizard._interactive_prepare_installation(args, [])
+
+    assert installation == {"operation": "update", "release_id": "old"}
+    assert returned.email_binding is None
+    assert reviewed_email == [(None, True), (None, True)]
+
+
+def test_interactive_integer_prompt_retries_invalid_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    values = iter(("not-a-port", "70000", "8777"))
+    warnings: list[str] = []
+    monkeypatch.setattr(wizard, "ask", lambda _prompt, default="": next(values))
+    monkeypatch.setattr(wizard, "note", lambda message, **_kwargs: warnings.append(message))
+
+    assert wizard._ask_int("TS Web port", 8766, minimum=1, maximum=65535) == 8777
+    assert len(warnings) == 2
+
+
 def test_menu_defaults_read_existing_configuration(tmp_path: Path) -> None:
     root = tmp_path / "install"
     workspace = tmp_path / "research"

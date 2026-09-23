@@ -27,6 +27,10 @@
 `<install>/workspaces`。Host、终端、TS Web 和卸载器共享
 `.pi/tspi/workspace-root.json` 中记录的值。
 
+交互安装器中的 `Review and install` 会显示完整安装计划。按 Enter 或输入 `Y` 开始安装；
+输入 `N` 会返回配置菜单继续修改，尚未写入安装文件或启动服务。选择 `9) Quit` 才会退出
+安装器并保持未安装状态。
+
 发布通过以下选择器原子切换：
 
 ```text

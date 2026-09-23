@@ -36,6 +36,11 @@ directory containing named projects. The default is `<install>/workspaces`.
 The installer records it in `.pi/tspi/workspace-root.json`; the Host, terminal,
 TS Web service, and uninstaller consume that same value.
 
+In the interactive installer, `Review and install` displays the complete installation plan.
+Press Enter or enter `Y` to start; enter `N` to return to the configuration menu and continue
+editing. No installation files are written and no services are started before confirmation.
+Choose `9) Quit` to leave the installer without installing.
+
 The package is selected atomically through:
 
 ```text
