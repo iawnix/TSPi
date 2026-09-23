@@ -45,7 +45,7 @@ process.stdout.write(JSON.stringify({{ call, rendered }}));
 def test_native_tui_registers_all_server_tool_renderer_families() -> None:
     source = TUI_PACKAGE.read_text(encoding="utf-8")
     native_source = PRESENTATION.read_text(encoding="utf-8")
-    for name in ("ts_state", "ts_change", "ts_environment", "ts_calc", "ts_dispatch", "ts_reply", "ts_notify"):
+    for name in ("ts_state", "ts_change", "ts_workflow", "ts_environment", "ts_calc", "ts_dispatch", "ts_reply", "ts_notify"):
         assert name in native_source
     for name in ("seed", "compare", "analyze", "import", "render", "report"):
         assert f'"{name}"' in source

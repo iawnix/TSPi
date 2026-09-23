@@ -25,6 +25,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--name")
     parser.add_argument("--query")
     parser.add_argument("--node-id")
+    parser.add_argument("--scope")
+    parser.add_argument("--target-id")
+    parser.add_argument("--operation")
     parser.add_argument("--request-file")
     args = parser.parse_args(argv)
     try:
@@ -36,6 +39,9 @@ def main(argv: list[str] | None = None) -> int:
                 "name": args.name,
                 "query": args.query,
                 "node_id": args.node_id,
+                "scope": args.scope,
+                "target_id": args.target_id,
+                "operation": args.operation,
             }.items()
             if value is not None
         }

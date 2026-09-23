@@ -5,6 +5,7 @@ export type CommandId =
   | "research.locate"
   | "research.validate"
   | "research.operations"
+  | "research.continuation"
   | "research.change"
   | "compute.environments"
   | "compute.environment"

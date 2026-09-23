@@ -15,6 +15,7 @@ EXPECTED_TOOLS = {
     "sys_prompt",
     "ts_state",
     "ts_change",
+    "ts_workflow",
     "ts_environment",
     "ts_review",
     "ts_reply",
@@ -104,7 +105,7 @@ process.stdout.write(JSON.stringify({{
 """
     result = _node_json(script)
 
-    assert set(result["research"]) == {"sys_prompt", "ts_state", "ts_change", "ts_notify"}
+    assert set(result["research"]) == {"sys_prompt", "ts_state", "ts_change", "ts_workflow", "ts_notify"}
     assert set(result["review"]) == {"ts_review", "ts_reply"}
     assert set(result["compute"]) == {"ts_environment", "ts_dispatch", "ts_calc"}
     assert set(result["artifacts"]) == {
@@ -527,6 +528,50 @@ process.stdout.write(JSON.stringify({{error,calls}}));
     assert workspace_calls[0]["args"][1] == "research.change"
     assert workspace_calls[0]["request"]["operations"][0]["type"] == "future_science_operation"
     assert workspace_calls[0]["request"]["operations"][0]["payload"] == "kept"
+
+
+def test_ts_workflow_routes_status_and_writes_through_the_canonical_command(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    refs = start_research_node(workspace)
+    script = f"""
+import {{ readFileSync }} from "node:fs";
+import {{ spawnSync }} from "node:child_process";
+import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
+process.env.TS_AGENT_PYTHON = {json.dumps(sys.executable)};
+const calls=[]; let workflowTool;
+const pi={{
+  registerTool:(tool)=>{{ if (tool.name === "ts_workflow") workflowTool=tool; }},
+  registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
+  exec:async (command,args)=>{{
+    const requestFlag=args.indexOf("--request-file");
+    const request=requestFlag >= 0 ? JSON.parse(readFileSync(args[requestFlag+1],"utf8")) : null;
+    calls.push({{command,args,request}});
+    const result=spawnSync(command,args,{{encoding:"utf8"}});
+    return {{code:result.status,stdout:result.stdout,stderr:result.stderr}};
+  }},
+}};
+research(pi);
+const status=await workflowTool.execute("status",{{operation:"status",scope:"node",targetId:{json.dumps(refs["node_id"])},root:{json.dumps(str(workspace))}}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+const required=await workflowTool.execute("required",{{operation:"set_required",scope:"node",targetId:{json.dumps(refs["node_id"])},action:"inspect",reason:"Inspect the bounded node.",root:{json.dumps(str(workspace))}}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+process.stdout.write(JSON.stringify({{status,required,calls}}));
+"""
+    result = _node_json(script)
+    assert result["status"]["details"]["result"]["schema_version"] == "research-continuation/1"
+    workflow_calls = [call for call in result["calls"] if call["args"] and call["args"][0].endswith("ts_api.py")]
+    assert len(workflow_calls) == 2
+    assert "--request-file" not in workflow_calls[0]["args"]
+    assert workflow_calls[0]["args"][1:8] == [
+        "research.continuation", "--root", str(workspace), "--scope", "node", "--target-id", refs["node_id"],
+    ]
+    assert workflow_calls[1]["request"] == {
+        "schema_version": "ts-continuation-request/1",
+        "operation": "set_required",
+        "scope": "node",
+        "target_id": refs["node_id"],
+        "action": "inspect",
+        "reason": "Inspect the bounded node.",
+    }
+    assert json.loads(result["required"]["content"][0]["text"])["schema_version"] == "research-continuation-result/1"
 
 
 def test_review_fallback_failure_uses_review_runtime_taxonomy() -> None:

@@ -21,6 +21,7 @@ import {
   type ChangeToolParams,
   type NotifyToolParams,
   type StateToolParams,
+  type WorkflowToolParams,
 } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
 import { guardPackageSourceRead, packageSourceSystemPrompt } from "../shared/package-source-policy.ts";
 import { registerSessionGuard } from "../shared/session-guard.ts";
@@ -129,7 +130,7 @@ export function registerResearchExtension(pi: ExtensionAPI) {
       } catch {
         currentState = "\n\nCurrent workspace snapshot is unavailable. Read ts_state before any scientific write; do not treat session history as current workspace state.";
       }
-      extensionText += `\n\nResearchMap workspace active: ${root}. Use ${PUBLIC_TOOL_NAMES.state} to read the canonical map and ${PUBLIC_TOOL_NAMES.change} to apply explicit map changes. ResearchPhase, ResearchNode, ResearchClaim, Finding, and Gate are map objects; compute environments and execution records are separate runtime data. The Root Agent chooses research strategy and records interpretation. Query ${PUBLIC_TOOL_NAMES.state} mode=operations before using an unfamiliar map operation.${currentState}`;
+      extensionText += `\n\nResearchMap workspace active: ${root}. Use ${PUBLIC_TOOL_NAMES.state} to read the canonical map and ${PUBLIC_TOOL_NAMES.change} to apply explicit map changes. Use ${PUBLIC_TOOL_NAMES.workflow} after a wake to inspect or record a required, deferred, blocked, or completed continuation for a Node, Claim, or Gate. ResearchPhase, ResearchNode, ResearchClaim, Finding, and Gate are map objects; compute environments and execution records are separate runtime data. The Root Agent chooses research strategy and records interpretation. Query ${PUBLIC_TOOL_NAMES.state} mode=operations before using an unfamiliar map operation.${currentState}`;
     }
     const emitted = `${event.systemPrompt}\n\n${extensionText}`;
     promptObservation = {
@@ -218,6 +219,23 @@ export function registerResearchExtension(pi: ExtensionAPI) {
     },
   });
 
+  pi.registerTool({
+    ...TOOL_CONTRACTS.workflow,
+    renderCall: (args, theme) => renderTsNativeCall("ts_workflow", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsNativeResult("ts_workflow", result, options, theme, context.isError),
+    async execute(_toolCallId, params: WorkflowToolParams, signal, _onUpdate, ctx) {
+      const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      const result = params.operation === "status"
+        ? await runtime.command("research.continuation", root, {
+          operation: params.operation,
+          scope: params.scope,
+          targetId: params.targetId,
+        }, signal)
+        : await runtime.command("research.continuation", root, { request: continuationRequest(params) }, signal);
+      return toolText(JSON.stringify(result, null, 2), { result });
+    },
+  });
+
   const notificationTarget = configuredNotificationTarget();
   pi.registerTool({
     ...TOOL_CONTRACTS.notify,
@@ -297,6 +315,20 @@ export function registerResearchExtension(pi: ExtensionAPI) {
       });
     },
   });
+}
+
+function continuationRequest(params: WorkflowToolParams): Record<string, unknown> {
+  const request: Record<string, unknown> = {
+    schema_version: "ts-continuation-request/1",
+    operation: params.operation,
+  };
+  if (params.scope !== undefined) request.scope = params.scope;
+  if (params.targetId !== undefined) request.target_id = params.targetId;
+  if (params.action !== undefined) request.action = params.action;
+  if (params.reason !== undefined) request.reason = params.reason;
+  if (params.requestId !== undefined) request.request_id = params.requestId;
+  if (params.continuationId !== undefined) request.continuation_id = params.continuationId;
+  return request;
 }
 
 function configuredNotificationTarget(): string {

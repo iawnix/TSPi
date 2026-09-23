@@ -64,6 +64,35 @@ class GateVerdict(StrEnum):
     BLOCKED = "blocked"
 
 
+class ContinuationScope(StrEnum):
+    """The ResearchMap object that owns a pending continuation."""
+
+    NODE = "node"
+    CLAIM = "claim"
+    GATE = "gate"
+
+
+class ContinuationStatus(StrEnum):
+    """Lifecycle state of one explicitly requested next action."""
+
+    REQUIRED = "required"
+    DEFERRED = "deferred"
+    BLOCKED = "blocked"
+    COMPLETED = "completed"
+
+
+class ContinuationAction(StrEnum):
+    """Bounded actions a Root may record for a later continuation."""
+
+    INSPECT = "inspect"
+    FINALIZE = "finalize"
+    LAUNCH = "launch"
+    ANALYZE = "analyze"
+    REVIEW = "review"
+    EVALUATE = "evaluate"
+    CLOSE = "close"
+
+
 @dataclass(kw_only=True)
 class ResearchObject:
     """Common identity and serialization behavior for map objects."""
@@ -85,6 +114,87 @@ class ResearchObject:
             "id": self.id,
             "created_at": self.created_at,
             "metadata": _copy(self.metadata),
+        }
+
+
+@dataclass(kw_only=True)
+class ContinuationRecord(ResearchObject):
+    """A durable, typed obligation to continue work on a map object.
+
+    Continuations describe liveness, but do not choose or execute a scientific
+    method.  The Host may use a ``required`` record to schedule a bounded wake;
+    the Root Agent remains responsible for the actual ChangeSet or action.
+    """
+
+    scope: ContinuationScope
+    target_id: str
+    action: ContinuationAction
+    status: ContinuationStatus = ContinuationStatus.REQUIRED
+    reason: str | None = None
+    request_id: str | None = None
+    type_name: ClassVar[str] = "continuation_record"
+
+    def __post_init__(self) -> None:
+        # Keep direct model construction ergonomic while storing only enum
+        # values in the validated aggregate.
+        for field_name, enum_type in (
+            ("scope", ContinuationScope),
+            ("action", ContinuationAction),
+            ("status", ContinuationStatus),
+        ):
+            value = getattr(self, field_name)
+            if isinstance(value, str) and not isinstance(value, enum_type):
+                try:
+                    setattr(self, field_name, enum_type(value))
+                except ValueError:
+                    pass
+
+    @property
+    def target_ref(self) -> str:
+        """Generic spelling used by orchestration clients."""
+
+        return self.target_id
+
+    def validate(self, research_map: "ResearchMap") -> None:
+        super().validate(research_map)
+        if not isinstance(self.scope, ContinuationScope):
+            raise ResearchModelError(f"continuation {self.id} has an invalid scope")
+        if not self.target_id or not isinstance(self.target_id, str):
+            raise ResearchModelError(f"continuation {self.id} target_id must be a non-empty string")
+        if not isinstance(self.action, ContinuationAction):
+            raise ResearchModelError(f"continuation {self.id} has an invalid action")
+        if not isinstance(self.status, ContinuationStatus):
+            raise ResearchModelError(f"continuation {self.id} has an invalid status")
+        if self.reason is not None and not isinstance(self.reason, str):
+            raise ResearchModelError(f"continuation {self.id} reason must be a string or null")
+        if (
+            self.status in {ContinuationStatus.DEFERRED, ContinuationStatus.BLOCKED}
+            and (self.reason is None or not self.reason.strip())
+        ):
+            raise ResearchModelError(f"continuation {self.id} {self.status.value} status requires a reason")
+        if self.request_id is not None and (
+            not isinstance(self.request_id, str) or not self.request_id
+        ):
+            raise ResearchModelError(f"continuation {self.id} request_id must be a non-empty string or null")
+        target = {
+            ContinuationScope.NODE: research_map.nodes,
+            ContinuationScope.CLAIM: research_map.claims,
+            ContinuationScope.GATE: research_map.gates,
+        }[self.scope]
+        if self.target_id not in target:
+            raise ResearchModelError(
+                f"continuation {self.id} references unknown {self.scope.value} {self.target_id}"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **super().to_dict(),
+            "scope": self.scope.value,
+            "target_id": self.target_id,
+            "action": self.action.value,
+            "status": self.status.value,
+            "reason": self.reason,
+            "request_id": self.request_id,
         }
 
 
@@ -401,6 +511,7 @@ class ResearchMap:
     nodes: dict[str, ResearchNode] = field(default_factory=dict)
     findings: dict[str, Finding] = field(default_factory=dict)
     gates: dict[str, Gate] = field(default_factory=dict)
+    continuations: dict[str, ContinuationRecord] = field(default_factory=dict)
     claim_relations: list[dict[str, Any]] = field(default_factory=list)
     focus_claim_ids: list[str] = field(default_factory=list)
     focus_node_ids: list[str] = field(default_factory=list)
@@ -445,6 +556,38 @@ class ResearchMap:
             raise ResearchModelError(f"gate {gate.id} references unknown {gate.scope.value} {gate.target_id}")
         self._add(self.gates, gate)
         _append_unique(target[gate.target_id].gate_ids, gate.id)
+
+    def add_continuation(self, continuation: ContinuationRecord) -> None:
+        continuation.validate(self)
+        self._add(self.continuations, continuation)
+
+    def resolve_continuation(
+        self,
+        continuation_id: str,
+        status: ContinuationStatus,
+        *,
+        reason: str | None = None,
+        request_id: str | None = None,
+    ) -> ContinuationRecord:
+        continuation = self.continuations.get(continuation_id)
+        if continuation is None:
+            raise ResearchModelError(f"unknown continuation {continuation_id}")
+        if not isinstance(status, ContinuationStatus):
+            raise ResearchModelError("continuation status must be a ContinuationStatus")
+        if continuation.status is ContinuationStatus.COMPLETED and status is not ContinuationStatus.COMPLETED:
+            raise ResearchModelError(f"completed continuation {continuation_id} cannot be reopened")
+        previous = (continuation.status, continuation.reason, continuation.request_id)
+        continuation.status = status
+        if reason is not None:
+            continuation.reason = reason
+        if request_id is not None:
+            continuation.request_id = request_id
+        try:
+            continuation.validate(self)
+        except ResearchModelError:
+            continuation.status, continuation.reason, continuation.request_id = previous
+            raise
+        return continuation
 
     def add_claim_relation(self, source_id: str, target_id: str, relation: str) -> None:
         if source_id not in self.claims or target_id not in self.claims:
@@ -553,6 +696,7 @@ class ResearchMap:
             *self.nodes.values(),
             *self.findings.values(),
             *self.gates.values(),
+            *self.continuations.values(),
         ]
         ids: set[str] = set()
         for item in all_objects:
@@ -640,6 +784,7 @@ class ResearchMap:
             "nodes": [item.to_dict() for item in self.nodes.values()],
             "findings": [item.to_dict() for item in self.findings.values()],
             "gates": [item.to_dict() for item in self.gates.values()],
+            "continuations": [item.to_dict() for item in self.continuations.values()],
             "claim_relations": _copy(self.claim_relations),
             "focus_claim_ids": list(self.focus_claim_ids),
             "focus_node_ids": list(self.focus_node_ids),
@@ -753,6 +898,19 @@ class ResearchMap:
                 evaluations=evaluations,
             )
             result.gates[gate.id] = gate
+        for row in _rows(value, "continuations"):
+            continuation = ContinuationRecord(
+                id=_required_string(row, "id"),
+                created_at=_required_string(row, "created_at"),
+                metadata=dict(row.get("metadata", {})),
+                scope=ContinuationScope(row.get("scope")),
+                target_id=_required_string(row, "target_id"),
+                action=ContinuationAction(row.get("action")),
+                status=ContinuationStatus(row.get("status", ContinuationStatus.REQUIRED)),
+                reason=row.get("reason"),
+                request_id=row.get("request_id"),
+            )
+            result.continuations[continuation.id] = continuation
         result.validate()
         return result
 
@@ -768,6 +926,7 @@ class ResearchMap:
             *self.nodes,
             *self.findings,
             *self.gates,
+            *self.continuations,
         }
 
     def _validate_node_cycles(self) -> None:

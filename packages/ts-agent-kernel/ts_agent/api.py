@@ -80,6 +80,17 @@ def _research(action: str, root: str | Path, params: dict[str, Any]) -> dict[str
         return {"schema_version": "research-validation/1", "valid": True}
     if action == "operations":
         return operation_catalog()
+    if action == "continuation":
+        request = params.get("request")
+        if request is None:
+            return _continuation_status(
+                kernel.load(),
+                scope=params.get("scope"),
+                target_id=params.get("target_id") or params.get("target_ref"),
+            )
+        if not isinstance(request, dict):
+            raise CommandError("research.continuation requires an object request")
+        return _apply_continuation_request(kernel, request)
     if action == "detail":
         research_map = kernel.load().to_dict()
         kind = _string(params, "kind")
@@ -198,6 +209,203 @@ def _string(params: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise CommandError(f"{key} must be a non-empty string")
     return value.strip()
+
+
+def _continuation_status(
+    research_map: Any,
+    *,
+    scope: str | None = None,
+    target_id: str | None = None,
+) -> dict[str, Any]:
+    """Return the durable continuation queue without choosing a next action."""
+
+    records = []
+    for record in getattr(research_map, "continuations", {}).values():
+        value = record.to_dict() if hasattr(record, "to_dict") else dict(record)
+        if scope is not None and value.get("scope") != scope:
+            continue
+        if target_id is not None and value.get("target_id") != target_id:
+            continue
+        records.append(value)
+    records.sort(key=lambda item: (item.get("created_at", ""), item.get("id", "")))
+    required = [item for item in records if item.get("status") == "required"]
+    return {
+        "schema_version": "research-continuation/1",
+        "map_id": research_map.map_id,
+        "revision": research_map.revision,
+        "continuations": records,
+        "required": required,
+    }
+
+
+def _apply_continuation_request(kernel: ResearchKernel, request: dict[str, Any]) -> dict[str, Any]:
+    schema_version = request.get("schema_version", "ts-continuation-request/1")
+    if schema_version != "ts-continuation-request/1":
+        raise CommandError(f"unsupported continuation request schema: {schema_version}")
+    operation = request.get("operation")
+    if operation == "status":
+        research_map = kernel.load()
+        return _continuation_status(
+            research_map,
+            scope=request.get("scope"),
+            target_id=request.get("target_id") or request.get("target_ref"),
+        )
+    if operation == "set" or operation in {"set_required", "set_deferred", "set_blocked", "set_completed"}:
+        # The canonical envelope has one set operation and a status field.
+        # Keep operation-specific spellings as aliases for existing tools.
+        status = request.get("status") if operation == "set" else operation.removeprefix("set_")
+        if status is None:
+            status = "required"
+        if status not in {"required", "deferred", "blocked", "completed"}:
+            raise CommandError("continuation set status must be required, deferred, blocked, or completed")
+        continuation_id = request.get("continuation_id") or request.get("id")
+        target_id = request.get("target_id") or request.get("target_ref")
+
+        # A disposition can refer to the only required record for a scope and
+        # target without making the model echo its generated continuation ID.
+        # Resolve only an unambiguous required record; the Host never guesses
+        # between competing obligations.
+        if operation in {"set_deferred", "set_blocked", "set_completed"} and not continuation_id:
+            scope = request.get("scope")
+            action = request.get("action")
+            if scope and target_id:
+                current = kernel.load()
+                candidates = [
+                    item for item in current.continuations.values()
+                    if item.status.value == "required"
+                    and item.scope.value == scope
+                    and item.target_id == target_id
+                    and (not action or item.action.value == action)
+                ]
+                if len(candidates) == 1:
+                    continuation_id = candidates[0].id
+                elif len(candidates) > 1:
+                    raise CommandError("continuation disposition is ambiguous; provide continuationId")
+
+        # Tool-facing aliases update an existing record when an ID is given.
+        # `set_required` is also used to resume a deferred/blocked record; it
+        # must not attempt to create a duplicate continuation with that ID.
+        if operation in {"set", "set_required", "set_deferred", "set_blocked", "set_completed"} and continuation_id:
+            current = kernel.load()
+            existing = current.continuations.get(continuation_id)
+            if existing is None:
+                raise CommandError(f"unknown continuation {continuation_id}")
+            for key, expected in (("scope", existing.scope.value), ("target_id", existing.target_id), ("action", existing.action.value)):
+                supplied = request.get(key) or (request.get("target_ref") if key == "target_id" else None)
+                if supplied is not None and supplied != expected:
+                    raise CommandError(f"continuation {continuation_id} {key} does not match the existing record")
+            operation_value = {
+                "type": "resolve_continuation",
+                "id": continuation_id,
+                "status": status,
+            }
+            if request.get("reason") is not None:
+                operation_value["reason"] = request["reason"]
+            if request.get("request_id") is not None:
+                operation_value["request_id"] = request["request_id"]
+        else:
+            operation_value = {
+                "type": "set_continuation",
+                "scope": request.get("scope"),
+                "target_id": target_id,
+                "action": request.get("action"),
+                "status": status,
+                "id": continuation_id,
+                "reason": request.get("reason"),
+                "request_id": request.get("request_id"),
+                "metadata": request.get("metadata", {}),
+            }
+    elif operation == "resolve" or operation == "clear":
+        continuation_id = request.get("continuation_id") or request.get("id")
+        status = request.get("status", "completed")
+        if status not in {"required", "deferred", "blocked", "completed"}:
+            raise CommandError("continuation resolve status must be required, deferred, blocked, or completed")
+        operation_value = {
+            "type": "resolve_continuation",
+            "id": continuation_id,
+            "status": status,
+        }
+        if operation == "clear":
+            operation_value["status"] = "completed"
+        if request.get("reason") is not None:
+            operation_value["reason"] = request["reason"]
+        if request.get("request_id") is not None:
+            operation_value["request_id"] = request["request_id"]
+    else:
+        raise CommandError("continuation operation must be status, set, resolve, or a supported set_* alias")
+    change_set = {
+        "schema_version": "ts-change-request/1",
+        "rationale": request.get("rationale") or f"Record continuation disposition: {operation}",
+        "basis_refs": request.get("basis_refs", []),
+        "expected_revision": request.get("expected_revision"),
+        "operations": [operation_value],
+    }
+    # Tool callers may omit an ID for a newly created required continuation.
+    # Allocate it from the current map and pin the revision so a concurrent
+    # writer fails cleanly instead of producing a duplicate record.
+    if operation_value["type"] == "set_continuation" and not operation_value.get("id"):
+        current = kernel.load()
+        operation_value["id"] = _next_continuation_id(current)
+        if change_set.get("expected_revision") is None:
+            change_set["expected_revision"] = current.revision
+    change_set = {key: value for key, value in change_set.items() if value is not None}
+    # An exact request-id retry is already committed.  Return the current
+    # ledger without creating a synthetic revision for a no-op replay.
+    request_id = request.get("request_id")
+    if request_id is not None and operation_value["type"] == "set_continuation":
+        current = kernel.load()
+        for existing in current.continuations.values():
+            if existing.request_id != request_id:
+                continue
+            if (
+                existing.scope.value == operation_value.get("scope")
+                and existing.target_id == operation_value.get("target_id")
+                and existing.action.value == operation_value.get("action")
+            ):
+                return _continuation_result(current, created_ids=[existing.id])
+            raise CommandError(f"request_id {request_id} is already bound to another continuation")
+    if request_id is not None and operation_value["type"] == "resolve_continuation":
+        current = kernel.load()
+        existing = current.continuations.get(operation_value["id"])
+        if existing is not None and existing.request_id == request_id:
+            desired = operation_value["status"]
+            if existing.status.value == desired and (
+                "reason" not in operation_value or existing.reason == operation_value["reason"]
+            ):
+                return _continuation_result(current)
+            raise CommandError(f"request_id {request_id} is already bound to another continuation disposition")
+    result = kernel.apply(change_set)
+    current = kernel.load()
+    status = _continuation_status(current)
+    return {**status, "schema_version": "research-continuation-result/1", "change": result}
+
+
+def _continuation_result(research_map: Any, *, created_ids: list[str] | None = None) -> dict[str, Any]:
+    """Return the same envelope as a committed continuation request replay."""
+
+    return {
+        **_continuation_status(research_map),
+        "schema_version": "research-continuation-result/1",
+        "change": {
+            "schema_version": "research-change-result/1",
+            "map_id": research_map.map_id,
+            "revision": research_map.revision,
+            "created_ids": list(created_ids or []),
+            "operation_count": 1,
+        },
+    }
+
+
+def _next_continuation_id(research_map: Any) -> str:
+    """Return the next stable ``cont_N`` ID without reusing map object IDs."""
+
+    all_ids = set()
+    for collection in ("phases", "claims", "nodes", "findings", "gates", "continuations"):
+        all_ids.update(getattr(research_map, collection, {}).keys())
+    index = 1
+    while f"cont_{index}" in all_ids:
+        index += 1
+    return f"cont_{index}"
 
 
 def _json_text(value: Any) -> str:

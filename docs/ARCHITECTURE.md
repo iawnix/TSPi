@@ -265,6 +265,16 @@ delivery pending and allows a later worker pass to retry it. Root must reread
 write `ResearchMap` state. The Monitor never calls `finalize`, writes
 `ResearchMap`, or makes a scientific decision.
 
+Research liveness is represented separately from Monitor observations by a
+Kernel-validated continuation record. `ts_workflow` can list records or record
+one required, deferred, blocked, or completed disposition for a Node, Claim, or
+Gate. A `required` record names an action selected by Root; it does not execute
+that action or choose a scientific verdict. At a run boundary the Host checks
+the durable queue and may add at most three bounded follow-ups for unresolved
+required records. The Root must perform the action or explicitly resolve the
+record, so a parsed calculation can continue even when Monitor has no new
+status event, while a blocked or deferred study remains quiet and auditable.
+
 Host `monitor/event` notifications are live only. Host primes its event cursor
 on startup instead of replaying historical files after a restart; Phone clients
 refresh `monitor/status` and the durable delivery outbox when reconnecting.

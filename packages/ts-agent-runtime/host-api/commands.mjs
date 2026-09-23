@@ -68,6 +68,9 @@ export function commandArguments(command, params = {}) {
     name: "--name",
     query: "--query",
     nodeId: "--node-id",
+    scope: "--scope",
+    targetId: "--target-id",
+    operation: "--operation",
   };
   for (const [key, flag] of Object.entries(flags)) {
     if (invocation.params[key] !== undefined) args.push(flag, String(invocation.params[key]));

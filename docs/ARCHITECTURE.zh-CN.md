@@ -215,6 +215,14 @@ request id 为 `monitor:<event_id>`；session 不存在、workspace 不匹配或
 `ts_state`，再显式执行 `ts_calc inspect`，并自行决定是否 `finalize` 或通过 `ts_change`
 写入 Finding/Gate/Node 状态。Monitor 不自动 finalize、不修改 ResearchMap、不做科学判断。
 
+研究推进的 liveness 由 Kernel 校验的 continuation record 单独表示，不依赖 Monitor
+是否还有新的状态摘要。`ts_workflow` 可以查询记录，或为 Node、Claim、Gate 记录
+`required`、`deferred`、`blocked`、`completed` disposition。`required` 只记录 Root
+已经选择的下一动作，不执行动作，也不替 Root 选择科学结论。每次 run boundary，Host
+最多为尚未解决的 required record 追加三次 follow-up；Root 必须执行动作，或明确把记录
+置为 deferred、blocked、completed。这样 parsed 之后即使没有新的 Monitor 事件，研究也
+能继续；阻塞或延期的研究则保持静默且可审计。
+
 Host 的 `monitor/event` 通知只是实时投影，不是持久化重放日志。Host 启动时会先建立已有
 事件文件的游标，因此重启不会重复推送旧事件；Phone 重连时应通过 `monitor/status` 和
 持久化 delivery outbox 恢复状态。

@@ -9,6 +9,7 @@ const TOOL_ROWS = [
   ["systemPrompt", "sys_prompt", "deterministic_runtime"],
   ["state", "ts_state", "deterministic_workspace"],
   ["change", "ts_change", "deterministic_workspace"],
+  ["workflow", "ts_workflow", "deterministic_workspace"],
   ["environment", "ts_environment", "deterministic_infrastructure"],
   ["review", "ts_review", "child_agent"],
   ["compute", "ts_calc", "child_agent"],
@@ -95,6 +96,19 @@ export function createPublicToolContracts(Type) {
         "Put strategy in rationale and keep each operation typed; never edit the map file directly.",
         "One ChangeSet is validated against the current revision and committed atomically under one lock.",
       ],
+    }),
+    workflow: contract("workflow", "TS Workflow", "Record a research continuation.", Type.Object({
+      operation: literalUnion(["status", "set_required", "set_deferred", "set_blocked", "set_completed"]),
+      scope: Type.Optional(literalUnion(["node", "claim", "gate"])),
+      targetId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+      action: Type.Optional(literalUnion(["inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"])),
+      reason: Type.Optional(Type.String({ minLength: 1 })),
+      requestId: Type.Optional(Type.String({ minLength: 1 })),
+      continuationId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+      root: optionalRoot,
+    }, { additionalProperties: false }), {
+      executionMode: "sequential",
+      replay: "never",
     }),
     environment: contract("environment", "TS Environment", "Inspect configured local and remote compute environments.", Type.Object({
       mode: Type.Optional(literalUnion(["list", "show"])),

@@ -39,6 +39,7 @@ research.detail     一个 map 对象
 research.locate     在 map 对象中搜索
 research.validate   校验 map
 research.operations 操作目录
+research.continuation 查询或记录有界的 continuation disposition
 research.change     应用一个 ChangeSet
 ```
 

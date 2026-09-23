@@ -58,6 +58,7 @@ def test_canonical_api_exposes_research_operation_catalog(tmp_path: Path) -> Non
     assert catalog["schema_version"] == "research-operation-catalog/1"
     assert {item["type"] for item in catalog["operations"]} == {
         "create_phase", "create_claim", "create_node", "create_finding", "create_gate",
-        "evaluate_gate", "set_node_state", "set_claim_status", "relate_claims", "set_focus",
+        "set_continuation", "resolve_continuation", "evaluate_gate", "set_node_state",
+        "set_claim_status", "relate_claims", "set_focus",
     }
     assert all("template_ref" not in item for item in catalog["operations"])

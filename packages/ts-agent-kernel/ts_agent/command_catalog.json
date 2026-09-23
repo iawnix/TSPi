@@ -7,6 +7,7 @@
     {"id": "research.locate", "domain": "research", "effect": "read", "required": ["query"]},
     {"id": "research.validate", "domain": "research", "effect": "read", "required": []},
     {"id": "research.operations", "domain": "research", "effect": "read", "required": []},
+    {"id": "research.continuation", "domain": "research", "effect": "write", "required": []},
     {"id": "research.change", "domain": "research", "effect": "write", "required": ["request"]},
     {"id": "compute.environments", "domain": "compute", "effect": "read", "required": []},
     {"id": "compute.environment", "domain": "compute", "effect": "read", "required": ["name"]},

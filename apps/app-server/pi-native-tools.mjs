@@ -116,6 +116,79 @@ export function createChangeTool() {
   };
 }
 
+/**
+ * Expose the Kernel continuation ledger without letting the Host choose a
+ * scientific action. Writes are typed requests validated by
+ * `research.continuation`; status is read-only and may be filtered locally.
+ */
+export function createWorkflowTool() {
+  return {
+    ...TOOL_CONTRACTS.workflow,
+    async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
+      const root = params.root || toolContext.cwd;
+      let result;
+      if (params.operation === "status") {
+        result = await NATIVE_COMMANDS.execute("research.continuation", root, {
+          scope: params.scope,
+          targetId: params.targetId,
+        }, context?.abortSignal);
+        result = filterContinuationStatus(result, params);
+      } else {
+        validateWorkflowParams(params);
+        requireNativeWrites("ts_workflow");
+        result = await NATIVE_COMMANDS.execute(
+          "research.continuation",
+          root,
+          { request: continuationRequest(params) },
+          context?.abortSignal,
+        );
+      }
+      return toolResult(result);
+    },
+  };
+}
+
+/**
+ * Keep an active research lane live when the Root has explicitly recorded a
+ * required next action. The hook only asks the Root to inspect and resolve
+ * the record; it never selects a Claim/Gate outcome or invokes the action.
+ */
+export function createContinuationLivenessHook({ cwd, maxFollowUps = 3, statusReader } = {}) {
+  if (typeof cwd !== "string" || !cwd) throw new TypeError("continuation liveness hook requires cwd");
+  const readStatus = typeof statusReader === "function"
+    ? statusReader
+    : (signal) => NATIVE_COMMANDS.execute("research.continuation", cwd, {}, signal);
+  const followUpsByRun = new Map();
+  return async (event, context) => {
+    const runId = event?.runId;
+    if (typeof runId !== "string" || !runId) return undefined;
+    const attempts = followUpsByRun.get(runId) || 0;
+    if (attempts >= maxFollowUps) return undefined;
+    let status;
+    try {
+      status = await readStatus(context?.abortSignal);
+    } catch (_error) {
+      // A status read must not make an otherwise valid Agent run fail closed.
+      return undefined;
+    }
+    const required = requiredContinuations(status);
+    if (required.length === 0) {
+      followUpsByRun.delete(runId);
+      return undefined;
+    }
+    followUpsByRun.set(runId, attempts + 1);
+    const refs = required
+      .slice(0, 8)
+      .map((record) => record?.id || record?.continuation_id || record?.target_ref || record?.target_id)
+      .filter((value) => typeof value === "string" && value)
+      .join(", ");
+    const suffix = refs ? ` (${refs})` : "";
+    return {
+      followUp: `Kernel has ${required.length} required continuation record${required.length === 1 ? "" : "s"}${suffix}. Continue the research turn: read ts_workflow with operation=status, then perform the recorded action or explicitly set its disposition to deferred, blocked, or completed. Do not end while a safe, explicit next step remains.`,
+    };
+  };
+}
+
 export function createEnvironmentTool() {
   return {
     ...TOOL_CONTRACTS.environment,
@@ -451,6 +524,7 @@ export function createTspiTools(options = {}) {
   return [
     createStateTool(),
     createChangeTool(),
+    createWorkflowTool(),
     createEnvironmentTool(),
     createComputeTool(),
     createReviewTool(options.review),
@@ -602,9 +676,9 @@ async function runCanonicalApi(command, cwd, extraArgs, parentSignal, timeoutMs 
 }
 
 async function executeNativeCommand({ command, root, params, signal }) {
-  if (command === "research.change") {
+  if (command === "research.change" || (command === "research.continuation" && params.request !== undefined)) {
     return runPrivateRequest(
-      "tspi-native-change-",
+      command === "research.change" ? "tspi-native-change-" : "tspi-native-continuation-",
       packageScript("ts_api.py"),
       command,
       root,
@@ -614,6 +688,85 @@ async function executeNativeCommand({ command, root, params, signal }) {
     );
   }
   return runCanonicalApi(command, root, commandArguments(command, params), signal);
+}
+
+function continuationRequest(params) {
+  const request = {
+    schema_version: "ts-continuation-request/1",
+    operation: params.operation,
+  };
+  if (params.scope !== undefined) request.scope = params.scope;
+  if (params.targetId !== undefined) request.target_id = params.targetId;
+  if (params.action !== undefined) request.action = params.action;
+  if (params.reason !== undefined) request.reason = params.reason;
+  if (params.requestId !== undefined) request.request_id = params.requestId;
+  if (params.continuationId !== undefined) request.continuation_id = params.continuationId;
+  return request;
+}
+
+function validateWorkflowParams(params) {
+  const operation = params.operation;
+  if (operation === "set_required" && !params.continuationId
+      && (!params.scope || !params.targetId || !params.action)) {
+    throw new Error("ts_workflow set_required requires scope, targetId, and action");
+  }
+  if (["set_deferred", "set_blocked"].includes(operation) && !params.reason) {
+    throw new Error(`ts_workflow ${operation} requires reason`);
+  }
+  if (["set_deferred", "set_blocked", "set_completed"].includes(operation)
+      && !params.continuationId && (!params.scope || !params.targetId)) {
+    throw new Error(`ts_workflow ${operation} requires continuationId or scope and targetId`);
+  }
+  if (["set_deferred", "set_blocked", "set_completed"].includes(operation)
+      && !params.continuationId && !params.action) {
+    throw new Error(`ts_workflow ${operation} requires action when creating a continuation`);
+  }
+}
+
+function filterContinuationStatus(result, params) {
+  if (!params.scope && !params.targetId) return result;
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+  const keys = ["continuations", "records", "items"];
+  const key = keys.find((candidate) => Array.isArray(result[candidate]));
+  if (!key) return result;
+  const records = result[key].filter((record) => {
+    if (!record || typeof record !== "object") return false;
+    const scope = record.scope;
+    const target = record.target_ref || record.target_id || record.targetId;
+    return (!params.scope || scope === params.scope) && (!params.targetId || target === params.targetId);
+  });
+  const filtered = { ...result, [key]: records };
+  if (Array.isArray(result.required)) {
+    filtered.required = result.required.filter((record) => {
+      if (!record || typeof record !== "object") return false;
+      const scope = record.scope;
+      const target = record.target_ref || record.target_id || record.targetId;
+      return (!params.scope || scope === params.scope) && (!params.targetId || target === params.targetId);
+    });
+  }
+  if ("required_count" in result) filtered.required_count = records.filter((record) => record?.status === "required").length;
+  return filtered;
+}
+
+function requiredContinuations(result) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return [];
+  const candidates = [result.required, result.continuations, result.records, result.items]
+    .filter((value) => Array.isArray(value))
+    .flat();
+  if (candidates.length > 0) {
+    const required = candidates.filter((record) => record && typeof record === "object"
+      && (record.status === "required" || record.disposition === "required"));
+    const seen = new Set();
+    return required.filter((record) => {
+      const key = record.id || record.continuation_id || `${record.scope || ""}:${record.target_id || ""}:${record.action || ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  return Number.isInteger(result.required_count) && result.required_count > 0
+    ? Array.from({ length: Math.min(result.required_count, 8) }, () => ({ status: "required" }))
+    : [];
 }
 
 async function resolveArtifacts(root, artifactIds, signal) {

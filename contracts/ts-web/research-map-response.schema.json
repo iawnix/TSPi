@@ -51,6 +51,7 @@
         "nodes": { "type": "array", "items": { "type": "object" } },
         "findings": { "type": "array", "items": { "type": "object" } },
         "gates": { "type": "array", "items": { "type": "object" } },
+        "continuations": { "type": "array", "items": { "$ref": "#/$defs/continuation" } },
         "claim_relations": { "type": "array", "items": { "type": "object" } },
         "focus_claim_ids": { "type": "array", "items": { "type": "string" } },
         "focus_node_ids": { "type": "array", "items": { "type": "string" } },
@@ -80,6 +81,34 @@
         "gate_count": { "type": "integer", "minimum": 0 },
         "closed_node_count": { "type": "integer", "minimum": 0 },
         "open_issue_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "created_at",
+        "metadata",
+        "scope",
+        "target_id",
+        "action",
+        "status",
+        "reason",
+        "request_id"
+      ],
+      "properties": {
+        "type": { "const": "continuation_record" },
+        "id": { "type": "string", "minLength": 1 },
+        "created_at": { "type": "string", "minLength": 1 },
+        "metadata": { "type": "object" },
+        "scope": { "enum": ["node", "claim", "gate"] },
+        "target_id": { "type": "string", "minLength": 1 },
+        "action": { "enum": ["inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"] },
+        "status": { "enum": ["required", "deferred", "blocked", "completed"] },
+        "reason": { "type": ["string", "null"] },
+        "request_id": { "type": ["string", "null"] }
       }
     }
   }

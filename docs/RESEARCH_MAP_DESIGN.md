@@ -44,6 +44,7 @@ research.detail     one map object
 research.locate     text search over map objects
 research.validate   validate the map
 research.operations operation catalog
+research.continuation inspect or record a bounded continuation disposition
 research.change     apply one ChangeSet
 ```
 

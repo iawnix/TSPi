@@ -2,6 +2,10 @@
 
 from .model import (
     ClaimStatus,
+    ContinuationAction,
+    ContinuationRecord,
+    ContinuationScope,
+    ContinuationStatus,
     FactFinding,
     Finding,
     FindingKind,
@@ -27,6 +31,10 @@ from .kernel import ResearchKernel, ResearchKernelError
 __all__ = [
     "ClaimGate",
     "ClaimStatus",
+    "ContinuationAction",
+    "ContinuationRecord",
+    "ContinuationScope",
+    "ContinuationStatus",
     "FactFinding",
     "Finding",
     "FindingKind",

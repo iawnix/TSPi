@@ -8,6 +8,7 @@ import {
 import { loadServerExtensions } from "./server-extension-loader.mjs";
 import { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 import { createPackageSourceReadGuard } from "./pi-harness-policy.mjs";
+import { createContinuationLivenessHook } from "./pi-native-tools.mjs";
 
 export {
   createAnalyzeTool,
@@ -23,6 +24,8 @@ export {
   createReviewTool,
   createSeedTool,
   createStateTool,
+  createWorkflowTool,
+  createContinuationLivenessHook,
 } from "./pi-native-tools.mjs";
 export { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 
@@ -125,6 +128,11 @@ async function createTspiHarness(session, options, executionEnv) {
       createPackageSourceReadGuard({ packageRoot: loadedSkills.packageRoot, cwd: session.metadata.cwd }),
       { id: "tspi.package-source-read" },
     );
+    created.harness.hooks.on(
+      "before_run_end",
+      createContinuationLivenessHook({ cwd: session.metadata.cwd, maxFollowUps: 3 }),
+      { id: "tspi.continuation-liveness" },
+    );
     const lane = await created.harness.lane("main", TODO_CONTEXT);
     return {
       harness: created.harness,
@@ -147,7 +155,7 @@ async function createTspiHarness(session, options, executionEnv) {
 }
 
 function tspiSystemPrompt(cwd) {
-  return `You are the TSPi research agent for ${cwd}. ResearchMap in the Research Kernel is authoritative for scientific state. Use ts_state before reasoning from workspace records. Use ts_change for canonical writes; include a concrete rationale and auditable operations. Use ts_environment to inspect configured local and remote compute environments, and ts_calc for one preflight-bound calculation lifecycle. Monitor events may arrive through session next_run; treat them as operational evidence, reread ts_state, and inspect the bound Attempt before acting. After ts_calc launch returns after submission, including an uncertain result, end the turn and let Monitor enqueue next_run; do not call bash sleep, wait, or a manual polling loop. Use ts_calc inspect only after a Monitor wake or an explicit later request. A completed scheduler state is not the same as a parsed calculation. Use ts_seed or ts_import for validated calculation inputs; give ts_import a concise semantic input basename with the correct format extension. Use ts_compare for deterministic structure comparisons, ts_render for registered visual artifacts, and ts_report for revision-bound report packages. Use ts_review for isolated advisory assessment, then record Root's disposition with ts_reply before applying its advice. Use ts_notify only for material configured delivery events. Use sys_prompt when the effective system prompt or its provenance must be inspected. Use registered schemas, bounded state/capability catalogs, and public skills references; do not inspect installed package implementation or tests as research documentation. Do not invent identifiers, artifact paths, or calculation results. Treat tool output as evidence, preserve uncertainty, and keep Claims, Findings, Gate evaluations, and conclusions distinct.`;
+  return `You are the TSPi research agent for ${cwd}. ResearchMap in the Research Kernel is authoritative for scientific state. Use ts_state before reasoning from workspace records. Use ts_change for canonical writes; include a concrete rationale and auditable operations. Use ts_environment to inspect configured local and remote compute environments, and ts_calc for one preflight-bound calculation lifecycle. After every Monitor wake, including a parsed calculation result, read ts_state and call ts_workflow with operation=status before deciding what happens next. When a concrete next action is known for an active Node, Claim, or Gate, record it with ts_workflow operation=set_required, then perform that action or explicitly set it deferred, blocked, or completed with a reason. Do not end a turn with an active scope and an unrecorded next action; the Host may issue a bounded follow-up while a required continuation remains. Monitor events may arrive through session next_run; treat them as operational evidence, reread ts_state, and inspect the bound Attempt before acting. After ts_calc launch returns after submission, including an uncertain result, end the turn and let Monitor enqueue next_run; do not call bash sleep, wait, or a manual polling loop. Use ts_calc inspect only after a Monitor wake or an explicit later request. A completed scheduler state is not the same as a parsed calculation. Use ts_seed or ts_import for validated calculation inputs; give ts_import a concise semantic input basename with the correct format extension. Use ts_compare for deterministic structure comparisons, ts_render for registered visual artifacts, and ts_report for revision-bound report packages. Use ts_review for isolated advisory assessment, then record Root's disposition with ts_reply before applying its advice. Use ts_notify only for material configured delivery events. Use sys_prompt when the effective system prompt or its provenance must be inspected. Use registered schemas, bounded state/capability catalogs, and public skills references; do not inspect installed package implementation or tests as research documentation. Do not invent identifiers, artifact paths, or calculation results. Treat tool output as evidence, preserve uncertainty, and keep Claims, Findings, Gate evaluations, and conclusions distinct.`;
 }
 
 if (isDirectInternalProcessEntry(import.meta.url)) {

@@ -1,5 +1,5 @@
 export type PublicToolKey =
-  | "systemPrompt" | "state" | "change" | "environment" | "review"
+  | "systemPrompt" | "state" | "change" | "workflow" | "environment" | "review"
   | "compute" | "reply" | "seed" | "compare" | "analyze" | "dispatch"
   | "importArtifact" | "render" | "report" | "notify";
 
@@ -21,6 +21,15 @@ export interface ChangeToolParams extends WorkspaceToolParams {
   operations: Array<{ type: string; [key: string]: unknown }>;
   basisRefs?: string[];
   expectedRevision?: number;
+}
+export interface WorkflowToolParams extends WorkspaceToolParams {
+  operation: "status" | "set_required" | "set_deferred" | "set_blocked" | "set_completed";
+  scope?: "node" | "claim" | "gate";
+  targetId?: string;
+  action?: "inspect" | "finalize" | "launch" | "analyze" | "review" | "evaluate" | "close";
+  reason?: string;
+  requestId?: string;
+  continuationId?: string;
 }
 export interface EnvironmentToolParams extends WorkspaceToolParams { mode?: "list" | "show"; name?: string }
 export interface ComputeToolParams extends WorkspaceToolParams {

@@ -15,6 +15,10 @@ import fcntl
 from .model import (
     ClaimGate,
     ClaimStatus,
+    ContinuationAction,
+    ContinuationRecord,
+    ContinuationScope,
+    ContinuationStatus,
     FactFinding,
     FindingKind,
     FindingStatus,
@@ -268,6 +272,64 @@ def _apply_operation(research_map: ResearchMap, operation: dict[str, Any]) -> li
         )
         research_map.add_gate(gate)
         return [gate.id]
+    if kind == "set_continuation":
+        continuation_id = _string(operation, "id")
+        scope = ContinuationScope(operation.get("scope"))
+        target_id = _string(operation, "target_id")
+        action = ContinuationAction(_string(operation, "action"))
+        request_id = operation.get("request_id")
+        if request_id is not None and (not isinstance(request_id, str) or not request_id):
+            raise ResearchKernelError("operation field request_id must be a non-empty string")
+        existing = research_map.continuations.get(continuation_id)
+        if existing is not None:
+            if request_id is not None and existing.request_id == request_id:
+                if (
+                    existing.scope is scope
+                    and existing.target_id == target_id
+                    and existing.action == action
+                ):
+                    # A retried request must not create a second obligation or
+                    # reset a resolution that was committed after the first
+                    # request returned.
+                    return []
+            raise ResearchKernelError(f"continuation {continuation_id} already exists")
+        if request_id is not None:
+            for candidate in research_map.continuations.values():
+                if candidate.request_id == request_id:
+                    if (
+                        candidate.scope is scope
+                        and candidate.target_id == target_id
+                        and candidate.action == action
+                    ):
+                        return []
+                    raise ResearchKernelError(f"request_id {request_id} is already bound to another continuation")
+        continuation = ContinuationRecord(
+            id=continuation_id,
+            created_at=created_at,
+            scope=scope,
+            target_id=target_id,
+            action=action,
+            status=ContinuationStatus(operation.get("status", ContinuationStatus.REQUIRED)),
+            reason=operation.get("reason"),
+            request_id=request_id,
+            metadata=dict(operation.get("metadata", {})),
+        )
+        research_map.add_continuation(continuation)
+        return [continuation.id]
+    if kind == "resolve_continuation":
+        continuation_id = _string(operation, "id")
+        continuation = research_map.continuations.get(continuation_id)
+        if continuation is None:
+            raise ResearchKernelError(f"unknown continuation {continuation_id}")
+        reason = operation["reason"] if "reason" in operation else continuation.reason
+        request_id = operation["request_id"] if "request_id" in operation else continuation.request_id
+        research_map.resolve_continuation(
+            continuation_id,
+            ContinuationStatus(operation.get("status")),
+            reason=reason,
+            request_id=request_id,
+        )
+        return []
     if kind == "evaluate_gate":
         research_map.evaluate_gate(
             _string(operation, "gate_id"),

@@ -11,6 +11,7 @@ import { createDisplayRefFormatter } from "./ref-presentation.ts";
 export const NATIVE_PRESENTATION_TOOL_NAMES = Object.freeze([
   "ts_state",
   "ts_change",
+  "ts_workflow",
   "ts_environment",
   "ts_calc",
   "ts_dispatch",
@@ -74,6 +75,7 @@ export function nativeToolLabel(toolName: string): string {
   const known: Record<string, string> = {
     ts_state: "TS State",
     ts_change: "TS Change",
+    ts_workflow: "TS Workflow",
     ts_environment: "TS Environment",
     ts_calc: "TS Calculate",
     ts_dispatch: "TS Node Dispatch",

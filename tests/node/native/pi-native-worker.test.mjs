@@ -338,7 +338,7 @@ test("native Pi server gives every client the complete Agent tool inventory", { 
     assert.ok(runtime.workerPids.has(summary.sessionId), "native Worker did not start");
     const state = await readExperimentalSessionState(runtime.sessionDir, summary.sessionId);
     assert.deepEqual(state.activeTools, [
-      "read", "sys_prompt", "write", "bash", "ts_state", "ts_change", "ts_environment",
+      "read", "sys_prompt", "write", "bash", "ts_state", "ts_change", "ts_workflow", "ts_environment",
       "ts_calc", "ts_review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze", "ts_dispatch", "ts_import",
       "ts_render", "ts_report", "ts_notify",
     ]);

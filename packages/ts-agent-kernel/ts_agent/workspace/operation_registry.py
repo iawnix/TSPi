@@ -43,6 +43,14 @@ INPUT_OPERATION_CONTRACTS: dict[str, OperationContract] = {
         required=frozenset({"type", "id", "scope", "target_id"}),
         optional=frozenset({"criteria", "created_at", "metadata"}),
     ),
+    "set_continuation": OperationContract(
+        required=frozenset({"type", "id", "scope", "target_id", "action"}),
+        optional=frozenset({"status", "reason", "request_id", "created_at", "metadata"}),
+    ),
+    "resolve_continuation": OperationContract(
+        required=frozenset({"type", "id", "status"}),
+        optional=frozenset({"reason", "request_id"}),
+    ),
     "evaluate_gate": OperationContract(
         required=frozenset({"type", "gate_id", "verdict"}),
         optional=frozenset({"message", "evidence_refs", "created_at"}),

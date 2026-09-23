@@ -24,6 +24,7 @@ EXPECTED_TOOLS = {
     "sys_prompt",
     "ts_state",
     "ts_change",
+    "ts_workflow",
     "ts_review",
     "ts_reply",
     "ts_calc",
