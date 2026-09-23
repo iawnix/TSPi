@@ -115,10 +115,10 @@ scheduler lease 和 Monitor 健康文件。`tspi.workspace-directory` 只暴露�
 
 `TSPi --workspace <name>` 先 bootstrap 工作区，再向 Host 请求 `session/list` 和
 `session/create`/`session/resume`，最后把 Pi 官方 `ExperimentalClientTui` 直接连接到
-返回的本地 descriptor。`/new`、`/resume`、`/fork`、slash command、completion、渲染和
-输入循环仍由 Pi 提供；Phone 通过 Host RPC，Monitor 通过 durable `next_run` entry 访问
-同一个 lane。workspace `.pi/sessions` 的 format-3 历史只读，显式 import 才能进入安装级
-format-4。
+返回的本地 descriptor。远程 TUI 负责 completion、渲染、输入循环和它支持的 slash
+command，其中 `/resume` 只在当前 workspace 内切换；普通 Pi 的 `/new` 与 `/fork` 不会由
+这个客户端暴露。Phone 通过 Host RPC，Monitor 通过 durable `next_run` entry 访问同一个
+lane。workspace `.pi/sessions` 的 format-3 历史只读，显式 import 才能进入安装级 format-4。
 `TSPI_HOST_BACKEND=ordinary` 仅是迁移/调试模式，不是 Harness fallback。
 
 第一次执行 `TSPi --workspace <name>` 时，如果项目不存在，客户端会通过同一套经过校验

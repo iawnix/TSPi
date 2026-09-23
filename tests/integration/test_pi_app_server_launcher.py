@@ -338,6 +338,14 @@ def test_session_selection_is_workspace_scoped_and_explicit() -> None:
         ])
 
 
+@pytest.mark.parametrize("option", ["-r", "--resume"])
+def test_startup_resume_rejects_the_false_selector_semantics(option: str) -> None:
+    with pytest.raises(launcher.TSPiHostError, match="use /resume inside the terminal") as failure:
+        launcher.parse_launch_request(["--workspace", "reaction-a", option])
+
+    assert failure.value.exit_code == 2
+
+
 def test_phone_management_commands_are_parsed_before_workspace_selection() -> None:
     pairing = launcher.parse_launch_request(["phone", "pair"])
     devices = launcher.parse_launch_request(["phone", "devices"])

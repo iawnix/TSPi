@@ -1,0 +1,529 @@
+diff --git a/packages/coding-agent/src/experimental/client-tui.ts b/packages/coding-agent/src/experimental/client-tui.ts
+index a2a72e6a8..fc1ffa918 100644
+--- a/packages/coding-agent/src/experimental/client-tui.ts
++++ b/packages/coding-agent/src/experimental/client-tui.ts
+@@ -7,8 +7,10 @@ import {
+ 	type FacetLoader,
+ 	type JsonValue,
+ 	type LoadedFacets,
++	type RemoteServices,
+ } from "@earendil-works/chord";
+ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
++import type { AgentMessage, Entry, LaneSnapshot } from "@earendil-works/pi-agent-core";
+ import {
+ 	CombinedAutocompleteProvider,
+ 	type Component,
+@@ -47,7 +49,12 @@ import {
+ 	type PresentationToolRenderers,
+ } from "./services/presentation-layout.ts";
+ import { PresentationUI } from "./services/presentation-ui.ts";
+-import { SessionDirectory, SessionManagement, type SessionSummary } from "./services/sessions.ts";
++import {
++	SessionDirectory,
++	SessionManagement,
++	SessionNavigation,
++	type SessionSummary,
++} from "./services/sessions.ts";
+ import { SlashCommands } from "./services/slash-commands.ts";
+ import {
+ 	createBuiltInSlashCommandsFacet,
+@@ -57,6 +64,8 @@ import { Transcript, type Transcript as TranscriptService } from "./services/tra
+ 
+ export interface RunClientTuiOptions extends OpenClientRuntimeOptions {
+ 	readonly facetLoader?: FacetLoader;
++	/** Optional Host-side resume guard used by the TSPi native adapter. */
++	readonly resumeSession?: (sessionId: string) => Promise<void>;
+ }
+ 
+ export interface ClientTuiServer {
+@@ -76,6 +85,7 @@ interface PreparedClientSession {
+ 	readonly server: ClientTuiServer;
+ 	readonly summary: SessionSummary;
+ 	readonly presentationPlugins: JsonValue;
++	readonly presentationPackagePaths: readonly string[] | null;
+ }
+ 
+ interface PendingSelection {
+@@ -112,6 +122,14 @@ export class ExperimentalClientTui implements Component {
+ 	#presentationFacets: LoadedFacets | undefined;
+ 	#facetHost: FacetHost | undefined;
+ 	#facetReloadTail = Promise.resolve();
++	#presentationData: JsonValue | undefined;
++	#presentationPackagePaths: readonly string[] | null | undefined;
++	#reloadPresentationPlugins: ((data: JsonValue) => Promise<void>) | undefined;
++	#serverServices: RemoteServices | undefined;
++	#sessionDirectory: SessionDirectory | undefined;
++	#sessionManagement: SessionManagement | undefined;
++	#presentationPlugins: PresentationPlugins | undefined;
++	readonly #resumeSessionHook: ((sessionId: string) => Promise<void>) | undefined;
+ 	#session: SessionFeature | undefined;
+ 	#slashCommands: SlashCommands | undefined;
+ 	#controller: AgentController | undefined;
+@@ -128,17 +146,26 @@ export class ExperimentalClientTui implements Component {
+ 	#sessionId: string | undefined;
+ 	#status = "Starting Session…";
+ 	#busy = false;
++	#switchingSession = false;
+ 	#closed = false;
+ 	#closePromise: Promise<void> | undefined;
+ 	#recoveryTransition: Promise<void> = Promise.resolve();
++	#sessionSwitchTail: Promise<void> = Promise.resolve();
+ 	#laneUnsubscribe: (() => void) | undefined;
+ 	#chatView: ExperimentalChatView | undefined;
+ 
+-	private constructor(ui: TUI, requestRender: () => void, finish: () => void, loadedFacets: LoadedFacets) {
++	private constructor(
++		ui: TUI,
++		requestRender: () => void,
++		finish: () => void,
++		loadedFacets: LoadedFacets,
++		resumeSessionHook: ((sessionId: string) => Promise<void>) | undefined,
++	) {
+ 		this.#ui = ui;
+ 		this.#requestRender = requestRender;
+ 		this.#finish = finish;
+ 		this.#sharedFacets = loadedFacets;
++		this.#resumeSessionHook = resumeSessionHook;
+ 		setKeybindings(this.#keybindings);
+ 		this.#chatInput = this.#createEditor();
+ 		this.#editorContainer.addChild(this.#chatInput);
+@@ -194,6 +221,7 @@ export class ExperimentalClientTui implements Component {
+ 		readonly ui: TUI;
+ 		readonly servers: readonly ClientTuiServer[];
+ 		readonly facetLoader?: FacetLoader;
++		readonly resumeSession?: (sessionId: string) => Promise<void>;
+ 		requestRender(): void;
+ 		finish(): void;
+ 	}): Promise<ExperimentalClientTui> {
+@@ -201,7 +229,13 @@ export class ExperimentalClientTui implements Component {
+ 		const loadedFacets = await combineFacetLoaders(
+ 			options.facetLoader === undefined ? [] : [options.facetLoader],
+ 		).load();
+-		const component = new ExperimentalClientTui(options.ui, options.requestRender, options.finish, loadedFacets);
++		const component = new ExperimentalClientTui(
++			options.ui,
++			options.requestRender,
++			options.finish,
++			loadedFacets,
++			options.resumeSession,
++		);
+ 		try {
+ 			await component.#start(prepared);
+ 			await component.#openPreparedSession(prepared);
+@@ -275,6 +309,18 @@ export class ExperimentalClientTui implements Component {
+ 
+ 	async #start(prepared: PreparedClientSession): Promise<void> {
+ 		const server = prepared.server;
++		const serverServices = server.server.open({
++			services: [SessionDirectory, SessionManagement, PresentationPlugins],
++			assertAccess() {},
++			onError: (error) => this.showError(error.message),
++		});
++		await serverServices.ready(BACKGROUND_CONTEXT);
++		this.#serverServices = serverServices;
++		this.#sessionDirectory = serverServices.use(SessionDirectory);
++		this.#sessionManagement = serverServices.use(SessionManagement);
++		this.#presentationPlugins = serverServices.use(PresentationPlugins);
++		this.#presentationData = prepared.presentationPlugins;
++		this.#presentationPackagePaths = prepared.presentationPackagePaths;
+ 		let presentationFacets = await combineFacetLoaders(
+ 			createPresentationFacetLoaders(prepared.presentationPlugins),
+ 		).load();
+@@ -296,11 +342,13 @@ export class ExperimentalClientTui implements Component {
+ 				const retired = presentationFacets;
+ 				presentationFacets = candidate;
+ 				this.#presentationFacets = candidate;
++				this.#presentationData = data;
+ 				await retired.dispose();
+ 			});
+ 			this.#facetReloadTail = operation.catch(() => {});
+ 			return operation;
+ 		};
++		this.#reloadPresentationPlugins = reloadPresentationPlugins;
+ 		const presentationBridgeFacet = defineFacet({
+ 			id: "@pi/presentation-bridge",
+ 			setup: (env) => {
+@@ -328,6 +376,9 @@ export class ExperimentalClientTui implements Component {
+ 				const commands = env.use(SlashCommands);
+ 				const controller = env.use(AgentController);
+ 				const transcript = env.use(Transcript);
++				env.provide(SessionNavigation, {
++					resume: (sessionId, context) => this.#resumeSession(sessionId, context),
++				});
+ 				const sessionFeature: SessionFeature = {
+ 					serverId: server.serverId,
+ 					session: server.session,
+@@ -389,6 +440,7 @@ export class ExperimentalClientTui implements Component {
+ 		const errors: unknown[] = [];
+ 		try {
+ 			await this.#recoveryTransition;
++			await this.#sessionSwitchTail;
+ 			await this.#closeLane();
+ 			await this.#facetReloadTail;
+ 		} catch (error) {
+@@ -402,6 +454,14 @@ export class ExperimentalClientTui implements Component {
+ 			}
+ 			this.#facetHost = undefined;
+ 		}
++		if (this.#serverServices !== undefined) {
++			try {
++				await this.#serverServices.dispose(BACKGROUND_CONTEXT);
++			} catch (error) {
++				errors.push(error);
++			}
++			this.#serverServices = undefined;
++		}
+ 		const generations = [this.#presentationFacets, this.#sharedFacets].filter(
+ 			(generation): generation is LoadedFacets => generation !== undefined,
+ 		);
+@@ -540,7 +600,7 @@ export class ExperimentalClientTui implements Component {
+ 	}
+ 
+ 	#handleConnectionState(serverId: string, state: ServerConnectionState): void {
+-		if (this.#closed || this.#selectedServerId !== serverId) return;
++		if (this.#closed || this.#switchingSession || this.#selectedServerId !== serverId) return;
+ 		if (state.status === "connected") {
+ 			if (this.#laneUnsubscribe === undefined) {
+ 				this.#busy = true;
+@@ -556,7 +616,7 @@ export class ExperimentalClientTui implements Component {
+ 	}
+ 
+ 	#handleAttachmentState(feature: SessionFeature, state: SessionAttachmentState): void {
+-		if (this.#closed || this.#selectedServerId !== feature.serverId || this.#sessionId === undefined) return;
++		if (this.#closed || this.#switchingSession || this.#selectedServerId !== feature.serverId || this.#sessionId === undefined) return;
+ 		if (state.status === "attached" && state.sessionId === this.#sessionId) {
+ 			this.#queueRecovery(async () => {
+ 				if (this.#laneUnsubscribe === undefined) await this.#openLane(feature);
+@@ -598,10 +658,12 @@ export class ExperimentalClientTui implements Component {
+ 			view.apply(value.snapshot);
+ 			this.#rebuild();
+ 		});
+-		if (feature.transcript.state.value?.snapshot === null || feature.transcript.state.value?.snapshot === undefined) {
++		const snapshot = feature.transcript.state.value?.snapshot;
++		if (snapshot === null || snapshot === undefined) {
+ 			await this.#closeLane();
+ 			throw new Error("Transcript has no initialized snapshot");
+ 		}
++		this.#restoreEditorHistory(snapshot);
+ 	}
+ 
+ 	async #closeLane(): Promise<void> {
+@@ -614,6 +676,163 @@ export class ExperimentalClientTui implements Component {
+ 		this.#statusContainer.clear();
+ 	}
+ 
++	#restoreEditorHistory(snapshot: LaneSnapshot): void {
++		const texts = sessionUserTexts(snapshot.transcript);
++		if (typeof this.#chatInput.resetHistory === "function") {
++			this.#chatInput.resetHistory(texts);
++			return;
++		}
++		for (const text of texts) this.#chatInput.addToHistory(text);
++	}
++
++	#resetPresentation(): void {
++		this.#setHeader(undefined);
++		this.#setFooter(undefined);
++		this.#setEditor(undefined);
++		this.#toolRendererRegistration = undefined;
++		this.#toolRenderers = undefined;
++		this.#chatView?.setRenderers(undefined);
++	}
++
++	#workspaceSessions(): readonly SessionSummary[] {
++		const sessions = this.#sessionDirectory?.state.value?.sessions ?? [];
++		const configuredCwd = process.env.TSPI_SESSION_CWD?.trim() || undefined;
++		const cwd = configuredCwd || process.cwd();
++		return sessions
++			.filter(
++				(session) =>
++					session.serverId === this.#selectedServerId &&
++					(session.cwd === cwd || (configuredCwd === undefined && session.cwd === undefined)),
++			)
++			.sort(
++				(left, right) =>
++					right.createdAt - left.createdAt ||
++					left.serverId.localeCompare(right.serverId) ||
++					left.sessionId.localeCompare(right.sessionId),
++			);
++	}
++
++	async #resumeSession(requestedId: string | undefined, _context: unknown): Promise<void> {
++		const candidates = this.#workspaceSessions().filter((session) => session.sessionId !== this.#sessionId);
++		let targetId = requestedId;
++		if (targetId !== undefined && targetId === this.#sessionId) {
++			this.#status = "Already on this session";
++			this.#rebuild();
++			return;
++		}
++		if (targetId === undefined) {
++			if (candidates.length === 0) throw new Error("No other writable sessions exist in this workspace");
++			const selected = await this.#select(
++				"Resume session:",
++				candidates.map((session) => ({
++					value: session.sessionId,
++					label: session.sessionId,
++					description: new Date(session.createdAt).toISOString(),
++				})),
++			);
++			if (selected === undefined) return;
++			targetId = selected;
++		}
++		const target = candidates.find((session) => session.sessionId === targetId);
++		if (target === undefined) throw new Error(`Session is not present in this workspace: ${targetId}`);
++		const operation = this.#sessionSwitchTail.catch(() => {}).then(() => this.#switchSession(target.sessionId));
++		this.#sessionSwitchTail = operation.catch(() => {});
++		await operation;
++	}
++
++	async #switchSession(targetId: string): Promise<void> {
++		const feature = this.#session;
++		const management = this.#sessionManagement;
++		const plugins = this.#presentationPlugins;
++		const oldId = this.#sessionId;
++		const oldData = this.#presentationData;
++		if (feature === undefined || management === undefined || plugins === undefined || oldId === undefined) {
++			throw new Error("Session navigation is not ready");
++		}
++		if (targetId === oldId) return;
++		await this.#recoveryTransition;
++		if (this.#closed) return;
++		const oldDraft = this.#chatInput.getText();
++		this.#switchingSession = true;
++		this.#busy = true;
++		this.#status = `Resuming ${targetId}…`;
++		this.#rebuild();
++		let attachmentSwitchStarted = false;
++		let resumeHookStarted = false;
++		let targetPreparationStarted = false;
++		let presentationReloadStarted = false;
++		const oldPackagePaths = this.#presentationPackagePaths ?? null;
++		try {
++			if (this.#resumeSessionHook !== undefined) {
++				resumeHookStarted = true;
++				await this.#resumeSessionHook(targetId);
++			}
++			targetPreparationStarted = true;
++			const targetData = await plugins.prepareSession({ sessionId: targetId, packagePaths: null }, BACKGROUND_CONTEXT);
++			await this.#closeLane();
++			attachmentSwitchStarted = true;
++			await management.attach(targetId, BACKGROUND_CONTEXT);
++			await feature.session.whenAttached(targetId, BACKGROUND_CONTEXT);
++			this.#sessionId = targetId;
++			if (this.#reloadPresentationPlugins === undefined) throw new Error("Presentation reload is not ready");
++			presentationReloadStarted = true;
++			this.#resetPresentation();
++			this.#presentationPackagePaths = null;
++			await this.#reloadPresentationPlugins(targetData);
++			await this.#openLane(feature);
++			this.#updateAutocomplete();
++			this.#status = "Resumed session";
++		} catch (error) {
++			const rollbackErrors: unknown[] = [error];
++			const rollback = async (operation: () => Promise<void>): Promise<void> => {
++				try {
++					await operation();
++				} catch (rollbackError) {
++					rollbackErrors.push(rollbackError);
++				}
++			};
++			await rollback(() => this.#closeLane());
++			if (this.#resumeSessionHook !== undefined && (resumeHookStarted || attachmentSwitchStarted)) {
++				await rollback(() => this.#resumeSessionHook!(oldId));
++			}
++			if (attachmentSwitchStarted || this.#sessionId === targetId) {
++				await rollback(async () => {
++					await management.attach(oldId, BACKGROUND_CONTEXT);
++					await feature.session.whenAttached(oldId, BACKGROUND_CONTEXT);
++				});
++			}
++			this.#sessionId = oldId;
++			let restoredData = oldData;
++			if (targetPreparationStarted) {
++				this.#presentationPackagePaths = oldPackagePaths;
++				await rollback(async () => {
++					restoredData = await plugins.prepareSession(
++						{ sessionId: oldId, packagePaths: oldPackagePaths },
++						BACKGROUND_CONTEXT,
++					);
++				});
++			}
++			if (restoredData !== undefined && (targetPreparationStarted || presentationReloadStarted || this.#presentationData !== restoredData)) {
++				await rollback(async () => {
++					if (this.#reloadPresentationPlugins === undefined) throw new Error("Presentation reload is not ready");
++					this.#resetPresentation();
++					await this.#reloadPresentationPlugins(restoredData!);
++				});
++			}
++			await rollback(async () => {
++				await this.#openLane(feature);
++				this.#chatInput.setText(oldDraft);
++			});
++			this.#status = `Resume failed: ${message(error)}`;
++			if (rollbackErrors.length > 1) throw new AggregateError(rollbackErrors, "Session resume and rollback failed");
++			throw error;
++		} finally {
++			this.#switchingSession = false;
++			this.#busy = false;
++			this.#rebuild();
++		}
++	}
++
+ 	async #runPrompt(messageText: string): Promise<void> {
+ 		const prompt = messageText.trim();
+ 		if (prompt.length === 0) return;
+@@ -662,8 +881,15 @@ export class ExperimentalClientTui implements Component {
+ 		const running = operation !== null && operation !== undefined;
+ 		this.#status = running ? "Queueing steering message…" : "Running turn…";
+ 		this.#rebuild();
+-		if (running) this.#reportQueue(await controller.steer({ message: prompt, images: null }, BACKGROUND_CONTEXT));
+-		else this.#reportOperation(await controller.prompt({ message: prompt, images: null }, BACKGROUND_CONTEXT));
++		if (running) {
++			const response = await controller.steer({ message: prompt, images: null }, BACKGROUND_CONTEXT);
++			this.#reportQueue(response);
++			if (response.accepted) this.#chatInput.addToHistory(prompt);
++		} else {
++			const response = await controller.prompt({ message: prompt, images: null }, BACKGROUND_CONTEXT);
++			this.#reportOperation(response);
++			if (response.accepted) this.#chatInput.addToHistory(prompt);
++		}
+ 	}
+ 
+ 	async #queueFollowUp(text: string): Promise<void> {
+@@ -672,7 +898,9 @@ export class ExperimentalClientTui implements Component {
+ 		try {
+ 			this.#status = "Queueing follow-up…";
+ 			this.#rebuild();
+-			this.#reportQueue(await controller.followUp({ message: text, images: null }, BACKGROUND_CONTEXT));
++			const response = await controller.followUp({ message: text, images: null }, BACKGROUND_CONTEXT);
++			this.#reportQueue(response);
++			if (response.accepted) this.#chatInput.addToHistory(text);
+ 		} catch (error) {
+ 			this.#status = `Error: ${message(error)}`;
+ 			this.#rebuild();
+@@ -822,6 +1050,7 @@ async function prepareClientSession(
+ 			server: selected.server,
+ 			summary: selected.summary,
+ 			presentationPlugins,
++			presentationPackagePaths: command.pluginPackages?.map((packagePath) => resolve(packagePath)) ?? null,
+ 		};
+ 	} finally {
+ 		await Promise.allSettled(opened.map(({ services }) => services.dispose(BACKGROUND_CONTEXT)));
+@@ -879,6 +1108,7 @@ export async function runClientTui(command: ClientCommand, options: RunClientTui
+ 				session: server.session,
+ 			})),
+ 			facetLoader: options.facetLoader,
++			resumeSession: options.resumeSession,
+ 			requestRender: () => tui.requestRender(),
+ 			finish,
+ 		});
+@@ -906,3 +1136,22 @@ function requireSingleServer<T>(features: readonly T[]): T {
+ function message(error: unknown): string {
+ 	return error instanceof Error ? error.message : String(error);
+ }
++
++function sessionUserTexts(entries: readonly Entry[]): readonly string[] {
++	const texts: string[] = [];
++	const add = (message: AgentMessage): void => {
++		if (message.role !== "user") return;
++		const text = typeof message.content === "string"
++			? message.content
++			: message.content
++				.filter((content) => content.type === "text")
++				.map((content) => content.text)
++				.join("");
++		if (text.trim().length > 0) texts.push(text);
++	};
++	for (const entry of entries) {
++		if (entry.type === "message") add(entry.message);
++		else if (entry.type === "compaction") for (const message of entry.retainedTail) add(message);
++	}
++	return texts;
++}
+diff --git a/packages/coding-agent/src/experimental/services/sessions.ts b/packages/coding-agent/src/experimental/services/sessions.ts
+index 4b44a62d1..def341557 100644
+--- a/packages/coding-agent/src/experimental/services/sessions.ts
++++ b/packages/coding-agent/src/experimental/services/sessions.ts
+@@ -40,6 +40,13 @@ export interface SessionManagement {
+ 
+ export const SessionManagement = defineService<SessionManagement>("pi.session-management");
+ 
++/** Process-local navigation requested by the experimental presentation. */
++export interface SessionNavigation {
++	resume(sessionId: string | undefined, context: Context): Promise<void>;
++}
++
++export const SessionNavigation = defineService<SessionNavigation>("pi.local.session-navigation", { local: true });
++
+ export interface WorkspaceSummary {
+ 	workspaceId: string;
+ 	name: string;
+diff --git a/packages/coding-agent/src/experimental/services/slash-commands-provider.ts b/packages/coding-agent/src/experimental/services/slash-commands-provider.ts
+index b3fced7af..75d7449cd 100644
+--- a/packages/coding-agent/src/experimental/services/slash-commands-provider.ts
++++ b/packages/coding-agent/src/experimental/services/slash-commands-provider.ts
+@@ -4,6 +4,7 @@ import { AgentController } from "./agent-controller.ts";
+ import { type ModelSummary, Models, type Models as ModelsService } from "./models.ts";
+ import { PresentationPlugins, SessionPlugins } from "./plugins.ts";
+ import { PresentationUI } from "./presentation-ui.ts";
++import { SessionNavigation } from "./sessions.ts";
+ import { type SlashCommandContribution, SlashCommands } from "./slash-commands.ts";
+ 
+ export const TspiSystemPrompt = defineService<{ inspect(context: Context): Promise<JsonValue> }>("tspi.system-prompt");
+@@ -97,11 +98,22 @@ export function createBuiltInSlashCommandsFacet(options: {
+ 			const ui = env.use(PresentationUI);
+ 			const presentationPlugins = env.use(PresentationPlugins);
+ 			const sessionPlugins = env.use(SessionPlugins);
++			const sessionNavigation = env.use(SessionNavigation);
+            const systemPrompt = process.env.TSPI_PACKAGE_ROOT ? env.use(TspiSystemPrompt) : undefined;
+ 			env.onActivate(() => {
+ 				env.own(commands.replace(modelCommand(models, ui)));
+ 				env.own(commands.replace(thinkingCommand(models, ui)));
+ 				env.own(commands.replace(compactCommand(controller, ui)));
++				env.own(commands.replace({
++					name: "resume",
++					description: "Resume a different session in this workspace",
++					argumentHint: "[<session-id>]",
++					async run(args, context) {
++						const sessionId = args.trim();
++						await sessionNavigation.resume(sessionId.length === 0 ? undefined : sessionId, context);
++						return undefined;
++					},
++				}));
+                if (systemPrompt !== undefined) {
+                    env.own(commands.replace({
+                        name: "sys_prompt",
+diff --git a/packages/tui/src/components/editor.ts b/packages/tui/src/components/editor.ts
+index 42b722f8c..aa73c1b6f 100644
+--- a/packages/tui/src/components/editor.ts
++++ b/packages/tui/src/components/editor.ts
+@@ -424,6 +424,14 @@ export class Editor implements Component, Focusable {
+ 		}
+ 	}
+ 
++	/** Replace prompt history without changing the current editor draft. */
++	resetHistory(texts: readonly string[]): void {
++		this.history = [];
++		this.historyIndex = -1;
++		this.historyDraft = null;
++		for (const text of texts) this.addToHistory(text);
++	}
++
+ 	private isEditorEmpty(): boolean {
+ 		return this.state.lines.length === 1 && this.state.lines[0] === "";
+ 	}
+diff --git a/packages/tui/src/editor-component.ts b/packages/tui/src/editor-component.ts
+index 595645033..edfb6a161 100644
+--- a/packages/tui/src/editor-component.ts
++++ b/packages/tui/src/editor-component.ts
+@@ -39,6 +39,9 @@ export interface EditorComponent extends Component {
+ 	/** Add text to history for up/down navigation */
+ 	addToHistory?(text: string): void;
+ 
++	/** Replace prompt history, preserving the editor's current text. */
++	resetHistory?(texts: readonly string[]): void;
++
+ 	// =========================================================================
+ 	// Advanced text manipulation (optional)
+ 	// =========================================================================
+

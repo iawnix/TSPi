@@ -44,10 +44,19 @@ system service 去掉 `--user`。Host 私有 socket 位于配置的 runtime 目�
 
 ## 会话和操作
 
-`/new`、`/resume`、`/fork`、`/model`、`/settings` 以及 extension 命令仍然是 Pi
-原生命令。`-c` 选择当前 workspace 最近的可写 format-4 session，`--session-id <id>` 选择
-指定 session。Phone/Web 的 prompt 通过 Host `input/send` 进入同一个 lane，并使用持久
-回执和稳定的 `client_message_id`。
+远程 `ExperimentalClientTui` 提供 `/resume`、`/model`、`/thinking`、`/compact`、
+`/reload` 以及已安装的 TSPi extension 命令。`/resume` 只能切换当前 workspace 中的
+format-4 session，不会跨 workspace。普通 Pi 的 `/new` 和 `/fork` 在这个远程客户端中
+不可用。
+
+启动时，`-c` 选择当前 workspace 最近的可写 format-4 session，`--session-id <id>` 选择
+指定 session。顶层 `-r`/`--resume` 会被明确拒绝，因为 Host-mediated client 必须先取得
+确定的连接 descriptor 才能启动 TUI；请先进入终端，再执行 `/resume`。Phone/Web 的
+prompt 通过 Host `input/send` 进入同一个 lane，并使用持久回执和稳定的
+`client_message_id`。
+
+输入历史会从当前选中的 session 恢复，并且按 session 隔离；切换会话后可用编辑框的上下
+方向键查找该会话已经接受的 prompt。
 
 分离、打断和退出不是同一件事：终端 detach 只是客户端断开；`Esc` 或 Host 的
 `turn/interrupt` 请求打断当前 turn；`/quit` 才结束 Pi。连接在提交后丢失时 Host 会

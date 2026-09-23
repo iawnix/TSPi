@@ -53,11 +53,21 @@ socket is under the configured runtime directory and the bridge token is under
 
 ## Sessions and controls
 
-Pi's `/new`, `/resume`, `/fork`, `/model`, `/settings`, and extension commands
-remain Pi commands. `-c` selects the latest writable format-4 session in this
-workspace; `--session-id <id>` selects an exact session. Phone and Web prompts
-are submitted through Host `input/send` with a durable request receipt and a
-stable `client_message_id`.
+The remote `ExperimentalClientTui` provides `/resume`, `/model`, `/thinking`,
+`/compact`, `/reload`, and the installed TSPi extension commands. `/resume`
+switches to another format-4 session in the current workspace; it does not
+cross workspace boundaries. Ordinary Pi's `/new` and `/fork` commands are not
+available in this remote client.
+
+At launch, `-c` selects the latest writable format-4 session and
+`--session-id <id>` selects an exact session. Startup `-r`/`--resume` is
+rejected because the Host-mediated client must obtain an exact connection
+descriptor before starting the TUI; open the terminal and use `/resume`
+instead. Phone and Web prompts are submitted through Host `input/send` with a
+durable request receipt and a stable `client_message_id`.
+
+Prompt history is restored from the selected session and remains session-scoped;
+use the editor's Up/Down keys to revisit accepted prompts after switching.
 
 Disconnect, interrupt, and quit are different states. A detached terminal is
 only a disconnected client. `Esc` or Host `turn/interrupt` requests an active

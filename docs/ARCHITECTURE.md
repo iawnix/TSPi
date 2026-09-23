@@ -166,11 +166,12 @@ are stored in `.pi/app-server-host/sessions/<encoded-cwd>/`; workspace
 `TSPi --workspace <name>` bootstraps the selected workspace, asks Host for
 `session/list` plus `session/create`/`session/resume`, and then execs Pi's
 official `ExperimentalClientTui` against the returned local connection
-descriptor. `/new`, `/resume`, `/fork`, slash commands, completion, rendering,
-and input handling remain Pi-owned. Phone uses Host RPC and Monitor submits a
-durable `next_run` entry to the same lane. Disconnecting a client does not stop
-the worker or its current turn. `TSPI_HOST_BACKEND=ordinary` is an explicit
-migration/debug mode only; it is not a Harness fallback.
+descriptor. The remote TUI owns completion, rendering, input handling, and its
+supported slash commands, including workspace-scoped `/resume`; ordinary Pi's
+`/new` and `/fork` are not exposed by this client. Phone uses Host RPC and
+Monitor submits a durable `next_run` entry to the same lane. Disconnecting a
+client does not stop the worker or its current turn. `TSPI_HOST_BACKEND=ordinary`
+is an explicit migration/debug mode only; it is not a Harness fallback.
 
 The first client launch initializes a missing workspace through the same
 validated bootstrap. The Host never creates an unnamed workspace; a client must

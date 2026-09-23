@@ -106,7 +106,10 @@ export function createChangeTool() {
         context?.abortSignal,
       );
       return {
-        content: [{ type: "text", text: `${JSON.stringify(result, null, 2)}\n\n${JSON.stringify(summary, null, 2)}` }],
+        content: [
+          { type: "text", text: JSON.stringify(result, null, 2) },
+          { type: "text", text: JSON.stringify(summary, null, 2) },
+        ],
         details: { result, summary },
       };
     },

@@ -60,6 +60,7 @@
     "config/pi-harness-operation-request.patch",
     "config/pi-harness-operation-forward.patch",
     "config/pi-transcript-json.patch",
+    "config/pi-session-navigation.patch",
     "contracts/ts-render/curve-data.schema.json",
     "contracts/ts-web/README.md",
     "contracts/ts-web/component-manifest.schema.json",

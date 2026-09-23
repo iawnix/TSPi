@@ -27,6 +27,7 @@ HARNESS_ADMISSION_QUEUE_PATCH_PATH = ROOT / "config" / "pi-harness-admission-que
 HARNESS_OPERATION_REQUEST_PATCH_PATH = ROOT / "config" / "pi-harness-operation-request.patch"
 HARNESS_OPERATION_FORWARD_PATCH_PATH = ROOT / "config" / "pi-harness-operation-forward.patch"
 TRANSCRIPT_JSON_PATCH_PATH = ROOT / "config" / "pi-transcript-json.patch"
+SESSION_NAVIGATION_PATCH_PATH = ROOT / "config" / "pi-session-navigation.patch"
 
 
 class PiSourceError(RuntimeError):
@@ -126,6 +127,19 @@ def verify(source: Path) -> str:
         or "const watch = await lane.watch(context)" not in provider
     ):
         raise PiSourceError(f"Pi source is missing the non-blocking TSPi Harness admission patch: {source}")
+    native_client_path = (
+        source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui.ts"
+    )
+    slash_commands = slash_commands_path.read_text(encoding="utf-8")
+    native_client = native_client_path.read_text(encoding="utf-8")
+    tui_editor_path = source / "packages" / "tui" / "src" / "components" / "editor.ts"
+    if not _has_session_navigation_patch(
+        sessions=sessions,
+        slash_commands=slash_commands,
+        native_client=native_client,
+        editor=tui_editor_path.read_text(encoding="utf-8"),
+    ):
+        raise PiSourceError(f"Pi source is missing the TSPi session navigation patch: {source}")
     return commit
 
 
@@ -286,6 +300,64 @@ def apply_transcript_json_patch(source: Path) -> None:
         raise PiSourceError(f"failed to apply Pi Transcript JSON patch: {exc}") from exc
 
 
+def apply_session_navigation_patch(source: Path) -> None:
+    """Add native /resume switching and per-session prompt history."""
+    sessions_path = (
+        source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "sessions.ts"
+    )
+    editor_path = source / "packages" / "tui" / "src" / "components" / "editor.ts"
+    client_path = source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui.ts"
+    slash_path = (
+        source
+        / "packages"
+        / "coding-agent"
+        / "src"
+        / "experimental"
+        / "services"
+        / "slash-commands-provider.ts"
+    )
+    sessions = sessions_path.read_text(encoding="utf-8")
+    client = client_path.read_text(encoding="utf-8")
+    slash_commands = slash_path.read_text(encoding="utf-8")
+    editor = editor_path.read_text(encoding="utf-8")
+    if _has_session_navigation_patch(
+        sessions=sessions,
+        slash_commands=slash_commands,
+        native_client=client,
+        editor=editor,
+    ):
+        return
+    try:
+        subprocess.run(
+            ["git", "-C", str(source), "apply", str(SESSION_NAVIGATION_PATCH_PATH)],
+            check=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PiSourceError(f"failed to apply TSPi session navigation patch: {exc}") from exc
+
+
+def _has_session_navigation_patch(
+    *,
+    sessions: str,
+    slash_commands: str,
+    native_client: str,
+    editor: str,
+) -> bool:
+    """Recognize the complete TSPi patch without matching an upstream /resume."""
+    return all(
+        marker in source
+        for source, marker in (
+            (sessions, 'defineService<SessionNavigation>("pi.local.session-navigation", { local: true })'),
+            (slash_commands, "await sessionNavigation.resume(sessionId.length === 0 ? undefined : sessionId, context)"),
+            (native_client, "#sessionSwitchTail: Promise<void> = Promise.resolve()"),
+            (native_client, "resume: (sessionId, context) => this.#resumeSession(sessionId, context)"),
+            (native_client, "function sessionUserTexts(entries: readonly Entry[])"),
+            (editor, "resetHistory(texts: readonly string[]): void"),
+        )
+    )
+
+
 def apply_harness_admission_patch(source: Path) -> None:
     """Expose durable accept-then-drive methods to Host clients.
 
@@ -366,6 +438,7 @@ def clone(destination: Path) -> Path:
     apply_tool_renderers_patch(destination)
     apply_transcript_json_patch(destination)
     apply_harness_admission_patch(destination)
+    apply_session_navigation_patch(destination)
     verify(destination)
     return destination
 
@@ -386,6 +459,7 @@ def install(install_root: Path) -> Path:
         apply_tool_renderers_patch(destination)
         apply_transcript_json_patch(destination)
         apply_harness_admission_patch(destination)
+        apply_session_navigation_patch(destination)
         verify(destination)
         if not (destination / "node_modules").is_dir():
             _install_dependencies(destination)

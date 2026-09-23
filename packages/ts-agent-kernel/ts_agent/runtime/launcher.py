@@ -152,6 +152,8 @@ owned AgentHarness server. Session history is isolated under the installation
 Host state; Phone and monitor requests address the same Pi lane. Set
 TSPI_HOST_BACKEND=ordinary only for the legacy ordinary-Pi bridge/tmux mode.
 The managed Host service is ts-app-server-tspi.service.
+To select another Host session, open the terminal and run /resume. Startup
+-r/--resume is not supported by the Host-mediated client.
 """
 
 
@@ -226,6 +228,12 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
             session_id = value.removeprefix("--session-id=")
         elif value in {"-c", "--continue"}:
             continue_latest = True
+        elif value in {"-r", "--resume"}:
+            raise TSPiHostError(
+                "startup -r/--resume is not supported by the Host-mediated client; "
+                "open the workspace and use /resume inside the terminal",
+                exit_code=2,
+            )
         elif value in {"-h", "--help"}:
             show_help = True
         else:

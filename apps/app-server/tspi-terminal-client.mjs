@@ -116,6 +116,12 @@ function splitNativeProviderArgs(values) {
 }
 
 async function main() {
+  if (options.resume === true || piArgs.some((value) => value === "--resume" || value === "-r")) {
+    throw new Error(
+      "startup -r/--resume is not supported by the Host-mediated client; "
+      + "open the workspace and use /resume inside the terminal",
+    );
+  }
   const socketPath = requireOption("socket_path");
   const workspaceId = requireOption("workspace_id");
   const workspaceRoot = validateWorkspaceRoot(requireOption("workspace_root"));
@@ -172,7 +178,15 @@ async function main() {
   process.env.PI_SERVER_DIR = descriptor.server_directory || dirname(descriptor.socket_path);
   process.env.TSPI_PACKAGE_ROOT = packageRoot;
   process.env.TSPI_NATIVE_WRITES = "1";
-  const child = spawn(process.execPath, childArgs, { cwd: workspaceRoot, env: process.env, stdio: "inherit" });
+  const child = spawn(process.execPath, childArgs, {
+    cwd: workspaceRoot,
+    env: {
+      ...process.env,
+      TSPI_HOST_SOCKET: socketPath,
+      TSPI_WORKSPACE_ID: workspaceId,
+    },
+    stdio: "inherit",
+  });
   child.once("error", (error) => {
     process.stderr.write(`TSPi: ${error.message}\n`);
     process.exitCode = 1;

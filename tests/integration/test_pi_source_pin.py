@@ -46,6 +46,10 @@ def test_pi_source_pin_is_explicit_and_valid() -> None:
     assert "function toStrictJson" in transcript_patch
     assert "reduceLaneSnapshot(snapshot, forwarded)" in transcript_patch
     assert "details: undefined" in transcript_patch
+    navigation_patch = (ROOT / "config" / "pi-session-navigation.patch").read_text(encoding="utf-8")
+    assert "SessionNavigation" in navigation_patch
+    assert "sessionSwitchTail" in navigation_patch
+    assert "resetHistory(texts" in navigation_patch
 
 
 def test_prepare_pi_source_verifies_a_matching_checkout() -> None:
@@ -188,6 +192,40 @@ def test_transcript_json_patch_is_idempotent_for_an_upgraded_checkout(tmp_path, 
     monkeypatch.setattr(prepare_pi_source.subprocess, "run", lambda command, **_kwargs: calls.append(command))
 
     prepare_pi_source.apply_transcript_json_patch(source)
+
+    assert calls == []
+
+
+def test_session_navigation_patch_is_idempotent_for_an_upgraded_checkout(tmp_path, monkeypatch):
+    from scripts import prepare_pi_source
+
+    source = tmp_path / "pi"
+    sessions = source / "packages/coding-agent/src/experimental/services"
+    editor = source / "packages/tui/src/components"
+    client = source / "packages/coding-agent/src/experimental"
+    slash = client / "services"
+    sessions.mkdir(parents=True)
+    editor.mkdir(parents=True)
+    slash.mkdir(parents=True, exist_ok=True)
+    (sessions / "sessions.ts").write_text(
+        'defineService<SessionNavigation>("pi.local.session-navigation", { local: true })\n',
+        encoding="utf-8",
+    )
+    (editor / "editor.ts").write_text("resetHistory(texts: readonly string[]): void\n", encoding="utf-8")
+    (client / "client-tui.ts").write_text(
+        "#sessionSwitchTail: Promise<void> = Promise.resolve()\n"
+        "resume: (sessionId, context) => this.#resumeSession(sessionId, context)\n"
+        "function sessionUserTexts(entries: readonly Entry[])\n",
+        encoding="utf-8",
+    )
+    (slash / "slash-commands-provider.ts").write_text(
+        "await sessionNavigation.resume(sessionId.length === 0 ? undefined : sessionId, context)\n",
+        encoding="utf-8",
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(prepare_pi_source.subprocess, "run", lambda command, **_kwargs: calls.append(command))
+
+    prepare_pi_source.apply_session_navigation_patch(source)
 
     assert calls == []
 

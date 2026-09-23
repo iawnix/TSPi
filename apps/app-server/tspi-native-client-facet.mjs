@@ -22,10 +22,22 @@ const executeFile = promisify(execFile);
 export async function createTspiNativeClientFacet({ sourceRoot, packageRoot = process.env.TSPI_PACKAGE_ROOT } = {}) {
   if (typeof sourceRoot !== "string" || sourceRoot.length === 0) throw new TypeError("sourceRoot is required");
   const fromSource = (relative) => import(pathToFileURL(join(sourceRoot, relative)).href);
-  const [{ defineFacet }, { SlashCommands }, { PresentationUI }] = await Promise.all([
+  const [
+    { defineFacet },
+    { SlashCommands },
+    { PresentationLayout },
+    { PresentationUI },
+    { TspiSystemPrompt },
+    { RunHistoryBrowser, runRecords },
+    { WrappedDocumentViewer },
+  ] = await Promise.all([
     fromSource("packages/chord/src/index.ts"),
     fromSource("packages/coding-agent/src/experimental/services/slash-commands.ts"),
+    fromSource("packages/coding-agent/src/experimental/services/presentation-layout.ts"),
     fromSource("packages/coding-agent/src/experimental/services/presentation-ui.ts"),
+    fromSource("packages/coding-agent/src/experimental/services/slash-commands-provider.ts"),
+    import("../../extensions/pi/tui-package/src/runs.ts"),
+    import("../../extensions/pi/tui-package/src/document-viewer.ts"),
   ]);
   const root = typeof packageRoot === "string" && packageRoot.length > 0 ? packageRoot : process.cwd();
   const python = process.env.TSPI_WORKSPACE_PYTHON || process.env.TS_AGENT_PYTHON || "python3";
@@ -36,16 +48,20 @@ export async function createTspiNativeClientFacet({ sourceRoot, packageRoot = pr
     setup(env) {
       const commands = env.use(SlashCommands);
       const ui = env.use(PresentationUI);
+      const layout = env.use(PresentationLayout);
+      const systemPrompt = env.use(TspiSystemPrompt);
       env.onActivate(() => {
-        for (const name of ["research", "compute", "runs", "debug"]) {
-          env.own(commands.replace(commandFor(name, commands, ui, python, apiScript)));
+        for (const name of ["research", "compute", "debug"]) {
+          env.own(commands.replace(commandFor(name, ui, python, apiScript)));
         }
+        env.own(commands.replace(runsCommand(layout, ui, runRecords, RunHistoryBrowser, python, apiScript)));
+        env.own(commands.replace(systemPromptCommand(layout, ui, systemPrompt, WrappedDocumentViewer)));
       });
     },
   });
 }
 
-function commandFor(name, _commands, ui, python, apiScript) {
+function commandFor(name, ui, python, apiScript) {
   const definition = SLASH_COMMAND_DEFINITIONS[name];
   return {
     name,
@@ -81,6 +97,72 @@ function commandFor(name, _commands, ui, python, apiScript) {
           state: "failed",
           error: { code: error?.name === "CommandUsageError" ? "usage" : "command_failed", message },
         }, null, 2), context);
+      }
+      return undefined;
+    },
+  };
+}
+
+function runsCommand(layout, ui, runRecords, RunHistoryBrowser, python, apiScript) {
+  return {
+    name: "runs",
+    description: "Browse active and recorded Compute and Review runs.",
+    async run(args, context) {
+      if (args.trim().length > 0) throw new Error("/runs takes no arguments");
+      try {
+        const report = await executeCanonicalCommand(
+          { command: "compute.runs", params: Object.freeze({}) },
+          python,
+          apiScript,
+          layout.getContext().cwd,
+          context,
+        );
+        const records = runRecords(report);
+        if (records.length === 0) {
+          ui.showStatus("No TS subagent runs are available in this workspace", context);
+          return undefined;
+        }
+        ui.showStatus("", context);
+        const tuiContext = layout.getContext();
+        let handle;
+        const browser = new RunHistoryBrowser(
+          records,
+          tuiContext.tui,
+          tuiContext.theme,
+          tuiContext.keybindings,
+          () => handle?.hide(),
+        );
+        handle = tuiContext.tui.showOverlay(browser, { width: "94%", maxHeight: "88%", margin: 1 });
+      } catch (error) {
+        ui.showStatus(`Unable to read TS runs: ${error instanceof Error ? error.message : String(error)}`, context);
+      }
+      return undefined;
+    },
+  };
+}
+
+function systemPromptCommand(layout, ui, systemPrompt, WrappedDocumentViewer) {
+  return {
+    name: "sys_prompt",
+    description: "Show the effective system prompt and provenance",
+    async run(args, context) {
+      if (args.trim().length > 0) throw new Error("/sys_prompt takes no arguments");
+      try {
+        const manifest = await systemPrompt.inspect(context);
+        const tuiContext = layout.getContext();
+        ui.showStatus("", context);
+        let handle;
+        const viewer = new WrappedDocumentViewer(
+          "Effective system prompt",
+          JSON.stringify(manifest, null, 2),
+          tuiContext.tui,
+          tuiContext.theme,
+          tuiContext.keybindings,
+          () => handle?.hide(),
+        );
+        handle = tuiContext.tui.showOverlay(viewer, { width: "94%", maxHeight: "88%", margin: 1 });
+      } catch (error) {
+        ui.showStatus(`Unable to inspect system prompt: ${error instanceof Error ? error.message : String(error)}`, context);
       }
       return undefined;
     },
