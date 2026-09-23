@@ -1,12 +1,225 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 
 const sourceRoot = process.env.TSPI_PI_SOURCE;
+const testRoot = process.env.TSPI_TEST_ROOT || tmpdir();
+const nativeRuntimeRoot = process.env.TSPI_TEST_RUNTIME_ROOT;
+const nativeRuntimeDirectories = new Map();
+
+function nativeServerDirectory(root) {
+  if (!nativeRuntimeRoot) return join(root, "server");
+  let directory = nativeRuntimeDirectories.get(root);
+  if (!directory) {
+    directory = join(nativeRuntimeRoot, `n${process.pid.toString(36)}-${nativeRuntimeDirectories.size}`);
+    nativeRuntimeDirectories.set(root, directory);
+  }
+  return directory;
+}
+
+async function cleanupNativeRuntime(root) {
+  const directory = nativeRuntimeDirectories.get(root);
+  if (!directory) return;
+  nativeRuntimeDirectories.delete(root);
+  await rm(directory, { recursive: true, force: true });
+}
+
+async function waitForExit(fixture, label, timeoutMs = 10_000) {
+  let timeout;
+  try {
+    return await Promise.race([
+      fixture.exit,
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`${label}: ${fixture.stderr()}`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function startOrdinaryHost(root) {
+  const runtime = join(root, "runtime");
+  const workspace = join(root, "workspace");
+  const state = join(root, "state");
+  const serverId = "11111111-1111-4111-8111-111111111111";
+  const socket = join(runtime, `${serverId}.sock`);
+  await Promise.all([mkdir(runtime), mkdir(workspace), mkdir(state)]);
+  const child = spawn(process.execPath, [
+    "apps/app-server/pi-app-server.mjs", "server",
+    "--workspace", workspace,
+    "--directory", runtime,
+    "--server-id", serverId,
+    "--state-root", state,
+  ], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      TSPI_HOST_BACKEND: "ordinary",
+      TSPI_INSTALL_ROOT: root,
+      TSPI_MONITOR_DISABLED: "1",
+      TSPI_PACKAGE_ROOT: process.cwd(),
+      TSPI_WORKSPACE_ROOT: workspace,
+    },
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const exit = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => resolve({ code, signal }));
+  });
+  const fixture = { child, exit, runtime, socket, stderr: () => stderr };
+  try {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      try {
+        await access(socket);
+        return fixture;
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error(`Host exited before creating its socket: ${stderr}`);
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, 10));
+    }
+    throw new Error(`Host did not create its socket: ${stderr}`);
+  } catch (error) {
+    await stopTestHost(fixture);
+    throw error;
+  }
+}
+
+async function stopTestHost(fixture) {
+  if (fixture?.child.exitCode === null && fixture.child.signalCode === null) {
+    fixture.child.kill("SIGKILL");
+    await fixture.exit.catch(() => {});
+  }
+}
+
+test("Host removes its socket and exits cleanly on SIGTERM", async () => {
+  const root = await mkdtemp(join(testRoot, "host-shutdown-"));
+  let fixture;
+  try {
+    fixture = await startOrdinaryHost(root);
+    fixture.child.kill("SIGTERM");
+    assert.deepEqual(await waitForExit(fixture, "Host did not stop after SIGTERM"), { code: 0, signal: null });
+    await assert.rejects(access(fixture.socket), { code: "ENOENT" });
+    assert.equal(fixture.stderr(), "");
+  } finally {
+    await stopTestHost(fixture);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Host reports a shutdown cleanup failure without an unhandled rejection", async () => {
+  const root = await mkdtemp(join(testRoot, "host-shutdown-failure-"));
+  let fixture;
+  try {
+    fixture = await startOrdinaryHost(root);
+    const displacedRuntime = `${fixture.runtime}.displaced`;
+    await rename(fixture.runtime, displacedRuntime);
+    await writeFile(fixture.runtime, "not a directory\n");
+    fixture.child.kill("SIGTERM");
+    assert.deepEqual(await waitForExit(fixture, "Host did not stop after cleanup failure"), { code: 1, signal: null });
+    assert.match(fixture.stderr(), /TSPi Host shutdown failed after SIGTERM:.*ENOTDIR/s);
+    assert.doesNotMatch(fixture.stderr(), /unhandled.*rejection/i);
+    await access(join(displacedRuntime, basename(fixture.socket)));
+  } finally {
+    await stopTestHost(fixture);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Host handles SIGTERM while the managed Pi backend is starting", { skip: !sourceRoot }, async () => {
+  // Pi derives several Unix socket names below this root; keep it short enough
+  // for the platform AF_UNIX path limit.
+  const root = await mkdtemp(join(testRoot, "hs-"));
+  const runtime = nativeServerDirectory(root);
+  const workspace = join(root, "workspace");
+  const state = join(root, "state");
+  const agent = join(root, "agent");
+  const serverId = "22222222-2222-4222-8222-222222222222";
+  const socket = join(runtime, `${serverId}.sock`);
+  await Promise.all([mkdir(runtime), mkdir(workspace), mkdir(state), mkdir(agent)]);
+  const child = spawn(process.execPath, [
+    "apps/app-server/pi-app-server.mjs", "server",
+    "--source-root", sourceRoot,
+    "--workspace", workspace,
+    "--directory", runtime,
+    "--server-id", serverId,
+    "--state-root", state,
+  ], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PI_CODING_AGENT_DIR: agent,
+      TSPI_HOST_BACKEND: "harness",
+      TSPI_INSTALL_ROOT: root,
+      TSPI_MONITOR_DISABLED: "1",
+      TSPI_PACKAGE_ROOT: process.cwd(),
+      TSPI_PI_SOURCE: sourceRoot,
+      TSPI_WORKSPACE_ROOT: workspace,
+    },
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const exit = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => resolve({ code, signal }));
+  });
+  const fixture = { child, exit, stderr: () => stderr };
+  try {
+    const deadline = Date.now() + 10_000;
+    let observedStartup = false;
+    while (Date.now() < deadline) {
+      try {
+        await access(join(runtime, "pi"));
+        try {
+          await access(socket);
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+          observedStartup = true;
+          break;
+        }
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error(`Host exited during startup: ${stderr}`);
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, 1));
+    }
+    assert.equal(observedStartup, true, "did not observe the managed backend startup window");
+    child.kill("SIGTERM");
+    const result = await waitForExit(fixture, "Host did not stop after startup signal", 30_000);
+    assert.deepEqual(result, { code: 0, signal: null }, stderr);
+    const cleanupDeadline = Date.now() + 5_000;
+    let residualSockets = [];
+    do {
+      residualSockets = (await readdir(runtime, { recursive: true })).filter((name) => name.endsWith(".sock"));
+      if (residualSockets.length === 0) break;
+      await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+    } while (Date.now() < cleanupDeadline);
+    assert.deepEqual(residualSockets, []);
+    assert.equal(stderr, "");
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await exit.catch(() => {});
+    }
+    await cleanupNativeRuntime(root);
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("Host wrapper routes client mode through Pi's native client without injecting a presentation facet", async () => {
   const wrapper = await readFile("apps/app-server/pi-experimental-app-server.mjs", "utf8");
@@ -38,9 +251,11 @@ test("native client binds the interactive process to the workspace cwd", { skip:
 });
 
 async function startNativeServer(root, { workspaceRoot, python } = {}) {
+  const serverDirectory = nativeServerDirectory(root);
+  await mkdir(serverDirectory, { recursive: true });
   const child = spawn(process.execPath, [
     "apps/app-server/pi-experimental-app-server.mjs", "server", "--source-root", sourceRoot,
-    "--directory", join(root, "server"), "--workspace", root, "--session-dir", join(root, "sessions"),
+    "--directory", serverDirectory, "--workspace", root, "--session-dir", join(root, "sessions"),
   ], {
     cwd: process.cwd(), env: {
       ...process.env,
@@ -58,25 +273,30 @@ async function startNativeServer(root, { workspaceRoot, python } = {}) {
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => { output += chunk; });
   child.stderr.on("data", (chunk) => { errors += chunk; });
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`native server did not start: ${output}${errors}`)), 15_000);
-    child.stdout.on("data", () => {
-      if (/^Server: [0-9a-f-]+\nSocket: .+\.sock/m.test(output)) {
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`native server did not start: ${output}${errors}`)), 15_000);
+      child.stdout.on("data", () => {
+        if (/^Server: [0-9a-f-]+\nSocket: .+\.sock/m.test(output)) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+      child.once("error", (error) => {
         clearTimeout(timer);
-        resolve();
-      }
+        reject(error);
+      });
+      child.once("exit", (code) => {
+        if (code !== null && code !== 0) {
+          clearTimeout(timer);
+          reject(new Error(`native server exited ${code}: ${output}${errors}`));
+        }
+      });
     });
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.once("exit", (code) => {
-      if (code !== null && code !== 0) {
-        clearTimeout(timer);
-        reject(new Error(`native server exited ${code}: ${output}${errors}`));
-      }
-    });
-  });
+  } catch (error) {
+    await stopNativeServer(child);
+    throw error;
+  }
   return {
     child,
     serverId: output.match(/^Server: ([0-9a-f-]+)$/m)?.[1],
@@ -86,12 +306,16 @@ async function startNativeServer(root, { workspaceRoot, python } = {}) {
 
 async function stopNativeServer(child) {
   if (child.exitCode !== null || child.signalCode !== null) return;
+  const exit = new Promise((resolve) => child.once("exit", resolve));
   child.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolve) => child.once("exit", resolve)),
-    new Promise((resolve) => setTimeout(resolve, 2_000)),
-  ]);
-  if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  let timeout;
+  const stopped = await Promise.race([
+    exit.then(() => true),
+    new Promise((resolve) => { timeout = setTimeout(() => resolve(false), 2_000); }),
+  ]).finally(() => clearTimeout(timeout));
+  if (stopped || child.exitCode !== null || child.signalCode !== null) return;
+  child.kill("SIGKILL");
+  await exit;
 }
 
 async function runNativeClient(root, ...arguments_) {
@@ -193,11 +417,13 @@ test("native Pi app server rejects mode-incompatible arguments", { skip: !source
 
 test("native Pi app server starts from the pinned source entrypoint", { skip: !sourceRoot }, async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-server-"));
+  const serverDirectory = nativeServerDirectory(root);
+  await mkdir(serverDirectory, { recursive: true });
   await mkdir(join(root, "agent"), { recursive: true });
   await writeFile(join(root, "agent", "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test-key" } }), { mode: 0o600 });
   const child = spawn(process.execPath, [
     "apps/app-server/pi-experimental-app-server.mjs", "server", "--source-root", sourceRoot,
-    "--directory", join(root, "server"), "--workspace", root, "--session-dir", join(root, "sessions"),
+    "--directory", serverDirectory, "--workspace", root, "--session-dir", join(root, "sessions"),
   ], {
     cwd: process.cwd(), env: { ...process.env, PI_EXPERIMENTAL: "1", PI_OFFLINE: "1", PI_CODING_AGENT_DIR: join(root, "agent") },
     stdio: ["ignore", "pipe", "pipe"],
@@ -207,6 +433,7 @@ test("native Pi app server starts from the pinned source entrypoint", { skip: !s
   let serverClient;
   let services;
   let backgroundContext;
+  let step = "wait for server";
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => { output += chunk; });
@@ -222,6 +449,7 @@ test("native Pi app server starts from the pinned source entrypoint", { skip: !s
     });
     const socket = output.match(/^Socket: (.+)$/m)?.[1];
     assert.ok(socket);
+    step = "load client services";
     const fromSource = (relative) => import(pathToFileURL(join(sourceRoot, relative)).href);
     ({ BACKGROUND_CONTEXT: backgroundContext } = await fromSource("packages/chord/src/context/index.ts"));
     const { Client } = await fromSource("packages/client/src/index.ts");
@@ -237,8 +465,10 @@ test("native Pi app server starts from the pinned source entrypoint", { skip: !s
       serverId,
       transportFactory: createUnixTransportFactory({ path: socket }),
     });
+    step = "bind client services";
     services = createServerServiceBinding(serverClient, { services: [SessionManagement] });
     await services.ready(backgroundContext);
+    step = "create session";
     const session = await services.use(SessionManagement).create({ id: "cli-attach" }, backgroundContext);
     const sessionFiles = (await readdir(join(root, "sessions"), { recursive: true }))
       .filter((path) => path.endsWith(".jsonl"));
@@ -246,13 +476,13 @@ test("native Pi app server starts from the pinned source entrypoint", { skip: !s
     const sessionPath = join(root, "sessions", sessionFiles[0]);
     const legacyPresentationPackage = resolve("extensions/pi/tui-package");
     await writeSessionPluginPackageProfile(
-      join(root, "server"),
+      serverDirectory,
       serverId,
       sessionPath,
       [legacyPresentationPackage],
     );
     assert.deepEqual(
-      await readSessionPluginPackageProfile(join(root, "server"), serverId, sessionPath),
+      await readSessionPluginPackageProfile(serverDirectory, serverId, sessionPath),
       [legacyPresentationPackage],
     );
     const client = await new Promise((resolve, reject) => {
@@ -275,18 +505,16 @@ test("native Pi app server starts from the pinned source entrypoint", { skip: !s
     });
     assert.match(client.stdout, new RegExp(`^[0-9a-f-]+\\t${session.sessionId}\\tattached\\n$`));
     assert.deepEqual(
-      await readSessionPluginPackageProfile(join(root, "server"), serverId, sessionPath),
+      await readSessionPluginPackageProfile(serverDirectory, serverId, sessionPath),
       [],
     );
+  } catch (error) {
+    throw new Error(`${step}: ${error instanceof Error ? error.message : String(error)}\nServer output:\n${output}${errors}`, { cause: error });
   } finally {
     await services?.dispose(backgroundContext).catch(() => {});
     await serverClient?.dispose().catch(() => {});
-    child.kill("SIGTERM");
-    await Promise.race([
-      new Promise((resolve) => child.once("exit", resolve)),
-      new Promise((resolve) => setTimeout(resolve, 2_000)),
-    ]);
-    if (child.exitCode === null) child.kill("SIGKILL");
+    await stopNativeServer(child);
+    await cleanupNativeRuntime(root);
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -336,6 +564,7 @@ test("native Pi app server restores and reattaches a persisted session after res
     await client?.dispose().catch(() => {});
     if (first) await stopNativeServer(first.child);
     if (second) await stopNativeServer(second.child);
+    await cleanupNativeRuntime(root);
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -377,6 +606,7 @@ test("native session-control gateway attaches the existing Host session", { skip
     await services?.dispose(backgroundContext).catch(() => {});
     await serverClient?.dispose().catch(() => {});
     await stopNativeServer(server.child);
+    await cleanupNativeRuntime(root);
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -505,6 +735,7 @@ for (const directory of ["nodes", "operations", "scratch", "inputs"]) mkdirSync(
     await services?.dispose(backgroundContext).catch(() => {});
     await serverClient?.dispose().catch(() => {});
     await stopNativeServer(server.child);
+    await cleanupNativeRuntime(root);
     await rm(root, { recursive: true, force: true });
   }
 });

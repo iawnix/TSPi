@@ -102,6 +102,18 @@ async function until(check, timeout = 3_000) {
 const target = { workspace_id: "project-a", session_id: "session-a" };
 const input = { ...target, request_id: "request-1", client_message_id: "message-1", text: "检查计算进度", mode: "auto", source: "phone" };
 
+test("a duplicate Host startup cannot remove the live Host socket", async (t) => {
+  const env = await fixture(t);
+
+  await assert.rejects(
+    startTspiHost(env.hostOptions),
+    (error) => error?.code === "host_already_running",
+  );
+
+  const client = await env.connect();
+  assert.equal(client.hello.server_id, "local");
+});
+
 test("ordinary Pi bridge shares one session, routes busy input and rejects duplicate IDs with changed payload", async (t) => {
   const env = await fixture(t);
   const ordinary = await env.bridge();

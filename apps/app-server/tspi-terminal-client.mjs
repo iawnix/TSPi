@@ -13,6 +13,7 @@ import { lstatSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import { connectHost } from "./tspi-host-client.mjs";
+import { formatTerminalFailure } from "./tspi-terminal-errors.mjs";
 
 const args = process.argv.slice(2);
 const options = {};
@@ -182,6 +183,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  process.stderr.write(`TSPi: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(`TSPi: ${formatTerminalFailure(error, { installRoot: options.install_root })}\n`);
   process.exitCode = 1;
 });

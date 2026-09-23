@@ -26,6 +26,7 @@ HARNESS_ADMISSION_PATCH_PATH = ROOT / "config" / "pi-harness-admission.patch"
 HARNESS_ADMISSION_QUEUE_PATCH_PATH = ROOT / "config" / "pi-harness-admission-queue.patch"
 HARNESS_OPERATION_REQUEST_PATCH_PATH = ROOT / "config" / "pi-harness-operation-request.patch"
 HARNESS_OPERATION_FORWARD_PATCH_PATH = ROOT / "config" / "pi-harness-operation-forward.patch"
+TRANSCRIPT_JSON_PATCH_PATH = ROOT / "config" / "pi-transcript-json.patch"
 
 
 class PiSourceError(RuntimeError):
@@ -111,6 +112,9 @@ def verify(source: Path) -> str:
     renderer_chat = (source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui-chat.ts").read_text(encoding="utf-8")
     if "setToolRenderers" not in renderer_layout or "PresentationToolRenderers" not in renderer_client or "#builtInRenderers" not in renderer_chat:
         raise PiSourceError(f"Pi source is missing the TSPi native tool renderer patch: {source}")
+    transcript_provider_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "transcript-provider.ts"
+    if "function toStrictJson" not in transcript_provider_path.read_text(encoding="utf-8"):
+        raise PiSourceError(f"Pi source is missing the TSPi Transcript JSON patch: {source}")
     controller_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "agent-controller.ts"
     provider_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "agent-controller-provider.ts"
     provider = provider_path.read_text(encoding="utf-8")
@@ -271,6 +275,17 @@ def apply_tool_renderers_patch(source: Path) -> None:
         raise PiSourceError(f"failed to apply Pi native tool renderer patch: {exc}") from exc
 
 
+def apply_transcript_json_patch(source: Path) -> None:
+    """Keep replicated Transcript updates within Chord's strict JSON contract."""
+    provider_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "transcript-provider.ts"
+    if "function toStrictJson" in provider_path.read_text(encoding="utf-8"):
+        return
+    try:
+        subprocess.run(["git", "-C", str(source), "apply", str(TRANSCRIPT_JSON_PATCH_PATH)], check=True, text=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PiSourceError(f"failed to apply Pi Transcript JSON patch: {exc}") from exc
+
+
 def apply_harness_admission_patch(source: Path) -> None:
     """Expose durable accept-then-drive methods to Host clients.
 
@@ -349,6 +364,7 @@ def clone(destination: Path) -> Path:
     apply_model_data_patch(destination)
     apply_presentation_layout_patch(destination)
     apply_tool_renderers_patch(destination)
+    apply_transcript_json_patch(destination)
     apply_harness_admission_patch(destination)
     verify(destination)
     return destination
@@ -368,6 +384,7 @@ def install(install_root: Path) -> Path:
         apply_model_data_patch(destination)
         apply_presentation_layout_patch(destination)
         apply_tool_renderers_patch(destination)
+        apply_transcript_json_patch(destination)
         apply_harness_admission_patch(destination)
         verify(destination)
         if not (destination / "node_modules").is_dir():

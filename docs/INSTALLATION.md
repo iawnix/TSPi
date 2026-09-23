@@ -320,6 +320,13 @@ Gemini, DeepSeek, GLM/Zhipu, Kimi, custom OpenAI-compatible endpoints, and the
 non-support boundary for SeedDance/Seedream are listed in
 [Model Compatibility](MODEL_COMPATIBILITY.md).
 
+During installation, the installer copies any missing `models.json` and
+`auth.json` from the Host service account's `~/.pi/agent/` into the private
+installation state at `<install>/.pi/agent/`. Existing installation-local files
+are preserved on upgrades. If no files are available, configure provider
+credentials through Pi or provider environment variables before creating a
+TSPi session.
+
 ## Upgrade
 
 Run `./install.sh` again and choose the same installation root. The installer

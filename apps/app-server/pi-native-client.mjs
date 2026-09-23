@@ -2,6 +2,8 @@ import { lstatSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { formatError } from "./tspi-terminal-errors.mjs";
+
 if (!process.env.TSPI_PI_SOURCE) throw new Error("remote Pi client requires TSPI_PI_SOURCE");
 const sourceRoot = resolve(process.env.TSPI_PI_SOURCE);
 const fromSource = (relative) => import(pathToFileURL(join(sourceRoot, relative)).href);
@@ -86,7 +88,7 @@ if (!parsed.ok) {
       });
     }
   } catch (error) {
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(`Error: ${formatError(error)}`);
     process.exitCode = 1;
   }
 }

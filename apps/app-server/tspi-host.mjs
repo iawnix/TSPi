@@ -538,15 +538,19 @@ export async function startTspiHost(options) {
     });
   });
   let monitorTimer = null;
+  let socketIdentity = null;
   try {
     await removeStaleSocket(socketPath);
     await new Promise((resolve, reject) => { server.once("error", reject); server.listen(socketPath, () => { server.off("error", reject); resolve(); }); });
+    const socketInfo = await lstat(socketPath);
+    if (!socketInfo.isSocket()) throw protocolError("unsafe_socket", "Host endpoint was replaced during startup");
+    socketIdentity = { dev: socketInfo.dev, ino: socketInfo.ino };
     await chmod(socketPath, 0o600);
   } catch (cause) {
     closed = true;
     for (const client of clients) client.peer.close();
     await new Promise((resolve) => server.close(resolve)).catch(() => {});
-    await unlink(socketPath).catch(() => {});
+    await unlinkOwnedSocket(socketPath, socketIdentity).catch(() => {});
     try { await sessionBackend?.close?.(); } catch { /* cleanup is best effort */ }
     throw cause;
   }
@@ -621,7 +625,7 @@ export async function startTspiHost(options) {
     closed = true;
     for (const client of clients) client.peer.close();
     await new Promise((resolve) => server.close(resolve)).catch(() => {});
-    await unlink(socketPath).catch(() => {});
+    await unlinkOwnedSocket(socketPath, socketIdentity).catch(() => {});
     try { await sessionBackend?.close?.(); } catch { /* cleanup is best effort */ }
     throw cause;
   }
@@ -639,7 +643,7 @@ export async function startTspiHost(options) {
         for (const client of clients) client.peer.close();
         try {
           await new Promise((resolve) => server.close(resolve));
-          await unlink(socketPath).catch((error) => { if (error.code !== "ENOENT") throw error; });
+          await unlinkOwnedSocket(socketPath, socketIdentity);
         } finally {
           // Always release Pi bindings/runtime even if socket cleanup failed.
           await sessionBackend?.close?.();
@@ -808,6 +812,19 @@ async function removeStaleSocket(path) {
     connection.once("error", (error) => { if (["ECONNREFUSED", "ENOENT"].includes(error.code)) resolve(false); else reject(error); });
   });
   if (alive) throw protocolError("host_already_running", "A Host already owns this socket");
+  await unlinkOwnedSocket(path, { dev: info.dev, ino: info.ino });
+}
+
+async function unlinkOwnedSocket(path, identity) {
+  if (!identity) return;
+  let info;
+  try {
+    info = await lstat(path);
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  if (!info.isSocket() || info.dev !== identity.dev || info.ino !== identity.ino) return;
   await unlink(path).catch((error) => { if (error.code !== "ENOENT") throw error; });
 }
 

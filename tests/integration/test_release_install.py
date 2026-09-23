@@ -114,6 +114,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "config/pi-workspace-session-list.patch" in names
     assert "config/pi-research-workspace.patch" in names
     assert "config/pi-system-prompt.patch" in names
+    assert "config/pi-transcript-json.patch" in names
     assert "scripts/prepare_pi_source.py" in names
     assert not any(name.startswith("packages/ts-agent-kernel/ts_agent/web/") for name in names)
     assert "packages/ts-agent-kernel/ts_agent/workspace/artifacts.py" in names
@@ -152,6 +153,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "config" / "pi-workspace-session-list.patch").is_file()
     assert (package_root / "config" / "pi-research-workspace.patch").is_file()
     assert (package_root / "config" / "pi-system-prompt.patch").is_file()
+    assert (package_root / "config" / "pi-transcript-json.patch").is_file()
     assert (package_root / "scripts" / "prepare_pi_source.py").is_file()
     assert not (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web").exists()
     assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "artifacts.py").is_file()

@@ -76,6 +76,8 @@ ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 WEB_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
 SERVICE_CONFIG_SCHEMA = "tspi-service/1"
 SERVICE_CONFIG_RELATIVE = Path(".pi/tspi/service.json")
+PI_AGENT_CONFIG_FILES = ("models.json", "auth.json")
+PI_AGENT_CONFIG_MAX_BYTES = 2 * 1024 * 1024
 
 
 def detect_conda_root() -> str:
@@ -1568,6 +1570,8 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
         ".pi/app-server-host/host.token",
         ".pi/ts-web/auth.token",
         ".pi/tspi/model-icons.json",
+        ".pi/agent/models.json",
+        ".pi/agent/auth.json",
         ".pi/notifications.toml",
         ".pi/email/service.env",
         ".pi/email/smtp-password",
@@ -1857,6 +1861,144 @@ def prepare_runtime_dirs(root: Path) -> None:
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         directory.chmod(0o700)
     ensure_host_identity(root)
+
+
+def provision_pi_agent_configuration(args: argparse.Namespace) -> dict[str, object]:
+    """Seed installation-local Pi state without replacing an existing setup."""
+
+    root = Path(args.install_root).expanduser().resolve()
+    service_user = (
+        args.service_user
+        if args.service_scope == "system"
+        else pwd.getpwuid(os.getuid()).pw_name
+    )
+    account = pwd.getpwnam(service_user)
+    source_dir = Path(account.pw_dir) / ".pi" / "agent"
+    destination_dir = root / ".pi" / "agent"
+    _ensure_private_directory(destination_dir)
+    files: dict[str, str] = {}
+
+    for name in PI_AGENT_CONFIG_FILES:
+        destination = destination_dir / name
+        if _preserve_pi_agent_configuration(destination):
+            files[name] = "preserved"
+            continue
+        raw = _read_pi_agent_configuration(Path(account.pw_dir), name)
+        if raw is None:
+            files[name] = "not_configured"
+            continue
+        if _install_new_private_config_bytes(raw, destination):
+            files[name] = "imported"
+        elif _preserve_pi_agent_configuration(destination):
+            # Another installer or the service won the create race. Never
+            # replace configuration that appeared after our initial check.
+            files[name] = "preserved"
+        else:
+            raise RuntimeError(f"Pi agent configuration changed while it was being installed: {destination}")
+
+    configured = [status for status in files.values() if status != "not_configured"]
+    if not configured:
+        status = "not_configured"
+    elif "imported" in configured:
+        status = "imported"
+    else:
+        status = "preserved"
+    return {
+        "status": status,
+        "directory": str(destination_dir),
+        "source": str(source_dir),
+        "files": files,
+    }
+
+
+def _pi_agent_open_flags(*, directory: bool = False) -> int:
+    if not hasattr(os, "O_NOFOLLOW") or (directory and not hasattr(os, "O_DIRECTORY")):
+        raise RuntimeError("secure Pi configuration import is unavailable on this platform")
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+    return flags | (os.O_DIRECTORY if directory else 0)
+
+
+def _read_pi_agent_configuration(home: Path, name: str) -> bytes | None:
+    """Read a bounded source file without following a swapped path component."""
+
+    source = home / ".pi" / "agent" / name
+    descriptors: list[int] = []
+    try:
+        try:
+            current = os.open(home, _pi_agent_open_flags(directory=True))
+            descriptors.append(current)
+            for component in (".pi", "agent"):
+                current = os.open(component, _pi_agent_open_flags(directory=True), dir_fd=current)
+                descriptors.append(current)
+            descriptor = os.open(name, _pi_agent_open_flags(), dir_fd=current)
+            descriptors.append(descriptor)
+        except FileNotFoundError:
+            return None
+        except OSError as error:
+            raise RuntimeError(
+                f"Pi agent configuration source must be a regular file in physical directories: {source}"
+            ) from error
+
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise RuntimeError(f"Pi agent configuration source must be a regular file: {source}")
+        if info.st_size > PI_AGENT_CONFIG_MAX_BYTES:
+            raise RuntimeError(f"Pi agent configuration source is too large: {source}")
+        chunks: list[bytes] = []
+        size = 0
+        while size <= PI_AGENT_CONFIG_MAX_BYTES:
+            chunk = os.read(descriptor, min(64 * 1024, PI_AGENT_CONFIG_MAX_BYTES + 1 - size))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+        if size > PI_AGENT_CONFIG_MAX_BYTES:
+            raise RuntimeError(f"Pi agent configuration source is too large: {source}")
+        return b"".join(chunks)
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
+def _preserve_pi_agent_configuration(destination: Path) -> bool:
+    """Validate and chmod an existing destination through the opened inode."""
+
+    try:
+        descriptor = os.open(destination, _pi_agent_open_flags())
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise RuntimeError(f"Pi agent configuration must be a regular file: {destination}") from error
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise RuntimeError(f"Pi agent configuration must be a regular file: {destination}")
+        os.fchmod(descriptor, 0o600)
+    finally:
+        os.close(descriptor)
+    return True
+
+
+def _install_new_private_config_bytes(raw: bytes, destination: Path) -> bool:
+    """Atomically install a new file, without replacing a concurrent writer."""
+
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = -1
+            handle.write(raw)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(temporary, destination, follow_symlinks=False)
+        except FileExistsError:
+            return False
+        return True
+    finally:
+        if descriptor != -1:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
 
 
 def ensure_host_identity(root: Path) -> Path:
@@ -2329,6 +2471,7 @@ def build_component_summary(
     backend_configs: dict[str, dict[str, str]] | None = None,
     phone_connection: dict[str, object] | None = None,
     model_icons: dict[str, object] | None = None,
+    model_configuration: dict[str, object] | None = None,
 ) -> dict[str, object]:
     root = Path(args.install_root)
     workspace_root = Path(args.workspace_root)
@@ -2386,6 +2529,11 @@ def build_component_summary(
             "status": "disabled",
             "enabled": False,
             "config_path": str(root / ".pi/tspi/model-icons.json"),
+        },
+        "models": model_configuration or {
+            "status": "not_configured",
+            "directory": str(root / ".pi/agent"),
+            "files": {},
         },
         "web": (
             {
@@ -2464,6 +2612,14 @@ def show_installed_summary(
             "Model icon font",
             f"{icon_status} - {icon_detail}",
             tone="success" if icon_enabled else "muted",
+        )
+    models = components.get("models")
+    if isinstance(models, dict):
+        model_status = str(models.get("status", "not_configured"))
+        field(
+            "Pi model configuration",
+            f"{model_status} - {models.get('directory', root / '.pi/agent')}",
+            tone="success" if model_status in {"imported", "preserved"} else "warning",
         )
 
     app_server = components["app_server"]
@@ -2564,6 +2720,8 @@ def main(argv: list[str] | None = None) -> int:
         install_uninstaller(Path(args.install_root), ROOT)
         installed = run_install(args)
         with Spinner("Finalizing installation", stream=sys.stderr, enabled=not args.json) as activity:
+            activity.update("Importing Pi model configuration")
+            model_configuration = provision_pi_agent_configuration(args)
             activity.update("Configuring the model icon font")
             model_icons = configure_model_icons(args, installed)
             activity.update("Configuring the workspace root")
@@ -2602,6 +2760,7 @@ def main(argv: list[str] | None = None) -> int:
             backend_configs,
             phone_connection,
             model_icons,
+            model_configuration,
         )
         if args.start_services:
             failed_services = [
@@ -2628,6 +2787,7 @@ def main(argv: list[str] | None = None) -> int:
             "service_config": service_config,
             "phone_connection": phone_connection,
             "model_icons": model_icons,
+            "model_configuration": model_configuration,
             "verified_release": verified["release_id"],
             "install_log": str(_install_log_path(Path(args.install_root))),
         }
@@ -2645,6 +2805,7 @@ def main(argv: list[str] | None = None) -> int:
             f"compute_config={backend_configs.get('compute', {}).get('status', 'not_configured')}",
             f"phone_manifest={phone_connection.get('manifest', '') if isinstance(phone_connection, dict) else ''}",
             f"model_icons={model_icons.get('status', 'unknown') if isinstance(model_icons, dict) else 'unknown'}",
+            f"model_configuration={model_configuration.get('status', 'unknown') if isinstance(model_configuration, dict) else 'unknown'}",
             f"web_token_file={credentials.get('web_http', {}).get('path', '') if isinstance(credentials.get('web_http'), dict) else ''}",
             "status=success",
         )

@@ -5,6 +5,7 @@ import io
 import stat
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fontTools.ttLib import TTFont
@@ -312,6 +313,89 @@ def test_update_preserves_workspace_root_and_link_defaults(tmp_path: Path) -> No
     assert args.link_url == "https://relay.example.test"
 
 
+def test_pi_agent_configuration_is_imported_once_and_kept_private(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "service-home"
+    source = home / ".pi/agent"
+    source.mkdir(parents=True)
+    source.joinpath("models.json").write_text('{"providers":{"custom":{}}}\n', encoding="utf-8")
+    source.joinpath("auth.json").write_text('{"custom":{"type":"api_key","key":"secret"}}\n', encoding="utf-8")
+    account = SimpleNamespace(pw_name="service-user", pw_dir=str(home))
+    monkeypatch.setattr(wizard.pwd, "getpwuid", lambda _uid: account)
+    monkeypatch.setattr(wizard.pwd, "getpwnam", lambda _name: account)
+    args = wizard.parse_args([
+        "--install-root", str(tmp_path / "install"),
+        "--without-web", "--service-scope", "user", "--non-interactive",
+    ])
+    wizard.validate_options(args)
+
+    imported = wizard.provision_pi_agent_configuration(args)
+
+    destination = Path(args.install_root) / ".pi/agent"
+    assert imported["status"] == "imported"
+    assert imported["files"] == {"models.json": "imported", "auth.json": "imported"}
+    assert destination.joinpath("models.json").read_bytes() == source.joinpath("models.json").read_bytes()
+    assert destination.joinpath("auth.json").read_bytes() == source.joinpath("auth.json").read_bytes()
+    assert stat.S_IMODE(destination.joinpath("models.json").stat().st_mode) == 0o600
+    assert stat.S_IMODE(destination.joinpath("auth.json").stat().st_mode) == 0o600
+
+    destination.joinpath("models.json").write_text('{"providers":{"installation":{}}}\n', encoding="utf-8")
+    source.joinpath("models.json").write_text('{"providers":{"changed":{}}}\n', encoding="utf-8")
+    preserved = wizard.provision_pi_agent_configuration(args)
+
+    assert preserved["status"] == "preserved"
+    assert preserved["files"] == {"models.json": "preserved", "auth.json": "preserved"}
+    assert json.loads(destination.joinpath("models.json").read_text(encoding="utf-8")) == {
+        "providers": {"installation": {}}
+    }
+
+
+def test_pi_agent_configuration_rejects_symlinked_source_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "service-home"
+    real_source = tmp_path / "real-agent"
+    (home / ".pi").mkdir(parents=True)
+    real_source.mkdir()
+    real_source.joinpath("models.json").write_text("{}\n", encoding="utf-8")
+    (home / ".pi/agent").symlink_to(real_source, target_is_directory=True)
+    account = SimpleNamespace(pw_name="service-user", pw_dir=str(home))
+    monkeypatch.setattr(wizard.pwd, "getpwuid", lambda _uid: account)
+    monkeypatch.setattr(wizard.pwd, "getpwnam", lambda _name: account)
+    args = wizard.parse_args([
+        "--install-root", str(tmp_path / "install"),
+        "--without-web", "--service-scope", "user", "--non-interactive",
+    ])
+    wizard.validate_options(args)
+
+    with pytest.raises(RuntimeError, match="physical directories"):
+        wizard.provision_pi_agent_configuration(args)
+
+
+def test_pi_agent_configuration_rejects_oversized_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "service-home"
+    source = home / ".pi/agent"
+    source.mkdir(parents=True)
+    source.joinpath("models.json").write_bytes(b"x" * (wizard.PI_AGENT_CONFIG_MAX_BYTES + 1))
+    account = SimpleNamespace(pw_name="service-user", pw_dir=str(home))
+    monkeypatch.setattr(wizard.pwd, "getpwuid", lambda _uid: account)
+    monkeypatch.setattr(wizard.pwd, "getpwnam", lambda _name: account)
+    args = wizard.parse_args([
+        "--install-root", str(tmp_path / "install"),
+        "--without-web", "--service-scope", "user", "--non-interactive",
+    ])
+    wizard.validate_options(args)
+
+    with pytest.raises(RuntimeError, match="too large"):
+        wizard.provision_pi_agent_configuration(args)
+
+
 def test_install_configuration_rollback_restores_owned_files_and_removes_new_release(
     tmp_path: Path,
 ) -> None:
@@ -335,6 +419,8 @@ def test_install_configuration_rollback_restores_owned_files_and_removes_new_rel
     phone.write_text("new-phone\n", encoding="utf-8")
     (root / ".pi/compute.toml").parent.mkdir(parents=True, exist_ok=True)
     (root / ".pi/compute.toml").write_text("new\n", encoding="utf-8")
+    (root / ".pi/agent").mkdir(parents=True)
+    (root / ".pi/agent/auth.json").write_text("{}\n", encoding="utf-8")
     new_release = root / ".pi/packages/tspi/releases/new"
     nested = new_release / "nested"
     nested.mkdir(parents=True)
@@ -348,6 +434,7 @@ def test_install_configuration_rollback_restores_owned_files_and_removes_new_rel
 
     assert phone.read_text(encoding="utf-8") == "old-phone\n"
     assert not (root / ".pi/compute.toml").exists()
+    assert not (root / ".pi/agent/auth.json").exists()
     assert release.is_dir()
     assert not (root / ".pi/packages/tspi/releases/new").exists()
 

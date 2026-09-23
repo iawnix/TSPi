@@ -140,8 +140,11 @@ Host 上线后，使用下面的命令管理手机授权：
 
 ## 模型配置
 
-模型目录、认证存储、API adapter 和 `models.json` 由固定 Pi release 提供。终端、TS
-Phone 和其他客户端连接同一 session，因此共享模型和工具集合；模型兼容性见
+模型目录和 API adapter 由固定 Pi release 提供。安装时，安装器会把 Host 服务账户
+`~/.pi/agent/` 中已有且安装目录缺失的 `models.json` 与 `auth.json` 复制到私有安装状态
+`<install>/.pi/agent/`；升级不会覆盖安装目录中已有的文件。如果没有可导入的配置，必须先
+通过 Pi 或 provider 环境变量配置凭据，再创建 TSPi 会话。终端、TS Phone 和其他客户端连接
+同一 session，因此共享模型和工具集合；模型兼容性见
 [Model Compatibility](MODEL_COMPATIBILITY.md)。
 
 ## 升级、回滚和恢复

@@ -25,7 +25,6 @@ const socketPath = join(resolve(options.directory), `${options["server-id"]}.soc
 // uses the same server-id-derived socket name, so keep its coordinator and
 // public socket in a private child directory to avoid endpoint collisions.
 const piServerDirectory = join(resolve(options.directory), "pi");
-mkdirSync(piServerDirectory, { recursive: true, mode: 0o700 });
 const python = process.env.TS_AGENT_PYTHON || "python3";
 const provider = options.provider ?? process.env.TSPI_PROVIDER;
 const model = options.model ?? process.env.TSPI_MODEL;
@@ -33,51 +32,12 @@ if ((provider === undefined) !== (model === undefined)) throw new Error("TSPI_PR
 if (Boolean(process.env.TSPI_LINK_URL) !== Boolean(process.env.TSPI_LINK_HOST_TOKEN_FILE)) {
   throw new Error("Both TSPi Link URL and Host token file are required.");
 }
-mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
 const backendMode = (process.env.TSPI_HOST_BACKEND || "harness").trim().toLowerCase();
 let sessionBackend;
 let host;
-try {
-  if (backendMode === "harness") {
-    const pin = JSON.parse(readFileSync(join(packageRoot, "config/pi-source.json"), "utf8"));
-    const sourceRoot = resolve(options["source-root"] || process.env.TSPI_PI_SOURCE || join(installRoot, ".pi/runtime-cache/pi", pin.commit));
-    if (!existsSync(join(sourceRoot, "packages/coding-agent/src/experimental/server.ts"))) {
-      throw new Error(`managed Pi experimental source is unavailable: ${sourceRoot}`);
-    }
-    process.env.TSPI_PI_SOURCE = sourceRoot;
-    sessionBackend = await createTspiHarnessBackend({
-      sourceRoot,
-      packageRoot,
-      installRoot,
-      workspaceRoot,
-      // Pi puts several UUID-bearing Unix sockets below this directory. The
-      // launcher-provided hashed runtime directory is deliberately short so
-      // the resulting paths stay below the POSIX AF_UNIX limit.
-      serverDirectory: piServerDirectory,
-      sessionDir: resolve(options["session-dir"] || join(stateRoot, "sessions")),
-      stateRoot,
-      serverId: options["server-id"],
-      provider,
-      model,
-    });
-  } else if (backendMode !== "ordinary") {
-    throw new Error(`Unsupported TSPI_HOST_BACKEND: ${backendMode}`);
-  }
-  const sessionLifecycle = sessionBackend
-    ? undefined
-    : (await import("./tspi-terminal-runtime.mjs")).createSessionLifecycle({ installRoot, packageRoot, stateRoot, socketPath });
-  host = await startTspiHost({
-    socketPath, workspaceRoot, stateRoot, installRoot, packageRoot, python, serverId: options["server-id"],
-    sessionBackend,
-    sessionLifecycle,
-  });
-} catch (error) {
-  try { await sessionBackend?.close?.(); } catch { /* startup cleanup is best effort */ }
-  throw error;
-}
-
 let stopping = false;
 let stopPromise;
+let startupPromise = Promise.resolve();
 const workers = new Map();
 const timers = new Set();
 function supervise(name, entry, argv) {
@@ -111,19 +71,14 @@ function supervise(name, entry, argv) {
   start();
 }
 
-if (process.env.TSPI_MONITOR_DISABLED !== "1") supervise("monitor", "apps/app-server/pi-monitor-worker.mjs", [
-  "--workspace-root", workspaceRoot, "--host-socket", socketPath, "--state-root", stateRoot,
-]);
-if (process.env.TSPI_LINK_URL || process.env.TSPI_LINK_HOST_TOKEN_FILE) {
-  supervise("link", "apps/app-server/tspi-link-host.mjs", [
-    "--relay-url", process.env.TSPI_LINK_URL, "--token-file", process.env.TSPI_LINK_HOST_TOKEN_FILE, "--socket-path", socketPath,
-  ]);
-}
-
 async function stop() {
   if (stopPromise) return stopPromise;
   stopping = true;
   stopPromise = (async () => {
+    // A signal can arrive while the managed Pi backend or Host socket is
+    // still starting. Let that work settle, then close whichever resources
+    // were acquired instead of leaving a stale coordinator or public socket.
+    await startupPromise.catch(() => {});
     for (const timer of timers) clearTimeout(timer);
     const exits = [...workers.values()].map((child) => new Promise((done) => {
       const timer = setTimeout(() => { child.kill("SIGKILL"); done(); }, 5000);
@@ -132,8 +87,95 @@ async function stop() {
       child.kill("SIGTERM");
     }));
     await Promise.allSettled(exits);
-    await host.close();
+    if (host) await host.close();
+    else await sessionBackend?.close?.();
   })();
   return stopPromise;
 }
-for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(signal, () => { void stop(); });
+
+let shutdownFailureReported = false;
+// Keep these listeners registered throughout asynchronous cleanup. Pi loads
+// dependencies that use `signal-exit`; a once-listener is removed before its
+// callback runs, which lets that package observe no peer listener and re-send
+// the signal before cleanup finishes.
+const shutdownSignals = ["SIGINT", "SIGTERM", "SIGHUP"];
+const signalHandlers = new Map();
+for (const signal of shutdownSignals) {
+  const handler = () => {
+    if (stopping) {
+      // A second explicit signal is the escape hatch if dependency startup or
+      // cleanup is wedged. Restore native signal handling before re-sending it.
+      for (const [name, registered] of signalHandlers) process.off(name, registered);
+      process.kill(process.pid, signal);
+      return;
+    }
+    void stop().catch((error) => {
+      process.exitCode = 1;
+      if (shutdownFailureReported) return;
+      shutdownFailureReported = true;
+      const detail = error instanceof Error ? (error.stack || error.message) : String(error);
+      process.stderr.write(`TSPi Host shutdown failed after ${signal}: ${detail}\n`);
+    });
+  };
+  signalHandlers.set(signal, handler);
+  process.on(signal, handler);
+}
+
+startupPromise = (async () => {
+  try {
+    // Do not expose runtime state until signal cleanup is installed above.
+    mkdirSync(piServerDirectory, { recursive: true, mode: 0o700 });
+    mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
+    if (backendMode === "harness") {
+      const pin = JSON.parse(readFileSync(join(packageRoot, "config/pi-source.json"), "utf8"));
+      const sourceRoot = resolve(options["source-root"] || process.env.TSPI_PI_SOURCE || join(installRoot, ".pi/runtime-cache/pi", pin.commit));
+      if (!existsSync(join(sourceRoot, "packages/coding-agent/src/experimental/server.ts"))) {
+        throw new Error(`managed Pi experimental source is unavailable: ${sourceRoot}`);
+      }
+      process.env.TSPI_PI_SOURCE = sourceRoot;
+      sessionBackend = await createTspiHarnessBackend({
+        sourceRoot,
+        packageRoot,
+        installRoot,
+        workspaceRoot,
+        // Pi puts several UUID-bearing Unix sockets below this directory. The
+        // launcher-provided hashed runtime directory is deliberately short so
+        // the resulting paths stay below the POSIX AF_UNIX limit.
+        serverDirectory: piServerDirectory,
+        sessionDir: resolve(options["session-dir"] || join(stateRoot, "sessions")),
+        stateRoot,
+        serverId: options["server-id"],
+        provider,
+        model,
+      });
+    } else if (backendMode !== "ordinary") {
+      throw new Error(`Unsupported TSPI_HOST_BACKEND: ${backendMode}`);
+    }
+    if (stopping) return;
+    const sessionLifecycle = sessionBackend
+      ? undefined
+      : (await import("./tspi-terminal-runtime.mjs")).createSessionLifecycle({ installRoot, packageRoot, stateRoot, socketPath });
+    host = await startTspiHost({
+      socketPath, workspaceRoot, stateRoot, installRoot, packageRoot, python, serverId: options["server-id"],
+      sessionBackend,
+      sessionLifecycle,
+    });
+  } catch (error) {
+    try { await sessionBackend?.close?.(); } catch { /* startup cleanup is best effort */ }
+    // A requested shutdown can disconnect Pi's coordinator while its client
+    // runtime is still activating. That startup error is part of cancellation,
+    // not a Host failure, once the partial backend has cleaned itself up.
+    if (stopping) return;
+    throw error;
+  }
+})();
+await startupPromise;
+
+if (process.env.TSPI_MONITOR_DISABLED !== "1") supervise("monitor", "apps/app-server/pi-monitor-worker.mjs", [
+  "--workspace-root", workspaceRoot, "--host-socket", socketPath, "--state-root", stateRoot,
+]);
+if (process.env.TSPI_LINK_URL || process.env.TSPI_LINK_HOST_TOKEN_FILE) {
+  supervise("link", "apps/app-server/tspi-link-host.mjs", [
+    "--relay-url", process.env.TSPI_LINK_URL, "--token-file", process.env.TSPI_LINK_HOST_TOKEN_FILE, "--socket-path", socketPath,
+  ]);
+}

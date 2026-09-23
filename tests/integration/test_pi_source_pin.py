@@ -42,6 +42,10 @@ def test_pi_source_pin_is_explicit_and_valid() -> None:
     assert "PresentationToolRenderers" in renderer_patch
     assert "#builtInRenderers" in renderer_patch
     assert "#toolRendererRegistration !== registration" in renderer_patch
+    transcript_patch = (ROOT / "config" / "pi-transcript-json.patch").read_text(encoding="utf-8")
+    assert "function toStrictJson" in transcript_patch
+    assert "reduceLaneSnapshot(snapshot, forwarded)" in transcript_patch
+    assert "details: undefined" in transcript_patch
 
 
 def test_prepare_pi_source_verifies_a_matching_checkout() -> None:
@@ -169,6 +173,21 @@ def test_tool_renderer_patch_is_idempotent_for_an_upgraded_checkout(tmp_path, mo
     monkeypatch.setattr(prepare_pi_source.subprocess, "run", lambda command, **_kwargs: calls.append(command))
 
     prepare_pi_source.apply_tool_renderers_patch(source)
+
+    assert calls == []
+
+
+def test_transcript_json_patch_is_idempotent_for_an_upgraded_checkout(tmp_path, monkeypatch):
+    from scripts import prepare_pi_source
+
+    source = tmp_path / "pi"
+    provider = source / "packages/coding-agent/src/experimental/services/transcript-provider.ts"
+    provider.parent.mkdir(parents=True)
+    provider.write_text("function toStrictJson() {}\n", encoding="utf-8")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(prepare_pi_source.subprocess, "run", lambda command, **_kwargs: calls.append(command))
+
+    prepare_pi_source.apply_transcript_json_patch(source)
 
     assert calls == []
 
