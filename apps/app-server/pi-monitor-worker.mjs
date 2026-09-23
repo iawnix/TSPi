@@ -123,7 +123,7 @@ async function writeHealth(stateRoot, value) {
   await rename(temporary, join(stateRoot, "monitor-health.json"));
 }
 
-async function sendNotification(workspace, event, signal) {
+export async function sendNotification(workspace, event, signal, execute = executeFile) {
   const request = { schema_version: "ts-user-notification/1",
     event: event.state === "unknown" ? "calculation_ambiguous" : ["failed", "stopped"].includes(event.state) ? "calculation_failed" : "progress",
     subject: `TSPi calculation ${event.intent_id}: ${event.state}`,
@@ -133,11 +133,51 @@ async function sendNotification(workspace, event, signal) {
   try {
     const requestFile = join(directory, "request.json");
     await writeFile(requestFile, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
-    const completed = await executeFile(python, [join(packageRoot, "scripts", "ts_email.py"), "notify", "--root", workspace, "--request-file", requestFile, "--json"], {
-      cwd: workspace, env: { ...process.env, PYTHONNOUSERSITE: "1" }, maxBuffer: 8 * 1024 * 1024, timeout: 150_000, signal });
-    const result = JSON.parse(completed.stdout.trim());
-    if (result?.ok !== true || !["sent", "already_sent"].includes(result.state)) throw new Error("monitor notification did not return a successful receipt");
+    try {
+      const completed = await execute(python, [join(packageRoot, "scripts", "ts_email.py"), "notify", "--root", workspace, "--request-file", requestFile, "--json"], {
+        cwd: workspace, env: { ...process.env, PYTHONNOUSERSITE: "1" }, maxBuffer: 8 * 1024 * 1024, timeout: 150_000, signal });
+      assertNotificationSuccess(parseNotificationJson(completed.stdout));
+    } catch (error) {
+      // execFile rejects on a non-zero CLI exit, while ts_email writes its
+      // structured provider/SMTP failure envelope to stdout.
+      const structured = tryParseNotificationJson(error?.stdout);
+      if (structured) throw notificationError(structured);
+      throw error;
+    }
   } finally { await rm(directory, { recursive: true, force: true }); }
+}
+
+function parseNotificationJson(value) {
+  const parsed = JSON.parse(String(value || "").trim());
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("notification CLI returned invalid JSON");
+  return parsed;
+}
+
+function tryParseNotificationJson(value) {
+  try { return parseNotificationJson(value); } catch (_error) { return undefined; }
+}
+
+function assertNotificationSuccess(result) {
+  if (result?.ok === false) throw notificationError(result);
+  if (result?.ok !== true || !["sent", "already_sent"].includes(result.state)) {
+    throw new Error("monitor notification did not return a successful receipt");
+  }
+}
+
+function notificationError(payload) {
+  const detail = payload?.error && typeof payload.error === "object" ? payload.error : {};
+  const error = new Error(
+    typeof detail.message === "string" && detail.message.trim()
+      ? detail.message.trim()
+      : "TS notification failed without a structured message",
+  );
+  error.name = "NotificationError";
+  error.code = detail.code;
+  error.error_class = detail.class;
+  error.state = payload?.state;
+  error.retry_disposition = payload?.retry_disposition;
+  error.receipt_ref = payload?.receipt_ref;
+  return error;
 }
 
 function discoverWorkspaces(root) {

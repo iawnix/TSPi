@@ -121,6 +121,78 @@ def test_xtb_scan_control_accepts_numbered_geometry_constraints(tmp_path: Path) 
     assert [directive.constraint_index for directive in plan.directives] == [1, 2, 3]
 
 
+def test_xtb_scan_control_accepts_native_named_inline_constraint_without_constrain(
+    tmp_path: Path,
+) -> None:
+    control = tmp_path / "scan.inp"
+    control.write_text(
+        "$scan\n distance: 1, 2, auto; 0.9, 1.1, 3\n$end\n",
+        encoding="utf-8",
+    )
+
+    plan = parse_xtb_scan_control(control, atom_count=3)
+
+    assert plan.mode == "sequential"
+    assert plan.point_count == 3
+    assert len(plan.constraints) == 1
+    assert plan.constraints[0].kind == "distance"
+    assert plan.constraints[0].atoms == (1, 2)
+    assert plan.constraints[0].initial_value is None
+    assert plan.directives[0].constraint_index == 1
+    assert plan.directives[0].start == pytest.approx(0.9)
+    assert plan.directives[0].end == pytest.approx(1.1)
+
+
+def test_xtb_scan_control_accepts_inline_scan_before_later_constrain(tmp_path: Path) -> None:
+    control = tmp_path / "scan.inp"
+    control.write_text(
+        "\n".join(
+            [
+                "$scan",
+                "  distance: 1, 2, auto ; 0.9, 1.1, 3",
+                "$constrain",
+                "  distance: 1, 3, auto",
+                "$end",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    plan = parse_xtb_scan_control(control, atom_count=3)
+
+    assert len(plan.constraints) == 2
+    assert plan.constraints[0].atoms == (1, 2)
+    assert plan.constraints[1].atoms == (1, 3)
+    assert plan.directives[0].constraint_index == 1
+
+
+def test_xtb_scan_control_accepts_block_terminators_between_sections(tmp_path: Path) -> None:
+    control = tmp_path / "scan.inp"
+    control.write_text(
+        "$constrain\n distance: 1, 2, auto\n$end\n"
+        "$scan\n 1: 0.9, 1.1, 3\n$end\n",
+        encoding="utf-8",
+    )
+
+    plan = parse_xtb_scan_control(control, atom_count=3)
+
+    assert plan.point_count == 3
+    assert plan.directives[0].constraint_index == 1
+
+
+def test_xtb_scan_control_rejects_numbered_scan_before_constraint_definition(
+    tmp_path: Path,
+) -> None:
+    control = tmp_path / "scan.inp"
+    control.write_text(
+        "$scan\n 1: 0.9, 1.1, 3\n$constrain\n distance: 1, 2, auto\n$end\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="undefined constraint 1"):
+        parse_xtb_scan_control(control, atom_count=3)
+
+
 @pytest.mark.parametrize(
     ("content", "message"),
     [
@@ -138,6 +210,11 @@ def test_xtb_scan_control_accepts_numbered_geometry_constraints(tmp_path: Path) 
             "endpoints must be positive",
         ),
         (
+            "$constrain\n distance: 1, 2, auto\n$scan\n"
+            " 1: 5, 12, 1.5, 3.2, 18\n$end\n",
+            "requires start, end, and steps",
+        ),
+        (
             "$constrain\n distance: 1, 2, auto\n$scan\n mode=concerted\n"
             " 1: 1.0, 2.0, 3\n 1: 2.0, 1.0, 4\n$end\n",
             "equal step counts",
@@ -146,6 +223,11 @@ def test_xtb_scan_control_accepts_numbered_geometry_constraints(tmp_path: Path) 
             "$constrain\n distance: 1, 2, auto\n$metadyn\n save=10\n$scan\n"
             " 1: 1.0, 2.0, 3\n$end\n",
             "unsupported.*section",
+        ),
+        (
+            "$scan\n distance: 1, 2, auto; 0.9, 1.1, 3\n$end\n"
+            "unexpected trailing content\n",
+            "content after \\$end",
         ),
     ],
 )
@@ -571,6 +653,24 @@ def test_xtb_scan_prepare_rejects_invalid_bound_control_before_execution(tmp_pat
     )
     with pytest.raises(ComputeContractError, match="invalid xTB scan control.*unsupported.*section"):
         _intent(workspace, "xtb", "scan")
+
+
+def test_xtb_scan_prepare_accepts_native_inline_control_before_execution(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    (workspace / "inputs/scan.inp").write_text(
+        "$scan\n distance: 1, 2, auto; 0.9, 1.1, 3\n$end\n",
+        encoding="utf-8",
+    )
+
+    prepared = prepare_calculation(workspace, _intent(workspace, "xtb", "scan"))
+
+    assert prepared["prepared"]["prepared_task"]["command"][0:5] == [
+        "xtb",
+        "inputs/candidate.xyz",
+        "--opt",
+        "normal",
+        "--input",
+    ]
 
 
 def _workspace(tmp_path: Path) -> Path:

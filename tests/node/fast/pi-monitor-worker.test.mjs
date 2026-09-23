@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { deliverMonitorEvent, parseMonitorArguments } from "../../../apps/app-server/pi-monitor-worker.mjs";
+import { deliverMonitorEvent, parseMonitorArguments, sendNotification } from "../../../apps/app-server/pi-monitor-worker.mjs";
 
 async function fixture(t) {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "tspi-monitor-worker-test-"));
@@ -49,6 +49,40 @@ test("notification retries preserve the wake acknowledgement and original sessio
   assert.equal(wakes[0].client_message_id, "monitor:evt_1");
   assert.equal(wakes[0].mode, "auto");
   assert.equal(wakes[0].source, "monitor");
+});
+
+test("monitor notifications preserve structured SMTP/provider failures", async (t) => {
+  const state = await fixture(t);
+  const providerFailure = {
+    schema_version: "ts-user-notification-error/1",
+    ok: false,
+    state: "failed",
+    retry_disposition: "retry_after_fix",
+    receipt_ref: "reports/email/deliveries/notification.json",
+    error: {
+      code: "NOTIFICATION_DELIVERY_NOT_STARTED",
+      class: "delivery_not_started",
+      message: "email notification was not started: SMTP server returned 535: authentication failed; receipt=reports/email/deliveries/notification.json",
+    },
+  };
+  const execute = async () => {
+    const error = new Error("Command failed: ts_email.py notify");
+    error.stdout = JSON.stringify(providerFailure);
+    error.stderr = "";
+    throw error;
+  };
+
+  await assert.rejects(
+    sendNotification(state.workspace, state.event, undefined, execute),
+    (error) => {
+      assert.equal(error.name, "NotificationError");
+      assert.equal(error.code, "NOTIFICATION_DELIVERY_NOT_STARTED");
+      assert.equal(error.retry_disposition, "retry_after_fix");
+      assert.equal(error.receipt_ref, providerFailure.receipt_ref);
+      assert.match(error.message, /SMTP server returned 535: authentication failed/);
+      return true;
+    },
+  );
 });
 
 test("an offline session leaves wake retryable while notification can complete", async (t) => {

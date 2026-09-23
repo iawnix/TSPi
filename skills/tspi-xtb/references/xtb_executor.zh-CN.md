@@ -9,6 +9,29 @@ Adapter 接受 `gfn0`、`gfn1`、`gfn2` 或 `gfnff`；电荷与 `uhf` 显式提�
 `max_cycles`。Capability descriptor 是准确机器合同；构造不熟悉请求前查询
 `ts_state mode=capabilities`。
 
+对于 `xtb.scan`，control Artifact 必须包含 `$scan` 段并以 `$end` 结束。`$constrain`
+后也可以使用 `$end` 作为 block 分隔符。推荐的编号形式在 `$constrain` 中定义原子序号；每个 `$scan` 指令只引用约束的 1-based 序号，
+并提供 `start`、`end`、`steps` 三个逗号分隔值：
+
+```text
+$constrain
+  force constant=0.5
+  distance: 5, 12, auto
+$scan
+  mode=sequential
+  1: 1.5, 3.2, 18
+$end
+```
+
+不要在编号式 `$scan` 行重复写 `5, 12`。关键字形式或拆开的 `start`/`end`/`steps`
+字段不属于适配器合同；如果希望在扫描行直接定义约束，也支持原生 xTB 的命名内联形式：
+
+```text
+$scan
+  distance: 5, 12, auto; 1.5, 3.2, 18
+$end
+```
+
 预期主要 Artifact 为：
 
 | 任务 | 必需 Artifact |

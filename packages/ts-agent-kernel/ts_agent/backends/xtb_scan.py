@@ -1,4 +1,9 @@
-"""Validated xTB relaxed-scan controls and deterministic scan-point parsing."""
+"""Validated xTB relaxed-scan controls and deterministic scan-point parsing.
+
+The control grammar mirrors xTB's ``$scan`` block: a directive may reference
+an earlier ``$constrain`` entry by number, or define a distance/angle/dihedral
+inline using ``kind: atoms, value; start, end, steps``.
+"""
 
 from __future__ import annotations
 
@@ -51,7 +56,8 @@ def parse_xtb_scan_control(path: Path, *, atom_count: int | None = None) -> XtbS
     text = path.read_text(encoding="utf-8")
     section: str | None = None
     seen_sections: set[str] = set()
-    ended = False
+    saw_end = False
+    section_closed = False
     constraints: list[XtbScanConstraint] = []
     directives: list[XtbScanDirective] = []
     mode = "sequential"
@@ -60,12 +66,11 @@ def parse_xtb_scan_control(path: Path, *, atom_count: int | None = None) -> XtbS
         line = raw_line.split("#", 1)[0].strip()
         if not line:
             continue
-        if ended:
-            raise ValueError(f"xTB scan control has content after $end at line {line_number}")
         if line.startswith("$"):
             header = line.lower()
             if header == "$end":
-                ended = True
+                saw_end = True
+                section_closed = True
                 section = None
                 continue
             if header not in {"$constrain", "$scan"}:
@@ -73,9 +78,8 @@ def parse_xtb_scan_control(path: Path, *, atom_count: int | None = None) -> XtbS
             section = header[1:]
             if section in seen_sections:
                 raise ValueError(f"duplicate xTB scan control section: {line}")
-            if section == "scan" and "constrain" not in seen_sections:
-                raise ValueError("$constrain must appear before $scan")
             seen_sections.add(section)
+            section_closed = False
             continue
         if section == "constrain":
             constraint = _parse_constraint(line, line_number)
@@ -89,14 +93,18 @@ def parse_xtb_scan_control(path: Path, *, atom_count: int | None = None) -> XtbS
                 if mode not in {"sequential", "concerted"}:
                     raise ValueError(f"unsupported xTB scan mode at line {line_number}: {mode}")
                 continue
-            directives.append(_parse_directive(line, line_number))
+            directives.append(_parse_directive(line, line_number, constraints))
             continue
+        if saw_end:
+            raise ValueError(f"xTB scan control has content after $end at line {line_number}")
         raise ValueError(f"xTB scan control content is outside a section at line {line_number}")
 
-    if not ended:
+    if not saw_end or not section_closed:
         raise ValueError("xTB scan control must end with $end")
-    if seen_sections != {"constrain", "scan"}:
-        raise ValueError("xTB scan control requires both $constrain and $scan sections")
+    if "scan" not in seen_sections:
+        if seen_sections == {"constrain"}:
+            raise ValueError("xTB scan control requires both $constrain and $scan sections")
+        raise ValueError("xTB scan control requires a $scan section")
     if not constraints:
         raise ValueError("xTB scan control defines no supported constraints")
     if not directives:
@@ -205,14 +213,60 @@ def _parse_constraint(line: str, line_number: int) -> XtbScanConstraint | None:
     return XtbScanConstraint(kind, atoms, initial)
 
 
-def _parse_directive(line: str, line_number: int) -> XtbScanDirective:
-    match = re.fullmatch(r"(\d+)\s*:\s*(.+)", line)
-    if not match:
-        raise ValueError(
-            f"xTB scan directives must reference a numbered constraint at line {line_number}"
+def _parse_directive(
+    line: str,
+    line_number: int,
+    constraints: list[XtbScanConstraint],
+) -> XtbScanDirective:
+    numbered = re.fullmatch(r"(\d+)\s*:\s*(.+)", line)
+    if numbered:
+        constraint_index = int(numbered.group(1))
+        if constraint_index <= 0:
+            raise ValueError(f"xTB scan constraint index must be positive at line {line_number}")
+        if constraint_index > len(constraints):
+            if not constraints:
+                raise ValueError(
+                    "$constrain must appear before $scan for numbered directives; "
+                    f"undefined constraint {constraint_index}"
+                )
+            raise ValueError(
+                f"xTB scan directive references undefined constraint {constraint_index}"
+            )
+        return _parse_scan_values(numbered.group(2), constraint_index, line_number)
+
+    inline = re.fullmatch(
+        r"(distance|angle|dihedral)\s*:\s*(.+)",
+        line,
+        flags=re.IGNORECASE,
+    )
+    if inline:
+        parts = inline.group(2).split(";")
+        if len(parts) != 2 or not all(part.strip() for part in parts):
+            raise ValueError(
+                "xTB inline scan directives require a constraint and "
+                f"start, end, and steps separated by ';' at line {line_number}"
+            )
+        constraint = _parse_constraint(
+            f"{inline.group(1)}: {parts[0].strip()}",
+            line_number,
         )
-    constraint_index = int(match.group(1))
-    fields = [field.strip() for field in match.group(2).split(",")]
+        if constraint is None:
+            raise ValueError(f"invalid xTB inline scan constraint at line {line_number}")
+        constraints.append(constraint)
+        return _parse_scan_values(parts[1], len(constraints), line_number)
+
+    raise ValueError(
+        "xTB scan directives must reference a numbered constraint or use "
+        f"the named inline form at line {line_number}"
+    )
+
+
+def _parse_scan_values(
+    value_text: str,
+    constraint_index: int,
+    line_number: int,
+) -> XtbScanDirective:
+    fields = [field.strip() for field in value_text.split(",")]
     if len(fields) != 3:
         raise ValueError(f"xTB scan directive requires start, end, and steps at line {line_number}")
     start = _finite_number(fields[0], "scan start")
@@ -221,8 +275,6 @@ def _parse_directive(line: str, line_number: int) -> XtbScanDirective:
         steps = int(fields[2])
     except ValueError as exc:
         raise ValueError(f"xTB scan steps must be an integer at line {line_number}") from exc
-    if constraint_index <= 0:
-        raise ValueError(f"xTB scan constraint index must be positive at line {line_number}")
     if not 2 <= steps <= _MAX_POINTS:
         raise ValueError(
             f"xTB scan steps must be between 2 and {_MAX_POINTS} at line {line_number}"
