@@ -247,7 +247,7 @@ After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory={_systemd_quote(service_root)}
+WorkingDirectory={_systemd_path(service_root)}
 ExecStart={command}
 {user_line}Restart=on-failure
 RestartSec=3s
@@ -257,7 +257,7 @@ PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths={_systemd_quote(state)}
+ReadWritePaths={_systemd_path(state)}
 
 [Install]
 WantedBy={wanted_by}
@@ -269,6 +269,19 @@ def _systemd_quote(value: str | Path) -> str:
     if any(ord(character) < 0x20 or ord(character) == 0x7F for character in text):
         raise ValueError("systemd paths and arguments cannot contain control characters")
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%") + '"'
+
+
+def _systemd_path(value: str | Path) -> str:
+    """Escape a path for a unit-file path directive without quoting it."""
+    text = str(value)
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in text):
+        raise ValueError("systemd paths and arguments cannot contain control characters")
+    return (
+        text.replace("\\", "\\\\")
+        .replace("%", "%%")
+        .replace(" ", "\\x20")
+        .replace("\t", "\\x09")
+    )
 
 
 def service_directory(scope: str) -> Path:

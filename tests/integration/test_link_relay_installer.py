@@ -57,7 +57,7 @@ def test_link_relay_unit_is_independent_from_tspi_host(tmp_path: Path) -> None:
     assert "WantedBy=multi-user.target" in unit
 
 
-def test_link_relay_unit_quotes_paths_for_systemd(tmp_path: Path) -> None:
+def test_link_relay_unit_escapes_path_directives_for_systemd(tmp_path: Path) -> None:
     args = SimpleNamespace(
         service_scope="system",
         public_url="https://relay.example.test",
@@ -72,9 +72,11 @@ def test_link_relay_unit_quotes_paths_for_systemd(tmp_path: Path) -> None:
         "/usr/bin/node",
     )
 
-    assert 'WorkingDirectory="' in unit
-    assert 'relay install/current/service"' in unit
-    assert 'ReadWritePaths="' in unit
+    assert "WorkingDirectory=" in unit
+    assert "WorkingDirectory=\"" not in unit
+    assert "relay\\x20install/current/service" in unit
+    assert "ReadWritePaths=" in unit
+    assert "ReadWritePaths=\"" not in unit
 
 
 def test_link_relay_uninstaller_removes_code_and_can_purge_state(tmp_path: Path) -> None:
