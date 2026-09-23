@@ -8,7 +8,7 @@ Backend 是确定性适配器。它描述支持的程序任务、校验参数、
 
 ## 支持的任务
 
-- Gaussian：`sp`、`opt`、`freq`、`opt_freq`、`irc`。
+- Gaussian：`sp`、`opt`、`ts`、`freq`、`opt_freq`、`irc`。
 - xTB：`sp`、`opt`、`freq`、`opt_freq`、`scan`、`md`。
 - CREST：`conformer_search`。
 - 使用 xTB CLI calculator 的 ASE：`neb`。
@@ -31,8 +31,8 @@ QBICS DMECP 当前不是已注册 capability。Backend 只有具备确定性解�
 
 解析器输出属于 Backend 所有的事实，不决定所请求任务是否成功。Compute 层在
 `program_status` 记录程序终止，并在 `task_validation` 中单独评估 capability 特定的完成
-情况。两者都不是科学 verdict；Gaussian 单点、优化和频率任务不会仅因使用 Gaussian
-解析器就继承过渡态评估规则。
+情况。两者都不是科学 verdict；Gaussian 单点、优化、过渡态优化和频率任务不会仅因使用
+Gaussian 解析器就继承科学上的过渡态评估规则。
 
 Host 将每次 launch 冻结为 `ts-calculation-intent/7`，包括 Node 与科学 intent 摘要以及
 同一 Node 内的 Attempt lineage。方法、输入、影响命令的参数或预期输出发生任何变化，都

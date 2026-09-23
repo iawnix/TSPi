@@ -104,6 +104,7 @@ _TASK_VALIDATORS: dict[tuple[str, str], TaskValidator] = {
         ("electronic_energy_hartree", "electronic_energy_missing"),
     ),
     ("gaussian", "opt"): _optimization_failures,
+    ("gaussian", "ts"): _optimization_failures,
     ("gaussian", "freq"): _require_truthy(
         ("frequency_count", "frequencies_missing"),
     ),

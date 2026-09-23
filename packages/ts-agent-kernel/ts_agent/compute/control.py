@@ -1480,6 +1480,7 @@ def _validate_backend_request(
     flags = route_settings(read_gjf_route(gjf))
     required_flags = {
         "opt": {"has_opt"},
+        "ts": {"has_ts"},
         "freq": {"has_freq"},
         "opt_freq": {"has_opt", "has_freq"},
         "irc": {"has_irc"},

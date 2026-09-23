@@ -35,6 +35,7 @@ def test_catalog_describes_executor_contracts_without_strategy_routing() -> None
     assert {
         "gaussian.sp",
         "gaussian.opt",
+        "gaussian.ts",
         "gaussian.freq",
         "gaussian.opt_freq",
         "gaussian.irc",
@@ -65,6 +66,12 @@ def test_catalog_describes_executor_contracts_without_strategy_routing() -> None
         "optimized_geometry",
         "frequencies",
     ]
+    assert capabilities["gaussian.ts"]["input_roles"] == ["gjf"]
+    assert capabilities["gaussian.ts"]["output_roles"] == [
+        "program_output",
+        "optimized_geometry",
+    ]
+    assert capabilities["gaussian.ts"]["parsers"] == ["gaussian.output/2"]
     assert capabilities["pyscf.sp"]["input_roles"] == ["xyz"]
     assert capabilities["pyscf.sp"]["parsers"] == ["pyscf.output/1"]
     assert capabilities["pyscf.sp"]["limits"]["default_xc"] == "CF22D"

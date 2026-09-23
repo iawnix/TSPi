@@ -256,6 +256,7 @@ def route_settings(route: str | None) -> dict[str, object]:
     settings: dict[str, object] = {
         "route_compact": compacted,
         "has_opt": "opt" in compacted,
+        "has_ts": _route_has_opt_option(compacted, "ts"),
         "has_irc": "irc" in compacted,
         "has_freq": "freq" in compacted,
         "has_qst2": "qst2" in compacted,
@@ -267,6 +268,16 @@ def route_settings(route: str | None) -> dict[str, object]:
             canonical = "maxcycle" if key == "maxcycles" else key
             settings[canonical] = int(match.group(1))
     return settings
+
+
+def _route_has_opt_option(compacted_route: str, option: str) -> bool:
+    """Return whether an option is explicitly selected inside ``Opt``."""
+
+    match = re.search(r"\bopt\b(?:\s*=\s*(?:\(([^)]*)\)|([^\s]+)))?", compacted_route)
+    if not match:
+        return False
+    options = match.group(1) or match.group(2) or ""
+    return re.search(rf"\b{re.escape(option)}\b", options) is not None
 
 
 def route_expectation(expected_route: str | None, log_route: str | None, text: str) -> dict[str, object]:

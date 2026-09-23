@@ -215,6 +215,7 @@ def _descriptor(
 CAPABILITY_DESCRIPTORS: Final[tuple[CapabilityDescriptor, ...]] = (
     _descriptor("gaussian.sp", "gaussian", "sp", frozenset({"gjf"}), ("program_output", "energy"), parser="gaussian.output/2"),
     _descriptor("gaussian.opt", "gaussian", "opt", frozenset({"gjf"}), ("program_output", "optimized_geometry"), parser="gaussian.output/2"),
+    _descriptor("gaussian.ts", "gaussian", "ts", frozenset({"gjf"}), ("program_output", "optimized_geometry"), parser="gaussian.output/2"),
     _descriptor("gaussian.freq", "gaussian", "freq", frozenset({"gjf"}), ("program_output", "frequencies"), parser="gaussian.output/2"),
     _descriptor("gaussian.opt_freq", "gaussian", "opt_freq", frozenset({"gjf"}), ("program_output", "optimized_geometry", "frequencies"), parser="gaussian.output/2"),
     _descriptor("gaussian.irc", "gaussian", "irc", frozenset({"gjf"}), ("program_output", "reaction_path"), parser="gaussian.irc/2"),

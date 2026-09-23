@@ -34,7 +34,7 @@ from ts_agent.calculation_contracts import CalculationContractError, validate_ca
 from ts_agent.remote import lifecycle as remote_lifecycle
 from ts_agent.remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguous, RemoteSubmissionRejected
 from ts_agent.remote.models import RemoteJobStatus, RemoteReceipt
-from ts_agent.backends.gaussian import parse_log
+from ts_agent.backends.gaussian import parse_log, route_settings
 from ts_agent.compute.task_validation import validate_parsed_task
 from ts_agent.workspace.identity import workspace_id
 from ts_agent.workspace.operational import _operational_files
@@ -336,6 +336,28 @@ def test_unavailable_capability_fails_without_implicit_substitution_or_attempt(t
 
     attempts = workspace / "nodes" / node_id / "attempts"
     assert not attempts.exists()
+
+
+def test_gaussian_ts_capability_requires_an_explicit_opt_ts_route(tmp_path: Path) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    source = workspace / "inputs" / "candidate.gjf"
+    source.write_text(
+        "%chk=candidate.chk\n#P M062X/6-31G** Opt=(TS,CalcFC)\n\nTS\n\n0 1\nH 0 0 0\n\n",
+        encoding="utf-8",
+    )
+
+    created = _create(workspace, node_id, capability="gaussian.ts")
+    prepared = prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
+
+    assert prepared["result"]["state"] == "prepared"
+    assert prepared["result"]["capability"] == "gaussian.ts"
+
+    source.write_text(
+        "%chk=candidate.chk\n#P M062X/6-31G** Opt\n\nTS\n\n0 1\nH 0 0 0\n\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ComputeContractError, match="missing.*has_ts"):
+        _create(workspace, node_id, capability="gaussian.ts")
 
 
 def test_intent_paths_ids_and_preflight_are_research_node_bound(tmp_path: Path) -> None:
@@ -707,6 +729,25 @@ def test_gaussian_optimization_reports_missing_convergence_evidence_once() -> No
         "status": "incomplete",
         "failures": ["optimization_convergence_evidence_missing"],
     }
+
+
+def test_gaussian_ts_validation_reuses_optimization_evidence() -> None:
+    validation = validate_parsed_task("gaussian", "ts", {
+        "normal_termination": True,
+        "missing_artifacts": [],
+        "stationary_point_found": True,
+        "final_geometry_atoms": 3,
+        "final_convergence_evidence_present": True,
+        "final_convergence_satisfied": True,
+    })
+
+    assert validation == {"status": "completed", "failures": []}
+
+
+def test_gaussian_route_settings_distinguishes_direct_ts_from_other_opt_keywords() -> None:
+    assert route_settings("#P M062X/6-31G** Opt=(TS,CalcFC)")["has_ts"] is True
+    assert route_settings("#P M062X/6-31G** Opt=(QST2,CalcFC)")["has_ts"] is False
+    assert route_settings("#P M062X/6-31G** Opt Freq")["has_ts"] is False
 
 
 def test_compute_result_contract_rejects_scientific_verdict_fields() -> None:

@@ -11,7 +11,7 @@ public calls.
 
 ## Supported Tasks
 
-- Gaussian: `sp`, `opt`, `freq`, `opt_freq`, `irc`.
+- Gaussian: `sp`, `opt`, `ts`, `freq`, `opt_freq`, `irc`.
 - xTB: `sp`, `opt`, `freq`, `opt_freq`, `scan`, `md`.
 - CREST: `conformer_search`.
 - ASE with the xTB CLI calculator: `neb`.
@@ -40,8 +40,9 @@ Parser output is factual and backend-owned; it does not decide whether the
 requested task succeeded. The compute layer records program termination in
 `program_status` and evaluates capability-specific completion separately in
 `task_validation`. Neither field is a scientific verdict, and Gaussian
-single-point, optimization, and frequency tasks never inherit transition-state
-assessment rules merely because they use the Gaussian parser.
+single-point, optimization, transition-state optimization, and frequency tasks
+never inherit scientific transition-state assessment rules merely because they
+use the Gaussian parser.
 
 The host freezes every launch in `ts-calculation-intent/7`, including Node and
 scientific-intent digests plus same-Node Attempt lineage. Any changed method,
