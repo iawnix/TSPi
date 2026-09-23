@@ -19,6 +19,13 @@ activation_script = "/home/iaw/soft/xtb/current/activate_xtb.sh"
 command = "/home/iaw/soft/xtb/current/bin/xtb"
 activation_script = "/home/iaw/soft/xtb/current/activate_xtb.sh"
 
+# PySCF/CF22D is intentionally isolated from the TSPi kernel runtime. The
+# bound Python must contain PySCF, geomeTRIC, pyscf-dispersion, and the TSPi
+# package (or a PYTHONPATH pointing at this checkout).
+[environments.local.backends.pyscf]
+command = "/home/iaw/soft/pyscf/current/bin/python"
+activation_script = "/home/iaw/soft/pyscf/current/activate_pyscf.sh"
+
 [environments.local.backends.crest]
 command = "/home/iaw/soft/crest/current/bin/crest"
 activation_script = "/home/iaw/soft/crest/activate_crest.sh"
@@ -69,3 +76,9 @@ requires_gpu = false
 
 [environments.cluster_1w.backends.ase_neb.environment]
 TS_ASE_NEB_XTB = "/home/agent/soft/xtb/current/bin/xtb"
+
+[environments.cluster_1w.backends.pyscf]
+command = ["/home/agent/soft/pyscf/current/bin/python"]
+activation_script = "/home/agent/soft/pyscf/current/activate_pyscf.sh"
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false

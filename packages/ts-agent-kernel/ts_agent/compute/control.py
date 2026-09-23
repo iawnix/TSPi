@@ -40,6 +40,12 @@ from ts_agent.backends.gaussian import (
     write_irc_parse_artifacts,
     write_parse_artifacts,
 )
+from ts_agent.backends.pyscf import (
+    PYSCF_REQUIRED_ARTIFACTS,
+    parse_pyscf_artifacts,
+    prepare_pyscf,
+    write_pyscf_parse_artifacts,
+)
 from ts_agent.backends.xtb import (
     XTB_REQUIRED_ARTIFACTS,
     parse_xtb_artifacts,
@@ -117,6 +123,7 @@ BACKEND_PREPARERS: dict[str, Callable[[BackendTask], PreparedTask]] = {
     "xtb": prepare_xtb,
     "crest": prepare_crest,
     "ase_neb": prepare_ase_neb,
+    "pyscf": prepare_pyscf,
 }
 BACKENDS: dict[str, dict[str, tuple[set[str], Callable[[BackendTask], PreparedTask]]]] = {
     backend: {
@@ -1229,7 +1236,9 @@ def parse_calculation(
         raise ComputeContractError("CREST parser requires the bound crest.out artifact")
     if backend == "ase_neb" and source.name != "neb_summary.json":
         raise ComputeContractError("ASE NEB parser requires the bound neb_summary.json artifact")
-    if backend not in {"gaussian", "xtb", "crest", "ase_neb"}:
+    if backend == "pyscf" and source.name != "pyscf_result.json":
+        raise ComputeContractError("PySCF parser requires the bound pyscf_result.json artifact")
+    if backend not in {"gaussian", "xtb", "crest", "ase_neb", "pyscf"}:
         raise ComputeContractError(f"no deterministic parser is exposed for backend: {backend}")
 
     parse_inputs = _bound_parse_artifacts(workspace, intent, prepared_task, source_ref)
@@ -1285,6 +1294,12 @@ def parse_calculation(
         parsed = parse_crest_artifacts(
             {name: path for name, (_, path) in parse_inputs.items()}
         )
+    elif backend == "pyscf":
+        parsed = parse_pyscf_artifacts(
+            str(intent["task_type"]),
+            {name: path for name, (_, path) in parse_inputs.items()},
+            expected_settings=adapter_settings(intent["parameters"]),
+        )
     else:
         parsed = parse_ase_neb_artifacts(
             {name: path for name, (_, path) in parse_inputs.items()},
@@ -1318,6 +1333,8 @@ def parse_calculation(
             write_xtb_parse_artifacts(parsed, parse_dir)
         elif backend == "crest":
             write_crest_parse_artifacts(parsed, parse_dir)
+        elif backend == "pyscf":
+            write_pyscf_parse_artifacts(parsed, parse_dir)
         else:
             write_ase_neb_parse_artifacts(parsed, parse_dir)
         parser_output_refs = sorted(
@@ -1409,6 +1426,8 @@ def _parser_name(backend: str, is_irc: bool) -> str:
         return "ts_agent.backends.xtb.parse_xtb_artifacts"
     if backend == "crest":
         return "ts_agent.backends.crest.parse_crest_artifacts"
+    if backend == "pyscf":
+        return "ts_agent.backends.pyscf.parse_pyscf_artifacts"
     return "ts_agent.backends.ase_neb.parse_ase_neb_artifacts"
 
 
@@ -1621,6 +1640,12 @@ def _backend_binding(workspace: Path, intent: dict[str, Any], backend: str) -> B
     environment_name = target.get("environment") if isinstance(target.get("environment"), str) else None
     binding_name = _backend_binding_name(backend)
     binding_names = _backend_binding_names(backend)
+    if backend == "ase_neb" and kind == "remote":
+        # Remote execution needs the ASE/Python runner binding.  The legacy
+        # ase_neb_xtb name denotes a local xTB executable and is not a valid
+        # remote runner fallback.
+        binding_name = "ase_neb"
+        binding_names = ("ase_neb",)
     if kind == "remote":
         platform = _remote_platform(str(environment_name))
         value = next(
@@ -1668,11 +1693,16 @@ def _apply_compute_environment(
             **prepared.environment,
             **binding.environment,
         }
-        environment.setdefault("TS_ASE_NEB_XTB", binding.command[0])
         if intent.get("execution_target", {}).get("kind") == "remote":
+            if not binding.environment.get("TS_ASE_NEB_XTB", "").strip():
+                raise ComputeContractError(
+                    "remote ASE NEB binding requires environment.TS_ASE_NEB_XTB"
+                )
             # On a remote platform the backend binding names the remote
             # Python runtime that owns ASE and the runner module.
             command = list(binding.command) + command[1:]
+        else:
+            environment.setdefault("TS_ASE_NEB_XTB", binding.command[0])
     else:
         command = list(binding.command) + command[1:]
         environment = {**prepared.environment, **binding.environment}
@@ -1693,6 +1723,8 @@ def _validate_required_backend_artifacts(intent: dict[str, Any], prepared: Prepa
         required = CREST_REQUIRED_ARTIFACTS
     elif backend == "ase_neb":
         required = ASE_NEB_REQUIRED_ARTIFACTS
+    elif backend == "pyscf":
+        required = PYSCF_REQUIRED_ARTIFACTS[task_type]
     else:
         return
     names = {Path(ref).name for ref in prepared.expected_artifacts}
@@ -1902,6 +1934,8 @@ def _remote_stdout_name(prepared: dict[str, Any]) -> str:
         return "crest.out"
     if backend == "ase_neb" and "ase_neb.out" in expected:
         return "ase_neb.out"
+    if backend == "pyscf" and "pyscf.out" in expected:
+        return "pyscf.out"
     return "remote_job.stdout"
 
 
@@ -1926,7 +1960,12 @@ def _default_parse_ref(workspace: Path, intent: dict[str, Any], prepared: dict[s
     if backend == "gaussian":
         candidates = [name for name in names if Path(name).suffix.lower() in {".log", ".out"}]
     else:
-        primary = {"xtb": "xtb.out", "crest": "crest.out", "ase_neb": "neb_summary.json"}.get(backend)
+        primary = {
+            "xtb": "xtb.out",
+            "crest": "crest.out",
+            "ase_neb": "neb_summary.json",
+            "pyscf": "pyscf_result.json",
+        }.get(backend)
         candidates = [name for name in names if name == primary]
     if len(candidates) != 1:
         raise ComputeContractError(f"parse primary artifact is ambiguous: {candidates}; supply an exact artifact_ref")

@@ -33,7 +33,7 @@ def parsed_program_outcome(backend: str, facts: dict[str, Any]) -> tuple[str, st
 
     if backend == "gaussian":
         completed = facts.get("normal_termination") is True
-    elif backend in {"xtb", "crest", "ase_neb"}:
+    elif backend in {"xtb", "crest", "ase_neb", "pyscf"}:
         completed = facts.get("execution_completed") is True
     else:
         raise ValueError(f"no program outcome rule is registered for backend: {backend}")
@@ -56,6 +56,10 @@ def _common_failures(backend: str, facts: dict[str, Any]) -> list[str]:
             and facts.get("scc_converged") is not True
         ):
             failures.append("electronic_structure_not_converged")
+        if backend == "pyscf" and facts.get("settings_match") is not True:
+            failures.append("run_settings_differ_from_intent")
+        if backend == "pyscf" and facts.get("execution_completed") is True and facts.get("output_completion_marker") is not True:
+            failures.append("completion_marker_missing")
     missing = facts.get("missing_artifacts")
     if isinstance(missing, list) and missing:
         failures.append("required_artifacts_missing")
@@ -148,5 +152,58 @@ _TASK_VALIDATORS: dict[tuple[str, str], TaskValidator] = {
         ("image_energies_complete", "reaction_path_energies_incomplete"),
         ("force_threshold_satisfied", "neb_force_threshold_not_satisfied"),
         ("settings_match", "run_settings_differ_from_intent"),
+    ),
+    ("pyscf", "sp"): _combine(
+        _require_present(("electronic_energy_hartree", "electronic_energy_missing")),
+        _require_truthy(("scf_converged", "electronic_structure_not_converged")),
+    ),
+    ("pyscf", "opt"): _combine(
+        _require_truthy(("scf_converged", "electronic_structure_not_converged")),
+        _require_truthy(
+            ("optimization_converged", "optimization_not_converged"),
+            ("stationary_point_found", "stationary_point_missing"),
+            ("optimized_geometry_atom_count", "optimized_geometry_missing"),
+        ),
+        _require_present(("electronic_energy_hartree", "electronic_energy_missing")),
+    ),
+    ("pyscf", "ts"): _combine(
+        _require_truthy(("scf_converged", "electronic_structure_not_converged")),
+        _require_truthy(
+            ("optimization_converged", "optimization_not_converged"),
+            ("stationary_point_found", "stationary_point_missing"),
+            ("optimized_geometry_atom_count", "optimized_geometry_missing"),
+        ),
+        _require_present(("electronic_energy_hartree", "electronic_energy_missing")),
+    ),
+    ("pyscf", "freq"): _combine(
+        _require_truthy(("scf_converged", "electronic_structure_not_converged")),
+        _require_truthy(("frequency_count", "frequencies_missing")),
+    ),
+    ("pyscf", "thermo"): _combine(
+        _require_truthy(("scf_converged", "electronic_structure_not_converged")),
+        _require_truthy(("frequency_count", "frequencies_missing")),
+        _require_truthy(("thermochemistry_complete", "thermochemistry_missing")),
+    ),
+    ("pyscf", "opt_freq"): _combine(
+        _require_truthy(("scf_converged", "electronic_structure_not_converged")),
+        _require_truthy(
+            ("optimization_converged", "optimization_not_converged"),
+            ("stationary_point_found", "stationary_point_missing"),
+            ("optimized_geometry_atom_count", "optimized_geometry_missing"),
+            ("frequency_count", "frequencies_missing"),
+            ("stationary_point_valid", "minimum_stationary_point_invalid"),
+        ),
+        _require_present(("electronic_energy_hartree", "electronic_energy_missing")),
+    ),
+    ("pyscf", "ts_freq"): _combine(
+        _require_truthy(("scf_converged", "electronic_structure_not_converged")),
+        _require_truthy(
+            ("optimization_converged", "optimization_not_converged"),
+            ("stationary_point_found", "stationary_point_missing"),
+            ("optimized_geometry_atom_count", "optimized_geometry_missing"),
+            ("frequency_count", "frequencies_missing"),
+            ("stationary_point_valid", "transition_state_not_first_order"),
+        ),
+        _require_present(("electronic_energy_hartree", "electronic_energy_missing")),
     ),
 }

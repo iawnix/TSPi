@@ -81,6 +81,7 @@ test("Pi Agent Core loads the packaged TSPi skill catalog", async () => {
   const loaded = await loadSkills(env, join(process.cwd(), "skills"), TODO_CONTEXT);
   assert.deepEqual(loaded.diagnostics, []);
   assert.deepEqual(loaded.skills.map((skill) => skill.name), [
+    "cf22d",
     "tspi-crest",
     "tspi-email",
     "tspi-energetics",

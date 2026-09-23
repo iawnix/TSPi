@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi provides 15 focused Skills. The Research Kernel Skill owns the canonical
+TSPi provides 16 focused Skills. The Research Kernel Skill owns the canonical
 ResearchMap contract; orchestration chooses the next bounded task; scientific
 and delivery Skills handle one method or output concern without redefining
 state.
@@ -16,6 +16,7 @@ state.
 | [tspi-irc](tspi-irc/SKILL.md) | Bidirectional paths and endpoint identity |
 | [tspi-energetics](tspi-energetics/SKILL.md) | Energies, thermal corrections, barriers, bounded kinetics, and profiles |
 | [tspi-method-selection](tspi-method-selection/SKILL.md) | Scientific method, Backend capability, and compute environment selection |
+| [cf22d](cf22d/SKILL.md) | Registered PySCF/CF22D workflows and runtime readiness |
 | [tspi-xtb](tspi-xtb/SKILL.md) | Registered xTB calculations |
 | [tspi-crest](tspi-crest/SKILL.md) | CREST conformer ensembles |
 | [tspi-qbics](tspi-qbics/SKILL.md) | QBICS method guidance and live capability discovery |

@@ -26,6 +26,10 @@ configuration changes.
 For `ase_neb`, `doctor` additionally imports ASE and the TSPi runner with the
 configured Python and executes the configured xTB program's version probe. The
 environment is ready only when all three components are available.
+For `pyscf`, bind a dedicated Python interpreter and activation script that
+contain PySCF, geomeTRIC, `pyscf-dispersion`, and the TSPi runner; the doctor
+also probes a `CF22D` DFT constructor. The PySCF kernel does not install or
+discover scientific packages from the host Python during a calculation.
 
 ## Isolation
 

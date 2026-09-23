@@ -137,6 +137,7 @@ function capabilityLabel(value?: string): string | undefined {
     xtb: "xTB",
     crest: "CREST",
     ase: "ASE",
+    pyscf: "PySCF",
     qbics: "Qbics",
   }[family?.toLowerCase() || ""] || humanizeToken(family || value);
   return action ? `${familyLabel} ${humanizeToken(action)}` : familyLabel;
@@ -150,6 +151,7 @@ function capabilityFamilyLabel(value?: string): string | undefined {
     xtb: "xTB",
     crest: "CREST",
     ase: "ASE",
+    pyscf: "PySCF",
     qbics: "Qbics",
   }[family.toLowerCase()] || humanizeToken(family);
 }

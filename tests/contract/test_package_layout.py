@@ -222,6 +222,7 @@ def test_public_skill_family_matches_the_fifteen_owned_capabilities() -> None:
         "tspi-irc",
         "tspi-energetics",
         "tspi-method-selection",
+        "cf22d",
         "tspi-xtb",
         "tspi-crest",
         "tspi-qbics",

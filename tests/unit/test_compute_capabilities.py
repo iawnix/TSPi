@@ -23,6 +23,7 @@ def test_capability_catalog_keeps_adapters_separate_from_readiness() -> None:
         "xtb",
         "crest",
         "ase_neb",
+        "pyscf",
     }
     assert all("backend" not in item and "task_type" not in item for item in catalog["capabilities"])
 
@@ -39,13 +40,23 @@ def test_catalog_describes_executor_contracts_without_strategy_routing() -> None
         "gaussian.irc",
         "xtb.scan",
         "crest.conformer_search",
+        "pyscf.sp",
+        "pyscf.opt_freq",
+        "pyscf.ts_freq",
     } <= set(capabilities)
     assert capabilities["ase.neb"]["input_roles"] == ["product", "reactant"]
+    assert capabilities["ase.neb"]["output_roles"] == [
+        "program_output",
+        "reaction_path",
+        "trajectory",
+        "run_summary",
+    ]
     assert capabilities["ase.neb"]["parsers"] == ["ase.neb/1"]
     assert capabilities["ase.neb"]["limits"] == {
         "max_images": 32,
         "calculator": "xtb_cli",
-        "optimizer": "FIRE",
+        "neb_methods": ["aseneb", "improvedtangent", "eb", "spline", "string"],
+        "optimizers": ["FIRE", "BFGS", "LBFGS", "MDMin"],
     }
     assert "qbics.dmecp" not in capabilities
     assert capabilities["gaussian.opt_freq"]["input_roles"] == ["gjf"]
@@ -54,6 +65,9 @@ def test_catalog_describes_executor_contracts_without_strategy_routing() -> None
         "optimized_geometry",
         "frequencies",
     ]
+    assert capabilities["pyscf.sp"]["input_roles"] == ["xyz"]
+    assert capabilities["pyscf.sp"]["parsers"] == ["pyscf.output/1"]
+    assert capabilities["pyscf.sp"]["limits"]["default_xc"] == "CF22D"
     assert all("candidate_strategies" not in item for item in capabilities.values())
 
 
@@ -78,10 +92,26 @@ def test_capability_parameters_are_descriptor_bound() -> None:
         validate_capability_parameters(descriptor, {"unknown_setting": "invented"})
 
     neb = resolve_capability("ase.neb", "1")
-    assert validate_capability_parameters(neb, {"images": 7, "climb": True}) == {
+    assert validate_capability_parameters(
+        neb,
+        {
+            "images": 7,
+            "ci_neb": True,
+            "ci_fmax": 0.025,
+            "neb_method": "improvedtangent",
+            "optimizer": "BFGS",
+        },
+    ) == {
         "images": 7,
-        "climb": True,
+        "ci_neb": True,
+        "ci_fmax": 0.025,
+        "neb_method": "improvedtangent",
+        "optimizer": "BFGS",
     }
+    with pytest.raises(ValueError, match="should not be valid"):
+        validate_capability_parameters(neb, {"climb": True, "ci_neb": True})
+    with pytest.raises(ValueError, match="required property"):
+        validate_capability_parameters(neb, {"ci_fmax": 0.025})
     with pytest.raises(ValueError, match="less than the minimum"):
         validate_capability_parameters(neb, {"images": 2})
     with pytest.raises(ValueError, match="dependency"):

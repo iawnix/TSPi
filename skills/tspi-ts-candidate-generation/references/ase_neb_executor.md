@@ -2,29 +2,63 @@
 
 The registered capability is `ase.neb@1`. It accepts exactly one `reactant` and
 one `product` XYZ artifact. Each endpoint must contain one frame, and both files
-must use the same atoms in the same order. The backend rejects identical
-endpoint coordinates before preparation.
+must use the same atoms in the same order. The backend rejects identical or
+rigidly equivalent endpoint geometries before preparation.
 
-ASE provides NEB interpolation and FIRE optimization. A fixed xTB CLI
+ASE provides NEB interpolation and path optimization. A fixed xTB CLI
 calculator supplies energy and Cartesian gradients for every image. Supported
 electronic methods are `gfn1` and `gfn2`; no calculator substitution occurs.
+The managed runner evaluates images serially and uses no ASE preconditioner;
+parallel image execution and `precon` are intentionally outside this capability.
 The capability catalog is authoritative for parameter types and bounds. Main
 parameters are `images`, `fmax`, `max_steps`, `spring_constant`,
-`interpolation`, `climb`, `remove_rotation_and_translation`, `method`,
-`charge`, `uhf`, `accuracy`, `electronic_temperature`, `solvent_model`, and
-`solvent`.
+`interpolation`, `neb_method`, `optimizer`, `climb`, `ci_neb`, `ci_fmax`,
+`remove_rotation_and_translation`, `method`, `charge`, `uhf`, `accuracy`,
+`electronic_temperature`, `solvent_model`, and `solvent`.
+
+`neb_method` selects the ASE path formulation: `aseneb`, `improvedtangent`,
+`eb`, `spline`, or `string`. `optimizer` selects the ASE optimizer:
+`FIRE`, `BFGS`, `LBFGS`, or `MDMin`. Defaults are explicit in the prepared
+command and echoed in `neb_summary.json`; the runner never relies on an ASE
+version default.
+
+The endpoints are input structures bound by the calculation intent;
+`ase.neb@1` does not pre-optimize them automatically. To relax endpoints first,
+run a registered optimization capability and bind its resulting XYZ artifacts
+to a new NEB intent. This capability also does not accept a `transition_state`
+input or discover one implicitly. TS-guided interpolation therefore requires a
+pre-existing TS candidate and an explicit future input-role extension.
+
+`ci_neb` is opt-in. When enabled, the runner first converges ordinary NEB with
+`climb=false`, then starts a second stage with the climbing image and
+`ci_fmax` (or `fmax` when omitted). If ordinary NEB does not converge, the CI
+stage is not started. The summary records the effective settings, stage-level
+convergence, and a bounded per-step history under `stages` and `history`; these
+fields are additive, so older summaries remain readable.
+`ci_fmax` is valid only when `ci_neb=true`; ordinary NEB and legacy single-stage
+`climb` runs report it as `null` because no CI stage is executed.
+The legacy single-stage `climb` mode and `ci_neb` are mutually exclusive; the
+intent must choose one explicitly.
+History records image energies and the maximum NEB force, not per-step image
+coordinates. `neb.traj` and `neb_path.xyz` contain only the final band.
 
 The required output set is:
 
-- `ase_neb.out`: optimizer log and the runner completion marker;
+- `ase_neb.out`: optimizer log and the runner completion marker, captured by
+  the calculation worker from stdout;
 - `neb.traj`: ASE-readable final image path;
 - `neb_path.xyz`: portable final path with one energy per image;
 - `neb_summary.json`: versioned run facts and convergence metrics.
 
+The capability exposes these logical output roles as `program_output`,
+`reaction_path`, `trajectory`, and `run_summary`; the bounded process history is
+part of `neb_summary.json` rather than a second uncontrolled log artifact.
+
 Parsing cross-checks the summary against the portable path, bound endpoints,
 energy list, image and atom counts, and all required files. A completed Python
 process is reported separately from task completion. `converged=false`, a
-maximum NEB force above `fmax`, mismatched endpoints, or incomplete path data
+maximum NEB force above the final stage's `fmax` (or `ci_fmax`), mismatched
+endpoints, or incomplete path data
 leaves `task_validation.status=incomplete` even when the program terminated
 normally.
 

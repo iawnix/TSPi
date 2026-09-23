@@ -14,12 +14,21 @@ from ase.units import Bohr, Hartree
 from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
 from ts_agent.backends.ase_neb import (
     ASE_NEB_ARTIFACTS,
+    _validate_run_summary,
     parse_ase_neb_artifacts,
     prepare_ase_neb,
     validate_ase_neb_endpoints,
 )
-from ts_agent.backends.ase_neb_runner import NebRunConfig, XtbCliCalculator, run_ase_neb
+from ts_agent.backends.ase_neb_runner import (
+    NebRunConfig,
+    XtbCliCalculator,
+    _configured_xtb_executable,
+    _validate_config,
+    main as ase_neb_runner_main,
+    run_ase_neb,
+)
 from ts_agent.backends.base import BackendTask
+from ts_agent.compute.control import _apply_compute_environment
 from ts_agent.compute import (
     ComputeContractError,
     create_calculation_intent,
@@ -28,6 +37,7 @@ from ts_agent.compute import (
     prepare_calculation,
 )
 from ts_agent.compute.task_validation import validate_parsed_task
+from ts_agent.platforms import BackendBinding
 
 
 def test_ase_neb_preparer_emits_bounded_explicit_runner_command() -> None:
@@ -43,6 +53,8 @@ def test_ase_neb_preparer_emits_bounded_explicit_runner_command() -> None:
                 "max_steps": "800",
                 "spring_constant": "0.2",
                 "interpolation": "linear",
+                "neb_method": "improvedtangent",
+                "optimizer": "BFGS",
                 "method": "gfn1",
                 "charge": "-1",
                 "uhf": "1",
@@ -64,6 +76,13 @@ def test_ase_neb_preparer_emits_bounded_explicit_runner_command() -> None:
         "reactant.xyz",
     ]
     assert prepared.command[5:7] == ["--product", "product.xyz"]
+    neb_method_index = prepared.command.index("--neb-method")
+    assert prepared.command[neb_method_index : neb_method_index + 4] == [
+        "--neb-method",
+        "improvedtangent",
+        "--optimizer",
+        "BFGS",
+    ]
     assert prepared.command[-8:] == [
         "--accuracy",
         "0.5",
@@ -74,8 +93,28 @@ def test_ase_neb_preparer_emits_bounded_explicit_runner_command() -> None:
         "--solvent",
         "water",
     ]
+    ci_index = prepared.command.index("--ci-neb")
+    assert prepared.command[ci_index : ci_index + 2] == [
+        "--ci-neb",
+        "false",
+    ]
+    assert "--ci-fmax" not in prepared.command
     assert prepared.input_paths == ["reactant.xyz", "product.xyz"]
     assert prepared.expected_artifacts == list(ASE_NEB_ARTIFACTS)
+
+
+def test_ase_neb_preparer_expands_ci_fmax_default_from_fmax() -> None:
+    prepared = prepare_ase_neb(
+        BackendTask(
+            node_id="node_1",
+            task_type="neb",
+            work_dir="nodes/node_1",
+            inputs={"reactant": "reactant.xyz", "product": "product.xyz"},
+            settings={"fmax": "0.03", "ci_neb": "true"},
+        )
+    )
+    ci_index = prepared.command.index("--ci-fmax")
+    assert prepared.command[ci_index : ci_index + 2] == ["--ci-fmax", "0.03"]
 
 
 @pytest.mark.parametrize(
@@ -84,6 +123,8 @@ def test_ase_neb_preparer_emits_bounded_explicit_runner_command() -> None:
         ({"images": "2"}, "images must be between"),
         ({"method": "gfnff"}, "method"),
         ({"solvent": "water"}, "provided together"),
+        ({"ci_neb": "true", "climb": "true"}, "mutually exclusive"),
+        ({"ci_fmax": "0.02"}, "requires ci_neb"),
         ({"shell": "arbitrary"}, "unsupported.*settings"),
     ],
 )
@@ -100,6 +141,68 @@ def test_ase_neb_preparer_rejects_unsupported_settings(
                 inputs={"reactant": "reactant.xyz", "product": "product.xyz"},
                 settings=settings,
             )
+        )
+
+
+def test_ase_neb_runner_rejects_ci_fmax_without_ci_neb(tmp_path: Path) -> None:
+    config = NebRunConfig(
+        reactant=tmp_path / "reactant.xyz",
+        product=tmp_path / "product.xyz",
+        images=3,
+        fmax=0.05,
+        max_steps=1,
+        spring_constant=0.1,
+        interpolation="linear",
+        method="gfn2",
+        charge=0,
+        uhf=0,
+        climb=False,
+        remove_rotation_and_translation=True,
+        ci_fmax=0.02,
+    )
+    with pytest.raises(ValueError, match="ci_fmax requires ci_neb"):
+        _validate_config(config)
+
+
+def test_ase_neb_runner_cli_rejects_ci_fmax_without_ci_neb(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="ci_fmax requires ci_neb"):
+        ase_neb_runner_main(
+            [
+                "--reactant",
+                str(tmp_path / "reactant.xyz"),
+                "--product",
+                str(tmp_path / "product.xyz"),
+                "--images",
+                "3",
+                "--fmax",
+                "0.05",
+                "--max-steps",
+                "1",
+                "--spring-constant",
+                "0.1",
+                "--interpolation",
+                "linear",
+                "--neb-method",
+                "aseneb",
+                "--optimizer",
+                "FIRE",
+                "--method",
+                "gfn2",
+                "--charge",
+                "0",
+                "--uhf",
+                "0",
+                "--climb",
+                "false",
+                "--ci-neb",
+                "false",
+                "--ci-fmax",
+                "0.02",
+                "--remove-rotation-and-translation",
+                "true",
+            ]
         )
 
 
@@ -157,6 +260,36 @@ print('* finished run on 2026/09/15 at 00:00:00')
     assert calculator.program_version == "6.7.1"
 
 
+def test_ase_neb_prefers_injected_xtb_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TS_ASE_NEB_XTB", "/managed/xtb/bin/xtb")
+    monkeypatch.setattr(
+        "ts_agent.backends.ase_neb_runner.configured_backend_command",
+        lambda _backend: pytest.fail("local compute config should not be consulted"),
+    )
+    assert _configured_xtb_executable() == "/managed/xtb/bin/xtb"
+
+
+def test_ase_neb_remote_binding_requires_explicit_xtb_executable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "ts_agent.compute.control._backend_binding",
+        lambda *_args: BackendBinding(command=("/managed/ase/bin/python",)),
+    )
+    task = prepare_ase_neb(
+        BackendTask(
+            node_id="node_1",
+            task_type="neb",
+            work_dir="nodes/node_1",
+            inputs={"reactant": "reactant.xyz", "product": "product.xyz"},
+        )
+    )
+    with pytest.raises(ComputeContractError, match="requires environment.TS_ASE_NEB_XTB"):
+        _apply_compute_environment(
+            tmp_path, {"execution_target": {"kind": "remote"}}, task
+        )
+
+
 def test_ase_neb_runner_generates_complete_artifact_set(tmp_path: Path) -> None:
     reactant = tmp_path / "reactant.xyz"
     product = tmp_path / "product.xyz"
@@ -186,6 +319,9 @@ def test_ase_neb_runner_generates_complete_artifact_set(tmp_path: Path) -> None:
 
     assert summary["execution_completed"] is True
     assert summary["converged"] is True
+    assert summary["ci_neb"] is False
+    assert summary["ci_fmax_ev_per_angstrom"] is None
+    assert summary["settings"]["ci_fmax"] is None
     assert summary["image_count"] == 3
     assert (output_dir / "neb.traj").is_file()
     assert (output_dir / "neb_path.xyz").is_file()
@@ -195,8 +331,230 @@ def test_ase_neb_runner_generates_complete_artifact_set(tmp_path: Path) -> None:
         {path.name: path for path in output_dir.iterdir()},
         reactant=reactant,
         product=product,
+        expected_settings={
+            "images": "3",
+            "fmax": "10",
+            "max_steps": "2",
+            "spring_constant": "0.1",
+            "interpolation": "linear",
+        },
     )
     assert parsed["summary"]["endpoint_match"] is True
+    assert parsed["summary"]["settings_match"] is True
+
+
+def test_ase_neb_parser_accepts_legacy_ci_summary_without_ci_fmax(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "outputs"
+    _synthetic_outputs(output_dir, converged=True)
+    summary_path = output_dir / "neb_summary.json"
+    run = json.loads(summary_path.read_text(encoding="utf-8"))
+    energies = run["image_energies_ev"]
+    run.update(
+        {
+            "ci_neb": True,
+            "stages": [
+                {
+                    "stage": "neb",
+                    "climb": False,
+                    "fmax_ev_per_angstrom": run["fmax_ev_per_angstrom"],
+                    "max_steps": run["max_steps"],
+                    "steps": run["steps"],
+                    "converged": True,
+                    "image_energies_ev": energies,
+                    "max_neb_force_ev_per_angstrom": run["max_neb_force_ev_per_angstrom"],
+                },
+                {
+                    "stage": "ci_neb",
+                    "climb": True,
+                    "fmax_ev_per_angstrom": run["fmax_ev_per_angstrom"],
+                    "max_steps": run["max_steps"],
+                    "steps": run["steps"],
+                    "converged": True,
+                    "image_energies_ev": energies,
+                    "max_neb_force_ev_per_angstrom": run["max_neb_force_ev_per_angstrom"],
+                },
+            ],
+        }
+    )
+    summary_path.write_text(json.dumps(run), encoding="utf-8")
+
+    parsed = parse_ase_neb_artifacts(
+        {path.name: path for path in output_dir.iterdir()},
+        expected_settings={
+            "images": "3",
+            "fmax": "0.05",
+            "max_steps": "500",
+            "spring_constant": "0.1",
+            "interpolation": "linear",
+            "ci_neb": "true",
+        },
+    )
+    assert parsed["summary"]["settings_match"] is True
+
+
+def test_ase_neb_two_stage_ci_records_stages_and_history(tmp_path: Path) -> None:
+    reactant = tmp_path / "reactant.xyz"
+    product = tmp_path / "product.xyz"
+    reactant.write_text("2\nreactant\nAr 0 0 0\nAr 1.2 0 0\n", encoding="utf-8")
+    product.write_text("2\nproduct\nAr 0 0 0\nAr 1.4 0 0\n", encoding="utf-8")
+    output_dir = tmp_path / "outputs"
+    summary = run_ase_neb(
+        NebRunConfig(
+            reactant=reactant,
+            product=product,
+            images=3,
+            fmax=10.0,
+            max_steps=2,
+            spring_constant=0.1,
+            interpolation="linear",
+            method="gfn2",
+            charge=0,
+            uhf=0,
+            climb=False,
+            remove_rotation_and_translation=True,
+            ci_neb=True,
+            ci_fmax=5.0,
+            neb_method="improvedtangent",
+            optimizer="BFGS",
+        ),
+        output_dir=output_dir,
+        calculator_factory=lambda _index: LennardJones(),
+    )
+
+    assert summary["ci_neb"] is True
+    assert summary["ci_fmax_ev_per_angstrom"] == pytest.approx(5.0)
+    assert summary["settings"]["ci_fmax"] == pytest.approx(5.0)
+    assert [stage["stage"] for stage in summary["stages"]] == ["neb", "ci_neb"]
+    assert all(stage["converged"] for stage in summary["stages"])
+    history = summary["history"]
+    assert history["schema_version"] == "ase-neb-history/1"
+    assert history["image_count"] == 3
+    assert {record["stage"] for record in history["records"]} == {"neb", "ci_neb"}
+
+    (output_dir / "ase_neb.out").write_text(
+        "ASE_NEB_RUN_COMPLETED {}\n",
+        encoding="utf-8",
+    )
+    parsed = parse_ase_neb_artifacts(
+        {path.name: path for path in output_dir.iterdir()},
+        reactant=reactant,
+        product=product,
+        expected_settings={
+            "images": "3",
+            "fmax": "10",
+            "max_steps": "2",
+            "spring_constant": "0.1",
+            "interpolation": "linear",
+            "ci_neb": "true",
+            "ci_fmax": "5",
+            "neb_method": "improvedtangent",
+            "optimizer": "BFGS",
+        },
+    )
+    assert parsed["summary"]["settings_match"] is True
+    assert parsed["summary"]["history_complete"] is True
+    assert parsed["summary"]["history_stages"] == ["neb", "ci_neb"]
+
+
+def test_ase_neb_summary_keeps_two_stage_state_consistent(tmp_path: Path) -> None:
+    output_dir = tmp_path / "outputs"
+    _synthetic_outputs(output_dir, converged=True)
+    summary_path = output_dir / "neb_summary.json"
+    run = json.loads(summary_path.read_text(encoding="utf-8"))
+    energies = run["image_energies_ev"]
+    run.update(
+        {
+            "ci_neb": True,
+            "ci_fmax_ev_per_angstrom": 0.025,
+            "steps": 7,
+            "max_neb_force_ev_per_angstrom": 0.02,
+            "stages": [
+                {
+                    "stage": "neb",
+                    "climb": False,
+                    "fmax_ev_per_angstrom": 0.05,
+                    "max_steps": 500,
+                    "steps": 42,
+                    "converged": True,
+                    "image_energies_ev": energies,
+                    "max_neb_force_ev_per_angstrom": 0.04,
+                },
+                {
+                    "stage": "ci_neb",
+                    "climb": True,
+                    "fmax_ev_per_angstrom": 0.025,
+                    "max_steps": 500,
+                    "steps": 7,
+                    "converged": True,
+                    "image_energies_ev": energies,
+                    "max_neb_force_ev_per_angstrom": 0.02,
+                },
+            ],
+            "history": {
+                "schema_version": "ase-neb-history/1",
+                "image_count": 3,
+                "records": [
+                    {
+                        "stage": "neb",
+                        "step": 0,
+                        "max_neb_force_ev_per_angstrom": 1.0,
+                        "image_energies_ev": energies,
+                    },
+                    {
+                        "stage": "neb",
+                        "step": 42,
+                        "max_neb_force_ev_per_angstrom": 0.04,
+                        "image_energies_ev": energies,
+                    },
+                    {
+                        "stage": "ci_neb",
+                        "step": 0,
+                        "max_neb_force_ev_per_angstrom": 0.04,
+                        "image_energies_ev": energies,
+                    },
+                    {
+                        "stage": "ci_neb",
+                        "step": 7,
+                        "max_neb_force_ev_per_angstrom": 0.02,
+                        "image_energies_ev": energies,
+                    },
+                ],
+            },
+        }
+    )
+    _validate_run_summary(run)
+
+    invalid = json.loads(json.dumps(run))
+    invalid["converged"] = False
+    with pytest.raises(ValueError, match="convergence disagrees"):
+        _validate_run_summary(invalid)
+
+    invalid = json.loads(json.dumps(run))
+    invalid["stages"][0]["converged"] = False
+    with pytest.raises(ValueError, match="ran before"):
+        _validate_run_summary(invalid)
+
+    invalid = json.loads(json.dumps(run))
+    invalid["history"]["records"][-1]["stage"] = "neb"
+    with pytest.raises(ValueError, match="history stage order"):
+        _validate_run_summary(invalid)
+
+    invalid = json.loads(json.dumps(run))
+    invalid["stages"][1]["fmax_ev_per_angstrom"] = 0.5
+    with pytest.raises(ValueError, match="stage fmax"):
+        _validate_run_summary(invalid)
+
+    invalid = json.loads(json.dumps(run))
+    invalid["climb"] = True
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        _validate_run_summary(invalid)
+
+    invalid = json.loads(json.dumps(run))
+    invalid["history"]["records"][-1]["step"] = 99
+    with pytest.raises(ValueError, match="history steps"):
+        _validate_run_summary(invalid)
 
 
 def test_ase_neb_parser_cross_checks_summary_path_endpoints_and_convergence(

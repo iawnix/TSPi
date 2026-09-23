@@ -21,6 +21,9 @@ OpenSSH/SCP 与 Torque 传输层，不是另一套公共计算生命周期。公
 首次远端计算前，或配置发生变化后，运行 `TSPi --check-remote`。对于 `ase_neb`，
 `doctor` 还会使用配置的 Python 导入 ASE 与 TSPi runner，并执行配置的 xTB 程序版本探测。
 三者全部可用时环境才算就绪。
+对于 `pyscf`，必须绑定包含 PySCF、geomeTRIC、`pyscf-dispersion` 和 TSPi runner 的专用
+Python 解释器及 activation script；doctor 还会探测 `CF22D` DFT 构造器。PySCF kernel
+不会在计算过程中向宿主 Python 安装依赖，也不会从宿主 Python 猜测科学软件包。
 
 ## 隔离
 

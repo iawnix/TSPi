@@ -763,6 +763,55 @@ def test_doctor_checks_ase_neb_python_ase_and_xtb_runtime(tmp_path: Path) -> Non
     assert checks["ok"] is False
 
 
+def test_doctor_checks_pyscf_cf22d_runtime(tmp_path: Path) -> None:
+    platform = _platform(tmp_path)
+    pyscf_backend = replace(
+        platform.backends["gaussian"],
+        command=("/opt/pyscf/bin/python",),
+        activation_script="/opt/pyscf/activate.sh",
+    )
+    platform = replace(platform, backends={"pyscf": pyscf_backend})
+
+    class Client:
+        calls = 0
+
+        def run(self, argv, *, check=True):
+            del check
+            return CommandResult(tuple(argv), 0, "ok\n", "")
+
+        def run_script(self, _script, args, *, check=True):
+            del check
+            self.calls += 1
+            if self.calls == 1:
+                return CommandResult(("ssh",), 0, "", "")
+            assert args == ["/opt/pyscf/activate.sh", "/opt/pyscf/bin/python"]
+            report = {
+                "distributions": {"pyscf-dispersion": "1.5.0"},
+                "modules": {
+                    "pyscf.dispersion": {
+                        "origin": "/opt/pyscf/lib/python/site-packages/pyscf/dispersion/__init__.py",
+                        "version": "1.5.0",
+                    }
+                },
+            }
+            return CommandResult(
+                ("ssh",),
+                0,
+                "TS_PYSCF_DOCTOR " + json.dumps(report) + "\n",
+                "",
+            )
+
+    checks = _doctor(Client(), platform)
+
+    assert checks["backends"]["pyscf"]["command_available"] is True
+    assert checks["backends"]["pyscf"]["activation_script_available"] is True
+    assert checks["backends"]["pyscf"]["runtime_dependencies_available"] is True
+    assert checks["backends"]["pyscf"]["runtime_versions"]["distributions"] == {
+        "pyscf-dispersion": "1.5.0"
+    }
+    assert checks["ok"] is True
+
+
 def test_torque_renders_ase_neb_platform_python_and_xtb_environment(tmp_path: Path) -> None:
     base = _job(tmp_path)
     ase_backend = replace(
@@ -786,3 +835,29 @@ def test_torque_renders_ase_neb_platform_python_and_xtb_environment(tmp_path: Pa
     assert "export TS_ASE_NEB_XTB=/opt/xtb/bin/xtb" in script
     assert "/opt/ase-neb/bin/python -m ts_agent.backends.ase_neb_runner --images 7" in script
     assert "> ase_neb.out" in script
+
+
+def test_torque_renders_pyscf_platform_python_and_activation(tmp_path: Path) -> None:
+    base = _job(tmp_path)
+    pyscf_backend = replace(
+        base.platform.backends["gaussian"],
+        command=("/opt/pyscf/bin/python",),
+        activation_script="/opt/pyscf/activate.sh",
+    )
+    platform = replace(base.platform, backends={"pyscf": pyscf_backend})
+    config = replace(
+        base,
+        backend="pyscf",
+        platform=platform,
+        command=("/local/python", "-m", "ts_agent.backends.pyscf_runner", "--task", "sp"),
+        input_paths=(tmp_path / "candidate.xyz",),
+        expected_artifacts=("pyscf.out", "pyscf_result.json"),
+        stdout_name="pyscf.out",
+    )
+    config.input_paths[0].write_text("1\nH\nH 0 0 0\n", encoding="utf-8")
+
+    script = render_job_script(config)
+
+    assert "source /opt/pyscf/activate.sh" in script
+    assert "/opt/pyscf/bin/python -m ts_agent.backends.pyscf_runner --task sp" in script
+    assert "> pyscf.out" in script

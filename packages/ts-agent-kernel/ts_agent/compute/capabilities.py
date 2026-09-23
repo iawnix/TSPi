@@ -102,7 +102,21 @@ def _ase_neb_parameters() -> dict[str, Any]:
                 "default": 0.1,
             },
             "interpolation": {"enum": ["linear", "idpp"], "default": "idpp"},
+            "neb_method": {
+                "enum": ["aseneb", "improvedtangent", "eb", "spline", "string"],
+                "default": "aseneb",
+            },
+            "optimizer": {
+                "enum": ["FIRE", "BFGS", "LBFGS", "MDMin"],
+                "default": "FIRE",
+            },
             "climb": {"type": "boolean", "default": False},
+            "ci_neb": {"type": "boolean", "default": False},
+            "ci_fmax": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 10,
+            },
             "remove_rotation_and_translation": {"type": "boolean", "default": True},
             "method": {"enum": ["gfn1", "gfn2"], "default": "gfn2"},
             "charge": {"type": "integer", "minimum": -100, "maximum": 100, "default": 0},
@@ -118,6 +132,53 @@ def _ase_neb_parameters() -> dict[str, Any]:
         "dependentRequired": {
             "solvent": ["solvent_model"],
             "solvent_model": ["solvent"],
+        },
+        "allOf": [
+            {
+                "if": {"required": ["ci_fmax"]},
+                "then": {
+                    "required": ["ci_neb"],
+                    "properties": {"ci_neb": {"const": True}},
+                },
+            }
+        ],
+        "not": {
+            "required": ["climb", "ci_neb"],
+            "properties": {
+                "climb": {"const": True},
+                "ci_neb": {"const": True},
+            },
+        },
+        "additionalProperties": False,
+    }
+
+
+def _pyscf_parameters(*, use_initial_hessian_default: bool = False) -> dict[str, Any]:
+    """Bound scalar settings for the dedicated PySCF/CF22D runtime."""
+
+    return {
+        "type": "object",
+        "properties": {
+            "basis": {"type": "string", "minLength": 1, "maxLength": 128, "default": "def2-tzvp"},
+            "charge": {"type": "integer", "minimum": -100, "maximum": 100, "default": 0},
+            "spin": {"type": "integer", "minimum": 0, "maximum": 200, "default": 0},
+            "unit": {"enum": ["angstrom", "bohr"], "default": "angstrom"},
+            "verbose": {"type": "integer", "minimum": 0, "maximum": 9, "default": 4},
+            "xc": {"enum": ["CF22D"], "default": "CF22D"},
+            "grid_level": {"type": "integer", "minimum": 0, "maximum": 9, "default": 6},
+            "conv_tol": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "default": 1.0e-10},
+            "max_cycle": {"type": "integer", "minimum": 1, "maximum": 100_000, "default": 400},
+            "max_steps": {"type": "integer", "minimum": 1, "maximum": 10_000, "default": 100},
+            "threads": {"type": "integer", "minimum": 1, "maximum": 4096, "default": 1},
+            "memory_mb": {"type": "integer", "minimum": 1, "maximum": 4_000_000, "default": 4000},
+            "imaginary_threshold_cm": {
+                "type": "number",
+                "exclusiveMaximum": 0,
+                "default": -20.0,
+            },
+            "temperature": {"type": "number", "minimum": 0, "maximum": 10_000, "default": 298.15},
+            "pressure": {"type": "number", "exclusiveMinimum": 0, "maximum": 10_000_000, "default": 101325.0},
+            "use_initial_hessian": {"type": "boolean", "default": use_initial_hessian_default},
         },
         "additionalProperties": False,
     }
@@ -197,10 +258,85 @@ CAPABILITY_DESCRIPTORS: Final[tuple[CapabilityDescriptor, ...]] = (
         "ase_neb",
         "neb",
         frozenset({"reactant", "product"}),
-        ("program_output", "reaction_path"),
+        ("program_output", "reaction_path", "trajectory", "run_summary"),
         parser="ase.neb/1",
         parameter_schema=_ase_neb_parameters(),
-        limits={"max_images": 32, "calculator": "xtb_cli", "optimizer": "FIRE"},
+        limits={
+            "max_images": 32,
+            "calculator": "xtb_cli",
+            "neb_methods": ["aseneb", "improvedtangent", "eb", "spline", "string"],
+            "optimizers": ["FIRE", "BFGS", "LBFGS", "MDMin"],
+        },
+    ),
+    _descriptor(
+        "pyscf.sp",
+        "pyscf",
+        "sp",
+        frozenset({"xyz"}),
+        ("program_output", "energy"),
+        parser="pyscf.output/1",
+        parameter_schema=_pyscf_parameters(),
+        limits={"runtime": "dedicated_python", "default_xc": "CF22D"},
+    ),
+    _descriptor(
+        "pyscf.opt",
+        "pyscf",
+        "opt",
+        frozenset({"xyz"}),
+        ("program_output", "optimized_geometry", "energy"),
+        parser="pyscf.output/1",
+        parameter_schema=_pyscf_parameters(),
+        limits={"runtime": "dedicated_python", "default_xc": "CF22D"},
+    ),
+    _descriptor(
+        "pyscf.ts",
+        "pyscf",
+        "ts",
+        frozenset({"xyz"}),
+        ("program_output", "optimized_geometry", "energy"),
+        parser="pyscf.output/1",
+        parameter_schema=_pyscf_parameters(use_initial_hessian_default=True),
+        limits={"runtime": "dedicated_python", "default_xc": "CF22D"},
+    ),
+    _descriptor(
+        "pyscf.freq",
+        "pyscf",
+        "freq",
+        frozenset({"xyz"}),
+        ("program_output", "frequencies"),
+        parser="pyscf.output/1",
+        parameter_schema=_pyscf_parameters(),
+        limits={"runtime": "dedicated_python", "default_xc": "CF22D"},
+    ),
+    _descriptor(
+        "pyscf.thermo",
+        "pyscf",
+        "thermo",
+        frozenset({"xyz"}),
+        ("program_output", "frequencies", "thermochemistry"),
+        parser="pyscf.output/1",
+        parameter_schema=_pyscf_parameters(),
+        limits={"runtime": "dedicated_python", "default_xc": "CF22D"},
+    ),
+    _descriptor(
+        "pyscf.opt_freq",
+        "pyscf",
+        "opt_freq",
+        frozenset({"xyz"}),
+        ("program_output", "optimized_geometry", "frequencies"),
+        parser="pyscf.output/1",
+        parameter_schema=_pyscf_parameters(),
+        limits={"runtime": "dedicated_python", "default_xc": "CF22D"},
+    ),
+    _descriptor(
+        "pyscf.ts_freq",
+        "pyscf",
+        "ts_freq",
+        frozenset({"xyz"}),
+        ("program_output", "optimized_geometry", "frequencies"),
+        parser="pyscf.output/1",
+        parameter_schema=_pyscf_parameters(use_initial_hessian_default=True),
+        limits={"runtime": "dedicated_python", "default_xc": "CF22D"},
     ),
 )
 

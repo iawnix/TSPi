@@ -28,6 +28,31 @@ _SOLVENT = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 _MAX_SUMMARY_BYTES = 1024 * 1024
 _POSITION_TOLERANCE_ANGSTROM = 1.0e-7
 _ENERGY_TOLERANCE_EV = 1.0e-7
+_HISTORY_RECORD_LIMIT = 256
+_NEB_METHODS = frozenset({"aseneb", "improvedtangent", "eb", "spline", "string"})
+_OPTIMIZERS = frozenset({"FIRE", "BFGS", "LBFGS", "MDMin"})
+_SETTINGS_FIELDS = frozenset(
+    {
+        "images",
+        "fmax",
+        "max_steps",
+        "spring_constant",
+        "interpolation",
+        "neb_method",
+        "optimizer",
+        "climb",
+        "ci_neb",
+        "ci_fmax",
+        "remove_rotation_and_translation",
+        "method",
+        "charge",
+        "uhf",
+        "accuracy",
+        "electronic_temperature",
+        "solvent_model",
+        "solvent",
+    }
+)
 _RUN_REQUIRED_FIELDS = frozenset(
     {
         "schema_version",
@@ -62,6 +87,16 @@ _RUN_REQUIRED_FIELDS = frozenset(
         "max_neb_force_ev_per_angstrom",
     }
 )
+_RUN_OPTIONAL_FIELDS = frozenset(
+    {
+        "ci_neb",
+        "ci_fmax_ev_per_angstrom",
+        "neb_method",
+        "settings",
+        "stages",
+        "history",
+    }
+)
 
 
 def prepare_ase_neb(task: BackendTask) -> PreparedTask:
@@ -91,6 +126,10 @@ def prepare_ase_neb(task: BackendTask) -> PreparedTask:
         _format_number(settings["spring_constant"]),
         "--interpolation",
         settings["interpolation"],
+        "--neb-method",
+        settings["neb_method"],
+        "--optimizer",
+        settings["optimizer"],
         "--method",
         settings["method"],
         "--charge",
@@ -102,6 +141,12 @@ def prepare_ase_neb(task: BackendTask) -> PreparedTask:
         "--remove-rotation-and-translation",
         str(settings["remove_rotation_and_translation"]).lower(),
     ]
+    # These flags are explicit in the prepared command so remote execution
+    # cannot silently fall back to a runner default.  They are inserted before
+    # the legacy optional xTB flags to keep the old command suffix stable.
+    command.extend(["--ci-neb", str(settings["ci_neb"]).lower()])
+    if settings["ci_fmax"] is not None:
+        command.extend(["--ci-fmax", _format_number(settings["ci_fmax"])])
     if settings["accuracy"] is not None:
         command.extend(["--accuracy", _format_number(settings["accuracy"])])
     if settings["electronic_temperature"] is not None:
@@ -133,7 +178,11 @@ def normalize_ase_neb_settings(settings: dict[str, str]) -> dict[str, Any]:
         "interpolation",
         "max_steps",
         "method",
+        "neb_method",
+        "optimizer",
         "remove_rotation_and_translation",
+        "ci_neb",
+        "ci_fmax",
         "solvent",
         "solvent_model",
         "spring_constant",
@@ -145,6 +194,18 @@ def normalize_ase_neb_settings(settings: dict[str, str]) -> dict[str, Any]:
     method = settings.get("method", "gfn2").lower()
     if method not in {"gfn1", "gfn2"}:
         raise ValueError(f"unsupported ASE NEB xTB method: {method}")
+    neb_method = settings.get("neb_method", "aseneb").lower()
+    if neb_method not in _NEB_METHODS:
+        raise ValueError(f"unsupported ASE NEB path method: {neb_method}")
+    optimizer = settings.get("optimizer", "FIRE").strip().lower()
+    optimizer_names = {
+        "fire": "FIRE",
+        "bfgs": "BFGS",
+        "lbfgs": "LBFGS",
+        "mdmin": "MDMin",
+    }
+    if optimizer not in optimizer_names:
+        raise ValueError(f"unsupported ASE NEB optimizer: {settings.get('optimizer')}")
     interpolation = settings.get("interpolation", "idpp").lower()
     if interpolation not in {"linear", "idpp"}:
         raise ValueError(f"unsupported ASE NEB interpolation: {interpolation}")
@@ -156,9 +217,23 @@ def normalize_ase_neb_settings(settings: dict[str, str]) -> dict[str, Any]:
         raise ValueError("ASE NEB solvent must be a safe xTB solvent name")
     if solvent_model is not None and solvent_model.lower() not in {"alpb", "gbsa"}:
         raise ValueError(f"unsupported ASE NEB solvent_model: {solvent_model}")
+    fmax = _bounded_float(settings.get("fmax", "0.05"), "fmax", 0.0, 10.0)
+    climb = _boolean(settings.get("climb", "false"), "climb")
+    ci_neb = _boolean(settings.get("ci_neb", "false"), "ci_neb")
+    if ci_neb and climb:
+        raise ValueError("ASE NEB climb and ci_neb are mutually exclusive; use ci_neb for two-stage CI-NEB")
+    ci_fmax = (
+        _bounded_float(settings["ci_fmax"], "ci_fmax", 0.0, 10.0)
+        if "ci_fmax" in settings
+        else None
+    )
+    if ci_fmax is not None and not ci_neb:
+        raise ValueError("ASE NEB ci_fmax requires ci_neb=true")
+    if ci_neb and ci_fmax is None:
+        ci_fmax = fmax
     return {
         "images": _bounded_int(settings.get("images", "7"), "images", 3, 32),
-        "fmax": _bounded_float(settings.get("fmax", "0.05"), "fmax", 0.0, 10.0),
+        "fmax": fmax,
         "max_steps": _bounded_int(settings.get("max_steps", "500"), "max_steps", 1, 100_000),
         "spring_constant": _bounded_float(
             settings.get("spring_constant", "0.1"),
@@ -167,7 +242,11 @@ def normalize_ase_neb_settings(settings: dict[str, str]) -> dict[str, Any]:
             10.0,
         ),
         "interpolation": interpolation,
-        "climb": _boolean(settings.get("climb", "false"), "climb"),
+        "neb_method": neb_method,
+        "optimizer": optimizer_names[optimizer],
+        "climb": climb,
+        "ci_neb": ci_neb,
+        "ci_fmax": ci_fmax,
         "remove_rotation_and_translation": _boolean(
             settings.get("remove_rotation_and_translation", "true"),
             "remove_rotation_and_translation",
@@ -296,8 +375,12 @@ def parse_ase_neb_artifacts(
         and image_energies_complete
         and endpoint_match is not False
     )
+    effective_fmax = run["fmax_ev_per_angstrom"]
+    run_stages = run.get("stages")
+    if isinstance(run_stages, list) and run_stages:
+        effective_fmax = run_stages[-1]["fmax_ev_per_angstrom"]
     force_threshold_satisfied = bool(
-        run["max_neb_force_ev_per_angstrom"] <= run["fmax_ev_per_angstrom"] + 1.0e-12
+        run["max_neb_force_ev_per_angstrom"] <= effective_fmax + 1.0e-12
     )
     settings_match: bool | None = None
     if expected_settings is not None:
@@ -323,6 +406,27 @@ def parse_ase_neb_artifacts(
             "missing_artifacts": [name for name, present in presence.items() if not present],
         }
     )
+    history = run.get("history")
+    if isinstance(history, dict):
+        records = history.get("records")
+        stages = [record.get("stage") for record in records] if isinstance(records, list) else []
+        summary.update(
+            {
+                "history_present": True,
+                "history_complete": True,
+                "history_record_count": len(records) if isinstance(records, list) else 0,
+                "history_stages": list(dict.fromkeys(stages)),
+            }
+        )
+    else:
+        summary.update(
+            {
+                "history_present": False,
+                "history_complete": None,
+                "history_record_count": 0,
+                "history_stages": [],
+            }
+        )
     return {
         "summary": summary,
         "reaction_path": {
@@ -358,7 +462,9 @@ class AseNebBackend(Backend):
 
 
 def _validate_run_summary(value: Any) -> None:
-    if not isinstance(value, dict) or set(value) != _RUN_REQUIRED_FIELDS:
+    if not isinstance(value, dict) or not _RUN_REQUIRED_FIELDS <= set(value):
+        raise ValueError("ASE NEB summary fields do not match ase.neb/1")
+    if set(value) - _RUN_REQUIRED_FIELDS - _RUN_OPTIONAL_FIELDS:
         raise ValueError("ASE NEB summary fields do not match ase.neb/1")
     if (
         value.get("schema_version") != "ase-neb-run/1"
@@ -367,13 +473,18 @@ def _validate_run_summary(value: Any) -> None:
         or value.get("execution_completed") is not True
     ):
         raise ValueError("ASE NEB summary identity or completion marker is invalid")
+    optimizer = value.get("optimizer")
+    neb_method = value.get("neb_method", "aseneb")
     if (
         value.get("calculator") != "xtb_cli"
-        or value.get("optimizer") != "FIRE"
+        or not isinstance(optimizer, str)
+        or optimizer not in _OPTIMIZERS
         or value.get("method") not in {"gfn1", "gfn2"}
         or value.get("interpolation") not in {"linear", "idpp"}
     ):
         raise ValueError("ASE NEB summary execution method is outside ase.neb/1")
+    if not isinstance(neb_method, str) or neb_method not in _NEB_METHODS:
+        raise ValueError("ASE NEB summary path method is outside ase.neb/1")
     for field in ("ase_version", "calculator", "method", "optimizer", "interpolation"):
         if not isinstance(value.get(field), str) or not value[field]:
             raise ValueError(f"ASE NEB summary field {field} must be a non-empty string")
@@ -460,6 +571,307 @@ def _validate_run_summary(value: Any) -> None:
     ):
         raise ValueError("ASE NEB summary barriers are inconsistent with image energies")
 
+    _validate_optional_run_fields(value)
+    _validate_settings_echo(value)
+
+
+def _validate_settings_echo(value: dict[str, Any]) -> None:
+    """Cross-check the effective settings object when a new runner emits it."""
+
+    if "settings" not in value:
+        return
+    settings = value["settings"]
+    if not isinstance(settings, dict) or set(settings) != _SETTINGS_FIELDS:
+        raise ValueError("ASE NEB summary settings fields are invalid")
+    expected = {
+        "images": value["image_count"],
+        "fmax": value["fmax_ev_per_angstrom"],
+        "max_steps": value["max_steps"],
+        "spring_constant": value["spring_constant_ev_per_angstrom2"],
+        "interpolation": value["interpolation"],
+        "neb_method": value.get("neb_method", "aseneb"),
+        "optimizer": value["optimizer"],
+        "climb": value["climb"],
+        "ci_neb": value.get("ci_neb", False),
+        "ci_fmax": (
+            value.get("ci_fmax_ev_per_angstrom", value["fmax_ev_per_angstrom"])
+            if value.get("ci_neb", False)
+            else value.get("ci_fmax_ev_per_angstrom")
+        ),
+        "remove_rotation_and_translation": value["remove_rotation_and_translation"],
+        "method": value["method"],
+        "charge": value["charge"],
+        "uhf": value["uhf"],
+        "accuracy": value["accuracy"],
+        "electronic_temperature": value["electronic_temperature"],
+        "solvent_model": value["solvent_model"],
+        "solvent": value["solvent"],
+    }
+    for key, expected_value in expected.items():
+        actual_value = settings[key]
+        if isinstance(expected_value, float):
+            if not isinstance(actual_value, (int, float)) or not math.isclose(
+                actual_value, expected_value, rel_tol=0.0, abs_tol=1.0e-12
+            ):
+                raise ValueError(f"ASE NEB summary settings {key} disagree with run fields")
+        elif actual_value != expected_value:
+            raise ValueError(f"ASE NEB summary settings {key} disagree with run fields")
+
+
+def _validate_optional_run_fields(value: dict[str, Any]) -> None:
+    """Validate additive two-stage/history fields while accepting old runs."""
+
+    if "ci_neb" in value and not isinstance(value["ci_neb"], bool):
+        raise ValueError("ASE NEB summary ci_neb must be boolean")
+    if value.get("ci_neb") is True and value["climb"] is True:
+        raise ValueError("ASE NEB summary climb and ci_neb are mutually exclusive")
+    if "stages" in value and value["stages"] is None:
+        raise ValueError("ASE NEB summary stages cannot be null")
+    if "history" in value and value["history"] is None:
+        raise ValueError("ASE NEB summary history cannot be null")
+    ci_neb = value.get("ci_neb", False)
+    if "ci_fmax_ev_per_angstrom" in value:
+        ci_fmax = value["ci_fmax_ev_per_angstrom"]
+        if ci_fmax is None:
+            if ci_neb:
+                raise ValueError("ASE NEB summary CI-NEB requires ci_fmax")
+        elif (
+            isinstance(ci_fmax, bool)
+            or not isinstance(ci_fmax, (int, float))
+            or not math.isfinite(float(ci_fmax))
+            or not 0.0 < float(ci_fmax) <= 10.0
+        ):
+            raise ValueError("ASE NEB summary ci_fmax is outside ase.neb/1")
+        elif not ci_neb:
+            raise ValueError("ASE NEB summary ci_fmax requires ci_neb")
+
+    stages = value.get("stages")
+    if stages is not None:
+        if not isinstance(stages, list) or not 1 <= len(stages) <= 2:
+            raise ValueError("ASE NEB summary stages are invalid")
+        expected_names = ["neb", "ci_neb"]
+        names: list[str] = []
+        for stage in stages:
+            if not isinstance(stage, dict):
+                raise ValueError("ASE NEB summary stage is not an object")
+            if set(stage) != {
+                "stage",
+                "climb",
+                "fmax_ev_per_angstrom",
+                "max_steps",
+                "steps",
+                "converged",
+                "image_energies_ev",
+                "max_neb_force_ev_per_angstrom",
+            }:
+                raise ValueError("ASE NEB summary stage fields are invalid")
+            name = stage["stage"]
+            if name not in expected_names or name in names:
+                raise ValueError("ASE NEB summary stage order is invalid")
+            names.append(name)
+            if not isinstance(stage["climb"], bool) or not isinstance(stage["converged"], bool):
+                raise ValueError("ASE NEB summary stage boolean is invalid")
+            if name == "neb" and stage["climb"] != value["climb"]:
+                raise ValueError("ASE NEB summary ordinary NEB climb disagrees with settings")
+            if name == "ci_neb" and stage["climb"] is not True:
+                raise ValueError("ASE NEB summary CI-NEB stage is not climbing")
+            if (
+                isinstance(stage["max_steps"], bool)
+                or not isinstance(stage["max_steps"], int)
+                or not 1 <= stage["max_steps"] <= 100_000
+                or isinstance(stage["steps"], bool)
+                or not isinstance(stage["steps"], int)
+                or not 0 <= stage["steps"] <= stage["max_steps"]
+            ):
+                raise ValueError("ASE NEB summary stage step count is invalid")
+            fmax = stage["fmax_ev_per_angstrom"]
+            force = stage["max_neb_force_ev_per_angstrom"]
+            if (
+                isinstance(fmax, bool)
+                or not isinstance(fmax, (int, float))
+                or not math.isfinite(float(fmax))
+                or not 0.0 < float(fmax) <= 10.0
+                or isinstance(force, bool)
+                or not isinstance(force, (int, float))
+                or not math.isfinite(float(force))
+                or float(force) < 0.0
+            ):
+                raise ValueError("ASE NEB summary stage convergence value is invalid")
+            expected_fmax = (
+                value["fmax_ev_per_angstrom"]
+                if name == "neb"
+                else (
+                    value.get("ci_fmax_ev_per_angstrom")
+                    or value["fmax_ev_per_angstrom"]
+                )
+            )
+            if not math.isclose(fmax, expected_fmax, rel_tol=0.0, abs_tol=1.0e-12):
+                raise ValueError("ASE NEB summary stage fmax disagrees with settings")
+            if stage["max_steps"] != value["max_steps"]:
+                raise ValueError("ASE NEB summary stage max_steps disagrees with settings")
+            if stage["converged"] and force > fmax + 1.0e-12:
+                raise ValueError("ASE NEB summary stage convergence exceeds fmax")
+            energies = stage["image_energies_ev"]
+            if (
+                not isinstance(energies, list)
+                or len(energies) != value["image_count"]
+                or any(
+                    isinstance(energy, bool)
+                    or not isinstance(energy, (int, float))
+                    or not math.isfinite(float(energy))
+                    for energy in energies
+                )
+            ):
+                raise ValueError("ASE NEB summary stage energies are invalid")
+        if names != expected_names[: len(names)]:
+            raise ValueError("ASE NEB summary stage order is invalid")
+        ci_neb = value.get("ci_neb")
+        if ci_neb is True:
+            if value["stages"][0]["climb"]:
+                raise ValueError("ASE NEB summary ordinary NEB stage cannot climb")
+            if names == ["neb"] and value["stages"][0]["converged"]:
+                raise ValueError("ASE NEB summary CI-NEB stage is missing")
+            if names == expected_names and not value["stages"][0]["converged"]:
+                raise ValueError("ASE NEB summary CI-NEB stage ran before NEB converged")
+            if names == expected_names and not value["stages"][1]["climb"]:
+                raise ValueError("ASE NEB summary CI-NEB stage is not climbing")
+        elif names != ["neb"]:
+            raise ValueError("ASE NEB summary CI-NEB stage is not enabled")
+
+        final_stage = stages[-1]
+        if value["converged"] != final_stage["converged"]:
+            raise ValueError("ASE NEB summary convergence disagrees with final stage")
+        if value["steps"] != final_stage["steps"]:
+            raise ValueError("ASE NEB summary steps disagree with final stage")
+        if not math.isclose(
+            value["max_neb_force_ev_per_angstrom"],
+            final_stage["max_neb_force_ev_per_angstrom"],
+            rel_tol=0.0,
+            abs_tol=_ENERGY_TOLERANCE_EV,
+        ):
+            raise ValueError("ASE NEB summary force disagrees with final stage")
+        if len(value["image_energies_ev"]) != len(final_stage["image_energies_ev"]) or any(
+            not math.isclose(observed, expected, rel_tol=0.0, abs_tol=_ENERGY_TOLERANCE_EV)
+            for observed, expected in zip(
+                value["image_energies_ev"], final_stage["image_energies_ev"]
+            )
+        ):
+            raise ValueError("ASE NEB summary energies disagree with final stage")
+    elif value.get("ci_neb") is True:
+        raise ValueError("ASE NEB summary CI-NEB run is missing stages")
+
+    history = value.get("history")
+    if history is not None:
+        if not isinstance(history, dict) or set(history) != {
+            "schema_version",
+            "image_count",
+            "records",
+        }:
+            raise ValueError("ASE NEB summary history fields are invalid")
+        if history["schema_version"] != "ase-neb-history/1" or history["image_count"] != value["image_count"]:
+            raise ValueError("ASE NEB summary history identity is invalid")
+        records = history["records"]
+        if not isinstance(records, list) or not records:
+            raise ValueError("ASE NEB summary history must contain records")
+        if len(records) > _HISTORY_RECORD_LIMIT:
+            raise ValueError("ASE NEB summary history is too large")
+        previous_stage = None
+        previous_step = -1
+        history_stages: list[str] = []
+        for record in records:
+            if not isinstance(record, dict) or set(record) != {
+                "stage",
+                "step",
+                "max_neb_force_ev_per_angstrom",
+                "image_energies_ev",
+            }:
+                raise ValueError("ASE NEB summary history record is invalid")
+            stage = record["stage"]
+            if stage not in {"neb", "ci_neb"}:
+                raise ValueError("ASE NEB summary history stage is invalid")
+            if previous_stage is None:
+                if stage != "neb":
+                    raise ValueError("ASE NEB summary history must start with NEB")
+                history_stages.append(stage)
+            if previous_stage is not None and stage != previous_stage:
+                if previous_stage == "ci_neb" or stage != "ci_neb":
+                    raise ValueError("ASE NEB summary history stage order is invalid")
+                previous_step = -1
+                history_stages.append(stage)
+            if (
+                isinstance(record["step"], bool)
+                or not isinstance(record["step"], int)
+                or record["step"] < 0
+                or record["step"] < previous_step
+            ):
+                raise ValueError("ASE NEB summary history step is invalid")
+            force = record["max_neb_force_ev_per_angstrom"]
+            if (
+                isinstance(force, bool)
+                or not isinstance(force, (int, float))
+                or not math.isfinite(float(force))
+                or float(force) < 0.0
+            ):
+                raise ValueError("ASE NEB summary history force is invalid")
+            energies = record["image_energies_ev"]
+            if (
+                not isinstance(energies, list)
+                or len(energies) != value["image_count"]
+                or any(
+                    isinstance(energy, bool)
+                    or not isinstance(energy, (int, float))
+                    or not math.isfinite(float(energy))
+                    for energy in energies
+                )
+            ):
+                raise ValueError("ASE NEB summary history energies are invalid")
+            previous_stage = stage
+            previous_step = record["step"]
+        if stages is not None and history_stages != [stage["stage"] for stage in stages]:
+            raise ValueError("ASE NEB summary history stages disagree with stages")
+        if stages is not None:
+            for stage_summary in stages:
+                stage_records = [
+                    record for record in records if record["stage"] == stage_summary["stage"]
+                ]
+                if not stage_records:
+                    raise ValueError("ASE NEB summary history is missing a stage")
+                final_record = stage_records[-1]
+                if final_record["step"] != stage_summary["steps"]:
+                    raise ValueError("ASE NEB summary history steps disagree with stage")
+                if not math.isclose(
+                    final_record["max_neb_force_ev_per_angstrom"],
+                    stage_summary["max_neb_force_ev_per_angstrom"],
+                    rel_tol=0.0,
+                    abs_tol=_ENERGY_TOLERANCE_EV,
+                ) or any(
+                    not math.isclose(observed, expected, rel_tol=0.0, abs_tol=_ENERGY_TOLERANCE_EV)
+                    for observed, expected in zip(
+                        final_record["image_energies_ev"], stage_summary["image_energies_ev"]
+                    )
+                ):
+                    raise ValueError("ASE NEB summary history does not match stage")
+        elif history_stages:
+            if "ci_neb" in history_stages and value.get("ci_neb") is not True:
+                raise ValueError("ASE NEB summary history CI-NEB stage is not enabled")
+            if history_stages != ["neb"]:
+                raise ValueError("ASE NEB summary history stage order is invalid")
+            final_record = records[-1]
+            if final_record["step"] != value["steps"]:
+                raise ValueError("ASE NEB summary history steps disagree with run")
+            if not math.isclose(
+                final_record["max_neb_force_ev_per_angstrom"],
+                value["max_neb_force_ev_per_angstrom"],
+                rel_tol=0.0,
+                abs_tol=_ENERGY_TOLERANCE_EV,
+            ) or any(
+                not math.isclose(observed, expected, rel_tol=0.0, abs_tol=_ENERGY_TOLERANCE_EV)
+                for observed, expected in zip(
+                    final_record["image_energies_ev"], value["image_energies_ev"]
+                )
+            ):
+                raise ValueError("ASE NEB summary history does not match run")
+
 
 def _run_settings_match(run: dict[str, Any], expected: dict[str, Any]) -> bool:
     mappings = {
@@ -468,7 +880,11 @@ def _run_settings_match(run: dict[str, Any], expected: dict[str, Any]) -> bool:
         "max_steps": "max_steps",
         "spring_constant": "spring_constant_ev_per_angstrom2",
         "interpolation": "interpolation",
+        "neb_method": "neb_method",
+        "optimizer": "optimizer",
         "climb": "climb",
+        "ci_neb": "ci_neb",
+        "ci_fmax": "ci_fmax_ev_per_angstrom",
         "remove_rotation_and_translation": "remove_rotation_and_translation",
         "method": "method",
         "charge": "charge",
@@ -480,7 +896,21 @@ def _run_settings_match(run: dict[str, Any], expected: dict[str, Any]) -> bool:
     }
     for expected_name, run_name in mappings.items():
         expected_value = expected[expected_name]
-        actual_value = run[run_name]
+        # Runs written before the two-stage extension have no additive fields;
+        # infer the legacy defaults so their settings still validate.
+        if expected_name == "ci_neb":
+            actual_value = run.get(run_name, False)
+        elif expected_name == "ci_fmax":
+            if run_name in run:
+                actual_value = run[run_name]
+            elif run.get("ci_neb", False):
+                actual_value = run["fmax_ev_per_angstrom"]
+            else:
+                actual_value = None
+        elif expected_name == "neb_method":
+            actual_value = run.get(run_name, "aseneb")
+        else:
+            actual_value = run[run_name]
         if isinstance(expected_value, float):
             if not isinstance(actual_value, (int, float)) or not math.isclose(
                 actual_value,

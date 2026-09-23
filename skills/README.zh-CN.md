@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi 提供 15 个职责明确的 Skill。Research Kernel Skill 管理规范 ResearchMap 合同；
+TSPi 提供 16 个职责明确的 Skill。Research Kernel Skill 管理规范 ResearchMap 合同；
 编排 Skill 选择下一项有边界的任务；科学与交付 Skill 各自处理一种方法或输出问题，不再
 重复定义状态。
 
@@ -15,6 +15,7 @@ TSPi 提供 15 个职责明确的 Skill。Research Kernel Skill 管理规范 Res
 | [tspi-irc](tspi-irc/SKILL.zh-CN.md) | 双向路径与端点身份 |
 | [tspi-energetics](tspi-energetics/SKILL.zh-CN.md) | 能量、热校正、势垒、有限动力学与能量剖面 |
 | [tspi-method-selection](tspi-method-selection/SKILL.zh-CN.md) | 科学方法、Backend capability 与计算环境选择 |
+| [cf22d](cf22d/SKILL.zh-CN.md) | 已注册的 PySCF/CF22D 工作流与运行环境就绪检查 |
 | [tspi-xtb](tspi-xtb/SKILL.zh-CN.md) | 已注册的 xTB 计算 |
 | [tspi-crest](tspi-crest/SKILL.zh-CN.md) | CREST 构象集合 |
 | [tspi-qbics](tspi-qbics/SKILL.zh-CN.md) | QBICS 方法建议与实时 capability 发现 |

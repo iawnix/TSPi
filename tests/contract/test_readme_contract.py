@@ -27,6 +27,7 @@ FOCUSED_SKILLS = {
     "tspi-irc": ROOT / "skills" / "tspi-irc",
     "tspi-energetics": ROOT / "skills" / "tspi-energetics",
     "tspi-method-selection": ROOT / "skills" / "tspi-method-selection",
+    "cf22d": ROOT / "skills" / "cf22d",
     "tspi-xtb": ROOT / "skills" / "tspi-xtb",
     "tspi-crest": ROOT / "skills" / "tspi-crest",
     "tspi-qbics": ROOT / "skills" / "tspi-qbics",

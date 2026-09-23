@@ -13,6 +13,7 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
     Object.freeze({ name: "tspi-irc", path: "./skills/tspi-irc" }),
     Object.freeze({ name: "tspi-energetics", path: "./skills/tspi-energetics" }),
     Object.freeze({ name: "tspi-method-selection", path: "./skills/tspi-method-selection" }),
+    Object.freeze({ name: "cf22d", path: "./skills/cf22d" }),
     Object.freeze({ name: "tspi-xtb", path: "./skills/tspi-xtb" }),
     Object.freeze({ name: "tspi-crest", path: "./skills/tspi-crest" }),
     Object.freeze({ name: "tspi-qbics", path: "./skills/tspi-qbics" }),
