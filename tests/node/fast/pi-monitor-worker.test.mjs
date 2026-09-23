@@ -85,6 +85,26 @@ test("monitor notifications preserve structured SMTP/provider failures", async (
   );
 });
 
+test("monitor notification timeouts remain ambiguous and retryable", async (t) => {
+  const state = await fixture(t);
+  const execute = async () => {
+    throw Object.assign(new Error("child process timed out"), { code: "ETIMEDOUT", timedOut: true });
+  };
+
+  await assert.rejects(
+    sendNotification(state.workspace, state.event, undefined, execute),
+    (error) => {
+      assert.equal(error.name, "NotificationError");
+      assert.equal(error.code, "NOTIFICATION_DELIVERY_TIMEOUT");
+      assert.equal(error.error_class, "delivery_ambiguous");
+      assert.equal(error.state, "unknown");
+      assert.equal(error.retry_disposition, "reconcile_only");
+      assert.match(error.message, /delivery status is unknown/);
+      return true;
+    },
+  );
+});
+
 test("an offline session leaves wake retryable while notification can complete", async (t) => {
   const state = await fixture(t);
   const errors = await deliverMonitorEvent({ ...state,

@@ -9,10 +9,12 @@ import os
 import re
 import shutil
 import smtplib
+import socket
 import ssl
 import stat
 import subprocess
 import tempfile
+import time
 import tomllib
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -39,7 +41,10 @@ SMTP_PRESETS: dict[str, dict[str, Any]] = {
     "custom": {"host": None, "port": 465, "security": "ssl"},
 }
 SMTP_SECURITY = frozenset({"ssl", "starttls"})
+SMTP_CONNECT_TIMEOUT = 120
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_SYSTEM_SMTP = smtplib.SMTP
+_SYSTEM_SMTP_SSL = smtplib.SMTP_SSL
 EVENTS = frozenset(
     {
         "progress",
@@ -193,6 +198,28 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
                 error_class="delivery_ambiguous",
                 state="unknown",
                 retry_disposition="reconcile_only",
+                receipt_ref=receipt_ref,
+            ) from exc
+        except Exception as exc:
+            # Keep an unexpected provider/preflight exception from leaving a
+            # durable `sending` receipt forever.  Known provider failures are
+            # handled above; this catch is the final convergence boundary for
+            # ordinary runtime exceptions raised before a confirmed send.
+            diagnostic = _safe_error(exc)
+            failed = {
+                **guard,
+                "state": "failed",
+                "updated_at": _now(),
+                "error_class": "delivery_failed",
+                "error": diagnostic,
+            }
+            _write_private_json(receipt_path, failed, exclusive=False)
+            raise NotificationError(
+                f"email notification failed: {diagnostic}; receipt={receipt_ref}",
+                code="NOTIFICATION_DELIVERY_FAILED",
+                error_class="delivery_failed",
+                state="failed",
+                retry_disposition="retry_after_fix",
                 receipt_ref=receipt_ref,
             ) from exc
 
@@ -588,14 +615,18 @@ def _run_smtp(
     try:
         context = ssl.create_default_context()
         if config.smtp_security == "ssl":
-            client = smtplib.SMTP_SSL(
+            client = _smtp_client_class(ssl_enabled=True)(
                 config.smtp_host,
                 config.smtp_port,
-                timeout=120,
+                timeout=SMTP_CONNECT_TIMEOUT,
                 context=context,
             )
         else:
-            client = smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=120)
+            client = _smtp_client_class(ssl_enabled=False)(
+                config.smtp_host,
+                config.smtp_port,
+                timeout=SMTP_CONNECT_TIMEOUT,
+            )
             client.ehlo()
             client.starttls(context=context)
             client.ehlo()
@@ -631,6 +662,107 @@ def _run_smtp(
                 client.quit()
             except (OSError, smtplib.SMTPException):
                 pass
+
+
+def _smtp_client_class(*, ssl_enabled: bool) -> type[smtplib.SMTP]:
+    """Return an SMTP client that resolves and connects over IPv4 only.
+
+    ``smtplib`` delegates hostname resolution to ``socket.create_connection``.
+    That helper follows the platform resolver order, which can leave a broken
+    IPv6 route waiting for the full connect timeout before trying IPv4.  The
+    dynamic subclass constrains the stdlib clients to AF_INET while TLS still
+    receives the original hostname for certificate/SNI verification.  If
+    callers inject a different SMTP class (as tests and embedders may), that
+    class is returned unchanged so its construction contract is preserved.
+    """
+
+    base = smtplib.SMTP_SSL if ssl_enabled else smtplib.SMTP
+    system_base = _SYSTEM_SMTP_SSL if ssl_enabled else _SYSTEM_SMTP
+    if base is not system_base:
+        return base
+    if ssl_enabled:
+
+        class IPv4SMTPSSL(base):  # type: ignore[misc,valid-type]
+            def _get_socket(self, host: str, port: int, timeout: float | None):
+                if self.debuglevel > 0:
+                    self._print_debug("connect:", (host, port))
+                plain_socket = _create_ipv4_connection(
+                    host,
+                    port,
+                    timeout,
+                    self.source_address,
+                )
+                try:
+                    return self.context.wrap_socket(plain_socket, server_hostname=self._host)
+                except BaseException:
+                    plain_socket.close()
+                    raise
+
+        return IPv4SMTPSSL
+
+    class IPv4SMTP(base):  # type: ignore[misc,valid-type]
+        def _get_socket(self, host: str, port: int, timeout: float | None):
+            if timeout is not None and not timeout:
+                raise ValueError("Non-blocking socket (timeout=0) is not supported")
+            if self.debuglevel > 0:
+                self._print_debug("connect: to", (host, port), self.source_address)
+            return _create_ipv4_connection(host, port, timeout, self.source_address)
+
+    return IPv4SMTP
+
+
+def _create_ipv4_connection(
+    host: str,
+    port: int,
+    timeout: float | None,
+    source_address: tuple[str, int] | None = None,
+) -> socket.socket:
+    """Connect to one of the host's IPv4 addresses within one total timeout.
+
+    ``socket.create_connection`` retries every address with the full timeout.
+    Keep the timeout bounded across all IPv4 candidates so a DNS response with
+    several dead addresses cannot outlive the monitor worker's command limit.
+    IPv6 answers are intentionally ignored; this is a deployment-level choice
+    for SMTP because the supported installation environments may have no IPv6
+    default route.
+    """
+
+    if timeout is not None and timeout <= 0:
+        raise ValueError("Non-blocking socket (timeout=0) is not supported")
+    deadline = time.monotonic() + timeout if timeout is not None else None
+    addresses = socket.getaddrinfo(
+        host,
+        port,
+        family=socket.AF_INET,
+        type=socket.SOCK_STREAM,
+        proto=socket.IPPROTO_TCP,
+    )
+    errors: list[OSError] = []
+    for family, socktype, proto, _canonname, sockaddr in addresses:
+        if family != socket.AF_INET:
+            continue
+        client_socket: socket.socket | None = None
+        try:
+            client_socket = socket.socket(family, socktype, proto)
+            if timeout is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("timed out while connecting to SMTP server")
+                client_socket.settimeout(remaining)
+            if source_address is not None:
+                client_socket.bind(source_address)
+            client_socket.connect(sockaddr)
+            return client_socket
+        except OSError as exc:
+            errors.append(exc)
+            if client_socket is not None:
+                try:
+                    client_socket.close()
+                except OSError:
+                    pass
+    if errors:
+        raise errors[-1]
+    raise OSError(f"SMTP host {host!r} has no IPv4 address")
 
 
 def _smtp_password(config: EmailNotificationConfig) -> str:
@@ -755,8 +887,35 @@ def _existing_delivery_result(
     if receipt.get("notification_digest") != notification_digest:
         raise ValueError("existing email notification receipt does not match the request")
     state = receipt.get("state")
-    if state == "failed" and receipt.get("error_class") == "delivery_not_started":
+    if state == "failed" and receipt.get("error_class") in {
+        "delivery_not_started",
+        "delivery_failed",
+    }:
         return None
+    if state == "sending":
+        # The exclusive delivery lock means the writer that created this
+        # receipt has already exited.  A process can be killed by the Host
+        # timeout or cancellation before it writes a terminal state; expose
+        # that outcome as ambiguous instead of leaving callers stuck on
+        # `sending` forever or blindly resending a possibly accepted message.
+        diagnostic = "notification process exited before delivery was confirmed"
+        reconciled = {
+            **receipt,
+            "state": "unknown",
+            "updated_at": _now(),
+            "error_class": "delivery_ambiguous",
+            "error": diagnostic,
+        }
+        _write_private_json(receipt_path, reconciled, exclusive=False)
+        raise NotificationError(
+            f"email notification result is ambiguous: {diagnostic}; "
+            f"do not retry automatically; receipt={receipt_ref}",
+            code="NOTIFICATION_DELIVERY_AMBIGUOUS",
+            error_class="delivery_ambiguous",
+            state="unknown",
+            retry_disposition="reconcile_only",
+            receipt_ref=receipt_ref,
+        )
     if state != "sent":
         raise ValueError(
             f"email notification remains {state}; do not retry automatically; receipt={receipt_ref}"

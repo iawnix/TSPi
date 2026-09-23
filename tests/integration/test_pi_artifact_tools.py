@@ -491,6 +491,39 @@ def test_notification_uses_fixed_installation_recipient_and_is_idempotent(
     assert stat.S_IMODE((workspace / first["receipt_ref"]).stat().st_mode) == 0o600
 
 
+def test_notification_unexpected_provider_exception_persists_failed_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    start_research_node(workspace)
+    config = _notification_install(tmp_path)
+    monkeypatch.setenv("TS_NOTIFICATION_CONFIG", str(config))
+    request = tmp_path / "notification.json"
+    request.write_text(json.dumps({
+        "schema_version": "ts-user-notification/1",
+        "event": "progress",
+        "subject": "Progress",
+        "summary": "The provider raises an unexpected runtime error.",
+        "report_refs": [],
+    }), encoding="utf-8")
+
+    def fail_provider(*_args, **_kwargs):
+        raise RuntimeError("provider setup exploded")
+
+    monkeypatch.setattr(email_delivery, "_run_provider", fail_provider)
+    with pytest.raises(NotificationError) as captured:
+        notify_user(workspace, request)
+
+    assert captured.value.state == "failed"
+    assert captured.value.error_class == "delivery_failed"
+    assert captured.value.code == "NOTIFICATION_DELIVERY_FAILED"
+    receipt = json.loads((workspace / str(captured.value.receipt_ref)).read_text(encoding="utf-8"))
+    assert receipt["state"] == "failed"
+    assert receipt["error_class"] == "delivery_failed"
+    assert "provider setup exploded" in receipt["error"]
+
+
 def test_notification_sends_with_qq_smtp_preset_and_env_authorization_code(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

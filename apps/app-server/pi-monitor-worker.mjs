@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const executeFile = promisify(execFile);
 const packageRoot = resolve(process.env.TSPI_PACKAGE_ROOT || fileURLToPath(new URL("../..", import.meta.url)));
 const python = process.env.TS_AGENT_PYTHON || process.env.TSPI_WORKSPACE_PYTHON || "python3";
+const NOTIFICATION_TIMEOUT_MS = 150_000;
 
 // A wake and a notification have independent durable acknowledgements.
 export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWake, sendNotification }) {
@@ -135,13 +136,14 @@ export async function sendNotification(workspace, event, signal, execute = execu
     await writeFile(requestFile, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
     try {
       const completed = await execute(python, [join(packageRoot, "scripts", "ts_email.py"), "notify", "--root", workspace, "--request-file", requestFile, "--json"], {
-        cwd: workspace, env: { ...process.env, PYTHONNOUSERSITE: "1" }, maxBuffer: 8 * 1024 * 1024, timeout: 150_000, signal });
+        cwd: workspace, env: { ...process.env, PYTHONNOUSERSITE: "1" }, maxBuffer: 8 * 1024 * 1024, timeout: NOTIFICATION_TIMEOUT_MS, signal });
       assertNotificationSuccess(parseNotificationJson(completed.stdout));
     } catch (error) {
       // execFile rejects on a non-zero CLI exit, while ts_email writes its
       // structured provider/SMTP failure envelope to stdout.
       const structured = tryParseNotificationJson(error?.stdout);
       if (structured) throw notificationError(structured);
+      if (isNotificationTimeout(error)) throw notificationTimeoutError();
       throw error;
     }
   } finally { await rm(directory, { recursive: true, force: true }); }
@@ -177,6 +179,23 @@ function notificationError(payload) {
   error.state = payload?.state;
   error.retry_disposition = payload?.retry_disposition;
   error.receipt_ref = payload?.receipt_ref;
+  return error;
+}
+
+function isNotificationTimeout(error) {
+  return error?.code === "ETIMEDOUT" || error?.timedOut === true;
+}
+
+function notificationTimeoutError() {
+  const error = new Error(
+    `email notification process timed out after ${NOTIFICATION_TIMEOUT_MS}ms; `
+    + "delivery status is unknown; inspect the delivery receipt before retrying",
+  );
+  error.name = "NotificationError";
+  error.code = "NOTIFICATION_DELIVERY_TIMEOUT";
+  error.error_class = "delivery_ambiguous";
+  error.state = "unknown";
+  error.retry_disposition = "reconcile_only";
   return error;
 }
 
