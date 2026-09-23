@@ -25,7 +25,10 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
    `completed` 关闭；Claim 状态另行更新。
 
 Review 只提供有边界的反方审查，不拥有规范状态。本地与远端环境使用同一组
-`launch`、`inspect`、`finalize`、`cancel` 生命周期；运行成功不等于科学结论成立。
+`launch`、`inspect`、`finalize`、`cancel` 生命周期。`launch` 成功提交后应结束当前
+turn，让持久化 Monitor 投递 `next_run`；不要用 `bash sleep`、`wait` 或手动轮询等待
+调度器任务。收到 Monitor 唤醒或用户稍后明确请求后，重新读取状态并先执行
+`inspect`，再决定是否收集或修改 ResearchMap。运行成功不等于科学结论成立。
 
 ## 参考资料
 

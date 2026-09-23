@@ -393,7 +393,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     }).map((tool) => [tool.name, tool]));
     const stateTool = tools.ts_state;
     const changeTool = tools.ts_change;
-    const toolContext = { cwd: workspace };
+    const toolContext = { cwd: workspace, sessionId: "native-tools" };
     const context = { abortSignal: new AbortController().signal };
     const state = await stateTool.execute("state-1", { mode: "summary" }, () => {}, toolContext, undefined, context);
     const summary = JSON.parse(state.content[0].text);
@@ -752,6 +752,18 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     ]);
     assert.equal(durableActions.actions[1].result.action_status, "unknown");
     assert.equal(durableResult.payload.reconciliation_required, true);
+
+    const monitorEntries = await readdir(join(workspace, "operations", "monitors"), { withFileTypes: true });
+    for (const entry of monitorEntries.filter((item) => item.isDirectory() && item.name.startsWith("mon_"))) {
+      const registration = JSON.parse(await readFile(join(workspace, "operations", "monitors", entry.name, "registration.json"), "utf8"));
+      assert.equal(registration.session_id, "native-tools");
+    }
+    const pendingRoot = join(workspace, "operations", "monitors", "pending_registrations");
+    for (const entry of await readdir(pendingRoot)) {
+      if (!entry.endsWith(".json")) continue;
+      const pending = JSON.parse(await readFile(join(pendingRoot, entry), "utf8"));
+      assert.equal(pending.binding.session_id, "native-tools");
+    }
 
     const validReviewSubmission = {
       outcome: "partial",

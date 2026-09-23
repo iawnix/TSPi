@@ -29,6 +29,7 @@ const {
 const executeFile = promisify(execFile);
 
 const OPERATIONS = ["launch", "inspect", "finalize", "cancel"];
+const MONITOR_ID = /^mon_[a-f0-9]{24}$/;
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
 const COMPUTE_OPERATION_FIELDS = Object.freeze({
   launch: [
@@ -58,7 +59,9 @@ export function createComputeTool() {
       let stage = "pre_action";
       let journal;
       let runRef;
+      let stagedMonitor;
       let monitor;
+      let monitorWarning;
       publishProgress(onUpdate, taskId, request, "queued", undefined, toolCallId);
       try {
         const binding = await preflightComputeRequest(root, request, signal, (value) => {
@@ -76,6 +79,12 @@ export function createComputeTool() {
           jobId: binding.jobId,
           executionSummary: binding.executionSummary,
         });
+        if (request.operation === "launch") {
+          // Persist the wake binding before submission.  If the worker exits
+          // after scheduler acceptance, the Host monitor can reconcile this
+          // durable request without submitting the calculation again.
+          stagedMonitor = await stageComputeMonitor(root, request, toolContext.sessionId, signal);
+        }
         const packet = buildComputeTask({
           runId: taskId,
           workspaceRoot: root,
@@ -96,8 +105,18 @@ export function createComputeTool() {
         await executeComputePlan(root, request, actions, signal, (state, action) => {
           publishProgress(onUpdate, taskId, request, state, action, toolCallId);
         });
-        if (request.operation === "launch" && lastActionCompleted(actions)) {
-          monitor = await registerComputeMonitor(root, request, toolContext.sessionId, signal);
+        if (stagedMonitor && submissionAccepted(actions)) {
+          try {
+            await reconcileComputeMonitor(root, stagedMonitor.monitor_id, signal);
+            monitor = await monitorStatus(root, stagedMonitor.monitor_id, signal);
+          } catch (error) {
+            monitorWarning = `Calculation submission has a durable monitor request (${stagedMonitor.monitor_id}), but registration is pending: ${errorMessage(error)}. The Host will retry registration; do not resubmit the calculation.`;
+            monitor = {
+              monitor_id: stagedMonitor.monitor_id,
+              status: "registration_pending",
+              error: monitorWarning,
+            };
+          }
         }
         const outcome = actionOutcome(actions);
         const result = buildComputeResult({
@@ -123,8 +142,10 @@ export function createComputeTool() {
         stage = "result_journal";
         runRef = completeAgentRun(journal, { actions, result, metadata });
         publishProgress(onUpdate, taskId, request, "completed", undefined, toolCallId, runRef);
+        const content = [{ type: "text", text: JSON.stringify(result, null, 2) }];
+        if (monitorWarning) content.push({ type: "text", text: monitorWarning });
         return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          content,
           details: { result, monitor, run: { ...metadata, run_ref: runRef } },
         };
       } catch (error) {
@@ -147,20 +168,46 @@ export function createComputeTool() {
   };
 }
 
-async function registerComputeMonitor(root, request, sessionId, signal) {
+async function stageComputeMonitor(root, request, sessionId, signal) {
+  if (typeof sessionId !== "string" || !sessionId) {
+    throw new Error("compute launch requires an owning session id for monitor wake");
+  }
   const args = [
-    "register",
+    "stage",
     "--root", root,
     "--node-id", request.nodeId,
     "--intent-id", request.intentId,
     "--intent-digest", request.intentDigest,
+    "--session-id", sessionId,
   ];
-  if (typeof sessionId === "string" && sessionId) args.push("--session-id", sessionId);
-  try {
-    return await runJsonCli(packageScript("ts_monitor.py"), args, root, signal, 60_000);
-  } catch (error) {
-    return { schema_version: "ts-compute-monitor-registration-error/1", error: errorMessage(error) };
+  const result = await runJsonCli(packageScript("ts_monitor.py"), args, root, signal, 60_000);
+  if (!isPlainObject(result) || typeof result.monitor_id !== "string" || !MONITOR_ID.test(result.monitor_id)) {
+    throw new Error("compute monitor staging returned an invalid monitor binding");
   }
+  return result;
+}
+
+async function reconcileComputeMonitor(root, monitorId, signal) {
+  if (typeof monitorId !== "string" || !MONITOR_ID.test(monitorId)) {
+    throw new Error("compute monitor reconciliation requires a valid monitor id");
+  }
+  await runJsonCli(
+    packageScript("ts_monitor.py"),
+    ["reconcile", "--root", root, "--force"],
+    root,
+    signal,
+    60_000,
+  );
+}
+
+async function monitorStatus(root, monitorId, signal) {
+  return runJsonCli(
+    packageScript("ts_monitor.py"),
+    ["status", "--root", root, "--monitor-id", monitorId],
+    root,
+    signal,
+    60_000,
+  );
 }
 
 async function preflightComputeRequest(root, request, signal, onStage) {
@@ -333,6 +380,11 @@ function actionCommand(toolName) {
 
 function lastActionCompleted(actions) {
   return actions.at(-1)?.result?.action_status === "completed";
+}
+
+function submissionAccepted(actions) {
+  const submission = actions.find((action) => action.tool === "ts_workspace_compute_submit");
+  return ["completed", "unknown"].includes(submission?.result?.action_status);
 }
 
 async function runComputeJson(root, command, args, signal, timeout) {

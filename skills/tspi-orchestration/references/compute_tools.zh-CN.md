@@ -78,6 +78,10 @@ Launch 接受完整语义请求和所选执行目标：
 所属 ResearchNode 未关闭。`completed` 只表示调度器/程序已结束，仍需收集和解析；
 `collected` 仍需解析。已创建或已准备的 intent 尚未造成外部变更，本身不妨碍放弃 Node。
 
+`launch` 提交返回后应结束当前 turn。App Server Monitor 会轮询绑定的 Attempt，在
+状态变化时排队 `next_run` 唤醒。等待期间不要调用 `bash sleep`、`wait` 或手动状态循环；
+收到 Monitor 唤醒或稍后明确请求后再执行 `inspect`。
+
 执行目标和 `dry_run` 是独立控制项。`executionTarget.kind=local` 时，`dry_run=true`
 准备并校验本地计划但不启动程序；`dry_run=false` 在 workspace 的持久化 Attempt 本地
 worker 中启动所选 Backend，并支持完整 `submit/status/tail/collect/cancel` 生命周期。

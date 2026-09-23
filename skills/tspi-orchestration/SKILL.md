@@ -31,7 +31,11 @@ does not redefine that model.
 
 Use Review for a bounded counterargument, not as a source of canonical state.
 Use the same `launch`, `inspect`, `finalize`, and `cancel` compute lifecycle for
-local and remote environments. Operational success is not scientific support.
+local and remote environments. After a successful `launch`, finish the current
+turn and let the durable Monitor enqueue a `next_run`; do not use `bash sleep`,
+`wait`, or a manual polling loop to wait for a scheduler job. On a Monitor wake
+or an explicit later request, reread state and use `inspect` before collecting
+or changing ResearchMap. Operational success is not scientific support.
 
 ## References
 

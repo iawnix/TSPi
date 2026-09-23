@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 TS_LOADER = ROOT / "tests" / "support" / "typescript_loader.mjs"
 COMPUTE = ROOT / "extensions" / "pi" / "compute" / "index.ts"
 COMPUTE_TOOLS = ROOT / "extensions" / "pi" / "compute" / "tools.ts"
+NATIVE_COMPUTE = ROOT / "apps" / "app-server" / "pi-native-compute.mjs"
+SESSION_WORKER = ROOT / "apps" / "app-server" / "pi-session-worker.mjs"
 ACTION_LOG = ROOT / "packages" / "ts-agent-runtime" / "agents" / "compute" / "action-log.cjs"
 
 
@@ -78,6 +80,19 @@ def test_compute_extension_delegates_fixed_plan_with_one_run_journal_owner() -> 
     assert "ts_change" not in source
     assert "append_observation" not in source
     assert "accept_claim" not in source
+
+
+def test_native_compute_binds_monitor_to_session_before_submission() -> None:
+    worker = SESSION_WORKER.read_text(encoding="utf-8")
+    compute = NATIVE_COMPUTE.read_text(encoding="utf-8")
+
+    assert "sessionId: session.metadata.id" in worker
+    assert "sessionId: session.sessionId" not in worker
+    assert 'stageComputeMonitor(root, request, toolContext.sessionId, signal)' in compute
+    assert '"stage"' in compute
+    assert "submissionAccepted(actions)" in compute
+    assert "reconcileComputeMonitor" in compute
+    assert compute.index("stageComputeMonitor(root, request") < compute.index("const packet = buildComputeTask")
 
 
 def test_action_log_preserves_ambiguous_control_and_redacts_secrets() -> None:

@@ -87,6 +87,11 @@ or `stopped` and Root has recorded any needed scientific interpretation.
 still pending. `collected` still requires parsing. A created or prepared intent
 has made no external change and does not by itself prevent abandoning the Node.
 
+When `launch` returns after submission, end the turn. The App Server Monitor polls
+the bound Attempt and queues a `next_run` wake when its state changes. Do not call
+`bash sleep`, `wait`, or a manual status loop while waiting; use `inspect` after
+the Monitor wake or an explicit later request.
+
 Execution target and `dry_run` are independent controls. With
 `executionTarget.kind=local`, `dry_run=true` prepares and validates the local
 plan without starting a program; `dry_run=false` starts the selected backend in
