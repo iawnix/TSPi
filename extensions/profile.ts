@@ -22,6 +22,7 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
     Object.freeze({ name: "tspi-render", path: "./skills/tspi-render" }),
     Object.freeze({ name: "tspi-email", path: "./skills/tspi-email" }),
     Object.freeze({ name: "tspi-mechanism-reasoning", path: "./skills/tspi-mechanism-reasoning" }),
+    Object.freeze({ name: "tspi-chemical-input", path: "./skills/tspi-chemical-input" }),
   ]),
   extensions: Object.freeze([
     Object.freeze({ name: "research", path: "./extensions/pi/research/index.ts" }),

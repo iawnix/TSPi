@@ -52,6 +52,41 @@ def gaussian_log(*, imaginary=False, temperature=298.15, method="HF/STO-3G", spa
     ])
 
 
+def test_chemical_name_resolution_preserves_candidate_trust_and_structure_metadata():
+    draft = evaluate("chemical.name.resolve", source(), {
+        "name": "2-propanol",
+        "resolver": "llm",
+        "candidates": [{"smiles": "C[C@H](O)C", "source": "llm"}],
+    })
+    assert draft["verdict"] == "inconclusive"
+    assert draft["data"]["status"] == "draft"
+    assert draft["data"]["candidates"][0]["canonical_smiles"] == "CC(C)O"
+    assert draft["data"]["candidates"][0]["formula"] == "C3H8O"
+    assert "name_resolution.json" in draft["files"]
+
+    confirmed = evaluate("chemical.name.resolve", source(), {
+        "name": "ethanol",
+        "resolver": "opsin",
+        "candidates": [{"smiles": "CCO", "source": "user"}],
+    })
+    assert confirmed["verdict"] == "valid"
+    assert confirmed["data"]["status"] == "confirmed"
+
+
+def test_chemical_name_resolution_reports_missing_backend_and_invalid_candidates():
+    missing = evaluate("chemical.name.resolve", source(), {"name": "unknown compound"})
+    assert missing["verdict"] == "unsupported"
+    assert missing["data"]["status"] == "unresolved"
+
+    invalid = evaluate("chemical.name.resolve", source(), {
+        "name": "not a molecule",
+        "resolver": "llm",
+        "candidates": [{"smiles": "C.C", "source": "llm"}],
+    })
+    assert invalid["verdict"] == "invalid"
+    assert invalid["data"]["status"] == "unresolved"
+
+
 def thermo_parameters(**changes):
     return {"species_key": "H2", "quantity": "G", "conditions": {"temperature_k": 298.15, "phase": "gas",
             "source_standard_state": {"kind": "pressure", "value": 1, "unit": "atm"}, "standard_state": {"kind": "concentration", "value": 1, "unit": "mol/L"}},

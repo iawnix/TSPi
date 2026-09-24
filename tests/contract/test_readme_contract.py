@@ -36,6 +36,7 @@ FOCUSED_SKILLS = {
     "tspi-report": ROOT / "skills" / "tspi-report",
     "tspi-email": ROOT / "skills" / "tspi-email",
     "tspi-mechanism-reasoning": ROOT / "skills" / "tspi-mechanism-reasoning",
+    "tspi-chemical-input": ROOT / "skills" / "tspi-chemical-input",
 }
 
 

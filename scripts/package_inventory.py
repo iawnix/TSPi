@@ -46,6 +46,7 @@ SKILL_NAMES = [
     "tspi-render",
     "tspi-email",
     "tspi-mechanism-reasoning",
+    "tspi-chemical-input",
 ]
 SKILL_ENTRIES = [f"./skills/{name}" for name in SKILL_NAMES]
 SKILL_ENTRY_FILES = [
@@ -96,7 +97,7 @@ LINK_RELAY_FILES = [
 
 ANALYSIS_FILES = [
     f"packages/ts-agent-kernel/ts_agent/analysis/{name}.py"
-    for name in ("__init__", "catalog", "engine", "reaction", "structures", "transition_state", "thermochemistry", "kinetics", "network", "results")
+    for name in ("__init__", "catalog", "engine", "name_resolution", "reaction", "structures", "transition_state", "thermochemistry", "kinetics", "network", "results")
 ]
 
 
@@ -267,6 +268,10 @@ REQUIRED_TARBALL_FILES = frozenset(
         "skills/tspi-render/references/render_contract.md",
         "skills/tspi-report/references/report_template.md",
         "skills/tspi-email/references/email_delivery.md",
+        "skills/tspi-chemical-input/references/name_resolution.md",
+        "skills/tspi-chemical-input/references/name_resolution.zh-CN.md",
+        "skills/tspi-chemical-input/references/structure_input.md",
+        "skills/tspi-chemical-input/references/structure_input.zh-CN.md",
         "themes/ts-theme.json",
         "packages/ts-agent-runtime/host-api/system-prompt.d.mts",
         "packages/ts-agent-runtime/host-api/system-prompt.mjs",
@@ -414,6 +419,10 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "skills/tspi-render/references/render_contract.md",
         "skills/tspi-report/references/report_template.md",
         "skills/tspi-email/references/email_delivery.md",
+        "skills/tspi-chemical-input/references/name_resolution.md",
+        "skills/tspi-chemical-input/references/name_resolution.zh-CN.md",
+        "skills/tspi-chemical-input/references/structure_input.md",
+        "skills/tspi-chemical-input/references/structure_input.zh-CN.md",
         "themes/ts-theme.json",
         "extensions/pi/research/index.ts",
         "extensions/pi/research/extension.ts",

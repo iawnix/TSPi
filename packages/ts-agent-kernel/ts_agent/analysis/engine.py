@@ -119,10 +119,10 @@ def load_inputs(root: Path, supplied: dict) -> tuple[Inputs, list[dict]]:
 
 
 def evaluate(capability: str, inputs: Inputs, parameters: dict) -> dict:
-    from . import reaction, structures, transition_state, thermochemistry, kinetics, network
+    from . import name_resolution, reaction, structures, transition_state, thermochemistry, kinetics, network
 
     handlers = {
-        **reaction.HANDLERS, **structures.HANDLERS, **transition_state.HANDLERS,
+        **name_resolution.HANDLERS, **reaction.HANDLERS, **structures.HANDLERS, **transition_state.HANDLERS,
         **thermochemistry.HANDLERS, **kinetics.HANDLERS, **network.HANDLERS,
     }
     handler = handlers.get(capability)

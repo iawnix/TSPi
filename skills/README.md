@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi provides 16 focused Skills. The Research Kernel Skill owns the canonical
+TSPi provides 17 focused Skills. The Research Kernel Skill owns the canonical
 ResearchMap contract; orchestration chooses the next bounded task; scientific
 and delivery Skills handle one method or output concern without redefining
 state.
@@ -25,6 +25,7 @@ state.
 | [tspi-render](tspi-render/SKILL.md) | Molecular images, animations, comparisons, and scientific curves |
 | [tspi-email](tspi-email/SKILL.md) | Configured notifications and report delivery |
 | [tspi-mechanism-reasoning](tspi-mechanism-reasoning/SKILL.md) | Mechanism hypotheses, mappings, elementary steps, and alternatives |
+| [tspi-chemical-input](tspi-chemical-input/SKILL.md) | Natural-language chemical names, structure candidates, and input confirmation |
 
 A transition-state study may invoke several Skills, but each keeps its own
 boundary: candidate generation creates a structure, TS validation establishes

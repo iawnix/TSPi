@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi 提供 16 个职责明确的 Skill。Research Kernel Skill 管理规范 ResearchMap 合同；
+TSPi 提供 17 个职责明确的 Skill。Research Kernel Skill 管理规范 ResearchMap 合同；
 编排 Skill 选择下一项有边界的任务；科学与交付 Skill 各自处理一种方法或输出问题，不再
 重复定义状态。
 
@@ -24,6 +24,7 @@ TSPi 提供 16 个职责明确的 Skill。Research Kernel Skill 管理规范 Res
 | [tspi-render](tspi-render/SKILL.zh-CN.md) | 分子图像、动画、对比图与科学曲线 |
 | [tspi-email](tspi-email/SKILL.zh-CN.md) | 按配置发送通知与报告 |
 | [tspi-mechanism-reasoning](tspi-mechanism-reasoning/SKILL.zh-CN.md) | 机理假设、映射、基元步骤与替代路径 |
+| [tspi-chemical-input](tspi-chemical-input/SKILL.zh-CN.md) | 自然语言化学名称、结构候选与输入确认 |
 
 一个过渡态研究可以调用多个 Skill，但它们各自保持清楚边界：候选生成产生结构，TS 验证
 建立鞍点证据，IRC 归属端点，能量学比较校正后的物理量。Root 通过 Kernel 把核验后的

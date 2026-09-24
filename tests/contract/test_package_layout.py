@@ -213,7 +213,7 @@ def test_public_skill_uses_nested_pi_skill_layout() -> None:
     assert not (ROOT / "templates").exists()
 
 
-def test_public_skill_family_matches_the_fifteen_owned_capabilities() -> None:
+def test_public_skill_family_matches_the_owned_capabilities() -> None:
     expected = {
         "tspi-research-kernel",
         "tspi-orchestration",
@@ -231,6 +231,7 @@ def test_public_skill_family_matches_the_fifteen_owned_capabilities() -> None:
         "tspi-render",
         "tspi-email",
         "tspi-mechanism-reasoning",
+        "tspi-chemical-input",
     }
     actual = {path.name for path in (ROOT / "skills").iterdir() if path.is_dir()}
     assert actual == expected

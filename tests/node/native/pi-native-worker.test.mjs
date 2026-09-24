@@ -82,6 +82,7 @@ test("Pi Agent Core loads the packaged TSPi skill catalog", async () => {
   assert.deepEqual(loaded.diagnostics, []);
   assert.deepEqual(loaded.skills.map((skill) => skill.name), [
     "cf22d",
+    "tspi-chemical-input",
     "tspi-crest",
     "tspi-email",
     "tspi-energetics",

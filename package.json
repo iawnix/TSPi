@@ -195,7 +195,8 @@
       "./skills/tspi-report",
       "./skills/tspi-render",
       "./skills/tspi-email",
-      "./skills/tspi-mechanism-reasoning"
+      "./skills/tspi-mechanism-reasoning",
+      "./skills/tspi-chemical-input"
     ],
     "themes": [
       "./themes/ts-theme.json"

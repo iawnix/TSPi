@@ -24,6 +24,8 @@ def choice(*values):
 
 
 TEXT = {"type": "string", "minLength": 1, "maxLength": 256}
+NAME = {"type": "string", "minLength": 1, "maxLength": 4096}
+SMILES = {"type": "string", "minLength": 1, "maxLength": 4096}
 KEY = {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"}
 BOOL = {"type": "boolean"}
 POSITIVE = {"type": "number", "exclusiveMinimum": 0, "maximum": 1e12}
@@ -38,6 +40,7 @@ CONDITIONS = obj({"temperature_k": {"type": "number", "exclusiveMinimum": 0, "ma
                  ["temperature_k", "phase", "source_standard_state", "standard_state"])
 SPECIES = obj({"key": KEY, "smiles": {"type": "string", "minLength": 1, "maxLength": 4096},
                "multiplicity": integer(1, 21), "role": choice("participant", "catalyst", "solvent", "spectator")}, ["key", "smiles", "multiplicity"])
+NAME_CANDIDATE = obj({"smiles": SMILES, "source": choice("llm", "user")}, ["smiles", "source"])
 TRANSFORM = obj({"translation": array(real(-1e6, 1e6), 3, 3), "rotation": array(array(real(-1, 1), 3, 3), 3, 3)}, ["translation"])
 MAP_PARAMETERS = {"mapping": MAPPING, "candidate_index": integer(0, 31)}
 SECTION = {"section_index": integer(0, 255)}
@@ -58,6 +61,18 @@ def descriptor(name, summary, roles, parameters, *, optional=(), multiple=(), li
 
 
 DESCRIPTORS = (
+    descriptor("chemical.name.resolve", "Resolve a chemical name to bounded, provenance-carrying structure candidates.", [],
+        obj({"name": NAME, "resolver": choice("auto", "opsin", "pubchem", "llm"),
+             "candidates": array(NAME_CANDIDATE, 16)}, ["name"],
+            allOf=[
+                {"if": {"required": ["resolver"], "properties": {"resolver": {"const": "llm"}}},
+                 "then": {"required": ["candidates"]}},
+                {"if": {"required": ["candidates"]}, "then": {"required": ["resolver"]}},
+            ]),
+        limitations=[
+            "This capability validates supplied candidates; a resolver backend must be registered for automatic name lookup.",
+            "A candidate is not a 3D product structure, reaction mapping, or mechanistic conclusion.",
+        ]),
     descriptor("reaction.parse", "Parse explicit molecular reaction identities, stoichiometry and electronic states.", [],
         obj({"reaction_smiles": {"type": "string", "minLength": 3, "maxLength": 8192},
              "multiplicities": obj({s: array(integer(1, 21)) for s in ("reactants", "products")}, ["reactants", "products"]),
