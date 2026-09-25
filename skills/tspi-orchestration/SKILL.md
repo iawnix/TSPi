@@ -29,6 +29,19 @@ does not redefine that model.
 7. Close a Node only after its deliverable is addressed and every attached
    NodeGate has a latest passing evaluation. Update Claim status separately.
 
+## Research Turn Checkpoint
+
+Before ending every turn, read `ts_state` with `mode=context` or `mode=liveness`
+and leave the active scope in an explicit lifecycle state. Use
+`ts_workflow operation=set_required` for the concrete next action, leave a
+submitted Attempt in the external wait state, record `deferred` or `blocked`
+with a reason, or close the relevant map scope after its evidence and gates are
+complete. A completed Attempt or completed Continuation alone is not a research
+conclusion. If liveness returns `decision_needed`, continue the turn and record
+the disposition. `required` is an explicit next-turn plan and a valid checkpoint;
+the Harness must not force it to execute in the same turn. Do not invent a
+method in the Harness or treat Monitor's `next_run` as a scientific instruction.
+
 Use Review for a bounded counterargument, not as a source of canonical state.
 Use the same `launch`, `inspect`, `finalize`, and `cancel` compute lifecycle for
 local and remote environments. After `launch` returns after submission,

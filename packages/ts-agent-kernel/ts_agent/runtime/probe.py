@@ -160,6 +160,8 @@ def _probe_distribution(*, required: bool) -> dict[str, Any]:
 
     files = distribution.files
     if files is None:
+        if not required:
+            return {"name": PYTHON_DISTRIBUTION, "installed": False}
         raise RuntimeError(f"Python distribution {PYTHON_DISTRIBUTION!r} has no file manifest")
     records: list[tuple[str, bytes]] = []
     for item in files:
@@ -171,6 +173,8 @@ def _probe_distribution(*, required: bool) -> dict[str, Any]:
             raise RuntimeError(f"installed Python payload file is missing: {relative}")
         records.append((relative.as_posix(), path.read_bytes()))
     if not records:
+        if not required:
+            return {"name": PYTHON_DISTRIBUTION, "installed": False}
         raise RuntimeError(f"Python distribution {PYTHON_DISTRIBUTION!r} has no package payload")
     root = Path(distribution.locate_file("")).resolve()
     return {

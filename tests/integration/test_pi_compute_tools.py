@@ -38,7 +38,8 @@ const launch={{...base,operation:"launch",purpose:"Single point",capability:"gau
 const localLaunch={{...launch,executionTarget:{{kind:"local"}}}};
 const invalidInspect={{...base,operation:"inspect",intentId:"calc_1",purpose:"bad"}};
 let hostError="";
-try {{ await compute.execute("call-1",invalidInspect,undefined,()=>{{}},{{cwd:"/tmp"}}); }} catch(error) {{ hostError=error.message; }}
+const invalidResult=await compute.execute("call-1",invalidInspect,undefined,()=>{{}},{{cwd:"/tmp"}});
+hostError=invalidResult.details?.envelope?.error?.message || "";
 process.stdout.write(JSON.stringify({{
   launch:check.Check(launch),
   localLaunch:check.Check(localLaunch),

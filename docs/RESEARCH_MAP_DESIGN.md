@@ -40,6 +40,8 @@ The shared command surface is:
 ```text
 research.map        complete map
 research.summary    progress and focus
+research.context    bounded turn context for the Root Agent
+research.liveness   lifecycle diagnosis from map and runtime records
 research.detail     one map object
 research.locate     text search over map objects
 research.validate   validate the map
@@ -49,7 +51,11 @@ research.change     apply one ChangeSet
 ```
 
 The Kernel API, Pi tools, slash commands, and Root Agent use these same
-commands. `/research` is a presentation spelling of the command service, not
+commands. `research.context` and `research.liveness` are bounded read models;
+they do not become a second ResearchMap or a second lifecycle authority.
+`research.continuation` persists an explicit Root disposition, while liveness
+only diagnoses whether a turn needs a decision, an external wake-up, or a
+checkpoint. `/research` is a presentation spelling of the command service, not
 another API. TS Web reads the direct canonical serialization through the
 ResearchMap provider. `/compute` queries the unified local/remote environment
 catalog through `compute.environments` and `compute.environment`.
@@ -73,6 +79,18 @@ display, but they do not create a second scientific state model or registry.
 Operational run records are shown separately from the map. Gates record
 criteria and evaluation history; they do not silently update their target.
 
+## Research Harness Turn Boundary
+
+The Root Agent is the only scientific decision-maker. A turn reads bounded
+context, selects and executes a bounded action through registered Skills and
+Capabilities, interprets the resulting evidence, and checkpoints one of these
+dispositions before ending: an explicit `required` continuation,
+`waiting_external` for a submitted Attempt, `deferred`/`blocked` with a reason,
+or a terminal map state. A pre-submission `prepared` Attempt is still a local
+decision point; it does not justify waiting for a Monitor event. The Harness
+may issue a bounded follow-up when liveness reports `decision_needed`, but it
+does not select the next scientific method or write a Finding.
+
 ## Delivery Checklist
 
 - keep only `research_map.json`, `transactions.jsonl`, and Node-owned execution
@@ -86,3 +104,7 @@ criteria and evaluation history; they do not silently update their target.
   catalog;
 - keep `ResearchMap` as the only scientific state model; do not introduce
   parallel scientific stores or aliases.
+- keep `tests/node/native/tspi-research-turn-e2e.test.mjs` as the domain-neutral
+  acceptance trace for Agent -> Kernel -> Host -> Monitor -> Agent progress;
+  domain-specific workflows must pass this lifecycle contract before adding
+  scientific policy.

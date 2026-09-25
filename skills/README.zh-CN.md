@@ -2,9 +2,9 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi 提供 17 个职责明确的 Skill。Research Kernel Skill 管理规范 ResearchMap 合同；
-编排 Skill 选择下一项有边界的任务；科学与交付 Skill 各自处理一种方法或输出问题，不再
-重复定义状态。
+TSPi 提供一个领域无关的 Research Harness；当前随附的 17 个 Skill 组成计算化学能力包。
+Research Kernel Skill 管理规范 ResearchMap 合同；编排 Skill 选择下一项有边界的任务；
+科学与交付 Skill 各自处理一种方法或输出问题，不再重复定义状态。
 
 | Skill | 职责 |
 | --- | --- |
@@ -26,9 +26,9 @@ TSPi 提供 17 个职责明确的 Skill。Research Kernel Skill 管理规范 Res
 | [tspi-mechanism-reasoning](tspi-mechanism-reasoning/SKILL.zh-CN.md) | 机理假设、映射、基元步骤与替代路径 |
 | [tspi-chemical-input](tspi-chemical-input/SKILL.zh-CN.md) | 自然语言化学名称、结构候选与输入确认 |
 
-一个过渡态研究可以调用多个 Skill，但它们各自保持清楚边界：候选生成产生结构，TS 验证
-建立鞍点证据，IRC 归属端点，能量学比较校正后的物理量。Root 通过 Kernel 把核验后的
-输出记录到同一个 ResearchMap。
+Harness 可以承载化学、数据分析、模拟或其他研究领域的 Skill。当前过渡态能力包中的
+Skill 仍保持清楚边界：候选生成产生结构，TS 验证建立鞍点证据，IRC 归属端点，能量学
+比较校正后的物理量。Root 通过 Kernel 把核验后的输出记录到同一个 ResearchMap。
 
 每个 Skill 都有内容对应的英文和中文入口，每份详细参考文档也同时维护英文与简体中文
 版本；两种语言的入口只链接同语言参考文档。常用术语见

@@ -11,7 +11,14 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "tspi-server-ext-"));
   await mkdir(join(root, "extensions"), { recursive: true });
   const entry = join(root, "extensions", "example.mjs");
-  await writeFile(entry, `export function createServerExtension() { return { tools: [{ name: "ts_example", execute() {} }] }; }\n`);
+  await writeFile(entry, `export function createServerExtension() { return { tools: [{
+    name: "ts_example",
+    label: "TS Example",
+    description: "A contract fixture.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    metadata: { authority: "host_read", effect: "read", replay: "safe", phase: "orient" },
+    execute() {},
+  }] }; }\n`);
   const digest = `sha256:${createHash("sha256").update(await readFile(entry)).digest("hex")}`;
   await writeFile(join(root, "extensions.json"), JSON.stringify({
     schema_version: "tspi-server-extensions/1",
@@ -34,6 +41,25 @@ test("server extension loader verifies and inventories package-owned tools", asy
     assert.deepEqual(loaded.tools.map((tool) => tool.name), ["ts_example"]);
     assert.equal(loaded.inventory[0].name, "example");
     assert.equal(loaded.inventory[0].permissions[0], "workspace.read");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("server extension loader rejects tools outside the Harness contract", async () => {
+  const root = await fixture();
+  try {
+    const entry = join(root, "extensions", "example.mjs");
+    await writeFile(entry, `export function createServerExtension() { return { tools: [{ name: "ts_example", execute() {} }] }; }\n`);
+    const digest = `sha256:${createHash("sha256").update(await readFile(entry)).digest("hex")}`;
+    const manifestPath = join(root, "extensions.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.extensions[0].sha256 = digest;
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    await assert.rejects(
+      loadServerExtensions({ packageRoot: root, manifestPath: "extensions.json" }),
+      /has no label/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

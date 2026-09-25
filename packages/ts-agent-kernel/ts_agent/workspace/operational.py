@@ -123,6 +123,9 @@ def runtime_status(
         "ambiguous_submissions": ambiguous_submissions,
         "ambiguous_cancellations": ambiguous_cancellations,
         "retryable_controls": retryable_controls,
+        # Domain-neutral alias used by Research Harness liveness. The
+        # calculation-specific field remains for existing compute clients.
+        "attempts": calculation_attempts,
         "calculation_attempts": calculation_attempts,
         "runtime_summary": {
             "paused_node_count": sum(row.get("paused") is True for row in dispatch),
@@ -743,6 +746,7 @@ def _empty_runtime_status(finding: dict[str, Any]) -> dict[str, Any]:
         "ambiguous_submissions": [],
         "ambiguous_cancellations": [],
         "retryable_controls": [],
+        "attempts": [],
         "calculation_attempts": [],
         "runtime_summary": {
             "paused_node_count": 0,

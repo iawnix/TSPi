@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
 import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { boundWorkspaceRoot } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -51,7 +52,7 @@ export function createComputeTool() {
         ...params,
         intentRequest: params.operation === "launch" ? buildCalculationRequest(params) : undefined,
       });
-      const root = params.root || toolContext.cwd;
+      const root = boundWorkspaceRoot(params, toolContext);
       const taskId = await allocateOperationalId(root, "sub", context?.abortSignal);
       const startedAt = Date.now();
       const signal = deadlineSignal(context?.abortSignal, computeTimeoutMs(request));

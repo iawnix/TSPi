@@ -14,13 +14,16 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_pi_source_pin_is_explicit_and_valid() -> None:
     pin = json.loads((ROOT / "config" / "pi-source.json").read_text(encoding="utf-8"))
     assert pin["repository"] == "https://github.com/earendil-works/pi.git"
-    assert pin["tag"] == "v0.85.1"
+    assert pin["tag"] == "v0.87.1"
     assert len(pin["commit"]) == 40
-    assert pin["commit"] == "d981de1229ef899957bbe968bc8dcda02a21f477"
+    assert pin["commit"] == "f07218c4d4bbc12bef056a7058c3dd49dfe41abe"
     assert pin["protocolVersion"] == 8
     patch = (ROOT / "config" / "pi-worker-entry.patch").read_text(encoding="utf-8")
     assert "PI_SESSION_WORKER_ENTRY" in patch
     assert "packages/coding-agent/src/experimental/process.ts" in patch
+    diagnostics_patch = (ROOT / "config" / "pi-process-diagnostics.patch").read_text(encoding="utf-8")
+    assert "TSPI_PI_DIAGNOSTIC_FILE" in diagnostics_patch
+    assert "openSync(diagnosticPath" in diagnostics_patch
     create_patch = (ROOT / "config" / "pi-multi-workspace-create.patch").read_text(encoding="utf-8")
     assert "createWorkspace(workspaceId" in create_patch
     assert "WorkspaceDirectory" in create_patch
@@ -44,8 +47,12 @@ def test_pi_source_pin_is_explicit_and_valid() -> None:
     assert "#toolRendererRegistration !== registration" in renderer_patch
     transcript_patch = (ROOT / "config" / "pi-transcript-json.patch").read_text(encoding="utf-8")
     assert "function toStrictJson" in transcript_patch
-    assert "reduceLaneSnapshot(snapshot, forwarded)" in transcript_patch
+    assert "reduceLaneSnapshot(draft.snapshot as unknown as LaneSnapshot, forwarded)" in transcript_patch
     assert "details: undefined" in transcript_patch
+    performance_patch = (ROOT / "config" / "pi-tui-performance.patch").read_text(encoding="utf-8")
+    assert "TRANSCRIPT_UPDATE_DELAY_MS" in performance_patch
+    assert "transcript.length < renderedLength" in performance_patch
+    assert "Object.is(this.args, args)" in performance_patch
     navigation_patch = (ROOT / "config" / "pi-session-navigation.patch").read_text(encoding="utf-8")
     assert "SessionNavigation" in navigation_patch
     assert "sessionSwitchTail" in navigation_patch
@@ -196,6 +203,49 @@ def test_transcript_json_patch_is_idempotent_for_an_upgraded_checkout(tmp_path, 
     assert calls == []
 
 
+def test_tui_performance_patch_is_idempotent_for_an_upgraded_checkout(tmp_path, monkeypatch):
+    from scripts import prepare_pi_source
+
+    source = tmp_path / "pi"
+    client = source / "packages/coding-agent/src/experimental"
+    tools = source / "packages/coding-agent/src/modes/interactive/components"
+    client.mkdir(parents=True)
+    tools.mkdir(parents=True)
+    (client / "client-tui.ts").write_text("TRANSCRIPT_UPDATE_DELAY_MS\n", encoding="utf-8")
+    (client / "client-tui-chat.ts").write_text("transcript.length < renderedLength\n", encoding="utf-8")
+    (tools / "tool-execution.ts").write_text("Object.is(this.args, args)\n", encoding="utf-8")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(prepare_pi_source.subprocess, "run", lambda command, **_kwargs: calls.append(command))
+
+    prepare_pi_source.apply_tui_performance_patch(source)
+
+    assert calls == []
+
+
+def test_tool_error_boundary_repair_uses_an_auditable_patch(tmp_path, monkeypatch):
+    from scripts import prepare_pi_source
+
+    source = tmp_path / "pi"
+    tools = source / "packages/agent/src/harness/runtime/drive"
+    tools.mkdir(parents=True)
+    (tools / "tools.ts").write_text(
+        "...(cancelled ? {} : { recovery: true, replay: call.replay })\n",
+        encoding="utf-8",
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(prepare_pi_source.subprocess, "run", lambda command, **_kwargs: calls.append(command))
+
+    prepare_pi_source.apply_tool_error_boundary_repair_patch(source)
+
+    assert calls == [[
+        "git",
+        "-C",
+        str(source),
+        "apply",
+        str(prepare_pi_source.TOOL_ERROR_BOUNDARY_REPAIR_PATCH_PATH),
+    ]]
+
+
 def test_session_navigation_patch_is_idempotent_for_an_upgraded_checkout(tmp_path, monkeypatch):
     from scripts import prepare_pi_source
 
@@ -239,7 +289,10 @@ def test_pi_source_verify_rejects_a_list_only_workspace_patch(tmp_path, monkeypa
     services.mkdir(parents=True)
     (source / ".git").mkdir()
     (experimental / "cli.ts").write_text("", encoding="utf-8")
-    (experimental / "process.ts").write_text("PI_SESSION_WORKER_ENTRY", encoding="utf-8")
+    (experimental / "process.ts").write_text(
+        "PI_SESSION_WORKER_ENTRY TSPI_PI_DIAGNOSTIC_FILE openSync(diagnosticPath",
+        encoding="utf-8",
+    )
     (services / "sessions.ts").write_text(
         'export const WorkspaceDirectory = defineService<WorkspaceDirectory>("tspi.workspace-directory");\n',
         encoding="utf-8",

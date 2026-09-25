@@ -11,6 +11,10 @@ import {
   type ReviewToolParams,
 } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
 import {
+  registerToolEnvelopeErrorHook,
+  wrapToolForPi,
+} from "../../../packages/ts-agent-runtime/host-api/tool-envelope.mjs";
+import {
   createSubagentStatusReporter,
   terminalStateForReport,
   terminalStatusForError,
@@ -19,6 +23,16 @@ import {
   renderTsReviewCall,
   renderTsReviewResult,
 } from "../shared/review-tool-presentation.ts";
+import type {
+  PiToolContext,
+  PiToolId,
+  PiToolRenderContext,
+  PiToolRenderOptions,
+  PiToolResult,
+  PiToolSignal,
+  PiToolTheme,
+  PiToolUpdate,
+} from "../shared/pi-tool-types.ts";
 import {
   renderTsNativeCall,
   renderTsNativeResult,
@@ -44,7 +58,8 @@ const TOOL_CONTRACTS = createPublicToolContracts(Type);
 
 export function registerReviewTools(pi: ExtensionAPI) {
   const runtime = new PiRuntime(pi);
-  pi.registerTool({
+  registerToolEnvelopeErrorHook(pi);
+  pi.registerTool(wrapToolForPi({
     ...TOOL_CONTRACTS.review,
     promptGuidelines: [
       "Use at ambiguity, failure analysis, branch selection, or final audit; advice is not evidence or a Claim conclusion.",
@@ -52,14 +67,14 @@ export function registerReviewTools(pi: ExtensionAPI) {
       "Select one Claim; optional artifact IDs must already be cited in its derived graph. Paths are forbidden.",
     ],
     renderShell: "self",
-    renderCall: (args, theme) => renderTsReviewCall(args as Record<string, unknown>, theme),
-    renderResult: (result, options, theme, context) => renderTsReviewResult(
+    renderCall: (args: ReviewToolParams, theme: PiToolTheme) => renderTsReviewCall(args as unknown as Record<string, unknown>, theme),
+    renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, _context: PiToolRenderContext<ReviewToolParams>) => renderTsReviewResult(
       result,
       options,
       theme,
-      context.isError,
+      _context.isError,
     ),
-    async execute(toolCallId, params: ReviewToolParams, signal, onUpdate, ctx) {
+    async execute(toolCallId: PiToolId, params: ReviewToolParams, signal: PiToolSignal, onUpdate: PiToolUpdate, ctx: PiToolContext) {
       if (!ctx.model) {
         throw new Error("No parent model is selected for TS subagent delegation");
       }
@@ -179,18 +194,18 @@ export function registerReviewTools(pi: ExtensionAPI) {
         throw error;
       }
     },
-  });
+  }));
 
-  pi.registerTool({
+  pi.registerTool(wrapToolForPi({
     ...TOOL_CONTRACTS.reply,
-    renderCall: (args, theme) => renderTsNativeCall("ts_reply", args as Record<string, unknown>, theme),
-    renderResult: (result, options, theme, context) => renderTsNativeResult("ts_reply", result, options, theme, context.isError),
+    renderCall: (args: ReplyToolParams, theme: PiToolTheme) => renderTsNativeCall("ts_reply", args as unknown as Record<string, unknown>, theme),
+    renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<ReplyToolParams>) => renderTsNativeResult("ts_reply", result, options, theme, context.isError),
     promptSnippet: "Record a TS Review disposition",
     promptGuidelines: [
       `Call after every successful ${PUBLIC_TOOL_NAMES.review} and before scientific mutation.`,
       "State what is adopted, rejected, or deferred and why; this response is not evidence.",
     ],
-    async execute(_toolCallId, params: ReplyToolParams, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId: PiToolId, params: ReplyToolParams, _signal: PiToolSignal, _onUpdate: PiToolUpdate, ctx: PiToolContext) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const disposition = writeReviewRootDisposition(root, {
         task_id: params.taskId,
@@ -202,5 +217,5 @@ export function registerReviewTools(pi: ExtensionAPI) {
       pi.appendEntry("ts-review-root-disposition", disposition);
       return toolText(JSON.stringify(disposition, null, 2), { disposition });
     },
-  });
+  }));
 }

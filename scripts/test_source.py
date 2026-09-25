@@ -41,7 +41,11 @@ def main(argv: list[str] | None = None) -> int:
         description="Build the current ts-agent-kernel wheel and test it in a temporary overlay."
     )
     parser.add_argument("--package-root", default=str(ROOT))
-    parser.add_argument("--env-root", help="Directory containing the shared scientific base.")
+    parser.add_argument(
+        "--env-root",
+        default=os.environ.get("TSPI_TEST_ENV_ROOT", "/home/iaw/debug/tspi-test-env"),
+        help="Directory containing the shared scientific base.",
+    )
     parser.add_argument("--base-prefix", help="Explicit healthy scientific base to reuse.")
     parser.add_argument("--conda", help="Path to conda or mamba executable.")
     parser.add_argument("--conda-root", help="Root directory of an existing Conda or Mamba installation.")

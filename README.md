@@ -2,9 +2,10 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi is a Pi-based computational chemistry research assistant for
-transition-state searches and reaction-path analysis. Research state,
-evidence, calculations, and reports live in one workspace.
+TSPi is a Pi-based, domain-neutral Research Harness for scientific workflows.
+Its bundled skill pack currently focuses on computational chemistry, including
+transition-state searches and reaction-path analysis. Research state, evidence,
+calculations, and reports live in one workspace.
 
 ## Install
 

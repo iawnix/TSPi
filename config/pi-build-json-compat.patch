@@ -1,0 +1,13 @@
+diff --git a/packages/agent/src/harness/runtime/drive/tools.ts b/packages/agent/src/harness/runtime/drive/tools.ts
+--- a/packages/agent/src/harness/runtime/drive/tools.ts
++++ b/packages/agent/src/harness/runtime/drive/tools.ts
+@@ -534,7 +534,7 @@ async function finalizeImmediateToolOutcome<TContext extends object | undefined>(
+ 			runId: drive.operationId,
+ 			toolCallId: outcome.toolCall.id,
+ 			toolName: outcome.toolCall.name,
+-			args: outcome.toolCall.arguments,
++			args: outcome.toolCall.arguments as unknown as Record<string, JsonValue>,
+ 			content: result.content,
+-			...(result.details === undefined ? {} : { details: result.details }),
++			...(result.details === undefined ? {} : { details: result.details as unknown as JsonValue }),
+ 			isError: true,

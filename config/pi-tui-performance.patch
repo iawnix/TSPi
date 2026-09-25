@@ -1,0 +1,117 @@
+diff --git a/packages/coding-agent/src/experimental/client-tui-chat.ts b/packages/coding-agent/src/experimental/client-tui-chat.ts
+index a613046ba..d1d07e61e 100644
+--- a/packages/coding-agent/src/experimental/client-tui-chat.ts
++++ b/packages/coding-agent/src/experimental/client-tui-chat.ts
+@@ -61,9 +61,6 @@ export class ExperimentalChatView {
+ 		}
+ 		this.#syncQueues(snapshot.queues);
+ 		this.#setWorking(snapshot.operation !== null);
+-		this.transcript.invalidate();
+-		this.pendingMessages.invalidate();
+-		this.status.invalidate();
+ 	}
+ 
+ 	refreshTheme(snapshot: LaneSnapshot): void {
+@@ -93,7 +90,10 @@ export class ExperimentalChatView {
+ 	}
+ 
+ 	#syncTranscript(transcript: readonly Entry[]): void {
+-		const diverged = this.#renderedEntryIds.some((id, index) => transcript[index]?.id !== id);
++		const renderedLength = this.#renderedEntryIds.length;
++		const diverged =
++			transcript.length < renderedLength ||
++			(renderedLength > 0 && transcript[renderedLength - 1]?.id !== this.#renderedEntryIds[renderedLength - 1]);
+ 		if (diverged) {
+ 			this.transcript.clear();
+ 			this.#tools.clear();
+diff --git a/packages/coding-agent/src/experimental/client-tui.ts b/packages/coding-agent/src/experimental/client-tui.ts
+index fc1ffa918..e69765d25 100644
+--- a/packages/coding-agent/src/experimental/client-tui.ts
++++ b/packages/coding-agent/src/experimental/client-tui.ts
+@@ -103,6 +103,8 @@ const selectTheme = {
+ 	noMatch: (text: string) => theme.fg("warning", text),
+ };
+ 
++const TRANSCRIPT_UPDATE_DELAY_MS = 32;
++
+ /** Service-only presentation driven by a replicated main-lane snapshot. */
+ export class ExperimentalClientTui implements Component {
+ 	readonly #ui: TUI;
+@@ -653,11 +655,41 @@ export class ExperimentalClientTui implements Component {
+ 		this.#documentContainer.addChild(this.#sessionHeading);
+ 		this.#documentContainer.addChild(view.transcript);
+ 		this.#pendingMessagesContainer.addChild(view.pendingMessages);
+-		this.#laneUnsubscribe = feature.transcript.state.subscribe((value) => {
++		let pendingSnapshot: LaneSnapshot | undefined;
++		let updateTimer: NodeJS.Timeout | undefined;
++		let disposed = false;
++		const flush = (): void => {
++			updateTimer = undefined;
++			if (disposed || pendingSnapshot === undefined) return;
++			const snapshot = pendingSnapshot;
++			pendingSnapshot = undefined;
++			view.apply(snapshot);
++			this.#requestRender();
++		};
++		const unsubscribe = feature.transcript.state.subscribe((value, _context, delivery) => {
+ 			if (value.snapshot === null) return;
+-			view.apply(value.snapshot);
+-			this.#rebuild();
++			pendingSnapshot = value.snapshot;
++			const eventType = value.event?.type;
++			const coalescible =
++				delivery.kind !== "hydrate" &&
++				(eventType === "message_update" || eventType === "tool_update" || eventType === "usage");
++			if (!coalescible) {
++				if (updateTimer !== undefined) {
++					clearTimeout(updateTimer);
++					updateTimer = undefined;
++				}
++				flush();
++				return;
++			}
++			if (updateTimer === undefined) updateTimer = setTimeout(flush, TRANSCRIPT_UPDATE_DELAY_MS);
+ 		});
++		this.#laneUnsubscribe = () => {
++			disposed = true;
++			if (updateTimer !== undefined) clearTimeout(updateTimer);
++			updateTimer = undefined;
++			pendingSnapshot = undefined;
++			unsubscribe();
++		};
+ 		const snapshot = feature.transcript.state.value?.snapshot;
+ 		if (snapshot === null || snapshot === undefined) {
+ 			await this.#closeLane();
+diff --git a/packages/coding-agent/src/modes/interactive/components/tool-execution.ts b/packages/coding-agent/src/modes/interactive/components/tool-execution.ts
+index 5355a3637..353571cf8 100644
+--- a/packages/coding-agent/src/modes/interactive/components/tool-execution.ts
++++ b/packages/coding-agent/src/modes/interactive/components/tool-execution.ts
+@@ -178,17 +178,20 @@ export class ToolExecutionComponent extends Container {
+ 	}
+ 
+ 	updateArgs(args: any): void {
++		if (Object.is(this.args, args)) return;
+ 		this.args = args;
+ 		this.updateDisplay();
+ 	}
+ 
+ 	markExecutionStarted(): void {
++		if (this.executionStarted) return;
+ 		this.executionStarted = true;
+ 		this.updateDisplay();
+ 		this.ui.requestRender();
+ 	}
+ 
+ 	setArgsComplete(): void {
++		if (this.argsComplete) return;
+ 		this.argsComplete = true;
+ 		this.updateDisplay();
+ 		this.ui.requestRender();
+@@ -202,6 +205,7 @@ export class ToolExecutionComponent extends Container {
+ 		},
+ 		isPartial = false,
+ 	): void {
++		if (this.result === result && this.isPartial === isPartial) return;
+ 		this.result = result;
+ 		this.isPartial = isPartial;
+ 		this.updateDisplay();

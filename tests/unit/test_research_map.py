@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from ts_agent.api import CommandError, execute
+from ts_agent.api import CommandError, _research_liveness, execute
 from ts_agent.research import (
     ClaimGate,
     ContinuationRecord,
@@ -383,3 +383,317 @@ def test_completed_continuation_cannot_be_reopened(tmp_path) -> None:
             root,
             {"request": {"operation": "set_required", "continuation_id": continuation_id}},
         )
+
+
+def test_research_liveness_requires_an_explicit_disposition_for_active_node(tmp_path) -> None:
+    root, kernel = _continuation_workspace(tmp_path)
+    kernel.apply({"operations": [{"type": "set_node_state", "node_id": "node_1", "state": "active"}]})
+
+    liveness = execute("research.liveness", root)
+    assert liveness["lifecycle"] == "decision_needed"
+    assert liveness["decision_needed"][0]["target_id"] == "node_1"
+
+    context = execute("research.context", root)
+    assert context["schema_version"] == "research-context/1"
+    assert context["lifecycle"]["state"] == "decision_needed"
+    assert context["focus"]["nodes"] == []
+    assert "phases" not in context
+    assert context["bounds"]["limits"]["continuations"] == 8
+    assert context["bounds"]["truncated"]["decision_needed"] is False
+
+
+def test_research_liveness_treats_pending_attempts_as_external_wait(tmp_path) -> None:
+    root, kernel = _continuation_workspace(tmp_path)
+    kernel.apply({"operations": [{"type": "set_node_state", "node_id": "node_1", "state": "active"}]})
+
+    liveness = _research_liveness(
+        kernel.load(),
+        root,
+        runtime={
+            "runtime_revision": "runtime-1",
+            "calculation_attempts": [{
+                "intent_id": "calc_1",
+                "node_id": "node_1",
+                "state": "running",
+                "path": "nodes/node_1/attempts/calc_1",
+            }],
+        },
+    )
+    assert liveness["lifecycle"] == "waiting_external"
+    assert liveness["waiting_external"][0]["intent_id"] == "calc_1"
+    assert liveness["decision_needed"] == []
+
+    generic = _research_liveness(
+        kernel.load(),
+        root,
+        runtime={
+            "runtime_revision": "runtime-2",
+            "attempts": [{
+                "attempt_id": "attempt_1",
+                "node_ref": "node_1",
+                "status": "running",
+                "path": "nodes/node_1/attempts/attempt_1",
+            }],
+        },
+    )
+    assert generic["lifecycle"] == "waiting_external"
+    assert generic["waiting_external"][0]["attempt_id"] == "attempt_1"
+
+
+def test_research_liveness_does_not_wait_for_unsubmitted_prepared_attempt(tmp_path) -> None:
+    root, kernel = _continuation_workspace(tmp_path)
+    kernel.apply({"operations": [{"type": "set_node_state", "node_id": "node_1", "state": "active"}]})
+
+    liveness = _research_liveness(
+        kernel.load(),
+        root,
+        runtime={
+            "runtime_revision": "runtime-prepared",
+            "calculation_attempts": [{
+                "intent_id": "calc_1",
+                "node_id": "node_1",
+                "state": "prepared",
+                "path": "nodes/node_1/attempts/calc_1",
+            }],
+        },
+    )
+    assert liveness["waiting_external"] == []
+    assert liveness["lifecycle"] == "decision_needed"
+    assert liveness["decision_needed"][0]["target_id"] == "node_1"
+
+
+def test_research_liveness_does_not_wait_for_collected_attempt(tmp_path) -> None:
+    root, kernel = _continuation_workspace(tmp_path)
+    kernel.apply({"operations": [{"type": "set_node_state", "node_id": "node_1", "state": "active"}]})
+
+    liveness = _research_liveness(
+        kernel.load(),
+        root,
+        runtime={
+            "runtime_revision": "runtime-collected",
+            "calculation_attempts": [{
+                "intent_id": "calc_1",
+                "node_id": "node_1",
+                "state": "collected",
+                "path": "nodes/node_1/attempts/calc_1",
+            }],
+        },
+    )
+    assert liveness["waiting_external"] == []
+    assert liveness["lifecycle"] == "decision_needed"
+    assert liveness["decision_needed"][0]["target_id"] == "node_1"
+
+
+def test_research_liveness_requires_a_new_decision_after_parsed_attempt_and_completed_continuation(tmp_path) -> None:
+    """A finished operational step does not finish an active research scope."""
+
+    root, kernel = _continuation_workspace(tmp_path)
+    kernel.apply({
+        "operations": [
+            {"type": "set_node_state", "node_id": "node_1", "state": "active"},
+            {
+                "type": "set_continuation",
+                "id": "cont_1",
+                "scope": "node",
+                "target_id": "node_1",
+                "action": "inspect",
+            },
+        ]
+    })
+    kernel.apply({"operations": [{"type": "resolve_continuation", "id": "cont_1", "status": "completed"}]})
+
+    liveness = _research_liveness(
+        kernel.load(),
+        root,
+        runtime={
+            "runtime_revision": "runtime-parsed",
+            "calculation_attempts": [{
+                "intent_id": "attempt_1",
+                "node_id": "node_1",
+                "state": "parsed",
+                "path": "nodes/node_1/attempts/attempt_1",
+            }],
+        },
+    )
+
+    assert liveness["lifecycle"] == "decision_needed"
+    assert liveness["waiting_external"] == []
+    assert any(item["target_id"] == "node_1" for item in liveness["decision_needed"])
+
+
+def test_research_liveness_preserves_required_and_terminal_states(tmp_path) -> None:
+    root, kernel = _continuation_workspace(tmp_path)
+    kernel.apply({"operations": [
+        {"type": "set_node_state", "node_id": "node_1", "state": "active"},
+        {"type": "set_continuation", "id": "cont_1", "scope": "node", "target_id": "node_1", "action": "inspect"},
+    ]})
+    assert execute("research.liveness", root)["lifecycle"] == "required"
+
+    kernel.apply({"operations": [{"type": "resolve_continuation", "id": "cont_1", "status": "completed"}]})
+    kernel.apply({"operations": [{"type": "set_node_state", "node_id": "node_1", "state": "closed", "outcome": "stopped"}]})
+    assert execute("research.liveness", root)["lifecycle"] == "terminal"
+
+
+def test_research_turn_checkpoint_accepts_explicit_plan_and_audits_boundary(tmp_path) -> None:
+    root, kernel = _continuation_workspace(tmp_path)
+    kernel.apply({
+        "operations": [
+            {"type": "set_node_state", "node_id": "node_1", "state": "active"},
+            {"type": "set_continuation", "id": "cont_1", "scope": "node", "target_id": "node_1", "action": "inspect"},
+        ]
+    })
+    result = execute("research.turn", root, {"request": {
+        "operation": "checkpoint",
+        "turn_id": "run_1",
+        "trigger": "host.before_run_end",
+    }})
+    assert result["schema_version"] == "research-turn-result/1"
+    assert result["accepted"] is True
+    assert result["lifecycle"] == "required"
+    assert (root / "operations" / "research_turns.jsonl").exists()
+    event = json.loads((root / "operations" / "research_turns.jsonl").read_text().splitlines()[-1])
+    assert event["schema_version"] == "research-turn-event/1"
+    assert event["turn_id"] == "run_1"
+
+
+def test_research_turn_end_rejects_missing_disposition_without_planning_science(tmp_path) -> None:
+    root, kernel = _continuation_workspace(tmp_path)
+    kernel.apply({"operations": [{"type": "set_node_state", "node_id": "node_1", "state": "active"}]})
+    result = execute("research.turn", root, {"request": {
+        "operation": "end",
+        "turn_id": "run_missing",
+        "trigger": "host.before_run_end",
+    }})
+    assert result["accepted"] is False
+    assert result["requires_disposition"] is True
+    assert result["lifecycle"] == "decision_needed"
+    assert result["liveness"]["decision_needed"][0]["target_id"] == "node_1"
+
+
+def test_research_turn_exposes_deferred_as_a_valid_terminal_disposition(tmp_path) -> None:
+    root, kernel = _continuation_workspace(tmp_path)
+    kernel.apply({
+        "operations": [
+            {"type": "set_node_state", "node_id": "node_1", "state": "active"},
+            {"type": "set_continuation", "id": "cont_1", "scope": "node", "target_id": "node_1", "action": "inspect", "status": "deferred", "reason": "Need a later review."},
+            {"type": "set_continuation", "id": "cont_2", "scope": "claim", "target_id": "claim_1", "action": "review", "status": "deferred", "reason": "Need a later review."},
+            {"type": "set_continuation", "id": "cont_3", "scope": "gate", "target_id": "gate_1", "action": "evaluate", "status": "deferred", "reason": "Need a later review."},
+        ]
+    })
+    result = execute("research.turn", root, {"request": {"operation": "checkpoint", "turn_id": "run_deferred"}})
+    assert result["accepted"] is True
+    assert result["lifecycle"] == "deferred"
+
+
+def test_research_turn_request_id_replay_does_not_duplicate_audit(tmp_path) -> None:
+    root, _kernel = _continuation_workspace(tmp_path)
+    request = {"operation": "orient", "turn_id": "run_replay", "request_id": "req_1"}
+    first = execute("research.turn", root, {"request": request})
+    second = execute("research.turn", root, {"request": request})
+    assert first["replayed"] is False
+    assert second["replayed"] is True
+    assert len((root / "operations" / "research_turns.jsonl").read_text().splitlines()) == 1
+
+
+def test_research_turn_request_id_cannot_be_reused_for_a_different_request(tmp_path) -> None:
+    root, _kernel = _continuation_workspace(tmp_path)
+    request = {
+        "operation": "checkpoint",
+        "turn_id": "run_1",
+        "session_id": "session_1",
+        "trigger": "host.before_run_end",
+        "event_id": "evt_1",
+        "request_id": "req_conflict",
+    }
+    execute("research.turn", root, {"request": request})
+
+    with pytest.raises(CommandError, match="already bound to another request"):
+        execute("research.turn", root, {"request": {**request, "operation": "end"}})
+    with pytest.raises(CommandError, match="already bound to another request"):
+        execute("research.turn", root, {"request": {**request, "turn_id": "run_2"}})
+    with pytest.raises(CommandError, match="already bound to another request"):
+        execute("research.turn", root, {"request": {**request, "session_id": "session_2"}})
+    with pytest.raises(CommandError, match="already bound to another request"):
+        execute("research.turn", root, {"request": {**request, "trigger": "monitor.wake"}})
+    with pytest.raises(CommandError, match="already bound to another request"):
+        execute("research.turn", root, {"request": {**request, "event_id": "evt_2"}})
+
+    assert len((root / "operations" / "research_turns.jsonl").read_text().splitlines()) == 1
+
+
+def test_compute_environment_summary_is_bounded_and_digest_bound(tmp_path) -> None:
+    root, _kernel = _continuation_workspace(tmp_path)
+    summary = execute("compute.environments", root)
+    assert summary["detail"] is False
+    assert summary["source_digest"].startswith("sha256:")
+    assert summary["catalog_digest"].startswith("sha256:")
+    environment = summary["environments"][0]
+    assert environment["identity_digest"].startswith("sha256:")
+    assert environment["readiness"]["state"] == "configured"
+    assert all(isinstance(backend, str) for backend in environment["backends"])
+    detailed = execute("compute.environment", root, {"name": environment["name"]})
+    assert detailed["environment"]["backends"]["gaussian"]["command"] == ["g16"]
+
+
+def test_research_context_bounds_durable_memory_fields(tmp_path) -> None:
+    root, kernel = _continuation_workspace(tmp_path)
+    long_text = "x" * 2_000
+    kernel.apply({"operations": [
+        {"type": "set_focus", "claim_ids": ["claim_1"], "node_ids": ["node_1"]},
+        {"type": "set_node_state", "node_id": "node_1", "state": "active"},
+        {
+            "type": "set_continuation",
+            "id": "cont_1",
+            "scope": "node",
+            "target_id": "node_1",
+            "action": "inspect",
+            "reason": long_text,
+            "metadata": {f"key_{index}": long_text for index in range(32)},
+        },
+    ]})
+
+    context = execute("research.context", root)
+    node = context["focus"]["nodes"][0]
+    continuation = context["continuations"]["required"][0]
+    assert len(node["objective"]) <= 512
+    assert len(continuation["reason"]) <= 512
+    assert "metadata" not in continuation
+    assert len(continuation["metadata_keys"]) == 8
+    assert context["bounds"]["truncated_fields"]["continuations"] is True
+    assert context["bounds"]["truncated_fields"]["focus_nodes"] is False
+    assert len(json.dumps(context, ensure_ascii=False)) < 20_000
+
+    liveness = execute("research.liveness", root)
+    assert len(liveness["required"][0]["reason"]) <= 512
+    assert liveness["truncated"]["required"] is False
+
+    status = execute("research.continuation", root)
+    assert len(status["continuations"][0]["reason"]) <= 512
+    assert "metadata" not in status["continuations"][0]
+
+
+def test_research_liveness_and_context_bound_large_continuation_queues(tmp_path) -> None:
+    root, kernel = _continuation_workspace(tmp_path)
+    kernel.apply({"operations": [
+        {"type": "set_node_state", "node_id": "node_1", "state": "active"},
+        *[
+            {
+                "type": "set_continuation",
+                "id": f"cont_{index}",
+                "scope": "node",
+                "target_id": "node_1",
+                "action": "inspect",
+                "reason": f"Required continuation {index}",
+            }
+            for index in range(1, 41)
+        ],
+    ]})
+
+    liveness = execute("research.liveness", root)
+    assert len(liveness["required"]) == 32
+    assert liveness["counts"]["required"] == 40
+    assert liveness["truncated"]["required"] is True
+
+    context = execute("research.context", root)
+    assert len(context["continuations"]["required"]) == 8
+    assert context["bounds"]["truncated"]["required"] is True

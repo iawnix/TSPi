@@ -33,6 +33,16 @@ NodeGate 的最新评估均为 `pass` 时，Node 才能以 `completed` 关闭。
 对于新问题，创建依赖于先前 Node 的后继 Node，并在同一个或后续 ChangeSet 中设置焦点。
 保留旧 Node、Finding、Gate、Artifact 和 Attempt 作为历史。
 
+## Research Turn 收尾
+
+每轮结束时，读取有界的 `research.context` 或 `research.liveness`，并明确登记生命周期
+disposition：用 `ts_workflow` 的 `set_required` 记录具体下一动作；让已提交 Attempt 保持
+`waiting_external`；带原因记录 `deferred` 或 `blocked`；或在解释证据后关闭相关 map
+scope。解析完成或运行记录完成本身不能关闭科学问题。`decision_needed` 要求 Root Agent
+继续并登记 disposition；`required` 是合法的下一轮计划，不能由 Harness 在本轮强制执行。
+Harness 的 follow-up 只用于修复缺少 disposition 的边界，不能替 Root 选择方法。
+Monitor 的 `next_run` 只是运行时唤醒。
+
 ## Review
 
 Review 只提供建议，不能写入 map。只向 Review 提供所需的 Claim 和 Artifact，通过

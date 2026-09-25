@@ -60,7 +60,7 @@ function renderHeader(
   const logo = compact ? "TSπ" : frame < 5 ? LOGO[Math.min(frame, LOGO.length - 1)]! : "TSπ  TSPi";
   const left = [
     center(theme.fg("accent", logo), leftWidth),
-    center(theme.fg("muted", "DAG-based transition-state research."), leftWidth),
+    center(theme.fg("muted", "ResearchMap scientific research."), leftWidth),
     center(theme.fg("dim", `${details.modelLabel || "Default model"} · ${details.thinkingLabel || "ready"}`), leftWidth),
     center(theme.fg("dim", formatCwd(workspaceRoot)), leftWidth),
   ];

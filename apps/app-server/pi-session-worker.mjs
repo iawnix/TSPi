@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createHash } from "node:crypto";
 import { createStaticFacetLoader, defineFacet, defineService } from "@earendil-works/chord";
 import {
   AgentHarness, createBashTool, createReadTool, createWriteTool,
@@ -9,6 +10,10 @@ import { loadServerExtensions } from "./server-extension-loader.mjs";
 import { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 import { createPackageSourceReadGuard } from "./pi-harness-policy.mjs";
 import { createContinuationLivenessHook } from "./pi-native-tools.mjs";
+import { markToolEnvelopeError, wrapToolForHarness } from "../../packages/ts-agent-runtime/host-api/tool-envelope.mjs";
+import { createToolExecutionContext } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
+import { PUBLIC_TOOL_METADATA } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { createResearchLifecycleController } from "../../packages/ts-agent-runtime/host-api/lifecycle.mjs";
 
 export {
   createAnalyzeTool,
@@ -50,7 +55,14 @@ async function loadTspiSkills(executionEnv) {
     const details = loaded.diagnostics.map((item) => `${item.path}: ${item.message}`).join("; ");
     throw new Error(`TSPi skill loading failed: ${details}`);
   }
-  return { packageRoot, skillsRoot, skills: loaded.skills };
+  const skills = loaded.skills.map((skill) => ({
+    ...skill,
+    // The model sees only the manifest; the digest binds a later explicit
+    // skill read to the exact body that was loaded for this worker.
+    digest: `sha256:${createHash("sha256").update(skill.content, "utf8").digest("hex")}`,
+    provenance_schema: "tspi-skill-provenance/1",
+  }));
+  return { packageRoot, skillsRoot, skills };
 }
 
 async function createTspiHarness(session, options, executionEnv) {
@@ -101,9 +113,23 @@ async function createTspiHarness(session, options, executionEnv) {
     createSystemPromptTool(promptManifest),
     createWriteTool(),
     createBashTool(),
-    ...loadedExtensions.tools,
+    ...loadedExtensions.tools.map(wrapToolForHarness),
   ];
   const activeToolNames = tools.map((tool) => tool.name);
+  const lifecycle = createResearchLifecycleController({ metadata: PUBLIC_TOOL_METADATA });
+  const toolExecutionContext = createToolExecutionContext({
+    workspace_root: session.metadata.cwd,
+    session_id: session.metadata.id,
+    sessionId: session.metadata.id,
+    operation_id: null,
+    lifecycle_phase: "turn",
+    replay_mode: "normal",
+    allowed_authorities: [...new Set(Object.values(PUBLIC_TOOL_METADATA).map((metadata) => metadata.authority))],
+    allowed_effects: [...new Set(Object.values(PUBLIC_TOOL_METADATA).map((metadata) => metadata.effect))],
+    allowed_phases: [...new Set(Object.values(PUBLIC_TOOL_METADATA).map((metadata) => metadata.phase))],
+    lifecycle_provider: () => lifecycle.contextPatch(),
+    env: executionEnv,
+  });
   const created = await AgentHarness.create({
     session,
     models: modelRuntime,
@@ -111,15 +137,71 @@ async function createTspiHarness(session, options, executionEnv) {
     thinkingLevel: resolved.thinkingLevel,
     tools,
     activeToolNames,
+    toolExecution: "sequential",
     // Session's canonical identifier lives in metadata.  The Pi Session
     // object itself does not expose a sessionId property; passing that
     // undefined value would create monitor registrations that cannot wake
     // this lane.
-    toolContext: { env: executionEnv, cwd: session.metadata.cwd, sessionId: session.metadata.id },
+    toolContext: toolExecutionContext,
     resources: { skills: loadedSkills.skills },
     systemPrompt: promptManifest.effective,
   }, TODO_CONTEXT);
+  if (process.env.TSPI_DEBUG === "1") {
+    const originalFault = created.harness.fault?.bind(created.harness);
+    if (originalFault) {
+      created.harness.fault = (cause, context) => {
+        const detail = cause instanceof Error ? (cause.stack || cause.message) : String(cause);
+        process.stderr.write(`TSPi Harness fault cause: ${detail}\n`);
+        return originalFault(cause, context);
+      };
+    }
+    created.harness.events.on("handler_error", (event) => {
+      const detail = event && typeof event === "object" ? JSON.stringify(event) : String(event);
+      process.stderr.write(`TSPi Harness handler error: ${detail}\n`);
+    });
+    created.harness.events.on("fault", (event) => {
+      const detail = event && typeof event === "object" ? JSON.stringify(event) : String(event);
+      process.stderr.write(`TSPi Harness fault: ${detail}\n`);
+    });
+  }
   try {
+    created.harness.hooks.on(
+      "before_drive",
+      (event) => {
+        // A cold-resumed durable operation reaches before_drive without a
+        // before_run prompt. Mark that path as recovery so replay:never tools
+        // cannot cross the execution boundary. Ordinary runs immediately
+        // replace this provisional state in before_run below.
+        if (lifecycle.snapshot().run_id !== event.runId) {
+          lifecycle.beginRun({ runId: event.runId, replay_mode: "recovery" });
+        }
+      },
+      { id: "tspi.lifecycle.recovery-boundary" },
+    );
+    created.harness.hooks.on(
+      "before_run",
+      (event) => {
+        lifecycle.beginRun({ runId: event.runId, messages: event.prompt });
+      },
+      { id: "tspi.lifecycle.begin-run" },
+    );
+    created.harness.hooks.on(
+      "before_tool",
+      (event) => {
+        // Admission advances only the Host-owned phase graph. An invalid
+        // transition is intentionally left for the execution gate to reject
+        // with its structured authorization envelope.
+        lifecycle.admitTool({ runId: event.runId, toolName: event.toolName });
+      },
+      { id: "tspi.lifecycle.admit-tool" },
+    );
+    created.harness.hooks.on(
+      "after_tool",
+      (event) => {
+        lifecycle.completeTool({ runId: event.runId, toolName: event.toolName, isError: event.isError });
+      },
+      { id: "tspi.lifecycle.complete-tool" },
+    );
     // Keep the package-source policy in the worker-owned Harness.  Registering
     // it here means every attached presentation shares the same guard, and a
     // phone/monitor client cannot bypass the ordinary TUI extension policy.
@@ -129,8 +211,15 @@ async function createTspiHarness(session, options, executionEnv) {
       { id: "tspi.package-source-read" },
     );
     created.harness.hooks.on(
+      "after_tool",
+      markToolEnvelopeError,
+      { id: "tspi.tool-error-envelope" },
+    );
+    created.harness.hooks.on(
       "before_run_end",
-      createContinuationLivenessHook({ cwd: session.metadata.cwd, maxFollowUps: 3 }),
+      // `required` is an explicit next-turn plan, so only an unresolved
+      // `decision_needed` checkpoint may inject a bounded same-turn repair.
+      createContinuationLivenessHook({ cwd: session.metadata.cwd, maxFollowUps: 1, followUpRequired: false }),
       { id: "tspi.continuation-liveness" },
     );
     const lane = await created.harness.lane("main", TODO_CONTEXT);
@@ -139,6 +228,7 @@ async function createTspiHarness(session, options, executionEnv) {
       lane,
       modelRuntime,
       settingsManager,
+      lifecycle,
       facetLoader: createStaticFacetLoader([
         defineFacet({
           id: "@tspi/system-prompt",
@@ -155,10 +245,22 @@ async function createTspiHarness(session, options, executionEnv) {
 }
 
 function tspiSystemPrompt(cwd) {
-  return `You are the TSPi research agent for ${cwd}. ResearchMap in the Research Kernel is authoritative for scientific state. Use ts_state before reasoning from workspace records. Use ts_change for canonical writes; include a concrete rationale and auditable operations. Use ts_environment to inspect configured local and remote compute environments, and ts_calc for one preflight-bound calculation lifecycle. After every Monitor wake, including a parsed calculation result, read ts_state and call ts_workflow with operation=status before deciding what happens next. When a concrete next action is known for an active Node, Claim, or Gate, record it with ts_workflow operation=set_required, then perform that action or explicitly set it deferred, blocked, or completed with a reason. Do not end a turn with an active scope and an unrecorded next action; the Host may issue a bounded follow-up while a required continuation remains. Monitor events may arrive through session next_run; treat them as operational evidence, reread ts_state, and inspect the bound Attempt before acting. After ts_calc launch returns after submission, including an uncertain result, end the turn and let Monitor enqueue next_run; do not call bash sleep, wait, or a manual polling loop. Use ts_calc inspect only after a Monitor wake or an explicit later request. A completed scheduler state is not the same as a parsed calculation. Use ts_seed or ts_import for validated calculation inputs; give ts_import a concise semantic input basename with the correct format extension. Use ts_compare for deterministic structure comparisons, ts_render for registered visual artifacts, and ts_report for revision-bound report packages. Use ts_review for isolated advisory assessment, then record Root's disposition with ts_reply before applying its advice. Use ts_notify only for material configured delivery events. Use sys_prompt when the effective system prompt or its provenance must be inspected. Use registered schemas, bounded state/capability catalogs, and public skills references; do not inspect installed package implementation or tests as research documentation. Do not invent identifiers, artifact paths, or calculation results. Treat tool output as evidence, preserve uncertainty, and keep Claims, Findings, Gate evaluations, and conclusions distinct.`;
+  return `You are the TSPi research agent for ${cwd}. The ResearchMap in the Research Kernel is authoritative for scientific state, while execution Attempts and Artifacts are operational evidence referenced by the map. The Harness lifecycle is domain-neutral: chemistry, reaction mechanisms, data analysis, simulation, or another research domain are all expressed as Claims, Nodes, Findings, Gates, Attempts, and Artifacts plus registered Skills and Capabilities. Follow one explicit Research Turn lifecycle: (1) orient by reading ts_state mode=context, (2) plan the next scientific action, (3) prepare and execute through the registered tools, (4) reconcile Monitor evidence, (5) interpret results, and (6) checkpoint the map and lifecycle disposition before ending. The Host checkpoint is canonical research.turn; ts_state/liveness is its bounded read model. A required continuation is an explicit next-turn plan and a valid end state, not an instruction to execute again in the same turn. Use ts_state mode=liveness when you need the compact lifecycle diagnosis; use summary, detail, locate, or map only for focused expansion. Use ts_change for canonical ResearchMap writes; include a concrete rationale, basis references, and auditable operations. Use ts_environment, ts_state capabilities, and skills references on demand when selecting a method or execution target; do not load complete skill text or environment catalogs into every turn. Use the registered execution capability for the current domain (for this package, ts_calc is the calculation lifecycle).
+
+After every Monitor wake, including a completed or parsed external operation, read ts_state mode=context or liveness, identify the bound Node and Attempt, and inspect the Attempt before deciding what happens next. After an execution capability submits work, including an uncertain result, end the turn and let Monitor enqueue next_run; do not call bash sleep, wait, or a manual polling loop. Use the capability's inspect operation only after a Monitor wake or an explicit later request. A completed scheduler state is not the same as a parsed or validated research result.
+
+Before ending every turn, make the lifecycle explicit: record a concrete next action with ts_workflow operation=set_required; or, when the work is waiting on an external Attempt/Monitor event, leave it waiting; or explicitly set the scope deferred or blocked with a reason; or close the relevant Node/Claim/Gate and record the resulting state. Do not end with an active scope that has none of these dispositions. The Host may issue a bounded follow-up when liveness is required or a decision is missing, but the Agent remains the only scientific decision-maker. Monitor next_run is an operational wake-up, not a new scientific instruction.
+
+Use ts_seed or ts_import for validated calculation inputs; give ts_import a concise semantic input basename with the correct format extension. Use ts_compare for deterministic structure comparisons, ts_render for registered visual artifacts, and ts_report for revision-bound report packages. Use ts_review for isolated advisory assessment, then record Root's disposition with ts_reply before applying its advice. Use ts_notify only for material configured delivery events. Use sys_prompt when the effective system prompt or its provenance must be inspected. Use registered schemas, bounded state/capability catalogs, and public skills references; do not inspect installed package implementation or tests as research documentation. Do not invent identifiers, artifact paths, or calculation results. Treat tool output as evidence, preserve uncertainty, and keep Claims, Findings, Gate evaluations, and conclusions distinct.`;
 }
 
 if (isDirectInternalProcessEntry(import.meta.url)) {
   if (consumeInternalProcessRole() !== "session-worker") throw new Error("TSPi worker requires Pi session-worker role");
-  void runSessionWorkerWithHarness(process.argv.slice(2), createTspiHarness).catch(() => process.exit(1));
+  void runSessionWorkerWithHarness(process.argv.slice(2), createTspiHarness).catch((error) => {
+    if (process.env.TSPI_DEBUG === "1") {
+      const detail = error instanceof Error ? (error.stack || error.message) : String(error);
+      process.stderr.write(`TSPi session worker failed: ${detail}\n`);
+    }
+    process.exit(1);
+  });
 }

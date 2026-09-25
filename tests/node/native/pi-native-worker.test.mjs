@@ -40,6 +40,8 @@ test("system prompt manifest reports the exact effective prompt by origin", asyn
   assert.equal(manifest.provenance_complete, true);
   assert.deepEqual(manifest.contributors.map((contributor) => contributor.origin), ["native", "skill", "extension"]);
   assert.deepEqual(manifest.contributors[1].inputs, ["skills/example/SKILL.md"]);
+  assert.equal(manifest.contributors[1].metadata.schema_version, "tspi-skill-manifest/1");
+  assert.equal(manifest.contributors[1].metadata.skills[0].digest, null);
   for (const contributor of manifest.contributors) assert.match(contributor.sha256, /^[0-9a-f]{64}$/);
 
   const tool = createSystemPromptTool(manifest);

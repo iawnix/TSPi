@@ -8,12 +8,16 @@ second research-state vocabulary of their own.
 from __future__ import annotations
 
 import json
+import hashlib
+from datetime import datetime, timezone
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
 from .research import ResearchKernel
 from .workspace.operation_registry import operation_catalog
+from .io import append_jsonl, sha256_json
+from .workspace.transactions import workspace_lock
 
 
 def _load_command_catalog() -> dict[str, Any]:
@@ -36,6 +40,17 @@ COMPUTE_COMMANDS = frozenset(
     command for command, definition in COMMAND_DEFINITIONS.items() if definition.get("domain") == "compute"
 )
 COMMANDS = RESEARCH_COMMANDS | COMPUTE_COMMANDS
+
+# Research Memory is durable and unbounded; an Agent turn is not.  These
+# limits belong to the context/liveness read models rather than the canonical
+# ResearchMap so focused detail queries can still expose the full record.
+_CONTEXT_FOCUS_LIMIT = 8
+_CONTEXT_CONTINUATION_LIMIT = 8
+_CONTEXT_ATTEMPT_LIMIT = 8
+_CONTEXT_DECISION_LIMIT = 8
+_CONTEXT_REFERENCE_LIMIT = 8
+_LIVENESS_RECORD_LIMIT = 32
+_CONTEXT_TEXT_LIMIT = 512
 
 
 class CommandError(ValueError):
@@ -63,6 +78,15 @@ def _research(action: str, root: str | Path, params: dict[str, Any]) -> dict[str
     kernel = ResearchKernel(root)
     if action == "map":
         return kernel.load().to_dict()
+    if action == "context":
+        return _research_context(kernel.load(), root)
+    if action == "liveness":
+        return _research_liveness(kernel.load(), root)
+    if action == "turn":
+        request = params.get("request")
+        if not isinstance(request, dict):
+            raise CommandError("research.turn requires params.request")
+        return _research_turn(kernel, root, request)
     if action == "summary":
         research_map = kernel.load()
         return {
@@ -128,10 +152,10 @@ def _research(action: str, root: str | Path, params: dict[str, Any]) -> dict[str
 
 def _compute(action: str, root: str | Path, params: dict[str, Any]) -> dict[str, Any]:
     if action == "environments":
-        return _environment_catalog()
+        return _environment_catalog(detail=False)
     if action == "environment":
         name = _string(params, "name")
-        catalog = _environment_catalog()
+        catalog = _environment_catalog(detail=True)
         item = next((environment for environment in catalog["environments"] if environment["name"] == name), None)
         if item is None:
             raise CommandError(f"unknown compute environment: {name}")
@@ -157,7 +181,7 @@ def _compute(action: str, root: str | Path, params: dict[str, Any]) -> dict[str,
     raise CommandError(f"unsupported compute command: {action}")
 
 
-def _environment_catalog() -> dict[str, Any]:
+def _environment_catalog(*, detail: bool) -> dict[str, Any]:
     from .platforms import EnvironmentConfigurationError, load_config
 
     try:
@@ -166,25 +190,28 @@ def _environment_catalog() -> dict[str, Any]:
         return {
             "schema_version": "compute-environment-catalog/1",
             "configured": False,
+            "detail": detail,
             "error": str(exc),
+            "source": None,
+            "source_digest": None,
+            "catalog_digest": None,
             "default": None,
             "environments": [],
         }
+    source_digest = _file_digest(config.source)
     environments = []
     for environment in sorted(config.environments.values(), key=lambda item: item.name):
         platform = environment.platform
-        environments.append({
+        item = {
             "name": environment.name,
             "kind": environment.kind,
             "default": environment.name == config.default_environment,
-            "backends": {
-                backend: {
-                    "command": list(binding.command),
-                    "activation_script": binding.activation_script,
-                    "scratch_root": binding.scratch_root,
-                    "environment_keys": sorted(binding.environment),
-                }
-                for backend, binding in sorted(environment.backends.items())
+            # The list read model is intentionally bounded. Full command,
+            # activation, scratch and environment details require `show`.
+            "backends": sorted(environment.backends),
+            "readiness": {
+                "state": "configured",
+                "backend_count": len(environment.backends),
             },
             "platform": {
                 "kind": "ssh_torque",
@@ -194,14 +221,48 @@ def _environment_catalog() -> dict[str, Any]:
                 "allowed_queues": list(platform.allowed_queues),
                 "max_nodes": platform.max_nodes,
             } if platform else {"kind": "local"},
+        }
+        if detail:
+            item["backends"] = {
+                backend: {
+                    "command": list(binding.command),
+                    "activation_script": binding.activation_script,
+                    "scratch_root": binding.scratch_root,
+                    "environment_keys": sorted(binding.environment),
+                }
+                for backend, binding in sorted(environment.backends.items())
+            }
+        else:
+            item["platform"] = {"kind": "ssh_torque" if platform else "local"}
+        item["identity_digest"] = sha256_json({
+            "name": item["name"],
+            "kind": item["kind"],
+            "default": item["default"],
+            "backends": sorted(environment.backends),
+            "platform": item["platform"].get("kind"),
         })
+        environments.append(item)
     return {
         "schema_version": "compute-environment-catalog/1",
         "configured": True,
+        "detail": detail,
         "source": str(config.source),
+        "source_digest": source_digest,
         "default": config.default_environment,
+        "catalog_digest": sha256_json({
+            "source_digest": source_digest,
+            "environments": environments,
+        }),
         "environments": environments,
     }
+
+
+def _file_digest(path: str | Path) -> str | None:
+    try:
+        digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except (OSError, TypeError):
+        return None
+    return f"sha256:{digest}"
 
 
 def _string(params: dict[str, Any], key: str) -> str:
@@ -229,13 +290,638 @@ def _continuation_status(
         records.append(value)
     records.sort(key=lambda item: (item.get("created_at", ""), item.get("id", "")))
     required = [item for item in records if item.get("status") == "required"]
+    counts = {
+        "continuations": len(records),
+        "required": len(required),
+    }
     return {
         "schema_version": "research-continuation/1",
         "map_id": research_map.map_id,
         "revision": research_map.revision,
-        "continuations": records,
-        "required": required,
+        "continuations": [_compact_continuation(item) for item in records[:_LIVENESS_RECORD_LIMIT]],
+        "required": [_compact_continuation(item) for item in required[:_LIVENESS_RECORD_LIMIT]],
+        "counts": counts,
+        "truncated": {key: value > _LIVENESS_RECORD_LIMIT for key, value in counts.items()},
     }
+
+
+def _research_context(research_map: Any, root: str | Path) -> dict[str, Any]:
+    """Build a bounded Agent-facing research context.
+
+    This is a read model, not a second source of scientific state.  The full
+    ResearchMap, execution records, Skill catalog, and environment catalog
+    remain separately queryable; context exposes only the current focus and
+    compact operational summaries needed to choose the next action.
+    """
+
+    runtime = _runtime_status(root)
+    liveness = _research_liveness(research_map, root, runtime=runtime)
+    limits = {
+        "focus": _CONTEXT_FOCUS_LIMIT,
+        "continuations": _CONTEXT_CONTINUATION_LIMIT,
+        "attempts": _CONTEXT_ATTEMPT_LIMIT,
+        "decisions": _CONTEXT_DECISION_LIMIT,
+        "references_per_item": _CONTEXT_REFERENCE_LIMIT,
+        "text_chars": _CONTEXT_TEXT_LIMIT,
+    }
+    focus_node_ids = list(research_map.focus_node_ids)
+    focus_claim_ids = list(research_map.focus_claim_ids)
+    focus_nodes = []
+    for node_id in focus_node_ids[: limits["focus"]]:
+        node = research_map.nodes.get(node_id)
+        if node is None:
+            continue
+        focus_nodes.append(_node_context(node, research_map))
+    focus_claims = []
+    for claim_id in focus_claim_ids[: limits["focus"]]:
+        claim = research_map.claims.get(claim_id)
+        if claim is None:
+            continue
+        focus_claims.append(_claim_context(claim))
+    return {
+        "schema_version": "research-context/1",
+        "map_id": research_map.map_id,
+        "map_revision": research_map.revision,
+        "title": _bounded_text(research_map.title),
+        "focus": {
+            "claim_ids": focus_claim_ids[: limits["focus"]],
+            "node_ids": focus_node_ids[: limits["focus"]],
+            "claims": focus_claims,
+            "nodes": focus_nodes,
+        },
+        "progress": research_map.progress(),
+        "continuations": {
+            "required": [_compact_continuation(item) for item in liveness["required"][: limits["continuations"]]],
+            "deferred": [_compact_continuation(item) for item in liveness["deferred"][: limits["continuations"]]],
+            "blocked": [_compact_continuation(item) for item in liveness["blocked"][: limits["continuations"]]],
+        },
+        "execution": {
+            "pending_attempts": [_compact_attempt(item) for item in liveness["waiting_external"][: limits["attempts"]]],
+            "runtime_revision": runtime.get("runtime_revision"),
+            "runtime_summary": runtime.get("runtime_summary", {}),
+        },
+        "lifecycle": {
+            "state": liveness["lifecycle"],
+            "decision_needed": [_compact_decision(item) for item in liveness["decision_needed"][: limits["decisions"]]],
+            "active_nodes": liveness["active_nodes"][: limits["decisions"]],
+        },
+        "bounds": {
+            "limits": limits,
+            "truncated": {
+                "focus_claims": len(focus_claim_ids) > limits["focus"],
+                "focus_nodes": len(focus_node_ids) > limits["focus"],
+                "required": _liveness_count(liveness, "required") > limits["continuations"],
+                "deferred": _liveness_count(liveness, "deferred") > limits["continuations"],
+                "blocked": _liveness_count(liveness, "blocked") > limits["continuations"],
+                "pending_attempts": _liveness_count(liveness, "waiting_external") > limits["attempts"],
+                "decision_needed": _liveness_count(liveness, "decision_needed") > limits["decisions"],
+            },
+            "truncated_fields": {
+                "focus_nodes": any(_has_truncated_fields(item) for item in focus_nodes),
+                "focus_claims": any(_has_truncated_fields(item) for item in focus_claims),
+                "continuations": any(
+                    _has_truncated_fields(item)
+                    for category in ("required", "deferred", "blocked")
+                    for item in liveness[category][: limits["continuations"]]
+                ),
+                "pending_attempts": any(
+                    _has_truncated_fields(item)
+                    for item in liveness["waiting_external"][: limits["attempts"]]
+                ),
+                "decision_needed": any(
+                    _has_truncated_fields(item)
+                    for item in liveness["decision_needed"][: limits["decisions"]]
+                ),
+            },
+        },
+    }
+
+
+def _research_liveness(
+    research_map: Any,
+    root: str | Path,
+    *,
+    runtime: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Derive the bounded research turn state from canonical sources.
+
+    ``required`` remains the explicit Agent work queue.  ``waiting_external``
+    is derived from non-terminal execution Attempts, while ``decision_needed`` detects
+    an active/focused Node that has neither an external wait nor an explicit
+    continuation/disposition.  No scientific action is inferred here.
+    """
+
+    runtime = runtime if runtime is not None else _runtime_status(root)
+    records = [
+        item.to_dict() if hasattr(item, "to_dict") else dict(item)
+        for item in research_map.continuations.values()
+    ]
+    required = [item for item in records if item.get("status") == "required"]
+    deferred = [item for item in records if item.get("status") == "deferred"]
+    blocked = [item for item in records if item.get("status") == "blocked"]
+
+    terminal_attempt_states = {"failed", "stopped", "collected", "parsed"}
+    # ``prepared`` is a local, pre-submission binding. It has no external
+    # event for Monitor to observe, so an active scope must remain eligible for
+    # an Agent decision (submit, revise, retry, or close) instead of waiting
+    # indefinitely for a wake-up that cannot arrive.
+    non_external_attempt_states = {"prepared", *terminal_attempt_states}
+    waiting_external = []
+    for row in runtime.get("attempts", runtime.get("calculation_attempts", [])):
+        if not isinstance(row, dict):
+            continue
+        attempt_id = row.get("attempt_id") or row.get("intent_id")
+        node_id = row.get("node_ref") or row.get("node_id")
+        state = row.get("state") or row.get("status")
+        if state in non_external_attempt_states or not attempt_id:
+            continue
+        waiting_external.append({
+            "attempt_id": attempt_id,
+            "intent_id": row.get("intent_id"),
+            "node_id": node_id,
+            "state": state,
+            "path": row.get("path"),
+        })
+
+    active_node_ids = []
+    candidate_node_ids = list(dict.fromkeys([
+        *getattr(research_map, "focus_node_ids", []),
+        *[
+            node.id for node in research_map.nodes.values()
+            if getattr(node.state, "value", node.state) == "active"
+        ],
+    ]))
+    decision_needed = []
+    held_node_ids = set()
+    held_scope_refs = set()
+    deferred_scope_refs = set()
+    blocked_scope_refs = set()
+    pending_node_ids = {item.get("node_id") for item in waiting_external}
+    required_scope_refs = {
+        (item.get("scope"), item.get("target_id"))
+        for item in required
+        if item.get("scope") and item.get("target_id")
+    }
+    for node_id in candidate_node_ids:
+        node = research_map.nodes.get(node_id)
+        if node is None:
+            continue
+        state = getattr(node.state, "value", node.state)
+        if state not in {"active", "planned"}:
+            continue
+        active_node_ids.append(node_id)
+        node_records = [
+            item for item in records
+            if item.get("scope") == "node" and item.get("target_id") == node_id
+        ]
+        if any(item.get("status") in {"deferred", "blocked"} for item in node_records):
+            held_node_ids.add(node_id)
+            held_scope_refs.add(("node", node_id))
+            if any(item.get("status") == "blocked" for item in node_records):
+                blocked_scope_refs.add(("node", node_id))
+            else:
+                deferred_scope_refs.add(("node", node_id))
+        if (
+            node_id not in pending_node_ids
+            and ("node", node_id) not in required_scope_refs
+            and ("node", node_id) not in held_scope_refs
+        ):
+            decision_needed.append({
+                "scope": "node",
+                "target_id": node_id,
+                "title": node.title,
+                "objective": node.objective,
+                "reason": "active research scope has no required continuation or pending Attempt",
+            })
+
+    # Claims and Gates are first-class research scopes too. Keep the candidate
+    # set bounded to focus claims and claims attached to an active Node; this
+    # prevents a large historical map from becoming a per-turn wake source.
+    active_node_set = set(active_node_ids)
+    candidate_claim_ids = list(dict.fromkeys([
+        *getattr(research_map, "focus_claim_ids", []),
+        *[
+            claim.id for claim in research_map.claims.values()
+            if active_node_set.intersection(getattr(claim, "node_ids", []))
+        ],
+    ]))
+    for claim_id in candidate_claim_ids:
+        claim = research_map.claims.get(claim_id)
+        if claim is None:
+            continue
+        linked_pending = any(
+            node_id in pending_node_ids for node_id in getattr(claim, "node_ids", [])
+        )
+        status = getattr(claim.status, "value", claim.status)
+        claim_records = [
+            item for item in records
+            if item.get("scope") == "claim" and item.get("target_id") == claim_id
+        ]
+        if any(item.get("status") in {"deferred", "blocked"} for item in claim_records):
+            held_scope_refs.add(("claim", claim_id))
+            if any(item.get("status") == "blocked" for item in claim_records):
+                blocked_scope_refs.add(("claim", claim_id))
+            else:
+                deferred_scope_refs.add(("claim", claim_id))
+        if (
+            status in {"proposed", "inconclusive"}
+            and not linked_pending
+            and ("claim", claim_id) not in required_scope_refs
+            and ("claim", claim_id) not in held_scope_refs
+        ):
+            decision_needed.append({
+                "scope": "claim",
+                "target_id": claim_id,
+                "title": claim.statement,
+                "objective": "interpret current evidence and decide the next bounded research action",
+                "reason": "focus Claim has no required continuation or explicit disposition",
+            })
+
+    candidate_gate_ids = []
+    for node_id in active_node_ids:
+        node = research_map.nodes.get(node_id)
+        if node is not None:
+            candidate_gate_ids.extend(getattr(node, "gate_ids", []))
+    for claim_id in candidate_claim_ids:
+        claim = research_map.claims.get(claim_id)
+        if claim is not None:
+            candidate_gate_ids.extend(getattr(claim, "gate_ids", []))
+    for gate_id in dict.fromkeys(candidate_gate_ids):
+        gate = research_map.gates.get(gate_id)
+        if gate is None:
+            continue
+        scope = getattr(gate.scope, "value", gate.scope)
+        gate_ref = (scope, gate.target_id)
+        gate_records = [
+            item for item in records
+            if item.get("scope") == "gate" and item.get("target_id") == gate_id
+        ]
+        if any(item.get("status") in {"deferred", "blocked"} for item in gate_records):
+            held_scope_refs.add(("gate", gate_id))
+            if any(item.get("status") == "blocked" for item in gate_records):
+                blocked_scope_refs.add(("gate", gate_id))
+            else:
+                deferred_scope_refs.add(("gate", gate_id))
+        latest = gate.latest()
+        verdict = getattr(latest.verdict, "value", latest.verdict) if latest else None
+        linked_pending = scope == "node" and gate.target_id in pending_node_ids
+        if (
+            verdict in {None, "inconclusive", "blocked", "fail"}
+            and not linked_pending
+            and ("gate", gate_id) not in required_scope_refs
+            and ("gate", gate_id) not in held_scope_refs
+        ):
+            decision_needed.append({
+                "scope": "gate",
+                "target_id": gate_id,
+                "title": f"Evaluate gate for {scope} {gate.target_id}",
+                "objective": "evaluate the gate against the current evidence",
+                "reason": "research Gate has no settled evaluation or disposition",
+            })
+
+    if required:
+        lifecycle = "required"
+    elif decision_needed:
+        lifecycle = "decision_needed"
+    elif waiting_external:
+        lifecycle = "waiting_external"
+    elif blocked_scope_refs:
+        lifecycle = "blocked"
+    elif deferred_scope_refs:
+        lifecycle = "deferred"
+    elif active_node_ids:
+        lifecycle = "decision_needed"
+    elif research_map.nodes:
+        lifecycle = "terminal"
+    else:
+        lifecycle = "idle"
+
+    counts = {
+        "required": len(required),
+        "deferred": len(deferred),
+        "blocked": len(blocked),
+        "waiting_external": len(waiting_external),
+        "decision_needed": len(decision_needed),
+        "active_nodes": len(active_node_ids),
+        "held_scopes": len(held_scope_refs),
+        "deferred_scopes": len(deferred_scope_refs),
+        "blocked_scopes": len(blocked_scope_refs),
+    }
+    return {
+        "schema_version": "research-liveness/1",
+        "map_id": research_map.map_id,
+        "map_revision": research_map.revision,
+        "runtime_revision": runtime.get("runtime_revision"),
+        "lifecycle": lifecycle,
+        "required": [_compact_continuation(item) for item in required[:_LIVENESS_RECORD_LIMIT]],
+        "deferred": [_compact_continuation(item) for item in deferred[:_LIVENESS_RECORD_LIMIT]],
+        "blocked": [_compact_continuation(item) for item in blocked[:_LIVENESS_RECORD_LIMIT]],
+        "waiting_external": [_compact_attempt(item) for item in waiting_external[:_LIVENESS_RECORD_LIMIT]],
+        "active_nodes": active_node_ids[:_LIVENESS_RECORD_LIMIT],
+        "held_scopes": [
+            {"scope": scope, "target_id": target_id}
+            for scope, target_id in sorted(held_scope_refs)[:_LIVENESS_RECORD_LIMIT]
+        ],
+        "deferred_scopes": [
+            {"scope": scope, "target_id": target_id}
+            for scope, target_id in sorted(deferred_scope_refs)[:_LIVENESS_RECORD_LIMIT]
+        ],
+        "blocked_scopes": [
+            {"scope": scope, "target_id": target_id}
+            for scope, target_id in sorted(blocked_scope_refs)[:_LIVENESS_RECORD_LIMIT]
+        ],
+        "decision_needed": [_compact_decision(item) for item in decision_needed[:_LIVENESS_RECORD_LIMIT]],
+        "counts": counts,
+        "truncated": {key: value > _LIVENESS_RECORD_LIMIT for key, value in counts.items()},
+    }
+
+
+def _runtime_status(root: str | Path) -> dict[str, Any]:
+    from .workspace.operational import runtime_status
+
+    return runtime_status(root)
+
+
+def _research_turn(kernel: ResearchKernel, root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
+    """Run one domain-neutral Research Turn boundary.
+
+    This is deliberately a checkpoint/read operation, not a planner.  The
+    Kernel derives the disposition from ResearchMap and runtime evidence; the
+    Host uses ``accepted`` to decide whether a bounded Agent follow-up is
+    needed.  A ``required`` disposition is a valid end state because it is an
+    explicit next-turn plan, whereas ``decision_needed`` is not.
+    """
+
+    allowed = {
+        "schema_version", "operation", "turn_id", "session_id", "trigger", "request_id",
+        "event_id", "monitor_id", "intent_id",
+    }
+    unknown = sorted(set(request) - allowed)
+    if unknown:
+        raise CommandError("research.turn request contains unsupported fields: " + ", ".join(unknown))
+    if request.get("schema_version", "research-turn-request/1") != "research-turn-request/1":
+        raise CommandError("unsupported research turn request schema")
+    operation = request.get("operation")
+    if operation not in {"start", "orient", "checkpoint", "end", "wake"}:
+        raise CommandError("research.turn operation must be start, orient, checkpoint, end, or wake")
+    turn_id = request.get("turn_id")
+    if turn_id is not None and (not isinstance(turn_id, str) or not turn_id.strip() or len(turn_id) > 256):
+        raise CommandError("research.turn turn_id must be a non-empty string of at most 256 characters")
+    session_id = request.get("session_id")
+    if session_id is not None and (not isinstance(session_id, str) or not session_id.strip() or len(session_id) > 256):
+        raise CommandError("research.turn session_id must be a non-empty string of at most 256 characters")
+    request_id = request.get("request_id")
+    if request_id is not None and (not isinstance(request_id, str) or not request_id.strip() or len(request_id) > 256):
+        raise CommandError("research.turn request_id must be a non-empty string of at most 256 characters")
+    trigger = request.get("trigger", "agent")
+    if not isinstance(trigger, str) or not trigger.strip() or len(trigger) > 128:
+        raise CommandError("research.turn trigger must be a non-empty string of at most 128 characters")
+    for key in ("event_id", "monitor_id", "intent_id"):
+        value = request.get(key)
+        if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > 256):
+            raise CommandError(f"research.turn {key} must be a non-empty string of at most 256 characters")
+
+    # A request id is an idempotency key, not a globally reusable label.  Keep
+    # the comparison surface explicit and bounded so a retry with the same
+    # semantic request is replayable while accidental key reuse is rejected.
+    request_identity = {
+        "operation": operation,
+        "turn_id": turn_id,
+        "session_id": session_id,
+        "trigger": trigger,
+        "event_id": request.get("event_id"),
+        "monitor_id": request.get("monitor_id"),
+        "intent_id": request.get("intent_id"),
+    }
+
+    research_map = kernel.load()
+    runtime = _runtime_status(root)
+    liveness = _research_liveness(research_map, root, runtime=runtime)
+    accepted = not (operation in {"checkpoint", "end"} and liveness["lifecycle"] == "decision_needed")
+    result: dict[str, Any] = {
+        "schema_version": "research-turn-result/1",
+        "operation": operation,
+        "turn_id": turn_id,
+        "session_id": session_id,
+        "trigger": trigger,
+        "event_id": request.get("event_id"),
+        "monitor_id": request.get("monitor_id"),
+        "intent_id": request.get("intent_id"),
+        "accepted": accepted,
+        "requires_disposition": not accepted,
+        "lifecycle": liveness["lifecycle"],
+        "liveness": liveness,
+    }
+    # Mirror the bounded diagnostic fields at the turn boundary so Host
+    # adapters do not need to know which nested read model produced them.
+    for key in ("required", "deferred", "blocked", "waiting_external", "decision_needed", "counts"):
+        result[key] = liveness.get(key, [] if key != "counts" else {})
+    if operation == "orient":
+        result["context"] = _research_context(research_map, root)
+    event = {
+        "schema_version": "research-turn-event/1",
+        "operation": operation,
+        "turn_id": turn_id,
+        "session_id": session_id,
+        "request_id": request.get("request_id"),
+        "trigger": trigger,
+        "event_id": request.get("event_id"),
+        "monitor_id": request.get("monitor_id"),
+        "intent_id": request.get("intent_id"),
+        "accepted": accepted,
+        "lifecycle": liveness["lifecycle"],
+        "map_revision": research_map.revision,
+        "runtime_revision": runtime.get("runtime_revision"),
+        "recorded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    # Turn events are operational audit, not ResearchMap facts.  They live in
+    # the workspace operations area and are never read as scientific evidence.
+    turn_log = Path(root) / "operations" / "research_turns.jsonl"
+    replayed = False
+    with workspace_lock(Path(root)):
+        if request.get("request_id") and turn_log.exists():
+            # Request IDs are the replay key for Host retries.  The current
+            # liveness is still returned, but the audit log is not duplicated.
+            # Reusing a key for a different operation would otherwise make a
+            # failed/late delivery indistinguishable from a valid retry.
+            for line in turn_log.read_text(encoding="utf-8").splitlines():
+                row = _json_load_object(line)
+                if not isinstance(row, dict) or row.get("request_id") != request["request_id"]:
+                    continue
+                existing_identity = {
+                    key: row.get(key)
+                    for key in request_identity
+                }
+                if existing_identity != request_identity:
+                    raise CommandError(
+                        f"research.turn request_id {request['request_id']} is already bound to another request"
+                    )
+                replayed = True
+                break
+        if not replayed:
+            append_jsonl(turn_log, event)
+    result["replayed"] = replayed
+    return result
+
+
+def _node_context(node: Any, research_map: Any) -> dict[str, Any]:
+    gate_summaries = []
+    for gate_id in node.gate_ids[:_CONTEXT_REFERENCE_LIMIT]:
+        gate = research_map.gates.get(gate_id)
+        if gate is None:
+            continue
+        latest = gate.latest()
+        criteria = list(gate.criteria)
+        gate_summaries.append({
+            "id": gate.id,
+            "scope": gate.scope.value,
+            "criteria": [_bounded_text(item) for item in criteria[:_CONTEXT_REFERENCE_LIMIT]],
+            "latest_verdict": latest.verdict.value if latest else None,
+            "truncated": {
+                "criteria": len(criteria) > _CONTEXT_REFERENCE_LIMIT
+                or any(len(str(item)) > _CONTEXT_TEXT_LIMIT for item in criteria),
+            },
+        })
+    claim_ids, claim_ids_truncated = _bounded_refs(node.claim_ids)
+    finding_ids, finding_ids_truncated = _bounded_refs(node.finding_ids)
+    gate_ids, gate_ids_truncated = _bounded_refs(node.gate_ids)
+    attempt_refs, attempt_refs_truncated = _bounded_refs(node.attempt_refs)
+    artifact_refs, artifact_refs_truncated = _bounded_refs(node.artifact_refs)
+    return {
+        "id": node.id,
+        "title": _bounded_text(node.title),
+        "objective": _bounded_text(node.objective),
+        "state": node.state.value,
+        "outcome": node.outcome.value if node.outcome else None,
+        "claim_ids": claim_ids,
+        "finding_ids": finding_ids,
+        "gate_ids": gate_ids,
+        "attempt_refs": attempt_refs,
+        "artifact_refs": artifact_refs,
+        "gates": gate_summaries,
+        "truncated": {
+            "title": len(str(node.title)) > _CONTEXT_TEXT_LIMIT,
+            "objective": len(str(node.objective)) > _CONTEXT_TEXT_LIMIT,
+            "claim_ids": claim_ids_truncated,
+            "finding_ids": finding_ids_truncated,
+            "gate_ids": gate_ids_truncated,
+            "attempt_refs": attempt_refs_truncated,
+            "artifact_refs": artifact_refs_truncated,
+            "gates": len(node.gate_ids) > _CONTEXT_REFERENCE_LIMIT,
+        },
+    }
+
+
+def _claim_context(claim: Any) -> dict[str, Any]:
+    node_ids, node_ids_truncated = _bounded_refs(claim.node_ids)
+    finding_ids, finding_ids_truncated = _bounded_refs(claim.finding_ids)
+    gate_ids, gate_ids_truncated = _bounded_refs(claim.gate_ids)
+    return {
+        "id": claim.id,
+        "statement": _bounded_text(claim.statement),
+        "status": claim.status.value,
+        "node_ids": node_ids,
+        "finding_ids": finding_ids,
+        "gate_ids": gate_ids,
+        "truncated": {
+            "statement": len(str(claim.statement)) > _CONTEXT_TEXT_LIMIT,
+            "node_ids": node_ids_truncated,
+            "finding_ids": finding_ids_truncated,
+            "gate_ids": gate_ids_truncated,
+        },
+    }
+
+
+def _bounded_text(value: Any, limit: int = _CONTEXT_TEXT_LIMIT) -> Any:
+    """Return a compact text value without copying arbitrary durable data."""
+
+    if value is None or not isinstance(value, str):
+        return value
+    if len(value) <= limit:
+        return value
+    marker = "...[truncated]"
+    return f"{value[:max(0, limit - len(marker))]}{marker}"
+
+
+def _bounded_refs(values: Any, limit: int = _CONTEXT_REFERENCE_LIMIT) -> tuple[list[str], bool]:
+    if not isinstance(values, (list, tuple)):
+        return [], bool(values)
+    normalized = [str(value) for value in values if isinstance(value, str) and value]
+    return normalized[:limit], len(normalized) > limit
+
+
+def _compact_continuation(value: dict[str, Any]) -> dict[str, Any]:
+    metadata = value.get("metadata")
+    previous_truncated = value.get("truncated") if isinstance(value.get("truncated"), dict) else {}
+    if isinstance(metadata, dict):
+        metadata_keys = sorted(str(key) for key in metadata)[:_CONTEXT_REFERENCE_LIMIT]
+        metadata_keys_truncated = len(metadata) > _CONTEXT_REFERENCE_LIMIT
+    else:
+        metadata_keys = [str(key) for key in value.get("metadata_keys", [])[:_CONTEXT_REFERENCE_LIMIT]]
+        metadata_keys_truncated = bool(previous_truncated.get("metadata_keys"))
+    reason = value.get("reason")
+    reason_truncated = bool(previous_truncated.get("reason"))
+    if isinstance(reason, str):
+        reason_truncated = reason_truncated or len(reason) > _CONTEXT_TEXT_LIMIT
+    return {
+        "id": value.get("id"),
+        "scope": value.get("scope"),
+        "target_id": value.get("target_id"),
+        "action": value.get("action"),
+        "status": value.get("status"),
+        "reason": _bounded_text(reason),
+        "request_id": _bounded_text(value.get("request_id"), 128),
+        "metadata_keys": metadata_keys,
+        "truncated": {
+            "reason": reason_truncated,
+            "metadata_keys": metadata_keys_truncated,
+        },
+    }
+
+
+def _compact_attempt(value: dict[str, Any]) -> dict[str, Any]:
+    previous_truncated = value.get("truncated") if isinstance(value.get("truncated"), dict) else {}
+    path = value.get("path")
+    return {
+        "attempt_id": value.get("attempt_id"),
+        "intent_id": value.get("intent_id"),
+        "node_id": value.get("node_id"),
+        "state": value.get("state"),
+        "path": _bounded_text(path, 768),
+        "truncated": {
+            "path": bool(previous_truncated.get("path"))
+            or isinstance(path, str) and len(path) > 768,
+        },
+    }
+
+
+def _compact_decision(value: dict[str, Any]) -> dict[str, Any]:
+    previous_truncated = value.get("truncated") if isinstance(value.get("truncated"), dict) else {}
+    return {
+        "scope": value.get("scope"),
+        "target_id": value.get("target_id"),
+        "title": _bounded_text(value.get("title")),
+        "objective": _bounded_text(value.get("objective")),
+        "reason": _bounded_text(value.get("reason")),
+        "truncated": {
+            key: bool(previous_truncated.get(key))
+            or isinstance(value.get(key), str) and len(value[key]) > _CONTEXT_TEXT_LIMIT
+            for key in ("title", "objective", "reason")
+        },
+    }
+
+
+def _has_truncated_fields(value: Any) -> bool:
+    truncated = value.get("truncated") if isinstance(value, dict) else None
+    return bool(
+        truncated is True
+        or isinstance(truncated, dict) and any(truncated.values())
+    )
+
+
+def _liveness_count(value: dict[str, Any], key: str) -> int:
+    counts = value.get("counts")
+    return int(counts.get(key, 0)) if isinstance(counts, dict) else len(value.get(key, []))
 
 
 def _apply_continuation_request(kernel: ResearchKernel, request: dict[str, Any]) -> dict[str, Any]:
@@ -410,6 +1096,14 @@ def _next_continuation_id(research_map: Any) -> str:
 
 def _json_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _json_load_object(value: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 __all__ = [

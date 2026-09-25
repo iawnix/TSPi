@@ -11,6 +11,10 @@ import {
   type EnvironmentToolParams,
 } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
 import {
+  registerToolEnvelopeErrorHook,
+  wrapToolForPi,
+} from "../../../packages/ts-agent-runtime/host-api/tool-envelope.mjs";
+import {
   createSubagentStatusReporter,
   terminalStateForReport,
   terminalStatusForError,
@@ -19,6 +23,16 @@ import {
   renderTsNativeCall,
   renderTsNativeResult,
 } from "../shared/native-tool-presentation.ts";
+import type {
+  PiToolContext,
+  PiToolId,
+  PiToolRenderContext,
+  PiToolRenderOptions,
+  PiToolResult,
+  PiToolSignal,
+  PiToolTheme,
+  PiToolUpdate,
+} from "../shared/pi-tool-types.ts";
 import { runComputeOperator } from "../../../packages/ts-agent-runtime/agents/compute/runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -98,6 +112,7 @@ type ComputeEnvironmentEntryData = {
 
 export function registerComputeTools(pi: ExtensionAPI) {
   const runtime = new PiRuntime(pi);
+  registerToolEnvelopeErrorHook(pi);
   pi.registerEntryRenderer<ComputeEnvironmentEntryData>("ts-compute-environment", (entry, { expanded }, theme) => {
     const data = entry.data;
     const result = data?.result || {};
@@ -116,11 +131,11 @@ export function registerComputeTools(pi: ExtensionAPI) {
     return new Text(text, 1, 0);
   });
 
-  pi.registerTool({
+  pi.registerTool(wrapToolForPi({
     ...TOOL_CONTRACTS.environment,
-    renderCall: (args, theme) => renderTsNativeCall("ts_environment", args as Record<string, unknown>, theme),
-    renderResult: (result, options, theme, context) => renderTsNativeResult("ts_environment", result, options, theme, context.isError),
-    async execute(_toolCallId, params: EnvironmentToolParams, signal, _onUpdate, ctx) {
+    renderCall: (args: EnvironmentToolParams, theme: PiToolTheme) => renderTsNativeCall("ts_environment", args as Record<string, unknown>, theme),
+    renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<EnvironmentToolParams>) => renderTsNativeResult("ts_environment", result, options, theme, context.isError),
+    async execute(_toolCallId: PiToolId, params: EnvironmentToolParams, signal: PiToolSignal, _onUpdate: PiToolUpdate, ctx: PiToolContext) {
       const mode = params.mode || "list";
       if (mode === "show" && !params.name) throw new Error("environment show requires name");
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
@@ -129,24 +144,24 @@ export function registerComputeTools(pi: ExtensionAPI) {
       }, signal);
       return toolText(JSON.stringify(result, null, 2), { result });
     },
-  });
+  }));
 
-  pi.registerTool({
+  pi.registerTool(wrapToolForPi({
     ...TOOL_CONTRACTS.dispatch,
-    renderCall: (args, theme) => renderTsNativeCall("ts_dispatch", args as Record<string, unknown>, theme),
-    renderResult: (result, options, theme, context) => renderTsNativeResult("ts_dispatch", result, options, theme, context.isError),
-    async execute(_toolCallId, params: DispatchToolParams, signal, _onUpdate, ctx) {
+    renderCall: (args: DispatchToolParams, theme: PiToolTheme) => renderTsNativeCall("ts_dispatch", args as unknown as Record<string, unknown>, theme),
+    renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<DispatchToolParams>) => renderTsNativeResult("ts_dispatch", result, options, theme, context.isError),
+    async execute(_toolCallId: PiToolId, params: DispatchToolParams, signal: PiToolSignal, _onUpdate: PiToolUpdate, ctx: PiToolContext) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const result = await runtime.compute("node-dispatch", root, nodeControlArguments(params), signal);
       return toolText(JSON.stringify(result), { dispatch: result });
     },
-  });
+  }));
 
-  pi.registerTool({
+  pi.registerTool(wrapToolForPi({
     ...TOOL_CONTRACTS.compute,
-    renderCall: (args, theme) => renderTsNativeCall("ts_calc", args as Record<string, unknown>, theme),
-    renderResult: (result, options, theme, context) => renderTsNativeResult("ts_calc", result, options, theme, context.isError),
-    async execute(toolCallId, params: ComputeToolParams, signal, onUpdate, ctx) {
+    renderCall: (args: ComputeToolParams, theme: PiToolTheme) => renderTsNativeCall("ts_calc", args as unknown as Record<string, unknown>, theme),
+    renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<ComputeToolParams>) => renderTsNativeResult("ts_calc", result, options, theme, context.isError),
+    async execute(toolCallId: PiToolId, params: ComputeToolParams, signal: PiToolSignal, onUpdate: PiToolUpdate, ctx: PiToolContext) {
       const input = params as unknown as ComputeRequest & { root?: string };
       validatePublicComputeParameters(input);
       if (!ctx.model) throw new Error("No parent model is selected for TS Compute delegation");
@@ -323,7 +338,7 @@ export function registerComputeTools(pi: ExtensionAPI) {
         throw withComputeFailureContext(error, failure, completedActions, runRef, secondaryFailures);
       }
     },
-  });
+  }));
 
   pi.registerCommand("compute", {
     description: SLASH_COMMAND_DEFINITIONS.compute.description,

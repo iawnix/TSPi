@@ -330,16 +330,31 @@ export async function createTspiHarnessBackend(options = {}) {
     binding.recoveryStarted = true;
     try {
       const raw = binding.snapshot?.snapshot || binding.snapshot || {};
+      if (process.env.TSPI_DEBUG === "1") {
+        process.stderr.write(`TSPi recovery admission ${binding.key}: operation=${raw.operation?.operationId || raw.operation?.id || "none"} queued=${Array.isArray(raw.queues) ? raw.queues.length : 0}\n`);
+      }
       if (raw.operation !== null && raw.operation !== undefined) {
-        if (typeof binding.active.agent.startQueued === "function") {
+        // `startQueued()` deliberately detaches `lane.resume()` and therefore
+        // hides drive failures. A cold operation has already crossed the
+        // durable admission boundary, so recovery must use the synchronous
+        // controller method and observe its terminal response/error.
+        if (typeof binding.active.agent.resume === "function") {
+          const response = await serializeBinding(binding, () => withSchedulerLease(binding, () => binding.active.agent.resume(BACKGROUND_CONTEXT)));
+          if (process.env.TSPI_DEBUG === "1") process.stderr.write(`TSPi recovery response ${binding.key}: ${JSON.stringify(response)}\n`);
+        } else if (typeof binding.active.agent.startQueued === "function") {
           const before = queuedEntryIds(binding.snapshot);
           const response = await serializeBinding(binding, () => withSchedulerLease(binding, () => binding.active.agent.startQueued(BACKGROUND_CONTEXT)));
+          if (process.env.TSPI_DEBUG === "1") process.stderr.write(`TSPi recovery response ${binding.key}: ${JSON.stringify(response)}\n`);
           adoptQueuedOperations(binding, response, before);
         }
       } else if (hasQueuedMessages(raw)) {
         await kick(binding);
       }
-    } catch {
+    } catch (cause) {
+      if (process.env.TSPI_DEBUG === "1") {
+        const detail = cause instanceof Error ? (cause.stack || cause.message) : String(cause);
+        process.stderr.write(`TSPi recovery failed ${binding.key}: ${detail}\n`);
+      }
       // The durable operation/queue remains authoritative. A later attach or
       // monitor tick retries recovery; no synthetic prompt is submitted here.
     }

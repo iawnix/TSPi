@@ -36,6 +36,16 @@ function modelVisibleSkillSection(skills) {
     source: skills.source,
     inputs: visible.map((skill) => skill.filePath),
     text,
+    metadata: {
+      schema_version: "tspi-skill-manifest/1",
+      skills: visible.map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+        location: skill.filePath,
+        digest: typeof skill.digest === "string" ? skill.digest : null,
+        provenance_schema: skill.provenance_schema || "tspi-skill-provenance/1",
+      })),
+    },
   });
 }
 
@@ -47,5 +57,6 @@ function promptContributor(origin, section) {
     source: section.source,
     ...(Array.isArray(section.inputs) ? { inputs: [...section.inputs] } : {}),
     text: section.text,
+    ...(section.metadata && typeof section.metadata === "object" ? { metadata: section.metadata } : {}),
   });
 }

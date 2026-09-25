@@ -151,7 +151,12 @@ export default defineFacet({
       const workspaceRoot = process.env.TS_WORKSPACE_ROOT || context.cwd;
       const unsubscribe = transcript.state.subscribe((value) => {
         latestSnapshot = value.snapshot;
-        layout.requestRender();
+        // Transcript rendering is coalesced by the native client. Avoid
+        // scheduling an extra frame for high-frequency streaming events.
+        const eventType = value.event?.type;
+        if (eventType !== "message_update" && eventType !== "tool_update" && eventType !== "usage") {
+          layout.requestRender();
+        }
       });
       layout.setHeader((headerContext) => createTspiPresentationHeader(
         headerContext,

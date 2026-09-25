@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { resolve, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { validateHarnessToolDefinition } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
 
 const MANIFEST_SCHEMA = "tspi-server-extensions/1";
 const NAME_PATTERN = /^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$/u;
@@ -190,11 +191,14 @@ async function verifyDigest(path, expected, name) {
 }
 
 function validateTool(tool, extensionName) {
-  if (!tool || typeof tool !== "object" || Array.isArray(tool) || typeof tool.name !== "string" || !TOOL_PATTERN.test(tool.name)) {
-    throw new Error(`server extension ${extensionName} returned an invalid tool`);
+  try {
+    return validateHarnessToolDefinition(tool, {
+      source: `server extension ${extensionName} tool`,
+      requireCanonical: true,
+    });
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : String(error), { cause: error });
   }
-  if (typeof tool.execute !== "function") throw new Error(`server extension ${extensionName} tool ${tool.name} has no execute function`);
-  return tool;
 }
 
 async function assertRegularDirectory(path, label) {

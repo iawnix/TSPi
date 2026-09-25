@@ -4,7 +4,28 @@ import sys
 import time
 from pathlib import Path
 
+from ts_agent.compute import local_lifecycle
 from ts_agent.compute.local_lifecycle import LocalJobConfig, collect, status, submit
+
+
+def test_systemd_user_preflight_rejects_an_unavailable_user_bus(monkeypatch) -> None:
+    calls = []
+
+    monkeypatch.setattr(
+        local_lifecycle.shutil,
+        "which",
+        lambda name: "/usr/bin/systemctl" if name == "systemctl" else None,
+    )
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return local_lifecycle.subprocess.CompletedProcess(command, 1)
+
+    monkeypatch.setattr(local_lifecycle.subprocess, "run", fake_run)
+
+    assert local_lifecycle._systemd_user_available() is False
+    assert calls[0][0] == ["/usr/bin/systemctl", "--user", "show-environment"]
+    assert calls[0][1]["timeout"] == 1.0
 
 
 def test_local_submit_is_idempotent_and_status_survives_worker_completion(tmp_path: Path) -> None:
@@ -24,6 +45,8 @@ def test_local_submit_is_idempotent_and_status_survives_worker_completion(tmp_pa
     )
 
     first = submit(config)
+    assert (run_dir / "local_receipt.json").is_file()
+    assert (run_dir / "program_status.json").is_file()
     second = submit(config)
 
     assert second == first

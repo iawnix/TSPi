@@ -1,44 +1,43 @@
 diff --git a/packages/coding-agent/src/experimental/services/transcript-provider.ts b/packages/coding-agent/src/experimental/services/transcript-provider.ts
-index 8496f17df..2cdf6f3da 100644
+index 1ffbb4c..3c71250 100644
 --- a/packages/coding-agent/src/experimental/services/transcript-provider.ts
 +++ b/packages/coding-agent/src/experimental/services/transcript-provider.ts
 @@ -1,4 +1,4 @@
--import { defineFacet, type Facet, type MutableReplicatedState } from "@earendil-works/chord";
-+import { defineFacet, type Facet, isJsonValue, type MutableReplicatedState } from "@earendil-works/chord";
+-import { type Context, defineFacet, type Facet, type MutableReplicatedState } from "@earendil-works/chord";
++import { type Context, defineFacet, type Facet, isJsonValue, type MutableReplicatedState } from "@earendil-works/chord";
  import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
  import {
  	type AgentLane,
-@@ -31,8 +31,8 @@ export function createTranscriptService(
- 		event: LaneWatchEvent | null,
- 		context: Parameters<typeof state.publish>[0],
- 	): void => {
--		state.state.snapshot = next as LaneTranscriptSnapshot;
--		state.state.event = event;
-+		state.state.snapshot = toStrictJson(next) as LaneTranscriptSnapshot;
-+		state.state.event = event === null ? null : toStrictJson(event);
- 		state.publish(context);
+@@ -27,7 +27,10 @@ export function createTranscriptService(
+ 	let rebaseError: Error | undefined;
+ 
+ 	const publishSnapshot = (next: LaneSnapshot, event: LaneWatchEvent | null, context: Context): void => {
+-		state.replace(context, { snapshot: next as LaneTranscriptSnapshot, event });
++		state.replace(context, {
++			snapshot: toStrictJson(next) as LaneTranscriptSnapshot,
++			event: event === null ? null : toStrictJson(event),
++		});
  	};
  
-@@ -58,11 +58,12 @@ export function createTranscriptService(
+ 	const scheduleRebase = (context: Context): void => {
+@@ -52,12 +55,13 @@ export function createTranscriptService(
  
- 	const onEvent = (event: HarnessEvent, context: Parameters<typeof state.publish>[0]): void => {
+ 	const onEvent = (event: HarnessEvent, context: Context): void => {
  		if (rebaseError !== undefined) throw rebaseError;
 -		const forwarded = toLaneWatchEvent(event);
 -		if (forwarded === undefined) return;
 +		const candidate = toLaneWatchEvent(event);
 +		if (candidate === undefined) return;
 +		const forwarded = toStrictJson(candidate);
- 		const snapshot = state.state.snapshot;
- 		if (snapshot === null) throw new Error("Transcript service is not active");
--		if (reduceLaneSnapshot(snapshot, event) === "rebase") scheduleRebase(context);
-+		if (reduceLaneSnapshot(snapshot, forwarded) === "rebase") scheduleRebase(context);
- 		state.state.event = forwarded;
- 		state.publish(context);
- 	};
-@@ -102,6 +103,20 @@ export function createTranscriptServiceFacet(lane: AgentLane): Facet {
- 	});
- }
- 
+ 		if (state.value.snapshot === null) throw new Error("Transcript service is not active");
+ 		let needsRebase = false;
+ 		state.change(context, (draft) => {
+-			needsRebase = reduceLaneSnapshot(draft.snapshot as unknown as LaneSnapshot, event) === "rebase";
++			needsRebase = reduceLaneSnapshot(draft.snapshot as unknown as LaneSnapshot, forwarded) === "rebase";
+ 			draft.event = forwarded;
+ 		});
+ 		if (needsRebase) scheduleRebase(context);
+@@ -88,0 +93,13 @@ export function createTranscriptService(
 +function toStrictJson<T>(value: T): T {
 +	if (isJsonValue(value)) return value;
 +	let encoded: string | undefined;
@@ -52,12 +51,7 @@ index 8496f17df..2cdf6f3da 100644
 +	if (!isJsonValue(normalized)) throw new TypeError("Transcript value is not strict JSON");
 +	return normalized as T;
 +}
-+
- function toLaneWatchEvent(event: HarnessEvent): LaneWatchEvent | undefined {
- 	switch (event.type) {
- 		case "handler_error":
 diff --git a/packages/coding-agent/test/experimental-transcript-provider.test.ts b/packages/coding-agent/test/experimental-transcript-provider.test.ts
-index bf63fa2a0..0d1d36496 100644
 --- a/packages/coding-agent/test/experimental-transcript-provider.test.ts
 +++ b/packages/coding-agent/test/experimental-transcript-provider.test.ts
 @@ -1,4 +1,4 @@

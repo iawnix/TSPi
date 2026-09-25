@@ -1,5 +1,7 @@
 # Architecture
 
+The normative unified Research Harness lifecycle is defined in [ADR 0006](adr/0006-unified-research-harness-lifecycle.md).
+
 [English](ARCHITECTURE.md) | [简体中文](ARCHITECTURE.zh-CN.md)
 
 TSPi packages scientific skills and runtime adapters on top of Pi. One
@@ -67,6 +69,12 @@ derived view from separate scientific registries. It contains `ResearchPhase`,
 `ResearchClaim`, `ResearchNode`, typed `Finding` objects, and typed `Gate`
 objects, together with their dependency, output, and target references.
 
+Attempts and Artifacts are not scientific facts inside the ResearchMap. They
+are durable execution records and evidence containers owned by the
+Compute/Workspace runtime. A Node stores stable references to them; the Kernel
+validates those references and evidence relationships but never turns scheduler
+state or file contents into a Finding or Claim conclusion by itself.
+
 ### ResearchMap And Research Kernel
 
 `ResearchMap` is a typed research graph. `ResearchClaim` represents a scientific
@@ -91,6 +99,75 @@ software or executors. A Compute Environment is a named `local` or `remote`
 execution environment with Backend bindings; Platform configuration supplies
 the transport and scheduler details for a remote environment. Tool success
 never becomes a scientific conclusion by itself.
+
+### Domain-Neutral Research Harness Lifecycle
+
+The Research Harness is domain-neutral. Chemistry, reaction mechanisms, data
+analysis, simulation, and other research domains use the same Claims, Nodes,
+Findings, Gates, Attempts, and Artifacts. Domain-specific behavior belongs in
+Skills, Capabilities, Backends, and Artifact schemas; it must not be encoded in
+Host scheduling or Kernel liveness rules.
+
+```text
+Agent (only scientific decision-maker)
+  -> bounded Research Context -> Research Kernel (canonical ResearchMap)
+  -> Harness/Host (turn admission, authority, recovery, follow-up)
+       +-> Monitor (external observation and next_run wake-up)
+       +-> Compute/Workspace runtime (Attempts, Artifacts, environments)
+```
+
+Durable Research Memory remains in the workspace. Each turn gets a bounded
+`research.context` read model containing the current focus and compact runtime
+summaries; it is not a second scientific state and does not copy full history
+or every Skill into model context. Each category has a fixed item limit and a
+fixed text/reference limit and a truncation marker; arbitrary continuation
+metadata and large reference lists are reduced to keys and bounded IDs. Full
+records remain available through focused map/detail queries. Skill catalogs are
+loaded when a worker is created and Skill bodies are cached for explicit
+invocation; only names, descriptions, and locations are placed in the model's
+default prompt. Capabilities and Compute
+Environments are queried when selecting or launching a method.
+
+Every Research Turn follows:
+
+```text
+TRIGGER -> ORIENT -> PLAN -> PREPARE -> EXECUTE
+        -> WAIT/RECONCILE -> INTERPRET -> ADVANCE -> CHECKPOINT
+```
+
+Before ending, the Agent must leave the Kernel in `required`,
+`waiting_external`, `deferred`/`blocked`, or `terminal`. An active Node with
+none of those dispositions yields `decision_needed`; the Harness may issue a
+bounded follow-up asking the Agent to read context and record a disposition,
+but it never chooses a scientific method or creates a Finding. `next_run` is
+an operational wake-up, not a new research instruction. An Attempt in
+`prepared` state has only a local, pre-submission binding and is therefore a
+decision point for the Agent, not an external wait. Only submitted, queued,
+running, completed-but-unparsed, or unknown Attempts hold a scope in
+`waiting_external` until the Host/Monitor produces new evidence.
+
+Public tools use one contract and a Harness-bound workspace context. The
+legacy `root` field is accepted only as an equality assertion. Tool contracts
+declare authority, side effects, replay/idempotency, lifecycle phase, and
+output schema; Research Writes go through Kernel ChangeSets, execution tools
+produce Attempts/Artifacts, and advisory tools never own scientific state.
+The server-extension loader rejects tools that do not provide the complete
+`label`, `description`, parameter schema, executable, and four-field Harness
+metadata contract before they enter a Worker.
+
+Tool factories and transport adapters have separate responsibilities. The
+`create*Tool()` functions define domain behavior and may throw typed failures;
+they are not themselves a transcript or transport boundary. The package-owned
+server extension composes those factories, while the legacy Pi registration
+boundary uses the same idempotent result wrapper for compatibility traffic.
+The native `pi-session-worker` applies the Harness adapter at the worker
+boundary. Successful results receive the `tspi-tool-result/1` envelope.
+Failures are converted to a normal result with `tspi-tool-error/1`; the
+native `after_tool` hook and the legacy Pi `tool_result` hook then set
+`isError: true`, so the durable transcript preserves both the machine-readable
+failure and the model-visible error status.
+Direct factory tests may call the domain tool without this adapter; production
+Harness traffic must enter through one of these transport boundaries.
 
 ### NodeGate And ClaimGate
 
@@ -266,14 +343,17 @@ write `ResearchMap` state. The Monitor never calls `finalize`, writes
 `ResearchMap`, or makes a scientific decision.
 
 Research liveness is represented separately from Monitor observations by a
-Kernel-validated continuation record. `ts_workflow` can list records or record
-one required, deferred, blocked, or completed disposition for a Node, Claim, or
-Gate. A `required` record names an action selected by Root; it does not execute
-that action or choose a scientific verdict. At a run boundary the Host checks
-the durable queue and may add at most three bounded follow-ups for unresolved
-required records. The Root must perform the action or explicitly resolve the
-record, so a parsed calculation can continue even when Monitor has no new
-status event, while a blocked or deferred study remains quiet and auditable.
+Kernel-validated continuation record. `ts_workflow` can list records or use the
+canonical `set`/`resolve` operations to record one required, deferred, blocked,
+or completed disposition for a Node, Claim, or Gate; the older `set_*` spellings
+remain compatibility aliases. ChangeSet audit fields belong to `ts_change`,
+not to this lifecycle request. A `required` record names an action selected by
+Root; it does not execute that action or choose a scientific verdict. At a run
+boundary the Host checks the durable queue and may add at most three bounded
+follow-ups for unresolved required records. The Root must perform the action or
+explicitly resolve the record, so a parsed calculation can continue even when
+Monitor has no new status event, while a blocked or deferred study remains
+quiet and auditable.
 
 Host `monitor/event` notifications are live only. Host primes its event cursor
 on startup instead of replaying historical files after a restart; Phone clients

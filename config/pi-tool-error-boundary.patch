@@ -1,0 +1,169 @@
+diff --git a/packages/agent/src/agent-loop.ts b/packages/agent/src/agent-loop.ts
+index e4fd515..1636ecb 100644
+--- a/packages/agent/src/agent-loop.ts
++++ b/packages/agent/src/agent-loop.ts
+@@ -546,11 +546,14 @@ async function executeToolCallsSequential(
+ 		const preparation = await prepareToolCall(currentContext, assistantMessage, toolCall, config, signal);
+ 		let finalized: FinalizedToolCallOutcome;
+ 		if (preparation.kind === "immediate") {
+-			finalized = {
++			finalized = await finalizeImmediateToolCall(
++				currentContext,
++				assistantMessage,
+ 				toolCall,
+-				result: preparation.result,
+-				isError: preparation.isError,
+-			};
++				preparation,
++				config,
++				signal,
++			);
+ 		} else {
+ 			const executed = await executePreparedToolCall(preparation, signal, emit);
+ 			finalized = await finalizeExecutedToolCall(
+@@ -600,11 +603,14 @@ async function executeToolCallsParallel(
+ 
+ 		const preparation = await prepareToolCall(currentContext, assistantMessage, toolCall, config, signal);
+ 		if (preparation.kind === "immediate") {
+-			const finalized = {
++			const finalized = await finalizeImmediateToolCall(
++				currentContext,
++				assistantMessage,
+ 				toolCall,
+-				result: preparation.result,
+-				isError: preparation.isError,
+-			} satisfies FinalizedToolCallOutcome;
++				preparation,
++				config,
++				signal,
++			);
+ 			await emitToolExecutionEnd(finalized, emit);
+ 			finalizedCalls.push(finalized);
+ 			if (signal?.aborted) {
+@@ -686,6 +692,46 @@ function shouldTerminateToolBatch(finalizedCalls: FinalizedToolCallOutcome[]): b
+ 	return finalizedCalls.length > 0 && finalizedCalls.every((finalized) => finalized.result.terminate === true);
+ }
+ 
++async function finalizeImmediateToolCall(
++	currentContext: AgentContext,
++	assistantMessage: AssistantMessage,
++	toolCall: AgentToolCall,
++	immediate: ImmediateToolCallOutcome,
++	config: AgentLoopConfig,
++	signal: AbortSignal | undefined,
++): Promise<FinalizedToolCallOutcome> {
++	let result = immediate.result;
++	let isError = immediate.isError;
++	if (config.afterToolCall) {
++		try {
++			const afterResult = await config.afterToolCall(
++				{
++					assistantMessage,
++					toolCall,
++					args: toolCall.arguments,
++					result,
++					isError,
++					context: currentContext,
++				},
++				signal,
++			);
++			if (afterResult) {
++				result = {
++					...result,
++					content: afterResult.content ?? result.content,
++					details: afterResult.details ?? result.details,
++					usage: afterResult.usage ?? result.usage,
++					terminate: afterResult.terminate ?? result.terminate,
++				};
++				isError = afterResult.isError ?? isError;
++			}
++		} catch (_error) {
++			// Preserve the original immediate failure if the post-tool adapter fails.
++		}
++	}
++	return { toolCall, result, isError };
++}
++
+ function prepareToolCallArguments(tool: AgentTool<any>, toolCall: AgentToolCall): AgentToolCall {
+ 	if (!tool.prepareArguments) {
+ 		return toolCall;
+diff --git a/packages/agent/src/harness/runtime/drive/tools.ts b/packages/agent/src/harness/runtime/drive/tools.ts
+index 1bff010..fa3b68c 100644
+--- a/packages/agent/src/harness/runtime/drive/tools.ts
++++ b/packages/agent/src/harness/runtime/drive/tools.ts
+@@ -484,7 +484,11 @@ async function startToolInvocation<TContext extends object | undefined>(
+ ): Promise<ToolCallTask> {
+ 	const prepared = await prepareToolInvocation(lane, drive, sources, call, tools);
+ 	if (prepared.kind === "outcome") {
+-		return { completion: publishToolOutcome(lane, drive, run, call, prepared.outcome, recovery) };
++		return {
++			completion: finalizeImmediateToolOutcome(lane, drive, prepared.outcome).then((outcome) =>
++				publishToolOutcome(lane, drive, run, call, outcome, recovery),
++			),
++		};
+ 	}
+ 	const effectPending = await publishToolIntent(
+ 		lane,
+@@ -512,6 +516,50 @@ async function startToolInvocation<TContext extends object | undefined>(
+ 	};
+ }
+ 
++/**
++ * Route validation and policy outcomes through the same post-tool adapter as
++ * executed tools. These outcomes never cross the external effect boundary, but
++ * they still need durable error envelopes and the normal transcript contract.
++ */
++async function finalizeImmediateToolOutcome<TContext extends object | undefined>(
++	lane: Lane<TContext>,
++	drive: Drive,
++	outcome: ToolOutcome,
++	options: { recovery?: boolean; replay?: "never" | "safe" } = {},
++): Promise<ToolOutcome> {
++	const result = outcome.message;
++	const patch = await lane.hooks.runToolWithGate(
++		"after_tool",
++		{
++			lane: lane.name,
++			runId: drive.operationId,
++			toolCallId: outcome.toolCall.id,
++			toolName: outcome.toolCall.name,
++			args: outcome.toolCall.arguments,
++			content: result.content,
++			...(result.details === undefined ? {} : { details: result.details }),
++			isError: true,
++			...(options.recovery === true ? { recovery: true as const } : {}),
++			...(options.replay === undefined ? {} : { replay: options.replay }),
++		},
++		drive.gate,
++		drive.context,
++	);
++	if (!patch) return outcome;
++	return {
++		...outcome,
++		message: {
++			...result,
++			content: patch.content ?? result.content,
++			...(patch.details === undefined
++				? result.details === undefined ? {} : { details: result.details }
++				: { details: patch.details }),
++			isError: patch.isError ?? result.isError,
++		},
++		terminate: patch.terminate ?? outcome.terminate,
++	};
++}
++
+ async function recoverToolInvocation<TContext extends object | undefined>(
+ 	lane: Lane<TContext>,
+ 	drive: Drive,
+@@ -581,5 +623,10 @@ async function recoverToolInvocation<TContext extends object | undefined>(
+ 	const checkpoint = await readCheckpoint(lane, drive, call);
+ 	return {
+-		completion: publishToolOutcome(lane, drive, run, call, interruptedOutcome(toolCall, checkpoint), true),
++		completion: finalizeImmediateToolOutcome(
++			lane,
++			drive,
++			interruptedOutcome(toolCall, checkpoint),
++			cancelled ? {} : { recovery: true, replay: call.replay },
++		).then((outcome) => publishToolOutcome(lane, drive, run, call, outcome, true)),
+ 	};
+ }

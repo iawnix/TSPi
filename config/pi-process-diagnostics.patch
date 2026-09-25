@@ -1,0 +1,71 @@
+diff --git a/packages/coding-agent/src/experimental/process.ts b/packages/coding-agent/src/experimental/process.ts
+index 0000000..0000000 100644
+--- a/packages/coding-agent/src/experimental/process.ts
++++ b/packages/coding-agent/src/experimental/process.ts
+@@ -1,3 +1,4 @@
++import { closeSync, openSync } from "node:fs";
+ import { type ChildProcess, spawn } from "node:child_process";
+ import { join, resolve } from "node:path";
+ import { fileURLToPath, pathToFileURL } from "node:url";
+@@ -49,23 +50,46 @@ export function spawnInternalProcess(
+ 	}
+ 	const entryUrl = defaultEntryUrl(role, options.entryUrl);
+ 	const sourceRuntimeArgs = import.meta.url.endsWith(".ts")
+ 		? ["--import", fileURLToPath(new URL("source-resolver.ts", import.meta.url))]
+ 		: [];
+-	const child = spawn(
+-		process.execPath,
+-		isBunBinary ? [...args] : [...sourceRuntimeArgs, fileURLToPath(entryUrl), ...args],
+-		{
+-			cwd: process.cwd(),
+-			detached: true,
+-			env: {
+-				...process.env,
+-				...options.env,
+-				[INTERNAL_PROCESS_ENV]: role,
+-			},
+-			stdio: "ignore",
+-			windowsHide: true,
+-		},
+-	);
++	// Detached Pi processes normally discard stderr. TSPi can opt into a
++	// per-run diagnostic file without changing the default process contract.
++	const diagnosticPath = process.env.TSPI_PI_DIAGNOSTIC_FILE?.trim();
++	let diagnosticFd: number | undefined;
++	if (diagnosticPath) {
++		try {
++			diagnosticFd = openSync(diagnosticPath, "a", 0o600);
++		} catch {
++			// Diagnostics must never prevent the managed process from starting.
++		}
++	}
++	const child = (() => {
++		try {
++			return spawn(
++				process.execPath,
++				isBunBinary ? [...args] : [...sourceRuntimeArgs, fileURLToPath(entryUrl), ...args],
++				{
++					cwd: process.cwd(),
++					detached: true,
++					env: {
++						...process.env,
++						...options.env,
++						[INTERNAL_PROCESS_ENV]: role,
++					},
++					stdio: diagnosticFd === undefined ? "ignore" : ["ignore", "ignore", diagnosticFd],
++					windowsHide: true,
++				},
++			);
++		} finally {
++			if (diagnosticFd !== undefined) {
++				try {
++					closeSync(diagnosticFd);
++				} catch {
++					// The child owns its duplicated descriptor after spawn returns.
++				}
++			}
++		}
++	})();
+ 	child.unref();
+ 	return child;
+ }

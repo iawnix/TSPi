@@ -347,10 +347,10 @@ def test_package_manifest_exposes_the_public_skill_family_and_allowlisted_runtim
         for name in manifest["peerDependencies"]
         if name.startswith("@earendil-works/pi-")
     } == {
-        "@earendil-works/pi-agent-core": "0.85.1",
-        "@earendil-works/pi-ai": "0.85.1",
-        "@earendil-works/pi-coding-agent": "0.85.1",
-        "@earendil-works/pi-tui": "0.85.1",
+        "@earendil-works/pi-agent-core": "0.87.1",
+        "@earendil-works/pi-ai": "0.87.1",
+        "@earendil-works/pi-coding-agent": "0.87.1",
+        "@earendil-works/pi-tui": "0.87.1",
     }
     assert "dependencies" not in manifest
     for name in ("ARCHITECTURE.md", "INSTALLATION.md", "MAINTAINER_GUIDE.md"):

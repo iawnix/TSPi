@@ -24,6 +24,16 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
 7. 只有交付物已处理且所附每个 NodeGate 的最新评估均为 `pass` 时，才能把 Node 以
    `completed` 关闭；Claim 状态另行更新。
 
+## Research Turn 收尾
+
+每轮结束前，读取 `ts_state` 的 `mode=context` 或 `mode=liveness`，并让当前活动 scope
+处于明确的生命周期状态：用 `ts_workflow operation=set_required` 登记具体下一动作；存在
+已提交 Attempt 时保持外部等待；带原因记录 `deferred` 或 `blocked`；或在证据和 Gate 均满足
+后关闭相关 map scope。Attempt 已完成或 Continuation 已完成本身都不是研究结论。若 liveness
+返回 `decision_needed`，必须继续当前 turn 并登记 disposition。`required` 表示已经登记了
+下一轮的具体动作，是合法的 checkpoint，Harness 不应在同一 turn 强行执行它。Harness
+不得替 Agent 发明方法，Monitor 的 `next_run` 也不是新的科学指令。
+
 Review 只提供有边界的反方审查，不拥有规范状态。本地与远端环境使用同一组
 `launch`、`inspect`、`finalize`、`cancel` 生命周期。`launch` 返回提交结果（包括结果不确定）后应结束当前
 turn，让持久化 Monitor 投递 `next_run`；不要用 `bash sleep`、`wait` 或手动轮询等待

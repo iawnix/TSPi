@@ -8,6 +8,9 @@ import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
 import { commandArguments, createCommandService } from "../../packages/ts-agent-runtime/host-api/commands.mjs";
 import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { boundWorkspaceRoot } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
+import { wrapToolWithEnvelope } from "../../packages/ts-agent-runtime/host-api/tool-envelope.mjs";
+import { checkpointFollowUp, continuationFollowUp } from "../../packages/ts-agent-runtime/host-api/lifecycle.mjs";
 import { createComputeTool } from "./pi-native-compute.mjs";
 import { createNotifyTool } from "./pi-native-notify.mjs";
 import { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
@@ -52,7 +55,7 @@ export function createStateTool() {
     ...TOOL_CONTRACTS.state,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       const mode = params.mode || "map";
-      const root = params.root || toolContext.cwd;
+      const root = boundWorkspaceRoot(params, toolContext);
       if (params.capabilityKind !== undefined && mode !== "capabilities") {
         throw new Error(`state mode=${mode} does not accept capability selectors`);
       }
@@ -92,7 +95,8 @@ export function createChangeTool() {
     ...TOOL_CONTRACTS.change,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_change");
-      const result = await NATIVE_COMMANDS.execute("research.change", params.root || toolContext.cwd, { request: {
+      const root = boundWorkspaceRoot(params, toolContext);
+      const result = await NATIVE_COMMANDS.execute("research.change", root, { request: {
           schema_version: "ts-change-request/1",
           rationale: params.rationale,
           expected_revision: params.expectedRevision,
@@ -101,7 +105,7 @@ export function createChangeTool() {
         } }, context?.abortSignal);
       const summary = await NATIVE_COMMANDS.execute(
         "research.summary",
-        params.root || toolContext.cwd,
+        root,
         {},
         context?.abortSignal,
       );
@@ -125,7 +129,7 @@ export function createWorkflowTool() {
   return {
     ...TOOL_CONTRACTS.workflow,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
-      const root = params.root || toolContext.cwd;
+      const root = boundWorkspaceRoot(params, toolContext);
       let result;
       if (params.operation === "status") {
         result = await NATIVE_COMMANDS.execute("research.continuation", root, {
@@ -149,15 +153,32 @@ export function createWorkflowTool() {
 }
 
 /**
- * Keep an active research lane live when the Root has explicitly recorded a
- * required next action. The hook only asks the Root to inspect and resolve
- * the record; it never selects a Claim/Gate outcome or invokes the action.
+ * Enforce the Research Turn end protocol without choosing scientific work.
+ * The Kernel derives liveness from ResearchMap plus operational Attempt
+ * records. The Host may request one bounded follow-up when the Root left an
+ * explicit continuation unresolved or failed to record a disposition for an
+ * active scope; it never chooses the next method or invokes it itself.
  */
-export function createContinuationLivenessHook({ cwd, maxFollowUps = 3, statusReader } = {}) {
+export function createContinuationLivenessHook({
+  cwd,
+  maxFollowUps = 3,
+  statusReader,
+  checkpointReader,
+  followUpRequired = true,
+} = {}) {
   if (typeof cwd !== "string" || !cwd) throw new TypeError("continuation liveness hook requires cwd");
   const readStatus = typeof statusReader === "function"
     ? statusReader
-    : (signal) => NATIVE_COMMANDS.execute("research.continuation", cwd, {}, signal);
+    : typeof checkpointReader === "function"
+      ? checkpointReader
+      : (signal, turnId) => NATIVE_COMMANDS.execute("research.turn", cwd, {
+        request: {
+          schema_version: "research-turn-request/1",
+          operation: "checkpoint",
+          turn_id: turnId,
+          trigger: "host.before_run_end",
+        },
+      }, signal);
   const followUpsByRun = new Map();
   return async (event, context) => {
     const runId = event?.runId;
@@ -166,26 +187,20 @@ export function createContinuationLivenessHook({ cwd, maxFollowUps = 3, statusRe
     if (attempts >= maxFollowUps) return undefined;
     let status;
     try {
-      status = await readStatus(context?.abortSignal);
+      status = await readStatus(context?.abortSignal, runId);
     } catch (_error) {
       // A status read must not make an otherwise valid Agent run fail closed.
       return undefined;
     }
-    const required = requiredContinuations(status);
-    if (required.length === 0) {
+    const followUp = followUpRequired
+      ? continuationFollowUp(status)
+      : checkpointFollowUp(status);
+    if (!followUp) {
       followUpsByRun.delete(runId);
       return undefined;
     }
     followUpsByRun.set(runId, attempts + 1);
-    const refs = required
-      .slice(0, 8)
-      .map((record) => record?.id || record?.continuation_id || record?.target_ref || record?.target_id)
-      .filter((value) => typeof value === "string" && value)
-      .join(", ");
-    const suffix = refs ? ` (${refs})` : "";
-    return {
-      followUp: `Kernel has ${required.length} required continuation record${required.length === 1 ? "" : "s"}${suffix}. Continue the research turn: read ts_workflow with operation=status, then perform the recorded action or explicitly set its disposition to deferred, blocked, or completed. Do not end while a safe, explicit next step remains.`,
-    };
+    return followUp;
   };
 }
 
@@ -194,10 +209,11 @@ export function createEnvironmentTool() {
     ...TOOL_CONTRACTS.environment,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       const mode = params.mode || "list";
+      const root = boundWorkspaceRoot(params, toolContext);
       if (mode === "show" && !params.name) throw new Error("environment show requires name");
       const result = await NATIVE_COMMANDS.execute(
         mode === "show" ? "compute.environment" : "compute.environments",
-        params.root || toolContext.cwd,
+        root,
         mode === "show" ? { name: params.name } : {},
         context?.abortSignal,
       );
@@ -212,7 +228,7 @@ export function createSeedTool() {
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_seed");
       return runDeterministicArtifact({
-        root: params.root || toolContext.cwd,
+        root: boundWorkspaceRoot(params, toolContext),
         kind: "structure_seed",
         operation: "generate",
         nodeId: params.nodeId,
@@ -252,7 +268,7 @@ export function createCompareTool() {
       requireNativeWrites("ts_compare");
       const comparisonParameters = serializeStructureComparisonParameters(params.parameters);
       return runDeterministicArtifact({
-        root: params.root || toolContext.cwd,
+        root: boundWorkspaceRoot(params, toolContext),
         kind: "structure_compare",
         operation: "compare",
         nodeId: params.nodeId,
@@ -286,7 +302,7 @@ export function createAnalyzeTool() {
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_analyze");
       return runDeterministicArtifact({
-        root: params.root || toolContext.cwd,
+        root: boundWorkspaceRoot(params, toolContext),
         kind: "scientific_analysis",
         operation: "run",
         nodeId: params.nodeId,
@@ -310,7 +326,7 @@ export function createDispatchTool() {
     ...TOOL_CONTRACTS.dispatch,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_dispatch");
-      const root = params.root || toolContext.cwd;
+      const root = boundWorkspaceRoot(params, toolContext);
       const result = await runJsonCli(packageScript("ts_compute.py"), ["node-dispatch", "--root", root, ...nodeControlArguments(params)], root, context?.abortSignal);
       return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
     },
@@ -322,8 +338,9 @@ export function createImportTool() {
     ...TOOL_CONTRACTS.importArtifact,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_import");
+      const root = boundWorkspaceRoot(params, toolContext);
       return runDeterministicArtifact({
-        root: params.root || toolContext.cwd,
+        root,
         kind: "artifact_import",
         operation: "import",
         nodeId: params.nodeId,
@@ -361,7 +378,7 @@ export function createRenderTool() {
     ...TOOL_CONTRACTS.render,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_render");
-      const root = params.root || toolContext.cwd;
+      const root = boundWorkspaceRoot(params, toolContext);
       const resolved = await resolveArtifacts(root, params.inputArtifactIds, context?.abortSignal);
       const request = validateRenderRequest(root, {
         operation: params.operation,
@@ -433,7 +450,7 @@ export function createReportTool() {
     ...TOOL_CONTRACTS.report,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("ts_report");
-      const root = params.root || toolContext.cwd;
+      const root = boundWorkspaceRoot(params, toolContext);
       const assetArtifactIds = params.assetArtifactIds || [];
       const resolvedAssets = assetArtifactIds.length
         ? await resolveArtifacts(root, assetArtifactIds, context?.abortSignal)
@@ -537,7 +554,7 @@ export function createTspiTools(options = {}) {
     createRenderTool(),
     createReportTool(),
     createNotifyTool(),
-  ];
+  ].map(wrapToolWithEnvelope);
 }
 
 async function runDeterministicArtifact(options) {
@@ -676,9 +693,13 @@ async function runCanonicalApi(command, cwd, extraArgs, parentSignal, timeoutMs 
 }
 
 async function executeNativeCommand({ command, root, params, signal }) {
-  if (command === "research.change" || (command === "research.continuation" && params.request !== undefined)) {
+  if (command === "research.change"
+    || (command === "research.continuation" && params.request !== undefined)
+    || (command === "research.turn" && params.request !== undefined)) {
     return runPrivateRequest(
-      command === "research.change" ? "tspi-native-change-" : "tspi-native-continuation-",
+      command === "research.change"
+        ? "tspi-native-change-"
+        : command === "research.turn" ? "tspi-native-turn-" : "tspi-native-continuation-",
       packageScript("ts_api.py"),
       command,
       root,
@@ -701,25 +722,30 @@ function continuationRequest(params) {
   if (params.reason !== undefined) request.reason = params.reason;
   if (params.requestId !== undefined) request.request_id = params.requestId;
   if (params.continuationId !== undefined) request.continuation_id = params.continuationId;
+  if (params.status !== undefined) request.status = params.status;
   return request;
 }
 
 function validateWorkflowParams(params) {
   const operation = params.operation;
-  if (operation === "set_required" && !params.continuationId
+  if (["set", "set_required"].includes(operation) && !params.continuationId
       && (!params.scope || !params.targetId || !params.action)) {
-    throw new Error("ts_workflow set_required requires scope, targetId, and action");
+    throw new Error(`ts_workflow ${operation} requires scope, targetId, and action`);
   }
-  if (["set_deferred", "set_blocked"].includes(operation) && !params.reason) {
-    throw new Error(`ts_workflow ${operation} requires reason`);
+  if (["set_deferred", "set_blocked"].includes(operation)
+      || (operation === "set" && ["deferred", "blocked"].includes(params.status))) {
+    if (!params.reason) throw new Error(`ts_workflow ${operation} requires reason`);
   }
-  if (["set_deferred", "set_blocked", "set_completed"].includes(operation)
+  if (["set", "set_deferred", "set_blocked", "set_completed"].includes(operation)
       && !params.continuationId && (!params.scope || !params.targetId)) {
     throw new Error(`ts_workflow ${operation} requires continuationId or scope and targetId`);
   }
-  if (["set_deferred", "set_blocked", "set_completed"].includes(operation)
+  if (["set", "set_deferred", "set_blocked", "set_completed"].includes(operation)
       && !params.continuationId && !params.action) {
     throw new Error(`ts_workflow ${operation} requires action when creating a continuation`);
+  }
+  if (operation === "resolve" && !params.continuationId) {
+    throw new Error(`ts_workflow ${operation} requires continuationId`);
   }
 }
 
@@ -746,27 +772,6 @@ function filterContinuationStatus(result, params) {
   }
   if ("required_count" in result) filtered.required_count = records.filter((record) => record?.status === "required").length;
   return filtered;
-}
-
-function requiredContinuations(result) {
-  if (!result || typeof result !== "object" || Array.isArray(result)) return [];
-  const candidates = [result.required, result.continuations, result.records, result.items]
-    .filter((value) => Array.isArray(value))
-    .flat();
-  if (candidates.length > 0) {
-    const required = candidates.filter((record) => record && typeof record === "object"
-      && (record.status === "required" || record.disposition === "required"));
-    const seen = new Set();
-    return required.filter((record) => {
-      const key = record.id || record.continuation_id || `${record.scope || ""}:${record.target_id || ""}:${record.action || ""}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }
-  return Number.isInteger(result.required_count) && result.required_count > 0
-    ? Array.from({ length: Math.min(result.required_count, 8) }, () => ({ status: "required" }))
-    : [];
 }
 
 async function resolveArtifacts(root, artifactIds, signal) {

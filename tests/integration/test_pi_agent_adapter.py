@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -158,8 +159,9 @@ function constants(schema) {{
   if (Object.hasOwn(schema||{{}},"const")) return [schema.const];
   return [...(schema?.anyOf||[]),...(schema?.oneOf||[])].flatMap(constants);
 }}
-const stateModes=constants(createPublicToolContracts(Type).state.parameters.properties.mode);
-process.stdout.write(JSON.stringify({{cases,removedAlias,stateModes}}));
+const stateModeSchema=createPublicToolContracts(Type).state.parameters.properties.mode;
+const stateModes=constants(stateModeSchema);
+process.stdout.write(JSON.stringify({{cases,removedAlias,stateModes,stateModePattern:stateModeSchema.pattern||null}}));
 """
     result = _node_json(script)
 
@@ -173,6 +175,8 @@ process.stdout.write(JSON.stringify({{cases,removedAlias,stateModes}}));
     ]
     assert result["removedAlias"]["name"] == "CommandUsageError"
     assert all(alias not in result["stateModes"] for alias in ("claim", "node", "finding", "gate"))
+    assert "context" in result["stateModePattern"]
+    assert "liveness" in result["stateModePattern"]
 
 
 def test_model_icons_identify_known_providers_and_fall_back_for_unknown_models() -> None:
@@ -478,9 +482,8 @@ const pi={{
 }};
 research(pi);
 const result=await globalThis.stateTool.execute("tool-1", {{mode:"operations",root:{json.dumps(str(workspace))}}}, undefined, undefined, {{cwd:{json.dumps(str(workspace))}}});
-let rejected=false;
-try {{ await globalThis.stateTool.execute("tool-2", {{mode:"operations",root:{json.dumps(str(workspace))},capabilityKind:"compute"}}, undefined, undefined, {{cwd:{json.dumps(str(workspace))}}}); }}
-catch (error) {{ rejected=String(error.message).includes("does not accept capability selectors"); }}
+    const rejectedResult = await globalThis.stateTool.execute("tool-2", {{mode:"operations",root:{json.dumps(str(workspace))},capabilityKind:"compute"}}, undefined, undefined, {{cwd:{json.dumps(str(workspace))}}});
+    const rejected = rejectedResult.details?.envelope?.error?.message?.includes("does not accept capability selectors") === true;
 process.stdout.write(JSON.stringify({{result,calls,rejected}}));
 """
     result = _node_json(script)
@@ -488,6 +491,92 @@ process.stdout.write(JSON.stringify({{result,calls,rejected}}));
     workspace_calls = [args for command, args in result["calls"] if args and args[0].endswith("ts_api.py")]
     assert workspace_calls and workspace_calls[-1][1:4] == ["research.operations", "--root", str(workspace)]
     assert result["rejected"] is True
+
+
+def test_state_context_and_liveness_modes_route_through_the_legacy_adapter(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    script = f"""
+import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
+const calls=[]; const pi={{
+  registerTool:(tool)=>{{ if (tool.name === "ts_state") globalThis.stateTool=tool; }},
+  registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
+  exec:async (command,args)=>{{
+    calls.push([command,args]);
+    const mode=args[1].replace("research.", "");
+    return {{stdout:JSON.stringify({{schema_version:`research-${{mode}}/1`,lifecycle:"idle"}})}};
+  }},
+}};
+research(pi);
+const context=await globalThis.stateTool.execute("context",{{mode:"context",root:{json.dumps(str(workspace))}}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+const liveness=await globalThis.stateTool.execute("liveness",{{mode:"liveness",root:{json.dumps(str(workspace))}}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+process.stdout.write(JSON.stringify({{context,liveness,calls}}));
+"""
+    result = _node_json(script)
+    assert result["context"]["details"]["result"]["schema_version"] == "research-context/1"
+    assert result["liveness"]["details"]["result"]["schema_version"] == "research-liveness/1"
+    assert result["context"]["details"]["envelope"]["schema_version"] == "tspi-tool-result/1"
+    assert result["liveness"]["details"]["envelope"]["schema_version"] == "tspi-tool-result/1"
+    assert [args[1] for _command, args in result["calls"]] == ["research.context", "research.liveness"]
+
+
+def test_legacy_adapter_root_is_bound_to_session_workspace(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    other_workspace = bootstrap_workspace_fixture(tmp_path / "other-workspace")
+    script = f"""
+import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
+let stateTool;
+const pi={{
+  registerTool:(tool)=>{{ if (tool.name === "ts_state") stateTool=tool; }},
+  registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
+}};
+research(pi);
+    const failed = await stateTool.execute("tool-1", {{mode:"summary",root:{json.dumps(str(other_workspace))}}}, undefined, undefined, {{cwd:{json.dumps(str(workspace))}}});
+    const error = failed.details?.envelope?.error?.message || "";
+process.stdout.write(JSON.stringify({{error}}));
+"""
+    result = _node_json(script)
+    assert result["error"] == "tool root is controlled by the Harness workspace context"
+
+
+def test_legacy_adapter_enqueues_bounded_lifecycle_follow_up(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    script = f"""
+import {{ readFileSync }} from "node:fs";
+import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
+const handlers={{}}; const messages=[]; const calls=[];
+const pi={{
+  registerTool:()=>{{}}, registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}},
+  on:(name,handler)=>{{ handlers[name]=handler; }}, appendEntry:()=>{{}},
+  sendUserMessage:(content,options)=>messages.push({{content,options}}),
+  exec:async (command,args)=>{{
+    const requestFlag=args.indexOf("--request-file");
+    const request=requestFlag >= 0 ? JSON.parse(readFileSync(args[requestFlag+1],"utf8")) : null;
+    calls.push({{command,args,request}});
+    return {{stdout:JSON.stringify({{
+      schema_version:"research-liveness/1",
+      lifecycle:"decision_needed",
+      map_revision:3,
+      decision_needed:[{{scope:"node",target_id:"node_1"}}],
+    }})}};
+  }},
+}};
+research(pi);
+await handlers.agent_settled({{type:"agent_settled"}},{{cwd:{json.dumps(str(workspace))},signal:undefined}});
+process.stdout.write(JSON.stringify({{messages,calls}}));
+"""
+    result = _node_json(script)
+    assert len(result["messages"]) == 1
+    assert "active scope lacking an explicit disposition" in result["messages"][0]["content"]
+    assert result["messages"][0]["options"] == {"deliverAs": "followUp"}
+    assert [call["args"][1] for call in result["calls"]] == ["research.turn"]
+    turn_calls = [
+        call
+        for call in result["calls"]
+        if call["args"] and call["args"][0].endswith("ts_api.py")
+    ]
+    assert len(turn_calls) == 1
+    assert turn_calls[0]["request"]["operation"] == "checkpoint"
+    assert turn_calls[0]["request"]["trigger"] == "host.agent_settled"
 
 
 def test_ts_change_forwards_unknown_operation_to_kernel_for_explicit_registry_error(tmp_path: Path) -> None:
@@ -512,9 +601,8 @@ const pi={{
   }},
 }};
 research(pi);
-let error="";
-try {{ await changeTool.execute("tool-1",{{root:{json.dumps(str(workspace))},rationale:"Probe kernel ownership.",operations:[{{type:"future_science_operation",payload:"kept"}}]}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}}); }}
-catch (caught) {{ error=String(caught.message||caught); }}
+    const failed = await changeTool.execute("tool-1",{{root:{json.dumps(str(workspace))},rationale:"Probe kernel ownership.",operations:[{{type:"future_science_operation",payload:"kept"}}]}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+    const error = failed.details?.envelope?.error?.message || "";
 process.stdout.write(JSON.stringify({{error,calls}}));
 """
     result = _node_json(script)
@@ -574,6 +662,52 @@ process.stdout.write(JSON.stringify({{status,required,calls}}));
     assert json.loads(result["required"]["content"][0]["text"])["schema_version"] == "research-continuation-result/1"
 
 
+def test_ts_workflow_canonical_set_and_resolve_round_trip(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    refs = start_research_node(workspace)
+    script = f"""
+import {{ readFileSync }} from "node:fs";
+import {{ spawnSync }} from "node:child_process";
+import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
+process.env.TS_AGENT_PYTHON = {json.dumps(sys.executable)};
+const calls=[]; let workflowTool;
+const pi={{
+  registerTool:(tool)=>{{ if (tool.name === "ts_workflow") workflowTool=tool; }},
+  registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
+  exec:async (command,args)=>{{
+    const requestFlag=args.indexOf("--request-file");
+    const request=requestFlag >= 0 ? JSON.parse(readFileSync(args[requestFlag+1],"utf8")) : null;
+    calls.push({{command,args,request}});
+    const result=spawnSync(command,args,{{encoding:"utf8"}});
+    return {{code:result.status,stdout:result.stdout,stderr:result.stderr}};
+  }},
+}};
+research(pi);
+const created=await workflowTool.execute("set",{{
+  operation:"set", scope:"claim", targetId:{json.dumps(refs["claim_id"])}, action:"review", status:"required",
+  root:{json.dumps(str(workspace))}
+}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+const createdPayload=JSON.parse(created.content[0].text);
+const continuationId=createdPayload.required.find((item)=>item.scope === "claim").id;
+const resolved=await workflowTool.execute("resolve",{{
+  operation:"resolve", continuationId, status:"completed", root:{json.dumps(str(workspace))}
+}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+process.stdout.write(JSON.stringify({{created:createdPayload,resolved:JSON.parse(resolved.content[0].text),calls}}));
+"""
+    result = _node_json(script)
+    assert result["created"]["required"][0]["status"] == "required"
+    assert result["resolved"]["required"] == []
+    workflow_calls = [call for call in result["calls"] if call["args"] and call["args"][0].endswith("ts_api.py")]
+    assert workflow_calls[0]["request"]["operation"] == "set"
+    assert workflow_calls[0]["request"]["status"] == "required"
+    assert workflow_calls[1]["request"] == {
+        "schema_version": "ts-continuation-request/1",
+        "operation": "resolve",
+        "continuation_id": result["created"]["required"][0]["id"],
+        "status": "completed",
+    }
+
+
 def test_review_fallback_failure_uses_review_runtime_taxonomy() -> None:
     source = (ROOT / "extensions" / "pi" / "review" / "tools.ts").read_text(encoding="utf-8")
 
@@ -610,9 +744,14 @@ def _api_cli(command: str, root: Path, *args: str) -> dict:
 
 
 def _node_json(script: str) -> dict:
+    environment = os.environ.copy()
+    # Keep adapter tests on the repository's managed Python runtime. Individual
+    # scripts may still override this explicitly when testing resolution paths.
+    environment.setdefault("TS_AGENT_PYTHON", sys.executable)
     completed = subprocess.run(
         ["node", "--experimental-loader", str(TS_LOADER), "--input-type=module", "--eval", script],
         cwd=ROOT,
+        env=environment,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

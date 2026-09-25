@@ -1,0 +1,13 @@
+diff --git a/packages/agent/src/harness/runtime/drive/tools.ts b/packages/agent/src/harness/runtime/drive/tools.ts
+--- a/packages/agent/src/harness/runtime/drive/tools.ts
++++ b/packages/agent/src/harness/runtime/drive/tools.ts
+@@ -615,7 +615,7 @@ async function recoverToolInvocation<TContext extends object | undefined>(
+ 		completion: finalizeImmediateToolOutcome(
+ 			lane,
+ 			drive,
+ 			interruptedOutcome(toolCall, checkpoint),
+-			...(cancelled ? {} : { recovery: true, replay: call.replay }),
++			cancelled ? {} : { recovery: true, replay: call.replay },
+ 		).then((outcome) => publishToolOutcome(lane, drive, run, call, outcome, true)),
+ 	};
+ }

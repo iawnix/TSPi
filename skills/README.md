@@ -2,10 +2,11 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-TSPi provides 17 focused Skills. The Research Kernel Skill owns the canonical
-ResearchMap contract; orchestration chooses the next bounded task; scientific
-and delivery Skills handle one method or output concern without redefining
-state.
+TSPi provides a domain-neutral Research Harness with 17 focused Skills in the
+current computational-chemistry bundle. The Research Kernel Skill owns the
+canonical ResearchMap contract; orchestration chooses the next bounded task;
+scientific and delivery Skills handle one method or output concern without
+redefining state.
 
 | Skill | Responsibility |
 | --- | --- |
@@ -27,11 +28,12 @@ state.
 | [tspi-mechanism-reasoning](tspi-mechanism-reasoning/SKILL.md) | Mechanism hypotheses, mappings, elementary steps, and alternatives |
 | [tspi-chemical-input](tspi-chemical-input/SKILL.md) | Natural-language chemical names, structure candidates, and input confirmation |
 
-A transition-state study may invoke several Skills, but each keeps its own
-boundary: candidate generation creates a structure, TS validation establishes
+The Harness can host Skills for chemistry, data analysis, simulation, or other
+research domains. The bundled transition-state study Skills keep their own
+boundaries: candidate generation creates a structure, TS validation establishes
 saddle evidence, IRC assigns endpoints, and energetics compares corrected
-quantities. Root records their verified outputs in the same ResearchMap through
-the Kernel.
+quantities. Root records verified outputs in the same ResearchMap through the
+Kernel.
 
 Each Skill has matching English and Chinese entrypoints. Every detailed
 reference also has an English and Simplified Chinese version; each entrypoint

@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_TEST_ENV_ROOT = os.environ.get("TSPI_TEST_ENV_ROOT", "/home/iaw/debug/tspi-test-env")
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -21,7 +22,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-prefix", help="Managed scientific base for the source suite.")
     parser.add_argument("--conda-root", help="Conda root used when preparing the source suite.")
-    parser.add_argument("--env-root", help="Managed environment store for the source suite.")
+    parser.add_argument(
+        "--env-root",
+        default=DEFAULT_TEST_ENV_ROOT,
+        help=f"Managed environment store for the source suite (default: {DEFAULT_TEST_ENV_ROOT}).",
+    )
     parser.add_argument("--force-base", action="store_true", help="Refresh the source-suite base environment.")
     parser.add_argument("suite", choices=["list", *sorted(load_manifest()["suites"])])
     parser.add_argument("args", nargs=argparse.REMAINDER)
@@ -67,11 +72,33 @@ def _run_native_pi(selected: dict[str, object], extra: list[str]) -> int:
     pi_source = os.environ.get("TSPI_PI_SOURCE")
     if not pi_source:
         raise SystemExit("native-pi tests require TSPI_PI_SOURCE pointing at a prepared Pi checkout")
+    verification = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "prepare_pi_source.py"),
+            "--verify",
+            pi_source,
+        ],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if verification.returncode != 0:
+        detail = (verification.stderr or verification.stdout).strip()
+        raise SystemExit(
+            "native-pi tests require a complete prepared Pi checkout; "
+            f"verification failed for {pi_source}: {detail}"
+        )
     node = shutil.which("node")
     if not node:
         raise SystemExit("native-pi tests require Node.js")
     resolver = Path(pi_source) / "packages" / "coding-agent" / "src" / "experimental" / "source-resolver.ts"
-    command = [node, "--import", str(resolver), "--test", *suite_paths("native-pi"), *extra]
+    # Node treats test-runner flags as global options; keep them before the
+    # file list so filters such as --test-name-pattern are not mistaken for
+    # positional paths or silently ignored.
+    command = [node, "--import", str(resolver), "--test", *extra, *suite_paths("native-pi")]
     return _run(command)
 
 

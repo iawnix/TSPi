@@ -6,12 +6,12 @@ import { join } from "node:path";
 import { startTspiHost } from "../../../apps/app-server/tspi-host.mjs";
 import { connectHost } from "../../../apps/app-server/tspi-host-client.mjs";
 import { installPiBridge } from "../../../extensions/pi/bridge/runtime.mjs";
+import { TEST_ROOT } from "./test-environment.mjs";
 
-const DEBUG_ROOT = "/home/iaw/debug/tspi-test-env";
 
 async function fixture(t, options = {}) {
-  await mkdir(DEBUG_ROOT, { recursive: true });
-  const root = await mkdtemp(join(DEBUG_ROOT, "host-core-"));
+  await mkdir(TEST_ROOT, { recursive: true });
+  const root = await mkdtemp(join(TEST_ROOT, "host-core-"));
   const workspaceRoot = join(root, "projects");
   const workspace = join(workspaceRoot, "project-a");
   const other = join(workspaceRoot, "project-b");

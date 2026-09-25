@@ -35,6 +35,8 @@ ResearchClaim -> ResearchNode -> Finding
 ```text
 research.map        完整 map
 research.summary    进展和 focus
+research.context    Root Agent 使用的有界 turn context
+research.liveness   根据 map 和 runtime 记录诊断生命周期
 research.detail     一个 map 对象
 research.locate     在 map 对象中搜索
 research.validate   校验 map
@@ -43,7 +45,9 @@ research.continuation 查询或记录有界的 continuation disposition
 research.change     应用一个 ChangeSet
 ```
 
-Kernel API、Pi tools、slash command 和 Root Agent 使用同一组命令。`/research` 只是
+Kernel API、Pi tools、slash command 和 Root Agent 使用同一组命令。`research.context` 和
+`research.liveness` 是有界 read model，不是第二份 ResearchMap，也不产生第二个生命周期
+权威；`research.continuation` 才负责持久化 Root 明确登记的 disposition。`/research` 只是
 命令服务的交互写法，不是另一套 API。TS Web 通过 ResearchMap provider 读取直接的规范
 序列化。`/compute` 通过 `compute.environments` 和 `compute.environment` 查询统一的
 本地/远端环境目录。
@@ -63,6 +67,15 @@ Artifact 是 Node 所有的操作记录。解析器或分析能力可以
 为了展示进行筛选和分组，但不创建第二个科学状态模型或 registry。操作记录与 map 分开展示。
 Gate 保存 criteria 和评估历史，不会静默修改目标对象。
 
+## Research Harness Turn 边界
+
+Root Agent 是唯一的科学决策者。每个 turn 读取有界 context，通过注册的 Skill 和
+Capability 选择并执行有界动作，解释证据，并在结束前登记一种 disposition：明确的
+`required` continuation、等待已提交 Attempt 的 `waiting_external`、带原因的
+`deferred`/`blocked`，或 terminal map 状态。提交前的 `prepared` Attempt 仍是本地决策点，
+不能据此等待 Monitor 事件。若 liveness 返回 `decision_needed`，Harness 可以追加有界
+follow-up，但不会选择下一种科学方法，也不会创建 Finding。
+
 ## 交付检查
 
 - 研究状态只保留 `research_map.json`、`transactions.jsonl` 和 Node 的执行目录；
@@ -73,3 +86,6 @@ Gate 保存 criteria 和评估历史，不会静默修改目标对象。
   消费这些定义；
 - local/remote 计算统一放在一份 `compute.toml` environments 目录后面；
 - 保持 `ResearchMap` 为唯一科学状态模型，不引入平行科学存储或别名。
+- 保持 `tests/node/native/tspi-research-turn-e2e.test.mjs` 作为 Agent -> Kernel ->
+  Host -> Monitor -> Agent 的领域无关验收轨迹；任何领域工作流在增加科学策略前都必须
+  先通过这一生命周期契约。

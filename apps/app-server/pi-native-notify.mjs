@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
 import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { boundWorkspaceRoot } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
 
 const executeFile = promisify(execFile);
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
@@ -18,7 +19,7 @@ export function createNotifyTool() {
         content: [{ type: "text", text: `TS Notify ${params.event}: sending` }],
         details: { notification: { event: params.event, state: "sending" } },
       }, { checkpoint: true });
-      const result = await runNotification(params.root || toolContext.cwd, {
+      const result = await runNotification(boundWorkspaceRoot(params, toolContext), {
         schema_version: "ts-user-notification/1",
         event: params.event,
         subject: params.subject,

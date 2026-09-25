@@ -7,9 +7,9 @@ import { join } from "node:path";
 import { convertHistory, importLegacyHistory, listLegacyHistory, parseHistory, validateWithPiSdk } from "../../../apps/app-server/tspi-history.mjs";
 import { startTspiHost } from "../../../apps/app-server/tspi-host.mjs";
 import { connectHost } from "../../../apps/app-server/tspi-host-client.mjs";
+import { TEST_ROOT, pinnedPiSource } from "./test-environment.mjs";
 
-const DEBUG_ROOT = "/home/iaw/debug/tspi-test-env";
-const PI_SOURCE = `${DEBUG_ROOT}/.pi/runtime-cache/pi/d981de1229ef899957bbe968bc8dcda02a21f477`;
+const PI_SOURCE = pinnedPiSource() || `${TEST_ROOT}/.pi/runtime-cache/pi/unknown`;
 const encode = (lines) => `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`;
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 
@@ -40,8 +40,8 @@ function v3(cwd, text = "original") {
 }
 
 async function fixture(t) {
-  await mkdir(DEBUG_ROOT, { recursive: true });
-  const installRoot = await mkdtemp(join(DEBUG_ROOT, "history-import-"));
+  await mkdir(TEST_ROOT, { recursive: true });
+  const installRoot = await mkdtemp(join(TEST_ROOT, "history-import-"));
   const workspaceRoot = join(installRoot, "workspaces");
   const cwd = join(workspaceRoot, "project-a");
   const other = join(workspaceRoot, "project-b");

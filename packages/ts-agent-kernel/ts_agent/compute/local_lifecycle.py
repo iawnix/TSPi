@@ -55,6 +55,10 @@ class _WorkerHandle:
     unit: str | None = None
 
 
+_STARTUP_TIMEOUT = 2.0
+_DURABLE_WORKER_STATES = {"running", "completed", "failed", "stopped"}
+
+
 def submit(config: LocalJobConfig) -> LocalReceipt:
     _validate_config(config)
     config.run_dir.mkdir(parents=True, exist_ok=True)
@@ -91,8 +95,8 @@ def submit(config: LocalJobConfig) -> LocalReceipt:
         write_json(worker_config, payload)
 
     if receipt_path.is_file():
-        raw = read_json(receipt_path)
-        return _receipt_from_mapping(raw)
+        receipt = _receipt_from_mapping(read_json(receipt_path))
+        return _await_durable_status(config, receipt, _WorkerHandle())
     if receipt_path.exists():
         raise ValueError("local receipt is not a regular file")
 
@@ -102,22 +106,58 @@ def submit(config: LocalJobConfig) -> LocalReceipt:
         item for item in (str(package_root), inherited_pythonpath) if item
     )
     worker = _start_worker(config, worker_config, pythonpath)
-    deadline = time.monotonic() + 2.0
+    try:
+        if not receipt_path.is_file():
+            return _await_durable_status(config, None, worker)
+        receipt = _receipt_from_mapping(read_json(receipt_path))
+        return _await_durable_status(config, receipt, worker)
+    except Exception:
+        _stop_worker(worker)
+        raise
+
+
+def _await_durable_status(
+    config: LocalJobConfig,
+    receipt: LocalReceipt | None,
+    worker: _WorkerHandle,
+) -> LocalReceipt:
+    """Wait until the worker has published a receipt and a durable status.
+
+    The worker writes its receipt before starting the child process. Returning
+    at that point made a successful ``submit`` indistinguishable from a
+    worker that exited before publishing any execution state.
+    """
+
+    receipt_path = config.run_dir / "local_receipt.json"
+    status_path = config.run_dir / config.program_status_name
+    deadline = time.monotonic() + _STARTUP_TIMEOUT
     while time.monotonic() < deadline:
-        if receipt_path.is_file():
-            return _receipt_from_mapping(read_json(receipt_path))
+        if receipt is None and receipt_path.is_file():
+            receipt = _receipt_from_mapping(read_json(receipt_path))
+        if receipt is not None and status_path.is_file():
+            observed = status(config, receipt)
+            if observed.get("state") in _DURABLE_WORKER_STATES:
+                return receipt
+            if observed.get("state") == "unknown":
+                break
         if worker.process is not None and worker.process.poll() is not None:
             break
         time.sleep(0.01)
-    _stop_worker(worker)
-    raise RuntimeError("local worker did not persist its receipt")
+    if receipt is None:
+        raise RuntimeError("local worker did not persist its receipt and startup status")
+    raise RuntimeError("local worker did not persist a durable startup status")
 
 
 def _start_worker(config: LocalJobConfig, worker_config: Path, pythonpath: str) -> _WorkerHandle:
     command = [sys.executable, str(Path(__file__).with_name("local_worker.py")), "--config", str(worker_config)]
     environment = {**os.environ, "PYTHONPATH": pythonpath, **config.environment}
     systemd_run = shutil.which("systemd-run")
-    if systemd_run and os.environ.get("TSPI_LOCAL_RUNNER_SYSTEMD", "auto").lower() not in {"0", "false", "no", "off"}:
+    if (
+        systemd_run
+        and os.environ.get("TSPI_LOCAL_RUNNER_SYSTEMD", "auto").lower()
+        not in {"0", "false", "no", "off"}
+        and _systemd_user_available()
+    ):
         # Host restarts must not terminate calculations. A transient user
         # service has its own cgroup while retaining the workspace paths and
         # environment used by the worker.
@@ -161,6 +201,26 @@ def _start_worker(config: LocalJobConfig, worker_config: Path, pythonpath: str) 
             close_fds=True,
         )
     )
+
+
+def _systemd_user_available() -> bool:
+    """Return whether a user systemd bus can accept transient services."""
+
+    systemctl = shutil.which("systemctl")
+    if not systemctl:
+        return False
+    try:
+        probe = subprocess.run(
+            [systemctl, "--user", "show-environment"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=1.0,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return probe.returncode == 0
 
 
 def _stop_worker(worker: _WorkerHandle) -> None:

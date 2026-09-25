@@ -203,14 +203,12 @@ await tools.ts_compare.execute("call-compare",{{
   referenceArtifactId:{json.dumps(reference_id)},targetArtifactId:{json.dumps(target_id)},
   parameters:{{reactionCenterAtoms:[0,1],keyBonds:[[0,1]]}},
 }},undefined,(value)=>updates.push(value),{{cwd:{json.dumps(str(workspace))}}});
-let rejection="";
-try {{
-  await tools.ts_compare.execute("call-invalid-compare",{{
-    operation:"compare",nodeId:{json.dumps(refs['node_id'])},
-    referenceArtifactId:{json.dumps(reference_id)},targetArtifactId:{json.dumps(target_id)},
-    parameters:{{rmsd_threshold:0.5}},
-  }},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
-}} catch (error) {{ rejection=String(error?.message||error); }}
+const failedCompare=await tools.ts_compare.execute("call-invalid-compare",{{
+  operation:"compare",nodeId:{json.dumps(refs['node_id'])},
+  referenceArtifactId:{json.dumps(reference_id)},targetArtifactId:{json.dumps(target_id)},
+  parameters:{{rmsd_threshold:0.5}},
+}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+const rejection=failedCompare.details?.envelope?.error?.message || "";
 process.stdout.write(JSON.stringify({{entries,updates,rejection}}));
 """
     completed = subprocess.run(
@@ -392,20 +390,17 @@ const pi={{
   }},
 }};
 install(pi);
-try {{
-  await tools.ts_render.execute("call-render",{{
-    operation:"compare",nodeId:{json.dumps(refs['node_id'])},
-    inputArtifactIds:{json.dumps([item['artifact_id'] for item in artifacts])},
-    outputName:"failed-comparison.png",
-  }},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
-}} catch (error) {{
-  process.stdout.write(JSON.stringify({{name:error.name,message:error.message,entries}}));
-}}
+const failed=await tools.ts_render.execute("call-render",{{
+  operation:"compare",nodeId:{json.dumps(refs['node_id'])},
+  inputArtifactIds:{json.dumps([item['artifact_id'] for item in artifacts])},
+  outputName:"failed-comparison.png",
+}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+process.stdout.write(JSON.stringify({{name:failed.details?.envelope?.error?.code,message:failed.content?.[0]?.text,entries}}));
 """
 
     completed = _node_ts(script)
     value = json.loads(completed.stdout)
-    assert value["name"] == "RenderBackendError"
+    assert value["name"] == "tool_error"
     assert "exit 2" in value["message"]
     assert "deliberate adapter failure" in value["message"]
     activity = workspace / "nodes" / refs["node_id"] / "activities" / "op_1"

@@ -1,6 +1,9 @@
 export type CommandId =
   | "research.map"
   | "research.summary"
+  | "research.context"
+  | "research.liveness"
+  | "research.turn"
   | "research.detail"
   | "research.locate"
   | "research.validate"

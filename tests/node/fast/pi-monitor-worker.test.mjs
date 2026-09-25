@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { deliverMonitorEvent, parseMonitorArguments, sendNotification } from "../../../apps/app-server/pi-monitor-worker.mjs";
+import { deliverMonitorEvent, parseMonitorArguments, recordMonitorTurn, sendNotification } from "../../../apps/app-server/pi-monitor-worker.mjs";
 
 async function fixture(t) {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "tspi-monitor-worker-test-"));
@@ -49,6 +49,46 @@ test("notification retries preserve the wake acknowledgement and original sessio
   assert.equal(wakes[0].client_message_id, "monitor:evt_1");
   assert.equal(wakes[0].mode, "auto");
   assert.equal(wakes[0].source, "monitor");
+});
+
+test("monitor wake records the canonical Research Turn before queue delivery", async (t) => {
+  const state = await fixture(t);
+  const calls = [];
+  const turn = await recordMonitorTurn({
+    workspace: state.workspace,
+    event: state.event,
+    delivery: state.delivery,
+    execute: async (_python, args) => {
+      calls.push(args);
+      const requestPath = args[args.indexOf("--request-file") + 1];
+      const request = JSON.parse(await readFile(requestPath, "utf8"));
+      assert.deepEqual(request, {
+        schema_version: "research-turn-request/1",
+        operation: "wake",
+        turn_id: "monitor:evt_1",
+        session_id: "existing-session",
+        request_id: "monitor:evt_1",
+        trigger: "monitor.wake",
+        event_id: "evt_1",
+        monitor_id: "mon_1",
+        intent_id: "calc_1",
+      });
+      return { stdout: JSON.stringify({ schema_version: "research-turn-result/1", operation: "wake", accepted: true }) };
+    },
+  });
+  assert.equal(turn.operation, "wake");
+  assert.equal(calls.length, 1);
+});
+
+test("a failed Research Turn wake keeps the durable wake retryable", async (t) => {
+  const state = await fixture(t);
+  const errors = await deliverMonitorEvent({ ...state,
+    recordTurn: async () => { throw new Error("turn boundary unavailable"); },
+    async sendWake() { throw new Error("must not queue before boundary"); },
+    async sendNotification() {},
+  });
+  assert.deepEqual(errors, ["wake: turn boundary unavailable"]);
+  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }, { channel: "notify", delivered: true }]);
 });
 
 test("monitor notifications preserve structured SMTP/provider failures", async (t) => {

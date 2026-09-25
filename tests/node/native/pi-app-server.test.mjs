@@ -5,11 +5,14 @@ import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
+import { connectHost } from "../../../apps/app-server/tspi-host-client.mjs";
 
 const sourceRoot = process.env.TSPI_PI_SOURCE;
 const testRoot = process.env.TSPI_TEST_ROOT || tmpdir();
 const nativeRuntimeRoot = process.env.TSPI_TEST_RUNTIME_ROOT;
 const nativeRuntimeDirectories = new Map();
+
+await mkdir(testRoot, { recursive: true });
 
 function nativeServerDirectory(root) {
   if (!nativeRuntimeRoot) return join(root, "server");
@@ -250,7 +253,7 @@ test("native client binds the interactive process to the workspace cwd", { skip:
   assert.match(piSource, /summary\.cwd === sessionCwd/);
 });
 
-async function startNativeServer(root, { workspaceRoot, python } = {}) {
+async function startNativeServer(root, { workspaceRoot, python, diagnosticFile } = {}) {
   const serverDirectory = nativeServerDirectory(root);
   await mkdir(serverDirectory, { recursive: true });
   const child = spawn(process.execPath, [
@@ -264,6 +267,7 @@ async function startNativeServer(root, { workspaceRoot, python } = {}) {
       PI_CODING_AGENT_DIR: join(root, "agent"),
       ...(workspaceRoot === undefined ? {} : { TSPI_WORKSPACE_ROOT: workspaceRoot }),
       ...(python === undefined ? {} : { TS_AGENT_PYTHON: python }),
+      ...(diagnosticFile === undefined ? {} : { TSPI_PI_DIAGNOSTIC_FILE: diagnosticFile }),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -316,6 +320,68 @@ async function stopNativeServer(child) {
   if (stopped || child.exitCode !== null || child.signalCode !== null) return;
   child.kill("SIGKILL");
   await exit;
+}
+
+async function startTspiHost(root, { workspaceRoot, diagnosticFile } = {}) {
+  const serverDirectory = nativeServerDirectory(root);
+  const stateRoot = join(root, "host-state");
+  const sessionDir = join(root, "sessions");
+  const serverId = "33333333-3333-4333-8333-333333333333";
+  const socket = join(serverDirectory, `${serverId}.sock`);
+  await mkdir(serverDirectory, { recursive: true });
+  const child = spawn(process.execPath, [
+    "apps/app-server/pi-app-server.mjs", "server", "--source-root", sourceRoot,
+    "--workspace", workspaceRoot, "--directory", serverDirectory, "--server-id", serverId,
+    "--state-root", stateRoot, "--session-dir", sessionDir,
+    "--provider", "anthropic", "--model", "claude-opus-4-8",
+  ], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PI_CODING_AGENT_DIR: join(root, "agent"),
+      PI_EXPERIMENTAL: "1",
+      PI_OFFLINE: "1",
+      TSPI_HOST_BACKEND: "harness",
+      TSPI_DEBUG: "1",
+      TSPI_INSTALL_ROOT: root,
+      TSPI_MONITOR_DISABLED: "1",
+      TSPI_PACKAGE_ROOT: process.cwd(),
+      TSPI_PI_SOURCE: sourceRoot,
+      TSPI_WORKSPACE_ROOT: workspaceRoot,
+      ...(diagnosticFile === undefined ? {} : { TSPI_PI_DIAGNOSTIC_FILE: diagnosticFile }),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  let errors = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => { output += chunk; });
+  child.stderr.on("data", (chunk) => { errors += chunk; });
+  const exit = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => resolve({ code, signal }));
+  });
+  const fixture = { child, exit, socket, stateRoot, sessionDir, stderr: () => errors };
+  try {
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      try {
+        await access(socket);
+        return fixture;
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error(`TSPi Host exited before creating its socket: ${output}${errors}`);
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+    }
+    throw new Error(`TSPi Host did not create its socket: ${output}${errors}`);
+  } catch (error) {
+    await stopNativeServer(child);
+    throw error;
+  }
 }
 
 async function runNativeClient(root, ...arguments_) {
@@ -514,6 +580,211 @@ test("native Pi app server starts from the pinned source entrypoint", { skip: !s
     await services?.dispose(backgroundContext).catch(() => {});
     await serverClient?.dispose().catch(() => {});
     await stopNativeServer(child);
+    await cleanupNativeRuntime(root);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("detached Pi diagnostics are opt-in and create a durable stderr file", { skip: !sourceRoot }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-native-diagnostics-"));
+  const diagnosticFile = join(root, "diagnostics", "pi.stderr.log");
+  await mkdir(join(root, "diagnostics"), { recursive: true });
+  let server;
+  try {
+    server = await startNativeServer(root, { diagnosticFile });
+    await access(diagnosticFile);
+  } finally {
+    if (server) await stopNativeServer(server.child);
+    await cleanupNativeRuntime(root);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("detached TSPi Host cold recovery settles a non-replayable effect without executing it", { skip: !sourceRoot }, async () => {
+  const root = await mkdtemp(join(testRoot, "tspi-cold-recovery-"));
+  const workspaceRoot = join(root, "workspaces");
+  const workspace = join(workspaceRoot, "project");
+  const diagnosticFile = join(root, "diagnostics", "pi.stderr.log");
+  await mkdir(join(root, "agent"), { recursive: true });
+  await mkdir(join(workspace, ".agents"), { recursive: true });
+  await mkdir(join(workspace, "nodes"), { recursive: true });
+  await mkdir(join(workspace, "operations"), { recursive: true });
+  await mkdir(join(workspace, "scratch"), { recursive: true });
+  await mkdir(join(workspace, "inputs"), { recursive: true });
+  await mkdir(join(root, "diagnostics"), { recursive: true });
+  await writeFile(join(root, "agent", "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test-key" } }), { mode: 0o600 });
+  await writeFile(join(workspace, "workspace.json"), JSON.stringify({
+    schema_version: "research-workspace/1",
+    workspace_id: "ws_" + "c".repeat(24),
+    kernel_protocol: "research-map/1",
+    created_at: "2026-09-25T00:00:00Z",
+  }));
+  await writeFile(join(workspace, ".agents", "workspace-identity.json"), JSON.stringify({
+    schema_version: "ts-workspace-identity/1",
+    workspace_id: "ws_" + "c".repeat(24),
+    created_at: "2026-09-25T00:00:00Z",
+  }));
+  await writeFile(join(workspace, "research_map.json"), JSON.stringify({
+    schema_version: "research-map/1",
+    map_id: "ws_" + "c".repeat(24),
+    title: "cold recovery fixture",
+    created_at: "2026-09-25T00:00:00Z",
+    revision: 0,
+    phases: [], claims: [], nodes: [], findings: [], gates: [],
+    claim_relations: [], focus_claim_ids: [], focus_node_ids: [], metadata: {},
+  }));
+  await writeFile(join(workspace, "transactions.jsonl"), "");
+
+  const target = { workspace_id: "project", session_id: "cold-recovery-session" };
+  let first;
+  let second;
+  let client;
+  let step = "start first Host";
+  let sessionPath;
+  try {
+    first = await startTspiHost(root, { workspaceRoot, diagnosticFile });
+    step = "create session";
+    client = await connectHost({ socketPath: first.socket });
+    const created = await client.request("session/create", {
+      ...target,
+      request_id: "create-cold-recovery-session",
+    });
+    assert.equal(created.session.session_id, target.session_id);
+    client.close();
+    client = undefined;
+    step = "stop first Host";
+    await stopNativeServer(first.child);
+
+    // Build the exact Pi durable runtime state through JsonlSessionRepo. This
+    // keeps the fixture on Pi's real storage/restore path instead of writing
+    // a private hand-rolled JSONL dialect.
+    step = "write durable fixture";
+    const fromSource = (relative) => import(pathToFileURL(join(sourceRoot, relative)).href);
+    const [{ BACKGROUND_CONTEXT }, sessionApi, { NodeExecutionEnv }, { restoreLane }] = await Promise.all([
+      fromSource("packages/chord/src/context/index.ts"),
+      fromSource("packages/agent/src/harness/session/index.ts"),
+      fromSource("packages/agent/src/node.ts"),
+      fromSource("packages/agent/src/harness/runtime/restore.ts"),
+    ]);
+    const fileSystem = new NodeExecutionEnv({ cwd: process.cwd() });
+    const repo = new sessionApi.JsonlSessionRepo({ fileSystem, sessionsRoot: first.sessionDir });
+    let session;
+    try {
+      const matches = (await repo.list(undefined, BACKGROUND_CONTEXT)).filter((item) => item.id === target.session_id);
+      assert.equal(matches.length, 1);
+      sessionPath = matches[0].path;
+      session = await repo.open(matches[0], BACKGROUND_CONTEXT);
+      const operationId = session.idGenerator.next();
+      const assistantEntryId = session.idGenerator.next();
+      const resultEntryId = session.idGenerator.next();
+      const configuration = {
+        model: { provider: "anthropic", modelId: "claude-opus-4-8" },
+        thinkingLevel: "off",
+        activeToolNames: [
+          "read", "sys_prompt", "write", "bash", "ts_state", "ts_change", "ts_workflow",
+          "ts_environment", "ts_calc", "ts_review", "ts_reply", "ts_seed", "ts_compare",
+          "ts_analyze", "ts_dispatch", "ts_import", "ts_render", "ts_report", "ts_notify",
+        ],
+      };
+      const assistant = {
+        role: "assistant",
+        content: [{
+          type: "toolCall",
+          id: "cold-recovery-notify",
+          name: "ts_notify",
+          arguments: {
+            event: "cold-recovery-test",
+            subject: "cold recovery",
+            summary: "this effect must never execute during recovery",
+            reportRefs: [],
+          },
+        }],
+        api: "anthropic-messages",
+        provider: "anthropic",
+        model: "claude-opus-4-8",
+        usage: {
+          input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "toolUse",
+        timestamp: Date.now(),
+      };
+      const run = {
+        at: "tools",
+        control: { status: "running" },
+        settings: {
+          compaction: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
+          steeringMode: "all",
+          followUpMode: "all",
+          toolExecution: "sequential",
+        },
+        batch: {
+          assistantEntryId,
+          configuration,
+          turnId: "cold-recovery-turn",
+          calls: [{ status: "effect_pending", sourceIndex: 0, resultEntryId, replay: "never" }],
+        },
+        latestAssistantEntryId: assistantEntryId,
+      };
+      await session.mutate((mutator) => mutator.commit([
+        sessionApi.insertEntry({ id: assistantEntryId, parentId: null, type: "message", message: assistant }),
+        sessionApi.setValue(sessionApi.branchTip("main"), assistantEntryId),
+        sessionApi.setValue(sessionApi.laneConfig("main"), configuration),
+        sessionApi.setValue(sessionApi.laneState("main"), { currentOperationId: operationId, lastOperationId: null, inbox: [] }),
+        sessionApi.setValue(sessionApi.operationMeta(operationId), {
+          operationId, lane: "main", sourceTipId: null, startedAt: Date.now(),
+          intent: { kind: "run", promptEntryIds: [] },
+        }),
+        sessionApi.setValue(sessionApi.operationToolArgs(operationId, "cold-recovery-turn", 0), assistant.content[0].arguments),
+        sessionApi.setValue(sessionApi.operationState(operationId), run),
+      ], BACKGROUND_CONTEXT), BACKGROUND_CONTEXT);
+      const restored = await restoreLane(session, "main", BACKGROUND_CONTEXT);
+      assert.equal(restored.operation?.state?.at, "tools");
+    } finally {
+      await session?.close(BACKGROUND_CONTEXT);
+      await repo.close(BACKGROUND_CONTEXT);
+      await fileSystem.cleanup(BACKGROUND_CONTEXT);
+    }
+
+    step = "start second Host";
+    second = await startTspiHost(root, { workspaceRoot, diagnosticFile });
+    step = "connect second Host";
+    client = await connectHost({ socketPath: second.socket });
+    let latest;
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      step = "poll recovered session";
+      latest = await client.request("session/read", target);
+      const messages = latest?.snapshot?.messages || [];
+      const toolResult = messages.map((entry) => entry?.message || entry).find((message) => message?.role === "toolResult");
+      if (latest?.snapshot?.operation === null && toolResult) break;
+      await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+    }
+    const messages = latest?.snapshot?.messages || [];
+    const toolResult = messages.map((entry) => entry?.message || entry).find((message) => message?.role === "toolResult");
+    assert.ok(toolResult, JSON.stringify(latest));
+    assert.equal(toolResult.toolCallId, "cold-recovery-notify");
+    assert.equal(toolResult.isError, true);
+    assert.equal(toolResult.details?.envelope?.error?.code, "tool_replay_forbidden");
+    assert.equal(toolResult.details?.envelope?.error?.failure_class, "authorization");
+    assert.match(toolResult.content?.at(-1)?.text || "", /external outcome is unknown/);
+    assert.equal(latest.snapshot.operation, null);
+  } catch (error) {
+    let diagnostic = "";
+    try { diagnostic = await readFile(diagnosticFile, "utf8"); } catch {}
+    let sessionContent = "";
+    try { sessionContent = await readFile(sessionPath, "utf8"); } catch {}
+    const details = [
+      first ? `first stderr:\n${first.stderr()}` : "",
+      second ? `second stderr:\n${second.stderr()}` : "",
+      `Pi diagnostic:\n${diagnostic}`,
+      `Session JSONL:\n${sessionContent}`,
+    ].filter(Boolean).join("\n");
+    throw new Error(`${step}: ${error instanceof Error ? error.message : String(error)}\n${details}`, { cause: error });
+  } finally {
+    client?.close();
+    if (first) await stopNativeServer(first.child);
+    if (second) await stopNativeServer(second.child);
     await cleanupNativeRuntime(root);
     await rm(root, { recursive: true, force: true });
   }

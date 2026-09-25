@@ -611,7 +611,10 @@ def _conda_root_candidates(conda_root: Path | None) -> list[str]:
 def _conda_env_command(conda: str, action: str, prefix: Path, spec_path: Path) -> list[str]:
     command = [conda, "env", action]
     if Path(conda).name == "conda":
-        command.extend(["--solver", "libmamba"])
+        # Keep libmamba as the normal path, but allow constrained installations
+        # (for example, CONDA_NO_PLUGINS=true) to select the classic solver.
+        solver = os.environ.get("TSPI_CONDA_SOLVER", "libmamba").strip() or "libmamba"
+        command.extend(["--solver", solver])
     command.extend(["-p", str(prefix), "-f", str(spec_path)])
     if action == "update":
         command.append("--prune")

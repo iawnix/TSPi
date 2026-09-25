@@ -12,6 +12,7 @@ import {
 } from "@earendil-works/pi-agent-core";
 import Type from "./pi-runtime-deps.mjs";
 import { createPublicToolContracts, PUBLIC_TOOL_NAMES } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { boundWorkspaceRoot } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
 import {
   createReviewArtifactReadCapture,
   createReviewArtifactReadTool,
@@ -60,7 +61,7 @@ export function createReviewTool(runtime) {
         reviewerRole: params.reviewerRole,
         artifactIds: params.artifactIds,
       });
-      const root = params.root || toolContext.cwd;
+      const root = boundWorkspaceRoot(params, toolContext);
       const taskId = await allocateOperationalId(root, context?.abortSignal);
       let journal;
       let runRef;
@@ -163,7 +164,7 @@ export function createReplyTool() {
     ...TOOL_CONTRACTS.reply,
     async execute(_toolCallId, params, _onUpdate, toolContext) {
       requireNativeWrites("ts_reply");
-      const disposition = writeReviewRootDisposition(params.root || toolContext.cwd, {
+      const disposition = writeReviewRootDisposition(boundWorkspaceRoot(params, toolContext), {
         task_id: params.taskId,
         review_run_ref: params.reviewRunRef,
         disposition: params.disposition,

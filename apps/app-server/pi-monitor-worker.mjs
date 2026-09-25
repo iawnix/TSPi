@@ -12,7 +12,7 @@ const python = process.env.TS_AGENT_PYTHON || process.env.TSPI_WORKSPACE_PYTHON 
 const NOTIFICATION_TIMEOUT_MS = 150_000;
 
 // A wake and a notification have independent durable acknowledgements.
-export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWake, sendNotification }) {
+export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWake, sendNotification, recordTurn }) {
   const errors = [];
   for (const channel of ["wake", "notify"]) {
     const claimed = await runJson("claim", workspace, ["--event-id", delivery.event_id, "--channel", channel]);
@@ -23,6 +23,12 @@ export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWa
       const hostWorkspaceId = await monitorHostWorkspaceId(workspace, event);
       if (channel === "wake") {
         if (!claimed.session_id) throw new Error("monitor has no owning session; wake remains pending");
+        if (typeof recordTurn === "function") {
+          const turn = await recordTurn({ workspace, event, delivery: claimed });
+          if (!turn || turn.schema_version !== "research-turn-result/1" || turn.operation !== "wake") {
+            throw new Error("Research Turn wake boundary returned an invalid result");
+          }
+        }
         // Keep the Host/Phone wire spelling stable. The Harness adapter
         // canonicalizes a monitor `auto` wake to a durable `next_run` queue
         // entry, including when the lane is currently active.
@@ -97,6 +103,7 @@ export async function runMonitorWorker(options, signal) {
           for (const delivery of pending.deliveries || []) {
             if (signal.aborted) break;
             deliveryErrors.push(...await deliverMonitorEvent({ workspace, delivery, runJson, sendWake,
+              recordTurn: recordMonitorTurn,
               sendNotification: (root, event) => sendNotification(root, event, signal) }));
           }
           await runJson("health", workspace, deliveryErrors.length ? ["--error", deliveryErrors.join("; ")] : []);
@@ -114,6 +121,47 @@ export async function runMonitorWorker(options, signal) {
       await delay(options.intervalMs, signal);
     } while (!signal.aborted);
   } finally { client?.close(); }
+}
+
+/**
+ * Record the Monitor -> Agent wake at the canonical Harness boundary before
+ * queuing the user-visible next_run entry. A failed boundary keeps the
+ * durable delivery pending so the wake cannot be acknowledged without an
+ * auditable lifecycle event.
+ */
+export async function recordMonitorTurn({ workspace, event, delivery, execute = executeFile } = {}) {
+  if (!workspace || !event || !delivery?.session_id) throw new TypeError("monitor turn requires workspace, event, and session binding");
+  const request = {
+    schema_version: "research-turn-request/1",
+    operation: "wake",
+    turn_id: `monitor:${event.event_id}`,
+    session_id: delivery.session_id,
+    request_id: delivery.request_id,
+    trigger: "monitor.wake",
+    event_id: event.event_id,
+    monitor_id: event.monitor_id,
+    intent_id: event.intent_id,
+  };
+  const directory = await mkdtemp(join(tmpdir(), "tspi-monitor-turn-"));
+  try {
+    const requestFile = join(directory, "request.json");
+    await writeFile(requestFile, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
+    let completed;
+    try {
+      completed = await execute(python, [join(packageRoot, "scripts", "ts_api.py"), "research.turn", "--root", workspace, "--request-file", requestFile], {
+        cwd: workspace,
+        env: { ...process.env, PYTHONNOUSERSITE: "1" },
+        maxBuffer: 8 * 1024 * 1024,
+      });
+    } catch (error) {
+      throw new Error(monitorCommandError(error), { cause: error });
+    }
+    const result = JSON.parse(String(completed.stdout || "").trim());
+    if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("Research Turn wake returned invalid JSON");
+    return result;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 async function writeHealth(stateRoot, value) {
@@ -244,6 +292,11 @@ function delay(milliseconds, signal) {
     const timer = setTimeout(finish, milliseconds);
     signal.addEventListener("abort", finish, { once: true });
   });
+}
+function monitorCommandError(error) {
+  const output = String(error?.stderr || error?.stdout || "").trim();
+  if (output) return output.slice(-4_000);
+  return errorMessage(error);
 }
 function errorMessage(error) { return error instanceof Error ? error.message : String(error); }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -4,7 +4,7 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
   displayName: "TSPi",
   version: "0.17.0",
   title: "TSPi research workspace",
-  description: "ResearchMap-driven transition-state research with explicit scientific workflows and deterministic execution.",
+  description: "Domain-neutral ResearchMap scientific workflows with deterministic execution.",
   skills: Object.freeze([
     Object.freeze({ name: "tspi-research-kernel", path: "./skills/tspi-research-kernel" }),
     Object.freeze({ name: "tspi-orchestration", path: "./skills/tspi-orchestration" }),

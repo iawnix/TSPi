@@ -3,6 +3,9 @@
   "commands": [
     {"id": "research.map", "domain": "research", "effect": "read", "required": []},
     {"id": "research.summary", "domain": "research", "effect": "read", "required": []},
+    {"id": "research.context", "domain": "research", "effect": "read", "required": []},
+    {"id": "research.liveness", "domain": "research", "effect": "read", "required": []},
+    {"id": "research.turn", "domain": "research", "effect": "write", "required": ["request"]},
     {"id": "research.detail", "domain": "research", "effect": "read", "required": ["kind", "id"]},
     {"id": "research.locate", "domain": "research", "effect": "read", "required": ["query"]},
     {"id": "research.validate", "domain": "research", "effect": "read", "required": []},
@@ -19,8 +22,8 @@
     "research": {
       "name": "research",
       "description": "Read or validate the current ResearchMap.",
-      "usage": "/research [summary|map|detail <kind> <id>|locate <query>|validate|operations]",
-      "completions": ["summary", "map", "detail", "locate", "validate", "operations"]
+      "usage": "/research [summary|context|liveness|map|detail <kind> <id>|locate <query>|validate|operations]",
+      "completions": ["summary", "context", "liveness", "map", "detail", "locate", "validate", "operations"]
     },
     "compute": {
       "name": "compute",

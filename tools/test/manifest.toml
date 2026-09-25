@@ -48,6 +48,8 @@ paths = [
   "tests/node/native/pi-harness-policy.test.mjs",
   "tests/node/native/pi-native-worker.test.mjs",
   "tests/node/native/pi-session-control.test.mjs",
+  "tests/node/native/tspi-research-turn-e2e.test.mjs",
+  "tests/node/native/tspi-lifecycle.test.mjs",
   "tests/node/native/tspi-host.test.mjs",
   "tests/node/native/tspi-history.test.mjs",
   "tests/node/native/tspi-ordinary-pi.test.mjs",

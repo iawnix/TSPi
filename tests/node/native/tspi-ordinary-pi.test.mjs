@@ -7,12 +7,12 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { startTspiHost } from "../../../apps/app-server/tspi-host.mjs";
 import { connectHost } from "../../../apps/app-server/tspi-host-client.mjs";
+import { TEST_ROOT as testRoot, managedPython } from "./test-environment.mjs";
 
 const execute = promisify(execFile);
 const source = process.env.TSPI_PI_SOURCE;
 const tmux = process.env.TSPI_TMUX;
-const testRoot = "/home/iaw/debug/tspi-test-env";
-const python = process.env.TS_AGENT_PYTHON || "/home/iaw/debug/tspi-test-env/bin/python";
+const python = managedPython();
 const quote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 async function eventually(read, predicate, milliseconds = 20000) {
   const deadline = Date.now() + milliseconds;

@@ -114,9 +114,12 @@ export class PiRuntime {
 
   private async executeCanonical(invocation: CommandTransportInvocation) {
     if (invocation.command === "research.change"
-      || (invocation.command === "research.continuation" && invocation.params.request !== undefined)) {
+      || (invocation.command === "research.continuation" && invocation.params.request !== undefined)
+      || (invocation.command === "research.turn" && invocation.params.request !== undefined)) {
       return this.withRequestFile(
-        invocation.command === "research.change" ? "ts-research-change-" : "ts-research-continuation-",
+        invocation.command === "research.change"
+          ? "ts-research-change-"
+          : invocation.command === "research.turn" ? "ts-research-turn-" : "ts-research-continuation-",
         invocation.params.request,
         (requestFile) => this.runScript(
           "api",
@@ -209,6 +212,15 @@ export class PiRuntime {
 export function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string): string {
   const root = resolveWorkspaceRoot(inputRoot || "", cwd);
   if (!root) throw new Error("No TS workspace root found. Pass root or set TS_WORKSPACE_ROOT.");
+  // Match the native Harness contract: an explicit root is only a
+  // compatibility assertion against the workspace discovered from the
+  // session cwd, never a way for a model to redirect a tool call.
+  if (inputRoot) {
+    const bound = resolveWorkspaceRoot("", cwd);
+    if (bound && resolve(bound) !== resolve(root)) {
+      throw new Error("tool root is controlled by the Harness workspace context");
+    }
+  }
   return root;
 }
 

@@ -104,7 +104,7 @@ export function slashCompletions(name, prefix = "") {
 
 function parseResearchSlash(tokens, usage) {
   const action = tokens[0] || "summary";
-  if (["summary", "map", "validate", "operations"].includes(action)
+  if (["summary", "context", "liveness", "map", "validate", "operations"].includes(action)
       && (tokens.length === 1 || (action === "summary" && tokens.length === 0))) {
     return Object.freeze({ command: `research.${action}`, params: Object.freeze({}) });
   }

@@ -1,3 +1,13 @@
+import type {
+  AgentToolResult,
+  AgentToolUpdateCallback,
+  ExtensionContext,
+  Theme,
+  ToolRenderContext,
+  ToolRenderResultOptions,
+} from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
+
 export type PublicToolKey =
   | "systemPrompt" | "state" | "change" | "workflow" | "environment" | "review"
   | "compute" | "reply" | "seed" | "compare" | "analyze" | "dispatch"
@@ -5,11 +15,72 @@ export type PublicToolKey =
 
 export const PUBLIC_TOOL_NAMES: Readonly<Record<PublicToolKey, string>>;
 export const PUBLIC_TOOL_EXECUTION: Readonly<Record<string, string>>;
-export function createPublicToolContracts(Type: any): any;
+export const PUBLIC_TOOL_METADATA: Readonly<Record<string, {
+  readonly authority: string;
+  readonly effect: string;
+  readonly replay: string;
+  readonly phase: string;
+}>>;
+export function validateHarnessToolDefinition(tool: any, options?: {
+  source?: string;
+  requireCanonical?: boolean;
+}): any;
+
+type ToolContract<P, N extends string = string, D = unknown, S = unknown> = {
+  readonly name: N;
+  readonly label: string;
+  readonly description: string;
+  readonly parameters: any;
+  readonly metadata: Readonly<{
+    readonly authority: string;
+    readonly effect: string;
+    readonly replay: string;
+    readonly phase: string;
+  }>;
+  readonly promptSnippet?: string;
+  readonly promptGuidelines?: readonly string[];
+  readonly executionMode?: "sequential" | "parallel";
+  readonly replay?: string;
+  readonly execute: (
+    toolCallId: string,
+    params: P,
+    signal: AbortSignal | undefined,
+    onUpdate: AgentToolUpdateCallback<D> | undefined,
+    ctx: ExtensionContext,
+  ) => Promise<AgentToolResult<D>>;
+  readonly renderCall?: (args: P, theme: Theme, context: ToolRenderContext<S, P>) => Component;
+  readonly renderResult?: (
+    result: AgentToolResult<D>,
+    options: ToolRenderResultOptions,
+    theme: Theme,
+    context: ToolRenderContext<S, P>,
+  ) => Component;
+};
+
+export interface PublicToolContracts {
+  readonly systemPrompt: ToolContract<Record<string, never>, "sys_prompt"> & { readonly promptSnippet: string };
+  readonly state: ToolContract<StateToolParams>;
+  readonly change: ToolContract<ChangeToolParams>;
+  readonly workflow: ToolContract<WorkflowToolParams>;
+  readonly environment: ToolContract<EnvironmentToolParams>;
+  readonly review: ToolContract<ReviewToolParams>;
+  readonly compute: ToolContract<ComputeToolParams>;
+  readonly reply: ToolContract<ReplyToolParams>;
+  readonly seed: ToolContract<SeedToolParams>;
+  readonly compare: ToolContract<CompareToolParams>;
+  readonly analyze: ToolContract<AnalyzeToolParams>;
+  readonly dispatch: ToolContract<DispatchToolParams>;
+  readonly importArtifact: ToolContract<ImportToolParams>;
+  readonly render: ToolContract<RenderToolParams>;
+  readonly report: ToolContract<ReportToolParams>;
+  readonly notify: ToolContract<NotifyToolParams>;
+}
+
+export function createPublicToolContracts(Type: any): PublicToolContracts;
 
 export interface WorkspaceToolParams { root?: string }
 export interface StateToolParams extends WorkspaceToolParams {
-  mode?: "map" | "summary" | "detail" | "locate" | "validate" | "operations" | "artifacts" | "capabilities" | "runs";
+  mode?: "map" | "summary" | "context" | "liveness" | "detail" | "locate" | "validate" | "operations" | "artifacts" | "capabilities" | "runs";
   query?: string;
   kind?: "phase" | "claim" | "node" | "finding" | "gate";
   id?: string;
@@ -23,10 +94,11 @@ export interface ChangeToolParams extends WorkspaceToolParams {
   expectedRevision?: number;
 }
 export interface WorkflowToolParams extends WorkspaceToolParams {
-  operation: "status" | "set_required" | "set_deferred" | "set_blocked" | "set_completed";
+  operation: "status" | "set" | "resolve" | "set_required" | "set_deferred" | "set_blocked" | "set_completed";
   scope?: "node" | "claim" | "gate";
   targetId?: string;
   action?: "inspect" | "finalize" | "launch" | "analyze" | "review" | "evaluate" | "close";
+  status?: "required" | "deferred" | "blocked" | "completed";
   reason?: string;
   requestId?: string;
   continuationId?: string;

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createServer as createNetServer } from "node:net";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { afterEach, test } from "node:test";
-import WebSocket from "ws";
 import {
   MAX_LINK_FRAME_BYTES,
   MAX_PAYLOAD_BYTES,
@@ -14,6 +14,9 @@ import {
 } from "../../../services/tspi-link-relay/protocol.mjs";
 import { createRelayServer } from "../../../services/tspi-link-relay/server.mjs";
 import { RelayStore } from "../../../services/tspi-link-relay/store.mjs";
+
+const requireRelayDependency = createRequire(new URL("../../../services/tspi-link-relay/package.json", import.meta.url));
+const WebSocket = requireRelayDependency("ws");
 
 const cleanups = [];
 afterEach(async () => {

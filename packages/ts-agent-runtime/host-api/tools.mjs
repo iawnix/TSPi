@@ -32,12 +32,91 @@ export const PUBLIC_TOOL_EXECUTION = Object.freeze(Object.fromEntries(
   TOOL_ROWS.map(([, name, execution]) => [name, execution]),
 ));
 
+// Canonical Harness metadata. Tool implementations remain transport adapters;
+// this registry is the shared authority/effect/replay contract used by Hosts,
+// audits, and future transports.
+export const PUBLIC_TOOL_METADATA = Object.freeze({
+  sys_prompt: Object.freeze({ authority: "host_read", effect: "read", replay: "safe", phase: "orient" }),
+  ts_state: Object.freeze({ authority: "kernel_read", effect: "read", replay: "safe", phase: "orient" }),
+  ts_change: Object.freeze({ authority: "kernel_write", effect: "research_write", replay: "idempotent", phase: "advance" }),
+  ts_workflow: Object.freeze({ authority: "kernel_write", effect: "lifecycle_write", replay: "idempotent", phase: "checkpoint" }),
+  ts_environment: Object.freeze({ authority: "runtime_read", effect: "read", replay: "safe", phase: "prepare" }),
+  ts_review: Object.freeze({ authority: "advisory_runtime", effect: "advisory", replay: "never", phase: "execute" }),
+  ts_calc: Object.freeze({ authority: "execution_runtime", effect: "attempt_artifact", replay: "never", phase: "execute" }),
+  ts_reply: Object.freeze({ authority: "research_write", effect: "advisory_disposition", replay: "never", phase: "interpret" }),
+  ts_seed: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "prepare" }),
+  ts_compare: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "interpret" }),
+  ts_analyze: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "interpret" }),
+  ts_dispatch: Object.freeze({ authority: "execution_runtime", effect: "execution_control", replay: "idempotent", phase: "prepare" }),
+  ts_import: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "prepare" }),
+  ts_render: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "interpret" }),
+  ts_report: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "checkpoint" }),
+  ts_notify: Object.freeze({ authority: "external_side_effect", effect: "external_write", replay: "never", phase: "checkpoint" }),
+});
+
+const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]*$/u;
+const METADATA_FIELDS = Object.freeze(["authority", "effect", "replay", "phase"]);
+const METADATA_VALUES = Object.freeze({
+  authority: new Set([
+    "host_read", "kernel_read", "kernel_write", "runtime_read", "advisory_runtime",
+    "execution_runtime", "research_write", "artifact_runtime", "external_side_effect",
+  ]),
+  effect: new Set([
+    "read", "research_write", "lifecycle_write", "advisory", "attempt_artifact",
+    "advisory_disposition", "artifact_write", "execution_control", "external_write",
+  ]),
+  replay: new Set(["safe", "idempotent", "never"]),
+  phase: new Set(["orient", "advance", "checkpoint", "prepare", "execute", "interpret"]),
+});
+
+/** Validate one executable tool at the Harness admission boundary. */
+export function validateHarnessToolDefinition(tool, { source = "tool", requireCanonical = true } = {}) {
+  if (!tool || typeof tool !== "object" || Array.isArray(tool)) {
+    throw new TypeError(`${source} must be an object`);
+  }
+  if (typeof tool.name !== "string" || !TOOL_NAME_PATTERN.test(tool.name)) {
+    throw new TypeError(`${source} has an invalid tool name`);
+  }
+  if (typeof tool.label !== "string" || !tool.label.trim()) {
+    throw new TypeError(`${source} ${tool.name} has no label`);
+  }
+  if (typeof tool.description !== "string" || !tool.description.trim()) {
+    throw new TypeError(`${source} ${tool.name} has no description`);
+  }
+  if (!tool.parameters || typeof tool.parameters !== "object" || Array.isArray(tool.parameters)) {
+    throw new TypeError(`${source} ${tool.name} has no parameter schema`);
+  }
+  if (typeof tool.execute !== "function") {
+    throw new TypeError(`${source} ${tool.name} has no execute function`);
+  }
+  const metadata = tool.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    throw new TypeError(`${source} ${tool.name} has no Harness metadata`);
+  }
+  const keys = Object.keys(metadata).sort();
+  const expectedKeys = [...METADATA_FIELDS].sort();
+  if (keys.length !== expectedKeys.length || keys.some((key, index) => key !== expectedKeys[index])) {
+    throw new TypeError(`${source} ${tool.name} has invalid Harness metadata fields`);
+  }
+  for (const field of METADATA_FIELDS) {
+    if (typeof metadata[field] !== "string" || !METADATA_VALUES[field].has(metadata[field])) {
+      throw new TypeError(`${source} ${tool.name} has invalid Harness metadata ${field}`);
+    }
+  }
+  const canonical = PUBLIC_TOOL_METADATA[tool.name];
+  if (requireCanonical && canonical && METADATA_FIELDS.some((field) => metadata[field] !== canonical[field])) {
+    throw new TypeError(`${source} ${tool.name} metadata does not match the canonical Harness contract`);
+  }
+  return tool;
+}
+
 export function createPublicToolContracts(Type) {
   const optionalRoot = Type.Optional(Type.String());
   const literalUnion = (values) => Type.Union(values.map((value) => Type.Literal(value)));
-  const nodeId = Type.String({ pattern: "^node_[1-9][0-9]*$", maxLength: 128 });
-  const artifactId = Type.String({ pattern: "^art_[0-9a-f]{24}$" });
-  const intentId = Type.String({ pattern: "^calc_[1-9][0-9]*$", maxLength: 128 });
+  const enumString = (values, maxLength = 64) => Type.String({
+    pattern: `^(?:${values.join("|")})$`,
+    maxLength,
+  });
   const operation = Type.Object({
     type: Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9_]*$" }),
   }, {
@@ -45,6 +124,9 @@ export function createPublicToolContracts(Type) {
     maxProperties: 24,
     propertyNames: { pattern: "^[A-Za-z][A-Za-z0-9_]*$", maxLength: 64 },
   });
+  const nodeId = Type.String({ pattern: "^node_[1-9][0-9]*$", maxLength: 128 });
+  const artifactId = Type.String({ pattern: "^art_[0-9a-f]{24}$" });
+  const intentId = Type.String({ pattern: "^calc_[1-9][0-9]*$", maxLength: 128 });
   const remoteResources = Type.Object({
     queue: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$" }),
     nodes: Type.Integer({ minimum: 1 }),
@@ -59,6 +141,49 @@ export function createPublicToolContracts(Type) {
     Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$" }),
     Type.Union([Type.String({ maxLength: 4096 }), Type.Number(), Type.Boolean()]),
   );
+  const executionTarget = Type.Object({
+    kind: literalUnion(["local", "remote"]),
+    environment: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" })),
+    resources: Type.Optional(remoteResources),
+  }, { additionalProperties: false });
+  const computeSourceAttempt = Type.Object({
+    intentId,
+    reason: Type.String({ minLength: 1, maxLength: 1000 }),
+  }, { additionalProperties: false });
+  const computeInputArtifacts = Type.Array(Type.Object({
+    inputRole: Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$", maxLength: 64 }),
+    artifactId,
+  }, { additionalProperties: false }), { minItems: 1, maxItems: 8 });
+  // Keep field definitions in one compact base object. The discriminated
+  // branches add operation-specific required fields; native execution still
+  // rejects cross-operation fields with the same rule set.
+  const computeOperationSchema = Type.Intersect([
+    Type.Object({
+      operation: literalUnion(["launch", "inspect", "finalize", "cancel"]),
+      nodeId,
+      root: optionalRoot,
+      intentId: Type.Optional(intentId),
+      purpose: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
+      capability: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9_]*(?:[.][a-z][a-z0-9_]*)+$", maxLength: 128 })),
+      capabilityVersion: Type.Optional(Type.String({ pattern: "^[1-9][0-9]*$", maxLength: 16 })),
+      attemptKind: Type.Optional(literalUnion(["primary", "retry", "recalculation"])),
+      sourceAttempt: Type.Optional(computeSourceAttempt),
+      inputArtifacts: Type.Optional(computeInputArtifacts),
+      parameters: Type.Optional(calculationParameters),
+      executionTarget: Type.Optional(executionTarget),
+      tailArtifact: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
+      tailLines: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+      artifacts: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 255 }), { maxItems: 32 })),
+      artifactRef: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+      timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 480 })),
+    }, { additionalProperties: false }),
+    Type.Union([
+      requiredOperationBranch("launch", ["purpose", "capability", "capabilityVersion", "attemptKind", "inputArtifacts", "executionTarget"]),
+      requiredOperationBranch("inspect", ["intentId"]),
+      requiredOperationBranch("finalize", ["intentId"]),
+      requiredOperationBranch("cancel", ["intentId"]),
+    ]),
+  ]);
 
   const contracts = {
     systemPrompt: contract("systemPrompt", "System Prompt", "Read the effective system prompt and its provenance.", Type.Object({}, {
@@ -66,21 +191,16 @@ export function createPublicToolContracts(Type) {
     }), {
       promptSnippet: "Inspect the effective system prompt and its provenance",
     }),
-    state: contract("state", "TS State", "Read the canonical ResearchMap and related compute records.", Type.Object({
-      mode: Type.Optional(literalUnion(["map", "summary", "detail", "locate", "validate", "operations", "artifacts", "capabilities", "runs"])),
+    state: contract("state", "TS State", "Read bounded ResearchMap state.", Type.Object({
+      mode: Type.Optional(enumString(["map", "summary", "context", "liveness", "detail", "locate", "validate", "operations", "artifacts", "capabilities", "runs"])),
       root: optionalRoot,
       query: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-      kind: Type.Optional(literalUnion(["phase", "claim", "node", "finding", "gate"])),
+      kind: Type.Optional(enumString(["phase", "claim", "node", "finding", "gate"])),
       id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
       nodeRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-      capabilityKind: Type.Optional(literalUnion(["compute", "analysis"])),
+      capabilityKind: Type.Optional(enumString(["compute", "analysis"])),
     }, { additionalProperties: false }), {
-      promptSnippet: "Read bounded TS research state",
-      promptGuidelines: [
-        "Start with summary or map; fetch focused ResearchMap objects only as needed.",
-        "Use locate with an ID or keyword to find Phases, Claims, Nodes, Findings, Gates, and artifacts.",
-        "Artifact IDs are logical; capability catalogs do not prove runtime readiness.",
-      ],
+      promptSnippet: "Read bounded ResearchMap state",
     }),
     change: contract("change", "TS Change", "Validate and atomically apply one Root-authored ResearchMap ChangeSet.", Type.Object({
       rationale: Type.String({ minLength: 1, maxLength: 12_000 }),
@@ -90,18 +210,16 @@ export function createPublicToolContracts(Type) {
       root: optionalRoot,
     }, { additionalProperties: false }), {
       executionMode: "sequential",
-      promptSnippet: "Apply one auditable TS research change",
-      promptGuidelines: [
-        "Use the canonical operation catalog and explicit ResearchMap object IDs.",
-        "Put strategy in rationale and keep each operation typed; never edit the map file directly.",
-        "One ChangeSet is validated against the current revision and committed atomically under one lock.",
-      ],
+      promptSnippet: "Apply an auditable ResearchMap ChangeSet",
     }),
     workflow: contract("workflow", "TS Workflow", "Record a research continuation.", Type.Object({
-      operation: literalUnion(["status", "set_required", "set_deferred", "set_blocked", "set_completed"]),
-      scope: Type.Optional(literalUnion(["node", "claim", "gate"])),
+      // Keep the operation token compact; the Kernel validates the canonical
+      // set/resolve/status vocabulary and compatibility aliases at runtime.
+      operation: Type.String({ minLength: 1, maxLength: 32, pattern: "^[a-z][a-z0-9_]*$" }),
+      scope: Type.Optional(enumString(["node", "claim", "gate"])),
       targetId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-      action: Type.Optional(literalUnion(["inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"])),
+      action: Type.Optional(enumString(["inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"])),
+      status: Type.Optional(enumString(["required", "deferred", "blocked", "completed"])),
       reason: Type.Optional(Type.String({ minLength: 1 })),
       requestId: Type.Optional(Type.String({ minLength: 1 })),
       continuationId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
@@ -115,38 +233,10 @@ export function createPublicToolContracts(Type) {
       name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential" }),
-    compute: contract("compute", "TS Calculate", "Run one preflight-bound launch, inspect, finalize, or cancel calculation lifecycle.", Type.Object({
-      operation: literalUnion(["launch", "inspect", "finalize", "cancel"]),
-      nodeId,
-      root: optionalRoot,
-      intentId: Type.Optional(intentId),
-      purpose: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
-      capability: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9_]*(?:[.][a-z][a-z0-9_]*)+$", maxLength: 128 })),
-      capabilityVersion: Type.Optional(Type.String({ pattern: "^[1-9][0-9]*$", maxLength: 16 })),
-      attemptKind: Type.Optional(literalUnion(["primary", "retry", "recalculation"])),
-      sourceAttempt: Type.Optional(Type.Object({
-        intentId,
-        reason: Type.String({ minLength: 1, maxLength: 1000 }),
-      }, { additionalProperties: false })),
-      inputArtifacts: Type.Optional(Type.Array(Type.Object({
-        inputRole: Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$", maxLength: 64 }),
-        artifactId,
-      }, { additionalProperties: false }), { minItems: 1, maxItems: 8 })),
-      parameters: Type.Optional(calculationParameters),
-      executionTarget: Type.Optional(Type.Object({
-        kind: literalUnion(["local", "remote"]),
-        environment: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" })),
-        resources: Type.Optional(remoteResources),
-      }, { additionalProperties: false })),
-      tailArtifact: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
-      tailLines: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
-      artifacts: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 255 }), { maxItems: 32 })),
-      artifactRef: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
-      timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 480 })),
-    }, { additionalProperties: false }), {
+    compute: contract("compute", "TS Calculate", "Run one calculation lifecycle operation.", computeOperationSchema, {
       executionMode: "sequential",
       replay: "never",
-      promptSnippet: "Run one calculation lifecycle operation",
+      promptSnippet: "Run one calculation operation",
     }),
     review: contract("review", "TS Review", "Run one isolated, bounded advisory Review of a target Claim.", Type.Object({
       targetClaimId: Type.String({ pattern: "^claim_[1-9][0-9]*$", maxLength: 128, description: "Scientific Claim that the Review must assess." }),
@@ -204,7 +294,7 @@ export function createPublicToolContracts(Type) {
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential" }),
     render: contract("render", "TS Render", "Render registered molecular, reaction-path, or scientific-curve artifacts.", Type.Object({
-      operation: literalUnion(RENDER_OPERATIONS),
+      operation: enumString(RENDER_OPERATIONS),
       nodeId,
       inputArtifactIds: Type.Array(artifactId, { minItems: 1, maxItems: 8, uniqueItems: true }),
       outputName: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
@@ -218,7 +308,7 @@ export function createPublicToolContracts(Type) {
     }, { additionalProperties: false }), { executionMode: "sequential" }),
     notify: contract("notify", "TS Notify User", "Notify the configured target about a material research event.", Type.Object({
       operation: Type.Literal("send"),
-      event: literalUnion(["progress", "node_completed", "calculation_failed", "calculation_ambiguous", "study_completed"]),
+      event: enumString(["progress", "node_completed", "calculation_failed", "calculation_ambiguous", "study_completed"], 32),
       subject: Type.String({ minLength: 1, maxLength: 300 }),
       summary: Type.String({ minLength: 1, maxLength: 20_000 }),
       reportRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 8, uniqueItems: true })),
@@ -231,11 +321,22 @@ export function createPublicToolContracts(Type) {
 }
 
 function contract(key, label, description, parameters, extra = {}) {
+  const metadata = PUBLIC_TOOL_METADATA[PUBLIC_TOOL_NAMES[key]];
+  if (!metadata) throw new Error(`missing Harness metadata for ${PUBLIC_TOOL_NAMES[key]}`);
   return {
     name: PUBLIC_TOOL_NAMES[key],
     label,
     description,
     parameters,
+    metadata,
     ...extra,
+  };
+}
+
+function requiredOperationBranch(operation, requiredFields) {
+  return {
+    type: "object",
+    properties: { operation: { const: operation } },
+    required: ["operation", ...requiredFields],
   };
 }

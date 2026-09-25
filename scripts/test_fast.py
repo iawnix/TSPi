@@ -34,6 +34,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--package-root", default=str(ROOT))
     parser.add_argument("--python", help="Python interpreter with the source-test dependencies.")
+    parser.add_argument(
+        "--env-root",
+        default=os.environ.get("TSPI_TEST_ENV_ROOT", "/home/iaw/debug/tspi-test-env"),
+        help="Managed environment store containing the source-test base.",
+    )
     parser.add_argument("--result-path", help="Optional path for a machine-readable test record.")
     parser.add_argument("pytest_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -47,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     if not any(value.endswith(".py") for value in pytest_args):
         pytest_args.extend(suite_paths("fast"))
 
-    python = _resolve_python(package_root, args.python)
+    python = _resolve_python(package_root, args.python, Path(args.env_root).expanduser().resolve())
     environment = dict(os.environ)
     environment.pop("PYTEST_ADDOPTS", None)
     environment.pop("PYTEST_PLUGINS", None)
@@ -81,14 +86,15 @@ def main(argv: list[str] | None = None) -> int:
     return completed.returncode
 
 
-def _resolve_python(package_root: Path, explicit: str | None) -> Path:
+def _resolve_python(package_root: Path, explicit: str | None, env_root: Path | None = None) -> Path:
     candidates: list[Path] = []
     if explicit:
         candidates.append(Path(explicit).expanduser().resolve())
     else:
-        candidates.append(Path(sys.executable).resolve())
         runtime = load_runtime_environment(package_root)
-        candidates.append(runtime.env_python(runtime.default_env_prefix(package_root)))
+        if env_root is not None:
+            candidates.append(runtime.env_python(runtime.default_env_prefix(package_root, env_root)))
+        candidates.append(Path(sys.executable).resolve())
 
     checked: set[Path] = set()
     for candidate in candidates:

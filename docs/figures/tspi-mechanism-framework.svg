@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="183mm" height="112mm" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
-  <title id="title">Auditable reaction-mechanism research with TSPi</title>
+  <title id="title">Example application: auditable reaction-mechanism research with TSPi</title>
   <desc id="desc">A publication-ready framework showing how a Root Agent turns a reaction-mechanism claim into bounded research nodes, dispatches chemistry skills, records verified FactFindings or IssueFindings, evaluates NodeGate and ClaimGate, and uses the result to select the next node or branch.</desc>
   <defs>
     <marker id="arrow-navy" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
@@ -35,7 +35,7 @@
   <rect width="1600" height="980" fill="#FBFCFB"/>
   <rect x="24" y="24" width="1552" height="932" rx="20" fill="#FBFCFB" stroke="#D6E1E3" stroke-width="1.6"/>
 
-  <text x="60" y="70" class="title">Auditable reaction-mechanism research with TSPi</text>
+  <text x="60" y="70" class="title">Example application: auditable reaction-mechanism research with TSPi</text>
   <text x="60" y="99" class="subtitle">From a falsifiable scientific claim to validated, provenance-preserving mechanistic conclusions</text>
 
   <text x="60" y="147" class="section">SCIENTIFIC DIRECTION</text>

@@ -261,7 +261,7 @@ index f3619b1fd..53a4c8572 100644
  	readonly status: Component;
 @@ -36,11 +37,18 @@ export function createChatViewport(options: ChatViewportOptions): ChatViewport {
  		...(options.widgetsBelow === undefined ? [] : [{ component: options.widgetsBelow, shrink: 1, minSize: 0 }]),
- 		{ component: options.footer, shrink: 1, minSize: 1 },
+ 		{ component: options.footer, shrink: 1, minSize: 0 },
  	]);
 +	const rootChildren = options.header === undefined
 +		? [
