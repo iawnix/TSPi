@@ -8,6 +8,10 @@ export const CONNECTION_ID_BYTES = 16;
 export const MAX_PAYLOAD_BYTES = 16 * 1024 * 1024 + 4;
 export const MAX_LINK_FRAME_BYTES = CONNECTION_ID_BYTES + MAX_PAYLOAD_BYTES;
 export const MAX_BUFFERED_BYTES = 64 * 1024 * 1024;
+// Leave room for one maximum frame after pausing a source. This keeps the
+// transport below MAX_BUFFERED_BYTES even when a frame is already in flight.
+export const LINK_HIGH_WATER_BYTES = MAX_BUFFERED_BYTES - MAX_LINK_FRAME_BYTES;
+export const LINK_LOW_WATER_BYTES = Math.floor(LINK_HIGH_WATER_BYTES / 2);
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 

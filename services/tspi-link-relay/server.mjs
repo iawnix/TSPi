@@ -3,9 +3,7 @@ import { WebSocketServer } from "ws";
 import {
   LINK_PATH,
   LINK_PROTOCOL,
-  MAX_BUFFERED_BYTES,
   MAX_LINK_FRAME_BYTES,
-  MAX_PAYLOAD_BYTES,
   createConnectionId,
   decodeControl,
   decodeHostData,
@@ -13,6 +11,7 @@ import {
   encodeHostData,
   isUuidV4,
 } from "./protocol.mjs";
+import { createWebSocketForwarder } from "./backpressure.mjs";
 import { RelayStore, RelayStoreError } from "./store.mjs";
 
 const MAX_JSON_BYTES = 16 * 1024;
@@ -129,7 +128,7 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
         if (isBinary) {
           const frame = decodeHostData(data);
           const device = active.connections.get(frame.connectionId);
-          if (device) sendBinary(device.socket, frame.payload);
+          device?.hostToDevice.enqueue(frame.payload);
           return;
         }
         const control = decodeControl(data);
@@ -144,7 +143,11 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
     socket.once("close", () => {
       const current = hosts.get(identity.hostId) === active;
       if (current) hosts.delete(identity.hostId);
-      for (const device of active.connections.values()) device.socket.close(1012, "TSPi Host disconnected");
+      for (const device of active.connections.values()) {
+        device.hostToDevice.stop();
+        device.deviceToHost.stop();
+        device.socket.close(1012, "TSPi Host disconnected");
+      }
       active.connections.clear();
       if (current) logger.info?.(`TSPi Link Relay Host disconnected: ${identity.hostId}`);
     });
@@ -160,6 +163,19 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
     if (previous) previous.socket.close(4001, "device connection replaced");
     const connectionId = createConnectionId();
     const active = { socket, identity, host, connectionId };
+    active.hostToDevice = createWebSocketForwarder({
+      source: host.socket,
+      target: socket,
+      send: (value) => socket.send(value, { binary: true }),
+      onOverflow: () => socket.close(4002, "Link backpressure limit exceeded"),
+    });
+    active.deviceToHost = createWebSocketForwarder({
+      source: socket,
+      target: host.socket,
+      encode: (value) => encodeHostData(connectionId, value),
+      send: (value) => host.socket.send(value, { binary: true }),
+      onOverflow: () => socket.close(4002, "Link backpressure limit exceeded"),
+    });
     devices.set(identity.deviceId, active);
     host.connections.set(connectionId, active);
     sendText(host.socket, encodeControl({
@@ -172,13 +188,15 @@ export function createRelayServer({ statePath, listenHost = "127.0.0.1", port = 
     socket.on("message", (data, isBinary) => {
       try {
         if (!isBinary) throw new Error("device Link messages must be binary");
-        sendBinary(host.socket, encodeHostData(connectionId, data));
+        active.deviceToHost.enqueue(data);
       } catch (error) {
         logger.warn?.(`TSPi Link Relay closed malformed device connection: ${safeMessage(error)}`);
         socket.close(4000, "invalid Link frame");
       }
     });
     socket.once("close", () => {
+      active.hostToDevice.stop();
+      active.deviceToHost.stop();
       if (devices.get(identity.deviceId) === active) devices.delete(identity.deviceId);
       if (host.connections.delete(connectionId) && host.socket.readyState === host.socket.OPEN) {
         sendText(host.socket, encodeControl({ v: 1, type: "close", connectionId, code: 1000 }));
@@ -244,15 +262,6 @@ function sendJson(response, status, value) {
     "x-content-type-options": "nosniff",
   });
   response.end(payload);
-}
-
-function sendBinary(socket, value) {
-  if (socket.readyState !== socket.OPEN) return;
-  if (socket.bufferedAmount > MAX_BUFFERED_BYTES) {
-    socket.close(4002, "Link backpressure limit exceeded");
-    return;
-  }
-  socket.send(value, { binary: true });
 }
 
 function sendText(socket, value) {

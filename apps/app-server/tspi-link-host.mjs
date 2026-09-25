@@ -14,6 +14,7 @@ import {
   encodeControl,
   encodeHostData,
 } from "../../services/tspi-link-relay/protocol.mjs";
+import { createWebSocketForwarder, holdSocket, releaseSocket } from "../../services/tspi-link-relay/backpressure.mjs";
 
 const options = parseArguments(process.argv.slice(2));
 const createWebSocket = await resolveWebSocketFactory();
@@ -59,7 +60,7 @@ async function connectOnce() {
       if (finished) return;
       finished = true;
       activeSocket = undefined;
-      for (const connection of connections.values()) connection.destroy();
+      for (const connection of connections.values()) connection.local.destroy();
       connections.clear();
       if (error) rejectPromise(error);
       else resolvePromise();
@@ -78,20 +79,14 @@ async function connectOnce() {
           if (control.type === "open") {
             openLocalConnection(socket, connections, control.connectionId);
           } else {
-            connections.get(control.connectionId)?.destroy();
+            connections.get(control.connectionId)?.local.destroy();
             connections.delete(control.connectionId);
           }
           return;
         }
         const frame = decodeHostData(event.data);
         const connection = connections.get(frame.connectionId);
-        if (connection && !connection.destroyed) {
-          if (connection.writableLength + frame.payload.byteLength > MAX_BUFFERED_BYTES) {
-            connection.destroy(new Error("local App Server backpressure limit exceeded"));
-          } else {
-            connection.write(frame.payload);
-          }
-        }
+        if (connection && !connection.local.destroyed) writeLocalData(socket, connection, frame.payload);
       } catch (error) {
         socket.close(4000, "invalid Link frame");
         finish(error instanceof Error ? error : new Error(String(error)));
@@ -118,22 +113,55 @@ async function connectOnce() {
 function openLocalConnection(relay, connections, connectionId) {
   if (connections.has(connectionId)) throw new Error("Relay reused a Link connection ID");
   const local = createConnection({ path: options.socketPath });
-  connections.set(connectionId, local);
-  local.on("data", (chunk) => {
-    if (relay.readyState !== relay.OPEN) return;
-    if (relay.bufferedAmount > MAX_BUFFERED_BYTES) {
-      local.destroy(new Error("Relay backpressure limit exceeded"));
-      return;
-    }
-    relay.send(encodeHostData(connectionId, chunk));
+  const connection = { local, incoming: [], incomingBytes: 0, incomingPauseOwner: {} };
+  connections.set(connectionId, connection);
+  const outgoing = createWebSocketForwarder({
+    source: local,
+    target: relay,
+    encode: (value) => encodeHostData(connectionId, value),
+    send: (value) => relay.send(value),
+    onOverflow: () => local.destroy(new Error("Relay backpressure limit exceeded")),
   });
+  local.on("data", (chunk) => outgoing.enqueue(chunk));
+  local.on("drain", () => flushLocalData(relay, connection));
   local.once("error", (error) => {
     process.stderr.write(`TSPi Link: local App Server connection failed: ${errorMessage(error)}\n`);
   });
   local.once("close", () => {
+    outgoing.stop();
+    connection.incoming.length = 0;
+    connection.incomingBytes = 0;
+    releaseSocket(relay, connection.incomingPauseOwner);
     if (!connections.delete(connectionId) || relay.readyState !== relay.OPEN) return;
     relay.send(encodeControl({ v: 1, type: "close", connectionId, code: 1000 }));
   });
+}
+
+function writeLocalData(relay, connection, payload) {
+  if (connection.incoming.length > 0 || connection.local.writableLength + payload.byteLength > MAX_BUFFERED_BYTES) {
+    if (connection.incomingBytes + payload.byteLength > MAX_BUFFERED_BYTES) {
+      connection.local.destroy(new Error("local App Server backpressure limit exceeded"));
+      return;
+    }
+    connection.incoming.push(payload);
+    connection.incomingBytes += payload.byteLength;
+    holdSocket(relay, connection.incomingPauseOwner);
+    return;
+  }
+  if (!connection.local.write(payload)) holdSocket(relay, connection.incomingPauseOwner);
+}
+
+function flushLocalData(relay, connection) {
+  if (connection.local.destroyed) return;
+  while (connection.incoming.length > 0) {
+    const payload = connection.incoming.shift();
+    connection.incomingBytes -= payload.byteLength;
+    if (!connection.local.write(payload)) {
+      holdSocket(relay, connection.incomingPauseOwner);
+      return;
+    }
+  }
+  releaseSocket(relay, connection.incomingPauseOwner);
 }
 
 function parseArguments(arguments_) {

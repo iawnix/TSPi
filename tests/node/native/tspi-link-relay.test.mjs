@@ -7,11 +7,15 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { afterEach, test } from "node:test";
 import {
+  LINK_HIGH_WATER_BYTES,
+  LINK_LOW_WATER_BYTES,
+  MAX_BUFFERED_BYTES,
   MAX_LINK_FRAME_BYTES,
   MAX_PAYLOAD_BYTES,
   decodeHostData,
   encodeHostData,
 } from "../../../services/tspi-link-relay/protocol.mjs";
+import { createWebSocketForwarder } from "../../../services/tspi-link-relay/backpressure.mjs";
 import { createRelayServer } from "../../../services/tspi-link-relay/server.mjs";
 import { RelayStore } from "../../../services/tspi-link-relay/store.mjs";
 
@@ -154,6 +158,75 @@ test("the largest native App Server chunk fits inside one multiplexed Link frame
     () => encodeHostData(connectionId, new Uint8Array(MAX_PAYLOAD_BYTES + 1)),
     /too large/u,
   );
+  assert.equal(LINK_HIGH_WATER_BYTES + MAX_LINK_FRAME_BYTES <= MAX_BUFFERED_BYTES, true);
+  assert.equal(LINK_LOW_WATER_BYTES < LINK_HIGH_WATER_BYTES, true);
+});
+
+test("bounded forwarding pauses at the high watermark and flushes in order", () => {
+  const sent = [];
+  let bufferedAmount = 8;
+  let paused = 0;
+  let resumed = 0;
+  const source = {
+    pause() { paused += 1; },
+    resume() { resumed += 1; },
+  };
+  const target = {
+    OPEN: 1,
+    readyState: 1,
+    get bufferedAmount() { return bufferedAmount; },
+    send(value) { sent.push([...value]); },
+  };
+  const forwarder = createWebSocketForwarder({
+    source,
+    target,
+    maxBufferedBytes: 8,
+    lowWaterBytes: 2,
+    maxQueueBytes: 8,
+    send: (value) => target.send(value),
+  });
+
+  assert.equal(forwarder.enqueue(Uint8Array.of(1, 2)), false);
+  assert.equal(forwarder.enqueue(Uint8Array.of(3, 4)), false);
+  assert.equal(paused, 1);
+  bufferedAmount = 0;
+  forwarder.flush();
+  assert.deepEqual(sent, [[1, 2], [3, 4]]);
+  assert.equal(resumed, 1);
+  forwarder.stop();
+});
+
+test("bounded forwarding rejects an over-limit queue without dropping an active target", () => {
+  let closed = 0;
+  let paused = 0;
+  let resumed = 0;
+  const source = {
+    pause() { paused += 1; },
+    resume() { resumed += 1; },
+    close() { closed += 1; },
+  };
+  const target = {
+    OPEN: 1,
+    readyState: 1,
+    bufferedAmount: 4,
+    send() {},
+  };
+  const forwarder = createWebSocketForwarder({
+    source,
+    target,
+    maxBufferedBytes: 4,
+    lowWaterBytes: 1,
+    maxQueueBytes: 3,
+    send: (value) => target.send(value),
+    onOverflow: () => source.close(),
+  });
+
+  assert.equal(forwarder.enqueue(Uint8Array.of(1, 2)), false);
+  assert.equal(forwarder.enqueue(Uint8Array.of(3, 4)), false);
+  assert.equal(closed, 1);
+  assert.equal(paused, 1);
+  assert.equal(resumed, 1);
+  forwarder.stop();
 });
 
 test("Host bridge carries native App Server bytes through a private Unix socket", async () => {

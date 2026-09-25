@@ -88,6 +88,7 @@ APP_SERVER_FILES = [
 
 LINK_RELAY_FILES = [
     "services/tspi-link-relay/cli.mjs",
+    "services/tspi-link-relay/backpressure.mjs",
     "services/tspi-link-relay/protocol.mjs",
     "services/tspi-link-relay/server.mjs",
     "services/tspi-link-relay/store.mjs",
