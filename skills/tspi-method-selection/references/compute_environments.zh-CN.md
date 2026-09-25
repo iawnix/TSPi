@@ -1,8 +1,8 @@
 # 计算环境合同
 
-`ts_calc` 同时管理本地和远端目标的计算生命周期。远端 adapter 是安装级绑定的
+`compute.run` 同时管理本地和远端目标的计算生命周期。远端 adapter 是安装级绑定的
 OpenSSH/SCP 与 Torque 传输层，不是另一套公共计算生命周期。公共环境查询是
-`compute.environments`，通过 `/compute` 与 `ts_environment` 暴露。
+`compute.environments`，通过 `/compute` 与 `compute.environment` 暴露。
 
 ## 安装级策略
 

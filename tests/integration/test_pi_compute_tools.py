@@ -24,14 +24,14 @@ install(pi);
 process.stdout.write(JSON.stringify({{tools:tools.map((tool)=>tool.name),commands}}));
 """
     result = _node_json(script)
-    assert result == {"tools": ["ts_environment", "ts_dispatch", "ts_calc"], "commands": ["compute"]}
+    assert result == {"tools": ["compute.environment", "execution.dispatch", "compute.run"], "commands": ["compute"]}
 
 
 def test_compact_compute_schema_uses_logical_artifacts_and_host_enforces_operation_fields() -> None:
     script = f"""
 import install from {json.dumps(COMPUTE.as_uri())};
 import {{ Compile }} from "typebox/compile";
-let compute;const pi={{registerTool:(tool)=>{{if(tool.name==="ts_calc")compute=tool}},registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{emit:()=>{{}}}}}};
+let compute;const pi={{registerTool:(tool)=>{{if(tool.name==="compute.run")compute=tool}},registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{emit:()=>{{}}}}}};
 install(pi);const check=Compile(compute.parameters);
 const base={{nodeId:"node_1"}};
 const launch={{...base,operation:"launch",purpose:"Single point",capability:"gaussian.sp",capabilityVersion:"1",attemptKind:"primary",inputArtifacts:[{{inputRole:"gjf",artifactId:"art_"+"b".repeat(24)}}],executionTarget:{{kind:"remote",environment:"cluster_1w",resources:{{queue:"batch",nodes:1,ncpus:8,memory:"16gb",walltime:"01:00:00",ngpus:0}}}}}};
@@ -78,7 +78,7 @@ def test_compute_extension_delegates_fixed_plan_with_one_run_journal_owner() -> 
     assert '"compute_result_delivery_failed"' in source
     assert 'onStage?.("intent_creation")' in source
     assert 'onStage?.("preflight")' in source
-    assert "ts_change" not in source
+    assert "research.change" not in source
     assert "append_observation" not in source
     assert "accept_claim" not in source
 

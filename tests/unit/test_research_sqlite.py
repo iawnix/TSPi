@@ -5,6 +5,7 @@ import sqlite3
 import pytest
 
 from ts_agent.research import (
+    ArtifactManifest,
     AttemptInterpretation,
     InterpretationOutcome,
     ResearchSqliteError,
@@ -82,6 +83,16 @@ def test_sqlite_bootstrap_and_atomic_claim_decision_commit(tmp_path) -> None:
 
     assert repository.bootstrap_from_json(research_map)["created"] is True
     records = _records()
+    repository.register_evidence(artifacts=[ArtifactManifest(
+        id="art_aaaaaaaaaaaaaaaaaaaaaaaa",
+        node_id="node_1",
+        kind="calculation_output",
+        format="json",
+        location="nodes/node_1/outputs/result.json",
+        sha256="sha256:" + "a" * 64,
+        size_bytes=1,
+        created_at="2026-09-25T00:01:30Z",
+    )])
     result = repository.commit(
         research_map,
         expected_revision=research_map.revision,

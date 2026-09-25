@@ -24,7 +24,7 @@
 
 ## 确定性工具参数
 
-`ts_compare` 暴露可选 `parameters`，字段使用 camel case：
+`artifact.compare` 暴露可选 `parameters`，字段使用 camel case：
 
 - `atomMapping`：每个参考原子对应的一个目标 index；
 - `reactionCenterAtoms`：用于局部 RMSD 的参考原子 index；

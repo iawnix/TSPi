@@ -16,7 +16,7 @@
 操作记录，不改变 Node 的科学状态；暂停期间仍可查看、收集、解析和精确取消作业。重启
 后再次提交前必须先核对最新回执。
 
-`ts_calc` 对 local/remote 使用相同的公开操作：
+`compute.run` 对 local/remote 使用相同的公开操作：
 
 ```text
 launch   -> prepare, submit

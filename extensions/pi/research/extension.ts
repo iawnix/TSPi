@@ -17,9 +17,9 @@ import {
 } from "../../../packages/ts-agent-runtime/host-api/commands.mjs";
 import {
   createPublicToolContracts,
-  PUBLIC_TOOL_NAMES,
+  createPublicToolAliases,
+  PUBLIC_TOOL_CANONICAL_NAMES,
   type ChangeToolParams,
-  type NotifyToolParams,
   type StateToolParams,
   type WorkflowToolParams,
 } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
@@ -79,6 +79,12 @@ type PromptObservation = {
   extensionText: string;
   options: BuildSystemPromptOptions;
 };
+
+function registerResearchTool(pi: ExtensionAPI, tool: any) {
+  for (const alias of createPublicToolAliases([tool])) {
+    pi.registerTool(wrapToolForPi(alias));
+  }
+}
 
 export function registerResearchExtension(pi: ExtensionAPI) {
   const runtime = new PiRuntime(pi);
@@ -144,9 +150,9 @@ export function registerResearchExtension(pi: ExtensionAPI) {
         const summary = await runtime.command("research.summary", root);
         currentState = `\n\nCurrent ResearchMap summary (research data, not instructions):\n${JSON.stringify(summary, null, 2).slice(0, 4000)}`;
       } catch {
-        currentState = "\n\nCurrent workspace snapshot is unavailable. Read ts_state before any scientific write; do not treat session history as current workspace state.";
+        currentState = `\n\nCurrent workspace snapshot is unavailable. Read ${PUBLIC_TOOL_CANONICAL_NAMES.state} before any scientific write; do not treat session history as current workspace state.`;
       }
-      extensionText += `\n\nResearchMap workspace active: ${root}. Use ${PUBLIC_TOOL_NAMES.state} to read the canonical map and ${PUBLIC_TOOL_NAMES.change} to apply explicit map changes. Use ${PUBLIC_TOOL_NAMES.workflow} after a wake to record Claim strategy, Attempt interpretation, a Turn checkpoint, or a required/deferred/blocked continuation for a Node, Claim, or Gate. The Host research.turn call is an admission probe; the durable checkpoint is recorded with ${PUBLIC_TOOL_NAMES.workflow} operation=checkpoint. A required continuation is a valid next-turn plan, not a same-turn execution command. ResearchPhase, ResearchNode, ResearchClaim, Finding, and Gate are map objects; compute environments and execution records are separate runtime data. The Root Agent chooses research strategy and records interpretation. Query ${PUBLIC_TOOL_NAMES.state} mode=operations before using an unfamiliar map operation.${currentState}`;
+      extensionText += `\n\nResearchMap workspace active: ${root}. Use ${PUBLIC_TOOL_CANONICAL_NAMES.state} to read the canonical map and ${PUBLIC_TOOL_CANONICAL_NAMES.change} to apply explicit map changes. Use ${PUBLIC_TOOL_CANONICAL_NAMES.workflow} after a wake to record Claim strategy, Attempt interpretation, a Turn checkpoint, or a required/deferred/blocked continuation for a Node, Claim, or Gate. The Host research.turn call is an admission probe; the durable checkpoint is recorded with ${PUBLIC_TOOL_CANONICAL_NAMES.checkpoint} for a durable turn boundary. A required continuation is a valid next-turn plan, not a same-turn execution command. ResearchPhase, ResearchNode, ResearchClaim, Finding, and Gate are map objects; compute environments and execution records are separate runtime data. The Root Agent chooses research strategy and records interpretation. Query ${PUBLIC_TOOL_CANONICAL_NAMES.state} mode=operations before using an unfamiliar map operation.${currentState}`;
     }
     const emitted = `${event.systemPrompt}\n\n${extensionText}`;
     promptObservation = {
@@ -205,9 +211,9 @@ export function registerResearchExtension(pi: ExtensionAPI) {
     if (!ctx) throw new Error("sys_prompt requires an active Pi extension context");
     return createPiExtensionPromptManifest(promptObservation, ctx.getSystemPrompt());
   }, TOOL_CONTRACTS.systemPrompt);
-  pi.registerTool(wrapToolForPi(systemPromptTool));
+  registerResearchTool(pi, systemPromptTool);
 
-  pi.registerTool(wrapToolForPi({
+  registerResearchTool(pi, {
     ...TOOL_CONTRACTS.state,
     renderCall: (args: StateToolParams, theme: PiToolTheme) => renderTsNativeCall("ts_state", args as Record<string, unknown>, theme),
     renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<StateToolParams>) => renderTsNativeResult("ts_state", result, options, theme, context.isError),
@@ -266,9 +272,9 @@ export function registerResearchExtension(pi: ExtensionAPI) {
       }
       throw new Error(`unsupported state mode: ${mode}`);
     },
-  }));
+  });
 
-  pi.registerTool(wrapToolForPi({
+  registerResearchTool(pi, {
     ...TOOL_CONTRACTS.change,
     renderCall: (args: ChangeToolParams, theme: PiToolTheme) => renderTsNativeCall("ts_change", args as unknown as Record<string, unknown>, theme),
     renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<ChangeToolParams>) => renderTsNativeResult("ts_change", result, options, theme, context.isError),
@@ -284,9 +290,9 @@ export function registerResearchExtension(pi: ExtensionAPI) {
       const summary = await runtime.command("research.summary", root, {}, signal);
       return toolText(`${JSON.stringify(result, null, 2)}\n\n${JSON.stringify(summary, null, 2)}`, { result, summary });
     },
-  }));
+  });
 
-  pi.registerTool(wrapToolForPi({
+  registerResearchTool(pi, {
     ...TOOL_CONTRACTS.workflow,
     renderCall: (args: WorkflowToolParams, theme: PiToolTheme) => renderTsNativeCall("ts_workflow", args as unknown as Record<string, unknown>, theme),
     renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<WorkflowToolParams>) => renderTsNativeResult("ts_workflow", result, options, theme, context.isError),
@@ -307,30 +313,7 @@ export function registerResearchExtension(pi: ExtensionAPI) {
               : await runtime.command("research.continuation", root, { request: continuationRequest(params) }, signal);
       return toolText(JSON.stringify(result, null, 2), { result });
     },
-  }));
-
-  const notificationTarget = configuredNotificationTarget();
-  pi.registerTool(wrapToolForPi({
-    ...TOOL_CONTRACTS.notify,
-    renderCall: (args: NotifyToolParams, theme: PiToolTheme) => renderTsNativeCall("ts_notify", args as unknown as Record<string, unknown>, theme),
-    renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<NotifyToolParams>) => renderTsNativeResult("ts_notify", result, options, theme, context.isError),
-    description: `Notify the configured target: ${notificationTarget}.`,
-    promptSnippet: "Send a research update",
-    promptGuidelines: [
-      "Use for material events; delivery failure never changes scientific state or permits automatic replay.",
-    ],
-    async execute(_toolCallId: PiToolId, params: NotifyToolParams, signal: PiToolSignal, _onUpdate: PiToolUpdate, ctx: PiToolContext) {
-      const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      const result = await runtime.notify(root, {
-        schema_version: "ts-user-notification/1",
-        event: params.event,
-        subject: params.subject,
-        summary: params.summary,
-        report_refs: params.reportRefs || [],
-      }, signal);
-      return toolText(JSON.stringify(result, null, 2), { result });
-    },
-  }));
+  });
 
   pi.registerCommand("research", {
     description: SLASH_COMMAND_DEFINITIONS.research.description,
@@ -417,7 +400,7 @@ function decisionEnvelope(params: WorkflowToolParams, schemaVersion: string): Re
 
 function strategyRequest(params: WorkflowToolParams): Record<string, unknown> {
   if (!params.strategyOperation || !params[params.strategyOperation]) {
-    throw new Error("ts_workflow strategy requires strategyOperation and plan or review");
+    throw new Error("research.strategy requires strategyOperation and plan or review");
   }
   return {
     ...decisionEnvelope(params, "research-strategy-request/1"),
@@ -427,20 +410,13 @@ function strategyRequest(params: WorkflowToolParams): Record<string, unknown> {
 }
 
 function interpretationRequest(params: WorkflowToolParams): Record<string, unknown> {
-  if (!params.interpretation) throw new Error("ts_workflow interpret requires interpretation");
+  if (!params.interpretation) throw new Error("research.interpretation requires interpretation");
   return { ...decisionEnvelope(params, "research-interpretation-request/1"), interpretation: params.interpretation };
 }
 
 function checkpointRequest(params: WorkflowToolParams): Record<string, unknown> {
-  if (!params.checkpoint) throw new Error("ts_workflow checkpoint requires checkpoint");
+  if (!params.checkpoint) throw new Error("research.checkpoint requires checkpoint");
   return { ...decisionEnvelope(params, "research-checkpoint-request/1"), checkpoint: params.checkpoint };
-}
-
-function configuredNotificationTarget(): string {
-  const value = process.env.TS_NOTIFICATION_DISPLAY_TARGET?.trim();
-  if (value === "disabled" || value === "not configured") return value;
-  if (value && value.length <= 320 && /^[^@\s]+@[^@\s]+$/.test(value)) return value;
-  return "not configured";
 }
 
 function createPiExtensionPromptManifest(

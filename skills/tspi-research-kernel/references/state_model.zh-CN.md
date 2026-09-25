@@ -45,10 +45,9 @@ research.validate     校验 map
 research.operations   当前 ChangeSet operation catalog
 ```
 
-`ts_state` 暴露相应的有边界模式（`map`、`summary`、`detail`、`locate`、`validate`、
+`research.read` 暴露相应的有边界模式（`map`、`summary`、`detail`、`locate`、`validate`、
 `operations`），以及计算模式（`artifacts`、`capabilities`、`runs`）。交互式读取使用
-`/research`。所有变更都使用由 Kernel 实现、通过 `ts_change` 暴露的
-`research.change`。
+`/research`。所有变更都使用由 Kernel 实现的 `research.change`。
 
 不要直接编辑 `research_map.json`。ChangeSet 在隔离副本上校验，只递增一次
 `revision`，原子写入，并追加一条小型 transaction receipt。无效变更不会触碰之前的

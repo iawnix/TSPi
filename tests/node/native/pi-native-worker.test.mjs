@@ -157,7 +157,7 @@ test("native analysis discovers contracts and journals explicit mapping results"
       operation: "run", nodeId: "node_1", capability: "reaction.mapping.validate", capabilityVersion: "1",
       inputArtifacts: {}, parameters: { mapping: [] },
     };
-    await assert.rejects(invoke(analyze, params), /ts_analyze requires the guarded/);
+    await assert.rejects(invoke(analyze, params), /analysis\.run requires the guarded/);
     process.env.TSPI_NATIVE_WRITES = "1";
     const imported = await invoke(createImportTool(), {
       operation: "import", nodeId: "node_1", format: "xyz_structure", inputName: "h2.xyz",
@@ -341,9 +341,10 @@ test("native Pi server gives every client the complete Agent tool inventory", { 
     assert.ok(runtime.workerPids.has(summary.sessionId), "native Worker did not start");
     const state = await readExperimentalSessionState(runtime.sessionDir, summary.sessionId);
     assert.deepEqual(state.activeTools, [
-      "read", "sys_prompt", "write", "bash", "ts_state", "ts_change", "ts_workflow", "ts_environment",
-      "ts_calc", "ts_review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze", "ts_dispatch", "ts_import",
-      "ts_render", "ts_report", "ts_notify",
+      "read", "system.prompt", "write", "bash", "research.read", "research.change", "research.continuation",
+      "research.strategy", "research.interpretation", "research.checkpoint", "compute.environment", "review.run",
+      "compute.run", "review.respond", "artifact.seed", "artifact.compare", "analysis.run", "execution.dispatch",
+      "artifact.import", "artifact.render", "report.build",
     ]);
   } finally {
     await sessionServices?.dispose(BACKGROUND_CONTEXT).catch(() => {});
@@ -395,6 +396,29 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     const tools = Object.fromEntries(nativeTools.createTspiTools({
       review: { models, model: faux.getModel(), thinkingLevel: "low" },
     }).map((tool) => [tool.name, tool]));
+    // The production inventory is canonical-only; keep local handles named
+    // after the historical source tools so the behavioral assertions below
+    // remain focused on execution semantics.
+    Object.assign(tools, {
+      ts_state: tools["research.read"],
+      ts_change: tools["research.change"],
+      ts_workflow: tools["research.continuation"],
+      ts_environment: tools["compute.environment"],
+      ts_calc: tools["compute.run"],
+      ts_review: tools["review.run"],
+      ts_reply: tools["review.respond"],
+      ts_seed: tools["artifact.seed"],
+      ts_compare: tools["artifact.compare"],
+      ts_analyze: tools["analysis.run"],
+      ts_dispatch: tools["execution.dispatch"],
+      ts_import: tools["artifact.import"],
+      ts_render: tools["artifact.render"],
+      ts_report: tools["report.build"],
+      // notify.send is Host/Monitor-owned and intentionally absent from the
+      // Agent inventory. Exercise its guarded factory directly where this
+      // test covers the external delivery boundary.
+      ts_notify: nativeTools.createNotifyTool(),
+    });
     const stateTool = tools.ts_state;
     const changeTool = tools.ts_change;
     const toolContext = { cwd: workspace, sessionId: "native-tools" };
@@ -425,7 +449,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     assert.equal(JSON.parse(artifacts.content[0].text).artifact_count, 0);
     await assert.rejects(
       stateTool.execute("capabilities-invalid", { mode: "capabilities" }, () => {}, toolContext, undefined, context),
-      /state mode=capabilities requires capabilityKind/,
+      /research\.read mode=capabilities requires capabilityKind/,
     );
 
     const request = {
@@ -439,7 +463,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     };
     await assert.rejects(
       changeTool.execute("change-disabled", request, () => {}, toolContext, undefined, context),
-      /ts_change requires the guarded TSPi App Server Root Agent/,
+      /research\.change requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
       tools.ts_seed.execute("seed-disabled", {
@@ -450,7 +474,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         multiplicity: 1,
         optimization: "none",
       }, () => {}, toolContext, undefined, context),
-      /ts_seed requires the guarded TSPi App Server Root Agent/,
+      /artifact\.seed requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
       tools.ts_render.execute("render-disabled", {
@@ -459,14 +483,14 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         inputArtifactIds: ["art_aaaaaaaaaaaaaaaaaaaaaaaa"],
         outputName: "disabled.png",
       }, () => {}, toolContext, undefined, context),
-      /ts_render requires the guarded TSPi App Server Root Agent/,
+      /artifact\.render requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
       tools.ts_report.execute("report-disabled", {
         operation: "build",
         packageName: "disabled",
       }, () => {}, toolContext, undefined, context),
-      /ts_report requires the guarded TSPi App Server Root Agent/,
+      /report\.build requires the guarded TSPi App Server Root Agent/,
     );
     assert.equal(tools.ts_calc.replay, "never");
     await assert.rejects(
@@ -475,7 +499,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         nodeId: "node_1",
         intentId: "calc_1",
       }, () => {}, toolContext, undefined, context),
-      /ts_calc requires the guarded TSPi App Server Root Agent/,
+      /compute\.run requires the guarded TSPi App Server Root Agent/,
     );
     assert.equal(tools.ts_review.replay, "never");
     assert.equal(tools.ts_reply.replay, "never");
@@ -485,7 +509,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         targetClaimId: "claim_1",
         question: "Review the bounded Claim.",
       }, () => {}, toolContext, undefined, context),
-      /ts_review requires the guarded TSPi App Server Root Agent/,
+      /review\.run requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
       tools.ts_reply.execute("reply-disabled", {
@@ -494,7 +518,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         disposition: "deferred",
         response: "No review is available.",
       }, () => {}, toolContext, undefined, context),
-      /ts_reply requires the guarded TSPi App Server Root Agent/,
+      /review\.respond requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
       tools.ts_notify.execute("notify-disabled", {
@@ -503,7 +527,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         subject: "Disabled notification",
         summary: "This must not be delivered without native writes enabled.",
       }, () => {}, toolContext, undefined, context),
-      /ts_notify requires the guarded TSPi App Server Root Agent/,
+      /notify\.send requires the guarded TSPi App Server Root Agent/,
     );
 
     process.env.TSPI_NATIVE_WRITES = "1";

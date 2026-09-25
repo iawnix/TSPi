@@ -23,7 +23,7 @@ Host 会把“当前 continuation 已完成”误当成“研究可以结束”�
 Agent
   读取 bounded Research Memory，选择问题、方法、Skill、Capability 和停止条件
   解释 Attempt/Artifact，提交 Finding/Gate/Claim/Node ChangeSet
-  通过 ts_workflow 登记 required/deferred/blocked/completed disposition
+  通过 research.continuation 登记 required/deferred/blocked/completed disposition
 
 Research Kernel
   唯一科学状态权威：ResearchMap、ChangeSet、引用完整性和 liveness
@@ -86,7 +86,7 @@ Host 在 `checkpoint/end` 读取 Kernel 的结果：
 
 - `accepted=true`：结束当前 turn；`required` 计划留给后续 turn 或 Monitor wake；
 - `requires_disposition=true`：最多追加有界 follow-up，要求 Agent 重新读取
-  `ts_state(mode=context|liveness)`，然后通过 `ts_workflow` 或 `ts_change` 登记 disposition；
+  `research.read(mode=context|liveness)`，然后通过 `research.continuation` 或 `research.change` 登记 disposition；
 - Host 不得在 follow-up 中指定 Capability、Backend、Skill、计算参数或科学结论；
 - 达到 follow-up 上限后保留 `decision_needed`，不能伪造 `terminal`。
 
@@ -100,7 +100,7 @@ Durable Research Memory 保存在 workspace：ResearchMap、ChangeSet、Attempt�
 Monitor event、turn audit 和 provenance。模型上下文不是第二份状态。
 
 每个 turn 只生成 bounded `research.context`：当前 focus、Gate/Continuation 摘要、
-Attempt 状态、liveness 和截断标记。需要完整对象时 Agent 使用 `ts_state detail/locate`
+Attempt 状态、liveness 和截断标记。需要完整对象时 Agent 使用 `research.read detail/locate`
 或专门的 Artifact 查询。
 
 Skill 使用 manifest-first、body-on-demand：Session 启动只将 name/description/location
@@ -146,7 +146,7 @@ policy。这样冷恢复只允许 safe/idempotent 的 reconcile，`replay: never
 
 ## 兼容策略
 
-现有 `research.liveness`、`research.continuation`、`ts_state` 和 `ts_workflow` 保留为
+现有 `research.liveness`、`research.continuation`、`research.read` 和 `research.continuation` 保留为
 兼容查询/写入接口；它们的语义由 `research.turn` 统一解释。legacy Pi 的
 `agent_settled` 和 Native Harness 的 `before_run_end` 都只调用同一 Kernel boundary，
 不得各自实现 liveness 推导。

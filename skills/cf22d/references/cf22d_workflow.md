@@ -58,7 +58,7 @@ current TSPi adapter maps those tasks to version-1 capability IDs
 `pyscf.sp`, `pyscf.opt`, `pyscf.ts`, `pyscf.freq`, and `pyscf.thermo`, and also
 offers `pyscf.opt_freq` and `pyscf.ts_freq` composite descriptors. Use the
 live catalog's version and schema; do not pass a source YAML task list as a
-`ts_calc` capability name.
+`compute.run` capability name.
 
 - `opt` and `ts` cannot be requested together.
 - `freq` requires an SCF on the current geometry; the SCF is implicit when

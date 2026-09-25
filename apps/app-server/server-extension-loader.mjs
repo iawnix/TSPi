@@ -6,7 +6,7 @@ import { validateHarnessToolDefinition } from "../../packages/ts-agent-runtime/h
 
 const MANIFEST_SCHEMA = "tspi-server-extensions/1";
 const NAME_PATTERN = /^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$/u;
-const TOOL_PATTERN = /^[a-z][a-z0-9_]*$/u;
+const TOOL_PATTERN = /^[a-z][a-z0-9]*(?:[._][a-z][a-z0-9_]*)*$/u;
 const SCOPE_VALUES = new Set(["server", "client", "both"]);
 const PERMISSIONS = new Set([
   "workspace.read",

@@ -21,7 +21,7 @@ not change the scientific Node state. Inspection, collection, parsing, and
 exact cancellation remain available while a Node is paused. A restart must
 reconcile the latest receipt before another submission.
 
-Use the same public `ts_calc` operations for local and remote environments:
+Use the same public `compute.run` operations for local and remote environments:
 
 ```text
 launch   -> prepare, submit

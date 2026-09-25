@@ -11,7 +11,10 @@ import {
   withAbortSignal,
 } from "@earendil-works/pi-agent-core";
 import Type from "./pi-runtime-deps.mjs";
-import { createPublicToolContracts, PUBLIC_TOOL_NAMES } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
+import {
+  createPublicToolContracts,
+  PUBLIC_TOOL_CANONICAL_NAMES,
+} from "../../packages/ts-agent-runtime/host-api/tools.mjs";
 import { boundWorkspaceRoot } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
 import {
   createReviewArtifactReadCapture,
@@ -53,7 +56,7 @@ export function createReviewTool(runtime) {
   return {
     ...TOOL_CONTRACTS.review,
     async execute(toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("ts_review");
+      requireNativeWrites("review.run");
       requireReviewRuntime(runtime);
       const request = validateSubagentRequest({
         targetClaimId: params.targetClaimId,
@@ -120,7 +123,7 @@ export function createReviewTool(runtime) {
           required: true,
           task_id: packet.task_id,
           review_run_ref: runRef,
-          tool: PUBLIC_TOOL_NAMES.reply,
+          tool: PUBLIC_TOOL_CANONICAL_NAMES.reply,
           allowed_dispositions: ROOT_DISPOSITIONS,
         };
         publishProgress(onUpdate, toolCallId, taskId, request, "completed", runRef);
@@ -163,7 +166,7 @@ export function createReplyTool() {
   return {
     ...TOOL_CONTRACTS.reply,
     async execute(_toolCallId, params, _onUpdate, toolContext) {
-      requireNativeWrites("ts_reply");
+      requireNativeWrites("review.respond");
       const disposition = writeReviewRootDisposition(boundWorkspaceRoot(params, toolContext), {
         task_id: params.taskId,
         review_run_ref: params.reviewRunRef,
@@ -453,7 +456,7 @@ function cliErrorMessage(stderr) {
 
 function requireReviewRuntime(runtime) {
   if (!runtime?.models || !runtime?.model || !runtime?.thinkingLevel) {
-    throw new Error("ts_review requires the native Pi model runtime");
+    throw new Error("review.run requires the native Pi model runtime");
   }
 }
 

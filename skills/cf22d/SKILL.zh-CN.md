@@ -14,13 +14,13 @@ role、输出 role、解析合同和任务验证测试后，它才是 TSPi Backe
 执行前读取 Artifact catalog 和实时 compute catalog：
 
 ```text
-ts_state mode=artifacts
-ts_state mode=capabilities capabilityKind=compute
+research.read mode=artifacts
+research.read mode=capabilities capabilityKind=compute
 ```
 
 只使用 catalog 返回的准确 capability 和参数 schema。若没有注册 PySCF/CF22D capability，
 只能给出方法建议和 doctor 计划。不得虚构 capability 名称、为不可用 descriptor 构造
-`ts_calc` 请求、通过任意 shell 调用 `pyscf-runner`，或把本地 smoke test 说成 TSPi 计算。
+`compute.run` 请求、通过任意 shell 调用 `pyscf-runner`，或把本地 smoke test 说成 TSPi 计算。
 
 当前 adapter 在实时 catalog 中出现时使用版本 1 的 ID：`pyscf.sp`、`pyscf.opt`、
 `pyscf.ts`、`pyscf.freq`、`pyscf.thermo`、`pyscf.opt_freq` 和 `pyscf.ts_freq`。这只是

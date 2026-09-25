@@ -48,5 +48,5 @@ are rejected because they can change stereochemistry.
 
 `species.identity` compares SpeciesRecords by isomeric graph, isotope, charge
 and multiplicity. It does not resolve unspecified stereochemistry or classify
-conformers. For geometric identity, use existing `ts_compare` with suitable
+conformers. For geometric identity, use existing `artifact.compare` with suitable
 mapping/stereochemical checks and physical tolerances.

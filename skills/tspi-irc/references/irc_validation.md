@@ -19,7 +19,7 @@ endpoint when its gradient or geometry does not justify direct basin assignment.
 Compare each endpoint with an explicitly selected reactant or product Artifact.
 Verify element counts, atom mapping, charge, multiplicity or electronic state,
 forming and breaking bonds, key internal coordinates, fragment pairing,
-conformation, and stereochemistry. Use `ts_compare` when a deterministic mapped
+conformation, and stereochemistry. Use `artifact.compare` when a deterministic mapped
 comparison is appropriate. Do not infer endpoint identity from filenames or
 path direction alone.
 

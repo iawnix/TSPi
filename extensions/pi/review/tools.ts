@@ -5,8 +5,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PiRuntime, requireWorkspaceRoot } from "../runtime.ts";
 import {
+  createPublicToolAliases,
   createPublicToolContracts,
-  PUBLIC_TOOL_NAMES,
+  PUBLIC_TOOL_CANONICAL_NAMES,
   type ReplyToolParams,
   type ReviewToolParams,
 } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
@@ -56,14 +57,20 @@ const { toolText } = require("../shared/tool-runtime.cjs");
 const ROOT_DISPOSITIONS = ["accepted", "partially_accepted", "rejected", "deferred"] as const;
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
 
+function registerReviewTool(pi: ExtensionAPI, tool: any) {
+  for (const alias of createPublicToolAliases([tool])) {
+    pi.registerTool(wrapToolForPi(alias));
+  }
+}
+
 export function registerReviewTools(pi: ExtensionAPI) {
   const runtime = new PiRuntime(pi);
   registerToolEnvelopeErrorHook(pi);
-  pi.registerTool(wrapToolForPi({
+  registerReviewTool(pi, {
     ...TOOL_CONTRACTS.review,
     promptGuidelines: [
       "Use at ambiguity, failure analysis, branch selection, or final audit; advice is not evidence or a Claim conclusion.",
-      `After success, call ${PUBLIC_TOOL_NAMES.reply} before scientific mutation.`,
+      `After success, call ${PUBLIC_TOOL_CANONICAL_NAMES.reply} before scientific mutation.`,
       "Select one Claim; optional artifact IDs must already be cited in its derived graph. Paths are forbidden.",
     ],
     renderShell: "self",
@@ -146,7 +153,7 @@ export function registerReviewTools(pi: ExtensionAPI) {
           required: true,
           task_id: packet.task_id,
           review_run_ref: runRef,
-          tool: PUBLIC_TOOL_NAMES.reply,
+          tool: PUBLIC_TOOL_CANONICAL_NAMES.reply,
           allowed_dispositions: ROOT_DISPOSITIONS,
         };
         return toolText(
@@ -194,15 +201,15 @@ export function registerReviewTools(pi: ExtensionAPI) {
         throw error;
       }
     },
-  }));
+  });
 
-  pi.registerTool(wrapToolForPi({
+  registerReviewTool(pi, {
     ...TOOL_CONTRACTS.reply,
     renderCall: (args: ReplyToolParams, theme: PiToolTheme) => renderTsNativeCall("ts_reply", args as unknown as Record<string, unknown>, theme),
     renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<ReplyToolParams>) => renderTsNativeResult("ts_reply", result, options, theme, context.isError),
     promptSnippet: "Record a TS Review disposition",
     promptGuidelines: [
-      `Call after every successful ${PUBLIC_TOOL_NAMES.review} and before scientific mutation.`,
+      `Call after every successful ${PUBLIC_TOOL_CANONICAL_NAMES.review} and before scientific mutation.`,
       "State what is adopted, rejected, or deferred and why; this response is not evidence.",
     ],
     async execute(_toolCallId: PiToolId, params: ReplyToolParams, _signal: PiToolSignal, _onUpdate: PiToolUpdate, ctx: PiToolContext) {
@@ -217,5 +224,5 @@ export function registerReviewTools(pi: ExtensionAPI) {
       pi.appendEntry("ts-review-root-disposition", disposition);
       return toolText(JSON.stringify(disposition, null, 2), { disposition });
     },
-  }));
+  });
 }

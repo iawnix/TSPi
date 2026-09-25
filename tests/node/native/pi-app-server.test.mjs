@@ -681,9 +681,10 @@ test("detached TSPi Host cold recovery settles a non-replayable effect without e
         model: { provider: "anthropic", modelId: "claude-opus-4-8" },
         thinkingLevel: "off",
         activeToolNames: [
-          "read", "sys_prompt", "write", "bash", "ts_state", "ts_change", "ts_workflow",
-          "ts_environment", "ts_calc", "ts_review", "ts_reply", "ts_seed", "ts_compare",
-          "ts_analyze", "ts_dispatch", "ts_import", "ts_render", "ts_report", "ts_notify",
+          "read", "system.prompt", "write", "bash", "research.read", "research.change", "research.continuation",
+          "research.strategy", "research.interpretation", "research.checkpoint", "compute.environment", "review.run",
+          "compute.run", "review.respond", "artifact.seed", "artifact.compare", "analysis.run", "execution.dispatch",
+          "artifact.import", "artifact.render", "report.build",
         ],
       };
       const assistant = {

@@ -5,7 +5,7 @@ storage. Keep those responsibilities separate.
 
 ## Before A Change
 
-Read the smallest useful `ts_state` result:
+Read the smallest useful `research.read` result:
 
 ```text
 summary -> map -> detail/locate -> artifacts/capabilities/runs
@@ -18,7 +18,7 @@ retrying the same calculation remains an Attempt under the same Node.
 
 ## During A Change
 
-Submit one `ts_change` request with a concrete rationale and ordered operations.
+Submit one `research.change` request with a concrete rationale and ordered operations.
 Use `create_finding` for verified Node outputs and choose `kind=fact` or
 `kind=issue`. Keep a Finding's statement narrow and cite `source_refs` such as
 Artifact IDs. Use `create_gate` only for a criterion that needs to be visible
@@ -45,7 +45,7 @@ Node, Findings, Gates, Artifacts, and Attempts as history.
 
 At the end of every turn, read the bounded `research.context` or
 `research.liveness` view and make the lifecycle disposition explicit. Record a
-concrete next action with `ts_workflow` (`set_required`), leave a submitted
+concrete next action with `research.continuation` (`set_required`), leave a submitted
 Attempt as `waiting_external`, record `deferred` or `blocked` with its reason,
 or close the relevant map scope after interpreting the evidence. Parsed or
 completed operational records do not close a scientific question by
@@ -58,5 +58,5 @@ wake-up.
 ## Review
 
 Review is advisory and never writes the map. Give Review only the Claim and
-Artifacts it needs, answer it through `ts_reply`, and record Root's accepted,
+Artifacts it needs, answer it through `review.respond`, and record Root's accepted,
 rejected, or qualified interpretation with ordinary map operations.

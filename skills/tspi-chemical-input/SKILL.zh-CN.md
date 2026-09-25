@@ -15,11 +15,11 @@ description: 在确定性 TSPi 分析或计算前，把自然语言化学名称�
 
 1. 保留用户原文，将每个反应物和产物标记为名称、SMILES、XYZ/artifact 或
    未解析描述。反应物和产物使用同一规则。
-2. 对名称通过 `ts_analyze` 调用 `chemical.name.resolve@1`，保留解析器
+2. 对名称通过 `analysis.run` 调用 `chemical.name.resolve@1`，保留解析器
    provenance、候选、诊断和状态。
 3. 把 `draft` 候选（包括 LLM 提出的 SMILES）、未解析名称、多个候选和未指定
    立体中心记录为输入问题，提出聚焦的澄清问题或请求 SMILES/结构 artifact。
-4. 只有候选被明确确认或由确定性解析器唯一解析后，才能传给 `ts_seed`。
+4. 只有候选被明确确认或由确定性解析器唯一解析后，才能传给 `artifact.seed`。
    seed 只是初始几何，不是驻点，也不能证明连接关系。
 5. 用确认后的物种执行 `reaction.parse`，检查守恒、映射候选和键变化；必须显式
    选择 atom mapping，不能把唯一图编辑当作机理证明。

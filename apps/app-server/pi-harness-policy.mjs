@@ -25,7 +25,7 @@ export function createPackageSourceReadGuard({
       block: {
         reason: [
           "TS package implementation and tests are not usage documentation in the installed research runtime.",
-          "Use the registered tool schema, ts_state mode=artifacts or mode=capabilities,",
+          "Use the registered tool schema, research.read mode=artifacts or mode=capabilities,",
           "or the public skills/ references. Diagnose or change package implementation",
           "from the separate authored checkout, then build and install a validated release.",
         ].join(" "),

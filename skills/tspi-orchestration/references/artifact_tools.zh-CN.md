@@ -63,7 +63,7 @@ Host 绑定两个输入 ID 与摘要，并在 `nodes/<node_id>/outputs/analysis/
 JSON Artifact。文档包含展开后的参数、verdict、不确定性、RMSD/内坐标/立体化学指标、
 诊断与来源。
 
-该结果属于运行记录。任何用于 Claim 或 Node 结果的值，都要通过 `ts_change` 注册为语义
+该结果属于运行记录。任何用于 Claim 或 Node 结果的值，都要通过 `research.change` 注册为语义
 Finding，并引用已核验的分析 Artifact。
 
 ## 导入已有输入
@@ -92,7 +92,7 @@ Node 本地目录由 Host 管理：
 相同名称和内容的重放是幂等的；相同名称绝不会覆盖不同内容。activity journal 只保存摘要
 和 metadata，不保存输入正文。QST2/QST3 导入还要求每个结构使用相同的声明电荷、多重度、
 原子数与原子顺序。拒绝 multi-job `--Link1--` 输入与 Link 0 文件系统路径。Compute 前
-使用 `ts_state mode=artifacts` 解析结果。
+使用 `research.read mode=artifacts` 解析结果。
 
 ## Activity 与来源
 

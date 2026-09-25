@@ -2,7 +2,7 @@
 
 `ts-compute-monitor/1` is the durable control-plane contract between a
 workspace and the Host Monitor worker. It is separate from
-`ResearchMap`, `ts_calc`, and the session-control transport.
+`ResearchMap`, `compute.run`, and the session-control transport.
 
 The registration binds one `intent_id` and its immutable intent digest to a
 workspace Node and, optionally, a Root session. A monitor tick reads the

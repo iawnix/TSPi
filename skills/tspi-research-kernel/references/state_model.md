@@ -51,10 +51,10 @@ research.validate     validate the map
 research.operations   current ChangeSet operation catalog
 ```
 
-The `ts_state` tool exposes the corresponding bounded modes (`map`, `summary`,
+The `research.read` tool exposes the corresponding bounded modes (`map`, `summary`,
 `detail`, `locate`, `validate`, `operations`) plus compute modes (`artifacts`,
 `capabilities`, `runs`). Use `/research` for interactive reads. All mutations
-use `research.change`, exposed as `ts_change` and implemented by the Kernel.
+use `research.change`, implemented by the Kernel.
 
 Do not edit `research_map.json` directly. A ChangeSet is validated against an
 isolated copy, increments `revision` once, writes atomically, and appends a

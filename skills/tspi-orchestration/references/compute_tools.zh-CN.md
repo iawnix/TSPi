@@ -1,6 +1,6 @@
 # Compute 子 Agent 与类型化动作
 
-`ts_calc` 委派一个有边界的运行生命周期。Root 选择化学问题、方法、ResearchNode、输入、
+`compute.run` 委派一个有边界的运行生命周期。Root 选择化学问题、方法、ResearchNode、输入、
 参数和执行目标。Host 解析不可变 intent，并只向隔离子 Agent 暴露预绑定、无参数的工具。
 
 公共生命周期是封闭的：
@@ -30,8 +30,8 @@ cancel   cancel
 读取：
 
 ```text
-ts_state mode=artifacts
-ts_state mode=capabilities capabilityKind=compute
+research.read mode=artifacts
+research.read mode=capabilities capabilityKind=compute
 ```
 
 Artifact catalog 提供逻辑 `art_...` ID、路径、SHA-256、所有者和兼容 role。Capability
@@ -39,7 +39,7 @@ catalog 提供 capability ID/version、参数形状、输入/输出 role 与解�
 软件或环境处于健康状态。
 
 若新 workspace 没有合适输入，先启动一个未关闭的 ResearchNode。对单个连通 SMILES
-使用 `ts_seed`，对有边界的 Gaussian、XYZ 或 xTB control 文本使用 `ts_import`。Host
+使用 `artifact.seed`，对有边界的 Gaussian、XYZ 或 xTB control 文本使用 `artifact.import`。Host
 返回逻辑 ID；调用方不得自行创建 `art_*` 值或 workspace 路径。
 
 ## Launch
@@ -124,7 +124,7 @@ Finalize 收集允许的输出集，并解析一个已收集 Artifact：
 历史。解析器事实属于运行输出。`program_status` 表示可执行程序是否到达正常终点；
 `task_validation` 单独表示请求的 capability 是否产生必需输出与收敛证据。因此正常终止的
 程序仍可能得到 `task_validation.status=incomplete`。Root 必须核验主要 Artifact，之后才
-能通过 `ts_change` 记录各项语义 Finding。
+能通过 `research.change` 记录各项语义 Finding。
 
 ## Cancel
 

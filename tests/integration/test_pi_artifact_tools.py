@@ -87,7 +87,7 @@ const pi={{
   }},
 }};
 install(pi);
-await tools.ts_import.execute("call-import",{{
+await tools["artifact.import"].execute("call-import",{{
   operation:"import",nodeId:{json.dumps(refs['node_id'])},format:"xyz_structure",
   inputName:"h2-reference.xyz",
   content:{json.dumps(content)},charge:0,multiplicity:1,
@@ -138,7 +138,7 @@ const pi={{
   }},
 }};
 install(pi);
-await tools.ts_seed.execute("call-seed",{{
+await tools["artifact.seed"].execute("call-seed",{{
   operation:"generate",nodeId:{json.dumps(refs['node_id'])},smiles:{json.dumps(smiles)},
   charge:0,multiplicity:1,optimization:"uff",
 }},undefined,(value)=>updates.push(value),{{cwd:{json.dumps(str(workspace))}}});
@@ -198,12 +198,12 @@ const pi={{
   }},
 }};
 install(pi);
-await tools.ts_compare.execute("call-compare",{{
+await tools["artifact.compare"].execute("call-compare",{{
   operation:"compare",nodeId:{json.dumps(refs['node_id'])},
   referenceArtifactId:{json.dumps(reference_id)},targetArtifactId:{json.dumps(target_id)},
   parameters:{{reactionCenterAtoms:[0,1],keyBonds:[[0,1]]}},
 }},undefined,(value)=>updates.push(value),{{cwd:{json.dumps(str(workspace))}}});
-const failedCompare=await tools.ts_compare.execute("call-invalid-compare",{{
+const failedCompare=await tools["artifact.compare"].execute("call-invalid-compare",{{
   operation:"compare",nodeId:{json.dumps(refs['node_id'])},
   referenceArtifactId:{json.dumps(reference_id)},targetArtifactId:{json.dumps(target_id)},
   parameters:{{rmsd_threshold:0.5}},
@@ -262,7 +262,7 @@ const pi={{
   }},
 }};
 install(pi);
-await tools.ts_analyze.execute("call-mapping",{{
+await tools["analysis.run"].execute("call-mapping",{{
   operation:"run",nodeId:{json.dumps(refs['node_id'])},
   capability:"reaction.mapping.validate",capabilityVersion:"1",
   inputArtifacts:{{
@@ -390,7 +390,7 @@ const pi={{
   }},
 }};
 install(pi);
-const failed=await tools.ts_render.execute("call-render",{{
+const failed=await tools["artifact.render"].execute("call-render",{{
   operation:"compare",nodeId:{json.dumps(refs['node_id'])},
   inputArtifactIds:{json.dumps([item['artifact_id'] for item in artifacts])},
   outputName:"failed-comparison.png",

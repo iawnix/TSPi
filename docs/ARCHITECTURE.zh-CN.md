@@ -18,7 +18,7 @@ TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装�
   workspace/session/research，也不解析 Host RPC。
 - `packages/ts-agent-kernel/ts_agent/` 管理 `ResearchMap`、引用完整性、验证和事务。
   计算控制面负责本地子进程的持久化生命周期，并通过配置好的
-  `ts_calc` 对 local 和 remote 使用同一套计算生命周期；统一的
+  `compute.run` 对 local 和 remote 使用同一套计算生命周期；统一的
   `compute.environments` 查询同时返回两类环境。渲染、报告和邮件仍由
   Skill/Plugin 工具提供。
 - `extensions/pi/` 包含两层面向 Pi 的集成。legacy research、compute、review、artifact
@@ -55,9 +55,22 @@ transactions.jsonl        # Kernel 变更历史
 派生视图。它包含 `ResearchPhase`、`ResearchClaim`、`ResearchNode`、`Finding` 和
 `Gate`，并维护它们之间的依赖、产出和目标引用。
 
-Attempt 和 Artifact 不属于 ResearchMap 的科学事实集合，而是由 Compute/Workspace
-Runtime 管理的运行记录和证据载体。Node 只保存它们的稳定引用；Kernel 校验引用和
-证据关系，但不把调度状态或文件内容直接解释成 Finding 或 Claim 结论。
+Attempt 和 Artifact 不属于 ResearchMap 的科学事实集合。它们由 Compute/Workspace
+Runtime 产生，但其稳定身份、digest、来源、lineage 和证据引用由 Research Kernel 的
+Evidence Registry 管理。原始文件仍保存在 workspace 或对象存储中；Kernel 只保存
+Artifact Manifest 和 Evidence Link，不把调度状态或文件内容直接解释成 Finding 或
+Claim 结论。
+
+```text
+Compute Runtime -> Attempt -> Artifact Manifest
+                              |
+                              +-> Evidence Link -> Claim/Finding/Gate
+```
+
+Artifact 不是 Finding。Artifact 是可验证的数据对象，Evidence Link 表示它与科学对象
+之间的 supports、contradicts、qualifies 或 derived_from 关系，Finding 则是 Root Agent
+基于这些证据提交的科学陈述。大型日志、轨迹和图像不进入 ResearchMap 或模型上下文；
+Agent 通过有界 manifest、摘要和按需 excerpt 读取它们。
 
 ### ResearchMap 与 Research Kernel
 
@@ -125,7 +138,7 @@ TRIGGER -> ORIENT(context) -> PLAN -> PREPARE -> EXECUTE
 如果 active Node 没有上述 disposition，Kernel 返回 `decision_needed`。Harness 只追加有
 界 follow-up，要求 Agent 重新读取 bounded context 并登记 disposition；Harness 不选择
 科学方法、不创建 Finding，也不把 `next_run` 当成新的研究指令。`research.liveness` 是
-Monitor、Host 和 Agent 共用的生命周期诊断，`research.continuation`/`ts_workflow` 是
+Monitor、Host 和 Agent 共用的生命周期诊断，`research.liveness`/`research.continuation` 是
 Agent 已作出的下一步决定的持久化记录。
 处于 `prepared` 的 Attempt 只有本地、提交前的绑定，因此仍是 Agent 的决策点，
 而不是等待外部事件。只有已提交、排队中、运行中、完成但尚未解析或状态未知的
@@ -165,15 +178,15 @@ Claim。Gate 记录结果，但不会自动修改 Node 或 Claim；解释和状�
 
 ## 独立科学能力与节点管理
 
-`ts_analyze` 通过按需能力目录派发 22 项版本化独立分析能力；对外目录由
+`analysis.run` 通过按需能力目录派发 22 项版本化独立分析能力；对外目录由
 `packages/ts-agent-kernel/ts_agent/compute/analysis.py` 组装，领域描述由
 `packages/ts-agent-kernel/ts_agent/analysis/catalog.py` 定义，领域实现位于
 `packages/ts-agent-kernel/ts_agent/analysis/`。结果绑定 Node、输入 digest、生成文件
-和候选事实；选定事实通过已有 `ts_change`
+和候选事实；选定事实通过已有 `research.change`
 入口重算校验后登记。能力不选择下一科学步骤，不接受 Claim。化学网络使用带计量
 的超边并允许有环，独立于研究 Node DAG。
 
-`ts_dispatch` 的暂停/恢复回执位于操作层，不改变 Node 科学状态。共享锁协调暂停
+`execution.dispatch` 的暂停/恢复回执位于操作层，不改变 Node 科学状态。共享锁协调暂停
 与分析、提交 guard 的边界；在途作业仍可查看、收集和取消。报告和 TS Web 消费
 规范 ResearchMap 数据。详见 [ADR 0002](adr/0002-independent-scientific-capabilities.md) 和
 [能力运维文档](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。
@@ -242,7 +255,7 @@ cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
 ## 其他契约
 
 ChangeSet 的操作定义位于 `ResearchKernel` 使用的 ResearchMap operation catalog；
-`ts_calc` 对 local/remote 使用相同的四个公开操作：
+`compute.run` 对 local/remote 使用相同的四个公开操作：
 
 ```text
 launch   -> prepare, submit
@@ -289,14 +302,14 @@ Compute Kernel 的 durable status：`completed` 只表示程序或 scheduler 已
 事件 delivery 默认通过绑定 session 的 `next_run` 排队唤醒 Root，不打断当前推理。稳定
 request id 为 `monitor:<event_id>`；session 不存在、workspace 不匹配或 App Server
 重启时 delivery 保持 pending，可由后续 worker 恢复。Root 被唤醒后必须重新读取
-`ts_state`，再显式执行 `ts_calc inspect`，并自行决定是否 `finalize` 或通过 `ts_change`
+`research.read`，再显式执行 `compute.run inspect`，并自行决定是否 `finalize` 或通过 `research.change`
 写入 Finding/Gate/Node 状态。Monitor 不自动 finalize、不修改 ResearchMap、不做科学判断。
 
 研究推进的 liveness 由 Kernel 校验的 continuation record 单独表示，不依赖 Monitor
-是否还有新的状态摘要。`ts_workflow` 可以查询记录，或使用 canonical 的
+是否还有新的状态摘要。`research.continuation` 可以查询记录，或使用 canonical 的
 `set`/`resolve` 操作，为 Node、Claim、Gate 记录 `required`、`deferred`、`blocked`、
 `completed` disposition；旧的 `set_*` 拼法只作为兼容 alias。ChangeSet 的审计字段属于
-`ts_change`，不混入生命周期请求。`required` 只记录 Root 已经选择的下一动作，不执行
+`research.change`，不混入生命周期请求。`required` 只记录 Root 已经选择的下一动作，不执行
 动作，也不替 Root 选择科学结论。每次 run boundary，Host 最多为尚未解决的 required
 record 追加三次 follow-up；Root 必须执行动作，或明确把记录置为 deferred、blocked、
 completed。这样 parsed 之后即使没有新的 Monitor 事件，研究也能继续；阻塞或延期的研究
@@ -311,6 +324,6 @@ Host 的 `monitor/event` 通知只是实时投影，不是持久化重放日志�
 ```text
 Workspace records <-> App Server Monitor worker -> Session next_run -> Root Agent
        ^                     |                         |
-       |                     +-- user notification     +-- ts_state / ts_calc / ts_change
+       |                     +-- user notification     +-- research.read / compute.run / research.change
        +-- Compute/remote durable status
 ```

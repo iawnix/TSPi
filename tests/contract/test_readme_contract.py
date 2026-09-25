@@ -166,6 +166,35 @@ def test_normal_runtime_docs_expose_only_current_contracts() -> None:
             assert term not in text, (path, term)
 
 
+def test_normal_runtime_docs_use_canonical_tool_names() -> None:
+    focused_files = [
+        path
+        for root in FOCUSED_SKILLS.values()
+        for path in (root / "SKILL.md", root / "SKILL.zh-CN.md", *sorted((root / "references").glob("*.md")))
+    ]
+    paths = [
+        README,
+        README_ZH,
+        ARCHITECTURE,
+        ARCHITECTURE_ZH,
+        INSTALLATION,
+        MAINTAINER,
+        SKILL,
+        SKILL_ROOT / "SKILL.zh-CN.md",
+        *sorted(REFERENCES.glob("*.md")),
+        *focused_files,
+    ]
+    legacy_tool_names = [
+        "ts_state", "ts_change", "ts_workflow", "ts_calc", "ts_environment",
+        "ts_review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze",
+        "ts_dispatch", "ts_import", "ts_render", "ts_report", "ts_notify",
+    ]
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        for name in legacy_tool_names:
+            assert name not in text, (path, name)
+
+
 def test_workspace_docs_match_bootstrap_canonical_file_names() -> None:
     architecture = ARCHITECTURE.read_text(encoding="utf-8")
     contract = (REFERENCES / "workspace_contract.md").read_text(encoding="utf-8")

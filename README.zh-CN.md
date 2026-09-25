@@ -68,9 +68,9 @@ TSPi Link Relay 建立出站 WSS；Relay 只负责设备授权与不透明字节
 ./TSPi --check-remote
 ```
 
-`ts_calc` 是 local 和 remote 共用的唯一计算生命周期入口。每个 Compute
+`compute.run` 是 local 和 remote 共用的唯一计算生命周期入口。每个 Compute
 environment 都有 `kind = "local"` 或 `"remote"` 以及对应的 `backends` 表；只有
-remote environment 额外包含 SSH/Torque 字段。`/compute` 和 `ts_environment` 工具
+remote environment 额外包含 SSH/Torque 字段。`/compute` 和 `compute.environment` 工具
 查询完整的 local/remote environment；远端就绪性检查属于已绑定计算的 preflight，
 不再单独形成一套 remote 命令。
 

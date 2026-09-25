@@ -1,7 +1,7 @@
 # Report Contract
 
 Build the report from the current `ResearchMap` and registered logical
-Artifacts with `ts_report`. The report is a package of the map revision and
+Artifacts with `report.build`. The report is a package of the map revision and
 the selected operational records; it is not a new state model.
 
 ## Required Content

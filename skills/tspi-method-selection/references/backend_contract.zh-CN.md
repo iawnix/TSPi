@@ -3,7 +3,7 @@
 Backend 是确定性适配器。它描述支持的程序任务、校验参数、准备不可变输入/脚本、声明
 预期 Artifact，并解析本地输出。Root 选择方法并解释已核验结果。
 
-使用 `ts_state mode=capabilities capabilityKind=compute` 获取当前机器可读目录；公共
+使用 `research.read mode=capabilities capabilityKind=compute` 获取当前机器可读目录；公共
 调用见 [compute_tools.zh-CN.md](../../tspi-orchestration/references/compute_tools.zh-CN.md)。
 
 ## 支持的任务
@@ -16,7 +16,7 @@ Backend 是确定性适配器。它描述支持的程序任务、校验参数、
 QBICS DMECP 当前不是已注册 capability。Backend 只有具备确定性解析合同与任务验证测试后
 才成为公共能力；只有输入准备器并不充分。
 
-使用目录构造 `ts_calc` 请求。选择 `executionTarget.kind = "local"` 或 `"remote"`；
+使用目录构造 `compute.run` 请求。选择 `executionTarget.kind = "local"` 或 `"remote"`；
 安装共享 `compute.toml` 后，还要选择相应环境名。两者使用相同生命周期和结果合同。远端
 就绪状态在计算 preflight 中检查，不是独立计算 API。
 
@@ -45,6 +45,6 @@ Backend 绑定。
 
 ## 记录科学结果
 
-Root 对照主要 Artifact 核验解析输出，拆分 Finding statement，并应用 `ts_change`。机理、
+Root 对照主要 Artifact 核验解析输出，拆分 Finding statement，并应用 `research.change`。机理、
 端点身份、振动模式归属和 Claim 状态由相关方法 Skill 评估；需要可见 verdict 时使用 Gate
 criteria。

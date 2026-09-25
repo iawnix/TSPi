@@ -38,6 +38,7 @@ from ts_agent.backends.gaussian import parse_log, route_settings
 from ts_agent.compute.task_validation import validate_parsed_task
 from ts_agent.workspace.identity import workspace_id
 from ts_agent.workspace.operational import _operational_files
+from ts_agent.research import ResearchKernel
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
@@ -650,6 +651,82 @@ def test_gaussian_parse_is_attempt_scoped_idempotent_and_scientifically_read_onl
     foreign.write_text(_gaussian_log(), encoding="utf-8")
     with pytest.raises(ComputeContractError, match=f"nodes/{node_id}/attempts/{created['intent_id']}/outputs"):
         parse_calculation(workspace, created["intent_id"], "inputs/foreign.log")
+
+
+def test_gaussian_parse_result_manifest_binds_registered_artifacts_and_replays(
+    tmp_path: Path,
+) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    created = _create(workspace, node_id)
+    prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
+    artifact_ref = f"nodes/{node_id}/attempts/{created['intent_id']}/outputs/gaussian.out"
+    log = workspace / artifact_ref
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(_gaussian_log(), encoding="utf-8")
+
+    result = parse_calculation(workspace, created["intent_id"], artifact_ref)
+    manifest = result["artifact_manifest"]
+    assert manifest
+    evidence = ResearchKernel(workspace).evidence_records()
+    assert [row["id"] for row in evidence["records"]["attempt"]] == [created["intent_id"]]
+    assert {row["id"] for row in evidence["records"]["artifact"]} == {
+        item["artifact_id"] for item in manifest
+    }
+    assert len({item["role"] for item in manifest}) == len(manifest)
+    catalog = {item["path"]: item for item in list_calculation_artifacts(workspace)["artifacts"]}
+    for item in manifest:
+        assert item["artifact_id"] == catalog[item["path"]]["artifact_id"]
+        assert item["sha256"] == catalog[item["path"]]["sha256"]
+        assert item["size_bytes"] == catalog[item["path"]]["size_bytes"]
+
+    assert parse_calculation(workspace, created["intent_id"], artifact_ref) == result
+
+
+def test_gaussian_parse_result_manifest_rejects_tampered_file_on_replay(
+    tmp_path: Path,
+) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    created = _create(workspace, node_id)
+    prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
+    artifact_ref = f"nodes/{node_id}/attempts/{created['intent_id']}/outputs/gaussian.out"
+    log = workspace / artifact_ref
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(_gaussian_log(), encoding="utf-8")
+    result = parse_calculation(workspace, created["intent_id"], artifact_ref)
+
+    summary = workspace / f"nodes/{node_id}/attempts/{created['intent_id']}/outputs/parsed/gaussian_summary.json"
+    summary.write_text(summary.read_text(encoding="utf-8") + " \n", encoding="utf-8")
+    assert result["artifact_manifest"]
+    with pytest.raises(ComputeContractError, match="artifact_manifest"):
+        parse_calculation(workspace, created["intent_id"], artifact_ref)
+
+
+def test_calculation_result_manifest_rejects_duplicate_roles(tmp_path: Path) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    created = _create(workspace, node_id)
+    prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
+    artifact_ref = f"nodes/{node_id}/attempts/{created['intent_id']}/outputs/gaussian.out"
+    log = workspace / artifact_ref
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(_gaussian_log(), encoding="utf-8")
+    parse_calculation(workspace, created["intent_id"], artifact_ref)
+
+    result_path = (
+        workspace
+        / "nodes"
+        / node_id
+        / "attempts"
+        / created["intent_id"]
+        / "outputs"
+        / "calculation_result.json"
+    )
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    assert len(result["artifact_manifest"]) > 1
+    result["artifact_manifest"][1]["role"] = result["artifact_manifest"][0]["role"]
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+
+    with pytest.raises(ComputeContractError, match="duplicate role"):
+        parse_calculation(workspace, created["intent_id"], artifact_ref)
 
 
 @pytest.mark.parametrize(

@@ -69,10 +69,10 @@ Local and remote environments live in that same file. Verify a remote environmen
 ./TSPi --check-remote
 ```
 
-`ts_calc` is the single calculation lifecycle for both local and remote
+`compute.run` is the single calculation lifecycle for both local and remote
 targets. A compute environment contains a `kind` (`local` or `remote`) and its
 `backends` table; only remote environments add SSH/Torque fields. `/compute` and the
-`ts_environment` tool inspect the complete environment catalog; readiness checks
+`compute.environment` tool inspect the complete environment catalog; readiness checks
 run as part of the bound calculation preflight.
 
 The skills cover Gaussian, xTB, CREST, ASE-NEB, structure validation,

@@ -767,6 +767,7 @@ def collect_calculation(
         state="collected",
         program_status=program_status,
         artifact_refs=artifact_refs,
+        artifact_manifest=_artifact_manifest_for_refs(workspace, intent, artifact_refs),
         provenance={
             "collected_at": now_iso(),
             "environment": policy["environment"],
@@ -1021,6 +1022,7 @@ def _collect_local_calculation(
         state="collected",
         program_status=program_status,
         artifact_refs=artifact_refs,
+        artifact_manifest=_artifact_manifest_for_refs(workspace, intent, artifact_refs),
         provenance={
             "runner": "local",
             "run_ref": _local_run_ref(intent),
@@ -1272,6 +1274,7 @@ def parse_calculation(
         if previous.get("state") == "parsed":
             same_inputs = provenance.get("parser_inputs") == parser_inputs
             if same_inputs:
+                _validate_artifact_manifest_binding(workspace, intent, previous)
                 return previous
             raise ComputeContractError(
                 "parse refuses to overwrite a result from different source content; use a new intent_id"
@@ -1372,6 +1375,9 @@ def parse_calculation(
             program_status=program_status,
             exit_status=(previous.get("exit_status") if previous else None),
             artifact_refs=[*raw_refs, *parsed_refs],
+            artifact_manifest=_artifact_manifest_for_refs(
+                workspace, intent, [*raw_refs, *parsed_refs]
+            ),
             parser_facts=summary,
             task_validation=task_validation,
             error_class=error_class,
@@ -2808,6 +2814,95 @@ def _validate_bound_result(intent: dict[str, Any], result: dict[str, Any], label
     _validate_result_binding(intent, result, label=label)
 
 
+def _artifact_manifest_for_refs(
+    workspace: Path,
+    intent: dict[str, Any],
+    refs: list[str],
+) -> list[dict[str, Any]]:
+    """Materialize immutable catalog bindings for result artifact refs."""
+
+    manifest: list[dict[str, Any]] = []
+    for ref in refs:
+        try:
+            record = resolve_artifact_ref(workspace, ref)
+        except WorkspaceArtifactError as exc:
+            raise ComputeContractError(
+                f"calculation result artifact is not a registered workspace artifact: {ref}"
+            ) from exc
+        manifest.append(
+            {
+                "artifact_id": record["artifact_id"],
+                "path": record["path"],
+                "sha256": record["sha256"],
+                "size_bytes": record["size_bytes"],
+                "role": _artifact_manifest_role(workspace, intent, ref),
+                "owner_node": record["owner_node"],
+                "source_intent_id": record["source_intent_id"],
+            }
+        )
+    return manifest
+
+
+def _artifact_manifest_role(workspace: Path, intent: dict[str, Any], ref: str) -> str:
+    """Derive a deterministic, unique role from an Attempt output path."""
+
+    output_root = (
+        workspace
+        / "nodes"
+        / str(intent["node_id"])
+        / "attempts"
+        / str(intent["intent_id"])
+        / "outputs"
+    )
+    try:
+        suffix = Path(ref).relative_to(output_root).as_posix()
+    except ValueError:
+        suffix = Path(ref).name
+    role = "output." + suffix.replace("/", ".")
+    if len(role) > 128:
+        role = "output." + hashlib.sha256(ref.encode("utf-8")).hexdigest()[:32]
+    return role
+
+
+def _validate_artifact_manifest_binding(
+    workspace: Path,
+    intent: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    """Reject replay when a recorded manifest no longer matches the files."""
+
+    manifest = result.get("artifact_manifest")
+    if manifest is None:
+        # Results written before artifact_manifest/2 remain replay-compatible.
+        return
+    refs = result.get("artifact_refs")
+    if not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs):
+        raise ComputeContractError("calculation result artifact_refs must be strings")
+    expected = _artifact_manifest_for_refs(workspace, intent, refs)
+    fields = (
+        "artifact_id",
+        "path",
+        "sha256",
+        "size_bytes",
+        "role",
+        "owner_node",
+        "source_intent_id",
+    )
+    actual_keys = {
+        tuple(item.get(field) for field in fields)
+        for item in manifest
+        if isinstance(item, dict)
+    }
+    expected_keys = {
+        tuple(item.get(field) for field in fields)
+        for item in expected
+    }
+    if actual_keys != expected_keys:
+        raise ComputeContractError(
+            "calculation result artifact_manifest does not match workspace artifacts"
+        )
+
+
 def _reuse_collected_result(
     workspace: Path,
     intent: dict[str, Any],
@@ -2827,6 +2922,7 @@ def _reuse_collected_result(
         return None
     previous = _read_object(result_path, "calculation result")
     _validate_bound_result(intent, previous, "calculation result")
+    _validate_artifact_manifest_binding(workspace, intent, previous)
     if previous.get("state") != "collected":
         return None
     refs = previous.get("artifact_refs")
@@ -2868,6 +2964,71 @@ def _write_result(workspace: Path, intent: dict[str, Any], result: dict[str, Any
     _require_physical_compute_path(workspace, path, "calculation result")
     path.parent.mkdir(parents=True, exist_ok=True)
     write_json(path, result)
+    _register_parsed_evidence(workspace, intent, result)
+
+
+def _register_parsed_evidence(
+    workspace: Path,
+    intent: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    """Admit parsed Attempt/Artifact metadata without creating science claims."""
+
+    if result.get("state") != "parsed" or not isinstance(result.get("artifact_manifest"), list):
+        return
+    from ts_agent.research import ArtifactManifest, AttemptRecord, ResearchKernel
+
+    manifest = result["artifact_manifest"]
+    parsed_at = (
+        result.get("provenance", {}).get("parsed_at")
+        if isinstance(result.get("provenance"), dict)
+        else None
+    ) or now_iso()
+    artifact_rows = []
+    output_ids = []
+    for item in manifest:
+        if not isinstance(item, dict):
+            raise ComputeContractError("parsed calculation artifact_manifest contains a non-object")
+        artifact_id = item.get("artifact_id")
+        location = item.get("path")
+        if not isinstance(artifact_id, str) or not isinstance(location, str):
+            raise ComputeContractError("parsed calculation artifact_manifest is missing artifact identity")
+        output_ids.append(artifact_id)
+        artifact_rows.append(ArtifactManifest.from_dict({
+            "artifact_id": artifact_id,
+            "owner_node": item.get("owner_node") or intent["node_id"],
+            "kind": "calculation_output",
+            "format": Path(location).suffix.removeprefix(".") or "binary",
+            "path": location,
+            "sha256": item.get("sha256"),
+            "size_bytes": item.get("size_bytes"),
+            "source_intent_id": item.get("source_intent_id") or intent["intent_id"],
+            "role": item.get("role"),
+            "created_at": parsed_at,
+        }))
+    attempt = AttemptRecord(
+        id=str(intent["intent_id"]),
+        node_id=str(intent["node_id"]),
+        capability=str(intent["capability"]),
+        capability_version=str(intent["capability_version"]),
+        state="parsed",
+        environment=(result.get("provenance") or {}).get("environment") if isinstance(result.get("provenance"), dict) else None,
+        output_artifact_ids=output_ids,
+        created_at=parsed_at,
+        updated_at=parsed_at,
+        metadata={
+            "program_status": result.get("program_status"),
+            "error_class": result.get("error_class"),
+            "result_digest": sha256_json(result),
+        },
+    )
+    digest = sha256_json({"intent_id": intent["intent_id"], "result": result})
+    ResearchKernel(workspace).register_evidence(
+        attempts=[attempt],
+        artifacts=artifact_rows,
+        event_id=f"compute:{intent['intent_id']}:{digest.removeprefix('sha256:')[:32]}",
+        request_digest=digest,
+    )
 
 
 def _result(
@@ -2878,6 +3039,7 @@ def _result(
     program_status: str,
     exit_status: int | None = None,
     artifact_refs: list[str] | None = None,
+    artifact_manifest: list[dict[str, Any]] | None = None,
     parser_facts: dict[str, Any] | None = None,
     task_validation: dict[str, Any] | None = None,
     error_class: str | None = None,
@@ -2911,6 +3073,8 @@ def _result(
             **(provenance or {}),
         },
     }
+    if artifact_manifest is not None:
+        result["artifact_manifest"] = artifact_manifest
     if task_validation is not None:
         result["task_validation"] = task_validation
     if control is not None:

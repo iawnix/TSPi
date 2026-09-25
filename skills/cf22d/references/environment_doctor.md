@@ -19,7 +19,7 @@ Python release or native libraries. A successful previous run is not evidence
 that a different environment or capability is ready.
 
 For a remote target, use the installation's read-only environment diagnostic
-(`TSPi --check-remote`). Use `ts_environment` to inspect the configured
+(`TSPi --check-remote`). Use `compute.environment` to inspect the configured
 environment and its Backend bindings; do not substitute an ad-hoc SSH command.
 The existing remote contract checks connection, scheduler, writable remote root,
 queues/nodes, activation, and each registered backend; remote readiness is still
@@ -74,7 +74,7 @@ when reporting why execution was withheld.
 
 The doctor proves runtime readiness only. It does not register a capability,
 choose a method, validate a transition state, or establish a reaction mechanism.
-Descriptor presence in `ts_state mode=capabilities capabilityKind=compute` also
+Descriptor presence in `research.read mode=capabilities capabilityKind=compute` also
 does not prove that the selected local/remote environment is healthy.
 
 When a TSPi adapter has not published exact input/output roles, parser, and

@@ -8,7 +8,7 @@ description: Read, validate, and atomically update the canonical TSPi ResearchMa
 [Chinese version](SKILL.zh-CN.md)
 
 Use this Skill for project research state: status queries, object lookup,
-ResearchMap validation, and atomic changes through `ts_state` and `ts_change`.
+ResearchMap validation, and atomic changes through `research.read` and `research.change`.
 The ResearchMap is the canonical data structure read directly by Root and TS
 Web. Do not create a projection or parallel scientific registry.
 
@@ -18,9 +18,9 @@ objects. `FactFinding` and `IssueFinding` are typed Finding specializations;
 an optional navigation group, not a required lifecycle layer. Node state and
 outcome represent progress independently of Claim status.
 
-Read with the narrowest `ts_state` mode that answers the question. Query
+Read with the narrowest `research.read` mode that answers the question. Query
 `mode=operations` before an unfamiliar write. Submit every mutation as one
-explicit ChangeSet through `ts_change`, using `expectedRevision` when a stale
+explicit ChangeSet through `research.change`, using `expectedRevision` when a stale
 write would be unsafe. Never edit `research_map.json` directly.
 
 The Kernel validates references, indexes, graph acyclicity, states, Gate rules,

@@ -202,7 +202,7 @@ export function continuationFollowUp(status) {
       .join(", ");
     const suffix = refs ? ` (${refs})` : "";
     return {
-      followUp: `Research turn ended with an active scope lacking an explicit disposition${suffix}. Continue the turn: read ts_state with mode=context, inspect any relevant Node/Attempt, record a Claim strategy or Attempt interpretation when needed with ts_workflow, then close with ts_workflow operation=checkpoint (use operation=set_required only for the legacy continuation ledger; deferred, blocked, or completed are explicit dispositions). Do not invent a scientific result and do not end while an active scope has no lifecycle disposition.`,
+      followUp: `Research turn ended with an active scope lacking an explicit disposition${suffix}. Continue the turn: read research.read with mode=context, inspect any relevant Node/Attempt, record a Claim strategy or Attempt interpretation when needed with research.strategy or research.interpretation, then close with research.checkpoint (use research.continuation only for the legacy continuation ledger; deferred, blocked, or completed are explicit dispositions). Do not invent a scientific result and do not end while an active scope has no lifecycle disposition.`,
     };
   }
 
@@ -213,7 +213,7 @@ export function continuationFollowUp(status) {
     .join(", ");
   const suffix = refs ? ` (${refs})` : "";
   return {
-    followUp: `Kernel has ${required.length} required continuation record${required.length === 1 ? "" : "s"}${suffix}. Continue the research turn: first read ts_state with mode=context (or mode=liveness), then read ts_workflow with operation=status, perform the recorded action, and explicitly set its disposition to deferred, blocked, or completed. Do not end while a safe, explicit next step remains.`,
+    followUp: `Kernel has ${required.length} required continuation record${required.length === 1 ? "" : "s"}${suffix}. Continue the research turn: first read research.read with mode=context (or mode=liveness), then read research.continuation with operation=status, perform the recorded action, and explicitly set its disposition to deferred, blocked, or completed. Do not end while a safe, explicit next step remains.`,
   };
 }
 

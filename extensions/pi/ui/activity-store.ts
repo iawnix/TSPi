@@ -1,6 +1,9 @@
 import type { ToolExecutionEndEvent, ToolExecutionStartEvent, ToolExecutionUpdateEvent } from "@earendil-works/pi-coding-agent";
 import type { TsActivityEvent, TsEnvironmentActivity } from "../shared/activity-events.ts";
-import { PUBLIC_TOOL_NAMES } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
+import {
+  PUBLIC_TOOL_CANONICAL_NAMES,
+  PUBLIC_TOOL_NAMES,
+} from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
 import {
   isTsSubagentStatus,
   TS_SUBAGENT_STATUS_SCHEMA,
@@ -17,12 +20,19 @@ export type TsDeterministicKind = "structure" | "analysis" | "artifact" | "rende
 
 const DETERMINISTIC_TOOLS = new Map<string, TsDeterministicKind>([
   [PUBLIC_TOOL_NAMES.seed, "structure"],
+  [PUBLIC_TOOL_CANONICAL_NAMES.seed, "structure"],
   [PUBLIC_TOOL_NAMES.compare, "analysis"],
+  [PUBLIC_TOOL_CANONICAL_NAMES.compare, "analysis"],
   [PUBLIC_TOOL_NAMES.importArtifact, "artifact"],
+  [PUBLIC_TOOL_CANONICAL_NAMES.importArtifact, "artifact"],
   [PUBLIC_TOOL_NAMES.render, "render"],
+  [PUBLIC_TOOL_CANONICAL_NAMES.render, "render"],
   [PUBLIC_TOOL_NAMES.report, "report"],
+  [PUBLIC_TOOL_CANONICAL_NAMES.report, "report"],
   [PUBLIC_TOOL_NAMES.notify, "notify"],
+  [PUBLIC_TOOL_CANONICAL_NAMES.notify, "notify"],
   [PUBLIC_TOOL_NAMES.environment, "environment"],
+  [PUBLIC_TOOL_CANONICAL_NAMES.environment, "environment"],
 ]);
 
 export interface TsSubagentActivity {
@@ -198,7 +208,9 @@ export function activityState(activity: TsActivity): TsSubagentState {
 
 export function isSubagentTool(toolName: string): boolean {
   return toolName === PUBLIC_TOOL_NAMES.review
-    || toolName === PUBLIC_TOOL_NAMES.compute;
+    || toolName === PUBLIC_TOOL_NAMES.compute
+    || toolName === PUBLIC_TOOL_CANONICAL_NAMES.review
+    || toolName === PUBLIC_TOOL_CANONICAL_NAMES.compute;
 }
 export function isTrackedActivityTool(toolName: string): boolean {
   return isSubagentTool(toolName) || DETERMINISTIC_TOOLS.has(toolName);
@@ -214,7 +226,10 @@ function statePriority(state: TsSubagentState): number {
 function fallbackSubagentStatus(event: ToolExecutionStartEvent, now: number): TsSubagentStatus {
   const args = objectValue(event.args);
   const timestampValue = new Date(now).toISOString();
-  const role = event.toolName === PUBLIC_TOOL_NAMES.compute ? "compute" : "review";
+  const role = event.toolName === PUBLIC_TOOL_NAMES.compute
+    || event.toolName === PUBLIC_TOOL_CANONICAL_NAMES.compute
+    ? "compute"
+    : "review";
   const nodeId = stringValue(args.nodeId);
   return {
     schema_version: TS_SUBAGENT_STATUS_SCHEMA,

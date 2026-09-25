@@ -24,18 +24,72 @@ const TOOL_ROWS = [
   ["notify", "ts_notify", "deterministic_external"],
 ];
 
+// Semantic Harness names are the stable interface exposed to Agents. The
+// original ts_* names remain source/metadata aliases for replay and legacy
+// adapters, but are not placed in the active Agent inventory.
+export const PUBLIC_TOOL_CANONICAL_NAMES = Object.freeze({
+  systemPrompt: "system.prompt",
+  state: "research.read",
+  change: "research.change",
+  workflow: "research.continuation",
+  strategy: "research.strategy",
+  interpretation: "research.interpretation",
+  checkpoint: "research.checkpoint",
+  environment: "compute.environment",
+  review: "review.run",
+  compute: "compute.run",
+  reply: "review.respond",
+  seed: "artifact.seed",
+  compare: "artifact.compare",
+  analyze: "analysis.run",
+  dispatch: "execution.dispatch",
+  importArtifact: "artifact.import",
+  render: "artifact.render",
+  report: "report.build",
+  notify: "notify.send",
+});
+
 export const PUBLIC_TOOL_NAMES = Object.freeze(Object.fromEntries(
   TOOL_ROWS.map(([key, name]) => [key, name]),
 ));
 
-export const PUBLIC_TOOL_EXECUTION = Object.freeze(Object.fromEntries(
+export const PUBLIC_TOOL_ALIASES = Object.freeze({
+  ...Object.fromEntries(TOOL_ROWS.map(([key, legacyName]) => [
+    legacyName,
+    Object.freeze({
+      canonicalName: PUBLIC_TOOL_CANONICAL_NAMES[key],
+      deprecated: true,
+      aliasFor: PUBLIC_TOOL_CANONICAL_NAMES[key],
+    }),
+  ])),
+  ...Object.fromEntries(Object.entries(PUBLIC_TOOL_CANONICAL_NAMES).map(([key, canonicalName]) => [
+    canonicalName,
+    Object.freeze({
+      canonicalName,
+      deprecated: false,
+      aliasFor: PUBLIC_TOOL_NAMES[key] || undefined,
+    }),
+  ])),
+});
+
+const TOOL_EXECUTION = Object.fromEntries(
   TOOL_ROWS.map(([, name, execution]) => [name, execution]),
-));
+);
+for (const [key, canonicalName] of Object.entries(PUBLIC_TOOL_CANONICAL_NAMES)) {
+  if (!TOOL_EXECUTION[canonicalName]) {
+    const row = TOOL_ROWS.find(([rowKey]) => rowKey === key);
+    const execution = row?.[2] || (key === "strategy" || key === "interpretation" || key === "checkpoint"
+      ? TOOL_ROWS.find(([rowKey]) => rowKey === "workflow")?.[2]
+      : undefined);
+    if (execution) TOOL_EXECUTION[canonicalName] = execution;
+  }
+}
+export const PUBLIC_TOOL_EXECUTION = Object.freeze(TOOL_EXECUTION);
 
 // Canonical Harness metadata. Tool implementations remain transport adapters;
 // this registry is the shared authority/effect/replay contract used by Hosts,
 // audits, and future transports.
-export const PUBLIC_TOOL_METADATA = Object.freeze({
+const LEGACY_TOOL_METADATA = Object.freeze({
   sys_prompt: Object.freeze({ authority: "host_read", effect: "read", replay: "safe", phase: "orient" }),
   ts_state: Object.freeze({ authority: "kernel_read", effect: "read", replay: "safe", phase: "orient" }),
   ts_change: Object.freeze({ authority: "kernel_write", effect: "research_write", replay: "idempotent", phase: "advance" }),
@@ -54,7 +108,21 @@ export const PUBLIC_TOOL_METADATA = Object.freeze({
   ts_notify: Object.freeze({ authority: "external_side_effect", effect: "external_write", replay: "never", phase: "checkpoint" }),
 });
 
-const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]*$/u;
+// Canonical aliases carry the same lifecycle contract as their legacy source.
+// Keep this registry separate from the four-field execution metadata so old
+// consumers that compare metadata keys remain source compatible.
+const CANONICAL_TOOL_METADATA = Object.fromEntries(
+  Object.entries(PUBLIC_TOOL_CANONICAL_NAMES).map(([key, canonicalName]) => {
+    const legacyName = PUBLIC_TOOL_NAMES[key] || "ts_workflow";
+    return [canonicalName, LEGACY_TOOL_METADATA[legacyName] || LEGACY_TOOL_METADATA.ts_workflow];
+  }),
+);
+export const PUBLIC_TOOL_METADATA = Object.freeze({
+  ...LEGACY_TOOL_METADATA,
+  ...CANONICAL_TOOL_METADATA,
+});
+
+const TOOL_NAME_PATTERN = /^[a-z][a-z0-9]*(?:[._][a-z][a-z0-9_]*)*$/u;
 const METADATA_FIELDS = Object.freeze(["authority", "effect", "replay", "phase"]);
 const METADATA_VALUES = Object.freeze({
   authority: new Set([
@@ -76,6 +144,21 @@ export function validateHarnessToolDefinition(tool, { source = "tool", requireCa
   }
   if (typeof tool.name !== "string" || !TOOL_NAME_PATTERN.test(tool.name)) {
     throw new TypeError(`${source} has an invalid tool name`);
+  }
+  const descriptor = PUBLIC_TOOL_ALIASES[tool.name];
+  // Existing Host fixtures may provide only the four-field lifecycle
+  // metadata.  Enforce alias markers whenever a tool opts into the new
+  // identity fields, while preserving that legacy fixture shape.
+  if (descriptor && ("canonicalName" in tool || "deprecated" in tool || "aliasFor" in tool)) {
+    if (tool.canonicalName !== descriptor.canonicalName) {
+      throw new TypeError(`${source} ${tool.name} has an invalid canonicalName`);
+    }
+    if (tool.deprecated !== descriptor.deprecated) {
+      throw new TypeError(`${source} ${tool.name} has an invalid deprecated marker`);
+    }
+    if (descriptor.aliasFor !== undefined && tool.aliasFor !== descriptor.aliasFor) {
+      throw new TypeError(`${source} ${tool.name} has an invalid aliasFor marker`);
+    }
   }
   if (typeof tool.label !== "string" || !tool.label.trim()) {
     throw new TypeError(`${source} ${tool.name} has no label`);
@@ -215,7 +298,7 @@ export function createPublicToolContracts(Type) {
       executionMode: "sequential",
       promptSnippet: "Apply an auditable ResearchMap ChangeSet",
     }),
-    workflow: contract("workflow", "TS Workflow", "Record a research continuation.", Type.Object({
+    workflow: contract("workflow", "TS Workflow", "Record lifecycle state.", Type.Object({
       // Keep the operation token compact; the Kernel validates the canonical
       // set/resolve/status vocabulary and compatibility aliases at runtime.
       operation: Type.String({ minLength: 1, maxLength: 32, pattern: "^[a-z][a-z0-9_]*$" }),
@@ -291,7 +374,7 @@ export function createPublicToolContracts(Type) {
       parameters: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 8 })),
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential" }),
-    analyze: contract("analyze", "TS Scientific Analysis", "Run a registered local scientific analysis and save a Node-owned artifact.", Type.Object({
+    analyze: contract("analyze", "TS Scientific Analysis", "Run registered analysis and save an artifact.", Type.Object({
       ...analysisProperties(Type),
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential" }),
@@ -335,14 +418,158 @@ export function createPublicToolContracts(Type) {
 function contract(key, label, description, parameters, extra = {}) {
   const metadata = PUBLIC_TOOL_METADATA[PUBLIC_TOOL_NAMES[key]];
   if (!metadata) throw new Error(`missing Harness metadata for ${PUBLIC_TOOL_NAMES[key]}`);
+  const canonicalName = PUBLIC_TOOL_CANONICAL_NAMES[key] || PUBLIC_TOOL_NAMES[key];
   return {
     name: PUBLIC_TOOL_NAMES[key],
+    canonicalName,
+    deprecated: PUBLIC_TOOL_NAMES[key] !== canonicalName,
+    aliasFor: canonicalName,
     label,
     description,
     parameters,
     metadata,
     ...extra,
   };
+}
+
+/**
+ * Clone one executable contract under its semantic canonical name.
+ *
+ * ``mapParams`` is used for the operation-specific research decision aliases;
+ * all other aliases forward parameters and execution context unchanged.
+ */
+export function createPublicToolAlias(tool, canonicalName, { mapParams } = {}) {
+  if (!tool || typeof tool !== "object" || typeof tool.execute !== "function") {
+    throw new TypeError("tool alias requires an executable tool");
+  }
+  const descriptor = PUBLIC_TOOL_ALIASES[canonicalName];
+  if (!descriptor || descriptor.deprecated) {
+    throw new TypeError(`unknown canonical tool alias: ${canonicalName}`);
+  }
+  const source = tool;
+  return {
+    ...source,
+    name: canonicalName,
+    canonicalName,
+    deprecated: false,
+    aliasFor: source.name,
+    parameters: DECISION_ALIAS_SCHEMAS[canonicalName] || source.parameters,
+    metadata: PUBLIC_TOOL_METADATA[canonicalName],
+    execute(toolCallId, params, ...rest) {
+      return source.execute(toolCallId, mapParams ? mapParams(params) : params, ...rest);
+    },
+  };
+}
+
+const SEMANTIC_ALIAS_SOURCES = Object.freeze({
+  "system.prompt": "sys_prompt",
+  "research.read": "ts_state",
+  "research.change": "ts_change",
+  "research.continuation": "ts_workflow",
+  "research.strategy": "ts_workflow",
+  "research.interpretation": "ts_workflow",
+  "research.checkpoint": "ts_workflow",
+  "compute.environment": "ts_environment",
+  "review.run": "ts_review",
+  "compute.run": "ts_calc",
+  "review.respond": "ts_reply",
+  "artifact.seed": "ts_seed",
+  "artifact.compare": "ts_compare",
+  "analysis.run": "ts_analyze",
+  "execution.dispatch": "ts_dispatch",
+  "artifact.import": "ts_import",
+  "artifact.render": "ts_render",
+  "report.build": "ts_report",
+});
+
+// Decision aliases intentionally expose only operation-specific fields. They
+// forward to one workflow implementation without copying the full
+// continuation schema into three additional Agent context slots.
+const DECISION_ALIAS_SCHEMAS = Object.freeze({
+  "research.continuation": Object.freeze({
+    type: "object",
+    properties: {
+      operation: { enum: ["status", "set_required", "set_status", "resolve"] },
+      scope: { enum: ["node", "claim", "gate"] },
+      targetId: { type: "string", minLength: 1, maxLength: 128 },
+      action: { enum: ["inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"] },
+      status: { enum: ["required", "deferred", "blocked", "completed"] },
+      reason: { type: "string", minLength: 1 },
+      requestId: { type: "string", minLength: 1 },
+      continuationId: { type: "string", minLength: 1, maxLength: 128 },
+      root: { type: "string" },
+    },
+    required: ["operation"],
+    additionalProperties: false,
+  }),
+  "research.strategy": Object.freeze({
+    type: "object",
+    properties: {
+      strategyOperation: { enum: ["plan", "review"] },
+      plan: { type: "object", additionalProperties: true, maxProperties: 32 },
+      review: { type: "object", additionalProperties: true, maxProperties: 32 },
+      rationale: { type: "string", minLength: 1, maxLength: 12_000 },
+      basisRefs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
+      expectedRevision: { type: "integer", minimum: 0 },
+      eventId: { type: "string", minLength: 1, maxLength: 256 },
+      root: { type: "string" },
+    },
+    required: ["strategyOperation"],
+    additionalProperties: false,
+  }),
+  "research.interpretation": Object.freeze({
+    type: "object",
+    properties: {
+      interpretation: { type: "object", additionalProperties: true, maxProperties: 32 },
+      rationale: { type: "string", minLength: 1, maxLength: 12_000 },
+      basisRefs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
+      expectedRevision: { type: "integer", minimum: 0 },
+      eventId: { type: "string", minLength: 1, maxLength: 256 },
+      root: { type: "string" },
+    },
+    required: ["interpretation"],
+    additionalProperties: false,
+  }),
+  "research.checkpoint": Object.freeze({
+    type: "object",
+    properties: {
+      checkpoint: { type: "object", additionalProperties: true, maxProperties: 32 },
+      rationale: { type: "string", minLength: 1, maxLength: 12_000 },
+      basisRefs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
+      expectedRevision: { type: "integer", minimum: 0 },
+      eventId: { type: "string", minLength: 1, maxLength: 256 },
+      root: { type: "string" },
+    },
+    required: ["checkpoint"],
+    additionalProperties: false,
+  }),
+});
+
+/** Create all semantic aliases available in a transport's tool list. */
+export function createPublicToolAliases(tools, { includeDecisionAliases = true } = {}) {
+  if (!Array.isArray(tools)) throw new TypeError("tool aliases require an array");
+  const byName = new Map(tools.map((tool) => [tool?.name, tool]));
+  return Object.entries(SEMANTIC_ALIAS_SOURCES).flatMap(([canonicalName, sourceName]) => {
+    if (!includeDecisionAliases && [
+      "research.strategy",
+      "research.interpretation",
+      "research.checkpoint",
+    ].includes(canonicalName)) return [];
+    const source = byName.get(sourceName);
+    if (!source) return [];
+    const mapParams = canonicalName === "research.strategy"
+      ? (params) => ({
+        ...params,
+        operation: "strategy",
+        strategyOperation: params?.strategyOperation || "plan",
+      })
+      : canonicalName === "research.interpretation"
+        ? (params) => ({ ...params, operation: "interpret" })
+        : canonicalName === "research.checkpoint"
+          ? (params) => ({ ...params, operation: "checkpoint" })
+          : undefined;
+    return [createPublicToolAlias(source, canonicalName, { mapParams })];
+  });
 }
 
 function requiredOperationBranch(operation, requiredFields) {

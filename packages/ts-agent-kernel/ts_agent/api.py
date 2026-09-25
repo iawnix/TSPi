@@ -15,7 +15,10 @@ from pathlib import Path
 from typing import Any
 
 from .research import (
+    ArtifactManifest,
     AttemptInterpretation,
+    AttemptRecord,
+    EvidenceLink,
     ResearchKernel,
     ResearchKernelError,
     StrategyPlan,
@@ -130,6 +133,27 @@ def _research(action: str, root: str | Path, params: dict[str, Any]) -> dict[str
         if type(limit) is not int or not 1 <= limit <= 2048:
             raise CommandError("research.decisions limit must be an integer between 1 and 2048")
         return kernel.decision_records(claim_id=claim_id, limit=limit)
+    if action == "evidence":
+        record_type = params.get("record_type") or params.get("recordType")
+        if record_type is not None and record_type not in {"attempt", "artifact", "link"}:
+            raise CommandError("research.evidence record_type must be attempt, artifact, or link")
+        limit = params.get("limit", 128)
+        if type(limit) is not int or not 1 <= limit <= 2048:
+            raise CommandError("research.evidence limit must be an integer between 1 and 2048")
+        filters = {
+            "node_id": params.get("node_id") or params.get("nodeId"),
+            "artifact_id": params.get("artifact_id") or params.get("artifactId"),
+            "subject_id": params.get("subject_id") or params.get("subjectId"),
+        }
+        for key, value in filters.items():
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise CommandError(f"research.evidence {key} must be a non-empty string")
+        return kernel.evidence_records(record_type=record_type, limit=limit, **filters)
+    if action == "evidence.register":
+        request = params.get("request")
+        if not isinstance(request, dict):
+            raise CommandError("research.evidence.register requires params.request")
+        return _register_evidence_request(kernel, request)
     if action == "storage":
         operation = params.get("operation", "status")
         if operation not in {"status", "bootstrap"}:
@@ -704,6 +728,52 @@ def _decision_request_envelope(request: dict[str, Any], *, schema: str) -> tuple
     if not isinstance(basis_refs, list) or any(not isinstance(item, str) or not item.strip() for item in basis_refs):
         raise CommandError("decision basis_refs must be a list of non-empty strings")
     return event_id, expected_revision, rationale, basis_refs
+
+
+def _register_evidence_request(kernel: ResearchKernel, request: dict[str, Any]) -> dict[str, Any]:
+    """Validate the runtime-to-Kernel evidence admission envelope."""
+
+    allowed = {"schema_version", "event_id", "request_digest", "attempts", "artifacts", "links"}
+    unknown = sorted(set(request) - allowed)
+    if unknown:
+        raise CommandError("research.evidence.register contains unsupported fields: " + ", ".join(unknown))
+    if request.get("schema_version", "research-evidence-request/1") != "research-evidence-request/1":
+        raise CommandError("unsupported research-evidence-request/1 schema")
+    event_id = request.get("event_id")
+    request_digest = request.get("request_digest")
+    for name, value in (("event_id", event_id), ("request_digest", request_digest)):
+        if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > 512):
+            raise CommandError(f"research.evidence.register {name} must be a bounded string")
+    def rows(key: str, factory: Any) -> list[Any]:
+        value = request.get(key, [])
+        if not isinstance(value, list) or len(value) > 256:
+            raise CommandError(f"research.evidence.register {key} must be a bounded list")
+        try:
+            normalized = []
+            for item in value:
+                item = dict(item)
+                item.setdefault("created_at", _now())
+                normalized.append(factory(item))
+            return normalized
+        except (TypeError, ValueError, KeyError) as exc:
+            raise CommandError(f"research.evidence.register {key} contains an invalid record") from exc
+    for key in ("attempts", "artifacts", "links"):
+        value = request.get(key, [])
+        if not isinstance(value, list) or len(value) > 256:
+            raise CommandError(f"research.evidence.register {key} must be a bounded list")
+        if any(not isinstance(item, dict) for item in value):
+            raise CommandError("research.evidence.register records must be objects")
+    try:
+        result = kernel.register_evidence(
+            attempts=rows("attempts", AttemptRecord.from_dict),
+            artifacts=rows("artifacts", ArtifactManifest.from_dict),
+            links=rows("links", EvidenceLink.from_dict),
+            event_id=event_id,
+            request_digest=request_digest,
+        )
+    except ResearchKernelError as exc:
+        raise CommandError(str(exc)) from exc
+    return {"schema_version": "research-evidence-result/1", "operation": "register", "commit": result}
 
 
 def _commit_strategy_request(kernel: ResearchKernel, request: dict[str, Any]) -> dict[str, Any]:

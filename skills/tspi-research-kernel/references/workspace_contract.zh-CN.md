@@ -23,7 +23,7 @@ bootstrap 创建 map。Map identity 与对象 ID 都是 workspace 本地的。Ke
 常规流程为：
 
 ```text
-ts_state -> Root interpretation -> ts_change
+research.read -> Root interpretation -> research.change
 ```
 
 `research.change` 在锁内加载当前 map，把有序 ChangeSet 应用到独立副本，校验完整变更后

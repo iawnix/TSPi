@@ -21,7 +21,7 @@ replacement UI.
   research APIs and does not decode Host RPC.
 - `packages/ts-agent-kernel/ts_agent/` owns the `ResearchMap`, reference
   integrity, validation, and transactions. Its
-  `ts_calc` control plane uses one lifecycle for local subprocesses and remote
+  `compute.run` control plane uses one lifecycle for local subprocesses and remote
   scheduler jobs; the configured remote adapter supplies transport and
   readiness operations. Rendering, reporting, and email remain
   Skill/Plugin tools.
@@ -70,10 +70,25 @@ derived view from separate scientific registries. It contains `ResearchPhase`,
 objects, together with their dependency, output, and target references.
 
 Attempts and Artifacts are not scientific facts inside the ResearchMap. They
-are durable execution records and evidence containers owned by the
-Compute/Workspace runtime. A Node stores stable references to them; the Kernel
-validates those references and evidence relationships but never turns scheduler
-state or file contents into a Finding or Claim conclusion by itself.
+are produced by the Compute/Workspace runtime, while their stable identity,
+digest, provenance, lineage, and evidence references are governed by the
+Research Kernel's Evidence Registry. Raw files remain in the workspace or an
+object store; the Kernel stores bounded Artifact Manifests and Evidence Links,
+and never turns scheduler state or file contents into a Finding or Claim
+conclusion by itself.
+
+```text
+Compute Runtime -> Attempt -> Artifact Manifest
+                              |
+                              +-> Evidence Link -> Claim/Finding/Gate
+```
+
+An Artifact is not a Finding. It is a verifiable data object; an Evidence Link
+records whether it supports, contradicts, qualifies, or derives a scientific
+object; and a Finding is the Root Agent's scientific statement based on that
+evidence. Large logs, trajectories, and images stay out of the ResearchMap and
+model context; Agents read bounded manifests, summaries, and on-demand
+excerpts.
 
 ### ResearchMap And Research Kernel
 
@@ -271,14 +286,14 @@ Server package; skills remain top-level Pi capabilities.
 
 ## Deterministic Tool Plane
 
-`ts_analyze` dispatches 22 independent versioned analysis capabilities from an
+`analysis.run` dispatches 22 independent versioned analysis capabilities from an
 on-demand catalog. Domain code lives in `analysis/`; Node-owned artifacts bind
 inputs, digests and generated files. Selected facts enter the existing
-`ts_change` candidate path after replay validation. No capability schedules a
+`research.change` candidate path after replay validation. No capability schedules a
 scientific successor or accepts a Claim. Chemical networks use stoichiometric
 hyperedges and may contain cycles, independently of the ResearchNode DAG.
 
-`ts_dispatch` writes Node-scoped pause/resume receipts outside canonical science.
+`execution.dispatch` writes Node-scoped pause/resume receipts outside canonical science.
 A shared lock orders pauses against new analysis and submission guards. In-flight
 jobs remain inspectable, collectable and cancellable. Reports and TS Web expose
 these execution records separately from the canonical map. See [ADR 0002](adr/0002-independent-scientific-capabilities.md)
@@ -291,7 +306,7 @@ next action from tool exit codes. See [ADR 0003](adr/0003-minimal-research-kerne
 
 Public tools validate input paths against the workspace root, normalize
 artifacts, and return machine-readable errors. Scientific backends are
-selected by capability and parse only their own output formats. `ts_calc` uses
+selected by capability and parse only their own output formats. `compute.run` uses
 the same four public operations for local and remote environments:
 
 ```text
@@ -338,15 +353,15 @@ The worker normally delivers an event to the bound session with `next_run`,
 which does not interrupt an active Root turn. Its request id is
 `monitor:<event_id>`. A missing session or an App Server restart leaves the
 delivery pending and allows a later worker pass to retry it. Root must reread
-`ts_state`, run `ts_calc inspect`, and decide whether to collect, parse, or
+`research.read`, run `compute.run inspect`, and decide whether to collect, parse, or
 write `ResearchMap` state. The Monitor never calls `finalize`, writes
 `ResearchMap`, or makes a scientific decision.
 
 Research liveness is represented separately from Monitor observations by a
-Kernel-validated continuation record. `ts_workflow` can list records or use the
+Kernel-validated continuation record. `research.continuation` can list records or use the
 canonical `set`/`resolve` operations to record one required, deferred, blocked,
 or completed disposition for a Node, Claim, or Gate; the older `set_*` spellings
-remain compatibility aliases. ChangeSet audit fields belong to `ts_change`,
+remain compatibility aliases. ChangeSet audit fields belong to `research.change`,
 not to this lifecycle request. A `required` record names an action selected by
 Root; it does not execute that action or choose a scientific verdict. At a run
 boundary the Host checks the durable queue and may add at most three bounded

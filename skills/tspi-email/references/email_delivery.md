@@ -1,6 +1,6 @@
 # Email Delivery Contract
 
-`ts_notify` delivers a fixed event to the recipient owned by the TSPi
+`notify.send` delivers a fixed event to the recipient owned by the TSPi
 installation and records the delivery receipt.
 
 The installation can retain the existing ClawEmail transport or use the built-in

@@ -37,18 +37,23 @@ from .decisions import (
     TurnCheckpoint,
     TurnDisposition,
 )
+from .evidence import ArtifactManifest, AttemptRecord, EvidenceLink, EvidenceModelError
 from .kernel import ResearchKernel, ResearchKernelError
 from .sqlite import ResearchSqliteError, ResearchSqliteRepository
 
 __all__ = [
     "ClaimGate",
     "AttemptInterpretation",
+    "AttemptRecord",
+    "ArtifactManifest",
     "ClaimStatus",
     "ContinuationAction",
     "ContinuationRecord",
     "ContinuationScope",
     "ContinuationStatus",
     "DecisionModelError",
+    "EvidenceLink",
+    "EvidenceModelError",
     "FactFinding",
     "Finding",
     "FindingKind",

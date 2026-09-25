@@ -12,5 +12,5 @@ InChI/InChIKey, unassigned stereocenters, and diagnostics. A missing resolver
 is a structured capability gap, not permission to invent a structure.
 
 Name lookup and structure identity are separate from 3D generation. After a
-candidate is confirmed, call `ts_seed`, then validate the reaction and mapping
+candidate is confirmed, call `artifact.seed`, then validate the reaction and mapping
 with the existing analysis capabilities.

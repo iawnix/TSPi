@@ -35,6 +35,14 @@ from .model import (
     ResearchPhase,
 )
 from .decisions import AttemptInterpretation, StrategyPlan, StrategyReview, TurnCheckpoint
+from .evidence import (
+    ArtifactManifest,
+    AttemptRecord,
+    EvidenceLink,
+    EvidenceModelError,
+    validate_interpretation_evidence,
+    validate_map_evidence,
+)
 from .sqlite import ResearchSqliteError, ResearchSqliteRepository
 
 
@@ -101,8 +109,10 @@ class ResearchKernel:
         research_map.validate()
         if self.sqlite.path.is_file():
             try:
+                artifacts, links = self.sqlite.load_evidence_index()
+                validate_map_evidence(research_map, artifacts, links)
                 self.sqlite.save_snapshot(research_map)
-            except ResearchSqliteError as exc:
+            except (ResearchSqliteError, EvidenceModelError) as exc:
                 raise ResearchKernelError(str(exc)) from exc
             self._save_json_unlocked(research_map)
             return research_map
@@ -158,6 +168,7 @@ class ResearchKernel:
         """Commit Claim decisions and the current map in one SQLite transaction."""
 
         basis = list(basis_refs)
+        interpretation_rows = list(interpretations)
         with self._lock():
             if not self.sqlite.path.is_file():
                 current = self._load_json_unlocked()
@@ -167,6 +178,14 @@ class ResearchKernel:
                     raise ResearchKernelError(str(exc)) from exc
             replayed = bool(event_id and self.sqlite.has_event(event_id))
             current = self.sqlite.load_map()
+            if not replayed:
+                try:
+                    artifacts, links = self.sqlite.load_evidence_index()
+                    validate_map_evidence(current, artifacts, links)
+                    for interpretation in interpretation_rows:
+                        validate_interpretation_evidence(interpretation, artifacts, links)
+                except (EvidenceModelError, ResearchSqliteError) as exc:
+                    raise ResearchKernelError(str(exc)) from exc
             try:
                 result = self.sqlite.commit(
                     current,
@@ -177,7 +196,7 @@ class ResearchKernel:
                     basis_refs=basis,
                     strategy_plans=strategy_plans,
                     strategy_reviews=strategy_reviews,
-                    interpretations=interpretations,
+                    interpretations=interpretation_rows,
                     checkpoint=checkpoint,
                 )
                 saved = self.sqlite.load_map()
@@ -226,6 +245,89 @@ class ResearchKernel:
             "records": records,
         }
 
+    def register_evidence(
+        self,
+        *,
+        attempts: Iterable[AttemptRecord] = (),
+        artifacts: Iterable[ArtifactManifest] = (),
+        links: Iterable[EvidenceLink] = (),
+        event_id: str | None = None,
+        request_digest: str | None = None,
+    ) -> dict[str, Any]:
+        """Admit Attempt/Artifact metadata and evidence links to the Kernel.
+
+        The Kernel owns evidence identity and provenance; raw payloads remain
+        in the workspace or object store.  Registration is deliberately
+        separate from scientific interpretation and cannot create Findings.
+        """
+
+        attempt_rows = list(attempts)
+        artifact_rows = list(artifacts)
+        link_rows = list(links)
+        with self._lock():
+            if not self.sqlite.path.is_file():
+                current = self._load_json_unlocked()
+                try:
+                    self.sqlite.bootstrap_from_json(current)
+                except ResearchSqliteError as exc:
+                    raise ResearchKernelError(str(exc)) from exc
+            current = self.sqlite.load_map()
+            try:
+                for record in (*attempt_rows, *artifact_rows, *link_rows):
+                    record.validate(current)
+            except EvidenceModelError as exc:
+                raise ResearchKernelError(str(exc)) from exc
+            replayed = bool(event_id and self.sqlite.has_event(event_id))
+            try:
+                result = self.sqlite.register_evidence(
+                    attempts=attempt_rows,
+                    artifacts=artifact_rows,
+                    links=link_rows,
+                    event_id=event_id,
+                    request_digest=request_digest,
+                )
+            except ResearchSqliteError as exc:
+                raise ResearchKernelError(str(exc)) from exc
+            if not replayed:
+                self._append_transaction_unlocked({
+                    "kind": "evidence_registration",
+                    **result,
+                    "event_id": event_id,
+                })
+            return result
+
+    def evidence_records(
+        self,
+        *,
+        record_type: str | None = None,
+        node_id: str | None = None,
+        artifact_id: str | None = None,
+        subject_id: str | None = None,
+        limit: int = 128,
+    ) -> dict[str, Any]:
+        """Return bounded Kernel-owned evidence metadata."""
+
+        if not self.sqlite.path.is_file():
+            return {
+                "schema_version": "research-evidence/1",
+                "backend": "json",
+                "records": {key: [] for key in ([record_type] if record_type else ("attempt", "artifact", "link"))},
+            }
+        try:
+            result = self.sqlite.list_evidence(
+                record_type=record_type,
+                node_id=node_id,
+                artifact_id=artifact_id,
+                subject_id=subject_id,
+                limit=limit,
+            )
+        except ResearchSqliteError as exc:
+            raise ResearchKernelError(str(exc)) from exc
+        research_map = self.load_read_only()
+        result["map_id"] = research_map.map_id
+        result["map_revision"] = research_map.revision
+        return result
+
     def transact(self, change: Callable[[ResearchMap], Any]) -> ResearchMap:
         with self._lock():
             research_map = self._load_unlocked()
@@ -265,6 +367,12 @@ class ResearchKernel:
                 except ResearchKernelError:
                     raise
                 except (ResearchModelError, TypeError, ValueError) as exc:
+                    raise ResearchKernelError(str(exc)) from exc
+            if self.sqlite.path.is_file():
+                try:
+                    artifacts, links = self.sqlite.load_evidence_index()
+                    validate_map_evidence(draft, artifacts, links)
+                except (EvidenceModelError, ResearchSqliteError) as exc:
                     raise ResearchKernelError(str(exc)) from exc
             draft.revision = current.revision + 1
             self._save_unlocked(draft)

@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { PiRuntime, requireWorkspaceRoot } from "../runtime.ts";
 import {
+  createPublicToolAliases,
   createPublicToolContracts,
   type AnalyzeToolParams,
   type CompareToolParams,
@@ -94,6 +95,12 @@ const { analysisRequest, analysisRequestSummary, validateAnalysisResult } = requ
   "../../../packages/ts-agent-runtime/artifacts/analysis-contract.cjs",
 );
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
+
+function registerArtifactTool(pi: ExtensionAPI, tool: any) {
+  for (const alias of createPublicToolAliases([tool])) {
+    pi.registerTool(wrapToolForPi(alias));
+  }
+}
 type AnalysisParameters = {
   operation: "run";
   nodeId: string;
@@ -107,7 +114,7 @@ type AnalysisParameters = {
 export function registerArtifactTools(pi: ExtensionAPI) {
   const runtime = new PiRuntime(pi);
   registerToolEnvelopeErrorHook(pi);
-  pi.registerTool(wrapToolForPi({
+  registerArtifactTool(pi, {
     ...TOOL_CONTRACTS.seed,
     renderCall: (args: SeedToolParams, theme: PiToolTheme) => renderTsArtifactCall("seed", args as unknown as Record<string, unknown>, theme),
     renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<SeedToolParams>) => renderTsArtifactResult("seed", result, options, theme, context.isError),
@@ -166,15 +173,15 @@ export function registerArtifactTools(pi: ExtensionAPI) {
         throw error;
       }
     },
-  }));
+  });
 
-  pi.registerTool(wrapToolForPi({
+  registerArtifactTool(pi, {
     ...TOOL_CONTRACTS.compare,
     renderCall: (args: CompareToolParams, theme: PiToolTheme) => renderTsArtifactCall("compare", args as unknown as Record<string, unknown>, theme),
     renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<CompareToolParams>) => renderTsArtifactResult("compare", result, options, theme, context.isError),
     promptSnippet: "Compare molecular structures",
     promptGuidelines: [
-      "Use two art_* IDs and zero-based indices; register verified scientific values as Findings through ts_change.",
+      "Use two art_* IDs and zero-based indices; register verified scientific values as Findings through research.change.",
     ],
     async execute(_toolCallId: PiToolId, params: CompareToolParams, signal: PiToolSignal, onUpdate: PiToolUpdate, ctx: PiToolContext) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
@@ -223,15 +230,15 @@ export function registerArtifactTools(pi: ExtensionAPI) {
         throw error;
       }
     },
-  }));
+  });
 
-  pi.registerTool(wrapToolForPi({
+  registerArtifactTool(pi, {
     ...TOOL_CONTRACTS.analyze,
     renderCall: (args: AnalyzeToolParams, theme: PiToolTheme) => renderTsArtifactCall("analyze", args as unknown as Record<string, unknown>, theme),
     renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<AnalyzeToolParams>) => renderTsArtifactResult("analyze", result, options, theme, context.isError),
     promptSnippet: "Analyze registered artifacts",
     promptGuidelines: [
-      "Discover input roles and parameters via ts_state mode=capabilities capabilityKind=analysis; record selected facts with ts_change.",
+      "Discover input roles and parameters via research.read mode=capabilities capabilityKind=analysis; record selected facts with research.change.",
     ],
     async execute(_toolCallId: PiToolId, params: AnalyzeToolParams, signal: PiToolSignal, onUpdate: PiToolUpdate, ctx: PiToolContext) {
       const input = params as AnalysisParameters;
@@ -272,9 +279,9 @@ export function registerArtifactTools(pi: ExtensionAPI) {
         throw error;
       }
     },
-  }));
+  });
 
-  pi.registerTool(wrapToolForPi({
+  registerArtifactTool(pi, {
     ...TOOL_CONTRACTS.importArtifact,
     renderCall: (args: ImportToolParams, theme: PiToolTheme) => renderTsArtifactCall("import", args as unknown as Record<string, unknown>, theme),
     renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<ImportToolParams>) => renderTsArtifactResult("import", result, options, theme, context.isError),
@@ -333,9 +340,9 @@ export function registerArtifactTools(pi: ExtensionAPI) {
         throw error;
       }
     },
-  }));
+  });
 
-  pi.registerTool(wrapToolForPi({
+  registerArtifactTool(pi, {
     ...TOOL_CONTRACTS.render,
     renderCall: (args: RenderToolParams, theme: PiToolTheme) => renderTsArtifactCall("render", args as unknown as Record<string, unknown>, theme),
     renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<RenderToolParams>) => renderTsArtifactResult("render", result, options, theme, context.isError),
@@ -402,9 +409,9 @@ export function registerArtifactTools(pi: ExtensionAPI) {
         throw error;
       }
     },
-  }));
+  });
 
-  pi.registerTool(wrapToolForPi({
+  registerArtifactTool(pi, {
     ...TOOL_CONTRACTS.report,
     renderCall: (args: ReportToolParams, theme: PiToolTheme) => renderTsArtifactCall("report", args as unknown as Record<string, unknown>, theme),
     renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<ReportToolParams>) => renderTsArtifactResult("report", result, options, theme, context.isError),
@@ -480,7 +487,7 @@ export function registerArtifactTools(pi: ExtensionAPI) {
         throw error;
       }
     },
-  }));
+  });
 }
 
 async function resolveArtifacts(

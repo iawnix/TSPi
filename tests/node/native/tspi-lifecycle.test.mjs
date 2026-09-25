@@ -582,8 +582,8 @@ test("Research Turn hook continues an explicit required disposition", async () =
   });
   const result = await hook({ runId: "run-required" }, context);
   assert.match(result.followUp, /cont_1/);
-  assert.match(result.followUp, /ts_state with mode=context/);
-  assert.match(result.followUp, /ts_workflow/);
+  assert.match(result.followUp, /research\.read with mode=context/);
+  assert.match(result.followUp, /research\.continuation with operation=status/);
 });
 
 test("production checkpoint mode treats required as a valid next-turn plan", async () => {
@@ -613,7 +613,8 @@ test("Research Turn hook repairs a missing disposition without selecting science
   });
   const result = await hook({ runId: "run-decision" }, context);
   assert.match(result.followUp, /mode=context/);
-  assert.match(result.followUp, /set_required/);
+  assert.match(result.followUp, /research\.strategy or research\.interpretation/);
+  assert.match(result.followUp, /research\.checkpoint/);
   assert.match(result.followUp, /deferred, blocked, or completed/);
   assert.doesNotMatch(result.followUp, /ts_calc launch|choose|select/);
   assert.equal(await hook({ runId: "run-decision" }, context), undefined);

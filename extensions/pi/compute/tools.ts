@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { PiRuntime, requireWorkspaceRoot } from "../runtime.ts";
 import { parseSlashCommand, slashCompletions, SLASH_COMMAND_DEFINITIONS } from "../../../packages/ts-agent-runtime/host-api/commands.mjs";
 import {
+  createPublicToolAliases,
   createPublicToolContracts,
   type ComputeToolParams,
   type DispatchToolParams,
@@ -57,6 +58,12 @@ const {
 const OPERATIONS = ["launch", "inspect", "finalize", "cancel"] as const;
 const ATTEMPT_KINDS = ["primary", "retry", "recalculation"] as const;
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
+
+function registerComputeTool(pi: ExtensionAPI, tool: any) {
+  for (const alias of createPublicToolAliases([tool])) {
+    pi.registerTool(wrapToolForPi(alias));
+  }
+}
 
 const COMPUTE_OPERATION_FIELDS = Object.freeze({
   launch: ["purpose", "capability", "capabilityVersion", "attemptKind", "sourceAttempt", "inputArtifacts", "parameters", "executionTarget", "timeoutSeconds"],
@@ -131,7 +138,7 @@ export function registerComputeTools(pi: ExtensionAPI) {
     return new Text(text, 1, 0);
   });
 
-  pi.registerTool(wrapToolForPi({
+  registerComputeTool(pi, {
     ...TOOL_CONTRACTS.environment,
     renderCall: (args: EnvironmentToolParams, theme: PiToolTheme) => renderTsNativeCall("ts_environment", args as Record<string, unknown>, theme),
     renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<EnvironmentToolParams>) => renderTsNativeResult("ts_environment", result, options, theme, context.isError),
@@ -144,9 +151,9 @@ export function registerComputeTools(pi: ExtensionAPI) {
       }, signal);
       return toolText(JSON.stringify(result, null, 2), { result });
     },
-  }));
+  });
 
-  pi.registerTool(wrapToolForPi({
+  registerComputeTool(pi, {
     ...TOOL_CONTRACTS.dispatch,
     renderCall: (args: DispatchToolParams, theme: PiToolTheme) => renderTsNativeCall("ts_dispatch", args as unknown as Record<string, unknown>, theme),
     renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<DispatchToolParams>) => renderTsNativeResult("ts_dispatch", result, options, theme, context.isError),
@@ -155,9 +162,9 @@ export function registerComputeTools(pi: ExtensionAPI) {
       const result = await runtime.compute("node-dispatch", root, nodeControlArguments(params), signal);
       return toolText(JSON.stringify(result), { dispatch: result });
     },
-  }));
+  });
 
-  pi.registerTool(wrapToolForPi({
+  registerComputeTool(pi, {
     ...TOOL_CONTRACTS.compute,
     renderCall: (args: ComputeToolParams, theme: PiToolTheme) => renderTsNativeCall("ts_calc", args as unknown as Record<string, unknown>, theme),
     renderResult: (result: PiToolResult, options: PiToolRenderOptions, theme: PiToolTheme, context: PiToolRenderContext<ComputeToolParams>) => renderTsNativeResult("ts_calc", result, options, theme, context.isError),
@@ -338,7 +345,7 @@ export function registerComputeTools(pi: ExtensionAPI) {
         throw withComputeFailureContext(error, failure, completedActions, runRef, secondaryFailures);
       }
     },
-  }));
+  });
 
   pi.registerCommand("compute", {
     description: SLASH_COMMAND_DEFINITIONS.compute.description,

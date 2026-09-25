@@ -36,6 +36,8 @@ def validate_calculation_contract(schema_name: str, instance: Any) -> None:
         key=lambda error: tuple(str(part) for part in error.path),
     )
     if not errors:
+        if schema_name == "calculation_result.schema.json" and isinstance(instance, dict):
+            _validate_artifact_manifest(instance)
         return
     shown = []
     for error in errors[:3]:
@@ -69,6 +71,27 @@ def validate_calculation_result_binding(
         or provenance.get("capability_descriptor_digest") != intent.get("capability_descriptor_digest")
     ):
         raise CalculationContractError(f"{label} is not bound to the prepared calculation intent")
+
+
+def _validate_artifact_manifest(result: dict[str, Any]) -> None:
+    """Enforce manifest-level uniqueness not expressible in JSON Schema.
+
+    ``uniqueItems`` protects complete objects, but an artifact manifest also
+    uses ``role`` as the stable binding for an output.  Duplicate IDs, paths,
+    or roles would make replay and downstream evidence selection ambiguous.
+    """
+
+    manifest = result.get("artifact_manifest")
+    if manifest is None:
+        return
+    if not isinstance(manifest, list):
+        raise CalculationContractError("calculation result artifact_manifest must be an array")
+    for key in ("artifact_id", "path", "role"):
+        values = [item.get(key) for item in manifest if isinstance(item, dict)]
+        if len(values) != len(set(values)):
+            raise CalculationContractError(
+                f"calculation result artifact_manifest contains duplicate {key}"
+            )
 
 
 @lru_cache(maxsize=None)

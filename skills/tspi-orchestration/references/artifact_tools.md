@@ -69,7 +69,7 @@ parameters, verdict, uncertainty, RMSD/internal-coordinate/stereochemical
 metrics, diagnostics, and provenance.
 
 This result is operational. Register any value used in a Claim or Node outcome
-as a semantic Finding through `ts_change`, citing the verified analysis artifact.
+as a semantic Finding through `research.change`, citing the verified analysis artifact.
 
 ## Import An Existing Input
 
@@ -99,7 +99,7 @@ overwrites different content. The activity journal stores hashes and metadata,
 never the input body. QST2/QST3 imports also require every structure to use the same
 declared charge/multiplicity, atom count, and atom order. Multi-job `--Link1--`
 inputs and Link 0 filesystem paths are rejected. Resolve the result with
-`ts_state mode=artifacts` before Compute.
+`research.read mode=artifacts` before Compute.
 
 ## Activity And Provenance
 

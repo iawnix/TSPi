@@ -27,7 +27,7 @@ Bootstrap rejects an unsupported workspace without rewriting it.
 The normal flow is:
 
 ```text
-ts_state -> Root interpretation -> ts_change
+research.read -> Root interpretation -> research.change
 ```
 
 `research.change` loads the current map under a lock, applies the ordered

@@ -31,9 +31,9 @@ does not redefine that model.
 
 ## Research Turn Checkpoint
 
-Before ending every turn, read `ts_state` with `mode=context` or `mode=liveness`
+Before ending every turn, read `research.read` with `mode=context` or `mode=liveness`
 and leave the active scope in an explicit lifecycle state. Use
-`ts_workflow operation=set_required` for the concrete next action, leave a
+`research.continuation operation=set_required` for the concrete next action, leave a
 submitted Attempt in the external wait state, record `deferred` or `blocked`
 with a reason, or close the relevant map scope after its evidence and gates are
 complete. A completed Attempt or completed Continuation alone is not a research

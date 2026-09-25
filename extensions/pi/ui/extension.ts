@@ -6,7 +6,10 @@ import { Text, truncateToWidth, type TUI } from "@earendil-works/pi-tui";
 import { TspiEditor } from "./editor.ts";
 import { createTspiStartupHeader } from "./startup.ts";
 import { fitColumns, formatCwd } from "./render-utils.ts";
-import { PUBLIC_TOOL_NAMES } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
+import {
+  PUBLIC_TOOL_CANONICAL_NAMES,
+  PUBLIC_TOOL_NAMES,
+} from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
 import { parseSlashCommand, SLASH_COMMAND_DEFINITIONS } from "../../../packages/ts-agent-runtime/host-api/commands.mjs";
 import {
   subscribeTsActivity,
@@ -338,12 +341,19 @@ function contextText(ctx: ExtensionContext): string {
 function foregroundToolLabel(toolName: string): string {
   const labels: Record<string, string> = {
     [PUBLIC_TOOL_NAMES.state]: "reading research state",
+    [PUBLIC_TOOL_CANONICAL_NAMES.state]: "reading research state",
     [PUBLIC_TOOL_NAMES.change]: "applying research change",
+    [PUBLIC_TOOL_CANONICAL_NAMES.change]: "applying research change",
     [PUBLIC_TOOL_NAMES.environment]: "checking compute environment",
+    [PUBLIC_TOOL_CANONICAL_NAMES.environment]: "checking compute environment",
     [PUBLIC_TOOL_NAMES.importArtifact]: "importing calculation input",
+    [PUBLIC_TOOL_CANONICAL_NAMES.importArtifact]: "importing calculation input",
     [PUBLIC_TOOL_NAMES.compare]: "comparing molecular structures",
+    [PUBLIC_TOOL_CANONICAL_NAMES.compare]: "comparing molecular structures",
     [PUBLIC_TOOL_NAMES.reply]: "recording review response",
+    [PUBLIC_TOOL_CANONICAL_NAMES.reply]: "recording review response",
     [PUBLIC_TOOL_NAMES.notify]: "sending research update",
+    [PUBLIC_TOOL_CANONICAL_NAMES.notify]: "sending research update",
   };
   return labels[toolName] || `running ${toolName}`;
 }

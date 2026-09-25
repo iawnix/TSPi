@@ -15,6 +15,14 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from .decisions import AttemptInterpretation, StrategyPlan, StrategyReview, TurnCheckpoint
+from .evidence import (
+    ArtifactManifest,
+    AttemptRecord,
+    EvidenceLink,
+    EvidenceModelError,
+    validate_interpretation_evidence,
+    validate_map_evidence,
+)
 from .model import ResearchMap, ResearchModelError
 
 
@@ -118,6 +126,14 @@ class ResearchSqliteRepository:
         if event_id is not None and (not isinstance(event_id, str) or not event_id.strip()):
             raise ResearchSqliteError("event_id must be a non-empty string")
 
+        try:
+            artifacts, links = self.load_evidence_index()
+            validate_map_evidence(research_map, artifacts, links)
+            for interpretation in interpretation_rows:
+                validate_interpretation_evidence(interpretation, artifacts, links)
+        except EvidenceModelError as exc:
+            raise ResearchSqliteError(str(exc)) from exc
+
         self.initialize()
         with self._transaction() as connection:
             current = connection.execute("SELECT map_id, revision FROM research_map WHERE singleton = 1").fetchone()
@@ -191,6 +207,166 @@ class ResearchSqliteRepository:
             )
         return result
 
+    def register_evidence(
+        self,
+        *,
+        attempts: Iterable[AttemptRecord] = (),
+        artifacts: Iterable[ArtifactManifest] = (),
+        links: Iterable[EvidenceLink] = (),
+        event_id: str | None = None,
+        request_digest: str | None = None,
+    ) -> dict[str, Any]:
+        """Atomically register execution metadata and evidence relations.
+
+        The method stores manifests and links only.  Artifact payloads remain
+        in the workspace/object store and are addressed by their location and
+        digest.  ``event_id`` gives Compute/Monitor adapters replay-safe
+        admission into the Kernel registry.
+        """
+
+        attempt_rows = list(attempts)
+        artifact_rows = list(artifacts)
+        link_rows = list(links)
+        self.initialize()
+        try:
+            research_map = self.load_map()
+        except ResearchSqliteError:
+            research_map = None
+        for record in (*attempt_rows, *artifact_rows, *link_rows):
+            try:
+                record.validate(research_map)
+            except EvidenceModelError as exc:
+                raise ResearchSqliteError(str(exc)) from exc
+        if event_id is not None and (not isinstance(event_id, str) or not event_id.strip()):
+            raise ResearchSqliteError("event_id must be a non-empty string")
+
+        with self._transaction() as connection:
+            current = connection.execute("SELECT revision FROM research_map WHERE singleton = 1").fetchone()
+            map_revision = int(current["revision"]) if current is not None else 0
+            if event_id is not None:
+                replay = connection.execute(
+                    "SELECT payload FROM kernel_events WHERE event_id = ?", (event_id,)
+                ).fetchone()
+                if replay is not None:
+                    replay_payload = json.loads(replay["payload"])
+                    previous_digest = replay_payload.get("request_digest")
+                    if request_digest is not None and previous_digest is not None and previous_digest != request_digest:
+                        raise ResearchSqliteError(f"event_id {event_id} is already bound to another evidence request")
+                    return replay_payload.get("result", replay_payload)
+
+            known_artifacts = {
+                row["id"] for row in connection.execute("SELECT id FROM artifact_manifests")
+            }
+            known_artifacts.update(record.id for record in artifact_rows)
+            missing_links = sorted({link.artifact_id for link in link_rows if link.artifact_id not in known_artifacts})
+            if missing_links:
+                raise ResearchSqliteError(
+                    "evidence links reference unregistered Artifacts: " + ", ".join(missing_links)
+                )
+            created_ids: list[str] = []
+            for attempt in attempt_rows:
+                self._insert_evidence_record(connection, "attempt_records", attempt.id, attempt.node_id, attempt.created_at, attempt.to_dict())
+                created_ids.append(attempt.id)
+            for artifact in artifact_rows:
+                self._insert_evidence_record(connection, "artifact_manifests", artifact.id, artifact.node_id, artifact.created_at, artifact.to_dict())
+                created_ids.append(artifact.id)
+            for link in link_rows:
+                self._insert_evidence_record(connection, "evidence_links", link.id, link.subject_id, link.created_at, link.to_dict())
+                created_ids.append(link.id)
+            result = {
+                "schema_version": "research-evidence-registration/1",
+                "map_revision": map_revision,
+                "created_ids": created_ids,
+                "attempt_count": len(attempt_rows),
+                "artifact_count": len(artifact_rows),
+                "link_count": len(link_rows),
+            }
+            self._write_event(
+                connection,
+                event_id or f"evidence:{created_ids[0] if created_ids else map_revision}",
+                map_revision,
+                {"result": result, "request_digest": request_digest},
+            )
+        return result
+
+    def list_evidence(
+        self,
+        *,
+        record_type: str | None = None,
+        node_id: str | None = None,
+        artifact_id: str | None = None,
+        subject_id: str | None = None,
+        limit: int = 128,
+    ) -> dict[str, Any]:
+        """Return bounded evidence metadata without reading raw payloads."""
+
+        if type(limit) is not int or not 1 <= limit <= 2048:
+            raise ResearchSqliteError("evidence limit must be an integer between 1 and 2048")
+        if record_type is not None and record_type not in {"attempt", "artifact", "link"}:
+            raise ResearchSqliteError("evidence record_type must be attempt, artifact, or link")
+        self.initialize()
+        tables = {
+            "attempt": "attempt_records",
+            "artifact": "artifact_manifests",
+            "link": "evidence_links",
+        }
+        selected = [record_type] if record_type else ["attempt", "artifact", "link"]
+        records: dict[str, list[dict[str, Any]]] = {key: [] for key in selected}
+        with self._connection() as connection:
+            for key in selected:
+                table = tables[key]
+                clauses: list[str] = []
+                values: list[str] = []
+                if node_id is not None and key in {"attempt", "artifact"}:
+                    clauses.append("node_id = ?")
+                    values.append(node_id)
+                if artifact_id is not None:
+                    if key == "artifact":
+                        clauses.append("id = ?")
+                        values.append(artifact_id)
+                    elif key == "link":
+                        clauses.append("json_extract(payload, '$.artifact_id') = ?")
+                        values.append(artifact_id)
+                if subject_id is not None and key == "link":
+                    clauses.append("subject_id = ?")
+                    values.append(subject_id)
+                where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+                rows = connection.execute(
+                    f"SELECT payload FROM {table}{where} ORDER BY created_at, id LIMIT ?",
+                    (*values, limit),
+                ).fetchall()
+                records[key] = [json.loads(row["payload"]) for row in rows]
+        return {
+            "schema_version": "research-evidence/1",
+            "backend": "sqlite",
+            "records": records,
+        }
+
+    def load_evidence_index(self) -> tuple[dict[str, ArtifactManifest], dict[str, EvidenceLink]]:
+        """Load the small evidence index used to validate map references.
+
+        Only manifests and typed links are read; raw artifact payloads remain
+        outside SQLite.  The index is intentionally bounded by the registry
+        itself and is used under the Kernel's write lock before a commit.
+        """
+
+        self.initialize()
+        with self._connection() as connection:
+            artifact_rows = connection.execute("SELECT payload FROM artifact_manifests").fetchall()
+            link_rows = connection.execute("SELECT payload FROM evidence_links").fetchall()
+        try:
+            artifacts = {
+                item.id: item
+                for item in (ArtifactManifest.from_dict(json.loads(row["payload"])) for row in artifact_rows)
+            }
+            links = {
+                item.id: item
+                for item in (EvidenceLink.from_dict(json.loads(row["payload"])) for row in link_rows)
+            }
+        except (json.JSONDecodeError, TypeError, ValueError, EvidenceModelError) as exc:
+            raise ResearchSqliteError(f"evidence registry is invalid: {exc}") from exc
+        return artifacts, links
+
     def has_event(self, event_id: str) -> bool:
         """Return whether an event id has already been committed."""
 
@@ -231,6 +407,7 @@ class ResearchSqliteRepository:
                 "attempt_interpretations": self.list_records("attempt_interpretation"),
                 "turn_checkpoints": self.list_records("turn_checkpoint"),
             },
+            "evidence": self.list_evidence()["records"],
         }
 
     @contextmanager
@@ -274,6 +451,17 @@ class ResearchSqliteRepository:
             connection.execute(
                 f"INSERT INTO {table}(id, claim_id, created_at, payload) VALUES (?, ?, ?, ?)",
                 (record_id, claim_id, created_at, json.dumps(value, ensure_ascii=False, sort_keys=True)),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ResearchSqliteError(f"{table} record already exists: {record_id}") from exc
+
+    @staticmethod
+    def _insert_evidence_record(connection: sqlite3.Connection, table: str, record_id: str, scope_id: str, created_at: str, value: dict[str, Any]) -> None:
+        try:
+            column = "node_id" if table != "evidence_links" else "subject_id"
+            connection.execute(
+                f"INSERT INTO {table}(id, {column}, created_at, payload) VALUES (?, ?, ?, ?)",
+                (record_id, scope_id if scope_id is not None else "", created_at, json.dumps(value, ensure_ascii=False, sort_keys=True)),
             )
         except sqlite3.IntegrityError as exc:
             raise ResearchSqliteError(f"{table} record already exists: {record_id}") from exc
@@ -347,6 +535,24 @@ CREATE TABLE IF NOT EXISTS turn_checkpoint_claims (
     claim_id TEXT NOT NULL,
     PRIMARY KEY (checkpoint_id, claim_id)
 );
+CREATE TABLE IF NOT EXISTS attempt_records (
+    id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    payload TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS artifact_manifests (
+    id TEXT PRIMARY KEY,
+    node_id TEXT,
+    created_at TEXT NOT NULL,
+    payload TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS evidence_links (
+    id TEXT PRIMARY KEY,
+    subject_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    payload TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS kernel_events (
     event_id TEXT PRIMARY KEY,
     map_revision INTEGER NOT NULL,
@@ -358,6 +564,10 @@ CREATE INDEX IF NOT EXISTS idx_strategy_reviews_claim_created ON strategy_review
 CREATE INDEX IF NOT EXISTS idx_interpretations_claim_created ON attempt_interpretations(claim_id, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_checkpoints_claim_created ON turn_checkpoints(claim_id, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_checkpoint_claim_refs ON turn_checkpoint_claims(claim_id, checkpoint_id);
+CREATE INDEX IF NOT EXISTS idx_attempt_records_node_created ON attempt_records(node_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_artifact_manifests_node_created ON artifact_manifests(node_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_evidence_links_subject_created ON evidence_links(subject_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_evidence_links_artifact ON evidence_links(json_extract(payload, '$.artifact_id'));
 """
 
 

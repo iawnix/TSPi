@@ -18,22 +18,24 @@ from scripts.check_package import SKILL_ENTRIES, validate_version_surfaces
 ROOT = Path(__file__).resolve().parents[2]
 TS_LOADER = ROOT / "tests" / "support" / "typescript_loader.mjs"
 EXPECTED_TOOLS = {
-    "sys_prompt",
-    "ts_state",
-    "ts_change",
-    "ts_workflow",
-    "ts_environment",
-    "ts_review",
-    "ts_reply",
-    "ts_calc",
-    "ts_seed",
-    "ts_compare",
-    "ts_analyze",
-    "ts_dispatch",
-    "ts_import",
-    "ts_render",
-    "ts_report",
-    "ts_notify",
+    "system.prompt",
+    "research.read",
+    "research.change",
+    "research.continuation",
+    "research.strategy",
+    "research.interpretation",
+    "research.checkpoint",
+    "compute.environment",
+    "review.run",
+    "compute.run",
+    "review.respond",
+    "artifact.seed",
+    "artifact.compare",
+    "analysis.run",
+    "execution.dispatch",
+    "artifact.import",
+    "artifact.render",
+    "report.build",
 }
 EXPECTED_COMMANDS = {"research", "compute", "runs", "debug"}
 
@@ -73,21 +75,21 @@ process.stdout.write(JSON.stringify({{
     result = _node_json(script)
     assert {item["name"] for item in result["tools"]} == EXPECTED_TOOLS
     assert set(result["commands"]) == EXPECTED_COMMANDS
-    assert {name for name, mode in result["execution"].items() if mode == "child_agent"} == {
-        "ts_review", "ts_calc"
+    assert {name for name, mode in result["execution"].items() if mode == "child_agent" and name in EXPECTED_TOOLS} == {
+        "review.run", "compute.run",
     }
-    assert result["execution"]["ts_seed"] == "deterministic_artifact"
-    assert result["execution"]["ts_compare"] == "deterministic_artifact"
-    assert result["execution"]["ts_analyze"] == "deterministic_artifact"
-    assert result["execution"]["ts_import"] == "deterministic_artifact"
-    assert result["execution"]["ts_render"] == "deterministic_artifact"
-    assert result["execution"]["ts_report"] == "deterministic_artifact"
-    context = next(item for item in result["tools"] if item["name"] == "ts_state")
+    assert result["execution"]["artifact.seed"] == "deterministic_artifact"
+    assert result["execution"]["artifact.compare"] == "deterministic_artifact"
+    assert result["execution"]["analysis.run"] == "deterministic_artifact"
+    assert result["execution"]["artifact.import"] == "deterministic_artifact"
+    assert result["execution"]["artifact.render"] == "deterministic_artifact"
+    assert result["execution"]["report.build"] == "deterministic_artifact"
+    context = next(item for item in result["tools"] if item["name"] == "research.read")
     assert "query" in context["properties"]
     assert "mode" in context["properties"]
     assert not any(name.startswith("ts_workspace_") or name.startswith("ts_subagent_") for name in EXPECTED_TOOLS)
     renderer_rows = {item["name"]: item for item in result["renderers"]}
-    assert all(renderer_rows[name]["call"] and renderer_rows[name]["result"] for name in EXPECTED_TOOLS if name != "sys_prompt")
+    assert all(renderer_rows[name]["call"] and renderer_rows[name]["result"] for name in EXPECTED_TOOLS if name != "system.prompt")
 
 
 def test_pi_extensions_register_only_their_owned_tools() -> None:
@@ -111,11 +113,16 @@ process.stdout.write(JSON.stringify({{
 """
     result = _node_json(script)
 
-    assert set(result["research"]) == {"sys_prompt", "ts_state", "ts_change", "ts_workflow", "ts_notify"}
-    assert set(result["review"]) == {"ts_review", "ts_reply"}
-    assert set(result["compute"]) == {"ts_environment", "ts_dispatch", "ts_calc"}
+    assert set(result["research"]) == {
+        "system.prompt", "research.read", "research.change", "research.continuation",
+        "research.strategy", "research.interpretation", "research.checkpoint",
+    }
+    assert set(result["review"]) == {"review.run", "review.respond"}
+    assert set(result["compute"]) == {
+        "compute.environment", "execution.dispatch", "compute.run",
+    }
     assert set(result["artifacts"]) == {
-        "ts_seed", "ts_import", "ts_compare", "ts_analyze", "ts_render", "ts_report"
+        "artifact.seed", "artifact.import", "artifact.compare", "analysis.run", "artifact.render", "report.build",
     }
 
 
@@ -127,13 +134,15 @@ import compute from {json.dumps((ROOT / 'extensions/pi/compute/index.ts').as_uri
 import artifacts from {json.dumps((ROOT / 'extensions/pi/artifacts/index.ts').as_uri())};
 import {{ createTspiTools }} from {json.dumps((ROOT / 'apps/app-server/pi-native-tools.mjs').as_uri())};
 import {{ createSystemPromptTool }} from {json.dumps((ROOT / 'apps/app-server/system-prompt.mjs').as_uri())};
+import {{ createPublicToolAlias }} from {json.dumps((ROOT / 'packages/ts-agent-runtime/host-api/tools.mjs').as_uri())};
 const extensionTools=[];
 const pi={{
   registerTool:(tool)=>extensionTools.push(tool),registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},
   on:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{on:()=>()=>{{}}}},
 }};
 for (const install of [research,review,compute,artifacts]) install(pi);
-const nativeTools=[createSystemPromptTool({{}}),...createTspiTools()];
+const systemPrompt=createSystemPromptTool({{}});
+const nativeTools=[createPublicToolAlias(systemPrompt,"system.prompt"),...createTspiTools()];
 const schemas=(tools)=>Object.fromEntries(tools.map((tool)=>[tool.name,JSON.parse(JSON.stringify(tool.parameters))]));
 process.stdout.write(JSON.stringify({{extension:schemas(extensionTools),native:schemas(nativeTools)}}));
 """
@@ -222,18 +231,18 @@ function propertyKeys(schema, found=new Set()) {{
 process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(tools).map(([name,tool])=>[name,propertyKeys(tool.parameters)]))));
 """
     schemas = _node_json(script)
-    assert "nodeId" in schemas["ts_calc"]
-    assert "smiles" in schemas["ts_seed"]
-    assert "optimization" in schemas["ts_seed"]
-    assert "referenceArtifactId" in schemas["ts_compare"]
-    assert "targetArtifactId" in schemas["ts_compare"]
-    assert "nodeId" in schemas["ts_import"]
-    assert "inputName" in schemas["ts_import"]
-    assert "content" in schemas["ts_import"]
-    assert "nodeId" in schemas["ts_render"]
-    assert "inputArtifactIds" in schemas["ts_render"]
-    assert "packageName" in schemas["ts_report"]
-    assert "targetClaimId" in schemas["ts_review"]
+    assert "nodeId" in schemas["compute.run"]
+    assert "smiles" in schemas["artifact.seed"]
+    assert "optimization" in schemas["artifact.seed"]
+    assert "referenceArtifactId" in schemas["artifact.compare"]
+    assert "targetArtifactId" in schemas["artifact.compare"]
+    assert "nodeId" in schemas["artifact.import"]
+    assert "inputName" in schemas["artifact.import"]
+    assert "content" in schemas["artifact.import"]
+    assert "nodeId" in schemas["artifact.render"]
+    assert "inputArtifactIds" in schemas["artifact.render"]
+    assert "packageName" in schemas["report.build"]
+    assert "targetClaimId" in schemas["review.run"]
     public_fields = {field for fields in schemas.values() for field in fields}
     assert "actId" not in public_fields
     assert "inputRefs" not in public_fields
@@ -261,11 +270,11 @@ process.stdout.write(JSON.stringify({{rows,total:rows.reduce((sum,row)=>sum+row.
     by_name = {row["name"]: row for row in measured["rows"]}
 
     assert skill_bytes <= 7_000
-    assert by_name["ts_calc"]["schema"] <= 4_500
+    assert by_name["compute.run"]["schema"] <= 4_500
     # Preserve the previous surface budget; new analyses share one small
     # envelope with domain schemas loaded through the capability catalog.
-    analysis_bytes = by_name["ts_analyze"]["total"]
-    management_bytes = by_name["ts_dispatch"]["total"]
+    analysis_bytes = by_name["analysis.run"]["total"]
+    management_bytes = by_name["execution.dispatch"]["total"]
     assert analysis_bytes <= 900
     assert management_bytes <= 500
     assert measured["total"] - analysis_bytes - management_bytes <= 13_000
@@ -322,10 +331,10 @@ process.stdout.write(JSON.stringify(result));
     result = _node_json(script)
     prompt = result["systemPrompt"]
     assert "ResearchMap workspace active" in prompt
-    assert "ts_state" in prompt
-    assert "ts_change" in prompt
+    assert "research.read" in prompt
+    assert "research.change" in prompt
     assert "ResearchPhase, ResearchNode, ResearchClaim, Finding, and Gate are map objects" in prompt
-    assert "Query ts_state mode=operations before using an unfamiliar map operation" in prompt
+    assert "Query research.read mode=operations before using an unfamiliar map operation" in prompt
     assert "workflow phase" not in prompt.lower()
 
 
@@ -346,14 +355,14 @@ const sourceInfo={{path:"package",source:"test-package",scope:"project",origin:"
 const visible={{name:"visible",description:"Visible skill",filePath:{json.dumps(visible_path)},baseDir:"/skills/visible",sourceInfo,disableModelInvocation:false}};
 const hidden={{name:"hidden",description:"Hidden skill",filePath:{json.dumps(hidden_path)},baseDir:"/skills/hidden",sourceInfo,disableModelInvocation:true}};
 const options={{
-  cwd:{json.dumps(str(workspace))},selectedTools:["read","sys_prompt","ts_state"],
-  toolSnippets:{{sys_prompt:"Inspect prompt"}},promptGuidelines:["One guideline"],
+  cwd:{json.dumps(str(workspace))},selectedTools:["read","system.prompt","research.read"],
+  toolSnippets:{{"system.prompt":"Inspect prompt"}},promptGuidelines:["One guideline"],
   contextFiles:[{{path:"/workspace/AGENTS.md",content:"Workspace instructions"}}],skills:[visible,hidden],
 }};
 const before=`PI NATIVE${{formatSkillsForPrompt(options.skills,"read")}}`;
 const tspi=await handlers.before_agent_start({{systemPrompt:before,systemPromptOptions:options}},{{cwd:options.cwd}});
 const effective=`${{tspi.systemPrompt}}\n\nTHIRD PARTY EXTENSION`;
-const result=await tools.sys_prompt.execute("prompt-1",{{}},undefined,undefined,{{getSystemPrompt:()=>effective}});
+const result=await tools["system.prompt"].execute("prompt-1",{{}},undefined,undefined,{{getSystemPrompt:()=>effective}});
 process.stdout.write(JSON.stringify({{manifest:JSON.parse(result.content[0].text),details:result.details,effective}}));
 """
     result = _node_json(script)
@@ -425,7 +434,7 @@ const pi={{registerTool:(tool)=>tools[tool.name]=tool,registerCommand:()=>{{}},r
   }},
 }};
 install(pi);
-const inspect=async (prompt,index)=>JSON.parse((await tools.sys_prompt.execute(`prompt-${{index}}`,{{}},undefined,undefined,{{getSystemPrompt:()=>prompt.systemPrompt}})).content[0].text);
+const inspect=async (prompt,index)=>JSON.parse((await tools["system.prompt"].execute(`prompt-${{index}}`,{{}},undefined,undefined,{{getSystemPrompt:()=>prompt.systemPrompt}})).content[0].text);
 const first=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
 const firstManifest=await inspect(first,1);
 const second=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
@@ -476,7 +485,7 @@ def test_state_operations_routes_to_the_kernel_without_leaking_other_selectors(t
 import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
 const calls=[];
 const pi={{
-  registerTool:(tool)=>{{ if (tool.name === "ts_state") globalThis.stateTool=tool; }},
+  registerTool:(tool)=>{{ if (tool.name === "research.read") globalThis.stateTool=tool; }},
   registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
   exec:async (command,args)=>{{
     calls.push([command,args]);
@@ -503,7 +512,7 @@ def test_state_context_and_liveness_modes_route_through_the_legacy_adapter(tmp_p
     script = f"""
 import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
 const calls=[]; const pi={{
-  registerTool:(tool)=>{{ if (tool.name === "ts_state") globalThis.stateTool=tool; }},
+  registerTool:(tool)=>{{ if (tool.name === "research.read") globalThis.stateTool=tool; }},
   registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
   exec:async (command,args)=>{{
     calls.push([command,args]);
@@ -531,7 +540,7 @@ def test_legacy_adapter_root_is_bound_to_session_workspace(tmp_path: Path) -> No
 import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
 let stateTool;
 const pi={{
-  registerTool:(tool)=>{{ if (tool.name === "ts_state") stateTool=tool; }},
+  registerTool:(tool)=>{{ if (tool.name === "research.read") stateTool=tool; }},
   registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
 }};
 research(pi);
@@ -595,7 +604,7 @@ import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_u
 process.env.TS_AGENT_PYTHON = {json.dumps(sys.executable)};
 const calls=[]; let changeTool;
 const pi={{
-  registerTool:(tool)=>{{ if (tool.name === "ts_change") changeTool=tool; }},
+  registerTool:(tool)=>{{ if (tool.name === "research.change") changeTool=tool; }},
   registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
   exec:async (command,args)=>{{
     const requestFlag=args.indexOf("--request-file");
@@ -633,7 +642,7 @@ import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_u
 process.env.TS_AGENT_PYTHON = {json.dumps(sys.executable)};
 const calls=[]; let workflowTool;
 const pi={{
-  registerTool:(tool)=>{{ if (tool.name === "ts_workflow") workflowTool=tool; }},
+  registerTool:(tool)=>{{ if (tool.name === "research.continuation") workflowTool=tool; }},
   registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
   exec:async (command,args)=>{{
     const requestFlag=args.indexOf("--request-file");
@@ -677,7 +686,7 @@ import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_u
 process.env.TS_AGENT_PYTHON = {json.dumps(sys.executable)};
 const calls=[]; let workflowTool;
 const pi={{
-  registerTool:(tool)=>{{ if (tool.name === "ts_workflow") workflowTool=tool; }},
+  registerTool:(tool)=>{{ if (tool.name === "research.continuation") workflowTool=tool; }},
   registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
   exec:async (command,args)=>{{
     const requestFlag=args.indexOf("--request-file");
@@ -732,7 +741,7 @@ import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_u
 process.env.TS_AGENT_PYTHON = {json.dumps(sys.executable)};
 const calls=[]; let workflowTool;
 const pi={{
-  registerTool:(tool)=>{{ if (tool.name === "ts_workflow") workflowTool=tool; }},
+  registerTool:(tool)=>{{ if (tool.name === "research.continuation") workflowTool=tool; }},
   registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
   exec:async (command,args)=>{{
     const requestFlag=args.indexOf("--request-file");

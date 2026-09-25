@@ -13,6 +13,12 @@ export type PublicToolKey =
   | "compute" | "reply" | "seed" | "compare" | "analyze" | "dispatch"
   | "importArtifact" | "render" | "report" | "notify";
 
+export const PUBLIC_TOOL_CANONICAL_NAMES: Readonly<Record<string, string>>;
+export const PUBLIC_TOOL_ALIASES: Readonly<Record<string, {
+  readonly canonicalName: string;
+  readonly deprecated: boolean;
+  readonly aliasFor?: string;
+}>>;
 export const PUBLIC_TOOL_NAMES: Readonly<Record<PublicToolKey, string>>;
 export const PUBLIC_TOOL_EXECUTION: Readonly<Record<string, string>>;
 export const PUBLIC_TOOL_METADATA: Readonly<Record<string, {
@@ -28,6 +34,9 @@ export function validateHarnessToolDefinition(tool: any, options?: {
 
 type ToolContract<P, N extends string = string, D = unknown, S = unknown> = {
   readonly name: N;
+  readonly canonicalName?: string;
+  readonly deprecated?: boolean;
+  readonly aliasFor?: string;
   readonly label: string;
   readonly description: string;
   readonly parameters: any;
@@ -77,6 +86,10 @@ export interface PublicToolContracts {
 }
 
 export function createPublicToolContracts(Type: any): PublicToolContracts;
+export function createPublicToolAlias(tool: any, canonicalName: string, options?: {
+  mapParams?: (params: any) => any;
+}): any;
+export function createPublicToolAliases(tools: any[], options?: { includeDecisionAliases?: boolean }): any[];
 
 export interface WorkspaceToolParams { root?: string }
 export interface StateToolParams extends WorkspaceToolParams {

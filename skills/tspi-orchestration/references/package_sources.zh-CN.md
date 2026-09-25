@@ -5,7 +5,7 @@
 按以下顺序使用来源：
 
 1. 已注册的公共工具 schema，用于稳定调用 envelope；
-2. `ts_state`，用于实时 ResearchMap、Artifact、capability 和 operation catalog；
+2. `research.read`，用于实时 ResearchMap、Artifact、capability 和 operation catalog；
 3. `SKILL.md`，用于研究工作流；
 4. 当前主题对应的一份 `references/*.md` 专用参考。
 

@@ -42,6 +42,11 @@
       "uniqueItems": true,
       "items": {"type": "string", "minLength": 1}
     },
+    "artifact_manifest": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {"$ref": "#/$defs/artifact_manifest_item"}
+    },
     "parser_facts": {
       "type": "object",
       "propertyNames": {
@@ -121,5 +126,33 @@
       "then": {"required": ["task_validation"]}
     }
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "artifact_manifest_item": {
+      "type": "object",
+      "required": [
+        "artifact_id", "path", "sha256", "size_bytes", "role",
+        "owner_node", "source_intent_id"
+      ],
+      "properties": {
+        "artifact_id": {"type": "string", "pattern": "^art_[0-9a-f]{24}$"},
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "size_bytes": {"type": "integer", "minimum": 0},
+        "role": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$"
+        },
+        "owner_node": {
+          "type": ["string", "null"],
+          "pattern": "^node_[1-9][0-9]*$"
+        },
+        "source_intent_id": {
+          "type": ["string", "null"],
+          "pattern": "^calc_[1-9][0-9]*$"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
 }

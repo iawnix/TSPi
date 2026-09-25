@@ -8,7 +8,7 @@ The adapter accepts `gfn0`, `gfn1`, `gfn2`, or `gfnff`; charge and `uhf` are
 explicit. Solvent and solvent model must be supplied together and the model is
 `alpb` or `gbsa`. Optimization tasks accept a bounded `opt_level` and
 `max_cycles`. The capability descriptor is the exact machine contract; ask
-`ts_state mode=capabilities` before constructing an unfamiliar request.
+`research.read mode=capabilities` before constructing an unfamiliar request.
 
 For `xtb.scan`, the control artifact must contain a `$scan` section and end
 with `$end`. A `$end` after `$constrain` may also be used as a block separator.
