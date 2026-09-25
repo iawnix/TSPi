@@ -143,6 +143,23 @@ invocation; only names, descriptions, and locations are placed in the model's
 default prompt. Capabilities and Compute
 Environments are queried when selecting or launching a method.
 
+The runtime boundary is explicit:
+
+```text
+Research Memory (durable records)
+  -> ResearchMemoryService (one facade over the canonical store)
+  -> ContextBuilder (bounded deterministic projection)
+  -> ContextPack (ephemeral turn working set)
+  -> Prompt (ContextPack plus tools, Skill metadata, and instructions)
+```
+
+`ResearchMemoryService` does not cache a second ResearchMap or persist a
+ContextPack. `ContextPack.context_id` and provenance identify the source
+revision so a Host can rebuild it after a change or retry. Semantic writes stay
+on `research.change`, `research.strategy`, `research.interpretation`,
+`research.continuation`, and `research.checkpoint`; there is no generic
+`memory.commit` operation that could bypass domain validation.
+
 Every Research Turn follows:
 
 ```text

@@ -39,10 +39,14 @@ from .decisions import (
 )
 from .evidence import ArtifactManifest, AttemptRecord, EvidenceLink, EvidenceModelError
 from .kernel import ResearchKernel, ResearchKernelError
+from .memory import ContextReader, KernelMemoryStore, LivenessReader, MemoryStore, ResearchMemoryService
 from .sqlite import ResearchSqliteError, ResearchSqliteRepository
+from .context import ContextBuilder, ContextPack
 
 __all__ = [
     "ClaimGate",
+    "ContextBuilder",
+    "ContextPack",
     "AttemptInterpretation",
     "AttemptRecord",
     "ArtifactManifest",
@@ -70,6 +74,11 @@ __all__ = [
     "ResearchClaim",
     "ResearchKernel",
     "ResearchKernelError",
+    "ResearchMemoryService",
+    "MemoryStore",
+    "KernelMemoryStore",
+    "ContextReader",
+    "LivenessReader",
     "ResearchMap",
     "ResearchModelError",
     "ResearchNode",

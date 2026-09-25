@@ -19,12 +19,15 @@ from .research import (
     AttemptInterpretation,
     AttemptRecord,
     EvidenceLink,
+    KernelMemoryStore,
     ResearchKernel,
     ResearchKernelError,
+    ResearchMemoryService,
     StrategyPlan,
     StrategyReview,
     TurnCheckpoint,
 )
+from .research.context import ContextBuilder
 from .workspace.operation_registry import operation_catalog
 from .io import append_jsonl, sha256_json
 from .workspace.transactions import workspace_lock
@@ -86,29 +89,22 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
 
 def _research(action: str, root: str | Path, params: dict[str, Any]) -> dict[str, Any]:
     kernel = ResearchKernel(root)
+    # Read projections cross the Memory Service boundary. The Kernel remains
+    # the transaction/invariant engine; the service adds no second store.
+    memory = ResearchMemoryService(root, store=KernelMemoryStore(kernel))
     if action == "map":
-        return kernel.load().to_dict()
+        return memory.read_projection("map")
     if action == "context":
-        return _research_context(kernel.load(), root)
+        return memory.read_projection("context")
     if action == "liveness":
-        return _research_liveness(kernel.load(), root)
+        return memory.read_projection("liveness")
     if action == "turn":
         request = params.get("request")
         if not isinstance(request, dict):
             raise CommandError("research.turn requires params.request")
         return _research_turn(kernel, root, request)
     if action == "summary":
-        research_map = kernel.load()
-        return {
-            "schema_version": "research-summary/1",
-            "map_id": research_map.map_id,
-            "title": research_map.title,
-            "revision": research_map.revision,
-            "progress": research_map.progress(),
-            "ready_node_ids": [node.id for node in research_map.ready_nodes()],
-            "focus_claim_ids": list(research_map.focus_claim_ids),
-            "focus_node_ids": list(research_map.focus_node_ids),
-        }
+        return memory.read_projection("summary")
     if action == "validate":
         kernel.load()
         return {"schema_version": "research-validation/1", "valid": True}
@@ -132,7 +128,7 @@ def _research(action: str, root: str | Path, params: dict[str, Any]) -> dict[str
         limit = params.get("limit", 128)
         if type(limit) is not int or not 1 <= limit <= 2048:
             raise CommandError("research.decisions limit must be an integer between 1 and 2048")
-        return kernel.decision_records(claim_id=claim_id, limit=limit)
+        return memory.decisions(claim_id=claim_id, limit=limit)
     if action == "evidence":
         record_type = params.get("record_type") or params.get("recordType")
         if record_type is not None and record_type not in {"attempt", "artifact", "link"}:
@@ -148,7 +144,7 @@ def _research(action: str, root: str | Path, params: dict[str, Any]) -> dict[str
         for key, value in filters.items():
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise CommandError(f"research.evidence {key} must be a non-empty string")
-        return kernel.evidence_records(record_type=record_type, limit=limit, **filters)
+        return memory.evidence(record_type=record_type, limit=limit, **filters)
     if action == "evidence.register":
         request = params.get("request")
         if not isinstance(request, dict):
@@ -374,95 +370,18 @@ def _continuation_status(
 
 
 def _research_context(research_map: Any, root: str | Path) -> dict[str, Any]:
-    """Build a bounded Agent-facing research context.
-
-    This is a read model, not a second source of scientific state.  The full
-    ResearchMap, execution records, Skill catalog, and environment catalog
-    remain separately queryable; context exposes only the current focus and
-    compact operational summaries needed to choose the next action.
-    """
+    """Build the bounded Context Pack projected from durable Research Memory."""
 
     runtime = _runtime_status(root)
     liveness = _research_liveness(research_map, root, runtime=runtime)
-    limits = {
-        "focus": _CONTEXT_FOCUS_LIMIT,
-        "continuations": _CONTEXT_CONTINUATION_LIMIT,
-        "attempts": _CONTEXT_ATTEMPT_LIMIT,
-        "decisions": _CONTEXT_DECISION_LIMIT,
-        "references_per_item": _CONTEXT_REFERENCE_LIMIT,
-        "text_chars": _CONTEXT_TEXT_LIMIT,
-    }
-    focus_node_ids = list(research_map.focus_node_ids)
-    focus_claim_ids = list(research_map.focus_claim_ids)
-    focus_nodes = []
-    for node_id in focus_node_ids[: limits["focus"]]:
-        node = research_map.nodes.get(node_id)
-        if node is None:
-            continue
-        focus_nodes.append(_node_context(node, research_map))
-    focus_claims = []
-    for claim_id in focus_claim_ids[: limits["focus"]]:
-        claim = research_map.claims.get(claim_id)
-        if claim is None:
-            continue
-        focus_claims.append(_claim_context(claim))
-    return {
-        "schema_version": "research-context/1",
-        "map_id": research_map.map_id,
-        "map_revision": research_map.revision,
-        "title": _bounded_text(research_map.title),
-        "focus": {
-            "claim_ids": focus_claim_ids[: limits["focus"]],
-            "node_ids": focus_node_ids[: limits["focus"]],
-            "claims": focus_claims,
-            "nodes": focus_nodes,
-        },
-        "progress": research_map.progress(),
-        "continuations": {
-            "required": [_compact_continuation(item) for item in liveness["required"][: limits["continuations"]]],
-            "deferred": [_compact_continuation(item) for item in liveness["deferred"][: limits["continuations"]]],
-            "blocked": [_compact_continuation(item) for item in liveness["blocked"][: limits["continuations"]]],
-        },
-        "execution": {
-            "pending_attempts": [_compact_attempt(item) for item in liveness["waiting_external"][: limits["attempts"]]],
-            "runtime_revision": runtime.get("runtime_revision"),
-            "runtime_summary": runtime.get("runtime_summary", {}),
-        },
-        "lifecycle": {
-            "state": liveness["lifecycle"],
-            "decision_needed": [_compact_decision(item) for item in liveness["decision_needed"][: limits["decisions"]]],
-            "active_nodes": liveness["active_nodes"][: limits["decisions"]],
-        },
-        "bounds": {
-            "limits": limits,
-            "truncated": {
-                "focus_claims": len(focus_claim_ids) > limits["focus"],
-                "focus_nodes": len(focus_node_ids) > limits["focus"],
-                "required": _liveness_count(liveness, "required") > limits["continuations"],
-                "deferred": _liveness_count(liveness, "deferred") > limits["continuations"],
-                "blocked": _liveness_count(liveness, "blocked") > limits["continuations"],
-                "pending_attempts": _liveness_count(liveness, "waiting_external") > limits["attempts"],
-                "decision_needed": _liveness_count(liveness, "decision_needed") > limits["decisions"],
-            },
-            "truncated_fields": {
-                "focus_nodes": any(_has_truncated_fields(item) for item in focus_nodes),
-                "focus_claims": any(_has_truncated_fields(item) for item in focus_claims),
-                "continuations": any(
-                    _has_truncated_fields(item)
-                    for category in ("required", "deferred", "blocked")
-                    for item in liveness[category][: limits["continuations"]]
-                ),
-                "pending_attempts": any(
-                    _has_truncated_fields(item)
-                    for item in liveness["waiting_external"][: limits["attempts"]]
-                ),
-                "decision_needed": any(
-                    _has_truncated_fields(item)
-                    for item in liveness["decision_needed"][: limits["decisions"]]
-                ),
-            },
-        },
-    }
+    return ContextBuilder(
+        focus_limit=_CONTEXT_FOCUS_LIMIT,
+        continuation_limit=_CONTEXT_CONTINUATION_LIMIT,
+        attempt_limit=_CONTEXT_ATTEMPT_LIMIT,
+        decision_limit=_CONTEXT_DECISION_LIMIT,
+        reference_limit=_CONTEXT_REFERENCE_LIMIT,
+        text_limit=_CONTEXT_TEXT_LIMIT,
+    ).build(research_map, liveness=liveness, runtime=runtime)
 
 
 def _research_liveness(

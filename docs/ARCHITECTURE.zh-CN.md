@@ -121,6 +121,22 @@ SessionWorker 创建时加载并缓存正文，但默认 prompt 只放 name、de
 只有显式调用 Skill 时才把正文注入当前 turn。Capability 和
 Compute Environment 在方法选择或 launch 前按需查询。
 
+运行时边界固定为：
+
+```text
+Research Memory（持久记录）
+  -> ResearchMemoryService（面向 Host 的唯一 facade）
+  -> ContextBuilder（确定性的有界投影）
+  -> ContextPack（临时 turn 工作集）
+  -> Prompt（ContextPack + 工具、Skill 元数据和指令）
+```
+
+`ResearchMemoryService` 不缓存第二份 ResearchMap，也不持久化 ContextPack。
+`ContextPack.context_id` 和 provenance 标识其来源 revision，因此 Host 可以在状态变化
+或重试后重新构造。语义写入仍只能通过 `research.change`、`research.strategy`、
+`research.interpretation`、`research.continuation` 和 `research.checkpoint`；不提供会绕过
+领域校验的通用 `memory.commit`。
+
 Research Turn 的统一协议是：
 
 ```text
