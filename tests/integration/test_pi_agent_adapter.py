@@ -6,7 +6,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
+from tests.support.workspace_helpers import (
+    bootstrap_workspace_fixture,
+    calculation_intent_fixture,
+    calculation_prepared_fixture,
+    start_research_node,
+)
 from scripts.check_package import SKILL_ENTRIES, validate_version_surfaces
 
 
@@ -706,6 +711,77 @@ process.stdout.write(JSON.stringify({{created:createdPayload,resolved:JSON.parse
         "continuation_id": result["created"]["required"][0]["id"],
         "status": "completed",
     }
+
+
+def test_ts_workflow_decision_aliases_route_strategy_interpretation_and_checkpoint(tmp_path: Path) -> None:
+    """The compact Agent-facing workflow tool preserves canonical decision commands."""
+
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    refs = start_research_node(workspace)
+    intent = calculation_intent_fixture(refs["node_id"], "calc_1")
+    attempt_dir = workspace / "nodes" / refs["node_id"] / "attempts" / intent["intent_id"]
+    attempt_dir.mkdir(parents=True, exist_ok=True)
+    (attempt_dir / "intent.json").write_text(json.dumps(intent), encoding="utf-8")
+    (attempt_dir / "prepared.json").write_text(
+        json.dumps(calculation_prepared_fixture(intent)), encoding="utf-8"
+    )
+    script = f"""
+import {{ readFileSync }} from "node:fs";
+import {{ spawnSync }} from "node:child_process";
+import research from {json.dumps((ROOT / 'extensions/pi/research/index.ts').as_uri())};
+process.env.TS_AGENT_PYTHON = {json.dumps(sys.executable)};
+const calls=[]; let workflowTool;
+const pi={{
+  registerTool:(tool)=>{{ if (tool.name === "ts_workflow") workflowTool=tool; }},
+  registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
+  exec:async (command,args)=>{{
+    const requestFlag=args.indexOf("--request-file");
+    const request=requestFlag >= 0 ? JSON.parse(readFileSync(args[requestFlag+1],"utf8")) : null;
+    calls.push({{command,args,request}});
+    const result=spawnSync(command,args,{{encoding:"utf8"}});
+    return {{code:result.status,stdout:result.stdout,stderr:result.stderr}};
+  }},
+}};
+research(pi);
+const strategy=await workflowTool.execute("strategy",{{
+  operation:"strategy", strategyOperation:"plan",
+  plan:{{id:"strategy_1",claim_id:{json.dumps(refs["claim_id"])},node_id:{json.dumps(refs["node_id"])},objective:"Compare bounded candidates.",rationale:"Current evidence is incomplete.",status:"active",created_at:"2026-09-25T00:00:00Z"}},
+  rationale:"Declare the next bounded strategy.", root:{json.dumps(str(workspace))}
+}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+const interpretation=await workflowTool.execute("interpret",{{
+  operation:"interpret",
+  interpretation:{{id:"interpretation_1",claim_id:{json.dumps(refs["claim_id"])},node_id:{json.dumps(refs["node_id"])},attempt_ref:"calc_1",summary:"The prepared attempt is not yet conclusive.",outcome:"inconclusive",created_at:"2026-09-25T00:01:00Z"}},
+  root:{json.dumps(str(workspace))}
+}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+const checkpoint=await workflowTool.execute("checkpoint",{{
+  operation:"checkpoint",
+  checkpoint:{{id:"checkpoint_1",turn_id:"turn_1",disposition:"continue_required",reason:"Continue the declared strategy.",claim_ids:[{json.dumps(refs["claim_id"])}],node_ids:[{json.dumps(refs["node_id"])}],unresolved_refs:["strategy_1"],created_at:"2026-09-25T00:02:00Z"}},
+  root:{json.dumps(str(workspace))}
+}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+process.stdout.write(JSON.stringify({{
+  strategy:JSON.parse(strategy.content[0].text),
+  interpretation:JSON.parse(interpretation.content[0].text),
+  checkpoint:JSON.parse(checkpoint.content[0].text),
+  calls,
+}}));
+"""
+    result = _node_json(script)
+    assert result["strategy"]["operation"] == "plan"
+    assert result["strategy"]["record"]["id"] == "strategy_1"
+    assert result["interpretation"]["record"]["attempt_ref"] == "calc_1"
+    assert result["checkpoint"]["record"]["disposition"] == "continue_required"
+    workflow_calls = [
+        call for call in result["calls"]
+        if call["args"] and call["args"][0].endswith("ts_api.py")
+    ]
+    assert [call["args"][1] for call in workflow_calls] == [
+        "research.strategy", "research.interpretation", "research.checkpoint",
+    ]
+    assert [call["request"]["schema_version"] for call in workflow_calls] == [
+        "research-strategy-request/1",
+        "research-interpretation-request/1",
+        "research-checkpoint-request/1",
+    ]
 
 
 def test_review_fallback_failure_uses_review_runtime_taxonomy() -> None:

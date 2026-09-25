@@ -11,6 +11,11 @@
     {"id": "research.validate", "domain": "research", "effect": "read", "required": []},
     {"id": "research.operations", "domain": "research", "effect": "read", "required": []},
     {"id": "research.continuation", "domain": "research", "effect": "write", "required": []},
+    {"id": "research.strategy", "domain": "research", "effect": "write", "required": ["request"]},
+    {"id": "research.interpretation", "domain": "research", "effect": "write", "required": ["request"]},
+    {"id": "research.checkpoint", "domain": "research", "effect": "write", "required": ["request"]},
+    {"id": "research.decisions", "domain": "research", "effect": "read", "required": []},
+    {"id": "research.storage", "domain": "research", "effect": "write", "required": []},
     {"id": "research.change", "domain": "research", "effect": "write", "required": ["request"]},
     {"id": "compute.environments", "domain": "compute", "effect": "read", "required": []},
     {"id": "compute.environment", "domain": "compute", "effect": "read", "required": ["name"]},
@@ -22,8 +27,8 @@
     "research": {
       "name": "research",
       "description": "Read or validate the current ResearchMap.",
-      "usage": "/research [summary|context|liveness|map|detail <kind> <id>|locate <query>|validate|operations]",
-      "completions": ["summary", "context", "liveness", "map", "detail", "locate", "validate", "operations"]
+      "usage": "/research [summary|context|liveness|map|decisions|storage|detail <kind> <id>|locate <query>|validate|operations]",
+      "completions": ["summary", "context", "liveness", "map", "decisions", "storage", "detail", "locate", "validate", "operations"]
     },
     "compute": {
       "name": "compute",

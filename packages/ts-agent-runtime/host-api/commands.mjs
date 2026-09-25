@@ -67,6 +67,8 @@ export function commandArguments(command, params = {}) {
     id: "--id",
     name: "--name",
     query: "--query",
+    claimId: "--claim-id",
+    limit: "--limit",
     nodeId: "--node-id",
     scope: "--scope",
     targetId: "--target-id",
@@ -104,7 +106,7 @@ export function slashCompletions(name, prefix = "") {
 
 function parseResearchSlash(tokens, usage) {
   const action = tokens[0] || "summary";
-  if (["summary", "context", "liveness", "map", "validate", "operations"].includes(action)
+  if (["summary", "context", "liveness", "map", "decisions", "storage", "validate", "operations"].includes(action)
       && (tokens.length === 1 || (action === "summary" && tokens.length === 0))) {
     return Object.freeze({ command: `research.${action}`, params: Object.freeze({}) });
   }

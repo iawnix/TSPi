@@ -8,7 +8,7 @@ import tempfile
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 import fcntl
 
@@ -34,6 +34,8 @@ from .model import (
     ResearchNode,
     ResearchPhase,
 )
+from .decisions import AttemptInterpretation, StrategyPlan, StrategyReview, TurnCheckpoint
+from .sqlite import ResearchSqliteError, ResearchSqliteRepository
 
 
 MAP_FILE = "research_map.json"
@@ -55,6 +57,7 @@ class ResearchKernel:
     def __init__(self, root: str | Path):
         self.root = Path(root).expanduser().absolute()
         self.path = self.root / MAP_FILE
+        self.sqlite = ResearchSqliteRepository(self.root)
 
     def load(self) -> ResearchMap:
         with self._lock():
@@ -72,6 +75,14 @@ class ResearchKernel:
         return self._load_unlocked()
 
     def _load_unlocked(self) -> ResearchMap:
+        if self.sqlite.path.is_file():
+            try:
+                return self.sqlite.load_map()
+            except ResearchSqliteError as exc:
+                raise ResearchKernelError(str(exc)) from exc
+        return self._load_json_unlocked()
+
+    def _load_json_unlocked(self) -> ResearchMap:
         try:
             value = json.loads(self.path.read_text(encoding="utf-8"))
             if not isinstance(value, dict):
@@ -87,6 +98,17 @@ class ResearchKernel:
             return self._save_unlocked(research_map)
 
     def _save_unlocked(self, research_map: ResearchMap) -> ResearchMap:
+        research_map.validate()
+        if self.sqlite.path.is_file():
+            try:
+                self.sqlite.save_snapshot(research_map)
+            except ResearchSqliteError as exc:
+                raise ResearchKernelError(str(exc)) from exc
+            self._save_json_unlocked(research_map)
+            return research_map
+        return self._save_json_unlocked(research_map)
+
+    def _save_json_unlocked(self, research_map: ResearchMap) -> ResearchMap:
         research_map.validate()
         self.root.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(research_map.to_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -104,6 +126,105 @@ class ResearchKernel:
                 pass
             raise ResearchKernelError(f"cannot save ResearchMap: {exc}") from exc
         return research_map
+
+    def ensure_sqlite(self) -> dict[str, Any]:
+        """Migrate an existing JSON workspace to the SQLite Kernel backend."""
+
+        with self._lock():
+            if self.sqlite.path.is_file():
+                current = self.sqlite.load_map()
+                return {"schema_version": "research-sqlite-bootstrap/1", "created": False, "revision": current.revision}
+            current = self._load_json_unlocked()
+            try:
+                result = self.sqlite.bootstrap_from_json(current)
+            except ResearchSqliteError as exc:
+                raise ResearchKernelError(str(exc)) from exc
+            self._save_json_unlocked(current)
+            return result
+
+    def commit_decisions(
+        self,
+        *,
+        expected_revision: int | None = None,
+        event_id: str | None = None,
+        request_digest: str | None = None,
+        rationale: str | None = None,
+        basis_refs: Iterable[str] = (),
+        strategy_plans: Iterable[StrategyPlan] = (),
+        strategy_reviews: Iterable[StrategyReview] = (),
+        interpretations: Iterable[AttemptInterpretation] = (),
+        checkpoint: TurnCheckpoint | None = None,
+    ) -> dict[str, Any]:
+        """Commit Claim decisions and the current map in one SQLite transaction."""
+
+        basis = list(basis_refs)
+        with self._lock():
+            if not self.sqlite.path.is_file():
+                current = self._load_json_unlocked()
+                try:
+                    self.sqlite.bootstrap_from_json(current)
+                except ResearchSqliteError as exc:
+                    raise ResearchKernelError(str(exc)) from exc
+            replayed = bool(event_id and self.sqlite.has_event(event_id))
+            current = self.sqlite.load_map()
+            try:
+                result = self.sqlite.commit(
+                    current,
+                    expected_revision=expected_revision,
+                    event_id=event_id,
+                    request_digest=request_digest,
+                    rationale=rationale,
+                    basis_refs=basis,
+                    strategy_plans=strategy_plans,
+                    strategy_reviews=strategy_reviews,
+                    interpretations=interpretations,
+                    checkpoint=checkpoint,
+                )
+                saved = self.sqlite.load_map()
+            except ResearchSqliteError as exc:
+                raise ResearchKernelError(str(exc)) from exc
+            self._save_json_unlocked(saved)
+            if not replayed:
+                self._append_transaction_unlocked({
+                    "kind": "claim_decision",
+                    **result,
+                    "event_id": event_id,
+                    "rationale": rationale,
+                    "basis_refs": basis,
+                })
+            return result
+
+    def decision_records(self, *, claim_id: str | None = None, limit: int = 128) -> dict[str, Any]:
+        """Return bounded Claim decision records from the active backend."""
+
+        if type(limit) is not int or not 1 <= limit <= 2048:
+            raise ResearchKernelError("decision record limit must be an integer between 1 and 2048")
+
+        if not self.sqlite.path.is_file():
+            return {
+                "schema_version": "research-decisions/1",
+                "backend": "json",
+                "map_id": self.load_read_only().map_id,
+                "records": {key: [] for key in ("strategy_plans", "strategy_reviews", "attempt_interpretations", "turn_checkpoints")},
+            }
+        try:
+            snapshot = self.sqlite.export_snapshot()
+        except ResearchSqliteError as exc:
+            raise ResearchKernelError(str(exc)) from exc
+        records = snapshot["claim_decisions"]
+        if claim_id is not None:
+            records = {
+                key: [item for item in values if claim_id in item.get("claim_ids", [item.get("claim_id")])]
+                for key, values in records.items()
+            }
+        records = {key: values[:limit] for key, values in records.items()}
+        return {
+            "schema_version": "research-decisions/1",
+            "backend": "sqlite",
+            "map_id": snapshot["research_map"]["map_id"],
+            "map_revision": snapshot["research_map"]["revision"],
+            "records": records,
+        }
 
     def transact(self, change: Callable[[ResearchMap], Any]) -> ResearchMap:
         with self._lock():

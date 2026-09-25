@@ -14,7 +14,14 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from .research import ResearchKernel
+from .research import (
+    AttemptInterpretation,
+    ResearchKernel,
+    ResearchKernelError,
+    StrategyPlan,
+    StrategyReview,
+    TurnCheckpoint,
+)
 from .workspace.operation_registry import operation_catalog
 from .io import append_jsonl, sha256_json
 from .workspace.transactions import workspace_lock
@@ -115,6 +122,43 @@ def _research(action: str, root: str | Path, params: dict[str, Any]) -> dict[str
         if not isinstance(request, dict):
             raise CommandError("research.continuation requires an object request")
         return _apply_continuation_request(kernel, request)
+    if action == "decisions":
+        claim_id = params.get("claim_id") or params.get("claimId")
+        if claim_id is not None and (not isinstance(claim_id, str) or not claim_id.strip()):
+            raise CommandError("research.decisions claim_id must be a non-empty string")
+        limit = params.get("limit", 128)
+        if type(limit) is not int or not 1 <= limit <= 2048:
+            raise CommandError("research.decisions limit must be an integer between 1 and 2048")
+        return kernel.decision_records(claim_id=claim_id, limit=limit)
+    if action == "storage":
+        operation = params.get("operation", "status")
+        if operation not in {"status", "bootstrap"}:
+            raise CommandError("research.storage operation must be status or bootstrap")
+        database = Path(root) / "research.db"
+        if operation == "bootstrap":
+            result = kernel.ensure_sqlite()
+            return {**result, "backend": "sqlite", "path": str(database)}
+        return {
+            "schema_version": "research-storage/1",
+            "backend": "sqlite" if database.is_file() else "json",
+            "sqlite": database.is_file(),
+            "path": str(database),
+        }
+    if action == "strategy":
+        request = params.get("request")
+        if not isinstance(request, dict):
+            raise CommandError("research.strategy requires params.request")
+        return _commit_strategy_request(kernel, request)
+    if action == "interpretation":
+        request = params.get("request")
+        if not isinstance(request, dict):
+            raise CommandError("research.interpretation requires params.request")
+        return _commit_interpretation_request(kernel, root, request)
+    if action == "checkpoint":
+        request = params.get("request")
+        if not isinstance(request, dict):
+            raise CommandError("research.checkpoint requires params.request")
+        return _commit_checkpoint_request(kernel, root, request)
     if action == "detail":
         research_map = kernel.load().to_dict()
         kind = _string(params, "kind")
@@ -642,6 +686,209 @@ def _runtime_status(root: str | Path) -> dict[str, Any]:
     return runtime_status(root)
 
 
+def _decision_request_envelope(request: dict[str, Any], *, schema: str) -> tuple[str | None, int | None, str | None, list[str]]:
+    """Validate shared metadata for Claim decisions without copying payloads."""
+
+    if request.get("schema_version", schema) != schema:
+        raise CommandError(f"unsupported {schema} request schema")
+    event_id = request.get("event_id")
+    if event_id is not None and (not isinstance(event_id, str) or not event_id.strip()):
+        raise CommandError("decision event_id must be a non-empty string")
+    expected_revision = request.get("expected_revision")
+    if expected_revision is not None and (type(expected_revision) is not int or expected_revision < 0):
+        raise CommandError("decision expected_revision must be a non-negative integer")
+    rationale = request.get("rationale")
+    if rationale is not None and (not isinstance(rationale, str) or not rationale.strip()):
+        raise CommandError("decision rationale must be a non-empty string")
+    basis_refs = request.get("basis_refs", [])
+    if not isinstance(basis_refs, list) or any(not isinstance(item, str) or not item.strip() for item in basis_refs):
+        raise CommandError("decision basis_refs must be a list of non-empty strings")
+    return event_id, expected_revision, rationale, basis_refs
+
+
+def _commit_strategy_request(kernel: ResearchKernel, request: dict[str, Any]) -> dict[str, Any]:
+    _decision_unknown_fields(request, {"schema_version", "operation", "event_id", "expected_revision", "rationale", "basis_refs", "plan", "review"})
+    event_id, expected_revision, rationale, basis_refs = _decision_request_envelope(
+        request, schema="research-strategy-request/1",
+    )
+    operation = request.get("operation")
+    if operation not in {"plan", "review"}:
+        raise CommandError("research.strategy operation must be plan or review")
+    payload = request.get("plan" if operation == "plan" else "review")
+    if not isinstance(payload, dict):
+        raise CommandError(f"research.strategy {operation} requires a {operation} object")
+    value = dict(payload)
+    value.setdefault("created_at", _now())
+    if operation == "plan":
+        record = StrategyPlan.from_dict(value)
+        request_digest = sha256_json({"operation": operation, "record": record.to_dict(), "rationale": rationale, "basis_refs": basis_refs})
+        result = _commit_decisions(kernel,
+            expected_revision=expected_revision,
+            event_id=event_id,
+            request_digest=request_digest,
+            rationale=rationale,
+            basis_refs=basis_refs,
+            strategy_plans=[record],
+        )
+    else:
+        record = StrategyReview.from_dict(value)
+        request_digest = sha256_json({"operation": operation, "record": record.to_dict(), "rationale": rationale, "basis_refs": basis_refs})
+        result = _commit_decisions(kernel,
+            expected_revision=expected_revision,
+            event_id=event_id,
+            request_digest=request_digest,
+            rationale=rationale,
+            basis_refs=basis_refs,
+            strategy_reviews=[record],
+        )
+    return {"schema_version": "research-strategy-result/1", "operation": operation, "record": record.to_dict(), "commit": result}
+
+
+def _commit_interpretation_request(kernel: ResearchKernel, root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
+    _decision_unknown_fields(request, {"schema_version", "event_id", "expected_revision", "rationale", "basis_refs", "interpretation"})
+    event_id, expected_revision, rationale, basis_refs = _decision_request_envelope(
+        request, schema="research-interpretation-request/1",
+    )
+    payload = request.get("interpretation")
+    if not isinstance(payload, dict):
+        raise CommandError("research.interpretation requires an interpretation object")
+    value = dict(payload)
+    value.setdefault("created_at", _now())
+    record = AttemptInterpretation.from_dict(value)
+    runtime = _runtime_status(root)
+    attempt_ids = {
+        row.get("attempt_id") or row.get("intent_id")
+        for row in runtime.get("attempts", runtime.get("calculation_attempts", []))
+        if isinstance(row, dict)
+    }
+    if record.attempt_ref not in attempt_ids:
+        raise CommandError(f"interpretation references unknown Attempt {record.attempt_ref}")
+    request_digest = sha256_json({"record": record.to_dict(), "rationale": rationale, "basis_refs": basis_refs})
+    result = _commit_decisions(kernel,
+        expected_revision=expected_revision,
+        event_id=event_id,
+        request_digest=request_digest,
+        rationale=rationale,
+        basis_refs=basis_refs,
+        interpretations=[record],
+    )
+    return {"schema_version": "research-interpretation-result/1", "record": record.to_dict(), "commit": result}
+
+
+def _commit_checkpoint_request(kernel: ResearchKernel, root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
+    _decision_unknown_fields(request, {"schema_version", "event_id", "expected_revision", "rationale", "basis_refs", "checkpoint"})
+    event_id, expected_revision, rationale, basis_refs = _decision_request_envelope(
+        request, schema="research-checkpoint-request/1",
+    )
+    payload = request.get("checkpoint")
+    if not isinstance(payload, dict):
+        raise CommandError("research.checkpoint requires a checkpoint object")
+    value = dict(payload)
+    value.setdefault("created_at", _now())
+    record = TurnCheckpoint.from_dict(value)
+    current = kernel.load()
+    runtime = _runtime_status(root)
+    decisions = kernel.decision_records()
+    _validate_checkpoint_lifecycle(record, current, runtime, decisions)
+    request_digest = sha256_json({"record": record.to_dict(), "rationale": rationale, "basis_refs": basis_refs})
+    result = _commit_decisions(kernel,
+        expected_revision=expected_revision,
+        event_id=event_id,
+        request_digest=request_digest,
+        rationale=rationale,
+        basis_refs=basis_refs,
+        checkpoint=record,
+    )
+    # SQLite binds the checkpoint to the revision committed in the same
+    # transaction; expose that canonical value rather than the request's
+    # optional placeholder.
+    record.map_revision = result["revision"]
+    return {"schema_version": "research-checkpoint-result/1", "record": record.to_dict(), "commit": result}
+
+
+def _decision_unknown_fields(request: dict[str, Any], allowed: set[str]) -> None:
+    unknown = sorted(set(request) - allowed)
+    if unknown:
+        raise CommandError("decision request contains unsupported fields: " + ", ".join(unknown))
+
+
+def _commit_decisions(kernel: ResearchKernel, **kwargs: Any) -> dict[str, Any]:
+    try:
+        return kernel.commit_decisions(**kwargs)
+    except ResearchKernelError as exc:
+        raise CommandError(str(exc)) from exc
+
+
+def _validate_checkpoint_lifecycle(
+    checkpoint: Any,
+    research_map: Any,
+    runtime: dict[str, Any],
+    decisions: dict[str, Any],
+) -> None:
+    """Enforce the non-negotiable evidence/lifecycle bindings at close time."""
+
+    disposition = checkpoint.disposition.value
+    attempts = [row for row in runtime.get("attempts", runtime.get("calculation_attempts", [])) if isinstance(row, dict)]
+    by_id = {row.get("attempt_id") or row.get("intent_id"): row for row in attempts}
+    unresolved = set(checkpoint.unresolved_refs)
+    if disposition == "waiting_external":
+        if not unresolved:
+            raise CommandError("waiting_external checkpoint requires unresolved_refs")
+        missing = sorted(ref for ref in unresolved if ref not in by_id)
+        if missing:
+            raise CommandError("waiting_external checkpoint references unknown Attempts: " + ", ".join(missing))
+        terminal = {"failed", "stopped", "collected", "parsed"}
+        finished = sorted(ref for ref in unresolved if (by_id[ref].get("state") or by_id[ref].get("status")) in terminal)
+        if finished:
+            raise CommandError("waiting_external checkpoint references terminal Attempts: " + ", ".join(finished))
+
+    if disposition == "continue_required":
+        plans = decisions.get("records", {}).get("strategy_plans", [])
+        strategy_ids = set(checkpoint.metadata.get("strategy_ids", [])) if isinstance(checkpoint.metadata, dict) else set()
+        valid_claims = {
+            row.get("claim_id") for row in plans
+            if row.get("status") in {"proposed", "active"}
+            and (not strategy_ids or row.get("id") in strategy_ids)
+        }
+        missing = sorted(set(checkpoint.claim_ids) - valid_claims)
+        if missing:
+            raise CommandError("continue_required checkpoint needs an active StrategyPlan for Claims: " + ", ".join(missing))
+
+    if disposition == "terminal":
+        scoped_nodes = set(checkpoint.node_ids)
+        for claim in research_map.claims.values():
+            if claim.id in checkpoint.claim_ids:
+                scoped_nodes.update(claim.node_ids)
+        open_nodes = sorted(
+            node_id for node_id in scoped_nodes
+            if node_id in research_map.nodes
+            and getattr(research_map.nodes[node_id].state, "value", research_map.nodes[node_id].state) != "closed"
+        )
+        if open_nodes:
+            raise CommandError("terminal checkpoint requires closed Nodes: " + ", ".join(open_nodes))
+
+    # Parsed is a scientific result, not merely a scheduler state. Every
+    # parsed Attempt in the checkpoint scope must have an interpretation.
+    scoped_nodes = set(checkpoint.node_ids)
+    scoped_claims = set(checkpoint.claim_ids)
+    for claim in research_map.claims.values():
+        if claim.id in scoped_claims:
+            scoped_nodes.update(claim.node_ids)
+    interpreted = {
+        row.get("attempt_ref")
+        for row in decisions.get("records", {}).get("attempt_interpretations", [])
+    }
+    missing_interpretations = sorted(
+        (row.get("attempt_id") or row.get("intent_id"))
+        for row in attempts
+        if (row.get("state") or row.get("status")) == "parsed"
+        and (not scoped_nodes or (row.get("node_ref") or row.get("node_id")) in scoped_nodes)
+        and (row.get("attempt_id") or row.get("intent_id")) not in interpreted
+    )
+    if missing_interpretations:
+        raise CommandError("parsed Attempts require AttemptInterpretation before checkpoint: " + ", ".join(missing_interpretations))
+
+
 def _research_turn(kernel: ResearchKernel, root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
     """Run one domain-neutral Research Turn boundary.
 
@@ -1096,6 +1343,10 @@ def _next_continuation_id(research_map: Any) -> str:
 
 def _json_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _json_load_object(value: str) -> dict[str, Any]:

@@ -80,6 +80,17 @@ export function createStateTool() {
         throw new Error("state mode=capabilities requires capabilityKind=compute or analysis");
       }
       if (mode === "runs") return toolResult(await NATIVE_COMMANDS.execute("compute.runs", root, {}, context?.abortSignal));
+      if (mode === "decisions") {
+        return toolResult(await NATIVE_COMMANDS.execute("research.decisions", root, {
+          claimId: params.claimId,
+          limit: params.limit,
+        }, context?.abortSignal));
+      }
+      if (mode === "storage") {
+        return toolResult(await NATIVE_COMMANDS.execute("research.storage", root, {
+          operation: params.storageOperation || "status",
+        }, context?.abortSignal));
+      }
       const command = `research.${mode}`;
       const commandParams = mode === "detail"
         ? { kind: params.kind, id: params.id }
@@ -137,6 +148,48 @@ export function createWorkflowTool() {
           targetId: params.targetId,
         }, context?.abortSignal);
         result = filterContinuationStatus(result, params);
+      } else if (params.operation === "strategy") {
+        requireNativeWrites("ts_workflow");
+        if (!params.strategyOperation || !params[params.strategyOperation]) {
+          throw new Error("ts_workflow strategy requires strategyOperation and plan or review");
+        }
+        result = await NATIVE_COMMANDS.execute("research.strategy", root, {
+          request: {
+            schema_version: "research-strategy-request/1",
+            operation: params.strategyOperation,
+            [params.strategyOperation]: params[params.strategyOperation],
+            rationale: params.rationale,
+            basis_refs: params.basisRefs || [],
+            expected_revision: params.expectedRevision,
+            event_id: params.eventId,
+          },
+        }, context?.abortSignal);
+      } else if (params.operation === "interpret") {
+        requireNativeWrites("ts_workflow");
+        if (!params.interpretation) throw new Error("ts_workflow interpret requires interpretation");
+        result = await NATIVE_COMMANDS.execute("research.interpretation", root, {
+          request: {
+            schema_version: "research-interpretation-request/1",
+            interpretation: params.interpretation,
+            rationale: params.rationale,
+            basis_refs: params.basisRefs || [],
+            expected_revision: params.expectedRevision,
+            event_id: params.eventId,
+          },
+        }, context?.abortSignal);
+      } else if (params.operation === "checkpoint") {
+        requireNativeWrites("ts_workflow");
+        if (!params.checkpoint) throw new Error("ts_workflow checkpoint requires checkpoint");
+        result = await NATIVE_COMMANDS.execute("research.checkpoint", root, {
+          request: {
+            schema_version: "research-checkpoint-request/1",
+            checkpoint: params.checkpoint,
+            rationale: params.rationale,
+            basis_refs: params.basisRefs || [],
+            expected_revision: params.expectedRevision,
+            event_id: params.eventId,
+          },
+        }, context?.abortSignal);
       } else {
         validateWorkflowParams(params);
         requireNativeWrites("ts_workflow");
@@ -694,11 +747,17 @@ async function runCanonicalApi(command, cwd, extraArgs, parentSignal, timeoutMs 
 
 async function executeNativeCommand({ command, root, params, signal }) {
   if (command === "research.change"
+    || command === "research.strategy"
+    || command === "research.interpretation"
+    || command === "research.checkpoint"
     || (command === "research.continuation" && params.request !== undefined)
     || (command === "research.turn" && params.request !== undefined)) {
     return runPrivateRequest(
       command === "research.change"
         ? "tspi-native-change-"
+        : command === "research.strategy" ? "tspi-native-strategy-"
+        : command === "research.interpretation" ? "tspi-native-interpretation-"
+        : command === "research.checkpoint" ? "tspi-native-checkpoint-"
         : command === "research.turn" ? "tspi-native-turn-" : "tspi-native-continuation-",
       packageScript("ts_api.py"),
       command,

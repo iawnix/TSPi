@@ -80,12 +80,15 @@ export function createPublicToolContracts(Type: any): PublicToolContracts;
 
 export interface WorkspaceToolParams { root?: string }
 export interface StateToolParams extends WorkspaceToolParams {
-  mode?: "map" | "summary" | "context" | "liveness" | "detail" | "locate" | "validate" | "operations" | "artifacts" | "capabilities" | "runs";
+  mode?: "map" | "summary" | "context" | "liveness" | "detail" | "locate" | "validate" | "operations" | "decisions" | "storage" | "artifacts" | "capabilities" | "runs";
   query?: string;
   kind?: "phase" | "claim" | "node" | "finding" | "gate";
   id?: string;
   nodeRef?: string;
   capabilityKind?: "compute" | "analysis";
+  claimId?: string;
+  limit?: number;
+  storageOperation?: "status" | "bootstrap";
 }
 export interface ChangeToolParams extends WorkspaceToolParams {
   rationale: string;
@@ -94,7 +97,7 @@ export interface ChangeToolParams extends WorkspaceToolParams {
   expectedRevision?: number;
 }
 export interface WorkflowToolParams extends WorkspaceToolParams {
-  operation: "status" | "set" | "resolve" | "set_required" | "set_deferred" | "set_blocked" | "set_completed";
+  operation: "status" | "set" | "resolve" | "set_required" | "set_deferred" | "set_blocked" | "set_completed" | "strategy" | "interpret" | "checkpoint";
   scope?: "node" | "claim" | "gate";
   targetId?: string;
   action?: "inspect" | "finalize" | "launch" | "analyze" | "review" | "evaluate" | "close";
@@ -102,6 +105,15 @@ export interface WorkflowToolParams extends WorkspaceToolParams {
   reason?: string;
   requestId?: string;
   continuationId?: string;
+  strategyOperation?: "plan" | "review";
+  plan?: Record<string, unknown>;
+  review?: Record<string, unknown>;
+  interpretation?: Record<string, unknown>;
+  checkpoint?: Record<string, unknown>;
+  rationale?: string;
+  basisRefs?: string[];
+  expectedRevision?: number;
+  eventId?: string;
 }
 export interface EnvironmentToolParams extends WorkspaceToolParams { mode?: "list" | "show"; name?: string }
 export interface ComputeToolParams extends WorkspaceToolParams {

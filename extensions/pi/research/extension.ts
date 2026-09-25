@@ -146,7 +146,7 @@ export function registerResearchExtension(pi: ExtensionAPI) {
       } catch {
         currentState = "\n\nCurrent workspace snapshot is unavailable. Read ts_state before any scientific write; do not treat session history as current workspace state.";
       }
-      extensionText += `\n\nResearchMap workspace active: ${root}. Use ${PUBLIC_TOOL_NAMES.state} to read the canonical map and ${PUBLIC_TOOL_NAMES.change} to apply explicit map changes. Use ${PUBLIC_TOOL_NAMES.workflow} after a wake to inspect or record a required, deferred, blocked, or completed continuation for a Node, Claim, or Gate. The canonical turn checkpoint is research.turn; a required continuation is a valid next-turn plan, not a same-turn execution command. ResearchPhase, ResearchNode, ResearchClaim, Finding, and Gate are map objects; compute environments and execution records are separate runtime data. The Root Agent chooses research strategy and records interpretation. Query ${PUBLIC_TOOL_NAMES.state} mode=operations before using an unfamiliar map operation.${currentState}`;
+      extensionText += `\n\nResearchMap workspace active: ${root}. Use ${PUBLIC_TOOL_NAMES.state} to read the canonical map and ${PUBLIC_TOOL_NAMES.change} to apply explicit map changes. Use ${PUBLIC_TOOL_NAMES.workflow} after a wake to record Claim strategy, Attempt interpretation, a Turn checkpoint, or a required/deferred/blocked continuation for a Node, Claim, or Gate. The Host research.turn call is an admission probe; the durable checkpoint is recorded with ${PUBLIC_TOOL_NAMES.workflow} operation=checkpoint. A required continuation is a valid next-turn plan, not a same-turn execution command. ResearchPhase, ResearchNode, ResearchClaim, Finding, and Gate are map objects; compute environments and execution records are separate runtime data. The Root Agent chooses research strategy and records interpretation. Query ${PUBLIC_TOOL_NAMES.state} mode=operations before using an unfamiliar map operation.${currentState}`;
     }
     const emitted = `${event.systemPrompt}\n\n${extensionText}`;
     promptObservation = {
@@ -221,6 +221,16 @@ export function registerResearchExtension(pi: ExtensionAPI) {
         const result = await runtime.command(`research.${mode}` as CommandId, root, {}, signal);
         return toolText(JSON.stringify(result, null, 2), { result });
       }
+      if (mode === "decisions") {
+        const result = await runtime.command("research.decisions", root, { claimId: params.claimId, limit: params.limit }, signal);
+        return toolText(JSON.stringify(result, null, 2), { result });
+      }
+      if (mode === "storage") {
+        const result = await runtime.command("research.storage", root, {
+          operation: params.storageOperation || "status",
+        }, signal);
+        return toolText(JSON.stringify(result, null, 2), { result });
+      }
       if (mode === "detail") {
         if (!params.kind || !params.id) throw new Error("state mode=detail requires kind and id");
         const result = await runtime.command("research.detail", root, { kind: params.kind, id: params.id }, signal);
@@ -288,7 +298,13 @@ export function registerResearchExtension(pi: ExtensionAPI) {
           scope: params.scope,
           targetId: params.targetId,
         }, signal)
-        : await runtime.command("research.continuation", root, { request: continuationRequest(params) }, signal);
+        : params.operation === "strategy"
+          ? await runtime.command("research.strategy", root, { request: strategyRequest(params) }, signal)
+          : params.operation === "interpret"
+            ? await runtime.command("research.interpretation", root, { request: interpretationRequest(params) }, signal)
+            : params.operation === "checkpoint"
+              ? await runtime.command("research.checkpoint", root, { request: checkpointRequest(params) }, signal)
+              : await runtime.command("research.continuation", root, { request: continuationRequest(params) }, signal);
       return toolText(JSON.stringify(result, null, 2), { result });
     },
   }));
@@ -387,6 +403,37 @@ function continuationRequest(params: WorkflowToolParams): Record<string, unknown
   if (params.continuationId !== undefined) request.continuation_id = params.continuationId;
   if (params.status !== undefined) request.status = params.status;
   return request;
+}
+
+function decisionEnvelope(params: WorkflowToolParams, schemaVersion: string): Record<string, unknown> {
+  return {
+    schema_version: schemaVersion,
+    rationale: params.rationale,
+    basis_refs: params.basisRefs || [],
+    expected_revision: params.expectedRevision,
+    event_id: params.eventId,
+  };
+}
+
+function strategyRequest(params: WorkflowToolParams): Record<string, unknown> {
+  if (!params.strategyOperation || !params[params.strategyOperation]) {
+    throw new Error("ts_workflow strategy requires strategyOperation and plan or review");
+  }
+  return {
+    ...decisionEnvelope(params, "research-strategy-request/1"),
+    operation: params.strategyOperation,
+    [params.strategyOperation]: params[params.strategyOperation],
+  };
+}
+
+function interpretationRequest(params: WorkflowToolParams): Record<string, unknown> {
+  if (!params.interpretation) throw new Error("ts_workflow interpret requires interpretation");
+  return { ...decisionEnvelope(params, "research-interpretation-request/1"), interpretation: params.interpretation };
+}
+
+function checkpointRequest(params: WorkflowToolParams): Record<string, unknown> {
+  if (!params.checkpoint) throw new Error("ts_workflow checkpoint requires checkpoint");
+  return { ...decisionEnvelope(params, "research-checkpoint-request/1"), checkpoint: params.checkpoint };
 }
 
 function configuredNotificationTarget(): string {

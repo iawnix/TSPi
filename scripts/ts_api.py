@@ -24,6 +24,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--id")
     parser.add_argument("--name")
     parser.add_argument("--query")
+    parser.add_argument("--claim-id")
+    parser.add_argument("--limit", type=int)
     parser.add_argument("--node-id")
     parser.add_argument("--scope")
     parser.add_argument("--target-id")
@@ -38,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
                 "id": args.id,
                 "name": args.name,
                 "query": args.query,
+                "claim_id": args.claim_id,
+                "limit": args.limit,
                 "node_id": args.node_id,
                 "scope": args.scope,
                 "target_id": args.target_id,

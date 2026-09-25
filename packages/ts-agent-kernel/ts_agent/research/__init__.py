@@ -26,15 +26,29 @@ from .model import (
     ClaimGate,
     NodeGate,
 )
+from .decisions import (
+    AttemptInterpretation,
+    DecisionModelError,
+    InterpretationOutcome,
+    StrategyPlan,
+    StrategyReview,
+    StrategyReviewDecision,
+    StrategyStatus,
+    TurnCheckpoint,
+    TurnDisposition,
+)
 from .kernel import ResearchKernel, ResearchKernelError
+from .sqlite import ResearchSqliteError, ResearchSqliteRepository
 
 __all__ = [
     "ClaimGate",
+    "AttemptInterpretation",
     "ClaimStatus",
     "ContinuationAction",
     "ContinuationRecord",
     "ContinuationScope",
     "ContinuationStatus",
+    "DecisionModelError",
     "FactFinding",
     "Finding",
     "FindingKind",
@@ -44,6 +58,7 @@ __all__ = [
     "GateScope",
     "GateVerdict",
     "IssueFinding",
+    "InterpretationOutcome",
     "NodeGate",
     "NodeOutcome",
     "NodeState",
@@ -55,4 +70,12 @@ __all__ = [
     "ResearchNode",
     "ResearchObject",
     "ResearchPhase",
+    "ResearchSqliteError",
+    "ResearchSqliteRepository",
+    "StrategyPlan",
+    "StrategyReview",
+    "StrategyReviewDecision",
+    "StrategyStatus",
+    "TurnCheckpoint",
+    "TurnDisposition",
 ]

@@ -114,11 +114,17 @@ export class PiRuntime {
 
   private async executeCanonical(invocation: CommandTransportInvocation) {
     if (invocation.command === "research.change"
+      || invocation.command === "research.strategy"
+      || invocation.command === "research.interpretation"
+      || invocation.command === "research.checkpoint"
       || (invocation.command === "research.continuation" && invocation.params.request !== undefined)
       || (invocation.command === "research.turn" && invocation.params.request !== undefined)) {
       return this.withRequestFile(
         invocation.command === "research.change"
           ? "ts-research-change-"
+          : invocation.command === "research.strategy" ? "ts-research-strategy-"
+          : invocation.command === "research.interpretation" ? "ts-research-interpretation-"
+          : invocation.command === "research.checkpoint" ? "ts-research-checkpoint-"
           : invocation.command === "research.turn" ? "ts-research-turn-" : "ts-research-continuation-",
         invocation.params.request,
         (requestFile) => this.runScript(

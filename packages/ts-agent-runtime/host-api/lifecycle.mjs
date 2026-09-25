@@ -202,7 +202,7 @@ export function continuationFollowUp(status) {
       .join(", ");
     const suffix = refs ? ` (${refs})` : "";
     return {
-      followUp: `Research turn ended with an active scope lacking an explicit disposition${suffix}. Continue the turn: read ts_state with mode=context, inspect any relevant Node/Attempt, then either record the concrete next action with ts_workflow operation=set_required, or explicitly set the scope deferred, blocked, or completed with a reason. Do not invent a scientific result and do not end while an active scope has no lifecycle disposition.`,
+      followUp: `Research turn ended with an active scope lacking an explicit disposition${suffix}. Continue the turn: read ts_state with mode=context, inspect any relevant Node/Attempt, record a Claim strategy or Attempt interpretation when needed with ts_workflow, then close with ts_workflow operation=checkpoint (use operation=set_required only for the legacy continuation ledger; deferred, blocked, or completed are explicit dispositions). Do not invent a scientific result and do not end while an active scope has no lifecycle disposition.`,
     };
   }
 
