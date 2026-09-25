@@ -2,8 +2,7 @@
 
 [English](0004-unified-app-server-extension-runtime.md) | 简体中文
 
-- 状态：已接受；[ADR 0005](0005-ordinary-pi-host-bridge.zh-CN.md) 只保留给隔离的普通
-  Pi 迁移/调试模式
+- 状态：已接受；已退役的 ordinary-Pi bridge 不属于运行时
 - 日期：2026-09-17
 
 ## 决定
@@ -29,4 +28,4 @@ Compute 和 Review runtime 仍校验结果 tool call。对声明 DeepSeek 风格
 
 ## 后果
 
-ADR 0005 只描述显式选择的普通兼容模式，不能作为本运行时的 fallback。
+旧 ordinary-Pi bridge 仅作为历史设计背景保留；它不会被打包、选择或由本运行时访问。

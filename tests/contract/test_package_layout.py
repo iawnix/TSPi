@@ -69,7 +69,7 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     app_server = package_root / "apps" / "app-server" / "pi-app-server.mjs"
     app_server.parent.mkdir(parents=True)
     app_server.write_text("// test app server entry\n", encoding="utf-8")
-    # The launcher validates the pinned ordinary Pi checkout before it execs
+    # The launcher validates the pinned Pi checkout before it execs
     # Node.  Keep this fixture self-contained by creating a tiny local Git
     # checkout with the two paths the normal CLI requires.  The fake `node`
     # below still runs the test Pi, so no real Pi dependency is needed here.
@@ -95,7 +95,7 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
             "commit",
             "--quiet",
             "-m",
-            "fixture ordinary Pi source",
+            "fixture pinned Pi source",
         ],
         check=True,
     )
@@ -277,11 +277,11 @@ def test_current_sources_do_not_use_generation_branded_language_or_paths() -> No
 def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert (RUNTIME_ROOT / "host-api" / "commands.mjs").is_file()
     assert (RUNTIME_ROOT / "host-api" / "tools.mjs").is_file()
-    assert (ROOT / "extensions" / "pi" / "runtime.ts").is_file()
-    assert (ROOT / "extensions" / "pi" / "research" / "extension.ts").is_file()
-    assert (ROOT / "extensions" / "pi" / "ui" / "extension.ts").is_file()
-    for name in ("artifacts", "compute", "review"):
-        assert (ROOT / "extensions" / "pi" / name / "tools.ts").is_file()
+    assert (RUNTIME_ROOT / "host-api" / "model-readiness.ts").is_file()
+    assert (ROOT / "extensions" / "server" / "tspi-tools.mjs").is_file()
+    assert not (ROOT / "extensions" / "pi" / "runtime.ts").exists()
+    for name in ("research", "review", "compute", "artifacts"):
+        assert not (ROOT / "extensions" / "pi" / name).exists()
     for removed in ("adapters", "core", "shared", "ts-workflow-control", "ts-workflow-ui", "ts-workflow-review", "ts-workflow-compute", "ts-workflow-artifacts"):
         assert not (ROOT / "extensions" / removed).exists()
     for name in ("agent-protocol.cjs", "fact-kinds.cjs", "failure-taxonomy.cjs", "run-journal.cjs", "session-lifecycle.cjs"):
@@ -296,13 +296,11 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert (PYTHON_PACKAGE / "structures" / "seed.py").is_file()
 
 
-def test_pi_extension_entrypoints_only_install_owned_modules() -> None:
-    for name in ("research", "ui", "review", "compute", "artifacts"):
-        source = (ROOT / "extensions" / "pi" / name / "index.ts").read_text(encoding="utf-8")
-        assert len(source.splitlines()) <= 10
-        assert "registerTool" not in source
-        assert "registerCommand" not in source
-        assert "new PiRuntime" not in source
+def test_native_harness_is_the_only_public_pi_tool_entrypoint() -> None:
+    manifest = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    assert manifest["pi"]["extensions"] == []
+    assert (ROOT / "extensions" / "server" / "extensions.json").is_file()
+    assert not list((ROOT / "extensions" / "pi").glob("**/index.ts"))
     assert (PYTHON_PACKAGE / "research" / "kernel.py").is_file()
     assert (PYTHON_PACKAGE / "research" / "model.py").is_file()
     assert (PYTHON_PACKAGE / "workspace" / "bootstrap.py").is_file()

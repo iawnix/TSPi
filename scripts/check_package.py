@@ -28,14 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "@iawnix/ts-agent"
 PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 THEME_ENTRIES = ["./themes/ts-theme.json"]
-EXTENSION_ENTRIES = [
-    "./extensions/pi/research/index.ts",
-    "./extensions/pi/ui/index.ts",
-    "./extensions/pi/review/index.ts",
-    "./extensions/pi/compute/index.ts",
-    "./extensions/pi/artifacts/index.ts",
-    "./extensions/pi/bridge/index.ts",
-]
+EXTENSION_ENTRIES: list[str] = []
 REMOVED_PREFIXES = (
     "agent-core/",
     "agent-skills/",

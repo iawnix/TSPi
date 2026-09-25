@@ -4,8 +4,7 @@
 
 `TSPi --workspace <name>` 启动的是 Pi 官方的远程 `ExperimentalClientTui`，不会替换
 Pi 的 header、editor、命令目录、transcript、extension 或输入循环。选中的 workspace
-绑定到安装级 Pi Harness format-4 会话；`<workspace>/.pi/sessions/` 中的旧 format-3 文件只用于只读
-兼容展示。
+绑定到安装级 Pi Harness format-4 会话。
 
 ## 运行边界
 
@@ -28,9 +27,9 @@ TUI、Phone、Monitor 都是同一个 lane 的客户端，不会启动第二个 
 ```
 
 启动器先确保安装级 Host 在线，再请求 session descriptor，直接把 Pi 官方 native client
-连接到 Pi App Server socket。默认路径没有 tmux、PTY scraping 或 ordinary bridge。同一
-workspace 的第二个终端会连接同一个 format-4 session；客户端关闭不会停止 worker，也不会打断
-当前 turn。`TSPI_HOST_BACKEND=ordinary` 只保留给迁移/调试检查。
+连接到 Pi App Server socket。Native Pi Harness 是唯一支持的后端，不提供 tmux 或 PTY scraping
+路径。同一 workspace 的第二个终端会连接同一个 format-4 session；客户端关闭不会
+停止 worker，也不会打断当前 turn。
 
 Host 是安装级服务，会扫描 workspace root 下的直接子工作区。通常使用：
 
@@ -39,15 +38,13 @@ systemctl --user start ts-app-server-tspi.service
 systemctl --user status ts-app-server-tspi.service
 ```
 
-system service 去掉 `--user`。Host 私有 socket 位于配置的 runtime 目录，bridge token
-位于 `.pi/app-server-host/`。
+system service 去掉 `--user`。Host 私有 socket 位于配置的 runtime 目录。
 
 ## 会话和操作
 
 远程 `ExperimentalClientTui` 提供 `/resume`、`/model`、`/thinking`、`/compact`、
-`/reload` 以及已安装的 TSPi extension 命令。`/resume` 只能切换当前 workspace 中的
-format-4 session，不会跨 workspace。普通 Pi 的 `/new` 和 `/fork` 在这个远程客户端中
-不可用。
+`/reload` 以及 Native TSPi 命令。`/resume` 只能切换当前 workspace 中的 format-4
+session，不会跨 workspace。独立 Pi 的会话命令在这个远程客户端中不可用。
 
 启动时，`-c` 选择当前 workspace 最近的可写 format-4 session，`--session-id <id>` 选择
 指定 session。顶层 `-r`/`--resume` 会被明确拒绝，因为 Host-mediated client 必须先取得
@@ -78,12 +75,10 @@ Monitor 不会自动 finalize，也不会修改 ResearchMap。
 `reaction-a` 这样的直接目录名。Monitor 会先验证 canonical identity，再做路由转换，
 避免跨项目投递。
 
-## 旧历史
+## 会话存储
 
-安装级 `.pi/app-server-host/sessions/` 是唯一规范 format-4 存储。workspace
-`.pi/sessions/*.jsonl` 的 v3 历史可以列出和读取，但不能 resume 或 prompt。使用
-`apps/app-server/tspi-history.mjs --source ... --import`（或 Host 的 `session/import`）
-显式导入；源文件按 digest 校验且不修改，安装级 Host state 会写 provenance 报告。未知、
-残缺、活动或冲突历史会拒绝，而不会静默重放。
+安装级 `.pi/app-server-host/sessions/` 是 Native Pi Harness 使用的唯一 session 存储。
+workspace `.pi/sessions/*.jsonl` 历史不是受支持的输入，Native runtime 不会 resume 或导入它。
+研究状态应保存在 workspace Research Memory；format-4 session 使用 Host 的会话控制接口。
 
 详见[架构](ARCHITECTURE.zh-CN.md)和[安装说明](INSTALLATION.zh-CN.md)。

@@ -28,11 +28,14 @@ const piServerDirectory = join(resolve(options.directory), "pi");
 const python = process.env.TS_AGENT_PYTHON || "python3";
 const provider = options.provider ?? process.env.TSPI_PROVIDER;
 const model = options.model ?? process.env.TSPI_MODEL;
+const backendMode = (process.env.TSPI_HOST_BACKEND || "harness").trim().toLowerCase();
+if (backendMode !== "harness") {
+  throw new Error(`Unsupported TSPI_HOST_BACKEND: ${backendMode}; Native Pi Harness is the only supported backend`);
+}
 if ((provider === undefined) !== (model === undefined)) throw new Error("TSPI_PROVIDER and TSPI_MODEL must be provided together");
 if (Boolean(process.env.TSPI_LINK_URL) !== Boolean(process.env.TSPI_LINK_HOST_TOKEN_FILE)) {
   throw new Error("Both TSPi Link URL and Host token file are required.");
 }
-const backendMode = (process.env.TSPI_HOST_BACKEND || "harness").trim().toLowerCase();
 let sessionBackend;
 let host;
 let stopping = false;
@@ -126,39 +129,31 @@ startupPromise = (async () => {
     // Do not expose runtime state until signal cleanup is installed above.
     mkdirSync(piServerDirectory, { recursive: true, mode: 0o700 });
     mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
-    if (backendMode === "harness") {
-      const pin = JSON.parse(readFileSync(join(packageRoot, "config/pi-source.json"), "utf8"));
-      const sourceRoot = resolve(options["source-root"] || process.env.TSPI_PI_SOURCE || join(installRoot, ".pi/runtime-cache/pi", pin.commit));
-      if (!existsSync(join(sourceRoot, "packages/coding-agent/src/experimental/server.ts"))) {
-        throw new Error(`managed Pi experimental source is unavailable: ${sourceRoot}`);
-      }
-      process.env.TSPI_PI_SOURCE = sourceRoot;
-      sessionBackend = await createTspiHarnessBackend({
-        sourceRoot,
-        packageRoot,
-        installRoot,
-        workspaceRoot,
-        // Pi puts several UUID-bearing Unix sockets below this directory. The
-        // launcher-provided hashed runtime directory is deliberately short so
-        // the resulting paths stay below the POSIX AF_UNIX limit.
-        serverDirectory: piServerDirectory,
-        sessionDir: resolve(options["session-dir"] || join(stateRoot, "sessions")),
-        stateRoot,
-        serverId: options["server-id"],
-        provider,
-        model,
-      });
-    } else if (backendMode !== "ordinary") {
-      throw new Error(`Unsupported TSPI_HOST_BACKEND: ${backendMode}`);
+    const pin = JSON.parse(readFileSync(join(packageRoot, "config/pi-source.json"), "utf8"));
+    const sourceRoot = resolve(options["source-root"] || process.env.TSPI_PI_SOURCE || join(installRoot, ".pi/runtime-cache/pi", pin.commit));
+    if (!existsSync(join(sourceRoot, "packages/coding-agent/src/experimental/server.ts"))) {
+      throw new Error(`managed Pi experimental source is unavailable: ${sourceRoot}`);
     }
+    process.env.TSPI_PI_SOURCE = sourceRoot;
+    sessionBackend = await createTspiHarnessBackend({
+      sourceRoot,
+      packageRoot,
+      installRoot,
+      workspaceRoot,
+      // Pi puts several UUID-bearing Unix sockets below this directory. The
+      // launcher-provided hashed runtime directory is deliberately short so
+      // the resulting paths stay below the POSIX AF_UNIX limit.
+      serverDirectory: piServerDirectory,
+      sessionDir: resolve(options["session-dir"] || join(stateRoot, "sessions")),
+      stateRoot,
+      serverId: options["server-id"],
+      provider,
+      model,
+    });
     if (stopping) return;
-    const sessionLifecycle = sessionBackend
-      ? undefined
-      : (await import("./tspi-terminal-runtime.mjs")).createSessionLifecycle({ installRoot, packageRoot, stateRoot, socketPath });
     host = await startTspiHost({
-      socketPath, workspaceRoot, stateRoot, installRoot, packageRoot, python, serverId: options["server-id"],
+      socketPath, workspaceRoot, stateRoot, packageRoot, python, serverId: options["server-id"],
       sessionBackend,
-      sessionLifecycle,
     });
   } catch (error) {
     try { await sessionBackend?.close?.(); } catch { /* startup cleanup is best effort */ }

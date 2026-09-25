@@ -229,9 +229,9 @@ Create a new conversation or continue the latest conversation in a project:
 The Host identity is `<install>/.pi/app-server-host/server-id`; request receipts,
 scheduler leases, Monitor health, and the canonical Pi format-4 session repository
 live below the same directory. format-4 files are grouped by cwd under
-`.pi/app-server-host/sessions/`. Workspace `.pi/sessions` files are legacy format-3
-history and remain read-only until an explicit import. A workspace is restricted
-to a validated direct child of the configured workspace root.
+`.pi/app-server-host/sessions/`. Workspace `.pi/sessions` files are not accepted by
+Native Pi Harness. A workspace is restricted to a validated direct child of the
+configured workspace root.
 
 The default terminal path uses Pi's official native remote client over the
 local descriptor returned by Host. It does not require tmux or PTY scraping.
@@ -276,15 +276,12 @@ The stable `ws_<hex>` identity in `workspace.json` is verified before Monitor
 maps it to the Host route name (the direct-child directory). This prevents a
 foreign event from being delivered to another project.
 
-## Legacy history migration
+## Session history
 
-Workspace format-3 histories remain read-only. Inspect them with
-`apps/app-server/tspi-history.mjs`; pass `--import` and an explicit `--source`
-to create a new installation-level format-4 session. The source is hash-checked and
-preserved, and a provenance report is written under
-`.pi/app-server-host/history-imports/`. Active operations, torn files,
-unsupported records, and ambiguous workspace ownership are rejected rather than
-replayed.
+Native Pi Harness accepts only installation-level format-4 sessions under
+`.pi/app-server-host/sessions/`. Legacy workspace history files are not imported
+or resumed. Preserve scientific continuity in Research Memory rather than in a
+second session format.
 
 ## Workspace Bootstrap
 

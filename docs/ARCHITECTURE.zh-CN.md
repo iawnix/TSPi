@@ -21,15 +21,12 @@ TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装�
   `compute.run` 对 local 和 remote 使用同一套计算生命周期；统一的
   `compute.environments` 查询同时返回两类环境。渲染、报告和邮件仍由
   Skill/Plugin 工具提供。
-- `extensions/pi/` 包含两层面向 Pi 的集成。legacy research、compute、review、artifact
-  和 ExtensionAPI UI 适配器继续为直接 `pi` 启动保留；`extensions/pi/tui-package/`
-  是仅在调用方用 `-e` 显式选择时才加载的 presentation facet。TSPi 启动器默认不选择
-  presentation facet 或注册 TSPi 主题，因此 header、editor、命令目录、transcript 外壳和
-  输入循环均由 Pi 自己提供。
-  `extensions/server/` 包含包内 server 工具入口。App Server 只加载
-  `extensions/server/extensions.json` 中经过 allowlist 和 SHA-256 校验的条目，不执行
-  客户端提交的代码；worker 还统一加载 package skills、hooks、策略和 system prompt，
-  所有 transport 使用同一份工具 runtime。
+- `extensions/pi/` 仅包含 Native client facet 所需的少量 presentation helper。
+  直接 ExtensionAPI 适配器及其公共入口已经移除；启动器和 Native Pi Worker 不会加载
+  旧的 ExtensionAPI 路径。
+  `extensions/server/` 是唯一的包内 server 工具入口。App Server 只加载经过 allowlist 和
+  SHA-256 校验的条目，不执行客户端提交的代码；worker 还统一加载 package skills、hooks、
+  策略和 system prompt，所有 transport 使用同一份工具 runtime。
 - `components/ts-web/` 是可选的只读浏览器客户端，直接渲染 Kernel 序列化的
   `ResearchMap`；浏览器控制通过显式启动的
   `TSPi --gateway` 适配器附着到已有 Host session，不会创建第二个 Worker。
@@ -215,17 +212,17 @@ TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、
 ## App Server 生命周期
 
 `ts-app-server-tspi.service` 调用 TSPi Host 入口，在 `.pi/app-server-host/` 创建安装级
-状态，包括稳定 server ID、Host socket、format-4 session repository、bridge token、请求回执、
+状态，包括稳定 server ID、Host socket、format-4 session repository、请求回执、
 scheduler lease 和 Monitor 健康文件。`tspi.workspace-directory` 只暴露包含受支持
 `workspace.json` 的直接子工作区。
 
 `TSPi --workspace <name>` 先 bootstrap 工作区，再向 Host 请求 `session/list` 和
 `session/create`/`session/resume`，最后把 Pi 官方 `ExperimentalClientTui` 直接连接到
 返回的本地 descriptor。远程 TUI 负责 completion、渲染、输入循环和它支持的 slash
-command，其中 `/resume` 只在当前 workspace 内切换；普通 Pi 的 `/new` 与 `/fork` 不会由
-这个客户端暴露。Phone 通过 Host RPC，Monitor 通过 durable `next_run` entry 访问同一个
-lane。workspace `.pi/sessions` 的 format-3 历史只读，显式 import 才能进入安装级 format-4。
-`TSPI_HOST_BACKEND=ordinary` 仅是迁移/调试模式，不是 Harness fallback。
+command，其中 `/resume` 只在当前 workspace 内切换；独立 Pi 的会话命令不会由这个客户端
+暴露。Phone 通过 Host RPC，Monitor 通过 durable `next_run` entry 访问同一个
+lane。workspace `.pi/sessions` 不属于受支持的 Native 运行时边界，不会被导入或恢复。
+`TSPI_HOST_BACKEND` 必须为 `harness`；已退役的 ordinary-Pi 后端会直接拒绝。
 
 第一次执行 `TSPi --workspace <name>` 时，如果项目不存在，客户端会通过同一套经过校验
 的 bootstrap 初始化它；Host 不会创建未命名项目，必须由客户端明确指定合法名称。

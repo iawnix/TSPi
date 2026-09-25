@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { requireRuntimeModel } from "../../../../extensions/pi/shared/model-readiness.ts";
+import { requireRuntimeModel } from "../../host-api/model-readiness.ts";
 import {
   createComputeResultCapture,
   createComputeResultTool,

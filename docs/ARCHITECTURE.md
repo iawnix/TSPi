@@ -25,15 +25,12 @@ replacement UI.
   scheduler jobs; the configured remote adapter supplies transport and
   readiness operations. Rendering, reporting, and email remain
   Skill/Plugin tools.
-- `extensions/pi/` contains two Pi-facing integration layers. The legacy
-  research, compute, review, artifact, and ExtensionAPI UI adapters remain for
-  direct `pi` compatibility. `extensions/pi/tui-package/` is a presentation
-  facet available only when a caller explicitly selects it with `-e`. The TSPi
-  launcher does not select a presentation facet or register the TSPi theme, so
-  Pi retains its own header, editor, command registry, transcript shell, and
-  input loop.
-  `extensions/server/` contains the package-owned server tool entry. The App
-  Server loads only the allowlisted, digest-verified entries in
+- `extensions/pi/` contains only the small Native TUI presentation helpers
+  required by the client facet. Direct ExtensionAPI adapters and their public
+  entrypoints have been removed; they are not selected by the launcher or
+  loaded by the Native Pi Worker.
+  `extensions/server/` is the sole package-owned tool entry. The App Server
+  loads only the allowlisted, digest-verified entries in
   `extensions/server/extensions.json`; the worker also loads package skills,
   hooks, policy, and system prompt once for every transport. It never evaluates
   code supplied by a client.
@@ -41,8 +38,9 @@ replacement UI.
   serialized canonical `ResearchMap`. The optional
   `apps/app-server/tspi-browser-gateway.mjs` adapter exposes the same Host
   session to a browser over the versioned session-control contract; it attaches
-  to an existing session and never owns a second Worker. The older
-  `pi-session-control-server.mjs` entrypoint remains a legacy compatibility path.
+  to an existing session and never owns a second Worker. The
+  `pi-session-control-server.mjs` module supplies the shared HTTP transport for
+  that contract.
 - TS Phone is an independent Flutter client that connects through TSPi Link.
 
 Pi's App Server owns the session directory, transcript history, model state,
@@ -270,17 +268,17 @@ installation state at `.pi/app-server-host/`, including one stable server ID,
 the Host socket, format-4 sessions, receipts, scheduler leases, and Monitor health.
 The Pi App Server is the runtime owner below that Host. Its format-4 sessions
 are stored in `.pi/app-server-host/sessions/<encoded-cwd>/`; workspace
-`.pi/sessions` files are format-3 compatibility history only.
+`.pi/sessions` files are outside the supported Native runtime boundary.
 
 `TSPi --workspace <name>` bootstraps the selected workspace, asks Host for
 `session/list` plus `session/create`/`session/resume`, and then execs Pi's
 official `ExperimentalClientTui` against the returned local connection
 descriptor. The remote TUI owns completion, rendering, input handling, and its
-supported slash commands, including workspace-scoped `/resume`; ordinary Pi's
-`/new` and `/fork` are not exposed by this client. Phone uses Host RPC and
+supported slash commands, including workspace-scoped `/resume`; standalone Pi
+session commands are not exposed by this client. Phone uses Host RPC and
 Monitor submits a durable `next_run` entry to the same lane. Disconnecting a
-client does not stop the worker or its current turn. `TSPI_HOST_BACKEND=ordinary`
-is an explicit migration/debug mode only; it is not a Harness fallback.
+client does not stop the worker or its current turn. `TSPI_HOST_BACKEND` must be
+`harness`; the retired ordinary-Pi backend is rejected.
 
 The first client launch initializes a missing workspace through the same
 validated bootstrap. The Host never creates an unnamed workspace; a client must
@@ -416,6 +414,6 @@ are separate from the scientific operation journal.
   `extensions/server/extensions.json`.
 - TS Web contracts: `contracts/ts-web/`.
 - Monitor contracts: `contracts/tspi-monitor/1/`.
-- Host lifecycle and native Harness integration tests: `tests/integration/test_pi_app_server_launcher.py`,
-  `tests/node/native/tspi-host.test.mjs`, `tests/node/native/tspi-history.test.mjs`, and
-  `tests/node/native/tspi-ordinary-pi.test.mjs`.
+- Host lifecycle and Native Harness integration tests: `tests/integration/test_pi_app_server_launcher.py`,
+  `tests/node/native/tspi-host.test.mjs`, `tests/node/native/pi-native-worker.test.mjs`, and
+  `tests/node/native/pi-session-control.test.mjs`.

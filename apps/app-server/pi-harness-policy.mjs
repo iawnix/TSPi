@@ -2,8 +2,8 @@ import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, relative, resolve } from "node:path";
 
-// The ordinary Pi extension enforces this policy in its tool_call hook.  The
-// Harness has no ExtensionAPI, so keep the security boundary as a small,
+// The retired ExtensionAPI path enforced this policy in its tool_call hook.
+// The Harness has no ExtensionAPI, so keep the security boundary as a small,
 // presentation-independent hook that can run for every client (TUI, phone,
 // monitor, or another trusted client).
 export const PACKAGE_READ_TOOLS = Object.freeze(["read", "grep", "find", "ls"]);

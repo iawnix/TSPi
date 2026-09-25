@@ -44,8 +44,8 @@ The first command creates a Harness conversation; the second continues the
 latest writable conversation in that workspace. TSPi asks Host for a local Pi
 connection descriptor and then starts Pi's official native remote client/TUI.
 The default path has no tmux, PTY scraping, or second agent loop. If the Host
-is unavailable, TSPi reports the failure; ordinary Pi is available only through
-the explicit `TSPI_HOST_BACKEND=ordinary` migration/debug mode.
+is unavailable, TSPi reports the failure. Native Pi Harness is the only
+supported runtime backend; the retired ordinary-Pi backend is rejected.
 Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for a
 user-scoped installation, or omit `--user` for a system-scoped installation.
 With service scope `none`, the managed Host is disabled and normal workspace,

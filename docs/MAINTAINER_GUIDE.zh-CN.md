@@ -26,9 +26,8 @@ export TSPI_PI_SOURCE=/path/to/prepared/pi
 npm run test:native-pi
 ```
 
-默认 Harness 路径不需要 tmux。`TSPI_HOST_BACKEND=ordinary` 和 `TSPI_TMUX` 只保留给隔离
-的迁移/调试兼容 lane，不能作为 Harness fallback。不要用未固定或被修改的 Pi checkout
-迁就测试。远端 smoke 和真实模型评测是显式 opt-in lane，需要外部
+Native Pi Harness 不需要 tmux，也是唯一支持的运行时。`TSPI_HOST_BACKEND=ordinary` 与
+`TSPI_TMUX` 会被拒绝。不要用未固定或被修改的 Pi checkout 迁就测试。远端 smoke 和真实模型评测是显式 opt-in lane，需要外部
 配置，不属于默认测试套件。
 
 权威测试清单是 `tools/test/manifest.toml`，由 `tools/test/runner.py` 调度。
@@ -57,7 +56,7 @@ ID、命令和收集结果，不覆盖已有证据。
 可重放候选，并在确定性输出语义变化时提升版本。不要加入科学 successor routing。
 
 Node 暂停/恢复回执属于操作状态；提交和分析边界必须保留共享工作区锁，同时保持查看、
-收集和取消能力。应测试 Harness client、extension 入口、history 导入保护、Monitor
+收集和取消能力。应测试 Harness client、server extension 合同、Monitor
 重试与回执、wheel 安装、直接渲染 ResearchMap 和源码篡改拒绝。当前证据以稳定的运维文档、
 源码测试和组件测试为准，不把一次性验收报告提交到仓库。
 
@@ -65,7 +64,7 @@ Node 暂停/恢复回执属于操作状态；提交和分析边界必须保留�
 
 - `docs/ARCHITECTURE.zh-CN.md`：运行时和科学边界。
 - `docs/INSTALLATION.zh-CN.md`：安装、服务、升级和恢复。
-- `docs/TERMINAL.zh-CN.md`：Pi 原生 TUI、Host、Phone 与 Monitor 使用；兼容模式另行说明。
+- `docs/TERMINAL.zh-CN.md`：Pi 原生 TUI、Host、Phone 与 Monitor 使用。
 - `skills/`：面向用户的科学流程和参考资料。
 - `contracts/ts-web/`：规范 ResearchMap 响应的浏览器传输合同。
 

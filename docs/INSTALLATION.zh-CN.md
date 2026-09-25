@@ -93,11 +93,12 @@ SMTP 或其他凭据由受管环境提供。
 一个 Host 可以服务 workspace root 下的多个直接子工作区。终端、TS Phone 和 Monitor
 通过 Host 连接同一个 Harness lane，不创建第二个 Agent runtime。默认终端使用 Pi 官方
 native client 连接 Host 返回的本地 descriptor，不需要 tmux 或 PTY scraping；客户端关闭
-不会停止 worker 或当前 turn。`TSPI_HOST_BACKEND=ordinary` 仅用于迁移/调试。
+不会停止 worker 或当前 turn。Native Pi Harness 是唯一支持的后端。
 
 规范 format-4 transcript 位于 `.pi/app-server-host/sessions/<encoded-cwd>/`，请求回执、scheduler
-lease、Monitor outbox 也位于安装级 Host state。systemd 重启后这些 durable operation/queue
-ID 仍可恢复，客户端通过新的 Host epoch/cursor 重新附着。
+lease、Monitor outbox 也位于安装级 Host state。workspace `.pi/sessions` 历史不被 Native
+Harness 接受。systemd 重启后这些 durable operation/queue ID 仍可恢复，客户端通过新的 Host
+epoch/cursor 重新附着。
 
 ## Monitor 运维
 
@@ -110,13 +111,11 @@ workspace 内写入 registration、event 和 delivery 回执。`monitor/list`、
 `workspace.json` 中稳定的 `ws_<hex>` 身份会先被验证，再映射到 Host 使用的直接目录名，
 防止 foreign event 投递到错误项目。
 
-## 旧历史迁移
+## 会话历史
 
-workspace `.pi/sessions/*.jsonl` 的 v3 历史保持只读。使用
-`apps/app-server/tspi-history.mjs` 盘点；只有显式指定 `--source` 并加 `--import` 才会在
-安装级 session root 生成新的 format-4 文件。源文件按 hash 校验并保持不变，
-`.pi/app-server-host/history-imports/` 写入 provenance 报告。活动操作、残缺文件、不支持的
-记录或 workspace 归属有歧义时会拒绝，不会重放。
+Native Pi Harness 只接受安装级 `.pi/app-server-host/sessions/` 下的 format-4 session。
+旧 workspace 历史文件不会导入或恢复；研究连续性应保存在 Research Memory，而不是第二套
+session 格式。
 
 ## TS Phone 与 TSPi Link
 

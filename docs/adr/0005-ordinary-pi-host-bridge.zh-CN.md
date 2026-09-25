@@ -2,13 +2,14 @@
 
 [English](0005-ordinary-pi-host-bridge.md) | 简体中文
 
-- 状态：仅接受为迁移/调试兼容模式；不是默认运行时
+- 状态：已退役；仅作为历史设计记录
 - 日期：2026-09-21
 - 范围：TSPi 启动器、Pi 终端、Host、Phone、Web、Monitor 与历史
 
 ## 决定
 
-本 ADR 记录过渡期的普通 Pi 兼容模式。只有显式设置
+本 ADR 记录过去的普通 Pi 兼容模式。该模式已经退役，不会被当前运行时选择、打包或访问。
+历史上只有显式设置
 `TSPI_HOST_BACKEND=ordinary` 时，`TSPi --workspace <name>` 才启动固定版本 Pi CLI 的
 普通 `InteractiveMode`。Pi 拥有 agent loop、模型、工具、format-3 transcript、cwd 和
 workspace Root lock。TSPi 只加载普通研究 extension 及一个很小的 bridge extension；
@@ -47,5 +48,5 @@ Host 为 workspace root 启动一个 Monitor worker。Monitor 持久化 registra
 - Pi 原生命令和行为完整保留，不引入 TSPi 自己的渲染器。
 - Phone、Web、Monitor 可以共享一个 live Pi session，不拥有第二个 agent。
 - `request_id` 和 `client_message_id` 让重试可观察；不确定输入不会盲目重放。
-- 兼容模式与 Harness 的回执、历史和锁完全隔离；迁移完成后应移除该模式。
+- 兼容模式与 Harness 的回执、历史和锁完全隔离；实现已从受支持运行时移除。
 - 默认 Harness 终端不依赖 tmux，Host 恢复后通过本地 Pi connection descriptor 重新连接。

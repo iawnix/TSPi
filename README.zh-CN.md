@@ -46,8 +46,8 @@ lane 的客户端。直接打开工作区即可：
 
 第一条命令创建 Harness 会话，第二条命令继续该工作区最近的可写会话。TSPi 先向 Host
 取得本地 Pi connection descriptor，再启动 Pi 官方 native remote client/TUI。默认路径不
-使用 tmux、PTY scraping，也不会创建第二个 agent loop。Host 不可用时会明确报错；普通 Pi
-只在显式设置 `TSPI_HOST_BACKEND=ordinary` 的迁移/调试模式中使用。
+使用 tmux、PTY scraping，也不会创建第二个 agent loop。Host 不可用时会明确报错；旧的独立
+Pi 运行时已经移除，Native Pi Harness 是唯一受支持的后端。
 使用 `systemctl --user stop|restart|status ts-app-server-tspi.service` 管理
 Host 生命周期。scope 为 none 时，必须由运维人员启动 Host，普通 workspace、Phone 和
 Monitor 入口才可用。`--host` 只是服务内部入口，不用于日常启动。

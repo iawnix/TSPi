@@ -2,13 +2,14 @@
 
 [English](0005-ordinary-pi-host-bridge.md) | [简体中文](0005-ordinary-pi-host-bridge.zh-CN.md)
 
-- Status: accepted for migration/debug compatibility only; not the default runtime
+- Status: retired; historical design record only
 - Date: 2026-09-21
 - Scope: TSPi launcher, Pi terminal, Host, Phone, Web, Monitor, and history
 
 ## Decision
 
-This ADR records the transitional ordinary-Pi compatibility mode. When
+This ADR records the former transitional ordinary-Pi compatibility mode. It is
+retired and is not selected, packaged, or reachable by the current runtime. When
 `TSPI_HOST_BACKEND=ordinary` is explicitly selected, `TSPi --workspace <name>`
 launches the pinned Pi CLI in its normal `InteractiveMode`. Pi owns the agent
 loop, model, tools, format-3 transcript, cwd, and workspace Root lock. TSPi
@@ -58,6 +59,6 @@ rejected.
 - `request_id` and `client_message_id` make retries observable; uncertain input
   is not blindly replayed.
 - The compatibility mode remains isolated from Harness receipts, history, and
-  locks; it is removed once migration support is no longer needed.
+  locks; the implementation has now been removed from the supported runtime.
 - The default Harness terminal has no tmux dependency and reconnects through a
   local Pi connection descriptor after Host recovery.

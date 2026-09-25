@@ -27,10 +27,9 @@ export TSPI_PI_SOURCE=/path/to/prepared/pi
 npm run test:native-pi
 ```
 
-The default Harness path does not require tmux. `TSPI_HOST_BACKEND=ordinary`
-and `TSPI_TMUX` are retained only for the isolated migration/debug compatibility
-lane; they must not be used as a Harness fallback. Do not substitute an unpinned
-or modified Pi checkout to make the lane pass. Remote smoke and live
+The Native Pi Harness path does not require tmux and is the only supported
+runtime. `TSPI_HOST_BACKEND=ordinary` and `TSPI_TMUX` are rejected. Do not
+substitute an unpinned or modified Pi checkout to make the lane pass. Remote smoke and live
 model evaluation are opt-in lanes; they require explicit external configuration
 and are never part of the default suite.
 
@@ -73,8 +72,8 @@ schemas out of the always-loaded tools. Do not add scientific successor routing.
 
 Node pause/resume receipts are operational state. Preserve the shared workspace
 lock at submission and analysis boundaries; keep inspection, collection and
-cancellation available. Test the native Harness client and extension entrypoints,
-history import guards, Monitor retry/acknowledgement behavior, wheel
+cancellation available. Test the Native Harness client and server-extension contract,
+Monitor retry/acknowledgement behavior, wheel
 installation, direct ResearchMap Web rendering, and source-tampering rejection.
 Use the stable operations guide and focused test suites as the current evidence;
 one-off validation reports do not belong in the repository.
@@ -83,8 +82,7 @@ one-off validation reports do not belong in the repository.
 
 - `docs/ARCHITECTURE.md` — runtime and scientific boundaries.
 - `docs/INSTALLATION.md` — installer, services, upgrades, and recovery.
-- `docs/TERMINAL.md` — native Pi TUI, Host, Phone, and Monitor usage; the ordinary
-  compatibility mode is documented separately.
+- `docs/TERMINAL.md` — Native Pi TUI, Host, Phone, and Monitor usage.
 - `skills/` — user-facing scientific procedures and references.
 - `contracts/ts-web/` — optional browser transport schemas for canonical map responses.
 

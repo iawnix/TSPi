@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 import { createServer, createConnection } from "node:net";
 import { chmod, lstat, mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from "node:fs/promises";
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRpcPeer, HOST_PROTOCOL, protocolError } from "./tspi-host-client.mjs";
-import { importLegacyHistory, listLegacyHistory, readLegacyHistory } from "./tspi-history.mjs";
 
 const executeFile = promisify(execFile);
 // Host addresses are direct child directory names. Scientific workspace.json
@@ -19,11 +18,12 @@ const MONITOR_ID = /^mon_[a-f0-9]{24}$/u;
 const MONITOR_EVENT_ID = /^evt_[a-f0-9]{32}$/u;
 const SESSION_EVENT_HISTORY_LIMIT = 256;
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const capabilities = ["workspace.list", "workspace.create", "session.list", "session.read", "session.create", "session.resume", "session.attach", "session.detach", "session.remove", "session.import", "input.send", "input.status", "turn.interrupt", "models.list", "model.select", "monitor.list", "monitor.status", "monitor.enable", "monitor.disable"];
+const capabilities = ["workspace.list", "workspace.create", "session.list", "session.read", "session.create", "session.resume", "session.attach", "session.detach", "session.remove", "input.send", "input.status", "turn.interrupt", "models.list", "model.select", "monitor.list", "monitor.status", "monitor.enable", "monitor.disable"];
 
-/** Owns routing and durable acceptance records. Harness Pi owns the session lane; ordinary mode is isolated compatibility. */
+/** Owns routing and durable acceptance records for the Native Pi Harness. */
 export async function startTspiHost(options) {
-  const { socketPath, workspaceRoot, stateRoot, sessionLifecycle, sessionBackend = null, serverId = "local", python = process.env.TS_AGENT_PYTHON || "python3", packageRoot = PACKAGE_ROOT, monitorPollMs = 2_000, sessionStartTimeoutMs = 30_000 } = options;
+  const { socketPath, workspaceRoot, stateRoot, sessionBackend = null, serverId = "local", python = process.env.TS_AGENT_PYTHON || "python3", packageRoot = PACKAGE_ROOT, monitorPollMs = 2_000 } = options;
+  if (!sessionBackend) throw protocolError("native_backend_required", "TSPi Host requires the Native Pi Harness backend");
   for (const [name, value] of Object.entries({ socketPath, workspaceRoot, stateRoot })) {
     if (typeof value !== "string" || !value.startsWith("/")) throw new TypeError(`${name} must be absolute`);
   }
@@ -32,31 +32,13 @@ export async function startTspiHost(options) {
   await mkdir(workspaceRoot, { recursive: true, mode: 0o700 });
   if ((await lstat(workspaceRoot)).isSymbolicLink()) throw protocolError("invalid_workspace_root", "Workspace container must not be a symlink");
   const physicalRoot = await realpath(workspaceRoot);
-  const tokenFile = join(stateRoot, "bridge-token");
-  let token = options.bridgeToken;
-  if (!token) {
-    try {
-      const info = await lstat(tokenFile);
-      if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o077)) throw protocolError("unsafe_token", "Bridge token must be an owner-only regular file");
-      token = (await readFile(tokenFile, "utf8")).trim();
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-      token = randomBytes(32).toString("hex");
-      await writeFile(tokenFile, `${token}\n`, { flag: "wx", mode: 0o600 });
-    }
-  }
   const epoch = randomUUID();
-  // Installed Hosts enforce the v3 read-only migration boundary. A bare
-  // in-process ordinary adapter (used by compatibility callers) may still
-  // exercise the legacy writer until it is explicitly opted into Harness.
-  const legacyV3ReadOnly = Boolean(options.installRoot || process.env.TSPI_INSTALL_ROOT || sessionBackend);
   const clients = new Set();
   const live = new Map();
   const inFlight = new Map();
-  const lifecycleLocks = new Set();
-  // Keep event ordering stable when a bridge briefly disconnects and
-  // reconnects to the same Host epoch.  The live record is removed on close,
-  // so its last sequence must survive outside that map.
+  // Keep event ordering stable when the Harness binding reconnects to the same
+  // Host epoch. The live record is replaced by backend snapshots, so its last
+  // sequence survives outside that map.
   const sessionSequences = new Map();
   // Monitor events are immutable files.  Keep a physical-file marker rather
   // than only the path so a malformed file can be repaired and reprocessed.
@@ -93,76 +75,17 @@ export async function startTspiHost(options) {
     return result.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async function sessionFiles(root) {
-    const sessionRoot = join(root, ".pi", "sessions");
-    await assertContainedPhysical(root, join(root, ".pi"), true);
-    try {
-      await assertContainedPhysical(root, sessionRoot);
-      const rows = [];
-      for (const entry of await readdir(sessionRoot, { withFileTypes: true })) {
-        if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-        const path = join(sessionRoot, entry.name);
-        try {
-          const parsed = await readPiSession(path, root, { readOnlyV3: legacyV3ReadOnly });
-          if (parsed) rows.push(parsed);
-        } catch { /* A malformed history is never treated as a usable session. */ }
-      }
-      return rows;
-    } catch (error) {
-      if (error.code === "ENOENT") return [];
-      throw error;
-    }
-  }
-
   function liveSummary(record) {
     const { client: _client, ...session } = record.session || {};
     return { ...session, online: true, read_only: false, is_streaming: record.snapshot.is_streaming === true, turn_id: record.snapshot.turn_id ?? null, model: record.snapshot.model ?? null, updated_at: record.updatedAt };
   }
 
   async function listSessions(workspaceId) {
-    if (sessionBackend) return sessionBackend.listSessions(workspaceId);
-    const root = await workspace(workspaceId);
-    const rows = new Map((await legacySessions(workspaceId)).map((item) => [item.session_id, item]));
-    for (const item of await sessionFiles(root)) {
-      // Keep the richer read-only compatibility descriptor for workspace v3;
-      // only canonical writable records may replace it in this map.
-      if (item.session.version === 3 && rows.has(item.session.session_id)) continue;
-      rows.set(item.session.session_id, { ...item.session, workspace_id: workspaceId });
-    }
-    for (const record of live.values()) if (record.session.workspace_id === workspaceId) rows.set(record.session.session_id, liveSummary(record));
-    return [...rows.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-  }
-
-  async function legacySessions(workspaceId) {
-    const installRoot = options.installRoot || process.env.TSPI_INSTALL_ROOT;
-    return installRoot ? listLegacyHistory({ installRoot, workspaceRoot: physicalRoot, workspaceId }) : [];
+    return sessionBackend.listSessions(workspaceId);
   }
 
   async function readSession(workspaceId, sessionId) {
-    if (sessionBackend) return sessionBackend.readSession(workspaceId, sessionId);
-    validateId(sessionId, "session_id");
-    const root = await workspace(workspaceId);
-    const record = live.get(keyFor(workspaceId, sessionId));
-    if (record) return { session: liveSummary(record), snapshot: { ...record.snapshot, online: true, can_prompt: true, read_only: false }, epoch, sequence: record.sequence };
-    const historical = (await sessionFiles(root)).find((item) => item.session.session_id === sessionId);
-    if (!historical || (historical.session.version === 3 && historical.session.read_only)) {
-      const legacy = (await legacySessions(workspaceId)).find((item) => item.session_id === sessionId);
-      if (legacy) {
-        const parsed = await readLegacyHistory({ installRoot: options.installRoot || process.env.TSPI_INSTALL_ROOT, workspaceRoot: physicalRoot, workspaceId, sessionId });
-        return { session: legacy, snapshot: { ...(parsed?.snapshot || {}), read_only: true, can_prompt: false, compatibility_error: legacy.incompatibility?.message || "Legacy history is preserved; explicitly import it into the Harness first", importable: legacy.importable, source_path: legacy.source_path }, epoch, sequence: 0 };
-      }
-    }
-    if (!historical) {
-      throw protocolError("session_not_found", "Session is not present in this workspace");
-    }
-    return { session: { ...historical.session, workspace_id: workspaceId }, snapshot: historical.snapshot, epoch, sequence: 0 };
-  }
-
-  function liveSession(workspaceId, sessionId) {
-    validateId(sessionId, "session_id");
-    const record = live.get(keyFor(workspaceId, sessionId));
-    if (!record || record.peer.isClosed()) throw protocolError("session_offline", "This Pi session is offline; resume it before sending input", true);
-    return record;
+    return sessionBackend.readSession(workspaceId, sessionId);
   }
 
   function emitSession(record, event = null, type = "event") {
@@ -238,7 +161,7 @@ export async function startTspiHost(options) {
       if (previous?.state === "uncertain" && !reconcileUncertain) {
         return { ...previous.result, duplicate: true };
       }
-      // Pending input can be reconciled at the bridge using the same business ID.
+      // Pending input can be reconciled by the Harness backend using the same business ID.
       // Other mutations return uncertainty after a Host crash instead of repeating side effects.
       if (previous?.state === "pending" && !scope.startsWith("input")) throw protocolError("request_uncertain", "Host stopped while applying this request; inspect current state before retrying");
       await writeAtomic(path, { digest, state: "pending", created_at: previous?.created_at || new Date().toISOString() });
@@ -291,45 +214,14 @@ export async function startTspiHost(options) {
     if (method === "initialize") {
       if (params.protocol !== undefined && params.protocol !== HOST_PROTOCOL) throw protocolError("protocol_mismatch", "Unsupported TSPi Host protocol");
       client.initialized = true;
-      return { protocol: HOST_PROTOCOL, server_id: serverId, epoch, capabilities: [...capabilities, ...(sessionLifecycle ? ["session.create", "session.resume"] : [])] };
+      return { protocol: HOST_PROTOCOL, server_id: serverId, epoch, capabilities: [...capabilities] };
     }
     if (!client.initialized) throw protocolError("not_initialized", "Send initialize before session requests");
     if (method === "bridge/hello") {
-      if (sessionBackend) throw protocolError("bridge_not_used", "Harness sessions connect through Pi's native protocol");
-      if (!equalSecret(params.token, token)) throw protocolError("unauthorized", "Invalid local bridge credentials");
-      const root = await workspace(params.workspace_id);
-      validateId(params.session_id, "session_id");
-      if (params.cwd !== root || params.version !== 3) throw protocolError("session_workspace_mismatch", "Ordinary Pi bridge must use this workspace and session format 3");
-      if (params.session_file !== undefined && params.session_file !== null) await validateSessionPath(root, params.session_file, true);
-      const key = keyFor(params.workspace_id, params.session_id);
-      for (const [otherKey, other] of live) {
-        if (other.session.workspace_id === params.workspace_id && other.peer !== client.peer && !other.peer.isClosed()) {
-          throw protocolError("workspace_busy", "Another ordinary Pi process already owns this workspace");
-        }
-        if (other.peer === client.peer) live.delete(otherKey);
-      }
-      const now = new Date().toISOString();
-      const record = { peer: client.peer, sequence: sessionSequences.get(key) || 0, updatedAt: now, history: [], snapshot: sanitizeSnapshot(params.snapshot), session: {
-        workspace_id: params.workspace_id, session_id: params.session_id, cwd: root, session_file: params.session_file ?? null,
-        terminal_id: params.terminal_id ?? null, name: params.name ?? null, version: 3, online: true, read_only: false,
-        created_at: params.created_at || now, updated_at: now, format: "pi-v3",
-      } };
-      client.bridgeKey = key;
-      live.set(key, record);
-      emitSession(record, null, "snapshot");
-      return { accepted: true, epoch };
+      throw protocolError("bridge_not_used", "Legacy Pi bridge is removed; connect through the Native Pi Harness protocol");
     }
     if (method === "bridge/event") {
-      const record = live.get(client.bridgeKey);
-      if (!record || record.peer !== client.peer || params.session_id !== record.session.session_id) throw protocolError("unauthorized", "Bridge is not registered for this session");
-      record.snapshot = sanitizeSnapshot(params.snapshot);
-      if (params.session_file) {
-        await validateSessionPath(record.session.cwd, params.session_file, true);
-        record.session.session_file = params.session_file;
-      }
-      if (params.name !== undefined) record.session.name = params.name;
-      emitSession(record, params.event ?? null);
-      return { accepted: true };
+      throw protocolError("bridge_not_used", "Legacy Pi bridge is removed; connect through the Native Pi Harness protocol");
     }
     if (method === "workspace/list") return { workspaces: await listWorkspaces() };
     if (method === "workspace/create") {
@@ -366,69 +258,21 @@ export async function startTspiHost(options) {
       return { accepted: true };
     }
     if (method === "session/create" || method === "session/resume") {
-      const root = await workspace(params.workspace_id);
-      if (sessionBackend) {
-        return deduplicate(method, params.request_id, cleanRequest(params), async () => {
-          const result = method === "session/create"
-            ? await sessionBackend.createSession({ workspace_id: params.workspace_id, session_id: params.session_id, provider: params.provider, model: params.model })
-            : await sessionBackend.resumeSession({ workspace_id: params.workspace_id, session_id: params.session_id, provider: params.provider, model: params.model });
-          acceptBackendEvent({ workspace_id: params.workspace_id, session_id: result.session.session_id, snapshot: result.snapshot, session: result.session, event: null });
-          return sanitizeClientResult(result, params.presentation === "terminal");
-        });
-      }
-      if (!sessionLifecycle) throw protocolError("session_lifecycle_unavailable", "This Host has no persistent terminal launcher");
-      if (method === "session/resume") {
-        const session = await readSession(params.workspace_id, params.session_id);
-        if (session.session.read_only) throw protocolError("legacy_session_read_only", "Legacy session history requires an explicit import before opening in ordinary Pi");
-        if (session.session.online) return session;
-      }
+      await workspace(params.workspace_id);
       return deduplicate(method, params.request_id, cleanRequest(params), async () => {
-        if (lifecycleLocks.has(params.workspace_id) || [...live.values()].some((record) => record.session.workspace_id === params.workspace_id)) throw protocolError("workspace_busy", "This workspace already has a live Pi session");
-        lifecycleLocks.add(params.workspace_id);
-        try {
-          const session = method === "session/resume" ? await readSession(params.workspace_id, params.session_id) : null;
-          const sessionId = params.session_id || randomUUID();
-          validateId(sessionId, "session_id");
-          await sessionLifecycle({ action: method.slice(8), workspace_id: params.workspace_id, workspace_root: root, session_id: sessionId, session_file: session?.session.session_file, request_id: params.request_id });
-          const deadline = Date.now() + sessionStartTimeoutMs;
-          while (Date.now() < deadline && !closed) {
-            if (live.has(keyFor(params.workspace_id, sessionId))) return readSession(params.workspace_id, sessionId);
-            await new Promise((resolve) => setTimeout(resolve, 50));
-          }
-          throw protocolError("session_start_timeout", "Pi terminal started but its bridge did not become ready; inspect the existing terminal before retrying", true);
-        } finally { lifecycleLocks.delete(params.workspace_id); }
+        const result = method === "session/create"
+          ? await sessionBackend.createSession({ workspace_id: params.workspace_id, session_id: params.session_id, provider: params.provider, model: params.model })
+          : await sessionBackend.resumeSession({ workspace_id: params.workspace_id, session_id: params.session_id, provider: params.provider, model: params.model });
+        acceptBackendEvent({ workspace_id: params.workspace_id, session_id: result.session.session_id, snapshot: result.snapshot, session: result.session, event: null });
+        return sanitizeClientResult(result, params.presentation === "terminal");
       });
     }
     if (method === "session/remove") {
       await workspace(params.workspace_id);
-      return deduplicate(method, params.request_id, cleanRequest(params), async () => {
-        if (sessionBackend) return sessionBackend.removeSession(params.workspace_id, params.session_id);
-        const historical = await readSession(params.workspace_id, params.session_id);
-        if (historical.session.online) throw protocolError("session_busy", "Close the Pi session before removing its history");
-        if (historical.session.read_only) throw protocolError("legacy_session_read_only", "Legacy session history is read-only");
-        const path = historical.session.session_file;
-        const trash = join(dirname(path), ".trash");
-        await ensurePrivateDirectory(trash);
-        await rename(path, join(trash, `${randomUUID()}-${basename(path)}`));
-        return { accepted: true, recoverable: true };
-      });
+      return deduplicate(method, params.request_id, cleanRequest(params), () => sessionBackend.removeSession(params.workspace_id, params.session_id));
     }
     if (method === "session/import") {
-      await workspace(params.workspace_id);
-      validateId(params.request_id, "request_id");
-      if (typeof params.source !== "string" || !params.source.endsWith(".jsonl")) throw protocolError("invalid_history_path", "session/import requires an explicit history source");
-      const installRoot = options.installRoot || process.env.TSPI_INSTALL_ROOT;
-      if (!installRoot) throw protocolError("history_unavailable", "Host has no installation root for history import");
-      return deduplicate(method, params.request_id, cleanRequest(params), async () => {
-        const result = await importLegacyHistory({
-          installRoot,
-          workspaceRoot: physicalRoot,
-          workspaceId: params.workspace_id,
-          source: params.source,
-          sourceRoot: process.env.TSPI_PI_SOURCE,
-        });
-        return { accepted: true, ...result };
-      });
+      throw protocolError("method_not_found", "session/import was removed; Native Pi Harness sessions are created or resumed directly");
     }
     if (method === "input/send") {
       await workspace(params.workspace_id);
@@ -437,17 +281,8 @@ export async function startTspiHost(options) {
       if (typeof params.text !== "string" || params.text.length === 0 || params.text.length > 1_000_000) throw protocolError("invalid_input", "Input must contain text within the size limit");
       if (params.mode !== undefined && !["auto", "follow_up", "steer", "next_run"].includes(params.mode)) throw protocolError("invalid_input", "Unsupported input mode");
       const payload = { workspace_id: params.workspace_id, session_id: params.session_id, client_message_id: params.client_message_id, text: params.text, mode: params.mode || "auto", source: params.source || "phone" };
-      const reconcileUncertain = Boolean(sessionBackend);
-      const result = await deduplicate("input-request", params.request_id, payload, () => deduplicate("input", params.client_message_id, payload, async () => {
-        if (sessionBackend) return sessionBackend.sendInput(payload);
-        const historical = await readSession(params.workspace_id, params.session_id).catch((error) => {
-          if (error.code === "session_not_found") return null;
-          throw error;
-        });
-        if (historical?.session?.read_only) throw protocolError("legacy_session_read_only", "Legacy Pi history is read-only; explicitly import it into the Harness first");
-        const record = liveSession(params.workspace_id, params.session_id);
-        return record.peer.request("bridge/input", payload);
-      }, { reconcileUncertain }), { reconcileUncertain });
+      const reconcileUncertain = true;
+      const result = await deduplicate("input-request", params.request_id, payload, () => deduplicate("input", params.client_message_id, payload, () => sessionBackend.sendInput(payload), { reconcileUncertain }), { reconcileUncertain });
       const currentReceipt = live.get(keyFor(params.workspace_id, params.session_id))?.snapshot.receipts?.find((receipt) => receipt.client_message_id === params.client_message_id);
       return currentReceipt?.state === "uncertain" ? { ...result, accepted: false, state: "uncertain" } : result;
     }
@@ -455,62 +290,18 @@ export async function startTspiHost(options) {
       await workspace(params.workspace_id);
       validateId(params.session_id, "session_id");
       validateId(params.client_message_id, "client_message_id");
-      if (sessionBackend) return sessionBackend.inputStatus(params);
-      const liveRecord = live.get(keyFor(params.workspace_id, params.session_id));
-      if (liveRecord && !liveRecord.peer.isClosed()) {
-        try {
-          const liveStatus = await liveRecord.peer.request("bridge/input-status", {
-            workspace_id: params.workspace_id,
-            session_id: params.session_id,
-            client_message_id: params.client_message_id,
-          }, { timeoutMs: 5_000 });
-          if (liveStatus?.state !== "not_found") {
-            // A rolling bridge upgrade may still expose the narrow
-            // pre-admission state; never surface it as accepted.
-            return liveStatus?.state === "dispatching" ? { ...liveStatus, accepted: false } : liveStatus;
-          }
-        } catch (error) {
-          // Older bridge processes do not expose status yet.  Fall through to
-          // the durable receipt instead of making status unavailable during a
-          // rolling restart or a brief bridge disconnect.
-          if (!["connection_closed", "request_timeout", "method_not_found", "session_offline"].includes(error.code)) throw error;
-        }
-      }
-      const root = await workspace(params.workspace_id);
-      const bridgeStatus = await readBridgeInputReceipt(root, params.session_id, params.client_message_id);
-      if (bridgeStatus) return bridgeStatus;
-      const path = join(stateRoot, "requests", `${hash(`input:${params.client_message_id}:${params.workspace_id}:${params.session_id}`)}.json`);
-      try {
-        const receipt = JSON.parse(await readFile(path, "utf8"));
-        if (receipt.result?.state === "uncertain") return receipt.result;
-        // The Host record only proves that the bridge accepted the RPC.  It
-        // cannot prove that Pi admitted the prompt after the bridge returned;
-        // without the bridge's own receipt, report that ambiguity explicitly.
-        if (receipt.result?.accepted === true) return {
-          client_message_id: params.client_message_id,
-          state: "uncertain",
-          accepted: false,
-        };
-        return receipt.result || { client_message_id: params.client_message_id, state: "uncertain", accepted: false };
-      } catch (error) {
-        if (error.code !== "ENOENT") throw error;
-        return { client_message_id: params.client_message_id, state: "not_found", accepted: false };
-      }
+      return sessionBackend.inputStatus(params);
     }
     if (method === "turn/interrupt" || method === "model/select") {
       await workspace(params.workspace_id);
       return deduplicate(method, params.request_id, cleanRequest(params), async () => {
-        if (sessionBackend) {
-          if (method === "turn/interrupt") return sessionBackend.interrupt(params);
-          return sessionBackend.selectModel(params);
-        }
-        return liveSession(params.workspace_id, params.session_id).peer.request(method === "turn/interrupt" ? "bridge/interrupt" : "bridge/model-select", params);
+        if (method === "turn/interrupt") return sessionBackend.interrupt(params);
+        return sessionBackend.selectModel(params);
       });
     }
     if (method === "models/list") {
       await workspace(params.workspace_id);
-      if (sessionBackend) return sessionBackend.models(params);
-      return liveSession(params.workspace_id, params.session_id).peer.request("bridge/models", params);
+      return sessionBackend.models(params);
     }
     if (["monitor/list", "monitor/status", "monitor/enable", "monitor/disable"].includes(method)) {
       client.monitorWorkspaces.add(params.workspace_id);
@@ -520,21 +311,11 @@ export async function startTspiHost(options) {
   }
 
   const server = createServer((socket) => {
-    const client = { initialized: false, subscriptions: new Set(), monitorWorkspaces: new Set(), bridgeKey: null, peer: null };
+    const client = { initialized: false, subscriptions: new Set(), monitorWorkspaces: new Set(), peer: null };
     client.peer = createRpcPeer(socket, { onRequest: (method, params) => handle(client, method, params) });
     clients.add(client);
     client.peer.on("close", () => {
       clients.delete(client);
-      const record = live.get(client.bridgeKey);
-      if (record?.peer !== client.peer) return;
-      live.delete(client.bridgeKey);
-      record.sequence += 1;
-      sessionSequences.set(client.bridgeKey, record.sequence);
-      record.updatedAt = new Date().toISOString();
-      record.snapshot = { ...record.snapshot, online: false, can_prompt: false };
-      for (const observer of clients) if (observer.subscriptions.has(client.bridgeKey)) {
-        try { observer.peer.notify("session/event", { workspace_id: record.session.workspace_id, session_id: record.session.session_id, epoch, sequence: record.sequence, type: "snapshot", snapshot: record.snapshot, session: { ...record.session, online: false, updated_at: record.updatedAt }, event: { type: "session_offline" } }); } catch { observer.peer.close(); }
-      }
     });
   });
   let monitorTimer = null;
@@ -631,7 +412,7 @@ export async function startTspiHost(options) {
   }
   let closePromise;
   return {
-    socketPath, bridgeTokenFile: tokenFile, epoch, server,
+    socketPath, epoch, server,
     async close() {
       if (closePromise) return closePromise;
       closePromise = (async () => {
@@ -654,66 +435,8 @@ export async function startTspiHost(options) {
   };
 }
 
-export async function readPiSession(path, root, { readOnlyV3 = true } = {}) {
-  await validateSessionPath(root, path);
-  const source = await readFile(path, "utf8");
-  const lines = source.split("\n").filter(Boolean);
-  if (!lines.length) return null;
-  const header = JSON.parse(lines[0]);
-  if (header.type !== "session" || typeof header.id !== "string" || !IDENTIFIER.test(header.id) || header.cwd !== root) return null;
-  const info = await lstat(path);
-  const version = header.version ?? 1;
-  const session = { session_id: header.id, cwd: root, session_file: path, version, format: version === 3 ? (readOnlyV3 ? "pi-v3-legacy" : "pi-v3") : `legacy-v${version}`, read_only: version === 3 ? readOnlyV3 : true, online: false, is_streaming: false, turn_id: null, name: null, created_at: header.timestamp || info.birthtime.toISOString(), updated_at: info.mtime.toISOString() };
-  if (version !== 3) return { session, snapshot: { messages: [], online: false, read_only: true, can_prompt: false, is_streaming: false, turn_id: null, compatibility_error: "Only ordinary Pi session format 3 is supported; experimental history is read-only" } };
-  const entries = [];
-  for (let index = 1; index < lines.length; index += 1) {
-    try { entries.push(JSON.parse(lines[index])); } catch (error) { if (index !== lines.length - 1 || source.endsWith("\n")) throw error; }
-  }
-  const indexed = new Map(entries.filter((entry) => typeof entry.id === "string").map((entry) => [entry.id, entry]));
-  const branch = [];
-  const seen = new Set();
-  let cursor = entries.at(-1);
-  while (cursor && !seen.has(cursor.id)) {
-    seen.add(cursor.id);
-    branch.unshift(cursor);
-    cursor = indexed.get(cursor.parentId);
-  }
-  session.name = entries.findLast((entry) => entry.type === "session_info")?.name ?? null;
-  const model = branch.findLast((entry) => entry.type === "model_change");
-  const messages = branch.filter((entry) => entry.type === "message").map((entry) => ({ ...entry.message, id: entry.id }));
-  const receipts = [];
-  const receiptRoot = join(root, ".pi", "bridge-receipts", header.id);
-  try {
-    await assertContainedPhysical(root, join(root, ".pi", "bridge-receipts"));
-    await assertContainedPhysical(root, receiptRoot);
-    for (const entry of await readdir(receiptRoot, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-      const receipt = JSON.parse(await readFile(join(receiptRoot, entry.name), "utf8"));
-      const matching = messages.find((message) => message.role === "user" && message.timestamp === receipt.message_timestamp);
-      if (matching && receipt.state === "observed") matching.clientMessageId = receipt.client_message_id;
-      receipts.push({ client_message_id: receipt.client_message_id, state: matching && receipt.state === "observed" ? "observed" : "uncertain" });
-    }
-  } catch (error) { if (error.code !== "ENOENT") throw error; }
-  return { session, snapshot: { messages, online: false, read_only: readOnlyV3, can_prompt: false, is_streaming: false, turn_id: null, pending_messages: false, streaming_message: null, model: model ? { provider: model.provider, id: model.modelId } : null, ...(readOnlyV3 ? { importable: true, source_path: path } : {}), receipts } };
-}
-
-async function validateSessionPath(root, path, allowMissing = false) {
-  if (typeof path !== "string" || dirname(path) !== join(root, ".pi", "sessions") || !path.endsWith(".jsonl")) throw protocolError("invalid_session_path", "Session history must be inside the workspace .pi/sessions directory");
-  await assertContainedPhysical(root, join(root, ".pi"), allowMissing);
-  await assertContainedPhysical(root, dirname(path), allowMissing);
-  await assertContainedPhysical(root, path, allowMissing);
-}
-
-async function assertContainedPhysical(root, path, allowMissing = false) {
-  if (relative(root, path).startsWith("..")) throw protocolError("unsafe_path", "Path escaped workspace");
-  try {
-    const info = await lstat(path);
-    if (info.isSymbolicLink() || await realpath(path) !== path) throw protocolError("unsafe_path", "Managed state must not contain symbolic links");
-  } catch (error) { if (!(allowMissing && error.code === "ENOENT")) throw error; }
-}
-
 function sanitizeSnapshot(snapshot) {
-  if (!snapshot || !Array.isArray(snapshot.messages)) throw protocolError("invalid_snapshot", "Bridge snapshot requires messages");
+  if (!snapshot || !Array.isArray(snapshot.messages)) throw protocolError("invalid_snapshot", "Harness snapshot requires messages");
   return snapshot;
 }
 
@@ -744,8 +467,8 @@ function parseSessionCursor(params, currentEpoch) {
   if (params.after_sequence !== undefined && (!Number.isSafeInteger(params.after_sequence) || params.after_sequence < 0)) {
     throw protocolError("invalid_cursor", "after_sequence must be a non-negative integer");
   }
-  // The legacy sequence-only spelling remains accepted for clients that have
-  // not upgraded to epoch-aware cursors. It is scoped to this Host process.
+  // The sequence-only spelling remains accepted for clients that have not
+  // upgraded to epoch-aware cursors. It is scoped to this Host process.
   const epoch = params.after_epoch ?? currentEpoch;
   if (typeof epoch !== "string" || epoch.length === 0) throw protocolError("invalid_cursor", "after_epoch must be a non-empty string");
   return { epoch, sequence: params.after_sequence || 0 };
@@ -754,12 +477,6 @@ function parseSessionCursor(params, currentEpoch) {
 function validateId(value, label) {
   if (typeof value !== "string" || !IDENTIFIER.test(value)) throw protocolError("invalid_identifier", `${label} is invalid`);
 }
-function equalSecret(left, right) {
-  if (typeof left !== "string" || typeof right !== "string") return false;
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
 function hash(value) { return createHash("sha256").update(value).digest("hex"); }
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -767,27 +484,6 @@ function stableJson(value) {
   return JSON.stringify(value);
 }
 function cleanRequest(params) { const { request_id, ...value } = params; return value; }
-async function readBridgeInputReceipt(root, sessionId, clientMessageId) {
-  const receiptRoot = join(root, ".pi", "bridge-receipts", sessionId);
-  const path = join(receiptRoot, `${hash(clientMessageId)}.json`);
-  try {
-    await assertContainedPhysical(root, join(root, ".pi", "bridge-receipts"), true);
-    await assertContainedPhysical(root, receiptRoot, true);
-    await assertContainedPhysical(root, path);
-    const receipt = JSON.parse(await readFile(path, "utf8"));
-    if (receipt.session_id !== sessionId || receipt.client_message_id !== clientMessageId) return null;
-    const state = ["dispatching", "submitted", "observed", "uncertain"].includes(receipt.state) ? receipt.state : "uncertain";
-    return {
-      client_message_id: clientMessageId,
-      state,
-      accepted: state === "submitted" || state === "observed",
-      ...(receipt.error ? { error: receipt.error } : {}),
-    };
-  } catch (error) {
-    if (error.code === "ENOENT") return null;
-    throw error;
-  }
-}
 async function ensurePrivateDirectory(path) {
   await mkdir(path, { recursive: true, mode: 0o700 });
   const info = await lstat(path);
@@ -913,18 +609,7 @@ function validMonitorEvent(event, eventId, monitorId, identity, binding) {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
-  const values = {};
-  for (let index = 0; index < args.length; index += 2) {
-    if (!args[index]?.startsWith("--") || !args[index + 1]) throw new Error("Host arguments require --name value");
-    values[args[index].slice(2)] = args[index + 1];
-  }
-  const options = { socketPath: values["socket-path"], workspaceRoot: values["workspace-root"], stateRoot: values["state-root"], serverId: values["server-id"] || "local", packageRoot: process.env.TSPI_PACKAGE_ROOT || PACKAGE_ROOT };
-  const { createSessionLifecycle } = await import("./tspi-terminal-runtime.mjs");
-  options.sessionLifecycle = createSessionLifecycle({ installRoot: process.env.TSPI_INSTALL_ROOT, packageRoot: options.packageRoot, stateRoot: options.stateRoot, socketPath: options.socketPath });
-  const host = await startTspiHost(options);
-  process.stdout.write(`TSPi Host ready: ${host.socketPath}\n`);
-  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(signal, () => void host.close());
+  throw protocolError("native_backend_required", "Direct TSPi Host startup was removed; use the Native Pi App Server");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

@@ -10,7 +10,6 @@ def test_test_manifest_declares_all_supported_lanes_and_existing_paths() -> None
     assert {
         "fast",
         "source",
-        "pi-adapter",
         "subagents",
         "native-pi",
         "package",

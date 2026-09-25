@@ -205,7 +205,7 @@ async function createTspiHarness(session, options, executionEnv) {
     );
     // Keep the package-source policy in the worker-owned Harness.  Registering
     // it here means every attached presentation shares the same guard, and a
-    // phone/monitor client cannot bypass the ordinary TUI extension policy.
+    // phone/monitor client cannot bypass the Native client policy.
     created.harness.hooks.on(
       "before_tool",
       createPackageSourceReadGuard({ packageRoot: loadedSkills.packageRoot, cwd: session.metadata.cwd }),

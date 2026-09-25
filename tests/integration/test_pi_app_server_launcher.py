@@ -164,18 +164,6 @@ def test_tspi_launcher_disables_retired_custom_renderer(
         os.environ.update(original_environment)
 
 
-def test_tmux_probe_checks_the_selected_binary(tmp_path: Path) -> None:
-    working = tmp_path / "tmux-ok"
-    working.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    working.chmod(0o755)
-    broken = tmp_path / "tmux-broken"
-    broken.write_text("#!/bin/sh\nexit 127\n", encoding="utf-8")
-    broken.chmod(0o755)
-
-    assert launcher._probe_tmux(str(working)) is True
-    assert launcher._probe_tmux(str(broken)) is False
-
-
 def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     install_root = tmp_path / "tspi-install"
     package_home = install_root / ".pi/packages/tspi"
@@ -554,70 +542,26 @@ def test_default_terminal_connects_to_host_and_continues_latest_workspace_sessio
     ]
 
 
-def test_native_pi_command_uses_ordinary_cli_and_workspace_history(
+def test_ordinary_runtime_flag_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TSPI_HOST_BACKEND", raising=False)
+    with pytest.raises(launcher.TSPiHostError, match="--native-runtime was removed"):
+        launcher.parse_launch_request(["--workspace", "reaction-a", "--native-runtime"])
+
+
+def test_ordinary_backend_is_rejected_before_host_start(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     installation = _installation(tmp_path)
-    source = tmp_path / "pi-source"
-    (source / "packages/coding-agent/src/experimental").mkdir(parents=True)
-    (source / "packages/coding-agent/src/cli.ts").write_text("", encoding="utf-8")
-    (source / "packages/coding-agent/src/experimental/source-resolver.ts").write_text("", encoding="utf-8")
-    (installation.package_root / "config").mkdir()
-    (installation.package_root / "config/pi-source.json").write_text(json.dumps({"commit": "a" * 40}), encoding="utf-8")
     workspace = installation.root / "workspaces" / "reaction-a"
-    (workspace / ".pi/sessions").mkdir(parents=True)
-    monkeypatch.setenv("TSPI_PI_SOURCE", str(source))
-    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
-    monkeypatch.setattr(
-        launcher.subprocess,
-        "run",
-        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, "a" * 40 + "\n", ""),
-    )
-    request = launcher.parse_launch_request(["--workspace", "reaction-a", "--session-id", "native-1", "--thinking", "high"])
+    workspace.mkdir(parents=True)
+    request = launcher.parse_launch_request(["--workspace", "reaction-a"])
+    monkeypatch.setenv("TSPI_HOST_BACKEND", "ordinary")
 
-    command = launcher.build_native_pi_command(installation, request, workspace)
-
-    assert command[:5] == [
-        "/usr/bin/node",
-        "--import",
-        str(source / "packages/coding-agent/src/experimental/source-resolver.ts"),
-        str(source / "packages/coding-agent/src/cli.ts"),
-        "--session-dir",
-    ]
-    assert str(workspace / ".pi/sessions") in command
-    assert ["--session-id", "native-1"] == command[command.index("--session-id") : command.index("--session-id") + 2]
-    assert command[-2:] == ["--thinking", "high"]
-    assert all(path in command for path in [
-        str(installation.package_root / "extensions/pi/research/index.ts"),
-        str(installation.package_root / "extensions/pi/bridge/index.ts"),
-    ])
-
-
-def test_native_pi_command_rejects_history_paths_outside_workspace(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    installation = _installation(tmp_path)
-    source = tmp_path / "pi-source"
-    (source / "packages/coding-agent/src/experimental").mkdir(parents=True)
-    (source / "packages/coding-agent/src/cli.ts").write_text("", encoding="utf-8")
-    (source / "packages/coding-agent/src/experimental/source-resolver.ts").write_text("", encoding="utf-8")
-    (installation.package_root / "config").mkdir()
-    (installation.package_root / "config/pi-source.json").write_text(json.dumps({"commit": "b" * 40}), encoding="utf-8")
-    workspace = installation.root / "workspaces" / "reaction-a"
-    (workspace / ".pi/sessions").mkdir(parents=True)
-    monkeypatch.setenv("TSPI_PI_SOURCE", str(source))
-    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
-    monkeypatch.setattr(
-        launcher.subprocess,
-        "run",
-        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, "b" * 40 + "\n", ""),
-    )
-    request = launcher.parse_launch_request(["--workspace", "reaction-a", "--session", "/tmp/foreign.jsonl"])
-
-    with pytest.raises(launcher.TSPiHostError, match="workspace's .pi/sessions"):
-        launcher.build_native_pi_command(installation, request, workspace)
+    with pytest.raises(launcher.TSPiHostError, match="Native Pi Harness is the only supported backend"):
+        launcher.launch_terminal(installation, request, workspace)
 
 
 @pytest.mark.parametrize(

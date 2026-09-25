@@ -5,8 +5,7 @@
 `TSPi --workspace <name>` is a launcher for Pi's official remote
 `ExperimentalClientTui`. It does not replace Pi's header, editor, command
 registry, transcript view, extensions, or input loop. The selected workspace is
-bound to one installation-level Pi Harness format-4 session; old format-3 files under
-`<workspace>/.pi/sessions/` are read-only compatibility history.
+bound to one installation-level Pi Harness format-4 session.
 
 ## Runtime shape
 
@@ -34,10 +33,10 @@ loop.
 
 The launcher first ensures the installation Host is ready, then requests a
 session descriptor and execs Pi's native client directly against the Pi App
-Server socket. No tmux session, PTY scraping, or ordinary bridge is involved in
-the default path. A second terminal attaches to the same format-4 session; closing a
-client does not stop the worker or interrupt a turn. The explicit
-`TSPI_HOST_BACKEND=ordinary` setting remains only for migration/debug checks.
+Server socket. Native Pi Harness is the only supported backend: no tmux
+session or PTY scraping path is available. A second terminal
+attaches to the same format-4 session; closing a client does not stop the
+worker or interrupt a turn.
 
 The Host service is installation-wide and scans direct child workspaces. It is
 normally managed with:
@@ -48,16 +47,15 @@ systemctl --user status ts-app-server-tspi.service
 ```
 
 Use the same commands without `--user` for a system unit. The private Host
-socket is under the configured runtime directory and the bridge token is under
-`.pi/app-server-host/`.
+socket is under the configured runtime directory.
 
 ## Sessions and controls
 
 The remote `ExperimentalClientTui` provides `/resume`, `/model`, `/thinking`,
-`/compact`, `/reload`, and the installed TSPi extension commands. `/resume`
+`/compact`, `/reload`, and the Native TSPi commands. `/resume`
 switches to another format-4 session in the current workspace; it does not
-cross workspace boundaries. Ordinary Pi's `/new` and `/fork` commands are not
-available in this remote client.
+cross workspace boundaries. Standalone Pi session commands are not available
+in this remote client.
 
 At launch, `-c` selects the latest writable format-4 session and
 `--session-id <id>` selects an exact session. Startup `-r`/`--resume` is
@@ -98,16 +96,13 @@ Monitor never finalizes a calculation or edits `ResearchMap`.
 addresses the direct-child directory name such as `reaction-a`; Monitor verifies
 the canonical identity before translating it to that route name.
 
-## Legacy histories
+## Session storage
 
 The installation-level `.pi/app-server-host/sessions/` tree is the only
-canonical format-4 store. Workspace `.pi/sessions/*.jsonl` format-3 files are listed and
-readable but cannot be resumed or prompted. Use
-`apps/app-server/tspi-history.mjs --source ... --import` (or Host
-`session/import`) for an explicit source-digest-checked format-3 to format-4 import; the
-source is never modified and a provenance report is written under the
-installation Host state. Unknown, torn, active, or conflicting history is
-rejected instead of silently replayed.
+session store used by Native Pi Harness. Workspace `.pi/sessions/*.jsonl`
+history is not a supported input and is neither resumed nor imported by the
+Native runtime. Keep research state in the workspace Research Memory and use
+the Host session controls for format-4 sessions.
 
 See [Architecture](ARCHITECTURE.md) and [Installation](INSTALLATION.md) for
 service, package, and recovery details.

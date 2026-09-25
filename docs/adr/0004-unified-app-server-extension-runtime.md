@@ -2,8 +2,7 @@
 
 [English](0004-unified-app-server-extension-runtime.md) | [简体中文](0004-unified-app-server-extension-runtime.zh-CN.md)
 
-- Status: accepted; [ADR 0005](0005-ordinary-pi-host-bridge.md) is retained only
-  for the isolated ordinary migration/debug mode
+- Status: accepted; the retired ordinary-Pi bridge is not part of the runtime
 - Date: 2026-09-17
 - Scope: TSPi App Server, terminal TUI, Phone, and Web clients
 
@@ -38,5 +37,5 @@ the named choice.
 
 ## Consequences
 
-ADR 0005 documents only the explicitly selected ordinary compatibility mode;
-it is not a fallback for this runtime.
+The former ordinary-Pi bridge is retained only as historical design context;
+it is not packaged, selected, or reachable by this runtime.

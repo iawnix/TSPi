@@ -19,6 +19,7 @@ def test_release_inventory_is_shared_by_checker_and_installer() -> None:
 
 
 def test_required_release_members_are_in_the_npm_allowlist() -> None:
+    manifest = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     allowlisted = {"package.json", *check_package.expanded_allowlisted_files()}
 
     assert package_inventory.REQUIRED_TARBALL_FILES <= allowlisted
@@ -32,6 +33,26 @@ def test_required_release_members_are_in_the_npm_allowlist() -> None:
     assert "contracts/ts-web/provider-request.schema.json" in package_inventory.REQUIRED_TARBALL_FILES
     assert "contracts/ts-web/provider-response.schema.json" in package_inventory.REQUIRED_RUNTIME_FILES
     assert "contracts/ts-web/research-map-response.schema.json" in package_inventory.REQUIRED_TARBALL_FILES
+    assert not any(path.startswith("extensions/pi/") and path.endswith("/index.ts") for path in package_inventory.PACKAGE_FILES)
+    assert manifest["pi"]["extensions"] == []
+    for retired in (
+        "extensions/pi/runtime.ts",
+        "extensions/pi/research/*.ts",
+        "extensions/pi/compute/*.ts",
+        "extensions/pi/review/*.ts",
+        "extensions/pi/artifacts/*.ts",
+        "extensions/pi/ui/*.ts",
+        "extensions/pi/bridge/*",
+    ):
+        assert retired not in package_inventory.PACKAGE_FILES
+    for retired in (
+        "apps/app-server/pi-experimental-app-server.mjs",
+        "apps/app-server/tspi-terminal-runtime.mjs",
+        "apps/app-server/tspi-history.mjs",
+    ):
+        assert retired not in package_inventory.APP_SERVER_FILES
+        assert retired not in package_inventory.REQUIRED_TARBALL_FILES
+        assert retired not in package_inventory.REQUIRED_RUNTIME_FILES
 
 
     assert "contracts/ts-render/curve-data.schema.json" in package_inventory.REQUIRED_RUNTIME_FILES

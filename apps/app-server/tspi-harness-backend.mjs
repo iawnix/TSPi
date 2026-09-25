@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { createSessionControl } from "./pi-session-control.mjs";
 import { readReceipt, receiptDigest, receiptKey, writeReceipt } from "./tspi-receipts.mjs";
 import { acquireSchedulerLease } from "./tspi-scheduler-lease.mjs";
-import { listLegacyHistory, parseHistory, readLegacyHistory } from "./tspi-history.mjs";
+import { parseHarnessHistory } from "./pi-session-history.mjs";
 
 const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/u;
@@ -26,7 +26,6 @@ export async function createTspiHarnessBackend(options = {}) {
   const workspaceRoot = absolute(options.workspaceRoot, "workspaceRoot");
   const serverDirectory = absolute(options.serverDirectory, "serverDirectory");
   const sessionDir = absolute(options.sessionDir, "sessionDir");
-  const installRoot = absolute(options.installRoot || resolve(serverDirectory, "../../.."), "installRoot");
   const stateRoot = absolute(options.stateRoot || join(serverDirectory, ".."), "stateRoot");
   const workerEntry = join(packageRoot, "apps/app-server/pi-session-worker.mjs");
   const schedulerOwner = `host:${process.pid}:${randomUUID()}`;
@@ -635,7 +634,7 @@ export async function createTspiHarnessBackend(options = {}) {
       // authoritative and will be retried on a later attach if it is fixed.
       try {
         const content = await readFile(summary.path, "utf8");
-        const parsed = parseHistory(content, summary.cwd);
+        const parsed = parseHarnessHistory(content, summary.cwd);
         if (parsed.version !== 4) continue;
         const lane = parsed.values.get("pi.lane.state\0main");
         const inbox = Array.isArray(lane?.inbox) ? lane.inbox : [];
@@ -663,17 +662,9 @@ export async function createTspiHarnessBackend(options = {}) {
           const binding = bindings.get(`${workspaceId}/${item.sessionId}`);
           return summaryFor(item, root, binding?.snapshot, Boolean(binding));
         });
-      // Workspace v3 files are deliberately visible but never writable. The
-      // canonical Harness repository remains the only source of live sessions.
-      const legacy = await listLegacyHistory({ installRoot, workspaceRoot, workspaceId, includeCanonical: false });
-      const rows = new Map(harness.map((item) => [item.session_id, item]));
-      for (const item of legacy) if (!rows.has(item.session_id)) rows.set(item.session_id, item);
-      return [...rows.values()]
-        .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+      return harness.sort((left, right) => right.updated_at.localeCompare(left.updated_at));
     },
     async readSession(workspaceId, sessionId) {
-      const legacy = await readLegacyHistory({ installRoot, workspaceRoot, workspaceId, sessionId, includeCanonical: false });
-      if (legacy) return legacy;
       const binding = await openBinding(workspaceId, sessionId);
       return { session: summaryFor(binding.summary, binding.root, binding.snapshot, true), snapshot: hostSnapshot(binding.snapshot), cursor: { sequence: binding.sequence } };
     },
@@ -692,9 +683,6 @@ export async function createTspiHarnessBackend(options = {}) {
     },
     async resumeSession({ workspace_id: workspaceId, session_id: sessionId, provider, model }) {
       const root = await workspace(workspaceId);
-      if (await readLegacyHistory({ installRoot, workspaceRoot, workspaceId, sessionId, includeCanonical: false })) {
-        throw error("legacy_session_read_only", "Workspace Pi v3 history is read-only; explicitly import it into the Harness first");
-      }
       const summary = findSummary(sessionId, root);
       const binding = await openBinding(workspaceId, sessionId);
       await applyRequestedModel(binding, provider, model);
@@ -723,9 +711,6 @@ export async function createTspiHarnessBackend(options = {}) {
     },
     async removeSession(workspaceId, sessionId) {
       const root = await workspace(workspaceId);
-      if (await readLegacyHistory({ installRoot, workspaceRoot, workspaceId, sessionId, includeCanonical: false })) {
-        throw error("legacy_session_read_only", "Workspace Pi v3 history is read-only");
-      }
       const summary = findSummary(sessionId, root);
       const binding = bindings.get(`${workspaceId}/${sessionId}`);
       if (binding) await closeBinding(binding);
@@ -733,9 +718,6 @@ export async function createTspiHarnessBackend(options = {}) {
       return { accepted: true, recoverable: false };
     },
     async sendInput(params) {
-      if (await readLegacyHistory({ installRoot, workspaceRoot, workspaceId: params.workspace_id, sessionId: params.session_id, includeCanonical: false })) {
-        throw error("legacy_session_read_only", "Workspace Pi v3 history is read-only; explicitly import it into the Harness first");
-      }
       const binding = await openBinding(params.workspace_id, params.session_id);
       const mode = params.mode || "auto";
       const payload = {
@@ -963,8 +945,8 @@ function messageText(message) {
 }
 
 /**
- * Keep the Harness endpoint on the same small wire shape as the ordinary
- * bridge. Pi's experimental Models service exposes a richer catalog and
+ * Keep the Harness endpoint on the small Host wire shape. Pi's experimental
+ * Models service exposes a richer catalog and
  * uses `modelId`; Phone/Host clients use `id` and `selected` instead.
  */
 function normalizeModels(value) {

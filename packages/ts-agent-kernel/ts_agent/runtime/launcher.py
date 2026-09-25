@@ -112,7 +112,6 @@ class LaunchRequest:
     pi_args: tuple[str, ...]
     gateway: bool = False
     host: bool = False
-    native_runtime: bool = False
     phone_action: str | None = None
     phone_device_id: str | None = None
 
@@ -149,8 +148,8 @@ Options:
 
 The terminal runs Pi's native experimental client TUI against an installation-
 owned AgentHarness server. Session history is isolated under the installation
-Host state; Phone and monitor requests address the same Pi lane. Set
-TSPI_HOST_BACKEND=ordinary only for the legacy ordinary-Pi bridge/tmux mode.
+Host state; Phone and monitor requests address the same Pi lane. The Native
+Pi Harness is the only supported runtime backend.
 The managed Host service is ts-app-server-tspi.service.
 To select another Host session, open the terminal and run /resume. Startup
 -r/--resume is not supported by the Host-mediated client.
@@ -172,7 +171,6 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
     pi_args: list[str] = []
     gateway = False
     host = False
-    native_runtime = False
     index = 0
     while index < len(argv):
         value = argv[index]
@@ -196,7 +194,10 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         elif value in {"--host", "--service-host"}:
             host = True
         elif value == "--native-runtime":
-            native_runtime = True
+            raise TSPiHostError(
+                "--native-runtime was removed; TSPi always runs through the Native Pi Harness",
+                exit_code=2,
+            )
         elif value == "--allow-writes":
             raise TSPiHostError("--allow-writes was removed; App Server is the guarded writable Root Agent", exit_code=2)
         elif value in {"--phone", "--phone-worker", "--phone-access"} or value.startswith("--phone-access="):
@@ -250,7 +251,6 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         pi_args=tuple(pi_args),
         gateway=gateway,
         host=host,
-        native_runtime=native_runtime,
     )
 
 
@@ -801,7 +801,7 @@ def configure_process_environment(installation: Installation, workspace: Path, w
     os.environ["TSPI_INSTALL_ROOT"] = str(installation.root)
     os.environ["TS_WORKSPACE_ROOT"] = str(workspace)
     os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / ".pi" / "agent")
-    # Do not inherit the retired replacement renderer into ordinary Pi.
+    # Keep the Native Pi client on the package's standard presentation path.
     os.environ.pop("TSPI_CUSTOM_UI", None)
     _restore_native_pi_settings(installation)
     if installation.compute_config_default and installation.compute_config_default.is_file():
@@ -1035,69 +1035,6 @@ def build_harness_client_command(installation: Installation, request: LaunchRequ
     return command
 
 
-def build_native_pi_command(installation: Installation, request: LaunchRequest, workspace: Path) -> list[str]:
-    """Use Pi's normal CLI and InteractiveMode, including its normal extensions."""
-    pin = json.loads((installation.package_root / "config/pi-source.json").read_text(encoding="utf-8"))
-    source = Path(os.environ.get("TSPI_PI_SOURCE") or installation.root / ".pi/runtime-cache/pi" / pin["commit"])
-    entry = source / "packages/coding-agent/src/cli.ts"
-    resolver = source / "packages/coding-agent/src/experimental/source-resolver.ts"
-    if not entry.is_file() or not resolver.is_file():
-        raise TSPiHostError("ordinary Pi source is unavailable; prepare the pinned Pi source or reinstall TSPi")
-    try:
-        commit = subprocess.run(["git", "-C", str(source), "rev-parse", "HEAD"], check=True,
-                                text=True, capture_output=True, timeout=10).stdout.strip()
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise TSPiHostError("cannot verify the ordinary Pi source checkout") from exc
-    if commit != pin["commit"]:
-        raise TSPiHostError("ordinary Pi source commit does not match config/pi-source.json")
-    command = [_node_binary(), "--import", str(resolver), str(entry)]
-    sessions = workspace / ".pi/sessions"
-    if _has_cli_option(request.pi_args, "--session-dir"):
-        raise TSPiHostError("--session-dir is bound to the workspace by TSPi", exit_code=2)
-    for index, argument in enumerate(request.pi_args):
-        option, separator, value = argument.partition("=")
-        if option in {"--session", "--fork"} and (separator or index + 1 < len(request.pi_args)):
-            candidate = value if separator else request.pi_args[index + 1]
-            if "/" in candidate or candidate.endswith(".jsonl"):
-                path = Path(candidate).expanduser()
-                path = path if path.is_absolute() else workspace / path
-                if path.resolve().parent != sessions.resolve():
-                    raise TSPiHostError("session files must belong to this workspace's .pi/sessions directory", exit_code=2)
-    command.extend(["--session-dir", str(sessions)])
-    if request.session_id:
-        command.extend(["--session-id", request.session_id])
-    elif request.continue_latest:
-        command.append("--continue")
-    # The package's optional UI extension is intentionally not selected here.
-    # TSPi must leave Pi's native InteractiveMode presentation untouched; users
-    # can still load that facet explicitly when invoking Pi directly.
-    for name in ("research", "review", "compute", "artifacts", "bridge"):
-        command.extend(["-e", str(installation.package_root / "extensions/pi" / name / "index.ts")])
-    command.extend(["--skill", str(installation.package_root / "skills")])
-    command.extend(request.pi_args)
-    return command
-
-
-def launch_native_pi(installation: Installation, request: LaunchRequest, workspace: Path) -> NoReturn:
-    # The workspace lock survives exec, while normal /new, /resume and /fork
-    # remain available inside this one Pi process.
-    descriptors = [acquire_directory_guard(installation.root, workspace)]
-    try:
-        descriptors.append(acquire_root_agent_lock(workspace))
-        os.environ["TSPI_WORKSPACE_ID"] = str(request.workspace_name)
-        os.environ["TSPI_SESSION_CWD"] = str(workspace)
-        os.environ["TSPI_HOST_SOCKET"] = str(_host_socket_directory(installation, create=True) / f"{_host_server_id(installation, create=True)}.sock")
-        os.environ["TSPI_BRIDGE_TOKEN_FILE"] = str(installation.root / ".pi/app-server-host/bridge-token")
-        os.environ.pop("TSPI_CUSTOM_UI", None)
-        os.environ.pop("PI_EXPERIMENTAL", None)
-        os.environ.pop("TS_SESSION_GUARD", None)
-        os.environ.pop("TS_SESSION_WRITER_PID", None)
-        exec_pi(build_native_pi_command(installation, request, workspace), workspace)
-    finally:
-        for descriptor in reversed(descriptors):
-            os.close(descriptor)
-
-
 def launch_harness_client(installation: Installation, request: LaunchRequest, workspace: Path) -> NoReturn:
     """Run Pi's native remote TUI against the installation-owned harness."""
     if request.session_id and not SESSION_ID.fullmatch(request.session_id):
@@ -1310,66 +1247,26 @@ def exec_pi(command: list[str], workspace: Path) -> NoReturn:
 
 
 def launch_terminal(installation: Installation, request: LaunchRequest, workspace: Path) -> NoReturn:
-    """Run the Host-mediated native Pi client by default.
+    """Run the Host-mediated Native Pi client.
 
     The Harness Host is the only owner of the Pi server and session worker.
     The terminal process is just Pi's official experimental client, connected
-    to the descriptor selected by ``tspi-terminal-client.mjs``.  Ordinary mode
-    remains an explicit migration/debug path and is never a Harness fallback.
+    to the descriptor selected by ``tspi-terminal-client.mjs``.
     """
     if request.session_id and not SESSION_ID.fullmatch(request.session_id):
         raise TSPiHostError("invalid session identity", exit_code=2)
+    backend = os.environ.get("TSPI_HOST_BACKEND", "harness").strip().lower()
+    if backend != "harness":
+        raise TSPiHostError(
+            f"unsupported TSPI_HOST_BACKEND={backend!r}; Native Pi Harness is the only supported backend",
+            exit_code=2,
+        )
     os.environ["TSPI_SESSION_CWD"] = str(workspace)
-    if os.environ.get("TSPI_HOST_BACKEND", "harness").strip().lower() != "ordinary":
-        try:
-            socket_path = ensure_host_running(installation)
-        except TSPiHostError as exc:
-            raise TSPiHostError(f"Pi harness Host is unavailable: {exc}") from exc
-        # The adapter performs session/list + create/resume through Host, then
-        # starts Pi's own native client against the returned Unix descriptor.
-        pin = json.loads((installation.package_root / "config/pi-source.json").read_text(encoding="utf-8"))
-        source = Path(os.environ.get("TSPI_PI_SOURCE") or installation.root / ".pi/runtime-cache/pi" / pin["commit"]).resolve()
-        if not (source / "packages/coding-agent/src/experimental/source-resolver.ts").is_file():
-            raise TSPiHostError("prepared Pi Harness source is unavailable; reinstall the pinned Pi runtime")
-        os.environ["TSPI_PI_SOURCE"] = str(source)
-        os.environ["PI_EXPERIMENTAL"] = "1"
-        os.environ["TSPI_PACKAGE_ROOT"] = str(installation.package_root)
-        os.environ["PI_SESSION_WORKER_ENTRY"] = str(installation.package_root / "apps/app-server/pi-session-worker.mjs")
-        os.environ["TSPI_WORKSPACE_ROOT"] = str(installation.workspaces_root)
-        os.environ["TSPI_NATIVE_WRITES"] = "1"
-        exec_pi(build_host_client_command(installation, request, socket_path=socket_path), workspace)
-    if request.native_runtime or not sys.stdin.isatty() or not sys.stdout.isatty():
-        launch_native_pi(installation, request, workspace)
-    tmux = os.environ.get("TSPI_TMUX") or shutil.which("tmux")
-    if not tmux:
-        managed_tmux = installation.env_root / "bin/tmux"
-        if managed_tmux.is_file():
-            tmux = str(managed_tmux)
-    if not tmux or not _probe_tmux(tmux):
-        print("TSPi: tmux is unavailable; running Pi in the foreground.", file=sys.stderr)
-        launch_native_pi(installation, request, workspace)
-    os.environ["TSPI_TMUX"] = tmux
     try:
         socket_path = ensure_host_running(installation)
     except TSPiHostError as exc:
-        print(f"TSPi: {exc}; running Pi in the foreground.", file=sys.stderr)
-        launch_native_pi(installation, request, workspace)
+        raise TSPiHostError(f"Pi harness Host is unavailable: {exc}") from exc
     exec_pi(build_host_client_command(installation, request, socket_path=socket_path), workspace)
-
-
-def _probe_tmux(binary: str) -> bool:
-    """Check the exact tmux binary before asking Host to create a session."""
-    try:
-        completed = subprocess.run(
-            [binary, "-V"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-            timeout=5,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return completed.returncode == 0
 
 
 def launch(argv: list[str], *, package_root: str | Path, install_root: str | Path) -> int:

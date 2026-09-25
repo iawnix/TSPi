@@ -16,8 +16,8 @@ const executeFile = promisify(execFile);
  *
  * The worker owns tools and the AgentController; this facet only restores the
  * familiar command names and renders their structured command result. It is
- * intentionally independent of the old ExtensionAPI/UI package so loading it
- * cannot create a second ordinary Pi runtime.
+ * intentionally independent of the retired ExtensionAPI/UI runtime so loading
+ * it cannot create a second agent process.
  */
 export async function createTspiNativeClientFacet({ sourceRoot, packageRoot = process.env.TSPI_PACKAGE_ROOT } = {}) {
   if (typeof sourceRoot !== "string" || sourceRoot.length === 0) throw new TypeError("sourceRoot is required");

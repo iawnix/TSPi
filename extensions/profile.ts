@@ -24,13 +24,9 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
     Object.freeze({ name: "tspi-mechanism-reasoning", path: "./skills/tspi-mechanism-reasoning" }),
     Object.freeze({ name: "tspi-chemical-input", path: "./skills/tspi-chemical-input" }),
   ]),
-  extensions: Object.freeze([
-    Object.freeze({ name: "research", path: "./extensions/pi/research/index.ts" }),
-    Object.freeze({ name: "ui", path: "./extensions/pi/ui/index.ts" }),
-    Object.freeze({ name: "review", path: "./extensions/pi/review/index.ts" }),
-    Object.freeze({ name: "compute", path: "./extensions/pi/compute/index.ts" }),
-    Object.freeze({ name: "artifacts", path: "./extensions/pi/artifacts/index.ts" }),
-  ]),
+  // Native Pi Harness owns the agent loop and server tools. Direct
+  // ExtensionAPI modules are retired and must not be auto-loaded.
+  extensions: Object.freeze([]),
   theme: Object.freeze({ name: "ts-theme", path: "./themes/ts-theme.json" }),
   commands: SLASH_COMMAND_NAMES,
 });
