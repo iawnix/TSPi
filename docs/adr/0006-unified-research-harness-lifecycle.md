@@ -34,7 +34,7 @@ only on demand; list/show expose source and identity digests plus readiness with
 commands or environment variables into the default context. Public tools declare authority, effect, replay/idempotency, phase, schemas,
 workspace/session binding, and error taxonomy and use the common result/error envelopes.
 
-Existing `research.liveness`, `research.continuation`, `research.read`, and `research.continuation` remain
+Existing `research.liveness`, `research.continuation`, and `research.read` remain
 compatibility interfaces whose lifecycle interpretation is governed by `research.turn`.
 
 Runtime enforcement is centralized at tool admission. Every production tool must expose
