@@ -996,6 +996,40 @@ def test_changing_relay_requires_a_new_host_enrollment(tmp_path: Path) -> None:
         wizard.configure_phone_connection(args)
 
 
+def test_interactive_phone_configuration_defers_host_enrollment_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = wizard.parse_args(["--install-root", str(tmp_path / "install")])
+    answers = iter(("https://relay.example.test",))
+    monkeypatch.setattr(wizard, "ask_yes_no", lambda _prompt, _default: True)
+    monkeypatch.setattr(wizard, "ask", lambda _prompt, _default="": next(answers))
+
+    wizard._configure_menu_phone(args)
+
+    assert args.phone_access == "link"
+    assert args.link_enrollment_code is None
+    assert args._defer_link_enrollment is True
+
+
+def test_deferred_host_enrollment_is_collected_after_install(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = SimpleNamespace(
+        phone_access="link",
+        link_enrollment_code=None,
+        _defer_link_enrollment=True,
+    )
+    monkeypatch.setattr(wizard.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(wizard.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(wizard, "ask", lambda _prompt, _default="": "ABCD-EFGH-IJKL")
+
+    wizard.collect_deferred_link_enrollment(args)
+
+    assert args.link_enrollment_code == "ABCD-EFGH-IJKL"
+    assert args._defer_link_enrollment is False
+
+
 @pytest.mark.parametrize("relay_url", ["https://", "https://relay.example.test:invalid"])
 def test_link_url_must_be_a_valid_origin(relay_url: str) -> None:
     with pytest.raises(ValueError, match="link-url"):

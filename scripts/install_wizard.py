@@ -300,7 +300,10 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
         token_exists = (Path(args.install_root) / ".pi/app-server-host/host.token").is_file()
         enrolled_for_url = token_exists and existing_link is not None and args.link_url.rstrip("/") == existing_link[0]
         if not enrolled_for_url and args.link_enrollment_code is None:
-            args.link_enrollment_code = ask("Host enrollment code").strip()
+            # The package/runtime installation can take longer than the
+            # Relay's short-lived enrollment window. Ask for the code only
+            # after that work completes, immediately before redemption.
+            args._defer_link_enrollment = True
     section("Runtime and services")
     args.conda_root = args.conda_root or ask("Conda root (blank for auto-detect)", detect_conda_root())
     if args.service_scope is None:
@@ -462,6 +465,7 @@ def _configure_menu_phone(args: argparse.Namespace) -> None:
         args.phone_access = "disabled"
         args.link_url = None
         args.link_enrollment_code = None
+        args._defer_link_enrollment = False
         return
     args.phone_access = "link"
     existing_link = _existing_link_configuration(Path(args.install_root))
@@ -469,9 +473,13 @@ def _configure_menu_phone(args: argparse.Namespace) -> None:
     token_file = Path(args.install_root) / ".pi/app-server-host/host.token"
     enrolled_for_url = token_file.is_file() and existing_link is not None and args.link_url.rstrip("/") == existing_link[0]
     if not enrolled_for_url:
-        args.link_enrollment_code = ask("Host enrollment code", args.link_enrollment_code or "").strip()
+        args.link_enrollment_code = None
+        # Enrollment is deliberately collected after the potentially long
+        # package installation, so a valid code cannot expire mid-install.
+        args._defer_link_enrollment = True
     else:
         args.link_enrollment_code = None
+        args._defer_link_enrollment = False
 
 
 def _configure_menu_runtime(args: argparse.Namespace) -> None:
@@ -503,6 +511,11 @@ def _initialize_interactive_menu(args: argparse.Namespace) -> None:
     args.install_root = args.install_root or ask("Installation directory", str(Path.home() / ".local/share/tspi"))
     args.install_root = str(Path(args.install_root).expanduser())
     _load_existing_menu_defaults(args)
+    if args.phone_access == "link" and not _link_host_enrolled_for_url(args):
+        # Do not collect a ten-minute enrollment code before a long runtime
+        # installation. It is requested in the finalization phase instead.
+        args.link_enrollment_code = None
+        args._defer_link_enrollment = True
     args._installer_menu_initialized = True
 
 
@@ -630,6 +643,8 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Phone access", "TSPi Link Relay" if args.phone_access == "link" else "disabled", tone="success" if args.phone_access == "link" else "muted")
     if args.phone_access == "link":
         field("TSPi Link Relay", args.link_url, tone="success")
+        if getattr(args, "_defer_link_enrollment", False):
+            field("Host enrollment", "request after core installation", tone="warning")
         field("Phone tool access", "same Agent and tools as terminal", tone="success")
     field(
         "Model icon font",
@@ -814,7 +829,7 @@ def validate_options(args: argparse.Namespace) -> None:
         args.link_url = _validate_link_url(args.link_url)
         token_file = Path(args.install_root) / ".pi/app-server-host/host.token"
         enrolled_for_url = token_file.is_file() and existing_link is not None and existing_link[0] == args.link_url
-        if not enrolled_for_url and not args.link_enrollment_code:
+        if not enrolled_for_url and not args.link_enrollment_code and not getattr(args, "_defer_link_enrollment", False):
             raise ValueError("--link-enrollment-code is required when enrolling a new TSPi Host")
     elif args.link_url or args.link_enrollment_code:
         raise ValueError("--link-url and --link-enrollment-code require --phone-access link")
@@ -904,6 +919,17 @@ def _existing_link_configuration(root: Path) -> tuple[str, str] | None:
     if not isinstance(relay_url, str) or not isinstance(host_id, str):
         return None
     return relay_url, host_id
+
+
+def _link_host_enrolled_for_url(args: argparse.Namespace) -> bool:
+    """Return whether this install already has a Host token for the Relay."""
+
+    if args.phone_access != "link" or not isinstance(args.link_url, str):
+        return False
+    root = Path(args.install_root)
+    existing = _existing_link_configuration(root)
+    token_file = root / ".pi/app-server-host/host.token"
+    return token_file.is_file() and existing is not None and existing[0] == args.link_url.rstrip("/")
 
 
 def _validate_link_url(value: object) -> str:
@@ -1536,6 +1562,22 @@ def run_install(args: argparse.Namespace) -> dict[str, object]:
     if args.conda_root:
         command.extend(["--conda-root", args.conda_root])
     return run_logged_install(command, Path(args.install_root), show_progress=not args.json)
+
+
+def collect_deferred_link_enrollment(args: argparse.Namespace) -> None:
+    """Collect a short-lived Relay code after the long install phase."""
+
+    if not getattr(args, "_defer_link_enrollment", False):
+        return
+    if args.phone_access != "link":
+        return
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise RuntimeError("a Host enrollment code is required after installation; use --link-enrollment-code with --non-interactive")
+    note("Core installation is complete. Generate a fresh Host enrollment code now, then enter it below.", tone="accent")
+    args.link_enrollment_code = ask("Host enrollment code").strip()
+    if not args.link_enrollment_code:
+        raise ValueError("Host enrollment code must not be empty")
+    args._defer_link_enrollment = False
 
 
 def configure_model_icons(args: argparse.Namespace, installed: dict[str, object]) -> dict[str, object]:
@@ -2798,6 +2840,7 @@ def main(argv: list[str] | None = None) -> int:
         previous_configuration = snapshot_install_configuration(installation_root, args)
         install_uninstaller(Path(args.install_root), ROOT)
         installed = run_install(args)
+        collect_deferred_link_enrollment(args)
         with Spinner("Finalizing installation", stream=sys.stderr, enabled=not args.json) as activity:
             activity.update("Importing Pi model configuration")
             model_configuration = provision_pi_agent_configuration(args)

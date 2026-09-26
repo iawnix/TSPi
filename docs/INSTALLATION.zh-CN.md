@@ -197,7 +197,9 @@ PTY scraping。Host 重启会保留 format-4 transcript、operation/queue ID、�
 重新连接的客户端从新的 Host epoch/cursor 恢复。
 
 TS Phone 通过 TSPi Link 连接该 Host。安装时启用 Phone access，并提供 HTTPS TSPi Link Relay
-origin 和 Relay 管理员创建的一次性 Host enrollment code。安装器写入
+origin 和 Relay 管理员创建的一次性 Host enrollment code。交互式安装会在耗时的运行时安装
+完成后、写入 Phone manifest 前才询问这个短期 code，避免安装超过 code 有效期；非交互式安装
+仍通过 `--link-enrollment-code` 直接提供。安装器写入
 `.pi/app-server-host/link.json` 及仅所有者可读的 `.pi/app-server-host/host.token`；Host
 只向 Relay 建立出站 WSS，不会向 Relay 或互联网暴露 App Server 端口。
 

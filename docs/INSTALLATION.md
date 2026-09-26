@@ -240,7 +240,10 @@ Monitor outbox state; reconnecting clients resume from a Host epoch/cursor.
 
 TS Phone connects to this Host through TSPi Link. During installation, enable
 Phone access and provide the HTTPS TSPi Link Relay origin plus a single-use Host
-enrollment code created by the Link Relay administrator. The installer writes
+enrollment code created by the Link Relay administrator. Interactive installs
+ask for this short-lived code after the long runtime installation, immediately
+before writing the Phone manifest, so it cannot expire mid-install. Non-interactive
+installs still provide it with `--link-enrollment-code`. The installer writes
 `.pi/app-server-host/link.json` and the owner-only
 `.pi/app-server-host/host.token`. The Host then maintains an outbound WSS
 connection; no App Server port is exposed to the Relay or Internet.
