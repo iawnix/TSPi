@@ -926,7 +926,7 @@ function appendFailureMessage(transcript, failure) {
   return messages;
 }
 
-function normalizeOperationFailure(result) {
+export function normalizeOperationFailure(result) {
   if (!result || typeof result !== "object") return null;
   const source = result.error && typeof result.error === "object" ? result.error : result;
   if (result.status !== "failed" && !result.error) return null;
@@ -945,7 +945,7 @@ function normalizeOperationFailure(result) {
       : numericHttpStatus(message);
   return {
     code: typeof source.code === "string" && source.code.trim() ? source.code.trim().slice(0, 96) : "operation_failed",
-    summary: failureSummary(source.code),
+    summary: failureSummary(source.code, statusCode),
     detail: message.slice(0, 4000),
     ...(statusCode === null ? {} : { statusCode }),
     retryable: source.retryable === true || result.retryable === true,
@@ -958,7 +958,7 @@ function numericHttpStatus(message) {
   return match ? Number(match[1]) : null;
 }
 
-function failureSummary(code) {
+export function failureSummary(code, statusCode = null) {
   switch (code) {
     case "provider_error":
       return "模型服务拒绝了请求";
@@ -968,7 +968,13 @@ function failureSummary(code) {
       return "模型服务暂时不可用";
     case "provider_rate_limited":
       return "模型服务限制了请求频率";
+    case "auth_unavailable":
+      return "模型服务认证不可用";
+    case "server_error":
+    case "upstream_server_error":
+      return "模型服务发生服务器错误";
     default:
+      if (statusCode !== null && statusCode >= 500 && statusCode < 600) return "模型服务暂时不可用";
       return "程序未能完成本次回复";
   }
 }
@@ -1003,6 +1009,7 @@ function receiptFromOperationResult(receipt, result) {
     };
   }
   if (result.status === "failed") {
+    const failure = normalizeOperationFailure(result);
     return {
       ...receipt,
       state: "failed",
@@ -1010,9 +1017,9 @@ function receiptFromOperationResult(receipt, result) {
       reconciled: true,
       retryable: false,
       operation_result: result,
-      error: result.error && typeof result.error === "object"
+      error: failure || (result.error && typeof result.error === "object"
         ? { code: result.error.code || "operation_failed", message: result.error.message || "Pi operation failed" }
-        : { code: "operation_failed", message: "Pi operation failed" },
+        : { code: "operation_failed", message: "Pi operation failed" }),
     };
   }
   return receipt;
