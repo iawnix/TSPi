@@ -134,5 +134,7 @@ the App Server lifecycle, and release procedure. 中文说明见
 - [Code of Conduct](CODE_OF_CONDUCT.md) / [行为准则](CODE_OF_CONDUCT.zh-CN.md)
 - [Changelog](CHANGELOG.md) / [变更日志](CHANGELOG.zh-CN.md)
 
-The repository currently has no license grant. Do not redistribute or reuse the
-source until the repository owner adds and confirms a license.
+Project-owned source in this repository is licensed under the [Apache License
+2.0](LICENSE). Third-party dependencies, the pinned Pi source, native chemistry
+programs, and bundled assets may have separate licenses; preserve their notices
+when redistributing them.

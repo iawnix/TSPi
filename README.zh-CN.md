@@ -122,4 +122,5 @@ npm run lint:skills
 - [行为准则](CODE_OF_CONDUCT.zh-CN.md) / [Code of Conduct](CODE_OF_CONDUCT.md)
 - [变更日志](CHANGELOG.zh-CN.md) / [Changelog](CHANGELOG.md)
 
-本仓库当前没有许可证授权。在仓库所有者添加并确认许可证前，不要重新分发或复用源码。
+本仓库由项目拥有的源码采用 [Apache License 2.0](LICENSE) 授权。第三方依赖、固定版本的
+Pi 源码、本地化学程序和随附资源可能适用各自的许可证；重新分发时必须保留相应声明。

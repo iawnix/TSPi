@@ -12,6 +12,7 @@ in `docs/adr/`.
 - Clarified the Research Memory, bounded turn context, capability catalog, and
   Monitor wake-up boundaries.
 - Added repository governance documents and automated Skill contract checks.
+- Added the Apache-2.0 license and SPDX metadata for project-owned source.
 
 There is no published release tag for this entry yet. Release notes must include
 the package version, pinned Pi revision, migration notes, and the test lanes run.

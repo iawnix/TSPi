@@ -24,5 +24,7 @@ explains the public contract and must be updated with code changes. A historical
 ADR is not an active compatibility promise; the current Native-only runtime and
 the latest accepted ADRs define supported behavior.
 
-The repository currently has no license grant. Do not redistribute or reuse the
-source until the repository owner adds and confirms a license.
+Project-owned source is licensed under the [Apache License 2.0](../LICENSE).
+Third-party dependencies, the pinned Pi source, native chemistry programs, and
+bundled assets may have separate licenses; preserve their notices when
+redistributing them.

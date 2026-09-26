@@ -27,6 +27,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "@iawnix/ts-agent"
 PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
+PROJECT_LICENSE = "Apache-2.0"
 THEME_ENTRIES = ["./themes/ts-theme.json"]
 EXTENSION_ENTRIES: list[str] = []
 REMOVED_PREFIXES = (
@@ -84,6 +85,8 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         errors.append(f"package name must be {PACKAGE_NAME}")
     if manifest.get("version") != PACKAGE_VERSION:
         errors.append(f"package version must be {PACKAGE_VERSION}")
+    if manifest.get("license") != PROJECT_LICENSE:
+        errors.append(f"package license must be {PROJECT_LICENSE}")
     if not isinstance(manifest.get("version"), str) or not re.fullmatch(
         r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", manifest["version"]
     ):
@@ -148,6 +151,8 @@ def validate_python_project() -> None:
     errors: list[str] = []
     if not isinstance(metadata, dict) or metadata.get("name") != "ts-agent-kernel":
         errors.append("pyproject project.name must be ts-agent-kernel")
+    if not isinstance(metadata, dict) or metadata.get("license") != PROJECT_LICENSE:
+        errors.append(f"pyproject license must be {PROJECT_LICENSE}")
     if not isinstance(metadata, dict) or metadata.get("dynamic") != ["version"]:
         errors.append("pyproject version must be sourced from ts_agent._version")
     if setuptools.get("package-dir") != {"": "packages/ts-agent-kernel"}:
@@ -176,6 +181,8 @@ def validate_version_surfaces() -> None:
         errors.append("package-lock root package metadata is missing")
     elif packages[""].get("version") != PACKAGE_VERSION:
         errors.append("package-lock root package version does not match the package release")
+    elif packages[""].get("license") != PROJECT_LICENSE:
+        errors.append(f"package-lock root package license must be {PROJECT_LICENSE}")
     if profile_match is None or profile_match.group(1) != PACKAGE_VERSION:
         errors.append("package profile version does not match the package release")
     if errors:

@@ -42,5 +42,5 @@ Artifact 引用的 Finding 记录；进程成功本身不是科学证据。
 ## Pull Request
 
 标题应描述问题，正文说明边界明确的解决方案，并避免提交无关格式化或生成文件。发布与
-所有权说明见[维护者指南](docs/MAINTAINER_GUIDE.zh-CN.md)。本 checkout 当前没有许可证
-授权，重新分发前必须由仓库所有者确认许可证。
+所有权说明见[维护者指南](docs/MAINTAINER_GUIDE.zh-CN.md)。项目拥有的源码采用
+[Apache-2.0](LICENSE) 授权；重新分发完整安装包前还必须检查第三方声明。

@@ -2,6 +2,7 @@
   "name": "@iawnix/ts-agent",
   "version": "0.17.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "description": "Pi package for a domain-neutral ResearchMap scientific harness, deterministic validation, and bounded Compute and Review subagents.",
   "repository": {
@@ -39,6 +40,7 @@
     "TSPi",
     "install-link-relay.sh",
     "uninstall-link-relay.sh",
+    "LICENSE",
     "README.md",
     "README.zh-CN.md",
     "pyproject.toml",

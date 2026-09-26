@@ -104,6 +104,7 @@ PACKAGE_FILES = [
     "TSPi",
     "install-link-relay.sh",
     "uninstall-link-relay.sh",
+    "LICENSE",
     "README.md",
     "README.zh-CN.md",
     "pyproject.toml",

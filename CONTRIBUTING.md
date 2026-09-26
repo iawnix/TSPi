@@ -55,5 +55,5 @@ for a smaller change when a proposal mixes runtime, scientific, and packaging
 contracts.
 
 See the [Maintainer Guide](docs/MAINTAINER_GUIDE.md) for release and ownership
-details. The project license must be confirmed by the repository owner before
-redistribution; this checkout currently does not include a license grant.
+details. Project-owned source is licensed under [Apache-2.0](LICENSE); check
+third-party notices before redistributing a complete installation.
