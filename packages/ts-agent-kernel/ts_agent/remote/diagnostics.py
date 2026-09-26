@@ -98,6 +98,13 @@ def _doctor(client: SSHClient, platform: RemotePlatform) -> dict[str, Any]:
                     item.activation_script or "",
                     executable,
                     item.environment.get("TS_ASE_NEB_XTB", ""),
+                    item.environment.get("TS_ASE_NEB_GAUSSIAN", ""),
+                ]
+                if item.environment.get("TS_ASE_NEB_GAUSSIAN", "").strip()
+                else [
+                    item.activation_script or "",
+                    executable,
+                    item.environment.get("TS_ASE_NEB_XTB", ""),
                 ],
                 check=False,
             )
@@ -158,15 +165,27 @@ def _ase_neb_check_script() -> str:
 activation=$1
 python_executable=$2
 xtb_executable=$3
+gaussian_executable=${4:-}
 if [[ -n "$activation" ]]; then source "$activation"; fi
-test -n "$xtb_executable"
-"$python_executable" -c 'import ase, numpy; import ts_agent.backends.ase_neb_runner'
-if [[ "$xtb_executable" == /* ]]; then
-  test -x "$xtb_executable"
-else
-  command -v -- "$xtb_executable" >/dev/null
+if [[ -z "$xtb_executable" && -z "$gaussian_executable" ]]; then
+  exit 1
 fi
-"$xtb_executable" --version >/dev/null 2>&1
+"$python_executable" -c 'import ase, numpy; import ts_agent.backends.ase_neb_runner'
+if [[ -n "$xtb_executable" ]]; then
+  if [[ "$xtb_executable" == /* ]]; then
+    test -x "$xtb_executable"
+  else
+    command -v -- "$xtb_executable" >/dev/null
+  fi
+  "$xtb_executable" --version >/dev/null 2>&1
+fi
+if [[ -n "$gaussian_executable" ]]; then
+  if [[ "$gaussian_executable" == /* ]]; then
+    test -x "$gaussian_executable"
+  else
+    command -v -- "$gaussian_executable" >/dev/null
+  fi
+fi
 '''
 
 

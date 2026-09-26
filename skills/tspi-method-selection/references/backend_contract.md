@@ -11,10 +11,13 @@ public calls.
 
 ## Supported Tasks
 
-- Gaussian: `sp`, `opt`, `ts`, `freq`, `opt_freq`, `irc`.
+- Gaussian: `sp`, `opt`, `ts`, `freq`, `opt_freq`, `irc`, and the registered
+  relaxed-scan capability `gaussian.scan@1`.
 - xTB: `sp`, `opt`, `freq`, `opt_freq`, `scan`, `md`.
 - CREST: `conformer_search`.
-- ASE with the xTB CLI calculator: `neb`.
+- ASE NEB: the registered `ase.neb@1` capability, using the xTB CLI calculator
+  by default or the explicit `calculator=gaussian_cli` mode when Gaussian
+  per-image forces are required.
 
 QBICS DMECP is not a registered capability. A backend is not public until it
 has a deterministic parser contract and task-validation tests; an input

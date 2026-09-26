@@ -20,7 +20,5 @@ export function toolErrorResult(
 ): any;
 
 export function wrapToolWithEnvelope(tool: any): any;
-export function wrapToolForPi(tool: any): any;
 export function wrapToolForHarness(tool: any): any;
 export function markToolEnvelopeError(event: any): { details: any; isError: true } | { isError: true } | undefined;
-export function registerToolEnvelopeErrorHook(pi: any): void;

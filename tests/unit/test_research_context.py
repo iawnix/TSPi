@@ -26,8 +26,8 @@ def _map() -> ResearchMap:
 
 def _liveness() -> dict:
     return {
-        "lifecycle": "required",
-        "required": [{
+        "lifecycle": "continue_required",
+        "continue_required": [{
             "id": "cont_1", "scope": "node", "target_id": "node_1",
             "action": "inspect", "status": "required", "reason": "inspect evidence",
         }],
@@ -36,7 +36,7 @@ def _liveness() -> dict:
         "waiting_external": [],
         "decision_needed": [],
         "active_nodes": ["node_1"],
-        "counts": {"required": 1, "deferred": 0, "blocked": 0, "waiting_external": 0, "decision_needed": 0},
+        "counts": {"continue_required": 1, "required": 1, "deferred": 0, "blocked": 0, "waiting_external": 0, "decision_needed": 0},
     }
 
 
@@ -64,15 +64,15 @@ def test_context_pack_is_bounded_and_reports_truncation() -> None:
     research_map.focus_claim_ids = ["claim_1"] * 3
     research_map.revision = 2
     liveness = _liveness()
-    liveness["required"] = [
+    liveness["continue_required"] = [
         {"id": f"cont_{index}", "scope": "node", "target_id": "node_1", "action": "inspect", "status": "required", "reason": "x"}
         for index in range(5)
     ]
-    liveness["counts"]["required"] = 5
+    liveness["counts"]["continue_required"] = 5
     packed = ContextBuilder(focus_limit=1, continuation_limit=2).build(research_map, liveness=liveness)
 
     assert len(packed["continuations"]["required"]) == 2
-    assert packed["bounds"]["truncated"]["required"] is True
+    assert packed["bounds"]["truncated"]["continue_required"] is True
     assert packed["bounds"]["truncated"]["focus_claims"] is True
     assert len(packed["items"]) == 4  # one claim, one node, and two continuations
 
@@ -89,8 +89,8 @@ def test_context_pack_is_rebuildable_without_becoming_memory() -> None:
 def test_context_pack_applies_custom_text_and_reference_bounds_to_runtime_rows() -> None:
     research_map = _map()
     liveness = _liveness()
-    liveness["required"][0]["reason"] = "r" * 40
-    liveness["required"][0]["metadata"] = {f"key_{index}": index for index in range(5)}
+    liveness["continue_required"][0]["reason"] = "r" * 40
+    liveness["continue_required"][0]["metadata"] = {f"key_{index}": index for index in range(5)}
     packed = ContextBuilder(text_limit=12, reference_limit=2).build(
         research_map,
         liveness=liveness,

@@ -85,7 +85,7 @@ The scientific runtime probe executes reaction parsing and an ASE thermal-model
 check in addition to geometry and rendering checks. The pinned Pi source runtime
 also needs hydrated model data and built workspace dependencies;
 `scripts/prepare_pi_source.py --install` prepares both when missing. See
-[scientific operations](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md) for capability
+[scientific operations](SCIENTIFIC_CAPABILITIES_OPERATIONS.md) for capability
 discovery, Node pause/resume, and opt-in remote/model smoke commands.
 
 During an upgrade, the same step verifies the complete multi-workspace patch. Older

@@ -14,10 +14,8 @@ import { boundWorkspaceRoot } from "../../../packages/ts-agent-runtime/host-api/
 import { createToolExecutionContext } from "../../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
 import {
   markToolEnvelopeError,
-  registerToolEnvelopeErrorHook,
   toolErrorResult,
   wrapToolForHarness,
-  wrapToolForPi,
   wrapToolWithEnvelope,
 } from "../../../packages/ts-agent-runtime/host-api/tool-envelope.mjs";
 import { managedPython } from "./test-environment.mjs";
@@ -36,11 +34,11 @@ test("public tools expose one Harness metadata contract", () => {
 });
 
 test("runtime tool admission rejects metadata drift and malformed results", async () => {
-  const canonical = PUBLIC_TOOL_METADATA.ts_state;
+  const canonical = PUBLIC_TOOL_METADATA["research.read"];
   assert.throws(
-    () => wrapToolForPi({
-      name: "ts_state",
-      label: "TS State",
+    () => wrapToolForHarness({
+      name: "research.read",
+      label: "Research Read",
       description: "A contract fixture.",
       parameters: Type.Object({}, { additionalProperties: false }),
       metadata: { ...canonical, effect: "external_write" },
@@ -48,12 +46,11 @@ test("runtime tool admission rejects metadata drift and malformed results", asyn
     }),
     /canonical Harness contract/,
   );
-  const malformed = wrapToolForPi({
-    name: "ts_state",
-    label: "TS State",
+  const malformed = wrapToolForHarness({
+    name: "research.read",
+    label: "Research Read",
     description: "A contract fixture.",
     parameters: Type.Object({}, { additionalProperties: false }),
-    metadata: canonical,
     execute() { return { content: "not a Pi content array" }; },
   });
   const result = await malformed.execute("call-contract");
@@ -371,113 +368,6 @@ test("recovery interruptions classify non-replayable effects as authorization fa
   assert.equal(patch.details.envelope.error.retryable, false);
 });
 
-test("legacy Pi adapter preserves structured errors through the tool_result boundary", async () => {
-  const handlers = [];
-  const pi = { on: (event, handler) => handlers.push({ event, handler }) };
-  registerToolEnvelopeErrorHook(pi);
-  registerToolEnvelopeErrorHook(pi);
-  assert.equal(handlers.length, 1, "one Pi instance should receive one envelope hook");
-  assert.equal(handlers[0].event, "tool_result");
-
-  const tool = wrapToolForPi({
-    name: "ts_example",
-    async execute() {
-      const error = new Error("legacy structured failure");
-      error.code = "legacy_failure";
-      error.retry_safe = true;
-      throw error;
-    },
-  });
-  const result = await tool.execute("call-pi");
-  assert.equal(result.details.envelope.schema_version, "tspi-tool-error/1");
-  assert.equal(result.details.envelope.error.code, "legacy_failure");
-  assert.deepEqual(handlers[0].handler({ details: result.details, isError: false }), { isError: true });
-  const generic = handlers[0].handler({
-    toolName: "ts_example",
-    toolCallId: "call-validation",
-    content: [{ type: "text", text: "invalid tool arguments" }],
-    details: {},
-    isError: true,
-  });
-  assert.equal(generic.isError, true);
-  assert.equal(generic.details.envelope.schema_version, "tspi-tool-error/1");
-  assert.equal(generic.details.envelope.error.message, "invalid tool arguments");
-  assert.equal(generic.details.envelope.error.failure_class, "validation");
-});
-
-test("legacy Pi adapter persists the envelope when Pi Core finalizes a tool result", async () => {
-  const faux = fauxProvider();
-  faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("ts_example", {}, { id: "call-pi-core" }), { stopReason: "toolUse" }),
-    fauxAssistantMessage("recovered"),
-  ]);
-  const tool = wrapToolForPi({
-    name: "ts_example",
-    label: "ts_example",
-    description: "A tool that fails for the legacy Pi transcript contract test.",
-    parameters: Type.Object({}, { additionalProperties: false }),
-    async execute() {
-      const error = new Error("legacy transcript failure");
-      error.code = "legacy_transcript_failure";
-      error.retry_safe = true;
-      throw error;
-    },
-  });
-  const agent = new Agent({
-    streamFn: faux.provider.streamSimple,
-    initialState: {
-      model: faux.getModel(),
-      tools: [tool],
-      thinkingLevel: "off",
-    },
-    afterToolCall: async ({ result, isError }) => markToolEnvelopeError({
-      details: result.details,
-      isError,
-    }),
-  });
-  await agent.prompt("invoke the failing tool");
-  const result = agent.state.messages.find((message) => message.role === "toolResult");
-  assert.ok(result, "Pi Core should append a tool result message");
-  assert.equal(result.isError, true);
-  assert.equal(result.details.envelope.schema_version, "tspi-tool-error/1");
-  assert.equal(result.details.envelope.error.code, "legacy_transcript_failure");
-});
-
-test("legacy Pi adapter persists a structured envelope for argument validation failures", async () => {
-  const faux = fauxProvider();
-  faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("ts_example", {}, { id: "call-pi-validation" }), { stopReason: "toolUse" }),
-    fauxAssistantMessage("validation was reported"),
-  ]);
-  let executions = 0;
-  const tool = wrapToolForPi({
-    name: "ts_example",
-    label: "ts_example",
-    description: "A tool with a required argument for the legacy validation contract test.",
-    parameters: Type.Object({ required: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
-    async execute() {
-      executions += 1;
-      return { content: [{ type: "text", text: "must not execute" }] };
-    },
-  });
-  const agent = new Agent({
-    streamFn: faux.provider.streamSimple,
-    initialState: { model: faux.getModel(), tools: [tool], thinkingLevel: "off" },
-    afterToolCall: async ({ result, isError }) => markToolEnvelopeError({
-      ...result,
-      isError,
-    }),
-  });
-  await agent.prompt("invoke the tool with invalid arguments");
-  const result = agent.state.messages.find((message) => message.role === "toolResult");
-  assert.ok(result, "Pi Core should append a validation tool result message");
-  assert.equal(executions, 0);
-  assert.equal(result.isError, true);
-  assert.equal(result.details.envelope.schema_version, "tspi-tool-error/1");
-  assert.equal(result.details.envelope.error.code, "tool_error");
-  assert.match(result.details.envelope.error.message, /required|argument|property/i);
-});
-
 test("Harness transcript persists structured tool errors after after_tool", async () => {
   const repo = new MemorySessionRepo();
   const session = await repo.create({ id: "tspi-tool-envelope" }, context);
@@ -584,18 +474,19 @@ test("Research Turn hook continues an explicit required disposition", async () =
   assert.match(result.followUp, /cont_1/);
   assert.match(result.followUp, /research\.read with mode=context/);
   assert.match(result.followUp, /research\.continuation with operation=status/);
+  assert.doesNotMatch(result.followUp, /legacy continuation ledger/);
 });
 
-test("production checkpoint mode treats required as a valid next-turn plan", async () => {
+test("production checkpoint mode treats continue_required as a valid next-turn plan", async () => {
   const hook = createContinuationLivenessHook({
     cwd: process.cwd(),
     followUpRequired: false,
     statusReader: async () => ({
       schema_version: "research-turn-result/1",
-      lifecycle: "required",
+      lifecycle: "continue_required",
       accepted: true,
       requires_disposition: false,
-      required: [{ id: "cont_1", status: "required" }],
+      continue_required: [{ id: "cont_1", status: "required" }],
     }),
   });
   assert.equal(await hook({ runId: "run-required-next-turn" }, context), undefined);
@@ -615,7 +506,7 @@ test("Research Turn hook repairs a missing disposition without selecting science
   assert.match(result.followUp, /mode=context/);
   assert.match(result.followUp, /research\.strategy or research\.interpretation/);
   assert.match(result.followUp, /research\.checkpoint/);
-  assert.match(result.followUp, /deferred, blocked, or completed/);
+  assert.doesNotMatch(result.followUp, /set its disposition to deferred, blocked, or completed/);
   assert.doesNotMatch(result.followUp, /ts_calc launch|choose|select/);
   assert.equal(await hook({ runId: "run-decision" }, context), undefined);
 });
@@ -735,8 +626,8 @@ test("Harness follow-up requires context before recording the next action", asyn
   }
 });
 
-test("Research Turn hook leaves external waits and terminal states alone", async () => {
-  for (const lifecycle of ["waiting_external", "blocked", "terminal", "idle"]) {
+test("Research Turn hook leaves valid waits, plans, and terminal states alone", async () => {
+  for (const lifecycle of ["continue_required", "waiting_external", "blocked", "terminal", "idle"]) {
     const hook = createContinuationLivenessHook({
       cwd: process.cwd(),
       statusReader: async () => ({ schema_version: "research-liveness/1", lifecycle, required: [] }),

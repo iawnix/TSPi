@@ -2,9 +2,12 @@
 
 ## Canonical State
 
-Each research workspace owns `workspace.json`, one `research_map.json`,
-`transactions.jsonl`, the workspace input directory `inputs/`, and Node-owned
-directories under `nodes/<node_id>/`.
+Each research workspace owns `workspace.json`, a synchronized
+`research_map.json` snapshot, `transactions.jsonl`, the workspace input
+directory `inputs/`, and Node-owned directories under `nodes/<node_id>/`.
+After `research.storage operation=bootstrap`, `research.db` is the authoritative
+SQLite Kernel backend for the map snapshot, decision records, and Evidence
+Registry metadata. Raw Attempt and Artifact payloads never move into SQLite.
 The document contains the complete `ResearchMap`: phases, claims, nodes,
 findings, gates, Claim relations, focus, metadata, and revision. TS Web and
 Root consume this document directly. Compute Attempts and Artifacts live in
@@ -19,7 +22,9 @@ duplicate IDs, unknown references, cycles, invalid enum values, and inconsistent
 reverse indexes. Keep all artifact references logical and workspace-relative;
 do not put absolute or remote paths in map objects.
 
-The canonical scientific state file is `research_map.json`.
+The map model is the canonical scientific state. In JSON-only mode the state is
+read from `research_map.json`; in SQLite mode the database is authoritative and
+the JSON file is a synchronized export for read-only clients and recovery.
 Bootstrap rejects an unsupported workspace without rewriting it.
 
 ## Write Boundary
@@ -32,8 +37,9 @@ research.read -> Root interpretation -> research.change
 
 `research.change` loads the current map under a lock, applies the ordered
 ChangeSet to a detached copy, validates the complete post-state, increments the
-revision, and replaces `research_map.json` atomically. A rejected request does
-not change the prior revision. Do not edit the JSON or transaction log by hand.
+revision, and commits the active backend before updating the JSON snapshot and
+transaction receipt. A rejected request does not change the prior revision. Do
+not edit the JSON, SQLite database, or transaction log by hand.
 
 ## Relationships
 
@@ -53,6 +59,9 @@ implicit veto unless a Gate criterion says so.
 
 Calculation intents, Attempts, run journals, scheduler receipts, parser output,
 Review runs, rendered files, report packages, notifications, and UI state are
-operational records. They may be cited by a Finding through `source_refs` after
-Root verifies the primary Artifact. A successful execution never changes a
-Claim or Node automatically.
+operational records. Attempt records, Artifact manifests, and EvidenceLinks are
+registered as bounded metadata in the Evidence Registry; their raw payloads
+remain in Node-owned directories or an external store. A Finding or Gate may
+cite only registered, validated evidence references after Root verifies the
+primary Artifact. A successful execution never changes a Claim or Node
+automatically.

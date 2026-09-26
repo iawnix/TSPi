@@ -1,13 +1,8 @@
 import { validateHarnessToolDefinition } from "./tools.mjs";
-import {
-  createToolExecutionContext,
-  validateToolInvocationContext,
-} from "./workspace-context.mjs";
+import { validateToolInvocationContext } from "./workspace-context.mjs";
 
 const RESULT_SCHEMA = "tspi-tool-result/1";
 const ERROR_SCHEMA = "tspi-tool-error/1";
-const piEnvelopeHooks = new WeakSet();
-
 const FAILURE_CLASSES = Object.freeze([
   "validation", "authorization", "workspace", "conflict", "ambiguous", "transient", "execution", "contract",
 ]);
@@ -153,70 +148,6 @@ export function wrapToolForHarness(tool) {
   };
 }
 
-/**
- * Wrap a legacy Pi tool without losing its structured error result.
- *
- * Pi Core converts thrown tool errors into a new unstructured result before
- * its `tool_result` hook runs. Returning the typed error result here keeps the
- * envelope in the transcript; registerToolEnvelopeErrorHook restores the
- * separate isError flag at that hook boundary.
- */
-export function wrapToolForPi(tool) {
-  if (!tool || typeof tool.execute !== "function") throw new TypeError("tool envelope requires an executable tool");
-  // Direct factory tests and legacy callers may still use a minimal tool. All
-  // production public tools carry metadata and are therefore admitted strictly.
-  if (tool.metadata !== undefined) {
-    validateHarnessToolDefinition(tool, { source: "Pi tool", requireCanonical: true });
-  }
-  const wrapped = wrapToolWithEnvelope(tool);
-  return {
-    ...wrapped,
-    async execute(toolCallId, ...args) {
-      try {
-        if (tool.metadata !== undefined) {
-          const piContext = args[3];
-          const executionContext = piContext?.toolExecutionContext
-            || createPiExecutionContext(tool, piContext, toolCallId);
-          if (executionContext) {
-            const sessionId = typeof piContext?.sessionManager?.getSessionId === "function"
-              ? piContext.sessionManager.getSessionId()
-              : executionContext.session_id;
-            validateToolInvocationContext(tool, executionContext, {
-              operationId: toolCallId,
-              workspaceRoot: typeof piContext?.cwd === "string" ? piContext.cwd : executionContext.workspace_root,
-              sessionId: typeof sessionId === "string" ? sessionId : executionContext.session_id,
-            }, toolCallId);
-          }
-        }
-        return await wrapped.execute(toolCallId, ...args);
-      } catch (error) {
-        return toolErrorResult(error, tool.name, toolCallId);
-      }
-    },
-  };
-}
-
-function createPiExecutionContext(tool, piContext, toolCallId) {
-  const workspaceRoot = typeof piContext?.cwd === "string" && piContext.cwd.startsWith("/")
-    ? piContext.cwd
-    : null;
-  if (!workspaceRoot) return undefined;
-  const sessionId = typeof piContext?.sessionManager?.getSessionId === "function"
-    ? piContext.sessionManager.getSessionId()
-    : `pi:${workspaceRoot}`;
-  const metadata = tool.metadata;
-  return createToolExecutionContext({
-    workspace_root: workspaceRoot,
-    session_id: typeof sessionId === "string" && sessionId ? sessionId : `pi:${workspaceRoot}`,
-    operation_id: toolCallId,
-    lifecycle_phase: metadata.phase,
-    replay_mode: "normal",
-    allowed_authorities: [metadata.authority],
-    allowed_effects: [metadata.effect],
-    allowed_phases: [metadata.phase],
-  });
-}
-
 function toolResultText(content) {
   if (!Array.isArray(content)) return "tool execution failed";
   const text = content
@@ -279,18 +210,6 @@ export function markToolEnvelopeError(event) {
     },
     isError: true,
   };
-}
-
-/** Install the Pi adapter hook once for one ExtensionAPI instance. */
-export function registerToolEnvelopeErrorHook(pi) {
-  if (!pi || typeof pi !== "object") throw new TypeError("tool envelope hook requires a Pi ExtensionAPI");
-  // Lightweight adapters and contract probes may expose registerTool without
-  // Pi's event bus. The wrapper still preserves structured execution errors;
-  // only the post-result isError restoration is unavailable in that transport.
-  if (typeof pi.on !== "function") return;
-  if (piEnvelopeHooks.has(pi)) return;
-  piEnvelopeHooks.add(pi);
-  pi.on("tool_result", markToolEnvelopeError);
 }
 
 export const TOOL_RESULT_SCHEMA_VERSION = RESULT_SCHEMA;

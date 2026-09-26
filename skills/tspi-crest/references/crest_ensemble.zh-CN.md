@@ -14,8 +14,8 @@
 必须在不修改研究 workspace 的情况下提供兼容 xTB executable。部署或环境变化后，以及
 首次计算前，运行 `TSPi --check-remote`。缺失命令或激活脚本属于运行故障，不是科学结果。
 
-不要从计算任务中安装或升级 CREST。按照
-[集群部署流程](../../../docs/INSTALLATION.zh-CN.md#部署-crest)，再运行有边界的计算节点
+不要从计算任务中安装或升级 CREST。按照[远端计算配置](../../../docs/INSTALLATION.zh-CN.md)，
+再运行有边界的计算节点
 smoke search。调度器退出码为零但缺少任何必需主要 Artifact 时，属于程序或集成失败，
 不是空构象集合。
 

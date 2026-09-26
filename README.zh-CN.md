@@ -6,6 +6,10 @@ TSPi 是基于 Pi 的、领域无关的科学 Research Harness，用于运行有
 当前随附的 Skill 主要面向计算化学，包括过渡态搜索和反应路径分析。研究状态、证据、
 计算结果和报告都保存在同一个工作区。
 
+本仓库目前处于积极开发的预发布阶段。受支持的运行时只有 Native Pi Harness；已经退役的
+ordinary-Pi 兼容运行时不会被打包或选择。当前化学 Skill 包只是领域无关的 Claim、Node、
+Finding、Gate、Attempt 和 Artifact 模型的一个应用。
+
 ## 安装
 
 准备 Git、Python 3.11+、Node.js 22.19+、Conda/Mamba 以及 Pi 凭据。只有使用
@@ -31,6 +35,9 @@ cd TSPi
 详见[安装与运维](docs/INSTALLATION.zh-CN.md)（英文版：[Installation and Operations](docs/INSTALLATION.md)），
 其中包含依赖、运行时、升级、回滚和恢复说明；
 模型与 provider 边界见[模型兼容性](docs/MODEL_COMPATIBILITY.zh-CN.md)。
+
+完整文档导航见[文档索引](docs/README.zh-CN.md)。公开 Skill 入口和按需 references 见
+[Skill 目录](skills/README.zh-CN.md)。
 
 ## Host 与终端
 
@@ -74,8 +81,10 @@ remote environment 额外包含 SSH/Torque 字段。`/compute` 和 `compute.envi
 查询完整的 local/remote environment；远端就绪性检查属于已绑定计算的 preflight，
 不再单独形成一套 remote 命令。
 
-Skill 覆盖 Gaussian、xTB、CREST、ASE-NEB、结构验证、渲染、报告和邮件投递。详见
-[Skill 目录](skills/README.zh-CN.md) 与 [术语表](skills/tspi-research-kernel/references/glossary.zh-CN.md)。
+Skill 覆盖 Gaussian、xTB、CREST、ASE-NEB、结构验证、渲染、报告和邮件投递。执行前必须
+查询准确的版本化 capability 和计算环境；Skill 描述不能证明程序已经安装。详见
+[Capability 与计算模型](docs/CAPABILITY_COMPUTE_MODEL.zh-CN.md) 和
+[科学能力运维](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。
 
 ## 浏览器查看
 
@@ -99,8 +108,18 @@ python3 tools/test/runner.py list
 python3 tools/test/runner.py fast -- -q
 python3 tools/test/runner.py source -- -q
 npm run lint:public
+npm run lint:skills
 ```
 
 [维护者指南](docs/MAINTAINER_GUIDE.zh-CN.md)介绍包校验、App Server 生命周期和发布流程；
 英文版本见 [Architecture](docs/ARCHITECTURE.md)、[Terminal](docs/TERMINAL.md) 和
 [Maintainer Guide](docs/MAINTAINER_GUIDE.md)。
+
+## 社区与项目政策
+
+- [贡献指南](CONTRIBUTING.zh-CN.md) / [Contributing](CONTRIBUTING.md)
+- [安全策略](SECURITY.zh-CN.md) / [Security policy](SECURITY.md)
+- [行为准则](CODE_OF_CONDUCT.zh-CN.md) / [Code of Conduct](CODE_OF_CONDUCT.md)
+- [变更日志](CHANGELOG.zh-CN.md) / [Changelog](CHANGELOG.md)
+
+本仓库当前没有许可证授权。在仓库所有者添加并确认许可证前，不要重新分发或复用源码。

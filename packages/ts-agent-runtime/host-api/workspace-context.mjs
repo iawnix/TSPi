@@ -167,8 +167,8 @@ function toolContextError(code, message, failureClass) {
 /**
  * Resolve the workspace from the trusted Harness context.
  *
- * `root` remains accepted by legacy callers, but it is only a compatibility
- * assertion. A model cannot redirect a tool call to another workspace.
+ * `root` remains accepted by non-Harness callers as an equality assertion.
+ * A model cannot redirect a tool call to another workspace.
  */
 export function boundWorkspaceRoot(params = {}, toolContext = {}) {
   const bound = typeof toolContext?.cwd === "string" && toolContext.cwd.trim()

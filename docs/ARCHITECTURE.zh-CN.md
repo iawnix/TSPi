@@ -29,7 +29,7 @@ TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装�
   策略和 system prompt，所有 transport 使用同一份工具 runtime。
 - `components/ts-web/` 是可选的只读浏览器客户端，直接渲染 Kernel 序列化的
   `ResearchMap`；浏览器控制通过显式启动的
-  `TSPi --gateway` 适配器附着到已有 Host session，不会创建第二个 Worker。
+  `apps/app-server/tspi-browser-gateway.mjs` 适配器附着到已有 Host session，不会创建第二个 Worker。
 - TS Phone 是独立 Flutter 客户端，通过 TSPi Link 连接 Host。
 
 Pi App Server 独占 session directory、对话历史、模型状态、prompt loop 和 worker lane。
@@ -39,13 +39,16 @@ Monitor 都连接同一个 lane，因此共享 `read`、`write`、`bash` 和包�
 
 ## 科学状态模型
 
-工作区的规范状态是一个 `ResearchMap`。它以一个对象序列化为：
+每个工作区只有一个规范 `ResearchMap`，并使用一个持久 metadata backend：
 
 ```text
-research_map.json
+research.db                # map 与有界 metadata 的 SQLite 权威后端
+research_map.json           # 同步的 ResearchMap snapshot
+workspace.json              # 已校验的 workspace identity 和 schema marker
 nodes/<node_id>/          # Attempt / Artifact 等执行记录
 inputs/                   # 工作区相对路径的输入 artifact
-transactions.jsonl        # Kernel 变更历史
+transactions.jsonl       # 追加式 ChangeSet 回执
+operations/               # turn、monitor 和 execution receipts
 ```
 
 `ResearchMap` 是项目研究进展的规范对象，不是从多个 registry 临时拼接出来的
@@ -130,9 +133,10 @@ Research Memory（持久记录）
 
 `ResearchMemoryService` 不缓存第二份 ResearchMap，也不持久化 ContextPack。
 `ContextPack.context_id` 和 provenance 标识其来源 revision，因此 Host 可以在状态变化
-或重试后重新构造。语义写入仍只能通过 `research.change`、`research.strategy`、
-`research.interpretation`、`research.continuation` 和 `research.checkpoint`；不提供会绕过
-领域校验的通用 `memory.commit`。
+或重试后重新构造。新的语义写入只能通过 `research.change`、`research.strategy`、
+`research.interpretation` 和 `research.checkpoint`；新的 turn 不通过
+`research.continuation` 写入，它只用于读取或迁移旧的 required-action ledger。不提供会
+绕过领域校验的通用 `memory.commit`。
 
 Research Turn 的统一协议是：
 
@@ -141,21 +145,22 @@ TRIGGER -> ORIENT(context) -> PLAN -> PREPARE -> EXECUTE
         -> WAIT/RECONCILE -> INTERPRET -> ADVANCE -> CHECKPOINT
 ```
 
-每轮结束前，Agent 必须让 Kernel 的 liveness 落入以下之一：
+每轮结束前，Agent 必须调用 `research.checkpoint`，登记一种当前 disposition：
+`continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
+`user_input_required`。`continue_required` 表示 Agent 已经选择了下一 turn 的明确动作。
+旧的 `required` 值只在读取或迁移 `research.continuation` ledger 时接受，并规范化为
+`continue_required`，不是另一套生命周期状态。`research.liveness` 只是有界的生命周期诊断
+投影，不是持久化下一步，也不负责关闭 turn。
 
-- `required`：已登记明确的下一动作，由 Agent 在后续 turn 执行或处置；
-- `waiting_external`：存在尚未终止的 Attempt/外部运行，等待 Monitor 的 `next_run`；
-- `deferred`/`blocked`：明确记录原因和恢复条件；
-- `terminal`：相关 Node/Claim/Gate 已完成或停止并写入结果。
-
-如果 active Node 没有上述 disposition，Kernel 返回 `decision_needed`。Harness 只追加有
-界 follow-up，要求 Agent 重新读取 bounded context 并登记 disposition；Harness 不选择
-科学方法、不创建 Finding，也不把 `next_run` 当成新的研究指令。`research.liveness` 是
-Monitor、Host 和 Agent 共用的生命周期诊断，`research.liveness`/`research.continuation` 是
-Agent 已作出的下一步决定的持久化记录。
+如果 active Node 没有合法 disposition，Kernel 返回 `decision_needed`。Harness 只追加有
+界 follow-up，要求 Agent 重新读取 bounded context 并通过 checkpoint 登记 disposition；
+Harness 不选择科学方法、不创建 Finding，也不把 `next_run` 当成新的研究指令。
 处于 `prepared` 的 Attempt 只有本地、提交前的绑定，因此仍是 Agent 的决策点，
 而不是等待外部事件。只有已提交、排队中、运行中、完成但尚未解析或状态未知的
 Attempt 才会让 scope 进入 `waiting_external`，直到 Host/Monitor 产生新证据。
+
+为兼容旧 transport，liveness 响应可以在只读的 `required` 字段中镜像规范的
+`continue_required` 记录；这个 alias 不会把 `required` 变成新的生命周期 disposition。
 
 所有公开工具都通过统一 contract 暴露：workspace/session 由 Harness context 绑定，模型
 不能把请求重定向到另一个 root；`root` 只作为旧客户端的兼容断言。工具按 Read、Research
@@ -168,12 +173,11 @@ schema、可执行函数以及四字段 Harness metadata contract 的工具。
 
 工具工厂和传输适配器职责分离。`create*Tool()` 只定义领域行为，可以抛出带分类的错误，
 本身不是 transcript 或 transport 边界。package-owned server extension 组合这些工厂；
-legacy Pi 注册边界也使用同一个幂等 result wrapper，因此兼容传输不会暴露第二套 payload
-契约。native `pi-session-worker` 在 Worker 边界应用 Harness adapter。成功结果使用
+Native `pi-session-worker` 在 Worker 边界应用 Harness adapter。成功结果使用
 `tspi-tool-result/1` envelope；失败会先转换为带 `tspi-tool-error/1` 的普通 result，再由
-native `after_tool` hook 或 legacy Pi `tool_result` hook 设置 `isError: true`，因此持久化
-transcript 同时保留机器可读的失败信息和模型可见的错误状态。直接工厂测试可以绕过
-adapter 调用领域工具；生产 Harness 流量必须经过上述某一个传输边界。
+Native `after_tool` hook 设置 `isError: true`，因此持久化 transcript 同时保留机器可读的
+失败信息和模型可见的错误状态。直接工厂测试可以绕过 adapter 调用领域工具；生产 Harness
+流量必须经过 Native server-extension 边界。
 
 ### NodeGate 与 ClaimGate
 
@@ -257,8 +261,11 @@ Link Relay 使用独立的 `install-link-relay.sh` 安装器，在公网或私�
 
 TS Web 默认只读，不拥有 Pi session。需要浏览器控制时，显式启动 loopback gateway：
 
-```text
-TSPi --gateway --workspace reaction-a --session-id <session-id> --port 8767
+```bash
+node apps/app-server/tspi-browser-gateway.mjs \
+  --connect unix:///run/user/$UID/tspi/<server-id>.sock \
+  --workspace /absolute/workspaces/reaction-a \
+  --session-id <session-id> --port 8767
 ```
 
 Gateway 只附着已经存在的 Host session，通过版本化 session-control 合约提供
@@ -318,15 +325,14 @@ request id 为 `monitor:<event_id>`；session 不存在、workspace 不匹配或
 `research.read`，再显式执行 `compute.run inspect`，并自行决定是否 `finalize` 或通过 `research.change`
 写入 Finding/Gate/Node 状态。Monitor 不自动 finalize、不修改 ResearchMap、不做科学判断。
 
-研究推进的 liveness 由 Kernel 校验的 continuation record 单独表示，不依赖 Monitor
-是否还有新的状态摘要。`research.continuation` 可以查询记录，或使用 canonical 的
-`set`/`resolve` 操作，为 Node、Claim、Gate 记录 `required`、`deferred`、`blocked`、
-`completed` disposition；旧的 `set_*` 拼法只作为兼容 alias。ChangeSet 的审计字段属于
-`research.change`，不混入生命周期请求。`required` 只记录 Root 已经选择的下一动作，不执行
-动作，也不替 Root 选择科学结论。每次 run boundary，Host 最多为尚未解决的 required
-record 追加三次 follow-up；Root 必须执行动作，或明确把记录置为 deferred、blocked、
-completed。这样 parsed 之后即使没有新的 Monitor 事件，研究也能继续；阻塞或延期的研究
-则保持静默且可审计。
+研究推进的 liveness 是独立于 Monitor 观察的诊断投影。turn boundary 通过
+`research.checkpoint` 持久化 Agent 的 disposition。`research.continuation` 仅作为旧
+required-action ledger 的兼容接口：可以通过 canonical `set`/`resolve` 查询或迁移旧记录，
+旧的 `set_*` 拼法只作为 alias；新 turn 不应再用它结束生命周期。旧 `required` 记录会被
+规范化为 `continue_required`，不构成第二套 liveness 状态机。ChangeSet 的审计字段属于
+`research.change`，不混入这个兼容请求。每次 run boundary，Host 只会针对
+`decision_needed` 追加最多三次 follow-up，并且不会替 Agent 选择方法。这样 parsed 之后
+即使没有新的 Monitor 事件，研究也能继续；阻塞或延期的研究则保持静默且可审计。
 
 Host 的 `monitor/event` 通知只是实时投影，不是持久化重放日志。Host 启动时会先建立已有
 事件文件的游标，因此重启不会重复推送旧事件；Phone 重连时应通过 `monitor/status` 和

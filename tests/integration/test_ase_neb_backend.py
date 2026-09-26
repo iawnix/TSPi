@@ -21,6 +21,7 @@ from ts_agent.backends.ase_neb import (
 )
 from ts_agent.backends.ase_neb_runner import (
     NebRunConfig,
+    GaussianCliCalculator,
     XtbCliCalculator,
     _configured_xtb_executable,
     _validate_config,
@@ -115,6 +116,27 @@ def test_ase_neb_preparer_expands_ci_fmax_default_from_fmax() -> None:
     )
     ci_index = prepared.command.index("--ci-fmax")
     assert prepared.command[ci_index : ci_index + 2] == ["--ci-fmax", "0.03"]
+
+
+def test_ase_neb_preparer_exposes_gaussian_calculator_settings() -> None:
+    prepared = prepare_ase_neb(
+        BackendTask(
+            node_id="node_1",
+            task_type="neb",
+            work_dir="nodes/node_1",
+            inputs={"reactant": "reactant.xyz", "product": "product.xyz"},
+            settings={
+                "calculator": "gaussian_cli",
+                "gaussian_route": "#p B3LYP/6-31G(d) Force",
+                "gaussian_multiplicity": "1",
+                "gaussian_nproc": "4",
+                "gaussian_mem": "2GB",
+            },
+        )
+    )
+    assert prepared.command[prepared.command.index("--calculator") + 1] == "gaussian_cli"
+    assert prepared.command[prepared.command.index("--gaussian-route") + 1] == "#p B3LYP/6-31G(d) Force"
+    assert prepared.command[prepared.command.index("--gaussian-mem") + 1] == "2GB"
 
 
 @pytest.mark.parametrize(
@@ -258,6 +280,43 @@ print('* finished run on 2026/09/15 at 00:00:00')
         np.asarray([[-0.1, 0.0, 0.0], [0.1, 0.0, 0.0]]) * Hartree / Bohr
     )
     assert calculator.program_version == "6.7.1"
+
+
+def test_gaussian_cli_calculator_parses_energy_and_forces(
+    tmp_path: Path,
+) -> None:
+    executable = tmp_path / "fake-g16"
+    executable.write_text(
+        f"""#!{sys.executable}
+import sys
+sys.stdin.read()
+print(' Gaussian 16: Rev. C.01')
+print(' SCF Done:  E(RHF) =  -1.2500000000     A.U. after 5 cycles')
+print(' Forces (Hartrees/Bohr)')
+print(' -------------------------------------------------------------------')
+print('     1  1    0.100000  0.000000  0.000000')
+print('     2  1   -0.100000  0.000000  0.000000')
+print(' Normal termination of Gaussian 16')
+""",
+        encoding="utf-8",
+    )
+    executable.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    calculator = GaussianCliCalculator(
+        executable=str(executable),
+        route="#p HF/3-21G Force",
+        charge=0,
+        multiplicity=1,
+        nproc=1,
+        mem="1GB",
+    )
+    atoms = Atoms("H2", positions=[[0.0, 0.0, 0.0], [0.74, 0.0, 0.0]])
+    atoms.calc = calculator
+
+    assert atoms.get_potential_energy() == pytest.approx(-1.25 * Hartree)
+    assert atoms.get_forces() == pytest.approx(
+        np.asarray([[0.1, 0.0, 0.0], [-0.1, 0.0, 0.0]]) * Hartree / Bohr
+    )
+    assert calculator.program_version == "C.01"
 
 
 def test_ase_neb_prefers_injected_xtb_binding(monkeypatch: pytest.MonkeyPatch) -> None:

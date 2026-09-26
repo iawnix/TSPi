@@ -23,7 +23,8 @@ Host 会把“当前 continuation 已完成”误当成“研究可以结束”�
 Agent
   读取 bounded Research Memory，选择问题、方法、Skill、Capability 和停止条件
   解释 Attempt/Artifact，提交 Finding/Gate/Claim/Node ChangeSet
-  通过 research.continuation 登记 required/deferred/blocked/completed disposition
+  在每轮结束调用 research.checkpoint 登记 continue_required、waiting_external、
+  deferred、blocked、terminal 或 user_input_required disposition
 
 Research Kernel
   唯一科学状态权威：ResearchMap、ChangeSet、引用完整性和 liveness
@@ -70,12 +71,16 @@ Kernel 暴露 `research.turn`（`research-turn-request/1` / `research-turn-resul
 Kernel 只返回以下状态：
 
 - `idle`：没有 active scope；
-- `required`：Agent 已登记明确的下一动作。这是合法的 turn 终态，Host 不得强制本轮执行；
+- `continue_required`：Agent 已登记明确的下一 turn 动作。这是合法的 turn 终态，Host 不得强制本轮执行；
 - `waiting_external`：存在已提交、排队、运行中、完成但未解析或状态未知的 Attempt；
-- `decision_needed`：active Node/Claim/Gate 没有 required、等待、deferred、blocked 或 terminal disposition；
+- `decision_needed`：active Node/Claim/Gate 没有 `continue_required`、等待、deferred、blocked 或 terminal disposition；
 - `deferred`：Agent 明确记录了原因和后续恢复条件；
 - `blocked`：Agent 明确记录了阻塞原因和恢复条件；
 - `terminal`：相关 scope 已关闭或研究没有开放 scope。
+
+旧的 `required` 值只在读取或迁移兼容的 `research.continuation` ledger 时接受，并规范化为
+`continue_required`；它不是另一套生命周期状态。`research.liveness` 只是诊断投影，不负责
+持久化下一步或关闭 turn。
 
 Attempt/Artifact/Continuation 的完成都不是研究完成的同义词。只有 ResearchMap 的
 Node/Claim/Gate 状态和 Finding/Gate 证据决定科学结论。
@@ -84,9 +89,10 @@ Node/Claim/Gate 状态和 Finding/Gate 证据决定科学结论。
 
 Host 在 `checkpoint/end` 读取 Kernel 的结果：
 
-- `accepted=true`：结束当前 turn；`required` 计划留给后续 turn 或 Monitor wake；
+- `accepted=true`：结束当前 turn；`continue_required` 计划留给后续 turn 或 Monitor wake；
 - `requires_disposition=true`：最多追加有界 follow-up，要求 Agent 重新读取
-  `research.read(mode=context|liveness)`，然后通过 `research.continuation` 或 `research.change` 登记 disposition；
+  `research.read(mode=context|liveness)`，然后通过 `research.checkpoint` 或
+  `research.change` 登记 disposition；只有迁移旧记录时才使用 `research.continuation`；
 - Host 不得在 follow-up 中指定 Capability、Backend、Skill、计算参数或科学结论；
 - 达到 follow-up 上限后保留 `decision_needed`，不能伪造 `terminal`。
 
@@ -144,15 +150,17 @@ Monitor-wake turn。`before_tool` 只允许 Host 阶段图中的下一阶段，�
 真正调用工具前都会刷新 provider，因此同一个 run 的多个 tool batch 能看到当前阶段，而 Agent 参数不能修改
 policy。这样冷恢复只允许 safe/idempotent 的 reconcile，`replay: never` 的副作用会在进入实现函数前被拒绝。
 
-## 兼容策略
+## Native 生命周期接口
 
-现有 `research.liveness`、`research.continuation`、`research.read` 和 `research.continuation` 保留为
-兼容查询/写入接口；它们的语义由 `research.turn` 统一解释。legacy Pi 的
-`agent_settled` 和 Native Harness 的 `before_run_end` 都只调用同一 Kernel boundary，
-不得各自实现 liveness 推导。
+`research.read`（包括有界的 `liveness` 视图）和 `research.checkpoint` 是
+Agent/Host 的规范接口：前者提供有界状态，后者以 disposition 结束 turn。
+`research.liveness` 只是诊断；`research.continuation` 仅用于读取或迁移旧的
+required-action ledger。所有生命周期语义统一由 `research.turn` 解释。Native
+Worker 的 `before_run_end` 只调用同一个 lifecycle boundary，不得实现第二套
+liveness 或 continuation 状态机。
 
 ## 验证
 
-必须覆盖：缺少 disposition、显式 required、waiting external、deferred/blocked、terminal、
+必须覆盖：缺少 disposition、显式 continue_required、waiting external、deferred/blocked、terminal、
 Monitor wake、parsed Attempt 后重新需要决策、turn audit 幂等边界、bounded context、
 workspace binding、工具 envelope 和 Skill/Environment lazy-read contract。

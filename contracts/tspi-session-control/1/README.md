@@ -5,10 +5,10 @@ adapter. The current source of truth for Phone and Host clients is
 `tspi-host/1` (`apps/app-server/tspi-host.mjs`); this contract gives a browser a
 stable, session-bound HTTP shape without creating another Pi runtime.
 
-The ordinary Pi process remains the owner of the agent loop, transcript, model,
-tools, and workspace lock. The adapter only attaches to an existing Host
-session. It must never start Pi, execute client-supplied extensions, or write
-scientific files directly.
+The Pi App Server `SessionWorker`/`AgentHarness` lane is the owner of the agent
+loop, transcript, model, tools, and workspace lock. This adapter only attaches
+to an existing Host session. It must never start Pi, execute client-supplied
+extensions, or write scientific files directly.
 
 ## Request lifecycle
 
@@ -30,7 +30,7 @@ token and an explicit origin policy.
 | `GET` | `/health` | protocol and attached-session readiness |
 | `GET` | `/v1/session/{session_id}/snapshot` | Host `session/read` result |
 | `POST` | `/rpc` | allowlisted Host RPC method and params |
-| `POST` | `/v1/session/{session_id}/requests` | legacy prompt/abort translation |
+| `POST` | `/v1/session/{session_id}/requests` | compatibility prompt/abort translation into Host RPC |
 | `GET` | `/v1/session/{session_id}/events` | SSE snapshot and Host notifications |
 
 The adapter binds workspace and session from its startup arguments, rejects

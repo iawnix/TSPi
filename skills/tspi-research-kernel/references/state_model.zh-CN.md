@@ -1,8 +1,9 @@
 # ResearchMap 状态模型
 
-`ResearchMap` 是一个研究项目的规范类型化状态。序列化文件为 `research_map.json`；
-`ResearchMap.to_dict()` 的格式由 Root 与 TS Web 直接消费。Kernel 加载、校验并原子保存
-同一个对象。
+`ResearchMap` 是一个研究项目的规范类型化科学状态。`ResearchMap.to_dict()` 是 Root 与
+TS Web 消费的 map snapshot。workspace bootstrap 到 SQLite 后，`research.db` 是 Kernel 的
+权威后端，`research_map.json` 是同步导出快照；仅 JSON 的 workspace 仍可读取，并通过
+`research.storage operation=bootstrap` 升级。
 
 ## 对象
 
@@ -17,8 +18,9 @@
 | `Gate` | 面向一个 Node 或 Claim 的 criteria 与 evaluations | `scope`、`target_id`、`criteria`、`evaluations` |
 | `NodeGate` / `ClaimGate` | Gate 的类型化实现 | `scope=node` / `scope=claim` |
 
-`Finding` 是共同数据结构，应使用其专用类型而不是发明平行证据记录。
-`GateEvaluation` 保存 verdict（`pass`、`fail`、`inconclusive`、`blocked`）、时间戳、
+`Finding` 是科学结论的共同数据结构。运行证据由 Kernel 单独管理：`AttemptRecord`、
+`ArtifactManifest` 与 `EvidenceLink` 构成 Evidence Registry；原始 payload 保留在 Node
+目录或外部 Artifact store。`GateEvaluation` 保存 verdict（`pass`、`fail`、`inconclusive`、`blocked`）、时间戳、
 message、证据引用与输入 revision。
 
 ## 状态与图规则
@@ -43,11 +45,16 @@ research.detail       一个 phase、claim、node、finding 或 gate
 research.locate       在 map 对象中进行文本搜索
 research.validate     校验 map
 research.operations   当前 ChangeSet operation catalog
+research.context      有界 turn context
+research.liveness     生命周期诊断
+research.decisions    有界 strategy/interpretation/checkpoint 历史
+research.evidence     Attempt/Artifact/EvidenceLink 元数据
+research.storage      当前 JSON 或 SQLite 后端及 bootstrap 状态
 ```
 
-`research.read` 暴露相应的有边界模式（`map`、`summary`、`detail`、`locate`、`validate`、
-`operations`），以及计算模式（`artifacts`、`capabilities`、`runs`）。交互式读取使用
-`/research`。所有变更都使用由 Kernel 实现的 `research.change`。
+`research.read` 还暴露上述有界模式与计算模式（`artifacts`、`capabilities`、`runs`）。交互式读取
+使用 `/research`。Strategy、interpretation、checkpoint、Evidence Registry 与 map 变更都使用
+各自的类型化 Kernel command；不要创建通用 memory write。
 
 不要直接编辑 `research_map.json`。ChangeSet 在隔离副本上校验，只递增一次
 `revision`，原子写入，并追加一条小型 transaction receipt。无效变更不会触碰之前的

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import Type from "typebox";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createStateTool, createAnalyzeTool, createDispatchTool, createChangeTool } from "../../../apps/app-server/pi-native-tools.mjs";
+import { createPublicToolAlias } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
 
 const repository = fileURLToPath(new URL("../../..", import.meta.url));
 const [provider, modelId, repetitionsText = "3", outputPath] = process.argv.slice(2);
@@ -25,7 +26,12 @@ const skills = (await Promise.all([
   "tspi-mechanism-reasoning", "tspi-ts-candidate-generation", "tspi-ts-validation",
   "tspi-irc", "tspi-energetics",
 ].map(name => readFile(join(repository, `skills/${name}/SKILL.md`), "utf8")))).join("\n\n");
-const tools = [createStateTool(), createAnalyzeTool(), createDispatchTool(), createChangeTool(), {
+const tools = [
+  [createStateTool(), "research.read"],
+  [createAnalyzeTool(), "analysis.run"],
+  [createDispatchTool(), "execution.dispatch"],
+  [createChangeTool(), "research.change"],
+].map(([tool, canonicalName]) => createPublicToolAlias(tool, canonicalName)).concat([{
   name: "read", description: "Read an existing workspace artifact or packaged Skill reference.",
   parameters: Type.Object({ path: Type.String() }, { additionalProperties: false }),
   async execute(id, params, update, ctx) {
@@ -36,7 +42,7 @@ const tools = [createStateTool(), createAnalyzeTool(), createDispatchTool(), cre
     if (Buffer.byteLength(content) > 65536) throw new Error("read exceeds 64 KiB; use bounded state");
     return { content: [{ type: "text", text: content }], details: {} };
   },
-}];
+}]);
 const cases = [
   ["definition", "Check this closed reaction CCl.[OH-]>>CO.[Cl-], all component multiplicities 1. Propose atom correspondences and preserve ambiguity; no need to select a mechanism.", ["reaction.parse", "reaction.mapping.generate"]],
   ["existing_ts", "The supplied ts.log is a synthetic candidate output. Assess its stationary-point/mode evidence; for the selected H-H mode use bond [0,1] as the expected changing coordinate. State remaining gaps. Do not rebuild the reaction.", ["gaussian.output.analyze", "vibration.analyze_mode"]],
@@ -74,7 +80,7 @@ while (pending.length) {
       row.calls.push(record);
       const size = Buffer.byteLength(JSON.stringify(call.arguments));
       row.tool_argument_bytes += size;
-      if (["ts_state", "ts_change", "ts_dispatch"].includes(call.name)) row.administrative_argument_bytes += size;
+      if (["research.read", "research.change", "execution.dispatch"].includes(call.name)) row.administrative_argument_bytes += size;
       let result, isError = false;
       try {
         const tool = tools.find(tool => tool.name === call.name);
@@ -82,7 +88,7 @@ while (pending.length) {
         result = await tool.execute(call.id, call.arguments, undefined, { cwd: fixture.workspace }, undefined, { abortSignal: AbortSignal.timeout(30000) });
       } catch (error) { isError = true; row.errors++; record.error = error.message; result = { content: [{ type: "text", text: error.message }] }; }
       record.isError = isError;
-      if (!isError && call.name === "ts_analyze") {
+      if (!isError && call.name === "analysis.run") {
         const payload = JSON.parse(result.content[0].text);
         record.result = { verdict: payload.verdict, analysis_artifact: payload.analysis_artifact, output_artifacts: payload.output_artifacts };
       }
@@ -90,9 +96,9 @@ while (pending.length) {
     }
   }
   const successful = row.calls.filter(call => !call.isError);
-  row.capability_coverage = expected.every(capability => successful.some(call => call.name === "ts_analyze" && call.arguments.capability === capability));
+  row.capability_coverage = expected.every(capability => successful.some(call => call.name === "analysis.run" && call.arguments.capability === capability));
   row.completed = row.capability_coverage && !!row.final && !row.transport_error;
-  if (caseId === "node_management") row.completed &&= ["pause", "resume"].every(operation => successful.some(call => call.name === "ts_dispatch" && call.arguments.operation === operation && call.arguments.nodeId === fixture.node));
+  if (caseId === "node_management") row.completed &&= ["pause", "resume"].every(operation => successful.some(call => call.name === "execution.dispatch" && call.arguments.operation === operation && call.arguments.nodeId === fixture.node));
   if (caseId === "ambiguous_mapping") row.completed &&= successful.some(call => call.name === "read" && call.arguments.path.endsWith("mapping.json")) && !successful.some(call => call.arguments?.parameters?.candidate_index !== undefined);
   report.runs.push(row);
   const snapshot = JSON.stringify(report, null, 2) + "\n";

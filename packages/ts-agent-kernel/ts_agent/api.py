@@ -392,7 +392,9 @@ def _research_liveness(
 ) -> dict[str, Any]:
     """Derive the bounded research turn state from canonical sources.
 
-    ``required`` remains the explicit Agent work queue.  ``waiting_external``
+    ``continue_required`` is the canonical explicit Agent work queue.
+    The ``required`` field remains a read-only compatibility alias for older
+    clients. ``waiting_external``
     is derived from non-terminal execution Attempts, while ``decision_needed`` detects
     an active/focused Node that has neither an external wait nor an explicit
     continuation/disposition.  No scientific action is inferred here.
@@ -478,7 +480,7 @@ def _research_liveness(
                 "target_id": node_id,
                 "title": node.title,
                 "objective": node.objective,
-                "reason": "active research scope has no required continuation or pending Attempt",
+                "reason": "active research scope has no continue_required checkpoint or pending Attempt",
             })
 
     # Claims and Gates are first-class research scopes too. Keep the candidate
@@ -521,7 +523,7 @@ def _research_liveness(
                 "target_id": claim_id,
                 "title": claim.statement,
                 "objective": "interpret current evidence and decide the next bounded research action",
-                "reason": "focus Claim has no required continuation or explicit disposition",
+                "reason": "focus Claim has no continue_required checkpoint or explicit disposition",
             })
 
     candidate_gate_ids = []
@@ -567,7 +569,7 @@ def _research_liveness(
             })
 
     if required:
-        lifecycle = "required"
+        lifecycle = "continue_required"
     elif decision_needed:
         lifecycle = "decision_needed"
     elif waiting_external:
@@ -584,6 +586,8 @@ def _research_liveness(
         lifecycle = "idle"
 
     counts = {
+        "continue_required": len(required),
+        # Compatibility count for older bounded-context consumers.
         "required": len(required),
         "deferred": len(deferred),
         "blocked": len(blocked),
@@ -600,6 +604,8 @@ def _research_liveness(
         "map_revision": research_map.revision,
         "runtime_revision": runtime.get("runtime_revision"),
         "lifecycle": lifecycle,
+        "continue_required": [_compact_continuation(item) for item in required[:_LIVENESS_RECORD_LIMIT]],
+        # Compatibility alias; new callers should use continue_required.
         "required": [_compact_continuation(item) for item in required[:_LIVENESS_RECORD_LIMIT]],
         "deferred": [_compact_continuation(item) for item in deferred[:_LIVENESS_RECORD_LIMIT]],
         "blocked": [_compact_continuation(item) for item in blocked[:_LIVENESS_RECORD_LIMIT]],
@@ -884,8 +890,8 @@ def _research_turn(kernel: ResearchKernel, root: str | Path, request: dict[str, 
     This is deliberately a checkpoint/read operation, not a planner.  The
     Kernel derives the disposition from ResearchMap and runtime evidence; the
     Host uses ``accepted`` to decide whether a bounded Agent follow-up is
-    needed.  A ``required`` disposition is a valid end state because it is an
-    explicit next-turn plan, whereas ``decision_needed`` is not.
+    needed.  A ``continue_required`` disposition is a valid end state because
+    it is an explicit next-turn plan, whereas ``decision_needed`` is not.
     """
 
     allowed = {
@@ -950,7 +956,7 @@ def _research_turn(kernel: ResearchKernel, root: str | Path, request: dict[str, 
     }
     # Mirror the bounded diagnostic fields at the turn boundary so Host
     # adapters do not need to know which nested read model produced them.
-    for key in ("required", "deferred", "blocked", "waiting_external", "decision_needed", "counts"):
+    for key in ("continue_required", "required", "deferred", "blocked", "waiting_external", "decision_needed", "counts"):
         result[key] = liveness.get(key, [] if key != "counts" else {})
     if operation == "orient":
         result["context"] = _research_context(research_map, root)
@@ -1262,7 +1268,7 @@ def _apply_continuation_request(kernel: ResearchKernel, request: dict[str, Any])
         "expected_revision": request.get("expected_revision"),
         "operations": [operation_value],
     }
-    # Tool callers may omit an ID for a newly created required continuation.
+    # Tool callers may omit an ID for a newly created legacy required-action record.
     # Allocate it from the current map and pin the revision so a concurrent
     # writer fails cleanly instead of producing a duplicate record.
     if operation_value["type"] == "set_continuation" and not operation_value.get("id"):

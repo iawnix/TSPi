@@ -7,6 +7,11 @@ Its bundled skill pack currently focuses on computational chemistry, including
 transition-state searches and reaction-path analysis. Research state, evidence,
 calculations, and reports live in one workspace.
 
+This repository is an active, pre-release project. The supported runtime is the
+Native Pi Harness; the retired ordinary-Pi compatibility runtime is not
+packaged or selected. The current chemistry bundle is one application of the
+domain-neutral Claims, Nodes, Findings, Gates, Attempts, and Artifacts model.
+
 ## Install
 
 Prepare Git, Python 3.11+, Node.js 22.19+, Conda/Mamba, and a Pi credential.
@@ -23,9 +28,19 @@ The core installation always includes the Agent, scientific runtime, and
 molecular rendering. TS Web is optional. The installer configures one
 installation-wide TSPi Host; there is no TS Phone daemon to install.
 
+Interactive installation also offers the optional TSPi Model Icons font.
+Non-interactive installation leaves it disabled unless `--with-model-icons` is
+provided; use `--without-model-icons` to disable it explicitly. The font is
+installed under the user data directory, and `TSPI_ICON_STYLE=unicode` or
+`TSPI_ICON_STYLE=nerd` selects the fallback style.
+
 See [Installation and Operations](docs/INSTALLATION.md) for prerequisites,
 runtime setup, upgrades, rollback, and recovery. Model/provider behavior is
 documented in [Model Compatibility](docs/MODEL_COMPATIBILITY.md).
+
+For the full documentation map, see [Documentation](docs/README.md). Public
+Skill entrypoints and their on-demand references are listed in the [Skill
+Catalog](skills/README.md).
 
 ## Host and terminal
 
@@ -76,8 +91,10 @@ targets. A compute environment contains a `kind` (`local` or `remote`) and its
 run as part of the bound calculation preflight.
 
 The skills cover Gaussian, xTB, CREST, ASE-NEB, structure validation,
-rendering, reports, and email delivery. See the [Skill Catalog](skills/README.md)
-and [Glossary](skills/tspi-research-kernel/references/glossary.md).
+rendering, reports, and email delivery. Discover the exact versioned capability
+and environment before execution; a Skill description never proves that a
+program is installed. See the [Capability and Compute Model](docs/CAPABILITY_COMPUTE_MODEL.md)
+and [Scientific Capabilities Operations](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS.md).
 
 ## Browser explorer
 
@@ -103,8 +120,19 @@ python3 tools/test/runner.py list
 python3 tools/test/runner.py fast -- -q
 python3 tools/test/runner.py source -- -q
 npm run lint:public
+npm run lint:skills
 ```
 
 The [Maintainer Guide](docs/MAINTAINER_GUIDE.md) describes package validation,
 the App Server lifecycle, and release procedure. 中文说明见
 [中文架构](docs/ARCHITECTURE.zh-CN.md) 和 [终端文档](docs/TERMINAL.zh-CN.md)。
+
+## Community And Project Policy
+
+- [Contributing](CONTRIBUTING.md) / [贡献指南](CONTRIBUTING.zh-CN.md)
+- [Security policy](SECURITY.md) / [安全策略](SECURITY.zh-CN.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md) / [行为准则](CODE_OF_CONDUCT.zh-CN.md)
+- [Changelog](CHANGELOG.md) / [变更日志](CHANGELOG.zh-CN.md)
+
+The repository currently has no license grant. Do not redistribute or reuse the
+source until the repository owner adds and confirms a license.

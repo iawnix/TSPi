@@ -41,6 +41,13 @@ Remote entries add Platform-owned SSH and scheduler fields. `/compute list`
 and `/compute show <name>` query that catalog, so local and remote environments
 share one public vocabulary.
 
+The current chemistry adapters include `gaussian.scan@1` for Gaussian scan
+energy profiles. `ase.neb@1` uses xTB by default and accepts the explicit
+`calculator = "gaussian_cli"` parameter when each image must be evaluated with
+Gaussian energies and Cartesian gradients. The selected calculator and its
+route/resource settings are persisted in the run summary and checked during
+parsing.
+
 ## Verification
 
 Tests should cover capability input bounds, replay of source artifacts, digest

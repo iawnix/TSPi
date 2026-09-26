@@ -8,9 +8,12 @@ description: Read, validate, and atomically update the canonical TSPi ResearchMa
 [Chinese version](SKILL.zh-CN.md)
 
 Use this Skill for project research state: status queries, object lookup,
-ResearchMap validation, and atomic changes through `research.read` and `research.change`.
-The ResearchMap is the canonical data structure read directly by Root and TS
-Web. Do not create a projection or parallel scientific registry.
+ResearchMap validation, bounded Research Memory reads, and atomic changes through
+`research.read` and `research.change`. The ResearchMap is the canonical
+scientific model; `research.context` and `research.liveness` are disposable
+bounded projections, not parallel state. Decision records and the Evidence
+Registry are Kernel-owned metadata, exposed through `research.decisions`,
+`research.evidence`, and `research.storage`.
 
 `ResearchClaim`, `ResearchNode`, `Finding`, and `Gate` are the core research
 objects. `FactFinding` and `IssueFinding` are typed Finding specializations;
@@ -22,6 +25,11 @@ Read with the narrowest `research.read` mode that answers the question. Query
 `mode=operations` before an unfamiliar write. Submit every mutation as one
 explicit ChangeSet through `research.change`, using `expectedRevision` when a stale
 write would be unsafe. Never edit `research_map.json` directly.
+
+For a turn, prefer `context` or `liveness`; expand to `detail`, `decisions`,
+`evidence`, `storage`, or `capabilities` only when the current question requires
+it. Attempts and Artifacts are operational evidence: register their manifests
+and typed links before citing them in an Interpretation, Finding, or Gate.
 
 The Kernel validates references, indexes, graph acyclicity, states, Gate rules,
 and the complete post-change map before committing one revision. Findings and

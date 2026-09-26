@@ -34,6 +34,7 @@ _OPTIMIZERS = frozenset({"FIRE", "BFGS", "LBFGS", "MDMin"})
 _SETTINGS_FIELDS = frozenset(
     {
         "images",
+        "calculator",
         "fmax",
         "max_steps",
         "spring_constant",
@@ -51,8 +52,19 @@ _SETTINGS_FIELDS = frozenset(
         "electronic_temperature",
         "solvent_model",
         "solvent",
+        "gaussian_route",
+        "gaussian_multiplicity",
+        "gaussian_nproc",
+        "gaussian_mem",
     }
 )
+_LEGACY_SETTINGS_FIELDS = _SETTINGS_FIELDS - {
+    "calculator",
+    "gaussian_route",
+    "gaussian_multiplicity",
+    "gaussian_nproc",
+    "gaussian_mem",
+}
 _RUN_REQUIRED_FIELDS = frozenset(
     {
         "schema_version",
@@ -95,6 +107,10 @@ _RUN_OPTIONAL_FIELDS = frozenset(
         "settings",
         "stages",
         "history",
+        "gaussian_route",
+        "gaussian_multiplicity",
+        "gaussian_nproc",
+        "gaussian_mem",
     }
 )
 
@@ -116,6 +132,8 @@ def prepare_ase_neb(task: BackendTask) -> PreparedTask:
         task.inputs["reactant"],
         "--product",
         task.inputs["product"],
+        "--calculator",
+        settings["calculator"],
         "--images",
         str(settings["images"]),
         "--fmax",
@@ -157,6 +175,19 @@ def prepare_ase_neb(task: BackendTask) -> PreparedTask:
         command.extend(
             ["--solvent-model", settings["solvent_model"], "--solvent", settings["solvent"]]
         )
+    if settings["calculator"] == "gaussian_cli":
+        command.extend(
+            [
+                "--gaussian-route",
+                settings["gaussian_route"],
+                "--gaussian-multiplicity",
+                str(settings["gaussian_multiplicity"]),
+                "--gaussian-nproc",
+                str(settings["gaussian_nproc"]),
+                "--gaussian-mem",
+                settings["gaussian_mem"],
+            ]
+        )
 
     return PreparedTask(
         backend="ase_neb",
@@ -170,6 +201,7 @@ def prepare_ase_neb(task: BackendTask) -> PreparedTask:
 def normalize_ase_neb_settings(settings: dict[str, str]) -> dict[str, Any]:
     allowed = {
         "accuracy",
+        "calculator",
         "charge",
         "climb",
         "electronic_temperature",
@@ -187,10 +219,17 @@ def normalize_ase_neb_settings(settings: dict[str, str]) -> dict[str, Any]:
         "solvent_model",
         "spring_constant",
         "uhf",
+        "gaussian_route",
+        "gaussian_multiplicity",
+        "gaussian_nproc",
+        "gaussian_mem",
     }
     unknown = sorted(set(settings) - allowed)
     if unknown:
         raise ValueError(f"unsupported ASE NEB settings: {unknown}")
+    calculator = settings.get("calculator", "xtb_cli").lower()
+    if calculator not in {"xtb_cli", "gaussian_cli"}:
+        raise ValueError(f"unsupported ASE NEB calculator: {calculator}")
     method = settings.get("method", "gfn2").lower()
     if method not in {"gfn1", "gfn2"}:
         raise ValueError(f"unsupported ASE NEB xTB method: {method}")
@@ -217,6 +256,12 @@ def normalize_ase_neb_settings(settings: dict[str, str]) -> dict[str, Any]:
         raise ValueError("ASE NEB solvent must be a safe xTB solvent name")
     if solvent_model is not None and solvent_model.lower() not in {"alpb", "gbsa"}:
         raise ValueError(f"unsupported ASE NEB solvent_model: {solvent_model}")
+    gaussian_route = settings.get("gaussian_route", "#p HF/3-21G Force").strip()
+    if calculator == "gaussian_cli" and not gaussian_route:
+        raise ValueError("gaussian_route is required for the Gaussian ASE NEB calculator")
+    gaussian_mem = settings.get("gaussian_mem", "1GB").strip()
+    if not re.fullmatch(r"[1-9][0-9]*[mMgG][bBwW]", gaussian_mem):
+        raise ValueError("gaussian_mem must be a positive value such as 1GB or 512MB")
     fmax = _bounded_float(settings.get("fmax", "0.05"), "fmax", 0.0, 10.0)
     climb = _boolean(settings.get("climb", "false"), "climb")
     ci_neb = _boolean(settings.get("ci_neb", "false"), "ci_neb")
@@ -233,6 +278,7 @@ def normalize_ase_neb_settings(settings: dict[str, str]) -> dict[str, Any]:
         ci_fmax = fmax
     return {
         "images": _bounded_int(settings.get("images", "7"), "images", 3, 32),
+        "calculator": calculator,
         "fmax": fmax,
         "max_steps": _bounded_int(settings.get("max_steps", "500"), "max_steps", 1, 100_000),
         "spring_constant": _bounded_float(
@@ -272,6 +318,12 @@ def normalize_ase_neb_settings(settings: dict[str, str]) -> dict[str, Any]:
         ),
         "solvent_model": solvent_model.lower() if solvent_model is not None else None,
         "solvent": solvent,
+        "gaussian_route": gaussian_route,
+        "gaussian_multiplicity": _bounded_int(
+            settings.get("gaussian_multiplicity", "1"), "gaussian_multiplicity", 1, 200
+        ),
+        "gaussian_nproc": _bounded_int(settings.get("gaussian_nproc", "1"), "gaussian_nproc", 1, 4096),
+        "gaussian_mem": gaussian_mem,
     }
 
 
@@ -476,7 +528,7 @@ def _validate_run_summary(value: Any) -> None:
     optimizer = value.get("optimizer")
     neb_method = value.get("neb_method", "aseneb")
     if (
-        value.get("calculator") != "xtb_cli"
+        value.get("calculator") not in {"xtb_cli", "gaussian_cli"}
         or not isinstance(optimizer, str)
         or optimizer not in _OPTIMIZERS
         or value.get("method") not in {"gfn1", "gfn2"}
@@ -490,6 +542,21 @@ def _validate_run_summary(value: Any) -> None:
             raise ValueError(f"ASE NEB summary field {field} must be a non-empty string")
     if value.get("calculator_version") is not None and not isinstance(value["calculator_version"], str):
         raise ValueError("ASE NEB calculator_version must be a string or null")
+    if value["calculator"] == "gaussian_cli":
+        if not isinstance(value.get("gaussian_route"), str) or not value["gaussian_route"].strip():
+            raise ValueError("Gaussian ASE NEB summary requires gaussian_route")
+        for field, minimum, maximum in (
+            ("gaussian_multiplicity", 1, 200),
+            ("gaussian_nproc", 1, 4096),
+        ):
+            if isinstance(value.get(field), bool) or not isinstance(value.get(field), int):
+                raise ValueError(f"ASE NEB summary field {field} must be an integer")
+            if not minimum <= value[field] <= maximum:
+                raise ValueError(f"ASE NEB summary field {field} is outside ase.neb/1")
+        if not isinstance(value.get("gaussian_mem"), str) or re.fullmatch(
+            r"[1-9][0-9]*[mMgG][bBwW]", value["gaussian_mem"]
+        ) is None:
+            raise ValueError("ASE NEB summary gaussian_mem is invalid")
     for field in ("climb", "remove_rotation_and_translation", "converged"):
         if not isinstance(value.get(field), bool):
             raise ValueError(f"ASE NEB summary field {field} must be boolean")
@@ -581,7 +648,7 @@ def _validate_settings_echo(value: dict[str, Any]) -> None:
     if "settings" not in value:
         return
     settings = value["settings"]
-    if not isinstance(settings, dict) or set(settings) != _SETTINGS_FIELDS:
+    if not isinstance(settings, dict) or set(settings) not in {_SETTINGS_FIELDS, _LEGACY_SETTINGS_FIELDS}:
         raise ValueError("ASE NEB summary settings fields are invalid")
     expected = {
         "images": value["image_count"],
@@ -607,6 +674,16 @@ def _validate_settings_echo(value: dict[str, Any]) -> None:
         "solvent_model": value["solvent_model"],
         "solvent": value["solvent"],
     }
+    if set(settings) == _SETTINGS_FIELDS:
+        expected.update(
+            {
+                "calculator": value["calculator"],
+                "gaussian_route": value.get("gaussian_route", "#p HF/3-21G Force"),
+                "gaussian_multiplicity": value.get("gaussian_multiplicity", 1),
+                "gaussian_nproc": value.get("gaussian_nproc", 1),
+                "gaussian_mem": value.get("gaussian_mem", "1GB"),
+            }
+        )
     for key, expected_value in expected.items():
         actual_value = settings[key]
         if isinstance(expected_value, float):
@@ -893,6 +970,11 @@ def _run_settings_match(run: dict[str, Any], expected: dict[str, Any]) -> bool:
         "electronic_temperature": "electronic_temperature",
         "solvent_model": "solvent_model",
         "solvent": "solvent",
+        "calculator": "calculator",
+        "gaussian_route": "gaussian_route",
+        "gaussian_multiplicity": "gaussian_multiplicity",
+        "gaussian_nproc": "gaussian_nproc",
+        "gaussian_mem": "gaussian_mem",
     }
     for expected_name, run_name in mappings.items():
         expected_value = expected[expected_name]
@@ -909,6 +991,10 @@ def _run_settings_match(run: dict[str, Any], expected: dict[str, Any]) -> bool:
                 actual_value = None
         elif expected_name == "neb_method":
             actual_value = run.get(run_name, "aseneb")
+        elif expected_name == "calculator":
+            actual_value = run.get(run_name, "xtb_cli")
+        elif expected_name in {"gaussian_route", "gaussian_multiplicity", "gaussian_nproc", "gaussian_mem"}:
+            actual_value = run.get(run_name, expected[expected_name])
         else:
             actual_value = run[run_name]
         if isinstance(expected_value, float):

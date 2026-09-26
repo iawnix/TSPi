@@ -258,6 +258,7 @@ def route_settings(route: str | None) -> dict[str, object]:
         "has_opt": "opt" in compacted,
         "has_ts": _route_has_opt_option(compacted, "ts"),
         "has_irc": "irc" in compacted,
+        "has_scan": _route_has_opt_option(compacted, "scan") or re.search(r"\bscan\b", compacted) is not None,
         "has_freq": "freq" in compacted,
         "has_qst2": "qst2" in compacted,
         "has_qst3": "qst3" in compacted,
@@ -521,6 +522,7 @@ IRC_REACTION_COORDINATE_RE = re.compile(
     r"NET REACTION COORDINATE UP TO THIS POINT\s*=\s*([-+0-9.DEde]+)", re.I
 )
 SCF_ENERGY_RE = re.compile(r"SCF Done:\s+E\([^)]+\)\s*=\s*([-+0-9.DEde]+)", re.I)
+SCAN_STEP_RE = re.compile(r"\bStep number\s+(\d+)\s+out of a maximum of\s+(\d+)", re.I)
 
 
 def parse_irc_path(lines: list[str], route: str | None = None) -> dict[str, object]:
@@ -801,6 +803,105 @@ def parse_log(
     return {"summary": summary, "frequencies": section_frequencies, "atoms": atoms}
 
 
+def _scan_energy_points(lines: list[str]) -> list[dict[str, object]]:
+    """Collect one final SCF energy for each Gaussian scan step.
+
+    Gaussian prints several SCF/optimization records while walking a scan.
+    A step marker lets us retain the final energy for each point; when a
+    Gaussian version omits those markers, the SCF records remain a useful,
+    deterministic fallback profile.
+    """
+
+    points: list[dict[str, object]] = []
+    current: dict[str, object] | None = None
+    fallback: list[float] = []
+    for line in lines:
+        step = SCAN_STEP_RE.search(line)
+        if step:
+            if current is not None and current.get("energy_hartree") is not None:
+                points.append(current)
+            current = {
+                "point_number": int(step.group(1)),
+                "maximum_point_number": int(step.group(2)),
+                "energy_hartree": None,
+            }
+        match = SCF_ENERGY_RE.search(line)
+        if not match:
+            continue
+        energy = float(match.group(1).replace("D", "E").replace("d", "e"))
+        fallback.append(energy)
+        if current is not None:
+            current["energy_hartree"] = energy
+    if current is not None and current.get("energy_hartree") is not None:
+        points.append(current)
+    if points:
+        return points
+    return [
+        {"point_number": index, "energy_hartree": energy}
+        for index, energy in enumerate(fallback, start=1)
+    ]
+
+
+def parse_scan_log(
+    log_path: Path,
+    section_index: int | None = None,
+    expected_route: str | None = None,
+) -> dict[str, object]:
+    """Parse a Gaussian relaxed-scan profile and its completion evidence."""
+
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+    section = select_job_section(lines, section_index)
+    section_lines = section["lines"]
+    if not isinstance(section_lines, list):
+        raise TypeError("internal parser error: scan section lines are unavailable")
+    section_text = "\n".join(section_lines)
+    route = extract_log_route(section_lines)
+    points = _scan_energy_points(section_lines)
+    normal_termination = "Normal termination of Gaussian" in section_text
+    route_scan = bool(route_settings(route).get("has_scan"))
+    step_scan = bool(SCAN_STEP_RE.search(section_text))
+    scan_detected = route_scan or step_scan
+    expected_point_count = max(
+        (int(point["maximum_point_number"]) for point in points if "maximum_point_number" in point),
+        default=None,
+    )
+    scan_complete = bool(
+        normal_termination
+        and scan_detected
+        and len(points) >= 2
+        and (expected_point_count is None or len(points) >= expected_point_count)
+    )
+    summary: dict[str, object] = {
+        "log": str(log_path),
+        "section_count": section["section_count"],
+        "selected_section_index": section["index"],
+        "selected_section_reason": section["selection_reason"],
+        "gaussian_route": route,
+        "gaussian_route_settings": route_settings(route),
+        "route_expectation": route_expectation(expected_route, route, section_text),
+        "normal_termination": normal_termination,
+        "error_termination": "Error termination" in section_text,
+        "scan_detected": scan_detected,
+        "scan_complete": scan_complete,
+        "scan_point_count": len(points),
+        "scan_expected_point_count": expected_point_count,
+        "scan_energies_complete": bool(points) and all(
+            isinstance(point.get("energy_hartree"), (int, float))
+            for point in points
+        ),
+        "electronic_energy_hartree": points[-1]["energy_hartree"] if points else None,
+    }
+    return {
+        "summary": summary,
+        "profile": {
+            "schema_version": "gaussian-scan-profile/1",
+            "energy_unit": "hartree",
+            "points": points,
+        },
+    }
+
+
 def write_parse_artifacts(parsed: dict[str, object], output_dir: Path, log_stem: str, log_name: str) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     summary = parsed["summary"]
@@ -815,6 +916,16 @@ def write_parse_artifacts(parsed: dict[str, object], output_dir: Path, log_stem:
     )
     if atoms:
         write_xyz(output_dir / f"{log_stem}_final.xyz", atoms, f"Final geometry extracted from {log_name}")
+
+
+def write_scan_parse_artifacts(parsed: dict[str, object], output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    summary = parsed["summary"]
+    profile = parsed["profile"]
+    if not isinstance(summary, dict) or not isinstance(profile, dict):
+        raise TypeError("parsed Gaussian scan artifact has unexpected shape")
+    write_json(output_dir / "gaussian_scan_summary.json", summary)
+    write_json(output_dir / "scan_profile.json", profile)
 
 
 def build_prepare_parser() -> argparse.ArgumentParser:

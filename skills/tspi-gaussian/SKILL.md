@@ -1,6 +1,6 @@
 ---
 name: tspi-gaussian
-description: Prepare, run, and inspect registered Gaussian single-point, optimization, frequency, transition-state, QST, and IRC calculations.
+description: Prepare, run, and inspect registered Gaussian single-point, optimization, frequency, scan, transition-state, and IRC calculations, plus QST input guidance.
 ---
 
 # TSPi Gaussian
@@ -16,8 +16,14 @@ Bind each `.gjf` input as a Node-owned Artifact. Preserve route, method, basis,
 charge, multiplicity, solvent, resources, task, and relevant keywords in the
 immutable intent. Check that the output matches that intent, select the correct
 job section, and assess termination, SCF behavior, optimization convergence,
-frequency evidence, geometry, electronic state, IRC data, and thermochemistry
-without conflating them.
+frequency evidence, geometry, electronic state, IRC data, thermochemistry, and
+scan profiles without conflating them. A Gaussian relaxed scan must use the
+registered `gaussian.scan@1` capability; do not submit an input containing
+`Scan` as `gaussian.sp`.
+
+QST2/QST3 is input construction and guidance in this release, not a registered
+execution capability. Submit only a catalog descriptor returned by
+`research.read mode=capabilities`; do not label a QST input as `gaussian.ts`.
 
 Record parser output only after checking primary files. Normal termination is
 not task validation, and neither is a scientific verdict. Record SCF

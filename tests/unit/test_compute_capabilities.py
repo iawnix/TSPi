@@ -39,6 +39,7 @@ def test_catalog_describes_executor_contracts_without_strategy_routing() -> None
         "gaussian.freq",
         "gaussian.opt_freq",
         "gaussian.irc",
+        "gaussian.scan",
         "xtb.scan",
         "crest.conformer_search",
         "pyscf.sp",
@@ -55,7 +56,7 @@ def test_catalog_describes_executor_contracts_without_strategy_routing() -> None
     assert capabilities["ase.neb"]["parsers"] == ["ase.neb/1"]
     assert capabilities["ase.neb"]["limits"] == {
         "max_images": 32,
-        "calculator": "xtb_cli",
+        "calculators": ["xtb_cli", "gaussian_cli"],
         "neb_methods": ["aseneb", "improvedtangent", "eb", "spline", "string"],
         "optimizers": ["FIRE", "BFGS", "LBFGS", "MDMin"],
     }
@@ -72,6 +73,8 @@ def test_catalog_describes_executor_contracts_without_strategy_routing() -> None
         "optimized_geometry",
     ]
     assert capabilities["gaussian.ts"]["parsers"] == ["gaussian.output/2"]
+    assert capabilities["gaussian.scan"]["output_roles"] == ["program_output", "scan_profile"]
+    assert capabilities["gaussian.scan"]["parsers"] == ["gaussian.scan/1"]
     assert capabilities["pyscf.sp"]["input_roles"] == ["xyz"]
     assert capabilities["pyscf.sp"]["parsers"] == ["pyscf.output/1"]
     assert capabilities["pyscf.sp"]["limits"]["default_xc"] == "CF22D"
@@ -115,6 +118,16 @@ def test_capability_parameters_are_descriptor_bound() -> None:
         "neb_method": "improvedtangent",
         "optimizer": "BFGS",
     }
+    assert validate_capability_parameters(
+        neb,
+        {
+            "calculator": "gaussian_cli",
+            "gaussian_route": "#p B3LYP/6-31G(d) Force",
+            "gaussian_multiplicity": 1,
+            "gaussian_nproc": 2,
+            "gaussian_mem": "2GB",
+        },
+    )["calculator"] == "gaussian_cli"
     with pytest.raises(ValueError, match="should not be valid"):
         validate_capability_parameters(neb, {"climb": True, "ci_neb": True})
     with pytest.raises(ValueError, match="required property"):

@@ -8,9 +8,11 @@
 ## Decision
 
 `ResearchKernel` is the transaction and integrity boundary for one canonical
-`ResearchMap`. The map is a typed aggregate, persisted as `research_map.json`,
-with execution records under `nodes/<node_id>/` kept outside the scientific
-aggregate.
+`ResearchMap`. The map is a typed aggregate. `research.db` is the authoritative
+Research Memory backend after bootstrap; `research_map.json` is the synchronized
+portable snapshot and export. Execution records under `nodes/<node_id>/` remain
+outside the scientific aggregate, while bounded decision and evidence metadata
+is stored in the same Research Memory backend.
 
 The map owns these concepts:
 
@@ -29,10 +31,12 @@ Gate                common target/criteria/evaluation contract
 fact or issue explicit without creating separate registries. `Gate` is likewise
 one base contract; `scope` and the specialized class identify its target.
 
-`ResearchMap.to_dict()` is canonical serialization. RootAgent and TS Web read
-that document directly; neither builds a second scientific model or maintains a
-second state store. A client may filter records for presentation, but filtered
-data is not a protocol or a mutation boundary.
+`ResearchMap.to_dict()` is the canonical map serialization. RootAgent and TS Web
+read that projection directly; neither builds a second scientific model or
+maintains a second mutation store. A client may filter records for presentation,
+but filtered data is not a protocol or a mutation boundary. Decision records,
+Attempt/Artifact manifests, and Evidence Links are Research Memory metadata,
+not duplicate ResearchMap objects and not raw payload copies.
 
 ## Gate Semantics
 
@@ -48,9 +52,9 @@ ChangeSet. Gate evaluation never silently mutates either target.
 ## Responsibilities
 
 The Kernel validates references and dependency cycles, enforces Node state
-transitions, applies optimistic revisions, and atomically persists the map. It
-does not select a method, run a Backend, submit a remote job, or infer a Claim
-status from tool success.
+transitions, applies optimistic revisions, and atomically commits the active
+Research Memory backend plus its JSON snapshot. It does not select a method,
+run a Backend, submit a remote job, or infer a Claim status from tool success.
 
 Skills describe procedures and capabilities. Backends implement scientific
 software or executors. A Compute Environment is a named local or remote
@@ -68,12 +72,17 @@ scientific object types in the map.
 - A closed Node always has an explicit outcome.
 - Completing a Node with a NodeGate requires a latest passing evaluation.
 - ChangeSets are applied atomically and increment the map revision once.
-- `research_map.json` is the only canonical scientific state file.
+- `ResearchMap` is the only canonical scientific state model.
+- After SQLite bootstrap, `research.db` is the authoritative durable backend;
+  `research_map.json` is a synchronized snapshot and portable export.
+- Decision, Attempt, Artifact, and Evidence Link metadata is indexed once in
+  Research Memory; raw logs and binary payloads stay in their external stores.
 
 ## Consequences
 
 The old scientific registry set and view/graph protocol are deliberately not
 compatible with this design. TS Web, RootAgent, reports, and future clients
-must consume `ResearchMap` serialization. Operational tooling may keep durable
-Attempt and Artifact files, but only the Kernel can promote their references to
-Findings or Gate evidence.
+must consume `ResearchMap` serialization and the bounded Research Memory read
+models. Operational tooling may keep durable Attempt and Artifact files, but
+only the Kernel can register their manifests and promote typed Evidence Links
+to Findings or Gate evidence.

@@ -1,9 +1,11 @@
 # ResearchMap State Model
 
-`ResearchMap` is the canonical, typed state of one research project. The
-serialized file is `research_map.json`; `ResearchMap.to_dict()` is the format
-consumed by Root and TS Web. The Kernel loads, validates, and atomically saves
-this same object.
+`ResearchMap` is the canonical, typed scientific state of one research project.
+`ResearchMap.to_dict()` is the map snapshot consumed by Root and TS Web. When a
+workspace has been bootstrapped to SQLite, `research.db` is the authoritative
+Kernel backend and `research_map.json` is its synchronized export snapshot;
+JSON-only workspaces remain readable and are upgraded through
+`research.storage operation=bootstrap`.
 
 ## Objects
 
@@ -18,8 +20,10 @@ this same object.
 | `Gate` | criteria and evaluations for a Node or Claim | `scope`, `target_id`, `criteria`, `evaluations` |
 | `NodeGate` / `ClaimGate` | typed Gate specializations | `scope=node` / `scope=claim` |
 
-`Finding` is the common data structure. Use its specialized class rather than
-inventing a parallel evidence record. `GateEvaluation` stores a
+`Finding` is the common scientific conclusion structure. Execution evidence is
+separate Kernel metadata: `AttemptRecord`, `ArtifactManifest`, and
+`EvidenceLink` form the Evidence Registry; raw payloads remain in Node-owned
+directories or an external Artifact store. `GateEvaluation` stores a
 verdict (`pass`, `fail`, `inconclusive`, `blocked`), timestamp, message,
 evidence references, and the input revision.
 
@@ -49,12 +53,17 @@ research.detail       one phase, claim, node, finding, or gate
 research.locate       text search over map objects
 research.validate     validate the map
 research.operations   current ChangeSet operation catalog
+research.context      bounded turn context
+research.liveness     lifecycle diagnosis
+research.decisions   bounded strategy/interpretation/checkpoint history
+research.evidence    Attempt/Artifact/EvidenceLink metadata
+research.storage     active JSON or SQLite backend and bootstrap status
 ```
 
-The `research.read` tool exposes the corresponding bounded modes (`map`, `summary`,
-`detail`, `locate`, `validate`, `operations`) plus compute modes (`artifacts`,
-`capabilities`, `runs`). Use `/research` for interactive reads. All mutations
-use `research.change`, implemented by the Kernel.
+The `research.read` tool exposes these bounded modes plus compute modes
+(`artifacts`, `capabilities`, `runs`). Use `/research` for interactive reads.
+Strategy, interpretation, checkpoint, Evidence Registry, and map mutations use
+their typed Kernel commands; do not create a generic memory write.
 
 Do not edit `research_map.json` directly. A ChangeSet is validated against an
 isolated copy, increments `revision` once, writes atomically, and appends a

@@ -8,10 +8,12 @@ Backend 是确定性适配器。它描述支持的程序任务、校验参数、
 
 ## 支持的任务
 
-- Gaussian：`sp`、`opt`、`ts`、`freq`、`opt_freq`、`irc`。
+- Gaussian：`sp`、`opt`、`ts`、`freq`、`opt_freq`、`irc`，以及已注册的松弛扫描能力
+  `gaussian.scan@1`。
 - xTB：`sp`、`opt`、`freq`、`opt_freq`、`scan`、`md`。
 - CREST：`conformer_search`。
-- 使用 xTB CLI calculator 的 ASE：`neb`。
+- ASE NEB：已注册的 `ase.neb@1`，默认使用 xTB CLI calculator；需要 Gaussian 逐 image
+  力时显式设置 `calculator=gaussian_cli`。
 
 QBICS DMECP 当前不是已注册 capability。Backend 只有具备确定性解析合同与任务验证测试后
 才成为公共能力；只有输入准备器并不充分。

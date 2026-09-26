@@ -173,7 +173,8 @@ class ContextBuilder:
         compact_continuation = lambda item: _compact_continuation(
             item, text_limit=self.text_limit, reference_limit=self.reference_limit,
         )
-        required = [compact_continuation(item) for item in liveness.get("required", [])[: self.continuation_limit]]
+        required_source = liveness.get("continue_required", liveness.get("required", []))
+        required = [compact_continuation(item) for item in required_source[: self.continuation_limit]]
         deferred = [compact_continuation(item) for item in liveness.get("deferred", [])[: self.continuation_limit]]
         blocked = [compact_continuation(item) for item in liveness.get("blocked", [])[: self.continuation_limit]]
         pending = [_compact_attempt(item, text_limit=self.text_limit) for item in liveness.get("waiting_external", [])[: self.attempt_limit]]
@@ -244,7 +245,14 @@ class ContextBuilder:
                 "nodes": focus_nodes,
             },
             "progress": research_map.progress(),
-            "continuations": {"required": required, "deferred": deferred, "blocked": blocked},
+            "continuations": {
+                "continue_required": required,
+                # Compatibility alias for older clients and persisted prompt
+                # fixtures; new callers should use continue_required.
+                "required": required,
+                "deferred": deferred,
+                "blocked": blocked,
+            },
             "execution": {
                 "pending_attempts": pending,
                 "runtime_revision": runtime.get("runtime_revision"),
@@ -261,7 +269,10 @@ class ContextBuilder:
             "truncated": {
                 "focus_claims": len(focus_claim_ids) > self.focus_limit,
                 "focus_nodes": len(focus_node_ids) > self.focus_limit,
-                "required": _count(liveness, "required") > self.continuation_limit,
+                "continue_required": _count(liveness, "continue_required") > self.continuation_limit
+                or _count(liveness, "required") > self.continuation_limit,
+                "required": _count(liveness, "continue_required") > self.continuation_limit
+                or _count(liveness, "required") > self.continuation_limit,
                 "deferred": _count(liveness, "deferred") > self.continuation_limit,
                 "blocked": _count(liveness, "blocked") > self.continuation_limit,
                 "pending_attempts": _count(liveness, "waiting_external") > self.attempt_limit,

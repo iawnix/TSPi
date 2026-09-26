@@ -10,6 +10,11 @@ Root 会话使用：
 ```text
 research.read         有边界地读取 ResearchMap 与计算状态
 research.change        提交一个原子 ResearchMap ChangeSet
+research.strategy      记录或评审 Claim strategy
+research.interpretation 解释已完成 Attempt
+research.checkpoint    用 disposition 结束当前 Research Turn
+research.continuation  兼容 required-action ledger
+system.prompt          查看有效 prompt 来源
 compute.environment   本地与远端计算环境目录
 compute.run          一个有边界的计算生命周期
 execution.dispatch      暂停或恢复一个 Node 的新任务派发
@@ -34,8 +39,9 @@ Slash command 调用同一个命令服务：`/research`、`/compute`、`/runs` �
 或 `research.read mode=summary`。research extension 可以在 prompt 中加入有边界的摘要，但不能
 写入 map。方法选择、结果解释与停止决策仍由 Root Agent 负责。
 
-`research.read` 模式包括 `map`、`summary`、`detail`、`locate`、`validate`、
-`operations`、`artifacts`、`capabilities` 和 `runs`。`capabilityKind=compute`
+`research.read` 模式包括 `map`、`summary`、`context`、`liveness`、`detail`、`locate`、
+`validate`、`operations`、`decisions`、`evidence`、`storage`、`artifacts`、`capabilities`
+和 `runs`。`capabilityKind=compute`
 列出计算 capability；`capabilityKind=analysis` 解析分析方法。使用 `kind` 和 `id` 聚焦
 一个 map 对象，不要为 ResearchMap 发明额外的上下文词汇。
 

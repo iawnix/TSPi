@@ -76,6 +76,8 @@ requires_gpu = false
 
 [environments.cluster_1w.backends.ase_neb.environment]
 TS_ASE_NEB_XTB = "/home/agent/soft/xtb/current/bin/xtb"
+# Required when an ase.neb intent selects calculator = "gaussian_cli".
+TS_ASE_NEB_GAUSSIAN = "/home/agent/soft/gaussian/current/g16/g16"
 
 [environments.cluster_1w.backends.pyscf]
 command = ["/home/agent/soft/pyscf/current/bin/python"]

@@ -24,6 +24,7 @@
     "test:list": "python3 tools/test/runner.py list",
     "test:fast": "python3 tools/test/runner.py fast -- -q",
     "lint:public": "python3 tools/lint_public_surface.py",
+    "lint:skills": "python3 tools/lint_skills.py",
     "test": "python3 tools/test/runner.py source -- -q",
     "test:subagents": "python3 tools/test/runner.py subagents",
     "test:package": "python3 tools/test/runner.py package",

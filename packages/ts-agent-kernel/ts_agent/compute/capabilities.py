@@ -82,6 +82,7 @@ def _ase_neb_parameters() -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
+            "calculator": {"enum": ["xtb_cli", "gaussian_cli"], "default": "xtb_cli"},
             "images": {"type": "integer", "minimum": 3, "maximum": 32, "default": 7},
             "fmax": {
                 "type": "number",
@@ -127,6 +128,19 @@ def _ase_neb_parameters() -> dict[str, Any]:
             "solvent": {
                 "type": "string",
                 "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$",
+            },
+            "gaussian_route": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "default": "#p HF/3-21G Force",
+            },
+            "gaussian_multiplicity": {"type": "integer", "minimum": 1, "maximum": 200, "default": 1},
+            "gaussian_nproc": {"type": "integer", "minimum": 1, "maximum": 4096, "default": 1},
+            "gaussian_mem": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]*[mMgG][bBwW]$",
+                "default": "1GB",
             },
         },
         "dependentRequired": {
@@ -220,6 +234,16 @@ CAPABILITY_DESCRIPTORS: Final[tuple[CapabilityDescriptor, ...]] = (
     _descriptor("gaussian.opt_freq", "gaussian", "opt_freq", frozenset({"gjf"}), ("program_output", "optimized_geometry", "frequencies"), parser="gaussian.output/2"),
     _descriptor("gaussian.irc", "gaussian", "irc", frozenset({"gjf"}), ("program_output", "reaction_path"), parser="gaussian.irc/2"),
     _descriptor(
+        "gaussian.scan",
+        "gaussian",
+        "scan",
+        frozenset({"gjf"}),
+        ("program_output", "scan_profile"),
+        parser="gaussian.scan/1",
+        parameter_schema=_parameters(),
+        limits={"minimum_points": 2, "energy_unit": "hartree"},
+    ),
+    _descriptor(
         "xtb.sp", "xtb", "sp", frozenset({"xyz"}), ("program_output", "energy"),
         parser="xtb.artifacts/2",
         parameter_schema=_parameters("accuracy", "charge", "electronic_temperature", "method", "solvent", "solvent_model", "uhf"),
@@ -264,7 +288,7 @@ CAPABILITY_DESCRIPTORS: Final[tuple[CapabilityDescriptor, ...]] = (
         parameter_schema=_ase_neb_parameters(),
         limits={
             "max_images": 32,
-            "calculator": "xtb_cli",
+            "calculators": ["xtb_cli", "gaussian_cli"],
             "neb_methods": ["aseneb", "improvedtangent", "eb", "spline", "string"],
             "optimizers": ["FIRE", "BFGS", "LBFGS", "MDMin"],
         },

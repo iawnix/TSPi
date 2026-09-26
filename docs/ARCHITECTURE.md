@@ -52,14 +52,16 @@ authorization role.
 
 ## Scientific State Model
 
-Each workspace has one canonical research object:
+Each workspace has one canonical ResearchMap and one durable metadata backend:
 
 ```text
-research_map.json
+research.db                # SQLite authority for map and bounded metadata
+research_map.json           # synchronized ResearchMap snapshot
 workspace.json           # validated workspace identity and schema marker
 nodes/<node_id>/          # Attempt and Artifact execution records
 inputs/                   # workspace-relative imported input artifacts
-transactions.jsonl        # Kernel change history
+transactions.jsonl       # append-only ChangeSet receipts
+operations/               # turn, monitor, and execution receipts
 ```
 
 `ResearchMap` is the canonical project object. It is not assembled as a
@@ -154,9 +156,11 @@ Research Memory (durable records)
 `ResearchMemoryService` does not cache a second ResearchMap or persist a
 ContextPack. `ContextPack.context_id` and provenance identify the source
 revision so a Host can rebuild it after a change or retry. Semantic writes stay
-on `research.change`, `research.strategy`, `research.interpretation`,
-`research.continuation`, and `research.checkpoint`; there is no generic
-`memory.commit` operation that could bypass domain validation.
+on `research.change`, `research.strategy`, `research.interpretation`, and
+`research.checkpoint`; new turns do not write through `research.continuation`,
+which is retained only to read or migrate old required-action ledger records.
+There is no generic `memory.commit` operation that could bypass domain
+validation.
 
 Every Research Turn follows:
 
@@ -165,16 +169,26 @@ TRIGGER -> ORIENT -> PLAN -> PREPARE -> EXECUTE
         -> WAIT/RECONCILE -> INTERPRET -> ADVANCE -> CHECKPOINT
 ```
 
-Before ending, the Agent must leave the Kernel in `required`,
-`waiting_external`, `deferred`/`blocked`, or `terminal`. An active Node with
-none of those dispositions yields `decision_needed`; the Harness may issue a
-bounded follow-up asking the Agent to read context and record a disposition,
-but it never chooses a scientific method or creates a Finding. `next_run` is
-an operational wake-up, not a new research instruction. An Attempt in
-`prepared` state has only a local, pre-submission binding and is therefore a
-decision point for the Agent, not an external wait. Only submitted, queued,
-running, completed-but-unparsed, or unknown Attempts hold a scope in
-`waiting_external` until the Host/Monitor produces new evidence.
+Before ending, the Agent must call `research.checkpoint` with one of the
+current dispositions: `continue_required`, `waiting_external`, `deferred`,
+`blocked`, `terminal`, or `user_input_required`. `continue_required` records an
+explicit next-turn action chosen by the Agent. The old `required` value is
+accepted only while reading or migrating a `research.continuation` ledger and
+is normalized to `continue_required`; it is not a second lifecycle state.
+`research.liveness` is a bounded diagnostic projection, not a persisted next
+step or a turn-closing command. An active Node with no valid disposition yields
+`decision_needed`; the Harness may issue a bounded follow-up asking the Agent
+to read context and checkpoint a disposition, but it never chooses a
+scientific method or creates a Finding. `next_run` is an operational wake-up,
+not a new research instruction. An Attempt in `prepared` state has only a
+local, pre-submission binding and is therefore a decision point for the Agent,
+not an external wait. Only submitted, queued, running, completed-but-unparsed,
+or unknown Attempts hold a scope in `waiting_external` until the Host/Monitor
+produces new evidence.
+
+For transport compatibility, the liveness response may mirror the canonical
+`continue_required` records under the read-only `required` field; that alias
+does not make `required` a new lifecycle disposition.
 
 Public tools use one contract and a Harness-bound workspace context. The
 legacy `root` field is accepted only as an equality assertion. Tool contracts
@@ -188,16 +202,14 @@ metadata contract before they enter a Worker.
 Tool factories and transport adapters have separate responsibilities. The
 `create*Tool()` functions define domain behavior and may throw typed failures;
 they are not themselves a transcript or transport boundary. The package-owned
-server extension composes those factories, while the legacy Pi registration
-boundary uses the same idempotent result wrapper for compatibility traffic.
-The native `pi-session-worker` applies the Harness adapter at the worker
-boundary. Successful results receive the `tspi-tool-result/1` envelope.
-Failures are converted to a normal result with `tspi-tool-error/1`; the
-native `after_tool` hook and the legacy Pi `tool_result` hook then set
-`isError: true`, so the durable transcript preserves both the machine-readable
-failure and the model-visible error status.
-Direct factory tests may call the domain tool without this adapter; production
-Harness traffic must enter through one of these transport boundaries.
+server extension composes those factories, and the Native `pi-session-worker`
+applies the Harness adapter at the Worker boundary. Successful results receive
+the `tspi-tool-result/1` envelope. Failures are converted to a normal result
+with `tspi-tool-error/1`; the Native `after_tool` hook then sets `isError: true`,
+so the durable transcript preserves both the machine-readable failure and the
+model-visible error status. Direct factory tests may call the domain tool
+without this adapter; production Harness traffic enters through the Native
+server-extension boundary.
 
 ### NodeGate And ClaimGate
 
@@ -216,19 +228,19 @@ interpretation through a Map ChangeSet.
 
 ## ChangeSets And Browser Clients
 
-Pi extensions, host tools, and slash commands all submit the same
+Native server tools, Host commands, and slash commands all submit the same
 small ChangeSet envelope to `ResearchKernel`. The kernel validates operation
 fields, references, optimistic revision, and graph invariants before atomically
-writing `research_map.json` and appending `transactions.jsonl`. A failed
-ChangeSet leaves the previous revision untouched.
+committing the active Research Memory backend and updating its JSON snapshot and
+transaction receipt. A failed ChangeSet leaves the previous revision untouched.
 
 TS Web reads the canonical map through `components/ts-web/`; it does not own Pi
 sessions or submit prompts. It is a browser client of the same map, not a
 separate protocol or scientific state store. Browser control is a separate,
-explicitly started loopback adapter (`TSPi --gateway`) backed by Pi's
-`AgentController` and `Transcript`; it uses request IDs for idempotency and
-sequence cursors for reconnects. TS Phone uses the same underlying services
-through TSPi Link.
+explicitly started loopback adapter (`apps/app-server/tspi-browser-gateway.mjs`)
+attached to the Host's existing session; it uses request IDs for idempotency
+and sequence cursors for reconnects. TS Phone uses the same underlying
+services through TSPi Link.
 
 ## TSPi Link
 
@@ -372,18 +384,18 @@ delivery pending and allows a later worker pass to retry it. Root must reread
 write `ResearchMap` state. The Monitor never calls `finalize`, writes
 `ResearchMap`, or makes a scientific decision.
 
-Research liveness is represented separately from Monitor observations by a
-Kernel-validated continuation record. `research.continuation` can list records or use the
-canonical `set`/`resolve` operations to record one required, deferred, blocked,
-or completed disposition for a Node, Claim, or Gate; the older `set_*` spellings
-remain compatibility aliases. ChangeSet audit fields belong to `research.change`,
-not to this lifecycle request. A `required` record names an action selected by
-Root; it does not execute that action or choose a scientific verdict. At a run
-boundary the Host checks the durable queue and may add at most three bounded
-follow-ups for unresolved required records. The Root must perform the action or
-explicitly resolve the record, so a parsed calculation can continue even when
-Monitor has no new status event, while a blocked or deferred study remains
-quiet and auditable.
+Research liveness is a diagnostic projection separate from Monitor
+observations. The turn boundary persists the Agent's disposition through
+`research.checkpoint`. `research.continuation` remains only as a compatibility
+ledger: it can list or resolve legacy records through `set`/`resolve` (the old
+`set_*` spellings remain aliases), but new turns must use `checkpoint`.
+Legacy `required` records are migrated to `continue_required`; they do not
+define a second liveness state machine. ChangeSet audit fields belong to
+`research.change`, not to this compatibility request. At a run boundary the
+Host follows the checkpoint result and may add at most three bounded
+follow-ups only for `decision_needed`; it never chooses the next method. Thus
+a parsed calculation can continue even when Monitor has no new status event,
+while a blocked or deferred study remains quiet and auditable.
 
 Host `monitor/event` notifications are live only. Host primes its event cursor
 on startup instead of replaying historical files after a restart; Phone clients

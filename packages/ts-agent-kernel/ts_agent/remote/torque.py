@@ -129,8 +129,13 @@ def render_job_script(config: RemoteJobConfig) -> str:
     manages_scratch = config.backend == "gaussian" or backend.scratch_root is not None
     if manages_scratch:
         lines.extend(_scratch_setup(config, backend))
-    if backend.activation_script:
-        lines.extend(_activation_wrapper(config, backend.activation_script))
+    activation_scripts = [backend.activation_script] if backend.activation_script else []
+    if config.backend == "ase_neb" and environment.get("TS_ASE_NEB_GAUSSIAN"):
+        gaussian_binding = config.platform.backends.get("gaussian")
+        if gaussian_binding and gaussian_binding.activation_script:
+            activation_scripts.append(gaussian_binding.activation_script)
+    for activation_script in dict.fromkeys(activation_scripts):
+        lines.extend(_activation_wrapper(config, activation_script))
     if manages_scratch:
         lines.extend(_restore_scratch_environment(config.backend))
     lines.append("set -u")

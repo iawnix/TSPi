@@ -7,6 +7,8 @@
 
 export const RESEARCH_LIFECYCLE_STATES = Object.freeze([
   "idle",
+  "continue_required",
+  // Read-only compatibility state emitted by older Kernel responses.
   "required",
   "decision_needed",
   "waiting_external",
@@ -178,8 +180,9 @@ function messageText(message) {
 /**
  * A checkpoint is successful when the Agent has either recorded a next
  * action, is waiting for an external Attempt, has explicitly held the scope,
- * or has closed it.  Hosts must not turn an already-valid `required` state
- * into an immediate same-turn execution.
+ * or has closed it. Hosts must not turn an already-valid `continue_required`
+ * state (or its legacy `required` read alias) into an immediate same-turn
+ * execution.
  */
 export function checkpointFollowUp(status) {
   if (!status || typeof status !== "object" || Array.isArray(status)) return undefined;
@@ -202,7 +205,7 @@ export function continuationFollowUp(status) {
       .join(", ");
     const suffix = refs ? ` (${refs})` : "";
     return {
-      followUp: `Research turn ended with an active scope lacking an explicit disposition${suffix}. Continue the turn: read research.read with mode=context, inspect any relevant Node/Attempt, record a Claim strategy or Attempt interpretation when needed with research.strategy or research.interpretation, then close with research.checkpoint (use research.continuation only for the legacy continuation ledger; deferred, blocked, or completed are explicit dispositions). Do not invent a scientific result and do not end while an active scope has no lifecycle disposition.`,
+      followUp: `Research turn ended with an active scope lacking an explicit disposition${suffix}. Continue the turn: read research.read with mode=context, inspect any relevant Node/Attempt, record a Claim strategy or Attempt interpretation when needed with research.strategy or research.interpretation, then close with research.checkpoint. Use research.continuation only to inspect or migrate an older required-action record. Do not invent a scientific result and do not end while an active scope has no lifecycle disposition.`,
     };
   }
 
@@ -213,18 +216,19 @@ export function continuationFollowUp(status) {
     .join(", ");
   const suffix = refs ? ` (${refs})` : "";
   return {
-    followUp: `Kernel has ${required.length} required continuation record${required.length === 1 ? "" : "s"}${suffix}. Continue the research turn: first read research.read with mode=context (or mode=liveness), then read research.continuation with operation=status, perform the recorded action, and explicitly set its disposition to deferred, blocked, or completed. Do not end while a safe, explicit next step remains.`,
+    followUp: `Kernel has ${required.length} legacy required-action record${required.length === 1 ? "" : "s"}${suffix}. Continue the research turn: first read research.read with mode=context (or mode=liveness), then read research.continuation with operation=status, migrate or resolve the recorded action, and explicitly set its disposition to deferred, blocked, or completed. Do not end while a safe, explicit next step remains.`,
   };
 }
 
 export function requiredContinuations(result) {
   if (!result || typeof result !== "object" || Array.isArray(result)) return [];
-  const candidates = [result.required, result.continuations, result.records, result.items]
+  const candidates = [result.continue_required, result.required, result.continuations, result.records, result.items]
     .filter((value) => Array.isArray(value))
     .flat();
   if (candidates.length > 0) {
     const required = candidates.filter((record) => record && typeof record === "object"
-      && (record.status === "required" || record.disposition === "required"));
+      && (record.status === "required" || record.status === "continue_required"
+        || record.disposition === "required" || record.disposition === "continue_required"));
     const seen = new Set();
     return required.filter((record) => {
       const key = record.id || record.continuation_id || `${record.scope || ""}:${record.target_id || ""}:${record.action || ""}`;
@@ -233,7 +237,10 @@ export function requiredContinuations(result) {
       return true;
     });
   }
-  return Number.isInteger(result.required_count) && result.required_count > 0
-    ? Array.from({ length: Math.min(result.required_count, 8) }, () => ({ status: "required" }))
+  const count = Number.isInteger(result.continue_required_count)
+    ? result.continue_required_count
+    : result.required_count;
+  return Number.isInteger(count) && count > 0
+    ? Array.from({ length: Math.min(count, 8) }, () => ({ status: "continue_required" }))
     : [];
 }

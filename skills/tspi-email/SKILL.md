@@ -11,6 +11,8 @@ This Skill documents the Host/Monitor-owned `notify.send` delivery capability;
 it is not a Root Agent tool. Use
 `tspi-research-kernel` for research state and `tspi-orchestration` for
 operational, report, and Artifact context.
+
+Use this Skill when a recorded event or report needs a configured notification.
 Notifications communicate recorded research outcomes and link to their reports.
 The installation may use the existing ClawEmail transport or the built-in SMTP
 transport. SMTP presets currently cover 163 and QQ mailboxes.

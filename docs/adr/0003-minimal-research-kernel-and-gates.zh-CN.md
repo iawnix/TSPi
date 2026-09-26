@@ -8,8 +8,10 @@
 ## 决定
 
 `ResearchKernel` 是一个项目唯一规范 `ResearchMap` 的事务和完整性边界。
-`ResearchMap` 是有类型的聚合对象，持久化为 `research_map.json`；
-`nodes/<node_id>/` 下的执行记录属于执行平面，不是另一套科研状态。
+`ResearchMap` 是有类型的聚合对象。SQLite bootstrap 后，`research.db` 是
+Research Memory 的权威后端；`research_map.json` 是同步的可移植 snapshot 和导出。
+`nodes/<node_id>/` 下的执行记录属于执行平面，不是另一套科研状态；有界的决策和证据
+元数据与它们一起保存在同一个 Research Memory 后端。
 
 ```text
 ResearchPhase       导航分组
@@ -25,8 +27,11 @@ Gate                统一的目标/标准/评估协议
 `Finding` 是同一个基类和数据结构，通过 `kind` 及特化字段区分 fact 和
 issue。`Gate` 也是一个基类，`scope` 与子类标识它的目标。
 
-`ResearchMap.to_dict()` 是规范序列化。RootAgent 和 TS Web 直接读取这份
-文档；它们可以为了展示筛选记录，但不会建立第二个科学状态库。
+`ResearchMap.to_dict()` 是 map 的规范序列化。RootAgent 和 TS Web 直接读取这份
+投影；它们不会建立第二个科学模型或第二个变更存储。客户端可以为了展示筛选记录，
+但筛选结果不是协议也不是变更边界。Decision 记录、Attempt/Artifact manifest 和
+Evidence Link 是 Research Memory 元数据，不是重复的 ResearchMap 对象，也不复制原始
+payload。
 
 ## Gate 语义
 
@@ -39,9 +44,9 @@ RootAgent 通过 ChangeSet 明确修改。Gate 评估不会隐式修改目标对
 
 ## 责任边界
 
-Kernel 校验引用和依赖环、执行 Node 状态转换、处理乐观 revision，并原子持久化
-ResearchMap。它不选择方法、不运行 Backend、不提交远程任务，也不根据工具成功
-推断 Claim 状态。
+Kernel 校验引用和依赖环、执行 Node 状态转换、处理乐观 revision，并原子提交活动的
+Research Memory 后端及其 JSON snapshot。它不选择方法、不运行 Backend、不提交远程任务，
+也不根据工具成功推断 Claim 状态。
 
 Skill 描述流程和能力，Backend 实现具体科学软件或执行器。Compute Environment 是
 绑定 Backend 的命名本地或远端执行环境，Platform 提供远端传输和调度细节。Attempt
@@ -56,8 +61,13 @@ Skill 描述流程和能力，Backend 实现具体科学软件或执行器。Com
 - 关闭 Node 必须给出明确 outcome。
 - 有 NodeGate 时，Node 以 completed 关闭必须有最新通过评估。
 - ChangeSet 原子应用，一次只增加一个 map revision。
-- `research_map.json` 是唯一规范科研状态文件。
+- `ResearchMap` 是唯一规范科学状态模型。
+- SQLite bootstrap 后，`research.db` 是权威持久化后端；`research_map.json` 是同步
+  snapshot 和可移植导出。
+- Decision、Attempt、Artifact 和 Evidence Link 元数据只在 Research Memory 中登记一次；
+  原始日志和二进制 payload 保存在外部存储。
 
-旧 registry 集合和 view/graph 协议不再兼容。TS Web、RootAgent、报告及其他
-客户端都消费 ResearchMap 序列化；执行工具可以保留 Attempt/Artifact 文件，但只有
-Kernel 能把它们提升为 Finding 或 Gate 证据引用。
+旧 registry 集合和 view/graph 协议不再兼容。TS Web、RootAgent、报告及其他客户端都消费
+ResearchMap 序列化和有界 Research Memory read model；执行工具可以保留 Attempt/Artifact
+文件，但只有 Kernel 能登记 manifest，并把类型化 Evidence Link 提升为 Finding 或 Gate
+证据引用。

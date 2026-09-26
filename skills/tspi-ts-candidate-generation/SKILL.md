@@ -25,5 +25,6 @@ the generated structure and failed or distorted searches as issues only when
 they inform the research question.
 
 Read [candidate_generation.md](references/candidate_generation.md) for method
-criteria. For the registered ASE/xTB NEB executor, read
+criteria. For the registered ASE NEB executor (xTB by default, Gaussian when
+explicitly selected), read
 [ase_neb_executor.md](references/ase_neb_executor.md).

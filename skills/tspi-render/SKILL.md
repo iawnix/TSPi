@@ -11,6 +11,9 @@ Use this Skill with `artifact.render` to turn registered structures and numerica
 Artifacts into figures. Use `tspi-research-kernel` for Node ownership and map
 changes.
 
+Do not treat a rendered image as new scientific evidence. Verify the source
+Artifact, labels, units, and revision before citing the figure in a Finding.
+
 | Operation | Inputs | Output |
 | --- | --- | --- |
 | `render` | one molecular structure | PNG |

@@ -10,6 +10,11 @@ The Root session uses:
 ```text
 research.read         bounded ResearchMap and compute reads
 research.change        one atomic ResearchMap ChangeSet
+research.strategy     record or review a Claim strategy
+research.interpretation interpret a completed Attempt
+research.checkpoint    close the current Research Turn with a disposition
+research.continuation  compatibility required-action ledger
+system.prompt          inspect effective prompt provenance
 compute.environment   local and remote compute environment catalog
 compute.run          one bounded calculation lifecycle
 execution.dispatch      pause or resume new work dispatch for one Node
@@ -37,8 +42,9 @@ read the current `ResearchMap`; after a write, use the returned revision or
 the prompt, but it cannot write the map. The Root Agent remains responsible for
 method selection, interpretation, and stopping.
 
-`research.read` modes are `map`, `summary`, `detail`, `locate`, `validate`, `operations`,
-`artifacts`, `capabilities`, and `runs`. `capabilityKind=compute` lists
+`research.read` modes are `map`, `summary`, `context`, `liveness`, `detail`, `locate`,
+`validate`, `operations`, `decisions`, `evidence`, `storage`, `artifacts`,
+`capabilities`, and `runs`. `capabilityKind=compute` lists
 calculation capabilities; `capabilityKind=analysis` resolves analysis methods.
 Use `kind` and `id` for a focused map object. Do not invent a second context
 vocabulary for the ResearchMap.

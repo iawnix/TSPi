@@ -31,6 +31,14 @@ _TOTAL_ENERGY = re.compile(
     rf"(?:\||::)\s*TOTAL ENERGY\s+({_FLOAT})\s+Eh",
     flags=re.IGNORECASE,
 )
+_GAUSSIAN_ENERGY = re.compile(
+    rf"SCF Done:\s+E\([^)]+\)\s*=\s*({_FLOAT})",
+    flags=re.IGNORECASE,
+)
+_GAUSSIAN_FORCE_ROW = re.compile(
+    rf"^\s*\d+\s+\d+\s+({_FLOAT})\s+({_FLOAT})\s+({_FLOAT})\s*$"
+)
+_GAUSSIAN_VERSION = re.compile(r"Gaussian\s+(?:16|09)\s*:\s*Rev\.\s*([^\s]+)", flags=re.IGNORECASE)
 _HISTORY_RECORD_LIMIT = 256
 _HISTORY_RECORDS_PER_STAGE = _HISTORY_RECORD_LIMIT // 2
 _NEB_METHODS = frozenset({"aseneb", "improvedtangent", "eb", "spline", "string"})
@@ -64,6 +72,11 @@ class NebRunConfig:
     ci_fmax: float | None = None
     neb_method: str = "aseneb"
     optimizer: str = "FIRE"
+    calculator: str = "xtb_cli"
+    gaussian_route: str = "#p HF/3-21G Force"
+    gaussian_multiplicity: int = 1
+    gaussian_nproc: int = 1
+    gaussian_mem: str = "1GB"
 
 
 class XtbCliCalculator(Calculator):
@@ -154,6 +167,94 @@ class XtbCliCalculator(Calculator):
             }
 
 
+class GaussianCliCalculator(Calculator):
+    """ASE calculator using one isolated Gaussian energy/gradient job per image."""
+
+    implemented_properties = ["energy", "forces"]
+
+    def __init__(
+        self,
+        *,
+        executable: str,
+        route: str,
+        charge: int,
+        multiplicity: int,
+        nproc: int,
+        mem: str,
+    ) -> None:
+        super().__init__()
+        if not executable or "\x00" in executable:
+            raise ValueError("TS_ASE_NEB_GAUSSIAN must name a Gaussian executable")
+        if not route.strip():
+            raise ValueError("Gaussian NEB route cannot be empty")
+        self.executable = executable
+        self.route = route.strip()
+        self.charge = charge
+        self.multiplicity = multiplicity
+        self.nproc = nproc
+        self.mem = mem
+        self.program_version: str | None = None
+
+    def calculate(
+        self,
+        atoms: Atoms | None = None,
+        properties: Sequence[str] = ("energy", "forces"),
+        system_changes: Sequence[str] = all_changes,
+    ) -> None:
+        super().calculate(atoms, properties, system_changes)
+        if self.atoms is None:
+            raise RuntimeError("Gaussian calculator received no atoms")
+        with tempfile.TemporaryDirectory(prefix="ase-neb-gaussian-") as directory:
+            work_dir = Path(directory)
+            input_path = work_dir / "input.gjf"
+            input_path.write_text(self._input_text(self.atoms), encoding="utf-8")
+            with input_path.open("rb") as stdin:
+                completed = subprocess.run(
+                    [self.executable],
+                    cwd=work_dir,
+                    stdin=stdin,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+            output = completed.stdout or ""
+            if completed.returncode != 0:
+                detail = (completed.stderr or output)[-4096:].strip()
+                raise RuntimeError(f"Gaussian gradient calculation failed ({completed.returncode}): {detail}")
+            if "Normal termination of Gaussian" not in output:
+                raise RuntimeError("Gaussian gradient calculation did not terminate normally")
+            energies = list(_GAUSSIAN_ENERGY.finditer(output))
+            if not energies:
+                raise RuntimeError("Gaussian gradient calculation returned no SCF energy")
+            forces = _read_gaussian_forces(output, len(self.atoms))
+            version_match = _GAUSSIAN_VERSION.search(output)
+            if version_match:
+                self.program_version = version_match.group(1)
+            self.results = {
+                "energy": _number(energies[-1].group(1)) * Hartree,
+                "forces": forces * Hartree / Bohr,
+            }
+
+    def _input_text(self, atoms: Atoms) -> str:
+        route = self.route if self.route.startswith("#") else f"#p {self.route}"
+        if not re.search(r"\bforce\b", route, flags=re.IGNORECASE):
+            route = f"{route} Force"
+        lines = [
+            f"%nprocshared={self.nproc}",
+            f"%mem={self.mem}",
+            route,
+            "",
+            "ASE NEB image",
+            "",
+            f"{self.charge} {self.multiplicity}",
+        ]
+        for symbol, (x, y, z) in zip(atoms.get_chemical_symbols(), atoms.get_positions()):
+            lines.append(f"{symbol:<3s} {x:16.8f} {y:16.8f} {z:16.8f}")
+        lines.extend(["", ""])
+        return "\n".join(lines)
+
+
 def run_ase_neb(
     config: NebRunConfig,
     *,
@@ -196,22 +297,35 @@ def run_ase_neb(
     neb.interpolate(method=config.interpolation)
 
     if calculator_factory is None:
-        # Remote workers receive the validated calculator path through the
-        # backend environment.  The local compute catalog remains a useful
-        # fallback for direct runner invocation.
-        executable = _configured_xtb_executable()
+        if config.calculator == "gaussian_cli":
+            executable = _configured_gaussian_executable()
 
-        def calculator_factory(_index: int) -> Calculator:
-            return XtbCliCalculator(
-                executable=executable,
-                method=config.method,
-                charge=config.charge,
-                uhf=config.uhf,
-                accuracy=config.accuracy,
-                electronic_temperature=config.electronic_temperature,
-                solvent_model=config.solvent_model,
-                solvent=config.solvent,
-            )
+            def calculator_factory(_index: int) -> Calculator:
+                return GaussianCliCalculator(
+                    executable=executable,
+                    route=config.gaussian_route,
+                    charge=config.charge,
+                    multiplicity=config.gaussian_multiplicity,
+                    nproc=config.gaussian_nproc,
+                    mem=config.gaussian_mem,
+                )
+        else:
+            # Remote workers receive the validated calculator path through the
+            # backend environment.  The local compute catalog remains a useful
+            # fallback for direct runner invocation.
+            executable = _configured_xtb_executable()
+
+            def calculator_factory(_index: int) -> Calculator:
+                return XtbCliCalculator(
+                    executable=executable,
+                    method=config.method,
+                    charge=config.charge,
+                    uhf=config.uhf,
+                    accuracy=config.accuracy,
+                    electronic_temperature=config.electronic_temperature,
+                    solvent_model=config.solvent_model,
+                    solvent=config.solvent,
+                )
 
     calculators: list[Calculator] = []
     for index, image in enumerate(images):
@@ -277,7 +391,7 @@ def run_ase_neb(
         "task_type": "neb",
         "execution_completed": True,
         "ase_version": ase_version,
-        "calculator": "xtb_cli",
+        "calculator": config.calculator,
         "calculator_version": calculator_version,
         "method": config.method,
         "charge": config.charge,
@@ -286,6 +400,10 @@ def run_ase_neb(
         "electronic_temperature": config.electronic_temperature,
         "solvent_model": config.solvent_model,
         "solvent": config.solvent,
+        "gaussian_route": config.gaussian_route,
+        "gaussian_multiplicity": config.gaussian_multiplicity,
+        "gaussian_nproc": config.gaussian_nproc,
+        "gaussian_mem": config.gaussian_mem,
         "optimizer": config.optimizer,
         "neb_method": config.neb_method,
         "interpolation": config.interpolation,
@@ -324,6 +442,11 @@ def run_ase_neb(
             "electronic_temperature": config.electronic_temperature,
             "solvent_model": config.solvent_model,
             "solvent": config.solvent,
+            "calculator": config.calculator,
+            "gaussian_route": config.gaussian_route,
+            "gaussian_multiplicity": config.gaussian_multiplicity,
+            "gaussian_nproc": config.gaussian_nproc,
+            "gaussian_mem": config.gaussian_mem,
         },
         "stages": stages,
         "history": {
@@ -431,6 +554,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run one bounded ASE NEB calculation")
     parser.add_argument("--reactant", type=Path, required=True)
     parser.add_argument("--product", type=Path, required=True)
+    parser.add_argument("--calculator", choices=("xtb_cli", "gaussian_cli"), default="xtb_cli")
     parser.add_argument("--images", type=int, required=True)
     parser.add_argument("--fmax", type=float, required=True)
     parser.add_argument("--max-steps", type=int, required=True)
@@ -457,10 +581,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--electronic-temperature", type=float)
     parser.add_argument("--solvent-model", choices=("alpb", "gbsa"))
     parser.add_argument("--solvent")
+    parser.add_argument("--gaussian-route", default="#p HF/3-21G Force")
+    parser.add_argument("--gaussian-multiplicity", type=int, default=1)
+    parser.add_argument("--gaussian-nproc", type=int, default=1)
+    parser.add_argument("--gaussian-mem", default="1GB")
     args = parser.parse_args(argv)
     config = NebRunConfig(
         reactant=args.reactant,
         product=args.product,
+        calculator=args.calculator,
         images=args.images,
         fmax=args.fmax,
         max_steps=args.max_steps,
@@ -479,6 +608,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         electronic_temperature=args.electronic_temperature,
         solvent_model=args.solvent_model,
         solvent=args.solvent,
+        gaussian_route=args.gaussian_route,
+        gaussian_multiplicity=args.gaussian_multiplicity,
+        gaussian_nproc=args.gaussian_nproc,
+        gaussian_mem=args.gaussian_mem,
     )
     _validate_config(config)
     run_ase_neb(config)
@@ -486,6 +619,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _validate_config(config: NebRunConfig) -> None:
+    if config.calculator not in {"xtb_cli", "gaussian_cli"}:
+        raise ValueError("calculator must be xtb_cli or gaussian_cli")
     if not 3 <= config.images <= 32:
         raise ValueError("images must be between 3 and 32")
     if not 0.0 < config.fmax <= 10.0 or not math.isfinite(config.fmax):
@@ -502,6 +637,14 @@ def _validate_config(config: NebRunConfig) -> None:
         raise ValueError("solvent and solvent_model must be provided together")
     if config.method not in {"gfn1", "gfn2"}:
         raise ValueError("method must be gfn1 or gfn2")
+    if not config.gaussian_route.strip():
+        raise ValueError("gaussian_route must not be empty")
+    if not 1 <= config.gaussian_multiplicity <= 200:
+        raise ValueError("gaussian_multiplicity must be between 1 and 200")
+    if not 1 <= config.gaussian_nproc <= 4096:
+        raise ValueError("gaussian_nproc must be between 1 and 4096")
+    if not re.fullmatch(r"[1-9][0-9]*[mMgG][bBwW]", config.gaussian_mem):
+        raise ValueError("gaussian_mem must be a positive value such as 1GB or 512MB")
     if config.interpolation not in {"linear", "idpp"}:
         raise ValueError("interpolation must be linear or idpp")
     if config.neb_method not in _NEB_METHODS:
@@ -535,6 +678,39 @@ def _configured_xtb_executable() -> str:
 
     injected = os.environ.get("TS_ASE_NEB_XTB", "").strip()
     return injected or configured_backend_command("ase_neb_xtb")
+
+
+def _configured_gaussian_executable() -> str:
+    """Resolve the Gaussian executable for local or injected remote execution."""
+
+    injected = os.environ.get("TS_ASE_NEB_GAUSSIAN", "").strip()
+    return injected or configured_backend_command("gaussian")
+
+
+def _read_gaussian_forces(output: str, atom_count: int) -> np.ndarray:
+    """Read the final Gaussian ``Forces (Hartrees/Bohr)`` table."""
+
+    blocks: list[list[list[float]]] = []
+    lines = output.splitlines()
+    for index, line in enumerate(lines):
+        if "Forces (Hartrees/Bohr)" not in line:
+            continue
+        current: list[list[float]] = []
+        for following in lines[index + 1 :]:
+            match = _GAUSSIAN_FORCE_ROW.match(following)
+            if match:
+                current.append([_number(match.group(part)) for part in (1, 2, 3)])
+                continue
+            if current and (not following.strip() or "Cartesian Forces" in following):
+                break
+        if len(current) >= atom_count:
+            blocks.append(current[-atom_count:])
+    if not blocks:
+        raise RuntimeError("Gaussian output contains no complete force table")
+    forces = np.asarray(blocks[-1], dtype=float)
+    if forces.shape != (atom_count, 3) or not np.isfinite(forces).all():
+        raise RuntimeError("Gaussian force table has an invalid shape")
+    return forces
 
 
 def _read_gradient(path: Path, atom_count: int) -> np.ndarray:

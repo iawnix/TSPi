@@ -32,13 +32,14 @@ does not redefine that model.
 ## Research Turn Checkpoint
 
 Before ending every turn, read `research.read` with `mode=context` or `mode=liveness`
-and leave the active scope in an explicit lifecycle state. Use
-`research.continuation operation=set_required` for the concrete next action, leave a
-submitted Attempt in the external wait state, record `deferred` or `blocked`
-with a reason, or close the relevant map scope after its evidence and gates are
-complete. A completed Attempt or completed Continuation alone is not a research
-conclusion. If liveness returns `decision_needed`, continue the turn and record
-the disposition. `required` is an explicit next-turn plan and a valid checkpoint;
+and close the lifecycle with `research.checkpoint`. Record strategy and Attempt
+interpretation first when applicable, then use one explicit disposition:
+`continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
+`user_input_required`. `research.continuation` is a compatibility ledger for
+older required-action records; it is not the primary turn checkpoint. A
+completed Attempt or completed Continuation alone is not a research conclusion.
+If liveness returns `decision_needed`, continue the turn and record the
+checkpoint disposition. A `continue_required` plan is a valid next-turn plan;
 the Harness must not force it to execute in the same turn. Do not invent a
 method in the Harness or treat Monitor's `next_run` as a scientific instruction.
 

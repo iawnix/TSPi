@@ -10,6 +10,9 @@ description: 将分子结构、轨迹、反应机理和科学曲线渲染为 TSP
 使用 `artifact.render` 将已注册结构和数值 Artifact 制作成图像；Node 所属和 map 变更使用
 `tspi-research-kernel`。
 
+不要把渲染图像当作新的科学证据。引用到 Finding 前必须核对来源 Artifact、标签、单位和
+ResearchMap revision。
+
 | 操作 | 输入 | 输出 |
 | --- | --- | --- |
 | `render` | 一个分子结构 | PNG |

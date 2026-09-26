@@ -208,9 +208,10 @@ export function createWorkflowTool() {
 /**
  * Enforce the Research Turn end protocol without choosing scientific work.
  * The Kernel derives liveness from ResearchMap plus operational Attempt
- * records. The Host may request one bounded follow-up when the Root left an
- * explicit continuation unresolved or failed to record a disposition for an
- * active scope; it never chooses the next method or invokes it itself.
+ * records. The Host may request one bounded follow-up when the Root failed to
+ * record a checkpoint disposition for an active scope; it never chooses the
+ * next method or invokes it itself. Legacy continuation records are read only
+ * for compatibility and migration.
  */
 export function createContinuationLivenessHook({
   cwd,
@@ -609,9 +610,8 @@ export function createTspiTools(options = {}) {
     createNotifyTool(),
   ];
   // Expose semantic canonical names to the Agent. The ts_* source factories
-  // remain internal compatibility implementations, but are deliberately not
-  // duplicated in the active inventory (which would inflate every prompt
-  // schema).
+  // remain private implementation details and are deliberately not duplicated
+  // in the active inventory (which would inflate every prompt schema).
   return createPublicToolAliases(tools).map(wrapToolWithEnvelope);
 }
 

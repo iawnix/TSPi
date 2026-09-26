@@ -44,16 +44,16 @@ Node, Findings, Gates, Artifacts, and Attempts as history.
 ## Research Turn Checkpoint
 
 At the end of every turn, read the bounded `research.context` or
-`research.liveness` view and make the lifecycle disposition explicit. Record a
-concrete next action with `research.continuation` (`set_required`), leave a submitted
-Attempt as `waiting_external`, record `deferred` or `blocked` with its reason,
-or close the relevant map scope after interpreting the evidence. Parsed or
-completed operational records do not close a scientific question by
-themselves. `decision_needed` requires the Root Agent to continue and record a
-disposition; a Harness follow-up may enforce that boundary but never chooses a
-method. An explicit `required` plan is a valid next-turn checkpoint and must not
-be forced to execute in the same turn. Monitor `next_run` is only an operational
-wake-up.
+`research.liveness` view, record any needed strategy or Attempt interpretation,
+and call `research.checkpoint` with an explicit disposition:
+`continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
+`user_input_required`. `research.continuation` remains available for the legacy
+required-action ledger and migration; it is not the turn boundary. Parsed or
+completed operational records do not close a scientific question by themselves.
+`decision_needed` requires the Root Agent to continue and record a checkpoint;
+a Harness follow-up may enforce that boundary but never chooses a method. A
+`continue_required` plan is a valid next-turn checkpoint and must not be forced
+to execute in the same turn. Monitor `next_run` is only an operational wake-up.
 
 ## Review
 

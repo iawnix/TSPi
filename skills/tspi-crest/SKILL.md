@@ -11,6 +11,10 @@ Use this Skill for the registered `crest.conformer_search` capability. CREST
 owns ensemble exploration; xTB calculations outside a CREST search belong to
 `tspi-xtb`.
 
+Do not treat a normal process exit or a non-empty ensemble as scientific
+evidence until the primary files, member counts, and selected-structure
+identity have been checked.
+
 Bind one XYZ Artifact and explicit charge, unpaired electrons, xTB method,
 search and optimization levels, threads, and solvent settings. Validate normal
 termination and the complete primary output set. Check that conformer and

@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import posixpath
+import re
 import signal
 import shutil
 import tempfile
@@ -34,11 +35,13 @@ from ts_agent.backends.crest import (
 from ts_agent.backends.gaussian import (
     parse_irc_log,
     parse_log,
+    parse_scan_log,
     prepare_gaussian,
     read_gjf_route,
     route_settings,
     write_irc_parse_artifacts,
     write_parse_artifacts,
+    write_scan_parse_artifacts,
 )
 from ts_agent.backends.pyscf import (
     PYSCF_REQUIRED_ARTIFACTS,
@@ -1281,12 +1284,18 @@ def parse_calculation(
             )
 
     is_irc = backend == "gaussian" and intent.get("task_type") == "irc"
+    is_scan = backend == "gaussian" and intent.get("task_type") == "scan"
     if backend == "gaussian":
         expected_route = None
         gjf_ref = intent["input_refs"].get("gjf")
         if gjf_ref:
             expected_route = read_gjf_route(workspace / _workspace_ref(workspace, gjf_ref, read=True))
-        parsed = parse_irc_log(source) if is_irc else parse_log(source, expected_route=expected_route)
+        if is_irc:
+            parsed = parse_irc_log(source)
+        elif is_scan:
+            parsed = parse_scan_log(source, expected_route=expected_route)
+        else:
+            parsed = parse_log(source, expected_route=expected_route)
     elif backend == "xtb":
         parsed = parse_xtb_artifacts(
             str(intent["task_type"]),
@@ -1320,7 +1329,7 @@ def parse_calculation(
         raise ComputeContractError("parse output path is not a directory")
     if parse_dir.exists() and any(parse_dir.iterdir()):
         raise ComputeContractError("parse output directory is non-empty without a matching calculation result")
-    parser_name = _parser_name(backend, is_irc)
+    parser_name = _parser_name(backend, is_irc, is_scan)
     descriptor = resolve_capability(str(intent["capability"]), str(intent["capability_version"]))
     if len(descriptor.parsers) != 1:
         raise ComputeContractError(f"capability must bind exactly one parser: {intent['capability']}")
@@ -1330,6 +1339,8 @@ def parse_calculation(
     try:
         if backend == "gaussian" and is_irc:
             write_irc_parse_artifacts(parsed, parse_dir, source.stem, source.name)
+        elif backend == "gaussian" and is_scan:
+            write_scan_parse_artifacts(parsed, parse_dir)
         elif backend == "gaussian":
             write_parse_artifacts(parsed, parse_dir, source.stem, source.name)
         elif backend == "xtb":
@@ -1425,9 +1436,13 @@ def _bound_parse_artifacts(
     return artifacts
 
 
-def _parser_name(backend: str, is_irc: bool) -> str:
+def _parser_name(backend: str, is_irc: bool, is_scan: bool = False) -> str:
     if backend == "gaussian":
-        return "ts_agent.backends.gaussian.parse_irc_log" if is_irc else "ts_agent.backends.gaussian.parse_log"
+        if is_irc:
+            return "ts_agent.backends.gaussian.parse_irc_log"
+        if is_scan:
+            return "ts_agent.backends.gaussian.parse_scan_log"
+        return "ts_agent.backends.gaussian.parse_log"
     if backend == "xtb":
         return "ts_agent.backends.xtb.parse_xtb_artifacts"
     if backend == "crest":
@@ -1484,12 +1499,23 @@ def _validate_backend_request(
     if gjf.suffix.lower() not in {".gjf", ".com"}:
         raise ComputeContractError("Gaussian input must use .gjf or .com")
     flags = route_settings(read_gjf_route(gjf))
+    if str(intent["task_type"]) == "scan" and not flags.get("has_scan"):
+        input_text = gjf.read_text(encoding="utf-8", errors="replace")
+        modredundant_scan = re.search(
+            r"(?im)^\s*[dabla]\s+(?:\d+\s+){2,4}s\s+\d+(?:\s|$)",
+            input_text,
+        ) is not None
+        if not modredundant_scan:
+            raise ComputeContractError(
+                "Gaussian route/input does not contain a scan directive"
+            )
     required_flags = {
         "opt": {"has_opt"},
         "ts": {"has_ts"},
         "freq": {"has_freq"},
         "opt_freq": {"has_opt", "has_freq"},
         "irc": {"has_irc"},
+        "scan": set(),
         "sp": set(),
     }[str(intent["task_type"])]
     missing = sorted(flag for flag in required_flags if not flags.get(flag))
@@ -1694,27 +1720,48 @@ def _apply_compute_environment(
         return prepared
     command = list(prepared.command)
     if prepared.backend == "ase_neb":
-        # The ASE runner launches xTB itself; bind that backend via the
-        # prepared environment. A remote environment also selects its Python.
+        # The ASE runner launches the selected calculator itself; bind that
+        # executable through the prepared environment. A remote environment
+        # also selects the Python runtime that owns ASE and the runner module.
         environment = {
             **prepared.environment,
             **binding.environment,
         }
+        calculator = str(intent.get("parameters", {}).get("calculator", "xtb_cli"))
+        gaussian_binding = None
+        if calculator == "gaussian_cli":
+            try:
+                gaussian_binding = _backend_binding(workspace, intent, "gaussian")
+            except (EnvironmentConfigurationError, RemoteConfigurationError) as exc:
+                raise ComputeContractError(f"invalid Gaussian backend binding: {exc}") from exc
+            if gaussian_binding is not None:
+                environment.update(gaussian_binding.environment)
         if intent.get("execution_target", {}).get("kind") == "remote":
-            if not binding.environment.get("TS_ASE_NEB_XTB", "").strip():
+            required_variable = (
+                "TS_ASE_NEB_GAUSSIAN" if calculator == "gaussian_cli" else "TS_ASE_NEB_XTB"
+            )
+            if not environment.get(required_variable, "").strip():
                 raise ComputeContractError(
-                    "remote ASE NEB binding requires environment.TS_ASE_NEB_XTB"
+                    f"remote ASE NEB binding requires environment.{required_variable}"
                 )
             # On a remote platform the backend binding names the remote
             # Python runtime that owns ASE and the runner module.
             command = list(binding.command) + command[1:]
         else:
-            environment.setdefault("TS_ASE_NEB_XTB", binding.command[0])
+            if calculator == "xtb_cli":
+                environment.setdefault("TS_ASE_NEB_XTB", binding.command[0])
     else:
         command = list(binding.command) + command[1:]
         environment = {**prepared.environment, **binding.environment}
     activation = (
-        binding.activation_script
+        (
+            gaussian_binding.activation_script
+            if prepared.backend == "ase_neb"
+            and str(intent.get("parameters", {}).get("calculator", "xtb_cli")) == "gaussian_cli"
+            and gaussian_binding is not None
+            and gaussian_binding.activation_script
+            else binding.activation_script
+        )
         if intent.get("execution_target", {}).get("kind") == "local"
         else prepared.activation_script
     )

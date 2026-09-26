@@ -21,7 +21,7 @@ command or activation script is an operational failure, not a scientific
 result.
 
 Do not install or upgrade CREST from a calculation job. Follow the
-[cluster deployment procedure](../../../docs/INSTALLATION.md#deploy-crest),
+[remote compute configuration](../../../docs/INSTALLATION.md#configure-remote-execution-compute-backends),
 then use a bounded compute-node smoke search. A zero scheduler exit status with
 any required primary artifact missing is a program or integration failure, not
 an empty conformer ensemble.

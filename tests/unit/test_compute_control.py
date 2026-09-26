@@ -34,7 +34,7 @@ from ts_agent.calculation_contracts import CalculationContractError, validate_ca
 from ts_agent.remote import lifecycle as remote_lifecycle
 from ts_agent.remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguous, RemoteSubmissionRejected
 from ts_agent.remote.models import RemoteJobStatus, RemoteReceipt
-from ts_agent.backends.gaussian import parse_log, route_settings
+from ts_agent.backends.gaussian import parse_log, parse_scan_log, route_settings
 from ts_agent.compute.task_validation import validate_parsed_task
 from ts_agent.workspace.identity import workspace_id
 from ts_agent.workspace.operational import _operational_files
@@ -825,6 +825,47 @@ def test_gaussian_route_settings_distinguishes_direct_ts_from_other_opt_keywords
     assert route_settings("#P M062X/6-31G** Opt=(TS,CalcFC)")["has_ts"] is True
     assert route_settings("#P M062X/6-31G** Opt=(QST2,CalcFC)")["has_ts"] is False
     assert route_settings("#P M062X/6-31G** Opt Freq")["has_ts"] is False
+
+
+def test_gaussian_scan_parser_emits_a_bound_energy_profile(tmp_path: Path) -> None:
+    log = tmp_path / "scan.log"
+    log.write_text(
+        "\n".join(
+            [
+                " #P B3LYP/6-31G(d) Opt=Scan",
+                " Step number 1 out of a maximum of 3",
+                " SCF Done:  E(RB3LYP) =  -40.123000     A.U.",
+                " Step number 2 out of a maximum of 3",
+                " SCF Done:  E(RB3LYP) =  -40.125000     A.U.",
+                " Step number 3 out of a maximum of 3",
+                " SCF Done:  E(RB3LYP) =  -40.124000     A.U.",
+                " Normal termination of Gaussian 16",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    parsed = parse_scan_log(log, expected_route="#P B3LYP/6-31G(d) Opt=Scan")
+    assert parsed["summary"]["scan_complete"] is True
+    assert parsed["summary"]["scan_point_count"] == 3
+    assert [point["energy_hartree"] for point in parsed["profile"]["points"]] == [
+        -40.123,
+        -40.125,
+        -40.124,
+    ]
+
+
+def test_gaussian_scan_task_validation_requires_scan_evidence() -> None:
+    assert validate_parsed_task(
+        "gaussian",
+        "scan",
+        {
+            "normal_termination": True,
+            "missing_artifacts": [],
+            "scan_detected": True,
+            "scan_complete": True,
+            "scan_energies_complete": True,
+        },
+    ) == {"status": "completed", "failures": []}
 
 
 def test_compute_result_contract_rejects_scientific_verdict_fields() -> None:

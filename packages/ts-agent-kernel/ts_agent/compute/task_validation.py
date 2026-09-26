@@ -119,6 +119,11 @@ _TASK_VALIDATORS: dict[tuple[str, str], TaskValidator] = {
         ("point_count", "irc_points_missing"),
         ("endpoint_geometry_atoms", "irc_endpoint_geometry_missing"),
     ),
+    ("gaussian", "scan"): _require_truthy(
+        ("scan_detected", "scan_not_detected"),
+        ("scan_complete", "scan_not_complete"),
+        ("scan_energies_complete", "scan_energies_missing"),
+    ),
     ("xtb", "sp"): _require_present(
         ("total_energy_hartree", "total_energy_missing"),
     ),

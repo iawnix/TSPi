@@ -18,5 +18,5 @@ description: 通过化学构造、扫描、QST、NEB 或构象与取向采样生
 为事实；失败或畸变的搜索只有在影响研究问题时才记录为 IssueFinding。
 
 方法判据见 [candidate_generation.zh-CN.md](references/candidate_generation.zh-CN.md)。
-使用已注册的 ASE/xTB NEB 执行器时，读取
+使用已注册的 ASE NEB 执行器（默认 xTB，也可显式选择 Gaussian）时，读取
 [ase_neb_executor.zh-CN.md](references/ase_neb_executor.zh-CN.md)。

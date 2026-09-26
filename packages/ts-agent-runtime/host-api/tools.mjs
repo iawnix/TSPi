@@ -25,8 +25,8 @@ const TOOL_ROWS = [
 ];
 
 // Semantic Harness names are the stable interface exposed to Agents. The
-// original ts_* names remain source/metadata aliases for replay and legacy
-// adapters, but are not placed in the active Agent inventory.
+// original ts_* names are private factory/source keys retained only to compose
+// canonical tools; they are never placed in the active Agent inventory.
 export const PUBLIC_TOOL_CANONICAL_NAMES = Object.freeze({
   systemPrompt: "system.prompt",
   state: "research.read",
@@ -54,8 +54,8 @@ export const PUBLIC_TOOL_NAMES = Object.freeze(Object.fromEntries(
 ));
 
 export const PUBLIC_TOOL_ALIASES = Object.freeze({
-  ...Object.fromEntries(TOOL_ROWS.map(([key, legacyName]) => [
-    legacyName,
+  ...Object.fromEntries(TOOL_ROWS.map(([key, sourceName]) => [
+    sourceName,
     Object.freeze({
       canonicalName: PUBLIC_TOOL_CANONICAL_NAMES[key],
       deprecated: true,
@@ -89,7 +89,7 @@ export const PUBLIC_TOOL_EXECUTION = Object.freeze(TOOL_EXECUTION);
 // Canonical Harness metadata. Tool implementations remain transport adapters;
 // this registry is the shared authority/effect/replay contract used by Hosts,
 // audits, and future transports.
-const LEGACY_TOOL_METADATA = Object.freeze({
+const SOURCE_TOOL_METADATA = Object.freeze({
   sys_prompt: Object.freeze({ authority: "host_read", effect: "read", replay: "safe", phase: "orient" }),
   ts_state: Object.freeze({ authority: "kernel_read", effect: "read", replay: "safe", phase: "orient" }),
   ts_change: Object.freeze({ authority: "kernel_write", effect: "research_write", replay: "idempotent", phase: "advance" }),
@@ -108,17 +108,17 @@ const LEGACY_TOOL_METADATA = Object.freeze({
   ts_notify: Object.freeze({ authority: "external_side_effect", effect: "external_write", replay: "never", phase: "checkpoint" }),
 });
 
-// Canonical aliases carry the same lifecycle contract as their legacy source.
-// Keep this registry separate from the four-field execution metadata so old
-// consumers that compare metadata keys remain source compatible.
+// Canonical tools carry the same lifecycle contract as their private source
+// factory. Keep this registry separate from the four-field execution metadata
+// so source factories can remain implementation details.
 const CANONICAL_TOOL_METADATA = Object.fromEntries(
   Object.entries(PUBLIC_TOOL_CANONICAL_NAMES).map(([key, canonicalName]) => {
-    const legacyName = PUBLIC_TOOL_NAMES[key] || "ts_workflow";
-    return [canonicalName, LEGACY_TOOL_METADATA[legacyName] || LEGACY_TOOL_METADATA.ts_workflow];
+    const sourceName = PUBLIC_TOOL_NAMES[key] || "ts_workflow";
+    return [canonicalName, SOURCE_TOOL_METADATA[sourceName] || SOURCE_TOOL_METADATA.ts_workflow];
   }),
 );
 export const PUBLIC_TOOL_METADATA = Object.freeze({
-  ...LEGACY_TOOL_METADATA,
+  ...SOURCE_TOOL_METADATA,
   ...CANONICAL_TOOL_METADATA,
 });
 
@@ -147,8 +147,8 @@ export function validateHarnessToolDefinition(tool, { source = "tool", requireCa
   }
   const descriptor = PUBLIC_TOOL_ALIASES[tool.name];
   // Existing Host fixtures may provide only the four-field lifecycle
-  // metadata.  Enforce alias markers whenever a tool opts into the new
-  // identity fields, while preserving that legacy fixture shape.
+  // metadata. Enforce alias markers whenever a tool opts into the identity
+  // fields, while preserving that minimal fixture shape.
   if (descriptor && ("canonicalName" in tool || "deprecated" in tool || "aliasFor" in tool)) {
     if (tool.canonicalName !== descriptor.canonicalName) {
       throw new TypeError(`${source} ${tool.name} has an invalid canonicalName`);
@@ -300,7 +300,7 @@ export function createPublicToolContracts(Type) {
     }),
     workflow: contract("workflow", "TS Workflow", "Record lifecycle state.", Type.Object({
       // Keep the operation token compact; the Kernel validates the canonical
-      // set/resolve/status vocabulary and compatibility aliases at runtime.
+      // set/resolve/status vocabulary and operation aliases at runtime.
       operation: Type.String({ minLength: 1, maxLength: 32, pattern: "^[a-z][a-z0-9_]*$" }),
       scope: Type.Optional(enumString(["node", "claim", "gate"])),
       targetId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),

@@ -11,15 +11,16 @@ outbox record. `completed` means the program or scheduler has ended;
 `parsed` is emitted only after collection and parsing have produced the bound
 calculation result. `unknown` is an explicit uncertainty state.
 
-The Monitor may wake its owning Pi session and send a user notification. It
-does not call `finalize`, modify `ResearchMap`, or make a scientific decision.
+The Monitor may wake its owning Native Pi `SessionWorker` lane and send a user
+notification. It does not call `finalize`, modify `ResearchMap`, or make a
+scientific decision.
 Delivery uses `monitor:{event_id}` as the stable request id. A missing session
 leaves the delivery pending; it is not allowed to create a new Root session.
 
-`next_run` is the persisted wake policy name. The worker sends the Host an
-`input/send` request in `auto` mode: the bridge starts a turn when Pi is idle
-and queues a follow-up while Pi is busy. It does not use Pi's experimental
-remote protocol or the ordinary extension API's passive `nextTurn` queue.
+`next_run` is the persisted wake policy name. The Monitor sends the Host an
+`input/send` request in `auto` mode: the Native Worker starts a turn when the
+lane is idle and queues a follow-up while it is busy. It does not use Pi's
+experimental remote protocol or a second extension-owned turn queue.
 
 Each event has a monotonic per-monitor `sequence`; returning to a previously
 observed state produces a new event. Event persistence precedes its outbox and

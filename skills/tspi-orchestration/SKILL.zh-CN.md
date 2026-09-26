@@ -26,13 +26,14 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
 
 ## Research Turn 收尾
 
-每轮结束前，读取 `research.read` 的 `mode=context` 或 `mode=liveness`，并让当前活动 scope
-处于明确的生命周期状态：用 `research.continuation operation=set_required` 登记具体下一动作；存在
-已提交 Attempt 时保持外部等待；带原因记录 `deferred` 或 `blocked`；或在证据和 Gate 均满足
-后关闭相关 map scope。Attempt 已完成或 Continuation 已完成本身都不是研究结论。若 liveness
-返回 `decision_needed`，必须继续当前 turn 并登记 disposition。`required` 表示已经登记了
-下一轮的具体动作，是合法的 checkpoint，Harness 不应在同一 turn 强行执行它。Harness
-不得替 Agent 发明方法，Monitor 的 `next_run` 也不是新的科学指令。
+每轮结束前，读取 `research.read` 的 `mode=context` 或 `mode=liveness`，并使用
+`research.checkpoint` 结束生命周期。需要时先记录 strategy 和 Attempt interpretation，再选择一个
+明确 disposition：`continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
+`user_input_required`。`research.continuation` 只是旧 required-action 记录的兼容 ledger，不是主要
+turn checkpoint。Attempt 或 Continuation 完成本身都不是研究结论。若 liveness 返回
+`decision_needed`，必须继续当前 turn 并记录 checkpoint。`continue_required` 是合法的下一轮计划，
+Harness 不应在同一 turn 强行执行它。Harness 不得替 Agent 发明方法，Monitor 的 `next_run` 也不是
+新的科学指令。
 
 Review 只提供有边界的反方审查，不拥有规范状态。本地与远端环境使用同一组
 `launch`、`inspect`、`finalize`、`cancel` 生命周期。`launch` 返回提交结果（包括结果不确定）后应结束当前

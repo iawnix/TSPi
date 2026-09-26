@@ -37,6 +37,11 @@ cancel   -> cancel
 remote environment 额外带由 Platform 管理的 SSH 和 scheduler 字段。`/compute list` 与
 `/compute show <name>` 查询同一目录，本地和远端不再使用两套公开词汇。
 
+当前化学计算适配器包含 `gaussian.scan@1`，用于 Gaussian 扫描能量曲线。`ase.neb@1`
+默认使用 xTB；如果每个 image 必须由 Gaussian 计算能量和笛卡尔梯度，可显式设置
+`calculator = "gaussian_cli"`。选定的 calculator、route 和资源参数会写入运行摘要，
+并在解析阶段进行一致性校验。
+
 ## 验证
 
 测试应覆盖能力输入边界、源 artifact 重放、digest 绑定和显式 ChangeSet 提升。能力不

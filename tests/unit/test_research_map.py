@@ -527,7 +527,10 @@ def test_research_liveness_preserves_required_and_terminal_states(tmp_path) -> N
         {"type": "set_node_state", "node_id": "node_1", "state": "active"},
         {"type": "set_continuation", "id": "cont_1", "scope": "node", "target_id": "node_1", "action": "inspect"},
     ]})
-    assert execute("research.liveness", root)["lifecycle"] == "required"
+    liveness = execute("research.liveness", root)
+    assert liveness["lifecycle"] == "continue_required"
+    assert liveness["continue_required"][0]["id"] == "cont_1"
+    assert liveness["required"][0]["id"] == "cont_1"  # compatibility alias
 
     kernel.apply({"operations": [{"type": "resolve_continuation", "id": "cont_1", "status": "completed"}]})
     kernel.apply({"operations": [{"type": "set_node_state", "node_id": "node_1", "state": "closed", "outcome": "stopped"}]})
@@ -549,7 +552,7 @@ def test_research_turn_checkpoint_accepts_explicit_plan_and_audits_boundary(tmp_
     }})
     assert result["schema_version"] == "research-turn-result/1"
     assert result["accepted"] is True
-    assert result["lifecycle"] == "required"
+    assert result["lifecycle"] == "continue_required"
     assert (root / "operations" / "research_turns.jsonl").exists()
     event = json.loads((root / "operations" / "research_turns.jsonl").read_text().splitlines()[-1])
     assert event["schema_version"] == "research-turn-event/1"
@@ -654,7 +657,7 @@ def test_research_context_bounds_durable_memory_fields(tmp_path) -> None:
 
     context = execute("research.context", root)
     node = context["focus"]["nodes"][0]
-    continuation = context["continuations"]["required"][0]
+    continuation = context["continuations"]["continue_required"][0]
     assert len(node["objective"]) <= 512
     assert len(continuation["reason"]) <= 512
     assert "metadata" not in continuation
@@ -664,8 +667,8 @@ def test_research_context_bounds_durable_memory_fields(tmp_path) -> None:
     assert len(json.dumps(context, ensure_ascii=False)) < 20_000
 
     liveness = execute("research.liveness", root)
-    assert len(liveness["required"][0]["reason"]) <= 512
-    assert liveness["truncated"]["required"] is False
+    assert len(liveness["continue_required"][0]["reason"]) <= 512
+    assert liveness["truncated"]["continue_required"] is False
 
     status = execute("research.continuation", root)
     assert len(status["continuations"][0]["reason"]) <= 512
@@ -690,10 +693,11 @@ def test_research_liveness_and_context_bound_large_continuation_queues(tmp_path)
     ]})
 
     liveness = execute("research.liveness", root)
-    assert len(liveness["required"]) == 32
-    assert liveness["counts"]["required"] == 40
-    assert liveness["truncated"]["required"] is True
+    assert len(liveness["continue_required"]) == 32
+    assert liveness["counts"]["continue_required"] == 40
+    assert liveness["truncated"]["continue_required"] is True
+    assert liveness["required"] == liveness["continue_required"]
 
     context = execute("research.context", root)
-    assert len(context["continuations"]["required"]) == 8
-    assert context["bounds"]["truncated"]["required"] is True
+    assert len(context["continuations"]["continue_required"]) == 8
+    assert context["bounds"]["truncated"]["continue_required"] is True
