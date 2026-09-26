@@ -338,6 +338,11 @@ Run `./install.sh` again and choose the same installation root. The installer
 downloads or builds a new content-addressed release, validates its package
 inventory, and switches `.pi/packages/tspi/current` atomically. Existing
 workspaces, App Server identities, and TS Web credentials are retained.
+The launcher exports the pinned Pi checkout as the internal `TSPI_PI_SOURCE`
+variable for the Native client; users should not set it manually. If an older
+release reports `TSPI_PI_SOURCE is required for the native Pi client`, upgrade
+the installation so the launcher can select `<install>/.pi/runtime-cache/pi`
+from `config/pi-source.json`.
 
 ## Rollback
 

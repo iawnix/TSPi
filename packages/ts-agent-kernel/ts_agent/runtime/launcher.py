@@ -1018,10 +1018,23 @@ def build_host_client_command(
     return command
 
 
+def resolve_pi_source(installation: Installation) -> Path:
+    """Resolve the installation-pinned Pi source for every Native client."""
+    pin_path = installation.package_root / "config/pi-source.json"
+    try:
+        pin = json.loads(pin_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise TSPiHostError(f"cannot read the pinned Pi source descriptor: {pin_path}") from exc
+    commit = pin.get("commit") if isinstance(pin, dict) else None
+    if not isinstance(commit, str) or not commit:
+        raise TSPiHostError(f"pinned Pi source descriptor has no commit: {pin_path}")
+    source = os.environ.get("TSPI_PI_SOURCE") or installation.root / ".pi/runtime-cache/pi" / commit
+    return Path(source).expanduser().resolve()
+
+
 def build_harness_client_command(installation: Installation, request: LaunchRequest) -> list[str]:
     """Attach Pi's own experimental client TUI to the persistent harness."""
-    pin = json.loads((installation.package_root / "config/pi-source.json").read_text(encoding="utf-8"))
-    source = Path(os.environ.get("TSPI_PI_SOURCE") or installation.root / ".pi/runtime-cache/pi" / pin["commit"])
+    source = resolve_pi_source(installation)
     entry = source / "packages/coding-agent/src/experimental/source-resolver.ts"
     client = installation.package_root / "apps/app-server/pi-native-client.mjs"
     if not entry.is_file() or not client.is_file():
@@ -1040,11 +1053,7 @@ def launch_harness_client(installation: Installation, request: LaunchRequest, wo
     if request.session_id and not SESSION_ID.fullmatch(request.session_id):
         raise TSPiHostError("invalid session identity", exit_code=2)
     os.environ["TSPI_SESSION_CWD"] = str(workspace)
-    os.environ["TSPI_PI_SOURCE"] = str(
-        Path(os.environ.get("TSPI_PI_SOURCE") or installation.root / ".pi/runtime-cache/pi" / json.loads(
-            (installation.package_root / "config/pi-source.json").read_text(encoding="utf-8")
-        )["commit"]).resolve()
-    )
+    os.environ["TSPI_PI_SOURCE"] = str(resolve_pi_source(installation))
     os.environ["PI_SERVER_DIR"] = str(installation.root / ".pi/app-server-host/pi-server")
     os.environ["PI_EXPERIMENTAL"] = "1"
     os.environ["TSPI_PACKAGE_ROOT"] = str(installation.package_root)
@@ -1261,6 +1270,7 @@ def launch_terminal(installation: Installation, request: LaunchRequest, workspac
             f"unsupported TSPI_HOST_BACKEND={backend!r}; Native Pi Harness is the only supported backend",
             exit_code=2,
         )
+    os.environ["TSPI_PI_SOURCE"] = str(resolve_pi_source(installation))
     os.environ["TSPI_SESSION_CWD"] = str(workspace)
     try:
         socket_path = ensure_host_running(installation)

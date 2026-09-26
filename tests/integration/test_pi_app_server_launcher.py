@@ -542,6 +542,41 @@ def test_default_terminal_connects_to_host_and_continues_latest_workspace_sessio
     ]
 
 
+def test_default_terminal_exports_installation_pinned_pi_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = _installation(tmp_path)
+    source = installation.root / ".pi/runtime-cache/pi/pinned"
+    source.mkdir(parents=True)
+    (installation.package_root / "config").mkdir(parents=True)
+    (installation.package_root / "config/pi-source.json").write_text(
+        json.dumps({"commit": "pinned"}) + "\n",
+        encoding="utf-8",
+    )
+    endpoint = tmp_path / "host.sock"
+    captured: dict[str, object] = {}
+
+    def stop_exec(command: list[str], workspace: Path) -> None:
+        captured["command"] = command
+        captured["workspace"] = workspace
+        raise RuntimeError("stop test client")
+
+    monkeypatch.delenv("TSPI_PI_SOURCE", raising=False)
+    monkeypatch.setattr(launcher, "ensure_host_running", lambda _installation: endpoint)
+    monkeypatch.setattr(launcher, "exec_pi", stop_exec)
+
+    with pytest.raises(RuntimeError, match="stop test client"):
+        launcher.launch_terminal(
+            installation,
+            launcher.parse_launch_request(["--workspace", "reaction-a"]),
+            installation.workspaces_root / "reaction-a",
+        )
+
+    assert os.environ["TSPI_PI_SOURCE"] == str(source.resolve())
+    assert captured["workspace"] == installation.workspaces_root / "reaction-a"
+
+
 def test_ordinary_runtime_flag_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

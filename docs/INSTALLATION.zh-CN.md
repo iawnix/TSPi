@@ -274,6 +274,10 @@ token 文件不存在时，安装器会生成随机 TS Web token。也可以传�
 再次运行 `./install.sh` 并选择相同安装根目录。安装器下载或构建新的 content-addressed release，
 验证 package inventory，再原子切换 `.pi/packages/tspi/current`。已有 workspace、App Server
 identity 和 TS Web credential 会保留。
+启动器会把固定 Pi checkout 作为 Native client 使用的内部变量 `TSPI_PI_SOURCE` 导出，用户不应
+手工设置它。如果旧 release 报告 `TSPI_PI_SOURCE is required for the native Pi client`，请升级
+该安装；修复后的启动器会根据 `config/pi-source.json` 自动选择
+`<install>/.pi/runtime-cache/pi` 中的固定 checkout。
 
 升级失败时，安装器会事务性恢复旧 release、launcher、runtime manifest、凭据、backend 文件、
 Phone manifest 和受管 service unit。当前 CLI 没有单独的 rollback selector；要切换到旧版本，
