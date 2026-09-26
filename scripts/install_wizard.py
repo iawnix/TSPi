@@ -1695,11 +1695,16 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
         for path in releases_root.iterdir()
         if path.is_dir() and not path.is_symlink()
     ) if releases_root.is_dir() and not releases_root.is_symlink() else []
+    package_home = root / ".pi/packages/tspi"
     workspace_root = Path(args.workspace_root).expanduser().resolve()
     return {
         "files": paths,
         "services": services,
         "service_scope": getattr(args, "service_scope", "none"),
+        "package_selection": {
+            "current": _snapshot_file(package_home / "current"),
+            "state": _snapshot_file(package_home / "install-state.json"),
+        },
         "release_ids": release_ids,
         "workspace_root": {
             "path": str(workspace_root),
@@ -1812,6 +1817,14 @@ def restore_install_configuration(root: Path, snapshot: dict[str, object]) -> No
                 continue
             _make_tree_removable(path)
             shutil.rmtree(path)
+
+    package_selection = snapshot.get("package_selection")
+    if isinstance(package_selection, dict):
+        package_home = root / ".pi/packages/tspi"
+        for name in ("current", "state"):
+            selection = package_selection.get(name)
+            if isinstance(selection, dict):
+                _restore_file(package_home / ("install-state.json" if name == "state" else name), selection)
 
     workspace = snapshot.get("workspace_root")
     if isinstance(workspace, dict) and workspace.get("existed") is False:

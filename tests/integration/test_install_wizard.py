@@ -590,6 +590,9 @@ def test_install_configuration_rollback_restores_owned_files_and_removes_new_rel
     payload.chmod(0o400)
     nested.chmod(0o300)
     new_release.chmod(0o300)
+    package_home = root / ".pi/packages/tspi"
+    (package_home / "current").symlink_to("releases/new")
+    (package_home / "install-state.json").write_text("new-state\n", encoding="utf-8")
 
     wizard.restore_install_configuration(root, snapshot)
 
@@ -598,6 +601,8 @@ def test_install_configuration_rollback_restores_owned_files_and_removes_new_rel
     assert not (root / ".pi/agent/auth.json").exists()
     assert release.is_dir()
     assert not (root / ".pi/packages/tspi/releases/new").exists()
+    assert not (package_home / "current").is_symlink()
+    assert not (package_home / "install-state.json").exists()
 
 
 def test_non_interactive_smtp_options_write_only_a_secure_credential_reference(tmp_path: Path) -> None:
