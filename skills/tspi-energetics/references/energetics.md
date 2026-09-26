@@ -59,6 +59,6 @@ model depletion or rank kinetically preferred pathways.
 `mechanism.energy_profile` requires a selected path and `initial_composition`.
 It preserves stoichiometric participants and spectator pools while accumulating
 ΔG and local barrier heights on one reference. Its generated `energy_profile.json`
-uses the existing `ts-curve-data/1` contract and can be passed to `artifact.render curve`.
+uses the existing `ts-curve-data/1` contract and can be passed to `artifact_render curve`.
 The profile is a selected comparison, not a claim of complete mechanism discovery.
 Reports and Node Web details link analyses back to source files and Findings.

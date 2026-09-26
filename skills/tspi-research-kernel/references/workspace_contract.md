@@ -32,10 +32,10 @@ Bootstrap rejects an unsupported workspace without rewriting it.
 The normal flow is:
 
 ```text
-research.read -> Root interpretation -> research.change
+research_read -> Root interpretation -> research_change
 ```
 
-`research.change` loads the current map under a lock, applies the ordered
+`research_change` loads the current map under a lock, applies the ordered
 ChangeSet to a detached copy, validates the complete post-state, increments the
 revision, and commits the active backend before updating the JSON snapshot and
 transaction receipt. A rejected request does not change the prior revision. Do

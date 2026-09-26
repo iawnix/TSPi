@@ -80,7 +80,7 @@ scripts/prepare_pi_source.py --install <root>
 ## 配置计算后端
 
 本地计算在持久化 Attempt 子进程中执行；远程执行临时镜像输入并将结果收回本地。
-两者共享 `compute.run` 的公开生命周期；选择 `execution_target.kind = "local"` 或
+两者共享 `compute_run` 的公开生命周期；选择 `execution_target.kind = "local"` 或
 `"remote"`，并在计算意图中填写统一配置文件里的环境名。只有 remote 环境包含 SSH/Torque
 传输字段。安装器统一接收一份计算后端 TOML 文件：
 交互安装时在提示处输入文件路径，非交互安装时使用
@@ -222,7 +222,7 @@ Host 为 workspace root 启动一个 Monitor worker，轮询持久化 Compute �
 workspace 内写入 registration、event 和 delivery 回执。`monitor/list`、`monitor/status`、
 `monitor/enable`、`monitor/disable` 提供健康状态和积压信息。wake 与 notification 分别
 确认、租约和退避；wake 只表示 Pi 接受了输入，不表示 agent turn 已完成。Root Agent
-必须重新读取 `research.read`、检查计算后才能修改 ResearchMap。
+必须重新读取 `research_read`、检查计算后才能修改 ResearchMap。
 
 `workspace.json` 中稳定的 `ws_<hex>` 身份会先被验证，再映射到 Host 使用的直接目录名，
 防止 foreign event 投递到错误项目。

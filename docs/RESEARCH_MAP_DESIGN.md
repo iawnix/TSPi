@@ -99,7 +99,7 @@ criteria and evaluation history; they do not silently update their target.
 
 The Root Agent is the only scientific decision-maker. A turn reads bounded
 context, selects and executes a bounded action through registered Skills and
-Capabilities, interprets the resulting evidence, and calls `research.checkpoint`
+Capabilities, interprets the resulting evidence, and calls `research_checkpoint`
 with one disposition before ending: `continue_required`, `waiting_external`,
 `deferred`, `blocked`, `terminal`, or `user_input_required`. A pre-submission
 `prepared` Attempt is still a local decision point; it does not justify waiting

@@ -28,25 +28,25 @@ const TOOL_ROWS = [
 // original ts_* names are private factory/source keys retained only to compose
 // canonical tools; they are never placed in the active Agent inventory.
 export const PUBLIC_TOOL_CANONICAL_NAMES = Object.freeze({
-  systemPrompt: "system.prompt",
-  state: "research.read",
-  change: "research.change",
-  workflow: "research.continuation",
-  strategy: "research.strategy",
-  interpretation: "research.interpretation",
-  checkpoint: "research.checkpoint",
-  environment: "compute.environment",
-  review: "review.run",
-  compute: "compute.run",
-  reply: "review.respond",
-  seed: "artifact.seed",
-  compare: "artifact.compare",
-  analyze: "analysis.run",
-  dispatch: "execution.dispatch",
-  importArtifact: "artifact.import",
-  render: "artifact.render",
-  report: "report.build",
-  notify: "notify.send",
+  systemPrompt: "system_prompt",
+  state: "research_read",
+  change: "research_change",
+  workflow: "research_continuation",
+  strategy: "research_strategy",
+  interpretation: "research_interpretation",
+  checkpoint: "research_checkpoint",
+  environment: "compute_environment",
+  review: "review_run",
+  compute: "compute_run",
+  reply: "review_respond",
+  seed: "artifact_seed",
+  compare: "artifact_compare",
+  analyze: "analysis_run",
+  dispatch: "execution_dispatch",
+  importArtifact: "artifact_import",
+  render: "artifact_render",
+  report: "report_build",
+  notify: "notify_send",
 });
 
 export const PUBLIC_TOOL_NAMES = Object.freeze(Object.fromEntries(
@@ -122,7 +122,7 @@ export const PUBLIC_TOOL_METADATA = Object.freeze({
   ...CANONICAL_TOOL_METADATA,
 });
 
-const TOOL_NAME_PATTERN = /^[a-z][a-z0-9]*(?:[._][a-z][a-z0-9_]*)*$/u;
+const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]*$/u;
 const METADATA_FIELDS = Object.freeze(["authority", "effect", "replay", "phase"]);
 const METADATA_VALUES = Object.freeze({
   authority: new Set([
@@ -462,31 +462,31 @@ export function createPublicToolAlias(tool, canonicalName, { mapParams } = {}) {
 }
 
 const SEMANTIC_ALIAS_SOURCES = Object.freeze({
-  "system.prompt": "sys_prompt",
-  "research.read": "ts_state",
-  "research.change": "ts_change",
-  "research.continuation": "ts_workflow",
-  "research.strategy": "ts_workflow",
-  "research.interpretation": "ts_workflow",
-  "research.checkpoint": "ts_workflow",
-  "compute.environment": "ts_environment",
-  "review.run": "ts_review",
-  "compute.run": "ts_calc",
-  "review.respond": "ts_reply",
-  "artifact.seed": "ts_seed",
-  "artifact.compare": "ts_compare",
-  "analysis.run": "ts_analyze",
-  "execution.dispatch": "ts_dispatch",
-  "artifact.import": "ts_import",
-  "artifact.render": "ts_render",
-  "report.build": "ts_report",
+  "system_prompt": "sys_prompt",
+  "research_read": "ts_state",
+  "research_change": "ts_change",
+  "research_continuation": "ts_workflow",
+  "research_strategy": "ts_workflow",
+  "research_interpretation": "ts_workflow",
+  "research_checkpoint": "ts_workflow",
+  "compute_environment": "ts_environment",
+  "review_run": "ts_review",
+  "compute_run": "ts_calc",
+  "review_respond": "ts_reply",
+  "artifact_seed": "ts_seed",
+  "artifact_compare": "ts_compare",
+  "analysis_run": "ts_analyze",
+  "execution_dispatch": "ts_dispatch",
+  "artifact_import": "ts_import",
+  "artifact_render": "ts_render",
+  "report_build": "ts_report",
 });
 
 // Decision aliases intentionally expose only operation-specific fields. They
 // forward to one workflow implementation without copying the full
 // continuation schema into three additional Agent context slots.
 const DECISION_ALIAS_SCHEMAS = Object.freeze({
-  "research.continuation": Object.freeze({
+  "research_continuation": Object.freeze({
     type: "object",
     properties: {
       operation: { enum: ["status", "set_required", "set_status", "resolve"] },
@@ -502,7 +502,7 @@ const DECISION_ALIAS_SCHEMAS = Object.freeze({
     required: ["operation"],
     additionalProperties: false,
   }),
-  "research.strategy": Object.freeze({
+  "research_strategy": Object.freeze({
     type: "object",
     properties: {
       strategyOperation: { enum: ["plan", "review"] },
@@ -517,7 +517,7 @@ const DECISION_ALIAS_SCHEMAS = Object.freeze({
     required: ["strategyOperation"],
     additionalProperties: false,
   }),
-  "research.interpretation": Object.freeze({
+  "research_interpretation": Object.freeze({
     type: "object",
     properties: {
       interpretation: { type: "object", additionalProperties: true, maxProperties: 32 },
@@ -530,7 +530,7 @@ const DECISION_ALIAS_SCHEMAS = Object.freeze({
     required: ["interpretation"],
     additionalProperties: false,
   }),
-  "research.checkpoint": Object.freeze({
+  "research_checkpoint": Object.freeze({
     type: "object",
     properties: {
       checkpoint: { type: "object", additionalProperties: true, maxProperties: 32 },
@@ -551,21 +551,21 @@ export function createPublicToolAliases(tools, { includeDecisionAliases = true }
   const byName = new Map(tools.map((tool) => [tool?.name, tool]));
   return Object.entries(SEMANTIC_ALIAS_SOURCES).flatMap(([canonicalName, sourceName]) => {
     if (!includeDecisionAliases && [
-      "research.strategy",
-      "research.interpretation",
-      "research.checkpoint",
+      "research_strategy",
+      "research_interpretation",
+      "research_checkpoint",
     ].includes(canonicalName)) return [];
     const source = byName.get(sourceName);
     if (!source) return [];
-    const mapParams = canonicalName === "research.strategy"
+    const mapParams = canonicalName === "research_strategy"
       ? (params) => ({
         ...params,
         operation: "strategy",
         strategyOperation: params?.strategyOperation || "plan",
       })
-      : canonicalName === "research.interpretation"
+      : canonicalName === "research_interpretation"
         ? (params) => ({ ...params, operation: "interpret" })
-        : canonicalName === "research.checkpoint"
+        : canonicalName === "research_checkpoint"
           ? (params) => ({ ...params, operation: "checkpoint" })
           : undefined;
     return [createPublicToolAlias(source, canonicalName, { mapParams })];

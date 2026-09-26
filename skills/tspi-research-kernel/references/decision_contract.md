@@ -1,9 +1,9 @@
 # ChangeSet Contract
 
-`research.change` is the only public mutation boundary for `ResearchMap`. It accepts
+`research_change` is the only public mutation boundary for `ResearchMap`. It accepts
 one object containing `rationale`, optional `basisRefs`, optional
 `expectedRevision`, and a non-empty `operations` array. Query
-`research.read mode=operations` for the current catalog before using an unfamiliar
+`research_read mode=operations` for the current catalog before using an unfamiliar
 operation.
 
 ## Operations

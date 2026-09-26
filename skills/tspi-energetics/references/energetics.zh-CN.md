@@ -45,5 +45,5 @@ E+ZPE 或 H。实际反应物浓度是独立速率输入。
 
 `mechanism.energy_profile` 要求选定路径和 `initial_composition`。它在同一参考上累积 ΔG
 与局部势垒，同时保留化学计量参与者和 spectator pool。生成的 `energy_profile.json`
-使用现有 `ts-curve-data/1` 合同，可传给 `artifact.render curve`。该剖面是所选比较，不声称机理
+使用现有 `ts-curve-data/1` 合同，可传给 `artifact_render curve`。该剖面是所选比较，不声称机理
 发现完整。报告与 Node Web 详情把分析链接回来源文件和 Finding。

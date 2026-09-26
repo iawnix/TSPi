@@ -2,7 +2,7 @@
 
 Candidates are deterministic parser output, not canonical scientific state.
 They remain in an Attempt's parsed output directory until the Root Agent
-explicitly promotes one through a ``research.change`` transaction.
+explicitly promotes one through a ``research_change`` transaction.
 """
 
 from __future__ import annotations

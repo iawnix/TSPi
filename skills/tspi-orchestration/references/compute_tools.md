@@ -1,6 +1,6 @@
 # Compute Subagent And Typed Actions
 
-`compute.run` delegates one bounded operational lifecycle. Root chooses
+`compute_run` delegates one bounded operational lifecycle. Root chooses
 the chemistry, method, ResearchNode, inputs, parameters, and execution target. The
 host resolves the immutable intent and exposes only pre-bound zero-argument
 tools to the isolated child.
@@ -33,8 +33,8 @@ their arguments, call another tool, or choose a scientific method.
 Read:
 
 ```text
-research.read mode=artifacts
-research.read mode=capabilities capabilityKind=compute
+research_read mode=artifacts
+research_read mode=capabilities capabilityKind=compute
 ```
 
 The artifact catalog supplies logical `art_...` IDs, paths, SHA-256, owners,
@@ -43,7 +43,7 @@ parameter shape, input/output roles, and parser contract. It does not prove live
 software or environment health.
 
 If a fresh workspace has no suitable input, start a non-closed ResearchNode. Use
-`artifact.seed` for one connected SMILES or `artifact.import` for
+`artifact_seed` for one connected SMILES or `artifact_import` for
 bounded Gaussian, XYZ, or xTB control text. The host returns the logical ID;
 callers never create an `art_*` value or workspace path.
 
@@ -142,7 +142,7 @@ normal terminus; `task_validation` separately reports whether the requested
 capability produced its required outputs and convergence evidence. A normally
 terminated program can therefore have `task_validation.status=incomplete`.
 Root must verify the primary artifacts before recording individual semantic
-Findings through `research.change`.
+Findings through `research_change`.
 
 ## Cancel
 

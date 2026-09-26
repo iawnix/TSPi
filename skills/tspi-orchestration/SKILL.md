@@ -31,11 +31,11 @@ does not redefine that model.
 
 ## Research Turn Checkpoint
 
-Before ending every turn, read `research.read` with `mode=context` or `mode=liveness`
-and close the lifecycle with `research.checkpoint`. Record strategy and Attempt
+Before ending every turn, read `research_read` with `mode=context` or `mode=liveness`
+and close the lifecycle with `research_checkpoint`. Record strategy and Attempt
 interpretation first when applicable, then use one explicit disposition:
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
-`user_input_required`. `research.continuation` is a compatibility ledger for
+`user_input_required`. `research_continuation` is a compatibility ledger for
 older required-action records; it is not the primary turn checkpoint. A
 completed Attempt or completed Continuation alone is not a research conclusion.
 If liveness returns `decision_needed`, continue the turn and record the

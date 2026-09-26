@@ -1,6 +1,6 @@
 # 报告合同
 
-使用 `report.build` 从当前 `ResearchMap` 与已注册逻辑 Artifact 构建报告。报告是 map revision
+使用 `report_build` 从当前 `ResearchMap` 与已注册逻辑 Artifact 构建报告。报告是 map revision
 和所选运行记录组成的包，不是新的状态模型。
 
 ## 必需内容

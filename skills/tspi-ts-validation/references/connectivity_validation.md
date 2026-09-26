@@ -13,7 +13,7 @@ source path, endpoint optimization, and digest references explicit.
 
 Verify atom mapping, element counts, charge, multiplicity/state, relevant
 isotopes, bond changes, internal coordinates, stereochemistry, and any
-short-path or maximum-step limitation. Use `artifact.compare` for deterministic
+short-path or maximum-step limitation. Use `artifact_compare` for deterministic
 geometry and stereochemical checks.
 
 ## Recording And Evaluation

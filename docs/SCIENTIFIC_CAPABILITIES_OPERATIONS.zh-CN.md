@@ -16,7 +16,7 @@
 操作记录，不改变 Node 的科学状态；暂停期间仍可查看、收集、解析和精确取消作业。重启
 后再次提交前必须先核对最新回执。
 
-`compute.run` 对 local/remote 使用相同的公开操作：
+`compute_run` 对 local/remote 使用相同的公开操作：
 
 ```text
 launch   -> prepare, submit
@@ -32,7 +32,7 @@ cancel   -> cancel
 ## Finding、报告与网页
 
 分析输出位于 `nodes/<node_id>/outputs/analysis/`，绑定输入 digest、生成文件和临时
-解析候选。Root Agent 核验候选后，通过 `research.change` 创建 `FactFinding` 或
+解析候选。Root Agent 核验候选后，通过 `research_change` 创建 `FactFinding` 或
 `IssueFinding`。报告和 TS Web 直接消费规范 `ResearchMap` 序列化，不创建第二份科学
 状态，也不选择下一个 Node。
 

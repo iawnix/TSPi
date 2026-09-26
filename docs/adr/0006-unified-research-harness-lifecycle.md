@@ -20,11 +20,11 @@ facts. A supplied `request_id` is an idempotency key: an exact retry is marked `
 does not append another audit event; reusing that key with a different operation, turn, session,
 trigger, or delivery identity is rejected as a command error.
 
-`research.checkpoint` is the only turn-closing boundary. Its valid dispositions are
+`research_checkpoint` is the only turn-closing boundary. Its valid dispositions are
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, and
 `user_input_required`. `continue_required` means the Agent has recorded an explicit
 next-turn action. The old `required` value is accepted only when reading or migrating
-the compatibility `research.continuation` ledger and is normalized to
+the compatibility `research_continuation` ledger and is normalized to
 `continue_required`; it is not a second lifecycle state.
 Monitor records `research.turn(operation=wake)` before acknowledging a wake delivery; a failed
 boundary leaves the delivery pending for retry. `decision_needed` is the only state that requires a bounded Host follow-up. Host follow-up may
@@ -38,10 +38,10 @@ only on demand; list/show expose source and identity digests plus readiness with
 commands or environment variables into the default context. Public tools declare authority, effect, replay/idempotency, phase, schemas,
 workspace/session binding, and error taxonomy and use the common result/error envelopes.
 
-`research.read` (including its bounded `liveness` view) and
-`research.checkpoint` are the canonical Agent/Host interfaces for a turn.
+`research_read` (including its bounded `liveness` view) and
+`research_checkpoint` are the canonical Agent/Host interfaces for a turn.
 `research.liveness` is diagnostic only; it does not persist a next step.
-`research.continuation` remains a compatibility interface for reading or
+`research_continuation` remains a compatibility interface for reading or
 migrating older required-action records. `research.turn` remains the lifecycle
 boundary that interprets these records. The Native Worker's `before_run_end`
 boundary invokes the same lifecycle evaluation and must not implement a second

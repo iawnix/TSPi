@@ -50,7 +50,7 @@ calculation intent；若仍回答同一 Node 问题，还应显式标记为 reca
 独立 Runner 支持 `sp`、`opt`、`ts`、`freq` 和 `thermo`。当前 TSPi adapter 将这些任务
 映射到版本 1 的 capability ID `pyscf.sp`、`pyscf.opt`、`pyscf.ts`、`pyscf.freq` 和
 `pyscf.thermo`，并额外提供组合 descriptor `pyscf.opt_freq` 和 `pyscf.ts_freq`。应使用
-实时 catalog 的版本和 schema；不要把源 YAML 任务列表当成 `compute.run` capability 名称。
+实时 catalog 的版本和 schema；不要把源 YAML 任务列表当成 `compute_run` capability 名称。
 
 - `opt` 与 `ts` 不能同时请求；
 - `freq` 需要当前几何上的 SCF；未请求 `sp` 时，SCF 会隐式执行；

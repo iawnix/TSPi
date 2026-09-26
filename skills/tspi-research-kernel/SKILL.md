@@ -9,7 +9,7 @@ description: Read, validate, and atomically update the canonical TSPi ResearchMa
 
 Use this Skill for project research state: status queries, object lookup,
 ResearchMap validation, bounded Research Memory reads, and atomic changes through
-`research.read` and `research.change`. The ResearchMap is the canonical
+`research_read` and `research_change`. The ResearchMap is the canonical
 scientific model; `research.context` and `research.liveness` are disposable
 bounded projections, not parallel state. Decision records and the Evidence
 Registry are Kernel-owned metadata, exposed through `research.decisions`,
@@ -21,9 +21,9 @@ objects. `FactFinding` and `IssueFinding` are typed Finding specializations;
 an optional navigation group, not a required lifecycle layer. Node state and
 outcome represent progress independently of Claim status.
 
-Read with the narrowest `research.read` mode that answers the question. Query
+Read with the narrowest `research_read` mode that answers the question. Query
 `mode=operations` before an unfamiliar write. Submit every mutation as one
-explicit ChangeSet through `research.change`, using `expectedRevision` when a stale
+explicit ChangeSet through `research_change`, using `expectedRevision` when a stale
 write would be unsafe. Never edit `research_map.json` directly.
 
 For a turn, prefer `context` or `liveness`; expand to `detail`, `decisions`,

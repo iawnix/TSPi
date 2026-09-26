@@ -18,13 +18,13 @@ or transition-state validation.
 1. Preserve the exact user text and classify every species input as a name,
    SMILES, XYZ/artifact, or unresolved description. Apply this uniformly to
    reactants and products.
-2. Discover and call `chemical.name.resolve@1` through `analysis.run` for names.
+2. Discover and call `chemical.name.resolve@1` through `analysis_run` for names.
    Keep the returned resolver provenance, candidates, diagnostics, and status.
 3. Treat `draft` candidates (including LLM-proposed SMILES), unresolved names,
    multiple candidates, and unspecified stereocenters as input issues. Ask a
    focused clarification question or request a SMILES/structure artifact.
 4. Only after a candidate is explicitly confirmed or deterministically resolved
-   may it be passed to `artifact.seed`. The seed is an initial geometry, not a
+   may it be passed to `artifact_seed`. The seed is an initial geometry, not a
    stationary point or a proof of connectivity.
 5. Use the confirmed species in `reaction.parse`, then inspect conservation,
    mapping candidates, and bond changes. Select an atom mapping explicitly;

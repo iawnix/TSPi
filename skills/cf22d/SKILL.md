@@ -15,13 +15,13 @@ roles, output roles, parser contract, and task-validation tests.
 Before execution, read the artifact catalog and the live compute catalog:
 
 ```text
-research.read mode=artifacts
-research.read mode=capabilities capabilityKind=compute
+research_read mode=artifacts
+research_read mode=capabilities capabilityKind=compute
 ```
 
 Use only the exact capability and parameter schema returned by the catalog. If
 no PySCF/CF22D capability is registered, provide method guidance and a doctor
-plan only. Do not invent a capability name, construct a `compute.run` request for
+plan only. Do not invent a capability name, construct a `compute_run` request for
 an unavailable descriptor, invoke `pyscf-runner` through arbitrary shell, or
 present a local smoke test as a TSPi calculation.
 

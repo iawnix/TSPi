@@ -1,9 +1,9 @@
 # Remote Execution Contract
 
-`compute.run` owns the calculation lifecycle for both local and remote targets.
+`compute_run` owns the calculation lifecycle for both local and remote targets.
 The remote adapter is the installation-bound OpenSSH/SCP and Torque transport;
 it is not a second public calculation lifecycle. The public environment query
-is `compute.environments`, exposed as `/compute` and `compute.environment`.
+is `compute.environments`, exposed as `/compute` and `compute_environment`.
 
 ## Installation-Owned Policy
 

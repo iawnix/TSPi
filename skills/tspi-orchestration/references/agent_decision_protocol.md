@@ -5,7 +5,7 @@ storage. Keep those responsibilities separate.
 
 ## Before A Change
 
-Read the smallest useful `research.read` result:
+Read the smallest useful `research_read` result:
 
 ```text
 summary -> map -> detail/locate -> artifacts/capabilities/runs
@@ -18,7 +18,7 @@ retrying the same calculation remains an Attempt under the same Node.
 
 ## During A Change
 
-Submit one `research.change` request with a concrete rationale and ordered operations.
+Submit one `research_change` request with a concrete rationale and ordered operations.
 Use `create_finding` for verified Node outputs and choose `kind=fact` or
 `kind=issue`. Keep a Finding's statement narrow and cite `source_refs` such as
 Artifact IDs. Use `create_gate` only for a criterion that needs to be visible
@@ -45,9 +45,9 @@ Node, Findings, Gates, Artifacts, and Attempts as history.
 
 At the end of every turn, read the bounded `research.context` or
 `research.liveness` view, record any needed strategy or Attempt interpretation,
-and call `research.checkpoint` with an explicit disposition:
+and call `research_checkpoint` with an explicit disposition:
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
-`user_input_required`. `research.continuation` remains available for the legacy
+`user_input_required`. `research_continuation` remains available for the legacy
 required-action ledger and migration; it is not the turn boundary. Parsed or
 completed operational records do not close a scientific question by themselves.
 `decision_needed` requires the Root Agent to continue and record a checkpoint;
@@ -58,5 +58,5 @@ to execute in the same turn. Monitor `next_run` is only an operational wake-up.
 ## Review
 
 Review is advisory and never writes the map. Give Review only the Claim and
-Artifacts it needs, answer it through `review.respond`, and record Root's accepted,
+Artifacts it needs, answer it through `review_respond`, and record Root's accepted,
 rejected, or qualified interpretation with ordinary map operations.

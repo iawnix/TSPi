@@ -1,6 +1,6 @@
 # 邮件投递合同
 
-`notify.send` 把固定事件发送给 TSPi 安装配置拥有的收件人，并记录投递回执。
+`notify_send` 把固定事件发送给 TSPi 安装配置拥有的收件人，并记录投递回执。
 
 安装可以保留现有 ClawEmail transport，也可以使用内置 SMTP transport。SMTP 当前支持
 `163` 与 `qq` preset：

@@ -6,11 +6,11 @@
 ## 发现与调用
 
 ```text
-research.read mode=capabilities capabilityKind=analysis
-research.read mode=capabilities capabilityKind=analysis query=reaction.mapping.validate@1
+research_read mode=capabilities capabilityKind=analysis
+research_read mode=capabilities capabilityKind=analysis query=reaction.mapping.validate@1
 ```
 
-调用 `analysis.run` 时提供未关闭的 `nodeId`、已注册 XYZ Artifact ID 和显式、从零开始的
+调用 `analysis_run` 时提供未关闭的 `nodeId`、已注册 XYZ Artifact ID 和显式、从零开始的
 mapping。请求中不能出现物理路径。Species index 指向列表位置；重复 Artifact ID 表示同一
 species 的不同 occurrence。遵守 capability 返回的限制。
 
@@ -20,7 +20,7 @@ species 的不同 occurrence。遵守 capability 返回的限制。
 有效 map 必须准确覆盖两侧每个原子一次、元素匹配，并保持整个反应的元素计数。没有矛盾的
 部分 map 属于 inconclusive；重复引用、错误元素、计数不等或空 map 属于 invalid。
 
-当结果支持科学陈述时，通过 `research.change` 创建 `FactFinding`，提供产出它的 `node_id`、
+当结果支持科学陈述时，通过 `research_change` 创建 `FactFinding`，提供产出它的 `node_id`、
 简洁 statement、`kind=fact`、相关 value 与 datatype，并在 `source_refs` 中引用分析
 Artifact。不完整或化学上有歧义的 map 记录为 `IssueFinding`。不要把解析器诊断复制到
 map 并当作事实。

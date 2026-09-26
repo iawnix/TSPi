@@ -4,7 +4,7 @@ Root 负责科学判断，Kernel 负责结构有效性与原子存储；两者�
 
 ## 变更前
 
-读取足够回答问题的最小 `research.read` 结果：
+读取足够回答问题的最小 `research_read` 结果：
 
 ```text
 summary -> map -> detail/locate -> artifacts/capabilities/runs
@@ -16,7 +16,7 @@ Node 下新增 Attempt。
 
 ## 变更中
 
-提交一个带具体理由和有序 operations 的 `research.change` 请求。用 `create_finding` 记录已核验
+提交一个带具体理由和有序 operations 的 `research_change` 请求。用 `create_finding` 记录已核验
 的 Node 输出，并选择 `kind=fact` 或 `kind=issue`。Finding 的 statement 应保持单一、
 明确，并通过 `source_refs` 引用 Artifact ID 等来源。只有某项标准需要在 map 中可见时才
 使用 `create_gate`，然后用当前证据引用调用 `evaluate_gate`。
@@ -36,9 +36,9 @@ NodeGate 的最新评估均为 `pass` 时，Node 才能以 `completed` 关闭。
 ## Research Turn 收尾
 
 每轮结束时，读取有界的 `research.context` 或 `research.liveness`，在需要时记录 strategy 或
-Attempt interpretation，然后使用 `research.checkpoint` 写入明确 disposition：
+Attempt interpretation，然后使用 `research_checkpoint` 写入明确 disposition：
 `continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
-`user_input_required`。`research.continuation` 仍用于旧 required-action ledger 和迁移，不是 turn
+`user_input_required`。`research_continuation` 仍用于旧 required-action ledger 和迁移，不是 turn
 边界。解析完成或运行记录完成本身不能关闭科学问题。`decision_needed` 要求 Root Agent 继续并记录
 checkpoint；`continue_required` 是合法的下一轮计划，不能由 Harness 在本轮强制执行。Harness 的
 follow-up 只用于修复缺少 disposition 的边界，不能替 Root 选择方法。Monitor 的 `next_run` 只是
@@ -47,4 +47,4 @@ follow-up 只用于修复缺少 disposition 的边界，不能替 Root 选择方
 ## Review
 
 Review 只提供建议，不能写入 map。只向 Review 提供所需的 Claim 和 Artifact，通过
-`review.respond` 回答，再使用普通 map operation 记录 Root 接受、拒绝或附带条件的解释。
+`review_respond` 回答，再使用普通 map operation 记录 Root 接受、拒绝或附带条件的解释。

@@ -60,7 +60,7 @@ research.evidence    Attempt/Artifact/EvidenceLink metadata
 research.storage     active JSON or SQLite backend and bootstrap status
 ```
 
-The `research.read` tool exposes these bounded modes plus compute modes
+The `research_read` tool exposes these bounded modes plus compute modes
 (`artifacts`, `capabilities`, `runs`). Use `/research` for interactive reads.
 Strategy, interpretation, checkpoint, Evidence Registry, and map mutations use
 their typed Kernel commands; do not create a generic memory write.

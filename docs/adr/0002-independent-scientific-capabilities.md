@@ -17,10 +17,10 @@ for every species or tool result would increase maintenance without evidence.
 
 ## Decision
 
-Use one versioned `analysis.run` envelope with an on-demand capability catalog.
+Use one versioned `analysis_run` envelope with an on-demand capability catalog.
 New domain schemas stay outside the always-loaded tool definitions. Dispatch
 is an explicit ID/version lookup; descriptors never select a next capability.
-Existing `compute.run`, structure comparison and rendering implementations remain
+Existing `compute_run`, structure comparison and rendering implementations remain
 the execution authorities for their respective domains.
 
 Pure analysis handlers consume bounded artifact snapshots and explicit
@@ -30,19 +30,19 @@ and generated files. Domain results distinguish valid, invalid, inconclusive
 and unsupported; successful execution never means scientific acceptance.
 
 Analysis outputs are transient parser candidates in Node-owned artifacts. The
-existing `research.change` operation creates a selected `FactFinding` or
+existing `research_change` operation creates a selected `FactFinding` or
 `IssueFinding` only after replaying its registered handler and checking
 input/output bindings. Analysis never fabricates a calculation intent.
 Candidate replay assumes the installed capability version's deterministic
 algorithm; algorithm changes require a new capability version.
 
-`execution.dispatch` is a small operational pause/resume interface. Its Node-scoped
+`execution_dispatch` is a small operational pause/resume interface. Its Node-scoped
 receipt chain is outside canonical science. A shared workspace lock orders
 pause against analysis and the durable submission-guard claim. Operations
 already past that boundary are in flight; pause does not promise cancellation.
 Inspect, collect, parse and exact-Attempt cancellation remain available.
 Resuming a terminal Node is rejected; subsequent research uses a dependency.
-The tool is explicit because `research.read` is read-only and `research.change` is the
+The tool is explicit because `research_read` is read-only and `research_change` is the
 scientific transaction API. No new scientific Node status was introduced.
 
 Reports and Web consume the canonical ResearchMap serialization. A chemical network contains

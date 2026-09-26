@@ -57,13 +57,13 @@ export function createStateTool() {
       const mode = params.mode || "map";
       const root = boundWorkspaceRoot(params, toolContext);
       if (params.capabilityKind !== undefined && mode !== "capabilities") {
-        throw new Error(`research.read mode=${mode} does not accept capability selectors`);
+        throw new Error(`research_read mode=${mode} does not accept capability selectors`);
       }
       if (mode === "artifacts") {
         return toolResult(await NATIVE_COMMANDS.execute("compute.artifacts", root, { nodeId: params.nodeRef }, context?.abortSignal));
       }
       if (mode === "capabilities") {
-        if (!params.capabilityKind) throw new Error("research.read mode=capabilities requires capabilityKind=compute or analysis");
+        if (!params.capabilityKind) throw new Error("research_read mode=capabilities requires capabilityKind=compute or analysis");
         if (params.capabilityKind === "compute") {
           return toolResult(await NATIVE_COMMANDS.execute("compute.capabilities", root, {}, context?.abortSignal));
         }
@@ -77,7 +77,7 @@ export function createStateTool() {
             : ["analysis-capabilities", "--root", root];
           return toolResult(await runJsonCli(packageScript("ts_compute.py"), args, root, context?.abortSignal));
         }
-        throw new Error("research.read mode=capabilities requires capabilityKind=compute or analysis");
+        throw new Error("research_read mode=capabilities requires capabilityKind=compute or analysis");
       }
       if (mode === "runs") return toolResult(await NATIVE_COMMANDS.execute("compute.runs", root, {}, context?.abortSignal));
       if (mode === "decisions") {
@@ -105,7 +105,7 @@ export function createChangeTool() {
   return {
     ...TOOL_CONTRACTS.change,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("research.change");
+      requireNativeWrites("research_change");
       const root = boundWorkspaceRoot(params, toolContext);
       const result = await NATIVE_COMMANDS.execute("research.change", root, { request: {
           schema_version: "ts-change-request/1",
@@ -134,7 +134,7 @@ export function createChangeTool() {
 /**
  * Expose the Kernel continuation ledger without letting the Host choose a
  * scientific action. Writes are typed requests validated by
- * `research.continuation`; status is read-only and may be filtered locally.
+ * `research_continuation`; status is read-only and may be filtered locally.
  */
 export function createWorkflowTool() {
   return {
@@ -149,9 +149,9 @@ export function createWorkflowTool() {
         }, context?.abortSignal);
         result = filterContinuationStatus(result, params);
       } else if (params.operation === "strategy") {
-        requireNativeWrites("research.strategy");
+        requireNativeWrites("research_strategy");
         if (!params.strategyOperation || !params[params.strategyOperation]) {
-          throw new Error("research.strategy requires strategyOperation and plan or review");
+          throw new Error("research_strategy requires strategyOperation and plan or review");
         }
         result = await NATIVE_COMMANDS.execute("research.strategy", root, {
           request: {
@@ -165,8 +165,8 @@ export function createWorkflowTool() {
           },
         }, context?.abortSignal);
       } else if (params.operation === "interpret") {
-        requireNativeWrites("research.interpretation");
-        if (!params.interpretation) throw new Error("research.interpretation requires interpretation");
+        requireNativeWrites("research_interpretation");
+        if (!params.interpretation) throw new Error("research_interpretation requires interpretation");
         result = await NATIVE_COMMANDS.execute("research.interpretation", root, {
           request: {
             schema_version: "research-interpretation-request/1",
@@ -178,8 +178,8 @@ export function createWorkflowTool() {
           },
         }, context?.abortSignal);
       } else if (params.operation === "checkpoint") {
-        requireNativeWrites("research.checkpoint");
-        if (!params.checkpoint) throw new Error("research.checkpoint requires checkpoint");
+        requireNativeWrites("research_checkpoint");
+        if (!params.checkpoint) throw new Error("research_checkpoint requires checkpoint");
         result = await NATIVE_COMMANDS.execute("research.checkpoint", root, {
           request: {
             schema_version: "research-checkpoint-request/1",
@@ -192,7 +192,7 @@ export function createWorkflowTool() {
         }, context?.abortSignal);
       } else {
         validateWorkflowParams(params);
-        requireNativeWrites("research.continuation");
+        requireNativeWrites("research_continuation");
         result = await NATIVE_COMMANDS.execute(
           "research.continuation",
           root,
@@ -280,7 +280,7 @@ export function createSeedTool() {
   return {
     ...TOOL_CONTRACTS.seed,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("artifact.seed");
+      requireNativeWrites("artifact_seed");
       return runDeterministicArtifact({
         root: boundWorkspaceRoot(params, toolContext),
         kind: "structure_seed",
@@ -319,7 +319,7 @@ export function createCompareTool() {
   return {
     ...TOOL_CONTRACTS.compare,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("artifact.compare");
+      requireNativeWrites("artifact_compare");
       const comparisonParameters = serializeStructureComparisonParameters(params.parameters);
       return runDeterministicArtifact({
         root: boundWorkspaceRoot(params, toolContext),
@@ -354,7 +354,7 @@ export function createAnalyzeTool() {
   return {
     ...TOOL_CONTRACTS.analyze,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("analysis.run");
+      requireNativeWrites("analysis_run");
       return runDeterministicArtifact({
         root: boundWorkspaceRoot(params, toolContext),
         kind: "scientific_analysis",
@@ -379,7 +379,7 @@ export function createDispatchTool() {
   return {
     ...TOOL_CONTRACTS.dispatch,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("execution.dispatch");
+      requireNativeWrites("execution_dispatch");
       const root = boundWorkspaceRoot(params, toolContext);
       const result = await runJsonCli(packageScript("ts_compute.py"), ["node-dispatch", "--root", root, ...nodeControlArguments(params)], root, context?.abortSignal);
       return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
@@ -391,7 +391,7 @@ export function createImportTool() {
   return {
     ...TOOL_CONTRACTS.importArtifact,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("artifact.import");
+      requireNativeWrites("artifact_import");
       const root = boundWorkspaceRoot(params, toolContext);
       return runDeterministicArtifact({
         root,
@@ -431,7 +431,7 @@ export function createRenderTool() {
   return {
     ...TOOL_CONTRACTS.render,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("artifact.render");
+      requireNativeWrites("artifact_render");
       const root = boundWorkspaceRoot(params, toolContext);
       const resolved = await resolveArtifacts(root, params.inputArtifactIds, context?.abortSignal);
       const request = validateRenderRequest(root, {
@@ -503,7 +503,7 @@ export function createReportTool() {
   return {
     ...TOOL_CONTRACTS.report,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("report.build");
+      requireNativeWrites("report_build");
       const root = boundWorkspaceRoot(params, toolContext);
       const assetArtifactIds = params.assetArtifactIds || [];
       const resolvedAssets = assetArtifactIds.length
@@ -794,22 +794,22 @@ function validateWorkflowParams(params) {
   const operation = params.operation;
   if (["set", "set_required"].includes(operation) && !params.continuationId
       && (!params.scope || !params.targetId || !params.action)) {
-    throw new Error(`research.continuation ${operation} requires scope, targetId, and action`);
+    throw new Error(`research_continuation ${operation} requires scope, targetId, and action`);
   }
   if (["set_deferred", "set_blocked"].includes(operation)
       || (operation === "set" && ["deferred", "blocked"].includes(params.status))) {
-    if (!params.reason) throw new Error(`research.continuation ${operation} requires reason`);
+    if (!params.reason) throw new Error(`research_continuation ${operation} requires reason`);
   }
   if (["set", "set_deferred", "set_blocked", "set_completed"].includes(operation)
       && !params.continuationId && (!params.scope || !params.targetId)) {
-    throw new Error(`research.continuation ${operation} requires continuationId or scope and targetId`);
+    throw new Error(`research_continuation ${operation} requires continuationId or scope and targetId`);
   }
   if (["set", "set_deferred", "set_blocked", "set_completed"].includes(operation)
       && !params.continuationId && !params.action) {
-    throw new Error(`research.continuation ${operation} requires action when creating a continuation`);
+    throw new Error(`research_continuation ${operation} requires action when creating a continuation`);
   }
   if (operation === "resolve" && !params.continuationId) {
-    throw new Error(`research.continuation ${operation} requires continuationId`);
+    throw new Error(`research_continuation ${operation} requires continuationId`);
   }
 }
 

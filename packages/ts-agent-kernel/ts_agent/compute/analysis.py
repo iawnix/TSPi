@@ -92,7 +92,7 @@ def analysis_capabilities() -> dict[str, Any]:
             )}
             for item in ANALYSIS_DESCRIPTORS
         ],
-        "detail_query": "research.read mode=capabilities capabilityKind=analysis query=<capability>@<version>",
+        "detail_query": "research_read mode=capabilities capabilityKind=analysis query=<capability>@<version>",
     }
 
 

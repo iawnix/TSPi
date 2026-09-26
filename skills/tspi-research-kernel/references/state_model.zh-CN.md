@@ -52,7 +52,7 @@ research.evidence     Attempt/Artifact/EvidenceLink 元数据
 research.storage      当前 JSON 或 SQLite 后端及 bootstrap 状态
 ```
 
-`research.read` 还暴露上述有界模式与计算模式（`artifacts`、`capabilities`、`runs`）。交互式读取
+`research_read` 还暴露上述有界模式与计算模式（`artifacts`、`capabilities`、`runs`）。交互式读取
 使用 `/research`。Strategy、interpretation、checkpoint、Evidence Registry 与 map 变更都使用
 各自的类型化 Kernel command；不要创建通用 memory write。
 

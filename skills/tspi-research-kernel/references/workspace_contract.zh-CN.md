@@ -27,10 +27,10 @@ workspace 时会拒绝，不会重写它。
 常规流程为：
 
 ```text
-research.read -> Root interpretation -> research.change
+research_read -> Root interpretation -> research_change
 ```
 
-`research.change` 在锁内加载当前 map，把有序 ChangeSet 应用到独立副本，校验完整变更后
+`research_change` 在锁内加载当前 map，把有序 ChangeSet 应用到独立副本，校验完整变更后
 状态，递增 revision，先提交活动后端，再更新 JSON snapshot 与 transaction receipt。被拒绝的
 请求不会改变之前的 revision。不要手工编辑 JSON、SQLite 数据库或 transaction log。
 

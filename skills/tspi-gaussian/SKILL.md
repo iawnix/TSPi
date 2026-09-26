@@ -23,7 +23,7 @@ registered `gaussian.scan@1` capability; do not submit an input containing
 
 QST2/QST3 is input construction and guidance in this release, not a registered
 execution capability. Submit only a catalog descriptor returned by
-`research.read mode=capabilities`; do not label a QST input as `gaussian.ts`.
+`research_read mode=capabilities`; do not label a QST input as `gaussian.ts`.
 
 Record parser output only after checking primary files. Normal termination is
 not task validation, and neither is a scientific verdict. Record SCF

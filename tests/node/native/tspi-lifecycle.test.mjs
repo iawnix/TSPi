@@ -34,10 +34,10 @@ test("public tools expose one Harness metadata contract", () => {
 });
 
 test("runtime tool admission rejects metadata drift and malformed results", async () => {
-  const canonical = PUBLIC_TOOL_METADATA["research.read"];
+  const canonical = PUBLIC_TOOL_METADATA["research_read"];
   assert.throws(
     () => wrapToolForHarness({
-      name: "research.read",
+      name: "research_read",
       label: "Research Read",
       description: "A contract fixture.",
       parameters: Type.Object({}, { additionalProperties: false }),
@@ -47,7 +47,7 @@ test("runtime tool admission rejects metadata drift and malformed results", asyn
     /canonical Harness contract/,
   );
   const malformed = wrapToolForHarness({
-    name: "research.read",
+    name: "research_read",
     label: "Research Read",
     description: "A contract fixture.",
     parameters: Type.Object({}, { additionalProperties: false }),
@@ -472,8 +472,8 @@ test("Research Turn hook continues an explicit required disposition", async () =
   });
   const result = await hook({ runId: "run-required" }, context);
   assert.match(result.followUp, /cont_1/);
-  assert.match(result.followUp, /research\.read with mode=context/);
-  assert.match(result.followUp, /research\.continuation with operation=status/);
+  assert.match(result.followUp, /research_read with mode=context/);
+  assert.match(result.followUp, /research_continuation with operation=status/);
   assert.doesNotMatch(result.followUp, /legacy continuation ledger/);
 });
 
@@ -504,8 +504,8 @@ test("Research Turn hook repairs a missing disposition without selecting science
   });
   const result = await hook({ runId: "run-decision" }, context);
   assert.match(result.followUp, /mode=context/);
-  assert.match(result.followUp, /research\.strategy or research\.interpretation/);
-  assert.match(result.followUp, /research\.checkpoint/);
+  assert.match(result.followUp, /research_strategy or research_interpretation/);
+  assert.match(result.followUp, /research_checkpoint/);
   assert.doesNotMatch(result.followUp, /set its disposition to deferred, blocked, or completed/);
   assert.doesNotMatch(result.followUp, /ts_calc launch|choose|select/);
   assert.equal(await hook({ runId: "run-decision" }, context), undefined);

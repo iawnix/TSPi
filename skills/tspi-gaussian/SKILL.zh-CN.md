@@ -18,7 +18,7 @@ job section，并分别评估终止状态、SCF、优化收敛、频率证据、
 `gaussian.scan@1` capability；不要把含有 `Scan` 的输入伪装成 `gaussian.sp`。
 
 本版本的 QST2/QST3 只负责输入构造与方法指导，并不是已注册的执行 capability。只有
-`research.read mode=capabilities` 返回的 descriptor 才能用于提交；不要把 QST 输入标记为
+`research_read mode=capabilities` 返回的 descriptor 才能用于提交；不要把 QST 输入标记为
 `gaussian.ts`。
 
 核对原始文件后再记录解析结果。正常终止不等于任务验证，两者也都不等于科学结论。明确

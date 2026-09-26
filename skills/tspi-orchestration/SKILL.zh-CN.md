@@ -26,10 +26,10 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
 
 ## Research Turn 收尾
 
-每轮结束前，读取 `research.read` 的 `mode=context` 或 `mode=liveness`，并使用
-`research.checkpoint` 结束生命周期。需要时先记录 strategy 和 Attempt interpretation，再选择一个
+每轮结束前，读取 `research_read` 的 `mode=context` 或 `mode=liveness`，并使用
+`research_checkpoint` 结束生命周期。需要时先记录 strategy 和 Attempt interpretation，再选择一个
 明确 disposition：`continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
-`user_input_required`。`research.continuation` 只是旧 required-action 记录的兼容 ledger，不是主要
+`user_input_required`。`research_continuation` 只是旧 required-action 记录的兼容 ledger，不是主要
 turn checkpoint。Attempt 或 Continuation 完成本身都不是研究结论。若 liveness 返回
 `decision_needed`，必须继续当前 turn 并记录 checkpoint。`continue_required` 是合法的下一轮计划，
 Harness 不应在同一 turn 强行执行它。Harness 不得替 Agent 发明方法，Monitor 的 `next_run` 也不是

@@ -18,7 +18,7 @@ TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装�
   workspace/session/research，也不解析 Host RPC。
 - `packages/ts-agent-kernel/ts_agent/` 管理 `ResearchMap`、引用完整性、验证和事务。
   计算控制面负责本地子进程的持久化生命周期，并通过配置好的
-  `compute.run` 对 local 和 remote 使用同一套计算生命周期；统一的
+  `compute_run` 对 local 和 remote 使用同一套计算生命周期；统一的
   `compute.environments` 查询同时返回两类环境。渲染、报告和邮件仍由
   Skill/Plugin 工具提供。
 - `extensions/pi/` 仅包含 Native client facet 所需的少量 presentation helper。
@@ -133,9 +133,9 @@ Research Memory（持久记录）
 
 `ResearchMemoryService` 不缓存第二份 ResearchMap，也不持久化 ContextPack。
 `ContextPack.context_id` 和 provenance 标识其来源 revision，因此 Host 可以在状态变化
-或重试后重新构造。新的语义写入只能通过 `research.change`、`research.strategy`、
-`research.interpretation` 和 `research.checkpoint`；新的 turn 不通过
-`research.continuation` 写入，它只用于读取或迁移旧的 required-action ledger。不提供会
+或重试后重新构造。新的语义写入只能通过 `research_change`、`research_strategy`、
+`research_interpretation` 和 `research_checkpoint`；新的 turn 不通过
+`research_continuation` 写入，它只用于读取或迁移旧的 required-action ledger。不提供会
 绕过领域校验的通用 `memory.commit`。
 
 Research Turn 的统一协议是：
@@ -145,10 +145,10 @@ TRIGGER -> ORIENT(context) -> PLAN -> PREPARE -> EXECUTE
         -> WAIT/RECONCILE -> INTERPRET -> ADVANCE -> CHECKPOINT
 ```
 
-每轮结束前，Agent 必须调用 `research.checkpoint`，登记一种当前 disposition：
+每轮结束前，Agent 必须调用 `research_checkpoint`，登记一种当前 disposition：
 `continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
 `user_input_required`。`continue_required` 表示 Agent 已经选择了下一 turn 的明确动作。
-旧的 `required` 值只在读取或迁移 `research.continuation` ledger 时接受，并规范化为
+旧的 `required` 值只在读取或迁移 `research_continuation` ledger 时接受，并规范化为
 `continue_required`，不是另一套生命周期状态。`research.liveness` 只是有界的生命周期诊断
 投影，不是持久化下一步，也不负责关闭 turn。
 
@@ -195,15 +195,15 @@ Claim。Gate 记录结果，但不会自动修改 Node 或 Claim；解释和状�
 
 ## 独立科学能力与节点管理
 
-`analysis.run` 通过按需能力目录派发 22 项版本化独立分析能力；对外目录由
+`analysis_run` 通过按需能力目录派发 22 项版本化独立分析能力；对外目录由
 `packages/ts-agent-kernel/ts_agent/compute/analysis.py` 组装，领域描述由
 `packages/ts-agent-kernel/ts_agent/analysis/catalog.py` 定义，领域实现位于
 `packages/ts-agent-kernel/ts_agent/analysis/`。结果绑定 Node、输入 digest、生成文件
-和候选事实；选定事实通过已有 `research.change`
+和候选事实；选定事实通过已有 `research_change`
 入口重算校验后登记。能力不选择下一科学步骤，不接受 Claim。化学网络使用带计量
 的超边并允许有环，独立于研究 Node DAG。
 
-`execution.dispatch` 的暂停/恢复回执位于操作层，不改变 Node 科学状态。共享锁协调暂停
+`execution_dispatch` 的暂停/恢复回执位于操作层，不改变 Node 科学状态。共享锁协调暂停
 与分析、提交 guard 的边界；在途作业仍可查看、收集和取消。报告和 TS Web 消费
 规范 ResearchMap 数据。详见 [ADR 0002](adr/0002-independent-scientific-capabilities.md) 和
 [能力运维文档](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。
@@ -275,7 +275,7 @@ cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
 ## 其他契约
 
 ChangeSet 的操作定义位于 `ResearchKernel` 使用的 ResearchMap operation catalog；
-`compute.run` 对 local/remote 使用相同的四个公开操作：
+`compute_run` 对 local/remote 使用相同的四个公开操作：
 
 ```text
 launch   -> prepare, submit
@@ -322,15 +322,15 @@ Compute Kernel 的 durable status：`completed` 只表示程序或 scheduler 已
 事件 delivery 默认通过绑定 session 的 `next_run` 排队唤醒 Root，不打断当前推理。稳定
 request id 为 `monitor:<event_id>`；session 不存在、workspace 不匹配或 App Server
 重启时 delivery 保持 pending，可由后续 worker 恢复。Root 被唤醒后必须重新读取
-`research.read`，再显式执行 `compute.run inspect`，并自行决定是否 `finalize` 或通过 `research.change`
+`research_read`，再显式执行 `compute_run inspect`，并自行决定是否 `finalize` 或通过 `research_change`
 写入 Finding/Gate/Node 状态。Monitor 不自动 finalize、不修改 ResearchMap、不做科学判断。
 
 研究推进的 liveness 是独立于 Monitor 观察的诊断投影。turn boundary 通过
-`research.checkpoint` 持久化 Agent 的 disposition。`research.continuation` 仅作为旧
+`research_checkpoint` 持久化 Agent 的 disposition。`research_continuation` 仅作为旧
 required-action ledger 的兼容接口：可以通过 canonical `set`/`resolve` 查询或迁移旧记录，
 旧的 `set_*` 拼法只作为 alias；新 turn 不应再用它结束生命周期。旧 `required` 记录会被
 规范化为 `continue_required`，不构成第二套 liveness 状态机。ChangeSet 的审计字段属于
-`research.change`，不混入这个兼容请求。每次 run boundary，Host 只会针对
+`research_change`，不混入这个兼容请求。每次 run boundary，Host 只会针对
 `decision_needed` 追加最多三次 follow-up，并且不会替 Agent 选择方法。这样 parsed 之后
 即使没有新的 Monitor 事件，研究也能继续；阻塞或延期的研究则保持静默且可审计。
 
@@ -343,6 +343,6 @@ Host 的 `monitor/event` 通知只是实时投影，不是持久化重放日志�
 ```text
 Workspace records <-> App Server Monitor worker -> Session next_run -> Root Agent
        ^                     |                         |
-       |                     +-- user notification     +-- research.read / compute.run / research.change
+       |                     +-- user notification     +-- research_read / compute_run / research_change
        +-- Compute/remote durable status
 ```

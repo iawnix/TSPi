@@ -72,8 +72,8 @@ export function wakeMessage(event) {
   return ["A compute monitor event requires attention.", `event_id=${event.event_id}`, `monitor_id=${event.monitor_id}`,
     `node_id=${event.node_id}`, `intent_id=${event.intent_id}`, `state=${event.state}`,
     `program_status=${event.program_status || "unknown"}`, event.error_class ? `error_class=${event.error_class}` : undefined,
-    "Read research.read and the execution Attempt before deciding what to do.",
-    "Use compute.run with operation=inspect to reconcile status. A completed scheduler job is not a parsed result; check evidence before finalizing or changing ResearchMap.",
+    "Read research_read and the execution Attempt before deciding what to do.",
+    "Use compute_run with operation=inspect to reconcile status. A completed scheduler job is not a parsed result; check evidence before finalizing or changing ResearchMap.",
   ].filter(Boolean).join("\n");
 }
 

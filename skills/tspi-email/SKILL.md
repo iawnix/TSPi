@@ -7,7 +7,7 @@ description: Send configured email notifications for TSPi research events and re
 
 [Chinese version](SKILL.zh-CN.md)
 
-This Skill documents the Host/Monitor-owned `notify.send` delivery capability;
+This Skill documents the Host/Monitor-owned `notify_send` delivery capability;
 it is not a Root Agent tool. Use
 `tspi-research-kernel` for research state and `tspi-orchestration` for
 operational, report, and Artifact context.

@@ -39,5 +39,5 @@ XYZ 原子顺序必须与定义 mapping 的图一致；元素一致本身不能�
 后续优化/CREST/NEB 属于独立科学选择。反射操作会改变立体化学，因此被拒绝。
 
 `species.identity` 依据 isomeric graph、同位素、电荷和多重度比较 SpeciesRecord。它不
-解析未指定立体化学，也不分类构象。几何 identity 使用现有 `artifact.compare`，并提供合适的
+解析未指定立体化学，也不分类构象。几何 identity 使用现有 `artifact_compare`，并提供合适的
 mapping、立体化学检查和物理阈值。

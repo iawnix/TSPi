@@ -33,7 +33,7 @@ stereochemistry alongside the global RMSD and rendered structure.
 
 ## Deterministic Tool Parameters
 
-`artifact.compare` exposes optional `parameters` with camel-case fields:
+`artifact_compare` exposes optional `parameters` with camel-case fields:
 
 - `atomMapping`: one target index for every reference atom;
 - `reactionCenterAtoms`: reference atom indices used for local RMSD;

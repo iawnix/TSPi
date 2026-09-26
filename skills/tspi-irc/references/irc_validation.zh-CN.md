@@ -13,7 +13,7 @@
 
 将每个端点与一个显式选择的反应物或产物 Artifact 比较。核验元素计数、原子 mapping、
 电荷、多重度或电子态、形成/断裂键、关键内坐标、片段配对、构象与立体化学。适合确定性
-映射比较时使用 `artifact.compare`。不能只从文件名或路径方向推断端点 identity。
+映射比较时使用 `artifact_compare`。不能只从文件名或路径方向推断端点 identity。
 
 `mechanism.step.audit` 可以组合驻点、振动模式、正向/反向路径和结构比较 Artifact。预期
 端点 ID 必须显式给出，每项比较必须把提取端点绑定到该目标。Audit 是结构化评估，不是

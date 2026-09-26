@@ -1,6 +1,6 @@
 # Render Contract
 
-`artifact.render` creates molecular images, animations, comparison panels, reaction
+`artifact_render` creates molecular images, animations, comparison panels, reaction
 diagrams, and scientific curves as local artifacts.
 
 The request selects `render`, `animate`, `compare`, `mechanism`, `curve`, `energy`,

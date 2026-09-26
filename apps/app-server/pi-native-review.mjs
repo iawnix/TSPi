@@ -56,7 +56,7 @@ export function createReviewTool(runtime) {
   return {
     ...TOOL_CONTRACTS.review,
     async execute(toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("review.run");
+      requireNativeWrites("review_run");
       requireReviewRuntime(runtime);
       const request = validateSubagentRequest({
         targetClaimId: params.targetClaimId,
@@ -166,7 +166,7 @@ export function createReplyTool() {
   return {
     ...TOOL_CONTRACTS.reply,
     async execute(_toolCallId, params, _onUpdate, toolContext) {
-      requireNativeWrites("review.respond");
+      requireNativeWrites("review_respond");
       const disposition = writeReviewRootDisposition(boundWorkspaceRoot(params, toolContext), {
         task_id: params.taskId,
         review_run_ref: params.reviewRunRef,
@@ -456,7 +456,7 @@ function cliErrorMessage(stderr) {
 
 function requireReviewRuntime(runtime) {
   if (!runtime?.models || !runtime?.model || !runtime?.thinkingLevel) {
-    throw new Error("review.run requires the native Pi model runtime");
+    throw new Error("review_run requires the native Pi model runtime");
   }
 }
 

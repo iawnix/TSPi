@@ -107,7 +107,7 @@ install, enter its path when prompted; for a non-interactive install, pass
 available on the target machine, and pass the edited file to the installer. The
 installed copy is `<install>/.pi/compute.toml` and is written with mode `0600`.
 
-Local and remote calculations share one public lifecycle through `compute.run`; choose
+Local and remote calculations share one public lifecycle through `compute_run`; choose
 `execution_target.kind = "local"` or `"remote"` and, when using the unified file,
 its environment name in the calculation intent. SSH keys and other credentials stay in
 the SSH configuration and are never copied into this TOML. TSPi does not install
@@ -273,7 +273,7 @@ inside each workspace. `monitor/list`, `monitor/status`, `monitor/enable`, and
 `monitor/disable` expose health and backlog. Wake and notification channels have
 separate leases, retries, and receipts. A wake means that Pi accepted a prompt;
 it does not mean that the agent turn completed. The Root Agent must reread
-`research.read` and inspect the calculation before changing ResearchMap.
+`research_read` and inspect the calculation before changing ResearchMap.
 
 The stable `ws_<hex>` identity in `workspace.json` is verified before Monitor
 maps it to the Host route name (the direct-child directory). This prevents a

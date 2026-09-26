@@ -205,7 +205,7 @@ export function continuationFollowUp(status) {
       .join(", ");
     const suffix = refs ? ` (${refs})` : "";
     return {
-      followUp: `Research turn ended with an active scope lacking an explicit disposition${suffix}. Continue the turn: read research.read with mode=context, inspect any relevant Node/Attempt, record a Claim strategy or Attempt interpretation when needed with research.strategy or research.interpretation, then close with research.checkpoint. Use research.continuation only to inspect or migrate an older required-action record. Do not invent a scientific result and do not end while an active scope has no lifecycle disposition.`,
+      followUp: `Research turn ended with an active scope lacking an explicit disposition${suffix}. Continue the turn: read research_read with mode=context, inspect any relevant Node/Attempt, record a Claim strategy or Attempt interpretation when needed with research_strategy or research_interpretation, then close with research_checkpoint. Use research_continuation only to inspect or migrate an older required-action record. Do not invent a scientific result and do not end while an active scope has no lifecycle disposition.`,
     };
   }
 
@@ -216,7 +216,7 @@ export function continuationFollowUp(status) {
     .join(", ");
   const suffix = refs ? ` (${refs})` : "";
   return {
-    followUp: `Kernel has ${required.length} legacy required-action record${required.length === 1 ? "" : "s"}${suffix}. Continue the research turn: first read research.read with mode=context (or mode=liveness), then read research.continuation with operation=status, migrate or resolve the recorded action, and explicitly set its disposition to deferred, blocked, or completed. Do not end while a safe, explicit next step remains.`,
+    followUp: `Kernel has ${required.length} legacy required-action record${required.length === 1 ? "" : "s"}${suffix}. Continue the research turn: first read research_read with mode=context (or mode=liveness), then read research_continuation with operation=status, migrate or resolve the recorded action, and explicitly set its disposition to deferred, blocked, or completed. Do not end while a safe, explicit next step remains.`,
   };
 }
 

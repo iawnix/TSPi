@@ -1,6 +1,6 @@
 # 渲染合同
 
-`artifact.render` 将分子图像、动画、比较面板、反应图和科学曲线创建为本地 Artifact。
+`artifact_render` 将分子图像、动画、比较面板、反应图和科学曲线创建为本地 Artifact。
 
 请求选择 `render`、`animate`、`compare`、`mechanism`、`curve`、`energy`、`scan`
 或 `convergence`，以及一个已有 ResearchNode、逻辑输入 Artifact ID 和安全输出文件名。

@@ -866,8 +866,14 @@ function hostSnapshot(value) {
   const raw = value?.snapshot || value || {};
   const operation = raw.operation || null;
   const queues = Array.isArray(raw.queues) ? raw.queues : [];
+  const transcript = Array.isArray(raw.transcript)
+    ? raw.transcript
+    : Array.isArray(raw.messages)
+      ? raw.messages
+      : [];
+  const failure = operation === null ? normalizeOperationFailure(raw.lastResult) : null;
   return {
-    messages: Array.isArray(raw.transcript) ? raw.transcript : Array.isArray(raw.messages) ? raw.messages : [],
+    messages: appendFailureMessage(transcript, failure),
     online: true,
     read_only: false,
     can_prompt: true,
@@ -886,10 +892,85 @@ function hostSnapshot(value) {
     streaming_message: operation?.streamingMessage || null,
     running_tools: Array.isArray(operation?.runningTools) ? operation.runningTools : [],
     last_result: raw.lastResult || null,
+    runtime_error: failure,
     faulted: raw.faulted === true,
     model: normalizeModelIdentity(raw.configuration?.model),
     receipts: [],
   };
+}
+
+function appendFailureMessage(transcript, failure) {
+  if (!failure) return transcript;
+  const messages = transcript.slice();
+  const failedIndex = messages.findLastIndex((entry) => {
+    const message = entry?.type === "message" && entry.message && typeof entry.message === "object"
+      ? entry.message
+      : entry;
+    return message?.role === "assistant" && message?.outputState === "failed";
+  });
+  if (failedIndex >= 0) {
+    const entry = messages[failedIndex];
+    if (entry?.type === "message" && entry.message && typeof entry.message === "object") {
+      messages[failedIndex] = { ...entry, message: { ...entry.message, failure } };
+    } else {
+      messages[failedIndex] = { ...entry, failure };
+    }
+    return messages;
+  }
+  messages.push({
+    role: "assistant",
+    content: [],
+    outputState: "failed",
+    failure,
+  });
+  return messages;
+}
+
+function normalizeOperationFailure(result) {
+  if (!result || typeof result !== "object") return null;
+  const source = result.error && typeof result.error === "object" ? result.error : result;
+  if (result.status !== "failed" && !result.error) return null;
+  const message = typeof source.message === "string" && source.message.trim()
+    ? source.message.trim()
+    : "Pi operation failed";
+  const operationId = typeof result.operationId === "string"
+    ? result.operationId
+    : typeof result.operation_id === "string"
+      ? result.operation_id
+      : null;
+  const statusCode = Number.isSafeInteger(source.statusCode)
+    ? source.statusCode
+    : Number.isSafeInteger(source.status)
+      ? source.status
+      : numericHttpStatus(message);
+  return {
+    code: typeof source.code === "string" && source.code.trim() ? source.code.trim().slice(0, 96) : "operation_failed",
+    summary: failureSummary(source.code),
+    detail: message.slice(0, 4000),
+    ...(statusCode === null ? {} : { statusCode }),
+    retryable: source.retryable === true || result.retryable === true,
+    ...(operationId ? { operationId } : {}),
+  };
+}
+
+function numericHttpStatus(message) {
+  const match = String(message).match(/(?:^|\s)([1-5][0-9]{2})(?=\s|:|$)/);
+  return match ? Number(match[1]) : null;
+}
+
+function failureSummary(code) {
+  switch (code) {
+    case "provider_error":
+      return "模型服务拒绝了请求";
+    case "provider_auth_failed":
+      return "模型服务认证失败";
+    case "provider_unavailable":
+      return "模型服务暂时不可用";
+    case "provider_rate_limited":
+      return "模型服务限制了请求频率";
+    default:
+      return "程序未能完成本次回复";
+  }
 }
 
 function queuedEntryIds(snapshot) {

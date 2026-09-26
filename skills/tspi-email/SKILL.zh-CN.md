@@ -7,7 +7,7 @@ description: 按配置发送 TSPi 研究事件和报告的邮件通知，并跟�
 
 [English version](SKILL.md)
 
-本 Skill 说明由 Host/Monitor 拥有的 `notify.send` 投递 capability；它不是 Root Agent
+本 Skill 说明由 Host/Monitor 拥有的 `notify_send` 投递 capability；它不是 Root Agent
 工具。研究状态使用
 `tspi-research-kernel`，运行、报告与 Artifact 上下文使用 `tspi-orchestration`。通知传达
 已记录的研究结果，并关联相应报告。安装级配置可以选择

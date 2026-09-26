@@ -5,7 +5,7 @@
 Use sources in this order:
 
 1. registered public tool schemas for stable envelopes;
-2. `research.read` for the live ResearchMap, artifacts, capabilities, and operation
+2. `research_read` for the live ResearchMap, artifacts, capabilities, and operation
    catalog;
 3. `SKILL.md` for the research workflow;
 4. one focused `references/*.md` file when its topic is active.

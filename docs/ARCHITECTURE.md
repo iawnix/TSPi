@@ -21,7 +21,7 @@ replacement UI.
   research APIs and does not decode Host RPC.
 - `packages/ts-agent-kernel/ts_agent/` owns the `ResearchMap`, reference
   integrity, validation, and transactions. Its
-  `compute.run` control plane uses one lifecycle for local subprocesses and remote
+  `compute_run` control plane uses one lifecycle for local subprocesses and remote
   scheduler jobs; the configured remote adapter supplies transport and
   readiness operations. Rendering, reporting, and email remain
   Skill/Plugin tools.
@@ -156,8 +156,8 @@ Research Memory (durable records)
 `ResearchMemoryService` does not cache a second ResearchMap or persist a
 ContextPack. `ContextPack.context_id` and provenance identify the source
 revision so a Host can rebuild it after a change or retry. Semantic writes stay
-on `research.change`, `research.strategy`, `research.interpretation`, and
-`research.checkpoint`; new turns do not write through `research.continuation`,
+on `research_change`, `research_strategy`, `research_interpretation`, and
+`research_checkpoint`; new turns do not write through `research_continuation`,
 which is retained only to read or migrate old required-action ledger records.
 There is no generic `memory.commit` operation that could bypass domain
 validation.
@@ -169,11 +169,11 @@ TRIGGER -> ORIENT -> PLAN -> PREPARE -> EXECUTE
         -> WAIT/RECONCILE -> INTERPRET -> ADVANCE -> CHECKPOINT
 ```
 
-Before ending, the Agent must call `research.checkpoint` with one of the
+Before ending, the Agent must call `research_checkpoint` with one of the
 current dispositions: `continue_required`, `waiting_external`, `deferred`,
 `blocked`, `terminal`, or `user_input_required`. `continue_required` records an
 explicit next-turn action chosen by the Agent. The old `required` value is
-accepted only while reading or migrating a `research.continuation` ledger and
+accepted only while reading or migrating a `research_continuation` ledger and
 is normalized to `continue_required`; it is not a second lifecycle state.
 `research.liveness` is a bounded diagnostic projection, not a persisted next
 step or a turn-closing command. An active Node with no valid disposition yields
@@ -313,14 +313,14 @@ Server package; skills remain top-level Pi capabilities.
 
 ## Deterministic Tool Plane
 
-`analysis.run` dispatches 22 independent versioned analysis capabilities from an
+`analysis_run` dispatches 22 independent versioned analysis capabilities from an
 on-demand catalog. Domain code lives in `analysis/`; Node-owned artifacts bind
 inputs, digests and generated files. Selected facts enter the existing
-`research.change` candidate path after replay validation. No capability schedules a
+`research_change` candidate path after replay validation. No capability schedules a
 scientific successor or accepts a Claim. Chemical networks use stoichiometric
 hyperedges and may contain cycles, independently of the ResearchNode DAG.
 
-`execution.dispatch` writes Node-scoped pause/resume receipts outside canonical science.
+`execution_dispatch` writes Node-scoped pause/resume receipts outside canonical science.
 A shared lock orders pauses against new analysis and submission guards. In-flight
 jobs remain inspectable, collectable and cancellable. Reports and TS Web expose
 these execution records separately from the canonical map. See [ADR 0002](adr/0002-independent-scientific-capabilities.md)
@@ -333,7 +333,7 @@ next action from tool exit codes. See [ADR 0003](adr/0003-minimal-research-kerne
 
 Public tools validate input paths against the workspace root, normalize
 artifacts, and return machine-readable errors. Scientific backends are
-selected by capability and parse only their own output formats. `compute.run` uses
+selected by capability and parse only their own output formats. `compute_run` uses
 the same four public operations for local and remote environments:
 
 ```text
@@ -380,18 +380,18 @@ The worker normally delivers an event to the bound session with `next_run`,
 which does not interrupt an active Root turn. Its request id is
 `monitor:<event_id>`. A missing session or an App Server restart leaves the
 delivery pending and allows a later worker pass to retry it. Root must reread
-`research.read`, run `compute.run inspect`, and decide whether to collect, parse, or
+`research_read`, run `compute_run inspect`, and decide whether to collect, parse, or
 write `ResearchMap` state. The Monitor never calls `finalize`, writes
 `ResearchMap`, or makes a scientific decision.
 
 Research liveness is a diagnostic projection separate from Monitor
 observations. The turn boundary persists the Agent's disposition through
-`research.checkpoint`. `research.continuation` remains only as a compatibility
+`research_checkpoint`. `research_continuation` remains only as a compatibility
 ledger: it can list or resolve legacy records through `set`/`resolve` (the old
 `set_*` spellings remain aliases), but new turns must use `checkpoint`.
 Legacy `required` records are migrated to `continue_required`; they do not
 define a second liveness state machine. ChangeSet audit fields belong to
-`research.change`, not to this compatibility request. At a run boundary the
+`research_change`, not to this compatibility request. At a run boundary the
 Host follows the checkpoint result and may add at most three bounded
 follow-ups only for `decision_needed`; it never chooses the next method. Thus
 a parsed calculation can continue even when Monitor has no new status event,

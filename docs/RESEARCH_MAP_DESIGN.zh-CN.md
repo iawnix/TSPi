@@ -60,7 +60,7 @@ transport 在只读 `required` 字段中镜像记录；新调用方应使用 `co
 `research.decisions` 与 `research.evidence` 读取有界 SQLite 元数据，不加载原始文件。
 `/research` 只是命令服务的交互写法，不是另一套 API。
 TS Web 通过 ResearchMap provider 读取 map snapshot。`/compute` 通过 `compute.environments`
-和 `compute.environment` 查询统一的本地/远端环境目录。
+和 `compute_environment` 查询统一的本地/远端环境目录。
 
 ## 执行与 Finding
 
@@ -80,7 +80,7 @@ Gate 保存 criteria 和评估历史，不会静默修改目标对象。
 ## Research Harness Turn 边界
 
 Root Agent 是唯一的科学决策者。每个 turn 读取有界 context，通过注册的 Skill 和
-Capability 选择并执行有界动作，解释证据，并在结束前调用 `research.checkpoint` 登记一种
+Capability 选择并执行有界动作，解释证据，并在结束前调用 `research_checkpoint` 登记一种
 disposition：`continue_required`、等待已提交 Attempt 的 `waiting_external`、带原因的
 `deferred`/`blocked`、`terminal` 或 `user_input_required`。提交前的 `prepared` Attempt 仍是
 本地决策点，不能据此等待 Monitor 事件。若 liveness 返回 `decision_needed`，Harness 可以追加

@@ -21,7 +21,7 @@ not change the scientific Node state. Inspection, collection, parsing, and
 exact cancellation remain available while a Node is paused. A restart must
 reconcile the latest receipt before another submission.
 
-Use the same public `compute.run` operations for local and remote environments:
+Use the same public `compute_run` operations for local and remote environments:
 
 ```text
 launch   -> prepare, submit
@@ -40,7 +40,7 @@ cancellation outcomes must be inspected before retrying.
 
 Analysis outputs live under `nodes/<node_id>/outputs/analysis/` and are bound
 to input digests, generated files, and transient parser candidates. The Root
-Agent verifies a candidate before promoting it through `research.change` to a
+Agent verifies a candidate before promoting it through `research_change` to a
 `FactFinding` or `IssueFinding`. Reports and TS Web consume the canonical
 `ResearchMap` serialization directly; they do not create a second scientific
 state store or choose the next Node.

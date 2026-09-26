@@ -128,6 +128,6 @@ function nativePython() {
 
 function requireNativeWrites() {
   if (process.env.TSPI_NATIVE_WRITES !== "1") {
-    throw new Error("notify.send requires the guarded TSPi App Server Root Agent");
+    throw new Error("notify_send requires the guarded TSPi App Server Root Agent");
   }
 }

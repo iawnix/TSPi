@@ -1,8 +1,8 @@
 # ChangeSet 合同
 
-`research.change` 是 `ResearchMap` 唯一的公共变更边界。它接受一个对象，其中包含
+`research_change` 是 `ResearchMap` 唯一的公共变更边界。它接受一个对象，其中包含
 `rationale`、可选 `basisRefs`、可选 `expectedRevision` 和非空 `operations` 数组。
-使用不熟悉的 operation 前，先查询 `research.read mode=operations` 获取当前目录。
+使用不熟悉的 operation 前，先查询 `research_read mode=operations` 获取当前目录。
 
 ## Operations
 

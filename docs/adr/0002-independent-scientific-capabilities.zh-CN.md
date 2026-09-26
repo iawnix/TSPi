@@ -16,10 +16,10 @@
 分析能力通过版本化 registry 公开。每项能力声明输入/输出 schema、适用范围、参数
 限制、生成文件和候选事实；实现位于 Kernel 的 `analysis/`，但能力不能选择下一步，
 也不能接受 Claim。结果绑定 Node、输入 digest 和生成文件，选定事实必须由 Root Agent
-核验后通过 `research.change` 创建 `FactFinding` 或 `IssueFinding`。
+核验后通过 `research_change` 创建 `FactFinding` 或 `IssueFinding`。
 
-`execution.dispatch` 的暂停/恢复是独立的操作回执链，不增加科学状态枚举；在途作业仍可查看、
-收集、解析和精确取消。`compute.run` 对 local 和 remote 使用同一套生命周期，未知提交或
+`execution_dispatch` 的暂停/恢复是独立的操作回执链，不增加科学状态枚举；在途作业仍可查看、
+收集、解析和精确取消。`compute_run` 对 local 和 remote 使用同一套生命周期，未知提交或
 取消结果必须先检查再重试。
 
 ## 实现边界

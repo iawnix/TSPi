@@ -341,10 +341,10 @@ test("native Pi server gives every client the complete Agent tool inventory", { 
     assert.ok(runtime.workerPids.has(summary.sessionId), "native Worker did not start");
     const state = await readExperimentalSessionState(runtime.sessionDir, summary.sessionId);
     assert.deepEqual(state.activeTools, [
-      "read", "system.prompt", "write", "bash", "research.read", "research.change", "research.continuation",
-      "research.strategy", "research.interpretation", "research.checkpoint", "compute.environment", "review.run",
-      "compute.run", "review.respond", "artifact.seed", "artifact.compare", "analysis.run", "execution.dispatch",
-      "artifact.import", "artifact.render", "report.build",
+      "read", "system_prompt", "write", "bash", "research_read", "research_change", "research_continuation",
+      "research_strategy", "research_interpretation", "research_checkpoint", "compute_environment", "review_run",
+      "compute_run", "review_respond", "artifact_seed", "artifact_compare", "analysis_run", "execution_dispatch",
+      "artifact_import", "artifact_render", "report_build",
     ]);
   } finally {
     await sessionServices?.dispose(BACKGROUND_CONTEXT).catch(() => {});
@@ -400,21 +400,21 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     // after the historical source tools so the behavioral assertions below
     // remain focused on execution semantics.
     Object.assign(tools, {
-      ts_state: tools["research.read"],
-      ts_change: tools["research.change"],
-      ts_workflow: tools["research.continuation"],
-      ts_environment: tools["compute.environment"],
-      ts_calc: tools["compute.run"],
-      ts_review: tools["review.run"],
-      ts_reply: tools["review.respond"],
-      ts_seed: tools["artifact.seed"],
-      ts_compare: tools["artifact.compare"],
-      ts_analyze: tools["analysis.run"],
-      ts_dispatch: tools["execution.dispatch"],
-      ts_import: tools["artifact.import"],
-      ts_render: tools["artifact.render"],
-      ts_report: tools["report.build"],
-      // notify.send is Host/Monitor-owned and intentionally absent from the
+      ts_state: tools["research_read"],
+      ts_change: tools["research_change"],
+      ts_workflow: tools["research_continuation"],
+      ts_environment: tools["compute_environment"],
+      ts_calc: tools["compute_run"],
+      ts_review: tools["review_run"],
+      ts_reply: tools["review_respond"],
+      ts_seed: tools["artifact_seed"],
+      ts_compare: tools["artifact_compare"],
+      ts_analyze: tools["analysis_run"],
+      ts_dispatch: tools["execution_dispatch"],
+      ts_import: tools["artifact_import"],
+      ts_render: tools["artifact_render"],
+      ts_report: tools["report_build"],
+      // notify_send is Host/Monitor-owned and intentionally absent from the
       // Agent inventory. Exercise its guarded factory directly where this
       // test covers the external delivery boundary.
       ts_notify: nativeTools.createNotifyTool(),
