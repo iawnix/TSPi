@@ -75,6 +75,7 @@ APP_SERVER_FILES = [
     "apps/app-server/server-extension-loader.mjs",
     "apps/app-server/extension-manifest-loader.mjs",
     "apps/app-server/notification-dispatcher.mjs",
+    "apps/app-server/research-native-kernel.mjs",
     "apps/app-server/pi-native-compute.mjs",
     "apps/app-server/pi-native-notify.mjs",
     "apps/app-server/pi-native-review.mjs",
