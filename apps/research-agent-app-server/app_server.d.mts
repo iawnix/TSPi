@@ -85,7 +85,7 @@ export function create_app_server(options: {
   workspace_port?: WorkspacePort | null;
   workspace_catalog?: WorkspaceCatalog | null;
   turn_router?: TurnRouter | null;
-  kernel_port?: Pick<ResearchKernelPort, "admit_workspace" | "turn"> | null;
+  kernel_port?: Pick<ResearchKernelPort, "admit_workspace" | "apply_change" | "checkpoint" | "turn"> | null;
   tool_gateway?: ToolGateway | null;
   compute_orchestrator?: {
     readonly run(request: Record<string, unknown>): Promise<Record<string, unknown>>;

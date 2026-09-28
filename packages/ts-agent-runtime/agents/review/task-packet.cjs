@@ -28,7 +28,7 @@ function validateSubagentRequest(request) {
     targetClaimId: requireId(request.targetClaimId, "targetClaimId", CLAIM_ID),
     question: requireString(request.question, "question", LIMITS.maxQuestionChars),
     root: typeof request.root === "string" ? request.root : undefined,
-    artifactIds: uniqueIds(request.artifactIds || [], "artifactIds", LIMITS.maxArtifactIds, /^art_[0-9a-f]{24}$/),
+    artifactIds: uniqueIds(request.artifactIds || [], "artifactIds", LIMITS.maxArtifactIds, /^art_[0-9a-f]{64}$/),
     reviewerRole: request.reviewerRole === undefined ? "general" : requireRoleId(request.reviewerRole),
   };
 }
@@ -225,8 +225,10 @@ function mapDigest(map) {
 function requireWorkspaceRoot(value) {
   if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error("workspace root must be absolute");
   const root = fs.realpathSync(value);
-  const workspace = JSON.parse(fs.readFileSync(path.resolve(root, "workspace.json"), "utf8"));
-  if (workspace.schema_version !== "research-workspace/1") throw new Error("Review requires a ResearchMap workspace");
+  const workspace = JSON.parse(fs.readFileSync(path.resolve(root, "workspace_manifest.json"), "utf8"));
+  if (workspace.schema_version !== "research_agent_workspace_1" || workspace.workspace_mode !== "research") {
+    throw new Error("Review requires a ResearchMap workspace");
+  }
   return root;
 }
 

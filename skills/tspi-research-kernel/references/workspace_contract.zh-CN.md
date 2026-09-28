@@ -2,25 +2,18 @@
 
 ## 规范状态
 
-每个研究 workspace 拥有 `workspace.json`、同步的 `research_map.json` snapshot、
-`transactions.jsonl`、输入目录 `inputs/`，以及 `nodes/<node_id>/` 下由 Node 所有的目录。
-执行 `research.storage operation=bootstrap` 后，`research.db` 成为 map snapshot、decision
-记录和 Evidence Registry 元数据的 SQLite 权威 Kernel 后端。原始 Attempt 与 Artifact payload
-不会写入 SQLite。
-`research_map.json` 包含完整 ResearchMap：phase、claim、node、finding、gate、Claim 关系、
-焦点、metadata 与 revision。TS Web 和 Root 直接消费该文档。Compute Attempt 与 Artifact
-位于 Node 所属目录，可被 map 对象引用。
+每个研究 workspace 由不可变的 `workspace_manifest.json` 绑定。规范科学状态位于
+`research_map/context.json`，生命周期位于 `lifecycle/liveness.json`，有界 memory projection
+位于 `memory/index.json`。三者共享 workspace ID 与 revision，由 Filesystem Research Kernel
+原子写入；运行时不存在 JSON/SQLite 的备用权威。Compute Attempt 与 Artifact 的原始 payload
+保留在 Node/Artifact store，context 只保存类型化元数据。
 
 ## 初始化与身份
 
-通过 `workspace.engine.init_workspace()`，或调用同一 workspace 初始化边界的 Host
-bootstrap 创建 map。Map identity 与对象 ID 都是 workspace 本地的。Kernel 拒绝格式错误
-的 JSON、重复 ID、未知引用、环、无效 enum 值和不一致的反向索引。所有 Artifact 引用都
-保持为逻辑、workspace 相对引用；不要把绝对或远端路径写入 map 对象。
-
-ResearchMap 模型是规范科学状态。JSON-only 模式从 `research_map.json` 读取；SQLite 模式由
-数据库提供权威状态，JSON 文件是供只读客户端与恢复使用的同步导出。Bootstrap 遇到不支持的
-workspace 时会拒绝，不会重写它。
+只有 Host 可以初始化并 admit 研究 workspace。初始化创建 manifest 与 canonical
+context/liveness/memory 文档并处于 `admission_pending`；Host admission 将相关文档统一变为
+admitted/ready。每次读取都校验 manifest、物理文件、root、mode、ID、生命周期状态和 revision。
+不完整、符号链接、旧格式或混合布局必须 fail closed，不能静默迁移。
 
 ## 写入边界
 
@@ -30,9 +23,15 @@ workspace 时会拒绝，不会重写它。
 research_read -> Root interpretation -> research_change
 ```
 
-`research_change` 在锁内加载当前 map，把有序 ChangeSet 应用到独立副本，校验完整变更后
-状态，递增 revision，先提交活动后端，再更新 JSON snapshot 与 transaction receipt。被拒绝的
-请求不会改变之前的 revision。不要手工编辑 JSON、SQLite 数据库或 transaction log。
+所有 Kernel 写入都必须携带 Host 绑定的身份：
+
+```json
+{"principal":"root_agent","authority":"kernel_write"}
+```
+
+`research_change` 在 workspace lock 内加载 canonical context，检查 `expectedRevision`，在
+独立副本上应用 ChangeSet 并校验完整 post-state，然后原子提交 context、liveness、memory
+projection 和 manifest revision。被拒绝的请求不改变任何内容；不要手动编辑 canonical 文档。
 
 ## 关系
 

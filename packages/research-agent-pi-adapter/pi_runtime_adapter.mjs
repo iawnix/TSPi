@@ -17,6 +17,11 @@ export function create_pi_runtime_adapter({ pi_runtime, create_session, attach_s
   }
 
   const sessions = new Map();
+  let closed = false;
+
+  function ensure_open() {
+    if (closed) throw new Error("pi_runtime_closed");
+  }
 
   function session_id_of(raw_session) {
     const session_id = raw_session?.session_id || raw_session?.sessionId || raw_session?.id;
@@ -27,6 +32,7 @@ export function create_pi_runtime_adapter({ pi_runtime, create_session, attach_s
   }
 
   function remember(raw_session) {
+    ensure_open();
     if (raw_session === null || typeof raw_session !== "object") {
       throw new TypeError("Pi runtime returned an invalid session");
     }
@@ -36,6 +42,7 @@ export function create_pi_runtime_adapter({ pi_runtime, create_session, attach_s
   }
 
   function require_session(session_id) {
+    ensure_open();
     const session = sessions.get(session_id);
     if (!session) throw new Error("session_not_found: " + session_id);
     return session;
@@ -49,12 +56,18 @@ export function create_pi_runtime_adapter({ pi_runtime, create_session, attach_s
 
   function session_port(raw_session) {
     const session_id = session_id_of(raw_session);
+    const require_active = () => {
+      ensure_open();
+      if (!sessions.has(session_id)) throw new Error("session_closed: " + session_id);
+    };
     return create_agent_session_port({
       session_id,
       async submit(input) {
+        require_active();
         return method(raw_session, ["send_prompt", "sendPrompt", "prompt", "submit"], "prompt")({ text: input });
       },
       subscribe(listener) {
+        require_active();
         if (typeof listener !== "function") throw new TypeError("listener must be a function");
         const subscribe = raw_session.subscribe || raw_session.on;
         if (typeof subscribe !== "function") return () => {};
@@ -62,9 +75,11 @@ export function create_pi_runtime_adapter({ pi_runtime, create_session, attach_s
         return typeof unsubscribe === "function" ? unsubscribe : () => {};
       },
       async read_snapshot() {
+        require_active();
         return method(raw_session, ["read_snapshot", "readSnapshot", "getSnapshot", "snapshot"], "snapshot")();
       },
       async interrupt(request = {}) {
+        require_active();
         return method(raw_session, ["abort", "interrupt", "requestAbort"], "abort")(request);
       },
     });
@@ -72,10 +87,12 @@ export function create_pi_runtime_adapter({ pi_runtime, create_session, attach_s
 
   return create_agent_runtime_port({
     async create_session(request) {
+      ensure_open();
       if (typeof start !== "function") throw new TypeError("Pi runtime cannot create sessions");
       return session_port(remember(await start.call(pi_runtime, request)));
     },
     async attach_session(session_id) {
+      ensure_open();
       if (typeof attach === "function") {
         return session_port(remember(await attach.call(pi_runtime, session_id)));
       }
@@ -100,6 +117,7 @@ export function create_pi_runtime_adapter({ pi_runtime, create_session, attach_s
       return abort();
     },
     async close_session(session_id) {
+      ensure_open();
       const session = sessions.get(session_id);
       if (!session) throw new Error("session_not_found: " + session_id);
       const close = ["close", "dispose"].map((name) => session[name]).find((candidate) => typeof candidate === "function");
@@ -111,6 +129,8 @@ export function create_pi_runtime_adapter({ pi_runtime, create_session, attach_s
       return { session_id, state: "closed" };
     },
     async close() {
+      if (closed) return;
+      closed = true;
       sessions.clear();
       if (typeof pi_runtime.close === "function") await pi_runtime.close.call(pi_runtime);
     },

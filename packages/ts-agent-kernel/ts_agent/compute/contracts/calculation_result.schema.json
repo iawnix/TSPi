@@ -135,7 +135,7 @@
         "owner_node", "source_intent_id"
       ],
       "properties": {
-        "artifact_id": {"type": "string", "pattern": "^art_[0-9a-f]{24}$"},
+        "artifact_id": {"type": "string", "pattern": "^art_[0-9a-f]{64}$"},
         "path": {"type": "string", "minLength": 1, "maxLength": 4096},
         "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
         "size_bytes": {"type": "integer", "minimum": 0},

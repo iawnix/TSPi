@@ -83,6 +83,7 @@ test("composition root assembles compute orchestration from a full Host Kernel",
     async read_context() { return { revision: 0 }; },
     async apply_change() { return { accepted: true, revision: 1 }; },
     async admit_workspace() { return { accepted: true }; },
+    async checkpoint() { return { accepted: true }; },
     async turn() { return { accepted: true }; },
   };
   const composition = create_research_agent_composition({
@@ -102,6 +103,7 @@ test("composition root allows the Host to disable automatic compute orchestratio
     async read_context() { return { revision: 0 }; },
     async apply_change() { return { accepted: true, revision: 1 }; },
     async admit_workspace() { return { accepted: true }; },
+    async checkpoint() { return { accepted: true }; },
     async turn() { return { accepted: true }; },
   };
   const composition = create_research_agent_composition({
@@ -135,6 +137,8 @@ test("composition root shares its ArtifactStore with automatic compute orchestra
     await composition.app_server.admit_workspace({ workspace_root });
     await kernel.apply_change({
       workspace_id: "workspace_composition_compute",
+      principal: "root_agent",
+      authority: "kernel_write",
       expected_revision: 0,
       operations: [
         { type: "create_claim", id: "claim_1", statement: "composition compute" },

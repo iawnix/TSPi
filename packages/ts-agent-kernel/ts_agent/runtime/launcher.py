@@ -72,6 +72,7 @@ MODEL_ICON_CONFIG_SCHEMA = "tspi-model-icons/1"
 MODEL_ICON_CONFIG_RELATIVE = Path(".pi/tspi/model-icons.json")
 SERVICE_CONFIG_SCHEMA = "tspi-service/1"
 SERVICE_CONFIG_RELATIVE = Path(".pi/tspi/service.json")
+REMOTE_ENVIRONMENT_ENV = "TS_REMOTE_ENVIRONMENT"
 PI_AGENT_SETTINGS_RELATIVE = Path(".pi/agent/settings.json")
 TSPI_THEME_RELATIVE = Path("themes/ts-theme.json")
 TSPI_THEME_NAME = "ts-theme"
@@ -654,6 +655,7 @@ def configure_remote(installation: Installation) -> None:
             configured = str(installation.compute_config_default)
     if not configured:
         os.environ.pop("TS_COMPUTE_CONFIG", None)
+        os.environ.pop(REMOTE_ENVIRONMENT_ENV, None)
         os.environ["TS_REMOTE_DISPLAY_TARGET"] = "not configured"
         return
     path = _require_config_file(configured, "TS_COMPUTE_CONFIG")
@@ -662,20 +664,56 @@ def configure_remote(installation: Installation) -> None:
             config = tomllib.load(handle)
         environment_name = config.get("default_environment")
         environments = config.get("environments", {})
+        if (
+            not isinstance(environment_name, str)
+            or not isinstance(environments, dict)
+            or not environments
+            or environment_name not in environments
+        ):
+            raise ValueError("compute config must define default_environment and at least one environment")
+        if any(
+            not isinstance(name, str)
+            or not isinstance(item, dict)
+            or item.get("kind") not in {"local", "remote"}
+            for name, item in environments.items()
+        ):
+            raise ValueError("compute config environments must declare kind=local or kind=remote")
         environment = environments.get(environment_name, {}) if isinstance(environments, dict) else {}
-        if isinstance(environment, dict) and environment.get("kind") == "local" and isinstance(environments, dict):
-            remote_environments = [
-                item for item in environments.values()
-                if isinstance(item, dict) and item.get("kind") == "remote"
+        remote_name = environment_name if isinstance(environment, dict) and environment.get("kind") == "remote" else None
+        if remote_name is None and isinstance(environments, dict):
+            # ``default_environment`` controls ordinary calculation selection
+            # and may intentionally remain local.  Pick one remote target for
+            # the installation-level doctor, but preserve its canonical config
+            # id so the diagnostic cannot silently select another remote when
+            # multiple platforms are configured.
+            remote_names = [
+                name
+                for name, item in environments.items()
+                if isinstance(name, str) and isinstance(item, dict) and item.get("kind") == "remote"
             ]
-            environment = remote_environments[0] if remote_environments else environment
-        if not isinstance(environment, dict):
-            raise ValueError("default environment must be a table")
-        host = environment.get("ssh_host", environment_name or "configured")
-        scheduler = str(environment.get("scheduler", "torque")).title()
+            if remote_names:
+                remote_name = remote_names[0]
+                environment = environments[remote_name]
+            else:
+                environment = None
+        if remote_name is None:
+            os.environ.pop(REMOTE_ENVIRONMENT_ENV, None)
+            os.environ["TS_COMPUTE_CONFIG"] = str(path)
+            os.environ["TS_REMOTE_DISPLAY_TARGET"] = "not configured"
+            return
+        if not isinstance(environment, dict) or environment.get("kind") != "remote":
+            raise ValueError("selected remote environment must declare kind=remote")
+        host = environment.get("ssh_host")
+        if not isinstance(host, str) or not host.strip():
+            raise ValueError(f"remote environment {remote_name!r} is missing ssh_host")
+        scheduler = environment.get("scheduler", "torque")
+        if not isinstance(scheduler, str) or not scheduler.strip():
+            raise ValueError(f"remote environment {remote_name!r} has an invalid scheduler")
+        scheduler = scheduler.title()
     except (OSError, TypeError, ValueError, tomllib.TOMLDecodeError) as exc:
         raise TSPiHostError(f"invalid remote configuration: {path}: {exc}") from exc
     os.environ["TS_COMPUTE_CONFIG"] = str(path)
+    os.environ[REMOTE_ENVIRONMENT_ENV] = remote_name
     os.environ["TS_REMOTE_DISPLAY_TARGET"] = f"{host} · {scheduler}"
 
 
@@ -811,8 +849,20 @@ def check_remote(installation: Installation) -> int:
         expected = installation.compute_config_default or installation.root / ".pi" / "compute.toml"
         print(f"ResearchAgent: remote configuration is missing: {expected}", file=sys.stderr)
         return 1
+    environment_name = os.environ.get(REMOTE_ENVIRONMENT_ENV, "").strip()
+    if not environment_name:
+        print("ResearchAgent: no remote compute environment is configured", file=sys.stderr)
+        return 1
     completed = subprocess.run(
-        [sys.executable, str(installation.package_root / "scripts" / "ts_compute.py"), "remote-diagnostic", "--mode", "doctor"],
+        [
+            sys.executable,
+            str(installation.package_root / "scripts" / "ts_compute.py"),
+            "remote-diagnostic",
+            "--mode",
+            "doctor",
+            "--environment",
+            environment_name,
+        ],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -875,10 +925,14 @@ def configure_process_environment(installation: Installation, workspace: Path, w
     # Keep the Native Pi client on the package's standard presentation path.
     os.environ.pop("TSPI_CUSTOM_UI", None)
     _restore_native_pi_settings(installation)
-    if installation.compute_config_default and installation.compute_config_default.is_file():
-        os.environ["TS_COMPUTE_CONFIG"] = str(installation.compute_config_default)
-    else:
-        os.environ.pop("TS_COMPUTE_CONFIG", None)
+    # ``configure_remote`` runs before this function and may have validated a
+    # caller-selected compute profile. Preserve that path for the terminal and
+    # Host instead of silently switching back to the installation default.
+    if not os.environ.get("TS_COMPUTE_CONFIG"):
+        if installation.compute_config_default and installation.compute_config_default.is_file():
+            os.environ["TS_COMPUTE_CONFIG"] = str(installation.compute_config_default)
+        else:
+            os.environ.pop("TS_COMPUTE_CONFIG", None)
     python_cache = installation.process_cache_root / "python" / workspace_name
     pytest_cache = installation.process_cache_root / "pytest" / workspace_name
     for path in (installation.process_cache_root, python_cache.parent, pytest_cache.parent, python_cache, pytest_cache):
@@ -930,6 +984,21 @@ def ensure_workspace_sqlite(workspace: Path) -> dict[str, object]:
     from ts_agent.research import ResearchKernel
 
     return ResearchKernel(workspace).ensure_sqlite()
+
+
+def has_legacy_research_storage(workspace: Path) -> bool:
+    """Return whether the historical ResearchKernel layout is present.
+
+    New Research Agent workspaces use ``research_map/context.json`` as their
+    sole write authority.  The old JSON/SQLite files are still supported for
+    an explicit migration window, but must not be created merely by opening a
+    fresh filesystem workspace.
+    """
+
+    return any(
+        (workspace / name).exists()
+        for name in ("workspace.json", "research_map.json", "research.db", "transactions.jsonl")
+    )
 
 
 def check_research_workspace_storage(workspace: Path) -> dict[str, object]:
@@ -1599,38 +1668,16 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         os.environ["RESEARCH_AGENT_WORKSPACE_ID"] = str(manifest["workspace_id"])
         os.environ["TSPI_WORKSPACE_MODE"] = str(manifest["workspace_mode"])
         if manifest["workspace_mode"] == "research":
-            # The mode manifest owns the new Research Agent state, while the
-            # current Pi/Kernal bridge still consumes the legacy canonical
-            # ResearchMap files. Seed that compatibility view once, then let
-            # the normal bootstrap validator protect any later partial or
-            # corrupted workspace instead of treating mode directories as a
-            # legacy partial layout.
-            from ts_agent.workspace.bootstrap import bootstrap_workspace
-            from ts_agent.workspace.engine import init_workspace
-
-            try:
-                if (workspace / "research_map.json").is_file():
-                    bootstrap_workspace(workspace)
-                else:
-                    init_workspace(workspace)
-            except Exception as exc:
-                raise TSPiHostError(str(exc)) from exc
-            try:
-                # Research workspaces use SQLite as the durable Research Kernel
-                # metadata store.  The JSON snapshot remains an export/compatibility
-                # view, while the first launch performs the one-time migration.
-                ensure_workspace_sqlite(workspace)
-            except Exception as exc:
-                raise TSPiHostError(f"Research Kernel SQLite initialization failed: {exc}") from exc
-            try:
-                # During the storage migration, refuse to launch when the new
-                # context and the legacy Kernel disagree. A matching legacy
-                # view remains allowed with an explicit compatibility warning.
-                check_research_workspace_storage(workspace)
-            except TSPiHostError:
-                raise
-            except Exception as exc:
-                raise TSPiHostError(f"ResearchMap storage coherence check failed: {exc}") from exc
+            # The filesystem Research Kernel owns the canonical state. A
+            # workspace that also contains the retired JSON/SQLite store has
+            # two competing write authorities and must be migrated explicitly
+            # instead of being opened through a compatibility path.
+            if has_legacy_research_storage(workspace):
+                raise TSPiHostError(
+                    "workspace contains retired ResearchMap storage; "
+                    "remove or explicitly migrate research_map.json, research.db, "
+                    "workspace.json, and transactions.jsonl before opening it"
+                )
         configure_process_environment(installation, workspace, request.workspace_name)
         launch_terminal(installation, request, workspace)
 

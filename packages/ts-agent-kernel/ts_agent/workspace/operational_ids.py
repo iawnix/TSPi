@@ -84,7 +84,7 @@ def _workspace_root(root: str | Path) -> Path:
     if path_has_symlink(candidate):
         raise ValueError("workspace root must not be a symbolic link")
     workspace = candidate
-    if not workspace.is_dir() or not (workspace / "workspace.json").is_file():
+    if not workspace.is_dir() or not (workspace / "workspace_manifest.json").is_file():
         raise ValueError("operational IDs require an initialized TS workspace")
     return workspace
 

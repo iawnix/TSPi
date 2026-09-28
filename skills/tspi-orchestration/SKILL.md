@@ -18,6 +18,8 @@ does not redefine that model.
 3. Reuse or create a ResearchNode. Add a Phase only when grouping helps
    navigation. Select the scientific Skill, Backend, and compute environment
    needed for the question.
+   For a named target, verify readiness with the exact capability, environment,
+   and execution kind; default readiness does not validate another environment.
 4. Launch or inspect work under the owning Node. Keep Attempts and Artifacts
    attached to that Node.
 5. Inspect primary outputs, then record narrow FactFindings and IssueFindings

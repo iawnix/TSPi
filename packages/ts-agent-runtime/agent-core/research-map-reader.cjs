@@ -3,40 +3,48 @@
 const { existsSync, lstatSync, readFileSync } = require("node:fs");
 const { resolve } = require("node:path");
 
-// New Research Agent workspaces keep the authoritative ResearchMap projection
-// in research_map/context.json. Legacy workspaces still expose research_map.json.
-// Consumers receive the same map-shaped read-only document in either case.
+// The Agent Runtime consumes the same canonical read model as the Research
+// Kernel. It must never silently fall back to research_map.json, because that
+// would create a second authority after a workspace has migrated.
 function readResearchMap(rootValue) {
   const root = resolve(rootValue);
+  const manifestPath = resolve(root, "workspace_manifest.json");
   const contextPath = resolve(root, "research_map", "context.json");
   const livenessPath = resolve(root, "lifecycle", "liveness.json");
-  if (existsSync(contextPath)) {
-    if (lstatSync(contextPath).isSymbolicLink()) throw new Error("ResearchMap context is a symbolic link");
-    const context = JSON.parse(readFileSync(contextPath, "utf8"));
-    if (!isPlainObject(context) || context.schema_version !== "research_map_context_1") {
-      throw new Error("ResearchMap context schema is invalid");
-    }
-    return {
-      ...context,
-      schema_version: "research-map/1",
-      nodes: Array.isArray(context.nodes) ? context.nodes : [],
-      claims: Array.isArray(context.claims) ? context.claims : [],
-    };
+  if (!existsSync(manifestPath) || lstatSync(manifestPath).isSymbolicLink()) {
+    throw new Error("workspace manifest is required");
   }
-  // A partially-created new workspace must not silently fall back to a stale
-  // legacy map. The Research Agent boundary treats either state file as an
-  // explicit opt-in to the context/liveness protocol.
-  if (existsSync(livenessPath)) {
-    if (lstatSync(livenessPath).isSymbolicLink()) throw new Error("ResearchMap liveness is a symbolic link");
-    throw new Error("ResearchMap context does not exist");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  if (!isPlainObject(manifest) || manifest.schema_version !== "research_agent_workspace_1") {
+    throw new Error("workspace manifest schema is invalid");
   }
-  const mapPath = resolve(root, "research_map.json");
-  if (!existsSync(mapPath) || lstatSync(mapPath).isSymbolicLink()) return null;
-  const map = JSON.parse(readFileSync(mapPath, "utf8"));
-  if (!isPlainObject(map) || map.schema_version !== "research-map/1") {
-    throw new Error("ResearchMap schema is invalid");
+  if (manifest.workspace_mode === "light") return null;
+  if (manifest.workspace_mode !== "research") throw new Error("workspace mode is invalid");
+  if (!existsSync(contextPath) || lstatSync(contextPath).isSymbolicLink()) {
+    throw new Error("ResearchMap context is missing or symbolic");
   }
-  return map;
+  if (!existsSync(livenessPath) || lstatSync(livenessPath).isSymbolicLink()) {
+    throw new Error("ResearchMap liveness is missing or symbolic");
+  }
+  const context = JSON.parse(readFileSync(contextPath, "utf8"));
+  const liveness = JSON.parse(readFileSync(livenessPath, "utf8"));
+  if (!isPlainObject(context) || context.schema_version !== "research_map_context_1") {
+    throw new Error("ResearchMap context schema is invalid");
+  }
+  if (!isPlainObject(liveness) || liveness.schema_version !== "research_liveness_1") {
+    throw new Error("ResearchMap liveness schema is invalid");
+  }
+  if (context.workspace_mode !== "research" || context.workspace_id !== manifest.workspace_id
+      || liveness.workspace_id !== manifest.workspace_id) {
+    throw new Error("ResearchMap workspace identity is inconsistent");
+  }
+  if (!Number.isInteger(context.revision) || context.revision < 0 || liveness.revision !== context.revision) {
+    throw new Error("ResearchMap revision is inconsistent");
+  }
+  for (const field of ["phases", "claims", "nodes", "findings", "gates"]) {
+    if (!Array.isArray(context[field])) throw new Error(`ResearchMap ${field} must be an array`);
+  }
+  return { ...context, schema_version: "research-map/1" };
 }
 
 function isPlainObject(value) {

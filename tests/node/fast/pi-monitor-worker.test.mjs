@@ -17,7 +17,11 @@ async function fixture(t) {
   const workspace = join(temporaryRoot, "ts_001");
   await mkdir(workspace);
   const canonicalId = "ws_" + "a".repeat(24);
-  await writeFile(join(workspace, "workspace.json"), JSON.stringify({ schema_version: "research-workspace/1", workspace_id: canonicalId }));
+  await writeFile(join(workspace, "workspace_manifest.json"), JSON.stringify({
+    schema_version: "research_agent_workspace_1",
+    workspace_id: canonicalId,
+    workspace_mode: "research",
+  }));
   const event = { event_id: "evt_1", monitor_id: "mon_1", workspace_id: canonicalId, node_id: "node_1", intent_id: "calc_1", state: "completed" };
   const delivery = { event_id: event.event_id, session_id: "existing-session", request_id: "monitor:evt_1" };
   const completed = new Set();

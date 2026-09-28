@@ -113,6 +113,9 @@ def workspace_id_for(source_root: str | Path) -> str:
     """
 
     source = lexical_path(source_root)
+    manifest_id = _new_workspace_id(source)
+    if manifest_id is not None:
+        return manifest_id
     from ts_agent.workspace.identity import IDENTITY_REF, workspace_id as persisted_workspace_id
 
     identity_path = source / IDENTITY_REF
@@ -125,12 +128,63 @@ def workspace_id_for(source_root: str | Path) -> str:
 
 
 def _is_workspace(path: Path) -> bool:
+    if _is_new_research_workspace(path):
+        return True
     if not (path / "workspace.json").is_file() or not (path / "research_map.json").is_file():
         return False
     try:
         return validate_workspace(path, read_only=True).get("valid") is True
     except (OSError, ValueError):
         return False
+
+
+def _is_new_research_workspace(path: Path) -> bool:
+    """Recognize a complete Research Agent filesystem workspace read-only.
+
+    The optional Web provider predates ``workspace_manifest.json``.  Keeping
+    this check here lets discovery include new workspaces without making the
+    legacy ResearchKernel responsible for their state or creating any files.
+    """
+
+    manifest = _read_new_manifest(path)
+    if manifest is None or manifest.get("workspace_mode") != "research":
+        return False
+    context = path / "research_map" / "context.json"
+    liveness = path / "lifecycle" / "liveness.json"
+    return (
+        context.is_file()
+        and not context.is_symlink()
+        and liveness.is_file()
+        and not liveness.is_symlink()
+    )
+
+
+def _new_workspace_id(path: Path) -> str | None:
+    manifest = _read_new_manifest(path)
+    if manifest is None or manifest.get("workspace_mode") != "research":
+        return None
+    value = manifest.get("workspace_id")
+    if not isinstance(value, str) or not value or len(value) > 80:
+        return None
+    return value
+
+
+def _read_new_manifest(path: Path) -> dict[str, Any] | None:
+    manifest_path = path / "workspace_manifest.json"
+    if path_has_symlink(path) or not manifest_path.is_file() or manifest_path.is_symlink():
+        return None
+    try:
+        value = read_json(manifest_path)
+    except (OSError, ValueError):
+        return None
+    if value.get("schema_version") != "research_agent_workspace_1":
+        return None
+    if not isinstance(value.get("workspace_id"), str) or not value.get("workspace_id"):
+        return None
+    manifest_root = value.get("workspace_root")
+    if not isinstance(manifest_root, str) or lexical_path(manifest_root) != path:
+        return None
+    return value
 
 
 def _valid_row(row: object) -> bool:

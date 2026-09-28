@@ -439,8 +439,8 @@ function assertInside(root, candidate, message) {
 }
 
 function requireArtifactId(value, label) {
-  const artifactId = requireString(value, label, 28);
-  if (!/^art_[0-9a-f]{24}$/.test(artifactId)) throw new Error(`${label} is invalid`);
+  const artifactId = requireString(value, label, 68);
+  if (!/^art_[0-9a-f]{64}$/.test(artifactId)) throw new Error(`${label} is invalid`);
   return artifactId;
 }
 

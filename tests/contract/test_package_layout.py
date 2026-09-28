@@ -592,8 +592,83 @@ def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:
         "remote-diagnostic",
         "--mode",
         "doctor",
+        "--environment",
+        "cluster",
     ]
     assert not (install_root / "workspaces").exists()
+
+
+def test_tspi_check_remote_uses_one_canonical_remote_when_default_is_local(
+    tmp_path: Path,
+) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    ssh_config = install_root / ".pi" / "ssh_config"
+    ssh_config.parent.mkdir(parents=True, exist_ok=True)
+    ssh_config.write_text("Host cluster-a cluster-b\n", encoding="utf-8")
+    config = install_root / ".pi" / "compute.toml"
+    config.write_text(
+        f'''default_environment = "local"
+[environments.local]
+kind = "local"
+[environments.cluster_a]
+kind = "remote"
+ssh_host = "cluster-a"
+ssh_config = "{ssh_config}"
+scheduler = "torque"
+remote_root = "/remote/a"
+allowed_queues = ["batch"]
+[environments.cluster_a.backends.xtb]
+command = ["xtb"]
+[environments.cluster_b]
+kind = "remote"
+ssh_host = "cluster-b"
+ssh_config = "{ssh_config}"
+scheduler = "torque"
+remote_root = "/remote/b"
+allowed_queues = ["batch"]
+[environments.cluster_b.backends.xtb]
+command = ["xtb"]
+''',
+        encoding="utf-8",
+    )
+    diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
+    invocation = tmp_path / "diagnostic-argv.json"
+    diagnostic.write_text(
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        f"Path({str(invocation)!r}).write_text(json.dumps(sys.argv[1:]), encoding='utf-8')\n"
+        "print('{\"ok\": true}')\n",
+        encoding="utf-8",
+    )
+    write_test_runtime_manifest(_installed_package_root(install_root), install_root)
+
+    completed = _run_tspi(launcher, "--check-remote")
+
+    assert completed.returncode == 0, completed.stderr
+    assert "remote check passed (cluster-a · Torque)" in completed.stdout
+    assert json.loads(invocation.read_text(encoding="utf-8")) == [
+        "remote-diagnostic",
+        "--mode",
+        "doctor",
+        "--environment",
+        "cluster_a",
+    ]
+
+
+def test_tspi_check_remote_rejects_a_local_only_compute_profile(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    config = install_root / ".pi" / "compute.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        'default_environment = "local"\n[environments.local]\nkind = "local"\n',
+        encoding="utf-8",
+    )
+    write_test_runtime_manifest(_installed_package_root(install_root), install_root)
+
+    completed = _run_tspi(launcher, "--check-remote")
+
+    assert completed.returncode == 1
+    assert "no remote compute environment is configured" in completed.stderr
 
 
 def test_tspi_remote_diagnostic_preserves_structured_failure(tmp_path: Path) -> None:
@@ -715,10 +790,17 @@ print(json.dumps({
     # installation Host/Pi server owns the durable session lifecycle instead.
     assert not (workspace / ".pi" / "root-agent.lock").exists()
     assert json.loads((workspace / ".pi" / "settings.json").read_text(encoding="utf-8")) == {"quietStartup": True}
-    research_map = json.loads((workspace / "research_map.json").read_text(encoding="utf-8"))
-    assert research_map["schema_version"] == "research-map/1"
-    assert research_map["map_id"] == json.loads((workspace / "workspace.json").read_text(encoding="utf-8"))["workspace_id"]
-    assert (workspace / ".agents" / "workspace-identity.json").is_file()
+    manifest = json.loads((workspace / "workspace_manifest.json").read_text(encoding="utf-8"))
+    context = json.loads((workspace / "research_map" / "context.json").read_text(encoding="utf-8"))
+    liveness = json.loads((workspace / "lifecycle" / "liveness.json").read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == "research_agent_workspace_1"
+    assert manifest["workspace_id"] == "reaction-a"
+    assert context["schema_version"] == "research_map_context_1"
+    assert context["workspace_id"] == manifest["workspace_id"]
+    assert liveness["workspace_id"] == manifest["workspace_id"]
+    assert not (workspace / "research_map.json").exists()
+    assert not (workspace / "research.db").exists()
+    assert not (workspace / ".agents" / "workspace-identity.json").exists()
 
 
 def test_tspi_fails_closed_without_managed_runtime_manifest(tmp_path: Path) -> None:
@@ -750,7 +832,10 @@ def test_tspi_workspace_preserves_pi_settings_while_bootstrapping(tmp_path: Path
         "theme": "custom",
         "warnings": {"deprecated": False},
     }
-    assert (install_root / "workspaces" / "existing" / "research_map.json").is_file()
+    workspace = install_root / "workspaces" / "existing"
+    assert (workspace / "workspace_manifest.json").is_file()
+    assert (workspace / "research_map" / "context.json").is_file()
+    assert not (workspace / "research_map.json").exists()
 
 
 def test_tspi_rejects_symlinked_workspace_pi_settings(tmp_path: Path) -> None:

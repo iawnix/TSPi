@@ -5,6 +5,9 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "event_id", "sequence", "status_digest", "monitor_id", "workspace_id", "node_id", "intent_id", "intent_digest", "session_id", "wake_policy", "notify_policy", "previous_state", "state", "program_status", "job_id", "exit_status", "error_class", "error", "observed_at", "status"],
+  "allOf": [
+    {"if": {"properties": {"wake_policy": {"const": "next_run"}}}, "then": {"properties": {"session_id": {"type": "string", "minLength": 1}}}}
+  ],
   "properties": {
     "schema_version": {"const": "ts-compute-monitor-event/1"},
     "event_id": {"type": "string", "pattern": "^evt_[a-f0-9]{32}$"},

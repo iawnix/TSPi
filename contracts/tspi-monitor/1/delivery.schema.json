@@ -5,6 +5,9 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "event_id", "monitor_id", "session_id", "wake_policy", "notify_policy", "status", "attempts", "request_id", "created_at", "claimed_at", "delivered_at", "last_error", "channels"],
+  "allOf": [
+    {"if": {"properties": {"wake_policy": {"const": "next_run"}}}, "then": {"properties": {"session_id": {"type": "string", "minLength": 1}}}}
+  ],
   "properties": {
     "schema_version": {"const": "ts-monitor-delivery/1"},
     "event_id": {"type": "string", "pattern": "^evt_[a-f0-9]{32}$"},

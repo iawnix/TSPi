@@ -16,6 +16,18 @@ function require_workspace_manifest(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new TypeError("workspace operation must return a manifest object");
   }
+  if (value.schema_version !== "research_agent_workspace_1") {
+    throw new Error("unsupported_workspace_manifest");
+  }
+  if (typeof value.workspace_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(value.workspace_id)) {
+    throw new Error("invalid_workspace_id");
+  }
+  if (typeof value.workspace_root !== "string" || value.workspace_root.length === 0) {
+    throw new Error("invalid_workspace_root");
+  }
+  if (!new Set(["initializing", "ready", "admission_pending", "failed"]).has(value.state)) {
+    throw new Error("invalid_workspace_state");
+  }
   assert_session_mode(value.workspace_mode);
   return value;
 }
@@ -52,6 +64,16 @@ function require_research_request(value, operation) {
   return Object.freeze({ ...request, workspace_mode: "research" });
 }
 
+function require_research_change_principal(request) {
+  if (request.principal !== "root_agent") {
+    throw new TypeError("research_change requires the Root Agent principal");
+  }
+  if (request.authority !== "kernel_write") {
+    throw new TypeError("research_change requires authority=kernel_write");
+  }
+  return request;
+}
+
 function require_workspace_ready(manifest) {
   if (manifest.workspace_mode === "research" && manifest.state !== "ready") {
     throw new Error("workspace_admission_required");
@@ -77,7 +99,7 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
     }
   }
   if (kernel_port !== null) {
-    for (const method of ["admit_workspace", "turn"]) {
+    for (const method of ["admit_workspace", "apply_change", "checkpoint", "turn"]) {
       if (typeof kernel_port?.[method] !== "function") throw new TypeError(`kernel_port is missing ${method}()`);
     }
   }
@@ -344,10 +366,11 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
         throw new Error("kernel_port_not_configured");
       }
       const requested = require_research_request(request, "research_change");
+      require_research_change_principal(requested);
       const manifest = require_workspace_ready(await resolve_workspace(requested));
       if (manifest.workspace_mode !== "research") throw new Error("research_workspace_required");
       return kernel_port.apply_change({
-        ...request,
+        ...requested,
         workspace_id: manifest.workspace_id,
         workspace_root: manifest.workspace_root,
         workspace_mode: manifest.workspace_mode,

@@ -7,6 +7,8 @@ research model or renames domain objects for a client.
 
 from __future__ import annotations
 
+import copy
+import json
 import posixpath
 import re
 import stat
@@ -163,7 +165,7 @@ def _summary(row: dict[str, Any], research_map: Any | None = None) -> dict[str, 
     }
     if research_map is None:
         try:
-            research_map = ResearchKernel(source_root).load_read_only()
+            research_map = _load_map(source_root)
         except (ResearchKernelError, OSError, ValueError) as error:
             base["load_error"] = _sanitize(str(error), source_root)
             return base
@@ -198,10 +200,131 @@ def _route(row: dict[str, Any], route: str, query: dict[str, str]) -> Any:
 
 
 def _load_map(source_root: str) -> Any:
+    if _has_new_research_state(source_root):
+        try:
+            return _FilesystemResearchMap(source_root)
+        except (OSError, ValueError, ResearchWebError) as error:
+            raise ResearchWebError(str(error), retryable=True) from error
     try:
         return ResearchKernel(source_root).load_read_only()
     except ResearchKernelError as error:
         raise ResearchWebError(str(error), retryable=True) from error
+
+
+def _has_new_research_state(source_root: str | Path) -> bool:
+    root = lexical_path(source_root)
+    return (
+        not path_has_symlink(root)
+        and (root / "workspace_manifest.json").is_file()
+        and (root / "research_map" / "context.json").is_file()
+        and (root / "lifecycle" / "liveness.json").is_file()
+    )
+
+
+class _FilesystemResearchMap:
+    """Read-only ResearchMap projection for the new filesystem Kernel.
+
+    The Web contract still speaks ``research-map/1`` while the new Kernel
+    stores its context as ``research_map_context_1``.  This adapter translates
+    only the read shape; all mutations remain owned by the filesystem Kernel.
+    """
+
+    def __init__(self, source_root: str | Path) -> None:
+        self.root = lexical_path(source_root)
+        if path_has_symlink(self.root):
+            raise ResearchWebError("workspace path contains a symbolic link")
+        manifest = _read_object(self.root / "workspace_manifest.json", "workspace_manifest")
+        context = _read_object(self.root / "research_map" / "context.json", "research_context")
+        liveness = _read_object(self.root / "lifecycle" / "liveness.json", "research_liveness")
+        if manifest.get("schema_version") != "research_agent_workspace_1":
+            raise ResearchWebError("unsupported_workspace_manifest")
+        manifest_root = manifest.get("workspace_root")
+        if not isinstance(manifest_root, str) or lexical_path(manifest_root) != self.root:
+            raise ResearchWebError("workspace_root_mismatch")
+        if manifest.get("workspace_mode") != "research" or context.get("workspace_mode") != "research":
+            raise ResearchWebError("research_workspace_mode_required")
+        workspace_id = manifest.get("workspace_id")
+        if not isinstance(workspace_id, str) or context.get("workspace_id") != workspace_id:
+            raise ResearchWebError("research_workspace_id_mismatch")
+        if liveness.get("workspace_id") != workspace_id:
+            raise ResearchWebError("research_workspace_id_mismatch")
+        if context.get("schema_version") != "research_map_context_1":
+            raise ResearchWebError("unsupported_research_context_schema")
+        if liveness.get("schema_version") != "research_liveness_1":
+            raise ResearchWebError("unsupported_research_liveness_schema")
+        revision = context.get("revision")
+        if type(revision) is not int or revision < 0 or liveness.get("revision") != revision:
+            raise ResearchWebError("research_revision_mismatch")
+        self.context = context
+        self.created_at = str(context.get("created_at") or manifest.get("created_at") or "unknown")
+        self.map_id = str(context.get("map_id") or workspace_id)
+        self.revision = revision
+        self.nodes = {
+            item["id"]: item
+            for item in self._collection("nodes")
+            if isinstance(item.get("id"), str)
+        }
+
+    def _collection(self, name: str) -> list[dict[str, Any]]:
+        value = self.context.get(name, [])
+        if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+            raise ResearchWebError(f"research_context_{name}_invalid")
+        return value
+
+    def progress(self) -> dict[str, int]:
+        findings = self._collection("findings")
+        nodes = self._collection("nodes")
+        return {
+            "phase_count": len(self._collection("phases")),
+            "claim_count": len(self._collection("claims")),
+            "node_count": len(nodes),
+            "finding_count": len(findings),
+            "gate_count": len(self._collection("gates")),
+            "closed_node_count": sum(item.get("state") == "closed" for item in nodes),
+            "open_issue_count": sum(item.get("kind") == "issue" and item.get("status") == "open" for item in findings),
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        focus = self.context.get("focus", {})
+        if not isinstance(focus, dict):
+            raise ResearchWebError("research_context_focus_invalid")
+        claim_ids = focus.get("claim_ids", [])
+        node_ids = focus.get("node_ids", [])
+        if not isinstance(claim_ids, list) or not isinstance(node_ids, list):
+            raise ResearchWebError("research_context_focus_invalid")
+        payload = {
+            "schema_version": "research-map/1",
+            "map_id": self.map_id,
+            "title": str(self.context.get("title") or self.root.name or self.map_id),
+            "created_at": self.created_at,
+            "revision": self.revision,
+            "phases": copy.deepcopy(self._collection("phases")),
+            "claims": copy.deepcopy(self._collection("claims")),
+            "nodes": copy.deepcopy(self._collection("nodes")),
+            "findings": copy.deepcopy(self._collection("findings")),
+            "gates": copy.deepcopy(self._collection("gates")),
+            "continuations": copy.deepcopy(self._collection("continuations")),
+            "claim_relations": copy.deepcopy(self.context.get("claim_relations", [])),
+            "focus_claim_ids": list(claim_ids),
+            "focus_node_ids": list(node_ids),
+            "metadata": copy.deepcopy(self.context.get("metadata", {})),
+            "progress": self.progress(),
+        }
+        if not isinstance(payload["claim_relations"], list) or not isinstance(payload["metadata"], dict):
+            raise ResearchWebError("research_context_projection_invalid")
+        return payload
+
+
+def _read_object(path: Path, label: str) -> dict[str, Any]:
+    if path.is_symlink() or not path.is_file():
+        raise ResearchWebError(f"{label}_missing")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ResearchWebError(f"{label}_invalid") from error
+    if not isinstance(value, dict):
+        raise ResearchWebError(f"{label}_invalid")
+    return value
 
 
 def _detail(payload: dict[str, Any], collection: str, identifier: str) -> dict[str, Any]:

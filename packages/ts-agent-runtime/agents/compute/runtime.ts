@@ -240,7 +240,10 @@ export function shouldForceComputeResult(
 ): boolean {
   if (forceResult) return true;
   if (!isComputePlanReady(packet, actions)) return false;
-  return packet.operation !== "inspect" || actions.length > 1;
+  const inputs = packet.inputs as Record<string, unknown>;
+  const required = Array.isArray(inputs.required_actions) ? inputs.required_actions : [];
+  const optional = Array.isArray(inputs.optional_actions) ? inputs.optional_actions : [];
+  return actions.length >= required.length && (optional.length === 0 || actions.length > required.length);
 }
 
 async function createIsolatedResourceLoader(
@@ -293,13 +296,13 @@ function buildTaskPrompt(packet: Record<string, unknown>): string {
     inputs: packet.inputs,
     constraints: packet.constraints,
   };
-  return `Execute this fixed Compute plan. Use only the supplied tools and finish through ${COMPUTE_RESULT_TOOL_NAME}.\n\n${JSON.stringify(providerTask)}`;
+  return `Execute the declared Compute scheduler plan in this task. Use only the supplied tools and finish through ${COMPUTE_RESULT_TOOL_NAME}.\n\n${JSON.stringify(providerTask)}`;
 }
 
 function repairPrompt(packet: Record<string, unknown>, actions: ActionLog): string {
   return isComputePlanReady(packet, actions)
     ? `Result delivery only. Call ${COMPUTE_RESULT_TOOL_NAME} exactly once with summary and limitations.`
-    : "Continue the same fixed Compute plan. Do not retry any recorded action. Stop at the first failed or unknown required action, then submit the result.";
+    : "Continue the declared Compute scheduler plan. Do not retry any recorded action. Stop at the first failed or unknown required action, then submit the result.";
 }
 
 function assertComputeProviderTurn(
@@ -333,7 +336,7 @@ function computeResultError(
   const ready = packet ? isComputePlanReady(packet, actions) : false;
   const message = ready
     ? `Compute ended without a valid ${COMPUTE_RESULT_TOOL_NAME} call`
-    : "Compute ended before the fixed action plan reached a terminal point";
+    : "Compute ended before the declared action plan reached a terminal point";
   const error = new Error(message) as Error & { code?: string; computeActions?: ActionLog };
   error.code = "COMPUTE_RESULT_INVALID";
   error.computeActions = actions;

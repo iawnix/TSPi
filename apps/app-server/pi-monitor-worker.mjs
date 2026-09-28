@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, lstatSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
@@ -56,12 +56,14 @@ export async function monitorHostWorkspaceId(workspace, event) {
   // Scientific identity is stable across renames (ws_*); Host routes address
   // direct workspace directory names. Verify ownership before translating.
   const root = resolve(workspace);
-  const manifestPath = join(root, "workspace.json");
-  const [directory, manifest] = await Promise.all([lstat(root), lstat(manifestPath)]);
+  const manifestPath = join(root, "workspace_manifest.json");
+  const [directory, identityStat] = await Promise.all([lstat(root), lstat(manifestPath).catch(() => null)]);
   if (!directory.isDirectory() || directory.isSymbolicLink() || await realpath(root) !== root
-    || !manifest.isFile() || manifest.isSymbolicLink()) throw new Error("monitor workspace must be a physical initialized directory");
+    || !identityStat?.isFile() || identityStat.isSymbolicLink()) throw new Error("monitor workspace must be a physical initialized directory");
   const identity = JSON.parse(await readFile(manifestPath, "utf8"));
-  if (identity.schema_version !== "research-workspace/1" || !/^ws_[a-f0-9]{24}$/u.test(identity.workspace_id || "")) {
+  if (identity.schema_version !== "research_agent_workspace_1"
+    || identity.workspace_mode !== "research"
+    || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(identity.workspace_id || "")) {
     throw new Error("monitor workspace identity is invalid");
   }
   if (event.workspace_id !== identity.workspace_id) throw new Error("monitor event belongs to another workspace");
@@ -190,7 +192,14 @@ function discoverWorkspaces(root) {
   return children.filter((entry) => entry.isDirectory() && isWorkspace(join(candidate, entry.name))).map((entry) => join(candidate, entry.name));
 }
 function isWorkspace(path) {
-  try { const stat = lstatSync(path); return stat.isDirectory() && !stat.isSymbolicLink() && existsSync(join(path, "workspace.json")); }
+  try {
+    const stat = lstatSync(path);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) return false;
+    const manifestPath = join(path, "workspace_manifest.json");
+    if (!existsSync(manifestPath)) return false;
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    return manifest?.schema_version === "research_agent_workspace_1" && manifest.workspace_mode === "research";
+  }
   catch { return false; }
 }
 async function runMonitorJson(command, workspace, extra = [], signal) {

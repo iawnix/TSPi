@@ -171,6 +171,10 @@ const { nodeControlArguments } = require("../../packages/ts-agent-runtime/artifa
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
 const NATIVE_COMMANDS = createCommandService({ execute: executeNativeCommand });
 
+export function readResearchLiveness(cwd, signal) {
+  return NATIVE_COMMANDS.execute("research.liveness", cwd, {}, signal);
+}
+
 class RenderExecutionError extends Error {
   constructor(failure) {
     const detail = lastDiagnosticLine(failure.stderr_tail)
@@ -257,6 +261,8 @@ export function createChangeTool() {
       const root = boundWorkspaceRoot(params, toolContext);
       const result = await NATIVE_COMMANDS.execute("research.change", root, { request: {
           schema_version: "ts-change-request/1",
+          principal: toolContext?.principal,
+          authority: "kernel_write",
           rationale: params.rationale,
           expected_revision: params.expectedRevision,
           basis_refs: params.basisRefs || [],
@@ -309,6 +315,8 @@ export function createWorkflowTool() {
         result = await NATIVE_COMMANDS.execute("research.strategy", root, {
           request: {
             schema_version: "research-strategy-request/1",
+            principal: toolContext?.principal,
+            authority: "kernel_write",
             operation: params.strategyOperation,
             [params.strategyOperation]: params[params.strategyOperation],
             rationale: params.rationale,
@@ -323,6 +331,8 @@ export function createWorkflowTool() {
         result = await NATIVE_COMMANDS.execute("research.interpretation", root, {
           request: {
             schema_version: "research-interpretation-request/1",
+            principal: toolContext?.principal,
+            authority: "kernel_write",
             interpretation: params.interpretation,
             rationale: params.rationale,
             basis_refs: params.basisRefs || [],
@@ -337,6 +347,8 @@ export function createWorkflowTool() {
         result = await NATIVE_COMMANDS.execute("research.checkpoint", root, {
           request: {
             schema_version: "research-checkpoint-request/1",
+            principal: toolContext?.principal,
+            authority: "kernel_write",
             checkpoint,
             rationale: params.rationale,
             basis_refs: params.basisRefs || [],
@@ -350,7 +362,7 @@ export function createWorkflowTool() {
         result = await NATIVE_COMMANDS.execute(
           "research.continuation",
           root,
-          { request: continuationRequest(params) },
+          { request: continuationRequest(params, toolContext) },
           context?.abortSignal,
         );
       }
@@ -389,26 +401,22 @@ export function createContinuationLivenessHook({
     ? statusReader
     : typeof checkpointReader === "function"
       ? checkpointReader
-      : (signal, turnId) => NATIVE_COMMANDS.execute("research.turn", cwd, {
-        request: {
-          schema_version: "research-turn-request/1",
-          operation: "checkpoint",
-          turn_id: turnId,
-          trigger: "host.before_run_end",
-        },
-      }, signal);
+      : (signal) => NATIVE_COMMANDS.execute("research.liveness", cwd, {}, signal);
   const followUpsByRun = new Map();
   return async (event, context) => {
     const runId = event?.runId;
     if (typeof runId !== "string" || !runId) return undefined;
     const attempts = followUpsByRun.get(runId) || 0;
-    if (attempts >= maxFollowUps) return undefined;
+    if (attempts >= maxFollowUps) {
+      followUpsByRun.delete(runId);
+      return undefined;
+    }
     let status;
     try {
       status = await readStatus(context?.abortSignal, runId);
-    } catch (_error) {
-      // A status read must not make an otherwise valid Agent run fail closed.
-      return undefined;
+    } catch (error) {
+      followUpsByRun.delete(runId);
+      throw error;
     }
     const followUp = followUpRequired
       ? continuationFollowUp(status)
@@ -462,14 +470,28 @@ export function createComputeReadinessTool(options = {}) {
       const assembly = options.capabilityAssembly || options.capability_assembly;
       let readiness;
       if (assembly && typeof assembly.readiness === "function") {
-        readiness = await assembly.readiness(params.capability_id === undefined ? {} : { capability_id: params.capability_id });
+        readiness = await assembly.readiness({
+          ...(params.manifest_provider_id === undefined ? {} : { manifest_provider_id: params.manifest_provider_id }),
+          ...(params.capability_id === undefined ? {} : { capability_id: params.capability_id }),
+          ...(params.environment_id === undefined ? {} : { environment_id: params.environment_id }),
+          ...(params.execution_kind === undefined ? {} : { execution_kind: params.execution_kind }),
+        });
       } else {
         const gateway = options.toolGateway || options.tool_gateway;
         if (!gateway || typeof gateway.describe !== "function") throw new Error("compute_readiness_not_configured");
         const mode = await readWorkspaceMode(root);
+        const hasEnvironmentSelector = params.manifest_provider_id !== undefined
+          || params.environment_id !== undefined
+          || params.execution_kind !== undefined;
         readiness = gateway.describe({ workspace_mode: mode })
           .filter((item) => item?.kind === "compute" && (params.capability_id === undefined || item.capability_id === params.capability_id))
-          .map((item) => ({ capability_id: item.capability_id, capability_version: item.capability_version, readiness: { state: "registered", checks: [] } }));
+          .map((item) => ({
+            capability_id: item.capability_id,
+            capability_version: item.capability_version,
+            readiness: hasEnvironmentSelector
+              ? { state: "unknown", checks: [], reason: "environment_selector_requires_assembled_host" }
+              : { state: "registered", checks: [] },
+          }));
       }
       return toolResult({ protocol_version: "compute_readiness_1", readiness });
     },
@@ -979,41 +1001,25 @@ async function runCanonicalApi(command, cwd, extraArgs, parentSignal, timeoutMs 
 }
 
 async function executeNativeCommand({ command, root, params, signal }) {
-  // Research Agent workspaces have one durable filesystem Kernel authority.
-  // Keep legacy workspaces on ts_api.py, but never let a new workspace split
-  // reads and writes between context.json and research_map.json/SQLite.
-  if (command.startsWith("research.") && isFilesystemResearchWorkspace(root)) {
+  // Research workspaces have one durable filesystem Kernel authority. A
+  // partial or legacy layout is an invalid workspace, not a reason to route
+  // a request into the retired ResearchMap/SQLite implementation.
+  if (command.startsWith("research.")) {
+    if (!isFilesystemResearchWorkspace(root)) {
+      throw new Error(`canonical command ${command} failed: canonical Research Kernel workspace is required`);
+    }
     if (signal?.aborted) throw new Error(`canonical command ${command} was cancelled`);
     return executeFilesystemResearchCommand(command, root, params);
-  }
-  if (command === "research.change"
-    || command === "research.strategy"
-    || command === "research.interpretation"
-    || command === "research.checkpoint"
-    || (command === "research.continuation" && params.request !== undefined)
-    || (command === "research.turn" && params.request !== undefined)) {
-    return runPrivateRequest(
-      command === "research.change"
-        ? "tspi-native-change-"
-        : command === "research.strategy" ? "tspi-native-strategy-"
-        : command === "research.interpretation" ? "tspi-native-interpretation-"
-        : command === "research.checkpoint" ? "tspi-native-checkpoint-"
-        : command === "research.turn" ? "tspi-native-turn-" : "tspi-native-continuation-",
-      packageScript("ts_api.py"),
-      command,
-      root,
-      params.request,
-      signal,
-      60_000,
-    );
   }
   return runCanonicalApi(command, root, commandArguments(command, params), signal);
 }
 
-function continuationRequest(params) {
+function continuationRequest(params, toolContext) {
   const request = {
     schema_version: "ts-continuation-request/1",
     operation: params.operation === "set_status" ? "set" : params.operation,
+    principal: toolContext?.principal,
+    authority: "kernel_write",
   };
   if (params.scope !== undefined) request.scope = params.scope;
   if (params.targetId !== undefined) request.target_id = params.targetId;

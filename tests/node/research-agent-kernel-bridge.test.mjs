@@ -96,6 +96,8 @@ test("local Python bridge mutates the new context/liveness workspace without res
     const bridge = create_python_kernel_bridge(options);
     await assert.rejects(
       bridge.apply_change({
+        principal: "root_agent",
+        authority: "kernel_write",
         expected_revision: 0,
         operations: [{ type: "create_phase", id: "phase_1", title: "Blocked", objective: "Admission" }],
       }),
@@ -103,6 +105,8 @@ test("local Python bridge mutates the new context/liveness workspace without res
     );
     await bridge.admit_workspace({ request_id: "request_native_admit", authority: "host" });
     const change = await bridge.apply_change({
+      principal: "root_agent",
+      authority: "kernel_write",
       expected_revision: 0,
       operations: [
         { type: "create_phase", id: "phase_1", title: "Initial", objective: "Native" },
@@ -117,6 +121,8 @@ test("local Python bridge mutates the new context/liveness workspace without res
     assert.equal(change.revision, 1);
     assert.deepEqual(change.created_ids, ["phase_1", "claim_1", "node_1"]);
     const checkpoint = await bridge.checkpoint({
+      principal: "root_agent",
+      authority: "kernel_write",
       checkpoint_id: "checkpoint_1",
       disposition: "continue_required",
     });
@@ -129,6 +135,8 @@ test("local Python bridge mutates the new context/liveness workspace without res
     assert.deepEqual(context.focus, { claim_ids: ["claim_1"], node_ids: ["node_1"] });
     assert.equal((await restarted.turn({ operation: "orient" })).accepted, true);
     assert.equal((await restarted.turn({
+      principal: "root_agent",
+      authority: "kernel_write",
       operation: "checkpoint",
       input: { checkpoint_id: "checkpoint_2", disposition: "continue_required" },
     })).checkpoint_id, "checkpoint_2");

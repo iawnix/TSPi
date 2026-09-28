@@ -10,7 +10,7 @@ import { loadInstalledServerExtensions, loadServerExtensions } from "./server-ex
 import { discoverInstalledExtensions } from "./extension-manifest-loader.mjs";
 import { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 import { createPackageSourceReadGuard } from "./pi-harness-policy.mjs";
-import { createContinuationLivenessHook } from "./pi-native-tools.mjs";
+import { createContinuationLivenessHook, readResearchLiveness } from "./pi-native-tools.mjs";
 import { markToolEnvelopeError, wrapToolForHarness } from "../../packages/ts-agent-runtime/host-api/tool-envelope.mjs";
 import { createToolExecutionContext } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
 import { createPublicToolAlias } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
@@ -132,6 +132,7 @@ async function createTspiHarness(session, options, executionEnv) {
       workspaceMode,
       toolGateway: computeGateway,
       computeOrchestrator,
+      researchKernel,
       capabilityAssembly: capabilityHost?.capability_assembly,
       review: {
         models: modelRuntime,
@@ -301,7 +302,26 @@ async function createTspiHarness(session, options, executionEnv) {
       );
       created.harness.hooks.on(
         "before_tool",
-        (event) => {
+        async (event, context) => {
+          // Refresh the durable Kernel admission before every tool. The
+          // in-memory phase graph remains useful for ordering, but it cannot
+          // override a restart-safe blocked/decision-needed disposition.
+          try {
+            lifecycle.setDurableLiveness(await readResearchLiveness(session.metadata.cwd, context?.abortSignal));
+          } catch (error) {
+            return {
+              block: {
+                reason: JSON.stringify({
+                  schema_version: "tspi-lifecycle-admission-error/1",
+                  code: "research_liveness_unavailable",
+                  failure_class: "authorization",
+                  reason: String(error?.message || error),
+                  run_id: event.runId,
+                  tool_name: event.toolName,
+                }),
+              },
+            };
+          }
           // Admission is the first lifecycle boundary. Return a block here
           // when the transition is invalid so the Harness emits an immediate
           // tool error; allowing execution to continue would make the later

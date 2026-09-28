@@ -151,7 +151,12 @@ export interface WorkflowToolParams extends WorkspaceToolParams {
 }
 export interface EnvironmentToolParams extends WorkspaceToolParams { mode?: "list" | "show"; name?: string }
 export interface ComputeCatalogToolParams extends WorkspaceToolParams {}
-export interface ComputeReadinessToolParams extends WorkspaceToolParams { capability_id?: string }
+export interface ComputeReadinessToolParams extends WorkspaceToolParams {
+  manifest_provider_id?: string;
+  capability_id?: string;
+  environment_id?: string;
+  execution_kind?: "local" | "remote";
+}
 export interface ComputeToolParams extends WorkspaceToolParams {
   capability_id?: string;
   capability_version?: string;

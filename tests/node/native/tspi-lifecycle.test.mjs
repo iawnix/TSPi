@@ -22,6 +22,8 @@ import {
   wrapToolWithEnvelope,
 } from "../../../packages/ts-agent-runtime/host-api/tool-envelope.mjs";
 import { managedPython } from "./test-environment.mjs";
+import { create_workspace_initializer } from "../../../packages/research-agent-core/workspace.mjs";
+import { create_fs_research_kernel } from "../../../packages/research-agent-kernel/fs_kernel_adapter.mjs";
 
 const context = { abortSignal: new AbortController().signal };
 
@@ -347,6 +349,31 @@ test("dynamic Harness lifecycle admission advances phases without trusting Agent
   controller.completeTool({ runId: "run-recovery", toolName: "ts_calc", isError: true });
   assert.equal(controller.snapshot().lifecycle_phase, "prepare");
   assert.deepEqual(executions, ["state", "change", "calc", "state", "change"]);
+});
+
+test("durable liveness admits only the operations each Kernel disposition permits", () => {
+  const controller = createResearchLifecycleController({ metadata: PUBLIC_TOOL_METADATA });
+  const run = (runId) => controller.beginRun({ runId });
+
+  run("run-decision-admission");
+  controller.setDurableLiveness({ lifecycle: "decision_needed", disposition: null });
+  assert.equal(controller.admitTool({ runId: "run-decision-admission", toolName: "ts_calc" }).accepted, false);
+  assert.equal(controller.admitTool({ runId: "run-decision-admission", toolName: "ts_change" }).accepted, true);
+  controller.completeTool({ runId: "run-decision-admission", toolName: "ts_change" });
+
+  run("run-blocked-admission");
+  controller.setDurableLiveness({ lifecycle: "blocked", disposition: "blocked" });
+  assert.equal(controller.admitTool({ runId: "run-blocked-admission", toolName: "ts_calc" }).code, "research_lifecycle_blocked");
+  assert.equal(controller.admitTool({ runId: "run-blocked-admission", toolName: "ts_state" }).accepted, true);
+  controller.completeTool({ runId: "run-blocked-admission", toolName: "ts_state" });
+  // Once the recovery read advances the lane, the Kernel-owned checkpoint is
+  // the only mutation that can replace a blocked disposition.
+  assert.equal(controller.admitTool({ runId: "run-blocked-admission", toolName: "research_checkpoint" }).accepted, true);
+
+  run("run-user-input-admission");
+  controller.setDurableLiveness({ lifecycle: "decision_needed", disposition: "user_input_required" });
+  assert.equal(controller.admitTool({ runId: "run-user-input-admission", toolName: "ts_change" }).code, "research_user_input_required");
+  assert.equal(controller.admitTool({ runId: "run-user-input-admission", toolName: "ts_state" }).accepted, true);
 });
 
 test("Research lifecycle metadata separates strategy, interpretation, and checkpoint phases", () => {
@@ -773,6 +800,16 @@ test("Research Turn hook binds the canonical checkpoint to the current run", asy
   assert.equal(observedTurnId, "run-boundary-1");
 });
 
+test("Research Turn hook fails closed when canonical liveness cannot be read", async () => {
+  const hook = createContinuationLivenessHook({
+    cwd: join(tmpdir(), "tspi-liveness-workspace-does-not-exist"),
+  });
+  await assert.rejects(
+    hook({ runId: "run-liveness-unavailable" }, context),
+    /canonical command research\.liveness failed/,
+  );
+});
+
 test("Harness follow-up requires context before recording the next action", async () => {
   const repo = new MemorySessionRepo();
   const session = await repo.create({ id: "tspi-turn-protocol" }, context);
@@ -903,10 +940,17 @@ test("Research Turn hook reads real Kernel liveness through the canonical comman
     stdio: ["ignore", "pipe", "pipe"],
   });
   try {
-    run(["scripts/ts_workspace.py", "init_workspace", "--root", workspace]);
+    await create_workspace_initializer().initialize_workspace({
+      workspace_root: workspace,
+      workspace_id: "workspace_lifecycle_kernel",
+      workspace_mode: "research",
+    });
+    await create_fs_research_kernel({ workspace_root: workspace }).admit_workspace({ authority: "host" });
     const requestFile = join(root, "change.json");
     await writeFile(requestFile, JSON.stringify({
       schema_version: "ts-change-request/1",
+      principal: "root_agent",
+      authority: "kernel_write",
       rationale: "Create one active generic research scope for lifecycle integration.",
       operations: [
         { type: "create_claim", id: "claim_1", statement: "A bounded claim requires a next decision." },

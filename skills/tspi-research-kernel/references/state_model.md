@@ -1,11 +1,10 @@
 # ResearchMap State Model
 
 `ResearchMap` is the canonical, typed scientific state of one research project.
-`ResearchMap.to_dict()` is the map snapshot consumed by Root and TS Web. When a
-workspace has been bootstrapped to SQLite, `research.db` is the authoritative
-Kernel backend and `research_map.json` is its synchronized export snapshot;
-JSON-only workspaces remain readable and are upgraded through
-`research.storage operation=bootstrap`.
+The Filesystem Research Kernel persists it in `research_map/context.json` and
+projects lifecycle state to `lifecycle/liveness.json`; `workspace_manifest.json`
+binds identity, mode, root, admission, and revision. SQLite and
+`research_map.json` are not runtime authorities.
 
 ## Objects
 
@@ -57,7 +56,7 @@ research.context      bounded turn context
 research.liveness     lifecycle diagnosis
 research.decisions   bounded strategy/interpretation/checkpoint history
 research.evidence    Attempt/Artifact/EvidenceLink metadata
-research.storage     active JSON or SQLite backend and bootstrap status
+research.storage     canonical Filesystem Kernel documents and revision
 ```
 
 The `research_read` tool exposes these bounded modes plus compute modes
@@ -65,7 +64,8 @@ The `research_read` tool exposes these bounded modes plus compute modes
 Strategy, interpretation, checkpoint, Evidence Registry, and map mutations use
 their typed Kernel commands; do not create a generic memory write.
 
-Do not edit `research_map.json` directly. A ChangeSet is validated against an
-isolated copy, increments `revision` once, writes atomically, and appends a
-small transaction receipt. An invalid change leaves the previous revision
-untouched.
+Do not edit canonical documents directly. A ChangeSet is validated against an
+isolated copy, increments `revision` once, and atomically updates context,
+liveness, memory, and manifest. Every mutation carries the Root Agent
+`principal` and `kernel_write` `authority`; an invalid change leaves the prior
+revision untouched.

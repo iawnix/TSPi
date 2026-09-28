@@ -42,12 +42,22 @@ and compatible roles. The capability catalog supplies the capability ID/version,
 parameter shape, input/output roles, and parser contract. It does not prove live
 software or environment health.
 
+Before selecting an execution target, call `compute_readiness` with the exact
+`capability_id`, `environment_id`, and `execution_kind` (`local` or `remote`).
+An unqualified readiness query describes only the Host default and is not proof
+that a named remote environment is usable.
+
 If a fresh workspace has no suitable input, start a non-closed ResearchNode. Use
 `artifact_seed` for one connected SMILES or `artifact_import` for
 bounded Gaussian, XYZ, or xTB control text. The host returns the logical ID;
 callers never create an `art_*` value or workspace path.
 
 ## Launch
+
+Remote execution uses the lifecycle form below (`operation=launch`) for the
+same capability ID. The lower-level `capability_id` invocation form is for
+mode-neutral local providers and must not be given a remote environment
+selector; it has no calculation intent or scheduler lifecycle to reconcile.
 
 Launch accepts the complete semantic request and selected execution target:
 

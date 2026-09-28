@@ -2,30 +2,29 @@
 
 ## Canonical State
 
-Each research workspace owns `workspace.json`, a synchronized
-`research_map.json` snapshot, `transactions.jsonl`, the workspace input
-directory `inputs/`, and Node-owned directories under `nodes/<node_id>/`.
-After `research.storage operation=bootstrap`, `research.db` is the authoritative
-SQLite Kernel backend for the map snapshot, decision records, and Evidence
-Registry metadata. Raw Attempt and Artifact payloads never move into SQLite.
-The document contains the complete `ResearchMap`: phases, claims, nodes,
-findings, gates, Claim relations, focus, metadata, and revision. TS Web and
-Root consume this document directly. Compute Attempts and Artifacts live in
-Node-owned directories and can be cited by map objects.
+Every research workspace is bound by one immutable `workspace_manifest.json`.
+The manifest records the workspace ID, absolute root, `workspace_mode=research`,
+admission state, and Kernel revision. The scientific read model is
+`research_map/context.json`; lifecycle admission is `lifecycle/liveness.json`;
+the bounded memory projection is `memory/index.json`. These documents share the
+same workspace ID and revision and are written atomically by the Filesystem
+Research Kernel. There is no JSON/SQLite fallback authority.
+
+Raw execution payloads live under the Node/Attempt and Artifact stores. The
+Kernel context stores typed Claims, Nodes, Findings, Gates, relations, focus,
+Attempt records, Artifact manifests, EvidenceLinks, decisions, and revision.
+Artifacts are referenced by their logical `art_<sha256>` IDs; absolute or
+remote paths never become scientific object references.
 
 ## Bootstrap And Identity
 
-Create the map through `workspace.engine.init_workspace()` or the Host
-bootstrap that calls the same workspace initialization boundary. The map
-identity and object IDs are workspace-local. The Kernel rejects malformed JSON,
-duplicate IDs, unknown references, cycles, invalid enum values, and inconsistent
-reverse indexes. Keep all artifact references logical and workspace-relative;
-do not put absolute or remote paths in map objects.
-
-The map model is the canonical scientific state. In JSON-only mode the state is
-read from `research_map.json`; in SQLite mode the database is authoritative and
-the JSON file is a synchronized export for read-only clients and recovery.
-Bootstrap rejects an unsupported workspace without rewriting it.
+Only the Host may initialize and admit a research workspace. Initialization
+creates the manifest and canonical context/liveness/memory documents in
+`admission_pending`; Host admission changes all related documents to the
+admitted/ready state. Every reader validates the manifest, physical files,
+workspace root, mode, ID, lifecycle state, and revision before returning data.
+Partial, symlinked, legacy, or mixed layouts fail closed and are not migrated
+implicitly.
 
 ## Write Boundary
 
@@ -35,11 +34,17 @@ The normal flow is:
 research_read -> Root interpretation -> research_change
 ```
 
-`research_change` loads the current map under a lock, applies the ordered
-ChangeSet to a detached copy, validates the complete post-state, increments the
-revision, and commits the active backend before updating the JSON snapshot and
-transaction receipt. A rejected request does not change the prior revision. Do
-not edit the JSON, SQLite database, or transaction log by hand.
+All Kernel writes require the Host-bound identity:
+
+```json
+{"principal":"root_agent","authority":"kernel_write"}
+```
+
+`research_change` loads the current canonical context under the workspace lock,
+checks `expectedRevision`, applies the ordered ChangeSet to a detached copy,
+validates the complete post-state, and atomically commits context, liveness,
+memory projection, and manifest revision. A rejected request changes nothing.
+Do not edit any canonical document by hand.
 
 ## Relationships
 

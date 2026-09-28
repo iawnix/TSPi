@@ -14,7 +14,7 @@ const { readResearchMap } = require("../agent-core/research-map-reader.cjs");
 
 const RENDER_OPERATIONS = Object.freeze(["render", "compare", "animate", "mechanism", "curve", "energy", "scan", "convergence"]);
 const NODE_ID = /^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
-const ARTIFACT_ID = /^art_[0-9a-f]{24}$/;
+const ARTIFACT_ID = /^art_[0-9a-f]{64}$/;
 const OUTPUT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 function validateRenderRequest(rootValue, input, resolvedArtifacts) {
@@ -150,8 +150,10 @@ function requireAct(root, value) {
 function requireWorkspaceRoot(value) {
   if (typeof value !== "string" || !value || !isAbsolute(value)) throw new Error("workspace root must be absolute");
   const root = realpathSync(value);
-  const workspace = JSON.parse(readFileSync(resolve(root, "workspace.json"), "utf8"));
-  if (workspace.schema_version !== "research-workspace/1") throw new Error("artifact tools require a ResearchMap workspace");
+  const workspace = JSON.parse(readFileSync(resolve(root, "workspace_manifest.json"), "utf8"));
+  if (workspace.schema_version !== "research_agent_workspace_1" || workspace.workspace_mode !== "research") {
+    throw new Error("artifact tools require a ResearchMap workspace");
+  }
   const map = readResearchMap(root);
   if (!map) throw new Error("artifact tools require a ResearchMap");
   return root;

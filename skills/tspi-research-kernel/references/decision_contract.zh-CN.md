@@ -1,7 +1,8 @@
 # ChangeSet 合同
 
 `research_change` 是 `ResearchMap` 唯一的公共变更边界。它接受一个对象，其中包含
-`rationale`、可选 `basisRefs`、可选 `expectedRevision` 和非空 `operations` 数组。
+`principal=root_agent`、`authority=kernel_write`、`rationale`、可选 `basisRefs`、可选
+`expectedRevision` 和非空 `operations` 数组。
 使用不熟悉的 operation 前，先查询 `research_read mode=operations` 获取当前目录。
 
 ## Operations
@@ -28,10 +29,9 @@
 
 ## 提交规则
 
-Kernel 锁定 workspace，加载当前 map，在存在时检查 `expected_revision`，对独立副本应用
-operations，运行完整 map validator，递增一次 `revision`，并原子替换
-`research_map.json`。被拒绝的请求不会改变之前的 map。不要直接编辑 JSON、transaction
-log 或 TS Web 数据。
+Kernel 锁定 workspace，加载 canonical context，在存在时检查 `expected_revision`，对独立副本
+应用 operations，运行完整 map validator，递增一次 `revision`，并原子更新 context、liveness、
+memory 与 manifest。被拒绝的请求不会改变之前的 map。不要直接编辑 canonical 文档。
 
 `create_finding` 记录 Node 已核验的输出，不是通用日志项：支持科学陈述的值使用
 `FactFinding`；局限、异常、冲突或未决问题使用 `IssueFinding`。`create_gate` 与

@@ -48,7 +48,14 @@ export function create_research_execution_ledger({ kernel, read_context, clock =
   async function apply(context, operations) {
     const current = await read.call(kernel, { workspace_id: context.workspace_id, workspace_root: context.workspace_root });
     const revision = Number.isInteger(current?.revision) ? current.revision : 0;
-    return kernel.apply_change({ workspace_id: context.workspace_id, workspace_root: context.workspace_root, expected_revision: revision, operations });
+    return kernel.apply_change({
+      workspace_id: context.workspace_id,
+      workspace_root: context.workspace_root,
+      principal: "root_agent",
+      authority: "kernel_write",
+      expected_revision: revision,
+      operations,
+    });
   }
   return freeze_port({
     async create_run(context) {

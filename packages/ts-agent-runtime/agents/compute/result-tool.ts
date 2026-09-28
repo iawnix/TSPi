@@ -29,7 +29,7 @@ export function createComputeResultTool(
   return {
     name: COMPUTE_RESULT_TOOL_NAME,
     label: "TS Compute Result",
-    description: "Submit the bounded operational summary after the fixed Compute action plan reaches a terminal point.",
+    description: "Submit the bounded operational summary after the declared Compute action plan reaches a terminal point.",
     parameters,
     executionMode: "sequential",
     prepareArguments(args) {

@@ -40,6 +40,8 @@ test("installed compute path persists a real local geometry Attempt and Artifact
     await kernel.apply_change({
       workspace_root,
       workspace_id,
+      principal: "root_agent",
+      authority: "kernel_write",
       expected_revision: 0,
       operations: [{
         type: "create_node",

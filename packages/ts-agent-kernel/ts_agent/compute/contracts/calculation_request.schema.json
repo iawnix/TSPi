@@ -44,7 +44,7 @@
         "required": ["input_role", "artifact_id"],
         "properties": {
           "input_role": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$", "maxLength": 64},
-          "artifact_id": {"type": "string", "pattern": "^art_[0-9a-f]{24}$"}
+          "artifact_id": {"type": "string", "pattern": "^art_[0-9a-f]{64}$"}
         },
         "additionalProperties": false
       }

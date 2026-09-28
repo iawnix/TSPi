@@ -1,9 +1,9 @@
 # ResearchMap 状态模型
 
-`ResearchMap` 是一个研究项目的规范类型化科学状态。`ResearchMap.to_dict()` 是 Root 与
-TS Web 消费的 map snapshot。workspace bootstrap 到 SQLite 后，`research.db` 是 Kernel 的
-权威后端，`research_map.json` 是同步导出快照；仅 JSON 的 workspace 仍可读取，并通过
-`research.storage operation=bootstrap` 升级。
+`ResearchMap` 是一个研究项目的规范类型化科学状态。Filesystem Research Kernel 将其持久化到
+`research_map/context.json`，把生命周期投影到 `lifecycle/liveness.json`；
+`workspace_manifest.json` 绑定 identity、mode、root、admission 和 revision。SQLite 与
+`research_map.json` 不是运行时权威。
 
 ## 对象
 
@@ -49,13 +49,13 @@ research.context      有界 turn context
 research.liveness     生命周期诊断
 research.decisions    有界 strategy/interpretation/checkpoint 历史
 research.evidence     Attempt/Artifact/EvidenceLink 元数据
-research.storage      当前 JSON 或 SQLite 后端及 bootstrap 状态
+research.storage      canonical Filesystem Kernel 文档与 revision
 ```
 
 `research_read` 还暴露上述有界模式与计算模式（`artifacts`、`capabilities`、`runs`）。交互式读取
 使用 `/research`。Strategy、interpretation、checkpoint、Evidence Registry 与 map 变更都使用
 各自的类型化 Kernel command；不要创建通用 memory write。
 
-不要直接编辑 `research_map.json`。ChangeSet 在隔离副本上校验，只递增一次
-`revision`，原子写入，并追加一条小型 transaction receipt。无效变更不会触碰之前的
-revision。
+不要直接编辑 canonical 文档。ChangeSet 在隔离副本上校验，只递增一次 `revision`，并原子更新
+context、liveness、memory 与 manifest。每次 mutation 都要带 Root Agent 的 `principal` 和
+`kernel_write` `authority`；无效变更不会触碰之前的 revision。

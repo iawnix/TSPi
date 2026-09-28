@@ -551,17 +551,22 @@ def _tick_row(registration: dict[str, Any], previous: dict[str, Any], current: A
 
 def _workspace_root(root: str | Path) -> Path:
     workspace = lexical_path(root)
-    if path_has_symlink(workspace) or not (workspace / "workspace.json").is_file():
+    manifest = workspace / "workspace_manifest.json"
+    if path_has_symlink(workspace) or not manifest.is_file():
         raise ValueError("monitor operations require an initialized TS workspace")
+    if manifest.is_file() and manifest.is_symlink():
+        raise ValueError("monitor workspace manifest must be a regular file")
     return workspace
 
 
 def _workspace_id(workspace: Path) -> str:
     try:
-        value = read_json(workspace / "workspace.json")
+        value = read_json(workspace / "workspace_manifest.json")
     except Exception as exc:
         raise ValueError(f"workspace identity is unreadable: {exc}") from exc
     workspace_id = value.get("workspace_id") if isinstance(value, dict) else None
+    if value.get("schema_version") != "research_agent_workspace_1" or value.get("workspace_mode") != "research":
+        raise ValueError("monitor workspace manifest is invalid")
     if not isinstance(workspace_id, str) or not workspace_id:
         raise ValueError("workspace identity is invalid")
     return workspace_id

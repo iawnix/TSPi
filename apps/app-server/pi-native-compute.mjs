@@ -51,6 +51,15 @@ export function createComputeTool(options = {}) {
     async execute(toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites(toolContext);
       if (params && typeof params.capability_id === "string") {
+        const selectedEnvironment = params.environment;
+        const selectedKind = selectedEnvironment && typeof selectedEnvironment === "object"
+          ? (selectedEnvironment.kind ?? selectedEnvironment.execution_kind)
+          : undefined;
+        if (selectedKind === "remote") {
+          const error = new Error("remote compute requires compute_run operation=launch with an executionTarget");
+          error.code = "remote_execution_requires_lifecycle_operation";
+          throw error;
+        }
         const root = boundWorkspaceRoot(params, toolContext);
         const workspace_mode = await readWorkspaceMode(root);
         const gateway = options.toolGateway || options.tool_gateway;
@@ -87,6 +96,7 @@ export function createComputeTool(options = {}) {
         intentRequest: params.operation === "launch" ? buildCalculationRequest(params) : undefined,
       });
       const root = boundWorkspaceRoot(params, toolContext);
+      const workspaceMode = await readWorkspaceMode(root);
       const taskId = await allocateOperationalId(root, "sub", context?.abortSignal);
       const startedAt = Date.now();
       const signal = deadlineSignal(context?.abortSignal, computeTimeoutMs(request));
@@ -97,6 +107,8 @@ export function createComputeTool(options = {}) {
       let stagedMonitor;
       let monitor;
       let monitorWarning;
+      let researchAttempt;
+      let researchAttemptSettled = false;
       publishProgress(onUpdate, taskId, request, "queued", undefined, toolCallId);
       try {
         const binding = await preflightComputeRequest(root, request, signal, (value) => {
@@ -114,6 +126,14 @@ export function createComputeTool(options = {}) {
           jobId: binding.jobId,
           executionSummary: binding.executionSummary,
         });
+        if (workspaceMode === "research") {
+          if (request.operation === "launch") {
+            researchAttempt = await recordResearchAttempt(options.researchKernel, root, request, binding, "create");
+          } else {
+            await requireExistingResearchAttempt(options.researchKernel, root, request, binding);
+            researchAttempt = { attempt_id: request.intentId, binding };
+          }
+        }
         if (request.operation === "launch") {
           // Persist the wake binding before submission.  If the worker exits
           // after scheduler acceptance, the Host monitor can reconcile this
@@ -127,6 +147,7 @@ export function createComputeTool(options = {}) {
           capability: binding.capability,
           capabilityVersion: binding.capabilityVersion,
           capabilityDescriptor: binding.capabilityDescriptor,
+          actionPlan: binding.actionPlan,
           nodeId: request.nodeId,
           binding,
           tailArtifact: request.tailArtifact,
@@ -140,6 +161,17 @@ export function createComputeTool(options = {}) {
         await executeComputePlan(root, request, actions, signal, (state, action) => {
           publishProgress(onUpdate, taskId, request, state, action, toolCallId);
         });
+        if (workspaceMode === "research") {
+          await recordResearchAttempt(
+            options.researchKernel,
+            root,
+            request,
+            binding,
+            "transition",
+            { state: attemptStateForRequest(request.operation, actions) },
+          );
+          researchAttemptSettled = true;
+        }
         if (stagedMonitor && submissionAccepted(actions)) {
           try {
             await reconcileComputeMonitor(root, stagedMonitor.monitor_id, signal);
@@ -184,6 +216,22 @@ export function createComputeTool(options = {}) {
           details: { result, monitor, run: { ...metadata, run_ref: runRef } },
         };
       } catch (error) {
+        if (researchAttempt && options.researchKernel && !researchAttemptSettled) {
+          try {
+            const current = await options.researchKernel.read_context({ workspace_root: root });
+            const attempt = Array.isArray(current?.attempts)
+              ? current.attempts.find((item) => item?.id === researchAttempt.attempt_id)
+              : null;
+            if (attempt && !["succeeded", "failed", "timed_out", "cancelled", "completed"].includes(attempt.state)) {
+              await recordResearchAttempt(options.researchKernel, root, request, researchAttempt.binding, "transition", {
+                state: "failed",
+                error: { message: errorMessage(error), code: error?.code || null },
+              });
+            }
+          } catch (recordError) {
+            error = new Error(`${errorMessage(error)}; Research Kernel Attempt settlement failed: ${errorMessage(recordError)}`, { cause: error });
+          }
+        }
         const compactActions = compactCompletedActions(actions);
         const failure = classifyComputeFailure(compactActions, stage);
         const secondaryFailures = [];
@@ -201,6 +249,116 @@ export function createComputeTool(options = {}) {
       }
     },
   };
+}
+
+async function recordResearchAttempt(kernel, root, request, binding, operation, details = {}) {
+  if (!kernel || typeof kernel.read_context !== "function" || typeof kernel.apply_change !== "function") {
+    throw new Error("research compute requires a Research Kernel ledger");
+  }
+  const context = await kernel.read_context({ workspace_root: root });
+  const workspaceId = context?.workspace_id;
+  if (typeof workspaceId !== "string" || !workspaceId) throw new Error("Research Kernel context has no workspace_id");
+  const attemptId = request.intentId || binding.intentId;
+  if (typeof attemptId !== "string" || !attemptId) throw new Error("compute binding has no intent_id for Attempt ledger");
+  const expectedRevision = context.revision;
+  const common = {
+    workspace_id: workspaceId,
+    workspace_root: root,
+    principal: "root_agent",
+    authority: "kernel_write",
+    expected_revision: expectedRevision,
+  };
+  const inputArtifactIds = Array.isArray(request.inputArtifacts)
+    ? request.inputArtifacts.map((item) => item?.artifactId).filter((item) => typeof item === "string")
+    : [];
+  const metadata = {
+    intent_id: attemptId,
+    intent_digest: binding.intentDigest,
+    backend: request.backend,
+    execution_kind: binding.executionKind,
+    execution_summary: binding.executionSummary || {},
+    calculation_operation: request.operation,
+  };
+  if (operation === "transition") {
+    const existing = Array.isArray(context.attempts)
+      ? context.attempts.find((item) => item?.id === attemptId)
+      : null;
+    if (!existing) throw new Error(`Research Kernel has no Attempt for compute intent ${attemptId}`);
+    if (existing.node_id !== request.nodeId) {
+      throw new Error(`Research Kernel Attempt ${attemptId} belongs to another Node`);
+    }
+    const terminal = ["succeeded", "failed", "timed_out", "cancelled", "completed"];
+    if (terminal.includes(existing.state) && existing.state !== details.state) {
+      // A status inspection after a terminal Attempt is a read operation. Do
+      // not let its scheduler-facing `running` projection regress canonical
+      // scientific state or consume a revision.
+      if (request.operation === "inspect" && details.state === "running") {
+        return { attempt_id: attemptId, binding, revision: expectedRevision, unchanged: true };
+      }
+      throw new Error(`Research Kernel Attempt ${attemptId} is already terminal (${existing.state})`);
+    }
+  }
+  const change = operation === "create"
+    ? {
+      type: "create_attempt",
+      id: attemptId,
+      node_id: request.nodeId,
+      capability: binding.capability,
+      capability_version: binding.capabilityVersion,
+      state: "started",
+      environment: binding.environment ?? binding.executionKind ?? null,
+      input_artifact_ids: inputArtifactIds,
+      output_artifact_ids: [],
+      metadata,
+    }
+    : {
+      type: "transition_attempt",
+      attempt_id: attemptId,
+      state: details.state,
+      metadata: { ...metadata, ...(details.error ? { error: details.error } : {}) },
+      ...(details.error ? { error: details.error, error_class: details.error.code || "compute_failed" } : {}),
+    };
+  const result = await kernel.apply_change({ ...common, operations: [change] });
+  return { attempt_id: attemptId, binding, revision: result?.revision ?? expectedRevision };
+}
+
+async function requireExistingResearchAttempt(kernel, root, request, binding) {
+  if (!kernel || typeof kernel.read_context !== "function") {
+    throw new Error("research compute requires a Research Kernel ledger");
+  }
+  const context = await kernel.read_context({ workspace_root: root });
+  const attemptId = request.intentId || binding.intentId;
+  const attempt = Array.isArray(context?.attempts)
+    ? context.attempts.find((item) => item?.id === attemptId)
+    : null;
+  if (!attempt) {
+    const error = new Error(`Research Kernel has no Attempt for compute intent ${attemptId}`);
+    error.code = "research_attempt_not_found";
+    throw error;
+  }
+  if (attempt.node_id !== request.nodeId) {
+    const error = new Error(`Research Kernel Attempt ${attemptId} belongs to another Node`);
+    error.code = "research_attempt_scope_mismatch";
+    throw error;
+  }
+  return attempt;
+}
+
+function attemptStateForRequest(operation, actions) {
+  const canonical = actions.at(-1)?.result?.result;
+  const state = canonical?.state;
+  if (actions.some((action) => action?.result?.action_status === "failed")) return "failed";
+  if (actions.some((action) => action?.result?.action_status === "unknown") || state === "unknown") return "running";
+  if (operation === "launch") return submissionAccepted(actions) ? "running" : "failed";
+  if (operation === "cancel") return actions.some((action) => action.tool === "ts_workspace_compute_cancel"
+    && action?.result?.action_status === "completed") ? "cancelled" : "running";
+  if (operation === "finalize") {
+    const parsed = actions.find((action) => action.tool === "ts_workspace_compute_parse");
+    return parsed?.result?.action_status === "completed" ? "succeeded" : "running";
+  }
+  // Inspecting a scheduler state is not equivalent to parsing a scientific
+  // result. Keep the Attempt externally active until finalize records it.
+  return "running";
 }
 
 async function stageComputeMonitor(root, request, sessionId, signal) {
@@ -319,6 +477,7 @@ async function preflightComputeRequest(root, request, signal, onStage) {
     remoteDir: typeof raw.remote_dir === "string" ? raw.remote_dir : undefined,
     jobId: typeof raw.job_id === "string" ? raw.job_id : undefined,
     executionSummary: isPlainObject(raw.execution_summary) ? raw.execution_summary : {},
+    actionPlan: isPlainObject(raw.action_plan) ? raw.action_plan : undefined,
     capability: request.capability,
     capabilityVersion: request.capabilityVersion,
     capabilityDescriptor: descriptorSummary,
@@ -626,13 +785,17 @@ function buildCalculationRequest(request) {
 }
 
 function summarizeCapabilityDescriptor(value) {
-  return {
+  const summary = {
     capability: requireBindingString(value.capability, "capability_descriptor.capability"),
     version: requireBindingString(value.version, "capability_descriptor.version"),
     input_roles: requireBindingStringArray(value.input_roles, "capability_descriptor.input_roles"),
     output_roles: requireBindingStringArray(value.output_roles, "capability_descriptor.output_roles"),
     parsers: requireBindingStringArray(value.parsers, "capability_descriptor.parsers"),
   };
+  if (Array.isArray(value.operations)) summary.operations = requireBindingStringArray(value.operations, "capability_descriptor.operations");
+  if (Array.isArray(value.actions)) summary.actions = requireBindingStringArray(value.actions, "capability_descriptor.actions");
+  if (isPlainObject(value.action_plan)) summary.action_plan = value.action_plan;
+  return summary;
 }
 
 function requireBindingString(value, label) {

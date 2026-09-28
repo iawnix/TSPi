@@ -56,7 +56,13 @@ test("App Server source has no Pi or vendor runtime import", async () => {
 test("Host rejects a workspace port response that changes an explicit mode", async () => {
   const workspace_port = {
     async initialize_workspace(request) {
-      return { workspace_mode: request.workspace_mode === "light" ? "research" : "light" };
+      return {
+        schema_version: "research_agent_workspace_1",
+        workspace_id: "workspace_boundary",
+        workspace_root: request.workspace_root,
+        state: "ready",
+        workspace_mode: request.workspace_mode === "light" ? "research" : "light",
+      };
     },
     async attach_workspace() {
       return { workspace_mode: "light" };
@@ -82,7 +88,13 @@ test("Host freezes workspace requests before crossing the WorkspacePort boundary
     async initialize_workspace(request) {
       received = request;
       assert.throws(() => { request.workspace_mode = "research"; }, TypeError);
-      return { workspace_mode: "light" };
+      return {
+        schema_version: "research_agent_workspace_1",
+        workspace_id: "workspace_boundary",
+        workspace_root: request.workspace_root,
+        state: "ready",
+        workspace_mode: "light",
+      };
     },
     async attach_workspace() {
       return { workspace_mode: "light" };

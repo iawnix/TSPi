@@ -336,7 +336,7 @@ export function createPublicToolContracts(Type) {
     }, { additionalProperties: false }),
   ]);
   const nodeId = Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 });
-  const artifactId = Type.String({ pattern: "^art_[0-9a-f]{24}$" });
+  const artifactId = Type.String({ pattern: "^art_[0-9a-f]{64}$" });
   const intentId = Type.String({ pattern: "^calc_[1-9][0-9]*$", maxLength: 128 });
   const remoteResources = Type.Object({
     queue: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$" }),
@@ -467,7 +467,10 @@ export function createPublicToolContracts(Type) {
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential", promptSnippet: "List registered compute capabilities" }),
     computeReadiness: contract("computeReadiness", "Compute Readiness", "Check readiness of registered compute capabilities.", Type.Object({
+      manifest_provider_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
       capability_id: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$", maxLength: 128 })),
+      environment_id: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" })),
+      execution_kind: Type.Optional(literalUnion(["local", "remote"])),
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential", promptSnippet: "Check compute capability readiness" }),
     compute: contract("compute", "TS Calculate", "Run one mode-neutral registered calculation capability.", Type.Union([computeCapabilitySchema, computeOperationSchema]), {

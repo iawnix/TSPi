@@ -5,36 +5,59 @@ from pathlib import Path
 
 import pytest
 
-from tests.support.workspace_helpers import apply_change, bootstrap_workspace_fixture, start_research_node
+from tests.support.workspace_helpers import (
+    apply_filesystem_change,
+    bootstrap_filesystem_workspace_fixture,
+    start_filesystem_research_node,
+)
 from ts_agent.compute import (
     ComputeContractError,
     create_reaction_mapping_validation_artifact,
     import_calculation_artifact,
     list_calculation_artifacts,
 )
-from ts_agent.workspace import validate_workspace
-from ts_agent.research import ResearchKernel
 from ts_agent.workspace.candidates import load_finding_candidate, FindingCandidateError
 from ts_agent.reaction.mapping import validate_atom_mapping
 from ts_agent.compute.analysis import analysis_capabilities, resolve_analysis_capability, run_analysis
-from ts_agent.research.evidence import ArtifactManifest
+from ts_agent.research.agent_workspace import checkpoint as filesystem_checkpoint
 
 
 def _register_analysis_artifact(workspace: Path, node_id: str, artifact: dict) -> None:
-    """Admit a filesystem analysis artifact to the Kernel evidence index."""
+    """Register the analysis output in the canonical filesystem read model."""
 
-    kernel = ResearchKernel(workspace)
-    kernel.ensure_sqlite()
-    kernel.register_evidence(artifacts=[ArtifactManifest(
-        id=artifact["artifact_id"],
-        node_id=node_id,
-        kind="analysis",
-        format="json",
-        location=artifact["path"],
-        sha256=artifact["sha256"],
-        size_bytes=artifact["size_bytes"],
-        created_at="2026-01-01T00:00:00Z",
-    )])
+    # The filesystem boundary intentionally blocks evidence writes while a
+    # focused Claim is decision-needed. Record the bounded strategy decision
+    # first, matching the Root Agent lifecycle contract exercised by this test.
+    apply_filesystem_change(workspace, {
+        "operations": [{
+            "type": "create_strategy_plan",
+            "id": "strategy_analysis",
+            "claim_id": "claim_1",
+            "node_id": node_id,
+            "objective": "Validate the reaction mapping analysis.",
+            "rationale": "The bounded mapping result is ready for promotion.",
+        }],
+    })
+    filesystem_checkpoint(workspace, {
+        "principal": "root_agent",
+        "authority": "kernel_write",
+        "checkpoint_id": "checkpoint_analysis",
+        "disposition": "continue_required",
+        "claim_ids": ["claim_1"],
+        "node_ids": [node_id],
+    })
+    apply_filesystem_change(workspace, {
+        "operations": [{
+            "type": "create_artifact",
+            "id": artifact["artifact_id"],
+            "node_id": node_id,
+            "kind": "analysis",
+            "format": "json",
+            "location": artifact["path"],
+            "sha256": artifact["sha256"],
+            "size_bytes": artifact["size_bytes"],
+        }],
+    })
 
 
 def _xyz(symbol: str, comment: str) -> str:
@@ -42,8 +65,8 @@ def _xyz(symbol: str, comment: str) -> str:
 
 
 def _fixture(tmp_path: Path) -> tuple[Path, str, str, str]:
-    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
-    node_id = start_research_node(workspace)["node_id"]
+    workspace = bootstrap_filesystem_workspace_fixture(tmp_path / "workspace")
+    node_id = start_filesystem_research_node(workspace)["node_id"]
     reactant = import_calculation_artifact(
         workspace,
         {
@@ -100,7 +123,8 @@ def test_explicit_mapping_validation_writes_node_owned_analysis(tmp_path: Path) 
     assert document["provenance"]["input_digests"] == [
         document["inputs"][side][0]["sha256"] for side in ("reactants", "products")
     ]
-    assert validate_workspace(workspace)["valid"] is True
+    assert (workspace / "workspace_manifest.json").is_file()
+    assert not (workspace / "research_map.json").exists()
 
 
 def test_empty_mapping_is_invalid_and_retains_unmapped_atoms(tmp_path: Path) -> None:
@@ -130,8 +154,8 @@ def test_mapping_rejects_unknown_artifacts(tmp_path: Path) -> None:
             {
                 "schema_version": "ts-reaction-mapping-validate-request/1",
                 "node_id": node_id,
-                "reactants": [{"artifact_id": "art_000000000000000000000000"}],
-                "products": [{"artifact_id": "art_111111111111111111111111"}],
+                "reactants": [{"artifact_id": "art_" + "0" * 64}],
+                "products": [{"artifact_id": "art_" + "1" * 64}],
                 "mapping": _pair(),
             },
         )
@@ -215,9 +239,7 @@ def test_analysis_accepts_repeated_species_and_replays_without_duplicate_artifac
 
 def test_mapping_requires_open_node(tmp_path: Path) -> None:
     workspace, node_id, reactant, product = _fixture(tmp_path)
-    from tests.support.workspace_helpers import apply_change
-
-    apply_change(
+    apply_filesystem_change(
         workspace,
         {
             "rationale": "Close the node before checking the write guard.",
@@ -256,7 +278,7 @@ def test_analysis_candidates_promote_through_existing_change_and_retain_sources(
     assert selected["conceptId"] == "reaction.mapping.element_bijection"
     assert not (workspace / "observations.json").exists()
     _register_analysis_artifact(workspace, node_id, result["analysis_artifact"])
-    apply_change(workspace, {
+    apply_filesystem_change(workspace, {
         "rationale": "Use the checked element correspondence as evidence, without claiming mechanism identity.",
         "basis_refs": [selected["artifactId"]],
         "operations": [{
@@ -266,12 +288,14 @@ def test_analysis_candidates_promote_through_existing_change_and_retain_sources(
             "provenance": {"producer": "ts_agent.reaction.mapping.validate_atom_mapping", "candidate_id": selected["candidateId"]},
         }],
     })
-    research_map = ResearchKernel(workspace).load()
-    finding = research_map.findings["fnd_1"]
-    assert finding.kind.value == "fact"
-    assert finding.value is True
-    assert finding.source_refs == [selected["artifactId"]]
-    assert validate_workspace(workspace)["valid"] is True
+    from ts_agent.research.agent_workspace import read_context
+
+    context = read_context(workspace)
+    finding = next(item for item in context["findings"] if item["id"] == "fnd_1")
+    assert finding["kind"] == "fact"
+    assert finding["value"] is True
+    assert finding["source_refs"] == [selected["artifactId"]]
+    assert (workspace / "workspace_manifest.json").is_file()
 
 
 @pytest.mark.parametrize("mutation", ["value", "type", "source", "owner"])

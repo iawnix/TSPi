@@ -164,6 +164,22 @@ def test_tspi_launcher_disables_retired_custom_renderer(
         os.environ.update(original_environment)
 
 
+def test_tspi_launcher_preserves_validated_custom_compute_profile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = _installation(tmp_path)
+    workspace = installation.workspaces_root / "reaction-a"
+    workspace.mkdir(parents=True)
+    custom = tmp_path / "compute.toml"
+    custom.write_text("default_environment = 'local'\n", encoding="utf-8")
+    monkeypatch.setenv("TS_COMPUTE_CONFIG", str(custom))
+
+    launcher.configure_process_environment(installation, workspace, "reaction-a")
+
+    assert os.environ["TS_COMPUTE_CONFIG"] == str(custom)
+
+
 def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     install_root = tmp_path / "tspi-install"
     package_home = install_root / ".pi/packages/tspi"
@@ -362,6 +378,9 @@ def test_launcher_binds_and_admits_research_workspace(tmp_path: Path) -> None:
     assert manifest["workspace_mode"] == "research"
     assert manifest["state"] == "ready"
     assert json.loads((workspace / "research_map/context.json").read_text(encoding="utf-8"))["lifecycle_state"] == "admitted"
+    assert not (workspace / "research_map.json").exists()
+    assert not (workspace / "research.db").exists()
+    assert launcher.has_legacy_research_storage(workspace) is False
 
 
 @pytest.mark.parametrize("option", ["-r", "--resume"])

@@ -15,13 +15,11 @@ import json
 import os
 import re
 import tempfile
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
-
-import fcntl
-
 
 CONTEXT_SCHEMA = "research_map_context_1"
 LIVENESS_SCHEMA = "research_liveness_1"
@@ -69,9 +67,36 @@ def has_state_files(root: str | Path) -> bool:
     """
 
     path = Path(root).expanduser().resolve()
-    return (path / "research_map" / "context.json").exists() or (
-        path / "lifecycle" / "liveness.json"
-    ).exists()
+    # A state file alone is not sufficient to opt into the new runtime. The
+    # immutable manifest binds the ResearchMap projection to one workspace and
+    # prevents partial/unbound directories from bypassing the legacy boundary.
+    return all(
+        candidate.is_file() and not candidate.is_symlink()
+        for candidate in (
+            path / "workspace_manifest.json",
+            path / "research_map" / "context.json",
+            path / "lifecycle" / "liveness.json",
+        )
+    )
+
+
+def has_partial_state_files(root: str | Path) -> bool:
+    """Return whether any canonical new-workspace marker is present.
+
+    The command boundary uses this to route incomplete workspaces to the new
+    validator, so they fail with an explicit manifest/context/liveness error
+    instead of silently falling back to the legacy ResearchKernel store.
+    """
+
+    path = Path(root).expanduser().resolve()
+    return any(
+        candidate.exists()
+        for candidate in (
+            path / "workspace_manifest.json",
+            path / "research_map" / "context.json",
+            path / "lifecycle" / "liveness.json",
+        )
+    )
 
 
 def _now() -> str:
@@ -136,13 +161,29 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
 @contextmanager
 def _workspace_lock(root: Path) -> Iterator[None]:
     root.mkdir(parents=True, exist_ok=True)
-    lock_path = root / ".research-agent.lock"
-    with lock_path.open("a+", encoding="utf-8") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    lock_path = root / ".research-agent.lock.d"
+    started = time.monotonic()
+    while True:
         try:
-            yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            lock_path.mkdir(mode=0o700)
+            owner = lock_path / "owner"
+            owner.write_text(f"{os.getpid()}\n{time.time()}\n", encoding="utf-8")
+            break
+        except FileExistsError:
+            if time.monotonic() - started > 300:
+                raise AgentWorkspaceError(f"research_workspace_lock_timeout: {root}")
+            time.sleep(0.01)
+    try:
+        yield
+    finally:
+        try:
+            owner.unlink()
+        except FileNotFoundError:
+            pass
+        try:
+            lock_path.rmdir()
+        except FileNotFoundError:
+            pass
 
 
 def _state_paths(root: str | Path) -> tuple[Path, Path]:
@@ -151,6 +192,18 @@ def _state_paths(root: str | Path) -> tuple[Path, Path]:
 
 
 def _load_state(root: str | Path) -> tuple[Path, Path, dict[str, Any], dict[str, Any]]:
+    path = Path(root).expanduser().resolve()
+    manifest = _read_json(path / "workspace_manifest.json", "workspace_manifest")
+    if manifest.get("schema_version") != "research_agent_workspace_1":
+        raise AgentWorkspaceError("unsupported_workspace_manifest")
+    if manifest.get("workspace_mode") != "research":
+        raise AgentWorkspaceError("research_workspace_mode_required")
+    manifest_root = manifest.get("workspace_root")
+    if not isinstance(manifest_root, str) or Path(manifest_root).expanduser().resolve() != path:
+        raise AgentWorkspaceError("research_workspace_root_mismatch")
+    manifest_state = manifest.get("state")
+    if manifest_state not in ("admission_pending", "ready"):
+        raise AgentWorkspaceError(f"invalid_workspace_manifest_state: {manifest_state}")
     context_path, liveness_path = _state_paths(root)
     context = _read_json(context_path, "research_context")
     liveness = _read_json(liveness_path, "research_liveness")
@@ -160,6 +213,8 @@ def _load_state(root: str | Path) -> tuple[Path, Path, dict[str, Any], dict[str,
         raise AgentWorkspaceError("unsupported_research_liveness_schema")
     workspace_id = context.get("workspace_id")
     if workspace_id != liveness.get("workspace_id"):
+        raise AgentWorkspaceError("research_workspace_id_mismatch")
+    if workspace_id != manifest.get("workspace_id"):
         raise AgentWorkspaceError("research_workspace_id_mismatch")
     _identifier(workspace_id, "context.workspace_id")
     # This boundary is for the new Research Agent workspaces only.  A missing
@@ -174,6 +229,8 @@ def _load_state(root: str | Path) -> tuple[Path, Path, dict[str, Any], dict[str,
         raise AgentWorkspaceError(f"invalid_research_liveness_state: {liveness.get('state')}")
     if context.get("lifecycle_state") != liveness.get("state"):
         raise AgentWorkspaceError("research_lifecycle_state_mismatch")
+    if (manifest_state == "ready") != (context.get("lifecycle_state") == ADMITTED):
+        raise AgentWorkspaceError("research_manifest_state_mismatch")
     context_revision = context.get("revision", 0)
     liveness_revision = liveness.get("revision", 0)
     if type(context_revision) is not int or context_revision < 0:
@@ -196,6 +253,13 @@ def _check_workspace(request: dict[str, Any], workspace_id: str) -> None:
     supplied = request.get("workspace_id")
     if supplied is not None and supplied != workspace_id:
         raise AgentWorkspaceError("research_workspace_id_mismatch")
+
+
+def _require_kernel_write_principal(request: dict[str, Any]) -> None:
+    if request.get("principal") != "root_agent":
+        raise AgentWorkspaceError("research mutation requires the Root Agent principal")
+    if request.get("authority") != "kernel_write":
+        raise AgentWorkspaceError("research mutation requires authority=kernel_write")
 
 
 def _require_admitted(
@@ -275,12 +339,32 @@ def _persist_memory_projection(root: str | Path, context: dict[str, Any], livene
         "lifecycle": liveness.get("lifecycle", "idle"),
         "disposition": liveness.get("disposition"),
         "checkpoint_id": liveness.get("checkpoint_id"),
+        "waiting_external": copy.deepcopy(liveness.get("waiting_external", [])),
+        "decision_needed": copy.deepcopy(liveness.get("decision_needed", [])),
         "focus": copy.deepcopy(context.get("focus", {"claim_ids": [], "node_ids": []})),
         # Preserve only explicitly registered memory records if an older Host
         # supplied them; this adapter never invents scientific memory entries.
         "entries": copy.deepcopy(previous.get("entries", [])) if isinstance(previous.get("entries", []), list) else [],
     }
     _atomic_json(path, projection)
+
+
+def _optional_json(path: Path) -> tuple[bool, dict[str, Any] | None]:
+    if not path.exists():
+        return False, None
+    return True, _read_json(path, path.name)
+
+
+def _restore_json(path: Path, existed: bool, value: dict[str, Any] | None) -> None:
+    try:
+        if existed and value is not None:
+            _atomic_json(path, value)
+        elif path.exists():
+            path.unlink()
+    except OSError:
+        # Preserve the original commit failure; the workspace doctor can
+        # report a recovery mismatch if the filesystem itself is unavailable.
+        pass
 
 
 def _liveness_projection(
@@ -344,19 +428,143 @@ def _liveness_projection(
     focus = context.get("focus") if isinstance(context.get("focus"), dict) else {}
     node_ids = [item for item in focus.get("node_ids", []) if isinstance(item, str)]
     claim_ids = [item for item in focus.get("claim_ids", []) if isinstance(item, str)]
-    if node_ids or claim_ids:
+
+    # Operational Attempts are the Kernel-owned bridge between a Research
+    # Node and the Host/Monitor plane. A started/running Attempt is an
+    # external wait; prepared or terminal records remain an Agent decision
+    # point. Orphaned files under nodes/ cannot advance lifecycle state.
+    waiting_external = []
+    for attempt in _items(context, "attempts"):
+        if not isinstance(attempt, dict):
+            continue
+        state = attempt.get("state") or attempt.get("status")
+        if state not in {"started", "running"}:
+            continue
+        attempt_node = attempt.get("node_id") or attempt.get("node_ref")
+        attempt_id = attempt.get("id") or attempt.get("attempt_id") or attempt.get("intent_id")
+        if not isinstance(attempt_id, str) or not attempt_id:
+            continue
+        waiting_external.append({
+            "id": attempt_id,
+            "attempt_id": attempt.get("attempt_id") or attempt_id,
+            "intent_id": attempt.get("intent_id"),
+            "node_id": attempt_node,
+            "state": state,
+            "status": "waiting",
+        })
+    if waiting_external:
+        result["lifecycle"] = "waiting_external"
+        result["waiting_external"] = waiting_external
+        result["decision_needed"] = []
+        return result
+
+    nodes_by_id = {
+        item.get("id"): item
+        for item in _items(context, "nodes")
+        if isinstance(item, dict)
+    }
+    claims_by_id = {
+        item.get("id"): item
+        for item in _items(context, "claims")
+        if isinstance(item, dict)
+    }
+    open_node_ids = [
+        value for value in node_ids
+        if nodes_by_id.get(value, {}).get("state") in {"planned", "active"}
+    ]
+    open_claim_ids = [
+        value for value in claim_ids
+        if claims_by_id.get(value, {}).get("status", "proposed") in {"proposed", "inconclusive"}
+    ]
+    if open_node_ids or open_claim_ids:
         result["lifecycle"] = "decision_needed"
         result["decision_needed"] = [
             {"scope": "node", "target_id": value, "reason": "missing checkpoint disposition"}
-            for value in node_ids
+            for value in open_node_ids
         ] + [
             {"scope": "claim", "target_id": value, "reason": "missing checkpoint disposition"}
-            for value in claim_ids
+            for value in open_claim_ids
         ]
+    elif _items(context, "nodes") and all(
+        isinstance(item, dict) and item.get("state") == "closed"
+        for item in _items(context, "nodes")
+    ):
+        result["lifecycle"] = "terminal"
+        result["decision_needed"] = []
     else:
         result["lifecycle"] = "idle"
         result["decision_needed"] = []
     return result
+
+
+def _validate_checkpoint_lifecycle(context: dict[str, Any], checkpoint: dict[str, Any]) -> None:
+    """Enforce lifecycle references on the direct filesystem boundary.
+
+    The canonical decision API performs the same checks against its richer
+    runtime ledger. This smaller validator keeps direct Bridge/FS calls from
+    persisting an impossible liveness state.
+    """
+    disposition = checkpoint.get("disposition")
+    if disposition not in CHECKPOINT_DISPOSITIONS:
+        raise AgentWorkspaceError("checkpoint disposition is invalid")
+    claims = _items(context, "claims")
+    nodes = _items(context, "nodes")
+    attempts = _items(context, "attempts")
+    plans = _items(context, "strategy_plans")
+    interpretations = _items(context, "attempt_interpretations")
+    claim_by_id = {row.get("id"): row for row in claims}
+    node_by_id = {row.get("id"): row for row in nodes}
+    attempt_by_id = {row.get("id") or row.get("attempt_id") or row.get("intent_id"): row for row in attempts}
+    claim_ids = checkpoint.get("claim_ids", [])
+    node_ids = checkpoint.get("node_ids", [])
+    unresolved_refs = checkpoint.get("unresolved_refs", [])
+    if not isinstance(claim_ids, list) or any(item not in claim_by_id for item in claim_ids):
+        raise AgentWorkspaceError("checkpoint references unknown Claim")
+    if not isinstance(node_ids, list) or any(item not in node_by_id for item in node_ids):
+        raise AgentWorkspaceError("checkpoint references unknown Node")
+    if not isinstance(unresolved_refs, list) or any(not isinstance(item, str) or not item.strip() for item in unresolved_refs):
+        raise AgentWorkspaceError("checkpoint.unresolved_refs must be an array of non-empty strings")
+    if disposition == "waiting_external":
+        if not unresolved_refs:
+            raise AgentWorkspaceError("waiting_external checkpoint requires unresolved_refs")
+        missing = sorted(set(unresolved_refs) - set(attempt_by_id))
+        if missing:
+            raise AgentWorkspaceError("waiting_external checkpoint references unknown Attempts: " + ", ".join(missing))
+        terminal = set(ATTEMPT_TERMINAL_STATES) | {"failed", "stopped", "collected", "parsed"}
+        finished = sorted(ref for ref in set(unresolved_refs) if (attempt_by_id[ref].get("state") or attempt_by_id[ref].get("status")) in terminal)
+        if finished:
+            raise AgentWorkspaceError("waiting_external checkpoint references terminal Attempts: " + ", ".join(finished))
+    if disposition == "continue_required":
+        metadata = checkpoint.get("metadata") if isinstance(checkpoint.get("metadata"), dict) else {}
+        strategy_ids = set(metadata.get("strategy_ids", [])) if isinstance(metadata.get("strategy_ids"), list) else set()
+        valid_claims = {
+            row.get("claim_id") for row in plans
+            if row.get("status", "proposed") in {"proposed", "active"}
+            and (not strategy_ids or row.get("id") in strategy_ids)
+        }
+        missing = sorted(set(claim_ids) - valid_claims)
+        if missing:
+            raise AgentWorkspaceError("continue_required checkpoint needs an active StrategyPlan for Claims: " + ", ".join(missing))
+    if disposition == "terminal":
+        scoped_nodes = set(node_ids)
+        for claim_id in claim_ids:
+            scoped_nodes.update(claim_by_id[claim_id].get("node_ids", []))
+        open_nodes = sorted(node_id for node_id in scoped_nodes if node_id in node_by_id and node_by_id[node_id].get("state") != "closed")
+        if open_nodes:
+            raise AgentWorkspaceError("terminal checkpoint requires closed Nodes: " + ", ".join(open_nodes))
+    scoped_nodes = set(node_ids)
+    for claim_id in claim_ids:
+        scoped_nodes.update(claim_by_id[claim_id].get("node_ids", []))
+    interpreted = {row.get("attempt_ref") for row in interpretations}
+    missing_interpretations = sorted(
+        row.get("id") or row.get("attempt_id") or row.get("intent_id")
+        for row in attempts
+        if (row.get("state") or row.get("status")) == "parsed"
+        and (not scoped_nodes or row.get("node_id") in scoped_nodes)
+        and (row.get("id") or row.get("attempt_id") or row.get("intent_id")) not in interpreted
+    )
+    if missing_interpretations:
+        raise AgentWorkspaceError("parsed Attempts require AttemptInterpretation before checkpoint: " + ", ".join(missing_interpretations))
 
 
 def _expected_revision(request: dict[str, Any], current: int) -> None:
@@ -1112,6 +1320,8 @@ def admit_workspace(root: str | Path, request: dict[str, Any] | None = None) -> 
     request = request or {}
     with _workspace_lock(Path(root).expanduser().resolve()):
         context_path, liveness_path, context, liveness = _load_state(root)
+        manifest_path = Path(root).expanduser().resolve() / "workspace_manifest.json"
+        manifest = _read_json(manifest_path, "workspace_manifest")
         workspace_id = context["workspace_id"]
         _check_workspace(request, workspace_id)
         if request.get("authority") != "host":
@@ -1122,14 +1332,33 @@ def admit_workspace(root: str | Path, request: dict[str, Any] | None = None) -> 
             state = ADMITTED
         elif context["lifecycle_state"] == ADMISSION_PENDING:
             admitted_at = _now()
-            _atomic_json(context_path, {
+            admitted_context = {
                 **context, "lifecycle_state": ADMITTED, "lifecycle": "idle", "disposition": None,
                 "admitted_at": admitted_at,
-            })
-            _atomic_json(liveness_path, {**liveness, "state": ADMITTED, "admitted_at": admitted_at})
-            _persist_memory_projection(root, {
-                **context, "lifecycle_state": ADMITTED, "lifecycle": "idle", "disposition": None,
-            }, {**liveness, "state": ADMITTED})
+            }
+            admitted_liveness = {**liveness, "state": ADMITTED, "admitted_at": admitted_at}
+            admitted_manifest = {
+                **manifest,
+                "state": "ready",
+                "admitted_at": admitted_at,
+                "research_kernel": {
+                    **(manifest.get("research_kernel") if isinstance(manifest.get("research_kernel"), dict) else {}),
+                    "admission_required": False,
+                },
+            }
+            memory_path = Path(root).expanduser().resolve() / "memory" / "index.json"
+            memory_existed, memory_before = _optional_json(memory_path)
+            try:
+                _atomic_json(context_path, admitted_context)
+                _atomic_json(liveness_path, admitted_liveness)
+                _persist_memory_projection(root, admitted_context, admitted_liveness)
+                _atomic_json(manifest_path, admitted_manifest)
+            except Exception:
+                _restore_json(context_path, True, context)
+                _restore_json(liveness_path, True, liveness)
+                _restore_json(memory_path, memory_existed, memory_before)
+                _restore_json(manifest_path, True, manifest)
+                raise
             state = ADMITTED
         else:  # guarded by _load_state; retained for a clear boundary error
             raise AgentWorkspaceError("research_admission_required")
@@ -1146,6 +1375,7 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
         context_path, liveness_path, context, liveness = _load_state(root)
         workspace_id = context["workspace_id"]
         _check_workspace(request, workspace_id)
+        _require_kernel_write_principal(request)
         _require_admitted(context, liveness)
         current_revision = context["revision"]
         body = _request_body(request)
@@ -1165,9 +1395,17 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
         updated["lifecycle"] = projected_liveness.get("lifecycle", "idle")
         updated["disposition"] = projected_liveness.get("disposition")
         updated["checkpoint_id"] = projected_liveness.get("checkpoint_id")
-        _atomic_json(context_path, updated)
-        _atomic_json(liveness_path, projected_liveness)
-        _persist_memory_projection(root, updated, projected_liveness)
+        memory_path = Path(root).expanduser().resolve() / "memory" / "index.json"
+        memory_existed, memory_before = _optional_json(memory_path)
+        try:
+            _atomic_json(context_path, updated)
+            _atomic_json(liveness_path, projected_liveness)
+            _persist_memory_projection(root, updated, projected_liveness)
+        except Exception:
+            _restore_json(context_path, True, context)
+            _restore_json(liveness_path, True, liveness)
+            _restore_json(memory_path, memory_existed, memory_before)
+            raise
     return {
         "schema_version": "research_change_result", "accepted": True,
         "workspace_id": workspace_id, "revision": updated["revision"],
@@ -1181,6 +1419,7 @@ def checkpoint(root: str | Path, request: dict[str, Any] | None = None) -> dict[
         context_path, liveness_path, context, liveness = _load_state(root)
         workspace_id = context["workspace_id"]
         _check_workspace(request, workspace_id)
+        _require_kernel_write_principal(request)
         _require_admitted(context, liveness, allow_checkpoint=True)
         source = request.get("checkpoint") if isinstance(request.get("checkpoint"), dict) else request
         checkpoint_id = source.get("checkpoint_id") or source.get("id") or f"checkpoint_{context['revision'] + 1}"
@@ -1192,22 +1431,34 @@ def checkpoint(root: str | Path, request: dict[str, Any] | None = None) -> dict[
             "lifecycle_state": ADMITTED,
             "created_at": source.get("created_at") if isinstance(source.get("created_at"), str) else _now(),
         })
+        _validate_checkpoint_lifecycle(context, value)
         projected_liveness = _liveness_projection(context, {**liveness, "checkpoint_id": checkpoint_id}, value)
         path = Path(root).expanduser().resolve() / "checkpoints" / f"{checkpoint_id}.json"
+        checkpoint_existed, checkpoint_before = _optional_json(path)
         if path.exists():
             if _read_json(path, "research_checkpoint") != value:
                 raise AgentWorkspaceError("checkpoint_id_conflict")
-        else:
-            _atomic_json(path, value)
+        checkpoint_needs_write = not checkpoint_existed
         context_projection = {
             **context,
             "lifecycle": projected_liveness.get("lifecycle", "idle"),
             "disposition": projected_liveness.get("disposition"),
             "checkpoint_id": checkpoint_id,
         }
-        _atomic_json(context_path, context_projection)
-        _atomic_json(Path(root).expanduser().resolve() / "lifecycle" / "liveness.json", projected_liveness)
-        _persist_memory_projection(root, context_projection, projected_liveness)
+        memory_path = Path(root).expanduser().resolve() / "memory" / "index.json"
+        memory_existed, memory_before = _optional_json(memory_path)
+        try:
+            if checkpoint_needs_write:
+                _atomic_json(path, value)
+            _atomic_json(context_path, context_projection)
+            _atomic_json(Path(root).expanduser().resolve() / "lifecycle" / "liveness.json", projected_liveness)
+            _persist_memory_projection(root, context_projection, projected_liveness)
+        except Exception:
+            _restore_json(context_path, True, context)
+            _restore_json(liveness_path, True, liveness)
+            _restore_json(memory_path, memory_existed, memory_before)
+            _restore_json(path, checkpoint_existed, checkpoint_before)
+            raise
     return {
         "schema_version": "research_checkpoint_result", "accepted": True,
         "workspace_id": workspace_id, "checkpoint_id": checkpoint_id,
@@ -1225,8 +1476,12 @@ def turn(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, A
         # The turn router calls the operation payload ``input``.  Accepting
         # it here keeps the Kernel boundary independent of the transport's
         # envelope while preserving the snake_case checkpoint fields.
-        if "checkpoint" not in checkpoint_request and isinstance(request.get("input"), dict):
-            checkpoint_request["checkpoint"] = request["input"]
+        envelope = request.get("input") if isinstance(request.get("input"), dict) else request.get("payload")
+        if "checkpoint" not in checkpoint_request and isinstance(envelope, dict):
+            checkpoint_request["checkpoint"] = envelope
+            for field in ("principal", "authority"):
+                if field not in checkpoint_request and field in envelope:
+                    checkpoint_request[field] = envelope[field]
         return checkpoint(root, checkpoint_request)
     with _workspace_lock(Path(root).expanduser().resolve()):
         _, _, context, liveness = _load_state(root)

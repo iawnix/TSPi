@@ -3,27 +3,15 @@
 const { validateAgentResult, validateAgentTask } = require("../../agent-core/agent-protocol.cjs");
 const { COMPUTE_FACT_KINDS } = require("../../agent-core/fact-kinds.cjs");
 const {
-  COMPUTE_ACTION_TOOL_NAMES,
-  COMPUTE_PLANS,
   validateComputeTask,
 } = require("./task-packet.cjs");
 
 const MAX_COMPUTE_RESULT_BYTES = 32 * 1024;
-const ACTION_FACT_KINDS = Object.freeze({
-  prepare: "compute_preparation",
-  submit: "submission",
-  status: "inspection",
-  tail: "inspection",
-  collect: "collection",
-  parse: "parser",
-  cancel: "cancellation",
-});
-
 function buildComputeResult(submission, packet, actions) {
   const task = validateComputeTask(packet);
   const normalizedSubmission = validateSubmission(submission);
   const normalizedActions = validateComputeActionPlan(task, actions);
-  const primary = primaryAction(task.operation, normalizedActions);
+  const primary = primaryAction(task, normalizedActions);
   const primaryResult = operationResult(primary.result);
   const actionRefs = normalizedActions.map((_action, index) => actionResultRef(task, index));
   const artifactRefs = uniqueStrings(normalizedActions.flatMap((action) => {
@@ -52,7 +40,7 @@ function buildComputeResult(submission, packet, actions) {
       node_id: task.inputs.node_id,
       intent_id: task.inputs.intent_id,
       action_outcome: actionOutcome(normalizedActions),
-      completed_actions: normalizedActions.map((action) => actionName(action.tool)),
+      completed_actions: normalizedActions.map((action) => actionName(action.tool, task)),
       reconciliation_required: normalizedActions.some((action) => {
         const result = operationResult(action.result);
         return isPlainObject(result.control) && result.control.reconciliation_required === true;
@@ -92,7 +80,7 @@ function validateComputeResult(value, packet, actions) {
       if (!allowedBasis.has(ref)) throw new Error(`facts[${index}] cites an unknown Compute action`);
     }
   }
-  const primary = primaryAction(task.operation, normalizedActions);
+  const primary = primaryAction(task, normalizedActions);
   const expectedProgram = programResult(operationResult(primary.result));
   if (JSON.stringify(result.program) !== JSON.stringify(expectedProgram)) {
     throw new Error("Compute program state does not match the typed action result");
@@ -114,19 +102,24 @@ function validateComputeResult(value, packet, actions) {
 function validateComputeActionPlan(packet, actions) {
   const task = validateAgentTask(packet);
   if (task.role !== "compute") throw new Error("Compute actions require a Compute task");
-  if (!Array.isArray(actions) || actions.length < 1 || actions.length > 2) {
-    throw new Error("Compute subagent must execute one or two scoped actions");
+  if (!Array.isArray(actions) || actions.length < 1 || actions.length > 32) {
+    throw new Error("Compute subagent must execute one to thirty-two scoped actions");
   }
-  const plan = COMPUTE_PLANS[task.operation];
-  const allowed = [...plan.required, ...plan.optional];
+  const required = task.inputs.required_actions;
+  const optional = task.inputs.optional_actions;
+  const allowed = [...required, ...optional];
+  if (actions.length > allowed.length) throw new Error("Compute action journal exceeds the declared action plan");
   const normalized = actions.map((action, index) => validateAction(action, task, allowed[index], index));
   const firstStatus = actionStatus(normalized[0].result);
-  if (["launch", "finalize"].includes(task.operation)) {
-    if (firstStatus === "completed" && normalized.length !== 2) {
-      throw new Error(`Compute ${task.operation} must execute its second bound action after the first succeeds`);
-    }
-    if (firstStatus !== "completed" && normalized.length !== 1) {
-      throw new Error(`Compute ${task.operation} must stop after a non-successful first action`);
+  if (normalized.length < required.length && firstStatus === "completed") {
+    throw new Error(`Compute ${task.operation} must execute all required actions after success`);
+  }
+  if (normalized.length < required.length && firstStatus !== "completed" && normalized.length !== 1) {
+    throw new Error(`Compute ${task.operation} must stop after a non-successful required action`);
+  }
+  for (let index = 0; index < normalized.length - 1; index += 1) {
+    if (actionStatus(normalized[index].result) !== "completed") {
+      throw new Error(`Compute action ${index + 1} is non-terminal before the end of the journal`);
     }
   }
   return normalized;
@@ -143,7 +136,9 @@ function isComputePlanReady(packet, actions) {
 
 function validateAction(value, task, expectedAction, index) {
   if (!isPlainObject(value)) throw new Error(`Compute action ${index + 1} must be an object`);
-  const expectedTool = COMPUTE_ACTION_TOOL_NAMES[expectedAction];
+  const binding = task.inputs.action_bindings.find((item) => item.name === expectedAction);
+  if (!binding) throw new Error(`Compute action ${index + 1} is not declared by the action plan`);
+  const expectedTool = binding.tool;
   if (value.tool !== expectedTool) {
     throw new Error(`Compute action ${index + 1} must be ${expectedTool}`);
   }
@@ -169,7 +164,7 @@ function validateAction(value, task, expectedAction, index) {
   ) {
     throw new Error(`Compute action ${index + 1} capability binding changed`);
   }
-  return value;
+  return { ...value, binding };
 }
 
 function validateSubmission(value) {
@@ -197,7 +192,7 @@ function validatePayload(value, task, actions) {
   ) {
     throw new Error("Compute payload does not match the bound task");
   }
-  const expectedActions = actions.map((action) => actionName(action.tool));
+  const expectedActions = actions.map((action) => actionName(action.tool, task));
   if (JSON.stringify(value.completed_actions) !== JSON.stringify(expectedActions)) {
     throw new Error("Compute payload completed_actions do not match the action journal");
   }
@@ -211,7 +206,8 @@ function validatePayload(value, task, actions) {
 }
 
 function actionFact(action, basisRef) {
-  const actionKey = actionName(action.tool);
+  const actionKey = action.binding?.name || action.tool;
+  const binding = action.binding || null;
   const result = operationResult(action.result);
   const status = actionStatus(action.result);
   const state = typeof result.state === "string" && result.state
@@ -220,15 +216,16 @@ function actionFact(action, basisRef) {
       ? "diagnostic_tail_returned"
       : "unknown";
   return {
-    kind: ACTION_FACT_KINDS[actionKey],
+    kind: binding?.fact_kind || "inspection",
     statement: `Typed ${actionKey} action returned state ${state}.`,
     status: status === "unknown" ? "uncertain" : "observed",
     basis_refs: [basisRef],
   };
 }
 
-function primaryAction(operation, actions) {
-  if (operation === "inspect") return actions[0];
+function primaryAction(task, actions) {
+  const primaryName = task.inputs.primary_action;
+  if (primaryName) return actions.find((action) => actionName(action.tool, task) === primaryName) || actions[actions.length - 1];
   return actions[actions.length - 1];
 }
 
@@ -269,10 +266,10 @@ function operationResult(value) {
   return isPlainObject(value.result) ? value.result : value;
 }
 
-function actionName(toolName) {
-  const match = Object.entries(COMPUTE_ACTION_TOOL_NAMES).find(([, value]) => value === toolName);
-  if (!match) throw new Error(`unknown Compute action tool: ${toolName}`);
-  return match[0];
+function actionName(toolName, task) {
+  if (typeof toolName !== "string") throw new Error("Compute action tool must be a string");
+  const binding = task?.inputs?.action_bindings?.find((item) => item.tool === toolName);
+  return binding?.name || toolName;
 }
 
 function actionResultRef(task, index) {

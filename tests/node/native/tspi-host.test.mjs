@@ -89,7 +89,11 @@ async function fixture(t) {
   const workspaceRoot = join(root, "workspaces");
   const workspace = join(workspaceRoot, "project-a");
   await mkdir(workspace, { recursive: true });
-  await writeFile(join(workspace, "workspace.json"), JSON.stringify({ schema_version: "research-workspace/1" }));
+  await writeFile(join(workspace, "workspace_manifest.json"), JSON.stringify({
+    schema_version: "research_agent_workspace_1",
+    workspace_id: "project-a",
+    workspace_mode: "research",
+  }));
   const backend = createBackend(workspaceRoot);
   const host = await startTspiHost({ socketPath: join(root, "host.sock"), workspaceRoot, stateRoot: join(root, "state"), sessionBackend: backend, monitorPollMs: 0 });
   t.after(async () => { await host.close(); await rm(root, { recursive: true, force: true }); });
@@ -117,7 +121,11 @@ test("Host initialization exposes its selected package release", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-host-release-"));
   const workspaceRoot = join(root, "workspaces");
   await mkdir(join(workspaceRoot, "project-a"), { recursive: true });
-  await writeFile(join(workspaceRoot, "project-a", "workspace.json"), JSON.stringify({ schema_version: "research-workspace/1" }));
+  await writeFile(join(workspaceRoot, "project-a", "workspace_manifest.json"), JSON.stringify({
+    schema_version: "research_agent_workspace_1",
+    workspace_id: "project-a",
+    workspace_mode: "research",
+  }));
   const backend = createBackend(workspaceRoot);
   const host = await startTspiHost({
     socketPath: join(root, "host.sock"),
@@ -137,7 +145,11 @@ test("Host client rejects a stale package release", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-host-release-mismatch-"));
   const workspaceRoot = join(root, "workspaces");
   await mkdir(join(workspaceRoot, "project-a"), { recursive: true });
-  await writeFile(join(workspaceRoot, "project-a", "workspace.json"), JSON.stringify({ schema_version: "research-workspace/1" }));
+  await writeFile(join(workspaceRoot, "project-a", "workspace_manifest.json"), JSON.stringify({
+    schema_version: "research_agent_workspace_1",
+    workspace_id: "project-a",
+    workspace_mode: "research",
+  }));
   const backend = createBackend(workspaceRoot);
   const host = await startTspiHost({
     socketPath: join(root, "host.sock"),

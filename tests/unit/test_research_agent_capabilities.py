@@ -66,6 +66,15 @@ def test_descriptor_round_trip_and_mode_validation() -> None:
     parsed = CapabilityDescriptor.from_dict(descriptor.to_dict())
     assert parsed == descriptor
 
+    canonical = descriptor.to_canonical_dict()
+    assert canonical["protocol"] == "capability_descriptor"
+    assert canonical["capability_version"] == descriptor.version
+    assert canonical["provider"]["provider_id"] == descriptor.provider_id
+    assert CapabilityDescriptor.from_canonical_dict(canonical) == descriptor
+
+    dotted = _descriptor("gaussian.opt_freq").to_canonical_dict()
+    assert CapabilityDescriptor.from_canonical_dict(dotted).capability_id == "gaussian.opt_freq"
+
     serialized = descriptor.to_dict()
     serialized.pop("supported_workspace_modes")
     with pytest.raises(DescriptorError, match="missing capability descriptor fields"):

@@ -24,6 +24,7 @@ test("filesystem kernel rejects changes while admission is pending", async () =>
     const kernel = create_fs_research_kernel({ workspace_root: root });
     await assert.rejects(
       kernel.apply_change({
+        principal: "root_agent", authority: "kernel_write",
         workspace_id: "workspace_fs_kernel",
         expected_revision: 0,
         operations: [{ type: "create_phase", id: "phase_1", title: "Pending", objective: "blocked" }],
@@ -47,9 +48,13 @@ test("filesystem kernel persists admission and allows changes after restart", as
     });
     assert.equal(admission.accepted, true);
     assert.equal(admission.state, "admitted");
+    const manifest = JSON.parse(await readFile(join(root, "workspace_manifest.json"), "utf8"));
+    assert.equal(manifest.state, "ready");
+    assert.equal(manifest.research_kernel.admission_required, false);
 
     const restarted = create_fs_research_kernel({ workspace_root: root });
     const change = await restarted.apply_change({
+      principal: "root_agent", authority: "kernel_write",
       workspace_id: "workspace_fs_kernel",
       expected_revision: 0,
       operations: [{ type: "create_phase", id: "phase_1", title: "Admitted", objective: "allowed" }],
@@ -58,7 +63,7 @@ test("filesystem kernel persists admission and allows changes after restart", as
     assert.equal(change.revision, 1);
     assert.deepEqual((await restarted.read_context()).phases.map((phase) => phase.id), ["phase_1"]);
 
-    const checkpoint = await restarted.checkpoint({ workspace_id: "workspace_fs_kernel", checkpoint_id: "checkpoint_1" });
+    const checkpoint = await restarted.checkpoint({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", checkpoint_id: "checkpoint_1", disposition: "terminal" });
     assert.equal(checkpoint.accepted, true);
     const saved = JSON.parse(await readFile(join(root, "checkpoints", "checkpoint_1.json"), "utf8"));
     assert.equal(saved.lifecycle_state, "admitted");
@@ -73,6 +78,7 @@ test("filesystem kernel accepts semantic Node identifiers used by execution bind
     const kernel = create_fs_research_kernel({ workspace_root: root });
     await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });
     const change = await kernel.apply_change({
+      principal: "root_agent", authority: "kernel_write",
       workspace_id: "workspace_fs_kernel",
       expected_revision: 0,
       operations: [
@@ -93,6 +99,7 @@ test("filesystem kernel keeps semantic refs and durable checkpoint liveness alig
     const kernel = create_fs_research_kernel({ workspace_root: root });
     await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });
     await kernel.apply_change({
+      principal: "root_agent", authority: "kernel_write",
       workspace_id: "workspace_fs_kernel",
       expected_revision: 0,
       operations: [
@@ -103,6 +110,7 @@ test("filesystem kernel keeps semantic refs and durable checkpoint liveness alig
     });
     assert.equal((await kernel.read_liveness()).lifecycle, "decision_needed");
     const checkpoint = await kernel.checkpoint({
+      principal: "root_agent", authority: "kernel_write",
       workspace_id: "workspace_fs_kernel",
       checkpoint_id: "checkpoint_semantic.1",
       disposition: "continue_required",
@@ -113,11 +121,12 @@ test("filesystem kernel keeps semantic refs and durable checkpoint liveness alig
     const liveness = await restarted.read_liveness();
     assert.equal(liveness.lifecycle, "continue_required");
     assert.equal(liveness.continue_required[0].id, "node_transition.state.v2");
-    await restarted.checkpoint({ workspace_id: "workspace_fs_kernel", checkpoint_id: "checkpoint_semantic.2", disposition: "terminal" });
+    await restarted.checkpoint({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", checkpoint_id: "checkpoint_semantic.2", disposition: "terminal" });
     const terminal = await restarted.read_liveness();
     assert.equal(terminal.lifecycle, "terminal");
     assert.equal(terminal.continue_required, undefined);
     await restarted.apply_change({
+      principal: "root_agent", authority: "kernel_write",
       workspace_id: "workspace_fs_kernel",
       expected_revision: 1,
       operations: [{ type: "set_focus", claim_ids: ["claim_mechanism.v2"], node_ids: ["node_transition.state.v2"] }],
@@ -140,6 +149,7 @@ test("kernel port restores durable admission after the Host process is recreated
     });
     const restarted = create_research_kernel_port(create_fs_research_kernel({ workspace_root: root }));
     const change = await restarted.apply_change({
+      principal: "root_agent", authority: "kernel_write",
       workspace_id: "workspace_fs_kernel",
       expected_revision: 0,
       operations: [{ type: "create_phase", id: "phase_1", title: "Restored", objective: "allowed" }],
@@ -155,7 +165,7 @@ test("filesystem kernel records findings, gates, attempts, artifacts and interpr
   try {
     const kernel = create_fs_research_kernel({ workspace_root: root });
     await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });
-    const result = await kernel.apply_change({ workspace_id: "workspace_fs_kernel", expected_revision: 0, operations: [
+    const result = await kernel.apply_change({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", expected_revision: 0, operations: [
       { type: "create_claim", id: "claim_1", statement: "Hypothesis" },
       { type: "create_node", id: "node_1", title: "Run", objective: "Execute", claim_ids: ["claim_1"] },
       { type: "create_artifact", id: "artifact_1", node_id: "node_1", location: "runs/input.xyz", sha256: "abc", size_bytes: 4 },
@@ -182,18 +192,18 @@ test("filesystem kernel enforces Attempt transitions and links outputs to eviden
   try {
     const kernel = create_fs_research_kernel({ workspace_root: root });
     await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });
-    await kernel.apply_change({ workspace_id: "workspace_fs_kernel", expected_revision: 0, operations: [
+    await kernel.apply_change({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", expected_revision: 0, operations: [
       { type: "create_claim", id: "claim_1", statement: "Hypothesis" },
       { type: "create_node", id: "node_1", title: "Run", objective: "Execute", claim_ids: ["claim_1"] },
       { type: "create_attempt", id: "attempt_1", node_id: "node_1", capability: "xtb", capability_version: "1", state: "started" },
       { type: "create_finding", id: "finding_1", node_id: "node_1", claim_ids: ["claim_1"], statement: "Observed", kind: "fact" },
     ] });
-    await kernel.apply_change({ workspace_id: "workspace_fs_kernel", expected_revision: 1, operations: [
+    await kernel.apply_change({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", expected_revision: 1, operations: [
       { type: "transition_attempt", attempt_id: "attempt_1", state: "running", started_at: "2026-09-26T01:00:00Z", updated_at: "2026-09-26T01:00:00Z" },
       { type: "create_artifact", id: "artifact_1", node_id: "node_1", location: "runs/out.xyz", producer_attempt_id: "attempt_1", size_bytes: 4 },
       { type: "create_evidence", id: "evidence_1", artifact_id: "artifact_1", attempt_ref: "attempt_1", subject_type: "finding", subject_id: "finding_1", relation: "supports" },
     ] });
-    await kernel.apply_change({ workspace_id: "workspace_fs_kernel", expected_revision: 2, operations: [
+    await kernel.apply_change({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", expected_revision: 2, operations: [
       { type: "update_attempt", attempt_id: "attempt_1", state: "succeeded", finished_at: "2026-09-26T01:01:00Z" },
     ] });
     const context = await kernel.read_context();
@@ -206,7 +216,7 @@ test("filesystem kernel enforces Attempt transitions and links outputs to eviden
     assert.deepEqual(context.artifacts[0].evidence_link_ids, ["evidence_1"]);
     assert.deepEqual(context.findings[0].evidence_link_ids, ["evidence_1"]);
     await assert.rejects(
-      kernel.apply_change({ workspace_id: "workspace_fs_kernel", expected_revision: 3, operations: [
+      kernel.apply_change({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", expected_revision: 3, operations: [
         { type: "transition_attempt", attempt_id: "attempt_1", state: "running" },
       ] }),
       /invalid_attempt_transition/,

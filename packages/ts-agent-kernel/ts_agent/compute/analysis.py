@@ -33,7 +33,7 @@ ATOM_REFERENCE = {
 }
 SPECIES_ARTIFACTS = {
     "type": "array",
-    "items": {"type": "string", "pattern": "^art_[0-9a-f]{24}$"},
+    "items": {"type": "string", "pattern": "^art_[0-9a-f]{64}$"},
     "minItems": 1,
     "maxItems": 64,
 }

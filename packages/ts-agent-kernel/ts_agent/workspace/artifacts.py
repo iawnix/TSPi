@@ -16,14 +16,12 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from ts_agent.io import read_json
-from ts_agent.research import ResearchKernel, ResearchKernelError
-
 from .errors import ContractError
 from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .refs import CALCULATION_ID, NODE_ID
 
 
-ARTIFACT_ID_SCHEMA_VERSION = "ts-artifact-id/2"
+ARTIFACT_ID_SCHEMA_VERSION = "ts-artifact-id/3"
 ELIGIBLE_ARTIFACT_SUFFIXES = frozenset(
     {".com", ".gif", ".gjf", ".inp", ".json", ".log", ".out", ".png", ".txt", ".xyz"}
 )
@@ -113,12 +111,14 @@ def artifact_for_ref(
 def artifact_id(path: str, digest: str) -> str:
     """Derive a stable logical ID from both path and content digest."""
 
-    material = json.dumps(
-        {"schema_version": ARTIFACT_ID_SCHEMA_VERSION, "path": path, "sha256": digest},
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return "art_" + hashlib.sha256(material).hexdigest()[:24]
+    if not isinstance(digest, str) or not digest.startswith("sha256:"):
+        raise WorkspaceArtifactError("artifact digest must be a SHA-256 value")
+    digest_hex = digest.removeprefix("sha256:")
+    if len(digest_hex) != 64 or any(char not in "0123456789abcdef" for char in digest_hex):
+        raise WorkspaceArtifactError("artifact digest must be a SHA-256 value")
+    # Artifact identity is content-addressed across capability, kernel, and
+    # review transports. The logical path remains provenance, never identity.
+    return "art_" + digest_hex
 
 
 def artifact_ownership(ref: str) -> tuple[str | None, str | None]:
@@ -183,14 +183,23 @@ def workspace_root(root: str | Path) -> Path:
     workspace = lexical_path(root)
     if path_has_symlink(workspace):
         raise WorkspaceArtifactError(f"workspace root cannot contain a symbolic link: {workspace}")
-    workspace_doc = workspace / "workspace.json"
-    map_doc = workspace / "research_map.json"
+    workspace_doc = workspace / "workspace_manifest.json"
+    context_doc = workspace / "research_map" / "context.json"
     if not workspace.is_dir() or workspace.is_symlink():
         raise WorkspaceArtifactError(f"not an initialized TS workspace: {workspace}")
-    for path in (workspace_doc, map_doc, workspace / "nodes"):
+    if (workspace / "research_map.json").exists() or (workspace / "research.db").exists():
+        raise WorkspaceArtifactError("legacy ResearchMap storage is not supported by the canonical artifact workspace")
+    for path in (workspace_doc, context_doc, workspace / "lifecycle" / "liveness.json", workspace / "nodes"):
         if has_symlink_component(workspace, path):
             raise WorkspaceArtifactError(f"workspace canonical path uses a symbolic link: {path.relative_to(workspace)}")
-    if not workspace_doc.is_file() or workspace_doc.is_symlink() or not map_doc.is_file() or map_doc.is_symlink() or not (workspace / "nodes").is_dir():
+    if (
+        not workspace_doc.is_file()
+        or workspace_doc.is_symlink()
+        or not context_doc.is_file()
+        or context_doc.is_symlink()
+        or not (workspace / "lifecycle" / "liveness.json").is_file()
+        or not (workspace / "nodes").is_dir()
+    ):
         raise WorkspaceArtifactError(f"not an initialized TS workspace: {workspace}")
     try:
         identity = read_json(workspace_doc)
@@ -198,12 +207,19 @@ def workspace_root(root: str | Path) -> Path:
         raise WorkspaceArtifactError(
             f"cannot read workspace identity: {workspace_doc}"
         ) from exc
-    if not isinstance(identity, dict) or identity.get("schema_version") != "research-workspace/1":
+    if not isinstance(identity, dict) or identity.get("schema_version") != "research_agent_workspace_1" or identity.get("workspace_mode") != "research":
         raise WorkspaceArtifactError(f"unsupported workspace protocol: {workspace}")
     try:
-        ResearchKernel(workspace).load()
-    except ResearchKernelError as exc:
-        raise WorkspaceArtifactError(f"invalid ResearchMap: {exc}") from exc
+        context = read_json(context_doc)
+        liveness = read_json(workspace / "lifecycle" / "liveness.json")
+    except (OSError, ValueError) as exc:
+        raise WorkspaceArtifactError(f"cannot read canonical ResearchMap state: {exc}") from exc
+    if not isinstance(context, dict) or context.get("schema_version") != "research_map_context_1":
+        raise WorkspaceArtifactError("invalid ResearchMap context")
+    if not isinstance(liveness, dict) or liveness.get("schema_version") != "research_liveness_1":
+        raise WorkspaceArtifactError("invalid ResearchMap liveness")
+    if context.get("workspace_id") != identity.get("workspace_id") or liveness.get("workspace_id") != identity.get("workspace_id"):
+        raise WorkspaceArtifactError("workspace identity does not match canonical ResearchMap state")
     return workspace
 
 
@@ -217,21 +233,21 @@ def workspace_node_records(workspace: Path) -> list[dict[str, Any]]:
     """Return canonical serialized ResearchNode objects from the ResearchMap."""
 
     workspace = lexical_path(workspace)
+    context_path = workspace / "research_map" / "context.json"
     try:
-        research_map = ResearchKernel(workspace).load()
-    except ResearchKernelError as exc:
-        raise WorkspaceArtifactError(f"cannot read ResearchMap: {exc}") from exc
-    records: list[dict[str, Any]] = []
+        context = read_json(context_path)
+    except (OSError, ValueError) as exc:
+        raise WorkspaceArtifactError(f"cannot read ResearchMap context: {exc}") from exc
+    values = context.get("nodes", []) if isinstance(context, dict) else []
+    if not isinstance(values, list):
+        raise WorkspaceArtifactError("ResearchMap context nodes must be an array")
+    records = [dict(item) for item in values if isinstance(item, dict)]
     ids: set[str] = set()
-    for node in research_map.nodes.values():
-        node_id = node.id
-        if NODE_ID.fullmatch(node_id) is None:
-            raise WorkspaceArtifactError("ResearchMap contains an invalid node id")
-        if node_id in ids:
-            raise WorkspaceArtifactError(f"ResearchMap contains duplicate node id: {node_id}")
+    for record in records:
+        node_id = record.get("id")
+        if not isinstance(node_id, str) or NODE_ID.fullmatch(node_id) is None or node_id in ids:
+            raise WorkspaceArtifactError("ResearchMap context contains an invalid node id")
         ids.add(node_id)
-        item = node.to_dict()
-        records.append(item)
     return records
 
 

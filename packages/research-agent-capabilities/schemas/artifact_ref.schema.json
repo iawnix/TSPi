@@ -15,7 +15,7 @@
   ],
   "properties": {
     "schema_version": {"const": "research-agent-artifact-ref/1"},
-    "artifact_id": {"type": "string", "pattern": "^artifact_[0-9a-f]{64}$"},
+    "artifact_id": {"type": "string", "pattern": "^art_[0-9a-f]{64}$"},
     "content_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "artifact_type": {"type": "string", "minLength": 1},
     "byte_count": {"type": "integer", "minimum": 0},

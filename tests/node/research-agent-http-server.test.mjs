@@ -219,6 +219,8 @@ test("HTTP research routes initialize, admit, turn, and change a workspace throu
       workspace_root,
       workspace_id: "workspace_http_research",
       request_id: "request_http_research_change",
+      principal: "root_agent",
+      authority: "kernel_write",
       expected_revision: 0,
       operations: [{ type: "create_phase", id: "phase_1", title: "HTTP", objective: "route" }],
     });

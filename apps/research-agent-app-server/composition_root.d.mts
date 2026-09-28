@@ -18,7 +18,7 @@ export interface ResearchAgentComposition {
   readonly workspace_catalog: WorkspaceCatalog | null;
   readonly session_store: SessionStore | null;
   readonly turn_router: TurnRouter;
-  readonly kernel_port: Pick<ResearchKernelPort, "admit_workspace" | "turn"> | null;
+  readonly kernel_port: Pick<ResearchKernelPort, "admit_workspace" | "apply_change" | "checkpoint" | "turn"> | null;
   readonly tool_gateway: ToolGateway;
   readonly compute_orchestrator: ComputeOrchestrator | null;
   readonly capability_assembly: HostCapabilityAssembly | null;
@@ -37,7 +37,7 @@ export interface ResearchAgentCompositionOptions {
   readonly session_store_factory?: (options?: unknown) => SessionStore;
   readonly session_root?: string;
   readonly turn_router?: TurnRouter | null;
-  readonly kernel_port?: Pick<ResearchKernelPort, "admit_workspace" | "turn"> | null;
+  readonly kernel_port?: Pick<ResearchKernelPort, "admit_workspace" | "apply_change" | "checkpoint" | "turn"> | null;
   readonly tool_gateway?: ToolGateway | null;
   readonly capability_factory?: (options?: unknown) => ToolGateway;
   readonly artifact_root?: string;

@@ -12,8 +12,6 @@ const AUTHORITIES = Object.freeze({
   review: "advisory",
   compute: "operational",
 });
-const COMPUTE_OPERATIONS = Object.freeze(["launch", "inspect", "finalize", "cancel"]);
-const COMPUTE_ACTIONS = Object.freeze(["prepare", "submit", "status", "tail", "collect", "parse", "cancel"]);
 const OUTCOMES = Object.freeze(["success", "partial", "failure", "not_run"]);
 const PROGRAM_OUTCOMES = Object.freeze(["success", "failure", "not_run"]);
 const FORBIDDEN_RESULT_KEYS = new Set([
@@ -62,14 +60,23 @@ function validateAgentTask(value) {
   if (role === "review" && operation !== "claim_review") {
     throw new Error("Review task operation must be claim_review");
   }
-  if (role === "compute" && !COMPUTE_OPERATIONS.includes(operation)) {
-    throw new Error(`invalid Compute task operation: ${operation}`);
-  }
   const objective = requireString(value.objective, "objective", 4000);
   const workspace = validateWorkspace(value.workspace);
   const scope = validateScope(value.scope);
   const inputs = validateTaskInputs(value.inputs, role);
-  if (role === "compute") validateComputePlan(operation, inputs);
+  if (role === "compute") {
+    const descriptor = inputs.capability_descriptor;
+    if (Array.isArray(descriptor.operations) && !descriptor.operations.includes(operation)) {
+      throw new Error(`operation is not advertised by capability descriptor: ${operation}`);
+    }
+    if (Array.isArray(descriptor.actions)) {
+      const advertised = new Set(descriptor.actions);
+      const requested = [...inputs.required_actions, ...inputs.optional_actions];
+      if (requested.some((action) => !advertised.has(action))) {
+        throw new Error("compute action is not advertised by capability descriptor");
+      }
+    }
+  }
   const capabilities = uniqueStringArray(value.capabilities, "capabilities", 32, 128);
   const constraints = validateConstraints(value.constraints);
   if (value.output_contract !== "ts-agent-result/1") throw new Error("output_contract must be ts-agent-result/1");
@@ -107,12 +114,12 @@ function validateComputeInputs(value) {
   const keys = [
     "capability", "capability_version", "capability_descriptor_digest",
     "capability_descriptor", "expected_output_roles", "node_id", "intent_id", "intent_digest", "execution_kind",
-    "required_actions", "optional_actions", "tail", "collect_artifacts",
+    "required_actions", "optional_actions", "action_bindings", "primary_action", "tail", "collect_artifacts",
     "parse_artifact_ref",
   ];
   rejectUnknownKeys(value, keys, "compute inputs");
-  const capability = requirePattern(value.capability, "inputs.capability", /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/, 128);
-  const capabilityVersion = requirePattern(value.capability_version, "inputs.capability_version", /^[1-9][0-9]*$/, 16);
+  const capability = requirePattern(value.capability, "inputs.capability", /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/, 128);
+  const capabilityVersion = requirePattern(value.capability_version, "inputs.capability_version", /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/, 32);
   const descriptorDigest = requirePattern(
     value.capability_descriptor_digest,
     "inputs.capability_descriptor_digest",
@@ -147,35 +154,107 @@ function validateComputeInputs(value) {
     intent_id: intentId,
     intent_digest: value.intent_digest,
     execution_kind: requireEnum(value.execution_kind, "inputs.execution_kind", ["local", "remote"]),
-    required_actions: uniqueEnumArray(value.required_actions, "inputs.required_actions", COMPUTE_ACTIONS, 2),
-    optional_actions: uniqueEnumArray(value.optional_actions, "inputs.optional_actions", COMPUTE_ACTIONS, 2),
+    // Action names belong to the capability descriptor/Skill, not Agent Core.
+    // The core only validates bounded identifiers and preserves their order.
+    required_actions: uniqueStringArray(value.required_actions, "inputs.required_actions", 32, 128),
+    optional_actions: uniqueStringArray(value.optional_actions, "inputs.optional_actions", 32, 128),
+    action_bindings: validateActionBindings(value.action_bindings, "inputs.action_bindings"),
+    primary_action: value.primary_action === undefined
+      ? null
+      : nullableString(value.primary_action, "inputs.primary_action", 128),
     tail,
     collect_artifacts: uniqueStringArray(value.collect_artifacts, "inputs.collect_artifacts", 32, 255),
     parse_artifact_ref: nullableString(value.parse_artifact_ref, "inputs.parse_artifact_ref", 4096),
   };
 }
 
+function validateActionBindings(value, label) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 64) throw new Error(`${label} must contain at most 64 items`);
+  const names = new Set();
+  const tools = new Set();
+  return value.map((item, index) => {
+    if (!isPlainObject(item)) throw new Error(`${label}[${index}] must be an object`);
+    rejectUnknownKeys(item, ["name", "tool", "fact_kind"], `${label}[${index}]`);
+    const name = requirePattern(item.name, `${label}[${index}].name`, /^[A-Za-z][A-Za-z0-9_.:-]*$/, 128);
+    const tool = requirePattern(item.tool, `${label}[${index}].tool`, /^[A-Za-z][A-Za-z0-9_.:-]*$/, 128);
+    const factKind = requirePattern(item.fact_kind, `${label}[${index}].fact_kind`, /^[A-Za-z][A-Za-z0-9_.:-]*$/, 128);
+    if (names.has(name) || tools.has(tool)) throw new Error(`${label} contains duplicate action names or tools`);
+    names.add(name);
+    tools.add(tool);
+    return { name, tool, fact_kind: factKind };
+  });
+}
+
 function validateCapabilityDescriptor(value) {
   if (!isPlainObject(value)) throw new Error("inputs.capability_descriptor must be an object");
   rejectUnknownKeys(
     value,
-    ["capability", "version", "input_roles", "output_roles", "parsers"],
+    ["capability", "version", "input_roles", "output_roles", "parsers", "operations", "actions", "action_plan"],
     "inputs.capability_descriptor",
   );
   const capability = requirePattern(
     value.capability,
     "inputs.capability_descriptor.capability",
-    /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/,
+    /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/,
     128,
   );
-  const version = requirePattern(value.version, "inputs.capability_descriptor.version", /^[1-9][0-9]*$/, 16);
+  const version = requirePattern(value.version, "inputs.capability_descriptor.version", /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/, 32);
+  const operations = value.operations === undefined ? undefined : uniqueStringArray(value.operations, "inputs.capability_descriptor.operations", 32, 128);
+  const actions = value.actions === undefined ? undefined : uniqueStringArray(value.actions, "inputs.capability_descriptor.actions", 64, 128);
+  const actionPlan = value.action_plan === undefined
+    ? undefined
+    : validateCapabilityActionPlan(value.action_plan, "inputs.capability_descriptor.action_plan");
   return {
     capability,
     version,
     input_roles: uniqueStringArray(value.input_roles, "inputs.capability_descriptor.input_roles", 32, 64),
     output_roles: uniqueStringArray(value.output_roles, "inputs.capability_descriptor.output_roles", 32, 64),
     parsers: uniqueStringArray(value.parsers, "inputs.capability_descriptor.parsers", 16, 128),
+    ...(operations === undefined ? {} : { operations }),
+    ...(actions === undefined ? {} : { actions }),
+    ...(actionPlan === undefined ? {} : { action_plan: actionPlan }),
   };
+}
+
+function validateCapabilityActionPlan(value, label) {
+  if (!isPlainObject(value)) throw new Error(`${label} must be an object`);
+  const entries = Object.entries(value);
+  if (entries.length > 32) throw new Error(`${label} contains too many operations`);
+  const result = {};
+  for (const [operation, plan] of entries) {
+    if (!/^[A-Za-z][A-Za-z0-9_.:-]*$/.test(operation)) {
+      throw new Error(`${label} contains an invalid operation identifier`);
+    }
+    if (!isPlainObject(plan)) throw new Error(`${label}.${operation} must be an object`);
+    rejectUnknownKeys(plan, ["required", "optional", "primary", "required_actions", "optional_actions", "primary_action"], `${label}.${operation}`);
+    const required = validatePlanBindings(plan.required || plan.required_actions, `${label}.${operation}.required`);
+    const optional = validatePlanBindings(plan.optional || plan.optional_actions || [], `${label}.${operation}.optional`);
+    if (required.length + optional.length === 0) throw new Error(`${label}.${operation} must contain an action`);
+    const all = [...required, ...optional];
+    if (new Set(all.map((item) => item.name)).size !== all.length || new Set(all.map((item) => item.tool)).size !== all.length) {
+      throw new Error(`${label}.${operation} contains duplicate action names or tools`);
+    }
+    const primary = plan.primary || plan.primary_action || all[all.length - 1].name;
+    if (typeof primary !== "string" || !all.some((item) => item.name === primary)) {
+      throw new Error(`${label}.${operation}.primary must name a declared action`);
+    }
+    result[operation] = { required, optional, primary };
+  }
+  return result;
+}
+
+function validatePlanBindings(value, label) {
+  if (!Array.isArray(value) || value.length > 32) throw new Error(`${label} must contain at most 32 items`);
+  return value.map((item, index) => {
+    if (typeof item === "string") {
+      return { name: requirePattern(item, `${label}[${index}]`, /^[A-Za-z][A-Za-z0-9_.:-]*$/, 128), tool: item, fact_kind: "inspection" };
+    }
+    return validateActionBindings([{
+      ...item,
+      fact_kind: item.fact_kind || "inspection",
+    }], `${label}[${index}]`)[0];
+  });
 }
 
 function validateComputeTail(value) {
@@ -185,33 +264,6 @@ function validateComputeTail(value) {
     artifact: nullableString(value.artifact, "inputs.tail.artifact", 255),
     lines: requireIntegerRange(value.lines, "inputs.tail.lines", 1, 500),
   };
-}
-
-function validateComputePlan(operation, inputs) {
-  const expected = {
-    launch: { required: ["prepare", "submit"], optional: [] },
-    inspect: { required: ["status"], optional: ["tail"] },
-    finalize: { required: ["collect", "parse"], optional: [] },
-    cancel: { required: ["cancel"], optional: [] },
-  }[operation];
-  if (!expected) throw new Error(`invalid Compute task operation: ${operation}`);
-  if (JSON.stringify(inputs.required_actions) !== JSON.stringify(expected.required)) {
-    throw new Error(`Compute ${operation} required_actions do not match the fixed plan`);
-  }
-  if (JSON.stringify(inputs.optional_actions) !== JSON.stringify(expected.optional)) {
-    throw new Error(`Compute ${operation} optional_actions do not match the fixed plan`);
-  }
-  if (!["local", "remote"].includes(inputs.execution_kind)) {
-    throw new Error(`Compute ${operation} requires local or remote execution`);
-  }
-  if ((operation === "inspect") !== (inputs.tail !== null)) {
-    throw new Error(`Compute ${operation} tail binding does not match the fixed plan`);
-  }
-  if (operation === "finalize") {
-    if (!inputs.parse_artifact_ref) throw new Error("Compute finalize requires parse_artifact_ref");
-  } else if (inputs.collect_artifacts.length || inputs.parse_artifact_ref !== null) {
-    throw new Error(`Compute ${operation} cannot bind collection or parse artifacts`);
-  }
 }
 
 function validateDocumentBinding(value, label, expected) {
@@ -435,14 +487,6 @@ function uniqueStringArray(value, label, maxItems, maxLength) {
   return result;
 }
 
-function uniqueEnumArray(value, label, allowed, maxItems) {
-  if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
-  if (value.length > maxItems) throw new Error(`${label} exceeds ${maxItems} items`);
-  const result = value.map((item, index) => requireEnum(item, `${label}[${index}]`, allowed));
-  if (new Set(result).size !== result.length) throw new Error(`${label} contains duplicates`);
-  return result;
-}
-
 function rejectUnknownKeys(value, allowed, label) {
   const allowedSet = new Set(allowed);
   const unknown = Object.keys(value).filter((key) => !allowedSet.has(key));
@@ -455,8 +499,6 @@ function isPlainObject(value) {
 
 module.exports = {
   AUTHORITIES,
-  COMPUTE_ACTIONS,
-  COMPUTE_OPERATIONS,
   FORBIDDEN_RESULT_KEYS,
   PROGRAM_OUTCOMES,
   ROLES,

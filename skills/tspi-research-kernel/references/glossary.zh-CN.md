@@ -8,7 +8,7 @@
 | --- | --- |
 | Root Agent | 选择研究问题、方法、分支、解释和停止条件。 |
 | Research Kernel | 校验并原子持久化一个项目的 `ResearchMap`，不运行科学软件。 |
-| ResearchMap | 项目的规范类型化聚合对象，序列化为 `research_map.json`。 |
+| ResearchMap | 项目的规范类型化聚合对象，序列化为 `research_map/context.json`。 |
 | ResearchPhase | 相关研究 Node 的导航分组，不拥有独立生命周期。 |
 | ResearchClaim | 带有预测、反证条件和状态的待研究陈述。 |
 | ResearchNode | 一个有边界的问题和交付物，包含依赖、状态、结果，以及 Claim、Finding、Gate、Attempt、Artifact 引用。 |

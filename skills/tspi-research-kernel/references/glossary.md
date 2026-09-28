@@ -8,7 +8,7 @@ Use these names in prompts, tool requests, findings, and reports.
 | --- | --- |
 | Root Agent | Chooses research questions, methods, branches, interpretation, and stopping. |
 | Research Kernel | Validates and atomically persists one project `ResearchMap`; it does not run scientific software. |
-| ResearchMap | Canonical typed aggregate for a project, serialized as `research_map.json`. |
+| ResearchMap | Canonical typed aggregate for a project, serialized as `research_map/context.json`. |
 | ResearchPhase | Navigation group for related research Nodes. It has no independent lifecycle. |
 | ResearchClaim | Statement under investigation with predictions, falsifiers, and a status. |
 | ResearchNode | One bounded question and deliverable, with dependencies, state, outcome, and links to Claims, Findings, Gates, Attempts, and Artifacts. |

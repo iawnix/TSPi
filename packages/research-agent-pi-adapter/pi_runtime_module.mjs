@@ -170,6 +170,26 @@ export async function create_runtime(raw_options = {}) {
   const map_path = make_session_map_path(session_root);
   const descriptors = await read_session_map(map_path);
   const sessions = new Map();
+  const disposals = new WeakMap();
+  let closed = false;
+
+  function ensure_open() {
+    if (closed) throw new Error("pi_runtime_closed");
+  }
+
+  async function dispose_raw(raw) {
+    if (!raw || typeof raw !== "object") return undefined;
+    let pending = disposals.get(raw);
+    if (!pending) {
+      pending = Promise.resolve().then(() => {
+        if (typeof raw.dispose === "function") return raw.dispose();
+        if (typeof raw.close === "function") return raw.close();
+        return undefined;
+      });
+      disposals.set(raw, pending);
+    }
+    return pending;
+  }
 
   async function manager_for_create(cwd, pi_session_id, request) {
     if (typeof options.session_manager_factory === "function") {
@@ -214,6 +234,11 @@ export async function create_runtime(raw_options = {}) {
     if (typeof raw.abort !== "function") throw new TypeError("pi_runtime_factory_invalid: session.abort() is required");
     const pi_session_id = descriptor.pi_session_id ?? raw.sessionId ?? raw.session_id ?? raw.id;
     const entry = { session_id: framework_id, pi_session_id, cwd: descriptor.cwd, session_file: descriptor.session_file };
+    let dispose_promise;
+    const dispose = async () => {
+      dispose_promise ||= Promise.resolve().then(() => dispose_raw(raw));
+      await dispose_promise;
+    };
     sessions.set(framework_id, { framework_id, raw, entry });
     return {
       session_id: framework_id,
@@ -225,8 +250,8 @@ export async function create_runtime(raw_options = {}) {
       subscribe(listener) { return typeof raw.subscribe === "function" ? raw.subscribe(listener) : () => {}; },
       async getSnapshot() { return snapshot_for(framework_id, raw, entry); },
       async requestAbort(request) { return raw.abort(request); },
-      async dispose() { if (typeof raw.dispose === "function") raw.dispose(); },
-      async close() { if (typeof raw.dispose === "function") raw.dispose(); },
+      async dispose() { await dispose(); },
+      async close() { await dispose(); },
     };
   }
 
@@ -242,6 +267,7 @@ export async function create_runtime(raw_options = {}) {
 
   const pi_runtime = {
     async create_session(request = {}) {
+      ensure_open();
       const framework_id = framework_session_id(request.session_id);
       if (sessions.has(framework_id) || descriptors[framework_id]) {
         throw new Error(`session_id_conflict: ${framework_id}`);
@@ -255,6 +281,7 @@ export async function create_runtime(raw_options = {}) {
       return wrapped;
     },
     async attach_session(framework_id) {
+      ensure_open();
       const id = framework_session_id(framework_id);
       const existing = sessions.get(id);
       if (existing) return wrap(id, existing.raw, existing.entry);
@@ -267,14 +294,18 @@ export async function create_runtime(raw_options = {}) {
     },
     async close_session(framework_id) {
       const id = framework_session_id(framework_id);
-      if (!sessions.has(id) && !descriptors[id]) throw new Error(`session_not_found: ${id}`);
+      const current = sessions.get(id);
+      if (!current && !descriptors[id]) throw new Error(`session_not_found: ${id}`);
+      if (current) await dispose_raw(current.raw);
       sessions.delete(id);
       delete descriptors[id];
       await write_session_map(map_path, descriptors);
       return { session_id: id, state: "closed" };
     },
     async close() {
-      for (const { raw } of sessions.values()) if (typeof raw.dispose === "function") raw.dispose();
+      if (closed) return;
+      closed = true;
+      await Promise.all([...sessions.values()].map(({ raw }) => dispose_raw(raw)));
       sessions.clear();
     },
   };

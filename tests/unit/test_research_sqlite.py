@@ -17,7 +17,7 @@ from ts_agent.research import (
     TurnCheckpoint,
     TurnDisposition,
 )
-from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
+from tests.support.workspace_helpers import bootstrap_kernel_workspace_fixture, start_research_node
 from ts_agent.research import ResearchKernel
 
 
@@ -56,7 +56,7 @@ def _records():
             attempt_ref="calc_1",
             summary="The parsed scan does not establish a transition state.",
             outcome=InterpretationOutcome.INCONCLUSIVE,
-            artifact_refs=["art_aaaaaaaaaaaaaaaaaaaaaaaa"],
+            artifact_refs=["art_" + "a" * 64],
             actor={"kind": "root_agent", "run_id": "run_1"},
             created_at="2026-09-25T00:02:00Z",
         ),
@@ -76,7 +76,7 @@ def _records():
 
 
 def test_sqlite_bootstrap_and_atomic_claim_decision_commit(tmp_path) -> None:
-    root = bootstrap_workspace_fixture(tmp_path / "workspace")
+    root = bootstrap_kernel_workspace_fixture(tmp_path / "workspace")
     start_research_node(root)
     research_map = ResearchKernel(root).load()
     repository = ResearchSqliteRepository(root)
@@ -84,7 +84,7 @@ def test_sqlite_bootstrap_and_atomic_claim_decision_commit(tmp_path) -> None:
     assert repository.bootstrap_from_json(research_map)["created"] is True
     records = _records()
     repository.register_evidence(artifacts=[ArtifactManifest(
-        id="art_aaaaaaaaaaaaaaaaaaaaaaaa",
+        id="art_" + "a" * 64,
         node_id="node_1",
         kind="calculation_output",
         format="json",
@@ -114,7 +114,7 @@ def test_sqlite_bootstrap_and_atomic_claim_decision_commit(tmp_path) -> None:
 
 
 def test_sqlite_event_replay_is_idempotent(tmp_path) -> None:
-    root = bootstrap_workspace_fixture(tmp_path / "workspace")
+    root = bootstrap_kernel_workspace_fixture(tmp_path / "workspace")
     start_research_node(root)
     research_map = ResearchKernel(root).load()
     repository = ResearchSqliteRepository(root)
@@ -128,7 +128,7 @@ def test_sqlite_event_replay_is_idempotent(tmp_path) -> None:
 
 
 def test_sqlite_rejects_invalid_claim_decision_without_partial_write(tmp_path) -> None:
-    root = bootstrap_workspace_fixture(tmp_path / "workspace")
+    root = bootstrap_kernel_workspace_fixture(tmp_path / "workspace")
     start_research_node(root)
     research_map = ResearchKernel(root).load()
     repository = ResearchSqliteRepository(root)

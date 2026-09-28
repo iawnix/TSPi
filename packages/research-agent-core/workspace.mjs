@@ -227,8 +227,18 @@ export function create_workspace_initializer() {
     const liveness_path = join(manifest.workspace_root, "lifecycle", "liveness.json");
     const context = await read_json(context_path);
     const liveness = await read_json(liveness_path);
-    await write_json_atomic(context_path, { ...context, lifecycle_state: "admitted", admitted_at });
-    await write_json_atomic(liveness_path, { ...liveness, state: "admitted", admitted_at });
+    const context_admitted = context.lifecycle_state === "admitted";
+    const liveness_admitted = liveness.state === "admitted";
+    if (context_admitted !== liveness_admitted) {
+      throw new Error("research_lifecycle_state_mismatch");
+    }
+    // Kernel admission may have completed before a Host crash interrupted
+    // the manifest commit. Treat that durable pair as a recoverable commit
+    // point and only finalize the manifest on retry.
+    if (!context_admitted) {
+      await write_json_atomic(context_path, { ...context, lifecycle_state: "admitted", admitted_at });
+      await write_json_atomic(liveness_path, { ...liveness, state: "admitted", admitted_at });
+    }
     const memory_path = join(manifest.workspace_root, "memory", "index.json");
     let memory;
     try {

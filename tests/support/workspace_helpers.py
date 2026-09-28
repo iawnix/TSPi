@@ -6,8 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from ts_agent.io import sha256_json
+from ts_agent.runtime.workspace_mode import admit_research_workspace, initialize_workspace
 from ts_agent.workspace import init_workspace
 from ts_agent.research import ResearchKernel
+from ts_agent.research.agent_workspace import apply_change as _apply_filesystem_change
+from ts_agent.research.agent_workspace import read_context as read_filesystem_context
 from tests.support.kernel_helpers import apply_compiled_change, compile_change
 
 
@@ -22,9 +25,85 @@ def apply_change(root: Path, request: dict[str, Any]) -> dict[str, Any]:
     return apply_compiled_change(root, drafted["decision"])
 
 
-def bootstrap_workspace_fixture(root: Path) -> Path:
+def bootstrap_kernel_workspace_fixture(root: Path) -> Path:
+    """Create a ResearchKernel-backed fixture for kernel/SQLite tests.
+
+    New filesystem-runtime tests should use ``bootstrap_filesystem_workspace_fixture``;
+    this helper deliberately retains the JSON ResearchMap store required by the
+    ResearchKernel API tests.
+    """
     init_workspace(root)
+    # Current workspace discovery is keyed by the canonical manifest.  The
+    # ResearchKernel-backed tests still exercise the JSON ResearchMap store,
+    # so keep that map as the scientific kernel fixture while providing the
+    # production workspace identity contract around it.
+    manifest = {
+        "schema_version": "research_agent_workspace_1",
+        "workspace_id": json.loads((root / "workspace.json").read_text(encoding="utf-8"))["workspace_id"],
+        "workspace_mode": "research",
+        "state": "ready",
+        "workspace_root": str(root),
+        "research_kernel": {
+            "initialized": True,
+            "admission_required": False,
+            "revision": 0,
+        },
+    }
+    (root / "workspace_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return root
+
+
+def bootstrap_workspace_fixture(root: Path) -> Path:
+    """Backward-compatible test alias for the explicit kernel fixture.
+
+    New filesystem-runtime tests should call
+    ``bootstrap_filesystem_workspace_fixture`` directly.
+    """
+
+    return bootstrap_kernel_workspace_fixture(root)
+
+
+def bootstrap_filesystem_workspace_fixture(root: Path) -> Path:
+    """Create and admit the canonical manifest/context/liveness workspace."""
+
+    initialize_workspace(root, root.name, "research")
+    admit_research_workspace(root)
+    return root
+
+
+def apply_filesystem_change(root: Path, request: dict[str, Any]) -> dict[str, Any]:
+    """Apply a Root Agent ChangeSet to the canonical filesystem read model."""
+
+    body = dict(request)
+    body.setdefault("principal", "root_agent")
+    body.setdefault("authority", "kernel_write")
+    return _apply_filesystem_change(root, body)
+
+
+def start_filesystem_research_node(
+    root: Path,
+    *,
+    title: str = "Bounded research node",
+    objective: str = "Run one bounded research operation.",
+    claim_statement: str = "A bounded scientific claim requires evaluation.",
+) -> dict[str, str]:
+    """Create one Node through the canonical filesystem ResearchMap boundary."""
+
+    apply_filesystem_change(root, {
+        "operations": [
+            {"type": "create_phase", "id": "phase_1", "title": "Test phase", "objective": "Contain the bounded test research."},
+            {"type": "create_claim", "id": "claim_1", "statement": claim_statement},
+            {"type": "create_node", "id": "node_1", "phase_id": "phase_1", "claim_ids": ["claim_1"], "title": title, "objective": objective, "dependency_ids": []},
+            {"type": "set_focus", "claim_ids": ["claim_1"], "node_ids": ["node_1"]},
+        ],
+    })
+    context = read_filesystem_context(root)
+    node = next(item for item in context["nodes"] if item["id"] == "node_1")
+    return {
+        "phase_id": "phase_1",
+        "claim_id": node["claim_ids"][0],
+        "node_id": node["id"],
+    }
 
 
 def calculation_intent_fixture(node_id: str, intent_id: str) -> dict[str, Any]:
@@ -48,7 +127,7 @@ def calculation_intent_fixture(node_id: str, intent_id: str) -> dict[str, Any]:
         "input_refs": {"gjf": "inputs/candidate.gjf"},
         "input_bindings": [{
             "input_role": "gjf",
-            "artifact_id": "art_" + "a" * 24,
+            "artifact_id": "art_" + "a" * 64,
             "path": "inputs/candidate.gjf",
             "sha256": _DIGEST_B,
             "owner_node": node_id,

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 
-_ARTIFACT_ID = re.compile(r"^artifact_[0-9a-f]{64}$")
+_ARTIFACT_ID = re.compile(r"^art_[0-9a-f]{64}$")
 _CONTENT_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
@@ -37,7 +37,7 @@ class ArtifactRef:
             raise ArtifactError("artifact_id is invalid")
         if not isinstance(self.content_digest, str) or not _CONTENT_DIGEST.fullmatch(self.content_digest):
             raise ArtifactError("content_digest is invalid")
-        if self.artifact_id.removeprefix("artifact_") != self.content_digest.removeprefix("sha256:"):
+        if self.artifact_id.removeprefix("art_") != self.content_digest.removeprefix("sha256:"):
             raise ArtifactError("artifact_id does not match content_digest")
         if not isinstance(self.artifact_type, str) or not self.artifact_type:
             raise ArtifactError("artifact_type must be non-empty")
@@ -92,7 +92,7 @@ class ArtifactStore:
         metadata = dict(metadata or {})
         digest = "sha256:" + sha256(content).hexdigest()
         digest_hex = digest.removeprefix("sha256:")
-        artifact_id = "artifact_" + digest_hex
+        artifact_id = "art_" + digest_hex
         content_path = self._content_root / f"{digest_hex}.bin"
         metadata_path = self._metadata_root / f"{digest_hex}.json"
         if content_path.is_symlink() or metadata_path.is_symlink():
@@ -151,7 +151,7 @@ class ArtifactStore:
     def _digest_hex(self, artifact_id: str) -> str:
         if not isinstance(artifact_id, str) or not _ARTIFACT_ID.fullmatch(artifact_id):
             raise ArtifactError("artifact_id is invalid")
-        return artifact_id.removeprefix("artifact_")
+        return artifact_id.removeprefix("art_")
 
     @staticmethod
     def _atomic_write(path: Path, content: bytes) -> None:

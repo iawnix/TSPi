@@ -45,7 +45,7 @@ async function fixture() {
   });
   const kernel = create_research_kernel_port(create_fs_research_kernel({ workspace_root: root }));
   await kernel.admit_workspace({ request_id: "request_orchestrator_admit", workspace_id: "workspace_orchestrator", authority: "host" });
-  await kernel.apply_change({ workspace_id: "workspace_orchestrator", expected_revision: 0, operations: [
+  await kernel.apply_change({ workspace_id: "workspace_orchestrator", principal: "root_agent", authority: "kernel_write", expected_revision: 0, operations: [
     { type: "create_claim", id: "claim_1", statement: "mock calculation" },
     { type: "create_node", id: "node_1", title: "mock run", objective: "exercise orchestration", claim_ids: ["claim_1"] },
     { type: "create_finding", id: "finding_1", node_id: "node_1", claim_ids: ["claim_1"], statement: "mock result", kind: "fact" },
@@ -262,4 +262,109 @@ test("compute orchestrator aborts the provider signal on timeout", async () => {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("compute orchestrator close waits for in-flight provider cleanup and terminal ledger writes", async () => {
+  const provider_gate = Promise.withResolvers();
+  const failed_gate = Promise.withResolvers();
+  const calls = [];
+  const ledger = {
+    async create_run() { calls.push("create"); },
+    async mark_running() { calls.push("running"); },
+    async mark_succeeded() { calls.push("succeeded"); },
+    async mark_failed() {
+      calls.push("failed");
+      await failed_gate.promise;
+      calls.push("failed_done");
+    },
+  };
+  const orchestrator = create_compute_orchestrator({
+    tool_gateway: {
+      async invoke() {
+        calls.push("provider");
+        await provider_gate.promise;
+        return { output: { ok: true }, artifacts: [] };
+      },
+    },
+    ledger_factory: () => ledger,
+  });
+  const pending = orchestrator.run({
+    workspace_id: "workspace_close",
+    workspace_root: "/tmp/workspace-close",
+    workspace_mode: "light",
+    capability_id: "mock_compute",
+    run_id: "run_close_wait",
+  });
+  pending.catch(() => {});
+  for (let index = 0; index < 50 && !calls.includes("provider"); index += 1) {
+    await Promise.resolve();
+  }
+  assert.deepEqual(calls.slice(0, 3), ["create", "running", "provider"]);
+
+  let close_finished = false;
+  const closing = orchestrator.close().then(() => { close_finished = true; });
+  for (let index = 0; index < 50 && !calls.includes("failed"); index += 1) {
+    await Promise.resolve();
+  }
+  assert.equal(calls.includes("failed"), true);
+  assert.equal(calls.includes("failed_done"), false);
+  assert.equal(close_finished, false);
+
+  failed_gate.resolve();
+  await closing;
+  assert.equal(close_finished, true);
+  assert.equal(calls.includes("failed_done"), true);
+  provider_gate.resolve();
+  await assert.rejects(pending, /cancelled/);
+  await assert.rejects(
+    orchestrator.run({
+      workspace_id: "workspace_close",
+      workspace_root: "/tmp/workspace-close",
+      workspace_mode: "light",
+      capability_id: "mock_compute",
+    }),
+    (error) => error?.code === "compute_orchestrator_closed",
+  );
+});
+
+test("compute orchestrator close aborts a run during durable creation before provider invocation", async () => {
+  const create_gate = Promise.withResolvers();
+  const calls = [];
+  const ledger = {
+    async create_run() {
+      calls.push("create");
+      await create_gate.promise;
+      calls.push("create_done");
+    },
+    async mark_running() { calls.push("running"); },
+    async mark_succeeded() { calls.push("succeeded"); },
+    async mark_failed() { calls.push("failed"); },
+  };
+  let provider_called = false;
+  const orchestrator = create_compute_orchestrator({
+    tool_gateway: {
+      async invoke() {
+        provider_called = true;
+        return { output: {}, artifacts: [] };
+      },
+    },
+    ledger_factory: () => ledger,
+  });
+  const pending = orchestrator.run({
+    workspace_id: "workspace_create_close",
+    workspace_root: "/tmp/workspace-create-close",
+    workspace_mode: "light",
+    capability_id: "mock_compute",
+    run_id: "run_create_close",
+  });
+  pending.catch(() => {});
+  for (let index = 0; index < 50 && !calls.includes("create"); index += 1) await Promise.resolve();
+  assert.deepEqual(calls, ["create"]);
+
+  const closing = orchestrator.close();
+  create_gate.resolve();
+  await closing;
+  await assert.rejects(pending, /cancelled/);
+  assert.equal(provider_called, false);
+  assert.deepEqual(calls, ["create", "create_done", "failed"]);
 });

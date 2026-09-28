@@ -89,6 +89,54 @@ test("Pi runtime module maps framework IDs and restores them from its durable ma
   }
 });
 
+test("Pi runtime close awaits async session disposal and rejects new operations", async () => {
+  const root = await mkdtemp(join(tmpdir(), "research-agent-pi-runtime-close-"));
+  let release_dispose;
+  let dispose_started = false;
+  let dispose_finished = false;
+  const disposal = new Promise((resolve) => { release_dispose = resolve; });
+  const delayed_factory = (options) => {
+    const raw = fake_factory(options);
+    raw.dispose = async () => {
+      dispose_started = true;
+      await disposal;
+      dispose_finished = true;
+    };
+    return raw;
+  };
+  try {
+    const runtime = await create_runtime({
+      cwd: join(root, "workspace"),
+      session_root: join(root, "sessions"),
+      create_agent_session: delayed_factory,
+      session_manager_class: FakeSessionManager,
+    });
+    await runtime.create_session({ session_id: "session_async_close" });
+
+    let close_finished = false;
+    const closing = runtime.close().then(() => { close_finished = true; });
+    for (let index = 0; index < 20 && !dispose_started; index += 1) {
+      await Promise.resolve();
+    }
+    assert.equal(dispose_started, true);
+    assert.equal(dispose_finished, false);
+    assert.equal(close_finished, false);
+
+    release_dispose();
+    await closing;
+    assert.equal(dispose_finished, true);
+    assert.equal(close_finished, true);
+    await assert.rejects(
+      runtime.create_session({ session_id: "session_after_close" }),
+      /pi_runtime_closed/,
+    );
+    await assert.rejects(runtime.attach_session("session_async_close"), /pi_runtime_closed/);
+  } finally {
+    release_dispose?.();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Pi SDK runtime refuses ambient configuration when no factory is injected", async () => {
   await assert.rejects(
     create_runtime({ cwd: "/tmp/research-agent-runtime", session_root: "/tmp/research-agent-sessions" }),

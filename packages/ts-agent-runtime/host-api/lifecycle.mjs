@@ -44,6 +44,24 @@ export function toolEventIsError(event) {
 
 const DEFAULT_TOOL_PHASES = Object.freeze(["orient", "advance", "prepare", "execute", "interpret", "checkpoint"]);
 
+// Durable Research Kernel liveness is a semantic boundary, not a generic
+// `read`/`write` switch. Keep the sets here in sync with the public tool
+// metadata registry so a newly named effect cannot accidentally bypass a
+// blocked or decision-needed workspace.
+const PURE_READ_EFFECTS = new Set(["read"]);
+const RESEARCH_DECISION_EFFECTS = new Set([
+  "research_write",
+  "lifecycle_write",
+  "advisory",
+  "advisory_disposition",
+]);
+const EXECUTION_EFFECTS = new Set([
+  "attempt_artifact",
+  "artifact_write",
+  "execution_control",
+  "external_write",
+]);
+
 /**
  * Create the Host-side lifecycle admission state for a live Harness lane.
  *
@@ -65,6 +83,12 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
     phase_before_tool: null,
     active_tool_call_id: null,
   };
+  let durableLiveness = null;
+
+  function setDurableLiveness(value) {
+    durableLiveness = value && typeof value === "object" ? structuredClone(value) : null;
+    return snapshot();
+  }
 
   function beginRun({ runId, messages = [], trigger, replay_mode: requestedReplayMode } = {}) {
     if (typeof runId !== "string" || !runId.trim()) throw new TypeError("lifecycle runId must be a non-empty identifier");
@@ -108,6 +132,54 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
       return { accepted: true, duplicate: true, ...snapshot() };
     }
     const targetPhase = metadataForTool.phase;
+    const lifecycle = durableLiveness?.lifecycle;
+    const disposition = durableLiveness?.disposition;
+    const effect = metadataForTool.effect;
+    const isRead = PURE_READ_EFFECTS.has(effect);
+    const isDecisionWrite = RESEARCH_DECISION_EFFECTS.has(effect);
+    const isExecution = EXECUTION_EFFECTS.has(effect);
+    if (lifecycle === "blocked" || disposition === "blocked") {
+      // The Kernel permits a checkpoint to replace a blocked disposition. A
+      // checkpoint is represented by lifecycle_write plus the checkpoint
+      // phase; all other mutations and side effects remain stopped.
+      const isRecoveryCheckpoint = isDecisionWrite && targetPhase === "checkpoint";
+      if (!isRead && !isRecoveryCheckpoint) {
+        return {
+          accepted: false,
+          code: "research_lifecycle_blocked",
+          reason: "durable Research Kernel liveness is blocked",
+          ...snapshot(),
+        };
+      }
+    }
+    if (disposition === "user_input_required") {
+      // User input is a hard stop. Only orientation reads and a checkpoint
+      // that records the user's eventual disposition can cross this boundary.
+      const isRecoveryCheckpoint = isDecisionWrite && targetPhase === "checkpoint";
+      if (!isRead && !isRecoveryCheckpoint) {
+        return {
+          accepted: false,
+          code: "research_user_input_required",
+          reason: "durable Research Kernel liveness requires user input",
+          ...snapshot(),
+        };
+      }
+    } else if (lifecycle === "decision_needed" || lifecycle === "waiting_external") {
+      // A decision-needed turn may still record a StrategyPlan, an
+      // interpretation, or its checkpoint. It must not launch work, mutate
+      // evidence, or perform an external side effect until that decision is
+      // durable. Waiting for a remote Attempt follows the same rule.
+      if (isExecution || (!isRead && !isDecisionWrite)) {
+        return {
+          accepted: false,
+          code: lifecycle === "waiting_external" ? "research_waiting_external" : "research_decision_required",
+          reason: lifecycle === "waiting_external"
+            ? "durable Research Kernel liveness is waiting for an external Attempt"
+            : "durable Research Kernel liveness requires a scientific decision",
+          ...snapshot(),
+        };
+      }
+    }
     const allowed = allowedToolPhases(state.lifecycle_phase);
     if (!allowed.includes(targetPhase)) {
       return {
@@ -193,7 +265,7 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
     if (state.run_id !== runId) beginRun({ runId });
   }
 
-  return Object.freeze({ beginRun, admitTool, completeTool, contextPatch, snapshot });
+  return Object.freeze({ beginRun, admitTool, completeTool, contextPatch, setDurableLiveness, snapshot });
 }
 
 function allowedToolPhases(phase) {

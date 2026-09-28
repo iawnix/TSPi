@@ -10,7 +10,7 @@ import { createRpcPeer, HOST_PROTOCOL, protocolError } from "./tspi-host-client.
 import { readWorkspaceMode } from "./workspace-mode-tools.mjs";
 
 const executeFile = promisify(execFile);
-// Host addresses are direct child directory names. Scientific workspace.json
+// Host addresses are direct child directory names. The workspace manifest
 // keeps the separate stable ws_* identity; this route allows the launcher's
 // documented 80-character, dot-compatible directory names.
 const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
@@ -66,14 +66,17 @@ export async function startTspiHost(options) {
       const info = await lstat(path);
       if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== path) throw protocolError("invalid_workspace", "Workspace must be a physical directory");
       if (!allowMissing) {
-        try {
-          const header = JSON.parse(await readFile(join(path, "workspace.json"), "utf8"));
-          if (header.schema_version !== "research-workspace/1") throw protocolError("invalid_workspace", "Unsupported workspace format");
-        } catch (error) {
-          if (error?.code !== "ENOENT") throw error;
-          // Light workspaces intentionally do not contain ResearchMap files.
-          // Their immutable mode manifest is the Host admission marker.
-          await readWorkspaceMode(path);
+        const manifestPath = join(path, "workspace_manifest.json");
+        const manifestInfo = await lstat(manifestPath);
+        if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink() || await realpath(manifestPath) !== manifestPath) {
+          throw protocolError("invalid_workspace", "Workspace manifest must be a physical file");
+        }
+        const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+        if (manifest.schema_version !== "research_agent_workspace_1"
+          || typeof manifest.workspace_id !== "string"
+          || !manifest.workspace_id
+          || !["light", "research"].includes(manifest.workspace_mode)) {
+          throw protocolError("invalid_workspace", "Unsupported workspace manifest");
         }
       }
     } catch (error) {
@@ -592,14 +595,15 @@ async function physicalFileInfo(path) {
 }
 
 async function monitorWorkspaceIdentity(project) {
-  const manifestPath = join(project.root, "workspace.json");
+  const manifestPath = join(project.root, "workspace_manifest.json");
   if (!await isPhysicalFile(manifestPath)) return null;
   try {
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
     if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)
-      || manifest.schema_version !== "research-workspace/1"
+      || manifest.schema_version !== "research_agent_workspace_1"
+      || manifest.workspace_mode !== "research"
       || typeof manifest.workspace_id !== "string"
-      || !/^ws_[a-f0-9]{24}$/u.test(manifest.workspace_id)) return null;
+      || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(manifest.workspace_id)) return null;
     const canonical = manifest.workspace_id;
     return { route: project.workspace_id, canonical };
   } catch {

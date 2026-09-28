@@ -71,6 +71,8 @@ test("App Server routes light and research workspaces through durable identity a
 
     const change = await kernel.apply_change({
       workspace_id: "workspace_research",
+      principal: "root_agent",
+      authority: "kernel_write",
       expected_revision: 0,
       operations: [{ type: "create_phase", id: "phase_1", title: "Initial phase", objective: "E2E" }],
     });

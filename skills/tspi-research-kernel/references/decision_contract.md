@@ -1,7 +1,7 @@
 # ChangeSet Contract
 
 `research_change` is the only public mutation boundary for `ResearchMap`. It accepts
-one object containing `rationale`, optional `basisRefs`, optional
+one object containing `principal=root_agent`, `authority=kernel_write`, `rationale`, optional `basisRefs`, optional
 `expectedRevision`, and a non-empty `operations` array. Query
 `research_read mode=operations` for the current catalog before using an unfamiliar
 operation.
@@ -31,11 +31,11 @@ single ChangeSet; unrelated changes should use separate requests.
 
 ## Commit Rules
 
-The Kernel locks the workspace, loads the current map, checks
+The Kernel locks the workspace, loads canonical context, checks
 `expected_revision` when present, applies operations to a detached copy, runs
-the full map validator, increments `revision`, and replaces `research_map.json`
-atomically. A rejected request does not alter the prior map. Do not edit the
-JSON file, transaction log, or TS Web data directly.
+the full map validator, increments `revision`, and atomically replaces context,
+liveness, memory, and manifest revision. A rejected request does not alter the
+prior map. Do not edit canonical documents directly.
 
 `create_finding` records the Node's verified output. It is not a generic log
 entry: use `FactFinding` for a value that supports a scientific statement and

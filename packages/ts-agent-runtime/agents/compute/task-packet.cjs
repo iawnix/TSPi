@@ -6,29 +6,10 @@ const {
   serializeAgentDocument,
   validateAgentTask,
 } = require("../../agent-core/agent-protocol.cjs");
-
-const COMPUTE_RESULT_TOOL_NAME = "ts_compute_result";
-const COMPUTE_ACTION_TOOL_NAMES = Object.freeze({
-  prepare: "ts_workspace_compute_prepare",
-  submit: "ts_workspace_compute_submit",
-  status: "ts_workspace_compute_status",
-  tail: "ts_workspace_compute_tail",
-  collect: "ts_workspace_compute_collect",
-  parse: "ts_workspace_compute_parse",
-  cancel: "ts_workspace_compute_cancel",
-});
-const COMPUTE_PLANS = Object.freeze({
-  launch: Object.freeze({ required: Object.freeze(["prepare", "submit"]), optional: Object.freeze([]) }),
-  inspect: Object.freeze({ required: Object.freeze(["status"]), optional: Object.freeze(["tail"]) }),
-  finalize: Object.freeze({ required: Object.freeze(["collect", "parse"]), optional: Object.freeze([]) }),
-  cancel: Object.freeze({ required: Object.freeze(["cancel"]), optional: Object.freeze([]) }),
-});
-const OBJECTIVES = Object.freeze({
-  launch: "Prepare the bound calculation intent and submit it exactly once.",
-  inspect: "Inspect the bound local or remote calculation and optionally read one bounded diagnostic tail.",
-  finalize: "Collect the bound calculation artifacts and run the bound deterministic parser.",
-  cancel: "Cancel the bound local or remote calculation exactly once.",
-});
+const {
+  COMPUTE_RESULT_TOOL_NAME,
+  schedulerPlanFor,
+} = require("./scheduler-plan.cjs");
 const MAX_COMPUTE_TASK_BYTES = 16 * 1024;
 
 function buildComputeTask({
@@ -38,6 +19,7 @@ function buildComputeTask({
   capability,
   capabilityVersion,
   capabilityDescriptor,
+  actionPlan,
   nodeId,
   binding,
   tailArtifact,
@@ -46,27 +28,29 @@ function buildComputeTask({
   artifactRef,
 }) {
   const root = requireWorkspaceRoot(workspaceRoot);
-  const plan = COMPUTE_PLANS[operation];
-  if (!plan) throw new Error(`unsupported Compute operation: ${operation}`);
   if (!isPlainObject(binding)) throw new Error("Compute task requires a preflight binding");
   const taskId = requirePattern(runId, "runId", /^sub_[1-9][0-9]*$/, 128);
   const normalizedNodeId = requirePattern(nodeId, "nodeId", /^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/, 128);
   const normalizedCapability = requirePattern(
     capability,
     "capability",
-    /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/,
+    /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/,
     128,
   );
   const normalizedCapabilityVersion = requirePattern(
     capabilityVersion,
     "capabilityVersion",
-    /^[1-9][0-9]*$/,
-    16,
+    /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/,
+    32,
   );
   const descriptor = normalizeCapabilityDescriptor(
     capabilityDescriptor,
     normalizedCapability,
     normalizedCapabilityVersion,
+  );
+  const plan = schedulerPlanFor(
+    operation,
+    actionPlan || (descriptor.action_plan && descriptor.action_plan[operation]),
   );
   const descriptorDigest = requirePattern(
     binding.capabilityDescriptorDigest || binding.capability_descriptor_digest,
@@ -97,6 +81,8 @@ function buildComputeTask({
     execution_kind: binding.executionKind,
     required_actions: [...plan.required],
     optional_actions: [...plan.optional],
+    action_bindings: plan.bindings.map((item) => ({ ...item })),
+    primary_action: plan.primary,
     tail: operation === "inspect"
       ? {
           artifact: tailArtifact === undefined ? null : requireString(tailArtifact, "tailArtifact", 255),
@@ -112,13 +98,12 @@ function buildComputeTask({
     role: "compute",
     authority: "operational",
     operation,
-    objective: OBJECTIVES[operation],
+    objective: `Execute the declared ${operation} scheduler operation for the bound calculation.`,
     workspace: { root, report_id: null, revision: null },
     scope: { report_id: null, node_refs: [normalizedNodeId], claim_refs: [] },
     inputs,
     capabilities: [
-      ...plan.required.map((action) => COMPUTE_ACTION_TOOL_NAMES[action]),
-      ...plan.optional.map((action) => COMPUTE_ACTION_TOOL_NAMES[action]),
+      ...plan.bindings.map((action) => action.tool),
       COMPUTE_RESULT_TOOL_NAME,
     ],
     constraints: {
@@ -139,15 +124,20 @@ function validateComputeTask(value) {
   if (task.role !== "compute" || task.authority !== "operational") {
     throw new Error("Compute task requires role=compute and authority=operational");
   }
-  const plan = COMPUTE_PLANS[task.operation];
-  if (!plan) throw new Error(`unsupported Compute operation: ${task.operation}`);
-  const expectedCapabilities = [
-    ...plan.required.map((action) => COMPUTE_ACTION_TOOL_NAMES[action]),
-    ...plan.optional.map((action) => COMPUTE_ACTION_TOOL_NAMES[action]),
-    COMPUTE_RESULT_TOOL_NAME,
-  ];
+  const inputs = task.inputs;
+  const bindings = Array.isArray(inputs.action_bindings) ? inputs.action_bindings : [];
+  if (!bindings.length) throw new Error("Compute task must declare action bindings");
+  const bindingNames = bindings.map((item) => item.name);
+  const declaredNames = [...inputs.required_actions, ...inputs.optional_actions];
+  if (JSON.stringify(bindingNames) !== JSON.stringify(declaredNames)) {
+    throw new Error("Compute task action bindings do not match its declared action plan");
+  }
+  if (!inputs.primary_action || !bindingNames.includes(inputs.primary_action)) {
+    throw new Error("Compute task primary_action must be one of its declared actions");
+  }
+  const expectedCapabilities = [...bindings.map((action) => action.tool), COMPUTE_RESULT_TOOL_NAME];
   if (JSON.stringify(task.capabilities) !== JSON.stringify(expectedCapabilities)) {
-    throw new Error("Compute task capabilities do not match its fixed action plan");
+    throw new Error("Compute task capabilities do not match its declared action plan");
   }
   const bytes = Buffer.byteLength(serializeAgentDocument(task), "utf8");
   if (bytes > MAX_COMPUTE_TASK_BYTES) {
@@ -158,7 +148,7 @@ function validateComputeTask(value) {
 
 function normalizeCapabilityDescriptor(value, capability, version) {
   if (!isPlainObject(value)) throw new Error("Compute task requires a capability descriptor summary");
-  const allowed = ["capability", "version", "input_roles", "output_roles", "parsers"];
+  const allowed = ["capability", "version", "input_roles", "output_roles", "parsers", "operations", "actions", "action_plan"];
   const unknown = Object.keys(value).filter((key) => !allowed.includes(key));
   if (unknown.length) throw new Error(`capability descriptor contains unknown fields: ${unknown.join(", ")}`);
   if (value.capability !== capability || value.version !== version) {
@@ -168,13 +158,16 @@ function normalizeCapabilityDescriptor(value, capability, version) {
     capability: requirePattern(
       value.capability,
       "capabilityDescriptor.capability",
-      /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/,
+      /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/,
       128,
     ),
-    version: requirePattern(value.version, "capabilityDescriptor.version", /^[1-9][0-9]*$/, 16),
+    version: requirePattern(value.version, "capabilityDescriptor.version", /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/, 32),
     input_roles: uniqueStrings(value.input_roles, "capabilityDescriptor.input_roles", 32, 64),
     output_roles: uniqueStrings(value.output_roles, "capabilityDescriptor.output_roles", 32, 64),
     parsers: uniqueStrings(value.parsers, "capabilityDescriptor.parsers", 16, 128),
+    ...(value.operations === undefined ? {} : { operations: uniqueStrings(value.operations, "capabilityDescriptor.operations", 32, 128) }),
+    ...(value.actions === undefined ? {} : { actions: uniqueStrings(value.actions, "capabilityDescriptor.actions", 64, 128) }),
+    ...(value.action_plan === undefined ? {} : { action_plan: value.action_plan }),
   };
 }
 
@@ -217,8 +210,6 @@ function isPlainObject(value) {
 }
 
 module.exports = {
-  COMPUTE_ACTION_TOOL_NAMES,
-  COMPUTE_PLANS,
   COMPUTE_RESULT_TOOL_NAME,
   MAX_COMPUTE_TASK_BYTES,
   buildComputeTask,

@@ -83,7 +83,54 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
     if missing:
         raise CommandError(f"{command} requires {', '.join(missing)}")
     if command.startswith("research."):
-        return _research(command.removeprefix("research."), root, value)
+        # The filesystem Research Agent protocol is the only public research
+        # workspace path. The retired ResearchKernel/SQLite layout remains
+        # available to explicitly isolated kernel fixtures, but it is not a
+        # transport fallback for a current installation.
+        from .research.agent_workspace import dispatch as dispatch_agent_workspace, has_partial_state_files, has_state_files
+
+        if has_state_files(root) or has_partial_state_files(root):
+            action = command.removeprefix("research.")
+            request = value.get("request") if isinstance(value.get("request"), dict) else value
+            method = {
+                "context": "read_context",
+                "map": "read_context",
+                "summary": "read_context",
+                "liveness": "read_liveness",
+                "validate": "read_context",
+                "turn": "turn",
+                "change": "apply_change",
+                "checkpoint": "checkpoint",
+            }.get(action)
+            if method is not None:
+                result = dispatch_agent_workspace(root, method, request)
+                if action == "validate":
+                    return {"schema_version": "research-validation/1", "valid": True, "revision": result.get("revision")}
+                return result
+            # Route unsupported or partial canonical commands through the new
+            # validator so malformed state fails closed instead of reaching
+            # the retired implementation.
+            return dispatch_agent_workspace(root, "read_context", request)
+        # A workspace with none of the canonical filesystem markers is an
+        # explicitly legacy ResearchKernel fixture. Keep that migration path
+        # available, while any new marker above is routed through the strict
+        # manifest/context/liveness validator and cannot fall back silently.
+        # Legacy callers predate the identity envelope; bind their request to
+        # the compatibility Root Agent boundary before invoking the old store.
+        legacy_value = dict(value)
+        legacy_mutation = command.removeprefix("research.") in {
+            "change", "continuation", "strategy", "interpretation", "checkpoint", "evidence.register",
+        }
+        if legacy_mutation and isinstance(legacy_value.get("request"), dict):
+            legacy_value["request"] = {
+                **legacy_value["request"],
+                "principal": legacy_value["request"].get("principal", "root_agent"),
+                "authority": legacy_value["request"].get("authority", "kernel_write"),
+            }
+        elif legacy_mutation:
+            legacy_value.setdefault("principal", "root_agent")
+            legacy_value.setdefault("authority", "kernel_write")
+        return _research(command.removeprefix("research."), root, legacy_value)
     return _compute(command.removeprefix("compute."), root, value)
 
 
@@ -149,6 +196,7 @@ def _research(action: str, root: str | Path, params: dict[str, Any]) -> dict[str
         request = params.get("request")
         if not isinstance(request, dict):
             raise CommandError("research.evidence.register requires params.request")
+        _require_kernel_write_principal(request)
         return _register_evidence_request(kernel, request)
     if action == "storage":
         operation = params.get("operation", "status")
@@ -210,7 +258,15 @@ def _research(action: str, root: str | Path, params: dict[str, Any]) -> dict[str
         request = params.get("request")
         if not isinstance(request, dict):
             raise CommandError("research.change requires params.request")
-        return kernel.apply(request)
+        _require_kernel_write_principal(request)
+        # Authorization belongs to this public command boundary. The
+        # historical ResearchKernel transaction format predates the identity
+        # envelope, so strip the already-validated transport fields before
+        # handing it the legacy ChangeSet shape.
+        legacy_request = dict(request)
+        legacy_request.pop("principal", None)
+        legacy_request.pop("authority", None)
+        return kernel.apply(legacy_request)
     raise CommandError(f"unsupported research command: {action}")
 
 
@@ -706,7 +762,8 @@ def _register_evidence_request(kernel: ResearchKernel, request: dict[str, Any]) 
 
 
 def _commit_strategy_request(kernel: ResearchKernel, request: dict[str, Any]) -> dict[str, Any]:
-    _decision_unknown_fields(request, {"schema_version", "operation", "event_id", "expected_revision", "rationale", "basis_refs", "plan", "review"})
+    _require_kernel_write_principal(request)
+    _decision_unknown_fields(request, {"schema_version", "operation", "event_id", "expected_revision", "rationale", "basis_refs", "plan", "review", "principal", "authority"})
     event_id, expected_revision, rationale, basis_refs = _decision_request_envelope(
         request, schema="research-strategy-request/1",
     )
@@ -744,7 +801,8 @@ def _commit_strategy_request(kernel: ResearchKernel, request: dict[str, Any]) ->
 
 
 def _commit_interpretation_request(kernel: ResearchKernel, root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
-    _decision_unknown_fields(request, {"schema_version", "event_id", "expected_revision", "rationale", "basis_refs", "interpretation"})
+    _require_kernel_write_principal(request)
+    _decision_unknown_fields(request, {"schema_version", "event_id", "expected_revision", "rationale", "basis_refs", "interpretation", "principal", "authority"})
     event_id, expected_revision, rationale, basis_refs = _decision_request_envelope(
         request, schema="research-interpretation-request/1",
     )
@@ -775,7 +833,8 @@ def _commit_interpretation_request(kernel: ResearchKernel, root: str | Path, req
 
 
 def _commit_checkpoint_request(kernel: ResearchKernel, root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
-    _decision_unknown_fields(request, {"schema_version", "event_id", "expected_revision", "rationale", "basis_refs", "checkpoint"})
+    _require_kernel_write_principal(request)
+    _decision_unknown_fields(request, {"schema_version", "event_id", "expected_revision", "rationale", "basis_refs", "checkpoint", "principal", "authority"})
     event_id, expected_revision, rationale, basis_refs = _decision_request_envelope(
         request, schema="research-checkpoint-request/1",
     )
@@ -809,6 +868,13 @@ def _decision_unknown_fields(request: dict[str, Any], allowed: set[str]) -> None
     unknown = sorted(set(request) - allowed)
     if unknown:
         raise CommandError("decision request contains unsupported fields: " + ", ".join(unknown))
+
+
+def _require_kernel_write_principal(request: dict[str, Any]) -> None:
+    if request.get("principal") != "root_agent":
+        raise CommandError("research mutation requires the Root Agent principal")
+    if request.get("authority") != "kernel_write":
+        raise CommandError("research mutation requires authority=kernel_write")
 
 
 def _commit_decisions(kernel: ResearchKernel, **kwargs: Any) -> dict[str, Any]:
@@ -1182,6 +1248,7 @@ def _apply_continuation_request(kernel: ResearchKernel, request: dict[str, Any])
             scope=request.get("scope"),
             target_id=request.get("target_id") or request.get("target_ref"),
         )
+    _require_kernel_write_principal(request)
     if operation == "set" or operation in {"set_required", "set_deferred", "set_blocked", "set_completed"}:
         # The canonical envelope has one set operation and a status field.
         # Keep operation-specific spellings as aliases for existing tools.

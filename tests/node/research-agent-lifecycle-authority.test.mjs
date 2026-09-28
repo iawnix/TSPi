@@ -14,34 +14,35 @@ test("blocked research liveness stops new mutations but permits a recovery check
     const workspace = create_workspace_initializer();
     await workspace.initialize_workspace({ workspace_root: root, workspace_id: "workspace_blocked", workspace_mode: "research" });
     const kernel = create_fs_research_kernel({ workspace_root: root });
+    const write = (request) => ({ principal: "root_agent", authority: "kernel_write", ...request });
     await kernel.admit_workspace({ workspace_id: "workspace_blocked", authority: "host", expected_state: "admission_pending" });
-    await kernel.apply_change({ expected_revision: 0, operations: [
+    await kernel.apply_change(write({ expected_revision: 0, operations: [
       { type: "create_claim", id: "claim_1", statement: "A bounded hypothesis" },
       { type: "create_node", id: "node_1", title: "Bounded work", objective: "Exercise lifecycle", claim_ids: ["claim_1"] },
       { type: "set_focus", claim_ids: ["claim_1"], node_ids: ["node_1"] },
-    ] });
+    ] }));
     await assert.rejects(
-      kernel.apply_change({ expected_revision: 1, operations: [{
+      kernel.apply_change(write({ expected_revision: 1, operations: [{
         type: "create_attempt", id: "attempt_1", node_id: "node_1",
         capability: "xtb", capability_version: "1", state: "started",
-      }] }),
+      }] })),
       /research_decision_required/,
     );
-    await kernel.apply_change({ expected_revision: 1, operations: [{
+    await kernel.apply_change(write({ expected_revision: 1, operations: [{
       type: "create_strategy_plan", id: "strategy_1", claim_id: "claim_1", node_id: "node_1",
       objective: "Choose a bounded execution", rationale: "The claim needs one declared method", status: "active",
-    }] });
-    await kernel.apply_change({ expected_revision: 2, operations: [{
+    }] }));
+    await kernel.apply_change(write({ expected_revision: 2, operations: [{
       type: "create_attempt", id: "attempt_1", node_id: "node_1",
       capability: "xtb", capability_version: "1", state: "started",
-    }] });
-    await kernel.checkpoint({ id: "checkpoint_blocked", disposition: "blocked", reason: "Waiting for user input" });
+    }] }));
+    await kernel.checkpoint(write({ id: "checkpoint_blocked", disposition: "blocked", reason: "Waiting for user input" }));
     await assert.rejects(
-      kernel.apply_change({ expected_revision: 3, operations: [{ type: "set_focus", claim_ids: ["claim_1"], node_ids: ["node_1"] }] }),
+      kernel.apply_change(write({ expected_revision: 3, operations: [{ type: "set_focus", claim_ids: ["claim_1"], node_ids: ["node_1"] }] })),
       /research_lifecycle_blocked/,
     );
     await assert.rejects(kernel.turn({ operation: "end" }), /research_lifecycle_blocked/);
-    const recovered = await kernel.checkpoint({ id: "checkpoint_recovered", disposition: "continue_required", unresolved_refs: ["node_1"] });
+    const recovered = await kernel.checkpoint(write({ id: "checkpoint_recovered", disposition: "continue_required", unresolved_refs: ["node_1"] }));
     assert.equal(recovered.disposition, "continue_required");
     const memory = JSON.parse(await readFile(join(root, "memory", "index.json"), "utf8"));
     const context = JSON.parse(await readFile(join(root, "research_map", "context.json"), "utf8"));
@@ -73,5 +74,39 @@ test("native research writes reject a non-root principal in Host context", async
   } finally {
     if (previous === undefined) delete process.env.TSPI_NATIVE_WRITES;
     else process.env.TSPI_NATIVE_WRITES = previous;
+  }
+});
+
+test("filesystem Research Kernel requires the Root Agent kernel-write boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-kernel-authority-"));
+  try {
+    const workspace = create_workspace_initializer();
+    await workspace.initialize_workspace({ workspace_root: root, workspace_id: "workspace_authority", workspace_mode: "research" });
+    const kernel = create_fs_research_kernel({ workspace_root: root });
+    await kernel.admit_workspace({ authority: "host" });
+    await assert.rejects(
+      kernel.apply_change({ expected_revision: 0, operations: [{ type: "create_phase", id: "phase_1", title: "Denied" }] }),
+      /Root Agent principal/,
+    );
+    await assert.rejects(
+      kernel.apply_change({ principal: "root_agent", authority: "host", expected_revision: 0, operations: [{ type: "create_phase", id: "phase_1", title: "Denied" }] }),
+      /authority=kernel_write/,
+    );
+    await assert.rejects(
+      kernel.checkpoint({ principal: "root_agent", authority: "kernel_write", id: "checkpoint_bad", disposition: "continue_required", claim_ids: ["claim_missing"] }),
+      /unknown Claim/,
+    );
+    const accepted = await kernel.apply_change({
+      principal: "root_agent", authority: "kernel_write", expected_revision: 0,
+      operations: [{ type: "create_phase", id: "phase_1", title: "Accepted" }],
+    });
+    assert.equal(accepted.revision, 1);
+    const turned = await kernel.turn({
+      principal: "root_agent", authority: "kernel_write", operation: "checkpoint",
+      input: { id: "checkpoint_input", disposition: "user_input_required" },
+    });
+    assert.equal(turned.checkpoint_id, "checkpoint_input");
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });

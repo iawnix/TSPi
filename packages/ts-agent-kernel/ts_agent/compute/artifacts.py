@@ -622,7 +622,7 @@ def _validate_reaction_mapping_request(request: dict[str, Any]) -> dict[str, Any
             if not isinstance(value, dict) or set(value) != {"artifact_id"}:
                 raise ComputeContractError(f"reaction mapping {side}[{index}] must contain artifact_id only")
             artifact_id = value["artifact_id"]
-            if not isinstance(artifact_id, str) or not re.fullmatch(r"^art_[0-9a-f]{24}$", artifact_id):
+            if not isinstance(artifact_id, str) or not re.fullmatch(r"^art_[0-9a-f]{64}$", artifact_id):
                 raise ComputeContractError(f"reaction mapping {side}[{index}] artifact_id is invalid")
             rows.append({"artifact_id": artifact_id})
         normalised[side] = rows
@@ -695,7 +695,7 @@ def _validate_structure_compare_request(request: dict[str, Any]) -> dict[str, An
     if not isinstance(node_id, str) or NODE_ID.fullmatch(node_id) is None:
         raise ComputeContractError("structure comparison node_id is invalid")
     input_ids = [request.get("reference_artifact_id"), request.get("target_artifact_id")]
-    if any(not isinstance(value, str) or re.fullmatch(r"art_[0-9a-f]{24}", value) is None for value in input_ids):
+    if any(not isinstance(value, str) or re.fullmatch(r"art_[0-9a-f]{64}", value) is None for value in input_ids):
         raise ComputeContractError("structure comparison inputs must be logical artifact IDs")
     if len(set(input_ids)) != 2:
         raise ComputeContractError("structure comparison requires two distinct artifacts")

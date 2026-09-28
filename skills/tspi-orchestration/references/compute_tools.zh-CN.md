@@ -38,6 +38,10 @@ Artifact catalog 提供逻辑 `art_...` ID、路径、SHA-256、所有者和兼�
 catalog 提供 capability ID/version、参数形状、输入/输出 role 与解析合同；它不能证明实时
 软件或环境处于健康状态。
 
+选择执行目标前，使用精确的 `capability_id`、`environment_id` 和 `execution_kind`
+（`local` 或 `remote`）调用 `compute_readiness`。不带环境选择器的 readiness 只描述 Host
+默认环境，不能证明命名的远端环境可用。
+
 若新 workspace 没有合适输入，先启动一个未关闭的 ResearchNode。对单个连通 SMILES
 使用 `artifact_seed`，对有边界的 Gaussian、XYZ 或 xTB control 文本使用 `artifact_import`。Host
 返回逻辑 ID；调用方不得自行创建 `art_*` 值或 workspace 路径。

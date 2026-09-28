@@ -127,6 +127,69 @@ def test_provider_map_route_returns_the_canonical_research_map(tmp_path: Path) -
         )
 
 
+def test_provider_serves_new_filesystem_research_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    state_dir = tmp_path / "state"
+    (workspace / "research_map").mkdir(parents=True)
+    (workspace / "lifecycle").mkdir()
+    (workspace / "workspace_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "research_agent_workspace_1",
+                "workspace_id": "workspace_filesystem",
+                "workspace_mode": "research",
+                "state": "ready",
+                "workspace_root": str(workspace),
+                "research_kernel": {"initialized": True, "admission_required": False, "revision": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (workspace / "research_map/context.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "research_map_context_1",
+                "workspace_id": "workspace_filesystem",
+                "workspace_mode": "research",
+                "revision": 0,
+                "lifecycle_state": "admitted",
+                "phases": [],
+                "claims": [],
+                "nodes": [],
+                "gates": [],
+                "focus": {"claim_ids": [], "node_ids": []},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (workspace / "lifecycle/liveness.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "research_liveness_1",
+                "workspace_id": "workspace_filesystem",
+                "state": "admitted",
+                "revision": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    workspace_id = register_sources(state_dir, [workspace])[0]["workspace_id"]
+    assert workspace_id == "workspace_filesystem"
+    catalog = handle_request(state_dir, _provider_request())
+    assert catalog["workspaces"][0]["available"] is True
+    payload = handle_request(
+        state_dir,
+        _provider_request(operation="route", workspace_id=workspace_id, route="map"),
+    )
+
+    Draft202012Validator(_read_json("research-map-response.schema.json")).validate(payload)
+    assert payload["map"]["map_id"] == workspace_id
+    assert payload["map"]["revision"] == 0
+    assert not (workspace / "research_map.json").exists()
+    assert not (workspace / "research.db").exists()
+
+
 def test_workspace_discovery_supports_read_only_workspace_roots(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     state_dir = tmp_path / "state"

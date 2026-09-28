@@ -79,9 +79,42 @@ function sha256Json(value) {
 async function createResearchFixture(root) {
   const workspace = join(root, "workspace");
   runJson(["scripts/ts_workspace.py", "init_workspace", "--root", workspace]);
+  const legacyIdentity = JSON.parse(await readFile(join(workspace, "workspace.json"), "utf8"));
+  await writeFile(join(workspace, "workspace_manifest.json"), JSON.stringify({
+    schema_version: "research_agent_workspace_1",
+    workspace_id: legacyIdentity.workspace_id,
+    workspace_mode: "research",
+    workspace_root: workspace,
+    state: "ready",
+    directories: ["inputs", "artifacts", "runs", "logs", "research_map", "memory", "lifecycle", "checkpoints", "nodes", "evidence", "monitor", "environments"],
+  }));
+  await mkdir(join(workspace, "research_map"), { recursive: true });
+  await mkdir(join(workspace, "lifecycle"), { recursive: true });
+  await writeFile(join(workspace, "research_map", "context.json"), JSON.stringify({
+    schema_version: "research_map_context_1",
+    workspace_id: legacyIdentity.workspace_id,
+    workspace_mode: "research",
+    revision: 0,
+    lifecycle_state: "admitted",
+    lifecycle: "idle",
+    disposition: null,
+    checkpoint_id: "checkpoint_0",
+    phases: [], claims: [], nodes: [], findings: [], gates: [], focus: { claim_ids: [], node_ids: [] },
+  }));
+  await writeFile(join(workspace, "lifecycle", "liveness.json"), JSON.stringify({
+    schema_version: "research_liveness_1",
+    workspace_id: legacyIdentity.workspace_id,
+    state: "admitted",
+    revision: 0,
+    lifecycle: "idle",
+    disposition: null,
+    checkpoint_id: "checkpoint_0",
+  }));
   const changeFile = join(root, "initial-change.json");
   await writeFile(changeFile, JSON.stringify({
     schema_version: "ts-change-request/1",
+    principal: "root_agent",
+    authority: "kernel_write",
     rationale: "Create one generic active research scope for the turn lifecycle contract.",
     operations: [
       { type: "create_claim", id: "claim_1", statement: "A bounded claim requires an external observation." },
@@ -92,6 +125,14 @@ async function createResearchFixture(root) {
         objective: "Exercise the domain-neutral Agent, Kernel, Host, and Monitor lifecycle.",
         claim_ids: ["claim_1"],
         dependency_ids: [],
+      },
+      {
+        type: "create_strategy_plan",
+        id: "strategy_1",
+        claim_id: "claim_1",
+        node_id: "node_1",
+        objective: "Submit and inspect the external observation.",
+        rationale: "The bounded external Attempt is the next evidence step.",
       },
       { type: "set_focus", claim_ids: ["claim_1"], node_ids: ["node_1"] },
       { type: "set_node_state", node_id: "node_1", state: "active" },
@@ -234,6 +275,33 @@ test("one external Attempt completes the generic Research Turn lifecycle", async
         state,
         programStatus,
       )));
+      // The operational result file is not ResearchMap state. Mirror the
+      // Host execution ledger so canonical liveness can observe this Attempt.
+      const context = runJson(["scripts/ts_api.py", "research.context", "--root", fixture.workspace]);
+      const requestFile = join(root, `attempt-${calls.length}.json`);
+      await writeFile(requestFile, JSON.stringify({
+        schema_version: "ts-change-request/1",
+        principal: "root_agent",
+        authority: "kernel_write",
+        expected_revision: context.revision,
+        operations: [params.operation === "launch"
+          ? {
+            type: "create_attempt",
+            id: fixture.created.intent_id,
+            node_id: "node_1",
+            capability: fixture.created.intent.capability,
+            capability_version: fixture.created.intent.capability_version,
+            state: "running",
+            metadata: { intent_id: fixture.created.intent_id },
+          }
+          : {
+            type: "transition_attempt",
+            attempt_id: fixture.created.intent_id,
+            state: "succeeded",
+            metadata: { program_status: programStatus },
+          }],
+      }));
+      runJson(["scripts/ts_api.py", "research.change", "--root", fixture.workspace, "--request-file", requestFile]);
       return resultEnvelope({ operation: params.operation, state }, "ts-calculation-result/2");
     },
   });
@@ -249,6 +317,8 @@ test("one external Attempt completes the generic Research Turn lifecycle", async
       const requestFile = join(root, `change-${calls.length}.json`);
       await writeFile(requestFile, JSON.stringify({
         schema_version: "ts-change-request/1",
+        principal: "root_agent",
+        authority: "kernel_write",
         rationale: params.rationale,
         operations: params.operations,
       }));

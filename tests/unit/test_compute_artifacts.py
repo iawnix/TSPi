@@ -8,7 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.support.workspace_helpers import apply_change, bootstrap_workspace_fixture, start_research_node
+from tests.support.workspace_helpers import (
+    apply_filesystem_change,
+    bootstrap_filesystem_workspace_fixture,
+    start_filesystem_research_node,
+)
 from ts_agent.compute import (
     ComputeContractError,
     create_calculation_intent,
@@ -25,8 +29,8 @@ from ts_agent.structures import StructureSeedError, generate_smiles_seed
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
-    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
-    refs = start_research_node(
+    workspace = bootstrap_filesystem_workspace_fixture(tmp_path / "workspace")
+    refs = start_filesystem_research_node(
         workspace,
         objective="Exercise deterministic calculation artifact binding.",
     )
@@ -35,6 +39,10 @@ def _workspace(tmp_path: Path) -> tuple[Path, str]:
 
 def _artifact(catalog: dict, path: str) -> dict:
     return next(item for item in catalog["artifacts"] if item["path"] == path)
+
+
+def _require_rdkit() -> None:
+    pytest.importorskip("rdkit")
 
 
 def _request(
@@ -87,7 +95,8 @@ def test_artifact_id_binds_path_and_content(tmp_path: Path) -> None:
     renamed = source.with_name("renamed.com")
     source.rename(renamed)
     second = _artifact(list_calculation_artifacts(workspace), "inputs/renamed.com")
-    assert second["artifact_id"] != first["artifact_id"]
+    # Artifact IDs are content-addressed; renaming changes provenance only.
+    assert second["artifact_id"] == first["artifact_id"]
     assert second["sha256"] == first["sha256"]
 
     renamed.write_text("# HF/STO-3G\n\nSP changed\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
@@ -177,6 +186,7 @@ def test_artifact_import_rejects_unsafe_name_extension_and_overwrite(tmp_path: P
 
 
 def test_rdkit_structure_seed_is_deterministic_and_explicit_about_limitations() -> None:
+    _require_rdkit()
     first = generate_smiles_seed(
         "C1=CCCCC1",
         charge=0,
@@ -201,6 +211,7 @@ def test_rdkit_structure_seed_is_deterministic_and_explicit_about_limitations() 
 
 
 def test_structure_seed_provenance_distinguishes_submitted_and_normalized_smiles() -> None:
+    _require_rdkit()
     submitted = " CCO "
     result = generate_smiles_seed(
         submitted,
@@ -220,6 +231,7 @@ def test_structure_seed_provenance_distinguishes_submitted_and_normalized_smiles
 
 
 def test_structure_seed_artifact_is_private_content_addressed_and_idempotent(tmp_path: Path) -> None:
+    _require_rdkit()
     workspace, node_id = _workspace(tmp_path)
     request = {
         "schema_version": "ts-structure-seed-request/1",
@@ -256,9 +268,10 @@ def test_structure_seed_artifact_is_private_content_addressed_and_idempotent(tmp
 
 
 def test_structure_seed_accepts_semantic_research_node_ids(tmp_path: Path) -> None:
-    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    _require_rdkit()
+    workspace = bootstrap_filesystem_workspace_fixture(tmp_path / "workspace")
     node_id = "node_water_energy"
-    apply_change(workspace, {
+    apply_filesystem_change(workspace, {
         "operations": [
             {"type": "create_phase", "id": "phase_1", "title": "Water energy"},
             {"type": "create_claim", "id": "claim_1", "statement": "The water energy is reproducible."},
@@ -285,6 +298,7 @@ def test_structure_seed_accepts_semantic_research_node_ids(tmp_path: Path) -> No
 
 
 def test_structure_seed_rejects_chemical_and_contract_mismatches(tmp_path: Path) -> None:
+    _require_rdkit()
     workspace, node_id = _workspace(tmp_path)
     base = {
         "schema_version": "ts-structure-seed-request/1",
@@ -494,7 +508,7 @@ def test_binding_rejects_unknown_incompatible_and_incomplete_roles(tmp_path: Pat
     xyz_artifact = _artifact(catalog, "inputs/source.xyz")
 
     with pytest.raises(ComputeContractError, match="unknown artifact_id"):
-        create_calculation_intent(workspace, _request(node_id, "art_000000000000000000000000"))
+        create_calculation_intent(workspace, _request(node_id, "art_" + "0" * 64))
     with pytest.raises(ComputeContractError, match="not compatible with input role gjf"):
         create_calculation_intent(workspace, _request(node_id, xyz_artifact["artifact_id"]))
 
@@ -595,6 +609,7 @@ def test_structure_seed_cli_uses_private_bounded_request_file(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    _require_rdkit()
     workspace, node_id = _workspace(tmp_path)
     request = tmp_path / "structure-seed.json"
     request.write_text(

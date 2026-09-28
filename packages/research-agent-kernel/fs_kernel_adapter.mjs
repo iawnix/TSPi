@@ -7,7 +7,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
+import { mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 export const FS_RESEARCH_KERNEL_VERSION = "fs_research_kernel_1";
@@ -55,6 +56,59 @@ const RESEARCH_STATE = Object.freeze({ pending: "admission_pending", admitted: "
 const CHECKPOINT_DISPOSITIONS = new Set([
   "continue_required", "waiting_external", "deferred", "blocked", "terminal", "user_input_required",
 ]);
+
+// The Python bridge uses an advisory file lock. Node has no built-in flock
+// primitive, so the native adapter serializes calls in-process and uses a
+// short-lived lock directory for other JS processes. The directory is only a
+// coordination token; all state writes remain atomic file replacements.
+const WORKSPACE_LOCKS = new Map();
+const WORKSPACE_LOCK_WAIT_MS = 10;
+const WORKSPACE_LOCK_STALE_MS = 5 * 60 * 1000;
+
+function sleep(milliseconds) {
+  return new Promise((resolve_sleep) => setTimeout(resolve_sleep, milliseconds));
+}
+
+async function acquire_workspace_lock(root) {
+  const lock_path = join(root, ".research-agent.lock.d");
+  const started_at = Date.now();
+  while (true) {
+    try {
+      await mkdir(lock_path, { recursive: false, mode: 0o700 });
+      await writeFile(join(lock_path, "owner"), `${process.pid}\n${Date.now()}\n`, { encoding: "utf8", mode: 0o600 });
+      return async () => {
+        await rm(lock_path, { recursive: true, force: true });
+      };
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      if (Date.now() - started_at > WORKSPACE_LOCK_STALE_MS) {
+        throw new Error(`research_workspace_lock_timeout: ${root}`);
+      }
+      await sleep(WORKSPACE_LOCK_WAIT_MS);
+    }
+  }
+}
+
+async function with_workspace_lock(root, operation) {
+  const previous = WORKSPACE_LOCKS.get(root) || Promise.resolve();
+  let release_queue;
+  const queued = new Promise((resolve_queue) => { release_queue = resolve_queue; });
+  const tail = previous.then(() => queued);
+  WORKSPACE_LOCKS.set(root, tail);
+  await previous;
+  let release_file;
+  try {
+    release_file = await acquire_workspace_lock(root);
+    return await operation();
+  } finally {
+    try {
+      if (release_file) await release_file();
+    } finally {
+      release_queue();
+      if (WORKSPACE_LOCKS.get(root) === tail) WORKSPACE_LOCKS.delete(root);
+    }
+  }
+}
 
 function require_workspace_root(value) {
   if (typeof value !== "string" || value.length === 0) {
@@ -122,6 +176,25 @@ async function write_json_atomic(path, value) {
   }
 }
 
+async function optional_json(path, label) {
+  try {
+    return { existed: true, value: await read_json(path, label) };
+  } catch (error) {
+    if (error?.cause?.code === "ENOENT") return { existed: false, value: null };
+    throw error;
+  }
+}
+
+async function restore_json(path, snapshot) {
+  try {
+    if (snapshot.existed) await write_json_atomic(path, snapshot.value);
+    else await rm(path, { force: true });
+  } catch {
+    // Preserve the original commit failure. A subsequent workspace doctor can
+    // surface a recovery mismatch if the filesystem itself is unavailable.
+  }
+}
+
 function workspace_id_from_documents(context, liveness, configured) {
   const context_id = context.workspace_id;
   const liveness_id = liveness.workspace_id;
@@ -141,7 +214,7 @@ function validate_documents(context, liveness, configured) {
   if (liveness.schema_version !== RESEARCH_LIVENESS_SCHEMA) {
     throw new Error("unsupported_research_liveness_schema");
   }
-  if (context.workspace_mode !== undefined && context.workspace_mode !== "research") {
+  if (context.workspace_mode !== "research") {
     throw new Error("research_workspace_mode_required");
   }
   const workspace_id = workspace_id_from_documents(context, liveness, configured);
@@ -154,17 +227,13 @@ function validate_documents(context, liveness, configured) {
     throw new Error(`invalid_research_liveness_state: ${String(liveness_state)}`);
   }
   if (context_state !== liveness_state) throw new Error("research_lifecycle_state_mismatch");
-  if (context.revision !== undefined && (!Number.isInteger(context.revision) || context.revision < 0)) {
+  if (!Number.isInteger(context.revision) || context.revision < 0) {
     throw new Error("invalid_research_context_revision");
   }
-  if (liveness.revision !== undefined && (!Number.isInteger(liveness.revision) || liveness.revision < 0)) {
+  if (!Number.isInteger(liveness.revision) || liveness.revision < 0) {
     throw new Error("invalid_research_liveness_revision");
   }
-  if (
-    context.revision !== undefined &&
-    liveness.revision !== undefined &&
-    context.revision !== liveness.revision
-  ) {
+  if (context.revision !== liveness.revision) {
     throw new Error("research_revision_mismatch");
   }
   return workspace_id;
@@ -178,6 +247,15 @@ function require_request_workspace(request, workspace_id, workspace_root) {
   const supplied_root = request?.workspace_root ?? request?.root;
   if (supplied_root !== undefined && resolve(require_workspace_root(supplied_root)) !== workspace_root) {
     throw new Error("research_workspace_root_mismatch");
+  }
+}
+
+function require_kernel_write_principal(request) {
+  if (request?.principal !== "root_agent") {
+    throw new Error("research mutation requires the Root Agent principal");
+  }
+  if (request?.authority !== "kernel_write") {
+    throw new Error("research mutation requires authority=kernel_write");
   }
 }
 
@@ -230,6 +308,8 @@ async function persist_memory_projection(root, context, liveness) {
     lifecycle: liveness.lifecycle ?? "idle",
     disposition: liveness.disposition ?? null,
     checkpoint_id: liveness.checkpoint_id ?? null,
+    waiting_external: Array.isArray(liveness.waiting_external) ? liveness.waiting_external : [],
+    decision_needed: Array.isArray(liveness.decision_needed) ? liveness.decision_needed : [],
     focus: context.focus ?? { claim_ids: [], node_ids: [] },
     entries: Array.isArray(previous.entries) ? previous.entries : [],
   });
@@ -272,15 +352,104 @@ function liveness_projection(context, liveness, checkpoint = null) {
     return result;
   }
   if (typeof liveness.disposition === "string") return result;
+  // Canonical Attempt records own the external execution wake. Keep this
+  // projection identical to the Python filesystem boundary so Host, Monitor,
+  // and Memory never derive competing lifecycle states.
+  const waiting_external = items(context, "attempts")
+    .filter((row) => row && typeof row === "object")
+    .map((row) => ({
+      id: row.id ?? row.attempt_id ?? row.intent_id,
+      attempt_id: row.id ?? row.attempt_id ?? row.intent_id,
+      intent_id: row.intent_id,
+      node_id: row.node_id,
+      state: row.state ?? row.status,
+      status: "waiting",
+    }))
+    .filter((row) => typeof row.attempt_id === "string"
+      && ["started", "running"].includes(row.state));
+  if (waiting_external.length > 0) {
+    result.lifecycle = "waiting_external";
+    result.waiting_external = waiting_external;
+    result.decision_needed = [];
+    return result;
+  }
   const focus = context?.focus && typeof context.focus === "object" ? context.focus : {};
   const node_ids = Array.isArray(focus.node_ids) ? focus.node_ids.filter((value) => typeof value === "string") : [];
   const claim_ids = Array.isArray(focus.claim_ids) ? focus.claim_ids.filter((value) => typeof value === "string") : [];
-  result.lifecycle = node_ids.length || claim_ids.length ? "decision_needed" : "idle";
+  const node_by_id = new Map(items(context, "nodes").map((row) => [row.id, row]));
+  const claim_by_id = new Map(items(context, "claims").map((row) => [row.id, row]));
+  const open_node_ids = node_ids.filter((id) => ["planned", "active"].includes(node_by_id.get(id)?.state));
+  const open_claim_ids = claim_ids.filter((id) => ["proposed", "inconclusive"].includes(claim_by_id.get(id)?.status ?? "proposed"));
+  const all_nodes_closed = items(context, "nodes").length > 0
+    && items(context, "nodes").every((row) => row?.state === "closed");
+  result.lifecycle = open_node_ids.length || open_claim_ids.length
+    ? "decision_needed"
+    : all_nodes_closed ? "terminal" : "idle";
   result.decision_needed = [
-    ...node_ids.map((target_id) => ({ scope: "node", target_id, reason: "missing checkpoint disposition" })),
-    ...claim_ids.map((target_id) => ({ scope: "claim", target_id, reason: "missing checkpoint disposition" })),
+    ...open_node_ids.map((target_id) => ({ scope: "node", target_id, reason: "missing checkpoint disposition" })),
+    ...open_claim_ids.map((target_id) => ({ scope: "claim", target_id, reason: "missing checkpoint disposition" })),
   ];
   return result;
+}
+
+function validate_checkpoint_lifecycle(context, checkpoint) {
+  const disposition = checkpoint.disposition;
+  if (!CHECKPOINT_DISPOSITIONS.has(disposition)) throw new Error("checkpoint disposition is invalid");
+  const claims = items(context, "claims");
+  const nodes = items(context, "nodes");
+  const attempts = items(context, "attempts");
+  const plans = items(context, "strategy_plans");
+  const interpretations = items(context, "attempt_interpretations");
+  const claim_by_id = new Map(claims.map((row) => [row.id, row]));
+  const node_by_id = new Map(nodes.map((row) => [row.id, row]));
+  const attempt_by_id = new Map(attempts.map((row) => [row.id ?? row.attempt_id ?? row.intent_id, row]));
+  const claim_ids = Array.isArray(checkpoint.claim_ids) ? checkpoint.claim_ids : [];
+  const node_ids = Array.isArray(checkpoint.node_ids) ? checkpoint.node_ids : [];
+  const unresolved_refs = Array.isArray(checkpoint.unresolved_refs) ? checkpoint.unresolved_refs : [];
+  if (claim_ids.some((id) => typeof id !== "string" || !claim_by_id.has(id))) {
+    throw new Error("checkpoint references unknown Claim");
+  }
+  if (node_ids.some((id) => typeof id !== "string" || !node_by_id.has(id))) {
+    throw new Error("checkpoint references unknown Node");
+  }
+  if (unresolved_refs.some((id) => typeof id !== "string" || id.trim() === "")) {
+    throw new Error("checkpoint.unresolved_refs must be an array of non-empty strings");
+  }
+  if (disposition === "waiting_external") {
+    if (unresolved_refs.length === 0) throw new Error("waiting_external checkpoint requires unresolved_refs");
+    const terminal = new Set(["failed", "stopped", "collected", "parsed", ...ATTEMPT_TERMINAL_STATES]);
+    const missing = unresolved_refs.filter((id) => !attempt_by_id.has(id));
+    if (missing.length > 0) throw new Error(`waiting_external checkpoint references unknown Attempts: ${[...new Set(missing)].join(", ")}`);
+    const finished = unresolved_refs.filter((id) => terminal.has(attempt_by_id.get(id).state ?? attempt_by_id.get(id).status));
+    if (finished.length > 0) throw new Error(`waiting_external checkpoint references terminal Attempts: ${[...new Set(finished)].join(", ")}`);
+  }
+  if (disposition === "continue_required") {
+    const strategy_ids = new Set(
+      checkpoint.metadata && typeof checkpoint.metadata === "object" && !Array.isArray(checkpoint.metadata)
+        && Array.isArray(checkpoint.metadata.strategy_ids) ? checkpoint.metadata.strategy_ids : [],
+    );
+    const valid_claims = new Set(plans.filter((row) => ["proposed", "active"].includes(row.status ?? "proposed")
+      && (!strategy_ids.size || strategy_ids.has(row.id))).map((row) => row.claim_id));
+    const missing = claim_ids.filter((id) => !valid_claims.has(id));
+    if (missing.length > 0) throw new Error(`continue_required checkpoint needs an active StrategyPlan for Claims: ${[...new Set(missing)].join(", ")}`);
+  }
+  if (disposition === "terminal") {
+    const scoped_nodes = new Set(node_ids);
+    for (const claim_id of claim_ids) for (const node_id of claim_by_id.get(claim_id)?.node_ids || []) scoped_nodes.add(node_id);
+    const open_nodes = [...scoped_nodes].filter((id) => node_by_id.get(id)?.state !== "closed");
+    if (open_nodes.length > 0) throw new Error(`terminal checkpoint requires closed Nodes: ${open_nodes.join(", ")}`);
+  }
+  const scoped_nodes = new Set(node_ids);
+  for (const claim_id of claim_ids) for (const node_id of claim_by_id.get(claim_id)?.node_ids || []) scoped_nodes.add(node_id);
+  const interpreted = new Set(interpretations.map((row) => row.attempt_ref));
+  const missing_interpretations = attempts
+    .filter((row) => (row.state ?? row.status) === "parsed"
+      && (!scoped_nodes.size || scoped_nodes.has(row.node_id))
+      && !interpreted.has(row.id ?? row.attempt_id ?? row.intent_id))
+    .map((row) => row.id ?? row.attempt_id ?? row.intent_id);
+  if (missing_interpretations.length > 0) {
+    throw new Error(`parsed Attempts require AttemptInterpretation before checkpoint: ${missing_interpretations.join(", ")}`);
+  }
 }
 
 function expected_revision(request, current) {
@@ -299,7 +468,8 @@ function expected_revision(request, current) {
 }
 
 function array_field(context, field) {
-  if (!Array.isArray(context[field])) context[field] = [];
+  if (context[field] === undefined || context[field] === null) context[field] = [];
+  if (!Array.isArray(context[field])) throw new Error(`context.${field} must be an array`);
   return context[field];
 }
 
@@ -319,11 +489,11 @@ function ensure_unique(collection, id, label) {
 }
 
 function items(context, field) {
-  if (!Array.isArray(context[field])) context[field] = [];
-  if (context[field].some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
+  const collection = array_field(context, field);
+  if (collection.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
     throw new Error(`context.${field} must contain objects`);
   }
-  return context[field];
+  return collection;
 }
 
 function string_list(operation, field) {
@@ -914,33 +1084,103 @@ export function create_fs_research_kernel({ workspace_root, workspace_id } = {})
   if (workspace_id !== undefined) require_identifier(workspace_id, "workspace_id");
   const context_path = join(root, "research_map", "context.json");
   const liveness_path = join(root, "lifecycle", "liveness.json");
+  const manifest_path = join(root, "workspace_manifest.json");
 
   async function load_state() {
     const context = await read_json(context_path, "research_context");
     const liveness = await read_json(liveness_path, "research_liveness");
     const id = validate_documents(context, liveness, workspace_id);
+    const manifest = await read_json(manifest_path, "workspace_manifest");
+    if (manifest.schema_version !== "research_agent_workspace_1") {
+      throw new Error("unsupported_workspace_manifest");
+    }
+    if (manifest.workspace_mode !== "research") {
+      throw new Error("research_workspace_mode_required");
+    }
+    if (manifest.workspace_id !== id) {
+      throw new Error("research_workspace_id_mismatch");
+    }
+    if (manifest.workspace_root !== undefined && resolve(manifest.workspace_root) !== root) {
+      throw new Error("research_workspace_root_mismatch");
+    }
+    if (!["admission_pending", "ready"].includes(manifest.state)) {
+      throw new Error(`invalid_workspace_manifest_state: ${String(manifest.state)}`);
+    }
+    if ((manifest.state === "ready") !== (context.lifecycle_state === RESEARCH_STATE.admitted)) {
+      throw new Error("research_manifest_state_mismatch");
+    }
     return { context, liveness, workspace_id: id };
   }
 
   async function read_context() {
-    return (await load_state()).context;
+    return with_workspace_lock(root, async () => (await load_state()).context);
   }
 
   async function read_liveness() {
-    const state = await load_state();
-    return liveness_projection(state.context, state.liveness);
+    return with_workspace_lock(root, async () => {
+      const state = await load_state();
+      return liveness_projection(state.context, state.liveness);
+    });
   }
 
   async function admit_workspace(request = {}) {
-    const state = await load_state();
-    require_request_workspace(request, state.workspace_id, root);
-    if (request.authority !== "host") {
-      throw new Error("research admission requires Host authority");
-    }
-    if (request.expected_state !== undefined && request.expected_state !== RESEARCH_STATE.pending) {
-      throw new Error("invalid research admission state");
-    }
-    if (state.context.lifecycle_state === RESEARCH_STATE.admitted) {
+    return with_workspace_lock(root, async () => {
+      const state = await load_state();
+      const manifest = await read_json(manifest_path, "workspace_manifest");
+      require_request_workspace(request, state.workspace_id, root);
+      if (request.authority !== "host") {
+        throw new Error("research admission requires Host authority");
+      }
+      if (request.expected_state !== undefined && request.expected_state !== RESEARCH_STATE.pending) {
+        throw new Error("invalid research admission state");
+      }
+      if (state.context.lifecycle_state === RESEARCH_STATE.admitted) {
+        if (manifest.state !== "ready") {
+          await write_json_atomic(manifest_path, {
+            ...manifest,
+            state: "ready",
+            admitted_at: state.context.admitted_at ?? now(),
+            research_kernel: {
+              ...(manifest.research_kernel && typeof manifest.research_kernel === "object" ? manifest.research_kernel : {}),
+              admission_required: false,
+            },
+          });
+        }
+        return {
+          schema_version: "research_admission_result",
+          request_id: request.request_id ?? null,
+          workspace_id: state.workspace_id,
+          accepted: true,
+          state: "admitted",
+          reason: null,
+        };
+      }
+      const admitted_at = now();
+      const context = { ...state.context, lifecycle_state: RESEARCH_STATE.admitted, lifecycle: "idle", disposition: null, admitted_at };
+      const liveness = { ...state.liveness, state: RESEARCH_STATE.admitted, admitted_at };
+      const manifest_admitted = {
+        ...manifest,
+        state: "ready",
+        admitted_at,
+        research_kernel: {
+          ...(manifest.research_kernel && typeof manifest.research_kernel === "object" ? manifest.research_kernel : {}),
+          admission_required: false,
+        },
+      };
+      const memory_path = join(root, "memory", "index.json");
+      const memory_before = await optional_json(memory_path, "research_memory_index");
+      try {
+        await write_json_atomic(context_path, context);
+        await write_json_atomic(liveness_path, liveness);
+        await persist_memory_projection(root, context, liveness);
+        await write_json_atomic(manifest_path, manifest_admitted);
+      } catch (error) {
+        await restore_json(context_path, { existed: true, value: state.context });
+        await restore_json(liveness_path, { existed: true, value: state.liveness });
+        await restore_json(memory_path, memory_before);
+        await restore_json(manifest_path, { existed: true, value: manifest });
+        throw error;
+      }
       return {
         schema_version: "research_admission_result",
         request_id: request.request_id ?? null,
@@ -949,117 +1189,136 @@ export function create_fs_research_kernel({ workspace_root, workspace_id } = {})
         state: "admitted",
         reason: null,
       };
-    }
-    const admitted_at = now();
-    const context = { ...state.context, lifecycle_state: RESEARCH_STATE.admitted, lifecycle: "idle", disposition: null, admitted_at };
-    const liveness = { ...state.liveness, state: RESEARCH_STATE.admitted, admitted_at };
-    await write_json_atomic(context_path, context);
-    await write_json_atomic(liveness_path, liveness);
-    await persist_memory_projection(root, context, liveness);
-    return {
-      schema_version: "research_admission_result",
-      request_id: request.request_id ?? null,
-      workspace_id: state.workspace_id,
-      accepted: true,
-      state: "admitted",
-      reason: null,
-    };
+    });
   }
 
   async function apply_change(request = {}) {
-    const state = await load_state();
-    require_request_workspace(request, state.workspace_id, root);
-    require_admitted(state.context, state.liveness);
-    const revision = Number.isInteger(state.context.revision) ? state.context.revision : 0;
-    expected_revision(request, revision);
-    if (!Array.isArray(request.operations) || request.operations.length === 0) {
-      throw new Error("ChangeSet.operations must be a non-empty list");
-    }
-    require_decision_ready(state.context, state.liveness, request.operations);
-    const context = JSON.parse(JSON.stringify(state.context));
-    const created_ids = [];
-    for (const operation of request.operations) {
-      const created = apply_operation(context, operation);
-      if (created !== null) created_ids.push(created);
-    }
-    context.revision = revision + 1;
-    const liveness = liveness_projection(context, { ...state.liveness, revision: context.revision }, {});
-    context.lifecycle = liveness.lifecycle ?? "idle";
-    context.disposition = liveness.disposition ?? null;
-    context.checkpoint_id = liveness.checkpoint_id ?? null;
-    await write_json_atomic(context_path, context);
-    await write_json_atomic(liveness_path, liveness);
-    await persist_memory_projection(root, context, liveness);
-    return {
-      schema_version: "research_change_result",
-      accepted: true,
-      workspace_id: state.workspace_id,
-      revision: context.revision,
-      created_ids,
-      operation_count: request.operations.length,
-    };
+    return with_workspace_lock(root, async () => {
+      const state = await load_state();
+      require_request_workspace(request, state.workspace_id, root);
+      require_kernel_write_principal(request);
+      require_admitted(state.context, state.liveness);
+      const revision = state.context.revision;
+      expected_revision(request, revision);
+      if (!Array.isArray(request.operations) || request.operations.length === 0) {
+        throw new Error("ChangeSet.operations must be a non-empty list");
+      }
+      require_decision_ready(state.context, state.liveness, request.operations);
+      const context = JSON.parse(JSON.stringify(state.context));
+      const created_ids = [];
+      for (const operation of request.operations) {
+        const created = apply_operation(context, operation);
+        if (created !== null) created_ids.push(created);
+      }
+      context.revision = revision + 1;
+      const liveness = liveness_projection(context, { ...state.liveness, revision: context.revision }, {});
+      context.lifecycle = liveness.lifecycle ?? "idle";
+      context.disposition = liveness.disposition ?? null;
+      context.checkpoint_id = liveness.checkpoint_id ?? null;
+      const memory_path = join(root, "memory", "index.json");
+      const memory_before = await optional_json(memory_path, "research_memory_index");
+      try {
+        await write_json_atomic(context_path, context);
+        await write_json_atomic(liveness_path, liveness);
+        await persist_memory_projection(root, context, liveness);
+      } catch (error) {
+        await restore_json(context_path, { existed: true, value: state.context });
+        await restore_json(liveness_path, { existed: true, value: state.liveness });
+        await restore_json(memory_path, memory_before);
+        throw error;
+      }
+      return {
+        schema_version: "research_change_result",
+        accepted: true,
+        workspace_id: state.workspace_id,
+        revision: context.revision,
+        created_ids,
+        operation_count: request.operations.length,
+      };
+    });
   }
 
   async function checkpoint(request = {}) {
-    const state = await load_state();
-    require_request_workspace(request, state.workspace_id, root);
-    require_admitted(state.context, state.liveness, { allow_checkpoint: true });
-    const source = request.checkpoint && typeof request.checkpoint === "object" ? request.checkpoint : request;
-    const checkpoint_id = source.checkpoint_id ?? source.id ?? `checkpoint_${(state.context.revision ?? 0) + 1}`;
-    require_identifier(checkpoint_id, "checkpoint_id");
-    const checkpoint = {
-      ...source,
-      schema_version: RESEARCH_CHECKPOINT_SCHEMA,
-      checkpoint_id,
-      workspace_id: state.workspace_id,
-      revision: state.context.revision ?? 0,
-      lifecycle_state: RESEARCH_STATE.admitted,
-      created_at: typeof source.created_at === "string" ? source.created_at : now(),
-    };
-    const checkpoint_path = join(root, "checkpoints", `${checkpoint_id}.json`);
-    try {
-      const existing = await read_json(checkpoint_path, "research_checkpoint");
-      if (JSON.stringify(existing) !== JSON.stringify(checkpoint)) throw new Error("checkpoint_id_conflict");
-    } catch (error) {
-      if (error?.cause?.code !== "ENOENT") throw error;
-      await write_json_atomic(checkpoint_path, checkpoint);
-    }
-    const projected_liveness = liveness_projection(state.context, { ...state.liveness, checkpoint_id }, checkpoint);
-    const context_projection = {
-      ...state.context,
-      lifecycle: projected_liveness.lifecycle ?? "idle",
-      disposition: projected_liveness.disposition ?? null,
-      checkpoint_id,
-    };
-    await write_json_atomic(liveness_path, projected_liveness);
-    await write_json_atomic(context_path, context_projection);
-    await persist_memory_projection(root, context_projection, projected_liveness);
-    return {
-      schema_version: "research_checkpoint_result",
-      accepted: true,
-      workspace_id: state.workspace_id,
-      checkpoint_id,
-      revision: checkpoint.revision,
-      lifecycle: projected_liveness.lifecycle,
-      disposition: projected_liveness.disposition ?? null,
-    };
+    return with_workspace_lock(root, async () => {
+      const state = await load_state();
+      require_request_workspace(request, state.workspace_id, root);
+      require_kernel_write_principal(request);
+      require_admitted(state.context, state.liveness, { allow_checkpoint: true });
+      const source = request.checkpoint && typeof request.checkpoint === "object" ? request.checkpoint : request;
+      const checkpoint_id = source.checkpoint_id ?? source.id ?? `checkpoint_${state.context.revision + 1}`;
+      require_identifier(checkpoint_id, "checkpoint_id");
+      const checkpoint = {
+        ...source,
+        schema_version: RESEARCH_CHECKPOINT_SCHEMA,
+        checkpoint_id,
+        workspace_id: state.workspace_id,
+        revision: state.context.revision,
+        lifecycle_state: RESEARCH_STATE.admitted,
+        created_at: typeof source.created_at === "string" ? source.created_at : now(),
+      };
+      validate_checkpoint_lifecycle(state.context, checkpoint);
+      const checkpoint_path = join(root, "checkpoints", `${checkpoint_id}.json`);
+      const checkpoint_before = await optional_json(checkpoint_path, "research_checkpoint");
+      try {
+        const existing = await read_json(checkpoint_path, "research_checkpoint");
+        if (!isDeepStrictEqual(existing, checkpoint)) throw new Error("checkpoint_id_conflict");
+      } catch (error) {
+        if (error?.cause?.code !== "ENOENT") throw error;
+      }
+      const projected_liveness = liveness_projection(state.context, { ...state.liveness, checkpoint_id }, checkpoint);
+      const context_projection = {
+        ...state.context,
+        lifecycle: projected_liveness.lifecycle ?? "idle",
+        disposition: projected_liveness.disposition ?? null,
+        checkpoint_id,
+      };
+      const memory_path = join(root, "memory", "index.json");
+      const memory_before = await optional_json(memory_path, "research_memory_index");
+      try {
+        if (!checkpoint_before.existed) await write_json_atomic(checkpoint_path, checkpoint);
+        await write_json_atomic(liveness_path, projected_liveness);
+        await write_json_atomic(context_path, context_projection);
+        await persist_memory_projection(root, context_projection, projected_liveness);
+      } catch (error) {
+        await restore_json(context_path, { existed: true, value: state.context });
+        await restore_json(liveness_path, { existed: true, value: state.liveness });
+        await restore_json(memory_path, memory_before);
+        await restore_json(checkpoint_path, checkpoint_before);
+        throw error;
+      }
+      return {
+        schema_version: "research_checkpoint_result",
+        accepted: true,
+        workspace_id: state.workspace_id,
+        checkpoint_id,
+        revision: checkpoint.revision,
+        lifecycle: projected_liveness.lifecycle,
+        disposition: projected_liveness.disposition ?? null,
+      };
+    });
   }
 
   async function turn(request = {}) {
-    if (request.operation === "checkpoint") return checkpoint({ ...request, ...(request.payload || {}) });
-    const state = await load_state();
-    require_request_workspace(request, state.workspace_id, root);
-    if (["start", "orient"].includes(request.operation)) {
-      return { accepted: true, operation: request.operation, context: state.context, liveness: liveness_projection(state.context, state.liveness) };
+    if (request.operation === "checkpoint") {
+      const envelope = request.input && typeof request.input === "object" ? request.input
+        : request.payload && typeof request.payload === "object" ? request.payload : {};
+      return checkpoint({ ...request, ...envelope });
     }
-    if (["end", "wake"].includes(request.operation)) {
-      require_admitted(state.context, state.liveness);
-      if (state.liveness.lifecycle === "decision_needed") {
-        throw new Error("research_decision_required");
+    return with_workspace_lock(root, async () => {
+      const state = await load_state();
+      require_request_workspace(request, state.workspace_id, root);
+      if (["start", "orient"].includes(request.operation)) {
+        return { accepted: true, operation: request.operation, context: state.context, liveness: liveness_projection(state.context, state.liveness) };
       }
-      return { accepted: true, operation: request.operation };
-    }
-    throw new Error(`invalid research_turn operation: ${String(request.operation)}`);
+      if (["end", "wake"].includes(request.operation)) {
+        require_admitted(state.context, state.liveness);
+        if (state.liveness.lifecycle === "decision_needed") {
+          throw new Error("research_decision_required");
+        }
+        return { accepted: true, operation: request.operation };
+      }
+      throw new Error(`invalid research_turn operation: ${String(request.operation)}`);
+    });
   }
 
   return Object.freeze({

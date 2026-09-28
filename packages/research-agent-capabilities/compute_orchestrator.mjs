@@ -345,6 +345,7 @@ export function create_compute_orchestrator({
     ? attempt_id_factory
     : () => `attempt_${randomUUID()}`;
   const active = new Map();
+  const inflight = new Set();
   let closed = false;
 
   function validate_signal(value) {
@@ -370,7 +371,7 @@ export function create_compute_orchestrator({
     return selected;
   }
 
-  async function run(request = {}) {
+  async function run_internal(request = {}) {
     if (closed) throw new ComputeOrchestratorError("compute_orchestrator_closed", "compute orchestrator is closed");
     const value = require_object(request, "run request");
     // App Server always injects workspace_mode. The research fallback keeps
@@ -435,10 +436,18 @@ export function create_compute_orchestrator({
         if (error?.code !== "run_not_found") throw error;
       }
     }
-    await ledger.create_run(context);
     const cancel_controller = new AbortController();
     active.set(execution_id, { controller: cancel_controller, workspace_id, workspace_root, kind: mode });
+    let ledger_created = false;
     try {
+      await ledger.create_run(context);
+      ledger_created = true;
+      // `close()` can abort a run while its durable create transition is in
+      // flight. Stop before mark_running/provider work in that race and let
+      // the normal failure path persist a terminal cancellation record.
+      if (closed || cancel_controller.signal.aborted) {
+        throw new ComputeOrchestratorError("cancelled", "compute execution was cancelled");
+      }
       await ledger.mark_running(context);
       const executed = await compute_service.invoke({
         workspace_id, workspace_root, workspace_mode: mode, capability_id, capability_version,
@@ -466,6 +475,10 @@ export function create_compute_orchestrator({
         revision: ledger_result?.revision ?? null,
       });
     } catch (error) {
+      // A failed create transition has no durable execution record to
+      // terminalize. Preserve that original error while still releasing the
+      // active cancellation entry.
+      if (!ledger_created) throw error;
       const state = error.service_state || classify_error(error, { cancelled: cancel_controller.signal.aborted || value.signal?.aborted === true });
       const record = error.service_error || error_record(error);
       const output_ids = Array.isArray(error?.details?.artifact_ids) ? error.details.artifact_ids.filter((id) => typeof id === "string" && ARTIFACT_ID.test(id)) : [];
@@ -481,6 +494,14 @@ export function create_compute_orchestrator({
     } finally {
       active.delete(execution_id);
     }
+  }
+
+  function run(request = {}) {
+    if (closed) return Promise.reject(new ComputeOrchestratorError("compute_orchestrator_closed", "compute orchestrator is closed"));
+    const promise = run_internal(request);
+    inflight.add(promise);
+    promise.then(() => inflight.delete(promise), () => inflight.delete(promise));
+    return promise;
   }
 
   async function cancel(request = {}) {
@@ -512,6 +533,7 @@ export function create_compute_orchestrator({
     // Abort all Host-owned monitor/compute work before the surrounding App
     // Server releases its runtime and capability resources.
     for (const entry of active.values()) entry.controller.abort();
+    await Promise.allSettled([...inflight]);
     active.clear();
   }
 

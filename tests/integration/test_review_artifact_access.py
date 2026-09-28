@@ -137,7 +137,8 @@ def _manifest(source: Path, relative_path: str, *, artifact_type: str = "text_do
         ],
     }[artifact_type]
     return {
-        "artifact_id": "art_" + hashlib.sha256(f"{relative_path}:{digest}".encode()).hexdigest()[:24],
+        # Artifact identity is content-addressed; the path remains provenance.
+        "artifact_id": "art_" + digest.removeprefix("sha256:"),
         "path": relative_path,
         "sha256": digest,
         "size_bytes": source.stat().st_size,

@@ -15,7 +15,8 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
 1. 规划前读取当前 ResearchMap 和聚焦对象。
 2. 说明不确定性、相关 Claim，以及一个边界明确的交付物。
 3. 复用或创建 ResearchNode。只有在分组有助于导航时才添加 Phase。根据问题选择科学
-   Skill、Backend 与计算环境。
+   Skill、Backend 与计算环境。对命名的执行目标，必须使用精确的 capability、environment
+   和 execution kind 查询 readiness；默认 readiness 不验证其他环境。
 4. 在所属 Node 下启动或检查任务，并将 Attempt 与 Artifact 留在该 Node 下。
 5. 检查原始输出后，通过 Kernel 记录粒度明确的 FactFinding 与 IssueFinding。Finding
    本身不会改变 Node 或 Claim 的状态。
