@@ -2,10 +2,10 @@
   "schema_version": "tspi-server-extensions/1",
   "extensions": [
     {
-      "name": "tspi-server-tools",
-      "entry": "extensions/server/tspi-tools.mjs",
+      "name": "tspi-core-tools",
+      "entry": "extensions/server/tspi-core-tools.mjs",
       "scope": "server",
-      "sha256": "sha256:c0657b5a184d54bbdd86534f4e1406fe60254a745ebd95d27c72e0984125197f",
+      "sha256": "sha256:da7918c7763f7804f162a435ea056a070d8b36d3bda9a4de5a47e8d2118d427e",
       "tools": [
         "research_read",
         "research_change",
@@ -14,16 +14,33 @@
         "research_interpretation",
         "research_checkpoint",
         "compute_environment",
+        "compute_catalog",
+        "compute_readiness",
         "review_run",
         "compute_run",
         "review_respond",
-        "artifact_seed",
-        "artifact_compare",
-        "analysis_run",
         "execution_dispatch",
         "artifact_import",
         "artifact_render",
         "report_build"
+      ],
+      "permissions": [
+        "workspace.read",
+        "workspace.write",
+        "remote.submit",
+        "model.delegate",
+        "notify.send"
+      ]
+    },
+    {
+      "name": "tspi-chemical-tools",
+      "entry": "extensions/server/tspi-chemical-tools.mjs",
+      "scope": "server",
+      "sha256": "sha256:73798b2df14034275522240b967e922ffd46512c1eb4fa851fb2ee6a584b7cdc",
+      "tools": [
+        "artifact_seed",
+        "artifact_compare",
+        "analysis_run"
       ],
       "permissions": [
         "workspace.read",

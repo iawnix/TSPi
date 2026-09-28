@@ -15,6 +15,7 @@ const { loadReviewerRole, validateReviewerRole } = require("./roles.cjs");
 
 const REVIEW_OPERATION = "claim_review";
 const REVIEW_CONTEXT_SCHEMA = "ts-review-context/1";
+const CLAIM_ID = /^claim_[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const LIMITS = Object.freeze({
   maxQuestionChars: 4000,
   maxArtifactIds: 4,
@@ -24,7 +25,7 @@ function validateSubagentRequest(request) {
   if (!isPlainObject(request)) throw new Error("Review request must be an object");
   rejectUnknownKeys(request, ["targetClaimId", "question", "root", "artifactIds", "reviewerRole"], "Review request");
   return {
-    targetClaimId: requireId(request.targetClaimId, "targetClaimId", /^claim_[1-9][0-9]*$/),
+    targetClaimId: requireId(request.targetClaimId, "targetClaimId", CLAIM_ID),
     question: requireString(request.question, "question", LIMITS.maxQuestionChars),
     root: typeof request.root === "string" ? request.root : undefined,
     artifactIds: uniqueIds(request.artifactIds || [], "artifactIds", LIMITS.maxArtifactIds, /^art_[0-9a-f]{24}$/),
@@ -138,7 +139,7 @@ function validateReviewContext(value, task, map) {
   if (value.task_id !== task.task_id || value.operation !== task.operation) {
     throw new Error("Review context identity does not match task");
   }
-  const targetClaimId = requireId(value.target_claim_id, "target_claim_id", /^claim_[1-9][0-9]*$/);
+  const targetClaimId = requireId(value.target_claim_id, "target_claim_id", CLAIM_ID);
   const target = map.claims.find((claim) => claim.id === targetClaimId);
   if (!target) throw new Error(`unknown Review Claim: ${targetClaimId}`);
   const reviewerRole = validateReviewerRole(value.reviewer_role);

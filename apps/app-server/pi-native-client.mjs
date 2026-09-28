@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { lstatSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { basename, dirname, resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { formatError } from "./tspi-terminal-errors.mjs";
@@ -24,9 +24,14 @@ function createHostResumeSession() {
   const socketPath = process.env.TSPI_HOST_SOCKET?.trim();
   const workspaceId = process.env.TSPI_WORKSPACE_ID?.trim();
   if (!socketPath || !workspaceId) return undefined;
+  const packageRoot = process.env.TSPI_PACKAGE_ROOT?.trim();
+  const releaseRoot = packageRoot ? dirname(resolve(packageRoot)) : undefined;
+  const expectedReleaseId = releaseRoot && basename(dirname(releaseRoot)) === "releases"
+    ? basename(releaseRoot)
+    : undefined;
   return async (sessionId) => {
     if (typeof sessionId !== "string" || sessionId.length === 0) throw new TypeError("sessionId is required");
-    const peer = await connectHost({ socketPath });
+    const peer = await connectHost({ socketPath, expectedReleaseId });
     try {
       const result = await peer.request("session/resume", {
         request_id: `terminal-resume-${process.pid}-${randomUUID()}`,

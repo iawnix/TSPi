@@ -474,6 +474,41 @@ def test_update_preserves_workspace_root_and_link_defaults(tmp_path: Path) -> No
     assert args.link_url == "https://relay.example.test"
 
 
+def test_explicit_phone_link_uses_discovered_relay_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    relay_root = tmp_path / "tspi-link"
+    monkeypatch.setattr(
+        wizard,
+        "discover_link_relay",
+        lambda _root: {
+            "root": str(relay_root),
+            "service_root": str(relay_root / "current/service"),
+            "cli": str(relay_root / "current/service/cli.mjs"),
+            "state": str(tmp_path / "relay.db"),
+            "relay_url": "https://relay.example.test",
+        },
+    )
+    args = wizard.parse_args(
+        [
+            "--install-root",
+            str(tmp_path / "install"),
+            "--phone-access",
+            "link",
+            "--link-relay-root",
+            str(relay_root),
+            "--link-enrollment-code",
+            "one-use-code",
+            "--non-interactive",
+        ]
+    )
+
+    wizard.validate_options(args)
+
+    assert args.link_url == "https://relay.example.test"
+
+
 def test_pi_agent_configuration_is_imported_once_and_kept_private(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -700,8 +735,9 @@ def test_app_server_service_is_one_installation_host(tmp_path: Path) -> None:
     unit = wizard.app_server_unit(args)
 
     assert f"WorkingDirectory={root}" in unit
-    assert f'ExecStart="{root / "TSPi"}" --service-host' in unit
+    assert f'ExecStart="{root / "ResearchAgent"}" --service-host' in unit
     assert "Environment=TSPI_SYSTEMD_HOST=1" in unit
+    assert "Environment=TSPI_SERVER_EXTENSIONS=tspi-core-tools,tspi-chemical-tools" in unit
     assert 'Environment="XDG_RUNTIME_DIR=' in unit
     assert f'PI_CODING_AGENT_DIR={root / ".pi/agent"}' in unit
     assert 'ReadWritePaths="/run/user/' in unit
@@ -790,6 +826,30 @@ def test_prepare_app_server_runtime_reports_installer_failure(
     )
     with pytest.raises(RuntimeError, match="npm failed"):
         wizard.prepare_app_server_runtime(root)
+
+
+def test_prepare_app_server_runtime_prefers_stable_current_release(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "install"
+    suite = root / "releases" / "release-new"
+    installer = suite / "agent/scripts/prepare_pi_source.py"
+    installer.parent.mkdir(parents=True)
+    installer.write_text("# fixture\n", encoding="utf-8")
+    (suite / "agent/config").mkdir(parents=True)
+    (root / "current").symlink_to(suite, target_is_directory=True)
+    runtime = root / ".pi/runtime-cache/pi/test"
+    runtime.mkdir(parents=True)
+    commands: list[list[str]] = []
+
+    def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout=f"{runtime}\n", stderr="")
+
+    monkeypatch.setattr(wizard.subprocess, "run", run)
+    assert wizard.prepare_app_server_runtime(root) == runtime
+    assert commands == [[wizard.sys.executable, str(installer), "--install", str(root)]]
 
 
 def test_configure_services_installs_and_starts_host_and_web(

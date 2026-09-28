@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent_turn_result",
+  "title": "Lightweight agent turn result",
+  "type": "object",
+  "required": ["protocol", "version", "request_id", "status", "output", "provenance"],
+  "properties": {
+    "protocol": {"const": "agent_turn_result"},
+    "version": {"const": 1},
+    "request_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
+    "status": {"enum": ["completed", "waiting", "blocked", "failed"]},
+    "output": {"type": "object", "maxProperties": 256},
+    "artifacts": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {"type": "string", "pattern": "^art_[A-Za-z0-9_-]{1,127}$"}
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["producer", "request_digest"],
+      "properties": {
+        "producer": {"type": "string", "minLength": 1, "maxLength": 128},
+        "request_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "attempt_id": {"type": "string", "maxLength": 128}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

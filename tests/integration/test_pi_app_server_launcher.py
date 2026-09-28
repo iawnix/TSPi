@@ -177,8 +177,8 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     (package_root / "themes").mkdir()
     shutil.copy2(ROOT / "themes" / "ts-theme.json", package_root / "themes" / "ts-theme.json")
     write_test_suite_manifest(suite_root, version=PACKAGE_VERSION)
-    shutil.copy2(ROOT / "TSPi", package_root / "TSPi")
-    (package_root / "TSPi").chmod(0o755)
+    shutil.copy2(ROOT / "ResearchAgent", package_root / "ResearchAgent")
+    (package_root / "ResearchAgent").chmod(0o755)
     (package_root / "scripts").mkdir()
     for name in ("_bootstrap.py", "tspi_launcher.py", "pi-loader.mjs"):
         shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
@@ -191,8 +191,8 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     shutil.copy2(ROOT / "requirements-runtime.txt", package_root / "requirements-runtime.txt")
     write_test_runtime_manifest(package_root, install_root)
     (package_home / "current").symlink_to("releases/test-suite")
-    installed_launcher = install_root / "TSPi"
-    installed_launcher.symlink_to(".pi/packages/tspi/current/agent/TSPi")
+    installed_launcher = install_root / "ResearchAgent"
+    installed_launcher.symlink_to(".pi/packages/tspi/current/agent/ResearchAgent")
     return install_root, installed_launcher
 
 
@@ -210,6 +210,20 @@ def test_resolve_installation_uses_configured_workspace_root(tmp_path: Path) -> 
     installation = launcher.resolve_installation(package_root, install_root)
 
     assert installation.workspaces_root == workspace_root
+
+
+def test_resolve_installation_explains_stale_standalone_agent(tmp_path: Path) -> None:
+    install_root, _launcher = _copy_launcher(tmp_path)
+    stale_agent = tmp_path / "legacy-agent"
+    stale_agent.mkdir()
+
+    with pytest.raises(launcher.TSPiHostError, match="old standalone Agent") as failure:
+        launcher.resolve_installation(stale_agent, install_root)
+
+    message = str(failure.value)
+    assert "launcher=" in message
+    assert "selected=" in message
+    assert "restart ts-app-server-tspi.service" in message
 
 
 def test_model_icon_marker_enables_tspi_style_and_preserves_explicit_style(
@@ -300,7 +314,7 @@ def test_host_command_owns_installation_state_and_workspace_root(
 
 
 def test_launcher_usage_keeps_internal_transport_modes_out_of_daily_help() -> None:
-    assert "TSPi --workspace <name>" in launcher.USAGE
+    assert "ResearchAgent --workspace <name>" in launcher.USAGE
     assert "ts-app-server-tspi.service" in launcher.USAGE
     for internal_mode in ("--service-host", "--app-server", "--app-client", "--gateway", "--standalone"):
         assert internal_mode not in launcher.USAGE
@@ -326,6 +340,30 @@ def test_session_selection_is_workspace_scoped_and_explicit() -> None:
         ])
 
 
+@pytest.mark.parametrize("arguments", [
+    ["--workspace", "reaction-a", "--mode", "light"],
+    ["--workspace=reaction-a", "--workspace-mode=research"],
+])
+def test_workspace_mode_is_parsed_by_the_public_research_agent_entrypoint(arguments: list[str]) -> None:
+    request = launcher.parse_launch_request(arguments)
+    assert request.workspace_mode in {"light", "research"}
+
+
+def test_workspace_mode_rejects_unknown_values() -> None:
+    with pytest.raises(launcher.TSPiHostError, match="must be light or research"):
+        launcher.parse_launch_request(["--workspace", "reaction-a", "--mode", "compute"])
+
+
+def test_launcher_binds_and_admits_research_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspaces" / "reaction-a"
+
+    manifest = launcher.bind_workspace_mode(workspace, "reaction-a", "research")
+
+    assert manifest["workspace_mode"] == "research"
+    assert manifest["state"] == "ready"
+    assert json.loads((workspace / "research_map/context.json").read_text(encoding="utf-8"))["lifecycle_state"] == "admitted"
+
+
 @pytest.mark.parametrize("option", ["-r", "--resume"])
 def test_startup_resume_rejects_the_false_selector_semantics(option: str) -> None:
     with pytest.raises(launcher.TSPiHostError, match="use /resume inside the terminal") as failure:
@@ -344,7 +382,7 @@ def test_phone_management_commands_are_parsed_before_workspace_selection() -> No
     assert revoke.phone_action == "revoke"
     assert revoke.phone_device_id == "223e4567-e89b-42d3-a456-426614174000"
 
-    with pytest.raises(launcher.TSPiHostError, match="usage: TSPi phone"):
+    with pytest.raises(launcher.TSPiHostError, match="usage: ResearchAgent phone"):
         launcher.parse_launch_request(["phone", "revoke"])
 
 
@@ -356,6 +394,35 @@ def test_host_state_prepares_private_pi_workspace_before_root_lock(tmp_path: Pat
     assert host_workspace == state_root / "workspace"
     assert (host_workspace / ".pi").is_dir()
     assert stat.S_IMODE((host_workspace / ".pi").stat().st_mode) == 0o700
+
+
+def test_host_environment_publishes_owner_only_worker_diagnostics(tmp_path: Path) -> None:
+    installation = _installation(tmp_path)
+    diagnostic = installation.root / ".pi/app-server-host/worker-diagnostics.log"
+    diagnostic.parent.mkdir(parents=True, exist_ok=True)
+    diagnostic.write_text("stale worker error\n", encoding="utf-8")
+    original_environment = dict(os.environ)
+    try:
+        launcher.configure_host_process_environment(installation)
+        assert os.environ["TSPI_PI_DIAGNOSTIC_FILE"] == str(diagnostic)
+        assert diagnostic.is_file()
+        assert diagnostic.read_text(encoding="utf-8") == ""
+        assert stat.S_IMODE(diagnostic.stat().st_mode) == 0o600
+    finally:
+        os.environ.clear()
+        os.environ.update(original_environment)
+
+
+def test_cli_workspace_storage_bootstraps_sqlite(tmp_path: Path) -> None:
+    installation = _installation(tmp_path)
+    workspace = launcher.prepare_workspace(installation, "sqlite-check")
+    from ts_agent.workspace.bootstrap import bootstrap_workspace
+
+    bootstrap_workspace(workspace)
+    result = launcher.ensure_workspace_sqlite(workspace)
+
+    assert result["created"] is True
+    assert (workspace / "research.db").is_file()
 
 
 def test_host_state_rejects_an_insecure_installation_pi_directory(tmp_path: Path) -> None:
@@ -373,10 +440,29 @@ def test_host_endpoint_requires_one_unix_socket(
 ) -> None:
     installation = _installation(tmp_path)
     monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
-    monkeypatch.setattr(launcher, "_host_server_id", lambda *_args, **_kwargs: "123e4567-e89b-42d3-a456-426614174000")
+    monkeypatch.setattr(launcher, "_host_server_id", lambda *_args, **_kwargs: "stale")
     monkeypatch.setattr(launcher, "_host_socket_directory", lambda *_args, **_kwargs: tmp_path / "missing-socket")
     with pytest.raises(launcher.TSPiHostUnavailableError, match="TSPi Host is not running"):
         launcher.resolve_host_socket(installation)
+
+
+def test_host_endpoint_removes_stale_unix_socket(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = _installation(tmp_path)
+    monkeypatch.setattr(launcher, "_host_server_id", lambda *_args, **_kwargs: "stale")
+    socket_directory = tmp_path / "stale-socket"
+    socket_directory.mkdir()
+    monkeypatch.setattr(launcher, "_host_socket_directory", lambda *_args, **_kwargs: socket_directory)
+    endpoint = socket_directory / "stale.sock"
+    listener = socket.socket(socket.AF_UNIX)
+    listener.bind(str(endpoint))
+    listener.close()
+
+    with pytest.raises(launcher.TSPiHostUnavailableError, match="socket is stale"):
+        launcher.resolve_host_socket(installation)
+    assert not endpoint.exists()
 
 
 def test_missing_host_is_started_once_and_waited_until_ready(
@@ -475,6 +561,7 @@ def test_gateway_attaches_one_host_session_with_http_options(
     endpoint = socket_directory / f"{server_id}.sock"
     listener = socket.socket(socket.AF_UNIX)
     listener.bind(str(endpoint))
+    listener.listen(1)
     try:
         request = launcher.parse_launch_request([
             "--gateway", "--workspace", "reaction-a", "--session-id", "session-1",
@@ -517,6 +604,7 @@ def test_default_terminal_connects_to_host_and_continues_latest_workspace_sessio
     endpoint = server / f"{server_id}.sock"
     listener = socket.socket(socket.AF_UNIX)
     listener.bind(str(endpoint))
+    listener.listen(1)
     monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
     try:
         command = launcher.build_host_client_command(
@@ -540,6 +628,26 @@ def test_default_terminal_connects_to_host_and_continues_latest_workspace_sessio
         "--continue",
         "--",
     ]
+
+
+def test_default_terminal_binds_standalone_release_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = replace(
+        _installation(tmp_path),
+        package_root=tmp_path / ".pi/packages/ts-agent/releases/release-direct",
+    )
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
+
+    command = launcher.build_host_client_command(
+        installation,
+        launcher.parse_launch_request(["--workspace", "reaction-a"]),
+        socket_path=tmp_path / "host.sock",
+    )
+
+    assert "--expected-release-id" in command
+    assert command[command.index("--expected-release-id") + 1] == "release-direct"
 
 
 def test_default_terminal_exports_installation_pinned_pi_source(

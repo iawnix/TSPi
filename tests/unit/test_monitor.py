@@ -145,7 +145,7 @@ def test_event_commit_recovers_missing_delivery_and_state(tmp_path, monkeypatch)
 
 def test_wake_and_notification_ack_retry_independently(tmp_path, monkeypatch):
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
-    _registered(root, notify_policy="user")
+    _registered(root, notify_policy="configured")
     monkeypatch.setattr("ts_agent.compute.control.calculation_status", lambda *args: {"state": "running"})
     event_id = tick_monitors(root)["monitors"][0]["event_id"]
     at = "2026-09-21T00:00:00+00:00"
@@ -232,7 +232,7 @@ def test_staged_registration_error_remains_visible_and_retries(tmp_path, monkeyp
 def test_monitor_records_match_contracts_and_old_completed_delivery_stays_completed(tmp_path, monkeypatch):
     from jsonschema import Draft202012Validator
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
-    registered = _registered(root, notify_policy="user")
+    registered = _registered(root, notify_policy="configured")
     monkeypatch.setattr("ts_agent.compute.control.calculation_status", lambda *args: {"state": "queued"})
     event_id = tick_monitors(root)["monitors"][0]["event_id"]
     delivery = list_pending_deliveries(root)[0]

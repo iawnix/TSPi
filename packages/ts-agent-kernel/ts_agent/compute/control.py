@@ -86,6 +86,7 @@ from .capabilities import (
     CapabilityGapError,
     adapter_settings,
     resolve_capability,
+    resolve_capability_registration,
     validate_capability_parameters,
 )
 from .errors import ComputeContractError
@@ -93,7 +94,9 @@ from .task_validation import parsed_program_outcome, validate_parsed_task
 from . import local_lifecycle
 from ts_agent.platforms import (
     BackendBinding,
+    EnvironmentBroker,
     EnvironmentConfigurationError,
+    EnvironmentRequirement,
     load_config as load_environment_config,
 )
 
@@ -1461,10 +1464,47 @@ def _validate_backend_request(
 ) -> None:
     backend = str(intent["backend"])
     task_type = str(intent["task_type"])
-    tasks = BACKENDS[backend]
-    if task_type not in tasks:
-        raise ComputeContractError(f"unsupported {backend} task_type: {task_type}")
-    required_inputs, _ = tasks[task_type]
+    registration = resolve_capability_registration(
+        str(intent["capability"]), str(intent["capability_version"])
+    )
+    provider = registration.provider if registration.provider_id != "builtin" else None
+    provider_validator = getattr(provider, "validate_inputs", None)
+    if provider is not None and callable(provider_validator):
+        try:
+            provider_validator(workspace=workspace, intent=intent, inputs=dict(inputs))
+        except ComputeContractError:
+            raise
+        except Exception as exc:
+            raise ComputeContractError(
+                f"{intent['capability']} provider rejected calculation inputs: {exc}"
+            ) from exc
+        return
+    tasks = BACKENDS.get(backend, {})
+    task = tasks.get(task_type)
+    if task is None:
+        provider = registration.provider
+        validator = getattr(provider, "validate_inputs", None)
+        if callable(validator):
+            # Providers own domain-specific content validation.  The kernel
+            # has already checked path safety and descriptor-declared roles.
+            try:
+                validator(workspace=workspace, intent=intent, inputs=dict(inputs))
+            except ComputeContractError:
+                raise
+            except Exception as exc:
+                raise ComputeContractError(
+                    f"{intent['capability']} provider rejected calculation inputs: {exc}"
+                ) from exc
+            return
+        prepare = getattr(provider, "prepare", None)
+        if not callable(prepare):
+            prepare = getattr(provider, "prepare_task", None)
+        if not callable(prepare):
+            raise ComputeContractError(
+                f"capability provider adapter is unavailable for {intent['capability']}@{intent['capability_version']}"
+            )
+        return
+    required_inputs, _ = task
     if set(inputs) != required_inputs:
         missing = sorted(required_inputs - set(inputs))
         unexpected = sorted(set(inputs) - required_inputs)
@@ -1595,7 +1635,27 @@ def _raw_prepared_task(
     )
     backend = str(intent["backend"])
     task_type = str(intent["task_type"])
-    _, prepare = BACKENDS[backend][task_type]
+    registration = resolve_capability_registration(
+        str(intent["capability"]), str(intent["capability_version"])
+    )
+    external_provider = registration.provider if registration.provider_id != "builtin" else None
+    external_prepare = getattr(external_provider, "prepare", None)
+    if not callable(external_prepare):
+        external_prepare = getattr(external_provider, "prepare_task", None)
+    task_handler = BACKENDS.get(backend, {}).get(task_type)
+    if callable(external_prepare):
+        prepare = external_prepare
+    elif task_handler is not None:
+        _, prepare = task_handler
+    else:
+        provider = registration.provider
+        prepare = getattr(provider, "prepare", None)
+        if not callable(prepare):
+            prepare = getattr(provider, "prepare_task", None)
+        if not callable(prepare):
+            raise ComputeContractError(
+                f"capability provider adapter is unavailable for {intent['capability']}@{intent['capability_version']}"
+            )
     task = BackendTask(
         node_id=str(intent["node_id"]),
         task_type=task_type,
@@ -1603,7 +1663,19 @@ def _raw_prepared_task(
         inputs=inputs,
         settings=adapter_settings(intent["parameters"]),
     )
-    return prepare(task)
+    try:
+        prepared = prepare(task)
+    except ComputeContractError:
+        raise
+    except Exception as exc:
+        raise ComputeContractError(
+            f"{intent['capability']} provider failed while preparing calculation: {exc}"
+        ) from exc
+    if not isinstance(prepared, PreparedTask):
+        raise ComputeContractError(
+            f"{intent['capability']} provider returned an invalid PreparedTask"
+        )
+    return prepared
 
 
 def _default_expected_artifact_refs(workspace: Path, intent: dict[str, Any]) -> list[str]:
@@ -1671,40 +1743,18 @@ def _backend_binding(workspace: Path, intent: dict[str, Any], backend: str) -> B
     target = intent.get("execution_target") or {}
     kind = str(target.get("kind"))
     environment_name = target.get("environment") if isinstance(target.get("environment"), str) else None
-    binding_name = _backend_binding_name(backend)
     binding_names = _backend_binding_names(backend)
     if backend == "ase_neb" and kind == "remote":
         # Remote execution needs the ASE/Python runner binding.  The legacy
         # ase_neb_xtb name denotes a local xTB executable and is not a valid
         # remote runner fallback.
-        binding_name = "ase_neb"
         binding_names = ("ase_neb",)
-    if kind == "remote":
-        platform = _remote_platform(str(environment_name))
-        value = next(
-            (platform.backends.get(name) for name in binding_names if platform.backends.get(name)),
-            None,
-        )
-        if value is None:
-            raise EnvironmentConfigurationError(
-                f"remote environment {platform.name!r} does not configure backend.{binding_name}"
-            )
-        return BackendBinding(
-            command=value.command,
-            activation_script=value.activation_script,
-            scratch_root=value.scratch_root,
-            environment=dict(value.environment),
-        )
-    environment = load_environment_config().environment(environment_name, kind="local")
-    value = next(
-        (environment.backends.get(name) for name in binding_names if environment.backends.get(name)),
-        None,
+    broker = EnvironmentBroker(load_environment_config())
+    binding = broker.bind(
+        EnvironmentRequirement(providers=binding_names, kind=kind),
+        environment_name,
     )
-    if value is None:
-        raise EnvironmentConfigurationError(
-            f"local environment {environment.name!r} does not configure backend.{binding_name}"
-        )
-    return value
+    return binding.to_backend_binding()
 
 
 def _apply_compute_environment(

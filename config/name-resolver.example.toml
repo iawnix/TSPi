@@ -1,0 +1,20 @@
+# Copy to <installation>/.pi/name-resolver.toml and keep it owner-readable.
+# The default installation does not enable network name lookup.
+default_resolver = "pubchem"
+
+[backends.pubchem]
+enabled = true
+endpoint = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
+timeout_seconds = 10
+cache = true
+# cache_dir = "/absolute/path/to/a/private/cache"
+user_agent = "TSPi-chemical-name-resolver/1"
+
+# OPSIN is an optional deterministic HTTP backend. Enable it when the OPSIN
+# service is reachable from the Host; leave it disabled to use PubChem only.
+# [backends.opsin]
+# enabled = true
+# endpoint = "https://opsin.ch.cam.ac.uk/opsin"
+# timeout_seconds = 10
+# cache = true
+# user_agent = "TSPi-chemical-name-resolver/1"

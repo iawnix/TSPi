@@ -171,6 +171,21 @@ def test_kernel_rejects_unknown_changeset_and_operation_fields(tmp_path) -> None
         kernel.apply({"operations": [{"type": "create_phase", "id": "phase_1", "title": "P", "old_field": True}]})
 
 
+def test_kernel_rejects_nonterminal_node_outcomes_at_operation_boundary(tmp_path) -> None:
+    root = tmp_path / "workspace"
+    from ts_agent.workspace import init_workspace
+
+    init_workspace(root)
+    kernel = ResearchKernel(root)
+    kernel.apply({"operations": [
+        {"type": "create_phase", "id": "phase_1", "title": "P"},
+        {"type": "create_claim", "id": "claim_1", "statement": "A claim."},
+        {"type": "create_node", "id": "node_1", "phase_id": "phase_1", "claim_ids": ["claim_1"], "title": "N", "objective": "Run."},
+    ]})
+    with pytest.raises(ResearchKernelError, match="outcome is only valid when state is closed"):
+        kernel.apply({"operations": [{"type": "set_node_state", "node_id": "node_1", "state": "blocked", "outcome": "stopped"}]})
+
+
 def test_continuations_round_trip_all_scopes_and_validate_targets() -> None:
     research_map = build_map()
     research_map.add_gate(NodeGate(id="gate_1", created_at="2026-09-18T00:00:00Z", target_id="node_1"))
@@ -635,7 +650,12 @@ def test_compute_environment_summary_is_bounded_and_digest_bound(tmp_path) -> No
     assert environment["readiness"]["state"] == "configured"
     assert all(isinstance(backend, str) for backend in environment["backends"])
     detailed = execute("compute.environment", root, {"name": environment["name"]})
-    assert detailed["environment"]["backends"]["gaussian"]["command"] == ["g16"]
+    gaussian = detailed["environment"]["backends"]["gaussian"]
+    assert gaussian["provider"] == "gaussian"
+    assert gaussian["binding_digest"].startswith("sha256:")
+    assert gaussian["readiness"]["state"] == "configured"
+    assert "command" not in json.dumps(detailed)
+    assert "activation_script" not in json.dumps(detailed)
 
 
 def test_research_context_bounds_durable_memory_fields(tmp_path) -> None:

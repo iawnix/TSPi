@@ -81,14 +81,20 @@ def test_core_package_build_is_deterministic_and_installs_app_server_payload(tmp
 
     assert installed["created"] is True
     assert repeated["created"] is False
-    assert set(installed["launchers"]) == {"TSPi"}
-    assert (install_root / "TSPi").is_symlink()
+    assert set(installed["launchers"]) == {"ResearchAgent"}
+    assert (install_root / "ResearchAgent").is_symlink()
+    assert (install_root / "current").is_symlink()
+    assert (install_root / "current").resolve() == Path(installed["package_root"])
+    assert (install_root / "bin" / "ResearchAgent").is_symlink()
+    package_root = Path(installed["package_root"])
+    assert (install_root / "bin" / "ResearchAgent").resolve() == package_root / "agent" / "ResearchAgent"
+    assert (install_root / "bin" / "ResearchAgent").resolve().is_file()
     assert not (install_root / "TSWeb").exists()
+    assert not (install_root / "bin" / "TSWeb").exists()
     guards = install_root / ".pi/session-guards"
     assert guards.is_dir()
     assert stat.S_IMODE(guards.stat().st_mode) == 0o700
     assert not (install_root / ".pi/session-host").exists()
-    package_root = Path(installed["package_root"])
     assert (package_root / "agent/apps/app-server/pi-app-server.mjs").is_file()
     assert not (package_root / "phone").exists()
 
@@ -137,6 +143,29 @@ def test_optional_web_launcher_is_removed_when_rolling_back_to_core_only(
     install_package(Path(core_only["manifest"]), None, install_root, allow_dirty=True)
 
     assert not (install_root / "TSWeb").exists()
+    assert not (install_root / "bin" / "TSWeb").exists()
+    assert (install_root / "bin" / "ResearchAgent").resolve() == Path(
+        install_root / ".pi" / "packages" / "tspi" / "current" / "agent" / "ResearchAgent"
+    ).resolve()
+
+
+def test_stable_app_shims_follow_atomic_current_and_reject_external_links(tmp_path: Path) -> None:
+    agent_manifest, _agent_release = _synthetic_release(tmp_path / "agent", marker="stable-shims")
+    built = build_package(
+        output_dir=tmp_path / "package",
+        agent_manifest_path=agent_manifest,
+        allow_dirty=True,
+        include_web=False,
+    )
+    install_root = tmp_path / "install"
+    install_package(Path(built["manifest"]), None, install_root, allow_dirty=True)
+
+    external = tmp_path / "external"
+    external.mkdir()
+    (install_root / "current").unlink()
+    (install_root / "current").symlink_to(external, target_is_directory=True)
+    with pytest.raises(SuiteReleaseError, match="stable application current pointer escapes"):
+        install_package(Path(built["manifest"]), None, install_root, allow_dirty=True)
 
 
 def test_suite_contract_rejects_retired_phone_component(tmp_path: Path) -> None:
@@ -176,6 +205,6 @@ def test_install_rejects_non_symlink_launcher_conflict(tmp_path: Path) -> None:
     )
     install_root = tmp_path / "install"
     install_root.mkdir()
-    (install_root / "TSPi").write_text("operator file\n", encoding="utf-8")
+    (install_root / "ResearchAgent").write_text("operator file\n", encoding="utf-8")
     with pytest.raises(SuiteReleaseError, match="non-symlink package entrypoints"):
         install_package(Path(built["manifest"]), None, install_root, allow_dirty=True)

@@ -87,6 +87,107 @@ def test_chemical_name_resolution_reports_missing_backend_and_invalid_candidates
     assert invalid["data"]["status"] == "unresolved"
 
 
+def test_pubchem_name_resolver_uses_config_and_replays_cached_evidence(tmp_path, monkeypatch):
+    config = tmp_path / "name-resolver.toml"
+    config.write_text(
+        '[backends.pubchem]\nendpoint = "https://pubchem.test/rest/pug"\ncache = true\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TSPI_NAME_RESOLVER_CONFIG", str(config))
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = json.dumps(payload).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return self.payload
+
+    responses = iter([
+        Response({"IdentifierList": {"CID": [702]}}),
+        Response({"PropertyTable": {"Properties": [{"CID": 702, "CanonicalSMILES": "CCO", "InChIKey": "LFQSCWFLJHTTHZ-UHFFFAOYSA-N"}]}}),
+    ])
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        calls.append((request.full_url, timeout))
+        return next(responses)
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    first = evaluate("chemical.name.resolve", source(), {"name": "ethanol"})
+    assert first["verdict"] == "valid"
+    assert first["data"]["status"] == "resolved"
+    assert first["data"]["candidates"][0]["source"] == "pubchem"
+    assert first["data"]["resolver_provenance"]["requests"][0]["response_sha256"].startswith("sha256:")
+    assert len(calls) == 2
+
+    replay = evaluate("chemical.name.resolve", source(), {"name": "ethanol"})
+    assert replay["verdict"] == "valid"
+    assert replay["data"] == first["data"]
+    assert len(calls) == 2
+
+
+def test_pubchem_name_resolver_keeps_multiple_cids_ambiguous(tmp_path, monkeypatch):
+    config = tmp_path / "name-resolver.toml"
+    config.write_text('[backends.pubchem]\nendpoint = "https://pubchem.test/rest/pug"\ncache = false\n', encoding="utf-8")
+    monkeypatch.setenv("TSPI_NAME_RESOLVER_CONFIG", str(config))
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = json.dumps(payload).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return self.payload
+
+    responses = iter([
+        Response({"IdentifierList": {"CID": [1, 2]}}),
+        Response({"PropertyTable": {"Properties": [
+            {"CID": 1, "CanonicalSMILES": "C"}, {"CID": 2, "CanonicalSMILES": "CC"}
+        ]}}),
+    ])
+    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout: next(responses))
+    result = evaluate("chemical.name.resolve", source(), {"name": "ambiguous"})
+    assert result["verdict"] == "inconclusive"
+    assert result["data"]["status"] == "ambiguous"
+    assert len(result["data"]["candidates"]) == 2
+
+
+def test_opsin_name_resolver_uses_configured_http_endpoint(tmp_path, monkeypatch):
+    config = tmp_path / "name-resolver.toml"
+    config.write_text(
+        '[backends.opsin]\nendpoint = "https://opsin.test/opsin"\ncache = false\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TSPI_NAME_RESOLVER_CONFIG", str(config))
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return json.dumps({"name": "ethanol", "smiles": "CCO", "stdinchi": "InChI=1S/C2H6O"}).encode()
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout: Response())
+    result = evaluate("chemical.name.resolve", source(), {"name": "ethanol", "resolver": "opsin"})
+    assert result["verdict"] == "valid"
+    assert result["data"]["status"] == "resolved"
+    assert result["data"]["resolver_provenance"]["implementation"] == "OPSIN HTTP API"
+
+
 def thermo_parameters(**changes):
     return {"species_key": "H2", "quantity": "G", "conditions": {"temperature_k": 298.15, "phase": "gas",
             "source_standard_state": {"kind": "pressure", "value": 1, "unit": "atm"}, "standard_state": {"kind": "concentration", "value": 1, "unit": "mol/L"}},

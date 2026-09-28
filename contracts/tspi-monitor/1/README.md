@@ -11,9 +11,9 @@ outbox record. `completed` means the program or scheduler has ended;
 `parsed` is emitted only after collection and parsing have produced the bound
 calculation result. `unknown` is an explicit uncertainty state.
 
-The Monitor may wake its owning Native Pi `SessionWorker` lane and send a user
-notification. It does not call `finalize`, modify `ResearchMap`, or make a
-scientific decision.
+The Monitor may wake its owning Native Pi `SessionWorker` lane and dispatch a
+configured notification. It does not call `finalize`, modify `ResearchMap`, or
+make a scientific decision.
 Delivery uses `monitor:{event_id}` as the stable request id. A missing session
 leaves the delivery pending; it is not allowed to create a new Root session.
 
@@ -40,7 +40,10 @@ submitting a calculation. A later tick can register the monitor from the
 verified submission receipt or unresolved submission guard. Failed registration
 is visible in status and retried without submitting the calculation again.
 Automatic registrations default to `notify_policy: none`; notification delivery
-requires an explicit `user` policy and configured notification transport.
+requires an explicit `configured` policy and a configured Host notification
+dispatcher. The policy names the dispatch decision, not a transport such as
+email; SMTP, ClawEmail, webhook, or another installed provider can implement
+the dispatcher.
 
 The CLI exposes `list`, `status`, `enable`, and `disable` for Host/Phone clients.
 Status includes observation health, delivery backlog/errors and outstanding

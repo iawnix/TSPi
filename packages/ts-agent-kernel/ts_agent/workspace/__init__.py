@@ -5,6 +5,7 @@ from .engine import change_workspace, init_workspace, load_research_map
 from .errors import ContractError
 from .identity import ensure_workspace_identity, read_workspace_identity, workspace_id
 from .validator import validate_workspace
+from .doctor import doctor_workspace, inspect_workspace
 
 __all__ = [
     "ContractError",
@@ -18,5 +19,7 @@ __all__ = [
     "load_research_map",
     "read_workspace_identity",
     "validate_workspace",
+    "inspect_workspace",
+    "doctor_workspace",
     "workspace_id",
 ]

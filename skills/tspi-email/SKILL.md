@@ -17,6 +17,13 @@ Notifications communicate recorded research outcomes and link to their reports.
 The installation may use the existing ClawEmail transport or the built-in SMTP
 transport. SMTP presets currently cover 163 and QQ mailboxes.
 
+`notify_send` is a Host/Monitor boundary, not a Root Agent tool in the active
+tool inventory. The Monitor creates notification deliveries only for a compute
+monitor registered with `notify_policy = "configured"`; `"none"` leaves the
+notification channel disabled. The Host service must be running for Monitor
+delivery, and the installation-level notification configuration must pass its
+startup validation first.
+
 ## Operating Rules
 
 - Use the recipient from the installation's notification configuration.

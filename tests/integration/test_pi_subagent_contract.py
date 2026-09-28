@@ -64,6 +64,18 @@ def test_review_request_accepts_only_claim_and_logical_artifact_ids() -> None:
     assert rows[2]["ok"] is False and "targetClaimId" in rows[2]["error"]
 
 
+def test_review_request_accepts_semantic_claim_ids() -> None:
+    script = (
+        f"const helper=require({json.dumps(str(TASK_PACKET))});"
+        "const value={targetClaimId:'claim_water_energy_comparison',question:'Review this.',artifactIds:[]};"
+        "try{process.stdout.write(JSON.stringify({ok:true,value:helper.validateSubagentRequest(value)}))}"
+        "catch(error){process.stdout.write(JSON.stringify({ok:false,error:error.message}))}"
+    )
+    row = json.loads(_node(script).stdout)
+    assert row["ok"] is True, row
+    assert row["value"]["targetClaimId"] == "claim_water_energy_comparison"
+
+
 def test_review_packet_carries_compact_current_gate_state(tmp_path: Path) -> None:
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     refs = accept_research_claim(workspace)

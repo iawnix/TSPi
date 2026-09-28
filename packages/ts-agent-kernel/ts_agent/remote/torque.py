@@ -21,7 +21,7 @@ from .models import (
 _JOB_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\[\]-]{0,255}$")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _WORKSPACE_ID = re.compile(r"^ws_[0-9a-f]{24}$")
-_NODE_ID = re.compile(r"^node_[1-9][0-9]*$")
+_NODE_ID = re.compile(r"^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _CALCULATION_ID = re.compile(r"^calc_[1-9][0-9]*$")
 
 

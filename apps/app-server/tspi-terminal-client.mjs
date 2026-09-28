@@ -10,7 +10,7 @@
  */
 import { spawn } from "node:child_process";
 import { lstatSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 
 import { connectHost } from "./tspi-host-client.mjs";
 import { formatTerminalFailure } from "./tspi-terminal-errors.mjs";
@@ -38,7 +38,7 @@ for (let index = 0; index < args.length; index += 1) {
     options.resume = true;
     continue;
   }
-  if (["--socket-path", "--workspace-id", "--workspace-root", "--state-root", "--install-root", "--package-root", "--session-id", "--provider", "--model"].includes(value)) {
+  if (["--socket-path", "--workspace-id", "--workspace-root", "--state-root", "--install-root", "--package-root", "--expected-release-id", "--session-id", "--provider", "--model"].includes(value)) {
     const next = args[++index];
     if (!next) throw new Error(`${value} requires a value`);
     options[value.slice(2).replaceAll("-", "_")] = next;
@@ -126,7 +126,13 @@ async function main() {
   const workspaceId = requireOption("workspace_id");
   const workspaceRoot = validateWorkspaceRoot(requireOption("workspace_root"));
   const { kept, provider, model } = splitNativeProviderArgs(piArgs);
-  const peer = await connectHost({ socketPath });
+  const packageRoot = resolve(requireOption("package_root"));
+  const releaseRoot = dirname(packageRoot);
+  const expectedReleaseId = options.expected_release_id
+    || (basename(releaseRoot) === "releases"
+      ? basename(packageRoot)
+      : (basename(dirname(releaseRoot)) === "releases" ? basename(releaseRoot) : undefined));
+  const peer = await connectHost({ socketPath, expectedReleaseId });
   let descriptor;
   try {
     const listed = await peer.request("session/list", { workspace_id: workspaceId });
@@ -170,7 +176,6 @@ async function main() {
   const sourceRoot = process.env.TSPI_PI_SOURCE;
   if (!sourceRoot) throw new Error("TSPI_PI_SOURCE is required for the native Pi client");
   const resolver = resolve(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts");
-  const packageRoot = requireOption("package_root");
   const client = resolve(packageRoot, "apps/app-server/pi-native-client.mjs");
   const childArgs = ["--import", resolver, client, "--connect", connect, "--session-id", descriptor.session_id, ...kept];
   process.env.TSPI_SESSION_CWD = workspaceRoot;
@@ -197,6 +202,12 @@ async function main() {
 }
 
 main().catch((error) => {
-  process.stderr.write(`TSPi: ${formatTerminalFailure(error, { installRoot: options.install_root })}\n`);
+  const diagnosticFile = options.state_root
+    ? `${options.state_root.replace(/\/$/u, "")}/worker-diagnostics.log`
+    : undefined;
+  process.stderr.write(`ResearchAgent: ${formatTerminalFailure(error, {
+    installRoot: options.install_root,
+    diagnosticFile,
+  })}\n`);
   process.exitCode = 1;
 });

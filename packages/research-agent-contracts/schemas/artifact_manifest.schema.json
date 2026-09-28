@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "artifact_manifest",
+  "title": "Artifact manifest",
+  "type": "object",
+  "required": ["protocol", "version", "artifact_id", "artifact_type", "logical_ref", "digest", "size_bytes", "producer", "provenance"],
+  "properties": {
+    "protocol": {"const": "artifact_manifest"},
+    "version": {"const": 1},
+    "artifact_id": {"type": "string", "pattern": "^art_[A-Za-z0-9_-]{1,127}$"},
+    "artifact_type": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"},
+    "logical_ref": {"type": "string", "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}(?:/[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})*$"},
+    "media_type": {"type": "string", "pattern": "^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "size_bytes": {"type": "integer", "minimum": 0, "maximum": 107374182400},
+    "producer": {
+      "type": "object",
+      "required": ["provider_id", "provider_version", "operation", "operation_version"],
+      "properties": {
+        "provider_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+        "provider_version": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$"},
+        "operation": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,127}$"},
+        "operation_version": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$"}
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["input_artifacts"],
+      "properties": {
+        "input_artifacts": {"type": "array", "maxItems": 256, "items": {"type": "string", "pattern": "^art_[A-Za-z0-9_-]{1,127}$"}},
+        "request_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "created_at": {"type": "string", "minLength": 1, "maxLength": 128}
+      },
+      "additionalProperties": false
+    },
+    "metadata": {"type": "object", "maxProperties": 128}
+  },
+  "additionalProperties": false
+}

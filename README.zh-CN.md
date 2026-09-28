@@ -47,9 +47,18 @@ cd TSPi
 lane 的客户端。直接打开工作区即可：
 
 ```bash
-./TSPi --workspace reaction-a
-./TSPi --workspace reaction-a -c
+./ResearchAgent --workspace reaction-a
+./ResearchAgent --workspace reaction-a -c
+./ResearchAgent --workspace quick-task --mode light
+./ResearchAgent --workspace reaction-study --mode research
 ```
+
+Light 工作区只保留轻量的 memory 和生命周期状态，但与 Research 共用同一套计算入口：
+`compute_catalog`、`compute_readiness`、`compute_run` 和 `compute_cancel`。结果记录在
+`runs/<run_id>/manifest.json` 和共享的 compute ArtifactStore 中。Light 不创建 ResearchMap
+Claim/Node、可审计 Attempt、Monitor 状态或科学解释。需要这些生命周期保证时才使用
+`--mode research`，例如过渡态/IRC 验证或比较机理结论。未注册的能力必须明确报告不可用，
+不能用其它方法替代。
 
 第一条命令创建 Harness 会话，第二条命令继续该工作区最近的可写会话。TSPi 先向 Host
 取得本地 Pi connection descriptor，再启动 Pi 官方 native remote client/TUI。默认路径不
@@ -72,7 +81,7 @@ TSPi Link Relay 建立出站 WSS；Relay 只负责设备授权与不透明字节
 远端 environment 可用下面的命令验证：
 
 ```bash
-./TSPi --check-remote
+./ResearchAgent --check-remote
 ```
 
 `compute_run` 是 local 和 remote 共用的唯一计算生命周期入口。每个 Compute

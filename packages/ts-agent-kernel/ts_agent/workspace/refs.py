@@ -6,11 +6,17 @@ import re
 from typing import Any
 
 
-CLAIM_ID_PATTERN = r"^claim_[1-9][0-9]*$"
+# Claims are workspace-local references.  Numeric IDs remain the default
+# allocator output, while semantic suffixes let callers preserve a stable
+# domain name across ResearchMap and execution/review layers.
+CLAIM_ID_PATTERN = r"^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
 CLAIM_ID = re.compile(CLAIM_ID_PATTERN)
 PHASE_ID_PATTERN = r"^phase_[1-9][0-9]*$"
 PHASE_ID = re.compile(PHASE_ID_PATTERN)
-NODE_ID_PATTERN = r"^node_[1-9][0-9]*$"
+# Node identifiers are workspace-local references, not ordinals.  Keep the
+# ``node_`` namespace for readability, but allow a semantic suffix so the
+# ResearchMap and execution/artifact layers share one contract.
+NODE_ID_PATTERN = r"^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
 NODE_ID = re.compile(NODE_ID_PATTERN)
 CALCULATION_ID_PATTERN = r"^calc_[1-9][0-9]*$"
 CALCULATION_ID = re.compile(CALCULATION_ID_PATTERN)
@@ -42,7 +48,8 @@ def claim_ordinal(value: str) -> int:
 def next_claim_ordinal(values: Any) -> int:
     """Allocate after the highest existing Claim ordinal without reusing history."""
 
-    return _next_ordinal(values, claim_ordinal)
+    numeric = [value for value in values if isinstance(value, str) and re.fullmatch(r"claim_[1-9][0-9]*", value)]
+    return _next_ordinal(numeric, claim_ordinal)
 
 
 def phase_ordinal(value: str) -> int:
@@ -81,7 +88,8 @@ def node_ordinal(value: str) -> int:
 def next_node_ordinal(values: Any) -> int:
     """Allocate after the highest existing ordinal without reusing history."""
 
-    return _next_ordinal(values, node_ordinal)
+    numeric = [value for value in values if isinstance(value, str) and re.fullmatch(r"node_[1-9][0-9]*", value)]
+    return _next_ordinal(numeric, node_ordinal)
 
 
 def node_sort_key(value: str) -> tuple[int, str]:
@@ -142,7 +150,14 @@ def next_gate_ordinal(values: Any) -> int:
 def _ordinal(value: str, *, pattern: re.Pattern[str], prefix: str, label: str) -> int:
     if not isinstance(value, str) or pattern.fullmatch(value) is None:
         raise WorkspaceRefError(f"invalid {label} ID: {value!r}")
-    return int(value.removeprefix(prefix))
+    # ``NODE_ID`` and ``CLAIM_ID`` intentionally allow opaque semantic
+    # suffixes.  Ordinal helpers are only for the numeric allocator form;
+    # never feed a semantic identifier to ``int`` and rely on its exception
+    # to distinguish the two protocols.
+    suffix = value.removeprefix(prefix)
+    if re.fullmatch(r"[1-9][0-9]*", suffix) is None:
+        raise WorkspaceRefError(f"{label} ID does not contain a numeric ordinal: {value!r}")
+    return int(suffix)
 
 
 def _next_ordinal(values: Any, parser: Any) -> int:

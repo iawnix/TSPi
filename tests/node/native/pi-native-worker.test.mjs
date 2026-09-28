@@ -343,8 +343,8 @@ test("native Pi server gives every client the complete Agent tool inventory", { 
     assert.deepEqual(state.activeTools, [
       "read", "system_prompt", "write", "bash", "research_read", "research_change", "research_continuation",
       "research_strategy", "research_interpretation", "research_checkpoint", "compute_environment", "review_run",
-      "compute_run", "review_respond", "artifact_seed", "artifact_compare", "analysis_run", "execution_dispatch",
-      "artifact_import", "artifact_render", "report_build",
+      "compute_run", "review_respond", "execution_dispatch", "artifact_import", "artifact_render", "report_build",
+      "artifact_seed", "artifact_compare", "analysis_run",
     ]);
   } finally {
     await sessionServices?.dispose(BACKGROUND_CONTEXT).catch(() => {});

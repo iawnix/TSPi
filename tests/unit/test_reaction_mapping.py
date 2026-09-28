@@ -17,6 +17,24 @@ from ts_agent.research import ResearchKernel
 from ts_agent.workspace.candidates import load_finding_candidate, FindingCandidateError
 from ts_agent.reaction.mapping import validate_atom_mapping
 from ts_agent.compute.analysis import analysis_capabilities, resolve_analysis_capability, run_analysis
+from ts_agent.research.evidence import ArtifactManifest
+
+
+def _register_analysis_artifact(workspace: Path, node_id: str, artifact: dict) -> None:
+    """Admit a filesystem analysis artifact to the Kernel evidence index."""
+
+    kernel = ResearchKernel(workspace)
+    kernel.ensure_sqlite()
+    kernel.register_evidence(artifacts=[ArtifactManifest(
+        id=artifact["artifact_id"],
+        node_id=node_id,
+        kind="analysis",
+        format="json",
+        location=artifact["path"],
+        sha256=artifact["sha256"],
+        size_bytes=artifact["size_bytes"],
+        created_at="2026-01-01T00:00:00Z",
+    )])
 
 
 def _xyz(symbol: str, comment: str) -> str:
@@ -237,6 +255,7 @@ def test_analysis_candidates_promote_through_existing_change_and_retain_sources(
     selected = result["candidate_refs"][0]
     assert selected["conceptId"] == "reaction.mapping.element_bijection"
     assert not (workspace / "observations.json").exists()
+    _register_analysis_artifact(workspace, node_id, result["analysis_artifact"])
     apply_change(workspace, {
         "rationale": "Use the checked element correspondence as evidence, without claiming mechanism identity.",
         "basis_refs": [selected["artifactId"]],

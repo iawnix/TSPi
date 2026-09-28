@@ -1,0 +1,14 @@
+{
+  "schema_version": "tspi-provider-descriptor/1",
+  "provider_id": "artifact_seed",
+  "kind": "harness",
+  "capabilities": [
+    {
+      "id": "artifact_seed",
+      "version": "1",
+      "aliases": ["artifact.seed"]
+    }
+  ],
+  "implementation": "builtin",
+  "notes": "Inventory entry for the built-in artifact seeding tool; execution remains harness-owned."
+}

@@ -116,9 +116,12 @@ except ImportError:
 
 INSTALLED_MANIFEST = ".tspi-package-release.json"
 LAUNCHER_PATHS = {
-    "TSPi": ("agent", "TSPi"),
+    "ResearchAgent": ("agent", "ResearchAgent"),
+    "ResearchAgentServer": ("agent", "ResearchAgentServer"),
     "TSWeb": ("web", "bin", "ts-web"),
 }
+LEGACY_LAUNCHER_NAMES = ("TSPi",)
+STABLE_APP_LAUNCHERS = ("ResearchAgent", "ResearchAgentServer", "TSWeb")
 
 # Installer control code is standard-library-only and must precede runtime activation.
 try:
@@ -320,7 +323,8 @@ def _install_captured_package(
         "release_id": manifest["release_id"],
         "package_root": str(target),
         "current": str(package_home / "current"),
-        "launcher": launchers["TSPi"],
+        "stable_current": str(install_root / "current"),
+        "launcher": launchers["ResearchAgent"],
         "launchers": launchers,
         "runtime": dict(prepared_runtime.result),
         "services_activated": False,
@@ -342,10 +346,17 @@ def _activate_release(
 
     current = package_home / "current"
     state_path = package_home / "install-state.json"
-    launcher_paths = [install_root / name for name in LAUNCHER_PATHS]
+    launcher_paths = [install_root / name for name in (*LAUNCHER_PATHS, *LEGACY_LAUNCHER_NAMES)]
+    stable_current = install_root / "current"
+    stable_bin = install_root / "bin"
+    stable_launcher_paths = [stable_bin / name for name in STABLE_APP_LAUNCHERS]
     current_before = _snapshot_symlink(current, "current package pointer")
+    stable_current_before = _snapshot_symlink(stable_current, "stable application current pointer")
     launchers_before = {
         path: _snapshot_symlink(path, "package entrypoint") for path in launcher_paths
+    }
+    stable_launchers_before = {
+        path: _snapshot_symlink(path, "stable application entrypoint") for path in stable_launcher_paths
     }
     manifest_before = _snapshot_json(prepared_runtime.manifest_path, "runtime manifest")
     state_before = _snapshot_json(state_path, "package install state")
@@ -354,19 +365,29 @@ def _activate_release(
             install_root,
             package_home,
             components,
+            release_root=target,
+        )
+        stable_launchers = install_stable_app_shims(
+            install_root,
+            package_home,
+            components,
+            release_root=target,
         )
         published = publisher(prepared_runtime)
         if published != prepared_runtime.manifest_path:
             raise SuiteReleaseError("runtime publisher returned an unexpected manifest path")
         switch_current(package_home, target)
         atomic_write_json(state_path, state)
-        return launchers
+        return {**launchers, **stable_launchers}
     except Exception as error:
         try:
             _restore_json(state_path, state_before)
             _restore_symlink(current, current_before)
+            _restore_symlink(stable_current, stable_current_before)
             _restore_json(prepared_runtime.manifest_path, manifest_before)
             for path, snapshot in launchers_before.items():
+                _restore_symlink(path, snapshot)
+            for path, snapshot in stable_launchers_before.items():
                 _restore_symlink(path, snapshot)
         except Exception as rollback_error:
             raise SuiteReleaseError(
@@ -594,13 +615,22 @@ def install_launchers(
     install_root: Path,
     package_home: Path,
     components: dict[str, Any],
+    *,
+    release_root: Path | None = None,
 ) -> dict[str, str]:
     paths = dict(LAUNCHER_PATHS)
+    selected_root = release_root or (package_home / "current")
     targets = {
-        name: package_home / "current" / Path(*relative)
+        name: selected_root / Path(*relative)
         for name, relative in paths.items()
     }
-    enabled = {"TSPi"}
+    enabled = {"ResearchAgent"}
+    # ResearchAgentServer is part of current releases. Keep synthetic/legacy Agent
+    # archives usable when the optional entrypoint is present only as a
+    # non-executable fixture; a real npm release carries it executable.
+    research_agent_target = targets["ResearchAgentServer"]
+    if research_agent_target.is_file() and os.access(research_agent_target, os.X_OK):
+        enabled.add("ResearchAgentServer")
     if "web" in components:
         enabled.add("TSWeb")
     for name, target in targets.items():
@@ -613,7 +643,70 @@ def install_launchers(
                 link.unlink()
             continue
         install_symlink(link, target)
+    for name in LEGACY_LAUNCHER_NAMES:
+        link = install_root / name
+        if link.is_symlink():
+            releases_root = (package_home / "releases").resolve()
+            if not _launcher_points_into_package_store(link, releases_root):
+                raise SuiteReleaseError(f"stale legacy entrypoint escapes the package store: {link}")
+            link.unlink()
     return {name: str(install_root / name) for name in enabled}
+
+
+def install_stable_app_shims(
+    install_root: Path,
+    package_home: Path,
+    components: dict[str, Any],
+    *,
+    release_root: Path | None = None,
+) -> dict[str, str]:
+    """Install reversible standalone APP shims alongside the legacy layout.
+
+    The package store remains authoritative during this migration.  A root
+    ``current`` pointer follows ``.pi/packages/tspi/current`` and stable
+    ``bin/`` links resolve through it, so an atomic package activation updates
+    every public entrypoint without copying or mixing release files.
+    """
+
+    stable_current = install_root / "current"
+    if stable_current.exists() and not stable_current.is_symlink():
+        raise SuiteReleaseError(f"stable application current pointer must be a symbolic link: {stable_current}")
+    if stable_current.is_symlink():
+        package_store = (package_home / "releases").resolve()
+        try:
+            resolved_current = stable_current.resolve(strict=False)
+        except (OSError, RuntimeError) as error:
+            raise SuiteReleaseError(f"cannot inspect stable application current pointer: {stable_current}") from error
+        if not resolved_current.is_relative_to(package_store):
+            raise SuiteReleaseError(f"stable application current pointer escapes the package store: {stable_current}")
+    install_symlink(stable_current, package_home / "current")
+
+    stable_bin = ensure_private_directory(install_root / "bin")
+    selected_root = release_root or stable_current
+    targets = {
+        "ResearchAgent": stable_current / "agent" / "ResearchAgent",
+        "ResearchAgentServer": stable_current / "agent" / "ResearchAgentServer",
+        "TSWeb": stable_current / "web" / "bin" / "ts-web",
+    }
+    enabled = {"ResearchAgent"}
+    selected_server = selected_root / "agent" / "ResearchAgentServer"
+    if selected_server.is_file() and os.access(selected_server, os.X_OK):
+        enabled.add("ResearchAgentServer")
+    if "web" in components:
+        enabled.add("TSWeb")
+    releases_root = (package_home / "releases").resolve()
+    for name, target in targets.items():
+        link = stable_bin / name
+        if name not in enabled:
+            if link.is_symlink():
+                if not _launcher_points_into_package_store(link, releases_root):
+                    raise SuiteReleaseError(f"stale stable entrypoint escapes the package store: {link}")
+                link.unlink()
+            elif link.exists():
+                raise SuiteReleaseError(f"stable application entrypoint must be a symbolic link: {link}")
+            continue
+        install_symlink(link, target)
+    return {name: str(stable_bin / name) for name in enabled}
 
 
 def validate_launcher_slots(
@@ -621,12 +714,12 @@ def validate_launcher_slots(
     package_home: Path,
     components: dict[str, Any],
 ) -> None:
-    enabled = {"TSPi"}
+    enabled = {"ResearchAgent"}
     if "web" in components:
         enabled.add("TSWeb")
     conflicts = [
         str(install_root / name)
-        for name in LAUNCHER_PATHS
+        for name in (*LAUNCHER_PATHS, *LEGACY_LAUNCHER_NAMES)
         if (install_root / name).exists() and not (install_root / name).is_symlink()
     ]
     if conflicts:
@@ -634,7 +727,7 @@ def validate_launcher_slots(
             "refusing to replace non-symlink package entrypoints: " + ", ".join(conflicts)
         )
     releases_root = (package_home / "releases").resolve()
-    for name in LAUNCHER_PATHS:
+    for name in (*LAUNCHER_PATHS, *LEGACY_LAUNCHER_NAMES):
         link = install_root / name
         if name not in enabled and link.is_symlink() and not _launcher_points_into_package_store(link, releases_root):
             raise SuiteReleaseError(f"stale optional component entrypoint escapes the package store: {link}")

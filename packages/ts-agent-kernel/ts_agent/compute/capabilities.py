@@ -14,6 +14,8 @@ from typing import Any, Final
 
 from jsonschema import Draft202012Validator
 
+from .registry import CapabilityRegistration, CapabilityRegistry
+
 
 @dataclass(frozen=True)
 class CapabilityDescriptor:
@@ -365,37 +367,137 @@ CAPABILITY_DESCRIPTORS: Final[tuple[CapabilityDescriptor, ...]] = (
     ),
 )
 
-CAPABILITIES_BY_ID: Final[dict[str, CapabilityDescriptor]] = {
-    item.capability: item for item in CAPABILITY_DESCRIPTORS
-}
-CAPABILITY_BY_BACKEND_TASK: Final[dict[tuple[str, str], CapabilityDescriptor]] = {
-    (item.backend, item.task_type): item for item in CAPABILITY_DESCRIPTORS
-}
+CAPABILITY_REGISTRY: CapabilityRegistry[CapabilityDescriptor] = CapabilityRegistry()
 
-# Private adapter metadata retained for the existing executor boundary.  It is
-# derived from descriptors and cannot express a scientific preference.
-BACKEND_TASK_INPUT_ROLES: Final[dict[str, dict[str, frozenset[str]]]] = {
-    backend: {
-        task: descriptor.input_roles
-        for (candidate_backend, task), descriptor in CAPABILITY_BY_BACKEND_TASK.items()
-        if candidate_backend == backend
-    }
-    for backend in sorted({item.backend for item in CAPABILITY_DESCRIPTORS})
-}
+# These maps remain as compatibility views for the existing executor boundary.
+# Resolution and catalog output use CAPABILITY_REGISTRY so a registered
+# provider does not require edits to this module's built-in tuple.
+CAPABILITIES_BY_ID: dict[str, CapabilityDescriptor] = {}
+CAPABILITY_BY_BACKEND_TASK: dict[tuple[str, str], CapabilityDescriptor] = {}
+BACKEND_TASK_INPUT_ROLES: dict[str, dict[str, frozenset[str]]] = {}
+
+
+def _unindex_capability(descriptor: CapabilityDescriptor) -> None:
+    """Remove one descriptor from the legacy executor compatibility views."""
+
+    backend_task = (descriptor.backend, descriptor.task_type)
+    if CAPABILITY_BY_BACKEND_TASK.get(backend_task) is descriptor:
+        CAPABILITY_BY_BACKEND_TASK.pop(backend_task, None)
+    tasks = BACKEND_TASK_INPUT_ROLES.get(descriptor.backend)
+    if tasks is not None and tasks.get(descriptor.task_type) is descriptor.input_roles:
+        tasks.pop(descriptor.task_type, None)
+        if not tasks:
+            BACKEND_TASK_INPUT_ROLES.pop(descriptor.backend, None)
+
+
+def _index_capability(descriptor: CapabilityDescriptor) -> None:
+    CAPABILITIES_BY_ID[descriptor.capability] = descriptor
+    CAPABILITY_BY_BACKEND_TASK[(descriptor.backend, descriptor.task_type)] = descriptor
+    BACKEND_TASK_INPUT_ROLES.setdefault(descriptor.backend, {})[descriptor.task_type] = descriptor.input_roles
+
+
+def register_capability(
+    descriptor: CapabilityDescriptor,
+    *,
+    provider_id: str = "builtin",
+    provider: object | None = None,
+    replace: bool = False,
+) -> CapabilityRegistration[CapabilityDescriptor]:
+    """Register one calculation descriptor with the runtime provider catalog.
+
+    The descriptor remains declarative.  A provider adapter may be associated
+    for discovery, but it is not imported or executed by catalog queries.
+    Duplicate ``capability@version`` registrations are rejected unless
+    ``replace=True`` is explicit.
+    """
+
+    if not isinstance(descriptor, CapabilityDescriptor):
+        raise TypeError("calculation capability providers must return CapabilityDescriptor values")
+    previous = CAPABILITY_REGISTRY.resolve(descriptor.capability, descriptor.version)
+    registration = CAPABILITY_REGISTRY.register(
+        descriptor,
+        provider_id=provider_id,
+        provider=provider,
+        replace=replace,
+    )
+    if previous is not None:
+        _unindex_capability(previous.descriptor)
+    _index_capability(descriptor)
+    return registration
+
+
+def register_capability_provider(
+    provider: object,
+    *,
+    provider_id: str | None = None,
+    replace: bool = False,
+) -> tuple[CapabilityRegistration[CapabilityDescriptor], ...]:
+    """Register all descriptors exposed by a provider object."""
+
+    source = getattr(provider, "descriptors", None) or getattr(provider, "capabilities", None)
+    if not callable(source):
+        raise ValueError("provider must expose descriptors() or capabilities()")
+    identifier = provider_id or getattr(provider, "provider_id", None) or getattr(provider, "name", None)
+    if not isinstance(identifier, str) or not identifier:
+        raise ValueError("provider_id is required for an unnamed provider")
+    descriptors = tuple(source())
+    if not all(isinstance(item, CapabilityDescriptor) for item in descriptors):
+        raise TypeError("calculation capability providers must return CapabilityDescriptor values")
+    previous = [
+        existing.descriptor
+        for descriptor in descriptors
+        if (existing := CAPABILITY_REGISTRY.resolve(descriptor.capability, descriptor.version)) is not None
+    ]
+    # Keep compatibility indexes in sync and avoid partial installation.
+    registrations = CAPABILITY_REGISTRY.register_many(
+        descriptors,
+        provider_id=identifier,
+        provider=provider,
+        replace=replace,
+    )
+    for descriptor in previous:
+        _unindex_capability(descriptor)
+    for descriptor in descriptors:
+        _index_capability(descriptor)
+    return registrations
+
+
+for _builtin_descriptor in CAPABILITY_DESCRIPTORS:
+    register_capability(_builtin_descriptor)
 
 
 def resolve_capability(capability: str, version: str = "1") -> CapabilityDescriptor:
-    descriptor = CAPABILITIES_BY_ID.get(capability)
-    if descriptor is None or descriptor.version != version:
+    registration = resolve_capability_registration(capability, version)
+    return registration.descriptor
+
+
+def resolve_capability_registration(
+    capability: str,
+    version: str = "1",
+) -> CapabilityRegistration[CapabilityDescriptor]:
+    """Resolve the descriptor and its trusted provider association.
+
+    Catalog consumers normally need only :func:`resolve_capability`.  The
+    execution boundary uses this richer lookup so an installed provider can
+    supply its own adapter without adding a backend-specific branch to the
+    kernel.  Provider objects are never exposed by the public catalog.
+    """
+
+    registration = CAPABILITY_REGISTRY.resolve(capability, version)
+    if registration is None:
         raise CapabilityGapError(capability, version)
-    return descriptor
+    return registration
 
 
 def capability_for_backend_task(backend: str, task_type: str) -> CapabilityDescriptor:
-    descriptor = CAPABILITY_BY_BACKEND_TASK.get((backend, task_type))
-    if descriptor is None:
+    matches = CAPABILITY_REGISTRY.find(
+        lambda item: item.backend == backend and item.task_type == task_type
+    )
+    if not matches:
         raise CapabilityGapError(f"{backend}.{task_type}")
-    return descriptor
+    # Backend/task is the legacy lookup without an explicit version.  Select
+    # the highest numeric version when a provider publishes multiple versions.
+    return max(matches, key=lambda item: int(item.descriptor.version) if item.descriptor.version.isdigit() else 0).descriptor
 
 
 def validate_capability_parameters(
@@ -439,7 +541,7 @@ def calculation_capabilities() -> dict[str, object]:
 
     return {
         "schema_version": "ts-capability-catalog/1",
-        "capabilities": [item.public() for item in CAPABILITY_DESCRIPTORS],
+        "capabilities": [item.public() for item in CAPABILITY_REGISTRY.descriptors()],
         "readiness": {
             "state": "not_probed",
             "meaning": (

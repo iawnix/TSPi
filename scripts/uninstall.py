@@ -25,7 +25,7 @@ SERVICE_NAMES = (
     "ts-app-server-tspi@.service",
     "ts-web-tspi.service",
 )
-ENTRYPOINTS = ("TSPi", "TSWeb")
+ENTRYPOINTS = ("ResearchAgent", "ResearchAgentServer", "TSPi", "TSWeb")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

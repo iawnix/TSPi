@@ -16,4 +16,6 @@ SCC 收敛、优化状态、频率数据、扫描完整性和轨迹完整性。
 
 优化几何、能量、频率集合、扫描序列与轨迹是不同结果。记录 Finding 前检查原始输出。
 扫描极大值或 xTB 虚频只能提供后续验证的候选，不能证明其为过渡态。详见
-[xtb_executor.zh-CN.md](references/xtb_executor.zh-CN.md)。
+[xtb_executor.zh-CN.md](references/xtb_executor.zh-CN.md)。优化后继续单点计算时，必须使用
+结果中的 `calculation.optimized_geometry_artifact_id`，并确认 Artifact 类型为
+`chemical/xyz`；不能按 `artifact_ids` 的位置选择 stdout 或 stderr。

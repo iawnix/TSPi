@@ -53,6 +53,30 @@ def _records() -> tuple[AttemptRecord, ArtifactManifest, EvidenceLink]:
     return attempt, artifact, link
 
 
+def test_json_backend_rejects_unregistered_finding_source_refs(tmp_path) -> None:
+    """Evidence refs stay fail-closed before the SQLite index exists."""
+
+    root = bootstrap_workspace_fixture(tmp_path / "workspace")
+    start_research_node(root)
+    kernel = ResearchKernel(root)
+    assert not (root / "research.db").exists()
+
+    with pytest.raises(ResearchKernelError, match="unregistered evidence"):
+        kernel.apply({"operations": [{
+            "type": "create_finding",
+            "id": "finding_1",
+            "node_id": "node_1",
+            "claim_ids": ["claim_1"],
+            "statement": "This source is not registered.",
+            "kind": "fact",
+            "value": True,
+            "source_refs": ["strategy_1"],
+        }]})
+
+    assert kernel.load().findings == {}
+    assert not (root / "research.db").exists()
+
+
 def test_kernel_registers_and_queries_evidence_metadata(tmp_path) -> None:
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
     start_research_node(root)

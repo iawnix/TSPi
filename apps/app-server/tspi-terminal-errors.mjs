@@ -1,11 +1,20 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /** Add an actionable diagnosis for Pi's opaque worker-startup failure. */
-export function formatTerminalFailure(error, { installRoot, fileExists = existsSync } = {}) {
+export function formatTerminalFailure(error, {
+  installRoot,
+  diagnosticFile,
+  fileExists = existsSync,
+  readFile = readFileSync,
+} = {}) {
   const message = formatError(error);
   if (!hasErrorMessage(error, "Internal server error") || typeof installRoot !== "string" || installRoot.length === 0) {
     return message;
+  }
+  const diagnostic = readDiagnosticTail(diagnosticFile, readFile);
+  if (diagnostic) {
+    return `${message}\nPi Worker diagnostics (${diagnosticFile}):\n${diagnostic}`;
   }
   const agentDir = resolve(installRoot, ".pi", "agent");
   const modelsPath = resolve(agentDir, "models.json");
@@ -19,9 +28,24 @@ export function formatTerminalFailure(error, { installRoot, fileExists = existsS
   );
 }
 
+function readDiagnosticTail(path, readFile) {
+  if (typeof path !== "string" || path.length === 0) return "";
+  try {
+    const content = String(readFile(path, "utf8"));
+    const lines = content.split(/\r?\n/u).filter(Boolean);
+    return lines.slice(-24).join("\n").slice(-12_000);
+  } catch {
+    return "";
+  }
+}
+
 /** Preserve concise outer context while exposing nested aggregate/cause messages. */
 export function formatError(error) {
-  return collectErrorMessages(error).join(": ");
+  const message = collectErrorMessages(error).join(": ");
+  if (message.includes("Remote service pi.agent-controller binding is closed")) {
+    return `${message}. The Host was restarted or upgraded; close and relaunch ResearchAgent`;
+  }
+  return message;
 }
 
 function hasErrorMessage(error, expected, seen = new Set()) {

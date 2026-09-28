@@ -18,6 +18,12 @@ mechanism statement in a Claim with predictions and falsifiers. Express support,
 conflict, or dependency as relations between Claims. ResearchNode dependencies
 describe study order, not chemical connectivity.
 
+Map mechanism concepts onto the canonical ResearchMap model: a mechanism
+hypothesis is a Claim (`create_claim`), while a bounded mechanism study or
+deliverable is a Node (`create_node`). Use the Research Kernel operation catalog
+before writing; do not turn labels such as "mechanistic hypothesis" or
+"mechanism study" into new operation types.
+
 Separate species identity, elementary-step connectivity, saddle evidence,
 energetics, kinetics, and robustness into questions that can fail independently.
 Preserve competing mechanisms and unexpected results. When evidence challenges

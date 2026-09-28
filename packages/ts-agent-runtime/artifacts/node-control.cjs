@@ -3,7 +3,7 @@
 function nodeControlProperties(Type) {
   return {
     operation: Type.Union([Type.Literal("pause"), Type.Literal("resume")]),
-    nodeId: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
+    nodeId: Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" }),
     rationale: Type.String({ minLength: 1, maxLength: 4000 }),
   };
 }

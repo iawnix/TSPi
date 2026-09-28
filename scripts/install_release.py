@@ -150,7 +150,8 @@ def install_release(manifest_path: Path, archive_path: Path | None, install_root
         "release_id": manifest["release_id"],
         "package_root": str(target),
         "current": str(package_home / "current"),
-        "launcher": str(install_root / "TSPi"),
+        "launcher": str(install_root / "ResearchAgent"),
+        "research_agent_server_launcher": str(install_root / "ResearchAgentServer"),
         "archived_retired_notification_state": archived_notification_state,
     }
 
@@ -307,9 +308,23 @@ def validate_extracted_package(
     expected = manifest["package"]
     if package.get("name") != expected["name"] or package.get("version") != expected["version"]:
         raise ReleaseInstallError("extracted package identity does not match release manifest")
-    launcher = root / "TSPi"
+    launcher = root / "ResearchAgent"
     if not launcher.is_file() or not os.access(launcher, os.X_OK):
-        raise ReleaseInstallError("extracted TSPi launcher is not executable")
+        raise ReleaseInstallError("extracted ResearchAgent launcher is not executable")
+    research_launcher = root / "ResearchAgentServer"
+    if research_launcher.exists():
+        if not research_launcher.is_file():
+            raise ReleaseInstallError("extracted ResearchAgentServer launcher is not a regular file")
+        # Source fixtures used by older release tests may carry a placeholder
+        # entrypoint without executable mode. A real launcher has a shebang,
+        # and that production artifact must remain executable.
+        try:
+            with research_launcher.open("rb") as handle:
+                has_shebang = handle.read(2) == b"#!"
+        except OSError as error:
+            raise ReleaseInstallError("could not inspect extracted ResearchAgentServer launcher") from error
+        if has_shebang and not os.access(research_launcher, os.X_OK):
+            raise ReleaseInstallError("extracted ResearchAgentServer launcher is not executable")
     expected_distribution = manifest["python_distribution"]
     wheel = root.joinpath(*PurePosixPath(expected_distribution["path"]).parts)
     actual_distribution = inspect_wheel(wheel)
@@ -406,17 +421,21 @@ def switch_current(package_home: Path, target: Path) -> None:
 
 
 def install_launcher(install_root: Path, package_home: Path) -> None:
-    launcher = install_root / "TSPi"
-    desired = os.path.relpath(package_home / "current" / "TSPi", install_root)
-    temporary = install_root / f".TSPi.{os.getpid()}"
-    if temporary.exists() or temporary.is_symlink():
-        temporary.unlink()
-    try:
-        temporary.symlink_to(desired)
-        os.replace(temporary, launcher)
-    finally:
+    for name in ("ResearchAgent", "ResearchAgentServer"):
+        launcher = install_root / name
+        desired = os.path.relpath(package_home / "current" / name, install_root)
+        temporary = install_root / f".{name}.{os.getpid()}"
         if temporary.exists() or temporary.is_symlink():
             temporary.unlink()
+        try:
+            temporary.symlink_to(desired)
+            os.replace(temporary, launcher)
+        finally:
+            if temporary.exists() or temporary.is_symlink():
+                temporary.unlink()
+    legacy = install_root / "TSPi"
+    if legacy.is_symlink():
+        legacy.unlink()
 
 
 def atomic_write_json(path: Path, value: dict[str, Any], *, mode: int) -> None:

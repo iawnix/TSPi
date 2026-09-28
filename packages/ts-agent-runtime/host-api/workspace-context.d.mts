@@ -1,3 +1,5 @@
+import type { ExecutionEnv } from "@earendil-works/pi-agent-core";
+
 export interface ToolExecutionContext {
   readonly cwd: string;
   readonly workspace_root: string;
@@ -9,7 +11,7 @@ export interface ToolExecutionContext {
   readonly allowed_authorities: readonly string[];
   readonly allowed_effects: readonly string[];
   readonly allowed_phases: readonly string[];
-  readonly env?: Readonly<Record<string, unknown>>;
+  readonly env?: Readonly<Record<string, unknown>> | ExecutionEnv;
 }
 
 export function createToolExecutionContext(options?: Record<string, unknown>): ToolExecutionContext;

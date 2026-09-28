@@ -13,7 +13,13 @@ from typing import Any, Final
 from jsonschema import Draft202012Validator
 
 from .errors import ComputeContractError
-from ts_agent.analysis.catalog import DESCRIPTORS
+from .registry import CapabilityRegistration
+from ts_agent.analysis.catalog import (
+    ANALYSIS_CAPABILITIES_BY_ID,
+    ANALYSIS_REGISTRY,
+    DESCRIPTORS,
+    register_analysis_descriptor,
+)
 
 
 ATOM_REFERENCE = {
@@ -75,9 +81,47 @@ ANALYSIS_DESCRIPTORS: Final[tuple[dict[str, Any], ...]] = (
     },
 ) + DESCRIPTORS
 
-ANALYSIS_CAPABILITIES_BY_ID: Final[dict[str, dict[str, Any]]] = {
-    item["capability"]: item for item in ANALYSIS_DESCRIPTORS
-}
+ANALYSIS_CAPABILITY_REGISTRY = ANALYSIS_REGISTRY
+
+
+def register_analysis_capability(
+    descriptor: dict[str, Any],
+    *,
+    provider_id: str = "builtin",
+    provider: object | None = None,
+    replace: bool = False,
+) -> CapabilityRegistration[dict[str, Any]]:
+    """Register one analysis descriptor with the runtime provider catalog."""
+
+    registration = register_analysis_descriptor(
+        descriptor,
+        provider_id=provider_id,
+        provider=provider,
+        replace=replace,
+    )
+    ANALYSIS_CAPABILITIES_BY_ID[descriptor["capability"]] = descriptor
+    return registration
+
+
+def register_analysis_provider(
+    provider: object,
+    *,
+    provider_id: str | None = None,
+    replace: bool = False,
+) -> tuple[CapabilityRegistration[dict[str, Any]], ...]:
+    """Register all analysis descriptors exposed by a provider object."""
+
+    registrations = ANALYSIS_REGISTRY.register_provider(provider, provider_id=provider_id, replace=replace)
+    for registration in registrations:
+        descriptor = registration.descriptor
+        ANALYSIS_CAPABILITIES_BY_ID[descriptor["capability"]] = descriptor
+    return registrations
+
+
+# The built-in analysis catalog is registered by ``analysis.catalog``.  The
+# mapping validator is implemented by this module and is the only additional
+# descriptor that must be installed here.
+register_analysis_capability(ANALYSIS_DESCRIPTORS[0])
 
 
 def analysis_capabilities() -> dict[str, Any]:
@@ -90,15 +134,15 @@ def analysis_capabilities() -> dict[str, Any]:
             {key: deepcopy(item[key]) for key in (
                 "capability", "version", "capability_kind", "summary", "input_roles", "output_roles"
             )}
-            for item in ANALYSIS_DESCRIPTORS
+            for item in ANALYSIS_CAPABILITY_REGISTRY.descriptors()
         ],
         "detail_query": "research_read mode=capabilities capabilityKind=analysis query=<capability>@<version>",
     }
 
 
 def resolve_analysis_capability(capability: str, version: str = "1") -> dict[str, Any]:
-    descriptor = ANALYSIS_CAPABILITIES_BY_ID.get(capability)
-    if descriptor is None or descriptor["version"] != version:
+    registration = ANALYSIS_CAPABILITY_REGISTRY.resolve(capability, version)
+    if registration is None:
         return {
             "schema_version": "ts-capability-gap/1",
             "ok": False,
@@ -109,7 +153,7 @@ def resolve_analysis_capability(capability: str, version: str = "1") -> dict[str
             "requested_version": version,
             "retryable": False,
         }
-    return {"schema_version": "ts-analysis-capability-resolution/1", "ok": True, **deepcopy(descriptor)}
+    return {"schema_version": "ts-analysis-capability-resolution/1", "ok": True, **deepcopy(registration.descriptor)}
 
 
 def run_analysis(root: str, request: dict[str, Any]) -> dict[str, Any]:

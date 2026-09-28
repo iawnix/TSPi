@@ -26,6 +26,13 @@ Read with the narrowest `research_read` mode that answers the question. Query
 explicit ChangeSet through `research_change`, using `expectedRevision` when a stale
 write would be unsafe. Never edit `research_map.json` directly.
 
+The ChangeSet `type` must be one of the canonical operations in
+`references/decision_contract.md`; never invent domain-specific operation names.
+For example, a mechanism hypothesis is a `create_claim` operation and a bounded
+mechanism study is a `create_node` operation. For `research_read` with
+`mode=capabilities`, always provide `capabilityKind=compute` or
+`capabilityKind=analysis`; these are conditional tool fields, not optional labels.
+
 For a turn, prefer `context` or `liveness`; expand to `detail`, `decisions`,
 `evidence`, `storage`, or `capabilities` only when the current question requires
 it. Attempts and Artifacts are operational evidence: register their manifests

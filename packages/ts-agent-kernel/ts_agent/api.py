@@ -246,7 +246,7 @@ def _compute(action: str, root: str | Path, params: dict[str, Any]) -> dict[str,
 
 
 def _environment_catalog(*, detail: bool) -> dict[str, Any]:
-    from .platforms import EnvironmentConfigurationError, load_config
+    from .platforms import EnvironmentBroker, EnvironmentConfigurationError, EnvironmentRequirement, load_config
 
     try:
         config = load_config()
@@ -270,8 +270,9 @@ def _environment_catalog(*, detail: bool) -> dict[str, Any]:
             "name": environment.name,
             "kind": environment.kind,
             "default": environment.name == config.default_environment,
-            # The list read model is intentionally bounded. Full command,
-            # activation, scratch and environment details require `show`.
+            # The list read model is intentionally bounded. Installation-owned
+            # command, activation, scratch and environment details never cross
+            # the Agent-facing API boundary.
             "backends": sorted(environment.backends),
             "readiness": {
                 "state": "configured",
@@ -287,14 +288,17 @@ def _environment_catalog(*, detail: bool) -> dict[str, Any]:
             } if platform else {"kind": "local"},
         }
         if detail:
+            # The public environment API is an Agent-facing read model. Keep
+            # installation-owned commands, activation scripts, scratch paths,
+            # and environment values inside the trusted execution boundary;
+            # expose only the broker's opaque binding and bounded readiness.
+            broker = EnvironmentBroker(config)
             item["backends"] = {
-                backend: {
-                    "command": list(binding.command),
-                    "activation_script": binding.activation_script,
-                    "scratch_root": binding.scratch_root,
-                    "environment_keys": sorted(binding.environment),
-                }
-                for backend, binding in sorted(environment.backends.items())
+                backend: broker.bind(
+                    EnvironmentRequirement((backend,), kind=environment.kind),
+                    environment.name,
+                ).public()
+                for backend in sorted(environment.backends)
             }
         else:
             item["platform"] = {"kind": "ssh_torque" if platform else "local"}

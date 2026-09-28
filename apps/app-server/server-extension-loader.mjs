@@ -46,7 +46,7 @@ export async function loadServerExtensions(options = {}) {
     }
     const entryPath = await resolveOwnedEntry(packageRoot, descriptor.entry, descriptor.name);
     await verifyDigest(entryPath, descriptor.sha256, descriptor.name);
-    const module = await import(pathToFileURL(entryPath).href);
+    const module = await import(`${pathToFileURL(entryPath).href}?sha256=${encodeURIComponent(descriptor.sha256)}`);
     if (typeof module.createServerExtension !== "function") {
       throw new Error(`server extension ${descriptor.name} must export createServerExtension()`);
     }
@@ -86,6 +86,68 @@ export async function loadServerExtensions(options = {}) {
     inventory: Object.freeze(inventory),
     manifestPath,
   });
+}
+
+/**
+ * Load server tools declared by installed tspi-extension manifests.
+ *
+ * Unlike the package-owned server manifest, installed extensions are opt-in:
+ * an empty allowlist loads nothing. The extension manifest loader has already
+ * constrained the entry to its extension root; this function re-checks the
+ * regular file and digest immediately before importing it.
+ */
+export async function loadInstalledServerExtensions(options = {}) {
+  const extensions = Array.isArray(options.extensions) ? options.extensions : [];
+  const allowlist = resolveInstalledAllowlist(options.allowlist, extensions);
+  const selected = extensions.filter((extension) => allowlist.has(extension.name));
+  const names = new Set();
+  const toolNames = new Set(Array.isArray(options.reservedToolNames) ? options.reservedToolNames : []);
+  const extensionToolNames = new Set();
+  const tools = [];
+  const inventory = [];
+  for (const extension of selected) {
+    if (!extension.server) throw new Error(`installed server extension is not declared: ${extension.name}`);
+    if (names.has(extension.name)) throw new Error(`duplicate installed server extension name: ${extension.name}`);
+    names.add(extension.name);
+    const entryPath = await resolveInstalledEntry(extension.server.entry, extension.name);
+    await verifyDigest(entryPath, extension.server.sha256, extension.name);
+    const module = await import(`${pathToFileURL(entryPath).href}?sha256=${encodeURIComponent(extension.server.sha256)}`);
+    if (typeof module.createServerExtension !== "function") {
+      throw new Error(`installed server extension ${extension.name} must export createServerExtension()`);
+    }
+    const created = await module.createServerExtension(options.factoryOptions || {});
+    const extensionTools = Array.isArray(created) ? created : created?.tools;
+    if (!Array.isArray(extensionTools) || extensionTools.length === 0) {
+      throw new Error(`installed server extension ${extension.name} returned no tools`);
+    }
+    const actualTools = extensionTools.map((tool) => validateTool(tool, extension.name));
+    const actualNames = actualTools.map((tool) => tool.name);
+    const declaredTools = extension.server.tools;
+    if (actualNames.length !== declaredTools.length || actualNames.some((name, index) => name !== declaredTools[index])) {
+      throw new Error(`installed server extension ${extension.name} tool inventory does not match its manifest`);
+    }
+    for (const tool of actualTools) {
+      if (toolNames.has(tool.name)) throw new Error(`server tool name collision: ${tool.name}`);
+      toolNames.add(tool.name);
+      extensionToolNames.add(tool.name);
+      tools.push(tool);
+    }
+    inventory.push(Object.freeze({
+      name: extension.name,
+      scope: "server",
+      entry: entryPath,
+      tools: Object.freeze([...actualNames]),
+      permissions: Object.freeze([...extension.server.permissions]),
+      sha256: extension.server.sha256,
+      source: "installed",
+    }));
+  }
+  if (Array.isArray(options.requiredToolNames)) {
+    for (const name of options.requiredToolNames) {
+      if (!extensionToolNames.has(name)) throw new Error(`installed server extension selection did not provide required tool: ${name}`);
+    }
+  }
+  return Object.freeze({ tools: Object.freeze(tools), inventory: Object.freeze(inventory) });
 }
 
 export async function readServerExtensionManifest(packageRoot, manifestPath) {
@@ -168,6 +230,17 @@ function resolveAllowlist(configured, descriptors) {
   return names;
 }
 
+function resolveInstalledAllowlist(configured, extensions) {
+  const values = configured === undefined
+    ? (process.env.TSPI_INSTALLED_SERVER_EXTENSIONS || "").split(",").map((value) => value.trim()).filter(Boolean)
+    : Array.isArray(configured) ? configured : String(configured).split(",").map((value) => value.trim()).filter(Boolean);
+  const names = new Set(values);
+  for (const name of names) {
+    if (!extensions.some((extension) => extension.name === name)) throw new Error(`installed server extension is not in the manifest: ${name}`);
+  }
+  return names;
+}
+
 async function resolveOwnedEntry(packageRoot, entry, name) {
   const path = resolve(packageRoot, entry);
   const relativePath = relative(packageRoot, path);
@@ -183,6 +256,19 @@ async function resolveOwnedEntry(packageRoot, entry, name) {
   }
   if (!info.isFile() || info.isSymbolicLink()) throw new Error(`server extension ${name} entry must be a regular file`);
   return path;
+}
+
+async function resolveInstalledEntry(entry, name) {
+  if (typeof entry !== "string" || !entry.startsWith("/")) throw new Error(`installed server extension ${name} entry must be absolute`);
+  let info;
+  try {
+    await assertPhysicalParents(entry);
+    info = await lstat(entry);
+  } catch (error) {
+    throw new Error(`installed server extension ${name} entry is unavailable`, { cause: error });
+  }
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error(`installed server extension ${name} entry must be a regular file`);
+  return entry;
 }
 
 async function verifyDigest(path, expected, name) {
@@ -213,6 +299,16 @@ async function assertOwnedParents(root, target) {
     current = resolve(current, segment);
     const info = await lstat(current);
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`server extension path contains a non-owned directory: ${current}`);
+  }
+}
+
+async function assertPhysicalParents(target) {
+  const relativePath = relative(sep, target);
+  let current = sep;
+  for (const segment of relativePath.split(sep).slice(0, -1)) {
+    current = resolve(current, segment);
+    const info = await lstat(current);
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`installed server extension path contains a non-owned directory: ${current}`);
   }
 }
 

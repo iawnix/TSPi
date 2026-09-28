@@ -128,7 +128,7 @@ function validateComputeInputs(value) {
     throw new Error("inputs.expected_output_roles does not match the capability descriptor");
   }
   const nodeId = requireString(value.node_id, "inputs.node_id", 128);
-  if (!/^node_[1-9][0-9]*$/.test(nodeId)) throw new Error("inputs.node_id must be a ResearchNode ID");
+  if (!/^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(nodeId)) throw new Error("inputs.node_id must be a ResearchNode ID");
   const intentId = requireString(value.intent_id, "inputs.intent_id", 128);
   if (!/^calc_[1-9][0-9]*$/.test(intentId)) {
     throw new Error("inputs.intent_id must be a calculation Attempt ID");

@@ -17,7 +17,7 @@
     "intent_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "session_id": {"type": ["string", "null"], "minLength": 1},
     "wake_policy": {"enum": ["none", "next_run"]},
-    "notify_policy": {"enum": ["none", "user"]},
+    "notify_policy": {"enum": ["none", "configured"]},
     "previous_state": {"type": ["string", "null"]},
     "state": {"enum": ["prepared", "submitted", "queued", "running", "completed", "parsed", "failed", "stopped", "unknown"]},
     "program_status": {"type": ["string", "null"]},

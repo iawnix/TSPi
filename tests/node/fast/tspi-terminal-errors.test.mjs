@@ -31,6 +31,19 @@ test("terminal failures are not rewritten when both config files exist or the er
   }), "connection failed");
 });
 
+test("worker diagnostics are surfaced for opaque Pi startup failures", () => {
+  const message = formatTerminalFailure(new Error("Internal server error"), {
+    installRoot: "/home/test/tspi",
+    diagnosticFile: "/home/test/tspi/.pi/app-server-host/worker-diagnostics.log",
+    fileExists: () => true,
+    readFile: () => "Error: provider auth failed\n    at worker (worker.ts:42)\n",
+  });
+
+  assert.match(message, /Pi Worker diagnostics/);
+  assert.match(message, /provider auth failed/);
+  assert.doesNotMatch(message, /Missing Pi configuration/);
+});
+
 test("nested service failures retain their actionable cause", () => {
   const failure = new AggregateError([
     new Error("Internal server error"),
@@ -44,4 +57,10 @@ test("nested service failures retain their actionable cause", () => {
   });
   assert.match(message, /^Failed to rebind services: Internal server error: cleanup failed: transport closed\n/);
   assert.match(message, /Possible cause: Missing Pi configuration/);
+});
+
+test("stale Pi bindings explain Host restart recovery", () => {
+  const message = formatError(new Error("Remote service pi.agent-controller binding is closed"));
+  assert.match(message, /Host was restarted or upgraded/);
+  assert.match(message, /relaunch ResearchAgent/);
 });

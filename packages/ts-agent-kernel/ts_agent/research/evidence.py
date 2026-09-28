@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Collection, Mapping
 
-from .model import ResearchMap, ResearchModelError
+from .model import ClaimGate, NodeGate, ResearchMap, ResearchModelError
 
 
 class EvidenceModelError(ResearchModelError):
@@ -102,14 +102,32 @@ def validate_map_evidence(
         )
     for gate in research_map.gates.values():
         for index, evaluation in enumerate(gate.evaluations):
+            # A gate may cite a finding already committed in the same
+            # ResearchMap.  This is a map-level evidence reference, distinct
+            # from an execution Artifact or an EvidenceLink.  Keep the scope
+            # check here so a finding from an unrelated node/claim cannot be
+            # smuggled into a gate decision.
+            finding_refs = [ref for ref in evaluation.evidence_refs if ref in research_map.findings]
+            external_refs = [ref for ref in evaluation.evidence_refs if ref not in research_map.findings]
             validate_evidence_refs(
-                evaluation.evidence_refs,
+                external_refs,
                 artifacts,
                 links,
                 label=f"gate {gate.id} evaluation {index} evidence_refs",
                 subject_type="gate",
                 subject_id=gate.id,
             )
+            for ref in finding_refs:
+                finding = research_map.findings[ref]
+                if isinstance(gate, NodeGate) and finding.node_id != gate.target_id:
+                    raise EvidenceModelError(
+                        f"gate {gate.id} evaluation {index} finding {ref} belongs to node {finding.node_id}, "
+                        f"not node {gate.target_id}"
+                    )
+                if isinstance(gate, ClaimGate) and gate.target_id not in finding.claim_ids:
+                    raise EvidenceModelError(
+                        f"gate {gate.id} evaluation {index} finding {ref} does not support claim {gate.target_id}"
+                    )
 
 
 def validate_interpretation_evidence(

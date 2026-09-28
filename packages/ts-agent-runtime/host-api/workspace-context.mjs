@@ -43,15 +43,29 @@ export function createToolExecutionContext(options = {}) {
     allowed_authorities: authorities,
     allowed_effects: effects,
     allowed_phases: phases,
-    env: options.env && typeof options.env === "object" && !Array.isArray(options.env)
-      ? Object.freeze({ ...options.env })
-      : undefined,
+    // `env` normally carries a process-environment record, but the Pi file
+    // tools use the same slot for their Host-owned ExecutionEnv capability.
+    // Do not spread that capability: its filesystem methods live on the
+    // prototype (`absolutePath`, `readBinaryFile`, etc.).
+    env: normalizeToolEnvironment(options.env),
   };
   Object.defineProperty(context, TOOL_CONTEXT_BRAND, { value: true });
   if (typeof options.lifecycle_provider === "function") {
     Object.defineProperty(context, TOOL_CONTEXT_POLICY_PROVIDER, { value: options.lifecycle_provider });
   }
   return Object.freeze(context);
+}
+
+function normalizeToolEnvironment(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (
+    typeof value.absolutePath === "function" &&
+    typeof value.fileInfo === "function" &&
+    typeof value.readBinaryFile === "function"
+  ) {
+    return value;
+  }
+  return Object.freeze({ ...value });
 }
 
 /** Bind a trusted context to the current Harness operation. */

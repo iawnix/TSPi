@@ -121,6 +121,19 @@ SessionWorker 创建时加载并缓存正文，但默认 prompt 只放 name、de
 只有显式调用 Skill 时才把正文注入当前 turn。Capability 和
 Compute Environment 在方法选择或 launch 前按需查询。
 
+Capability discovery 是运行时 Registry，而不是框架源码拥有的静态 dispatch 表。
+内置 descriptor 在启动时注册，受信任的 provider 也通过同一接口注册带版本的
+descriptor。对外 catalog 只暴露能力合同；provider 对象、可执行文件路径、激活脚本和
+环境变量值都留在执行边界内。计算 provider 必须显式提供受约束的
+`prepare`/`prepare_task`，也可以提供输入校验；没有受信任 adapter 的 descriptor 会被
+报告为不可用，不会退回到隐式命令。
+
+环境选择由 `EnvironmentBroker`（同时作为 `EnvironmentManager` 边界导出）负责。它将
+provider requirement 绑定到具名的 local 或 remote 环境，返回 readiness 和不透明的
+binding digest；只有受信任的 compute control 可以解包安装级 command binding。因此新增
+provider、scheduler 或 container runtime 不需要修改 ResearchMap、Harness 生命周期或
+Agent prompt。
+
 运行时边界固定为：
 
 ```text
@@ -130,6 +143,12 @@ Research Memory（持久记录）
   -> ContextPack（临时 turn 工作集）
   -> Prompt（ContextPack + 工具、Skill 元数据和指令）
 ```
+
+Agent Core 通过语言无关的 `ContextPort` 和 `MemoryPort` 暴露这条边界。
+Core 可以保存有界的 session 对话记忆，但不会写入 workspace 级 Research Memory。
+在 research 工作区中，`MemoryPort` 只能使用 session 范围；所有科研上下文都是由
+`KernelPort` 提供的只读投影，Research Kernel 仍然是 ResearchMap 和持久科研记忆的
+唯一权威。
 
 `ResearchMemoryService` 不缓存第二份 ResearchMap，也不持久化 ContextPack。
 `ContextPack.context_id` 和 provenance 标识其来源 revision，因此 Host 可以在状态变化
@@ -220,7 +239,7 @@ TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、
 scheduler lease 和 Monitor 健康文件。`tspi.workspace-directory` 只暴露包含受支持
 `workspace.json` 的直接子工作区。
 
-`TSPi --workspace <name>` 先 bootstrap 工作区，再向 Host 请求 `session/list` 和
+`ResearchAgent --workspace <name>` 先 bootstrap 工作区，再向 Host 请求 `session/list` 和
 `session/create`/`session/resume`，最后把 Pi 官方 `ExperimentalClientTui` 直接连接到
 返回的本地 descriptor。远程 TUI 负责 completion、渲染、输入循环和它支持的 slash
 command，其中 `/resume` 只在当前 workspace 内切换；独立 Pi 的会话命令不会由这个客户端
@@ -228,7 +247,7 @@ command，其中 `/resume` 只在当前 workspace 内切换；独立 Pi 的会�
 lane。workspace `.pi/sessions` 不属于受支持的 Native 运行时边界，不会被导入或恢复。
 `TSPI_HOST_BACKEND` 必须为 `harness`；已退役的 ordinary-Pi 后端会直接拒绝。
 
-第一次执行 `TSPi --workspace <name>` 时，如果项目不存在，客户端会通过同一套经过校验
+第一次执行 `ResearchAgent --workspace <name>` 时，如果项目不存在，客户端会通过同一套经过校验
 的 bootstrap 初始化它；Host 不会创建未命名项目，必须由客户端明确指定合法名称。
 
 ## TSPi Link

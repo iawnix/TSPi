@@ -93,12 +93,12 @@ scripts/prepare_pi_source.py --install <root>
 TSPi 不会下载 Gaussian 或其他站点管理的本地化学软件，SSH 凭据仍由 SSH
 配置管理，不会复制到该 TOML 文件中。
 
-添加 `--probe-remote` 时，安装过程会运行 `TSPi --check-remote`；若 SSH、scheduler、
+添加 `--probe-remote` 时，安装过程会运行 `ResearchAgent --check-remote`；若 SSH、scheduler、
 可写远程根目录或软件探针未就绪，安装会失败。不添加该参数时，摘要只报告 `not_probed`，
 不会把远程环境误报为可用：
 
 ```bash
-./TSPi --check-remote
+./ResearchAgent --check-remote
 ```
 
 当前远程合同只支持 Torque/PBS。配置必须声明 SSH、可写远程根目录、允许队列及站点
@@ -160,7 +160,7 @@ TSPi 通知只发送邮件，不需要 POP3 或 IMAP。
 lane。安装器可以启用并启动 Host；普通终端启动时也会按需启动已配置的服务：
 
 ```bash
-./TSPi --workspace reaction-a
+./ResearchAgent --workspace reaction-a
 ```
 
 user scope 安装使用：
@@ -173,18 +173,69 @@ systemctl --user stop ts-app-server-tspi.service
 
 system scope 安装省略 `--user`。`service scope = none` 时不管理 Host，Phone 和后台 Monitor
 不可用；需要 Host 功能时请选择 user 或 system。生成的 unit 调用 TSPi 内部服务入口，普通
-用户不应运行 `TSPi --host`。
+用户不应运行 `ResearchAgent --host`。
 
 默认且推荐的 scope 是 systemd user unit。system unit 必须提供显式的 `--service-user`；安装器
 会设置 `HOME`、`PI_CODING_AGENT_DIR` 和私有运行时目录，确保 Host 身份和本地 Pi 连接使用
 服务账户。Host worker facet、server-extension allowlist 和 native client 都来自已验证的
 Package release。
 
+## ResearchAgent 与内部 App Server
+
+`ResearchAgent` 是普通用户的主入口。它负责选择或校验工作区模式、初始化工作区、完成
+研究模式的 Host admission，然后再打开终端。`ResearchAgentServer` 是供框架客户端和
+管理员使用的内部 HTTP 服务，普通终端流程不需要用户手动启动它。
+
+如果要单独部署 App Server，再显式配置 runtime module；需要研究工作区准入和持久化研究
+状态时，再配置 Kernel module：
+
+```bash
+./ResearchAgentServer \
+  --runtime-module /absolute/path/to/runtime-module.mjs \
+  --kernel-module /absolute/path/to/kernel-module.mjs \
+  --port 8787 \
+  --write-config
+./ResearchAgentServer
+```
+
+配置会以 `0600` 写入 `<install>/.pi/research-agent/server.json`，schema 为
+`research_agent_server/1`。相对 module 路径相对于当前 Package release 解析；
+裸 package 名称交给 Node 的 module resolver。临时 smoke test 也可以使用
+`RESEARCH_AGENT_RUNTIME_MODULE` 和 `RESEARCH_AGENT_KERNEL_MODULE` 环境变量。
+`runtime_module` 必须导出 `create_runtime()`；提供 `kernel_module` 时必须导出
+`create_kernel()`。
+
+发行包内置显式的 Pi Runtime Module：
+`packages/research-agent-pi-adapter/pi_runtime_module.mjs`。当 Host 已配置 Pi SDK
+模型时，可以直接使用：
+
+```bash
+export RESEARCH_AGENT_RUNTIME_MODULE="$PWD/packages/research-agent-pi-adapter/pi_runtime_module.mjs"
+export RESEARCH_AGENT_CWD="$PWD/workspaces/demo"
+export RESEARCH_AGENT_SESSION_ROOT="$PWD/.pi/research-agent/sessions"
+export PI_CODING_AGENT_DIR="$PWD/.pi/research-agent/agent"
+export RESEARCH_AGENT_MODEL_PROVIDER="anthropic"
+export RESEARCH_AGENT_MODEL_ID="claude-sonnet-4-5"
+./ResearchAgentServer --port 8787
+```
+
+该模块不会隐式读取 `~/.pi`。导入 Pi SDK 前必须显式提供 `cwd` 或
+`workspace_root`、`session_root`、`agent_dir`，以及 `model`/`model_runtime` 或成对的
+`model_provider` 与 `model_id`。
+如果部署需要在代码中构造模型对象或 `ModelRuntime`，应提供一个导出
+`create_runtime(options)` 的小模块，再委托给该模块；文件路径不能直接作为
+`model_runtime` 值。测试环境可以注入
+`create_agent_session` 和 `session_manager_class`，无需网络或模型服务。
+
+`ResearchAgentServer` 与 `ts-app-server-tspi.service` 完全独立。现有 systemd 单元仍
+然启动旧版 TSPi Host；完成 module 配置验证后，请为 Research Agent 使用独立的
+service 或 supervisor。
+
 创建新会话或继续项目中的最新会话：
 
 ```bash
-./TSPi --workspace reaction-a
-./TSPi --workspace reaction-a -c
+./ResearchAgent --workspace reaction-a
+./ResearchAgent --workspace reaction-a -c
 ```
 
 Host 身份位于 `<install>/.pi/app-server-host/server-id`；请求回执、scheduler lease、
@@ -203,12 +254,16 @@ origin 和 Relay 管理员创建的一次性 Host enrollment code。交互式安
 `.pi/app-server-host/link.json` 及仅所有者可读的 `.pi/app-server-host/host.token`；Host
 只向 Relay 建立出站 WSS，不会向 Relay 或互联网暴露 App Server 端口。
 
+如果本机已经单独安装了 Relay，安装器会优先读取已知目录（包括
+`/home/iaw/soft/tspi-link`）及其 `tspi-link-relay.service`，自动填充 Relay URL；也可以显式
+指定 `--link-relay-root /path/to/tspi-link`。Relay 仍然是独立服务，不会被 Host 安装器重复安装。
+
 Host 上线后使用以下命令管理 Phone 授权：
 
 ```bash
-./TSPi phone pair
-./TSPi phone devices
-./TSPi phone revoke <device-id>
+./ResearchAgent phone pair
+./ResearchAgent phone devices
+./ResearchAgent phone revoke <device-id>
 ```
 
 `phone pair` 输出已配置的 Relay URL 和八位配对码。配对码五分钟后失效且只能使用一次；TS
@@ -235,7 +290,7 @@ session 格式。
 
 ## 工作区初始化
 
-首次运行 `./TSPi --workspace <name>` 时，客户端会在配置的 workspace root 下创建 0700 工作区
+首次运行 `./ResearchAgent --workspace <name>` 时，客户端会在配置的 workspace root 下创建 0700 工作区
 及规范科学文件。Host 的 WorkspaceDirectory 也提供同一操作给 TS Phone。Host 不会创建无名项目；
 初始化会验证已有 JSON，遇到不支持的状态时拒绝而不是重写。
 

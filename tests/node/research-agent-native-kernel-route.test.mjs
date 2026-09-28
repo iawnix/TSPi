@@ -1,0 +1,47 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import { executeFilesystemResearchCommand } from "../../apps/app-server/research-native-kernel.mjs";
+import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
+import { create_fs_research_kernel } from "../../packages/research-agent-kernel/fs_kernel_adapter.mjs";
+
+test("native research commands expose the FS kernel operation and liveness contracts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "research-native-route-"));
+  try {
+    await create_workspace_initializer().initialize_workspace({
+      workspace_root: root,
+      workspace_id: "workspace_native_route",
+      workspace_mode: "research",
+    });
+    await create_fs_research_kernel({ workspace_root: root }).admit_workspace({ authority: "host" });
+    const catalog = await executeFilesystemResearchCommand("research.operations", root);
+    assert.ok(catalog.operations.includes("create_node"));
+    await executeFilesystemResearchCommand("research.change", root, {
+      request: {
+        expected_revision: 0,
+        operations: [
+          { type: "create_claim", id: "claim_route.v1", statement: "A route claim" },
+          { type: "create_node", id: "node_route.v1", title: "Route node", objective: "Exercise route", claim_ids: ["claim_route.v1"] },
+          { type: "set_focus", claim_ids: ["claim_route.v1"], node_ids: ["node_route.v1"] },
+        ],
+      },
+    });
+    const result = await executeFilesystemResearchCommand("research.turn", root, {
+      request: {
+        operation: "checkpoint",
+        input: {
+          checkpoint_id: "checkpoint_route.1",
+          disposition: "continue_required",
+          unresolved_refs: ["node_route.v1"],
+        },
+      },
+    });
+    assert.equal(result.lifecycle, "continue_required");
+    assert.equal(result.liveness.continue_required[0].id, "node_route.v1");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

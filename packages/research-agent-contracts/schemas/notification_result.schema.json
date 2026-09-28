@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "notification_result",
+  "title": "Research agent notification result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "version", "operation", "state", "receipt_ref", "external_side_effects"],
+  "properties": {
+    "protocol": {"const": "notification_result"},
+    "version": {"const": 1},
+    "operation": {"const": "send"},
+    "state": {"enum": ["sent", "already_sent"]},
+    "receipt_ref": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "external_side_effects": {"type": "boolean"},
+    "event": {"enum": ["progress", "node_completed", "calculation_failed", "calculation_ambiguous", "study_completed"]},
+    "subject": {"type": "string", "minLength": 1, "maxLength": 300},
+    "report_refs": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 4096}
+    },
+    "notification_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "artifact_refs": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 4096}
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"state": {"const": "sent"}}},
+      "then": {"properties": {"external_side_effects": {"const": true}}}
+    },
+    {
+      "if": {"properties": {"state": {"const": "already_sent"}}},
+      "then": {"properties": {"external_side_effects": {"const": false}}}
+    }
+  ]
+}

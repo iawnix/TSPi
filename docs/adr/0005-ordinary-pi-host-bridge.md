@@ -10,7 +10,7 @@
 
 This ADR records the former transitional ordinary-Pi compatibility mode. It is
 retired and is not selected, packaged, or reachable by the current runtime. When
-`TSPI_HOST_BACKEND=ordinary` is explicitly selected, `TSPi --workspace <name>`
+`TSPI_HOST_BACKEND=ordinary` is explicitly selected, `ResearchAgent --workspace <name>`
 launches the pinned Pi CLI in its normal `InteractiveMode`. Pi owns the agent
 loop, model, tools, format-3 transcript, cwd, and workspace Root lock. TSPi
 loads ordinary research extensions plus one small bridge extension. This mode

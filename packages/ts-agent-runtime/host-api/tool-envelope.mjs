@@ -1,5 +1,6 @@
 import { validateHarnessToolDefinition } from "./tools.mjs";
 import { validateToolInvocationContext } from "./workspace-context.mjs";
+import { validateToolArguments } from "@earendil-works/pi-ai";
 
 const RESULT_SCHEMA = "tspi-tool-result/1";
 const ERROR_SCHEMA = "tspi-tool-error/1";
@@ -122,16 +123,32 @@ export function wrapToolWithEnvelope(tool) {
 /** Wrap a production Harness tool without losing its structured error result. */
 export function wrapToolForHarness(tool) {
   if (!tool || typeof tool.execute !== "function") throw new TypeError("tool envelope requires an executable tool");
+  const originalParameters = tool.parameters;
   if (tool.metadata !== undefined) {
     validateHarnessToolDefinition(tool, { source: "Harness tool", requireCanonical: true });
   }
-  const wrapped = wrapToolWithEnvelope(tool);
   const enforceInvocationContext = tool.metadata !== undefined;
+  // Pi Core validates arguments before invoking a tool. That fast path does
+  // not run `after_tool`, so an invalid third-party/test tool call would be
+  // persisted without our structured error envelope. Make non-canonical
+  // tools permissive at the Pi boundary and repeat their original schema
+  // check inside the wrapper, where it can be normalized consistently.
+  const exposedTool = !enforceInvocationContext && originalParameters
+    ? { ...tool, parameters: { type: "object", additionalProperties: true } }
+    : tool;
+  const wrapped = wrapToolWithEnvelope(exposedTool);
   return {
     ...wrapped,
     async execute(toolCallId, ...args) {
       try {
         let executionArgs = args;
+        if (!enforceInvocationContext && originalParameters) {
+          const params = args[0] === undefined ? {} : args[0];
+          validateToolArguments(
+            { name: tool.name, parameters: originalParameters },
+            { name: tool.name, arguments: params },
+          );
+        }
         if (enforceInvocationContext) {
           // Harness-native tools receive (params, onUpdate, toolContext,
           // invocation, context). Bind and validate the trusted context before

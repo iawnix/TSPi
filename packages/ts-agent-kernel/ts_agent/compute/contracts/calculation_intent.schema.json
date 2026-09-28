@@ -13,7 +13,7 @@
   "properties": {
     "schema_version": {"const": "ts-calculation-intent/7"},
     "intent_id": {"type": "string", "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128},
-    "node_id": {"type": "string", "pattern": "^node_[1-9][0-9]*$"},
+    "node_id": {"type": "string", "pattern": "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
     "node_contract_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "scientific_intent_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "purpose": {"type": "string", "minLength": 1, "maxLength": 2000},
@@ -25,7 +25,7 @@
           "type": "object",
           "required": ["source_node", "source_intent_id", "relation", "reason", "changed_fields"],
           "properties": {
-            "source_node": {"type": "string", "pattern": "^node_[1-9][0-9]*$"},
+            "source_node": {"type": "string", "pattern": "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
             "source_intent_id": {"type": "string", "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128},
             "relation": {"enum": ["retry", "recalculation"]},
             "reason": {"type": "string", "minLength": 1, "maxLength": 1000},
@@ -53,7 +53,11 @@
       "uniqueItems": true,
       "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 64}
     },
-    "backend": {"enum": ["gaussian", "xtb", "crest", "ase_neb", "pyscf"]},
+    "backend": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "maxLength": 64
+    },
     "task_type": {"type": "string", "minLength": 1, "maxLength": 64},
     "input_refs": {
       "type": "object",
@@ -74,7 +78,7 @@
           "artifact_id": {"type": "string", "pattern": "^art_[0-9a-f]{24}$"},
           "path": {"type": "string", "minLength": 1, "maxLength": 4096},
           "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-          "owner_node": {"type": ["string", "null"], "pattern": "^node_[1-9][0-9]*$"},
+          "owner_node": {"type": ["string", "null"], "pattern": "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
           "source_intent_id": {"type": ["string", "null"], "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128}
         },
         "additionalProperties": false

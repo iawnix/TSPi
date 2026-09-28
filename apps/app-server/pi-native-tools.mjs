@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, rmdir, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
 import { commandArguments, createCommandService } from "../../packages/ts-agent-runtime/host-api/commands.mjs";
@@ -14,10 +14,143 @@ import { checkpointFollowUp, continuationFollowUp } from "../../packages/ts-agen
 import { createComputeTool } from "./pi-native-compute.mjs";
 import { createNotifyTool } from "./pi-native-notify.mjs";
 import { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
+import { readWorkspaceMode } from "./workspace-mode-tools.mjs";
+import { create_tool_gateway } from "../../packages/research-agent-capabilities/tool_gateway.mjs";
+import { create_compute_orchestrator } from "../../packages/research-agent-capabilities/compute_orchestrator.mjs";
+import { create_local_xyz_provider } from "../../packages/research-agent-capabilities/local_xyz_provider.mjs";
+import {
+  executeFilesystemResearchCommand,
+  isFilesystemResearchWorkspace,
+} from "./research-native-kernel.mjs";
 
 export { createComputeTool } from "./pi-native-compute.mjs";
 export { createNotifyTool } from "./pi-native-notify.mjs";
 export { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
+
+export function createLightComputeTool(options = {}) {
+  return {
+    ...TOOL_CONTRACTS.lightCompute,
+    async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
+      const root = boundWorkspaceRoot(params, toolContext);
+      const mode = await readWorkspaceMode(root);
+      if (mode !== "light") throw new Error("light_compute_requires_light_workspace");
+      // Geometry preparation remains available even when no optional compute
+      // provider is configured. Registered providers are injected by the Host
+      // for generic light runs; this local gateway is intentionally scoped to
+      // the current workspace's artifact store.
+      const localGateway = create_tool_gateway({
+        workspace_mode: "light",
+        artifact_root: join(root, "artifacts", "light_compute"),
+        providers: [create_local_xyz_provider()],
+      });
+      let result;
+      if (params.operation === "generate_xyz") {
+        const generated = await localGateway.invoke({
+          workspace_mode: "light",
+          capability_id: "local_xyz_generate",
+          input: {
+            molecule: params.molecule,
+            ...(params.logicalRef === undefined ? {} : { logical_ref: params.logicalRef }),
+          },
+          signal: context?.abortSignal,
+        });
+        const generatedArtifact = generated.output?.artifact;
+        const generatedBytes = generatedArtifact?.artifact_id
+          ? await localGateway.artifact_store.read(generatedArtifact.artifact_id)
+          : null;
+        result = {
+          schema_version: "research-agent-light-compute/1",
+          operation: "generate_xyz",
+          status: "completed",
+          workspace_mode: "light",
+          calculation_kind: "local_geometry",
+          scientific_status: "prepared_only",
+          output: {
+            ...generated.output,
+            ...(generatedBytes ? { xyz: generatedBytes.content.toString("utf8") } : {}),
+          },
+          artifacts: generated.artifacts,
+          limitations: [
+            "This is a bounded local light-mode calculation and does not create a ResearchMap Claim, Node, or Attempt.",
+            "The generated geometry is deterministic input preparation, not an optimized quantum-chemical result.",
+          ],
+        };
+      } else if (params.operation === "inspect_xyz") {
+        result = {
+          schema_version: "research-agent-light-compute/1",
+          operation: "inspect_xyz",
+          status: "completed",
+          workspace_mode: "light",
+          calculation_kind: "local_geometry_inspection",
+          scientific_status: "descriptive_only",
+          output: inspect_light_xyz(params.xyz),
+          artifacts: [],
+          limitations: [
+            "This inspection is descriptive and does not validate a chemical model or represent a completed scientific calculation.",
+          ],
+        };
+      } else if (params.operation === "catalog") {
+        const gateway = options.toolGateway || options.tool_gateway || localGateway;
+        const capabilities = gateway.describe({ workspace_mode: "light" });
+        result = {
+          schema_version: "research-agent-light-compute/1",
+          operation: "catalog",
+          status: "completed",
+          workspace_mode: "light",
+          scientific_status: "descriptive_only",
+          output: { capabilities },
+          artifacts: [],
+          limitations: [
+            "Capability descriptors report registered support and limits; they are not calculation results.",
+            "Light runs are recorded in a bounded run manifest and do not create ResearchMap state.",
+          ],
+        };
+      } else if (params.operation === "run") {
+        const gateway = options.toolGateway || options.tool_gateway;
+        const orchestrator = options.computeOrchestrator || options.compute_orchestrator
+          || (gateway ? create_compute_orchestrator({ tool_gateway: gateway, artifact_store: gateway.artifact_store }) : null);
+        if (!orchestrator) throw new Error("light_compute_capability_host_not_configured");
+        const workspaceId = toolContext?.workspace_id || toolContext?.workspaceId || basename(root);
+        const input = bindLightInputArtifact({
+          gateway,
+          capabilityId: params.capabilityId,
+          input: params.input || {},
+          inputArtifactIds: params.inputArtifactIds,
+        });
+        const run = await orchestrator.run({
+          workspace_id: workspaceId,
+          workspace_root: root,
+          workspace_mode: "light",
+          ...(params.runId === undefined ? {} : { run_id: params.runId }),
+          capability_id: params.capabilityId,
+          ...(params.capabilityVersion === undefined ? {} : { capability_version: params.capabilityVersion }),
+          input,
+          ...(params.inputArtifactIds === undefined ? {} : { input_artifact_ids: params.inputArtifactIds }),
+          ...(params.timeoutMs === undefined ? {} : { timeout_ms: params.timeoutMs }),
+          request_id: _toolCallId,
+          signal: context?.abortSignal,
+        });
+        result = {
+          schema_version: "research-agent-light-compute/1",
+          operation: "run",
+          status: run.state === "succeeded" ? "completed" : run.state,
+          workspace_mode: "light",
+          scientific_status: run.state === "succeeded" ? "computed" : "execution_failed",
+          run_id: run.run_id,
+          output: run.result,
+          artifacts: run.artifacts || [],
+          limitations: [
+            "This calculation used a registered bounded capability without creating a ResearchMap Claim, Node, or Attempt.",
+            "For auditable scientific interpretation, run the same capability from a research workspace.",
+          ],
+        };
+      } else {
+        throw new Error(`unsupported light_compute operation: ${String(params.operation)}`);
+      }
+      return toolResult(result);
+    },
+  };
+}
 
 const require = createRequire(import.meta.url);
 const { beginActivity, completeActivity, failActivity } = require(
@@ -50,7 +183,7 @@ class RenderExecutionError extends Error {
   }
 }
 
-export function createStateTool() {
+export function createStateTool(options = {}) {
   return {
     ...TOOL_CONTRACTS.state,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
@@ -63,8 +196,23 @@ export function createStateTool() {
         return toolResult(await NATIVE_COMMANDS.execute("compute.artifacts", root, { nodeId: params.nodeRef }, context?.abortSignal));
       }
       if (mode === "capabilities") {
-        if (!params.capabilityKind) throw new Error("research_read mode=capabilities requires capabilityKind=compute or analysis");
+        if (!params.capabilityKind) throw new Error("research.read mode=capabilities requires capabilityKind=compute or analysis (tool research_read)");
         if (params.capabilityKind === "compute") {
+          // Compute discovery uses the same Host-owned live gateway as
+          // compute_catalog. Keep the legacy command only for Pi-only
+          // fixtures that do not inject a Host gateway.
+          const gateway = options.toolGateway || options.tool_gateway;
+          if (gateway && typeof gateway.describe === "function") {
+            const mode = await readWorkspaceMode(root);
+            const capabilities = gateway.describe({ workspace_mode: mode })
+              .filter((item) => item?.kind === "compute");
+            return toolResult({
+              protocol_version: "compute_catalog_1",
+              workspace_mode: mode,
+              catalog: capabilities,
+              capabilities,
+            });
+          }
           return toolResult(await NATIVE_COMMANDS.execute("compute.capabilities", root, {}, context?.abortSignal));
         }
         if (params.capabilityKind === "analysis") {
@@ -77,7 +225,7 @@ export function createStateTool() {
             : ["analysis-capabilities", "--root", root];
           return toolResult(await runJsonCli(packageScript("ts_compute.py"), args, root, context?.abortSignal));
         }
-        throw new Error("research_read mode=capabilities requires capabilityKind=compute or analysis");
+        throw new Error("research.read mode=capabilities requires capabilityKind=compute or analysis (tool research_read)");
       }
       if (mode === "runs") return toolResult(await NATIVE_COMMANDS.execute("compute.runs", root, {}, context?.abortSignal));
       if (mode === "decisions") {
@@ -114,18 +262,23 @@ export function createChangeTool() {
           basis_refs: params.basisRefs || [],
           operations: params.operations,
         } }, context?.abortSignal);
-      const summary = await NATIVE_COMMANDS.execute(
-        "research.summary",
-        root,
-        {},
-        context?.abortSignal,
-      );
+      // A rejected ChangeSet is not a persisted write. Do not read and return
+      // a post-change summary for an envelope that explicitly reports
+      // rejection; doing so invites the Agent to mistake the pre-change map
+      // for state created by this request.
+      const accepted = result?.accepted !== false
+        && result?.ok !== false
+        && result?.status !== "rejected"
+        && result?.status !== "failed";
+      const summary = accepted
+        ? await NATIVE_COMMANDS.execute("research.summary", root, {}, context?.abortSignal)
+        : null;
       return {
         content: [
           { type: "text", text: JSON.stringify(result, null, 2) },
-          { type: "text", text: JSON.stringify(summary, null, 2) },
+          ...(summary === null ? [] : [{ type: "text", text: JSON.stringify(summary, null, 2) }]),
         ],
-        details: { result, summary },
+        details: { result, summary, persisted: summary !== null },
       };
     },
   };
@@ -180,10 +333,11 @@ export function createWorkflowTool() {
       } else if (params.operation === "checkpoint") {
         requireNativeWrites("research_checkpoint");
         if (!params.checkpoint) throw new Error("research_checkpoint requires checkpoint");
+        const checkpoint = normalizeCheckpointPayload(params.checkpoint, toolContext, params.eventId);
         result = await NATIVE_COMMANDS.execute("research.checkpoint", root, {
           request: {
             schema_version: "research-checkpoint-request/1",
-            checkpoint: params.checkpoint,
+            checkpoint,
             rationale: params.rationale,
             basis_refs: params.basisRefs || [],
             expected_revision: params.expectedRevision,
@@ -203,6 +357,16 @@ export function createWorkflowTool() {
       return toolResult(result);
     },
   };
+}
+
+export function normalizeCheckpointPayload(value, toolContext, eventId) {
+  const checkpoint = { ...value };
+  const turnId = checkpoint.turn_id || toolContext?.operation_id || eventId || `turn_${Date.now()}`;
+  checkpoint.turn_id = turnId;
+  checkpoint.id ||= eventId || `checkpoint_${turnId}`;
+  if (!checkpoint.disposition && checkpoint.status) checkpoint.disposition = checkpoint.status;
+  delete checkpoint.status;
+  return checkpoint;
 }
 
 /**
@@ -272,6 +436,42 @@ export function createEnvironmentTool() {
         context?.abortSignal,
       );
       return toolResult(result);
+    },
+  };
+}
+
+export function createComputeCatalogTool(options = {}) {
+  return {
+    ...TOOL_CONTRACTS.computeCatalog,
+    async execute(_toolCallId, params, _onUpdate, toolContext) {
+      const root = boundWorkspaceRoot(params, toolContext);
+      const gateway = options.toolGateway || options.tool_gateway;
+      if (!gateway || typeof gateway.describe !== "function") throw new Error("compute_catalog_not_configured");
+      const mode = await readWorkspaceMode(root);
+      const catalog = gateway.describe({ workspace_mode: mode }).filter((item) => item?.kind === "compute");
+      return toolResult({ protocol_version: "compute_catalog_1", workspace_mode: mode, catalog, capabilities: catalog });
+    },
+  };
+}
+
+export function createComputeReadinessTool(options = {}) {
+  return {
+    ...TOOL_CONTRACTS.computeReadiness,
+    async execute(_toolCallId, params, _onUpdate, toolContext) {
+      const root = boundWorkspaceRoot(params, toolContext);
+      const assembly = options.capabilityAssembly || options.capability_assembly;
+      let readiness;
+      if (assembly && typeof assembly.readiness === "function") {
+        readiness = await assembly.readiness(params.capability_id === undefined ? {} : { capability_id: params.capability_id });
+      } else {
+        const gateway = options.toolGateway || options.tool_gateway;
+        if (!gateway || typeof gateway.describe !== "function") throw new Error("compute_readiness_not_configured");
+        const mode = await readWorkspaceMode(root);
+        readiness = gateway.describe({ workspace_mode: mode })
+          .filter((item) => item?.kind === "compute" && (params.capability_id === undefined || item.capability_id === params.capability_id))
+          .map((item) => ({ capability_id: item.capability_id, capability_version: item.capability_version, readiness: { state: "registered", checks: [] } }));
+      }
+      return toolResult({ protocol_version: "compute_readiness_1", readiness });
     },
   };
 }
@@ -592,23 +792,51 @@ export function createReportTool() {
 }
 
 export function createTspiTools(options = {}) {
+  return exposeTools([
+    ...createCoreToolFactories(options),
+    ...createChemicalToolFactories(options),
+  ]);
+}
+
+/**
+ * Build only the domain-neutral server tools for the core extension.
+ * Chemical artifact and analysis factories are intentionally kept out of
+ * this list so an extension can select the smallest trusted tool surface.
+ */
+export function createCoreTools(options = {}) {
+  return exposeTools(createCoreToolFactories(options));
+}
+
+/** Build only artifact/analysis tools owned by the chemical extension. */
+export function createChemicalTools(options = {}) {
+  return exposeTools(createChemicalToolFactories(options));
+}
+
+function createCoreToolFactories(options = {}) {
   const tools = [
-    createStateTool(),
+    createStateTool(options),
     createChangeTool(),
     createWorkflowTool(),
     createEnvironmentTool(),
-    createComputeTool(),
+    createComputeCatalogTool(options),
+    createComputeReadinessTool(options),
+    createComputeTool(options),
     createReviewTool(options.review),
     createReplyTool(),
-    createSeedTool(),
-    createCompareTool(),
-    createAnalyzeTool(),
     createDispatchTool(),
     createImportTool(),
     createRenderTool(),
     createReportTool(),
     createNotifyTool(),
   ];
+  return tools;
+}
+
+function createChemicalToolFactories(_options = {}) {
+  return [createSeedTool(), createCompareTool(), createAnalyzeTool()];
+}
+
+function exposeTools(tools) {
   // Expose semantic canonical names to the Agent. The ts_* source factories
   // remain private implementation details and are deliberately not duplicated
   // in the active inventory (which would inflate every prompt schema).
@@ -751,6 +979,13 @@ async function runCanonicalApi(command, cwd, extraArgs, parentSignal, timeoutMs 
 }
 
 async function executeNativeCommand({ command, root, params, signal }) {
+  // Research Agent workspaces have one durable filesystem Kernel authority.
+  // Keep legacy workspaces on ts_api.py, but never let a new workspace split
+  // reads and writes between context.json and research_map.json/SQLite.
+  if (command.startsWith("research.") && isFilesystemResearchWorkspace(root)) {
+    if (signal?.aborted) throw new Error(`canonical command ${command} was cancelled`);
+    return executeFilesystemResearchCommand(command, root, params);
+  }
   if (command === "research.change"
     || command === "research.strategy"
     || command === "research.interpretation"
@@ -778,7 +1013,7 @@ async function executeNativeCommand({ command, root, params, signal }) {
 function continuationRequest(params) {
   const request = {
     schema_version: "ts-continuation-request/1",
-    operation: params.operation,
+    operation: params.operation === "set_status" ? "set" : params.operation,
   };
   if (params.scope !== undefined) request.scope = params.scope;
   if (params.targetId !== undefined) request.target_id = params.targetId;
@@ -787,6 +1022,9 @@ function continuationRequest(params) {
   if (params.requestId !== undefined) request.request_id = params.requestId;
   if (params.continuationId !== undefined) request.continuation_id = params.continuationId;
   if (params.status !== undefined) request.status = params.status;
+  if (params.rationale !== undefined) request.rationale = params.rationale;
+  if (params.basisRefs !== undefined) request.basis_refs = params.basisRefs;
+  if (params.expectedRevision !== undefined) request.expected_revision = params.expectedRevision;
   return request;
 }
 
@@ -875,6 +1113,50 @@ function toolResult(result) {
   };
 }
 
+function inspect_light_xyz(value) {
+  if (typeof value !== "string") throw new Error("inspect_xyz requires an XYZ string");
+  const lines = value.replace(/\r\n?/gu, "\n").trimEnd().split("\n");
+  const atom_count = Number.parseInt(lines[0]?.trim() ?? "", 10);
+  if (!Number.isSafeInteger(atom_count) || atom_count < 1 || lines.length !== atom_count + 2) {
+    throw new Error("invalid XYZ atom count or row count");
+  }
+  const elements = {};
+  const coordinates = [];
+  for (const line of lines.slice(2)) {
+    const fields = line.trim().split(/\s+/u);
+    if (fields.length < 4 || !/^[A-Z][a-z]?$/u.test(fields[0])) throw new Error("invalid XYZ atom row");
+    const xyz = fields.slice(1, 4).map(Number);
+    if (xyz.some((item) => !Number.isFinite(item))) throw new Error("XYZ coordinates must be finite");
+    elements[fields[0]] = (elements[fields[0]] || 0) + 1;
+    coordinates.push(xyz);
+  }
+  const formula = Object.keys(elements).sort().map((element) => `${element}${elements[element] === 1 ? "" : elements[element]}`).join("");
+  return { atom_count, elements, formula };
+}
+
+/**
+ * `inputArtifactIds` is run provenance, while providers receive their input
+ * through the capability-specific `input` object. For the common single-input
+ * providers, bind the artifact only when the descriptor explicitly advertises
+ * the canonical `input_artifact_id` field. Generic capabilities keep their own
+ * input contracts and are never guessed into a provider-specific shape.
+ */
+function bindLightInputArtifact({ gateway, capabilityId, input, inputArtifactIds }) {
+  const normalized = input && typeof input === "object" && !Array.isArray(input) ? { ...input } : {};
+  if (!Array.isArray(inputArtifactIds) || inputArtifactIds.length === 0
+      || normalized.xyz !== undefined || normalized.input_artifact_id !== undefined) {
+    return normalized;
+  }
+  if (inputArtifactIds.length !== 1 || !gateway || typeof gateway.describe !== "function") return normalized;
+  const descriptor = gateway.describe({ workspace_mode: "light" })
+    .find((item) => item?.capability_id === capabilityId);
+  const properties = descriptor?.input_schema?.properties;
+  if (properties && Object.prototype.hasOwnProperty.call(properties, "input_artifact_id")) {
+    normalized.input_artifact_id = inputArtifactIds[0];
+  }
+  return normalized;
+}
+
 function expectedReportRefs(packageRef) {
   return {
     package_ref: packageRef,
@@ -957,13 +1239,17 @@ function lastDiagnosticLine(value) {
   return (lines.at(-1) || "").slice(0, 1000);
 }
 
-function cliErrorMessage(stderr) {
+export function cliErrorMessage(stderr) {
   if (typeof stderr !== "string" || !stderr.trim()) return undefined;
   try {
     const value = JSON.parse(stderr);
     if (value && typeof value.error === "string" && value.error.trim()) return value.error.trim();
   } catch (_error) {}
-  return stderr.trim().slice(-4000);
+  const lines = stderr.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const errorLine = [...lines].reverse().find((line) =>
+    /(?:^|\s)(?:[A-Za-z_][\w.]*(?:Error|Exception)|Error|Exception):/.test(line),
+  );
+  return (errorLine || lines.at(-1) || "").slice(-2000);
 }
 
 function packageScript(name) {
@@ -978,7 +1264,8 @@ function nativePython() {
 
 function requireNativeWrites(toolName) {
   if (process.env.TSPI_NATIVE_WRITES !== "1") {
-    throw new Error(`${toolName} requires the guarded TSPi App Server Root Agent`);
+    const publicCommand = toolName.replace(/_([^_]*)$/, ".$1");
+    throw new Error(`${publicCommand} requires the guarded TSPi App Server Root Agent (tool ${toolName})`);
   }
 }
 

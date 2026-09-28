@@ -1,0 +1,21 @@
+{
+  "schema_version": "tspi-provider-descriptor/1",
+  "provider_id": "xtb",
+  "kind": "compute",
+  "capabilities": [
+    {
+      "id": "xtb",
+      "version": "1",
+      "aliases": [
+        "xtb.sp",
+        "xtb.opt",
+        "xtb.freq",
+        "xtb.opt_freq",
+        "xtb.scan",
+        "xtb.md"
+      ]
+    }
+  ],
+  "implementation": "builtin",
+  "notes": "Inventory entry for the built-in xTB capability adapters."
+}

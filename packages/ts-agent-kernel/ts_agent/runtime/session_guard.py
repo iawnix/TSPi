@@ -26,6 +26,8 @@ class SessionGuardError(RuntimeError):
 
 def installation_is_guarded(installation: Path) -> bool:
     path = installation / ".pi" / "packages" / "tspi" / "install-state.json"
+    if not path.exists() and not path.is_symlink():
+        return _standalone_installation_is_guarded(installation)
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:
@@ -52,10 +54,42 @@ def installation_is_guarded(installation: Path) -> bool:
         raise SessionGuardError("invalid installation guard state") from exc
 
 
+def _standalone_installation_is_guarded(installation: Path) -> bool:
+    """Validate the active release in the standalone application layout."""
+    current = installation / "current"
+    releases = installation / "releases"
+    if not current.is_symlink() or releases.is_symlink() or not releases.is_dir():
+        return False
+    try:
+        selected = current.resolve(strict=True)
+        release_root = releases.resolve(strict=True)
+        if selected.parent != release_root:
+            return False
+        manifest_path = selected / ".ts-agent-release.json"
+        descriptor = os.open(manifest_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                    or info.st_mode & 0o077 or info.st_nlink != 1 or info.st_size > HEADER_LIMIT):
+                return False
+            value = json.loads(handle.read(HEADER_LIMIT + 1))
+        package = value.get("package") if isinstance(value, dict) else None
+        return (
+            isinstance(value, dict)
+            and value.get("schema_version") in {"ts-agent-release/1", "ts-agent-release/2"}
+            and value.get("release_id") == selected.name
+            and isinstance(package, dict)
+            and package.get("name") == "@iawnix/ts-agent"
+        )
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+
+
 def require_guarded_installation(installation: Path) -> None:
     if not installation_is_guarded(installation):
         raise SessionGuardError(
-            "installation guard upgrade is incomplete; run the Package installer after closing old TSPi writers",
+            "installation guard upgrade is incomplete; no selected TSPi Package release is safe to use; "
+            "run the Package installer after closing old TSPi writers",
             code="session_guard_upgrade_required",
         )
 

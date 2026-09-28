@@ -1,11 +1,14 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
 import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
 import { boundWorkspaceRoot } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
+import { readWorkspaceMode } from "./workspace-mode-tools.mjs";
+import { create_tool_gateway } from "../../packages/research-agent-capabilities/tool_gateway.mjs";
+import { create_compute_orchestrator } from "../../packages/research-agent-capabilities/compute_orchestrator.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -42,11 +45,42 @@ const COMPUTE_OPERATION_FIELDS = Object.freeze({
   cancel: ["intentId", "timeoutSeconds"],
 });
 
-export function createComputeTool() {
+export function createComputeTool(options = {}) {
   return {
     ...TOOL_CONTRACTS.compute,
     async execute(toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites();
+      if (params && typeof params.capability_id === "string") {
+        const root = boundWorkspaceRoot(params, toolContext);
+        const workspace_mode = await readWorkspaceMode(root);
+        const gateway = options.toolGateway || options.tool_gateway;
+        const orchestrator = options.computeOrchestrator || options.compute_orchestrator
+          || (gateway ? create_compute_orchestrator({ tool_gateway: gateway, artifact_store: gateway.artifact_store }) : null);
+        if (!orchestrator) throw new Error("compute_capability_host_not_configured");
+        const workspace_id = toolContext?.workspace_id || toolContext?.workspaceId || basename(root);
+        const result = await orchestrator.run({
+          workspace_id,
+          workspace_root: root,
+          workspace_mode,
+          capability_id: params.capability_id,
+          ...(params.capability_version === undefined ? {} : { capability_version: params.capability_version }),
+          ...(params.run_id === undefined ? {} : { run_id: params.run_id }),
+          ...(params.attempt_id === undefined ? {} : { attempt_id: params.attempt_id }),
+          ...(params.node_id === undefined ? {} : { node_id: params.node_id }),
+          input: params.input || {},
+          ...(params.input_artifact_ids === undefined ? {} : { input_artifact_ids: params.input_artifact_ids }),
+          ...(params.timeout_ms === undefined ? {} : { timeout_ms: params.timeout_ms }),
+          ...(params.metadata === undefined ? {} : { metadata: params.metadata }),
+          ...(params.environment === undefined ? {} : { environment: params.environment }),
+          ...(params.evidence_links === undefined ? {} : { evidence_links: params.evidence_links }),
+          request_id: toolCallId,
+          signal: context?.abortSignal,
+        });
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          details: result,
+        };
+      }
       validatePublicComputeParameters(params);
       const request = validateComputeRequest({
         ...params,
@@ -737,7 +771,7 @@ function nativePython() {
 
 function requireNativeWrites() {
   if (process.env.TSPI_NATIVE_WRITES !== "1") {
-    throw new Error("compute_run requires the guarded TSPi App Server Root Agent");
+    throw new Error("compute.run requires the guarded TSPi App Server Root Agent (tool compute_run)");
   }
 }
 

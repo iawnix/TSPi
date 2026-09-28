@@ -29,7 +29,9 @@ TICK_SCHEMA = "ts-compute-monitor-tick/1"
 MONITOR_ID = re.compile(r"^mon_[a-f0-9]{24}$")
 EVENT_ID = re.compile(r"^evt_[a-f0-9]{32}$")
 _WAKE_POLICIES = {"none", "next_run"}
-_NOTIFY_POLICIES = {"none", "user"}
+# The policy selects whether the configured Host notification dispatcher should
+# receive events. It deliberately does not name a transport such as email.
+_NOTIFY_POLICIES = {"none", "configured"}
 _OBSERVABLE_STATES = {"prepared", "submitted", "queued", "running", "completed", "parsed", "failed", "stopped", "unknown"}
 _CHANNELS = ("wake", "notify")
 _LEASE_SECONDS = 180
@@ -78,7 +80,7 @@ def _register_monitor(workspace: Path, *, node_id: str, intent_id: str, intent_d
     if wake_policy not in _WAKE_POLICIES:
         raise ValueError("monitor wake_policy must be none or next_run")
     if notify_policy not in _NOTIFY_POLICIES:
-        raise ValueError("monitor notify_policy must be none or user")
+        raise ValueError("monitor notify_policy must be none or configured")
     if session_id is not None and not _nonempty(session_id):
         raise ValueError("monitor session_id must be a non-empty string")
     resolved_id = monitor_id or _monitor_id(intent_id, intent_digest)
@@ -135,7 +137,7 @@ def stage_registration(root: str | Path, **binding: Any) -> dict[str, Any]:
     """Persist the wake binding BEFORE submission, so a later tick can finish registration."""
     workspace = _workspace_root(root)
     node_id, intent_id, digest = binding.get("node_id"), binding.get("intent_id"), binding.get("intent_digest")
-    if not isinstance(node_id, str) or not re.fullmatch(r"node_[1-9][0-9]*", node_id):
+    if not isinstance(node_id, str) or not re.fullmatch(r"node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", node_id):
         raise ValueError("monitor node_id is invalid")
     if not isinstance(intent_id, str) or not re.fullmatch(r"calc_[1-9][0-9]*", intent_id):
         raise ValueError("monitor intent_id is invalid")
@@ -345,7 +347,7 @@ def _normalize_delivery(delivery: dict[str, Any]) -> dict[str, Any]:
     delivery.setdefault("sequence", 0)
     if "channels" not in delivery:
         channels = {"wake": _new_channel(delivery.get("wake_policy") == "next_run"),
-                    "notify": _new_channel(delivery.get("notify_policy") == "user")}
+                    "notify": _new_channel(delivery.get("notify_policy") == "configured")}
         for row in channels.values():
             if row["status"] != "disabled" and delivery.get("status") == "delivered":
                 row.update(status="delivered", delivered_at=delivery.get("delivered_at"))

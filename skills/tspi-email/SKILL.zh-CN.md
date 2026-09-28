@@ -13,6 +13,10 @@ description: 按配置发送 TSPi 研究事件和报告的邮件通知，并跟�
 已记录的研究结果，并关联相应报告。安装级配置可以选择
 兼容的 ClawEmail 传输，或内置 SMTP 传输；SMTP 当前支持 163 和 QQ 邮箱预设。
 
+`notify_send` 是 Host/Monitor 边界能力，不会出现在当前 Root Agent 工具目录中。只有将计算
+Monitor 注册为 `notify_policy = "configured"` 时，Monitor 才会创建通知投递；`"none"` 会禁用
+通知通道。Host 服务必须运行，且安装级通知配置必须先通过启动校验，Monitor 才能投递。
+
 ## 操作规则
 
 - 使用安装级通知配置中的收件人。

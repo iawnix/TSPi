@@ -214,10 +214,10 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     runtime_payload = json.loads(runtime_plan.stdout)
     assert runtime_payload["python_install_source"] == "bundled-release-wheel"
     assert runtime_payload["python_wheel"]["sha256"] == distribution["sha256"]
-    assert (install_root / "TSPi").is_symlink()
-    assert (install_root / "TSPi").resolve() == package_root / "TSPi"
+    assert (install_root / "ResearchAgent").is_symlink()
+    assert (install_root / "ResearchAgent").resolve() == package_root / "ResearchAgent"
     help_result = subprocess.run(
-        [str(install_root / "TSPi"), "--help"],
+        [str(install_root / "ResearchAgent"), "--help"],
         cwd=install_root,
         text=True,
         stdout=subprocess.PIPE,
@@ -236,7 +236,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     fake_pi.chmod(0o755)
     write_test_runtime_manifest(package_root, install_root)
     startup = subprocess.run(
-        [str(install_root / "TSPi"), "--workspace", "release-smoke"],
+        [str(install_root / "ResearchAgent"), "--workspace", "release-smoke"],
         cwd=install_root,
         env={**os.environ, "PI_BIN": str(fake_pi)},
         text=True,
@@ -436,7 +436,7 @@ def _synthetic_release(
         {"name": "@iawnix/ts-agent", "version": version},
         separators=(",", ":"),
     ).encode() + b"\n"
-    files["TSPi"] = b"#!/usr/bin/env bash\nexit 0\n"
+    files["ResearchAgent"] = b"#!/usr/bin/env bash\nexit 0\n"
     files["README.md"] = f"release {marker}\n".encode()
     files.update(extra_files or {})
     python_payload = {
@@ -465,7 +465,7 @@ def _synthetic_release(
         for name, content in sorted(files.items()):
             info = tarfile.TarInfo(name if name.startswith("package/") else f"package/{name}")
             info.size = len(content)
-            info.mode = 0o755 if name in {"TSPi", "scripts/ts_web_provider.py"} else 0o644
+            info.mode = 0o755 if name in {"ResearchAgent", "scripts/ts_web_provider.py"} else 0o644
             archive.addfile(info, io.BytesIO(content))
     digest = hashlib.sha256(temporary_archive.read_bytes()).hexdigest()
     release_id = f"{version}-sha256-{digest[:16]}"

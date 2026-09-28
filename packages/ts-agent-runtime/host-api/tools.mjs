@@ -11,6 +11,8 @@ const TOOL_ROWS = [
   ["change", "ts_change", "deterministic_workspace"],
   ["workflow", "ts_workflow", "deterministic_workspace"],
   ["environment", "ts_environment", "deterministic_infrastructure"],
+  ["computeCatalog", "ts_compute_catalog", "deterministic_infrastructure"],
+  ["computeReadiness", "ts_compute_readiness", "deterministic_infrastructure"],
   ["review", "ts_review", "child_agent"],
   ["compute", "ts_calc", "child_agent"],
   ["reply", "ts_reply", "deterministic_operational"],
@@ -22,6 +24,7 @@ const TOOL_ROWS = [
   ["render", "ts_render", "deterministic_artifact"],
   ["report", "ts_report", "deterministic_artifact"],
   ["notify", "ts_notify", "deterministic_external"],
+  ["lightCompute", "ts_light_compute", "light_compute"],
 ];
 
 // Semantic Harness names are the stable interface exposed to Agents. The
@@ -36,6 +39,8 @@ export const PUBLIC_TOOL_CANONICAL_NAMES = Object.freeze({
   interpretation: "research_interpretation",
   checkpoint: "research_checkpoint",
   environment: "compute_environment",
+  computeCatalog: "compute_catalog",
+  computeReadiness: "compute_readiness",
   review: "review_run",
   compute: "compute_run",
   reply: "review_respond",
@@ -47,6 +52,7 @@ export const PUBLIC_TOOL_CANONICAL_NAMES = Object.freeze({
   render: "artifact_render",
   report: "report_build",
   notify: "notify_send",
+  lightCompute: "light_compute",
 });
 
 export const PUBLIC_TOOL_NAMES = Object.freeze(Object.fromEntries(
@@ -95,6 +101,8 @@ const SOURCE_TOOL_METADATA = Object.freeze({
   ts_change: Object.freeze({ authority: "kernel_write", effect: "research_write", replay: "idempotent", phase: "advance" }),
   ts_workflow: Object.freeze({ authority: "kernel_write", effect: "lifecycle_write", replay: "idempotent", phase: "checkpoint" }),
   ts_environment: Object.freeze({ authority: "runtime_read", effect: "read", replay: "safe", phase: "prepare" }),
+  ts_compute_catalog: Object.freeze({ authority: "runtime_read", effect: "read", replay: "safe", phase: "prepare" }),
+  ts_compute_readiness: Object.freeze({ authority: "runtime_read", effect: "read", replay: "safe", phase: "prepare" }),
   ts_review: Object.freeze({ authority: "advisory_runtime", effect: "advisory", replay: "never", phase: "execute" }),
   ts_calc: Object.freeze({ authority: "execution_runtime", effect: "attempt_artifact", replay: "never", phase: "execute" }),
   ts_reply: Object.freeze({ authority: "research_write", effect: "advisory_disposition", replay: "never", phase: "interpret" }),
@@ -106,6 +114,7 @@ const SOURCE_TOOL_METADATA = Object.freeze({
   ts_render: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "interpret" }),
   ts_report: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "checkpoint" }),
   ts_notify: Object.freeze({ authority: "external_side_effect", effect: "external_write", replay: "never", phase: "checkpoint" }),
+  ts_light_compute: Object.freeze({ authority: "execution_runtime", effect: "artifact_write", replay: "idempotent", phase: "execute" }),
 });
 
 // Canonical tools carry the same lifecycle contract as their private source
@@ -117,6 +126,19 @@ const CANONICAL_TOOL_METADATA = Object.fromEntries(
     return [canonicalName, SOURCE_TOOL_METADATA[sourceName] || SOURCE_TOOL_METADATA.ts_workflow];
   }),
 );
+// The workflow source factory serves several semantic decisions. Their
+// lifecycle phases are different even though they share one implementation.
+// Keep the public aliases aligned with the Research Turn graph so orientation
+// can advance into planning and completed Attempts can be interpreted before
+// the final checkpoint.
+CANONICAL_TOOL_METADATA.research_strategy = Object.freeze({
+  ...SOURCE_TOOL_METADATA.ts_workflow,
+  phase: "advance",
+});
+CANONICAL_TOOL_METADATA.research_interpretation = Object.freeze({
+  ...SOURCE_TOOL_METADATA.ts_workflow,
+  phase: "interpret",
+});
 export const PUBLIC_TOOL_METADATA = Object.freeze({
   ...SOURCE_TOOL_METADATA,
   ...CANONICAL_TOOL_METADATA,
@@ -200,14 +222,120 @@ export function createPublicToolContracts(Type) {
     pattern: `^(?:${values.join("|")})$`,
     maxLength,
   });
-  const operation = Type.Object({
-    type: Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9_]*$" }),
+  const identifier = (maxLength = 256) => Type.String({ minLength: 1, maxLength });
+  const text = (maxLength = 12_000) => Type.String({ minLength: 1, maxLength });
+  const stringArray = (maxItems = 128) => Type.Array(identifier(), { maxItems, uniqueItems: true });
+  const metadata = Type.Object({}, { additionalProperties: true, maxProperties: 32 });
+  const operation = (type, properties) => Type.Object({
+    type: Type.Literal(type),
+    ...properties,
   }, {
-    additionalProperties: true,
+    additionalProperties: false,
     maxProperties: 24,
-    propertyNames: { pattern: "^[A-Za-z][A-Za-z0-9_]*$", maxLength: 64 },
   });
-  const nodeId = Type.String({ pattern: "^node_[1-9][0-9]*$", maxLength: 128 });
+  // Node outcomes are terminal dispositions.  Keep the public ChangeSet
+  // schema aligned with ResearchNode.transition_node: non-terminal states
+  // cannot carry an outcome, while closing a node must carry one.
+  const setNodeStateOperation = Type.Union([
+    operation("set_node_state", {
+      node_id: identifier(),
+      state: literalUnion(["planned", "active", "paused", "blocked"]),
+      summary: Type.Optional(text()),
+    }),
+    operation("set_node_state", {
+      node_id: identifier(),
+      state: Type.Literal("closed"),
+      outcome: literalUnion(["completed", "inconclusive", "stopped"]),
+      summary: Type.Optional(text()),
+    }),
+  ]);
+  // ResearchMap mutation names are a Kernel contract, not domain labels. Keep
+  // the public schema discriminated so a model cannot invent operations such
+  // as `mechanistic_hypothesis` and only discover the mistake after execution.
+  const changeOperation = Type.Union([
+    operation("create_phase", {
+      id: identifier(), title: text(2000), objective: Type.Optional(text(12_000)),
+      created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
+    }),
+    operation("create_claim", {
+      id: identifier(), statement: text(),
+      status: Type.Optional(literalUnion(["proposed", "supported", "contradicted", "inconclusive", "withdrawn"])),
+      predictions: Type.Optional(stringArray()), falsifiers: Type.Optional(stringArray()),
+      created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
+    }),
+    operation("create_node", {
+      id: identifier(), title: text(2000), objective: text(),
+      phase_id: Type.Optional(identifier()), claim_ids: Type.Optional(stringArray()),
+      dependency_ids: Type.Optional(stringArray()), created_at: Type.Optional(identifier()),
+      metadata: Type.Optional(metadata),
+    }),
+    operation("create_finding", {
+      id: identifier(), node_id: identifier(), statement: text(),
+      kind: literalUnion(["fact", "issue"]), claim_ids: Type.Optional(stringArray()),
+      source_refs: Type.Optional(stringArray(256)), value: Type.Optional(Type.Any()),
+      datatype: Type.Optional(identifier(128)), unit: Type.Optional(identifier(128)),
+      provenance: Type.Optional(metadata),
+      status: Type.Optional(literalUnion(["open", "confirmed", "resolved", "accepted", "superseded"])),
+      severity: Type.Optional(identifier(64)), resolution: Type.Optional(text()),
+      created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
+    }),
+    operation("create_gate", {
+      id: identifier(), scope: literalUnion(["node", "claim"]), target_id: identifier(),
+      criteria: Type.Optional(Type.Array(Type.Any(), { maxItems: 128 })),
+      created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
+    }),
+    operation("set_continuation", {
+      id: identifier(), scope: literalUnion(["node", "claim", "gate"]), target_id: identifier(),
+      action: literalUnion(["inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"]),
+      status: Type.Optional(literalUnion(["required", "deferred", "blocked", "completed"])),
+      reason: Type.Optional(text()), request_id: Type.Optional(identifier()),
+      created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
+    }),
+    operation("resolve_continuation", {
+      id: identifier(), status: literalUnion(["required", "deferred", "blocked", "completed"]),
+      reason: Type.Optional(text()), request_id: Type.Optional(identifier()),
+    }),
+    operation("evaluate_gate", {
+      gate_id: identifier(), verdict: literalUnion(["pass", "fail", "inconclusive", "blocked"]),
+      message: Type.Optional(text()), evidence_refs: Type.Optional(stringArray(256)),
+      created_at: Type.Optional(identifier()),
+    }),
+    setNodeStateOperation,
+    operation("set_claim_status", {
+      claim_id: identifier(), status: literalUnion(["proposed", "supported", "contradicted", "inconclusive", "withdrawn"]),
+    }),
+    operation("relate_claims", {
+      source_id: identifier(), target_id: identifier(), relation: identifier(128),
+    }),
+    operation("set_focus", {
+      claim_ids: stringArray(), node_ids: stringArray(),
+    }),
+  ]);
+  const stateFields = {
+    root: optionalRoot,
+    query: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+    claimId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2048 })),
+    storageOperation: Type.Optional(enumString(["status", "bootstrap"])),
+    kind: Type.Optional(enumString(["phase", "claim", "node", "finding", "gate"])),
+    id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+    nodeRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+  };
+  const stateReadSchema = Type.Union([
+    Type.Object({
+      ...stateFields,
+      mode: Type.Literal("capabilities"),
+      capabilityKind: literalUnion(["compute", "analysis"]),
+    }, { additionalProperties: false }),
+    Type.Object({
+      ...stateFields,
+      mode: Type.Optional(literalUnion([
+        "map", "summary", "context", "liveness", "detail", "locate", "validate",
+        "operations", "decisions", "storage", "artifacts", "runs",
+      ])),
+    }, { additionalProperties: false }),
+  ]);
+  const nodeId = Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 });
   const artifactId = Type.String({ pattern: "^art_[0-9a-f]{24}$" });
   const intentId = Type.String({ pattern: "^calc_[1-9][0-9]*$", maxLength: 128 });
   const remoteResources = Type.Object({
@@ -267,6 +395,24 @@ export function createPublicToolContracts(Type) {
       requiredOperationBranch("cancel", ["intentId"]),
     ]),
   ]);
+  // Mode-neutral capability execution. Host injects workspace mode and the
+  // selected ledger; the Agent supplies only capability identity and input.
+  // Keep this branch separate from the legacy scheduler schema so the active
+  // compute_run contract cannot accidentally require scheduler intent fields.
+  const computeCapabilitySchema = Type.Object({
+    capability_id: Type.String({ pattern: "^[a-z][a-z0-9_]{0,127}$", maxLength: 128 }),
+    capability_version: Type.Optional(Type.String({ minLength: 1, maxLength: 32 })),
+    run_id: Type.Optional(Type.String({ minLength: 1, maxLength: 160, pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$" })),
+    attempt_id: Type.Optional(Type.String({ minLength: 1, maxLength: 160, pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$" })),
+    node_id: Type.Optional(nodeId),
+    input: Type.Optional(Type.Record(Type.String({ minLength: 1, maxLength: 128 }), Type.Any())),
+    input_artifact_ids: Type.Optional(Type.Array(Type.String({ pattern: "^art_[0-9a-f]{64}$" }), { maxItems: 32, uniqueItems: true })),
+    timeout_ms: Type.Optional(Type.Integer({ minimum: 1, maximum: 3_600_000 })),
+    metadata: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
+    environment: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
+    evidence_links: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true, maxProperties: 16 }), { maxItems: 128 })),
+    root: optionalRoot,
+  }, { additionalProperties: false });
 
   const contracts = {
     systemPrompt: contract("systemPrompt", "System Prompt", "Read the effective system prompt and its provenance.", Type.Object({}, {
@@ -274,23 +420,12 @@ export function createPublicToolContracts(Type) {
     }), {
       promptSnippet: "Inspect the effective system prompt and its provenance",
     }),
-    state: contract("state", "TS State", "Read bounded ResearchMap state.", Type.Object({
-      mode: Type.Optional(enumString(["map", "summary", "context", "liveness", "detail", "locate", "validate", "operations", "decisions", "storage", "artifacts", "capabilities", "runs"])),
-      root: optionalRoot,
-      query: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-      claimId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2048 })),
-      storageOperation: Type.Optional(enumString(["status", "bootstrap"])),
-      kind: Type.Optional(enumString(["phase", "claim", "node", "finding", "gate"])),
-      id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-      nodeRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-      capabilityKind: Type.Optional(enumString(["compute", "analysis"])),
-    }, { additionalProperties: false }), {
+    state: contract("state", "TS State", "Read bounded ResearchMap state.", stateReadSchema, {
       promptSnippet: "Read bounded ResearchMap state",
     }),
     change: contract("change", "TS Change", "Validate and atomically apply one Root-authored ResearchMap ChangeSet.", Type.Object({
       rationale: Type.String({ minLength: 1, maxLength: 12_000 }),
-      operations: Type.Array(operation, { minItems: 1, maxItems: 128 }),
+      operations: Type.Array(changeOperation, { minItems: 1, maxItems: 128 }),
       basisRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 256, uniqueItems: true })),
       expectedRevision: Type.Optional(Type.Integer({ minimum: 0 })),
       root: optionalRoot,
@@ -328,13 +463,20 @@ export function createPublicToolContracts(Type) {
       name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential" }),
-    compute: contract("compute", "TS Calculate", "Run one calculation lifecycle operation.", computeOperationSchema, {
+    computeCatalog: contract("computeCatalog", "Compute Catalog", "List the registered mode-neutral compute capabilities.", Type.Object({
+      root: optionalRoot,
+    }, { additionalProperties: false }), { executionMode: "sequential", promptSnippet: "List registered compute capabilities" }),
+    computeReadiness: contract("computeReadiness", "Compute Readiness", "Check readiness of registered compute capabilities.", Type.Object({
+      capability_id: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9_]{0,127}$", maxLength: 128 })),
+      root: optionalRoot,
+    }, { additionalProperties: false }), { executionMode: "sequential", promptSnippet: "Check compute capability readiness" }),
+    compute: contract("compute", "TS Calculate", "Run one mode-neutral registered calculation capability.", Type.Union([computeCapabilitySchema, computeOperationSchema]), {
       executionMode: "sequential",
       replay: "never",
       promptSnippet: "Run one calculation operation",
     }),
     review: contract("review", "TS Review", "Run one isolated, bounded advisory Review of a target Claim.", Type.Object({
-      targetClaimId: Type.String({ pattern: "^claim_[1-9][0-9]*$", maxLength: 128, description: "Scientific Claim that the Review must assess." }),
+      targetClaimId: Type.String({ pattern: "^claim_[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", maxLength: 128, description: "Scientific Claim that the Review must assess." }),
       question: Type.String({ minLength: 1, maxLength: 4000 }),
       reviewerRole: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9_-]{0,63}$" })),
       artifactIds: Type.Optional(Type.Array(artifactId, { maxItems: 4, uniqueItems: true })),
@@ -401,7 +543,7 @@ export function createPublicToolContracts(Type) {
       assetArtifactIds: Type.Optional(Type.Array(artifactId, { maxItems: 8, uniqueItems: true })),
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential" }),
-    notify: contract("notify", "TS Notify User", "Notify the configured target about a material research event.", Type.Object({
+  notify: contract("notify", "TS Notify User", "Notify the configured target about a material research event.", Type.Object({
       operation: Type.Literal("send"),
       event: enumString(["progress", "node_completed", "calculation_failed", "calculation_ambiguous", "study_completed"], 32),
       subject: Type.String({ minLength: 1, maxLength: 300 }),
@@ -409,6 +551,39 @@ export function createPublicToolContracts(Type) {
       reportRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 8, uniqueItems: true })),
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential", replay: "never" }),
+    lightCompute: contract("lightCompute", "Light Compute", "Inspect and run registered bounded capabilities without ResearchMap or Attempt lifecycle state.", Type.Union([
+      Type.Object({
+        operation: Type.Literal("generate_xyz"),
+        molecule: enumString(["water", "methane", "methanol"], 32),
+        logicalRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256, pattern: "^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$" })),
+        root: optionalRoot,
+      }, { additionalProperties: false }),
+      Type.Object({
+        operation: Type.Literal("inspect_xyz"),
+        xyz: Type.String({ minLength: 1, maxLength: 131_072 }),
+        root: optionalRoot,
+      }, { additionalProperties: false }),
+      Type.Object({
+        operation: Type.Literal("catalog"),
+        root: optionalRoot,
+      }, { additionalProperties: false }),
+      Type.Object({
+        operation: Type.Literal("run"),
+        capabilityId: Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z][a-z0-9_]{0,127}$" }),
+        capabilityVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 32 })),
+        input: Type.Optional(Type.Record(Type.String({ minLength: 1, maxLength: 128 }), Type.Any())),
+        // CapabilityRuntime artifacts are content-addressed with the full
+        // SHA-256 digest. Legacy native artifact tools retain their own
+        // contract above; light provider calls must use the capability ID.
+        inputArtifactIds: Type.Optional(Type.Array(
+          Type.String({ pattern: "^art_[0-9a-f]{64}$" }),
+          { maxItems: 32, uniqueItems: true },
+        )),
+        runId: Type.Optional(Type.String({ minLength: 1, maxLength: 160, pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$" })),
+        timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 3_600_000 })),
+        root: optionalRoot,
+      }, { additionalProperties: false }),
+    ]), { executionMode: "sequential", replay: "idempotent", promptSnippet: "Run a bounded local light-mode calculation" }),
   };
   return Object.freeze(Object.fromEntries(Object.entries(contracts).map(
     ([key, value]) => [key, Object.freeze(value)],
@@ -461,6 +636,86 @@ export function createPublicToolAlias(tool, canonicalName, { mapParams } = {}) {
   };
 }
 
+function normalizeDecisionRecord(record, aliases) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) return record;
+  const normalized = { ...record };
+  for (const [camel, snake] of aliases) {
+    if (normalized[snake] === undefined && normalized[camel] !== undefined) normalized[snake] = normalized[camel];
+    delete normalized[camel];
+  }
+  return normalized;
+}
+
+function normalizeStrategyParams(params = {}) {
+  const strategyOperation = params.strategyOperation || "plan";
+  const plan = normalizeDecisionRecord(params.plan, [
+    ["claimId", "claim_id"], ["nodeId", "node_id"], ["createdAt", "created_at"],
+    ["stopConditions", "stop_conditions"], ["switchConditions", "switch_conditions"],
+  ]);
+  const review = normalizeDecisionRecord(params.review, [
+    ["claimId", "claim_id"], ["selectedStrategyId", "selected_strategy_id"],
+    ["triggerRefs", "trigger_refs"], ["attemptRefs", "attempt_refs"], ["createdAt", "created_at"],
+  ]);
+  if (plan && typeof plan === "object") {
+    if (plan.claim_id === undefined) plan.claim_id = params.claim_id ?? params.claimId;
+    if (plan.node_id === undefined) plan.node_id = params.node_id ?? params.nodeId;
+    if (plan.rationale === undefined && params.rationale !== undefined) plan.rationale = params.rationale;
+  }
+  if (review && typeof review === "object" && review.claim_id === undefined) {
+    review.claim_id = params.claim_id ?? params.claimId;
+  }
+  if (strategyOperation === "plan") {
+    if (!plan || typeof plan !== "object") {
+      throw new Error("research_strategy plan must be an object");
+    }
+    if (typeof plan.claim_id !== "string" || !plan.claim_id.trim()) {
+      throw new Error("research_strategy plan requires an explicit claimId/claim_id bound to an existing Claim");
+    }
+    if (typeof plan.node_id === "string" && !plan.node_id.trim()) {
+      throw new Error("research_strategy plan nodeId/node_id must be a non-empty string when provided");
+    }
+  } else if (strategyOperation === "review"
+      && (!review || typeof review.claim_id !== "string" || !review.claim_id.trim())) {
+    throw new Error("research_strategy review requires an explicit claimId/claim_id bound to an existing Claim");
+  }
+  return { ...params, plan, review };
+}
+
+function normalizeInterpretationParams(params = {}) {
+  const interpretation = normalizeDecisionRecord(params.interpretation, [
+    ["claimId", "claim_id"], ["nodeId", "node_id"], ["attemptRef", "attempt_ref"], ["createdAt", "created_at"],
+  ]);
+  if (interpretation && typeof interpretation === "object") {
+    if (interpretation.claim_id === undefined) interpretation.claim_id = params.claim_id ?? params.claimId;
+    if (interpretation.node_id === undefined) interpretation.node_id = params.node_id ?? params.nodeId;
+    if (interpretation.attempt_ref === undefined) interpretation.attempt_ref = params.attempt_ref ?? params.attemptRef;
+  }
+  return { ...params, interpretation };
+}
+
+function normalizeCheckpointParams(params = {}) {
+  return {
+    ...params,
+    checkpoint: normalizeDecisionRecord(params.checkpoint, [
+      ["turnId", "turn_id"], ["claimIds", "claim_ids"], ["nodeIds", "node_ids"],
+      ["unresolvedRefs", "unresolved_refs"], ["mapRevision", "map_revision"], ["createdAt", "created_at"],
+    ]),
+  };
+}
+
+function normalizeContinuationParams(params = {}) {
+  const normalized = { ...params };
+  for (const [snake, camel] of [
+    ["target_id", "targetId"], ["request_id", "requestId"], ["continuation_id", "continuationId"],
+    ["basis_refs", "basisRefs"], ["expected_revision", "expectedRevision"],
+  ]) {
+    if (normalized[camel] === undefined && normalized[snake] !== undefined) normalized[camel] = normalized[snake];
+    delete normalized[snake];
+  }
+  if (normalized.operation === "set_status") normalized.operation = "set";
+  return normalized;
+}
+
 const SEMANTIC_ALIAS_SOURCES = Object.freeze({
   "system_prompt": "sys_prompt",
   "research_read": "ts_state",
@@ -470,6 +725,8 @@ const SEMANTIC_ALIAS_SOURCES = Object.freeze({
   "research_interpretation": "ts_workflow",
   "research_checkpoint": "ts_workflow",
   "compute_environment": "ts_environment",
+  "compute_catalog": "ts_compute_catalog",
+  "compute_readiness": "ts_compute_readiness",
   "review_run": "ts_review",
   "compute_run": "ts_calc",
   "review_respond": "ts_reply",
@@ -480,23 +737,137 @@ const SEMANTIC_ALIAS_SOURCES = Object.freeze({
   "artifact_import": "ts_import",
   "artifact_render": "ts_render",
   "report_build": "ts_report",
+  "light_compute": "ts_light_compute",
 });
 
 // Decision aliases intentionally expose only operation-specific fields. They
 // forward to one workflow implementation without copying the full
 // continuation schema into three additional Agent context slots.
+function identifierSchema() {
+  return { type: "string", minLength: 1, maxLength: 256 };
+}
+
+function textSchema(maxLength = 12_000) {
+  return { type: "string", minLength: 1, maxLength };
+}
+
+function decisionRecordSchema(properties) {
+  return {
+    type: "object",
+    properties,
+    additionalProperties: true,
+    maxProperties: 32,
+  };
+}
+
+function strategyPlanSchema() {
+  return {
+    ...decisionRecordSchema({
+    id: identifierSchema(),
+    claimId: identifierSchema(),
+    claim_id: identifierSchema(),
+    nodeId: identifierSchema(),
+    node_id: identifierSchema(),
+    objective: textSchema(),
+    rationale: textSchema(),
+    steps: { type: "array", maxItems: 128, items: { type: "object", additionalProperties: true } },
+    alternatives: { type: "array", maxItems: 128, items: { type: "object", additionalProperties: true } },
+    stopConditions: { type: "array", maxItems: 128, items: textSchema() },
+    stop_conditions: { type: "array", maxItems: 128, items: textSchema() },
+    switchConditions: { type: "array", maxItems: 128, items: textSchema() },
+    switch_conditions: { type: "array", maxItems: 128, items: textSchema() },
+    status: { enum: ["proposed", "active", "superseded", "completed", "blocked"] },
+    createdAt: identifierSchema(),
+    created_at: identifierSchema(),
+    }),
+  };
+}
+
+function claimBoundRecordSchema(record) {
+  return {
+    ...record,
+    anyOf: [
+      { required: ["claimId"] },
+      { required: ["claim_id"] },
+    ],
+  };
+}
+
+function strategyReviewSchema() {
+  return claimBoundRecordSchema(decisionRecordSchema({
+    id: identifierSchema(),
+    claimId: identifierSchema(),
+    claim_id: identifierSchema(),
+    decision: { enum: ["continue", "switch", "stop", "blocked"] },
+    rationale: textSchema(),
+    selectedStrategyId: identifierSchema(),
+    selected_strategy_id: identifierSchema(),
+    triggerRefs: { type: "array", maxItems: 128, items: identifierSchema() },
+    trigger_refs: { type: "array", maxItems: 128, items: identifierSchema() },
+    attemptRefs: { type: "array", maxItems: 128, items: identifierSchema() },
+    attempt_refs: { type: "array", maxItems: 128, items: identifierSchema() },
+    createdAt: identifierSchema(),
+    created_at: identifierSchema(),
+  }));
+}
+
+function interpretationSchema() {
+  return decisionRecordSchema({
+    id: identifierSchema(),
+    claimId: identifierSchema(),
+    claim_id: identifierSchema(),
+    nodeId: identifierSchema(),
+    node_id: identifierSchema(),
+    attemptRef: identifierSchema(),
+    attempt_ref: identifierSchema(),
+    summary: textSchema(),
+    outcome: { enum: ["supports", "contradicts", "inconclusive", "invalid"] },
+    createdAt: identifierSchema(),
+    created_at: identifierSchema(),
+  });
+}
+
+function checkpointSchema() {
+  return decisionRecordSchema({
+    id: identifierSchema(),
+    turnId: identifierSchema(),
+    turn_id: identifierSchema(),
+    disposition: { enum: ["waiting_external", "continue_required", "deferred", "blocked", "terminal", "user_input_required"] },
+    status: { enum: ["waiting_external", "continue_required", "deferred", "blocked", "terminal", "user_input_required"] },
+    reason: textSchema(),
+    claimIds: { type: "array", maxItems: 128, items: identifierSchema() },
+    claim_ids: { type: "array", maxItems: 128, items: identifierSchema() },
+    nodeIds: { type: "array", maxItems: 128, items: identifierSchema() },
+    node_ids: { type: "array", maxItems: 128, items: identifierSchema() },
+    unresolvedRefs: { type: "array", maxItems: 128, items: identifierSchema() },
+    unresolved_refs: { type: "array", maxItems: 128, items: identifierSchema() },
+    mapRevision: { type: "integer", minimum: 0 },
+    map_revision: { type: "integer", minimum: 0 },
+    createdAt: identifierSchema(),
+    created_at: identifierSchema(),
+  });
+}
+
 const DECISION_ALIAS_SCHEMAS = Object.freeze({
   "research_continuation": Object.freeze({
     type: "object",
     properties: {
-      operation: { enum: ["status", "set_required", "set_status", "resolve"] },
+      operation: { enum: ["status", "set", "set_required", "set_deferred", "set_blocked", "set_completed", "set_status", "resolve", "clear"] },
       scope: { enum: ["node", "claim", "gate"] },
       targetId: { type: "string", minLength: 1, maxLength: 128 },
+      target_id: { type: "string", minLength: 1, maxLength: 128 },
       action: { enum: ["inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"] },
       status: { enum: ["required", "deferred", "blocked", "completed"] },
       reason: { type: "string", minLength: 1 },
       requestId: { type: "string", minLength: 1 },
+      request_id: { type: "string", minLength: 1 },
       continuationId: { type: "string", minLength: 1, maxLength: 128 },
+      continuation_id: { type: "string", minLength: 1, maxLength: 128 },
+      rationale: { type: "string", minLength: 1, maxLength: 12_000 },
+      basisRefs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
+      basis_refs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
+      expectedRevision: { type: "integer", minimum: 0 },
+      expected_revision: { type: "integer", minimum: 0 },
       root: { type: "string" },
     },
     required: ["operation"],
@@ -506,21 +877,48 @@ const DECISION_ALIAS_SCHEMAS = Object.freeze({
     type: "object",
     properties: {
       strategyOperation: { enum: ["plan", "review"] },
-      plan: { type: "object", additionalProperties: true, maxProperties: 32 },
-      review: { type: "object", additionalProperties: true, maxProperties: 32 },
+      plan: strategyPlanSchema(),
+      review: strategyReviewSchema(),
+      // Accept these at the alias boundary for compatibility with model
+      // payloads that place the Claim/Node selectors beside `plan`.
+      claimId: identifierSchema(),
+      claim_id: identifierSchema(),
+      nodeId: identifierSchema(),
+      node_id: identifierSchema(),
       rationale: { type: "string", minLength: 1, maxLength: 12_000 },
       basisRefs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
       expectedRevision: { type: "integer", minimum: 0 },
       eventId: { type: "string", minLength: 1, maxLength: 256 },
       root: { type: "string" },
     },
+    // A Claim may be supplied beside the record and is copied into the
+    // canonical snake_case payload before dispatch.  Require it in either
+    // location at the transport boundary so malformed plans fail early.
+    anyOf: [
+      { required: ["claimId"] },
+      { required: ["claim_id"] },
+      {
+        required: ["plan"],
+        properties: { plan: { anyOf: [{ required: ["claimId"] }, { required: ["claim_id"] }] } },
+      },
+      {
+        required: ["review"],
+        properties: { review: { anyOf: [{ required: ["claimId"] }, { required: ["claim_id"] }] } },
+      },
+    ],
     required: ["strategyOperation"],
     additionalProperties: false,
   }),
   "research_interpretation": Object.freeze({
     type: "object",
     properties: {
-      interpretation: { type: "object", additionalProperties: true, maxProperties: 32 },
+      interpretation: interpretationSchema(),
+      claimId: identifierSchema(),
+      claim_id: identifierSchema(),
+      nodeId: identifierSchema(),
+      node_id: identifierSchema(),
+      attemptRef: identifierSchema(),
+      attempt_ref: identifierSchema(),
       rationale: { type: "string", minLength: 1, maxLength: 12_000 },
       basisRefs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
       expectedRevision: { type: "integer", minimum: 0 },
@@ -533,7 +931,7 @@ const DECISION_ALIAS_SCHEMAS = Object.freeze({
   "research_checkpoint": Object.freeze({
     type: "object",
     properties: {
-      checkpoint: { type: "object", additionalProperties: true, maxProperties: 32 },
+      checkpoint: checkpointSchema(),
       rationale: { type: "string", minLength: 1, maxLength: 12_000 },
       basisRefs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
       expectedRevision: { type: "integer", minimum: 0 },
@@ -557,16 +955,18 @@ export function createPublicToolAliases(tools, { includeDecisionAliases = true }
     ].includes(canonicalName)) return [];
     const source = byName.get(sourceName);
     if (!source) return [];
-    const mapParams = canonicalName === "research_strategy"
+    const mapParams = canonicalName === "research_continuation"
+      ? normalizeContinuationParams
+      : canonicalName === "research_strategy"
       ? (params) => ({
-        ...params,
+        ...normalizeStrategyParams(params),
         operation: "strategy",
         strategyOperation: params?.strategyOperation || "plan",
       })
       : canonicalName === "research_interpretation"
-        ? (params) => ({ ...params, operation: "interpret" })
+        ? (params) => ({ ...normalizeInterpretationParams(params), operation: "interpret" })
         : canonicalName === "research_checkpoint"
-          ? (params) => ({ ...params, operation: "checkpoint" })
+          ? (params) => ({ ...normalizeCheckpointParams(params), operation: "checkpoint" })
           : undefined;
     return [createPublicToolAlias(source, canonicalName, { mapParams })];
   });

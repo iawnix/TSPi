@@ -2,9 +2,20 @@
 
 [English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
 
-`TSPi --workspace <name>` 启动的是 Pi 官方的远程 `ExperimentalClientTui`，不会替换
+`ResearchAgent --workspace <name>` 是用户侧统一入口，启动 Pi 官方的远程 `ExperimentalClientTui`，不会替换
 Pi 的 header、editor、命令目录、transcript、extension 或输入循环。选中的 workspace
 绑定到安装级 Pi Harness format-4 会话。
+
+新工作区可以在入口处显式绑定不可变模式：
+
+```bash
+./ResearchAgent --workspace quick-task --mode light
+./ResearchAgent --workspace reaction-a --mode research
+```
+
+`light` 创建最小工作区；`research` 创建 Research Kernel 状态，并在终端会话启动前完成
+Host admission。已有框架工作区省略 `--mode` 时使用 manifest 中记录的模式，工作区创建后
+不能在两种模式之间转换。
 
 ## 运行边界
 
@@ -22,8 +33,8 @@ TUI、Phone、Monitor 都是同一个 lane 的客户端，不会启动第二个 
 ## 打开工作区
 
 ```bash
-./TSPi --workspace reaction-a
-./TSPi --workspace reaction-a -c
+./ResearchAgent --workspace reaction-a
+./ResearchAgent --workspace reaction-a -c
 ```
 
 启动器先确保安装级 Host 在线，再请求 session descriptor，直接把 Pi 官方 native client

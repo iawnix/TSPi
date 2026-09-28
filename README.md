@@ -51,9 +51,20 @@ model, tools, transcript, and Root lock; the terminal, Phone, and Monitor are
 clients of that same lane. Open a workspace directly:
 
 ```bash
-./TSPi --workspace reaction-a
-./TSPi --workspace reaction-a -c
+./ResearchAgent --workspace reaction-a
+./ResearchAgent --workspace reaction-a -c
+./ResearchAgent --workspace quick-task --mode light
+./ResearchAgent --workspace reaction-study --mode research
 ```
+
+Light workspaces keep memory and lifecycle state small, while using the same
+mode-neutral compute plane as research workspaces: `compute_catalog`,
+`compute_readiness`, `compute_run`, and `compute_cancel`. Results are recorded
+under `runs/<run_id>/manifest.json` and the shared compute ArtifactStore. Light
+mode does not create ResearchMap Claims/Nodes, audited Attempts, scheduler
+Monitor state, or scientific interpretations. Use `--mode research` when those
+lifecycle guarantees are required, for example for transition-state/IRC
+validation or a comparative mechanistic conclusion.
 
 The first command creates a Harness conversation; the second continues the
 latest writable conversation in that workspace. TSPi asks Host for a local Pi
@@ -81,7 +92,7 @@ Configure Backends and Compute environments in the unified
 Local and remote environments live in that same file. Verify a remote environment with:
 
 ```bash
-./TSPi --check-remote
+./ResearchAgent --check-remote
 ```
 
 `compute_run` is the single calculation lifecycle for both local and remote

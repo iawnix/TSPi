@@ -94,7 +94,7 @@ async function fixture(t) {
   const host = await startTspiHost({ socketPath: join(root, "host.sock"), workspaceRoot, stateRoot: join(root, "state"), sessionBackend: backend, monitorPollMs: 0 });
   t.after(async () => { await host.close(); await rm(root, { recursive: true, force: true }); });
   const client = await connectHost({ socketPath: host.socketPath });
-  return { host, client, backend };
+  return { host, client, backend, workspaceRoot };
 }
 
 test("Host requires the Native Pi Harness backend", async () => {
@@ -113,6 +113,47 @@ test("Native Host exposes only Harness session capabilities and rejects legacy b
   await assert.rejects(env.client.request("session/import", {}), { code: "method_not_found" });
 });
 
+test("Host initialization exposes its selected package release", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-native-host-release-"));
+  const workspaceRoot = join(root, "workspaces");
+  await mkdir(join(workspaceRoot, "project-a"), { recursive: true });
+  await writeFile(join(workspaceRoot, "project-a", "workspace.json"), JSON.stringify({ schema_version: "research-workspace/1" }));
+  const backend = createBackend(workspaceRoot);
+  const host = await startTspiHost({
+    socketPath: join(root, "host.sock"),
+    workspaceRoot,
+    stateRoot: join(root, "state"),
+    sessionBackend: backend,
+    releaseId: "release-test",
+    monitorPollMs: 0,
+  });
+  t.after(async () => { await host.close(); await rm(root, { recursive: true, force: true }); });
+  const client = await connectHost({ socketPath: host.socketPath, expectedReleaseId: "release-test" });
+  assert.equal(client.hello.release_id, "release-test");
+  client.close();
+});
+
+test("Host client rejects a stale package release", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-native-host-release-mismatch-"));
+  const workspaceRoot = join(root, "workspaces");
+  await mkdir(join(workspaceRoot, "project-a"), { recursive: true });
+  await writeFile(join(workspaceRoot, "project-a", "workspace.json"), JSON.stringify({ schema_version: "research-workspace/1" }));
+  const backend = createBackend(workspaceRoot);
+  const host = await startTspiHost({
+    socketPath: join(root, "host.sock"),
+    workspaceRoot,
+    stateRoot: join(root, "state"),
+    sessionBackend: backend,
+    releaseId: "release-old",
+    monitorPollMs: 0,
+  });
+  t.after(async () => { await host.close(); await rm(root, { recursive: true, force: true }); });
+  await assert.rejects(
+    connectHost({ socketPath: host.socketPath, expectedReleaseId: "release-new" }),
+    { code: "host_release_mismatch" },
+  );
+});
+
 test("Native Host routes session and input operations through the Harness backend", async (t) => {
   const env = await fixture(t);
   await env.client.request("initialize", {});
@@ -127,4 +168,24 @@ test("Native Host routes session and input operations through the Harness backen
   const duplicate = await env.client.request("input/send", { ...TARGET, request_id: "input-retry", client_message_id: "message-1", text: "continue" });
   assert.equal(duplicate.duplicate, true);
   assert.equal(env.backend.closed, false);
+});
+
+test("Native Host accepts a manifest-bound light workspace without ResearchMap files", async (t) => {
+  const env = await fixture(t);
+  const lightRoot = join(env.workspaceRoot, "light-a");
+  await mkdir(lightRoot, { recursive: true });
+  await writeFile(join(lightRoot, "workspace_manifest.json"), JSON.stringify({
+    schema_version: "research_agent_workspace_1",
+    workspace_id: "light-a",
+    workspace_mode: "light",
+    profile_id: "light_workspace_1",
+    state: "ready",
+    workspace_root: lightRoot,
+    created_at: "2026-09-27T00:00:00Z",
+    directories: ["inputs", "artifacts", "runs", "logs", "scratch", "sessions"],
+    research_kernel: { initialized: false, admission_required: false, revision: null },
+  }));
+  await env.client.request("initialize", {});
+  const listed = await env.client.request("workspace/list", {});
+  assert.ok(listed.workspaces.some((workspace) => workspace.workspace_id === "light-a"));
 });

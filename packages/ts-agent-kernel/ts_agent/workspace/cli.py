@@ -12,6 +12,7 @@ from .engine import init_workspace
 from .errors import ContractError
 from .operational_ids import allocate_operational_id
 from .validator import validate_workspace
+from .doctor import inspect_workspace
 
 
 def main(argv: list[str] | None = None, **_: Any) -> int:
@@ -22,6 +23,7 @@ def main(argv: list[str] | None = None, **_: Any) -> int:
         ("init_workspace", "initialize one fresh workspace"),
         ("bootstrap", "initialize or validate one ResearchMap workspace"),
         ("validate_workspace", "validate one ResearchMap workspace"),
+        ("doctor", "inspect new and legacy ResearchMap storage without writing"),
     ):
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--root", required=True)
@@ -37,12 +39,14 @@ def main(argv: list[str] | None = None, **_: Any) -> int:
             result = bootstrap_workspace(args.root)
         elif args.command == "validate_workspace":
             result = validate_workspace(args.root)
+        elif args.command == "doctor":
+            result = inspect_workspace(args.root)
         else:
             result = allocate_operational_id(args.root, args.kind)
     except (ContractError, ValueError, OSError) as exc:
         print(json.dumps({"valid": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
-    return 1 if args.command == "validate_workspace" and result.get("valid") is not True else 0
+    return 1 if args.command in {"validate_workspace", "doctor"} and result.get("valid") is not True else 0
 if __name__ == "__main__":
     raise SystemExit(main())

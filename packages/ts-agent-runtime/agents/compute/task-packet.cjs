@@ -50,7 +50,7 @@ function buildComputeTask({
   if (!plan) throw new Error(`unsupported Compute operation: ${operation}`);
   if (!isPlainObject(binding)) throw new Error("Compute task requires a preflight binding");
   const taskId = requirePattern(runId, "runId", /^sub_[1-9][0-9]*$/, 128);
-  const normalizedNodeId = requirePattern(nodeId, "nodeId", /^node_[1-9][0-9]*$/, 128);
+  const normalizedNodeId = requirePattern(nodeId, "nodeId", /^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/, 128);
   const normalizedCapability = requirePattern(
     capability,
     "capability",

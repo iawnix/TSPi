@@ -27,6 +27,14 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
   // Native Pi Harness owns the agent loop and server tools. Direct
   // ExtensionAPI modules are retired and must not be auto-loaded.
   extensions: Object.freeze([]),
+  // Installed Skills, capability providers, and explicitly allowlisted
+  // Harness tools are discovered by the App Server from manifest paths; they
+  // are not part of this profile's static core inventory.
+  installedExtensionManifests: Object.freeze({
+    environment: "TSPI_EXTENSION_MANIFESTS",
+    serverAllowlistEnvironment: "TSPI_INSTALLED_SERVER_EXTENSIONS",
+    schema: "tspi-extension/1",
+  }),
   theme: Object.freeze({ name: "ts-theme", path: "./themes/ts-theme.json" }),
   commands: SLASH_COMMAND_NAMES,
 });

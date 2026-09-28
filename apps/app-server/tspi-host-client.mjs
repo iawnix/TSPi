@@ -105,7 +105,7 @@ export function createRpcPeer(socket, { requestTimeoutMs = 30_000, onRequest } =
   return peer;
 }
 
-export async function connectHost({ socketPath, timeoutMs = 30_000, initialize = true, onRequest } = {}) {
+export async function connectHost({ socketPath, timeoutMs = 30_000, initialize = true, onRequest, expectedReleaseId } = {}) {
   if (typeof socketPath !== "string" || !socketPath.startsWith("/")) throw new TypeError("Host socketPath must be absolute");
   const socket = createConnection({ path: socketPath });
   const peer = createRpcPeer(socket, { requestTimeoutMs: timeoutMs, onRequest });
@@ -120,6 +120,16 @@ export async function connectHost({ socketPath, timeoutMs = 30_000, initialize =
     if (initialize) {
       const hello = await peer.request("initialize", { protocol: HOST_PROTOCOL });
       if (hello?.protocol !== HOST_PROTOCOL) throw protocolError("protocol_mismatch", "Unsupported TSPi Host protocol");
+      if (expectedReleaseId !== undefined && hello?.release_id !== expectedReleaseId) {
+        const actual = typeof hello?.release_id === "string" && hello.release_id.length > 0
+          ? hello.release_id
+          : "unknown";
+        throw protocolError(
+          "host_release_mismatch",
+          `TSPi Host release mismatch: expected ${expectedReleaseId}, running ${actual}; restart the TSPi Host and retry`,
+          true,
+        );
+      }
       peer.hello = hello;
     }
     return peer;

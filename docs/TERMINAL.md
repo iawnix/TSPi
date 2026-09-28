@@ -2,10 +2,22 @@
 
 [English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
 
-`TSPi --workspace <name>` is a launcher for Pi's official remote
+`ResearchAgent --workspace <name>` is the public launcher for Pi's official remote
 `ExperimentalClientTui`. It does not replace Pi's header, editor, command
 registry, transcript view, extensions, or input loop. The selected workspace is
 bound to one installation-level Pi Harness format-4 session.
+
+New workspaces may be explicitly bound to one immutable framework mode:
+
+```bash
+./ResearchAgent --workspace quick-task --mode light
+./ResearchAgent --workspace reaction-a --mode research
+```
+
+`light` creates the minimal workspace profile. `research` creates the Research
+Kernel state and performs Host admission before the terminal session starts.
+For an existing framework workspace, omitting `--mode` uses the recorded mode;
+a workspace cannot be converted between modes.
 
 ## Runtime shape
 
@@ -27,8 +39,8 @@ loop.
 ## Open a workspace
 
 ```bash
-./TSPi --workspace reaction-a
-./TSPi --workspace reaction-a -c
+./ResearchAgent --workspace reaction-a
+./ResearchAgent --workspace reaction-a -c
 ```
 
 The launcher first ensures the installation Host is ready, then requests a

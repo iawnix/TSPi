@@ -20,6 +20,9 @@ or transition-state validation.
    reactants and products.
 2. Discover and call `chemical.name.resolve@1` through `analysis_run` for names.
    Keep the returned resolver provenance, candidates, diagnostics, and status.
+   The capability uses the installation-owned `name-resolver.toml` when a
+   deterministic PubChem or OPSIN backend is enabled; `unsupported` means the
+   backend is unavailable and must not be bypassed with an LLM candidate.
 3. Treat `draft` candidates (including LLM-proposed SMILES), unresolved names,
    multiple candidates, and unspecified stereocenters as input issues. Ask a
    focused clarification question or request a SMILES/structure artifact.

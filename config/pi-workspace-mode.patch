@@ -1,0 +1,55 @@
+diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-agent/src/experimental/server.ts
+--- a/packages/coding-agent/src/experimental/server.ts
++++ b/packages/coding-agent/src/experimental/server.ts
+@@ -401,6 +401,35 @@
+ 		&& value.created_at.length > 0;
+ }
+ 
++const WORKSPACE_MANIFEST_SCHEMA = "research_agent_workspace_1";
++const LIGHT_WORKSPACE_DIRECTORIES = Object.freeze(["inputs", "artifacts", "runs", "logs", "scratch", "sessions"]);
++
++async function isSupportedLightWorkspace(root: string, manifest: unknown): Promise<boolean> {
++	if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) return false;
++	const value = manifest as Record<string, unknown>;
++	if (
++		value.schema_version !== WORKSPACE_MANIFEST_SCHEMA
++		|| value.workspace_mode !== "light"
++		|| value.state !== "ready"
++		|| typeof value.workspace_id !== "string"
++		|| !WORKSPACE_NAME.test(value.workspace_id)
++		|| value.workspace_root !== root
++		|| typeof value.created_at !== "string"
++		|| value.created_at.length === 0
++		|| !Array.isArray(value.directories)
++		|| !LIGHT_WORKSPACE_DIRECTORIES.every((directory) => value.directories.includes(directory))
++	) return false;
++	try {
++		for (const directory of LIGHT_WORKSPACE_DIRECTORIES) {
++			const info = await lstat(join(root, directory));
++			if (info.isSymbolicLink() || !info.isDirectory()) return false;
++		}
++		return true;
++	} catch {
++		return false;
++	}
++}
++
+ function isSupportedImmutableIdentity(identity: unknown, workspaceId: string): boolean {
+ 	if (!identity || typeof identity !== "object" || Array.isArray(identity)) return false;
+ 	const value = identity as Record<string, unknown>;
+@@ -430,6 +459,15 @@
+ 
+ async function isSupportedWorkspace(root: string): Promise<boolean> {
+ 	try {
++		const manifestPath = join(root, "workspace_manifest.json");
++		const manifestInfo = await lstat(manifestPath);
++		if (manifestInfo.isSymbolicLink() || !manifestInfo.isFile()) return false;
++		const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
++		if (manifest?.workspace_mode === "light") return await isSupportedLightWorkspace(root, manifest);
++	} catch (error) {
++		if (error?.code !== "ENOENT") return false;
++	}
++	try {
+ 		const identity = JSON.parse(await readFile(join(root, "workspace.json"), "utf8"));
+ 		if (!isSupportedWorkspaceIdentity(identity)) return false;
+ 		const immutableIdentity = JSON.parse(await readFile(join(root, ".agents/workspace-identity.json"), "utf8"));

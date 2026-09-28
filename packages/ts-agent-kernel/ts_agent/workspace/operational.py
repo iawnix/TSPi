@@ -1037,10 +1037,13 @@ def _attempt_intent_errors(
             CalculationContractError,
             validate_calculation_contract,
         )
-
-        validate_calculation_contract("calculation_intent.schema.json", intent)
-    except CalculationContractError as exc:
-        errors.append(str(exc))
+    except (ImportError, ModuleNotFoundError) as exc:
+        errors.append(f"calculation contract validation unavailable: {exc}")
+    else:
+        try:
+            validate_calculation_contract("calculation_intent.schema.json", intent)
+        except CalculationContractError as exc:
+            errors.append(str(exc))
     if intent.get("intent_id") != intent_id:
         errors.append("intent_id does not match Attempt directory")
     if intent.get("node_id") != node_id:

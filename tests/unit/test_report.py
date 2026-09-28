@@ -5,10 +5,24 @@ from pathlib import Path
 from ts_agent.io import read_json
 from ts_agent.report import build_final_report, build_report_package
 from ts_agent.report.context import collect_report_context
+from ts_agent.research import ResearchKernel
+from ts_agent.research.evidence import ArtifactManifest
 from ts_agent.workspace.engine import change_workspace, init_workspace
 
 
 def _seed(root: Path) -> None:
+    kernel = ResearchKernel(root)
+    kernel.ensure_sqlite()
+    kernel.register_evidence(artifacts=[ArtifactManifest(
+        id="art_report_candidates",
+        node_id=None,
+        kind="analysis",
+        format="json",
+        location="reports/candidates.json",
+        sha256="sha256:" + "0" * 64,
+        size_bytes=1,
+        created_at="2026-01-01T00:00:00Z",
+    )])
     change_workspace(root, {
         "expected_revision": 0,
         "operations": [
@@ -17,7 +31,7 @@ def _seed(root: Path) -> None:
             {"type": "create_node", "id": "node_1", "title": "Bounded search", "objective": "Search candidate saddles.", "phase_id": "phase_1", "claim_ids": ["claim_1"]},
             {"type": "create_finding", "id": "fnd_1", "node_id": "node_1", "claim_ids": ["claim_1"], "statement": "Three candidates were retained.", "kind": "fact", "value": 3, "datatype": "integer"},
             {"type": "create_gate", "id": "gate_1", "scope": "node", "target_id": "node_1", "criteria": [{"kind": "candidate_count"}]},
-            {"type": "evaluate_gate", "gate_id": "gate_1", "verdict": "pass", "evidence_refs": ["fnd_1"]},
+            {"type": "evaluate_gate", "gate_id": "gate_1", "verdict": "pass", "evidence_refs": ["art_report_candidates"]},
             {"type": "set_focus", "claim_ids": ["claim_1"], "node_ids": ["node_1"]},
         ],
     })

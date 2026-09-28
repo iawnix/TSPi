@@ -20,4 +20,8 @@ and trajectory completeness as appropriate.
 Treat an optimized geometry, energy, frequency set, scan series, and trajectory
 as separate results. Inspect primary outputs before recording Findings. A scan
 maximum or xTB imaginary mode is a candidate for further validation, not proof
-of a transition state. Read [xtb_executor.md](references/xtb_executor.md).
+of a transition state. When chaining an optimization into a single point, use
+the returned `calculation.optimized_geometry_artifact_id` (also listed under
+the `optimized_geometry` artifact role) and verify the Artifact type
+is `chemical/xyz`; never choose a stdout/stderr ID by position. Read
+[xtb_executor.md](references/xtb_executor.md).

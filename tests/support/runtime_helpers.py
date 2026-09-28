@@ -42,9 +42,6 @@ def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> P
 def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
     """Bind a test installation to the interpreter running the test suite."""
 
-    import numpy
-    import rdkit
-
     # Launcher tests exercise installation/runtime wiring, while
     # test_runtime_env.py owns the stricter environment-isolation cases.
     runtime_root = install_root / ".test-python-runtime"
@@ -99,11 +96,11 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
             },
             "modules": {
                 "numpy": {
-                    "version": numpy.__version__,
+                    "version": "2.0.0-test",
                     "origin": str(numpy_origin),
                 },
                 "rdkit": {
-                    "version": rdkit.__version__,
+                    "version": "2024.03.1-test",
                     "origin": str(rdkit_origin),
                 },
                 "matplotlib": {

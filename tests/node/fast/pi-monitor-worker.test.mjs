@@ -3,7 +3,13 @@ import { test } from "node:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { deliverMonitorEvent, parseMonitorArguments, recordMonitorTurn, sendNotification } from "../../../apps/app-server/pi-monitor-worker.mjs";
+import {
+  createNotificationDispatcher,
+  deliverMonitorEvent,
+  parseMonitorArguments,
+  recordMonitorTurn,
+  sendNotification,
+} from "../../../apps/app-server/pi-monitor-worker.mjs";
 
 async function fixture(t) {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "tspi-monitor-worker-test-"));
@@ -123,6 +129,23 @@ test("monitor notifications preserve structured SMTP/provider failures", async (
       return true;
     },
   );
+});
+
+test("monitor notification dispatcher accepts a transport-neutral provider", async (t) => {
+  const state = await fixture(t);
+  const calls = [];
+  const dispatcher = createNotificationDispatcher({
+    dispatch: async (request) => {
+      calls.push(request);
+      return { accepted: true, transport: "fixture" };
+    },
+  });
+  const result = await dispatcher.dispatch({ workspace: state.workspace, event: state.event, delivery: state.delivery });
+  assert.deepEqual(result, { accepted: true, transport: "fixture" });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].workspace, state.workspace);
+  assert.equal(calls[0].event.event_id, state.event.event_id);
+  assert.equal(calls[0].delivery.request_id, state.delivery.request_id);
 });
 
 test("monitor notification timeouts remain ambiguous and retryable", async (t) => {

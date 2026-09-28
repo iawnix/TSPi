@@ -92,6 +92,13 @@ def validate_input_operation_keys(
         raise ContractError(f"{name} is missing fields: {', '.join(missing)}")
     if unknown:
         raise ContractError(f"{name} contains unsupported fields: {', '.join(unknown)}")
+    if name == "set_node_state":
+        state = value.get("state")
+        has_outcome = "outcome" in value and value.get("outcome") is not None
+        if state == "closed" and not has_outcome:
+            raise ContractError("set_node_state closed requires outcome")
+        if state != "closed" and has_outcome:
+            raise ContractError("set_node_state outcome is only valid when state is closed")
 
 
 def input_operation_names() -> frozenset[str]:

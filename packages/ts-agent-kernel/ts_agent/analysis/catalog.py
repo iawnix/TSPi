@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from ts_agent.compute.registry import CapabilityRegistration, CapabilityRegistry
+
 
 def obj(properties=None, required=(), **keywords):
     return {"type": "object", "properties": properties or {}, "required": list(required), "additionalProperties": False, **keywords}
@@ -40,6 +44,9 @@ CONDITIONS = obj({"temperature_k": {"type": "number", "exclusiveMinimum": 0, "ma
                  ["temperature_k", "phase", "source_standard_state", "standard_state"])
 SPECIES = obj({"key": KEY, "smiles": {"type": "string", "minLength": 1, "maxLength": 4096},
                "multiplicity": integer(1, 21), "role": choice("participant", "catalyst", "solvent", "spectator")}, ["key", "smiles", "multiplicity"])
+# External callers may only label candidates as user- or model-supplied.  The
+# deterministic backend adds its own source label after lookup, inside the
+# kernel, so callers cannot self-assert PubChem/OPSIN provenance.
 NAME_CANDIDATE = obj({"smiles": SMILES, "source": choice("llm", "user")}, ["smiles", "source"])
 TRANSFORM = obj({"translation": array(real(-1e6, 1e6), 3, 3), "rotation": array(array(real(-1, 1), 3, 3), 3, 3)}, ["translation"])
 MAP_PARAMETERS = {"mapping": MAPPING, "candidate_index": integer(0, 31)}
@@ -70,7 +77,7 @@ DESCRIPTORS = (
                 {"if": {"required": ["candidates"]}, "then": {"required": ["resolver"]}},
             ]),
         limitations=[
-            "This capability validates supplied candidates; a resolver backend must be registered for automatic name lookup.",
+            "Automatic lookup requires an installation-owned name-resolver.toml with an enabled deterministic backend.",
             "A candidate is not a 3D product structure, reaction mapping, or mechanistic conclusion.",
         ]),
     descriptor("reaction.parse", "Parse explicit molecular reaction identities, stoichiometry and electronic states.", [],
@@ -135,3 +142,67 @@ DESCRIPTORS = (
     descriptor("mechanism.energy_profile", "Construct a selected Gibbs energy profile with a conserved explicit initial pool.", ["network"],
         obj({"path": array(PATH_ROW), "initial_composition": {"type": "object", "propertyNames": KEY, "additionalProperties": integer(1, 4096), "minProperties": 1, "maxProperties": 4096}}, ["path", "initial_composition"])),
 )
+
+
+# Runtime view of this declarative catalog.  ``DESCRIPTORS`` remains available
+# as the built-in compatibility snapshot; callers adding analysis providers
+# should register through this registry instead of editing the tuple.
+ANALYSIS_REGISTRY: CapabilityRegistry[dict[str, Any]] = CapabilityRegistry()
+ANALYSIS_CAPABILITIES_BY_ID: dict[str, dict[str, Any]] = {}
+
+
+def register_analysis_descriptor(
+    descriptor: dict[str, Any],
+    *,
+    provider_id: str = "builtin",
+    provider: object | None = None,
+    replace: bool = False,
+) -> CapabilityRegistration[dict[str, Any]]:
+    registration = ANALYSIS_REGISTRY.register(
+        descriptor,
+        provider_id=provider_id,
+        provider=provider,
+        replace=replace,
+    )
+    ANALYSIS_CAPABILITIES_BY_ID[descriptor["capability"]] = descriptor
+    return registration
+
+
+def register_analysis_capability(
+    descriptor: dict[str, Any],
+    *,
+    provider_id: str = "builtin",
+    provider: object | None = None,
+    replace: bool = False,
+) -> CapabilityRegistration[dict[str, Any]]:
+    """Compatibility alias for extensions using capability terminology."""
+
+    return register_analysis_descriptor(
+        descriptor,
+        provider_id=provider_id,
+        provider=provider,
+        replace=replace,
+    )
+
+
+def register_analysis_provider(
+    provider: object,
+    *,
+    provider_id: str | None = None,
+    replace: bool = False,
+) -> tuple[CapabilityRegistration[dict[str, Any]], ...]:
+    """Register descriptors exposed by an analysis provider object."""
+
+    registrations = ANALYSIS_REGISTRY.register_provider(
+        provider,
+        provider_id=provider_id,
+        replace=replace,
+    )
+    for registration in registrations:
+        descriptor = registration.descriptor
+        ANALYSIS_CAPABILITIES_BY_ID[descriptor["capability"]] = descriptor
+    return registrations
+
+
+for _builtin_descriptor in DESCRIPTORS:
+    register_analysis_descriptor(_builtin_descriptor)

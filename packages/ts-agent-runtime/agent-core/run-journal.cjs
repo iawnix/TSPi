@@ -25,7 +25,7 @@ const {
 } = require("./agent-protocol.cjs");
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const CLAIM_ID = /^claim_[1-9][0-9]*$/;
+const CLAIM_ID = /^claim_[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MAX_INVALID_REVIEW_RAW_BYTES = 16 * 1024;
 const MAX_AGENT_TASK_BYTES = 64 * 1024;
 const MAX_AGENT_ACTIONS_BYTES = 1024 * 1024;

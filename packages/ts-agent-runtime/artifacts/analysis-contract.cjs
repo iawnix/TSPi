@@ -5,7 +5,7 @@ const { createHash } = require("node:crypto");
 function analysisProperties(Type) {
   return {
     operation: Type.Literal("run"),
-    nodeId: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
+    nodeId: Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" }),
     capability: Type.String({ minLength: 1, maxLength: 128 }),
     capabilityVersion: Type.String({ minLength: 1, maxLength: 32 }),
     inputArtifacts: Type.Object({}, {

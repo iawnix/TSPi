@@ -2,11 +2,12 @@
 import { createServer, createConnection } from "node:net";
 import { chmod, lstat, mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRpcPeer, HOST_PROTOCOL, protocolError } from "./tspi-host-client.mjs";
+import { readWorkspaceMode } from "./workspace-mode-tools.mjs";
 
 const executeFile = promisify(execFile);
 // Host addresses are direct child directory names. Scientific workspace.json
@@ -22,7 +23,17 @@ const capabilities = ["workspace.list", "workspace.create", "session.list", "ses
 
 /** Owns routing and durable acceptance records for the Native Pi Harness. */
 export async function startTspiHost(options) {
-  const { socketPath, workspaceRoot, stateRoot, sessionBackend = null, serverId = "local", python = process.env.TS_AGENT_PYTHON || "python3", packageRoot = PACKAGE_ROOT, monitorPollMs = 2_000 } = options;
+  const {
+    socketPath,
+    workspaceRoot,
+    stateRoot,
+    sessionBackend = null,
+    serverId = "local",
+    python = process.env.TS_AGENT_PYTHON || "python3",
+    packageRoot = PACKAGE_ROOT,
+    releaseId = deriveReleaseId(packageRoot),
+    monitorPollMs = 2_000,
+  } = options;
   if (!sessionBackend) throw protocolError("native_backend_required", "TSPi Host requires the Native Pi Harness backend");
   for (const [name, value] of Object.entries({ socketPath, workspaceRoot, stateRoot })) {
     if (typeof value !== "string" || !value.startsWith("/")) throw new TypeError(`${name} must be absolute`);
@@ -55,8 +66,15 @@ export async function startTspiHost(options) {
       const info = await lstat(path);
       if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== path) throw protocolError("invalid_workspace", "Workspace must be a physical directory");
       if (!allowMissing) {
-        const header = JSON.parse(await readFile(join(path, "workspace.json"), "utf8"));
-        if (header.schema_version !== "research-workspace/1") throw protocolError("invalid_workspace", "Unsupported workspace format");
+        try {
+          const header = JSON.parse(await readFile(join(path, "workspace.json"), "utf8"));
+          if (header.schema_version !== "research-workspace/1") throw protocolError("invalid_workspace", "Unsupported workspace format");
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+          // Light workspaces intentionally do not contain ResearchMap files.
+          // Their immutable mode manifest is the Host admission marker.
+          await readWorkspaceMode(path);
+        }
       }
     } catch (error) {
       if (allowMissing && error.code === "ENOENT") return path;
@@ -214,7 +232,13 @@ export async function startTspiHost(options) {
     if (method === "initialize") {
       if (params.protocol !== undefined && params.protocol !== HOST_PROTOCOL) throw protocolError("protocol_mismatch", "Unsupported TSPi Host protocol");
       client.initialized = true;
-      return { protocol: HOST_PROTOCOL, server_id: serverId, epoch, capabilities: [...capabilities] };
+      return {
+        protocol: HOST_PROTOCOL,
+        server_id: serverId,
+        epoch,
+        release_id: releaseId,
+        capabilities: [...capabilities],
+      };
     }
     if (!client.initialized) throw protocolError("not_initialized", "Send initialize before session requests");
     if (method === "bridge/hello") {
@@ -435,6 +459,21 @@ export async function startTspiHost(options) {
   };
 }
 
+// Installed package roots are .../releases/<release-id>/agent.  Test and
+// source checkouts do not have that layout; returning null there keeps the
+// identity field explicit without inventing a release identifier.
+function deriveReleaseId(packageRoot) {
+  if (typeof packageRoot !== "string" || packageRoot.length === 0) return null;
+  const root = resolve(packageRoot);
+  const release = dirname(root);
+  // Standalone ResearchAgent releases point directly at
+  // ``.../releases/<id>``; the historical suite points at
+  // ``.../releases/<id>/agent``. Accept both layouts while requiring the
+  // literal releases directory as the trust boundary.
+  if (basename(release) === "releases") return basename(root);
+  return basename(dirname(release)) === "releases" ? basename(release) : null;
+}
+
 function sanitizeSnapshot(snapshot) {
   if (!snapshot || !Array.isArray(snapshot.messages)) throw protocolError("invalid_snapshot", "Harness snapshot requires messages");
   return snapshot;
@@ -578,7 +617,7 @@ function validMonitorBinding(binding, monitorId, identity) {
     && typeof binding.intent_digest === "string" && /^sha256:[0-9a-f]{64}$/u.test(binding.intent_digest)
     && (binding.session_id === null || (typeof binding.session_id === "string" && binding.session_id.length > 0))
     && ["none", "next_run"].includes(binding.wake_policy)
-    && ["none", "user"].includes(binding.notify_policy)
+    && ["none", "configured"].includes(binding.notify_policy)
     && typeof binding.enabled === "boolean"
     && typeof binding.created_at === "string" && binding.created_at.length > 0);
 }

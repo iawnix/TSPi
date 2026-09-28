@@ -41,6 +41,7 @@ try:
     )
     from .install_from_github import install_uninstaller, validate_commit, validate_ref, validate_repo
     from .install_release import validate_install_root
+    from .link_relay_discovery import discover_link_relay
     from .model_icons import install_model_icon_font
 except ImportError:
     from _credentials import provision_service_credentials
@@ -59,6 +60,7 @@ except ImportError:
     )
     from install_from_github import install_uninstaller, validate_commit, validate_ref, validate_repo
     from install_release import validate_install_root
+    from link_relay_discovery import discover_link_relay
     from model_icons import install_model_icon_font
 
 
@@ -161,7 +163,7 @@ def inspect_installation(root: Path) -> dict[str, str | None]:
     if not metadata["state_present"]:
         if metadata["owned"]:
             return {"operation": "restore", "release_id": None}
-        tspi_like = [root / "TSPi", package_home]
+        tspi_like = [root / "ResearchAgent", root / "current", root / "bin", package_home]
         if any(path.exists() or path.is_symlink() for path in tspi_like):
             raise RuntimeError(
                 f"installation-like files exist without trusted package state in {root}; "
@@ -223,6 +225,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--service-scope", choices=("none", "user", "system"))
     parser.add_argument("--service-user", help="Unix account used by systemd services (required for system scope).")
     parser.add_argument("--phone-access", choices=("disabled", "link"), help="TS Phone access mode.")
+    parser.add_argument(
+        "--link-relay-root",
+        default=os.environ.get("TSPI_LINK_RELAY_ROOT"),
+        help="Existing local TSPi Link Relay installation root (auto-detected when omitted).",
+    )
     parser.add_argument("--link-url", default=os.environ.get("TSPI_LINK_URL"), help="TSPi Link Relay HTTPS origin.")
     parser.add_argument("--link-enrollment-code", help="Single-use Host enrollment code issued by TSPi Link Relay.")
     parser.add_argument("--enable-services", action="store_true")
@@ -266,7 +273,7 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
         field("Resolved commit", args.tspi_commit)
 
     section("Core")
-    field("Agent", "required", tone="success")
+    field("TSPi terminal client", "required", tone="success")
     field("Scientific runtime", "required", tone="success")
     field("Molecular rendering", "required", tone="success")
     field("Pi App Server runtime", "required", tone="success")
@@ -339,10 +346,10 @@ def _load_existing_menu_defaults(args: argparse.Namespace) -> None:
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             args.with_model_icons = not (root / ".pi/packages/tspi/install-state.json").is_file()
     if args.phone_access is None:
-        args.phone_access = "link" if _existing_link_configuration(root) else "disabled"
+        args.phone_access = "link" if _existing_link_configuration(root) or _discover_relay(args) else "disabled"
     if args.link_url is None:
         existing_link = _existing_link_configuration(root)
-        args.link_url = existing_link[0] if existing_link else None
+        args.link_url = existing_link[0] if existing_link else _discover_relay_url(args)
     service_config = root / ".pi/tspi/service.json"
     if args.service_scope is None:
         try:
@@ -654,7 +661,7 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
 
     root = Path(args.install_root)
     section("Core")
-    field("Agent", f"install - {root / 'TSPi'}", tone="success")
+    field("ResearchAgent terminal client", f"install - {root / 'ResearchAgent'}", tone="success")
     field("Scientific runtime", "install and verify", tone="success")
     field("Molecular rendering", "install and verify (xyzrender, Matplotlib)", tone="success")
     field("Pi App Server", "install pinned runtime and verify", tone="success")
@@ -826,6 +833,8 @@ def validate_options(args: argparse.Namespace) -> None:
         if args.service_user != current_user:
             raise ValueError("--service-user is only supported with --service-scope system")
     if args.phone_access == "link":
+        if not args.link_url:
+            args.link_url = _discover_relay_url(args)
         args.link_url = _validate_link_url(args.link_url)
         token_file = Path(args.install_root) / ".pi/app-server-host/host.token"
         enrolled_for_url = token_file.is_file() and existing_link is not None and existing_link[0] == args.link_url
@@ -919,6 +928,22 @@ def _existing_link_configuration(root: Path) -> tuple[str, str] | None:
     if not isinstance(relay_url, str) or not isinstance(host_id, str):
         return None
     return relay_url, host_id
+
+
+def _discover_relay(args: argparse.Namespace) -> dict[str, str] | None:
+    """Discover a local Relay without starting or mutating it."""
+
+    cached = getattr(args, "_link_relay_discovery", None)
+    if cached is not None:
+        return cached
+    discovered = discover_link_relay(getattr(args, "link_relay_root", None))
+    args._link_relay_discovery = discovered
+    return discovered
+
+
+def _discover_relay_url(args: argparse.Namespace) -> str | None:
+    discovered = _discover_relay(args)
+    return discovered.get("relay_url") if discovered else None
 
 
 def _link_host_enrolled_for_url(args: argparse.Namespace) -> bool:
@@ -1382,7 +1407,7 @@ def probe_remote_backend(args: argparse.Namespace, configs: dict[str, dict[str, 
     compute = configs.get("compute", {})
     if compute.get("status") == "not_configured":
         raise ValueError("--probe-remote requires an installed compute configuration with a remote environment")
-    command = [str(Path(args.install_root) / "TSPi"), "--check-remote"]
+    command = [str(Path(args.install_root) / "ResearchAgent"), "--check-remote"]
     completed = subprocess.run(
         command,
         text=True,
@@ -1610,7 +1635,12 @@ def snapshot_active_release(root: Path) -> dict[str, object] | None:
     state = package_home / "install-state.json"
     if not current.is_symlink() or not state.is_file():
         return None
-    launchers = {name: os.readlink(root / name) for name in ("TSPi", "TSWeb") if (root / name).is_symlink()}
+    launchers = {
+        name: os.readlink(root / name)
+        for name in ("ResearchAgent", "ResearchAgentServer", "TSPi", "TSWeb", "bin/ResearchAgent", "bin/ResearchAgentServer", "bin/TSWeb")
+        if (root / name).is_symlink()
+    }
+    stable_current = os.readlink(root / "current") if (root / "current").is_symlink() else None
     state_bytes = state.read_bytes()
     runtime_manifest: tuple[str, bytes] | None = None
     try:
@@ -1626,6 +1656,7 @@ def snapshot_active_release(root: Path) -> dict[str, object] | None:
         marker_snapshot = model_icon_marker.read_bytes()
     return {
         "current": os.readlink(current),
+        "stable_current": stable_current,
         "state": state_bytes,
         "launchers": launchers,
         "runtime_manifest": runtime_manifest,
@@ -1651,7 +1682,11 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
     """Capture installer-owned configuration before any install side effect."""
 
     relative_paths = [
-        "TSPi",
+        "ResearchAgent",
+        "current",
+        "bin/ResearchAgent",
+        "bin/ResearchAgentServer",
+        "bin/TSWeb",
         "TSWeb",
         "uninstall.sh",
         ".pi/tspi/workspace-root.json",
@@ -1846,6 +1881,16 @@ def restore_active_release(root: Path, snapshot: dict[str, object] | None) -> No
         temporary.unlink(missing_ok=True)
         temporary.symlink_to(target)
         os.replace(temporary, current)
+    stable_target = snapshot.get("stable_current")
+    stable_current = root / "current"
+    if isinstance(stable_target, str):
+        stable_current.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        temporary = root / f".current.rollback.{os.getpid()}"
+        temporary.unlink(missing_ok=True)
+        temporary.symlink_to(stable_target)
+        os.replace(temporary, stable_current)
+    elif stable_current.is_symlink():
+        stable_current.unlink()
     state = snapshot.get("state")
     if isinstance(state, bytes):
         descriptor, temporary_name = tempfile.mkstemp(prefix=".install-state.rollback.", dir=package_home)
@@ -1868,7 +1913,8 @@ def restore_active_release(root: Path, snapshot: dict[str, object] | None) -> No
             if not isinstance(name, str) or not isinstance(target, str):
                 continue
             path = root / name
-            temporary = root / f".{name}.rollback.{os.getpid()}"
+            temporary = path.parent / f".{path.name}.rollback.{os.getpid()}"
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             temporary.unlink(missing_ok=True)
             temporary.symlink_to(target)
             os.replace(temporary, path)
@@ -1913,7 +1959,8 @@ def restore_active_release(root: Path, snapshot: dict[str, object] | None) -> No
 
 
 def prepare_app_server_runtime(root: Path) -> Path:
-    installer = root / ".pi/packages/tspi/current/agent/scripts/prepare_pi_source.py"
+    suite_root = active_suite_root(root)
+    installer = suite_root / "agent/scripts/prepare_pi_source.py"
     if installer.is_symlink() or not installer.is_file():
         raise RuntimeError(f"installed App Server runtime installer is unavailable: {installer}")
     completed = subprocess.run(
@@ -1929,7 +1976,7 @@ def prepare_app_server_runtime(root: Path) -> Path:
     # Prefer the pinned destination, which is deterministic even when npm or
     # git writes diagnostics after the helper's final stdout line.
     source: Path | None = None
-    pin_path = root / ".pi/packages/tspi/current/agent/config/pi-source.json"
+    pin_path = suite_root / "agent/config/pi-source.json"
     try:
         pin = json.loads(pin_path.read_text(encoding="utf-8"))
         commit = pin.get("commit") if isinstance(pin, dict) else None
@@ -1944,6 +1991,28 @@ def prepare_app_server_runtime(root: Path) -> Path:
     if source is None or not source.is_absolute() or not source.is_dir():
         raise RuntimeError("Pi App Server runtime installer returned an invalid source path")
     return source
+
+
+def active_suite_root(root: Path) -> Path:
+    """Resolve the selected application release through the stable shim.
+
+    During migration the stable root ``current`` may be absent; fall back to
+    the package-store pointer used by older installations.  Callers still
+    receive one immutable suite root and never compose files from two roots.
+    """
+
+    stable = root / "current"
+    if stable.is_symlink():
+        resolved = stable.resolve(strict=True)
+        if (resolved / "agent").is_dir():
+            return resolved
+    package_current = root / ".pi/packages/tspi/current"
+    if not package_current.is_symlink() and not package_current.is_dir():
+        raise RuntimeError(f"selected Research Agent release is unavailable: {stable}")
+    resolved = package_current.resolve(strict=True)
+    if not (resolved / "agent").is_dir():
+        raise RuntimeError(f"selected Research Agent release has no Agent component: {resolved}")
+    return resolved
 
 
 def prepare_runtime_dirs(root: Path) -> None:
@@ -2231,7 +2300,7 @@ def app_server_unit(args: argparse.Namespace) -> str:
         raise ValueError("service XDG_RUNTIME_DIR must be an absolute path")
     # Host is an internal service entrypoint. Ordinary users manage this unit
     # through systemctl and never need to invoke the Host process directly.
-    command = " ".join((_systemd_quote(root / "TSPi"), "--service-host"))
+    command = " ".join((_systemd_quote(root / "ResearchAgent"), "--service-host"))
     wanted_by = "multi-user.target" if args.service_scope == "system" else "default.target"
     runtime_directory = "RuntimeDirectory=tspi\nRuntimeDirectoryMode=0700" if args.service_scope == "system" else ""
     return f"""[Unit]
@@ -2249,7 +2318,7 @@ Environment={_systemd_quote('PI_CODING_AGENT_DIR=' + str(root / '.pi/agent'))}
 Environment=TSPI_SYSTEMD_HOST=1
 Environment={_systemd_quote('TSPI_WORKSPACE_ROOT=' + str(workspace_root))}
 Environment={_systemd_quote('TSPI_APP_SERVER_RUNTIME_DIR=' + ('/run/tspi' if args.service_scope == 'system' else str(Path(runtime_dir) / 'tspi')))}
-Environment=TSPI_SERVER_EXTENSIONS=tspi-server-tools
+Environment=TSPI_SERVER_EXTENSIONS=tspi-core-tools,tspi-chemical-tools
 {f'User={_systemd_value(service_user)}' if args.service_scope == 'system' else ''}
 {f'Group={_systemd_value(args.service_group)}' if getattr(args, 'service_group', None) and args.service_scope == 'system' else ''}
 {_notification_environment_directive(args)}
@@ -2596,7 +2665,7 @@ def build_component_summary(
     return {
         "agent": {
             "status": "ready",
-            "launcher": str(root / "TSPi"),
+            "launcher": str(root / "ResearchAgent"),
         },
         "runtime": {
             "status": "ready",
@@ -2687,7 +2756,7 @@ def show_installed_summary(
     render = components["render"]
     assert isinstance(runtime, dict) and isinstance(render, dict)
     section("Core")
-    field("Agent", f"ready - {root / 'TSPi'}", tone="success")
+    field("ResearchAgent terminal client", f"ready - {root / 'ResearchAgent'}", tone="success")
     field(
         "Scientific runtime",
         f"ready - {runtime.get('environment') or 'verified'}",

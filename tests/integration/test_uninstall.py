@@ -47,7 +47,7 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     download = root / "downloads/client.apk"
     download.parent.mkdir()
     download.write_bytes(b"apk")
-    (root / "TSPi").symlink_to(".pi/packages/tspi/current")
+    (root / "ResearchAgent").symlink_to(".pi/packages/tspi/current")
 
     result = uninstall(_args(root))
 
@@ -102,7 +102,7 @@ def test_interactive_defaults_run_safe_uninstall_and_preserve_data(tmp_path: Pat
     config.write_text("[remote]\n", encoding="utf-8")
     runtime = root / ".agents/envs/tspi/base/test"
     runtime.mkdir(parents=True)
-    (root / "TSPi").symlink_to(".pi/packages/tspi/current")
+    (root / "ResearchAgent").symlink_to(".pi/packages/tspi/current")
     monkeypatch.setattr(uninstaller.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(uninstaller.sys.stdout, "isatty", lambda: True)
     replies = iter(["", "", "", ""])
@@ -145,7 +145,7 @@ def test_uninstall_purge_removes_the_dedicated_installation_root(tmp_path: Path)
     root = tmp_path / "install"
     (root / ".pi/packages/tspi").mkdir(parents=True)
     (root / "workspaces/ts_001").mkdir(parents=True)
-    (root / "TSPi").symlink_to(".pi/packages/tspi/current")
+    (root / "ResearchAgent").symlink_to(".pi/packages/tspi/current")
     install_uninstaller(root, Path(__file__).resolve().parents[2])
     download = root / "downloads/client.apk"
     download.parent.mkdir()
@@ -217,12 +217,12 @@ def test_installed_uninstaller_removes_an_immutable_partial_release(tmp_path: Pa
 def test_uninstall_rejects_a_source_checkout_without_installation_metadata(tmp_path: Path) -> None:
     root = tmp_path / "source"
     root.mkdir()
-    (root / "TSPi").write_text("#!/bin/sh\n")
+    (root / "ResearchAgent").write_text("#!/bin/sh\n")
 
     with pytest.raises(ValueError, match="trusted TSPi installation metadata"):
         uninstaller.validate_root(root)
 
-    assert (root / "TSPi").is_file()
+    assert (root / "ResearchAgent").is_file()
 
 
 def test_uninstall_rejects_non_object_package_state(tmp_path: Path) -> None:

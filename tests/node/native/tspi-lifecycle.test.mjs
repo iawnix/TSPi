@@ -5,13 +5,16 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContinuationLivenessHook } from "../../../apps/app-server/pi-native-tools.mjs";
-import { createResearchLifecycleController } from "../../../packages/ts-agent-runtime/host-api/lifecycle.mjs";
+import { createResearchLifecycleController, toolEventIsError } from "../../../packages/ts-agent-runtime/host-api/lifecycle.mjs";
 import Type from "../../../apps/app-server/pi-runtime-deps.mjs";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
-import { Agent, AgentHarness, BACKGROUND_CONTEXT, MemorySessionRepo } from "@earendil-works/pi-agent-core";
-import { createPublicToolContracts, PUBLIC_TOOL_EXECUTION, PUBLIC_TOOL_METADATA, PUBLIC_TOOL_NAMES } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { Agent, AgentHarness, BACKGROUND_CONTEXT, createReadTool, MemorySessionRepo } from "@earendil-works/pi-agent-core";
+import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
+import { Check } from "typebox/value";
+import { createPublicToolAliases, createPublicToolContracts, PUBLIC_TOOL_EXECUTION, PUBLIC_TOOL_METADATA, PUBLIC_TOOL_NAMES } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { cliErrorMessage, normalizeCheckpointPayload } from "../../../apps/app-server/pi-native-tools.mjs";
 import { boundWorkspaceRoot } from "../../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
-import { createToolExecutionContext } from "../../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
+import { bindToolExecutionContext, createToolExecutionContext } from "../../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
 import {
   markToolEnvelopeError,
   toolErrorResult,
@@ -22,6 +25,41 @@ import { managedPython } from "./test-environment.mjs";
 
 const context = { abortSignal: new AbortController().signal };
 
+test("trusted tool context preserves the Pi ExecutionEnv capability", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-execution-env-context-"));
+  try {
+    const input = join(root, "chemical-data.txt");
+    await writeFile(input, "benzene\n");
+    const executionEnv = new NodeExecutionEnv({ cwd: root });
+    const context = createToolExecutionContext({
+      workspace_root: root,
+      session_id: "session-execution-env",
+      lifecycle_phase: "turn",
+      replay_mode: "normal",
+      allowed_authorities: ["host_read"],
+      allowed_effects: ["read"],
+      allowed_phases: ["orient"],
+      lifecycle_provider: () => ({}),
+      env: executionEnv,
+    });
+    assert.equal(context.env, executionEnv);
+
+    const bound = bindToolExecutionContext(context, { operationId: "operation-execution-env" }, "call-execution-env");
+    assert.equal(bound.env, executionEnv);
+    const result = await createReadTool().execute(
+      "call-execution-env",
+      { path: "chemical-data.txt" },
+      () => {},
+      bound,
+      undefined,
+      { abortSignal: new AbortController().signal },
+    );
+    assert.equal(result.content[0].text, "benzene\n");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("public tools expose one Harness metadata contract", () => {
   const contracts = createPublicToolContracts(Type);
   for (const name of Object.values(PUBLIC_TOOL_NAMES)) {
@@ -31,6 +69,45 @@ test("public tools expose one Harness metadata contract", () => {
   for (const [key, contract] of Object.entries(contracts)) {
     assert.deepEqual(contract.metadata, PUBLIC_TOOL_METADATA[contract.name], key);
   }
+});
+
+test("ResearchMap and capability schemas reject invented operations and incomplete selectors", () => {
+  const contracts = createPublicToolContracts(Type);
+  const validChange = {
+    rationale: "Create the initial bounded research scope.",
+    operations: [
+      { type: "create_phase", id: "phase_1", title: "Input resolution" },
+      { type: "create_claim", id: "claim_1", statement: "The input identities can be resolved." },
+      { type: "create_node", id: "node_1", title: "Resolve inputs", objective: "Resolve the named species.", phase_id: "phase_1", claim_ids: ["claim_1"] },
+    ],
+  };
+  assert.equal(Check(contracts.change.parameters, validChange), true);
+  assert.equal(Check(contracts.change.parameters, {
+    ...validChange,
+    operations: [{ type: "mechanistic_hypothesis", id: "claim_1", statement: "not canonical" }],
+  }), false);
+  assert.equal(Check(contracts.state.parameters, { mode: "capabilities" }), false);
+  assert.equal(Check(contracts.state.parameters, { mode: "capabilities", capabilityKind: "analysis" }), true);
+  assert.equal(Check(contracts.state.parameters, { mode: "summary", capabilityKind: "analysis" }), false);
+  assert.equal(Check(contracts.change.parameters, {
+    rationale: "Close the bounded node after reconciliation.",
+    operations: [{
+      type: "set_node_state",
+      node_id: "node_water_energy",
+      state: "closed",
+      outcome: "inconclusive",
+      summary: "The requested method was unavailable.",
+    }],
+  }), true);
+  assert.equal(Check(contracts.change.parameters, {
+    rationale: "Record a blocked node.",
+    operations: [{
+      type: "set_node_state",
+      node_id: "node_water_energy",
+      state: "blocked",
+      outcome: "stopped",
+    }],
+  }), false);
 });
 
 test("runtime tool admission rejects metadata drift and malformed results", async () => {
@@ -219,19 +296,23 @@ test("dynamic Harness lifecycle admission advances phases without trusting Agent
 
   assert.equal((await invoke(stateTool, "state-1")).details.envelope.ok, true);
   controller.completeTool({ runId: "run-dynamic", toolName: "ts_state" });
-  const deniedChange = await invoke(changeTool, "change-1");
-  assert.equal(deniedChange.details.envelope.error.code, "tool_phase_mismatch");
-  assert.equal(deniedChange.details.envelope.error.failure_class, "authorization");
-  assert.deepEqual(executions, ["state"]);
+  const admittedChange = controller.admitTool({ runId: "run-dynamic", toolName: "ts_change" });
+  assert.equal(admittedChange.accepted, true);
+  const changed = await invoke(changeTool, "change-1");
+  assert.equal(changed.details.envelope.ok, true);
+  controller.completeTool({ runId: "run-dynamic", toolName: "ts_change" });
+  assert.equal(controller.snapshot().lifecycle_phase, "prepare");
+  assert.deepEqual(executions, ["state", "change"]);
 
   const admittedCalc = controller.admitTool({ runId: "run-dynamic", toolName: "ts_calc" });
   assert.equal(admittedCalc.accepted, true);
   const calculated = await invoke(calcTool, "calc-1");
   assert.equal(calculated.details.envelope.ok, true);
-  assert.deepEqual(executions, ["state", "calc"]);
+  assert.deepEqual(executions, ["state", "change", "calc"]);
   assert.equal(controller.snapshot().lifecycle_phase, "execute");
 
   controller.beginRun({ runId: "run-recovery", replay_mode: "recovery" });
+  assert.equal(controller.admitTool({ runId: "run-recovery", toolName: "ts_state" }).accepted, true);
   const recoveryState = await stateTool.execute(
     "recovery-state",
     {},
@@ -242,6 +323,17 @@ test("dynamic Harness lifecycle admission advances phases without trusting Agent
   );
   assert.equal(recoveryState.details.envelope.ok, true);
   controller.completeTool({ runId: "run-recovery", toolName: "ts_state" });
+  assert.equal(controller.snapshot().lifecycle_phase, "advance");
+  assert.equal(controller.admitTool({ runId: "run-recovery", toolName: "ts_change" }).accepted, true);
+  await changeTool.execute(
+    "recovery-change",
+    {},
+    undefined,
+    context,
+    { operationId: "run-recovery", workspaceRoot: context.workspace_root, sessionId: context.session_id },
+    {},
+  );
+  controller.completeTool({ runId: "run-recovery", toolName: "ts_change" });
   assert.equal(controller.admitTool({ runId: "run-recovery", toolName: "ts_calc" }).accepted, true);
   const replayDenied = await calcTool.execute(
     "recovery-calc",
@@ -254,7 +346,163 @@ test("dynamic Harness lifecycle admission advances phases without trusting Agent
   assert.equal(replayDenied.details.envelope.error.code, "tool_replay_forbidden");
   controller.completeTool({ runId: "run-recovery", toolName: "ts_calc", isError: true });
   assert.equal(controller.snapshot().lifecycle_phase, "prepare");
-  assert.deepEqual(executions, ["state", "calc", "state"]);
+  assert.deepEqual(executions, ["state", "change", "calc", "state", "change"]);
+});
+
+test("Research lifecycle metadata separates strategy, interpretation, and checkpoint phases", () => {
+  assert.equal(PUBLIC_TOOL_METADATA.research_strategy.phase, "advance");
+  assert.equal(PUBLIC_TOOL_METADATA.research_interpretation.phase, "interpret");
+  assert.equal(PUBLIC_TOOL_METADATA.research_checkpoint.phase, "checkpoint");
+
+  const controller = createResearchLifecycleController({ metadata: PUBLIC_TOOL_METADATA });
+  controller.beginRun({ runId: "run-phase-graph" });
+  controller.admitTool({ runId: "run-phase-graph", toolName: "research_read" });
+  controller.completeTool({ runId: "run-phase-graph", toolName: "research_read" });
+  assert.equal(controller.snapshot().lifecycle_phase, "advance");
+  assert.equal(controller.admitTool({ runId: "run-phase-graph", toolName: "research_strategy" }).accepted, true);
+  controller.completeTool({ runId: "run-phase-graph", toolName: "research_strategy" });
+  assert.equal(controller.snapshot().lifecycle_phase, "prepare");
+  assert.equal(controller.admitTool({ runId: "run-phase-graph", toolName: "research_interpretation" }).accepted, true);
+  controller.beginRun({ runId: "run-interpret" });
+  controller.admitTool({ runId: "run-interpret", toolName: "compute_run" });
+  controller.completeTool({ runId: "run-interpret", toolName: "compute_run" });
+  assert.equal(controller.snapshot().lifecycle_phase, "interpret");
+  assert.equal(controller.admitTool({ runId: "run-interpret", toolName: "research_interpretation" }).accepted, true);
+  controller.completeTool({ runId: "run-interpret", toolName: "research_interpretation" });
+  assert.equal(controller.snapshot().lifecycle_phase, "checkpoint");
+  assert.equal(controller.admitTool({ runId: "run-interpret", toolName: "research_checkpoint" }).accepted, true);
+  controller.completeTool({ runId: "run-interpret", toolName: "research_checkpoint" });
+  // A bounded disposition repair may inspect the scope after a checkpoint;
+  // the read reopens only the planning phase, never the execution phase.
+  assert.equal(controller.admitTool({ runId: "run-interpret", toolName: "research_read" }).accepted, true);
+  controller.completeTool({ runId: "run-interpret", toolName: "research_read" });
+  assert.equal(controller.snapshot().lifecycle_phase, "advance");
+
+  controller.beginRun({ runId: "run-error-retry" });
+  controller.admitTool({ runId: "run-error-retry", toolName: "research_read" });
+  controller.completeTool({ runId: "run-error-retry", toolName: "research_read" });
+  controller.admitTool({ runId: "run-error-retry", toolName: "research_change" });
+  controller.completeTool({ runId: "run-error-retry", toolName: "research_change" });
+  assert.equal(controller.snapshot().lifecycle_phase, "prepare");
+  assert.equal(controller.admitTool({ runId: "run-error-retry", toolName: "compute_run" }).accepted, true);
+  controller.completeTool({ runId: "run-error-retry", toolName: "compute_run", isError: true });
+  assert.equal(controller.snapshot().lifecycle_phase, "prepare");
+  assert.equal(controller.admitTool({ runId: "run-error-retry", toolName: "compute_run" }).accepted, true);
+
+  controller.beginRun({ runId: "run-plan-after-preparation" });
+  controller.admitTool({ runId: "run-plan-after-preparation", toolName: "research_read" });
+  controller.completeTool({ runId: "run-plan-after-preparation", toolName: "research_read" });
+  controller.admitTool({ runId: "run-plan-after-preparation", toolName: "compute_environment" });
+  controller.completeTool({ runId: "run-plan-after-preparation", toolName: "compute_environment" });
+  assert.equal(controller.snapshot().lifecycle_phase, "prepare");
+  assert.equal(controller.admitTool({ runId: "run-plan-after-preparation", toolName: "research_change" }).accepted, true);
+});
+
+test("normalized tool-error envelopes keep lifecycle retries in the prior phase", () => {
+  assert.equal(toolEventIsError({ isError: true }), true);
+  assert.equal(toolEventIsError({ details: { envelope: { schema_version: "tspi-tool-error/1" } } }), true);
+  assert.equal(toolEventIsError({ details: { envelope: { ok: false } } }), true);
+  assert.equal(toolEventIsError({ details: { envelope: { schema_version: "tspi-tool-result/1", ok: true } } }), false);
+});
+
+test("decision aliases normalize claim and node selectors without rejecting compatibility fields", async () => {
+  const calls = [];
+  const source = {
+    name: "ts_workflow",
+    async execute(_toolCallId, params) {
+      calls.push(params);
+      return { content: [{ type: "text", text: "ok" }] };
+    },
+  };
+  const aliases = createPublicToolAliases([source]);
+  const continuation = aliases.find((tool) => tool.name === "research_continuation");
+  const strategy = aliases.find((tool) => tool.name === "research_strategy");
+  assert.ok(continuation);
+  const interpretation = aliases.find((tool) => tool.name === "research_interpretation");
+  assert.ok(strategy);
+  assert.ok(interpretation);
+
+  await continuation.execute("continuation-call", {
+    operation: "set_status",
+    scope: "claim",
+    target_id: "claim_1",
+    action: "inspect",
+    status: "required",
+    rationale: "Keep the next action auditable.",
+    expected_revision: 0,
+  });
+  assert.equal(calls[0].operation, "set");
+  assert.equal(calls[0].targetId, "claim_1");
+  assert.equal(calls[0].rationale, "Keep the next action auditable.");
+  assert.equal(calls[0].expectedRevision, 0);
+
+  await strategy.execute("strategy-call", {
+    strategyOperation: "plan",
+    claimId: "claim_1",
+    nodeId: "node_1",
+    plan: {
+      id: "strategy_1",
+      objective: "Define the bounded next action.",
+      rationale: "Keep the first turn auditable.",
+      title: "Compatibility field",
+    },
+  });
+  assert.equal(calls[1].operation, "strategy");
+  assert.equal(calls[1].plan.claim_id, "claim_1");
+  assert.equal(calls[1].plan.node_id, "node_1");
+  assert.equal(calls[1].plan.title, "Compatibility field");
+
+  assert.throws(
+    () => strategy.execute("strategy-missing-claim", {
+      strategyOperation: "plan",
+      plan: {
+        id: "strategy_missing_claim",
+        nodeId: "node_water_energy",
+        objective: "Define the bounded next action.",
+        rationale: "The claim binding is intentionally omitted.",
+      },
+    }),
+    /requires an explicit claimId\/claim_id/u,
+  );
+
+  await interpretation.execute("interpretation-call", {
+    claim_id: "claim_1",
+    node_id: "node_1",
+    attemptRef: "calc_1",
+    interpretation: {
+      id: "interpretation_1",
+      summary: "The result is inconclusive.",
+      outcome: "inconclusive",
+    },
+  });
+  assert.equal(calls[2].operation, "interpret");
+  assert.equal(calls[2].interpretation.claim_id, "claim_1");
+  assert.equal(calls[2].interpretation.node_id, "node_1");
+  assert.equal(calls[2].interpretation.attempt_ref, "calc_1");
+});
+
+test("checkpoint payload fills operational identity and maps legacy status", () => {
+  const checkpoint = normalizeCheckpointPayload({
+    status: "blocked",
+    reason: "The host must initialize the research map.",
+  }, { operation_id: "run-checkpoint" }, "checkpoint-event");
+  assert.deepEqual(checkpoint, {
+    id: "checkpoint-event",
+    turn_id: "run-checkpoint",
+    disposition: "blocked",
+    reason: "The host must initialize the research map.",
+  });
+});
+
+test("CLI errors keep the actionable exception instead of a full traceback", () => {
+  const message = cliErrorMessage([
+    "Traceback (most recent call last):",
+    "  File '/tmp/api.py', line 1, in <module>",
+    "    raise ResearchKernelError('boom')",
+    "ts_agent.research.kernel.ResearchKernelError: continuation cont_1 references unknown node node_1",
+  ].join("\n"));
+  assert.equal(message, "ts_agent.research.kernel.ResearchKernelError: continuation cont_1 references unknown node node_1");
+  assert.doesNotMatch(message, /Traceback/);
 });
 
 test("workspace root is bound by Harness context", () => {

@@ -28,5 +28,9 @@ execution capability. Submit only a catalog descriptor returned by
 Record parser output only after checking primary files. Normal termination is
 not task validation, and neither is a scientific verdict. Record SCF
 instability, spin contamination, state ambiguity, missing corrections, and
-method sensitivity explicitly. Read
+method sensitivity explicitly. For an optimization-to-SP chain, use the
+returned `optimized_input_artifact_id` and verify the Artifact type is
+`chemical/gaussian-input`; the provider also exposes the final geometry as
+`optimized_geometry_artifact_id`. Never pass stdout/stderr or a positional
+entry from `artifact_ids` as a Gaussian input. Read
 [gaussian_validation.md](references/gaussian_validation.md).

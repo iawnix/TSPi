@@ -23,6 +23,9 @@ Use `create_finding` for verified Node outputs and choose `kind=fact` or
 `kind=issue`. Keep a Finding's statement narrow and cite `source_refs` such as
 Artifact IDs. Use `create_gate` only for a criterion that needs to be visible
 in the map, then `evaluate_gate` with the current evidence references.
+`source_refs` may contain only registered Artifact or EvidenceLink IDs. Strategy-plan,
+Claim, Node, and request IDs are not evidence; use request-level `basisRefs` when a
+ChangeSet or strategy is the decision basis instead of placing its ID in a Finding.
 
 Do not infer a scientific conclusion from a successful tool return. Check the
 primary Artifact and execution record first. A scheduler or parser failure is

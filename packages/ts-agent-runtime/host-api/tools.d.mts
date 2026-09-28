@@ -9,7 +9,7 @@ import type {
 import type { Component } from "@earendil-works/pi-tui";
 
 export type PublicToolKey =
-  | "systemPrompt" | "state" | "change" | "workflow" | "environment" | "review"
+  | "systemPrompt" | "state" | "change" | "workflow" | "environment" | "computeCatalog" | "computeReadiness" | "review"
   | "compute" | "reply" | "seed" | "compare" | "analyze" | "dispatch"
   | "importArtifact" | "render" | "report" | "notify";
 
@@ -72,6 +72,8 @@ export interface PublicToolContracts {
   readonly change: ToolContract<ChangeToolParams>;
   readonly workflow: ToolContract<WorkflowToolParams>;
   readonly environment: ToolContract<EnvironmentToolParams>;
+  readonly computeCatalog: ToolContract<ComputeCatalogToolParams>;
+  readonly computeReadiness: ToolContract<ComputeReadinessToolParams>;
   readonly review: ToolContract<ReviewToolParams>;
   readonly compute: ToolContract<ComputeToolParams>;
   readonly reply: ToolContract<ReplyToolParams>;
@@ -92,20 +94,39 @@ export function createPublicToolAlias(tool: any, canonicalName: string, options?
 export function createPublicToolAliases(tools: any[], options?: { includeDecisionAliases?: boolean }): any[];
 
 export interface WorkspaceToolParams { root?: string }
-export interface StateToolParams extends WorkspaceToolParams {
-  mode?: "map" | "summary" | "context" | "liveness" | "detail" | "locate" | "validate" | "operations" | "decisions" | "storage" | "artifacts" | "capabilities" | "runs";
+type StateReadFields = WorkspaceToolParams & {
   query?: string;
   kind?: "phase" | "claim" | "node" | "finding" | "gate";
   id?: string;
   nodeRef?: string;
-  capabilityKind?: "compute" | "analysis";
   claimId?: string;
   limit?: number;
   storageOperation?: "status" | "bootstrap";
-}
+};
+export type StateToolParams = StateReadFields & ({
+  mode: "capabilities";
+  capabilityKind: "compute" | "analysis";
+} | {
+  mode?: "map" | "summary" | "context" | "liveness" | "detail" | "locate" | "validate" | "operations" | "decisions" | "storage" | "artifacts" | "runs";
+  capabilityKind?: never;
+});
+export type ResearchMapOperation =
+  | { type: "create_phase"; id: string; title: string; objective?: string; created_at?: string; metadata?: Record<string, unknown> }
+  | { type: "create_claim"; id: string; statement: string; status?: "proposed" | "supported" | "contradicted" | "inconclusive" | "withdrawn"; predictions?: string[]; falsifiers?: string[]; created_at?: string; metadata?: Record<string, unknown> }
+  | { type: "create_node"; id: string; title: string; objective: string; phase_id?: string; claim_ids?: string[]; dependency_ids?: string[]; created_at?: string; metadata?: Record<string, unknown> }
+  | { type: "create_finding"; id: string; node_id: string; statement: string; kind: "fact" | "issue"; claim_ids?: string[]; source_refs?: string[]; value?: unknown; datatype?: string; unit?: string; provenance?: Record<string, unknown>; status?: "open" | "confirmed" | "resolved" | "accepted" | "superseded"; severity?: string; resolution?: string; created_at?: string; metadata?: Record<string, unknown> }
+  | { type: "create_gate"; id: string; scope: "node" | "claim"; target_id: string; criteria?: unknown[]; created_at?: string; metadata?: Record<string, unknown> }
+  | { type: "set_continuation"; id: string; scope: "node" | "claim" | "gate"; target_id: string; action: "inspect" | "finalize" | "launch" | "analyze" | "review" | "evaluate" | "close"; status?: "required" | "deferred" | "blocked" | "completed"; reason?: string; request_id?: string; created_at?: string; metadata?: Record<string, unknown> }
+  | { type: "resolve_continuation"; id: string; status: "required" | "deferred" | "blocked" | "completed"; reason?: string; request_id?: string }
+  | { type: "evaluate_gate"; gate_id: string; verdict: "pass" | "fail" | "inconclusive" | "blocked"; message?: string; evidence_refs?: string[]; created_at?: string }
+  | { type: "set_node_state"; node_id: string; state: "planned" | "active" | "paused" | "blocked"; outcome?: never; summary?: string }
+  | { type: "set_node_state"; node_id: string; state: "closed"; outcome: "completed" | "inconclusive" | "stopped"; summary?: string }
+  | { type: "set_claim_status"; claim_id: string; status: "proposed" | "supported" | "contradicted" | "inconclusive" | "withdrawn" }
+  | { type: "relate_claims"; source_id: string; target_id: string; relation: string }
+  | { type: "set_focus"; claim_ids: string[]; node_ids: string[] };
 export interface ChangeToolParams extends WorkspaceToolParams {
   rationale: string;
-  operations: Array<{ type: string; [key: string]: unknown }>;
+  operations: ResearchMapOperation[];
   basisRefs?: string[];
   expectedRevision?: number;
 }
@@ -129,9 +150,22 @@ export interface WorkflowToolParams extends WorkspaceToolParams {
   eventId?: string;
 }
 export interface EnvironmentToolParams extends WorkspaceToolParams { mode?: "list" | "show"; name?: string }
+export interface ComputeCatalogToolParams extends WorkspaceToolParams {}
+export interface ComputeReadinessToolParams extends WorkspaceToolParams { capability_id?: string }
 export interface ComputeToolParams extends WorkspaceToolParams {
-  operation: "launch" | "inspect" | "finalize" | "cancel";
-  nodeId: string;
+  capability_id?: string;
+  capability_version?: string;
+  run_id?: string;
+  attempt_id?: string;
+  node_id?: string;
+  input?: Record<string, unknown>;
+  input_artifact_ids?: string[];
+  timeout_ms?: number;
+  metadata?: Record<string, unknown>;
+  environment?: Record<string, unknown>;
+  evidence_links?: Record<string, unknown>[];
+  operation?: "launch" | "inspect" | "finalize" | "cancel";
+  nodeId?: string;
   intentId?: string;
   purpose?: string;
   capability?: string;

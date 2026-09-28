@@ -368,12 +368,15 @@ class ResearchKernel:
                     raise
                 except (ResearchModelError, TypeError, ValueError) as exc:
                     raise ResearchKernelError(str(exc)) from exc
-            if self.sqlite.path.is_file():
-                try:
-                    artifacts, links = self.sqlite.load_evidence_index()
-                    validate_map_evidence(draft, artifacts, links)
-                except (EvidenceModelError, ResearchSqliteError) as exc:
-                    raise ResearchKernelError(str(exc)) from exc
+            # Evidence references are authoritative even before SQLite has
+            # been bootstrapped.  An empty registry must therefore reject
+            # non-empty refs instead of allowing a JSON-only map to persist
+            # unregistered source/evidence IDs.
+            try:
+                artifacts, links = self.sqlite.load_evidence_index() if self.sqlite.path.is_file() else ({}, {})
+                validate_map_evidence(draft, artifacts, links)
+            except (EvidenceModelError, ResearchSqliteError) as exc:
+                raise ResearchKernelError(str(exc)) from exc
             draft.revision = current.revision + 1
             self._save_unlocked(draft)
             result = {

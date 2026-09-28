@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument("--intent-digest", required=True)
         command.add_argument("--session-id")
         command.add_argument("--wake-policy", default="next_run")
-        command.add_argument("--notify-policy", default="none")
+        command.add_argument("--notify-policy", choices=("none", "configured"), default="none")
     for name in ("status", "enable", "disable"):
         command = sub.add_parser(name)
         command.add_argument("--root", required=True)

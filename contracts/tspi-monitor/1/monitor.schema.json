@@ -14,7 +14,7 @@
     "intent_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "session_id": {"type": ["string", "null"], "minLength": 1},
     "wake_policy": {"enum": ["none", "next_run"]},
-    "notify_policy": {"enum": ["none", "user"]},
+    "notify_policy": {"enum": ["none", "configured"]},
     "enabled": {"type": "boolean"},
     "created_at": {"type": "string", "minLength": 1}
   }

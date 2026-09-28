@@ -42,8 +42,18 @@ from .kernel import ResearchKernel, ResearchKernelError
 from .memory import ContextReader, KernelMemoryStore, LivenessReader, MemoryStore, ResearchMemoryService
 from .sqlite import ResearchSqliteError, ResearchSqliteRepository
 from .context import ContextBuilder, ContextPack
+from .agent_workspace import (
+    AgentWorkspaceError,
+    apply_change as apply_agent_workspace_change,
+    checkpoint as checkpoint_agent_workspace,
+    dispatch as dispatch_agent_workspace,
+    has_state_files as has_agent_workspace_state,
+    read_context as read_agent_workspace_context,
+    read_liveness as read_agent_workspace_liveness,
+)
 
 __all__ = [
+    "AgentWorkspaceError",
     "ClaimGate",
     "ContextBuilder",
     "ContextPack",
@@ -92,4 +102,10 @@ __all__ = [
     "StrategyStatus",
     "TurnCheckpoint",
     "TurnDisposition",
+    "apply_agent_workspace_change",
+    "checkpoint_agent_workspace",
+    "dispatch_agent_workspace",
+    "has_agent_workspace_state",
+    "read_agent_workspace_context",
+    "read_agent_workspace_liveness",
 ]

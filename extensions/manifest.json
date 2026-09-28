@@ -1,0 +1,32 @@
+{
+  "schema_version": "tspi-extension/1",
+  "name": "tspi-chemical",
+  "version": "0.17.0",
+  "skills": [],
+  "providers": [
+    {
+      "id": "artifact_seed",
+      "version": "1",
+      "kind": "harness",
+      "descriptor": "tspi-chemical/providers/artifact_seed.json"
+    },
+    {
+      "id": "chemical.analysis",
+      "version": "1",
+      "kind": "analysis",
+      "descriptor": "tspi-chemical/providers/chemical.analysis.json"
+    },
+    {
+      "id": "gaussian",
+      "version": "1",
+      "kind": "compute",
+      "descriptor": "tspi-chemical/providers/gaussian.json"
+    },
+    {
+      "id": "xtb",
+      "version": "1",
+      "kind": "compute",
+      "descriptor": "tspi-chemical/providers/xtb.json"
+    }
+  ]
+}

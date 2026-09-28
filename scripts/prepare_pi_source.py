@@ -17,6 +17,7 @@ MULTI_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace.patch"
 MULTI_WORKSPACE_CREATE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace-create.patch"
 WORKSPACE_SESSION_LIST_PATCH_PATH = ROOT / "config" / "pi-workspace-session-list.patch"
 RESEARCH_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-research-workspace.patch"
+WORKSPACE_MODE_PATCH_PATH = ROOT / "config" / "pi-workspace-mode.patch"
 SYSTEM_PROMPT_PATCH_PATH = ROOT / "config" / "pi-system-prompt.patch"
 SOURCE_RESOLVER_PATCH_PATH = ROOT / "config" / "pi-source-resolver.patch"
 MODEL_DATA_PATCH_PATH = ROOT / "config" / "pi-model-data.patch"
@@ -90,6 +91,7 @@ def verify(source: Path) -> str:
             "isSupportedWorkspaceIdentity" in server
             or 'identity?.schema_version !== "research-workspace/1"' in server
         ),
+        "Research Agent light workspace schema": "isSupportedLightWorkspace" in server and "research_agent_workspace_1" in server,
         "workspace validation diagnostic": 'new RoutedServerError("service_invalid_value", `Session cwd is not a supported TSPi workspace:' in server,
         "workspace-scoped session listing": ".filter(sessionMatchesCwd)" in client,
     }
@@ -262,6 +264,18 @@ def apply_research_workspace_patch(source: Path) -> None:
         )
     except (OSError, subprocess.CalledProcessError) as exc:
         raise PiSourceError(f"failed to apply TSPi ResearchMap workspace patch: {exc}") from exc
+
+
+def apply_workspace_mode_patch(source: Path) -> None:
+    """Allow the Pi session server to validate Research Agent light manifests."""
+    server_path = source / "packages" / "coding-agent" / "src" / "experimental" / "server.ts"
+    server = server_path.read_text(encoding="utf-8")
+    if "isSupportedLightWorkspace" in server:
+        return
+    try:
+        subprocess.run(["git", "-C", str(source), "apply", str(WORKSPACE_MODE_PATCH_PATH)], check=True, text=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PiSourceError(f"failed to apply TSPi light workspace validation patch: {exc}") from exc
 
 
 def apply_system_prompt_patch(source: Path) -> None:
@@ -549,6 +563,7 @@ def clone(destination: Path) -> Path:
     apply_multi_workspace_patch(destination)
     apply_workspace_session_list_patch(destination)
     apply_research_workspace_patch(destination)
+    apply_workspace_mode_patch(destination)
     apply_system_prompt_patch(destination)
     apply_source_resolver_patch(destination)
     apply_model_data_patch(destination)
@@ -573,6 +588,7 @@ def install(install_root: Path) -> Path:
         apply_multi_workspace_patch(destination)
         apply_workspace_session_list_patch(destination)
         apply_research_workspace_patch(destination)
+        apply_workspace_mode_patch(destination)
         apply_system_prompt_patch(destination)
         apply_source_resolver_patch(destination)
         apply_model_data_patch(destination)

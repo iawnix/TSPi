@@ -5,11 +5,13 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createNotificationDispatcher, sendNotification } from "./notification-dispatcher.mjs";
+
+export { createNotificationDispatcher, sendNotification } from "./notification-dispatcher.mjs";
 
 const executeFile = promisify(execFile);
 const packageRoot = resolve(process.env.TSPI_PACKAGE_ROOT || fileURLToPath(new URL("../..", import.meta.url)));
 const python = process.env.TS_AGENT_PYTHON || process.env.TSPI_WORKSPACE_PYTHON || "python3";
-const NOTIFICATION_TIMEOUT_MS = 150_000;
 
 // A wake and a notification have independent durable acknowledgements.
 export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWake, sendNotification, recordTurn }) {
@@ -40,7 +42,7 @@ export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWa
         if (response?.accepted !== true || response?.state === "uncertain") {
           throw new Error(response?.error?.message || "Host returned an uncertain monitor wake");
         }
-      } else await sendNotification(workspace, event);
+      } else await sendNotification(workspace, event, claimed);
       await runJson("complete", workspace, [...completion, "--delivered"]);
     } catch (error) {
       errors.push(`${channel}: ${errorMessage(error)}`);
@@ -79,6 +81,12 @@ export function wakeMessage(event) {
 
 export async function runMonitorWorker(options, signal) {
   const { connectHost } = await import("./tspi-host-client.mjs");
+  const notificationDispatcher = options.notificationDispatcher
+    ?? options.notification_dispatcher
+    ?? createNotificationDispatcher();
+  if (!notificationDispatcher || typeof notificationDispatcher.dispatch !== "function") {
+    throw new TypeError("monitor notificationDispatcher must expose dispatch(request)");
+  }
   let client;
   let lastSuccessfulPoll = null;
   const sendWake = async (params) => {
@@ -104,7 +112,9 @@ export async function runMonitorWorker(options, signal) {
             if (signal.aborted) break;
             deliveryErrors.push(...await deliverMonitorEvent({ workspace, delivery, runJson, sendWake,
               recordTurn: recordMonitorTurn,
-              sendNotification: (root, event) => sendNotification(root, event, signal) }));
+              sendNotification: (root, event, deliveryBinding) => notificationDispatcher.dispatch({
+                workspace: root, event, delivery: deliveryBinding, signal,
+              }) }));
           }
           await runJson("health", workspace, deliveryErrors.length ? ["--error", deliveryErrors.join("; ")] : []);
           errors.push(...deliveryErrors);
@@ -170,81 +180,6 @@ async function writeHealth(stateRoot, value) {
   const temporary = join(stateRoot, `monitor-health.${process.pid}.tmp`);
   await writeFile(temporary, `${JSON.stringify(value)}\n`, { mode: 0o600 });
   await rename(temporary, join(stateRoot, "monitor-health.json"));
-}
-
-export async function sendNotification(workspace, event, signal, execute = executeFile) {
-  const request = { schema_version: "ts-user-notification/1",
-    event: event.state === "unknown" ? "calculation_ambiguous" : ["failed", "stopped"].includes(event.state) ? "calculation_failed" : "progress",
-    subject: `TSPi calculation ${event.intent_id}: ${event.state}`,
-    // The existing notification content digest deduplicates retries by event identity.
-    summary: `Monitor ${event.monitor_id} observed ${event.state} for Node ${event.node_id}. Event ${event.event_id}.`, report_refs: [] };
-  const directory = await mkdtemp(join(tmpdir(), "tspi-monitor-notify-"));
-  try {
-    const requestFile = join(directory, "request.json");
-    await writeFile(requestFile, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
-    try {
-      const completed = await execute(python, [join(packageRoot, "scripts", "ts_email.py"), "notify", "--root", workspace, "--request-file", requestFile, "--json"], {
-        cwd: workspace, env: { ...process.env, PYTHONNOUSERSITE: "1" }, maxBuffer: 8 * 1024 * 1024, timeout: NOTIFICATION_TIMEOUT_MS, signal });
-      assertNotificationSuccess(parseNotificationJson(completed.stdout));
-    } catch (error) {
-      // execFile rejects on a non-zero CLI exit, while ts_email writes its
-      // structured provider/SMTP failure envelope to stdout.
-      const structured = tryParseNotificationJson(error?.stdout);
-      if (structured) throw notificationError(structured);
-      if (isNotificationTimeout(error)) throw notificationTimeoutError();
-      throw error;
-    }
-  } finally { await rm(directory, { recursive: true, force: true }); }
-}
-
-function parseNotificationJson(value) {
-  const parsed = JSON.parse(String(value || "").trim());
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("notification CLI returned invalid JSON");
-  return parsed;
-}
-
-function tryParseNotificationJson(value) {
-  try { return parseNotificationJson(value); } catch (_error) { return undefined; }
-}
-
-function assertNotificationSuccess(result) {
-  if (result?.ok === false) throw notificationError(result);
-  if (result?.ok !== true || !["sent", "already_sent"].includes(result.state)) {
-    throw new Error("monitor notification did not return a successful receipt");
-  }
-}
-
-function notificationError(payload) {
-  const detail = payload?.error && typeof payload.error === "object" ? payload.error : {};
-  const error = new Error(
-    typeof detail.message === "string" && detail.message.trim()
-      ? detail.message.trim()
-      : "TS notification failed without a structured message",
-  );
-  error.name = "NotificationError";
-  error.code = detail.code;
-  error.error_class = detail.class;
-  error.state = payload?.state;
-  error.retry_disposition = payload?.retry_disposition;
-  error.receipt_ref = payload?.receipt_ref;
-  return error;
-}
-
-function isNotificationTimeout(error) {
-  return error?.code === "ETIMEDOUT" || error?.timedOut === true;
-}
-
-function notificationTimeoutError() {
-  const error = new Error(
-    `email notification process timed out after ${NOTIFICATION_TIMEOUT_MS}ms; `
-    + "delivery status is unknown; inspect the delivery receipt before retrying",
-  );
-  error.name = "NotificationError";
-  error.code = "NOTIFICATION_DELIVERY_TIMEOUT";
-  error.error_class = "delivery_ambiguous";
-  error.state = "unknown";
-  error.retry_disposition = "reconcile_only";
-  return error;
 }
 
 function discoverWorkspaces(root) {

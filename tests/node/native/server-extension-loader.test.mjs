@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { loadServerExtensions } from "../../../apps/app-server/server-extension-loader.mjs";
+import { filterWorkspaceTools } from "../../../apps/app-server/workspace-mode-tools.mjs";
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "tspi-server-ext-"));
@@ -81,4 +82,45 @@ test("server extension loader rejects an integrity mismatch and unknown selectio
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("default package server manifest keeps complete core and chemical tool inventory", async () => {
+  const loaded = await loadServerExtensions({
+    packageRoot: process.cwd(),
+    reservedToolNames: ["read", "write", "bash", "system_prompt"],
+    requiredToolNames: ["research_read", "compute_environment", "compute_run", "analysis_run"],
+  });
+  assert.deepEqual(loaded.inventory.map((item) => item.name), ["tspi-core-tools", "tspi-chemical-tools"]);
+  const coreInventory = loaded.inventory.find((item) => item.name === "tspi-core-tools");
+  assert.ok(coreInventory.permissions.includes("notify.send"));
+  assert.ok(!loaded.tools.some((tool) => tool.name === "notify_send"));
+  assert.deepEqual(loaded.tools.map((tool) => tool.name), [
+    "research_read",
+    "research_change",
+    "research_continuation",
+    "research_strategy",
+    "research_interpretation",
+    "research_checkpoint",
+    "compute_environment",
+    "compute_catalog",
+    "compute_readiness",
+    "review_run",
+    "compute_run",
+    "review_respond",
+    "execution_dispatch",
+    "artifact_import",
+    "artifact_render",
+    "report_build",
+    "artifact_seed",
+    "artifact_compare",
+    "analysis_run",
+  ]);
+  const lightNames = filterWorkspaceTools(loaded.tools, "light").map((tool) => tool.name);
+  assert.ok(lightNames.includes("compute_run"));
+  assert.ok(lightNames.includes("compute_catalog"));
+  assert.ok(lightNames.includes("compute_readiness"));
+  assert.ok(!lightNames.includes("light_compute"));
+  const researchNames = filterWorkspaceTools(loaded.tools, "research").map((tool) => tool.name);
+  assert.ok(!researchNames.includes("light_compute"));
+  assert.ok(researchNames.includes("compute_run"));
 });

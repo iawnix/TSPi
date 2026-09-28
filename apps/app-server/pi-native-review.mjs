@@ -476,7 +476,8 @@ function nativePython() {
 
 function requireNativeWrites(toolName) {
   if (process.env.TSPI_NATIVE_WRITES !== "1") {
-    throw new Error(`${toolName} requires the guarded TSPi App Server Root Agent`);
+    const publicCommand = toolName.replace(/_([^_]*)$/, ".$1");
+    throw new Error(`${publicCommand} requires the guarded TSPi App Server Root Agent (tool ${toolName})`);
   }
 }
 

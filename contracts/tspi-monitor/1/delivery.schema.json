@@ -12,7 +12,7 @@
     "monitor_id": {"type": "string", "pattern": "^mon_[a-f0-9]{24}$"},
     "session_id": {"type": ["string", "null"], "minLength": 1},
     "wake_policy": {"enum": ["none", "next_run"]},
-    "notify_policy": {"enum": ["none", "user"]},
+    "notify_policy": {"enum": ["none", "configured"]},
     "status": {"enum": ["pending", "delivering", "delivered"]},
     "attempts": {"type": "integer", "minimum": 0},
     "request_id": {"type": "string", "pattern": "^monitor:[A-Za-z0-9._:-]{1,120}$"},

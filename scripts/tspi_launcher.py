@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Installed TSPi launcher entrypoint."""
+"""Installed ResearchAgent terminal launcher entrypoint."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from _bootstrap import activate_source_package
 def main(argv: list[str] | None = None) -> int:
     if not (ROOT / "package.json").is_file():
         print(
-            "TSPi: no installed Agent component; install a validated TSPi Package before starting",
+            "ResearchAgent: no installed Agent component; install a validated Research Agent package before starting",
             file=sys.stderr,
         )
         return 1

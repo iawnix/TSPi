@@ -1,0 +1,22 @@
+{
+  "schema_version": "tspi-provider-descriptor/1",
+  "provider_id": "gaussian",
+  "kind": "compute",
+  "capabilities": [
+    {
+      "id": "gaussian",
+      "version": "1",
+      "aliases": [
+        "gaussian.sp",
+        "gaussian.opt",
+        "gaussian.ts",
+        "gaussian.freq",
+        "gaussian.opt_freq",
+        "gaussian.irc",
+        "gaussian.scan"
+      ]
+    }
+  ],
+  "implementation": "builtin",
+  "notes": "Inventory entry for the built-in Gaussian capability adapters."
+}

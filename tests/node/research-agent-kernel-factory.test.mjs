@@ -1,0 +1,46 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
+import {
+  RESEARCH_KERNEL_FACTORY_VERSION,
+  create_kernel,
+} from "../../packages/research-agent-kernel/kernel_factory.mjs";
+
+async function workspace(prefix, workspace_id, workspace_mode = "research") {
+  const root = await mkdtemp(join(tmpdir(), `${prefix}-`));
+  await create_workspace_initializer().initialize_workspace({ workspace_root: root, workspace_id, workspace_mode });
+  return root;
+}
+
+test("kernel factory binds a dynamic filesystem backend to research workspace requests", async () => {
+  const root = await workspace("research-kernel-factory", "workspace_factory");
+  try {
+    const kernel = create_kernel({ backend: "fs" });
+    assert.equal(kernel.protocol_version, RESEARCH_KERNEL_FACTORY_VERSION);
+    assert.equal(kernel.backend, "filesystem");
+    assert.equal((await kernel.read_context({ workspace_root: root })).workspace_id, "workspace_factory");
+    await assert.rejects(
+      kernel.read_context({ workspace_root: root, workspace_id: "other_workspace" }),
+      /research_workspace_id_mismatch/,
+    );
+    await kernel.close();
+    await assert.rejects(kernel.read_context({ workspace_root: root }), /research_kernel_closed/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("kernel factory rejects light workspaces before creating an adapter", async () => {
+  const root = await workspace("light-kernel-factory", "workspace_light", "light");
+  try {
+    const kernel = create_kernel();
+    await assert.rejects(kernel.read_context({ workspace_root: root }), /research_workspace_required/);
+    await kernel.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

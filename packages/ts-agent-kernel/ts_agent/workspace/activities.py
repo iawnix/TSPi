@@ -13,7 +13,7 @@ from typing import Any, Iterable
 
 from ts_agent.io import read_json, sha256_json
 from ts_agent.research import ResearchKernel, ResearchKernelError
-from .refs import NODE_ID, ACTIVITY_ID
+from .refs import ACTIVITY_ID, NODE_ID, node_sort_key
 from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
@@ -615,9 +615,14 @@ def _unique_blockers(values: list[dict[str, str]]) -> list[dict[str, str]]:
 
 
 def _node_sort_key(value: str) -> tuple[int, int | str]:
-    if NODE_ID.fullmatch(value):
-        return (0, int(value.split("_", 1)[1]))
-    return (1, value)
+    """Sort numeric allocator IDs before opaque semantic Node IDs.
+
+    Node IDs are protocol references, not necessarily ordinals.  Keep this
+    local alias for the activity read model while delegating the contract to
+    ``workspace.refs`` so semantic IDs never reach an integer parser.
+    """
+
+    return node_sort_key(value)
 
 
 def _finding(

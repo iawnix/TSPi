@@ -8,6 +8,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ RUNTIME_ROOT = ROOT / "packages" / "ts-agent-runtime"
 AGENTS_ROOT = RUNTIME_ROOT / "agents"
 PYTHON_PACKAGE = ROOT / "packages" / "ts-agent-kernel" / "ts_agent"
 THEME_PATH = ROOT / "themes" / "ts-theme.json"
-TSPI_LAUNCHER = ROOT / "TSPi"
+TSPI_LAUNCHER = ROOT / "ResearchAgent"
 GENERATION_BRAND = re.compile(
     r"(?i)(?<![A-Za-z0-9])v[2-5](?![A-Za-z0-9])"
 )
@@ -115,8 +116,8 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
         json.dumps(pi_pin, indent=2) + "\n", encoding="utf-8"
     )
     write_test_suite_manifest(suite_root)
-    shutil.copy2(TSPI_LAUNCHER, package_root / "TSPi")
-    (package_root / "TSPi").chmod(0o755)
+    shutil.copy2(TSPI_LAUNCHER, package_root / "ResearchAgent")
+    (package_root / "ResearchAgent").chmod(0o755)
     (package_root / "scripts").mkdir()
     for name in ("_bootstrap.py", "tspi_launcher.py", "ts_compute.py"):
         shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
@@ -130,8 +131,8 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     shutil.copy2(ROOT / "requirements-runtime.txt", package_root / "requirements-runtime.txt")
     write_test_runtime_manifest(package_root, install_root)
     (package_home / "current").symlink_to("releases/test-suite")
-    launcher = install_root / "TSPi"
-    launcher.symlink_to(".pi/packages/tspi/current/agent/TSPi")
+    launcher = install_root / "ResearchAgent"
+    launcher.symlink_to(".pi/packages/tspi/current/agent/ResearchAgent")
     fake_node = install_root / "fake-bin" / "node"
     fake_node.parent.mkdir(parents=True)
     fake_node.write_text("#!/bin/sh\nexec \"$PI_BIN\" \"$@\"\n", encoding="utf-8")
@@ -177,6 +178,35 @@ def _run_tspi(
     endpoint.unlink(missing_ok=True)
     listener = socket.socket(socket.AF_UNIX)
     listener.bind(str(endpoint))
+    listener.listen(1)
+    stop_identity = threading.Event()
+
+    def serve_identity() -> None:
+        listener.settimeout(0.1)
+        while not stop_identity.is_set():
+            try:
+                connection, _ = listener.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                # Closing the listener is the fixture's normal shutdown path.
+                # Do not surface that expected wake-up as an unhandled thread
+                # exception in pytest's warning summary.
+                break
+            try:
+                connection.sendall(
+                    b'{"id":"launcher-identity","result":{"release_id":"test-suite"}}\n'
+                )
+            except BrokenPipeError:
+                # The launcher's liveness probe connects and closes without
+                # sending an identity request; the next connection performs
+                # the actual release check.
+                pass
+            finally:
+                connection.close()
+
+    identity_thread = threading.Thread(target=serve_identity, daemon=True)
+    identity_thread.start()
     environment = {
         **os.environ,
         "PATH": f"{install_root / 'fake-bin'}:{os.environ.get('PATH', '')}",
@@ -196,7 +226,9 @@ def _run_tspi(
             check=False,
         )
     finally:
+        stop_identity.set()
         listener.close()
+        identity_thread.join(timeout=1)
         endpoint.unlink(missing_ok=True)
         socket_dir.rmdir()
         runtime_dir.rmdir()
@@ -516,7 +548,7 @@ def test_tspi_rejects_non_private_notification_config(tmp_path: Path) -> None:
 def test_tspi_requires_an_installed_release(tmp_path: Path) -> None:
     install_root = tmp_path / "tspi-install"
     install_root.mkdir()
-    launcher = install_root / "TSPi"
+    launcher = install_root / "ResearchAgent"
     shutil.copy2(TSPI_LAUNCHER, launcher)
     launcher.chmod(0o755)
     (install_root / "scripts").mkdir()
@@ -527,7 +559,7 @@ def test_tspi_requires_an_installed_release(tmp_path: Path) -> None:
 
     assert completed.returncode == 1
     assert "no installed Agent component" in completed.stderr
-    assert "install a validated TSPi Package" in completed.stderr
+    assert "install a validated Research Agent package" in completed.stderr
 
 
 def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:

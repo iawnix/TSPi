@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
+from tests.support.workspace_helpers import apply_change, bootstrap_workspace_fixture, start_research_node
 from ts_agent.compute import (
     ComputeContractError,
     create_calculation_intent,
@@ -253,6 +253,35 @@ def test_structure_seed_artifact_is_private_content_addressed_and_idempotent(tmp
     assert stat.S_IMODE(xyz_path.stat().st_mode) == 0o600
     assert stat.S_IMODE(provenance_path.stat().st_mode) == 0o600
     assert len(list_calculation_artifacts(workspace, node_id=node_id)["artifacts"]) == 2
+
+
+def test_structure_seed_accepts_semantic_research_node_ids(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    node_id = "node_water_energy"
+    apply_change(workspace, {
+        "operations": [
+            {"type": "create_phase", "id": "phase_1", "title": "Water energy"},
+            {"type": "create_claim", "id": "claim_1", "statement": "The water energy is reproducible."},
+            {
+                "type": "create_node",
+                "id": node_id,
+                "phase_id": "phase_1",
+                "claim_ids": ["claim_1"],
+                "title": "Water energy",
+                "objective": "Generate a validated structure input.",
+            },
+        ],
+    })
+    result = create_structure_seed_artifact(workspace, {
+        "schema_version": "ts-structure-seed-request/1",
+        "node_id": node_id,
+        "smiles": "O",
+        "charge": 0,
+        "multiplicity": 1,
+        "optimization": "none",
+    })
+    assert result["artifact"]["owner_node"] == node_id
+    assert result["artifact"]["path"].startswith(f"nodes/{node_id}/inputs/")
 
 
 def test_structure_seed_rejects_chemical_and_contract_mismatches(tmp_path: Path) -> None:

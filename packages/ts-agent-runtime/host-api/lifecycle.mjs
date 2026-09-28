@@ -32,6 +32,16 @@ export const RESEARCH_TURN_PHASES = Object.freeze([
   "wake",
 ]);
 
+/**
+ * Pi may add `isError` only after the after-tool hook chain has started. Native
+ * adapters therefore also expose failures through the structured envelope.
+ */
+export function toolEventIsError(event) {
+  if (event?.isError === true) return true;
+  const envelope = event?.details?.envelope;
+  return envelope?.schema_version === "tspi-tool-error/1" || envelope?.ok === false;
+}
+
 const DEFAULT_TOOL_PHASES = Object.freeze(["orient", "advance", "prepare", "execute", "interpret", "checkpoint"]);
 
 /**
@@ -53,6 +63,7 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
     replay_mode: replayMode,
     last_tool: null,
     phase_before_tool: null,
+    active_tool_call_id: null,
   };
 
   function beginRun({ runId, messages = [], trigger, replay_mode: requestedReplayMode } = {}) {
@@ -69,14 +80,33 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
       replay_mode: effectiveReplayMode,
       last_tool: null,
       phase_before_tool: null,
+      active_tool_call_id: null,
     };
     return snapshot();
   }
 
-  function admitTool({ runId, toolName } = {}) {
+  function admitTool({ runId, toolName, toolCallId } = {}) {
     ensureRun(runId);
     const metadataForTool = toolMetadata[toolName];
     if (!metadataForTool) return { accepted: true, ignored: true, ...snapshot() };
+    // The Harness may execute a batch in parallel in other integrations. A
+    // lifecycle phase is a single ordered lane, so never let a second
+    // state-changing admission overwrite the first tool's rollback marker.
+    // Sequential callers clear this marker in completeTool before admitting
+    // the next call.
+    if (state.active_tool_call_id !== null) {
+      const sameCall = toolCallId && state.active_tool_call_id === toolCallId;
+      if (!sameCall) {
+        return {
+          accepted: false,
+          code: "lifecycle_tool_in_flight",
+          reason: `lifecycle tool ${state.last_tool || "unknown"} is still in flight`,
+          expected_phases: allowedToolPhases(state.lifecycle_phase),
+          ...snapshot(),
+        };
+      }
+      return { accepted: true, duplicate: true, ...snapshot() };
+    }
     const targetPhase = metadataForTool.phase;
     const allowed = allowedToolPhases(state.lifecycle_phase);
     if (!allowed.includes(targetPhase)) {
@@ -90,32 +120,53 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
     }
     state = {
       ...state,
-      lifecycle_phase: targetPhase === "orient" && state.lifecycle_phase === "wake" ? "wake" : targetPhase,
+      // A monitor wake admits exactly one orient/read tool. Once that read
+      // completes, the normal advance graph may inspect the bound Attempt.
+      lifecycle_phase: targetPhase,
       last_tool: toolName,
       phase_before_tool: state.lifecycle_phase,
+      active_tool_call_id: typeof toolCallId === "string" && toolCallId ? toolCallId : "__implicit__",
     };
     return { accepted: true, ...snapshot() };
   }
 
-  function completeTool({ runId, toolName, isError = false } = {}) {
+  function completeTool({ runId, toolName, toolCallId, isError = false } = {}) {
     ensureRun(runId);
+    // Ignore stale/out-of-order completions instead of applying their phase
+    // transition to whichever tool is currently active. This is important
+    // for Hosts that recover a batch or accidentally deliver callbacks out of
+    // order; the lifecycle lane remains deterministic and retryable.
+    if (state.active_tool_call_id !== null && (
+      state.last_tool !== toolName
+      || (typeof toolCallId === "string" && toolCallId && state.active_tool_call_id !== "__implicit__" && state.active_tool_call_id !== toolCallId)
+    )) {
+      return { ...snapshot(), ignored: true, code: "lifecycle_completion_mismatch" };
+    }
     if (isError) {
       if (state.last_tool === toolName && state.phase_before_tool) {
-        state = { ...state, lifecycle_phase: state.phase_before_tool, phase_before_tool: null };
+        state = { ...state, lifecycle_phase: state.phase_before_tool, phase_before_tool: null, active_tool_call_id: null };
       }
       return snapshot();
     }
     const metadataForTool = toolMetadata[toolName];
     if (!metadataForTool) return snapshot();
     const phase = metadataForTool.phase;
-    const nextPhase = phase === "orient" || phase === "advance" || phase === "prepare"
-      ? "prepare"
-      : phase === "execute"
-        ? "interpret"
-        : phase === "interpret"
-          ? "checkpoint"
-          : "checkpoint";
-    state = { ...state, lifecycle_phase: nextPhase, phase_before_tool: null };
+    // Orientation is followed by the planning/ResearchMap mutation phase;
+    // only after an advance is complete do we enter preparation. Re-reading
+    // state from a later phase normally returns to that phase. A bounded
+    // disposition repair is the exception: after checkpoint the Host may ask
+    // for one read-only orientation before accepting a strategy or checkpoint.
+    const phaseBeforeTool = state.phase_before_tool || state.lifecycle_phase;
+    const nextPhase = phase === "orient"
+      ? (phaseBeforeTool === "orient" || phaseBeforeTool === "wake" || phaseBeforeTool === "checkpoint" ? "advance" : phaseBeforeTool)
+      : phase === "advance" || phase === "prepare"
+        ? "prepare"
+        : phase === "execute"
+          ? "interpret"
+          : phase === "interpret"
+            ? "checkpoint"
+            : "checkpoint";
+    state = { ...state, lifecycle_phase: nextPhase, phase_before_tool: null, active_tool_call_id: null };
     return snapshot();
   }
 
@@ -149,11 +200,20 @@ function allowedToolPhases(phase) {
   switch (phase) {
     case "wake": return ["orient"];
     case "orient": return ["orient", "advance", "prepare"];
-    case "advance": return ["orient", "advance", "prepare", "checkpoint"];
-    case "prepare": return ["orient", "prepare", "execute", "interpret", "checkpoint"];
+    // A legacy/domain-specific turn may launch a bounded Attempt directly
+    // after orientation. Keep that compatibility path while still admitting
+    // explicit strategy/change records in the advance phase.
+    case "advance": return ["orient", "advance", "prepare", "execute", "checkpoint"];
+    // Preparation can include read-only environment/capability inspection
+    // before the Root records the Claim/Node plan. Keep advance reachable so
+    // that this valid planning path is not stranded in prepare.
+    case "prepare": return ["orient", "advance", "prepare", "execute", "interpret", "checkpoint"];
     case "execute": return ["orient", "execute", "interpret", "checkpoint"];
     case "interpret": return ["orient", "advance", "prepare", "interpret", "checkpoint"];
-    case "checkpoint": return ["checkpoint"];
+    // A checkpoint is normally terminal for this run. The liveness repair
+    // hook may, however, continue the same Harness run and must first inspect
+    // the active scope with the read-only orientation tool.
+    case "checkpoint": return ["orient", "checkpoint"];
     default: return [...DEFAULT_TOOL_PHASES];
   }
 }

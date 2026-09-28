@@ -10,7 +10,7 @@
 
 本 ADR 记录过去的普通 Pi 兼容模式。该模式已经退役，不会被当前运行时选择、打包或访问。
 历史上只有显式设置
-`TSPI_HOST_BACKEND=ordinary` 时，`TSPi --workspace <name>` 才启动固定版本 Pi CLI 的
+`TSPI_HOST_BACKEND=ordinary` 时，`ResearchAgent --workspace <name>` 才启动固定版本 Pi CLI 的
 普通 `InteractiveMode`。Pi 拥有 agent loop、模型、工具、format-3 transcript、cwd 和
 workspace Root lock。TSPi 只加载普通研究 extension 及一个很小的 bridge extension；
 该模式有独立 writer，绝不能作为 Harness fallback。

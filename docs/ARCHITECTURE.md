@@ -143,6 +143,22 @@ invocation; only names, descriptions, and locations are placed in the model's
 default prompt. Capabilities and Compute
 Environments are queried when selecting or launching a method.
 
+Capability discovery is a runtime registry, not a framework-owned static
+dispatch list. Built-in descriptors are registered at startup and trusted
+providers may register versioned descriptors through the same API. The public
+catalog exposes the descriptor contract only; provider objects, executable
+paths, activation scripts, and environment values stay behind the execution
+boundary. A calculation provider must explicitly supply a bounded preparer
+(`prepare`/`prepare_task`) and may supply input validation. A descriptor with
+no trusted adapter is unavailable rather than routed to an implicit command.
+
+Environment selection is owned by `EnvironmentBroker` (also exposed as the
+`EnvironmentManager` boundary). It maps a provider requirement to a named
+local or remote environment and returns readiness plus an opaque binding
+digest. Only trusted compute control code can unwrap the installation-owned
+command binding. This keeps adding a provider, scheduler, or container
+runtime independent from ResearchMap, Harness lifecycle, and Agent prompts.
+
 The runtime boundary is explicit:
 
 ```text
@@ -152,6 +168,13 @@ Research Memory (durable records)
   -> ContextPack (ephemeral turn working set)
   -> Prompt (ContextPack plus tools, Skill metadata, and instructions)
 ```
+
+Agent Core exposes this boundary through a language-neutral `ContextPort` and
+`MemoryPort`. The Core implementation may keep bounded session conversation
+memory, but it never writes workspace-scoped Research Memory. In a research
+workspace, the `MemoryPort` is session-only and all scientific context is a
+read-only projection supplied by the `KernelPort`; the Research Kernel remains
+the sole authority for ResearchMap and durable scientific memory.
 
 `ResearchMemoryService` does not cache a second ResearchMap or persist a
 ContextPack. `ContextPack.context_id` and provenance identify the source
@@ -282,7 +305,7 @@ The Pi App Server is the runtime owner below that Host. Its format-4 sessions
 are stored in `.pi/app-server-host/sessions/<encoded-cwd>/`; workspace
 `.pi/sessions` files are outside the supported Native runtime boundary.
 
-`TSPi --workspace <name>` bootstraps the selected workspace, asks Host for
+`ResearchAgent --workspace <name>` bootstraps the selected workspace, asks Host for
 `session/list` plus `session/create`/`session/resume`, and then execs Pi's
 official `ExperimentalClientTui` against the returned local connection
 descriptor. The remote TUI owns completion, rendering, input handling, and its

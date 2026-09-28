@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research-agent-artifact-ref-1",
+  "title": "Research agent artifact reference",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_id",
+    "content_digest",
+    "artifact_type",
+    "byte_count",
+    "artifact_path",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": {"const": "research-agent-artifact-ref/1"},
+    "artifact_id": {"type": "string", "pattern": "^artifact_[0-9a-f]{64}$"},
+    "content_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "artifact_type": {"type": "string", "minLength": 1},
+    "byte_count": {"type": "integer", "minimum": 0},
+    "artifact_path": {"type": "string", "pattern": "^content/[0-9a-f]{64}\\.bin$"},
+    "metadata": {"type": "object"}
+  }
+}

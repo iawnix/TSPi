@@ -117,7 +117,7 @@ Gaussian or other site-managed native chemistry software.
 remote environments. Remote scheduler checks remain available to the execution
 layer when a remote calculation is prepared; they are not a separate
 remote-only command surface.
-Add `--probe-remote` when installation should run `TSPi --check-remote` and fail
+Add `--probe-remote` when installation should run `ResearchAgent --check-remote` and fail
 unless SSH, the scheduler, writable remote root, and configured software probes
 are ready. Without that flag the summary reports `not_probed` rather than
 claiming remote readiness.
@@ -127,7 +127,7 @@ site-managed Gaussian/xTB/CREST/ASE-NEB commands. Restrict the file to mode 0600
 then run:
 
 ```bash
-./TSPi --check-remote
+./ResearchAgent --check-remote
 ```
 
 Remote execution code and software environments belong to the configured compute
@@ -202,7 +202,7 @@ session. The installer can enable and start the Host, and a normal terminal
 launch starts the configured service when needed:
 
 ```bash
-./TSPi --workspace reaction-a
+./ResearchAgent --workspace reaction-a
 ```
 
 Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for a
@@ -210,7 +210,7 @@ user-scoped installation, or omit `--user` for a system-scoped installation.
 With service scope `none`, the managed Host is disabled; Phone and background
 Monitor are unavailable. Configure a user or system service when Host-backed
 features are needed. The generated unit invokes TSPi's internal service
-entrypoint; ordinary users do not run `TSPi --host`.
+entrypoint; ordinary users do not run `ResearchAgent --host`.
 
 The default and recommended scope is a systemd user unit. A system unit must be
 given an explicit `--service-user`; the installer sets `HOME`, `PI_CODING_AGENT_DIR`,
@@ -219,11 +219,68 @@ are usable by the same account as the service user. The Host worker facet,
 server-extension allowlist, and native client are selected from the validated
 Package release.
 
+## ResearchAgent And The Internal App Server
+
+`ResearchAgent` is the normal user entrypoint. It selects or verifies the
+workspace mode and performs workspace initialization and research admission
+before opening the terminal. `ResearchAgentServer` is the internal HTTP
+service used by framework clients and administrators; it is not required for
+the ordinary terminal workflow.
+
+For an explicit App Server deployment, configure the runtime module (and a
+Kernel module when research workspace admission and durable research state are
+required):
+
+```bash
+./ResearchAgentServer \
+  --runtime-module /absolute/path/to/runtime-module.mjs \
+  --kernel-module /absolute/path/to/kernel-module.mjs \
+  --port 8787 \
+  --write-config
+./ResearchAgentServer
+```
+
+This writes the owner-only configuration at
+`<install>/.pi/research-agent/server.json` with schema
+`research_agent_server/1`. Relative module paths are resolved from the
+selected Package release; bare package specifiers are passed to Node's module
+resolver. The same values can be supplied through
+`RESEARCH_AGENT_RUNTIME_MODULE` and `RESEARCH_AGENT_KERNEL_MODULE` for
+ephemeral smoke tests. `runtime_module` must export `create_runtime()`;
+`kernel_module`, when present, must export `create_kernel()`.
+
+The release includes an explicit Pi Runtime Module at
+`packages/research-agent-pi-adapter/pi_runtime_module.mjs`. It can be selected
+when the host supplies an explicit Pi SDK model configuration:
+
+```bash
+export RESEARCH_AGENT_RUNTIME_MODULE="$PWD/packages/research-agent-pi-adapter/pi_runtime_module.mjs"
+export RESEARCH_AGENT_CWD="$PWD/workspaces/demo"
+export RESEARCH_AGENT_SESSION_ROOT="$PWD/.pi/research-agent/sessions"
+export PI_CODING_AGENT_DIR="$PWD/.pi/research-agent/agent"
+export RESEARCH_AGENT_MODEL_PROVIDER="anthropic"
+export RESEARCH_AGENT_MODEL_ID="claude-sonnet-4-5"
+./ResearchAgentServer --port 8787
+```
+
+The module never discovers `~/.pi` implicitly. Before importing the Pi SDK it
+requires explicit `cwd` or `workspace_root`, `session_root`, `agent_dir`, and
+either a model/model runtime or a `model_provider` plus `model_id`. Deployments that construct a model object or
+`ModelRuntime` in code should provide a small module exporting
+`create_runtime(options)` and delegate to this module; a filesystem path is not
+a valid `model_runtime` value. Tests may inject
+`create_agent_session` and `session_manager_class` without network access.
+
+`ResearchAgentServer` is intentionally separate from `ts-app-server-tspi.service`.
+The existing systemd unit continues to launch the legacy TSPi Host. Run the
+Research Agent command under a separately managed service or supervisor after
+its module configuration has been validated.
+
 Create a new conversation or continue the latest conversation in a project:
 
 ```bash
-./TSPi --workspace reaction-a
-./TSPi --workspace reaction-a -c
+./ResearchAgent --workspace reaction-a
+./ResearchAgent --workspace reaction-a -c
 ```
 
 The Host identity is `<install>/.pi/app-server-host/server-id`; request receipts,
@@ -248,12 +305,18 @@ installs still provide it with `--link-enrollment-code`. The installer writes
 `.pi/app-server-host/host.token`. The Host then maintains an outbound WSS
 connection; no App Server port is exposed to the Relay or Internet.
 
+When a Relay is already installed locally, the installer discovers known roots
+(including `/home/iaw/soft/tspi-link`) and reads its
+`tspi-link-relay.service` to prefill the Relay origin. Use
+`--link-relay-root /path/to/tspi-link` to select another installation. The Relay
+remains a separate service and is never installed twice by the Host installer.
+
 After the Host is online, create and manage Phone authorization with:
 
 ```bash
-./TSPi phone pair
-./TSPi phone devices
-./TSPi phone revoke <device-id>
+./ResearchAgent phone pair
+./ResearchAgent phone devices
+./ResearchAgent phone revoke <device-id>
 ```
 
 `phone pair` prints the configured TSPi Link Relay URL and an eight-character code that
@@ -288,7 +351,7 @@ second session format.
 
 ## Workspace Bootstrap
 
-The first `./TSPi --workspace <name>` invocation creates a 0700 workspace and
+The first `./ResearchAgent --workspace <name>` invocation creates a 0700 workspace and
 canonical scientific files when the named project does not exist. The Host's
 WorkspaceDirectory exposes the same operation to TS Phone. The Host itself does
 not create unnamed projects, and bootstrap validates existing JSON and refuses

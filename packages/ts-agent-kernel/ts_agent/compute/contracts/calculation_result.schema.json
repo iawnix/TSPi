@@ -22,7 +22,7 @@
     "schema_version": {"const": "ts-calculation-result/2"},
     "job_id": {"type": ["string", "null"]},
     "intent_id": {"type": "string", "pattern": "^calc_[1-9][0-9]*$"},
-    "node_id": {"type": "string", "pattern": "^node_[1-9][0-9]*$"},
+    "node_id": {"type": "string", "pattern": "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
     "capability": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$"},
     "capability_version": {"type": "string", "pattern": "^[1-9][0-9]*$"},
     "expected_output_roles": {
@@ -145,7 +145,7 @@
         },
         "owner_node": {
           "type": ["string", "null"],
-          "pattern": "^node_[1-9][0-9]*$"
+          "pattern": "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
         },
         "source_intent_id": {
           "type": ["string", "null"],
