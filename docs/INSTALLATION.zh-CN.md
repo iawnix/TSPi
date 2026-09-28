@@ -10,7 +10,7 @@
 - Linux、Git 和 Node.js 22.19+。
 - Python 3.11+、Conda/Mamba，以及可写的用户安装目录。
 - `config/pi-source.json` 指定版本的 Pi 源码 checkout；安装器也可以自动下载并修补。
-- 可选的 systemd user 或 system service 和 TS Web 端口。创建受管科学运行时需要
+- 正常安装需要 systemd user 或 system service；TS Web 端口是可选的。创建受管科学运行时需要
   Conda/Mamba；它不是可选的后端依赖。
 
 启动脚本默认使用公开 HTTPS 仓库；Git 传输中断时会有限重试，仍失败则回退到普通
@@ -157,7 +157,7 @@ TSPi 通知只发送邮件，不需要 POP3 或 IMAP。
 
 一个安装为 workspace root 下所有已验证工作区拥有唯一 TSPi Host。Host 是 control plane；
 安装级 Pi App Server 为每个活动 session 管理一个固定版本的 `SessionWorker`/`AgentHarness`
-lane。安装器可以启用并启动 Host；普通终端启动时也会按需启动已配置的服务：
+lane。安装器会在报告成功前启用并启动 Host；普通终端启动时直接附着到该服务：
 
 ```bash
 ./ResearchAgent --workspace reaction-a
@@ -171,8 +171,8 @@ systemctl --user restart ts-app-server-tspi.service
 systemctl --user stop ts-app-server-tspi.service
 ```
 
-system scope 安装省略 `--user`。`service scope = none` 时不管理 Host，Phone 和后台 Monitor
-不可用；需要 Host 功能时请选择 user 或 system。生成的 unit 调用 TSPi 内部服务入口，普通
+system scope 安装省略 `--user`。Host 是终端、Phone 和后台 Monitor 的必需依赖；`service scope = none`
+仅用于底层包暂存或测试，普通 workspace 入口不可用。生成的 unit 调用 TSPi 内部服务入口，普通
 用户不应运行 `ResearchAgent --host`。
 
 默认且推荐的 scope 是 systemd user unit。system unit 必须提供显式的 `--service-user`；安装器

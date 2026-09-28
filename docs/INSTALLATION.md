@@ -12,9 +12,9 @@ Link client; the public TSPi Link Relay has its own standalone installer.
 - Python 3.11+, Conda/Mamba, and a writable user installation directory.
 - A prepared Pi source checkout at the pinned revision (the installer can
   download and patch it automatically).
-- Optional: a systemd user or system service and a configured TS Web port. Conda/Mamba is
-  required when the managed scientific runtime is created; it is not an
-  optional backend dependency.
+- A systemd user or system service is required for a normal installation; a configured TS Web
+  port is optional. Conda/Mamba is required when the managed scientific runtime is created; it is
+  not an optional backend dependency.
 
 The bootstrap uses the public HTTPS repository by default and retries interrupted
 Git transfers before falling back to a regular shallow clone. It can also use a
@@ -198,8 +198,8 @@ only sends mail.
 The installation owns one TSPi Host for all validated workspaces below the
 installation workspace root. The Host is a control plane and the installation
 Pi App Server owns one pinned `SessionWorker`/`AgentHarness` lane per active
-session. The installer can enable and start the Host, and a normal terminal
-launch starts the configured service when needed:
+session. The installer enables and starts the Host before reporting success;
+the normal terminal launch then attaches to that service:
 
 ```bash
 ./ResearchAgent --workspace reaction-a
@@ -207,10 +207,10 @@ launch starts the configured service when needed:
 
 Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for a
 user-scoped installation, or omit `--user` for a system-scoped installation.
-With service scope `none`, the managed Host is disabled; Phone and background
-Monitor are unavailable. Configure a user or system service when Host-backed
-features are needed. The generated unit invokes TSPi's internal service
-entrypoint; ordinary users do not run `ResearchAgent --host`.
+The Host is required by the terminal, Phone, and background Monitor. Service
+scope `none` is reserved for low-level package staging or tests and leaves
+normal workspace entrypoints unavailable. The generated unit invokes TSPi's
+internal service entrypoint; ordinary users do not run `ResearchAgent --host`.
 
 The default and recommended scope is a systemd user unit. A system unit must be
 given an explicit `--service-user`; the installer sets `HOME`, `PI_CODING_AGENT_DIR`,

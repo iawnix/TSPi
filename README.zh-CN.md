@@ -64,9 +64,10 @@ Claim/Node、可审计 Attempt、Monitor 状态或科学解释。需要这些生
 取得本地 Pi connection descriptor，再启动 Pi 官方 native remote client/TUI。默认路径不
 使用 tmux、PTY scraping，也不会创建第二个 agent loop。Host 不可用时会明确报错；旧的独立
 Pi 运行时已经移除，Native Pi Harness 是唯一受支持的后端。
-使用 `systemctl --user stop|restart|status ts-app-server-tspi.service` 管理
-Host 生命周期。scope 为 none 时，必须由运维人员启动 Host，普通 workspace、Phone 和
-Monitor 入口才可用。`--host` 只是服务内部入口，不用于日常启动。
+安装器默认创建、启用并启动 user-scoped Host；使用
+`systemctl --user stop|restart|status ts-app-server-tspi.service` 管理 Host 生命周期。
+Host 是终端、Phone 和 Monitor 的必需依赖；`--service-scope none` 仅用于底层包暂存或测试，
+该模式下普通 workspace 入口不可用。`--host` 只是服务内部入口，不用于日常启动。
 
 TS Phone Flutter 应用通过 TSPi Link 连接同一个 Host 和 Pi Harness lane。Phone 和 Host 分别向
 TSPi Link Relay 建立出站 WSS；Relay 只负责设备授权与不透明字节转发，不管理会话或研究状态。

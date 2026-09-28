@@ -42,6 +42,39 @@ def test_non_interactive_options_select_only_web_as_optional_component(tmp_path:
     assert not hasattr(args, "with_phone")
 
 
+def test_non_interactive_defaults_to_a_started_user_host(tmp_path: Path) -> None:
+    args = wizard.parse_args([
+        "--install-root",
+        str(tmp_path / "install"),
+        "--without-web",
+        "--non-interactive",
+        "--yes",
+    ])
+
+    wizard.validate_options(args)
+
+    assert args.service_scope == "user"
+    assert args.enable_services is True
+    assert args.start_services is True
+
+
+def test_existing_unmanaged_host_is_migrated_to_user_service(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    service_config = root / ".pi/tspi/service.json"
+    service_config.parent.mkdir(parents=True)
+    service_config.write_text(
+        json.dumps({"schema_version": "tspi-service/1", "scope": "none", "runtime_dir": None}),
+        encoding="utf-8",
+    )
+    args = wizard.parse_args(["--install-root", str(root)])
+
+    wizard._load_existing_menu_defaults(args)
+
+    assert args.service_scope == "user"
+    assert args.enable_services is True
+    assert args.start_services is True
+
+
 def test_interactive_web_token_reprompts_until_valid(monkeypatch: pytest.MonkeyPatch) -> None:
     values = iter(("short", "a" * 8))
     monkeypatch.setattr(wizard.getpass, "getpass", lambda _prompt: next(values))

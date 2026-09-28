@@ -80,6 +80,7 @@ SERVICE_CONFIG_SCHEMA = "tspi-service/1"
 SERVICE_CONFIG_RELATIVE = Path(".pi/tspi/service.json")
 PI_AGENT_CONFIG_FILES = ("models.json", "auth.json")
 PI_AGENT_CONFIG_MAX_BYTES = 2 * 1024 * 1024
+DEFAULT_SERVICE_SCOPE = "user"
 
 
 def detect_conda_root() -> str:
@@ -222,7 +223,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--compute-config", help="Unified compute.toml to install as .pi/compute.toml.")
     parser.add_argument("--probe-remote", action="store_true", help="Run the remote doctor and fail if the configured environment is not ready.")
     parser.add_argument("--conda-root")
-    parser.add_argument("--service-scope", choices=("none", "user", "system"))
+    parser.add_argument(
+        "--service-scope",
+        choices=("none", "user", "system"),
+        help="Host service scope (default: user; none is only for package staging/tests).",
+    )
     parser.add_argument("--service-user", help="Unix account used by systemd services (required for system scope).")
     parser.add_argument("--phone-access", choices=("disabled", "link"), help="TS Phone access mode.")
     parser.add_argument(
@@ -314,16 +319,12 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
     section("Runtime and services")
     args.conda_root = args.conda_root or ask("Conda root (blank for auto-detect)", detect_conda_root())
     if args.service_scope is None:
-        configure_systemd = ask_yes_no(
-            "Install App Server and selected component service units",
-            True,
-        )
-        args.service_scope = "user" if configure_systemd else "none"
+        args.service_scope = DEFAULT_SERVICE_SCOPE
     if args.service_scope == "system" and not args.service_user:
         args.service_user = os.environ.get("SUDO_USER") or ask("Service user", "")
     if args.service_scope != "none":
-        args.enable_services = ask_yes_no("Enable services", True)
-        args.start_services = ask_yes_no("Start services now", True)
+        args.enable_services = True
+        args.start_services = True
     configure_email_interactively(args)
     return args
 
@@ -355,11 +356,17 @@ def _load_existing_menu_defaults(args: argparse.Namespace) -> None:
         try:
             document = json.loads(service_config.read_text(encoding="utf-8"))
             scope = document.get("scope") if isinstance(document, dict) else None
-            args.service_scope = scope if scope in {"none", "user", "system"} else None
+            # An older installation may have recorded ``none``.  Since the
+            # terminal is Host-mediated now, migrate that state to the
+            # default user service on the next normal installer run.
+            args.service_scope = scope if scope in {"user", "system"} else None
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             args.service_scope = None
     if args.service_scope is None:
-        args.service_scope = "none"
+        # A normal installation must have a Host service.  Keep an explicitly
+        # selected ``none`` scope available for package fixtures and staging,
+        # but never choose it implicitly for a user installation.
+        args.service_scope = DEFAULT_SERVICE_SCOPE
     if args.service_scope == "system" and not args.service_user:
         unit = Path("/etc/systemd/system/ts-app-server-tspi.service")
         try:
@@ -369,10 +376,11 @@ def _load_existing_menu_defaults(args: argparse.Namespace) -> None:
                     break
         except OSError:
             pass
-    if args.service_scope != "none" and not args.enable_services:
+    if args.service_scope != "none":
+        # ResearchAgent is a client of the installation Host.  Enabling the
+        # unit without starting it leaves a freshly installed CLI unusable.
         args.enable_services = True
-    if args.service_scope != "none" and not args.start_services:
-        args.start_services = False
+        args.start_services = True
     _load_existing_email_defaults(args, root)
 
 
@@ -491,21 +499,17 @@ def _configure_menu_phone(args: argparse.Namespace) -> None:
 
 def _configure_menu_runtime(args: argparse.Namespace) -> None:
     args.conda_root = ask("Conda root (blank for auto-detect)", args.conda_root or detect_conda_root()).strip()
-    current_scope = args.service_scope or "none"
+    current_scope = args.service_scope if args.service_scope in {"user", "system"} else DEFAULT_SERVICE_SCOPE
     while True:
-        scope = ask("Service scope (none, user, or system)", current_scope).strip().lower()
-        if scope in {"none", "user", "system"}:
+        scope = ask("Service scope (user or system)", current_scope).strip().lower()
+        if scope in {"user", "system"}:
             args.service_scope = scope
             break
-        note("Choose none, user, or system.", tone="warning")
+        note("Choose user or system; the App Server Host is required.", tone="warning")
     if args.service_scope == "system" and not args.service_user:
         args.service_user = os.environ.get("SUDO_USER") or ask("Service user", "")
-    if args.service_scope == "none":
-        args.enable_services = False
-        args.start_services = False
-    else:
-        args.enable_services = ask_yes_no("Enable services", bool(args.enable_services))
-        args.start_services = ask_yes_no("Start services now", bool(args.start_services))
+    args.enable_services = True
+    args.start_services = True
 
 
 def _initialize_interactive_menu(args: argparse.Namespace) -> None:
@@ -809,11 +813,13 @@ def validate_options(args: argparse.Namespace) -> None:
                 raise ValueError("--web-auth-token-file must be an absolute path inside the installation root")
     elif args.allow_remote:
         raise ValueError("--allow-remote requires --with-web")
-    args.service_scope = args.service_scope or "none"
+    args.service_scope = args.service_scope or DEFAULT_SERVICE_SCOPE
     if args.service_scope == "none" and (args.enable_services or args.start_services):
         raise ValueError("--enable-services and --start-services require a service scope")
-    if args.start_services:
+    if args.service_scope != "none":
+        # A normal installation must leave ResearchAgent with a usable Host.
         args.enable_services = True
+        args.start_services = True
     if args.service_scope == "system" and os.geteuid() != 0:
         raise ValueError("system services require root; choose --service-scope user")
     if args.service_scope == "system":
@@ -843,7 +849,7 @@ def validate_options(args: argparse.Namespace) -> None:
     elif args.link_url or args.link_enrollment_code:
         raise ValueError("--link-url and --link-enrollment-code require --phone-access link")
     if args.service_scope != "none" and shutil.which("systemctl") is None:
-        raise ValueError("service configuration requires systemctl; choose --service-scope none")
+        raise ValueError("the managed App Server Host requires systemctl; install on a systemd host or use an explicit staging scope")
     validate_email_options(args)
 
 

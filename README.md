@@ -72,11 +72,13 @@ connection descriptor and then starts Pi's official native remote client/TUI.
 The default path has no tmux, PTY scraping, or second agent loop. If the Host
 is unavailable, TSPi reports the failure. Native Pi Harness is the only
 supported runtime backend; the retired ordinary-Pi backend is rejected.
-Use `systemctl --user stop|restart|status ts-app-server-tspi.service` for a
+The installer creates, enables, and starts a user-scoped Host by default. Use
+`systemctl --user stop|restart|status ts-app-server-tspi.service` for a
 user-scoped installation, or omit `--user` for a system-scoped installation.
-With service scope `none`, the managed Host is disabled and normal workspace,
-Phone, and Monitor entrypoints are unavailable until an operator starts Host.
-`--host` is an internal service entrypoint and is not part of normal operation.
+The Host is required by the terminal, Phone, and Monitor; `--service-scope none`
+is reserved for low-level package staging or tests and leaves normal workspace
+entrypoints unavailable. `--host` is an internal service entrypoint and is not
+part of normal operation.
 
 The TS Phone Flutter app reaches the same Host and Pi Harness lane through TSPi Link. The
 Phone and Host both open outbound WSS connections to a TSPi Link Relay; the Relay
