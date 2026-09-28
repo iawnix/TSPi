@@ -138,23 +138,46 @@ function create_environment_broker(bindings) {
     const requested_environment = requirement.environment_id
       ?? requirement.environment
       ?? requirement.name;
-    const binding = requested_environment === undefined
-      ? configured
-      : configured?.environments?.[requested_environment];
+    const requested_kind = requirement.execution_kind;
+    const environments = configured?.environments && typeof configured.environments === "object"
+      ? configured.environments
+      : {};
+    const by_alias = requested_environment === undefined
+      ? undefined
+      : Object.values(environments).find((item) => item?.available
+        && (item.environment_id === requested_environment
+          || item.aliases?.includes?.(requested_environment)));
+    let binding = requested_environment === undefined ? configured : by_alias;
+    if (requested_environment === undefined && requested_kind !== undefined
+      && binding?.environment_kind !== requested_kind) {
+      const candidates = Object.values(environments).filter((item) => item?.available && item.environment_kind === requested_kind);
+      if (candidates.length === 1) binding = candidates[0];
+      else if (candidates.length > 1) {
+        throw Object.assign(new Error(`multiple ${requested_kind} compute environments are configured; select one by environment`), {
+          code: "environment_unavailable",
+          details: { environments: candidates.map((item) => item.environment_id) },
+        });
+      }
+    }
     if (!binding?.available) {
       const backend = binding?.backend || provider_id;
       const suffix = requested_environment === undefined ? "" : ` in environment ${requested_environment}`;
+      const available = Object.values(environments)
+        .filter((item) => item?.available)
+        .map((item) => item.environment_id)
+        .filter(Boolean);
       throw Object.assign(new Error(`compute environment does not configure backend: ${backend}${suffix}`), {
         code: "environment_unavailable",
+        details: { requested_environment, requested_kind, available_environments: available },
       });
     }
     if (requirement.environment_kind && requirement.environment_kind !== "compute") {
       throw Object.assign(new Error("compute capability requires a compute environment"), { code: "environment_unavailable" });
     }
-    const requested_kind = requirement.execution_kind;
     if (requested_kind !== undefined && requested_kind !== binding.environment_kind) {
       throw Object.assign(new Error(`compute environment kind is not available: ${requested_kind}`), {
         code: "environment_unavailable",
+        details: { environment_id: binding.environment_id, requested_kind },
       });
     }
     return {

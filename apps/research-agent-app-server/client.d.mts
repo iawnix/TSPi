@@ -44,6 +44,8 @@ export interface AppServerClient {
   compute_readiness(request?: {
     readonly manifest_provider_id?: string;
     readonly capability_id?: string;
+    readonly environment_id?: string;
+    readonly execution_kind?: "local" | "remote";
   }): Promise<{
     readonly protocol_version: string;
     readonly readiness: readonly Record<string, unknown>[];

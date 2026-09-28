@@ -173,6 +173,13 @@ def initialize_workspace(root: str | Path, workspace_id: str, workspace_mode: st
         "workspace_id": identifier,
         "workspace_mode": selected_mode,
         "profile_id": f"{selected_mode}_workspace_1",
+        # Keep the Python initializer aligned with the Agent Core workspace
+        # policy.  These fields are part of the immutable mode contract and
+        # are consumed by Host/runtime routing after restart.
+        "memory_profile": "research_map" if selected_mode == "research" else "session",
+        "memory_scope": "session",
+        "research_state_scope": "workspace" if selected_mode == "research" else "none",
+        "execution_profile": "audited" if selected_mode == "research" else "bounded",
         "state": initial_state,
         "workspace_root": str(path),
         "created_at": created_at,

@@ -13,6 +13,7 @@ const {
 } = require("node:fs");
 const { randomBytes } = require("node:crypto");
 const { isAbsolute, relative, resolve, sep } = require("node:path");
+const { readResearchMap } = require("./research-map-reader.cjs");
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ACTIVITY_ID = /^op_[1-9][0-9]*$/;
@@ -113,10 +114,8 @@ function statusDocument(activityId, kind, operation, nodeRefs, status, startedAt
 }
 
 function validateNodeRefs(root, nodeRefs) {
-  const mapPath = resolve(root, "research_map.json");
-  if (!existsSync(mapPath) || lstatSync(mapPath).isSymbolicLink()) throw new Error("ResearchMap does not exist");
-  const map = JSON.parse(readFileSync(mapPath, "utf8"));
-  if (!isPlainObject(map) || map.schema_version !== "research-map/1") throw new Error("deterministic activities require research-map/1");
+  const map = readResearchMap(root);
+  if (!map) throw new Error("ResearchMap does not exist");
   const known = new Set(
     Array.isArray(map.nodes)
       ? map.nodes.filter(isPlainObject).map((node) => node.id).filter((value) => typeof value === "string")

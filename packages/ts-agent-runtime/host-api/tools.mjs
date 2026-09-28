@@ -400,7 +400,7 @@ export function createPublicToolContracts(Type) {
   // Keep this branch separate from the legacy scheduler schema so the active
   // compute_run contract cannot accidentally require scheduler intent fields.
   const computeCapabilitySchema = Type.Object({
-    capability_id: Type.String({ pattern: "^[a-z][a-z0-9_]{0,127}$", maxLength: 128 }),
+    capability_id: Type.String({ pattern: "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$", maxLength: 128 }),
     capability_version: Type.Optional(Type.String({ minLength: 1, maxLength: 32 })),
     run_id: Type.Optional(Type.String({ minLength: 1, maxLength: 160, pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$" })),
     attempt_id: Type.Optional(Type.String({ minLength: 1, maxLength: 160, pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$" })),
@@ -467,7 +467,7 @@ export function createPublicToolContracts(Type) {
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential", promptSnippet: "List registered compute capabilities" }),
     computeReadiness: contract("computeReadiness", "Compute Readiness", "Check readiness of registered compute capabilities.", Type.Object({
-      capability_id: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9_]{0,127}$", maxLength: 128 })),
+      capability_id: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$", maxLength: 128 })),
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential", promptSnippet: "Check compute capability readiness" }),
     compute: contract("compute", "TS Calculate", "Run one mode-neutral registered calculation capability.", Type.Union([computeCapabilitySchema, computeOperationSchema]), {
@@ -569,7 +569,7 @@ export function createPublicToolContracts(Type) {
       }, { additionalProperties: false }),
       Type.Object({
         operation: Type.Literal("run"),
-        capabilityId: Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z][a-z0-9_]{0,127}$" }),
+        capabilityId: Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$" }),
         capabilityVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 32 })),
         input: Type.Optional(Type.Record(Type.String({ minLength: 1, maxLength: 128 }), Type.Any())),
         // CapabilityRuntime artifacts are content-addressed with the full

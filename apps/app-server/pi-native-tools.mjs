@@ -253,7 +253,7 @@ export function createChangeTool() {
   return {
     ...TOOL_CONTRACTS.change,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("research_change");
+      requireNativeWrites("research_change", toolContext);
       const root = boundWorkspaceRoot(params, toolContext);
       const result = await NATIVE_COMMANDS.execute("research.change", root, { request: {
           schema_version: "ts-change-request/1",
@@ -302,7 +302,7 @@ export function createWorkflowTool() {
         }, context?.abortSignal);
         result = filterContinuationStatus(result, params);
       } else if (params.operation === "strategy") {
-        requireNativeWrites("research_strategy");
+        requireNativeWrites("research_strategy", toolContext);
         if (!params.strategyOperation || !params[params.strategyOperation]) {
           throw new Error("research_strategy requires strategyOperation and plan or review");
         }
@@ -318,7 +318,7 @@ export function createWorkflowTool() {
           },
         }, context?.abortSignal);
       } else if (params.operation === "interpret") {
-        requireNativeWrites("research_interpretation");
+        requireNativeWrites("research_interpretation", toolContext);
         if (!params.interpretation) throw new Error("research_interpretation requires interpretation");
         result = await NATIVE_COMMANDS.execute("research.interpretation", root, {
           request: {
@@ -331,7 +331,7 @@ export function createWorkflowTool() {
           },
         }, context?.abortSignal);
       } else if (params.operation === "checkpoint") {
-        requireNativeWrites("research_checkpoint");
+        requireNativeWrites("research_checkpoint", toolContext);
         if (!params.checkpoint) throw new Error("research_checkpoint requires checkpoint");
         const checkpoint = normalizeCheckpointPayload(params.checkpoint, toolContext, params.eventId);
         result = await NATIVE_COMMANDS.execute("research.checkpoint", root, {
@@ -346,7 +346,7 @@ export function createWorkflowTool() {
         }, context?.abortSignal);
       } else {
         validateWorkflowParams(params);
-        requireNativeWrites("research_continuation");
+        requireNativeWrites("research_continuation", toolContext);
         result = await NATIVE_COMMANDS.execute(
           "research.continuation",
           root,
@@ -480,7 +480,7 @@ export function createSeedTool() {
   return {
     ...TOOL_CONTRACTS.seed,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("artifact_seed");
+      requireNativeWrites("artifact_seed", toolContext);
       return runDeterministicArtifact({
         root: boundWorkspaceRoot(params, toolContext),
         kind: "structure_seed",
@@ -519,7 +519,7 @@ export function createCompareTool() {
   return {
     ...TOOL_CONTRACTS.compare,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("artifact_compare");
+      requireNativeWrites("artifact_compare", toolContext);
       const comparisonParameters = serializeStructureComparisonParameters(params.parameters);
       return runDeterministicArtifact({
         root: boundWorkspaceRoot(params, toolContext),
@@ -554,7 +554,7 @@ export function createAnalyzeTool() {
   return {
     ...TOOL_CONTRACTS.analyze,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("analysis_run");
+      requireNativeWrites("analysis_run", toolContext);
       return runDeterministicArtifact({
         root: boundWorkspaceRoot(params, toolContext),
         kind: "scientific_analysis",
@@ -579,7 +579,7 @@ export function createDispatchTool() {
   return {
     ...TOOL_CONTRACTS.dispatch,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("execution_dispatch");
+      requireNativeWrites("execution_dispatch", toolContext);
       const root = boundWorkspaceRoot(params, toolContext);
       const result = await runJsonCli(packageScript("ts_compute.py"), ["node-dispatch", "--root", root, ...nodeControlArguments(params)], root, context?.abortSignal);
       return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
@@ -591,7 +591,7 @@ export function createImportTool() {
   return {
     ...TOOL_CONTRACTS.importArtifact,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("artifact_import");
+      requireNativeWrites("artifact_import", toolContext);
       const root = boundWorkspaceRoot(params, toolContext);
       return runDeterministicArtifact({
         root,
@@ -631,7 +631,7 @@ export function createRenderTool() {
   return {
     ...TOOL_CONTRACTS.render,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("artifact_render");
+      requireNativeWrites("artifact_render", toolContext);
       const root = boundWorkspaceRoot(params, toolContext);
       const resolved = await resolveArtifacts(root, params.inputArtifactIds, context?.abortSignal);
       const request = validateRenderRequest(root, {
@@ -703,7 +703,7 @@ export function createReportTool() {
   return {
     ...TOOL_CONTRACTS.report,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("report_build");
+      requireNativeWrites("report_build", toolContext);
       const root = boundWorkspaceRoot(params, toolContext);
       const assetArtifactIds = params.assetArtifactIds || [];
       const resolvedAssets = assetArtifactIds.length
@@ -1262,10 +1262,16 @@ function nativePython() {
   return process.env.TS_AGENT_PYTHON || "python3";
 }
 
-function requireNativeWrites(toolName) {
+function requireNativeWrites(toolName, toolContext) {
   if (process.env.TSPI_NATIVE_WRITES !== "1") {
     const publicCommand = toolName.replace(/_([^_]*)$/, ".$1");
     throw new Error(`${publicCommand} requires the guarded TSPi App Server Root Agent (tool ${toolName})`);
+  }
+  // Actual Harness invocations carry a Host-bound principal. Keep the
+  // environment check for older direct integrations and unit fixtures, but
+  // never accept a non-root principal from a trusted execution context.
+  if (toolContext?.principal !== undefined && toolContext.principal !== "root_agent") {
+    throw new Error(`${toolName} requires the Root Agent principal`);
   }
 }
 

@@ -181,10 +181,58 @@ function require_request_workspace(request, workspace_id, workspace_root) {
   }
 }
 
-function require_admitted(context, liveness) {
+function require_admitted(context, liveness, { allow_checkpoint = false } = {}) {
   if (context.lifecycle_state !== RESEARCH_STATE.admitted || liveness.state !== RESEARCH_STATE.admitted) {
     throw new Error("research_admission_required");
   }
+  if (!allow_checkpoint && (liveness.disposition === "blocked" || liveness.lifecycle === "blocked")) {
+    throw new Error("research_lifecycle_blocked");
+  }
+}
+
+function require_decision_ready(context, liveness, operations) {
+  if (liveness.lifecycle !== "decision_needed") return;
+  if (liveness.disposition === "user_input_required") {
+    throw new Error("research_user_input_required");
+  }
+  const focus = context.focus && typeof context.focus === "object" ? context.focus : {};
+  const claim_ids = new Set(Array.isArray(focus.claim_ids) ? focus.claim_ids : []);
+  const node_ids = new Set(Array.isArray(focus.node_ids) ? focus.node_ids : []);
+  const plans = Array.isArray(context.strategy_plans) ? context.strategy_plans : [];
+  if (plans.some((plan) => plan && ["proposed", "active"].includes(plan.status ?? "proposed")
+    && (claim_ids.has(plan.claim_id) || node_ids.has(plan.node_id)))) return;
+  const execution_types = new Set([
+    "create_attempt", "register_attempt", "transition_attempt", "update_attempt",
+    "create_artifact", "register_artifact", "create_evidence", "link_evidence",
+    "register_evidence", "create_finding", "create_gate", "evaluate_gate",
+  ]);
+  if (operations.some((item) => item && (execution_types.has(item.type)
+    || item.type === "set_node_state" && item.state === "active"))) {
+    throw new Error("research_decision_required");
+  }
+}
+
+async function persist_memory_projection(root, context, liveness) {
+  const path = join(root, "memory", "index.json");
+  let previous = {};
+  try {
+    previous = await read_json(path, "research_memory_index");
+  } catch (error) {
+    if (error?.cause?.code !== "ENOENT") throw error;
+  }
+  await write_json_atomic(path, {
+    schema_version: "research_memory_index_1",
+    workspace_id: context.workspace_id,
+    scope: "workspace",
+    authority: "research_kernel",
+    revision: context.revision ?? 0,
+    context_revision: context.revision ?? 0,
+    lifecycle: liveness.lifecycle ?? "idle",
+    disposition: liveness.disposition ?? null,
+    checkpoint_id: liveness.checkpoint_id ?? null,
+    focus: context.focus ?? { claim_ids: [], node_ids: [] },
+    entries: Array.isArray(previous.entries) ? previous.entries : [],
+  });
 }
 
 function liveness_projection(context, liveness, checkpoint = null) {
@@ -363,6 +411,31 @@ function attach_unique(item, field, value) {
   if (!item[field].includes(value)) item[field].push(value);
 }
 
+function claim_relation_would_cycle(context, source_id, target_id) {
+  const graph = new Map();
+  for (const edge of array_field(context, "claim_relations")) {
+    if (edge && typeof edge.source_id === "string" && typeof edge.target_id === "string") {
+      if (!graph.has(edge.source_id)) graph.set(edge.source_id, new Set());
+      graph.get(edge.source_id).add(edge.target_id);
+    }
+  }
+  if (!graph.has(source_id)) graph.set(source_id, new Set());
+  graph.get(source_id).add(target_id);
+  const visiting = new Set();
+  const visited = new Set();
+  const visit = (id) => {
+    if (visiting.has(id)) return true;
+    if (visited.has(id)) return false;
+    visiting.add(id);
+    for (const child of graph.get(id) ?? []) if (visit(child)) return true;
+    visiting.delete(id);
+    visited.add(id);
+    return false;
+  };
+  for (const id of graph.keys()) if (visit(id)) return true;
+  return false;
+}
+
 function refs_exist(context, refs, label, { artifacts_only = false } = {}) {
   const artifacts = new Set(items(context, "artifacts").map((row) => row.id));
   const evidence = artifacts_only ? new Set() : new Set(items(context, "evidence_links").map((row) => row.id));
@@ -458,6 +531,99 @@ function apply_operation(context, operation) {
     if (phase && !Array.isArray(phase.node_ids)) phase.node_ids = [];
     if (phase && !phase.node_ids.includes(id)) phase.node_ids.push(id);
     return id;
+  }
+  if (type === "set_node_state") {
+    const node_id = require_node_id(operation.node_id, "operation.node_id");
+    const node = lookup(context, "nodes", node_id, "node");
+    const state = operation.state;
+    if (!["planned", "active", "paused", "blocked", "closed"].includes(state)) {
+      throw new Error("operation.state is invalid");
+    }
+    if (node.state === "closed" && state !== "closed") throw new Error(`closed node ${node_id} cannot be reopened`);
+    const outcomes = ["completed", "inconclusive", "stopped"];
+    if (state === "closed" && !outcomes.includes(operation.outcome)) throw new Error("closing a node requires a valid outcome");
+    if (state !== "closed" && operation.outcome !== undefined && operation.outcome !== null) {
+      throw new Error("only a closed node can have an outcome");
+    }
+    if (state === "closed" && operation.outcome === "completed") {
+      const gates = items(context, "gates").filter((gate) => gate.scope === "node" && gate.target_id === node_id);
+      if (gates.some((gate) => !Array.isArray(gate.evaluations) || gate.evaluations.at(-1)?.verdict !== "pass")) {
+        throw new Error(`node ${node_id} cannot be completed before a NodeGate passes`);
+      }
+    }
+    node.state = state;
+    node.outcome = state === "closed" ? operation.outcome : null;
+    node.outcome_summary = typeof operation.summary === "string" ? operation.summary : null;
+    return null;
+  }
+  if (type === "set_claim_status") {
+    const claim_id = require_claim_id(operation.claim_id, "operation.claim_id");
+    const claim = lookup(context, "claims", claim_id, "claim");
+    if (!["proposed", "supported", "contradicted", "inconclusive", "withdrawn"].includes(operation.status)) {
+      throw new Error("operation.status is invalid");
+    }
+    claim.status = operation.status;
+    return null;
+  }
+  if (type === "relate_claims") {
+    const source_id = require_claim_id(operation.source_id, "operation.source_id");
+    const target_id = require_claim_id(operation.target_id, "operation.target_id");
+    if (source_id === target_id) throw new Error("claim relation cannot point to itself");
+    lookup(context, "claims", source_id, "claim");
+    lookup(context, "claims", target_id, "claim");
+    const relation = require_string(operation, "relation");
+    const relations = array_field(context, "claim_relations");
+    const candidate = { source_id, target_id, relation };
+    if (relations.some((item) => item?.source_id === source_id && item?.target_id === target_id && item?.relation === relation)) return null;
+    relations.push(candidate);
+    if (claim_relation_would_cycle(context, source_id, target_id)) {
+      relations.pop();
+      throw new Error("claim relation graph must be acyclic");
+    }
+    return null;
+  }
+  if (type === "set_continuation") {
+    const id = operation_id(operation);
+    const continuations = items(context, "continuations");
+    const scope = operation.scope;
+    if (!["node", "claim", "gate"].includes(scope)) throw new Error("operation.scope is invalid");
+    const target_id = scope === "node"
+      ? require_node_id(operation.target_id, "operation.target_id")
+      : scope === "claim" ? require_claim_id(operation.target_id, "operation.target_id")
+      : require_identifier(operation.target_id, "operation.target_id");
+    lookup(context, scope === "node" ? "nodes" : scope === "claim" ? "claims" : "gates", target_id, scope);
+    if (!["inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"].includes(operation.action)) {
+      throw new Error("operation.action is invalid");
+    }
+    const status = operation.status ?? "required";
+    if (!["required", "deferred", "blocked", "completed"].includes(status)) throw new Error("operation.status is invalid");
+    const reason = operation.reason ?? null;
+    if (reason !== null && (typeof reason !== "string" || reason.trim() === "")) throw new Error("operation.reason must be a non-empty string or null");
+    if (["deferred", "blocked"].includes(status) && !reason) throw new Error(`continuation ${id} ${status} status requires a reason`);
+    const request_id = operation.request_id === undefined ? null : require_identifier(operation.request_id, "operation.request_id");
+    const existing = continuations.find((item) => item.id === id);
+    if (existing) {
+      if (request_id && existing.request_id === request_id && existing.scope === scope && existing.target_id === target_id && existing.action === operation.action) return null;
+      throw new Error(`continuation ${id} already exists`);
+    }
+    if (request_id && continuations.some((item) => item.request_id === request_id)) throw new Error(`request_id ${request_id} is already bound to another continuation`);
+    continuations.push({ type: "continuation_record", id, created_at, metadata: object_field(operation, "metadata"), scope, target_id, action: operation.action, status, reason, request_id });
+    return id;
+  }
+  if (type === "resolve_continuation") {
+    const id = operation_id(operation);
+    const continuation = lookup(context, "continuations", id, "continuation");
+    const status = operation.status;
+    if (!["required", "deferred", "blocked", "completed"].includes(status)) throw new Error("operation.status is invalid");
+    if (continuation.status === "completed" && status !== "completed") throw new Error(`completed continuation ${id} cannot be reopened`);
+    const reason = operation.reason === undefined ? continuation.reason ?? null : operation.reason;
+    if (reason !== null && (typeof reason !== "string" || reason.trim() === "")) throw new Error("operation.reason must be a non-empty string or null");
+    if (["deferred", "blocked"].includes(status) && !reason) throw new Error(`continuation ${id} ${status} status requires a reason`);
+    const request_id = operation.request_id === undefined ? continuation.request_id ?? null : require_identifier(operation.request_id, "operation.request_id");
+    continuation.status = status;
+    continuation.reason = reason;
+    continuation.request_id = request_id;
+    return null;
   }
   if (type === "create_finding") {
     const id = operation_id(operation);
@@ -785,10 +951,11 @@ export function create_fs_research_kernel({ workspace_root, workspace_id } = {})
       };
     }
     const admitted_at = now();
-    const context = { ...state.context, lifecycle_state: RESEARCH_STATE.admitted, admitted_at };
+    const context = { ...state.context, lifecycle_state: RESEARCH_STATE.admitted, lifecycle: "idle", disposition: null, admitted_at };
     const liveness = { ...state.liveness, state: RESEARCH_STATE.admitted, admitted_at };
     await write_json_atomic(context_path, context);
     await write_json_atomic(liveness_path, liveness);
+    await persist_memory_projection(root, context, liveness);
     return {
       schema_version: "research_admission_result",
       request_id: request.request_id ?? null,
@@ -808,6 +975,7 @@ export function create_fs_research_kernel({ workspace_root, workspace_id } = {})
     if (!Array.isArray(request.operations) || request.operations.length === 0) {
       throw new Error("ChangeSet.operations must be a non-empty list");
     }
+    require_decision_ready(state.context, state.liveness, request.operations);
     const context = JSON.parse(JSON.stringify(state.context));
     const created_ids = [];
     for (const operation of request.operations) {
@@ -816,8 +984,12 @@ export function create_fs_research_kernel({ workspace_root, workspace_id } = {})
     }
     context.revision = revision + 1;
     const liveness = liveness_projection(context, { ...state.liveness, revision: context.revision }, {});
+    context.lifecycle = liveness.lifecycle ?? "idle";
+    context.disposition = liveness.disposition ?? null;
+    context.checkpoint_id = liveness.checkpoint_id ?? null;
     await write_json_atomic(context_path, context);
     await write_json_atomic(liveness_path, liveness);
+    await persist_memory_projection(root, context, liveness);
     return {
       schema_version: "research_change_result",
       accepted: true,
@@ -831,7 +1003,7 @@ export function create_fs_research_kernel({ workspace_root, workspace_id } = {})
   async function checkpoint(request = {}) {
     const state = await load_state();
     require_request_workspace(request, state.workspace_id, root);
-    require_admitted(state.context, state.liveness);
+    require_admitted(state.context, state.liveness, { allow_checkpoint: true });
     const source = request.checkpoint && typeof request.checkpoint === "object" ? request.checkpoint : request;
     const checkpoint_id = source.checkpoint_id ?? source.id ?? `checkpoint_${(state.context.revision ?? 0) + 1}`;
     require_identifier(checkpoint_id, "checkpoint_id");
@@ -853,7 +1025,15 @@ export function create_fs_research_kernel({ workspace_root, workspace_id } = {})
       await write_json_atomic(checkpoint_path, checkpoint);
     }
     const projected_liveness = liveness_projection(state.context, { ...state.liveness, checkpoint_id }, checkpoint);
+    const context_projection = {
+      ...state.context,
+      lifecycle: projected_liveness.lifecycle ?? "idle",
+      disposition: projected_liveness.disposition ?? null,
+      checkpoint_id,
+    };
     await write_json_atomic(liveness_path, projected_liveness);
+    await write_json_atomic(context_path, context_projection);
+    await persist_memory_projection(root, context_projection, projected_liveness);
     return {
       schema_version: "research_checkpoint_result",
       accepted: true,
@@ -874,6 +1054,9 @@ export function create_fs_research_kernel({ workspace_root, workspace_id } = {})
     }
     if (["end", "wake"].includes(request.operation)) {
       require_admitted(state.context, state.liveness);
+      if (state.liveness.lifecycle === "decision_needed") {
+        throw new Error("research_decision_required");
+      }
       return { accepted: true, operation: request.operation };
     }
     throw new Error(`invalid research_turn operation: ${String(request.operation)}`);

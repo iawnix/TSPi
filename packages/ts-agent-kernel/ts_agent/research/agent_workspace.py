@@ -198,9 +198,89 @@ def _check_workspace(request: dict[str, Any], workspace_id: str) -> None:
         raise AgentWorkspaceError("research_workspace_id_mismatch")
 
 
-def _require_admitted(context: dict[str, Any], liveness: dict[str, Any]) -> None:
+def _require_admitted(
+    context: dict[str, Any],
+    liveness: dict[str, Any],
+    *,
+    allow_checkpoint: bool = False,
+) -> None:
     if context.get("lifecycle_state") != ADMITTED or liveness.get("state") != ADMITTED:
         raise AgentWorkspaceError("research_admission_required")
+    # Admission and liveness are separate facts.  A durable blocked
+    # checkpoint must therefore stop new map/turn mutations even though the
+    # workspace remains admitted.  A checkpoint is the one recovery boundary:
+    # it may explicitly replace the blocked disposition with a new decision.
+    if not allow_checkpoint and (
+        liveness.get("disposition") == "blocked" or liveness.get("lifecycle") == "blocked"
+    ):
+        raise AgentWorkspaceError("research_lifecycle_blocked")
+
+
+def _require_decision_ready(
+    context: dict[str, Any],
+    liveness: dict[str, Any],
+    operations: list[dict[str, Any]],
+) -> None:
+    """Prevent execution/evidence writes while focus still needs a decision."""
+    if liveness.get("lifecycle") != "decision_needed":
+        return
+    if liveness.get("disposition") == "user_input_required":
+        raise AgentWorkspaceError("research_user_input_required")
+    focus = context.get("focus") if isinstance(context.get("focus"), dict) else {}
+    claim_ids = set(focus.get("claim_ids", []))
+    node_ids = set(focus.get("node_ids", []))
+    plans = context.get("strategy_plans", [])
+    if any(
+        isinstance(plan, dict)
+        and plan.get("status", "proposed") in {"proposed", "active"}
+        and (plan.get("claim_id") in claim_ids or plan.get("node_id") in node_ids)
+        for plan in plans if isinstance(plans, list)
+    ):
+        return
+    execution_types = {
+        "create_attempt", "register_attempt", "transition_attempt", "update_attempt",
+        "create_artifact", "register_artifact", "create_evidence", "link_evidence",
+        "register_evidence", "create_finding", "create_gate", "evaluate_gate",
+    }
+    if any(
+        isinstance(item, dict)
+        and (item.get("type") in execution_types
+             or item.get("type") == "set_node_state" and item.get("state") == "active")
+        for item in operations
+    ):
+        raise AgentWorkspaceError("research_decision_required")
+
+
+def _persist_memory_projection(root: str | Path, context: dict[str, Any], liveness: dict[str, Any]) -> None:
+    """Persist a bounded Kernel-owned memory index projection.
+
+    The index is metadata, not a second ResearchMap.  Keeping revision and
+    lifecycle facts here gives runtime/memory readers a restart-safe pointer
+    while claims, nodes, and evidence remain authoritative in context.json.
+    """
+    path = Path(root).expanduser().resolve() / "memory" / "index.json"
+    previous: dict[str, Any] = {}
+    try:
+        previous = _read_json(path, "research_memory_index")
+    except AgentWorkspaceError as exc:
+        if not str(exc).endswith("_missing"):
+            raise
+    projection = {
+        "schema_version": "research_memory_index_1",
+        "workspace_id": context["workspace_id"],
+        "scope": "workspace",
+        "authority": "research_kernel",
+        "revision": context.get("revision", 0),
+        "context_revision": context.get("revision", 0),
+        "lifecycle": liveness.get("lifecycle", "idle"),
+        "disposition": liveness.get("disposition"),
+        "checkpoint_id": liveness.get("checkpoint_id"),
+        "focus": copy.deepcopy(context.get("focus", {"claim_ids": [], "node_ids": []})),
+        # Preserve only explicitly registered memory records if an older Host
+        # supplied them; this adapter never invents scientific memory entries.
+        "entries": copy.deepcopy(previous.get("entries", [])) if isinstance(previous.get("entries", []), list) else [],
+    }
+    _atomic_json(path, projection)
 
 
 def _liveness_projection(
@@ -413,6 +493,32 @@ def _attach_unique(item: dict[str, Any], field: str, value: str) -> None:
         values.append(value)
 
 
+def _claim_relation_would_cycle(context: dict[str, Any], source_id: str, target_id: str) -> bool:
+    """Return whether adding a directed claim relation would create a cycle."""
+    edges = _array(context, "claim_relations")
+    graph: dict[str, set[str]] = {}
+    for edge in edges:
+        if isinstance(edge, dict) and isinstance(edge.get("source_id"), str) and isinstance(edge.get("target_id"), str):
+            graph.setdefault(edge["source_id"], set()).add(edge["target_id"])
+    graph.setdefault(source_id, set()).add(target_id)
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(node_id: str) -> bool:
+        if node_id in visiting:
+            return True
+        if node_id in visited:
+            return False
+        visiting.add(node_id)
+        if any(visit(child) for child in graph.get(node_id, ())):
+            return True
+        visiting.remove(node_id)
+        visited.add(node_id)
+        return False
+
+    return any(visit(node_id) for node_id in graph)
+
+
 def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str | None:
     operation = _object(operation, "ChangeSet operation")
     kind = operation.get("type")
@@ -487,6 +593,127 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             if item_id not in phase["node_ids"]:
                 phase["node_ids"].append(item_id)
         return item_id
+    if kind == "set_node_state":
+        node_id = _node_identifier(operation.get("node_id"), "operation.node_id")
+        node = _lookup(context, "nodes", node_id, "node")
+        state = operation.get("state")
+        allowed_states = {"planned", "active", "paused", "blocked", "closed"}
+        if state not in allowed_states:
+            raise AgentWorkspaceError("operation.state is invalid")
+        previous = node.get("state")
+        if previous == "closed" and state != "closed":
+            raise AgentWorkspaceError(f"closed node {node_id} cannot be reopened")
+        outcome = operation.get("outcome")
+        outcomes = {"completed", "inconclusive", "stopped"}
+        if state == "closed" and outcome not in outcomes:
+            raise AgentWorkspaceError("closing a node requires a valid outcome")
+        if state != "closed" and outcome is not None:
+            raise AgentWorkspaceError("only a closed node can have an outcome")
+        if state == "closed" and outcome == "completed":
+            node_gates = [
+                gate for gate in _items(context, "gates")
+                if gate.get("scope") == "node" and gate.get("target_id") == node_id
+            ]
+            if node_gates and any(
+                not gate.get("evaluations")
+                or gate["evaluations"][-1].get("verdict") != "pass"
+                for gate in node_gates
+            ):
+                raise AgentWorkspaceError(f"node {node_id} cannot be completed before a NodeGate passes")
+        node["state"] = state
+        node["outcome"] = outcome if state == "closed" else None
+        node["outcome_summary"] = operation.get("summary") if isinstance(operation.get("summary"), str) else None
+        return None
+    if kind == "set_claim_status":
+        claim_id = _claim_identifier(operation.get("claim_id"), "operation.claim_id")
+        claim = _lookup(context, "claims", claim_id, "claim")
+        status = operation.get("status")
+        if status not in {"proposed", "supported", "contradicted", "inconclusive", "withdrawn"}:
+            raise AgentWorkspaceError("operation.status is invalid")
+        claim["status"] = status
+        return None
+    if kind == "relate_claims":
+        source_id = _claim_identifier(operation.get("source_id"), "operation.source_id")
+        target_id = _claim_identifier(operation.get("target_id"), "operation.target_id")
+        if source_id == target_id:
+            raise AgentWorkspaceError("claim relation cannot point to itself")
+        _lookup(context, "claims", source_id, "claim")
+        _lookup(context, "claims", target_id, "claim")
+        relation = _string(operation, "relation")
+        relations = _array(context, "claim_relations")
+        candidate = {"source_id": source_id, "target_id": target_id, "relation": relation}
+        if candidate in relations:
+            return None
+        relations.append(candidate)
+        if _claim_relation_would_cycle(context, source_id, target_id):
+            relations.pop()
+            raise AgentWorkspaceError("claim relation graph must be acyclic")
+        return None
+    if kind == "set_continuation":
+        continuation_id = _identifier(operation.get("id"), "operation.id")
+        continuations = _items(context, "continuations")
+        scope = operation.get("scope")
+        if scope not in {"node", "claim", "gate"}:
+            raise AgentWorkspaceError("operation.scope is invalid")
+        target_id = operation.get("target_id")
+        target_id = (
+            _node_identifier(target_id, "operation.target_id") if scope == "node"
+            else _claim_identifier(target_id, "operation.target_id") if scope == "claim"
+            else _identifier(target_id, "operation.target_id")
+        )
+        _lookup(context, {"node": "nodes", "claim": "claims", "gate": "gates"}[scope], target_id, scope)
+        action = operation.get("action")
+        if action not in {"inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"}:
+            raise AgentWorkspaceError("operation.action is invalid")
+        status = operation.get("status", "required")
+        if status not in {"required", "deferred", "blocked", "completed"}:
+            raise AgentWorkspaceError("operation.status is invalid")
+        reason = operation.get("reason")
+        if reason is not None and (not isinstance(reason, str) or not reason.strip()):
+            raise AgentWorkspaceError("operation.reason must be a non-empty string or null")
+        if status in {"deferred", "blocked"} and not reason:
+            raise AgentWorkspaceError(f"continuation {continuation_id} {status} status requires a reason")
+        request_id = operation.get("request_id")
+        if request_id is not None:
+            request_id = _identifier(request_id, "operation.request_id")
+        existing = next((item for item in continuations if item.get("id") == continuation_id), None)
+        if existing is not None:
+            if request_id is not None and existing.get("request_id") == request_id and all(
+                existing.get(key) == value for key, value in (
+                    ("scope", scope), ("target_id", target_id), ("action", action),
+                )
+            ):
+                return None
+            raise AgentWorkspaceError(f"continuation {continuation_id} already exists")
+        if request_id is not None:
+            for candidate in continuations:
+                if candidate.get("request_id") == request_id:
+                    raise AgentWorkspaceError(f"request_id {request_id} is already bound to another continuation")
+        continuations.append({
+            "type": "continuation_record", "id": continuation_id, "created_at": created_at,
+            "metadata": _object_field(operation, "metadata"), "scope": scope,
+            "target_id": target_id, "action": action, "status": status,
+            "reason": reason, "request_id": request_id,
+        })
+        return continuation_id
+    if kind == "resolve_continuation":
+        continuation_id = _identifier(operation.get("id"), "operation.id")
+        continuation = _lookup(context, "continuations", continuation_id, "continuation")
+        status = operation.get("status")
+        if status not in {"required", "deferred", "blocked", "completed"}:
+            raise AgentWorkspaceError("operation.status is invalid")
+        if continuation.get("status") == "completed" and status != "completed":
+            raise AgentWorkspaceError(f"completed continuation {continuation_id} cannot be reopened")
+        reason = operation.get("reason", continuation.get("reason"))
+        if reason is not None and (not isinstance(reason, str) or not reason.strip()):
+            raise AgentWorkspaceError("operation.reason must be a non-empty string or null")
+        if status in {"deferred", "blocked"} and not reason:
+            raise AgentWorkspaceError(f"continuation {continuation_id} {status} status requires a reason")
+        request_id = operation.get("request_id", continuation.get("request_id"))
+        if request_id is not None:
+            request_id = _identifier(request_id, "operation.request_id")
+        continuation.update({"status": status, "reason": reason, "request_id": request_id})
+        return None
     if kind == "create_finding":
         item_id = _identifier(operation.get("id"), "operation.id")
         findings = _items(context, "findings")
@@ -877,7 +1104,7 @@ def read_context(root: str | Path) -> dict[str, Any]:
 
 def read_liveness(root: str | Path) -> dict[str, Any]:
     with _workspace_lock(Path(root).expanduser().resolve()):
-        _, _, context, liveness = _load_state(root)
+        context_path, liveness_path, context, liveness = _load_state(root)
         return _liveness_projection(context, liveness)
 
 
@@ -895,8 +1122,14 @@ def admit_workspace(root: str | Path, request: dict[str, Any] | None = None) -> 
             state = ADMITTED
         elif context["lifecycle_state"] == ADMISSION_PENDING:
             admitted_at = _now()
-            _atomic_json(context_path, {**context, "lifecycle_state": ADMITTED, "admitted_at": admitted_at})
+            _atomic_json(context_path, {
+                **context, "lifecycle_state": ADMITTED, "lifecycle": "idle", "disposition": None,
+                "admitted_at": admitted_at,
+            })
             _atomic_json(liveness_path, {**liveness, "state": ADMITTED, "admitted_at": admitted_at})
+            _persist_memory_projection(root, {
+                **context, "lifecycle_state": ADMITTED, "lifecycle": "idle", "disposition": None,
+            }, {**liveness, "state": ADMITTED})
             state = ADMITTED
         else:  # guarded by _load_state; retained for a clear boundary error
             raise AgentWorkspaceError("research_admission_required")
@@ -920,6 +1153,7 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
         operations = body.get("operations")
         if not isinstance(operations, list) or not operations:
             raise AgentWorkspaceError("ChangeSet.operations must be a non-empty list")
+        _require_decision_ready(context, liveness, operations)
         updated = copy.deepcopy(context)
         created_ids: list[str] = []
         for operation in operations:
@@ -928,8 +1162,12 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
                 created_ids.append(created)
         updated["revision"] = current_revision + 1
         projected_liveness = _liveness_projection(updated, {**liveness, "revision": updated["revision"]}, {})
+        updated["lifecycle"] = projected_liveness.get("lifecycle", "idle")
+        updated["disposition"] = projected_liveness.get("disposition")
+        updated["checkpoint_id"] = projected_liveness.get("checkpoint_id")
         _atomic_json(context_path, updated)
         _atomic_json(liveness_path, projected_liveness)
+        _persist_memory_projection(root, updated, projected_liveness)
     return {
         "schema_version": "research_change_result", "accepted": True,
         "workspace_id": workspace_id, "revision": updated["revision"],
@@ -940,10 +1178,10 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
 def checkpoint(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, Any]:
     request = request or {}
     with _workspace_lock(Path(root).expanduser().resolve()):
-        _, _, context, liveness = _load_state(root)
+        context_path, liveness_path, context, liveness = _load_state(root)
         workspace_id = context["workspace_id"]
         _check_workspace(request, workspace_id)
-        _require_admitted(context, liveness)
+        _require_admitted(context, liveness, allow_checkpoint=True)
         source = request.get("checkpoint") if isinstance(request.get("checkpoint"), dict) else request
         checkpoint_id = source.get("checkpoint_id") or source.get("id") or f"checkpoint_{context['revision'] + 1}"
         checkpoint_id = _identifier(checkpoint_id, "checkpoint_id")
@@ -961,7 +1199,15 @@ def checkpoint(root: str | Path, request: dict[str, Any] | None = None) -> dict[
                 raise AgentWorkspaceError("checkpoint_id_conflict")
         else:
             _atomic_json(path, value)
+        context_projection = {
+            **context,
+            "lifecycle": projected_liveness.get("lifecycle", "idle"),
+            "disposition": projected_liveness.get("disposition"),
+            "checkpoint_id": checkpoint_id,
+        }
+        _atomic_json(context_path, context_projection)
         _atomic_json(Path(root).expanduser().resolve() / "lifecycle" / "liveness.json", projected_liveness)
+        _persist_memory_projection(root, context_projection, projected_liveness)
     return {
         "schema_version": "research_checkpoint_result", "accepted": True,
         "workspace_id": workspace_id, "checkpoint_id": checkpoint_id,
@@ -989,6 +1235,8 @@ def turn(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, A
             return {"accepted": True, "operation": operation, "context": context, "liveness": _liveness_projection(context, liveness)}
         if operation in {"end", "wake"}:
             _require_admitted(context, liveness)
+            if liveness.get("lifecycle") == "decision_needed":
+                raise AgentWorkspaceError("research_decision_required")
             return {"accepted": True, "operation": operation}
         raise AgentWorkspaceError(f"invalid research_turn operation: {operation}")
 

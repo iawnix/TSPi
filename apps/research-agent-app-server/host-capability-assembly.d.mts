@@ -56,7 +56,12 @@ export interface HostCapabilityAssembly {
   readonly providers: readonly CapabilityProvider[];
   catalog(): readonly HostCapabilityCatalogEntry[];
   list_providers(): readonly HostCapabilityCatalogEntry[];
-  readiness(request?: Readonly<{ manifest_provider_id?: string; capability_id?: string }>): Promise<readonly Record<string, unknown>[]>;
+  readiness(request?: Readonly<{
+    manifest_provider_id?: string;
+    capability_id?: string;
+    environment_id?: string;
+    execution_kind?: "local" | "remote";
+  }>): Promise<readonly Record<string, unknown>[]>;
 }
 
 export function create_host_capability_assembly(options: HostCapabilityAssemblyOptions): HostCapabilityAssembly;

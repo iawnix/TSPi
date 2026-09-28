@@ -228,6 +228,10 @@ async function createTspiHarness(session, options, executionEnv) {
     operation_id: null,
     lifecycle_phase: "turn",
     replay_mode: "normal",
+    // This identity is bound by the trusted worker, independently of the
+    // per-tool authority metadata. Native write tools use it as the actor
+    // boundary; process environment flags remain only a legacy launch guard.
+    principal: "root_agent",
     allowed_authorities: [...new Set(Object.values(toolMetadata).map((metadata) => metadata.authority))],
     allowed_effects: [...new Set(Object.values(toolMetadata).map((metadata) => metadata.effect))],
     allowed_phases: [...new Set(Object.values(toolMetadata).map((metadata) => metadata.phase))],

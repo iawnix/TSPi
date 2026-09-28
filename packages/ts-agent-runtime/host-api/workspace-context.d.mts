@@ -8,6 +8,8 @@ export interface ToolExecutionContext {
   readonly operation_id: string | null;
   readonly lifecycle_phase: string;
   readonly replay_mode: "normal" | "recovery" | "reconcile";
+  /** Host-bound actor identity; native writes require `root_agent` when set. */
+  readonly principal?: string;
   readonly allowed_authorities: readonly string[];
   readonly allowed_effects: readonly string[];
   readonly allowed_phases: readonly string[];

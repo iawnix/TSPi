@@ -71,6 +71,16 @@ export interface ToolInvokeRequest {
   readonly workspace_mode?: WorkspaceMode;
   readonly input?: Readonly<Record<string, unknown>>;
   readonly params?: Readonly<Record<string, unknown>>;
+  /** Host-selected execution environment; command details never cross this port. */
+  readonly environment?: string | Readonly<{
+    readonly environment_id?: string;
+    readonly environment?: string;
+    readonly name?: string;
+    readonly kind?: "local" | "remote";
+  }>;
+  readonly execution_environment?: ToolInvokeRequest["environment"];
+  readonly execution_target?: ToolInvokeRequest["environment"];
+  readonly executionTarget?: ToolInvokeRequest["environment"];
 }
 
 export interface ToolResult {

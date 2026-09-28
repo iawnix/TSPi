@@ -466,6 +466,14 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
     async compute_readiness(request = {}) {
       ensure_open();
       if (!request || typeof request !== "object" || Array.isArray(request)) throw new TypeError("compute readiness request must be an object");
+      for (const field of ["manifest_provider_id", "capability_id", "environment_id"]) {
+        if (request[field] !== undefined && (typeof request[field] !== "string" || request[field].length === 0)) {
+          throw new TypeError(`${field} must be a non-empty string`);
+        }
+      }
+      if (request.execution_kind !== undefined && request.execution_kind !== "local" && request.execution_kind !== "remote") {
+        throw new TypeError("execution_kind must be local or remote");
+      }
       if (!capability_assembly && tool_gateway) {
         const mode = request.workspace_root !== undefined || request.workspace_id !== undefined
           ? (await resolve_workspace(request)).workspace_mode
@@ -483,6 +491,8 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
       const readiness = await capability_assembly.readiness({
         ...(request.manifest_provider_id === undefined ? {} : { manifest_provider_id: request.manifest_provider_id }),
         ...(request.capability_id === undefined ? {} : { capability_id: request.capability_id }),
+        ...(request.environment_id === undefined ? {} : { environment_id: request.environment_id }),
+        ...(request.execution_kind === undefined ? {} : { execution_kind: request.execution_kind }),
       });
       return { protocol_version: "compute_readiness_1", readiness };
     },
@@ -556,7 +566,25 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
     async close() {
       if (closed) return;
       closed = true;
-      await runtime.close();
+      let first_error;
+      // Host-owned workers may hold scheduler/monitor handles independently
+      // of the Pi runtime. Close them before tearing down the runtime, while
+      // still attempting every resource so a single provider cannot leak the
+      // remaining services.
+      for (const resource of [compute_orchestrator, capability_assembly, tool_gateway, kernel_port]) {
+        if (typeof resource?.close !== "function") continue;
+        try {
+          await resource.close();
+        } catch (error) {
+          first_error ||= error;
+        }
+      }
+      try {
+        await runtime.close();
+      } catch (error) {
+        first_error ||= error;
+      }
+      if (first_error) throw first_error;
     },
   };
 

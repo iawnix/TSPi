@@ -10,6 +10,7 @@ const {
 } = require("node:fs");
 const { createHash } = require("node:crypto");
 const { isAbsolute, relative, resolve, sep } = require("node:path");
+const { readResearchMap } = require("../agent-core/research-map-reader.cjs");
 
 const RENDER_OPERATIONS = Object.freeze(["render", "compare", "animate", "mechanism", "curve", "energy", "scan", "convergence"]);
 const NODE_ID = /^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -137,9 +138,8 @@ function validateCreatedReportPackage(rootValue, packageRef, expectedManifestDig
 function requireAct(root, value) {
   const nodeId = requireString(value, "nodeId", 128);
   if (!NODE_ID.test(nodeId)) throw new Error("nodeId must be a ResearchNode ID");
-  const mapPath = resolve(root, "research_map.json");
-  if (!existsSync(mapPath) || lstatSync(mapPath).isSymbolicLink()) throw new Error("ResearchMap does not exist");
-  const map = JSON.parse(readFileSync(mapPath, "utf8"));
+  const map = readResearchMap(root);
+  if (!map) throw new Error("ResearchMap does not exist");
   const matches = Array.isArray(map.nodes)
     ? map.nodes.filter((item) => isPlainObject(item) && item.id === nodeId)
     : [];
@@ -152,8 +152,8 @@ function requireWorkspaceRoot(value) {
   const root = realpathSync(value);
   const workspace = JSON.parse(readFileSync(resolve(root, "workspace.json"), "utf8"));
   if (workspace.schema_version !== "research-workspace/1") throw new Error("artifact tools require a ResearchMap workspace");
-  const mapPath = resolve(root, "research_map.json");
-  if (!existsSync(mapPath) || lstatSync(mapPath).isSymbolicLink()) throw new Error("artifact tools require research_map.json");
+  const map = readResearchMap(root);
+  if (!map) throw new Error("artifact tools require a ResearchMap");
   return root;
 }
 

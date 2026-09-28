@@ -95,6 +95,27 @@ test("xTB gateway resolves input artifact and rejects missing EnvironmentBroker"
   }
 });
 
+test("xTB provider refuses remote bindings before starting a local process", async () => {
+  const provider = create_xtb_provider({
+    artifact_store: store_fixture(),
+    environment_broker: {
+      resolve: () => ({
+        environment_id: "cluster_1w",
+        environment_kind: "compute",
+        execution_kind: "remote",
+        command: ["/this/path-must-never-be-spawned"],
+        readiness: { state: "configured", checks: [{ name: "remote_transport", state: "deferred" }] },
+      }),
+    },
+  });
+  await assert.rejects(
+    provider.invoke({ input: { xyz: WATER_XYZ } }),
+    (error) => error instanceof XtbProviderError
+      && error.code === "remote_execution_requires_workspace_compute"
+      && error.details.route === "ts_workspace_compute",
+  );
+});
+
 test("xTB provider does not invoke a shell and reports bounded process failures", async () => {
   const root = await mkdtemp(join(tmpdir(), "research-agent-xtb-fail-"));
   try {

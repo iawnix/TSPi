@@ -14,7 +14,7 @@ export function createNotifyTool() {
   return {
     ...TOOL_CONTRACTS.notify,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites();
+      requireNativeWrites(toolContext);
       onUpdate?.({
         content: [{ type: "text", text: `TS Notify ${params.event}: sending` }],
         details: { notification: { event: params.event, state: "sending" } },
@@ -126,8 +126,11 @@ function nativePython() {
   return process.env.TS_AGENT_PYTHON || "python3";
 }
 
-function requireNativeWrites() {
+function requireNativeWrites(toolContext) {
   if (process.env.TSPI_NATIVE_WRITES !== "1") {
     throw new Error("notify.send requires the guarded TSPi App Server Root Agent (tool notify_send)");
+  }
+  if (toolContext?.principal !== undefined && toolContext.principal !== "root_agent") {
+    throw new Error("notify.send requires the Root Agent principal");
   }
 }

@@ -50,7 +50,26 @@ class EnvironmentConfig:
         try:
             environment = self.environments[selected]
         except KeyError as exc:
-            raise EnvironmentConfigurationError(f"unknown compute environment: {selected}") from exc
+            # Remote callers commonly identify a platform by its SSH login
+            # (for example ``agent.1w``), while the config uses a stable
+            # environment id such as ``cluster_1w``. Resolve that alias only
+            # when it is unambiguous; the canonical config name remains the
+            # value returned to the execution lifecycle.
+            aliases = [
+                item
+                for item in self.environments.values()
+                if item.kind == "remote"
+                and item.platform is not None
+                and item.platform.ssh_host == selected
+            ]
+            if len(aliases) == 1:
+                environment = aliases[0]
+            elif len(aliases) > 1:
+                raise EnvironmentConfigurationError(
+                    f"multiple remote compute environments use ssh_host alias: {selected}"
+                ) from exc
+            else:
+                raise EnvironmentConfigurationError(f"unknown compute environment: {selected}") from exc
         if name is None and kind is not None and environment.kind != kind:
             candidates = [item for item in self.environments.values() if item.kind == kind]
             if len(candidates) == 1:

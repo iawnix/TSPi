@@ -26,6 +26,10 @@ export function createToolExecutionContext(options = {}) {
   }
   const replayMode = requireString(options.replay_mode || "normal", "replay_mode");
   if (!REPLAY_MODES.has(replayMode)) throw new TypeError(`unsupported replay_mode: ${replayMode}`);
+  // Principal identity is Host-owned metadata.  It is intentionally separate
+  // from tool ``authority`` (which describes a capability's owner) so a
+  // model cannot acquire Root Agent write privileges by selecting a tool.
+  const principal = options.principal === undefined ? undefined : requireString(options.principal, "principal");
   const authorities = normalizePolicy(options.allowed_authorities, "allowed_authorities");
   const effects = normalizePolicy(options.allowed_effects, "allowed_effects");
   const phases = normalizePolicy(
@@ -40,6 +44,7 @@ export function createToolExecutionContext(options = {}) {
     operation_id: operationId,
     lifecycle_phase: lifecyclePhase,
     replay_mode: replayMode,
+    ...(principal === undefined ? {} : { principal }),
     allowed_authorities: authorities,
     allowed_effects: effects,
     allowed_phases: phases,

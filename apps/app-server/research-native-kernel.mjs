@@ -72,6 +72,8 @@ export async function executeFilesystemResearchCommand(command, root, params = {
         schema_version: "research-operation-catalog/1",
         operations: [
           "create_phase", "create_claim", "create_node", "set_focus",
+          "set_node_state", "set_claim_status", "relate_claims",
+          "set_continuation", "resolve_continuation",
           "create_finding", "create_gate", "evaluate_gate", "create_artifact",
           "create_attempt", "transition_attempt", "create_evidence",
           "create_strategy_plan", "create_strategy_review", "create_interpretation",
@@ -79,17 +81,22 @@ export async function executeFilesystemResearchCommand(command, root, params = {
       };
     }
     if (command === "research.continuation") {
-      if (request.operation && request.operation !== "status") {
-        throw new Error("research continuation mutations require a durable checkpoint disposition in a Research Agent workspace");
+      if (!request.operation || request.operation === "status") {
+        const context = await bridge.read_context(request);
+        return continuationStatus(context);
       }
+      const contextBefore = await bridge.read_context(request);
+      const operation = continuationOperation(request, contextBefore);
+      const commit = await bridge.apply_change({
+        ...request,
+        operations: [operation],
+      });
+      const context = await bridge.read_context(request);
       return {
-        schema_version: "research-continuation-status/1",
-        required: [],
-        continue_required: [],
-        deferred: [],
-        blocked: [],
-        waiting_external: [],
-        note: "Research Agent workspaces use durable checkpoint dispositions; legacy continuation records are not projected.",
+        schema_version: "research-continuation-result/1",
+        operation: request.operation,
+        commit,
+        ...continuationStatus(context),
       };
     }
     throw new Error(`unsupported filesystem research command: ${command}`);
@@ -98,8 +105,91 @@ export async function executeFilesystemResearchCommand(command, root, params = {
   }
 }
 
+function continuationStatus(context) {
+  const records = Array.isArray(context?.continuations)
+    ? context.continuations.filter((item) => item && typeof item === "object")
+    : [];
+  const groups = Object.fromEntries(["required", "deferred", "blocked", "completed"]
+    .map((status) => [status, records.filter((item) => item.status === status)]));
+  return {
+    schema_version: "research-continuation-status/1",
+    continuations: records,
+    ...groups,
+    waiting_external: [],
+  };
+}
+
+function continuationOperation(request, context) {
+  const operation = request.operation;
+  const status = operation === "set_deferred" || operation === "set_blocked"
+    ? operation.slice(4)
+    : operation === "set_completed" ? "completed"
+      : operation === "set_required" ? "required"
+        : (operation === "resolve" || operation === "clear")
+          ? request.status || "completed"
+          : request.status || "required";
+  if (!["set", "set_required", "set_deferred", "set_blocked", "set_completed", "resolve", "clear"].includes(operation)) {
+    throw new Error("continuation operation must be status, set, resolve, or a supported set_* alias");
+  }
+  if (!["required", "deferred", "blocked", "completed"].includes(status)) {
+    throw new Error("continuation status must be required, deferred, blocked, or completed");
+  }
+  let continuationId = request.continuation_id || request.id;
+  const records = Array.isArray(context?.continuations) ? context.continuations : [];
+  const hasTarget = request.scope !== undefined || request.target_id !== undefined || request.action !== undefined;
+  if (["set_deferred", "set_blocked", "set_completed"].includes(operation) && !continuationId && hasTarget) {
+    const candidates = records.filter((item) => item?.status === "required"
+      && item.scope === request.scope
+      && (item.target_id === request.target_id || item.target_ref === request.target_id)
+      && (request.action === undefined || item.action === request.action));
+    if (candidates.length === 1) continuationId = candidates[0].id;
+    if (candidates.length > 1) throw new Error("continuation disposition is ambiguous; provide continuationId");
+  }
+  const shouldResolve = operation === "resolve" || operation === "clear"
+    || Boolean(continuationId && ["set", "set_required", "set_deferred", "set_blocked", "set_completed"].includes(operation));
+  if (shouldResolve) {
+    if (typeof continuationId !== "string" || continuationId.length === 0) {
+      throw new Error(`research_continuation ${operation} requires continuationId`);
+    }
+    const existing = records.find((item) => item?.id === continuationId);
+    if (!existing) throw new Error(`unknown continuation ${continuationId}`);
+    for (const [field, expected] of [["scope", existing.scope], ["target_id", existing.target_id], ["action", existing.action]]) {
+      if (request[field] !== undefined && request[field] !== expected) {
+        throw new Error(`continuation ${continuationId} ${field} does not match the existing record`);
+      }
+    }
+    return {
+      type: "resolve_continuation",
+      id: continuationId,
+      status: operation === "clear" ? "completed" : status,
+      ...(request.reason === undefined ? {} : { reason: request.reason }),
+      ...(request.request_id === undefined ? {} : { request_id: request.request_id }),
+    };
+  }
+  if (typeof request.scope !== "string" || typeof request.target_id !== "string" || typeof request.action !== "string") {
+    throw new Error(`research_continuation ${operation} requires scope, targetId, and action`);
+  }
+  const id = continuationId || `continuation_${request.scope}_${request.target_id}_${request.action}`;
+  return {
+    type: "set_continuation",
+    id,
+    scope: request.scope,
+    target_id: request.target_id,
+    action: request.action,
+    status,
+    ...(request.reason === undefined ? {} : { reason: request.reason }),
+    ...(request.request_id === undefined ? {} : { request_id: request.request_id }),
+  };
+}
+
 async function applyDecisionChange(bridge, request, kind) {
-  const source = kind === "strategy" ? request.plan : request.interpretation;
+  // Tool aliases normally provide `plan`/`review`, but older Root Agent
+  // turns sent the operation payload under the operation name. Normalize both
+  // forms at this boundary so schema drift does not become a misleading
+  // "requires a decision object" failure.
+  const source = kind === "strategy"
+    ? request[request.operation] || request.plan || request.review || request.strategy
+    : request.interpretation;
   if (!source || typeof source !== "object" || Array.isArray(source)) {
     throw new Error(`research.${kind} requires a decision object`);
   }

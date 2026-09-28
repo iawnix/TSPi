@@ -96,6 +96,9 @@ function research_seed(manifest) {
       research_state_scope: manifest.research_state_scope,
       revision: 0,
       lifecycle_state: "admission_pending",
+      lifecycle: "admission_pending",
+      disposition: null,
+      checkpoint_id: "checkpoint_0",
       phases: [],
       claims: [],
       nodes: [],
@@ -115,6 +118,12 @@ function research_seed(manifest) {
       workspace_id: manifest.workspace_id,
       scope: "workspace",
       authority: "research_kernel",
+      revision: 0,
+      context_revision: 0,
+      lifecycle: "admission_pending",
+      disposition: null,
+      checkpoint_id: "checkpoint_0",
+      focus: { claim_ids: [], node_ids: [] },
       entries: [],
     },
     checkpoint: {
@@ -220,6 +229,23 @@ export function create_workspace_initializer() {
     const liveness = await read_json(liveness_path);
     await write_json_atomic(context_path, { ...context, lifecycle_state: "admitted", admitted_at });
     await write_json_atomic(liveness_path, { ...liveness, state: "admitted", admitted_at });
+    const memory_path = join(manifest.workspace_root, "memory", "index.json");
+    let memory;
+    try {
+      memory = await read_json(memory_path);
+    } catch (error) {
+      if (error?.cause?.code !== "ENOENT") throw error;
+      memory = research_seed(manifest).memory;
+    }
+    await write_json_atomic(memory_path, {
+      ...memory,
+      revision: context.revision ?? 0,
+      context_revision: context.revision ?? 0,
+      lifecycle: "admitted",
+      disposition: memory.disposition ?? null,
+      checkpoint_id: memory.checkpoint_id ?? "checkpoint_0",
+      focus: context.focus ?? { claim_ids: [], node_ids: [] },
+    });
     const admitted = {
       ...manifest,
       state: "ready",

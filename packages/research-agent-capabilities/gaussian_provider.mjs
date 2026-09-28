@@ -4,7 +4,9 @@
  * Gaussian is deliberately treated as an opaque executable.  The Host's
  * EnvironmentBroker supplies argv and environment data, while ArtifactStore
  * is the only input/output boundary exposed to this provider.  No shell
- * command strings or installation paths are accepted here.
+ * command strings or installation paths are accepted here. Remote scheduler
+ * execution belongs to ts_workspace_compute/ts_compute and is rejected by
+ * this local adapter.
  */
 
 import { spawn } from "node:child_process";
@@ -228,8 +230,17 @@ async function resolve_environment(broker, input) {
     throw new GaussianProviderError("invalid_environment_binding", "EnvironmentBroker returned an invalid binding");
   }
   try {
-    return normalize_environment_binding(binding, input);
+    const normalized = normalize_environment_binding(binding, input);
+    if (normalized.execution_kind === "remote") {
+      throw new GaussianProviderError(
+        "remote_execution_requires_workspace_compute",
+        "Remote Gaussian execution must use ts_workspace_compute/ts_compute; the JS capability provider only executes local bindings",
+        { environment_id: normalized.environment_id, route: "ts_workspace_compute" },
+      );
+    }
+    return normalized;
   } catch (error) {
+    if (error instanceof GaussianProviderError) throw error;
     if (error?.code === "invalid_environment_binding") throw new GaussianProviderError(error.code, error.message, error.details);
     throw error;
   }

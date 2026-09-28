@@ -57,7 +57,10 @@ def bridge(path: Path) -> dict[str, object]:
                 binding = broker.bind(
                     EnvironmentRequirement((backend,), kind=environment_config.kind),
                     environment=environment_name,
-                    probe=environment_config.kind == "local",
+                    # Remote probes are deliberately non-destructive: the
+                    # broker records transport readiness as deferred while
+                    # keeping the environment selectable by the Host.
+                    probe=True,
                 )
                 private = binding.to_backend_binding()
                 activated_environment = (
@@ -72,6 +75,11 @@ def bridge(path: Path) -> dict[str, object]:
                     private,
                     activated_environment,
                     backend,
+                    aliases=(
+                        (environment_name, environment_config.platform.ssh_host)
+                        if environment_config.platform is not None
+                        else (environment_name,)
+                    ),
                 )
             except Exception as exc:
                 # Keep the environment visible to Host readiness even when a
@@ -162,7 +170,14 @@ def _pyscf_environment(activated_environment: dict[str, str]) -> dict[str, str]:
     }
 
 
-def _binding_document(binding, private, activated_environment: dict[str, str], backend: str) -> dict[str, object]:
+def _binding_document(
+    binding,
+    private,
+    activated_environment: dict[str, str],
+    backend: str,
+    *,
+    aliases: tuple[str, ...] = (),
+) -> dict[str, object]:
     """Serialize one Host-only environment binding for the JS bridge."""
 
     return {
@@ -170,6 +185,7 @@ def _binding_document(binding, private, activated_environment: dict[str, str], b
         "backend": backend,
         "environment_id": binding.environment,
         "environment_kind": binding.kind,
+        "aliases": list(dict.fromkeys(alias for alias in aliases if alias)),
         "command": list(private.command),
         # Only activation changes and configured backend variables cross the
         # bridge; the inherited process environment stays Host-private.

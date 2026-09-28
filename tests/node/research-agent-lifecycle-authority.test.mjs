@@ -1,0 +1,77 @@
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import { createChangeTool } from "../../apps/app-server/pi-native-tools.mjs";
+import { create_fs_research_kernel } from "../../packages/research-agent-kernel/fs_kernel_adapter.mjs";
+import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
+
+test("blocked research liveness stops new mutations but permits a recovery checkpoint", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-blocked-lifecycle-"));
+  try {
+    const workspace = create_workspace_initializer();
+    await workspace.initialize_workspace({ workspace_root: root, workspace_id: "workspace_blocked", workspace_mode: "research" });
+    const kernel = create_fs_research_kernel({ workspace_root: root });
+    await kernel.admit_workspace({ workspace_id: "workspace_blocked", authority: "host", expected_state: "admission_pending" });
+    await kernel.apply_change({ expected_revision: 0, operations: [
+      { type: "create_claim", id: "claim_1", statement: "A bounded hypothesis" },
+      { type: "create_node", id: "node_1", title: "Bounded work", objective: "Exercise lifecycle", claim_ids: ["claim_1"] },
+      { type: "set_focus", claim_ids: ["claim_1"], node_ids: ["node_1"] },
+    ] });
+    await assert.rejects(
+      kernel.apply_change({ expected_revision: 1, operations: [{
+        type: "create_attempt", id: "attempt_1", node_id: "node_1",
+        capability: "xtb", capability_version: "1", state: "started",
+      }] }),
+      /research_decision_required/,
+    );
+    await kernel.apply_change({ expected_revision: 1, operations: [{
+      type: "create_strategy_plan", id: "strategy_1", claim_id: "claim_1", node_id: "node_1",
+      objective: "Choose a bounded execution", rationale: "The claim needs one declared method", status: "active",
+    }] });
+    await kernel.apply_change({ expected_revision: 2, operations: [{
+      type: "create_attempt", id: "attempt_1", node_id: "node_1",
+      capability: "xtb", capability_version: "1", state: "started",
+    }] });
+    await kernel.checkpoint({ id: "checkpoint_blocked", disposition: "blocked", reason: "Waiting for user input" });
+    await assert.rejects(
+      kernel.apply_change({ expected_revision: 3, operations: [{ type: "set_focus", claim_ids: ["claim_1"], node_ids: ["node_1"] }] }),
+      /research_lifecycle_blocked/,
+    );
+    await assert.rejects(kernel.turn({ operation: "end" }), /research_lifecycle_blocked/);
+    const recovered = await kernel.checkpoint({ id: "checkpoint_recovered", disposition: "continue_required", unresolved_refs: ["node_1"] });
+    assert.equal(recovered.disposition, "continue_required");
+    const memory = JSON.parse(await readFile(join(root, "memory", "index.json"), "utf8"));
+    const context = JSON.parse(await readFile(join(root, "research_map", "context.json"), "utf8"));
+    assert.equal(memory.authority, "research_kernel");
+    assert.equal(memory.disposition, "continue_required");
+    assert.equal(memory.context_revision, 3);
+    assert.equal(context.lifecycle_state, "admitted");
+    assert.equal(context.lifecycle, "continue_required");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("native research writes reject a non-root principal in Host context", async () => {
+  const previous = process.env.TSPI_NATIVE_WRITES;
+  process.env.TSPI_NATIVE_WRITES = "1";
+  try {
+    await assert.rejects(
+      createChangeTool().execute(
+        "change-authority",
+        { rationale: "authority test", operations: [{ type: "set_focus", claim_ids: [], node_ids: [] }] },
+        undefined,
+        { cwd: "/tmp", principal: "monitor" },
+        undefined,
+        {},
+      ),
+      /Root Agent principal/,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.TSPI_NATIVE_WRITES;
+    else process.env.TSPI_NATIVE_WRITES = previous;
+  }
+});

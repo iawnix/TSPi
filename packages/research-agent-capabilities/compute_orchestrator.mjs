@@ -14,7 +14,7 @@ import { create_compute_service, resolve_compute_input } from "./compute_service
 import { create_light_execution_ledger, create_research_execution_ledger } from "./execution_ledger.mjs";
 
 const TERMINAL_STATES = new Set(["succeeded", "failed", "timed_out", "cancelled"]);
-const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u;
+const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u;
 const ARTIFACT_ID = /^art_[0-9a-f]{64}$/u;
 const MAX_ERROR_TEXT = 4_096;
 
@@ -345,6 +345,7 @@ export function create_compute_orchestrator({
     ? attempt_id_factory
     : () => `attempt_${randomUUID()}`;
   const active = new Map();
+  let closed = false;
 
   function validate_signal(value) {
     if (value !== undefined && (!value || typeof value.addEventListener !== "function"
@@ -370,6 +371,7 @@ export function create_compute_orchestrator({
   }
 
   async function run(request = {}) {
+    if (closed) throw new ComputeOrchestratorError("compute_orchestrator_closed", "compute orchestrator is closed");
     const value = require_object(request, "run request");
     // App Server always injects workspace_mode. The research fallback keeps
     // this low-level port usable by existing Host adapters that already bind
@@ -504,5 +506,14 @@ export function create_compute_orchestrator({
     });
   }
 
-  return Object.freeze({ protocol_version: COMPUTE_ORCHESTRATOR_VERSION, run, cancel });
+  async function close() {
+    if (closed) return;
+    closed = true;
+    // Abort all Host-owned monitor/compute work before the surrounding App
+    // Server releases its runtime and capability resources.
+    for (const entry of active.values()) entry.controller.abort();
+    active.clear();
+  }
+
+  return Object.freeze({ protocol_version: COMPUTE_ORCHESTRATOR_VERSION, run, cancel, close });
 }

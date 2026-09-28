@@ -45,3 +45,43 @@ test("native research commands expose the FS kernel operation and liveness contr
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("native research route permits Root Agent node state and continuation mutations", async () => {
+  const root = await mkdtemp(join(tmpdir(), "research-native-mutations-"));
+  try {
+    await create_workspace_initializer().initialize_workspace({
+      workspace_root: root,
+      workspace_id: "workspace_native_mutations",
+      workspace_mode: "research",
+    });
+    await create_fs_research_kernel({ workspace_root: root }).admit_workspace({ authority: "host" });
+    await executeFilesystemResearchCommand("research.change", root, {
+      request: {
+        expected_revision: 0,
+        operations: [
+          { type: "create_claim", id: "claim_mutation", statement: "Mutation claim" },
+          { type: "create_node", id: "node_mutation", title: "Mutation node", objective: "Exercise mutations", claim_ids: ["claim_mutation"] },
+          { type: "set_node_state", node_id: "node_mutation", state: "active" },
+        ],
+      },
+    });
+    const created = await executeFilesystemResearchCommand("research.continuation", root, {
+      request: {
+        operation: "set",
+        scope: "node",
+        target_id: "node_mutation",
+        action: "analyze",
+        request_id: "request_mutation",
+      },
+    });
+    assert.equal(created.required[0].status, "required");
+    const continuationId = created.required[0].id;
+    const resolved = await executeFilesystemResearchCommand("research.continuation", root, {
+      request: { operation: "resolve", continuation_id: continuationId, status: "completed" },
+    });
+    assert.equal(resolved.completed[0].id, continuationId);
+    assert.equal((await executeFilesystemResearchCommand("research.context", root)).nodes[0].state, "active");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

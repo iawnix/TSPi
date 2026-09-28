@@ -200,7 +200,7 @@ export function create_host_capability_assembly({
     providers: Object.freeze([...providers]),
     catalog() { return Object.freeze([...catalog]); },
     list_providers() { return Object.freeze([...catalog]); },
-    async readiness({ manifest_provider_id, capability_id } = {}) {
+    async readiness({ manifest_provider_id, capability_id, environment_id, execution_kind } = {}) {
       const matching = records.filter((record) => (manifest_provider_id === undefined || record.entry.id === manifest_provider_id)
         && (capability_id === undefined || record.descriptors.some((descriptor) => descriptor.capability_id === capability_id)));
       if (matching.length === 0) fail("provider_not_registered", "no assembled provider matches readiness request");
@@ -215,6 +215,8 @@ export function create_host_capability_assembly({
             capability_id: descriptor.capability_id,
             environment_kind: "compute",
             required_tool_ids: record.allow.required_tool_ids,
+            ...(environment_id === undefined ? {} : { environment_id }),
+            ...(execution_kind === undefined ? {} : { execution_kind }),
           };
           try {
             const binding = await broker.resolve(requirement);
@@ -228,11 +230,18 @@ export function create_host_capability_assembly({
               readiness: binding.readiness ?? { state: "configured", checks: [] },
             }));
           } catch (error) {
+            const unavailable = error?.code === "environment_unavailable";
             result.push(Object.freeze({
               manifest_provider_id: record.entry.id,
               adapter_id: record.provider.provider_id,
               capability_id: descriptor.capability_id,
-              readiness: { state: "error", checks: [], reason: String(error?.message || error) },
+              ...(environment_id === undefined ? {} : { environment_id }),
+              ...(execution_kind === undefined ? {} : { execution_kind }),
+              readiness: {
+                state: unavailable ? "unavailable" : "error",
+                checks: [],
+                reason: String(error?.message || error),
+              },
             }));
           }
         }

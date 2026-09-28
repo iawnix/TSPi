@@ -88,3 +88,13 @@ def test_broker_preserves_remote_binding_without_local_probe(tmp_path: Path) -> 
 
     assert binding.public()["readiness"]["state"] == "configured"
     assert {check["state"] for check in binding.readiness.checks} == {"configured", "deferred"}
+
+
+def test_broker_resolves_remote_ssh_host_alias_to_canonical_environment(tmp_path: Path) -> None:
+    broker = EnvironmentBroker(load_config(_config(tmp_path)))
+
+    binding = broker.readiness(EnvironmentRequirement(("openmm",), kind="remote"), "login.example")
+
+    assert binding.environment == "remote"
+    assert binding.kind == "remote"
+    assert binding.readiness.state == "configured"

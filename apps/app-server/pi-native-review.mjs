@@ -56,7 +56,7 @@ export function createReviewTool(runtime) {
   return {
     ...TOOL_CONTRACTS.review,
     async execute(toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("review_run");
+      requireNativeWrites("review_run", toolContext);
       requireReviewRuntime(runtime);
       const request = validateSubagentRequest({
         targetClaimId: params.targetClaimId,
@@ -166,7 +166,7 @@ export function createReplyTool() {
   return {
     ...TOOL_CONTRACTS.reply,
     async execute(_toolCallId, params, _onUpdate, toolContext) {
-      requireNativeWrites("review_respond");
+      requireNativeWrites("review_respond", toolContext);
       const disposition = writeReviewRootDisposition(boundWorkspaceRoot(params, toolContext), {
         task_id: params.taskId,
         review_run_ref: params.reviewRunRef,
@@ -474,10 +474,13 @@ function nativePython() {
   return process.env.TS_AGENT_PYTHON || "python3";
 }
 
-function requireNativeWrites(toolName) {
+function requireNativeWrites(toolName, toolContext) {
   if (process.env.TSPI_NATIVE_WRITES !== "1") {
     const publicCommand = toolName.replace(/_([^_]*)$/, ".$1");
     throw new Error(`${publicCommand} requires the guarded TSPi App Server Root Agent (tool ${toolName})`);
+  }
+  if (toolContext?.principal !== undefined && toolContext.principal !== "root_agent") {
+    throw new Error(`${toolName} requires the Root Agent principal`);
   }
 }
 

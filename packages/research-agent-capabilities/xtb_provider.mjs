@@ -4,6 +4,8 @@
  * The provider owns no installation path and never accepts a shell command
  * string.  An EnvironmentBroker supplies an argv binding; execution is
  * performed with spawn({ shell: false }) in a private temporary directory.
+ * Remote bindings are rejected before this local process boundary; the
+ * scheduler lifecycle is owned by ts_workspace_compute/ts_compute.
  * Input/output bytes cross the capability boundary through ArtifactStore.
  */
 
@@ -151,8 +153,17 @@ async function resolve_environment(broker, input) {
   });
   if (!binding || typeof binding !== "object" || Array.isArray(binding)) throw new XtbProviderError("invalid_environment_binding", "EnvironmentBroker returned an invalid binding");
   try {
-    return normalize_environment_binding(binding, input);
+    const normalized = normalize_environment_binding(binding, input);
+    if (normalized.execution_kind === "remote") {
+      throw new XtbProviderError(
+        "remote_execution_requires_workspace_compute",
+        "Remote xTB execution must use ts_workspace_compute/ts_compute; the JS capability provider only executes local bindings",
+        { environment_id: normalized.environment_id, route: "ts_workspace_compute" },
+      );
+    }
+    return normalized;
   } catch (error) {
+    if (error instanceof XtbProviderError) throw error;
     if (error?.code === "invalid_environment_binding") throw new XtbProviderError(error.code, error.message, error.details);
     throw error;
   }

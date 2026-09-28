@@ -185,3 +185,59 @@ test("remote-only compute configuration still registers a transport-neutral capa
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("remote environment readiness accepts the SSH host alias and preserves the canonical environment", async () => {
+  const root = await temporary_root();
+  try {
+    const ssh_config = join(root, "ssh_config");
+    await writeFile(ssh_config, "Host agent.1w\n  HostName agent.1w\n", { mode: 0o600 });
+    const compute_path = join(root, "compute.toml");
+    await writeFile(compute_path, [
+      'default_environment = "local"',
+      "[environments.local]",
+      'kind = "local"',
+      "[environments.local.backends.xtb]",
+      'command = "/bin/true"',
+      "[environments.cluster_1w]",
+      'kind = "remote"',
+      `ssh_config = ${JSON.stringify(ssh_config)}`,
+      'ssh_host = "agent.1w"',
+      'remote_root = "/tmp/tspi-remote"',
+      'allowed_queues = ["short"]',
+      "[environments.cluster_1w.backends.xtb]",
+      'command = ["xtb"]',
+      "",
+    ].join("\n"), "utf8");
+    const host = await create_configured_capability_host({
+      package_root: resolve("."),
+      compute_config_path: compute_path,
+      artifact_root: join(root, "artifacts"),
+    });
+    const readiness = await host.capability_assembly.readiness({
+      capability_id: "xtb_calculate",
+      environment_id: "agent.1w",
+      execution_kind: "remote",
+    });
+    assert.equal(readiness[0].environment_id, "cluster_1w");
+    assert.equal(readiness[0].environment_kind, "compute");
+    assert.equal(readiness[0].readiness.state, "configured");
+    assert.equal(readiness[0].readiness.checks.some((check) => check.name === "remote_transport" && check.state === "deferred"), true);
+    const unavailable = await host.capability_assembly.readiness({
+      capability_id: "xtb_calculate",
+      environment_id: "missing-environment",
+      execution_kind: "remote",
+    });
+    assert.equal(unavailable[0].readiness.state, "unavailable");
+    await assert.rejects(
+      host.tool_gateway.invoke({
+        workspace_mode: "research",
+        capability_id: "xtb_calculate",
+        environment: { kind: "remote", environment: "agent.1w" },
+        input: { xyz: "1\nH\nH 0 0 0\n" },
+      }),
+      (error) => error?.code === "remote_execution_requires_workspace_compute",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

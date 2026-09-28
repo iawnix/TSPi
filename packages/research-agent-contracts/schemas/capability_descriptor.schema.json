@@ -7,7 +7,7 @@
   "properties": {
     "protocol": {"const": "capability_descriptor"},
     "version": {"const": 1},
-    "capability_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,127}$"},
+    "capability_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"},
     "capability_version": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$"},
     "kind": {"enum": ["compute", "analysis", "artifact", "notification"]},
     "summary": {"type": "string", "minLength": 1, "maxLength": 2000},

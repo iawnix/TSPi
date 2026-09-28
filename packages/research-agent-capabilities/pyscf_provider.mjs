@@ -5,7 +5,8 @@
  * stages bounded XYZ input, invokes the Host-bound Python argv, and exposes
  * the runner's manifest as immutable artifacts.  Runtime package checks are
  * deliberately delegated to the compute bridge; an unavailable runtime is
- * never reported as a completed calculation.
+ * never reported as a completed calculation. Remote scheduler execution is
+ * owned by ts_workspace_compute/ts_compute, not this local adapter.
  */
 
 import { spawn } from "node:child_process";
@@ -159,6 +160,13 @@ async function resolve_environment(broker, input) {
   const binding = await resolver.call(broker, { provider_id: PROVIDER_ID, capability_id: `pyscf_${input.task_type}`, environment_kind: "compute", required_tool_ids: ["pyscf"], input });
   try {
     const normalized = normalize_environment_binding(binding, input);
+    if (normalized.execution_kind === "remote") {
+      throw new PyscfProviderError(
+        "remote_execution_requires_workspace_compute",
+        "Remote PySCF execution must use ts_workspace_compute/ts_compute; the JS capability provider only executes local bindings",
+        { environment_id: normalized.environment_id, route: "ts_workspace_compute" },
+      );
+    }
     const state = normalized.readiness?.state;
     if (state !== undefined && state !== "ready" && state !== "configured") throw new PyscfProviderError("environment_unavailable", "PySCF runtime is not ready", { readiness: normalized.readiness });
     return normalized;

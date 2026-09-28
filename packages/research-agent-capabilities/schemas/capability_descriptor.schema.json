@@ -18,7 +18,7 @@
   ],
   "properties": {
     "schema_version": {"const": "research-agent-capability/1"},
-    "capability_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "capability_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"},
     "version": {"type": "string", "pattern": "^[1-9][0-9]*$"},
     "provider_id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
     "input_kinds": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},

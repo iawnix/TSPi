@@ -49,7 +49,7 @@ export function createComputeTool(options = {}) {
   return {
     ...TOOL_CONTRACTS.compute,
     async execute(toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites();
+      requireNativeWrites(toolContext);
       if (params && typeof params.capability_id === "string") {
         const root = boundWorkspaceRoot(params, toolContext);
         const workspace_mode = await readWorkspaceMode(root);
@@ -769,9 +769,12 @@ function nativePython() {
   return process.env.TS_AGENT_PYTHON || "python3";
 }
 
-function requireNativeWrites() {
+function requireNativeWrites(toolContext) {
   if (process.env.TSPI_NATIVE_WRITES !== "1") {
     throw new Error("compute.run requires the guarded TSPi App Server Root Agent (tool compute_run)");
+  }
+  if (toolContext?.principal !== undefined && toolContext.principal !== "root_agent") {
+    throw new Error("compute.run requires the Root Agent principal");
   }
 }
 

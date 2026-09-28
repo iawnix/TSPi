@@ -17,6 +17,7 @@ const {
 } = require("node:fs");
 const { createHash, randomBytes } = require("node:crypto");
 const { isAbsolute, relative, resolve, sep } = require("node:path");
+const { readResearchMap } = require("./research-map-reader.cjs");
 const {
   REVIEW_INPUT_DOCUMENTS,
   serializeAgentDocument,
@@ -414,18 +415,16 @@ function agentRunOwnerRef(root, task, nodeRefs, ownerClaimRef) {
 }
 
 function workspaceContainsNode(root, nodeRef) {
-  const mapPath = resolve(root, "research_map.json");
-  if (!existsSync(mapPath) || lstatSync(mapPath).isSymbolicLink()) return false;
-  const map = JSON.parse(readFileSync(mapPath, "utf8"));
+  const map = readResearchMap(root);
+  if (!map) return false;
   return map.schema_version === "research-map/1"
     && Array.isArray(map.nodes)
     && map.nodes.some((item) => isPlainObject(item) && item.id === nodeRef);
 }
 
 function workspaceContainsClaim(root, claimRef) {
-  const mapPath = resolve(root, "research_map.json");
-  if (!existsSync(mapPath) || lstatSync(mapPath).isSymbolicLink()) return false;
-  const map = JSON.parse(readFileSync(mapPath, "utf8"));
+  const map = readResearchMap(root);
+  if (!map) return false;
   return map.schema_version === "research-map/1"
     && Array.isArray(map.claims)
     && map.claims.some((item) => isPlainObject(item) && item.id === claimRef);
