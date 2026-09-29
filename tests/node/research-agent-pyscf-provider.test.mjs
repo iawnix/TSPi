@@ -41,5 +41,5 @@ test("PySCF provider fails closed when the bound runtime is unavailable", async 
     (error) => error instanceof PyscfProviderError && error.code === "environment_unavailable",
   );
   assert.equal(resolved.provider_id, "pyscf_local");
-  assert.equal(resolved.capability_id, "pyscf_sp");
+  assert.equal(resolved.capability_id, "pyscf.sp");
 });

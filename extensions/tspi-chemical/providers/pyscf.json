@@ -1,0 +1,22 @@
+{
+  "schema_version": "tspi-provider-descriptor/1",
+  "provider_id": "pyscf",
+  "kind": "compute",
+  "capabilities": [
+    {
+      "id": "pyscf",
+      "version": "1",
+      "aliases": [
+        "pyscf.sp",
+        "pyscf.opt",
+        "pyscf.ts",
+        "pyscf.freq",
+        "pyscf.thermo",
+        "pyscf.opt_freq",
+        "pyscf.ts_freq"
+      ]
+    }
+  ],
+  "implementation": "builtin",
+  "notes": "Inventory entry for the built-in PySCF capability adapters."
+}

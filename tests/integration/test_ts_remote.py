@@ -329,6 +329,54 @@ def test_generated_gaussian_script_shares_and_cleans_configured_scratch(tmp_path
     assert list(scratch_root.iterdir()) == []
 
 
+def test_generated_gaussian_script_restores_workspace_cwd_after_activation(tmp_path: Path) -> None:
+    scratch_root = tmp_path / "scratch"
+    scratch_root.mkdir()
+    leaked_dir = tmp_path / "activation-cwd"
+    leaked_dir.mkdir()
+    config, remote_dir = _executable_job(
+        tmp_path,
+        scratch_root=scratch_root,
+        activation_body=(
+            'test -d "$GAUSS_SCRDIR"\n'
+            'printf "activated\\n" > "$GAUSS_SCRDIR/activation.marker"\n'
+            f"cd -- {str(leaked_dir)!r}\n"
+            "return 0\n"
+        ),
+    )
+    fake = tmp_path / "fake-g16"
+    fake.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'test "$GAUSS_SCRDIR" = "$TMPDIR"\n'
+        'test -f "$GAUSS_SCRDIR/activation.marker"\n'
+        "printf 'scratch\\n' > Gau-1705102.inp\n"
+        'printf "%s\\n" "$GAUSS_SCRDIR"\n',
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    config = replace(config, platform=replace(config.platform, backends={
+        "gaussian": replace(config.platform.backends["gaussian"], command=(str(fake),)),
+    }))
+    script = remote_dir / "job.pbs"
+    script.write_text(render_job_script(config), encoding="utf-8")
+
+    completed = subprocess.run(
+        ["bash", str(script)],
+        cwd=remote_dir,
+        env={**os.environ, "PBS_JOBID": "123.cluster"},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert (remote_dir / "Gau-1705102.inp").read_text(encoding="utf-8") == "scratch\n"
+    assert not (leaked_dir / "Gau-1705102.inp").exists()
+    assert list(scratch_root.iterdir()) == []
+
+
 def test_generated_gaussian_script_records_activation_failure_and_cleans_scratch(tmp_path: Path) -> None:
     scratch_root = tmp_path / "scratch"
     scratch_root.mkdir()

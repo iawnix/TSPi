@@ -7,6 +7,7 @@ import {
   create_gaussian_provider,
   create_local_xyz_provider,
   create_pyscf_provider,
+  create_crest_provider,
   create_tool_gateway,
   create_xtb_provider,
 } from "../../packages/research-agent-capabilities/index.mjs";
@@ -17,6 +18,7 @@ const ADAPTERS = Object.freeze({
   xtb_local: create_xtb_provider,
   gaussian_local: create_gaussian_provider,
   pyscf_local: create_pyscf_provider,
+  crest_local: create_crest_provider,
 });
 
 export class ComputeConfigCapabilityHostError extends Error {
@@ -92,7 +94,12 @@ export async function create_compute_config_capability_host({
     if (!Array.isArray(descriptors) || descriptors.length === 0) {
       throw new ComputeConfigCapabilityHostError("provider_invalid", `trusted adapter ${adapter_id} returned an invalid descriptor set`);
     }
-    const manifest_provider_id = adapter_id === "xtb_local" ? "xtb" : adapter_id === "gaussian_local" ? "gaussian" : "pyscf";
+    const manifest_provider_id = {
+      xtb_local: "xtb",
+      gaussian_local: "gaussian",
+      pyscf_local: "pyscf",
+      crest_local: "crest",
+    }[adapter_id];
     inventory.push({
       id: manifest_provider_id,
       version: "1",

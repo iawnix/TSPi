@@ -17,7 +17,7 @@ import { normalize_environment_binding } from "./environment_binding.mjs";
 
 const PROVIDER_ID = "gaussian_local";
 const PROVIDER_VERSION = "1";
-const CAPABILITY_ID = "gaussian_calculate";
+const CAPABILITY_IDS = Object.freeze(["sp", "opt", "freq", "opt_freq", "ts", "irc", "scan"].map((task) => `gaussian.${task}`));
 const MAX_INPUT_BYTES = 8 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const MAX_OUTPUT_FILES = 64;
@@ -25,10 +25,11 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const TASK_TYPES = new Set(["sp", "opt", "freq", "opt_freq", "ts", "irc", "scan"]);
 const SAFE_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
-const DESCRIPTOR = Object.freeze({
+function descriptor(task_type) {
+  return Object.freeze({
   protocol: "capability_descriptor",
   version: 1,
-  capability_id: CAPABILITY_ID,
+  capability_id: `gaussian.${task_type}`,
   capability_version: "1",
   kind: "compute",
   summary: "Run a bounded Gaussian quantum-chemistry calculation from a host-bound executable.",
@@ -38,7 +39,7 @@ const DESCRIPTOR = Object.freeze({
       input_artifact_id: { type: "string", pattern: "^art_[0-9a-f]{64}$" },
       gjf: { type: "string", maxLength: MAX_INPUT_BYTES },
       input_text: { type: "string", maxLength: MAX_INPUT_BYTES },
-      task_type: { enum: [...TASK_TYPES] },
+      task_type: { enum: [task_type] },
       timeout_ms: { type: "integer", minimum: 1, maximum: 3_600_000 },
     },
     additionalProperties: false,
@@ -54,7 +55,10 @@ const DESCRIPTOR = Object.freeze({
   supported_workspace_modes: Object.freeze(["light", "research"]),
   limits: Object.freeze({ max_input_bytes: MAX_INPUT_BYTES, max_output_bytes: MAX_OUTPUT_BYTES, max_timeout_ms: 3_600_000 }),
   effects: Object.freeze(["compute", "artifact_create", "external_process"]),
-});
+  });
+}
+
+const DESCRIPTORS = Object.freeze(["sp", "opt", "freq", "opt_freq", "ts", "irc", "scan"].map(descriptor));
 
 export class GaussianProviderError extends Error {
   constructor(code, message, details = {}) {
@@ -149,7 +153,7 @@ function optimized_gaussian_input(original, xyz) {
   return `${[...link0, route_text].join("\n")}\n\noptimized geometry\n\n${charge_multiplicity}\n${coordinates}\n\n`;
 }
 
-function normalize_input(value) {
+function normalize_input(value, requested_task_type = "sp") {
   const input = object(value, "input");
   const allowed = new Set(["input_artifact_id", "gjf", "input_text", "task_type", "timeout_ms"]);
   const unknown = Object.keys(input).find((key) => !allowed.has(key));
@@ -168,10 +172,8 @@ function normalize_input(value) {
       && (typeof input.input_artifact_id !== "string" || !/^art_[0-9a-f]{64}$/u.test(input.input_artifact_id))) {
     throw new GaussianProviderError("invalid_input", "input_artifact_id is invalid");
   }
-  const task_type = input.task_type ?? "sp";
-  if (typeof task_type !== "string" || !TASK_TYPES.has(task_type)) {
-    throw new GaussianProviderError("invalid_input", "unsupported Gaussian task_type");
-  }
+  const task_type = input.task_type ?? requested_task_type;
+  if (typeof task_type !== "string" || !TASK_TYPES.has(task_type) || task_type !== requested_task_type) throw new GaussianProviderError("invalid_input", `task_type must be ${requested_task_type}`);
   const timeout_ms = input.timeout_ms ?? DEFAULT_TIMEOUT_MS;
   if (!Number.isSafeInteger(timeout_ms) || timeout_ms < 1 || timeout_ms > 3_600_000) {
     throw new GaussianProviderError("invalid_input", "timeout_ms is out of range");
@@ -221,7 +223,7 @@ async function resolve_environment(broker, input) {
   }
   const binding = await resolver.call(broker, {
     provider_id: PROVIDER_ID,
-    capability_id: CAPABILITY_ID,
+    capability_id: `gaussian.${input.task_type ?? "sp"}`,
     environment_kind: "compute",
     required_tool_ids: ["gaussian"],
     input,
@@ -386,9 +388,11 @@ function create_provider(options = {}) {
   const provider = {
     provider_id: PROVIDER_ID,
     provider_version: PROVIDER_VERSION,
-    descriptors: () => [DESCRIPTOR],
-    async prepare({ input, artifact_store, environment_broker } = {}) {
-      const normalized = normalize_input(input);
+    descriptors: () => DESCRIPTORS,
+    async prepare({ input, task_type, artifact_store, environment_broker } = {}) {
+      const selected_task_type = task_type ?? input?.task_type ?? "sp";
+      if (!TASK_TYPES.has(selected_task_type)) throw new GaussianProviderError("invalid_capability", "unknown Gaussian capability descriptor");
+      const normalized = normalize_input(input, selected_task_type);
       const store = artifact_store ?? default_store;
       const gjf = normalized.gjf ?? await resolve_input_artifact(store, normalized.input_artifact_id);
       if (Buffer.byteLength(gjf, "utf8") > MAX_INPUT_BYTES) throw new GaussianProviderError("invalid_input", "Gaussian input exceeds the input size limit");
@@ -406,7 +410,7 @@ function create_provider(options = {}) {
         content: gjf,
         artifact_type: "chemical/gaussian-input",
         logical_ref: "inputs/gaussian-input.gjf",
-        metadata: { provider_id: PROVIDER_ID, capability_id: CAPABILITY_ID, input_artifact_id: prepared.input_artifact_id ?? null, task_type: prepared.task_type },
+        metadata: { provider_id: PROVIDER_ID, capability_id: `gaussian.${prepared.task_type}`, input_artifact_id: prepared.input_artifact_id ?? null, task_type: prepared.task_type },
       });
       if (!input_artifact || typeof input_artifact.artifact_id !== "string") throw new GaussianProviderError("invalid_artifact", "ArtifactStore returned an invalid input manifest");
       const work = await mkdtemp(join(tmpdir(), "research-agent-gaussian-"));
@@ -434,7 +438,7 @@ function create_provider(options = {}) {
             content,
             artifact_type,
             logical_ref: `outputs/gaussian/${name}`,
-            metadata: { provider_id: PROVIDER_ID, capability_id: CAPABILITY_ID, environment_id: prepared.environment.environment_id, input_artifact_id: input_artifact.artifact_id, task_type: prepared.task_type, ...(role ? { role } : {}) },
+            metadata: { provider_id: PROVIDER_ID, capability_id: `gaussian.${prepared.task_type}`, environment_id: prepared.environment.environment_id, input_artifact_id: input_artifact.artifact_id, task_type: prepared.task_type, ...(role ? { role } : {}) },
           });
           if (!artifact || typeof artifact.artifact_id !== "string") throw new GaussianProviderError("invalid_artifact", "ArtifactStore returned an invalid output manifest");
           output_artifact_ids.push(artifact.artifact_id);
@@ -457,12 +461,12 @@ function create_provider(options = {}) {
         if (optimization_task) {
           const xyz = parse_gaussian_xyz(output_text);
           if (xyz) {
-            const geometry = await store.create({ content: xyz, artifact_type: "chemical/xyz", logical_ref: "outputs/gaussian/optimized.xyz", metadata: { provider_id: PROVIDER_ID, capability_id: CAPABILITY_ID, environment_id: prepared.environment.environment_id, input_artifact_id: input_artifact.artifact_id, task_type: prepared.task_type, role: "optimized_geometry" } });
+            const geometry = await store.create({ content: xyz, artifact_type: "chemical/xyz", logical_ref: "outputs/gaussian/optimized.xyz", metadata: { provider_id: PROVIDER_ID, capability_id: `gaussian.${prepared.task_type}`, environment_id: prepared.environment.environment_id, input_artifact_id: input_artifact.artifact_id, task_type: prepared.task_type, role: "optimized_geometry" } });
             if (!geometry?.artifact_id) throw new GaussianProviderError("invalid_artifact", "ArtifactStore returned an invalid optimized geometry manifest");
             output_artifact_ids.push(geometry.artifact_id); output_artifact_roles.optimized_geometry = geometry.artifact_id;
             const optimized_input = optimized_gaussian_input(gjf, xyz);
             if (optimized_input) {
-              const optimized_input_artifact = await store.create({ content: optimized_input, artifact_type: "chemical/gaussian-input", logical_ref: "outputs/gaussian/optimized.gjf", metadata: { provider_id: PROVIDER_ID, capability_id: CAPABILITY_ID, environment_id: prepared.environment.environment_id, input_artifact_id: input_artifact.artifact_id, task_type: "sp", role: "optimized_gaussian_input", geometry_artifact_id: geometry.artifact_id } });
+              const optimized_input_artifact = await store.create({ content: optimized_input, artifact_type: "chemical/gaussian-input", logical_ref: "outputs/gaussian/optimized.gjf", metadata: { provider_id: PROVIDER_ID, capability_id: "gaussian.sp", environment_id: prepared.environment.environment_id, input_artifact_id: input_artifact.artifact_id, task_type: "sp", role: "optimized_gaussian_input", geometry_artifact_id: geometry.artifact_id } });
               if (!optimized_input_artifact?.artifact_id) throw new GaussianProviderError("invalid_artifact", "ArtifactStore returned an invalid optimized Gaussian input manifest");
               output_artifact_ids.push(optimized_input_artifact.artifact_id); output_artifact_roles.optimized_gaussian_input = optimized_input_artifact.artifact_id;
             }
@@ -505,8 +509,15 @@ function create_provider(options = {}) {
         artifacts: [executed.input_artifact.artifact_id, ...executed.output_artifact_ids],
       };
     },
-    async invoke({ input, artifact_store, environment_broker, signal } = {}) {
-      const prepared = await provider.prepare({ input, artifact_store, environment_broker });
+    async invoke({ descriptor: item, input, artifact_store, environment_broker, signal } = {}) {
+      // The Host normally supplies the canonical descriptor selected from the
+      // capability catalog.  Direct provider callers may omit it; route from
+      // input.task_type and default to the canonical single point capability.
+      const task_type = item?.capability_id === undefined
+        ? (input?.task_type ?? "sp")
+        : String(item.capability_id).replace(/^gaussian\./u, "");
+      if (!TASK_TYPES.has(task_type)) throw new GaussianProviderError("invalid_capability", "unknown Gaussian capability descriptor");
+      const prepared = await provider.prepare({ input, task_type, artifact_store, environment_broker });
       const executed = await provider.execute(prepared, { artifact_store, signal });
       const parsed = await provider.parse(executed, prepared);
       return provider.finalize({ prepared, executed, parsed });
@@ -515,7 +526,9 @@ function create_provider(options = {}) {
   return Object.freeze(provider);
 }
 
-export const GAUSSIAN_CAPABILITY_ID = CAPABILITY_ID;
-export const GAUSSIAN_DESCRIPTOR = DESCRIPTOR;
+export const GAUSSIAN_CAPABILITY_ID = "gaussian.sp";
+export const GAUSSIAN_CAPABILITY_IDS = CAPABILITY_IDS;
+export const GAUSSIAN_DESCRIPTOR = DESCRIPTORS[0];
+export const GAUSSIAN_DESCRIPTORS = DESCRIPTORS;
 export const GAUSSIAN_PROVIDER_ID = PROVIDER_ID;
 export { create_provider as create_gaussian_provider };

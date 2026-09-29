@@ -134,10 +134,11 @@ export function createComputeTool(options = {}) {
             researchAttempt = { attempt_id: request.intentId, binding };
           }
         }
-        if (request.operation === "launch") {
-          // Persist the wake binding before submission.  If the worker exits
-          // after scheduler acceptance, the Host monitor can reconcile this
-          // durable request without submitting the calculation again.
+        if (request.operation === "launch" && workspaceMode === "research") {
+          // Persist the wake binding before submission only for research
+          // workspaces. Light mode has no lifecycle/monitor authority; its
+          // remote scheduler record is inspected explicitly through the
+          // compute lifecycle operations.
           stagedMonitor = await stageComputeMonitor(root, request, toolContext.sessionId, signal);
         }
         const packet = buildComputeTask({
@@ -223,8 +224,14 @@ export function createComputeTool(options = {}) {
               ? current.attempts.find((item) => item?.id === researchAttempt.attempt_id)
               : null;
             if (attempt && !["succeeded", "failed", "timed_out", "cancelled", "completed"].includes(attempt.state)) {
+              const recoveryState = attemptStateAfterComputeError(request, actions);
               await recordResearchAttempt(options.researchKernel, root, request, researchAttempt.binding, "transition", {
-                state: "failed",
+                // An unknown scheduler/control outcome is still an active
+                // Attempt.  Marking it failed would hide the durable monitor
+                // wake that is responsible for reconciliation.  Likewise,
+                // inspect/finalize/cancel failures describe the Host action,
+                // not a scientific failure of the underlying Attempt.
+                state: recoveryState,
                 error: { message: errorMessage(error), code: error?.code || null },
               });
             }
@@ -359,6 +366,23 @@ function attemptStateForRequest(operation, actions) {
   // Inspecting a scheduler state is not equivalent to parsing a scientific
   // result. Keep the Attempt externally active until finalize records it.
   return "running";
+}
+
+/**
+ * Select a conservative Attempt state when the Host action itself throws.
+ *
+ * A completed or ambiguous submit means that an external job may exist even
+ * when monitor staging, journaling, or response handling failed afterwards.
+ * Keep that Attempt active so the monitor can reconcile it.  For all
+ * follow-up operations, a failed Host command does not establish a terminal
+ * scientific result; leave the existing Attempt running for retry/reconcile.
+ */
+function attemptStateAfterComputeError(request, actions) {
+  if (actions.some((action) => action?.result?.action_status === "unknown")) return "running";
+  if (request.operation !== "launch") return "running";
+  const submission = actions.find((action) => action.tool === "ts_workspace_compute_submit");
+  if (submission && ["completed", "unknown"].includes(submission.result?.action_status)) return "running";
+  return "failed";
 }
 
 async function stageComputeMonitor(root, request, sessionId, signal) {
@@ -945,4 +969,4 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-export const __test = Object.freeze({ runComputeAction });
+export const __test = Object.freeze({ runComputeAction, attemptStateAfterComputeError });

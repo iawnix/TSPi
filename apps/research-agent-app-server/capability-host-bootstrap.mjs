@@ -8,6 +8,7 @@ import {
   create_gaussian_provider,
   create_local_xyz_provider,
   create_pyscf_provider,
+  create_crest_provider,
   create_tool_gateway,
   create_xtb_provider,
 } from "../../packages/research-agent-capabilities/index.mjs";
@@ -20,6 +21,7 @@ const TRUSTED_ADAPTERS = Object.freeze({
   xtb_local: create_xtb_provider,
   gaussian_local: create_gaussian_provider,
   pyscf_local: create_pyscf_provider,
+  crest_local: create_crest_provider,
 });
 
 export class CapabilityHostBootstrapError extends Error {

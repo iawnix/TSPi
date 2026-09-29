@@ -1,29 +1,25 @@
 import type { ArtifactStorePort, CapabilityDescriptor, EnvironmentBrokerPort, CapabilityProvider } from "./tool_gateway.mjs";
 
-export const XTB_CAPABILITY_ID: "xtb.sp";
-export const XTB_CAPABILITY_IDS: readonly string[];
-export const XTB_PROVIDER_ID: "xtb_local";
-export const XTB_DESCRIPTOR: CapabilityDescriptor;
-export const XTB_DESCRIPTORS: readonly CapabilityDescriptor[];
+export const CREST_CAPABILITY_ID: "crest.conformer_search";
+export const CREST_PROVIDER_ID: "crest_local";
+export const CREST_DESCRIPTOR: CapabilityDescriptor;
 
-export class XtbProviderError extends Error {
+export class CrestProviderError extends Error {
   readonly code: string;
   readonly details: Readonly<Record<string, unknown>>;
 }
 
-export interface XtbProvider extends CapabilityProvider {
-  readonly provider_id: "xtb_local";
+export interface CrestProvider extends CapabilityProvider {
+  readonly provider_id: "crest_local";
   readonly provider_version: "1";
   prepare(input: {
     readonly input: Readonly<Record<string, unknown>>;
-    /** Host-selected canonical task descriptor (defaults to input.task_type or xtb.sp for direct calls). */
-    readonly task_type?: string;
     readonly artifact_store?: ArtifactStorePort;
     readonly environment_broker?: EnvironmentBrokerPort;
   }): Promise<Readonly<Record<string, unknown>>>;
   execute(
     prepared: Readonly<Record<string, unknown>>,
-    context?: { readonly artifact_store?: ArtifactStorePort },
+    context?: { readonly artifact_store?: ArtifactStorePort; readonly signal?: AbortSignal },
   ): Promise<Readonly<Record<string, unknown>>>;
   parse(
     executed: Readonly<Record<string, unknown>>,
@@ -32,7 +28,7 @@ export interface XtbProvider extends CapabilityProvider {
   finalize(input: Readonly<Record<string, unknown>>): Promise<Record<string, unknown>>;
 }
 
-export function create_xtb_provider(options?: {
+export function create_crest_provider(options?: {
   readonly artifact_store?: ArtifactStorePort;
   readonly environment_broker?: EnvironmentBrokerPort;
-}): XtbProvider;
+}): CrestProvider;

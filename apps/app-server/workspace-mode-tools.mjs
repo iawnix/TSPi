@@ -17,7 +17,6 @@ export const RESEARCH_ONLY_TOOL_NAMES = Object.freeze(new Set([
   "review_run",
   "review_respond",
   "execution_dispatch",
-  "analysis_run",
   "notify_send",
 ]));
 

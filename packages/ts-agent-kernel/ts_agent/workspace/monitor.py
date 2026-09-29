@@ -190,9 +190,13 @@ def reconcile_registrations(root: str | Path, *, force: bool = False, at: str | 
             attempted = _read_control_guard(workspace, intent, "submit")
             if result is None and attempted is None:
                 continue
-            if result is not None and result.get("state") == "failed":
-                # Failed submissions do not need polling; a later retry may
-                # still succeed, so keep the staged binding available.
+            if result is not None and result.get("state") != "submitted":
+                # A failed or malformed control receipt is not evidence that
+                # a scheduler job exists. Keep the staged binding available
+                # for an explicit retry, but never let Monitor poll an
+                # uncommitted job. A missing receipt with a durable guard is
+                # the one intentional exception: the submit effect is
+                # ambiguous and Monitor must reconcile it without resubmitting.
                 continue
             register_monitor(workspace, **binding)
             record.update(status="registered", last_error=None, next_attempt_at=None)

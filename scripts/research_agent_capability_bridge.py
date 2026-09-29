@@ -48,6 +48,7 @@ def bridge(path: Path) -> dict[str, object]:
         ("xtb_local", "xtb"),
         ("gaussian_local", "gaussian"),
         ("pyscf_local", "pyscf"),
+        ("crest_local", "crest"),
     ):
         environment_bindings: dict[str, dict[str, object]] = {}
         for environment_name, environment_config in config.environments.items():

@@ -59,7 +59,7 @@ test("xTB provider completes a real water single-point through App Server orches
     const result = await composition.app_server.run_compute({
       workspace_root,
       node_id: "node_1",
-      capability_id: "xtb_calculate",
+      capability_id: "xtb.sp",
       input: {
         xyz: "3\nwater\nO 0 0 0\nH 0.758602 0 0.504284\nH -0.758602 0 0.504284\n",
         task_type: "sp",

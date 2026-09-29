@@ -1,8 +1,10 @@
 import type { ArtifactStorePort, CapabilityDescriptor, EnvironmentBrokerPort, CapabilityProvider } from "./tool_gateway.mjs";
 
-export const GAUSSIAN_CAPABILITY_ID: "gaussian_calculate";
+export const GAUSSIAN_CAPABILITY_ID: "gaussian.sp";
+export const GAUSSIAN_CAPABILITY_IDS: readonly string[];
 export const GAUSSIAN_PROVIDER_ID: "gaussian_local";
 export const GAUSSIAN_DESCRIPTOR: CapabilityDescriptor;
+export const GAUSSIAN_DESCRIPTORS: readonly CapabilityDescriptor[];
 
 export class GaussianProviderError extends Error {
   readonly code: string;
@@ -14,6 +16,8 @@ export interface GaussianProvider extends CapabilityProvider {
   readonly provider_version: "1";
   prepare(input: {
     readonly input: Readonly<Record<string, unknown>>;
+    /** Host-selected canonical task descriptor (defaults to input.task_type or gaussian.sp for direct calls). */
+    readonly task_type?: string;
     readonly artifact_store?: ArtifactStorePort;
     readonly environment_broker?: EnvironmentBrokerPort;
   }): Promise<Readonly<Record<string, unknown>>>;

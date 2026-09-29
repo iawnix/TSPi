@@ -63,11 +63,13 @@ const CAPABILITIES = Object.freeze({
   ts_freq: { outputs: ["program_output", "optimized_geometry", "frequencies"] },
 });
 
+const capability_id_for = (task_type) => `pyscf.${task_type}`;
+
 function descriptor(task_type) {
   const entry = CAPABILITIES[task_type];
   return Object.freeze({
     protocol: "capability_descriptor", version: 1,
-    capability_id: `pyscf_${task_type}`,
+    capability_id: capability_id_for(task_type),
     capability_version: "1", kind: "compute",
     summary: `Run a bounded PySCF CF22D ${task_type} calculation in the Host-bound Python runtime.`,
     input_schema: Object.freeze({
@@ -157,7 +159,7 @@ async function resolve_environment(broker, input) {
   if (!broker || typeof broker !== "object") throw new PyscfProviderError("environment_unavailable", "EnvironmentBroker is required for PySCF execution");
   const resolver = broker.resolve ?? broker.bind;
   if (typeof resolver !== "function") throw new PyscfProviderError("environment_unavailable", "EnvironmentBroker must expose resolve() or bind()");
-  const binding = await resolver.call(broker, { provider_id: PROVIDER_ID, capability_id: `pyscf_${input.task_type}`, environment_kind: "compute", required_tool_ids: ["pyscf"], input });
+  const binding = await resolver.call(broker, { provider_id: PROVIDER_ID, capability_id: capability_id_for(input.task_type), environment_kind: "compute", required_tool_ids: ["pyscf"], input });
   try {
     const normalized = normalize_environment_binding(binding, input);
     if (normalized.execution_kind === "remote") {
@@ -231,7 +233,7 @@ function create_provider(options = {}) {
       object(prepared, "prepared");
       const store = artifact_store ?? default_store;
       if (!store || typeof store.create !== "function") throw new PyscfProviderError("artifact_store_unavailable", "ArtifactStore create() is required");
-      const input_artifact = await store.create({ content: prepared.xyz, artifact_type: "chemical/xyz", logical_ref: `inputs/pyscf-${prepared.task_type}.xyz`, metadata: { provider_id: PROVIDER_ID, capability_id: `pyscf_${prepared.task_type}`, task_type: prepared.task_type } });
+      const input_artifact = await store.create({ content: prepared.xyz, artifact_type: "chemical/xyz", logical_ref: `inputs/pyscf-${prepared.task_type}.xyz`, metadata: { provider_id: PROVIDER_ID, capability_id: capability_id_for(prepared.task_type), task_type: prepared.task_type } });
       if (!input_artifact?.artifact_id) throw new PyscfProviderError("invalid_artifact", "ArtifactStore returned an invalid input manifest");
       const work = await mkdtemp(join(tmpdir(), "research-agent-pyscf-"));
       try {
@@ -249,7 +251,7 @@ function create_provider(options = {}) {
           const stored = name.endsWith(".npy") ? bytes.toString("base64") : bytes.toString("utf8");
           if (Buffer.byteLength(stored, "utf8") > MAX_OUTPUT_BYTES) return;
           files[name] = stored;
-          const artifact = await store.create({ content: stored, artifact_type, logical_ref: `outputs/pyscf/${name}`, metadata: { provider_id: PROVIDER_ID, capability_id: `pyscf_${prepared.task_type}`, environment_id: prepared.environment.environment_id, task_type: prepared.task_type, input_artifact_id: input_artifact.artifact_id, ...(role ? { role } : {}), ...(name.endsWith(".npy") ? { encoding: "base64" } : {}) } });
+          const artifact = await store.create({ content: stored, artifact_type, logical_ref: `outputs/pyscf/${name}`, metadata: { provider_id: PROVIDER_ID, capability_id: capability_id_for(prepared.task_type), environment_id: prepared.environment.environment_id, task_type: prepared.task_type, input_artifact_id: input_artifact.artifact_id, ...(role ? { role } : {}), ...(name.endsWith(".npy") ? { encoding: "base64" } : {}) } });
           if (!artifact?.artifact_id) throw new PyscfProviderError("invalid_artifact", "ArtifactStore returned an invalid output manifest");
           output_artifact_ids.push(artifact.artifact_id);
           if (role) output_artifact_roles[role] = artifact.artifact_id;
@@ -271,7 +273,7 @@ function create_provider(options = {}) {
     async parse(executed, prepared) { object(executed, "executed"); object(prepared, "prepared"); return parse_output(prepared, executed); },
     async finalize({ prepared, executed, parsed } = {}) { return { output: { calculation: parsed, input_artifact: executed.input_artifact, environment: prepared.environment, artifact_roles: parsed.artifact_roles }, artifacts: [executed.input_artifact.artifact_id, ...executed.output_artifact_ids] }; },
     async invoke({ descriptor: item, input, artifact_store, environment_broker, signal } = {}) {
-      const task_type = String(item?.capability_id ?? "").replace(/^pyscf_/u, "");
+      const task_type = String(item?.capability_id ?? "").replace(/^pyscf\./u, "");
       if (!TASK_TYPES.has(task_type)) throw new PyscfProviderError("invalid_capability", "unknown PySCF capability descriptor");
       const prepared = await provider.prepare({ input, task_type, artifact_store, environment_broker });
       const executed = await provider.execute(prepared, { artifact_store, signal });
@@ -285,5 +287,5 @@ function create_provider(options = {}) {
 export const PYSCF_PROVIDER_ID = PROVIDER_ID;
 export const PYSCF_PROVIDER_VERSION = PROVIDER_VERSION;
 export const PYSCF_DESCRIPTORS = DESCRIPTORS;
-export const PYSCF_CAPABILITY_IDS = Object.freeze(Object.keys(CAPABILITIES).map((task) => `pyscf_${task}`));
+export const PYSCF_CAPABILITY_IDS = Object.freeze(Object.keys(CAPABILITIES).map(capability_id_for));
 export { create_provider as create_pyscf_provider };

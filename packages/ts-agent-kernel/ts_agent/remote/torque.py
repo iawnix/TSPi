@@ -310,6 +310,12 @@ def _activation_wrapper(config: RemoteJobConfig, activation_script: str) -> list
         f"  mv -- \"$status_tmp\" {status}",
         '  exit "$activation_rc"',
         "fi",
+        # Activation profiles are allowed to export vendor runtime
+        # variables, but they must not redirect the calculation's cwd.  Some
+        # Gaussian profiles ``cd`` as a side effect; restoring the
+        # workspace-bound run directory keeps relative scratch/output files
+        # (for example Gau-*.inp) inside this Attempt.
+        f"cd -- {shlex.quote(config.remote_dir)}",
     ]
 
 

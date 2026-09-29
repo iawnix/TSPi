@@ -1,0 +1,16 @@
+{
+  "schema_version": "tspi-provider-descriptor/1",
+  "provider_id": "crest",
+  "kind": "compute",
+  "capabilities": [
+    {
+      "id": "crest",
+      "version": "1",
+      "aliases": [
+        "crest.conformer_search"
+      ]
+    }
+  ],
+  "implementation": "builtin",
+  "notes": "Inventory entry for the built-in CREST conformer-search adapter."
+}

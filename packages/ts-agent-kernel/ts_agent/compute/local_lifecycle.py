@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from ts_agent.io import now_iso, read_json, write_json
+from ts_agent.path_safety import path_has_symlink
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,12 @@ class LocalJobConfig:
     expected_artifacts: tuple[str, ...]
     environment: dict[str, str]
     activation_script: str | None = None
+    # Optional per-attempt scratch directory.  Scientific programs such as
+    # Gaussian create transient ``Gau-*.inp``/checkpoint files outside their
+    # declared outputs; keeping this path inside the attempt makes those
+    # files durable and prevents a process-wide scratch directory from
+    # leaking into the workspace root.
+    scratch_dir: Path | None = None
     stdin_name: str | None = None
     stdout_name: str = "local_job.stdout"
     stderr_name: str = "local_job.stderr"
@@ -62,6 +69,13 @@ _DURABLE_WORKER_STATES = {"running", "completed", "failed", "stopped"}
 def submit(config: LocalJobConfig) -> LocalReceipt:
     _validate_config(config)
     config.run_dir.mkdir(parents=True, exist_ok=True)
+    if config.scratch_dir is not None:
+        # The scratch directory is part of the durable execution scope.  It
+        # intentionally survives process completion so a run can be audited
+        # after the worker exits.
+        config.scratch_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if config.scratch_dir.is_symlink() or not config.scratch_dir.is_dir():
+            raise ValueError("local calculation scratch directory must be a physical directory")
     _stage_inputs(config)
     worker_config = config.run_dir / ".local-worker.json"
     receipt_path = config.run_dir / "local_receipt.json"
@@ -80,6 +94,7 @@ def submit(config: LocalJobConfig) -> LocalReceipt:
         "command": list(config.command),
         "environment": config.environment,
         "activation_script": config.activation_script,
+        "scratch_dir": str(config.scratch_dir) if config.scratch_dir is not None else None,
         "stdin_path": str(config.run_dir / config.stdin_name) if config.stdin_name else None,
         "stdout_path": str(config.run_dir / config.stdout_name),
         "stderr_path": str(config.run_dir / config.stderr_name),
@@ -305,6 +320,8 @@ def collect(
     expected = set(config.expected_artifacts)
     if any(name not in expected for name in artifacts):
         raise ValueError("local collect artifacts must be a subset of the prepared expected artifacts")
+    if path_has_symlink(output_dir):
+        raise ValueError("local calculation output directory must be physical")
     output_dir.mkdir(parents=True, exist_ok=True)
     copied: list[str] = []
     manifest: list[dict[str, Any]] = []
@@ -377,13 +394,24 @@ def _receipt_from_mapping(raw: Any) -> LocalReceipt:
 def _validate_config(config: LocalJobConfig) -> None:
     if not config.command or any(not str(item) for item in config.command):
         raise ValueError("local calculation command must be a non-empty argv")
-    if config.run_dir.is_symlink() or (config.run_dir.exists() and not config.run_dir.is_dir()):
+    if path_has_symlink(config.run_dir) or (config.run_dir.exists() and not config.run_dir.is_dir()):
         raise ValueError("local calculation run directory must be a physical directory")
+    if config.scratch_dir is not None:
+        run_root = config.run_dir.resolve(strict=False)
+        scratch = config.scratch_dir
+        if not scratch.is_absolute():
+            raise ValueError("local calculation scratch directory must be absolute")
+        try:
+            scratch.resolve(strict=False).relative_to(run_root)
+        except ValueError as exc:
+            raise ValueError("local calculation scratch directory must stay inside the run directory") from exc
+        if path_has_symlink(scratch) or (scratch.exists() and not scratch.is_dir()):
+            raise ValueError("local calculation scratch directory must be a physical directory")
     if config.activation_script is not None:
         activation = Path(config.activation_script)
         if (
             not activation.is_absolute()
-            or activation.is_symlink()
+            or path_has_symlink(activation)
             or not activation.is_file()
             or not os.access(activation, os.R_OK)
         ):
@@ -404,7 +432,7 @@ def _validate_config(config: LocalJobConfig) -> None:
 
 def _stage_inputs(config: LocalJobConfig) -> None:
     for source in config.input_paths:
-        if source.is_symlink() or not source.is_file():
+        if path_has_symlink(source) or not source.is_file():
             raise FileNotFoundError(f"local calculation input is not a regular file: {source}")
         destination = config.run_dir / source.name
         if destination.exists() or destination.is_symlink():

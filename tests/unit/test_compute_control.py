@@ -290,6 +290,54 @@ def test_local_lifecycle_collects_into_workspace_and_parses_locally(
     assert parsed["program_status"] == "completed"
 
 
+def test_local_program_scratch_stays_inside_attempt_execution_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Program-generated Gaussian scratch files must never escape the Attempt."""
+
+    from tests.support.workspace_helpers import (
+        bootstrap_filesystem_workspace_fixture,
+        start_filesystem_research_node,
+    )
+
+    workspace = bootstrap_filesystem_workspace_fixture(tmp_path / "workspace")
+    node_id = start_filesystem_research_node(workspace)["node_id"]
+    (workspace / "inputs" / "candidate.gjf").write_text(
+        "%chk=candidate.chk\n#P B3LYP/6-31G(d) opt=(ts,calcfc) freq\n\nTS\n\n0 1\nH 0 0 0\n\n",
+        encoding="utf-8",
+    )
+    created = _create(workspace, node_id, dry_run=False)
+    prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
+
+    executable_dir = tmp_path / "bin"
+    executable_dir.mkdir()
+    executable = executable_dir / "g16"
+    executable.write_text(
+        "#!/bin/sh\n"
+        "cat >/dev/null\n"
+        "printf 'scratch\n' > \"$GAUSS_SCRDIR/Gau-1705102.inp\"\n"
+        f"cat > gaussian.out <<'EOF'\n{_gaussian_log()}\nEOF\n",
+        encoding="utf-8",
+    )
+    executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("PATH", f"{executable_dir}:{os.environ['PATH']}")
+
+    submit_calculation(workspace, created["intent_id"])
+    for _ in range(200):
+        observed = calculation_status(workspace, created["intent_id"])
+        if observed["state"] in {"completed", "failed"}:
+            break
+        time.sleep(0.01)
+    assert observed["state"] == "completed"
+
+    execution_root = (
+        workspace / "nodes" / node_id / "attempts" / created["intent_id"] / "execution" / "local"
+    )
+    assert (execution_root / "scratch" / "Gau-1705102.inp").is_file()
+    assert not (workspace / "Gau-1705102.inp").exists()
+
+
 def test_local_lifecycle_cancels_a_running_process_and_is_idempotent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -445,6 +493,82 @@ def test_remote_target_is_workspace_and_research_node_scoped(
         f"/remote/ts/workspaces/{identity}/runs/{node_id}/{created['intent_id']}"
     )
     assert created["execution_target"]["authority"] == "execution_mirror"
+
+
+def test_remote_intent_uses_light_execution_scope_without_research_map(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "light"
+    (workspace / "inputs").mkdir(parents=True)
+    (workspace / "runs").mkdir()
+    (workspace / "inputs" / "candidate.gjf").write_text(
+        "%chk=candidate.chk\n#P B3LYP/6-31G(d) opt=(ts,calcfc) freq\n\nTS\n\n0 1\nH 0 0 0\n\n",
+        encoding="utf-8",
+    )
+    (workspace / "workspace_manifest.json").write_text(
+        json.dumps({
+            "schema_version": "research_agent_workspace_1",
+            "workspace_id": "workspace_light_remote",
+            "workspace_mode": "light",
+            "state": "ready",
+            "workspace_root": str(workspace),
+            "created_at": "2026-01-01T00:00:00Z",
+        }),
+        encoding="utf-8",
+    )
+    _configure_remote(tmp_path, monkeypatch)
+    created = _create(
+        workspace,
+        "node_execution",
+        target=_remote_request_target(),
+    )
+
+    assert created["execution_target"]["kind"] == "remote"
+    assert created["execution_target"]["remote_dir"].endswith(
+        f"/runs/node_execution/{created['intent_id']}"
+    )
+    assert not (workspace / "research_map" / "context.json").exists()
+    prepared = prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
+    assert prepared["prepared"]["execution_policy"]["kind"] == "remote"
+
+
+def test_remote_intent_rejects_backend_disallowed_queue_during_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "light-queue"
+    (workspace / "inputs").mkdir(parents=True)
+    (workspace / "runs").mkdir()
+    (workspace / "inputs" / "candidate.gjf").write_text(
+        "%chk=candidate.chk\n#P B3LYP/6-31G(d) opt=(ts,calcfc) freq\n\nTS\n\n0 1\nH 0 0 0\n\n",
+        encoding="utf-8",
+    )
+    (workspace / "workspace_manifest.json").write_text(
+        json.dumps({
+            "schema_version": "research_agent_workspace_1",
+            "workspace_id": "workspace_light_queue",
+            "workspace_mode": "light",
+            "state": "ready",
+            "workspace_root": str(workspace),
+            "created_at": "2026-01-01T00:00:00Z",
+        }),
+        encoding="utf-8",
+    )
+    _configure_remote(tmp_path, monkeypatch)
+    config_path = tmp_path / "compute.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'allowed_queues = ["workq"]',
+            'allowed_queues = ["workq", "otherq"]',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    target = _remote_request_target()
+    target["resources"] = {**target["resources"], "queue": "otherq"}
+    with pytest.raises(ComputeContractError, match="not allowed for backend gaussian"):
+        _create(workspace, "node_execution", target=target)
 
 
 def test_remote_submit_status_tail_collect_and_cancel_are_receipt_bound(

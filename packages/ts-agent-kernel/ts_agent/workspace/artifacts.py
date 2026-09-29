@@ -178,7 +178,13 @@ def safe_existing_artifact_path(
 
 
 def workspace_root(root: str | Path) -> Path:
-    """Resolve and minimally verify a current research workspace."""
+    """Resolve a current research or light execution workspace.
+
+    Calculation files are also useful in a light workspace.  Keep the
+    ResearchMap checks strict for research mode, but do not make the remote
+    scheduler depend on a scientific map that light mode deliberately does
+    not create.
+    """
 
     workspace = lexical_path(root)
     if path_has_symlink(workspace):
@@ -187,6 +193,39 @@ def workspace_root(root: str | Path) -> Path:
     context_doc = workspace / "research_map" / "context.json"
     if not workspace.is_dir() or workspace.is_symlink():
         raise WorkspaceArtifactError(f"not an initialized TS workspace: {workspace}")
+    try:
+        identity = read_json(workspace_doc)
+    except (OSError, ValueError) as exc:
+        raise WorkspaceArtifactError(f"cannot read workspace identity: {workspace_doc}") from exc
+    if (
+        not isinstance(identity, dict)
+        or identity.get("schema_version") != "research_agent_workspace_1"
+    ):
+        raise WorkspaceArtifactError(f"unsupported workspace protocol: {workspace}")
+    # The manifest is the Host-owned workspace admission boundary.  Compute
+    # operations must never run against a partially initialized or failed
+    # workspace, even when its canonical directories happen to exist.
+    if identity.get("state") != "ready":
+        raise WorkspaceArtifactError(
+            f"workspace is not ready for compute: {identity.get('state', 'unknown')}"
+        )
+    if identity.get("workspace_root") and lexical_path(identity["workspace_root"]) != workspace:
+        raise WorkspaceArtifactError("workspace identity does not match canonical root")
+    if (
+        isinstance(identity, dict)
+        and identity.get("schema_version") == "research_agent_workspace_1"
+        and identity.get("workspace_mode") == "light"
+    ):
+        # Light workspaces have no ResearchMap/liveness contract.  The
+        # execution kernel creates a `nodes/<scope>/attempts` tree only when a
+        # calculation is requested; common input/output roots are enough here.
+        for required in ("inputs", "runs"):
+            path = workspace / required
+            if has_symlink_component(workspace, path) or (path.exists() and path.is_symlink()):
+                raise WorkspaceArtifactError(f"workspace canonical path uses a symbolic link: {required}")
+            if not path.is_dir():
+                raise WorkspaceArtifactError(f"not an initialized TS workspace: missing {required}")
+        return workspace
     if (workspace / "research_map.json").exists() or (workspace / "research.db").exists():
         raise WorkspaceArtifactError("legacy ResearchMap storage is not supported by the canonical artifact workspace")
     for path in (workspace_doc, context_doc, workspace / "lifecycle" / "liveness.json", workspace / "nodes"):
@@ -201,13 +240,7 @@ def workspace_root(root: str | Path) -> Path:
         or not (workspace / "nodes").is_dir()
     ):
         raise WorkspaceArtifactError(f"not an initialized TS workspace: {workspace}")
-    try:
-        identity = read_json(workspace_doc)
-    except (OSError, ValueError) as exc:
-        raise WorkspaceArtifactError(
-            f"cannot read workspace identity: {workspace_doc}"
-        ) from exc
-    if not isinstance(identity, dict) or identity.get("schema_version") != "research_agent_workspace_1" or identity.get("workspace_mode") != "research":
+    if identity.get("workspace_mode") != "research":
         raise WorkspaceArtifactError(f"unsupported workspace protocol: {workspace}")
     try:
         context = read_json(context_doc)
@@ -234,6 +267,34 @@ def workspace_node_records(workspace: Path) -> list[dict[str, Any]]:
 
     workspace = lexical_path(workspace)
     context_path = workspace / "research_map" / "context.json"
+    manifest_path = workspace / "workspace_manifest.json"
+    try:
+        manifest = read_json(manifest_path)
+    except (OSError, ValueError) as exc:
+        raise WorkspaceArtifactError(f"cannot read workspace identity: {manifest_path}") from exc
+    if isinstance(manifest, dict) and manifest.get("workspace_mode") == "light":
+        # Light execution scopes intentionally have no ResearchMap records.
+        # Enumerate only materialized node directories so artifact discovery
+        # can still bind calculation outputs without manufacturing claims.
+        nodes_root = workspace / "nodes"
+        if not nodes_root.is_dir() or nodes_root.is_symlink():
+            return []
+        records: list[dict[str, Any]] = []
+        for path in sorted(nodes_root.iterdir()):
+            if not path.is_dir() or path.is_symlink() or NODE_ID.fullmatch(path.name) is None:
+                continue
+            records.append({
+                "type": "execution_scope",
+                "id": path.name,
+                "phase_id": None,
+                "title": "Light execution scope",
+                "objective": "Operational calculation scope; not a ResearchMap Node.",
+                "dependency_ids": [],
+                "claim_ids": [],
+                "created_at": manifest.get("created_at"),
+                "state": "active",
+            })
+        return records
     try:
         context = read_json(context_path)
     except (OSError, ValueError) as exc:

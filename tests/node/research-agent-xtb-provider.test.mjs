@@ -83,7 +83,7 @@ test("xTB gateway resolves input artifact and rejects missing EnvironmentBroker"
       environment_broker: { bind: () => ({ environment_id: "mock", command: [executable] }) },
       providers: [create_xtb_provider()],
     });
-    const result = await gateway.invoke({ workspace_mode: "research", capability_id: "xtb_calculate", input: { input_artifact_id: input.artifact_id } });
+    const result = await gateway.invoke({ workspace_mode: "research", capability_id: "xtb.sp", input: { input_artifact_id: input.artifact_id } });
     assert.equal(result.status, "ok");
     assert.equal(result.output.calculation.backend, "xtb");
     await assert.rejects(

@@ -150,6 +150,10 @@ _TASK_VALIDATORS: dict[tuple[str, str], TaskValidator] = {
     ("crest", "conformer_search"): _require_truthy(
         ("conformer_count", "conformers_missing"),
         ("ensemble_counts_match", "ensemble_energy_counts_differ"),
+        ("energy_indices_match", "ensemble_energy_indices_invalid"),
+        ("best_is_single_structure", "best_structure_invalid"),
+        ("best_atom_count_match", "best_structure_atom_count_differ"),
+        ("artifacts_complete", "required_artifacts_incomplete"),
     ),
     ("ase_neb", "neb"): _require_truthy(
         ("converged", "neb_not_converged"),

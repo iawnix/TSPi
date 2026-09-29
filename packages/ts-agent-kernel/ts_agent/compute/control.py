@@ -185,6 +185,11 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
         scientific_digest=scientific_digest,
     )
     attempts_dir = workspace / "nodes" / node_id / "attempts"
+    if _is_light_execution_workspace(workspace):
+        # Light mode has no ResearchMap mutation boundary. Materialize an
+        # operational execution scope only after capability/input validation;
+        # remote staging remains independent from scientific Node state.
+        _ensure_light_execution_scope(workspace, node_id)
     _require_physical_compute_directory(workspace, workspace / "nodes" / node_id, "ResearchNode")
     _require_physical_compute_directory(workspace, attempts_dir, "calculation Attempt")
 
@@ -214,6 +219,7 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
                 request["execution_target"],
                 node_id,
                 intent_id,
+                backend=backend,
             ),
             "dry_run": request["dry_run"],
         }
@@ -822,18 +828,28 @@ def _local_job_config(
         local_command = [local_command[0]]
     run_dir = _local_execution_dir(workspace, intent)
     _require_physical_compute_directory(workspace, run_dir, "local calculation run")
+    scratch_dir = run_dir / "scratch" if prepared_task.get("backend") == "gaussian" else None
+    environment = {str(key): str(value) for key, value in (prepared_task.get("environment") or {}).items()}
+    if scratch_dir is not None:
+        # Gaussian writes Gau-*.inp and other transient files through
+        # GAUSS_SCRDIR/TMPDIR.  Bind both variables to this Attempt's
+        # persistent execution scope; local_worker reapplies the binding
+        # after activation profiles are sourced.
+        environment["GAUSS_SCRDIR"] = str(scratch_dir)
+        environment["TMPDIR"] = str(scratch_dir)
     return local_lifecycle.LocalJobConfig(
         intent_id=str(intent["intent_id"]),
         run_dir=run_dir,
         command=tuple(local_command),
         input_paths=tuple(workspace / _workspace_ref(workspace, ref, read=True) for ref in input_refs),
         expected_artifacts=expected,
-        environment={str(key): str(value) for key, value in (prepared_task.get("environment") or {}).items()},
+        environment=environment,
         activation_script=(
             str(prepared_task["activation_script"])
             if prepared_task.get("activation_script") is not None
             else None
         ),
+        scratch_dir=scratch_dir,
         stdin_name=stdin_name,
         stdout_name=(
             "local_job.stdout"
@@ -1306,8 +1322,10 @@ def parse_calculation(
             control=xtb_control,
         )
     elif backend == "crest":
+        input_ref = _workspace_ref(workspace, str(intent["input_refs"]["xyz"]), read=True)
         parsed = parse_crest_artifacts(
-            {name: path for name, (_, path) in parse_inputs.items()}
+            {name: path for name, (_, path) in parse_inputs.items()},
+            input_xyz=workspace / input_ref,
         )
     elif backend == "pyscf":
         parsed = parse_pyscf_artifacts(
@@ -1568,6 +1586,8 @@ def _materialize_execution_target(
     request_target: dict[str, Any],
     node_id: str,
     intent_id: str,
+    *,
+    backend: str | None = None,
 ) -> dict[str, Any]:
     if request_target["kind"] == "local":
         environment_name = request_target.get("environment")
@@ -1595,7 +1615,7 @@ def _materialize_execution_target(
         identity = workspace_id(workspace, create=True)
     except (EnvironmentConfigurationError, RemoteConfigurationError, WorkspaceIdentityError) as exc:
         raise ComputeContractError(f"cannot materialize remote execution target: {exc}") from exc
-    _validate_platform_resources(platform, resources)
+    _validate_platform_resources(platform, resources, backend=backend)
     remote_dir = str(
         PurePosixPath(platform.remote_root)
         / "workspaces"
@@ -1863,7 +1883,7 @@ def _normalize_prepared_task(
     return replace(prepared, input_paths=input_paths, expected_artifacts=normalized_expected)
 
 
-def _validate_execution_target(target: dict[str, Any]) -> dict[str, Any]:
+def _validate_execution_target(target: dict[str, Any], *, backend: str | None = None) -> dict[str, Any]:
     if target["kind"] == "local":
         environment_name = target.get("environment")
         if environment_name is not None:
@@ -1880,7 +1900,7 @@ def _validate_execution_target(target: dict[str, Any]) -> dict[str, Any]:
         resources = RemoteResources.from_mapping(target["resources"])
     except (KeyError, EnvironmentConfigurationError, RemoteConfigurationError) as exc:
         raise ComputeContractError(f"invalid remote execution target: {exc}") from exc
-    _validate_platform_resources(platform, resources)
+    _validate_platform_resources(platform, resources, backend=backend)
     return {
         "kind": "remote",
         "authority": "execution_mirror",
@@ -1902,7 +1922,7 @@ def _execution_policy_for_prepare(
     *,
     create_identity: bool = True,
 ) -> dict[str, Any]:
-    policy = _validate_execution_target(intent["execution_target"])
+    policy = _validate_execution_target(intent["execution_target"], backend=str(intent.get("backend") or ""))
     if policy["kind"] == "local":
         return policy
     try:
@@ -1959,7 +1979,7 @@ def _remote_job_config(
         resources = RemoteResources.from_mapping(target["resources"])
     except (EnvironmentConfigurationError, RemoteConfigurationError) as exc:
         raise ComputeContractError(f"invalid prepared remote execution target: {exc}") from exc
-    _validate_platform_resources(platform, resources)
+    _validate_platform_resources(platform, resources, backend=str(intent.get("backend") or ""))
     command = tuple(_rewritten_remote_command(prepared_task))
     config = RemoteJobConfig(
         submission_id=_remote_submission_id(str(target["workspace_id"]), str(intent["intent_id"])),
@@ -2095,7 +2115,12 @@ def _receipt_ref(intent: dict[str, Any]) -> str:
     return f"{base}/remote_receipt.json"
 
 
-def _validate_platform_resources(platform: Any, resources: RemoteResources) -> None:
+def _validate_platform_resources(
+    platform: Any,
+    resources: RemoteResources,
+    *,
+    backend: str | None = None,
+) -> None:
     if resources.queue not in platform.allowed_queues:
         raise ComputeContractError(
             f"queue {resources.queue!r} is not allowed by remote compute environment {platform.name}"
@@ -2104,6 +2129,20 @@ def _validate_platform_resources(platform: Any, resources: RemoteResources) -> N
         raise ComputeContractError(
             f"requested nodes={resources.nodes} exceeds environment max_nodes={platform.max_nodes}"
         )
+    if backend:
+        binding = platform.backends.get(backend)
+        if binding is None and backend == "ase_neb":
+            binding = platform.backends.get("ase_neb_xtb")
+        if binding is not None:
+            if binding.allowed_queues and resources.queue not in binding.allowed_queues:
+                raise ComputeContractError(
+                    f"queue {resources.queue!r} is not allowed for backend {backend} "
+                    f"in remote compute environment {platform.name}"
+                )
+            if binding.requires_gpu and resources.ngpus < 1:
+                raise ComputeContractError(
+                    f"backend {backend} requires at least one GPU in remote compute environment {platform.name}"
+                )
 
 
 def _reconcile_remote_submit(
@@ -2268,6 +2307,29 @@ def _workspace_root(root: str | Path) -> Path:
         raise ComputeContractError(str(exc)) from exc
 
 
+def _is_light_execution_workspace(workspace: Path) -> bool:
+    """Return whether this root is the bounded light execution profile."""
+
+    try:
+        manifest = read_json(workspace / "workspace_manifest.json")
+    except (OSError, ValueError):
+        return False
+    return isinstance(manifest, dict) and manifest.get("workspace_mode") == "light"
+
+
+def _ensure_light_execution_scope(workspace: Path, node_id: str) -> None:
+    nodes = workspace / "nodes"
+    node = nodes / node_id
+    attempts = node / "attempts"
+    for path, label in (
+        (nodes, "execution scope root"),
+        (node, "execution scope"),
+        (attempts, "calculation Attempt"),
+    ):
+        _require_physical_compute_directory(workspace, path, label)
+        path.mkdir(parents=True, exist_ok=True)
+
+
 def _intent_source(workspace: Path, value: str | Path) -> tuple[Path, str]:
     source = Path(value).expanduser()
     if source.is_absolute():
@@ -2338,6 +2400,23 @@ def _resolve_capability_contract(capability: str, version: str) -> CapabilityDes
 
 
 def _load_node(workspace: Path, node_id: str) -> dict[str, Any]:
+    if _is_light_execution_workspace(workspace):
+        if not re.fullmatch(r"node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", node_id):
+            raise ComputeContractError(f"invalid execution scope: {node_id}")
+        # This is an operational scope, not a ResearchMap Node. Its stable
+        # contract digest binds calculation files without granting light mode
+        # any claim, finding, or lifecycle authority.
+        return {
+            "type": "execution_scope",
+            "id": node_id,
+            "phase_id": None,
+            "title": "Light execution scope",
+            "objective": "Operational calculation scope; not a ResearchMap Node.",
+            "dependency_ids": [],
+            "claim_ids": [],
+            "created_at": None,
+            "state": "active",
+        }
     try:
         records = workspace_node_records(workspace)
     except WorkspaceArtifactError as exc:
@@ -2375,6 +2454,17 @@ def _validate_intent(intent: dict[str, Any]) -> None:
 
 
 def _validate_intent_node_scope(workspace: Path, intent: dict[str, Any], node: dict[str, Any]) -> None:
+    if _is_light_execution_workspace(workspace):
+        if node.get("type") != "execution_scope":
+            raise ComputeContractError("light calculations require an execution scope")
+        if node.get("state") == "closed":
+            raise ComputeContractError("light calculations require an open execution scope")
+        if intent.get("node_id") != node.get("id"):
+            raise ComputeContractError("calculation intent owner does not match its execution scope")
+        if intent.get("node_contract_digest") != node_contract_digest(node):
+            raise ComputeContractError("calculation intent is not bound to the current execution scope")
+        _validate_current_intent_lineage(workspace, intent)
+        return
     if node.get("type") != "research_node":
         raise ComputeContractError("calculations require a ResearchNode owner")
     if node.get("state") == "closed":
@@ -3072,6 +3162,11 @@ def _register_parsed_evidence(
     """Admit parsed Attempt/Artifact metadata without creating science claims."""
 
     if result.get("state") != "parsed" or not isinstance(result.get("artifact_manifest"), list):
+        return
+    if _is_light_execution_workspace(workspace):
+        # Light mode owns only operational files. Parsed output remains bound
+        # to the calculation directory and is not projected into ResearchMap
+        # evidence or scientific memory.
         return
     from ts_agent.research import ArtifactManifest, AttemptRecord, ResearchKernel
 

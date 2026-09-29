@@ -73,7 +73,11 @@ def prepare_crest(task: BackendTask) -> PreparedTask:
     )
 
 
-def parse_crest_artifacts(artifacts: dict[str, Path]) -> dict[str, Any]:
+def parse_crest_artifacts(
+    artifacts: dict[str, Path],
+    *,
+    input_xyz: Path | None = None,
+) -> dict[str, Any]:
     log = artifacts.get("crest.out")
     if log is None:
         raise ValueError("CREST parsing requires crest.out")
@@ -89,8 +93,18 @@ def parse_crest_artifacts(artifacts: dict[str, Path]) -> dict[str, Any]:
         "execution_completed": "CREST terminated normally." in text,
         "artifact_presence": presence,
         "missing_artifacts": [name for name, present in presence.items() if not present],
+        "crest_out_valid": bool(text.strip()),
     }
     details: dict[str, Any] = {}
+    ensemble = None
+    best = None
+    input_geometry = None
+    if input_xyz is not None:
+        input_geometry = xyz_frame_metadata(input_xyz)
+        if input_geometry["frame_count"] != 1:
+            raise ValueError("CREST input XYZ must contain exactly one structure")
+        summary["input_atom_count"] = input_geometry["atom_count"]
+    relative: list[dict[str, Any]] | None = None
     if "crest_conformers.xyz" in artifacts:
         ensemble = xyz_frame_metadata(artifacts["crest_conformers.xyz"])
         energies = [frame.get("energy_hartree") for frame in ensemble["frames"]]
@@ -107,7 +121,13 @@ def parse_crest_artifacts(artifacts: dict[str, Path]) -> dict[str, Any]:
         details["ensemble"] = ensemble
     if "crest_best.xyz" in artifacts:
         best = xyz_frame_metadata(artifacts["crest_best.xyz"])
-        summary["best_structure_energy_hartree"] = best["frames"][0].get("energy_hartree")
+        summary.update(
+            {
+                "best_conformer_count": best["frame_count"],
+                "best_atom_count": best["atom_count"],
+                "best_structure_energy_hartree": best["frames"][0].get("energy_hartree"),
+            }
+        )
     if "crest.energies" in artifacts:
         relative = _relative_energies(artifacts["crest.energies"])
         summary.update(
@@ -120,6 +140,47 @@ def parse_crest_artifacts(artifacts: dict[str, Path]) -> dict[str, Any]:
             }
         )
         details["relative_energies"] = relative
+    best_is_single_structure = best is not None and best["frame_count"] == 1
+    reference_atom_count = (
+        input_geometry["atom_count"]
+        if input_geometry is not None
+        else ensemble["atom_count"] if ensemble is not None else None
+    )
+    best_atom_count_match = (
+        best is not None
+        and reference_atom_count is not None
+        and best["atom_count"] == reference_atom_count
+    )
+    ensemble_atom_count_match = (
+        ensemble is not None
+        and reference_atom_count is not None
+        and ensemble["atom_count"] == reference_atom_count
+    )
+    energy_indices_match = (
+        relative is not None
+        and ensemble is not None
+        and len(relative) == ensemble["frame_count"]
+        and [item["conformer_index"] for item in relative] == list(range(1, len(relative) + 1))
+    )
+    summary.update(
+        {
+            "best_is_single_structure": best_is_single_structure,
+            "best_atom_count_match": best_atom_count_match,
+            "ensemble_atom_count_match": ensemble_atom_count_match,
+            "energy_indices_match": energy_indices_match,
+            "artifacts_complete": (
+                not summary["missing_artifacts"]
+                and summary["crest_out_valid"]
+                and ensemble is not None
+                and best is not None
+                and relative is not None
+                and best_is_single_structure
+                and best_atom_count_match
+                and ensemble_atom_count_match
+                and energy_indices_match
+            ),
+        }
+    )
     counts_match = (
         summary.get("conformer_count") is not None
         and summary.get("conformer_count") == summary.get("relative_energy_count")
@@ -160,17 +221,24 @@ def write_crest_parse_artifacts(parsed: dict[str, Any], output_dir: Path) -> lis
 def _relative_energies(path: Path) -> list[dict[str, Any]]:
     values: list[dict[str, Any]] = []
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        parts = line.split()
-        if len(parts) != 2:
+        if not line.strip():
             continue
+        parts = line.split()
+        if len(parts) != 2 or not re.fullmatch(r"\+?\d+", parts[0]):
+            raise ValueError(f"CREST energy table contains a malformed row: {path}")
         try:
             index = int(parts[0])
             energy = float(parts[1].replace("D", "E").replace("d", "e"))
         except ValueError:
-            continue
+            raise ValueError(f"CREST energy table contains a malformed row: {path}")
+        if index < 1 or not (energy == energy and abs(energy) != float("inf")):
+            raise ValueError(f"CREST energy table contains an invalid value: {path}")
         values.append({"conformer_index": index, "relative_energy_kcal_mol": energy})
     if not values:
         raise ValueError(f"CREST energy table contains no conformers: {path}")
+    indices = [item["conformer_index"] for item in values]
+    if indices != list(range(1, len(indices) + 1)):
+        raise ValueError(f"CREST energy table conformer indices are not contiguous: {path}")
     return values
 
 

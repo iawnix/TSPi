@@ -50,7 +50,7 @@ test("light_compute runs a real xTB calculation without ResearchMap state", { sk
       "light-xtb-smoke",
       {
         operation: "run",
-        capabilityId: "xtb_calculate",
+        capabilityId: "xtb.sp",
         runId: "run_light_xtb_smoke",
         input: {
           xyz: "3\nwater\nO 0 0 0\nH 0.758602 0 0.504284\nH -0.758602 0 0.504284\n",

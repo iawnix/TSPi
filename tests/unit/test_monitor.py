@@ -229,6 +229,17 @@ def test_staged_registration_error_remains_visible_and_retries(tmp_path, monkeyp
     assert reconcile_registrations(root, force=True)["registrations"][0]["status"] == "registered"
 
 
+def test_staged_registration_rejects_non_submitted_control_receipt(tmp_path, monkeypatch):
+    root = bootstrap_workspace_fixture(tmp_path / "workspace")
+    binding = dict(node_id="node_1", intent_id="calc_1", intent_digest="sha256:" + "f" * 64, session_id="session-1")
+    stage_registration(root, **binding)
+    monkeypatch.setattr("ts_agent.compute.control._load_prepared", lambda *args: (root, binding, {}))
+    monkeypatch.setattr("ts_agent.compute.control._read_control_result", lambda *args: {"state": "unknown"})
+    monkeypatch.setattr("ts_agent.compute.control._read_control_guard", lambda *args: None)
+    assert reconcile_registrations(root, force=True)["registrations"] == []
+    assert monitor_status(root)["monitors"] == []
+
+
 def test_monitor_records_match_contracts_and_old_completed_delivery_stays_completed(tmp_path, monkeypatch):
     from jsonschema import Draft202012Validator
     root = bootstrap_workspace_fixture(tmp_path / "workspace")

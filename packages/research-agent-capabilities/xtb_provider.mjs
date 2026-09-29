@@ -17,7 +17,7 @@ import { normalize_environment_binding } from "./environment_binding.mjs";
 
 const PROVIDER_ID = "xtb_local";
 const PROVIDER_VERSION = "1";
-const CAPABILITY_ID = "xtb_calculate";
+const CAPABILITY_IDS = Object.freeze(["sp", "opt", "freq", "opt_freq"].map((task) => `xtb.${task}`));
 const MAX_INPUT_BYTES = 8 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 const MAX_OUTPUT_FILES = 32;
@@ -27,10 +27,16 @@ const METHODS = new Set(["gfn0", "gfn1", "gfn2", "gfnff"]);
 const OUTPUT_FILES = Object.freeze(["xtbopt.xyz", "vibspectrum", "xtb.out", "charges", "wbo", "hessian"]);
 const SAFE_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
-const DESCRIPTOR = Object.freeze({
+function descriptor(task_type) {
+  const output_roles = {
+    sp: ["program_output", "energy"], opt: ["program_output", "optimized_geometry"],
+    freq: ["program_output", "frequencies"], opt_freq: ["program_output", "optimized_geometry", "frequencies"],
+    scan: ["program_output", "scan_profile"], md: ["program_output", "trajectory"],
+  }[task_type];
+  return Object.freeze({
   protocol: "capability_descriptor",
   version: 1,
-  capability_id: CAPABILITY_ID,
+  capability_id: `xtb.${task_type}`,
   capability_version: "1",
   kind: "compute",
   summary: "Run a bounded xTB single-point, optimization, or frequency calculation.",
@@ -39,7 +45,7 @@ const DESCRIPTOR = Object.freeze({
     properties: {
       input_artifact_id: { type: "string", pattern: "^art_[0-9a-f]{64}$" },
       xyz: { type: "string", maxLength: MAX_INPUT_BYTES },
-      task_type: { enum: ["sp", "opt", "freq", "opt_freq"] },
+      task_type: { enum: [task_type] },
       method: { enum: ["gfn0", "gfn1", "gfn2", "gfnff"] },
       charge: { type: "integer", minimum: -100, maximum: 100 },
       uhf: { type: "integer", minimum: 0, maximum: 100 },
@@ -50,7 +56,7 @@ const DESCRIPTOR = Object.freeze({
   output_schema: Object.freeze({
     type: "object",
     required: ["calculation", "artifacts"],
-    properties: { calculation: { type: "object" }, artifacts: { type: "array" } },
+    properties: { calculation: { type: "object" }, artifacts: { type: "array" }, output_roles: { type: "array", items: { type: "string" } } },
     additionalProperties: false,
   }),
   // Light mode may execute the same verified provider. It records a bounded
@@ -59,7 +65,10 @@ const DESCRIPTOR = Object.freeze({
   supported_workspace_modes: Object.freeze(["light", "research"]),
   limits: Object.freeze({ max_input_bytes: MAX_INPUT_BYTES, max_output_bytes: MAX_OUTPUT_BYTES, max_timeout_ms: 3_600_000 }),
   effects: Object.freeze(["compute", "artifact_create", "external_process"]),
-});
+  });
+}
+
+const DESCRIPTORS = Object.freeze(["sp", "opt", "freq", "opt_freq"].map(descriptor));
 
 export class XtbProviderError extends Error {
   constructor(code, message, details = {}) {
@@ -77,7 +86,7 @@ function object(value, field) {
   return value;
 }
 
-function normalized_input(value) {
+function normalized_input(value, requested_task_type = "sp") {
   const input = object(value, "input");
   const allowed = new Set(["input_artifact_id", "xyz", "task_type", "method", "charge", "uhf", "timeout_ms"]);
   const unknown = Object.keys(input).find((key) => !allowed.has(key));
@@ -91,7 +100,8 @@ function normalized_input(value) {
   if (input.input_artifact_id !== undefined && (typeof input.input_artifact_id !== "string" || !/^art_[0-9a-f]{64}$/u.test(input.input_artifact_id))) {
     throw new XtbProviderError("invalid_input", "input_artifact_id is invalid");
   }
-  const task_type = input.task_type ?? "sp";
+  const task_type = input.task_type ?? requested_task_type;
+  if (task_type !== requested_task_type) throw new XtbProviderError("invalid_input", `task_type must be ${requested_task_type}`);
   if (typeof task_type !== "string" || !TASK_TYPES.has(task_type)) throw new XtbProviderError("invalid_input", "unsupported xTB task_type");
   const method = (input.method ?? "gfn2").toLowerCase();
   if (typeof method !== "string" || !METHODS.has(method)) throw new XtbProviderError("invalid_input", "unsupported xTB method");
@@ -146,7 +156,7 @@ async function resolve_environment(broker, input) {
   if (typeof resolver !== "function") throw new XtbProviderError("environment_unavailable", "EnvironmentBroker must expose resolve() or bind()");
   const binding = await resolver.call(broker, {
     provider_id: PROVIDER_ID,
-    capability_id: CAPABILITY_ID,
+    capability_id: `xtb.${input.task_type ?? "sp"}`,
     environment_kind: "compute",
     required_tool_ids: ["xtb"],
     input,
@@ -248,9 +258,11 @@ function create_provider(options = {}) {
   const provider = {
     provider_id: PROVIDER_ID,
     provider_version: PROVIDER_VERSION,
-    descriptors: () => [DESCRIPTOR],
-    async prepare({ input, artifact_store, environment_broker } = {}) {
-      const normalized = normalized_input(input);
+    descriptors: () => DESCRIPTORS,
+    async prepare({ input, task_type, artifact_store, environment_broker } = {}) {
+      const selected_task_type = task_type ?? input?.task_type ?? "sp";
+      if (!TASK_TYPES.has(selected_task_type)) throw new XtbProviderError("invalid_capability", "unknown xTB capability descriptor");
+      const normalized = normalized_input(input, selected_task_type);
       const store = artifact_store ?? default_store;
       const xyz = normalized.xyz ?? await resolve_input_artifact(store, normalized.input_artifact_id);
       parse_xyz(xyz);
@@ -263,7 +275,7 @@ function create_provider(options = {}) {
       const xyz = parse_xyz(prepared.xyz);
       const input_artifact = await store.create({
         content: xyz, artifact_type: "chemical/xyz", logical_ref: "inputs/xtb-input.xyz",
-        metadata: { provider_id: PROVIDER_ID, capability_id: CAPABILITY_ID, input_artifact_id: prepared.input_artifact_id ?? null },
+        metadata: { provider_id: PROVIDER_ID, capability_id: `xtb.${prepared.task_type}`, input_artifact_id: prepared.input_artifact_id ?? null },
       });
       if (!input_artifact || typeof input_artifact.artifact_id !== "string") throw new XtbProviderError("invalid_artifact", "ArtifactStore returned an invalid input manifest");
       const work = await mkdtemp(join(tmpdir(), "research-agent-xtb-"));
@@ -284,7 +296,7 @@ function create_provider(options = {}) {
           files[name] = content;
           const artifact = await store.create({
             content, artifact_type: type, logical_ref: `outputs/xtb/${name}`,
-            metadata: { provider_id: PROVIDER_ID, capability_id: CAPABILITY_ID, environment_id: prepared.environment.environment_id, input_artifact_id: input_artifact.artifact_id, task_type: prepared.task_type, ...(role ? { role } : {}) },
+            metadata: { provider_id: PROVIDER_ID, capability_id: `xtb.${prepared.task_type}`, environment_id: prepared.environment.environment_id, input_artifact_id: input_artifact.artifact_id, task_type: prepared.task_type, ...(role ? { role } : {}) },
           });
           if (!artifact || typeof artifact.artifact_id !== "string") throw new XtbProviderError("invalid_artifact", "ArtifactStore returned an invalid output manifest");
           output_artifact_ids.push(artifact.artifact_id);
@@ -329,8 +341,17 @@ function create_provider(options = {}) {
         artifacts: [executed.input_artifact.artifact_id, ...executed.output_artifact_ids],
       };
     },
-    async invoke({ input, artifact_store, environment_broker, signal } = {}) {
-      const prepared = await provider.prepare({ input, artifact_store, environment_broker });
+    async invoke({ descriptor: item, input, artifact_store, environment_broker, signal } = {}) {
+      // The Host normally supplies the canonical descriptor selected from the
+      // capability catalog.  Direct provider callers (for example the
+      // prepare/execute convenience path used by the local adapter) may omit
+      // it; in that case route explicitly from the input task_type and use
+      // single point as the canonical default.
+      const task_type = item?.capability_id === undefined
+        ? (input?.task_type ?? "sp")
+        : String(item.capability_id).replace(/^xtb\./u, "");
+      if (!TASK_TYPES.has(task_type)) throw new XtbProviderError("invalid_capability", "unknown xTB capability descriptor");
+      const prepared = await provider.prepare({ input, task_type, artifact_store, environment_broker });
       const executed = await provider.execute(prepared, { artifact_store, signal });
       const parsed = await provider.parse(executed, prepared);
       return provider.finalize({ prepared, executed, parsed });
@@ -339,7 +360,9 @@ function create_provider(options = {}) {
   return Object.freeze(provider);
 }
 
-export const XTB_CAPABILITY_ID = CAPABILITY_ID;
-export const XTB_DESCRIPTOR = DESCRIPTOR;
+export const XTB_CAPABILITY_ID = "xtb.sp";
+export const XTB_CAPABILITY_IDS = CAPABILITY_IDS;
+export const XTB_DESCRIPTOR = DESCRIPTORS[0];
+export const XTB_DESCRIPTORS = DESCRIPTORS;
 export const XTB_PROVIDER_ID = PROVIDER_ID;
 export { create_provider as create_xtb_provider };

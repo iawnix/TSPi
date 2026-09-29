@@ -66,7 +66,7 @@ test("PySCF optimization exposes a typed optimized geometry artifact", async () 
     await chmod(executable, 0o700);
     const store = store_fixture();
     const provider = create_pyscf_provider({ artifact_store: store, environment_broker: ready_broker([executable]) });
-    const descriptor = provider.descriptors().find((item) => item.capability_id === "pyscf_opt");
+    const descriptor = provider.descriptors().find((item) => item.capability_id === "pyscf.opt");
     const result_value = await provider.invoke({ descriptor, input: { xyz: WATER_XYZ } });
     const calculation = result_value.output.calculation;
     assert.equal(calculation.artifact_roles.optimized_geometry, calculation.optimized_geometry_artifact_id);

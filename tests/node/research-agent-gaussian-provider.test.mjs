@@ -79,7 +79,7 @@ test("Gaussian gateway reads a Gaussian input ArtifactStore artifact", async () 
       environment_broker: { bind: () => ({ environment_id: "mock", command: [executable] }) },
       providers: [create_gaussian_provider()],
     });
-    const result = await gateway.invoke({ workspace_mode: "research", capability_id: "gaussian_calculate", input: { input_artifact_id: input.artifact_id } });
+    const result = await gateway.invoke({ workspace_mode: "research", capability_id: "gaussian.sp", input: { input_artifact_id: input.artifact_id } });
     assert.equal(result.status, "ok");
     assert.equal(result.output.calculation.backend, "gaussian");
   } finally {

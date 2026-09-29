@@ -63,7 +63,7 @@ test("Gaussian provider completes a real water single-point through App Server o
     const result = await composition.app_server.run_compute({
       workspace_root,
       node_id: "node_1",
-      capability_id: "gaussian_calculate",
+      capability_id: "gaussian.sp",
       input: {
         input_text: "%chk=water\n#p hf/3-21g sp\n\nwater smoke\n\n0 1\nO 0.000000 0.000000 0.000000\nH 0.758602 0.000000 0.504284\nH -0.758602 0.000000 0.504284\n\n",
         task_type: "sp",

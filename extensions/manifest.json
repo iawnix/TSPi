@@ -17,10 +17,22 @@
       "descriptor": "tspi-chemical/providers/chemical.analysis.json"
     },
     {
+      "id": "crest",
+      "version": "1",
+      "kind": "compute",
+      "descriptor": "tspi-chemical/providers/crest.json"
+    },
+    {
       "id": "gaussian",
       "version": "1",
       "kind": "compute",
       "descriptor": "tspi-chemical/providers/gaussian.json"
+    },
+    {
+      "id": "pyscf",
+      "version": "1",
+      "kind": "compute",
+      "descriptor": "tspi-chemical/providers/pyscf.json"
     },
     {
       "id": "xtb",

@@ -42,7 +42,7 @@ test("standalone capability bootstrap loads manifest, trusted adapter, and Envir
           kind: "compute",
           version: "1",
           descriptor_digest,
-          capability_ids: ["xtb_calculate"],
+          capability_ids: ["xtb.sp", "xtb.opt", "xtb.freq", "xtb.opt_freq"],
           required_tool_ids: ["xtb"],
         }],
       }),
@@ -54,8 +54,8 @@ test("standalone capability bootstrap loads manifest, trusted adapter, and Envir
       artifact_root: join(root, "artifacts"),
     });
     assert.equal(host.capability_assembly.catalog()[0].adapter_id, "xtb_local");
-    assert.ok(host.tool_gateway.describe({ workspace_mode: "research" }).some((item) => item.capability_id === "xtb_calculate"));
-    const readiness = await host.capability_assembly.readiness({ capability_id: "xtb_calculate" });
+    assert.ok(host.tool_gateway.describe({ workspace_mode: "research" }).some((item) => item.capability_id === "xtb.sp"));
+    const readiness = await host.capability_assembly.readiness({ capability_id: "xtb.sp" });
     assert.equal(readiness[0].readiness.state, "ready");
     assert.equal(readiness[0].environment_id, "test");
   } finally {
@@ -88,18 +88,21 @@ test("compute.toml fallback assembles light xTB and Gaussian capabilities", asyn
     assert.equal(host.source, "compute.toml");
     assert.deepEqual(
       host.tool_gateway.describe({ workspace_mode: "light" }).filter((item) => item.kind === "compute").map((item) => item.capability_id),
-      ["xtb_calculate", "gaussian_calculate"],
+      [
+        "xtb.sp", "xtb.opt", "xtb.freq", "xtb.opt_freq",
+        "gaussian.sp", "gaussian.opt", "gaussian.freq", "gaussian.opt_freq", "gaussian.ts", "gaussian.irc", "gaussian.scan",
+      ],
     );
-    assert.deepEqual((await host.capability_assembly.readiness({ capability_id: "xtb_calculate" }))[0].readiness.state, "ready");
+    assert.deepEqual((await host.capability_assembly.readiness({ capability_id: "xtb.sp" }))[0].readiness.state, "ready");
     const binding = await host.environment_broker.resolve({
       provider_id: "xtb_local",
-      capability_id: "xtb_calculate",
+      capability_id: "xtb.sp",
       environment_kind: "compute",
     });
     assert.equal(binding.env.RESEARCH_AGENT_TEST_ACTIVATED, "1");
     const selected = await host.environment_broker.resolve({
       provider_id: "xtb_local",
-      capability_id: "xtb_calculate",
+      capability_id: "xtb.sp",
       environment_kind: "compute",
       environment_id: "local",
     });
@@ -138,7 +141,7 @@ test("compute.toml keeps local and remote environments separate from capability 
     });
     const remote = await host.environment_broker.resolve({
       provider_id: "xtb_local",
-      capability_id: "xtb_calculate",
+      capability_id: "xtb.sp",
       environment_kind: "compute",
       environment_id: "remote",
       execution_kind: "remote",
@@ -147,7 +150,7 @@ test("compute.toml keeps local and remote environments separate from capability 
     assert.equal(remote.execution_kind, "remote");
     assert.deepEqual(host.tool_gateway.describe({ workspace_mode: "light" })
       .filter((item) => item.kind === "compute")
-      .map((item) => item.capability_id), ["xtb_calculate"]);
+      .map((item) => item.capability_id), ["xtb.sp", "xtb.opt", "xtb.freq", "xtb.opt_freq"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -177,8 +180,8 @@ test("remote-only compute configuration still registers a transport-neutral capa
       artifact_root: join(root, "artifacts"),
     });
     assert.ok(host.tool_gateway.describe({ workspace_mode: "research" })
-      .some((item) => item.capability_id === "xtb_calculate"));
-    const readiness = await host.capability_assembly.readiness({ capability_id: "xtb_calculate" });
+      .some((item) => item.capability_id === "xtb.sp"));
+    const readiness = await host.capability_assembly.readiness({ capability_id: "xtb.sp" });
     assert.equal(readiness[0].environment_id, "agent.1w");
     assert.equal(readiness[0].readiness.state, "configured");
   } finally {
@@ -214,7 +217,7 @@ test("remote environment readiness accepts the SSH host alias and preserves the 
       artifact_root: join(root, "artifacts"),
     });
     const readiness = await host.capability_assembly.readiness({
-      capability_id: "xtb_calculate",
+      capability_id: "xtb.sp",
       environment_id: "agent.1w",
       execution_kind: "remote",
     });
@@ -223,7 +226,7 @@ test("remote environment readiness accepts the SSH host alias and preserves the 
     assert.equal(readiness[0].readiness.state, "configured");
     assert.equal(readiness[0].readiness.checks.some((check) => check.name === "remote_transport" && check.state === "deferred"), true);
     const unavailable = await host.capability_assembly.readiness({
-      capability_id: "xtb_calculate",
+      capability_id: "xtb.sp",
       environment_id: "missing-environment",
       execution_kind: "remote",
     });
@@ -231,7 +234,7 @@ test("remote environment readiness accepts the SSH host alias and preserves the 
     await assert.rejects(
       host.tool_gateway.invoke({
         workspace_mode: "research",
-        capability_id: "xtb_calculate",
+        capability_id: "xtb.sp",
         environment: { kind: "remote", environment: "agent.1w" },
         input: { xyz: "1\nH\nH 0 0 0\n" },
       }),

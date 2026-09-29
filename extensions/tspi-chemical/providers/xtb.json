@@ -10,9 +10,7 @@
         "xtb.sp",
         "xtb.opt",
         "xtb.freq",
-        "xtb.opt_freq",
-        "xtb.scan",
-        "xtb.md"
+        "xtb.opt_freq"
       ]
     }
   ],

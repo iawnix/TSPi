@@ -26,6 +26,14 @@ def run(config: dict[str, Any]) -> int:
     status_path = Path(str(config["status_path"]))
     command = [str(item) for item in config["command"]]
     environment = {str(key): str(value) for key, value in config.get("environment", {}).items()}
+    scratch_dir = config.get("scratch_dir")
+    if scratch_dir is not None:
+        scratch_dir = str(scratch_dir)
+        # The worker owns the per-attempt scratch binding.  Do this after
+        # merging caller environment so an installation-wide GAUSS_SCRDIR or
+        # TMPDIR cannot redirect generated files outside the run.
+        environment["GAUSS_SCRDIR"] = scratch_dir
+        environment["TMPDIR"] = scratch_dir
     activation_script = config.get("activation_script")
     if activation_script is not None:
         activation_script = str(activation_script)
@@ -70,6 +78,11 @@ def run(config: dict[str, Any]) -> int:
             stdin = source.open("rb")
         stdout = Path(str(config["stdout_path"])).open("ab")
         stderr = Path(str(config["stderr_path"])).open("ab")
+        if scratch_dir:
+            scratch = Path(scratch_dir)
+            if scratch.is_symlink() or (scratch.exists() and not scratch.is_dir()):
+                raise OSError("local worker scratch directory must be a physical directory")
+            scratch.mkdir(parents=True, exist_ok=True, mode=0o700)
         child_command = command
         if activation_script:
             activation = Path(activation_script)
@@ -83,9 +96,21 @@ def run(config: dict[str, Any]) -> int:
             child_command = [
                 "/bin/bash",
                 "-c",
-                'set -e; source "$1"; shift; exec "$@"',
+                # Activation profiles are installation-owned shell snippets,
+                # and some vendor profiles change the shell's working
+                # directory as a side effect.  The calculation contract
+                # requires every relative program artifact (for example
+                # Gaussian's ``Gau-*.inp`` scratch files) to stay inside the
+                # attempt execution directory, so restore the worker's run
+                # directory after sourcing the profile before exec'ing the
+                # scientific process.
+                'set -e; source "$1"; shift; cd -- "$1"; shift; scratch="$1"; shift; '
+                'if [ -n "$scratch" ]; then export GAUSS_SCRDIR="$scratch" TMPDIR="$scratch"; fi; '
+                'exec "$@"',
                 "tspi-local-activation",
                 activation_script,
+                str(config["run_dir"]),
+                scratch_dir or "",
                 *command,
             ]
         child = subprocess.Popen(

@@ -13,19 +13,19 @@ test("compute_readiness preserves Host environment selectors", async () => {
     capabilityAssembly: {
       readiness: async (request) => {
         received = request;
-        return [{ capability_id: "xtb_calculate", environment_id: request.environment_id, readiness: { state: "ready", checks: [] } }];
+        return [{ capability_id: "xtb.sp", environment_id: request.environment_id, readiness: { state: "ready", checks: [] } }];
       },
     },
   });
   const result = await tool.execute("call-readiness", {
     manifest_provider_id: "chemical",
-    capability_id: "xtb_calculate",
+    capability_id: "xtb.sp",
     environment_id: "agent.1w",
     execution_kind: "remote",
   }, undefined, { cwd: "/tmp" });
   assert.deepEqual(received, {
     manifest_provider_id: "chemical",
-    capability_id: "xtb_calculate",
+    capability_id: "xtb.sp",
     environment_id: "agent.1w",
     execution_kind: "remote",
   });
@@ -34,15 +34,15 @@ test("compute_readiness preserves Host environment selectors", async () => {
 
 test("compute_readiness contract accepts local and remote selectors", () => {
   const contract = createPublicToolContracts(Type).computeReadiness.parameters;
-  assert.equal(Check(contract, { capability_id: "xtb_calculate", execution_kind: "local" }), true);
-  assert.equal(Check(contract, { capability_id: "xtb_calculate", environment_id: "agent.1w", execution_kind: "remote" }), true);
-  assert.equal(Check(contract, { capability_id: "xtb_calculate", execution_kind: "batch" }), false);
+  assert.equal(Check(contract, { capability_id: "xtb.sp", execution_kind: "local" }), true);
+  assert.equal(Check(contract, { capability_id: "xtb.sp", environment_id: "agent.1w", execution_kind: "remote" }), true);
+  assert.equal(Check(contract, { capability_id: "xtb.sp", execution_kind: "batch" }), false);
 });
 
 test("compute_readiness does not claim selected environment readiness without Host assembly", async () => {
-  const tool = createComputeReadinessTool({ toolGateway: { describe: () => [{ kind: "compute", capability_id: "xtb_calculate", capability_version: "1" }] } });
+  const tool = createComputeReadinessTool({ toolGateway: { describe: () => [{ kind: "compute", capability_id: "xtb.sp", capability_version: "1" }] } });
   const result = await tool.execute("call-readiness-fallback", {
-    capability_id: "xtb_calculate",
+    capability_id: "xtb.sp",
     environment_id: "cluster_1w",
     execution_kind: "remote",
   }, undefined, { cwd: "/tmp" });
@@ -57,7 +57,7 @@ test("capability_id compute route rejects remote before provider execution", asy
     const tool = createComputeTool({ computeOrchestrator: { run: async () => { invoked = true; return {}; } } });
     await assert.rejects(
       tool.execute("call-remote", {
-        capability_id: "xtb_calculate",
+        capability_id: "xtb.sp",
         environment: { kind: "remote", environment: "cluster_1w" },
       }, undefined, { cwd: "/tmp", principal: "root_agent" }),
       (error) => error?.code === "remote_execution_requires_lifecycle_operation",

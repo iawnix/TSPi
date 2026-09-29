@@ -148,7 +148,7 @@ test("light_compute binds one declared input Artifact into provider input", asyn
       toolGateway: {
         describe() {
           return [{
-            capability_id: "pyscf_opt",
+            capability_id: "pyscf.opt",
             capability_version: "1",
             input_schema: { type: "object", properties: { input_artifact_id: { type: "string" } } },
             supported_workspace_modes: ["light"],
@@ -165,7 +165,7 @@ test("light_compute binds one declared input Artifact into provider input", asyn
     const artifactId = `art_${"a".repeat(64)}`;
     const result = JSON.parse((await invoke(tool, {
       operation: "run",
-      capabilityId: "pyscf_opt",
+      capabilityId: "pyscf.opt",
       runId: "run_artifact_binding",
       inputArtifactIds: [artifactId],
       input: { task_type: "opt", xc: "CF22D" },
@@ -185,14 +185,14 @@ test("light_compute exposes only capabilities advertised for light mode", async 
       toolGateway: {
         describe() {
           return [
-            { capability_id: "xtb_calculate", capability_version: "1", supported_workspace_modes: ["light", "research"] },
+            { capability_id: "xtb.sp", capability_version: "1", supported_workspace_modes: ["light", "research"] },
             { capability_id: "research_only", capability_version: "1", supported_workspace_modes: ["research"] },
           ].filter((item) => item.supported_workspace_modes.includes("light"));
         },
       },
     });
     const result = JSON.parse((await invoke(tool, { operation: "catalog" }, root)).content[0].text);
-    assert.deepEqual(result.output.capabilities.map((item) => item.capability_id), ["xtb_calculate"]);
+    assert.deepEqual(result.output.capabilities.map((item) => item.capability_id), ["xtb.sp"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -204,7 +204,7 @@ test("light_compute catalog is admitted from an ordinary light turn", async () =
     const tool = wrapToolForHarness(createLightComputeTool({
       toolGateway: {
         describe() {
-          return [{ capability_id: "xtb_calculate", capability_version: "1", kind: "compute" }];
+          return [{ capability_id: "xtb.sp", capability_version: "1", kind: "compute" }];
         },
       },
     }));
@@ -230,7 +230,7 @@ test("light_compute catalog is admitted from an ordinary light turn", async () =
     assert.equal(response.details.envelope.ok, true);
     const result = JSON.parse(response.content[0].text);
     assert.equal(result.operation, "catalog");
-    assert.deepEqual(result.output.capabilities.map((item) => item.capability_id), ["xtb_calculate"]);
+    assert.deepEqual(result.output.capabilities.map((item) => item.capability_id), ["xtb.sp"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

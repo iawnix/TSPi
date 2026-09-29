@@ -14,7 +14,9 @@ const POLICIES = Object.freeze({
     execution_profile: "bounded",
     monitor: false,
     initial_state: "ready",
-    allowed_tool_classes: Object.freeze(["basic", "artifact", "compute"]),
+    // Light workspaces have no ResearchMap writes, but deterministic chemical
+    // input analysis is still a bounded artifact capability.
+    allowed_tool_classes: Object.freeze(["basic", "artifact", "compute", "analysis"]),
   }),
   research: Object.freeze({
     workspace_mode: "research",

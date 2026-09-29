@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createChangeTool } from "../../apps/app-server/pi-native-tools.mjs";
+import { __test as computeTest } from "../../apps/app-server/pi-native-compute.mjs";
 import { create_fs_research_kernel } from "../../packages/research-agent-kernel/fs_kernel_adapter.mjs";
 import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
 
@@ -75,6 +76,25 @@ test("native research writes reject a non-root principal in Host context", async
     if (previous === undefined) delete process.env.TSPI_NATIVE_WRITES;
     else process.env.TSPI_NATIVE_WRITES = previous;
   }
+});
+
+test("compute action failures preserve active Attempts for ambiguous or follow-up operations", () => {
+  assert.equal(computeTest.attemptStateAfterComputeError(
+    { operation: "launch" },
+    [{ tool: "ts_workspace_compute_submit", result: { action_status: "unknown" } }],
+  ), "running");
+  assert.equal(computeTest.attemptStateAfterComputeError(
+    { operation: "launch" },
+    [{ tool: "ts_workspace_compute_submit", result: { action_status: "completed" } }],
+  ), "running");
+  assert.equal(computeTest.attemptStateAfterComputeError(
+    { operation: "launch" },
+    [{ tool: "ts_workspace_compute_submit", result: { action_status: "failed" } }],
+  ), "failed");
+  assert.equal(computeTest.attemptStateAfterComputeError(
+    { operation: "finalize" },
+    [{ tool: "ts_workspace_compute_parse", result: { action_status: "failed" } }],
+  ), "running");
 });
 
 test("filesystem Research Kernel requires the Root Agent kernel-write boundary", async () => {

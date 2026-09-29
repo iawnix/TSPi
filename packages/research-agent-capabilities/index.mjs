@@ -38,14 +38,18 @@ export {
 } from "./local_xyz_provider.mjs";
 export {
   XTB_CAPABILITY_ID,
+  XTB_CAPABILITY_IDS,
   XTB_DESCRIPTOR,
+  XTB_DESCRIPTORS,
   XTB_PROVIDER_ID,
   XtbProviderError,
   create_xtb_provider,
 } from "./xtb_provider.mjs";
 export {
   GAUSSIAN_CAPABILITY_ID,
+  GAUSSIAN_CAPABILITY_IDS,
   GAUSSIAN_DESCRIPTOR,
+  GAUSSIAN_DESCRIPTORS,
   GAUSSIAN_PROVIDER_ID,
   GaussianProviderError,
   create_gaussian_provider,
@@ -58,6 +62,13 @@ export {
   PyscfProviderError,
   create_pyscf_provider,
 } from "./pyscf_provider.mjs";
+export {
+  CREST_CAPABILITY_ID,
+  CREST_DESCRIPTOR,
+  CREST_PROVIDER_ID,
+  CrestProviderError,
+  create_crest_provider,
+} from "./crest_provider.mjs";
 export {
   EnvironmentBindingError,
   create_environment_broker_adapter,
