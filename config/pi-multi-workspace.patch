@@ -126,7 +126,7 @@ index 5ec02aaa2..6628e5298 100644
  import { SessionPluginSelectionConflictError, SessionWorkerManager } from "./session-worker-manager.ts";
  
  export const ENV_SERVER_DIR = "PI_SERVER_DIR";
-@@ -373,6 +375,152 @@ interface RunningServerBackend extends RunningServer {
+@@ -373,6 +375,154 @@ interface RunningServerBackend extends RunningServer {
  	refreshSessions(): Promise<void>;
  }
  
