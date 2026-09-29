@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { create_agent_runtime_port, create_workspace_port } from "../../packages/research-agent-core/ports.mjs";
 import { assert_session_mode, require_matching_mode } from "../../packages/research-agent-core/session_mode.mjs";
+import { validate_workspace_manifest } from "../../packages/research-agent-core/workspace.mjs";
+import { require_workspace_id } from "../../packages/research-agent-core/workspace_id.mjs";
 
 export const APP_SERVER_PROTOCOL_VERSION = "research_agent_app_server_1";
 
@@ -16,20 +18,12 @@ function require_workspace_manifest(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new TypeError("workspace operation must return a manifest object");
   }
-  if (value.schema_version !== "research_agent_workspace_1") {
-    throw new Error("unsupported_workspace_manifest");
+  try {
+    validate_workspace_manifest(value, value.workspace_root);
+  } catch (error) {
+    throw new Error("invalid_workspace_manifest", { cause: error });
   }
-  if (typeof value.workspace_id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(value.workspace_id)) {
-    throw new Error("invalid_workspace_id");
-  }
-  if (typeof value.workspace_root !== "string" || value.workspace_root.length === 0) {
-    throw new Error("invalid_workspace_root");
-  }
-  if (!new Set(["initializing", "ready", "admission_pending", "failed"]).has(value.state)) {
-    throw new Error("invalid_workspace_state");
-  }
-  assert_session_mode(value.workspace_mode);
-  return value;
+  return Object.freeze(value);
 }
 
 function require_workspace_request(value, operation) {
@@ -44,9 +38,7 @@ function require_workspace_request(value, operation) {
   if (request.workspace_root !== undefined && (typeof request.workspace_root !== "string" || request.workspace_root.length === 0)) {
     throw new TypeError("workspace_root must be a non-empty string");
   }
-  if (request.workspace_id !== undefined && (typeof request.workspace_id !== "string" || request.workspace_id.length === 0)) {
-    throw new TypeError("workspace_id must be a non-empty string");
-  }
+  if (request.workspace_id !== undefined) require_workspace_id(request.workspace_id);
   if (request.workspace_mode !== undefined) assert_session_mode(request.workspace_mode);
   return Object.freeze({ ...request });
 }

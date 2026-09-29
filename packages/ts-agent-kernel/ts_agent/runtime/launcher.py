@@ -982,20 +982,26 @@ def configure_host_process_environment(installation: Installation) -> None:
 
 
 def ensure_workspace_sqlite(workspace: Path) -> dict[str, object]:
-    """Ensure the Research Kernel metadata store exists for a CLI workspace."""
+    """Reject the retired SQLite bootstrap entry point.
 
-    from ts_agent.research import ResearchKernel
+    Canonical workspaces use ``research_map/context.json`` plus the Kernel
+    liveness and memory projections. Creating ``research.db`` here would
+    reintroduce a second authority after installation, so callers must use
+    the Host workspace initializer and filesystem Kernel instead.
+    """
 
-    return ResearchKernel(workspace).ensure_sqlite()
+    raise TSPiHostError(
+        "SQLite ResearchMap storage is retired; initialize and admit the canonical "
+        "Research Agent workspace instead"
+    )
 
 
 def has_legacy_research_storage(workspace: Path) -> bool:
     """Return whether the historical ResearchKernel layout is present.
 
     New Research Agent workspaces use ``research_map/context.json`` as their
-    sole write authority.  The old JSON/SQLite files are still supported for
-    an explicit migration window, but must not be created merely by opening a
-    fresh filesystem workspace.
+    sole write authority. The retired JSON/SQLite files are rejected and must
+    not be created by opening a filesystem workspace.
     """
 
     return any(
@@ -1673,8 +1679,7 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         if manifest["workspace_mode"] == "research":
             # The filesystem Research Kernel owns the canonical state. A
             # workspace that also contains the retired JSON/SQLite store has
-            # two competing write authorities and must be migrated explicitly
-            # instead of being opened through a compatibility path.
+            # two competing write authorities and is rejected outright.
             if has_legacy_research_storage(workspace):
                 raise TSPiHostError(
                     "workspace contains retired ResearchMap storage; "

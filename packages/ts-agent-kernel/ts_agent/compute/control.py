@@ -73,7 +73,7 @@ from ts_agent.remote.errors import (
 from ts_agent.remote.models import RemoteJobConfig, RemoteResources
 from ts_agent.io import now_iso, read_json, sha256_json, write_json
 from ts_agent.workspace.operational_ids import allocate_operational_id
-from ts_agent.workspace.identity import WorkspaceIdentityError, workspace_id
+from ts_agent.workspace.identity import WorkspaceIdentityError
 from ts_agent.workspace.node_contract import node_contract_digest
 from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from ts_agent.workspace.artifacts import WorkspaceArtifactError, workspace_node_records, workspace_root as canonical_workspace_root
@@ -139,6 +139,7 @@ BACKENDS: dict[str, dict[str, tuple[set[str], Callable[[BackendTask], PreparedTa
     for backend, tasks in BACKEND_TASK_INPUT_ROLES.items()
 }
 OPERATIONS = {"prepare", "submit", "inspect", "collect", "cancel", "parse"}
+_CANONICAL_WORKSPACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
 
 
 def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
@@ -1612,7 +1613,7 @@ def _materialize_execution_target(
     try:
         platform = _remote_platform(str(request_target["environment"]))
         resources = RemoteResources.from_mapping(request_target["resources"])
-        identity = workspace_id(workspace, create=True)
+        identity = _canonical_workspace_id(workspace)
     except (EnvironmentConfigurationError, RemoteConfigurationError, WorkspaceIdentityError) as exc:
         raise ComputeContractError(f"cannot materialize remote execution target: {exc}") from exc
     _validate_platform_resources(platform, resources, backend=backend)
@@ -1926,7 +1927,7 @@ def _execution_policy_for_prepare(
     if policy["kind"] == "local":
         return policy
     try:
-        identity = workspace_id(workspace, create=create_identity)
+        identity = _canonical_workspace_id(workspace)
     except WorkspaceIdentityError as exc:
         raise ComputeContractError(f"cannot bind remote calculation to workspace identity: {exc}") from exc
     platform = _remote_platform(str(policy["environment"]))
@@ -2298,6 +2299,23 @@ def _has_collected_result(workspace: Path, intent: dict[str, Any]) -> bool:
     result = _read_object(path, "calculation result")
     _validate_bound_result(intent, result, "calculation result")
     return result.get("state") == "collected"
+
+
+def _canonical_workspace_id(workspace: Path) -> str:
+    """Read the immutable identity owned by the canonical workspace manifest."""
+
+    try:
+        manifest = read_json(workspace / "workspace_manifest.json")
+    except (OSError, ValueError) as exc:
+        raise WorkspaceIdentityError("canonical workspace manifest is missing or invalid") from exc
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema_version") != "research_agent_workspace_1"
+        or not isinstance(manifest.get("workspace_id"), str)
+        or _CANONICAL_WORKSPACE_ID.fullmatch(manifest["workspace_id"]) is None
+    ):
+        raise WorkspaceIdentityError("canonical workspace manifest has an invalid workspace_id")
+    return manifest["workspace_id"]
 
 
 def _workspace_root(root: str | Path) -> Path:
@@ -3180,58 +3198,8 @@ def _register_parsed_evidence(
     if isinstance(manifest, dict) and manifest.get("workspace_mode") == "research":
         _register_parsed_evidence_filesystem(workspace, intent, result)
         return
-    from ts_agent.research import ArtifactManifest, AttemptRecord, ResearchKernel
-
-    manifest = result["artifact_manifest"]
-    parsed_at = (
-        result.get("provenance", {}).get("parsed_at")
-        if isinstance(result.get("provenance"), dict)
-        else None
-    ) or now_iso()
-    artifact_rows = []
-    output_ids = []
-    for item in manifest:
-        if not isinstance(item, dict):
-            raise ComputeContractError("parsed calculation artifact_manifest contains a non-object")
-        artifact_id = item.get("artifact_id")
-        location = item.get("path")
-        if not isinstance(artifact_id, str) or not isinstance(location, str):
-            raise ComputeContractError("parsed calculation artifact_manifest is missing artifact identity")
-        output_ids.append(artifact_id)
-        artifact_rows.append(ArtifactManifest.from_dict({
-            "artifact_id": artifact_id,
-            "owner_node": item.get("owner_node") or intent["node_id"],
-            "kind": "calculation_output",
-            "format": Path(location).suffix.removeprefix(".") or "binary",
-            "path": location,
-            "sha256": item.get("sha256"),
-            "size_bytes": item.get("size_bytes"),
-            "source_intent_id": item.get("source_intent_id") or intent["intent_id"],
-            "role": item.get("role"),
-            "created_at": parsed_at,
-        }))
-    attempt = AttemptRecord(
-        id=str(intent["intent_id"]),
-        node_id=str(intent["node_id"]),
-        capability=str(intent["capability"]),
-        capability_version=str(intent["capability_version"]),
-        state="parsed",
-        environment=(result.get("provenance") or {}).get("environment") if isinstance(result.get("provenance"), dict) else None,
-        output_artifact_ids=output_ids,
-        created_at=parsed_at,
-        updated_at=parsed_at,
-        metadata={
-            "program_status": result.get("program_status"),
-            "error_class": result.get("error_class"),
-            "result_digest": sha256_json(result),
-        },
-    )
-    digest = sha256_json({"intent_id": intent["intent_id"], "result": result})
-    ResearchKernel(workspace).register_evidence(
-        attempts=[attempt],
-        artifacts=artifact_rows,
-        event_id=f"compute:{intent['intent_id']}:{digest.removeprefix('sha256:')[:32]}",
-        request_digest=digest,
+    raise ComputeContractError(
+        "parsed evidence requires a canonical admitted research workspace"
     )
 
 

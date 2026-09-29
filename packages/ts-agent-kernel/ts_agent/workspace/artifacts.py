@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from ts_agent.io import read_json
+from ts_agent.runtime.workspace_mode import RETIRED_WORKSPACE_FILES, WorkspaceModeError, validate_workspace_manifest
 from .errors import ContractError
 from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .refs import CALCULATION_ID, NODE_ID
@@ -24,6 +25,11 @@ from .refs import CALCULATION_ID, NODE_ID
 ARTIFACT_ID_SCHEMA_VERSION = "ts-artifact-id/3"
 ELIGIBLE_ARTIFACT_SUFFIXES = frozenset(
     {".com", ".gif", ".gjf", ".inp", ".json", ".log", ".out", ".png", ".txt", ".xyz"}
+)
+RESEARCH_CONTEXT_COLLECTIONS = (
+    "phases", "claims", "nodes", "findings", "gates", "claim_relations",
+    "attempts", "artifacts", "evidence_links", "continuations",
+    "strategy_plans", "strategy_reviews", "attempt_interpretations",
 )
 
 
@@ -195,13 +201,20 @@ def workspace_root(root: str | Path) -> Path:
         raise WorkspaceArtifactError(f"not an initialized TS workspace: {workspace}")
     try:
         identity = read_json(workspace_doc)
-    except (OSError, ValueError) as exc:
-        raise WorkspaceArtifactError(f"cannot read workspace identity: {workspace_doc}") from exc
-    if (
-        not isinstance(identity, dict)
-        or identity.get("schema_version") != "research_agent_workspace_1"
-    ):
-        raise WorkspaceArtifactError(f"unsupported workspace protocol: {workspace}")
+        identity = validate_workspace_manifest(identity, workspace)
+    except (OSError, ValueError, WorkspaceModeError) as exc:
+        # Preserve the compute-facing admission diagnostic when the manifest
+        # is present but still in a writer-side state. Other malformed fields
+        # remain a generic canonical-workspace error.
+        try:
+            raw_identity = read_json(workspace_doc)
+        except (OSError, ValueError):
+            raw_identity = None
+        if isinstance(raw_identity, dict) and raw_identity.get("state") not in {"ready", "admission_pending"}:
+            raise WorkspaceArtifactError(
+                f"workspace is not ready for compute: {raw_identity.get('state', 'unknown')}"
+            ) from exc
+        raise WorkspaceArtifactError(f"invalid canonical workspace: {workspace}") from exc
     # The manifest is the Host-owned workspace admission boundary.  Compute
     # operations must never run against a partially initialized or failed
     # workspace, even when its canonical directories happen to exist.
@@ -213,14 +226,10 @@ def workspace_root(root: str | Path) -> Path:
         raise WorkspaceArtifactError("workspace identity does not match canonical root")
     if any(
         (workspace / name).exists() or (workspace / name).is_symlink()
-        for name in ("workspace.json", "research_map.json", "research.db", "transactions.jsonl")
+        for name in RETIRED_WORKSPACE_FILES
     ):
         raise WorkspaceArtifactError("legacy ResearchMap storage is not supported by the canonical artifact workspace")
-    if (
-        isinstance(identity, dict)
-        and identity.get("schema_version") == "research_agent_workspace_1"
-        and identity.get("workspace_mode") == "light"
-    ):
+    if identity.get("workspace_mode") == "light":
         # Light workspaces have no ResearchMap/liveness contract.  The
         # execution kernel creates a `nodes/<scope>/attempts` tree only when a
         # calculation is requested; common input/output roots are enough here.
@@ -256,6 +265,19 @@ def workspace_root(root: str | Path) -> Path:
         raise WorkspaceArtifactError("invalid ResearchMap liveness")
     if context.get("workspace_id") != identity.get("workspace_id") or liveness.get("workspace_id") != identity.get("workspace_id"):
         raise WorkspaceArtifactError("workspace identity does not match canonical ResearchMap state")
+    missing = [name for name in RESEARCH_CONTEXT_COLLECTIONS if name not in context]
+    if missing:
+        raise WorkspaceArtifactError("ResearchMap context is missing collections: " + ", ".join(missing))
+    invalid = [name for name in RESEARCH_CONTEXT_COLLECTIONS if not isinstance(context[name], list)]
+    if invalid:
+        raise WorkspaceArtifactError("ResearchMap collections must be arrays: " + ", ".join(invalid))
+    focus = context.get("focus")
+    if not isinstance(focus, dict) or not isinstance(focus.get("claim_ids"), list) or not isinstance(focus.get("node_ids"), list):
+        raise WorkspaceArtifactError("ResearchMap focus is invalid")
+    if context.get("lifecycle_state") != liveness.get("state"):
+        raise WorkspaceArtifactError("ResearchMap lifecycle state is inconsistent")
+    if type(context.get("revision")) is not int or context["revision"] < 0 or liveness.get("revision") != context["revision"]:
+        raise WorkspaceArtifactError("ResearchMap revision is inconsistent")
     return workspace
 
 

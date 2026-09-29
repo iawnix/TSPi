@@ -8,8 +8,9 @@
 ## 决定
 
 `ResearchKernel` 是一个项目唯一规范 `ResearchMap` 的事务和完整性边界。
-`ResearchMap` 是有类型的聚合对象。SQLite bootstrap 后，`research.db` 是
-Research Memory 的权威后端；`research_map.json` 是同步的可移植 snapshot 和导出。
+`ResearchMap` 是有类型的聚合对象，规范序列化位于 `research_map/context.json`；
+`memory/index.json` 只是 Kernel 拥有的有界元数据/生命周期投影。已废弃的 SQLite/JSON
+文件只允许用于诊断，永远不是运行时权威。
 `nodes/<node_id>/` 下的执行记录属于执行平面，不是另一套科研状态；有界的决策和证据
 元数据与它们一起保存在同一个 Research Memory 后端。
 
@@ -44,8 +45,8 @@ RootAgent 通过 ChangeSet 明确修改。Gate 评估不会隐式修改目标对
 
 ## 责任边界
 
-Kernel 校验引用和依赖环、执行 Node 状态转换、处理乐观 revision，并原子提交活动的
-Research Memory 后端及其 JSON snapshot。它不选择方法、不运行 Backend、不提交远程任务，
+Kernel 校验引用和依赖环、执行 Node 状态转换、处理乐观 revision，并原子提交规范的
+filesystem context、liveness 和 metadata projection。它不选择方法、不运行 Backend、不提交远程任务，
 也不根据工具成功推断 Claim 状态。
 
 Skill 描述流程和能力，Backend 实现具体科学软件或执行器。Compute Environment 是
@@ -62,9 +63,9 @@ Skill 描述流程和能力，Backend 实现具体科学软件或执行器。Com
 - 有 NodeGate 时，Node 以 completed 关闭必须有最新通过评估。
 - ChangeSet 原子应用，一次只增加一个 map revision。
 - `ResearchMap` 是唯一规范科学状态模型。
-- SQLite bootstrap 后，`research.db` 是权威持久化后端；`research_map.json` 是同步
-  snapshot 和可移植导出。
-- Decision、Attempt、Artifact 和 Evidence Link 元数据只在 Research Memory 中登记一次；
+- `research_map/context.json` 是规范持久化科学状态；`memory/index.json` 是有界投影，
+  不是第二套权威。
+- Decision、Attempt、Artifact 和 Evidence Link 元数据只在 Kernel context/projection 中登记一次；
   原始日志和二进制 payload 保存在外部存储。
 
 旧 registry 集合和 view/graph 协议不再兼容。TS Web、RootAgent、报告及其他客户端都消费

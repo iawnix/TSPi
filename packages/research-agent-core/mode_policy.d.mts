@@ -5,7 +5,7 @@ export interface ModePolicy {
   readonly research_kernel: boolean;
   readonly memory_scope: "session";
   readonly research_state_scope: "none" | "workspace";
-  readonly memory_profile: "session" | "research_map";
+  readonly memory_profile: "session";
   readonly execution_profile: "bounded" | "audited";
   readonly monitor: boolean;
   readonly initial_state: "ready" | "admission_pending";

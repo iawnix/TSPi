@@ -20,6 +20,7 @@ export interface CapabilityDescriptor {
   readonly provider: Readonly<Record<string, string>>;
   readonly limits?: Readonly<Record<string, unknown>>;
   readonly effects?: readonly string[];
+  readonly execution_routes?: readonly string[];
 }
 
 export interface CapabilityProvider {
@@ -63,14 +64,11 @@ export interface ToolGatewayOptions {
 }
 
 export interface ToolInvokeRequest {
-  readonly capability_id?: string;
+  readonly capability_id: string;
   readonly capability_version?: string;
-  readonly tool_name?: string;
-  readonly version?: string;
   readonly tool_call_id?: string;
   readonly workspace_mode?: WorkspaceMode;
   readonly input?: Readonly<Record<string, unknown>>;
-  readonly params?: Readonly<Record<string, unknown>>;
   /** Host-selected execution environment; command details never cross this port. */
   readonly environment?: string | Readonly<{
     readonly environment_id?: string;

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { create_context_port, MEMORY_PORT_VERSION } from "./ports.mjs";
 import { assert_workspace_mode } from "./session_mode.mjs";
+import { require_workspace_id } from "./workspace_id.mjs";
 
 export const CONTEXT_PACK_SCHEMA = "agent_context_1";
 const DEFAULT_ENTRY_LIMIT = 64;
@@ -60,7 +61,7 @@ export function create_context_builder({
 } = {}) {
   assert_workspace_mode(workspace_mode);
   if (!memory_port || memory_port.protocol_version !== MEMORY_PORT_VERSION) throw new TypeError("memory_port must implement memory_port_1");
-  if (workspace_id !== undefined) require_non_empty_string(workspace_id, "workspace_id");
+  if (workspace_id !== undefined) require_workspace_id(workspace_id);
   if (session_id !== undefined) require_non_empty_string(session_id, "session_id");
   if (!Number.isInteger(entry_limit) || entry_limit <= 0) throw new TypeError("entry_limit must be a positive integer");
   const identity = { workspace_mode, workspace_id, session_id };

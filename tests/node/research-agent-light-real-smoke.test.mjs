@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -10,6 +10,7 @@ import { createLightComputeTool } from "../../apps/app-server/pi-native-tools.mj
 import { create_compute_orchestrator } from "../../packages/research-agent-capabilities/compute_orchestrator.mjs";
 import { create_tool_gateway } from "../../packages/research-agent-capabilities/tool_gateway.mjs";
 import { create_xtb_provider } from "../../packages/research-agent-capabilities/xtb_provider.mjs";
+import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
 
 function resolve_xtb() {
   const configured = process.env.TSPI_XTB_BIN;
@@ -25,7 +26,7 @@ const XTB_BIN = resolve_xtb();
 test("light_compute runs a real xTB calculation without ResearchMap state", { skip: !XTB_BIN }, async () => {
   const root = await mkdtemp(join(tmpdir(), "research-agent-light-xtb-real-"));
   try {
-    await writeFile(join(root, "workspace_manifest.json"), JSON.stringify({ workspace_mode: "light" }));
+    await create_workspace_initializer().initialize_workspace({ workspace_root: root, workspace_id: "light-real-smoke", workspace_mode: "light" });
     const gateway = create_tool_gateway({
       workspace_mode: "light",
       artifact_root: join(root, "artifacts", "light_compute"),

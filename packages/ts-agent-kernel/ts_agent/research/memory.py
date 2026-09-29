@@ -1,14 +1,10 @@
-"""Research Memory service boundaries.
+"""Read facade for canonical Research Agent workspace Memory.
 
-``ResearchMemoryService`` is the stable read facade used by Hosts and context
-builders.  It deliberately does not introduce another persistence layer:
-``MemoryStore`` owns access to the canonical records and the default adapter is
-just a thin wrapper around :class:`ResearchKernel`.
-
-The service returns read models as dictionaries, while ``MemoryStore`` keeps
-the canonical ``ResearchMap``/metadata API available for typed callers.  A
-context or liveness reader can be injected by a Host, which keeps this module
-independent from the prompt/context assembly implementation.
+``ResearchMemoryService`` reads the admitted filesystem workspace through the
+same boundary used by Host and Agent Runtime.  It never creates or selects a
+JSON/SQLite ResearchMap store.  ``KernelMemoryStore`` remains available only
+as an explicit typed adapter for isolated domain code; callers must opt into it
+directly when working with a non-runtime fixture.
 """
 
 from __future__ import annotations
@@ -18,6 +14,26 @@ from typing import Any, Callable, Protocol, runtime_checkable
 
 from .kernel import ResearchKernel, ResearchKernelError
 from .model import ResearchMap
+
+
+def _filesystem_map(context: dict[str, Any]) -> ResearchMap:
+    """Convert the canonical filesystem context into the typed read model.
+
+    ``context.json`` is the only Research Memory source used by the current
+    runtime.  The conversion is read-only and never writes a legacy map or
+    opens a SQLite repository.
+    """
+
+    focus = context.get("focus") if isinstance(context.get("focus"), dict) else {}
+    document = dict(context)
+    document.update({
+        "schema_version": "research-map/1",
+        "map_id": context.get("map_id") or f"map_{context.get('workspace_id', '')}",
+        "title": context.get("title") or context.get("workspace_id") or "Research workspace",
+        "focus_claim_ids": list(focus.get("claim_ids", [])),
+        "focus_node_ids": list(focus.get("node_ids", [])),
+    })
+    return ResearchMap.from_dict(document)
 
 
 @runtime_checkable
@@ -85,6 +101,93 @@ class KernelMemoryStore:
         )
 
 
+class FilesystemMemoryStore:
+    """Read-only MemoryStore adapter for an admitted Agent workspace.
+
+    The adapter deliberately has no ``ResearchKernel`` member.  Context and
+    liveness are loaded through the filesystem workspace boundary, keeping
+    Memory aligned with Host/Agent Runtime and preventing a silent fallback to
+    ``research_map.json`` or ``research.db``.
+    """
+
+    def __init__(self, root: str | Path):
+        self.root = Path(root).expanduser().absolute()
+
+    def _context(self) -> dict[str, Any]:
+        from .agent_workspace import read_context
+
+        return read_context(self.root)
+
+    def _liveness(self) -> dict[str, Any]:
+        from .agent_workspace import read_liveness
+
+        return read_liveness(self.root)
+
+    def load(self) -> ResearchMap:
+        return _filesystem_map(self._context())
+
+    def load_read_only(self) -> ResearchMap:
+        return self.load()
+
+    def decision_records(self, *, claim_id: str | None = None, limit: int = 128) -> dict[str, Any]:
+        context = self._context()
+        records = [
+            {**item, "decision_type": decision_type}
+            for key, decision_type in (
+                ("strategy_plans", "strategy_plan"),
+                ("strategy_reviews", "strategy_review"),
+                ("attempt_interpretations", "attempt_interpretation"),
+            )
+            for item in context.get(key, [])
+            if isinstance(item, dict)
+        ]
+        if claim_id is not None:
+            records = [item for item in records if item.get("claim_id") == claim_id]
+        return {
+            "schema_version": "research-decisions/1",
+            "claim_id": claim_id,
+            "records": records[:limit],
+        }
+
+    def evidence_records(
+        self,
+        *,
+        record_type: str | None = None,
+        node_id: str | None = None,
+        artifact_id: str | None = None,
+        subject_id: str | None = None,
+        limit: int = 128,
+    ) -> dict[str, Any]:
+        context = self._context()
+        groups = {"attempt": "attempts", "artifact": "artifacts", "link": "evidence_links"}
+        names = [groups[record_type]] if record_type in groups else list(groups.values())
+        records = [
+            item
+            for name in names
+            for item in context.get(name, [])
+            if isinstance(item, dict)
+        ]
+        filters = {
+            "node_id": node_id,
+            "artifact_id": artifact_id,
+            "subject_id": subject_id,
+        }
+        for field, expected in filters.items():
+            if expected is None:
+                continue
+            records = [
+                item for item in records
+                if item.get(field) == expected
+                or (isinstance(item.get("subject"), dict) and item["subject"].get(field) == expected)
+                or (isinstance(item.get(f"{field}s"), list) and expected in item[f"{field}s"])
+            ]
+        return {
+            "schema_version": "research-evidence/1",
+            "record_type": record_type,
+            "records": records[:limit],
+        }
+
+
 ContextReader = Callable[[ResearchMap, Path], dict[str, Any]]
 LivenessReader = Callable[[ResearchMap, Path], dict[str, Any]]
 
@@ -111,7 +214,10 @@ class ResearchMemoryService:
         liveness_reader: LivenessReader | None = None,
     ) -> None:
         self.root = Path(root).expanduser().absolute()
-        self.store: MemoryStore = store or KernelMemoryStore(ResearchKernel(self.root))
+        # The canonical runtime stores Memory in the admitted filesystem
+        # workspace.  A caller that still supplies ``KernelMemoryStore`` is an
+        # explicit legacy adapter and is never selected implicitly.
+        self.store: MemoryStore = store or FilesystemMemoryStore(self.root)
         if not isinstance(self.store, MemoryStore):
             raise TypeError("store does not implement MemoryStore")
         self._context_reader = context_reader
@@ -213,25 +319,26 @@ class ResearchMemoryService:
 
 
 def _default_context_reader(research_map: ResearchMap, root: Path) -> dict[str, Any]:
-    """Build with the extracted ContextBuilder during the compatibility period."""
+    """Read the Host-owned context projection from the canonical workspace."""
 
-    from .context import ContextBuilder
-    from ts_agent.api import _research_liveness, _runtime_status
+    from .agent_workspace import read_context
 
-    runtime = _runtime_status(root)
-    return ContextBuilder().build(
-        research_map,
-        liveness=_research_liveness(research_map, root, runtime=runtime),
-        runtime=runtime,
-    )
+    return read_context(root)
 
 
 def _default_liveness_reader(research_map: ResearchMap, root: Path) -> dict[str, Any]:
-    """Bridge to the current API read model until lifecycle is extracted."""
+    """Read the restart-safe lifecycle projection from the canonical workspace."""
 
-    from ts_agent.api import _research_liveness
+    from .agent_workspace import read_liveness
 
-    return _research_liveness(research_map, root)
+    return read_liveness(root)
 
 
-__all__ = ["ContextReader", "KernelMemoryStore", "LivenessReader", "MemoryStore", "ResearchMemoryService"]
+__all__ = [
+    "ContextReader",
+    "FilesystemMemoryStore",
+    "KernelMemoryStore",
+    "LivenessReader",
+    "MemoryStore",
+    "ResearchMemoryService",
+]

@@ -13,12 +13,13 @@ import { resolve } from "node:path";
 import { create_fs_research_kernel } from "./fs_kernel_adapter.mjs";
 import { create_research_kernel_port } from "./ports.mjs";
 import { create_python_kernel_bridge } from "./python_kernel_bridge.mjs";
+import { validate_workspace_files } from "../research-agent-core/workspace.mjs";
 
 export const RESEARCH_KERNEL_FACTORY_VERSION = "research_kernel_factory_1";
 export const RESEARCH_KERNEL_BACKENDS = Object.freeze(["filesystem", "python"]);
 
 const WORKSPACE_MANIFEST_SCHEMA = "research_agent_workspace_1";
-const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u;
+const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 
 function require_object(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -74,16 +75,9 @@ async function read_manifest(root) {
     throw new Error("workspace_manifest_invalid", { cause: error });
   }
   require_object(manifest, "workspace manifest");
-  if (manifest.schema_version !== WORKSPACE_MANIFEST_SCHEMA) {
-    throw new Error(`unsupported_workspace_manifest: ${String(manifest.schema_version)}`);
-  }
-  const manifest_root = require_workspace_root(manifest.workspace_root);
-  if (manifest_root !== root) throw new Error("workspace_root_mismatch");
+  await validate_workspace_files(manifest, root);
   const workspace_id = require_workspace_id(manifest.workspace_id, "workspace_id");
   if (manifest.workspace_mode !== "research") throw new Error("research_workspace_required");
-  if (!["ready", "admission_pending"].includes(manifest.state)) {
-    throw new Error(`invalid_workspace_state: ${String(manifest.state)}`);
-  }
   return manifest;
 }
 

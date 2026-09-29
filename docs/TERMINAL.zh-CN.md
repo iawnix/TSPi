@@ -82,9 +82,8 @@ workspace 内写入 event/delivery 回执；wake 与用户通知分别确认，�
 只是“已接受的输入”，不代表 agent 已完成；Root Agent 仍须重新读取状态并检查计算。
 Monitor 不会自动 finalize，也不会修改 ResearchMap。
 
-`workspace.json` 保存类似 `ws_<hex>` 的稳定科学身份，而 Host RPC 使用
-`reaction-a` 这样的直接目录名。Monitor 会先验证 canonical identity，再做路由转换，
-避免跨项目投递。
+`workspace_manifest.json` 中的规范 `workspace_id` 同时绑定科学状态与 Host
+路由；不存在独立的科学身份或直接目录 alias 映射。
 
 ## 会话存储
 

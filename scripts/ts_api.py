@@ -25,8 +25,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--name")
     parser.add_argument("--query")
     parser.add_argument("--claim-id")
+    parser.add_argument("--record-type")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--node-id")
+    parser.add_argument("--artifact-id")
+    parser.add_argument("--subject-id")
     parser.add_argument("--scope")
     parser.add_argument("--target-id")
     parser.add_argument("--operation")
@@ -41,8 +44,11 @@ def main(argv: list[str] | None = None) -> int:
                 "name": args.name,
                 "query": args.query,
                 "claim_id": args.claim_id,
+                "record_type": args.record_type,
                 "limit": args.limit,
                 "node_id": args.node_id,
+                "artifact_id": args.artifact_id,
+                "subject_id": args.subject_id,
                 "scope": args.scope,
                 "target_id": args.target_id,
                 "operation": args.operation,

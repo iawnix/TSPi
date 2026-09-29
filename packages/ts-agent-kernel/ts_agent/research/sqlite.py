@@ -38,8 +38,10 @@ class ResearchSqliteRepository:
     """Persist Kernel metadata without storing raw scientific files in SQLite."""
 
     def __init__(self, root: str | Path, *, database: str | Path | None = None):
-        self.root = Path(root).expanduser().absolute()
-        self.path = Path(database).expanduser().absolute() if database is not None else self.root / SQLITE_FILE
+        raise ResearchSqliteError(
+            "the retired SQLite ResearchMap store is unavailable; "
+            "use the canonical filesystem Research Agent workspace"
+        )
 
     def initialize(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)

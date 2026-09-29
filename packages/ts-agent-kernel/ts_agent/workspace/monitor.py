@@ -19,6 +19,7 @@ from typing import Any
 
 from ts_agent.io import now_iso, read_json, sha256_json, write_json
 from ts_agent.path_safety import lexical_path, path_has_symlink
+from ts_agent.runtime.workspace_mode import WorkspaceModeError, validate_workspace_manifest
 
 
 REGISTRATION_SCHEMA = "ts-compute-monitor/1"
@@ -560,6 +561,10 @@ def _workspace_root(root: str | Path) -> Path:
         raise ValueError("monitor operations require an initialized TS workspace")
     if manifest.is_file() and manifest.is_symlink():
         raise ValueError("monitor workspace manifest must be a regular file")
+    try:
+        validate_workspace_manifest(read_json(manifest), workspace, require_ready=True)
+    except (OSError, ValueError, WorkspaceModeError) as exc:
+        raise ValueError("monitor workspace manifest/layout is invalid") from exc
     return workspace
 
 
@@ -569,7 +574,7 @@ def _workspace_id(workspace: Path) -> str:
     except Exception as exc:
         raise ValueError(f"workspace identity is unreadable: {exc}") from exc
     workspace_id = value.get("workspace_id") if isinstance(value, dict) else None
-    if value.get("schema_version") != "research_agent_workspace_1" or value.get("workspace_mode") != "research":
+    if value.get("workspace_mode") != "research":
         raise ValueError("monitor workspace manifest is invalid")
     if not isinstance(workspace_id, str) or not workspace_id:
         raise ValueError("workspace identity is invalid")

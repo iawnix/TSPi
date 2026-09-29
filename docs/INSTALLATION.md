@@ -338,9 +338,10 @@ separate leases, retries, and receipts. A wake means that Pi accepted a prompt;
 it does not mean that the agent turn completed. The Root Agent must reread
 `research_read` and inspect the calculation before changing ResearchMap.
 
-The stable `ws_<hex>` identity in `workspace.json` is verified before Monitor
-maps it to the Host route name (the direct-child directory). This prevents a
-foreign event from being delivered to another project.
+The canonical `workspace_manifest.json` identity is verified before Monitor
+maps events to the Host route. Its `workspace_id` is the same value used by
+Kernel, local runs, and remote calculation intents; there is no separate
+`workspace.json` identity or alias layer.
 
 ## Session history
 
@@ -352,10 +353,12 @@ second session format.
 ## Workspace Bootstrap
 
 The first `./ResearchAgent --workspace <name>` invocation creates a 0700 workspace and
-canonical scientific files when the named project does not exist. The Host's
-WorkspaceDirectory exposes the same operation to TS Phone. The Host itself does
-not create unnamed projects, and bootstrap validates existing JSON and refuses
-unsupported state rather than rewriting it.
+the canonical `workspace_manifest.json`, `research_map/context.json`,
+`lifecycle/liveness.json`, and `memory/index.json` documents when the named
+project does not exist. The Host's WorkspaceDirectory exposes the same
+operation to TS Phone. The Host itself does not create unnamed projects, and
+bootstrap validates the canonical protocol and refuses legacy or partial state
+rather than rewriting it.
 
 ## Run The Research Explorer
 

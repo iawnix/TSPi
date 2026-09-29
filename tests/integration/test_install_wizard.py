@@ -1236,6 +1236,53 @@ def test_compute_toml_is_validated_and_written_private(tmp_path: Path) -> None:
     assert stat.S_IMODE(destination.stat().st_mode) == 0o600
 
 
+def test_name_resolver_toml_is_validated_and_written_private(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    args = wizard.parse_args([
+        "--install-root", str(root), "--without-web", "--service-scope", "none", "--non-interactive",
+    ])
+    source = tmp_path / "name-resolver.toml"
+    source.write_text(
+        """default_resolver = \"pubchem\"\n\n[backends.pubchem]\nenabled = true\n""",
+        encoding="utf-8",
+    )
+    args.name_resolver_config = str(source)
+    wizard.validate_options(args)
+    configs = wizard.configure_backend_configs(args)
+
+    destination = root / ".pi/name-resolver.toml"
+    assert configs["name_resolver"]["status"] == "configured"
+    assert configs["name_resolver"]["enabled_backends"] == "pubchem"
+    assert configs["name_resolver"]["automatic_lookup"] == "ready"
+    assert destination.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+
+
+def test_name_resolver_config_is_explicitly_not_configured_by_default(tmp_path: Path) -> None:
+    args = wizard.parse_args([
+        "--install-root", str(tmp_path / "install"), "--without-web", "--service-scope", "none", "--non-interactive",
+    ])
+    wizard.validate_options(args)
+    configs = wizard.configure_backend_configs(args)
+
+    assert configs["name_resolver"]["status"] == "not_configured"
+    assert configs["name_resolver"]["path"].endswith("/.pi/name-resolver.toml")
+
+
+def test_invalid_preserved_name_resolver_config_fails_install_configuration(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    destination = root / ".pi/name-resolver.toml"
+    destination.parent.mkdir(parents=True)
+    destination.write_text("default_resolver = \"invalid\"\n", encoding="utf-8")
+    args = wizard.parse_args([
+        "--install-root", str(root), "--without-web", "--service-scope", "none", "--non-interactive",
+    ])
+    wizard.validate_options(args)
+
+    with pytest.raises(ValueError, match="invalid existing name-resolver configuration"):
+        wizard.configure_backend_configs(args)
+
+
 def test_install_uninstaller_copies_recovery_files_and_marks_ownership(tmp_path: Path) -> None:
     root = tmp_path / "install"
     uninstaller = install_uninstaller(root, ROOT)

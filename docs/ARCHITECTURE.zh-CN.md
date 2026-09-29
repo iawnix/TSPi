@@ -85,8 +85,9 @@ ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
        +----------- ClaimGate / NodeGate
 ```
 
-`ResearchKernel` 负责加载、校验、事务提交和持久化 `ResearchMap`。`ResearchMap.to_dict()`
-是给 TS Web 和 Root Agent 的规范序列化，不是第二个科学状态。Root Agent 选择问题、
+文件系统 Research Kernel 负责加载、校验、事务提交和持久化规范 workspace projection。
+map-shaped context projection 是给 TS Web 和 Root Agent 的规范序列化，不是第二个科学状态。
+Root Agent 选择问题、
 方法、分支和停止条件；Skill 描述研究流程，Capability 描述可调用操作，Backend 实现
 科学软件或执行器。Compute Environment 是绑定 Backend 的命名 `local` 或 `remote`
 执行环境；Platform 只提供远端环境的传输和调度细节。工具成功不等于科学结论成立。
@@ -237,7 +238,7 @@ TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、
 `ts-app-server-tspi.service` 调用 TSPi Host 入口，在 `.pi/app-server-host/` 创建安装级
 状态，包括稳定 server ID、Host socket、format-4 session repository、请求回执、
 scheduler lease 和 Monitor 健康文件。`tspi.workspace-directory` 只暴露包含受支持
-`workspace.json` 的直接子工作区。
+`workspace_manifest.json` 及规范研究状态三元组的 workspace。
 
 `ResearchAgent --workspace <name>` 先 bootstrap 工作区，再向 Host 请求 `session/list` 和
 `session/create`/`session/resume`，最后把 Pi 官方 `ExperimentalClientTui` 直接连接到
@@ -293,7 +294,7 @@ cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
 
 ## 其他契约
 
-ChangeSet 的操作定义位于 `ResearchKernel` 使用的 ResearchMap operation catalog；
+ChangeSet 的操作定义位于文件系统 Research Kernel 使用的 ResearchMap operation catalog；
 `compute_run` 对 local/remote 使用相同的四个公开操作：
 
 ```text

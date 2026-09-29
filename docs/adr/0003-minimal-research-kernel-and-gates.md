@@ -8,11 +8,12 @@
 ## Decision
 
 `ResearchKernel` is the transaction and integrity boundary for one canonical
-`ResearchMap`. The map is a typed aggregate. `research.db` is the authoritative
-Research Memory backend after bootstrap; `research_map.json` is the synchronized
-portable snapshot and export. Execution records under `nodes/<node_id>/` remain
+`ResearchMap`. The map is a typed aggregate serialized in
+`research_map/context.json`; `memory/index.json` is only a Kernel-owned bounded
+metadata/lifecycle projection. Retired SQLite/JSON files are diagnostic inputs,
+never a runtime authority. Execution records under `nodes/<node_id>/` remain
 outside the scientific aggregate, while bounded decision and evidence metadata
-is stored in the same Research Memory backend.
+is represented by the ResearchMap collections and projection.
 
 The map owns these concepts:
 
@@ -52,8 +53,8 @@ ChangeSet. Gate evaluation never silently mutates either target.
 ## Responsibilities
 
 The Kernel validates references and dependency cycles, enforces Node state
-transitions, applies optimistic revisions, and atomically commits the active
-Research Memory backend plus its JSON snapshot. It does not select a method,
+transitions, applies optimistic revisions, and atomically commits the canonical
+filesystem context, liveness, and metadata projection. It does not select a method,
 run a Backend, submit a remote job, or infer a Claim status from tool success.
 
 Skills describe procedures and capabilities. Backends implement scientific
@@ -73,10 +74,10 @@ scientific object types in the map.
 - Completing a Node with a NodeGate requires a latest passing evaluation.
 - ChangeSets are applied atomically and increment the map revision once.
 - `ResearchMap` is the only canonical scientific state model.
-- After SQLite bootstrap, `research.db` is the authoritative durable backend;
-  `research_map.json` is a synchronized snapshot and portable export.
+- `research_map/context.json` is the canonical durable scientific state;
+  `memory/index.json` is a bounded projection and never a second authority.
 - Decision, Attempt, Artifact, and Evidence Link metadata is indexed once in
-  Research Memory; raw logs and binary payloads stay in their external stores.
+  the Kernel context/projection; raw logs and binary payloads stay in external stores.
 
 ## Consequences
 

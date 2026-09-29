@@ -147,7 +147,7 @@ profiles:
 | mode | memory profile | execution profile | scientific lifecycle |
 | --- | --- | --- | --- |
 | `light` | `session` | `bounded` | no ResearchMap, Claim, Node, Attempt, Evidence, or Monitor |
-| `research` | `research_map` | `audited` | Kernel ResearchMap plus Attempt, Evidence, and Monitor |
+| `research` | `session` | `audited` | Kernel ResearchMap plus Attempt, Evidence, and Monitor |
 
 The `light` profile creates only common inputs, artifacts, runs, logs, scratch,
 and session directories. It uses the ordinary Agent Turn lifecycle and keeps a

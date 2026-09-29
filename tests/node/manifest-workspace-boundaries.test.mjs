@@ -1,23 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { monitorHostWorkspaceId } from "../../apps/app-server/pi-monitor-worker.mjs";
+import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
 
 test("monitor identity uses the research workspace manifest", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-manifest-boundary-"));
   try {
     const workspace = join(root, "project-a");
-    await mkdir(workspace);
-    await writeFile(join(workspace, "workspace_manifest.json"), JSON.stringify({
-      schema_version: "research_agent_workspace_1",
+    await create_workspace_initializer().initialize_workspace({
+      workspace_root: workspace,
       workspace_id: "workspace_research",
       workspace_mode: "research",
-      state: "ready",
-    }));
-    assert.equal(await monitorHostWorkspaceId(workspace, { workspace_id: "workspace_research" }), "project-a");
+    });
+    await create_workspace_initializer().admit_workspace(workspace);
+    assert.equal(await monitorHostWorkspaceId(workspace, { workspace_id: "workspace_research" }), "workspace_research");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

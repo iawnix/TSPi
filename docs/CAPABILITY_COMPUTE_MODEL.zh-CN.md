@@ -9,13 +9,13 @@ Capability 是执行描述，不是研究状态。它声明有界输入、输出
 
 | 内容 | 所有者 |
 | --- | --- |
-| phase、claim、node、finding、gate | `ResearchMap` 与 `ResearchKernel` |
+| phase、claim、node、finding、gate | 文件系统 Research Kernel context |
 | 流程和能力指导 | Skill |
 | 软件调用与解析 | Backend |
 | 命名本地/远端执行环境及 Backend 绑定 | Compute Environment |
 | 远端传输和调度细节 | Platform |
 | attempt、artifact、scheduler 回执 | workspace 操作记录 |
-| 浏览器展示 | 直接读取 `ResearchMap.to_dict()` 的 TS Web |
+| 浏览器展示 | TS Web 直接读取规范 context projection |
 
 `FactFinding` 和 `IssueFinding` 是 Node 写入 map 的科学输出。解析结果可以先作为
 操作 artifact 保存，Root Agent 核验后再提交 `create_finding`。Gate 评估也是 map 记录，

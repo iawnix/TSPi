@@ -8,7 +8,7 @@
     "protocol": {"const": "agent_turn_request"},
     "version": {"const": 1},
     "request_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
-    "workspace_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
+    "workspace_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"},
     "session_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
     "input": {"type": "string", "minLength": 1, "maxLength": 100000},
     "context": {"type": "object", "maxProperties": 64}

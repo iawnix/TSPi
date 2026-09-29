@@ -27,6 +27,7 @@ from ts_agent.compute.cli import main as compute_cli_main
 from ts_agent.remote.errors import RemoteError
 from ts_agent.structures import StructureSeedError, generate_smiles_seed
 from ts_agent.workspace.artifacts import workspace_root as canonical_workspace_root, WorkspaceArtifactError
+from ts_agent.runtime.workspace_mode import initialize_workspace
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
@@ -48,18 +49,11 @@ def _require_rdkit() -> None:
 
 def test_workspace_root_rejects_non_ready_light_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "light"
-    (workspace / "inputs").mkdir(parents=True)
-    (workspace / "runs").mkdir()
-    (workspace / "workspace_manifest.json").write_text(
-        json.dumps({
-            "schema_version": "research_agent_workspace_1",
-            "workspace_id": "workspace_light",
-            "workspace_mode": "light",
-            "state": "initializing",
-            "workspace_root": str(workspace),
-        }),
-        encoding="utf-8",
-    )
+    initialize_workspace(workspace, "workspace_light", "light")
+    manifest_path = workspace / "workspace_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["state"] = "initializing"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(WorkspaceArtifactError, match="workspace is not ready for compute"):
         canonical_workspace_root(workspace)
 

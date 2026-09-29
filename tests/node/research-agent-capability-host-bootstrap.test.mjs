@@ -91,6 +91,8 @@ test("compute.toml fallback assembles light xTB and Gaussian capabilities", asyn
       [
         "xtb.sp", "xtb.opt", "xtb.freq", "xtb.opt_freq",
         "gaussian.sp", "gaussian.opt", "gaussian.freq", "gaussian.opt_freq", "gaussian.ts", "gaussian.irc", "gaussian.scan",
+        "xtb.scan", "xtb.md", "crest.conformer_search", "ase.neb",
+        "pyscf.sp", "pyscf.opt", "pyscf.ts", "pyscf.freq", "pyscf.thermo", "pyscf.opt_freq", "pyscf.ts_freq",
       ],
     );
     assert.deepEqual((await host.capability_assembly.readiness({ capability_id: "xtb.sp" }))[0].readiness.state, "ready");
@@ -184,7 +186,12 @@ test("compute.toml keeps local and remote environments separate from capability 
     assert.equal(remote.execution_kind, "remote");
     assert.deepEqual(host.tool_gateway.describe({ workspace_mode: "light" })
       .filter((item) => item.kind === "compute")
-      .map((item) => item.capability_id), ["xtb.sp", "xtb.opt", "xtb.freq", "xtb.opt_freq"]);
+      .map((item) => item.capability_id), [
+        "xtb.sp", "xtb.opt", "xtb.freq", "xtb.opt_freq",
+        "gaussian.sp", "gaussian.opt", "gaussian.ts", "gaussian.freq", "gaussian.opt_freq", "gaussian.irc", "gaussian.scan",
+        "xtb.scan", "xtb.md", "crest.conformer_search", "ase.neb",
+        "pyscf.sp", "pyscf.opt", "pyscf.ts", "pyscf.freq", "pyscf.thermo", "pyscf.opt_freq", "pyscf.ts_freq",
+      ]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

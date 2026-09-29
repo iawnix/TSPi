@@ -1,7 +1,9 @@
 import { createServer } from "node:http";
-import { basename } from "node:path";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { connectHost, HOST_PROTOCOL } from "./tspi-host-client.mjs";
+import { require_workspace_id } from "../../packages/research-agent-core/workspace_id.mjs";
 
 const options = { host: "127.0.0.1", port: "8767" };
 const args = process.argv.slice(2);
@@ -12,7 +14,15 @@ for (let index = 0; index < args.length; index++) {
 }
 if (!["127.0.0.1", "::1", "localhost"].includes(options.host) && !options["auth-token"]) throw new Error("A non-loopback gateway requires --auth-token");
 if (!options.connect?.startsWith("unix://") || !options.workspace || !options["session-id"]) throw new Error("Gateway requires --connect unix://SOCKET, --workspace and --session-id");
-const identity = { workspace_id: basename(options.workspace), session_id: options["session-id"] };
+const workspaceRoot = resolve(options.workspace);
+let workspaceManifest;
+try { workspaceManifest = JSON.parse(readFileSync(join(workspaceRoot, "workspace_manifest.json"), "utf8")); } catch (error) { throw new Error(`Cannot read workspace manifest: ${workspaceRoot}`, { cause: error }); }
+if (workspaceManifest?.schema_version !== "research_agent_workspace_1"
+  || workspaceManifest.state !== "ready"
+  || resolve(workspaceManifest.workspace_root || "") !== workspaceRoot) {
+  throw new Error("Gateway workspace manifest is invalid or not admitted");
+}
+const identity = { workspace_id: require_workspace_id(workspaceManifest.workspace_id), session_id: options["session-id"] };
 const peer = await connectHost({ socketPath: options.connect.slice(7) });
 await peer.request("session/attach", identity);
 const streams = new Set();

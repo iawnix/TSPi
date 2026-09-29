@@ -121,7 +121,7 @@
             "kind": {"const": "remote"},
             "authority": {"const": "execution_mirror"},
             "environment": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
-            "workspace_id": {"type": "string", "pattern": "^ws_[0-9a-f]{24}$"},
+            "workspace_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$"},
             "remote_dir": {"type": "string", "minLength": 1, "maxLength": 4096},
             "resources": {"$ref": "#/$defs/remote_resources"}
           },

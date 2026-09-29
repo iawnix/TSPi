@@ -15,7 +15,11 @@ from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_s
 
 IDENTITY_REF = ".agents/workspace-identity.json"
 IDENTITY_SCHEMA = "ts-workspace-identity/1"
-WORKSPACE_ID_PATTERN = re.compile(r"^ws_[0-9a-f]{24}$")
+# Workspace IDs are route and persistence keys shared with the Native Host.
+# The retired identity file is not a runtime authority, but if an isolated
+# caller reaches this module it must use the same grammar as the canonical
+# manifest rather than the former UUID-only contract.
+WORKSPACE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
 
 class WorkspaceIdentityError(ValueError):

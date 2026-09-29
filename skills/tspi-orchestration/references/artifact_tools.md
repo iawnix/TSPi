@@ -8,6 +8,7 @@ analyzing Node-owned input artifacts.
 - [Generate A Structure Seed](#generate-a-structure-seed)
 - [Compare Registered Structures](#compare-registered-structures)
 - [Import An Existing Input](#import-an-existing-input)
+- [Run Registered Analysis](#run-registered-analysis)
 - [Activity And Provenance](#activity-and-provenance)
 
 ## Generate A Structure Seed
@@ -100,6 +101,58 @@ never the input body. QST2/QST3 imports also require every structure to use the 
 declared charge/multiplicity, atom count, and atom order. Multi-job `--Link1--`
 inputs and Link 0 filesystem paths are rejected. Resolve the result with
 `research_read mode=artifacts` before Compute.
+
+## Run Registered Analysis
+
+`analysis_run` is the deterministic, local analysis boundary. It consumes
+registered Artifact IDs and writes an operational analysis Artifact; it does
+not launch a program, select a local/remote environment, or update the
+ResearchMap by itself. Before calling it, query the live analysis catalog:
+
+```text
+research_read mode=capabilities capabilityKind=analysis
+research_read mode=capabilities capabilityKind=analysis query=chemical.name.resolve@1
+```
+
+The second form is preferred when the exact capability and version are known.
+Catalog presence and the exact version are required; a missing entry is a
+capability gap and cannot be bypassed by guessing a method or using an
+unregistered installed tool. The request contract is:
+
+```json
+{
+  "operation": "run",
+  "nodeId": "node_1",
+  "capability": "reaction.parse",
+  "capabilityVersion": "1",
+  "inputArtifacts": {
+    "reactants": ["art_..."],
+    "products": ["art_..."]
+  },
+  "parameters": {}
+}
+```
+
+`nodeId` must identify an existing open ResearchNode. `inputArtifacts` is a
+role-to-array mapping of registered `art_...` IDs; physical paths, arbitrary
+filenames, and invented IDs are invalid. Host/Kernel resolves each ID, checks
+its workspace path, digest, and input-role schema, then passes immutable bytes
+to the registered provider. Bind inputs to the owning Node in the request and
+preserve their returned owner/path metadata; `parameters` must satisfy that
+capability's parameter schema. The name resolver accepts (among other fields) `name`, `resolver`, and
+optional candidate records; automatic deterministic resolution requires its
+installation-owned resolver configuration as described in the chemical-input
+Skill.
+
+The provider writes its result below
+`nodes/<node_id>/outputs/analysis/` and returns a bound
+`ts-analysis-result/1` with the analysis Artifact and source Artifact IDs.
+Analysis does not create a Claim, Finding, Gate, or Node status transition.
+Root must inspect and verify the returned Artifact, then use `research_change`
+to record a narrow `FactFinding` or `IssueFinding` with `source_refs` pointing
+to the registered analysis Artifact. Use `compute_run` for calculation
+lifecycles, including local/remote execution; do not route a calculation
+through `analysis_run`.
 
 ## Activity And Provenance
 

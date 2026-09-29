@@ -18,7 +18,11 @@ test("native research commands expose the FS kernel operation and liveness contr
     });
     await create_fs_research_kernel({ workspace_root: root }).admit_workspace({ authority: "host" });
     const catalog = await executeFilesystemResearchCommand("research.operations", root);
-    assert.ok(catalog.operations.includes("create_node"));
+    assert.ok(catalog.operations.some((item) => item.type === "create_node"));
+    await assert.rejects(
+      executeFilesystemResearchCommand("research.storage", root, { operation: "bootstrap" }),
+      /only operation=status/,
+    );
     await executeFilesystemResearchCommand("research.change", root, {
       request: {
         principal: "root_agent",
@@ -43,6 +47,13 @@ test("native research commands expose the FS kernel operation and liveness contr
         },
       },
     });
+    const located = await executeFilesystemResearchCommand("research.locate", root, { query: "route claim" });
+    assert.equal(located.schema_version, "research-locate/1");
+    assert.deepEqual(located.matches.map((item) => item.id), ["claim_route.v1"]);
+    const summary = await executeFilesystemResearchCommand("research.summary", root);
+    assert.equal(summary.schema_version, "research-summary/1");
+    assert.equal(summary.map_id, "map_workspace_native_route");
+    assert.equal(summary.progress.claim_count, 1);
     assert.equal(result.lifecycle, "continue_required");
     assert.equal(result.liveness.continue_required[0].id, "node_route.v1");
   } finally {
@@ -85,9 +96,12 @@ test("native research route permits Root Agent node state and continuation mutat
     assert.equal(created.required[0].status, "required");
     const continuationId = created.required[0].id;
     const resolved = await executeFilesystemResearchCommand("research.continuation", root, {
-      request: { principal: "root_agent", authority: "kernel_write", operation: "resolve", continuation_id: continuationId, status: "completed" },
+      request: {
+        principal: "root_agent", authority: "kernel_write", operation: "resolve",
+        continuationId, scope: "node", targetId: "node_mutation", action: "analyze", status: "completed",
+      },
     });
-    assert.equal(resolved.completed[0].id, continuationId);
+    assert.equal(resolved.continuations.find((item) => item.id === continuationId)?.status, "completed");
     assert.equal((await executeFilesystemResearchCommand("research.context", root)).nodes[0].state, "active");
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -106,6 +120,20 @@ test("native research routing rejects symlinked state files", async () => {
     const target = join(root, "context-outside.json");
     await unlink(context);
     await symlink(target, context);
+    assert.equal(isFilesystemResearchWorkspace(root), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("native research routing rejects a workspace before Host admission", async () => {
+  const root = await mkdtemp(join(tmpdir(), "research-native-pending-"));
+  try {
+    await create_workspace_initializer().initialize_workspace({
+      workspace_root: root,
+      workspace_id: "workspace_native_pending",
+      workspace_mode: "research",
+    });
     assert.equal(isFilesystemResearchWorkspace(root), false);
   } finally {
     await rm(root, { recursive: true, force: true });

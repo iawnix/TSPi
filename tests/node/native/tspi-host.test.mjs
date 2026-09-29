@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -177,21 +177,36 @@ test("Native Host routes session and input operations through the Harness backen
 test("Native Host accepts a manifest-bound light workspace without ResearchMap files", async (t) => {
   const env = await fixture(t);
   const lightRoot = join(env.workspaceRoot, "light-a");
-  await mkdir(lightRoot, { recursive: true });
-  await writeFile(join(lightRoot, "workspace_manifest.json"), JSON.stringify({
-    schema_version: "research_agent_workspace_1",
+  await create_workspace_initializer().initialize_workspace({
+    workspace_root: lightRoot,
     workspace_id: "light-a",
     workspace_mode: "light",
-    profile_id: "light_workspace_1",
-    state: "ready",
-    workspace_root: lightRoot,
-    created_at: "2026-09-27T00:00:00Z",
-    directories: ["inputs", "artifacts", "runs", "logs", "scratch", "sessions"],
-    research_kernel: { initialized: false, admission_required: false, revision: null },
-  }));
+  });
   await env.client.request("initialize", {});
   const listed = await env.client.request("workspace/list", {});
   assert.ok(listed.workspaces.some((workspace) => workspace.workspace_id === "light-a"));
+});
+
+test("Native Host rejects duplicate canonical workspace identities in workspace/list", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-native-host-duplicate-"));
+  const workspaceRoot = join(root, "workspaces");
+  const initializer = create_workspace_initializer();
+  const first = join(workspaceRoot, "physical-a");
+  const second = join(workspaceRoot, "physical-b");
+  await initializer.initialize_workspace({ workspace_root: first, workspace_id: "duplicate-id", workspace_mode: "light" });
+  await initializer.initialize_workspace({ workspace_root: second, workspace_id: "duplicate-id", workspace_mode: "light" });
+  const backend = createBackend(workspaceRoot);
+  await assert.rejects(
+    startTspiHost({
+      socketPath: join(root, "host.sock"),
+      workspaceRoot,
+      stateRoot: join(root, "state"),
+      sessionBackend: backend,
+      monitorPollMs: 0,
+    }),
+    { code: "invalid_workspace" },
+  );
+  await rm(root, { recursive: true, force: true });
 });
 
 test("Native Host workspace/create writes the canonical manifest protocol", async (t) => {

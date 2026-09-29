@@ -87,6 +87,12 @@ def classify_workspace(root: str | Path) -> WorkspaceClassification:
 
 
 def bootstrap_workspace(root: str | Path) -> dict[str, Any]:
+    raise WorkspaceBootstrapError(
+        WorkspaceBootstrapState.UNSUPPORTED_LAYOUT,
+        "the retired ResearchMap bootstrap is unavailable; initialize a canonical workspace through the Host",
+    )
+    # Historical JSON/SQLite bootstrap logic remains below only for source
+    # archaeology; it is unreachable in the current protocol.
     classification = classify_workspace(root)
     root_path = classification.root
     if classification.state is WorkspaceBootstrapState.FRESH:

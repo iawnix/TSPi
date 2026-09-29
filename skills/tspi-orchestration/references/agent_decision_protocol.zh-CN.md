@@ -29,7 +29,7 @@ Node 下新增 Attempt。
 
 ## 变更后
 
-读取返回的 revision，并在需要时读取 `research.summary`。只有完成标准已满足且所附每个
+读取返回的 revision，并在需要时读取 `research_read mode=summary`。只有完成标准已满足且所附每个
 NodeGate 的最新评估均为 `pass` 时，Node 才能以 `completed` 关闭。问题未解决时使用
 `inconclusive` 或 `stopped`。显式更新 Claim 状态；Node 状态与 Claim 状态互不隐含。
 
@@ -38,10 +38,10 @@ NodeGate 的最新评估均为 `pass` 时，Node 才能以 `completed` 关闭。
 
 ## Research Turn 收尾
 
-每轮结束时，读取有界的 `research.context` 或 `research.liveness`，在需要时记录 strategy 或
+每轮结束时，读取有界的 `research_read mode=context` 或 `research_read mode=liveness`，在需要时记录 strategy 或
 Attempt interpretation，然后使用 `research_checkpoint` 写入明确 disposition：
 `continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
-`user_input_required`。`research_continuation` 仍用于旧 required-action ledger 和迁移，不是 turn
+`user_input_required`。`research_continuation` 是辅助的 required-action ledger，不是 turn
 边界。解析完成或运行记录完成本身不能关闭科学问题。`decision_needed` 要求 Root Agent 继续并记录
 checkpoint；`continue_required` 是合法的下一轮计划，不能由 Harness 在本轮强制执行。Harness 的
 follow-up 只用于修复缺少 disposition 的边界，不能替 Root 选择方法。Monitor 的 `next_run` 只是
@@ -49,5 +49,11 @@ follow-up 只用于修复缺少 disposition 的边界，不能替 Root 选择方
 
 ## Review
 
-Review 只提供建议，不能写入 map。只向 Review 提供所需的 Claim 和 Artifact，通过
-`review_respond` 回答，再使用普通 map operation 记录 Root 接受、拒绝或附带条件的解释。
+Review 是隔离的建议性评估，不能写入 map。只向 Review 提供所需的 Claim 和已登记 Artifact。
+它不能改变 Claim、Node、Finding、Gate，不能选择方法、启动/取消 Compute，也不能单独充当证据。
+通过 `review_respond` 回答后，再使用普通 map operation 记录 Root 接受、拒绝或附带条件的解释。
+
+`analysis_run` 是独立的已注册确定性分析边界。它要求目录中的精确 capability/version、已存在且
+未关闭的 Node，以及 role 到已登记 Artifact ID 数组的映射。它不会选择执行环境、创建 Claim/Finding，
+也不会运行调度器生命周期；需要审计的 local/remote 计算使用 `compute_run`。
+`light_compute` 仅用于 light workspace 的有界 geometry/provider 运行。

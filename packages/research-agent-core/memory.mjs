@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { create_memory_port } from "./ports.mjs";
 import { assert_workspace_mode } from "./session_mode.mjs";
+import { require_workspace_id } from "./workspace_id.mjs";
 
 export const MEMORY_READ_SCHEMA = "agent_memory_read_1";
 export const MEMORY_ENTRY_SCHEMA = "agent_memory_entry_1";
@@ -90,7 +91,7 @@ export function create_memory_store({
   initial_entries = [],
 } = {}) {
   assert_workspace_mode(workspace_mode);
-  if (workspace_id !== undefined) require_non_empty_string(workspace_id, "workspace_id");
+  if (workspace_id !== undefined) require_workspace_id(workspace_id);
   if (session_id !== undefined) require_non_empty_string(session_id, "session_id");
   if (!Number.isInteger(max_entries) || max_entries <= 0) throw new TypeError("max_entries must be a positive integer");
   if (!Array.isArray(initial_entries) || initial_entries.length > max_entries) throw new TypeError("initial_entries exceeds max_entries");

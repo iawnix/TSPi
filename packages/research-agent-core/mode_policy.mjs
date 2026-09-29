@@ -27,7 +27,11 @@ const POLICIES = Object.freeze({
     // durable workspace-scoped map/checkpoint state separately.
     memory_scope: "session",
     research_state_scope: "workspace",
-    memory_profile: "research_map",
+    // Agent Core memory is disposable session context in both modes. The
+    // Research Kernel's durable scientific state is represented separately by
+    // research_state_scope=workspace and must never be advertised as a Core
+    // memory profile.
+    memory_profile: "session",
     execution_profile: "audited",
     monitor: true,
     initial_state: "admission_pending",

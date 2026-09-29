@@ -105,8 +105,9 @@ ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
        +----------- ClaimGate / NodeGate
 ```
 
-`ResearchKernel` loads, validates, commits, and persists the `ResearchMap`.
-`ResearchMap.to_dict()` is canonical serialization for TS Web and Root Agent,
+The filesystem Research Kernel loads, validates, commits, and persists the
+canonical workspace projections. The map-shaped context projection is the
+canonical serialization for TS Web and Root Agent,
 not a second scientific model. The Root Agent chooses questions, methods,
 branches, and stopping conditions. Skills describe research procedures,
 Capabilities describe callable operations, and Backends implement scientific
@@ -252,10 +253,11 @@ interpretation through a Map ChangeSet.
 ## ChangeSets And Browser Clients
 
 Native server tools, Host commands, and slash commands all submit the same
-small ChangeSet envelope to `ResearchKernel`. The kernel validates operation
-fields, references, optimistic revision, and graph invariants before atomically
-committing the active Research Memory backend and updating its JSON snapshot and
-transaction receipt. A failed ChangeSet leaves the previous revision untouched.
+small ChangeSet envelope to the filesystem Research Kernel port. The Kernel
+validates operation fields, references, optimistic revision, and graph
+invariants before atomically committing the canonical context/liveness
+projections and manifest revision. A failed ChangeSet leaves the previous
+revision untouched.
 
 TS Web reads the canonical map through `components/ts-web/`; it does not own Pi
 sessions or submit prompts. It is a browser client of the same map, not a

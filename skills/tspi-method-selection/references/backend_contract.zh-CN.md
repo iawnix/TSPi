@@ -22,6 +22,16 @@ QBICS DMECP 当前不是已注册 capability。Backend 只有具备确定性解�
 安装共享 `compute.toml` 后，还要选择相应环境名。两者使用相同生命周期和结果合同。远端
 就绪状态在计算 preflight 中检查，不是独立计算 API。
 
+实时目录是 capability identity 与 version 的权威来源。Skill 文字、Backend descriptor、已安装
+可执行文件或目录列表都不会注册 capability，也不能证明其可运行。先查询精确的
+`capability_id@version`，再使用该 capability、选定的 `environment_id` 和 `execution_kind`
+调用 `compute_readiness`。readiness 为 `unknown` 或 `deferred` 不等于可执行健康；真实启动前还要
+使用环境 doctor 或 `TSPi --check-remote doctor`。
+
+Local/remote 是独立于 capability identity 的执行环境属性。远端请求必须使用 Native
+`compute_run` 的 `operation=launch` 与 `executionTarget`；通用 capability invocation 形式不能
+携带 remote selector，也不能创建绑定调度器的 intent。两种目标使用相同生命周期和不可变 intent。
+
 例如，本地请求可绑定 `{"kind":"local","environment":"local"}`；同一 capability
 也可绑定 `{"kind":"remote","environment":"cluster_1w",...}`。
 
@@ -40,10 +50,10 @@ Host 将每次 launch 冻结为 `ts-calculation-intent/7`，包括 Node 与科�
 同一 Node 内的 Attempt lineage。方法、输入、影响命令的参数或预期输出发生任何变化，都
 需要新的 recalculation intent。
 
-执行边界并非远端专用：本地目标在 `dry_run=true` 时支持确定性准备，在 `dry_run=false`
-时启动有边界、持久化的 Attempt 本地 worker。远端目标仅在 `dry_run=false` 时使用配置的
-远端环境；远端 dry-run 只生成并校验提交计划，不联系调度器。Launch 前检查所选环境和
-Backend 绑定。
+执行边界对本地和远端目标使用同一合同。公共 launch 合同没有 `dry_run` 字段：Launch 会
+校验所选环境和 Backend 绑定，然后执行一个有边界的 Attempt 生命周期。只需要准备或检查
+环境健康时，使用 `compute_readiness` 和 Host preflight 诊断；这些检查不会创建
+Calculation Attempt。
 
 ## 记录科学结果
 

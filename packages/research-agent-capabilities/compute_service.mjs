@@ -7,6 +7,8 @@
  * Host context; the service never selects a ledger or writes ResearchMap.
  */
 
+import { is_workspace_id } from "../research-agent-core/workspace_id.mjs";
+
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$/u;
 const ARTIFACT_ID = /^art_[0-9a-f]{64}$/u;
 const MAX_ERROR_TEXT = 4_096;
@@ -32,6 +34,13 @@ function object(value, field) {
 function identifier(value, field) {
   if (typeof value !== "string" || !IDENTIFIER.test(value)) {
     throw new ComputeServiceError("invalid_request", `${field} must be a non-empty identifier`);
+  }
+  return value;
+}
+
+function workspace_identifier(value) {
+  if (!is_workspace_id(value)) {
+    throw new ComputeServiceError("invalid_request", "workspace_id must be a valid workspace identifier");
   }
   return value;
 }
@@ -174,7 +183,7 @@ export function create_compute_service({ gateway, artifact_store = null, clock =
 
   async function invoke(request = {}, { workspace_mode, cancel_key, cancel_signal } = {}) {
     const value = object(request, "compute request");
-    const workspace_id = identifier(value.workspace_id, "workspace_id");
+    const workspace_id = workspace_identifier(value.workspace_id);
     const workspace_root = value.workspace_root ?? value.root;
     if (workspace_root !== undefined && (typeof workspace_root !== "string" || workspace_root.trim() === "")) throw new ComputeServiceError("invalid_request", "workspace_root must be a non-empty string");
     const mode = workspace_mode ?? value.workspace_mode;

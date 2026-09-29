@@ -7,13 +7,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRpcPeer, HOST_PROTOCOL, protocolError } from "./tspi-host-client.mjs";
-import { readWorkspaceMode } from "./workspace-mode-tools.mjs";
-import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
+import { create_workspace_initializer, validate_workspace_files } from "../../packages/research-agent-core/workspace.mjs";
+import { is_workspace_id } from "../../packages/research-agent-core/workspace_id.mjs";
 
 const executeFile = promisify(execFile);
-// Host addresses are direct child directory names. The workspace manifest
-// keeps the separate stable ws_* identity; this route allows the launcher's
-// documented 80-character, dot-compatible directory names.
+  // The manifest identity is authoritative. A workspace is normally created
+  // under a directory with the same name, but routing must also work when a
+  // caller chooses a different physical directory name.
 const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u;
 const MONITOR_ID = /^mon_[a-f0-9]{24}$/u;
@@ -61,44 +61,70 @@ export async function startTspiHost(options) {
   let polling = false;
   const keyFor = (workspaceId, sessionId) => `${workspaceId}/${sessionId}`;
 
-  async function workspace(workspaceId, { allowMissing = false } = {}) {
-    if (typeof workspaceId !== "string" || !WORKSPACE_ID.test(workspaceId)) throw protocolError("invalid_workspace", "workspace_id must name a direct workspace");
-    const path = join(physicalRoot, workspaceId);
+  async function readWorkspaceManifestAt(path, { requireReady = true } = {}) {
     try {
       const info = await lstat(path);
-      if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== path) throw protocolError("invalid_workspace", "Workspace must be a physical directory");
-      if (!allowMissing) {
-        const manifestPath = join(path, "workspace_manifest.json");
-        const manifestInfo = await lstat(manifestPath);
-        if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink() || await realpath(manifestPath) !== manifestPath) {
-          throw protocolError("invalid_workspace", "Workspace manifest must be a physical file");
-        }
-        const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-        if (manifest.schema_version !== "research_agent_workspace_1"
-          || typeof manifest.workspace_id !== "string"
-          || !manifest.workspace_id
-          || !["light", "research"].includes(manifest.workspace_mode)
-          || manifest.state !== "ready"
-          || manifest.workspace_id !== workspaceId
-          || manifest.workspace_root !== path) {
-          throw protocolError("invalid_workspace", "Unsupported workspace manifest");
-        }
-      }
-    } catch (error) {
-      if (allowMissing && error.code === "ENOENT") return path;
-      if (error.code === "ENOENT") throw protocolError("workspace_not_found", `Workspace does not exist: ${workspaceId}`);
-      throw error;
+      if (!info.isDirectory() || info.isSymbolicLink() || await realpath(path) !== path) return null;
+      const manifestPath = join(path, "workspace_manifest.json");
+      const manifestInfo = await lstat(manifestPath);
+      if (!manifestInfo.isFile() || manifestInfo.isSymbolicLink() || await realpath(manifestPath) !== manifestPath) return null;
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      if (requireReady && manifest.state !== "ready") return null;
+      await validate_workspace_files(manifest, path);
+      return manifest;
+    } catch {
+      return null;
     }
-    return path;
+  }
+
+  async function workspace(workspaceId, { allowMissing = false } = {}) {
+    if (typeof workspaceId !== "string" || !WORKSPACE_ID.test(workspaceId)) throw protocolError("invalid_workspace", "workspace_id is invalid");
+    const direct = join(physicalRoot, workspaceId);
+    const candidates = [];
+    try {
+      const info = await lstat(direct);
+      if (info.isDirectory() && !info.isSymbolicLink() && await realpath(direct) === direct) candidates.push(direct);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    for (const entry of await readdir(physicalRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      const candidate = join(physicalRoot, entry.name);
+      if (!candidates.includes(candidate)) candidates.push(candidate);
+    }
+    const matches = [];
+    for (const candidate of candidates) {
+      const manifest = await readWorkspaceManifestAt(candidate);
+      if (manifest?.workspace_id === workspaceId) matches.push(candidate);
+    }
+    if (matches.length > 1) {
+      throw protocolError("invalid_workspace", `Workspace identity is duplicated: ${workspaceId}`);
+    }
+    if (matches.length === 1) return matches[0];
+    if (allowMissing) {
+      if (candidates.includes(direct)) {
+        throw protocolError("invalid_workspace", `Workspace directory already exists with another identity: ${workspaceId}`);
+      }
+      return direct;
+    }
+    throw protocolError("workspace_not_found", `Workspace does not exist: ${workspaceId}`);
   }
 
   async function listWorkspaces() {
     const result = [];
+    const identities = new Set();
     for (const entry of await readdir(physicalRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !WORKSPACE_ID.test(entry.name)) continue;
-      try { result.push({ workspace_id: entry.name, name: entry.name, root: await workspace(entry.name) }); } catch { /* Uninitialized directories are not projects. */ }
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      const root = join(physicalRoot, entry.name);
+      const manifest = await readWorkspaceManifestAt(root);
+      if (!manifest) continue;
+      if (identities.has(manifest.workspace_id)) {
+        throw protocolError("invalid_workspace", `Workspace identity is duplicated: ${manifest.workspace_id}`);
+      }
+      identities.add(manifest.workspace_id);
+      result.push({ workspace_id: manifest.workspace_id, name: manifest.workspace_id, root });
     }
-    return result.sort((a, b) => a.name.localeCompare(b.name));
+    return result.sort((a, b) => a.workspace_id.localeCompare(b.workspace_id));
   }
 
   function liveSummary(record) {
@@ -620,7 +646,7 @@ async function monitorWorkspaceIdentity(project) {
       || manifest.workspace_mode !== "research"
       || manifest.state !== "ready"
       || typeof manifest.workspace_id !== "string"
-      || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(manifest.workspace_id)) return null;
+      || !is_workspace_id(manifest.workspace_id)) return null;
     const canonical = manifest.workspace_id;
     return { route: project.workspace_id, canonical };
   } catch {
@@ -633,7 +659,7 @@ function validMonitorBinding(binding, monitorId, identity) {
     && binding.schema_version === "ts-compute-monitor/1"
     && binding.monitor_id === monitorId
     && binding.workspace_id === identity.canonical
-    && typeof binding.node_id === "string" && binding.node_id.trim().length > 0
+    && typeof binding.node_id === "string" && /^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u.test(binding.node_id)
     && typeof binding.intent_id === "string" && /^calc_[1-9][0-9]*$/u.test(binding.intent_id)
     && typeof binding.intent_digest === "string" && /^sha256:[0-9a-f]{64}$/u.test(binding.intent_digest)
     && (binding.session_id === null || (typeof binding.session_id === "string" && binding.session_id.length > 0))

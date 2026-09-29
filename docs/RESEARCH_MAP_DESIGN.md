@@ -12,9 +12,9 @@ containing `ResearchPhase`, `ResearchClaim`, `ResearchNode`, `Finding`, and
 `Gate` records. `FactFinding` and `IssueFinding` are specializations of the
 same `Finding` structure. `NodeGate` and `ClaimGate` are specializations of
 the same `Gate` structure. Reverse indexes and graph dependencies are stored
-in the map and checked by the model. `research_map.json` is the synchronized map
-snapshot; after SQLite bootstrap, `research.db` is the authoritative Kernel
-backend for the snapshot, decision records, and evidence metadata.
+in the map and checked by the model. The canonical runtime document is
+`research_map/context.json`, selected by `workspace_manifest.json`; retired
+JSON/SQLite files are diagnostic inputs only and are never Kernel authority.
 
 ```text
 ResearchClaim -> ResearchNode -> Finding
@@ -31,12 +31,12 @@ a latest `pass` evaluation.
 
 ## Kernel Boundary
 
-`ResearchKernel` is the only mutation authority. Callers submit one ChangeSet
-with an expected revision and ordered operations. The kernel validates the
-operation catalog, references, reverse indexes, cycles, and state transitions
-on a detached copy, then atomically commits the active backend, updates the JSON
-snapshot, and appends a transaction receipt. A failed request leaves the
-previous revision untouched.
+The filesystem Research Kernel is the only mutation authority. Callers submit
+one ChangeSet with an expected revision and ordered operations. The Kernel
+validates the operation catalog, references, reverse indexes, cycles, and state
+transitions, then atomically commits the context, liveness, memory projection,
+checkpoint, and manifest revision. A failed request leaves the previous
+revision untouched.
 
 The shared command surface is:
 
@@ -51,24 +51,23 @@ research.validate   validate the map
 research.operations operation catalog
 research.decisions  bounded strategy/review/interpretation/checkpoint history
 research.evidence   Attempt/Artifact/EvidenceLink metadata
-research.storage    active backend and bootstrap status
+research.storage    canonical filesystem storage status
 research.turn       unified turn admission/checkpoint boundary
 research.strategy   record or review strategy
 research.interpretation interpret an Attempt
 research.checkpoint close a turn with a disposition
-research.continuation compatibility required-action ledger
+research.continuation required-action ledger
 research.change     apply one ChangeSet
 ```
 
-The Kernel API, Pi tools, slash commands, and Root Agent use these same
+The Kernel port, Pi tools, slash commands, and Root Agent use these same
 commands. `research.context` and `research.liveness` are bounded read models;
 they do not become a second ResearchMap or a second lifecycle authority.
 `research.context` and `research.liveness` are bounded projections. Liveness is
 diagnostic and does not persist a next step. The `research.checkpoint` command
-is the primary turn boundary; `research.continuation` is retained only for
-compatibility and migration of older required-action records.
-The liveness response may expose a read-only `required` field alias for older
-transports; new callers should use `continue_required`.
+is the primary turn boundary; `research.continuation` is the explicit
+required-action ledger for the current protocol.
+The liveness response exposes the read-only `continue_required` field.
 `research.decisions` and `research.evidence` read bounded metadata without
 loading raw files. `/research` is a presentation spelling of the command
 service, not another API. TS Web reads the map snapshot through the ResearchMap
@@ -82,14 +81,14 @@ execution environment with Backend bindings. Platform configuration supplies
 remote transport and scheduler details. One `compute.toml` holds local and
 remote environment entries in the same catalog. Calculation Attempts and
 Artifacts remain Node-owned operational records. Their manifests and typed
-EvidenceLinks are registered as bounded metadata; raw files remain outside
-SQLite. A parser or analysis may produce transient candidate output, but only
+EvidenceLinks are registered as bounded metadata; raw files remain in the
+workspace-owned artifact directories. A parser or analysis may produce transient candidate output, but only
 an explicit ChangeSet creates a `FactFinding` or `IssueFinding` in the map.
 Tool success never changes a Claim or closes a Node.
 
 ## Clients And Reports
 
-`ResearchMap.to_dict()` is the canonical serialized document consumed directly
+The filesystem context has a canonical map-shaped projection consumed directly
 by TS Web, Root Agent, and reports. Clients may filter or group records for
 display, but they do not create a second scientific state model or registry.
 Operational run records are shown separately from the map. Gates record
@@ -109,9 +108,9 @@ write a Finding.
 
 ## Delivery Checklist
 
-- keep the map snapshot, active Kernel backend, transaction receipts,
-  Evidence/Decision metadata, and Node-owned execution directories as research
-  workspace state; raw payloads remain outside the metadata database;
+- keep the canonical context/liveness/memory projections, Evidence/Decision
+  metadata, and Node-owned execution directories as research workspace state;
+  raw payloads remain in their artifact stores;
 - add new map behavior as a model and ChangeSet operation, with focused tests;
 - update the Kernel operation catalog and focused tests for every new map behavior;
 - update `packages/ts-agent-kernel/ts_agent/command_catalog.json` or

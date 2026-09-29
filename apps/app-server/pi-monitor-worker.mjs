@@ -3,9 +3,10 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createNotificationDispatcher, sendNotification } from "./notification-dispatcher.mjs";
+import { validate_workspace_files } from "../../packages/research-agent-core/workspace.mjs";
 
 export { createNotificationDispatcher, sendNotification } from "./notification-dispatcher.mjs";
 
@@ -31,11 +32,11 @@ export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWa
             throw new Error("Research Turn wake boundary returned an invalid result");
           }
         }
-        // Keep the Host/Phone wire spelling stable. The Harness adapter
-        // canonicalizes a monitor `auto` wake to a durable `next_run` queue
-        // entry, including when the lane is currently active.
+        // Monitor wakes are operational queue entries. Send the canonical
+        // session-control mode explicitly so Host and Monitor share one wire
+        // contract and no source-specific alias is required.
         const response = await sendWake({ workspace_id: hostWorkspaceId, session_id: claimed.session_id,
-          request_id: claimed.request_id, client_message_id: claimed.request_id, source: "monitor", mode: "auto", text: wakeMessage(event) });
+          request_id: claimed.request_id, client_message_id: claimed.request_id, source: "monitor", mode: "next_run", text: wakeMessage(event) });
         // An accepted RPC is not enough when Pi could not confirm prompt
         // admission.  Preserve the outbox row for retry on an uncertain
         // result; otherwise a late bridge rejection could be lost forever.
@@ -53,24 +54,24 @@ export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWa
 }
 
 export async function monitorHostWorkspaceId(workspace, event) {
-  // Scientific identity is stable across renames (ws_*); Host routes address
-  // direct workspace directory names. Verify ownership before translating.
+  // The canonical manifest identity is the same value used by the compute
+  // plane and Host routes. The physical directory name is not an identity.
   const root = resolve(workspace);
   const manifestPath = join(root, "workspace_manifest.json");
   const [directory, identityStat] = await Promise.all([lstat(root), lstat(manifestPath).catch(() => null)]);
   if (!directory.isDirectory() || directory.isSymbolicLink() || await realpath(root) !== root
     || !identityStat?.isFile() || identityStat.isSymbolicLink()) throw new Error("monitor workspace must be a physical initialized directory");
   const identity = JSON.parse(await readFile(manifestPath, "utf8"));
-  if (identity.schema_version !== "research_agent_workspace_1"
-    || identity.workspace_mode !== "research"
-    || identity.state !== "ready"
-    || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(identity.workspace_id || "")) {
+  try {
+    await validate_workspace_files(identity, root);
+  } catch (error) {
+    throw new Error("monitor workspace identity is invalid", { cause: error });
+  }
+  if (identity.workspace_mode !== "research" || identity.state !== "ready") {
     throw new Error("monitor workspace identity is invalid");
   }
   if (event.workspace_id !== identity.workspace_id) throw new Error("monitor event belongs to another workspace");
-  const routeId = basename(root);
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u.test(routeId)) throw new Error("monitor workspace directory is not a Host workspace name");
-  return routeId;
+  return identity.workspace_id;
 }
 
 export function wakeMessage(event) {

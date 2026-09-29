@@ -12,6 +12,7 @@ from typing import Any
 
 from .refs import ACTIVITY_ID, CALCULATION_ID, SUBAGENT_RUN_ID
 from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.runtime.workspace_mode import WorkspaceModeError, validate_workspace_manifest
 
 
 STATE_SCHEMA = "ts-operational-id-state/1"
@@ -86,6 +87,14 @@ def _workspace_root(root: str | Path) -> Path:
     workspace = candidate
     if not workspace.is_dir() or not (workspace / "workspace_manifest.json").is_file():
         raise ValueError("operational IDs require an initialized TS workspace")
+    try:
+        validate_workspace_manifest(
+            json.loads((workspace / "workspace_manifest.json").read_text(encoding="utf-8")),
+            workspace,
+            require_ready=True,
+        )
+    except (OSError, ValueError, WorkspaceModeError) as exc:
+        raise ValueError("operational IDs require a valid canonical workspace") from exc
     return workspace
 
 

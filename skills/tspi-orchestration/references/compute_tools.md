@@ -39,8 +39,45 @@ research_read mode=capabilities capabilityKind=compute
 
 The artifact catalog supplies logical `art_...` IDs, paths, SHA-256, owners,
 and compatible roles. The capability catalog supplies the capability ID/version,
-parameter shape, input/output roles, and parser contract. It does not prove live
+input/output schemas, and parameter shape. Native preflight binds the concrete
+input/output roles and parser contract. Catalog presence does not prove live
 software or environment health.
+
+Every compute catalog entry uses the cross-runtime identity fields
+`capability_id` and `capability_version`:
+
+```json
+{
+  "capability_id": "crest.conformer_search",
+  "capability_version": "1",
+  "kind": "compute",
+  "input_schema": {"type": "object"},
+  "output_schema": {"type": "object"},
+  "execution_routes": ["native_lifecycle"]
+}
+```
+
+`input_schema` and `output_schema` are the catalog wire fields. A native
+calculation descriptor may additionally expose `input_roles`, `output_roles`,
+`parameter_schema`, and `parsers` in the private preflight binding; those
+fields are not required on the public gateway descriptor. The launch
+`inputArtifacts[].inputRole` values must match the roles returned by the
+selected capability's preflight binding.
+
+The calculation intent request uses the semantic fields `capability` and
+`capabilityVersion` shown in the launch example below. They are resolved from
+the catalog identity; do not invent a second name or infer registration from
+an executable, Skill text, or directory listing. A descriptor with only the
+`native_lifecycle` route must use the `operation=launch` form, including for a
+local target.
+
+`compute_catalog` and the compute branch of `research_read` return
+`protocol_version="compute_catalog_1"` with `catalog` (and the equivalent
+`capabilities` array). `compute_readiness` returns
+`protocol_version="compute_readiness_1"` and a `readiness` array. Each entry is
+bound to the requested capability and, when selected, environment and execution
+kind; `state=unknown` or `deferred` is an explicit uncertainty, not a launch
+authorization.
 
 Before selecting an execution target, call `compute_readiness` with the exact
 `capability_id`, `environment_id`, and `execution_kind` (`local` or `remote`).
@@ -84,6 +121,11 @@ Launch accepts the complete semantic request and selected execution target:
 }
 ```
 
+`resources.ngpus` is optional and defaults to `0`; `mpiprocs` and `ompthreads`
+are optional and are materialized as `null` when omitted. The Host always
+writes these explicit fields into `ts-calculation-request/5` before Python
+validation.
+
 Before the child starts, the host creates and validates a new
 `ts-calculation-intent/7`, binds the current Node contract, resolves paths and
 digests, allocates expected artifacts, and freezes the scientific and execution
@@ -102,15 +144,33 @@ the bound Attempt and queues a `next_run` wake when its state changes. Do not ca
 `bash sleep`, `wait`, or a manual status loop while waiting; use `inspect` after
 the Monitor wake or an explicit later request.
 
-Execution target and `dry_run` are independent controls. With
-`executionTarget.kind=local`, `dry_run=true` prepares and validates the local
-plan without starting a program; `dry_run=false` starts the selected backend in
-the workspace's durable Attempt-local worker and supports the full
-`submit/status/tail/collect/cancel` lifecycle. With
-`executionTarget.kind=remote`, `dry_run=true` only prepares and validates the
-remote plan; `dry_run=false` submits through the configured remote environment.
-The host still rejects arbitrary shell and keeps every command bound to the
-validated capability and immutable calculation intent.
+The public `compute_run` launch request has no `dry_run` switch. A launch always
+creates and validates an immutable intent, prepares the selected Backend, and
+executes the bounded `prepare -> submit` lifecycle for the selected target.
+Preparation-only inspection belongs to the Host readiness/preflight surfaces;
+it must not be represented as a successful calculation Attempt. The host still
+rejects arbitrary shell and keeps every command bound to the validated
+capability and immutable calculation intent.
+
+`compute_run` also accepts a separate mode-neutral local capability form for
+registered providers that do not use the scheduler intent lifecycle:
+
+```json
+{
+  "capability_id": "xtb.sp",
+  "capability_version": "1",
+  "run_id": "run_001",
+  "input": {"input_artifact_id": "art_...", "method": "gfn2"},
+  "input_artifact_ids": ["art_..."],
+  "timeout_ms": 120000
+}
+```
+
+This form is local and provider-bound. It has no `operation`, `nodeId`,
+`executionTarget`, scheduler receipt, or remote selector; a remote request must
+use the Native lifecycle form above. The provider descriptor decides how
+`input` and `input_artifact_ids` are bound, and the returned run/artifact
+manifest is the operational record for this form.
 
 ## Inspect
 

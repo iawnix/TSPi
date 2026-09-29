@@ -1,11 +1,10 @@
 """Research Agent workspace boundary.
 
 This module owns the small filesystem protocol used by the new Research Agent
-runtime.  It intentionally does not load ``research_map.json``: the new
-runtime stores its read model in ``research_map/context.json`` and
-``lifecycle/liveness.json``.  The JSONL Bridge uses this boundary whenever
-those files are present, while the established ResearchKernel remains the
-implementation for legacy workspaces.
+runtime. It intentionally does not load ``research_map.json``: the runtime
+stores its read model in ``research_map/context.json`` and
+``lifecycle/liveness.json``. The JSONL Bridge uses this boundary exclusively;
+the retired JSON/SQLite ResearchKernel is not a runtime fallback.
 """
 
 from __future__ import annotations
@@ -21,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from ts_agent.runtime.workspace_mode import WorkspaceModeError, _validate_layout, validate_workspace_manifest
+
 CONTEXT_SCHEMA = "research_map_context_1"
 LIVENESS_SCHEMA = "research_liveness_1"
 CHECKPOINT_SCHEMA = "research_checkpoint_1"
@@ -33,8 +34,14 @@ CHECKPOINT_DISPOSITIONS = frozenset({
 # IDs are opaque protocol references.  The namespace is part of the contract
 # while the suffix may carry a stable semantic token rather than an ordinal.
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+_WORKSPACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
 _NODE_ID = re.compile(r"^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _CLAIM_ID = re.compile(r"^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+RESEARCH_CONTEXT_COLLECTIONS = (
+    "phases", "claims", "nodes", "findings", "gates", "claim_relations",
+    "attempts", "artifacts", "evidence_links", "continuations",
+    "strategy_plans", "strategy_reviews", "attempt_interpretations",
+)
 
 # Attempt state is an operational lifecycle and does not change ResearchNode
 # state. ``completed`` remains readable for the initial workspace release;
@@ -130,6 +137,20 @@ def _claim_identifier(value: Any, field: str = "claim_id") -> str:
     return _ref_identifier(value, field, _CLAIM_ID, "Claim")
 
 
+def _validate_context_collections(context: dict[str, Any]) -> None:
+    """Require the complete ResearchMap collection surface at the read boundary."""
+
+    missing = [name for name in RESEARCH_CONTEXT_COLLECTIONS if name not in context]
+    if missing:
+        raise AgentWorkspaceError("research_context_missing_collections: " + ", ".join(missing))
+    invalid = [name for name in RESEARCH_CONTEXT_COLLECTIONS if not isinstance(context[name], list)]
+    if invalid:
+        raise AgentWorkspaceError("research_context_collections_must_be_arrays: " + ", ".join(invalid))
+    focus = context.get("focus")
+    if not isinstance(focus, dict) or not isinstance(focus.get("claim_ids"), list) or not isinstance(focus.get("node_ids"), list):
+        raise AgentWorkspaceError("research_context_focus_invalid")
+
+
 def _read_json(path: Path, label: str) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -191,9 +212,32 @@ def _state_paths(root: str | Path) -> tuple[Path, Path]:
     return path / "research_map" / "context.json", path / "lifecycle" / "liveness.json"
 
 
-def _load_state(root: str | Path) -> tuple[Path, Path, dict[str, Any], dict[str, Any]]:
-    path = Path(root).expanduser().resolve()
+def _load_state(
+    root: str | Path,
+    *,
+    allow_partial_admission: bool = False,
+) -> tuple[Path, Path, dict[str, Any], dict[str, Any]]:
+    requested = Path(root).expanduser()
+    if requested.is_symlink():
+        raise AgentWorkspaceError(f"workspace_root_symlink: {requested}")
+    path = requested.resolve()
     manifest = _read_json(path / "workspace_manifest.json", "workspace_manifest")
+    try:
+        manifest = validate_workspace_manifest(
+            manifest,
+            path,
+            allow_partial_admission=allow_partial_admission,
+        )
+    except WorkspaceModeError as exc:
+        raise AgentWorkspaceError(str(exc)) from exc
+    try:
+        # Keep the Python bridge on the same closed-world document/layout
+        # contract as the Native filesystem Kernel. This validates the
+        # memory projection, genesis checkpoint, physical directories, and
+        # retired-file rejection before any command reads or writes state.
+        _validate_layout(manifest, path, allow_partial_admission=allow_partial_admission)
+    except WorkspaceModeError as exc:
+        raise AgentWorkspaceError(str(exc)) from exc
     if manifest.get("schema_version") != "research_agent_workspace_1":
         raise AgentWorkspaceError("unsupported_workspace_manifest")
     if manifest.get("workspace_mode") != "research":
@@ -216,20 +260,32 @@ def _load_state(root: str | Path) -> tuple[Path, Path, dict[str, Any], dict[str,
         raise AgentWorkspaceError("research_workspace_id_mismatch")
     if workspace_id != manifest.get("workspace_id"):
         raise AgentWorkspaceError("research_workspace_id_mismatch")
-    _identifier(workspace_id, "context.workspace_id")
+    if not isinstance(workspace_id, str) or _WORKSPACE_ID.fullmatch(workspace_id) is None:
+        raise AgentWorkspaceError("context.workspace_id must be a valid workspace identifier")
     # This boundary is for the new Research Agent workspaces only.  A missing
     # mode is ambiguous (and could accidentally route a light workspace into
     # the research kernel), so require the immutable mode written by the
     # workspace initializer.
     if context.get("workspace_mode") != "research":
         raise AgentWorkspaceError("research_workspace_mode_required")
+    if not isinstance(context.get("created_at"), str) or not context["created_at"]:
+        raise AgentWorkspaceError("research_context_created_at_missing")
+    _validate_context_collections(context)
     if context.get("lifecycle_state") not in (ADMISSION_PENDING, ADMITTED):
         raise AgentWorkspaceError(f"invalid_research_lifecycle_state: {context.get('lifecycle_state')}")
     if liveness.get("state") not in (ADMISSION_PENDING, ADMITTED):
         raise AgentWorkspaceError(f"invalid_research_liveness_state: {liveness.get('state')}")
-    if context.get("lifecycle_state") != liveness.get("state"):
+    if context.get("lifecycle_state") != liveness.get("state") and not (
+        allow_partial_admission
+        and manifest_state == "admission_pending"
+        and {context.get("lifecycle_state"), liveness.get("state")} == {ADMISSION_PENDING, ADMITTED}
+    ):
         raise AgentWorkspaceError("research_lifecycle_state_mismatch")
-    if (manifest_state == "ready") != (context.get("lifecycle_state") == ADMITTED):
+    # Context/liveness are committed before the final manifest replacement.
+    # If Host crashes in that small window, keep the pair readable so the
+    # next admission call can finalize the manifest. A ready manifest still
+    # requires an admitted Kernel state.
+    if manifest_state == "ready" and context.get("lifecycle_state") != ADMITTED:
         raise AgentWorkspaceError("research_manifest_state_mismatch")
     context_revision = context.get("revision", 0)
     liveness_revision = liveness.get("revision", 0)
@@ -380,6 +436,11 @@ def _liveness_projection(
     """
 
     result = dict(liveness)
+    if context.get("lifecycle_state") != ADMITTED or liveness.get("state") != ADMITTED:
+        result["lifecycle"] = ADMISSION_PENDING
+        result["disposition"] = None
+        result.setdefault("checkpoint_id", context.get("checkpoint_id", "checkpoint_0"))
+        return result
     source = checkpoint or {}
     disposition = source.get("disposition")
     if checkpoint is not None and disposition is None:
@@ -1319,7 +1380,10 @@ def read_liveness(root: str | Path) -> dict[str, Any]:
 def admit_workspace(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, Any]:
     request = request or {}
     with _workspace_lock(Path(root).expanduser().resolve()):
-        context_path, liveness_path, context, liveness = _load_state(root)
+        context_path, liveness_path, context, liveness = _load_state(
+            root,
+            allow_partial_admission=True,
+        )
         manifest_path = Path(root).expanduser().resolve() / "workspace_manifest.json"
         manifest = _read_json(manifest_path, "workspace_manifest")
         workspace_id = context["workspace_id"]
@@ -1328,15 +1392,50 @@ def admit_workspace(root: str | Path, request: dict[str, Any] | None = None) -> 
             raise AgentWorkspaceError("research admission requires Host authority")
         if request.get("expected_state") is not None and request.get("expected_state") != ADMISSION_PENDING:
             raise AgentWorkspaceError("invalid research admission state")
-        if context["lifecycle_state"] == ADMITTED:
+        if context["lifecycle_state"] == ADMITTED and manifest.get("state") == "ready":
             state = ADMITTED
-        elif context["lifecycle_state"] == ADMISSION_PENDING:
+        elif context["lifecycle_state"] in (ADMISSION_PENDING, ADMITTED):
+            # The normal path starts with admission_pending. The admitted
+            # branch also handles a crash after context/liveness were written
+            # but before the manifest replacement completed.
             admitted_at = _now()
-            admitted_context = {
-                **context, "lifecycle_state": ADMITTED, "lifecycle": "idle", "disposition": None,
-                "admitted_at": admitted_at,
-            }
-            admitted_liveness = {**liveness, "state": ADMITTED, "admitted_at": admitted_at}
+            context_admitted = context["lifecycle_state"] == ADMITTED
+            liveness_admitted = liveness.get("state") == ADMITTED
+            already_admitted = context_admitted and liveness_admitted
+            # If both projections reached admitted before the manifest write,
+            # they are the durable commit point. Preserve their lifecycle and
+            # checkpoint disposition while finalizing the manifest; rewriting
+            # them as idle would erase a checkpoint after a Host crash.
+            if context_admitted and not liveness_admitted:
+                admitted_context = context
+                admitted_liveness = {
+                    **liveness, "state": ADMITTED,
+                    "lifecycle": context.get("lifecycle", "idle"),
+                    "disposition": context.get("disposition"),
+                    "checkpoint_id": context.get("checkpoint_id", "checkpoint_0"),
+                    "admitted_at": context.get("admitted_at", admitted_at),
+                }
+            elif not context_admitted and liveness_admitted:
+                admitted_liveness = liveness
+                admitted_context = {
+                    **context, "lifecycle_state": ADMITTED,
+                    "lifecycle": liveness.get("lifecycle", "idle"),
+                    "disposition": liveness.get("disposition"),
+                    "checkpoint_id": liveness.get("checkpoint_id", "checkpoint_0"),
+                    "admitted_at": liveness.get("admitted_at", admitted_at),
+                }
+            elif already_admitted:
+                admitted_context = context
+                admitted_liveness = liveness
+            else:
+                admitted_context = {
+                    **context, "lifecycle_state": ADMITTED, "lifecycle": "idle", "disposition": None,
+                    "admitted_at": admitted_at,
+                }
+                admitted_liveness = {
+                    **liveness, "state": ADMITTED, "lifecycle": "idle", "disposition": None,
+                    "checkpoint_id": liveness.get("checkpoint_id", "checkpoint_0"), "admitted_at": admitted_at,
+                }
             admitted_manifest = {
                 **manifest,
                 "state": "ready",
@@ -1344,13 +1443,15 @@ def admit_workspace(root: str | Path, request: dict[str, Any] | None = None) -> 
                 "research_kernel": {
                     **(manifest.get("research_kernel") if isinstance(manifest.get("research_kernel"), dict) else {}),
                     "admission_required": False,
+                    "revision": context.get("revision", 0),
                 },
             }
             memory_path = Path(root).expanduser().resolve() / "memory" / "index.json"
             memory_existed, memory_before = _optional_json(memory_path)
             try:
-                _atomic_json(context_path, admitted_context)
-                _atomic_json(liveness_path, admitted_liveness)
+                if not already_admitted:
+                    _atomic_json(context_path, admitted_context)
+                    _atomic_json(liveness_path, admitted_liveness)
                 _persist_memory_projection(root, admitted_context, admitted_liveness)
                 _atomic_json(manifest_path, admitted_manifest)
             except Exception:
@@ -1395,16 +1496,27 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
         updated["lifecycle"] = projected_liveness.get("lifecycle", "idle")
         updated["disposition"] = projected_liveness.get("disposition")
         updated["checkpoint_id"] = projected_liveness.get("checkpoint_id")
+        manifest_path = Path(root).expanduser().resolve() / "workspace_manifest.json"
+        manifest = _read_json(manifest_path, "workspace_manifest")
+        kernel_state = manifest.get("research_kernel")
+        if not isinstance(kernel_state, dict):
+            kernel_state = {}
+        updated_manifest = {
+            **manifest,
+            "research_kernel": {**kernel_state, "revision": updated["revision"]},
+        }
         memory_path = Path(root).expanduser().resolve() / "memory" / "index.json"
         memory_existed, memory_before = _optional_json(memory_path)
         try:
             _atomic_json(context_path, updated)
             _atomic_json(liveness_path, projected_liveness)
             _persist_memory_projection(root, updated, projected_liveness)
+            _atomic_json(manifest_path, updated_manifest)
         except Exception:
             _restore_json(context_path, True, context)
             _restore_json(liveness_path, True, liveness)
             _restore_json(memory_path, memory_existed, memory_before)
+            _restore_json(manifest_path, True, manifest)
             raise
     return {
         "schema_version": "research_change_result", "accepted": True,

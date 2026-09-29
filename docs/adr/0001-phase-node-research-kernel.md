@@ -84,8 +84,9 @@ bounded operational and advisory mechanisms, not scientific state owners.
 
 `ResearchMap.to_dict()` is the canonical serialized map. RootAgent and TS Web
 query that document directly; they may choose a focused view but do not create
-another scientific state store. The canonical paths are `research_map.json`,
-`transactions.jsonl`, and `nodes/<node_id>/...`.
+another scientific state store. The canonical paths are `workspace_manifest.json`,
+`research_map/context.json`, `lifecycle/liveness.json`, and
+`nodes/<node_id>/...`; `memory/index.json` is only a Kernel projection.
 
 ## Invariants
 

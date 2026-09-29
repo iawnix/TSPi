@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { create_agent_runtime_port, create_agent_session_port } from "./ports.mjs";
 import { assert_session_mode } from "./session_mode.mjs";
 import { resolve_mode_policy } from "./mode_policy.mjs";
+import { require_workspace_id } from "./workspace_id.mjs";
 
 const SESSION_ID = /^session_[A-Za-z0-9_-]{1,127}$/u;
 
@@ -78,6 +79,7 @@ export function create_fake_agent_runtime({ response = "completed" } = {}) {
       assert_session_mode(workspace_mode);
       assert_session_mode(session_mode);
       if (workspace_mode !== session_mode) throw new Error("session_mode_mismatch");
+      if (workspace_id !== undefined) require_workspace_id(workspace_id);
       const restored_id = session_id === undefined ? `session_${randomUUID()}` : session_id;
       if (typeof restored_id !== "string" || !SESSION_ID.test(restored_id)) throw new TypeError("session_id must be a valid identifier");
       const existing = sessions.get(restored_id);

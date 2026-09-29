@@ -19,9 +19,16 @@ from typing import Any
 MANIFEST_SCHEMA = "research_agent_workspace_1"
 WORKSPACE_MODES = frozenset({"light", "research"})
 WORKSPACE_STATES = frozenset({"initializing", "ready", "admission_pending", "failed"})
-_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
 _COMMON_DIRECTORIES = ("inputs", "artifacts", "runs", "logs")
+RETIRED_WORKSPACE_FILES = (
+    "workspace.json", "research_map.json", "research.db", "transactions.jsonl",
+    "research_state.json", "phases.json", "claims.json", "claim_relations.json",
+    "research_nodes.json", "observations.json", "proof_specs.json",
+    "validation_results.json", "findings.json", "gate_specs.json", "gate_results.json",
+    "decision_log.jsonl", "transaction_log.jsonl",
+)
 _MODE_DIRECTORIES = {
     "light": ("scratch", "sessions"),
     "research": (
@@ -35,6 +42,11 @@ _MODE_DIRECTORIES = {
         "environments",
     ),
 }
+RESEARCH_CONTEXT_COLLECTIONS = (
+    "phases", "claims", "nodes", "findings", "gates", "claim_relations",
+    "attempts", "artifacts", "evidence_links", "continuations",
+    "strategy_plans", "strategy_reviews", "attempt_interpretations",
+)
 
 
 class WorkspaceModeError(RuntimeError):
@@ -94,24 +106,177 @@ def _validate(manifest: dict[str, Any], root: Path) -> dict[str, Any]:
     if manifest.get("schema_version") != MANIFEST_SCHEMA:
         raise WorkspaceModeError("unsupported_workspace_manifest")
     _identifier(manifest.get("workspace_id"), "workspace_id")
-    _mode(manifest.get("workspace_mode"))
-    if manifest.get("state") not in WORKSPACE_STATES:
-        raise WorkspaceModeError("invalid_workspace_state")
+    workspace_mode = _mode(manifest.get("workspace_mode"))
+    expected_state_scope = "workspace" if workspace_mode == "research" else "none"
     if Path(str(manifest.get("workspace_root", ""))).expanduser().resolve() != root.resolve():
         raise WorkspaceModeError("workspace_root_mismatch")
+    if manifest.get("profile_id") != f"{workspace_mode}_workspace_1":
+        raise WorkspaceModeError(f"workspace_profile_id_mismatch: expected {workspace_mode}_workspace_1")
+    if manifest.get("memory_profile") != "session":
+        raise WorkspaceModeError("workspace_memory_profile_mismatch: expected session")
+    if manifest.get("memory_scope") != "session":
+        raise WorkspaceModeError("workspace_memory_scope_mismatch: expected session")
+    if manifest.get("research_state_scope") != expected_state_scope:
+        raise WorkspaceModeError(
+            f"workspace_research_state_scope_mismatch: expected {expected_state_scope}"
+        )
+    if manifest.get("execution_profile") != ("audited" if workspace_mode == "research" else "bounded"):
+        raise WorkspaceModeError("workspace_execution_profile_mismatch")
+    if not isinstance(manifest.get("created_at"), str) or not manifest["created_at"]:
+        raise WorkspaceModeError("workspace_created_at_missing")
+    if manifest.get("state") not in WORKSPACE_STATES:
+        raise WorkspaceModeError("invalid_workspace_state")
     directories = manifest.get("directories")
-    if not isinstance(directories, list) or not directories:
-        raise WorkspaceModeError("workspace_directories_missing")
+    expected_directories = [*_COMMON_DIRECTORIES, *_MODE_DIRECTORIES[workspace_mode]]
+    if (not isinstance(directories, list)
+            or len(directories) != len(expected_directories)
+            or len(set(directories)) != len(expected_directories)
+            or any(directory not in directories for directory in expected_directories)):
+        raise WorkspaceModeError("workspace_directories_mismatch")
+    kernel = manifest.get("research_kernel")
+    if not isinstance(kernel, dict) or kernel.get("initialized") != (workspace_mode == "research"):
+        raise WorkspaceModeError("workspace_research_kernel_mismatch")
+    if not isinstance(kernel.get("admission_required"), bool):
+        raise WorkspaceModeError("workspace_research_kernel_mismatch")
+    if workspace_mode == "research":
+        if kernel["admission_required"] != (manifest["state"] != "ready"):
+            raise WorkspaceModeError("workspace_research_kernel_mismatch")
+        if (not isinstance(kernel.get("revision"), int)
+                or isinstance(kernel.get("revision"), bool)
+                or kernel["revision"] < 0):
+            raise WorkspaceModeError("workspace_research_kernel_mismatch")
+    elif kernel["admission_required"] or kernel.get("revision") is not None:
+        raise WorkspaceModeError("workspace_research_kernel_mismatch")
     return manifest
+
+
+def _validate_layout(
+    manifest: dict[str, Any],
+    root: Path,
+    *,
+    allow_partial_admission: bool = False,
+) -> None:
+    """Reject manifests whose declared physical layout is incomplete."""
+
+    if root.is_symlink() or not root.is_dir():
+        raise WorkspaceModeError("workspace_root_invalid")
+    # ``initializing`` and ``failed`` are writer-side transaction states. They
+    # are never attachable runtime states; accepting them here would let the
+    # Python readers open a workspace that the JS Host rejects.
+    if manifest.get("state") not in {"ready", "admission_pending"}:
+        raise WorkspaceModeError(f"workspace_not_attachable: {manifest.get('state')}")
+    for name in RETIRED_WORKSPACE_FILES:
+        path = root / name
+        if path.exists() or path.is_symlink():
+            raise WorkspaceModeError(f"legacy_workspace_layout: {name}")
+    for directory in manifest["directories"]:
+        path = root / directory
+        if path.is_symlink() or not path.is_dir():
+            raise WorkspaceModeError(f"workspace_directory_invalid: {directory}")
+    if manifest["workspace_mode"] != "research":
+        return
+    required_files = (
+        root / "research_map/context.json",
+        root / "lifecycle/liveness.json",
+        root / "memory/index.json",
+        root / "checkpoints/checkpoint_0.json",
+    )
+    if any(path.is_symlink() or not path.is_file() for path in required_files):
+        raise WorkspaceModeError("research_workspace_documents_missing")
+    try:
+        context = _read_json(root / "research_map/context.json")
+        liveness = _read_json(root / "lifecycle/liveness.json")
+        memory = _read_json(root / "memory/index.json")
+        checkpoint = _read_json(root / "checkpoints/checkpoint_0.json")
+    except WorkspaceModeError as exc:
+        raise WorkspaceModeError("research_workspace_documents_invalid") from exc
+    if context.get("schema_version") != "research_map_context_1":
+        raise WorkspaceModeError("unsupported_research_context_schema")
+    if context.get("workspace_id") != manifest["workspace_id"]:
+        raise WorkspaceModeError("research_workspace_id_mismatch")
+    if context.get("workspace_mode") != "research":
+        raise WorkspaceModeError("research_workspace_mode_required")
+    if not isinstance(context.get("created_at"), str) or not context["created_at"]:
+        raise WorkspaceModeError("research_context_created_at_missing")
+    missing = [name for name in RESEARCH_CONTEXT_COLLECTIONS if name not in context]
+    if missing:
+        raise WorkspaceModeError("research_context_missing_collections: " + ", ".join(missing))
+    invalid = [name for name in RESEARCH_CONTEXT_COLLECTIONS if not isinstance(context.get(name), list)]
+    if invalid:
+        raise WorkspaceModeError("research_context_collections_must_be_arrays: " + ", ".join(invalid))
+    if (not isinstance(context.get("focus"), dict)
+            or not isinstance(context["focus"].get("claim_ids"), list)
+            or not isinstance(context["focus"].get("node_ids"), list)):
+        raise WorkspaceModeError("research_context_invalid")
+    if (liveness.get("schema_version") != "research_liveness_1"
+            or liveness.get("workspace_id") != manifest["workspace_id"]
+            or liveness.get("state") not in {"admission_pending", "admitted"}
+            or type(liveness.get("revision")) is not int
+            or liveness["revision"] < 0):
+        raise WorkspaceModeError("research_liveness_invalid")
+    revision = context.get("revision")
+    if (context.get("lifecycle_state") not in {"admission_pending", "admitted"}
+            or (context.get("lifecycle_state") != liveness.get("state")
+                and not (
+                    allow_partial_admission
+                    and manifest["state"] == "admission_pending"
+                    and {context.get("lifecycle_state"), liveness.get("state")} == {"admission_pending", "admitted"}
+                ))
+            or type(revision) is not int or revision < 0
+            or liveness["revision"] != revision):
+        raise WorkspaceModeError("research_revision_mismatch")
+    if (memory.get("schema_version") != "research_memory_index_1"
+            or memory.get("workspace_id") != manifest["workspace_id"]
+            or memory.get("scope") != "workspace"
+            or memory.get("authority") != "research_kernel"
+            or type(memory.get("revision")) is not int
+            or memory["revision"] != revision
+            or memory.get("context_revision") != revision
+            or not isinstance(memory.get("entries"), list)):
+        raise WorkspaceModeError("research_memory_invalid")
+    if (checkpoint.get("schema_version") != "research_checkpoint_1"
+            or checkpoint.get("workspace_id") != manifest["workspace_id"]):
+        raise WorkspaceModeError("research_checkpoint_invalid")
+    admitted = context.get("lifecycle_state") == "admitted" and liveness.get("state") == "admitted"
+    if manifest["state"] == "ready" and not admitted:
+        raise WorkspaceModeError("research_manifest_state_mismatch")
+    if manifest["research_kernel"]["revision"] != revision:
+        raise WorkspaceModeError("workspace_revision_mismatch")
+
+
+def validate_workspace_manifest(
+    manifest: dict[str, Any],
+    root: str | Path,
+    *,
+    require_ready: bool = False,
+    allow_partial_admission: bool = False,
+) -> dict[str, Any]:
+    """Validate one canonical manifest and its physical state projections."""
+
+    if not isinstance(manifest, dict):
+        raise WorkspaceModeError("workspace_manifest_invalid")
+    requested = Path(root).expanduser()
+    if requested.is_symlink():
+        raise WorkspaceModeError(f"workspace_root_symlink: {requested}")
+    path = requested.resolve()
+    result = _validate(manifest, path)
+    if require_ready and result.get("state") != "ready":
+        raise WorkspaceModeError(f"workspace_admission_required: {result.get('state')}")
+    _validate_layout(result, path, allow_partial_admission=allow_partial_admission)
+    return result
 
 
 def _research_seed(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     created_at = manifest["created_at"]
     workspace_id = manifest["workspace_id"]
+    collections = {name: [] for name in RESEARCH_CONTEXT_COLLECTIONS}
     return {
         "context": {
             "schema_version": "research_map_context_1",
             "workspace_id": workspace_id,
+            "map_id": f"map_{workspace_id}",
+            "title": workspace_id,
+            "created_at": created_at,
             "workspace_mode": "research",
             "memory_scope": manifest["memory_scope"],
             "research_state_scope": manifest["research_state_scope"],
@@ -120,10 +285,7 @@ def _research_seed(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "lifecycle": "admission_pending",
             "disposition": None,
             "checkpoint_id": "checkpoint_0",
-            "phases": [],
-            "claims": [],
-            "nodes": [],
-            "gates": [],
+            **collections,
             "focus": {"claim_ids": [], "node_ids": []},
         },
         "liveness": {
@@ -132,6 +294,9 @@ def _research_seed(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "memory_scope": manifest["memory_scope"],
             "research_state_scope": manifest["research_state_scope"],
             "state": "admission_pending",
+            "lifecycle": "admission_pending",
+            "disposition": None,
+            "checkpoint_id": "checkpoint_0",
             "revision": 0,
         },
         "memory": {
@@ -169,6 +334,15 @@ def initialize_workspace(root: str | Path, workspace_id: str, workspace_mode: st
     identifier = _identifier(workspace_id, "workspace_id")
     selected_mode = _mode(workspace_mode)
     manifest_path = path / "workspace_manifest.json"
+    # The manifest is the sole workspace identity authority.  Do this check
+    # before both the create and attach paths so a previously valid workspace
+    # cannot silently re-enter the runtime after an old ResearchMap store is
+    # copied into it.  The JavaScript WorkspacePort applies the same closed
+    # world rule; keeping it here prevents the Python launcher/CLI from
+    # accepting a mixed layout that the Host would later reject.
+    for name in RETIRED_WORKSPACE_FILES:
+        if (path / name).exists() or (path / name).is_symlink():
+            raise WorkspaceModeError(f"legacy_workspace_layout: {name}")
     if manifest_path.exists() or manifest_path.is_symlink():
         manifest = _validate(_read_json(manifest_path), path)
         if manifest["workspace_id"] != identifier:
@@ -177,11 +351,12 @@ def initialize_workspace(root: str | Path, workspace_id: str, workspace_mode: st
             raise WorkspaceModeError("workspace_mode_mismatch")
         if manifest["state"] not in {"ready", "admission_pending"}:
             raise WorkspaceModeError(f"workspace_initialization_incomplete: {manifest['state']}")
+        _validate_layout(
+            manifest,
+            path,
+            allow_partial_admission=manifest["state"] == "admission_pending",
+        )
         return manifest
-
-    for name in ("workspace.json", "research_map.json", "research.db", "transactions.jsonl"):
-        if (path / name).exists() or (path / name).is_symlink():
-            raise WorkspaceModeError(f"legacy_workspace_layout: {name}")
 
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     created_at = _now()
@@ -195,7 +370,10 @@ def initialize_workspace(root: str | Path, workspace_id: str, workspace_mode: st
         # Keep the Python initializer aligned with the Agent Core workspace
         # policy.  These fields are part of the immutable mode contract and
         # are consumed by Host/runtime routing after restart.
-        "memory_profile": "research_map" if selected_mode == "research" else "session",
+        # Agent Core memory is session-scoped in both modes. Durable
+        # workspace-scoped scientific state belongs to the Research Kernel and
+        # is expressed by research_state_scope below.
+        "memory_profile": "session",
         "memory_scope": "session",
         "research_state_scope": "workspace" if selected_mode == "research" else "none",
         "execution_profile": "audited" if selected_mode == "research" else "bounded",
@@ -237,26 +415,121 @@ def admit_research_workspace(root: str | Path) -> dict[str, Any]:
     path = requested_path.resolve()
     manifest_path = path / "workspace_manifest.json"
     manifest = _validate(_read_json(manifest_path), path)
+    _validate_layout(manifest, path, allow_partial_admission=True)
     if manifest["workspace_mode"] != "research":
         raise WorkspaceModeError("workspace_admission_not_required")
-    if manifest["state"] == "ready":
-        return manifest
     if manifest["state"] != "admission_pending":
-        raise WorkspaceModeError(f"workspace_admission_invalid_state: {manifest['state']}")
+        if manifest["state"] != "ready":
+            raise WorkspaceModeError(f"workspace_admission_invalid_state: {manifest['state']}")
     admitted_at = _now()
     context_path = path / "research_map/context.json"
     liveness_path = path / "lifecycle/liveness.json"
     context = _read_json(context_path)
     liveness = _read_json(liveness_path)
-    if context.get("lifecycle_state") != "admission_pending" or liveness.get("state") != "admission_pending":
+    if context.get("schema_version") != "research_map_context_1" or context.get("workspace_mode") != "research":
+        raise WorkspaceModeError("unsupported_research_context_schema")
+    if liveness.get("schema_version") != "research_liveness_1":
+        raise WorkspaceModeError("unsupported_research_liveness_schema")
+    if context.get("workspace_id") != manifest["workspace_id"] or liveness.get("workspace_id") != manifest["workspace_id"]:
+        raise WorkspaceModeError("research_workspace_identity_mismatch")
+    missing = [name for name in RESEARCH_CONTEXT_COLLECTIONS if name not in context]
+    invalid = [name for name in RESEARCH_CONTEXT_COLLECTIONS if not isinstance(context.get(name), list)]
+    if missing:
+        raise WorkspaceModeError("research_context_missing_collections: " + ", ".join(missing))
+    if invalid:
+        raise WorkspaceModeError("research_context_collections_must_be_arrays: " + ", ".join(invalid))
+    focus = context.get("focus")
+    if not isinstance(focus, dict) or not isinstance(focus.get("claim_ids"), list) or not isinstance(focus.get("node_ids"), list):
+        raise WorkspaceModeError("research_context_focus_invalid")
+    if context.get("lifecycle_state") not in {"admission_pending", "admitted"} \
+        or liveness.get("state") not in {"admission_pending", "admitted"} \
+        or (
+            context.get("lifecycle_state") != liveness.get("state")
+            and not (
+                manifest["state"] == "admission_pending"
+                and {context.get("lifecycle_state"), liveness.get("state")} == {"admission_pending", "admitted"}
+            )
+        ) \
+        or context.get("revision") != liveness.get("revision"):
         raise WorkspaceModeError("research_lifecycle_state_mismatch")
-    _write_json(context_path, {**context, "lifecycle_state": "admitted", "admitted_at": admitted_at})
-    _write_json(liveness_path, {**liveness, "state": "admitted", "admitted_at": admitted_at})
+    context_admitted = context.get("lifecycle_state") == "admitted"
+    liveness_admitted = liveness.get("state") == "admitted"
+    # Admission spans context and liveness documents. A process crash between
+    # those replacements must be repairable on the next Host open.
+    if manifest["state"] == "ready" and context_admitted != liveness_admitted:
+        raise WorkspaceModeError("research_lifecycle_state_mismatch")
+    if context_admitted != liveness_admitted:
+        if context_admitted:
+            _write_json(liveness_path, {
+                **liveness,
+                "state": "admitted",
+                "lifecycle": context.get("lifecycle", "idle"),
+                "disposition": context.get("disposition"),
+                "checkpoint_id": context.get("checkpoint_id", "checkpoint_0"),
+                "admitted_at": context.get("admitted_at", admitted_at),
+            })
+            liveness_admitted = True
+        else:
+            _write_json(context_path, {
+                **context,
+                "lifecycle_state": "admitted",
+                "lifecycle": liveness.get("lifecycle", "idle"),
+                "disposition": liveness.get("disposition"),
+                "checkpoint_id": liveness.get("checkpoint_id", "checkpoint_0"),
+                "admitted_at": liveness.get("admitted_at", admitted_at),
+            })
+            context_admitted = True
+    if manifest["state"] == "ready":
+        # A ready workspace may carry any admitted lifecycle projection
+        # (waiting_external, decision_needed, blocked, terminal, ...). Host
+        # restart must reopen it so Root can inspect or checkpoint that state;
+        # only admission facts must agree here.
+        if not context_admitted or not liveness_admitted:
+            raise WorkspaceModeError("research_manifest_state_mismatch")
+        return manifest
+    elif not context_admitted:
+        # Kernel admission may have completed both projections before the
+        # Host crashed while replacing the manifest. Preserve that durable
+        # pair on retry; only perform the initial admission write when the
+        # projections are still pending. Resetting an already-admitted
+        # checkpoint here would silently erase its lifecycle disposition.
+        _write_json(context_path, {
+            **context, "lifecycle_state": "admitted", "lifecycle": "idle", "disposition": None,
+            "checkpoint_id": context.get("checkpoint_id", "checkpoint_0"), "admitted_at": admitted_at,
+        })
+        _write_json(liveness_path, {
+            **liveness, "state": "admitted", "lifecycle": "idle", "disposition": None,
+            "checkpoint_id": liveness.get("checkpoint_id", "checkpoint_0"), "admitted_at": admitted_at,
+        })
+    memory_path = path / "memory/index.json"
+    try:
+        memory = _read_json(memory_path)
+    except WorkspaceModeError as exc:
+        if "missing" not in str(exc):
+            raise
+        memory = _research_seed(manifest)["memory"]
+    _write_json(memory_path, {
+        **memory,
+        "revision": context.get("revision", 0),
+        "context_revision": context.get("revision", 0),
+        "lifecycle": (
+            context.get("lifecycle", "idle") if context_admitted
+            else liveness.get("lifecycle", "idle") if liveness_admitted
+            else "idle"
+        ),
+        "disposition": (
+            context.get("disposition") if context_admitted
+            else liveness.get("disposition") if liveness_admitted
+            else None
+        ),
+        "checkpoint_id": context.get("checkpoint_id", "checkpoint_0"),
+        "focus": context.get("focus", {"claim_ids": [], "node_ids": []}),
+    })
     admitted = {
         **manifest,
         "state": "ready",
         "admitted_at": admitted_at,
-        "research_kernel": {**manifest["research_kernel"], "admission_required": False},
+        "research_kernel": {**manifest["research_kernel"], "admission_required": False, "revision": context.get("revision", 0)},
     }
     _write_json(manifest_path, admitted)
     return admitted
@@ -270,4 +543,5 @@ def read_workspace_mode(root: str | Path) -> str:
         raise WorkspaceModeError(f"workspace_root_symlink: {requested_path}")
     path = requested_path.resolve()
     manifest = _validate(_read_json(path / "workspace_manifest.json"), path)
+    _validate_layout(manifest, path)
     return manifest["workspace_mode"]

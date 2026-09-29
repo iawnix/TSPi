@@ -8,10 +8,16 @@ description: 读取、校验并原子更新由 Phase、Claim、Node、Finding、
 [English version](SKILL.md)
 
 当任务涉及项目研究状态、对象查询、ResearchMap 校验、有界 Research Memory 读取，或通过
-`research_read`、`research_change` 执行原子变更时使用本 Skill。ResearchMap 持久化在
-`research_map/context.json`；`workspace_manifest.json`、`lifecycle/liveness.json` 和
-`memory/index.json` 共同绑定身份与生命周期，不存在第二个权威存储。Decision 记录和
-Evidence Registry 由 Kernel 管理，通过 `research.decisions` 与 `research.evidence` 暴露。
+`research_read`、`research_change` 执行原子变更时使用本 Skill。研究 workspace 必须具备
+`workspace_manifest.json`（`research_agent_workspace_1`）、`research_map/context.json`
+（`research_map_context_1`）和 `lifecycle/liveness.json`（`research_liveness_1`）。Context
+始终包含数组 collection：`phases`、`claims`、`nodes`、`findings`、`gates`、
+`claim_relations`、`attempts`、`artifacts`、`evidence_links`、`continuations`、
+`strategy_plans`、`strategy_reviews`、`attempt_interpretations`；`focus.claim_ids` 和
+`focus.node_ids` 也必须是数组。`memory/index.json` 使用 `research_memory_index_1`，只是
+metadata/lifecycle projection，不是第二个 ResearchMap 权威。Decision 记录和 Evidence
+Registry 由 Kernel 管理，通过 `research_read` 的 `decisions` 与 `evidence` mode 暴露
+（内部 command ID 为 `research.decisions` 与 `research.evidence`）。
 
 `ResearchClaim`、`ResearchNode`、`Finding` 与 `Gate` 是核心研究对象。
 `FactFinding` 和 `IssueFinding` 是 Finding 的类型化实现；`NodeGate` 和 `ClaimGate`
@@ -19,9 +25,10 @@ Evidence Registry 由 Kernel 管理，通过 `research.decisions` 与 `research.
 Node 的状态与结果独立于 Claim 状态表达研究进展。
 
 读取时选择足以回答问题的最小 `research_read` 模式。写入陌生操作前先查询
-`mode=operations`。所有修改都以包含 `principal=root_agent`、`authority=kernel_write` 的显式
-ChangeSet 通过 `research_change` 提交；当过期写入不安全时使用 `expectedRevision`。不要直接编辑
-canonical 文档，也不要访问旧 JSON/SQLite 存储。
+`mode=operations`。所有修改都以显式 ChangeSet 通过 `research_change` 提交；当过期写入不安全时
+使用 `expectedRevision`。Host 会在发往 Kernel 的内部请求中附加 `principal=root_agent` 和
+`authority=kernel_write`；这两个 authority 字段不是公共 tool 参数。不要直接编辑 canonical 文档，
+也不要访问旧 JSON/SQLite 存储。
 
 ChangeSet 的 `type` 必须是
 `references/decision_contract.zh-CN.md` 中的 canonical 操作名，不要编造领域专用操作名。

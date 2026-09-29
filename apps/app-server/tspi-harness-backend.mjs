@@ -1,6 +1,7 @@
 import { lstat, readFile, realpath } from "node:fs/promises";
+import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { createSessionControl } from "./pi-session-control.mjs";
@@ -93,11 +94,25 @@ export async function createTspiHarnessBackend(options = {}) {
 
   async function workspace(workspaceId) {
     if (typeof workspaceId !== "string" || !WORKSPACE_ID.test(workspaceId)) throw error("invalid_workspace", "workspace_id is invalid");
-    const root = resolve(workspaceRoot, workspaceId);
-    if (relative(workspaceRoot, root) !== workspaceId) throw error("invalid_workspace", "workspace_id must name a direct workspace");
-    const info = await lstat(root).catch((cause) => { throw error("workspace_not_found", `Workspace does not exist: ${workspaceId}`, false, cause); });
-    if (!info.isDirectory() || info.isSymbolicLink() || await realpath(root) !== root) throw error("invalid_workspace", "Workspace must be a physical directory");
-    return root;
+    const direct = resolve(workspaceRoot, workspaceId);
+    const candidates = [direct];
+    for (const entry of readdirSync(workspaceRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      const candidate = resolve(workspaceRoot, entry.name);
+      if (!candidates.includes(candidate)) candidates.push(candidate);
+    }
+    const matches = [];
+    for (const candidate of candidates) {
+      try {
+        const info = await lstat(candidate);
+        if (!info.isDirectory() || info.isSymbolicLink() || await realpath(candidate) !== candidate) continue;
+        const manifest = readWorkspaceManifestSync(candidate);
+        if (manifest?.workspace_id === workspaceId) matches.push(candidate);
+      } catch { /* an unrelated or incomplete child is not a workspace */ }
+    }
+    if (matches.length > 1) throw error("invalid_workspace", `Workspace identity is duplicated: ${workspaceId}`);
+    if (matches.length === 0) throw error("workspace_not_found", `Workspace does not exist: ${workspaceId}`);
+    return matches[0];
   }
 
   function summaryFor(summary, root, snapshot, bound = true) {
@@ -136,9 +151,9 @@ export async function createTspiHarnessBackend(options = {}) {
   }
 
   function workspaceIdFor(root) {
-    const value = relative(workspaceRoot, root);
-    if (!value || value.includes("/") || value.includes("\\")) throw error("invalid_workspace", "session cwd is outside the workspace root");
-    return value;
+    const manifest = readWorkspaceManifestSync(root);
+    if (!manifest) throw error("invalid_workspace", "session cwd is not an initialized workspace");
+    return manifest.workspace_id;
   }
 
   function findSummary(sessionId, root) {
@@ -537,9 +552,9 @@ export async function createTspiHarnessBackend(options = {}) {
     const active = binding.active.agent;
     const raw = binding.snapshot?.snapshot || binding.snapshot || {};
     const busy = raw.operation !== null && raw.operation !== undefined;
-    // `auto` is the legacy Host/Monitor wire spelling. Monitor wakes are
-    // always durable next-run entries, even when the lane is currently busy.
-    const requested = payload.source === "monitor" && payload.mode === "auto" ? "next_run" : payload.mode;
+    // Monitor wakes arrive as the canonical durable queue mode. Ordinary
+    // phone input may still use `auto` for prompt-versus-queue admission.
+    const requested = payload.mode;
     if (requested === "steer" || requested === "follow_up" || requested === "next_run" || (requested === "auto" && busy)) {
       const mode = requested === "steer" ? "steer" : requested === "next_run" ? "next_run" : "follow_up";
       const response = await binding.control.dispatch({
@@ -815,7 +830,7 @@ export async function createTspiHarnessBackend(options = {}) {
           retryable: !response.accepted && isRetryableAdmissionFailure(response.error),
           error: response.error || null,
         });
-        const requested = payload.source === "monitor" && payload.mode === "auto" ? "next_run" : payload.mode;
+        const requested = payload.mode;
         if (response.entry_id && requested === "next_run") void kick(binding, { force: true }).catch(() => {});
         return receipt;
       })();
@@ -1065,6 +1080,23 @@ function normalizeModelIdentity(value) {
   if (!value || typeof value !== "object" || typeof value.provider !== "string") return null;
   const id = value.id ?? value.modelId;
   return typeof id === "string" ? { provider: value.provider, id } : null;
+}
+
+function readWorkspaceManifestSync(root) {
+  try {
+    const physical = resolve(root);
+    const info = lstatSync(physical);
+    if (!info.isDirectory() || info.isSymbolicLink()) return null;
+    const manifest = JSON.parse(readFileSync(join(physical, "workspace_manifest.json"), "utf8"));
+    if (manifest?.schema_version !== "research_agent_workspace_1"
+      || !WORKSPACE_ID.test(manifest.workspace_id)
+      || !["light", "research"].includes(manifest.workspace_mode)
+      || manifest.state !== "ready"
+      || resolve(manifest.workspace_root) !== physical) return null;
+    return manifest;
+  } catch {
+    return null;
+  }
 }
 
 const EXPLICIT_ADMISSION_FAILURES = new Set([

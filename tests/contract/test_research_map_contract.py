@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
@@ -8,14 +7,12 @@ import pytest
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
-from ts_agent.research import ResearchKernel
 from ts_agent.research.registry import (
     reconcile_workspace_registry,
     workspace_id_for,
 )
 from ts_agent.research.web import ResearchWebError, handle_request, register_sources
-from ts_agent.workspace import init_workspace
-from ts_agent.workspace.identity import workspace_id as canonical_workspace_id
+from ts_agent.runtime.workspace_mode import admit_research_workspace, initialize_workspace
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -36,6 +33,16 @@ def _provider_request(**values: object) -> dict[str, object]:
         "query": {},
         **values,
     }
+
+
+def _init_workspace(root: Path, workspace_id: str | None = None) -> dict[str, object]:
+    """Create the current canonical research workspace fixture."""
+
+    identifier = workspace_id or f"workspace_{root.name}"
+    manifest = initialize_workspace(root, identifier, "research")
+    if manifest["state"] == "admission_pending":
+        manifest = admit_research_workspace(root)
+    return manifest
 
 
 def test_research_map_transport_contracts_are_consistent() -> None:
@@ -100,7 +107,7 @@ def test_research_map_contract_rejects_private_provider_fields() -> None:
 def test_provider_map_route_returns_the_canonical_research_map(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     state_dir = tmp_path / "state"
-    init_workspace(workspace)
+    _init_workspace(workspace)
     workspace_id = register_sources(state_dir, [workspace])[0]["workspace_id"]
 
     payload = handle_request(
@@ -113,7 +120,9 @@ def test_provider_map_route_returns_the_canonical_research_map(tmp_path: Path) -
     )
 
     Draft202012Validator(_read_json("research-map-response.schema.json")).validate(payload)
-    assert payload["map"] == ResearchKernel(workspace).load().to_dict()
+    assert payload["map"]["map_id"] == f"map_{workspace_id}"
+    assert payload["map"]["revision"] == 0
+    assert payload["map"]["phases"] == []
     assert "source_root" not in payload["workspace"]
 
     with pytest.raises(ResearchWebError, match="unknown workspace route"):
@@ -130,49 +139,7 @@ def test_provider_map_route_returns_the_canonical_research_map(tmp_path: Path) -
 def test_provider_serves_new_filesystem_research_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     state_dir = tmp_path / "state"
-    (workspace / "research_map").mkdir(parents=True)
-    (workspace / "lifecycle").mkdir()
-    (workspace / "workspace_manifest.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "research_agent_workspace_1",
-                "workspace_id": "workspace_filesystem",
-                "workspace_mode": "research",
-                "state": "ready",
-                "workspace_root": str(workspace),
-                "research_kernel": {"initialized": True, "admission_required": False, "revision": 0},
-            }
-        ),
-        encoding="utf-8",
-    )
-    (workspace / "research_map/context.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "research_map_context_1",
-                "workspace_id": "workspace_filesystem",
-                "workspace_mode": "research",
-                "revision": 0,
-                "lifecycle_state": "admitted",
-                "phases": [],
-                "claims": [],
-                "nodes": [],
-                "gates": [],
-                "focus": {"claim_ids": [], "node_ids": []},
-            }
-        ),
-        encoding="utf-8",
-    )
-    (workspace / "lifecycle/liveness.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "research_liveness_1",
-                "workspace_id": "workspace_filesystem",
-                "state": "admitted",
-                "revision": 0,
-            }
-        ),
-        encoding="utf-8",
-    )
+    _init_workspace(workspace, "workspace_filesystem")
 
     workspace_id = register_sources(state_dir, [workspace])[0]["workspace_id"]
     assert workspace_id == "workspace_filesystem"
@@ -184,17 +151,57 @@ def test_provider_serves_new_filesystem_research_workspace(tmp_path: Path) -> No
     )
 
     Draft202012Validator(_read_json("research-map-response.schema.json")).validate(payload)
-    assert payload["map"]["map_id"] == workspace_id
+    assert payload["map"]["map_id"] == f"map_{workspace_id}"
     assert payload["map"]["revision"] == 0
     assert not (workspace / "research_map.json").exists()
     assert not (workspace / "research.db").exists()
 
 
+def test_provider_does_not_expose_an_admission_pending_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    state_dir = tmp_path / "state"
+    _init_workspace(workspace)
+    workspace_id = register_sources(state_dir, [workspace])[0]["workspace_id"]
+
+    # Simulate the durable files during a Host admission transition.  The
+    # registry may retain the row while the workspace is being admitted, but
+    # the read-only Web boundary must not publish that internal state.
+    manifest_path = workspace / "workspace_manifest.json"
+    context_path = workspace / "research_map" / "context.json"
+    liveness_path = workspace / "lifecycle" / "liveness.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    context = json.loads(context_path.read_text(encoding="utf-8"))
+    liveness = json.loads(liveness_path.read_text(encoding="utf-8"))
+    manifest["state"] = "admission_pending"
+    context["lifecycle_state"] = "admission_pending"
+    liveness["state"] = "admission_pending"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    context_path.write_text(json.dumps(context), encoding="utf-8")
+    liveness_path.write_text(json.dumps(liveness), encoding="utf-8")
+
+    with pytest.raises(ResearchWebError, match="unknown workspace id"):
+        handle_request(
+            state_dir,
+            _provider_request(operation="route", workspace_id=workspace_id, route="map"),
+        )
+
+
+def test_provider_rejects_a_non_array_research_collection(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    state_dir = tmp_path / "state"
+    _init_workspace(workspace)
+    context_path = workspace / "research_map" / "context.json"
+    context = json.loads(context_path.read_text(encoding="utf-8"))
+    context["attempts"] = {}
+    context_path.write_text(json.dumps(context), encoding="utf-8")
+    with pytest.raises(ValueError, match="workspace is not an initialized Research Agent workspace"):
+        register_sources(state_dir, [workspace])
+
+
 def test_workspace_discovery_supports_read_only_workspace_roots(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     state_dir = tmp_path / "state"
-    init_workspace(workspace)
-    (workspace / ".research-map.lock").unlink()
+    _init_workspace(workspace, "workspace_filesystem")
     workspace.chmod(0o555)
     try:
         rows = reconcile_workspace_registry(state_dir, [tmp_path])
@@ -206,9 +213,8 @@ def test_workspace_discovery_supports_read_only_workspace_roots(tmp_path: Path) 
 def test_provider_serves_catalog_and_map_from_read_only_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     state_dir = tmp_path / "state"
-    init_workspace(workspace)
+    _init_workspace(workspace)
     workspace_id = register_sources(state_dir, [workspace])[0]["workspace_id"]
-    (workspace / ".research-map.lock").unlink()
     workspace.chmod(0o555)
     try:
         catalog = handle_request(state_dir, _provider_request())
@@ -217,8 +223,8 @@ def test_provider_serves_catalog_and_map_from_read_only_workspace(tmp_path: Path
             state_dir,
             _provider_request(operation="route", workspace_id=workspace_id, route="map"),
         )
-        map_document = json.loads((workspace / "research_map.json").read_text(encoding="utf-8"))
-        assert payload["map"]["map_id"] == map_document["map_id"]
+        context = json.loads((workspace / "research_map" / "context.json").read_text(encoding="utf-8"))
+        assert payload["map"]["map_id"] == context["map_id"]
     finally:
         workspace.chmod(0o755)
 
@@ -226,28 +232,28 @@ def test_provider_serves_catalog_and_map_from_read_only_workspace(tmp_path: Path
 def test_registry_uses_canonical_workspace_identity(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     state_dir = tmp_path / "state"
-    init_workspace(workspace)
+    _init_workspace(workspace)
 
-    assert workspace_id_for(workspace) == canonical_workspace_id(workspace)
+    assert workspace_id_for(workspace) == "workspace_workspace"
     registered = register_sources(state_dir, [workspace])[0]
-    assert registered["workspace_id"] == canonical_workspace_id(workspace)
+    assert registered["workspace_id"] == "workspace_workspace"
     catalog = handle_request(state_dir, _provider_request())
-    assert catalog["workspaces"][0]["workspace_id"] == canonical_workspace_id(workspace)
+    assert catalog["workspaces"][0]["workspace_id"] == "workspace_workspace"
 
 
 def test_registry_keeps_path_id_fallback_for_uninitialized_directory(tmp_path: Path) -> None:
     source = tmp_path / "legacy"
     source.mkdir()
-    expected = "ws_" + hashlib.sha256(str(source.resolve()).encode("utf-8")).hexdigest()[:12]
-    assert workspace_id_for(source) == expected
+    with pytest.raises(ValueError, match="not an initialized Research Agent workspace"):
+        workspace_id_for(source)
 
 
-def test_registry_migrates_short_path_id_and_keeps_legacy_route(tmp_path: Path) -> None:
+def test_registry_rejects_legacy_workspace_id_routes(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     state_dir = tmp_path / "state"
-    init_workspace(workspace)
+    _init_workspace(workspace)
     state_dir.mkdir()
-    legacy_id = "ws_" + hashlib.sha256(str(workspace.resolve()).encode("utf-8")).hexdigest()[:12]
+    legacy_id = "ws_obsolete"
     (state_dir / "workspaces.json").write_text(
         json.dumps({
             "schema_version": "research-web-registry/1",
@@ -262,16 +268,14 @@ def test_registry_migrates_short_path_id_and_keeps_legacy_route(tmp_path: Path) 
     )
 
     rows = reconcile_workspace_registry(state_dir, [tmp_path])
-    canonical = canonical_workspace_id(workspace)
+    canonical = "workspace_workspace"
     assert rows[0]["workspace_id"] == canonical
-    assert legacy_id in rows[0]["legacy_workspace_ids"]
+    assert legacy_id != rows[0]["workspace_id"]
     persisted = json.loads((state_dir / "workspaces.json").read_text(encoding="utf-8"))
     assert persisted["workspaces"][0]["workspace_id"] == canonical
-    assert legacy_id in persisted["workspaces"][0]["legacy_workspace_ids"]
 
-    payload = handle_request(
-        state_dir,
-        _provider_request(operation="route", workspace_id=legacy_id, route="map"),
-    )
-    assert payload["workspace"]["workspace_id"] == canonical
-    assert payload["map"]["map_id"] == canonical
+    with pytest.raises(ResearchWebError, match="unknown workspace id"):
+        handle_request(
+            state_dir,
+            _provider_request(operation="route", workspace_id=legacy_id, route="map"),
+        )

@@ -8,6 +8,7 @@ Host 工具。
 - [生成结构种子](#生成结构种子)
 - [比较已注册结构](#比较已注册结构)
 - [导入已有输入](#导入已有输入)
+- [运行已注册分析](#运行已注册分析)
 - [Activity 与来源](#activity-与来源)
 
 ## 生成结构种子
@@ -93,6 +94,49 @@ Node 本地目录由 Host 管理：
 和 metadata，不保存输入正文。QST2/QST3 导入还要求每个结构使用相同的声明电荷、多重度、
 原子数与原子顺序。拒绝 multi-job `--Link1--` 输入与 Link 0 文件系统路径。Compute 前
 使用 `research_read mode=artifacts` 解析结果。
+
+## 运行已注册分析
+
+`analysis_run` 是确定性的本地分析边界。它消费已登记的 Artifact ID 并写入运行分析
+Artifact；本身不会启动程序、选择 local/remote 环境，也不会自动更新 ResearchMap。调用前先
+读取实时分析目录：
+
+```text
+research_read mode=capabilities capabilityKind=analysis
+research_read mode=capabilities capabilityKind=analysis query=chemical.name.resolve@1
+```
+
+已知精确 capability 与版本时优先使用第二种查询。必须同时存在目录项和精确版本；不存在时
+返回 capability gap，不能靠猜测方法或调用未登记的已安装工具绕过。请求合同为：
+
+```json
+{
+  "operation": "run",
+  "nodeId": "node_1",
+  "capability": "reaction.parse",
+  "capabilityVersion": "1",
+  "inputArtifacts": {
+    "reactants": ["art_..."],
+    "products": ["art_..."]
+  },
+  "parameters": {}
+}
+```
+
+`nodeId` 必须指向已存在且未关闭的 ResearchNode。`inputArtifacts` 是 role 到已登记
+`art_...` ID 数组的映射；物理路径、任意文件名和自行发明的 ID 都无效。Host/Kernel 解析每个
+ID，校验 workspace path、摘要和 input-role schema，然后把不可变内容交给已注册 provider。
+调用方应在请求中把输入绑定到所属 Node，并保留返回的 owner/path metadata；`parameters` 必须
+满足该 capability 的 parameter schema。名称解析除其他字段外接受 `name`、
+`resolver` 和可选候选记录；自动确定性解析还需要 chemical-input Skill 所述的安装级 resolver
+配置。
+
+Provider 将结果写入 `nodes/<node_id>/outputs/analysis/`，并返回绑定的
+`ts-analysis-result/1`，其中包含分析 Artifact 与来源 Artifact ID。Analysis 不会创建 Claim、
+Finding、Gate，也不会改变 Node 状态。Root 必须检查并核验返回 Artifact，然后用
+`research_change` 记录粒度明确的 `FactFinding` 或 `IssueFinding`，并在 `source_refs` 中引用已登记
+的 analysis Artifact。计算生命周期（包括 local/remote）使用 `compute_run`；不要通过
+`analysis_run` 执行计算。
 
 ## Activity 与来源
 

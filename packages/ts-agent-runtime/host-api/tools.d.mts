@@ -100,14 +100,18 @@ type StateReadFields = WorkspaceToolParams & {
   id?: string;
   nodeRef?: string;
   claimId?: string;
+  recordType?: "attempt" | "artifact" | "link";
+  nodeId?: string;
+  artifactId?: string;
+  subjectId?: string;
   limit?: number;
-  storageOperation?: "status" | "bootstrap";
+  storageOperation?: "status";
 };
 export type StateToolParams = StateReadFields & ({
   mode: "capabilities";
   capabilityKind: "compute" | "analysis";
 } | {
-  mode?: "map" | "summary" | "context" | "liveness" | "detail" | "locate" | "validate" | "operations" | "decisions" | "storage" | "artifacts" | "runs";
+  mode?: "map" | "summary" | "context" | "liveness" | "detail" | "locate" | "validate" | "operations" | "decisions" | "evidence" | "storage" | "artifacts" | "runs";
   capabilityKind?: never;
 });
 export type ResearchMapOperation =
@@ -131,7 +135,7 @@ export interface ChangeToolParams extends WorkspaceToolParams {
   expectedRevision?: number;
 }
 export interface WorkflowToolParams extends WorkspaceToolParams {
-  operation: "status" | "set" | "resolve" | "set_required" | "set_deferred" | "set_blocked" | "set_completed" | "strategy" | "interpret" | "checkpoint";
+  operation: "status" | "set" | "set_status" | "resolve" | "clear" | "set_required" | "set_deferred" | "set_blocked" | "set_completed" | "strategy" | "interpret" | "checkpoint";
   scope?: "node" | "claim" | "gate";
   targetId?: string;
   action?: "inspect" | "finalize" | "launch" | "analyze" | "review" | "evaluate" | "close";

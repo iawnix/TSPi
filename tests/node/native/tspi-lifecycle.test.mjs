@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContinuationLivenessHook } from "../../../apps/app-server/pi-native-tools.mjs";
-import { createResearchLifecycleController, toolEventIsError } from "../../../packages/ts-agent-runtime/host-api/lifecycle.mjs";
+import { createResearchLifecycleController, requiredContinuations, toolEventIsError } from "../../../packages/ts-agent-runtime/host-api/lifecycle.mjs";
 import Type from "../../../apps/app-server/pi-runtime-deps.mjs";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { Agent, AgentHarness, BACKGROUND_CONTEXT, createReadTool, MemorySessionRepo } from "@earendil-works/pi-agent-core";
@@ -109,6 +109,14 @@ test("ResearchMap and capability schemas reject invented operations and incomple
       state: "blocked",
       outcome: "stopped",
     }],
+  }), false);
+  assert.equal(Check(contracts.change.parameters, {
+    rationale: "Reject an unnamespaced claim identifier.",
+    operations: [{ type: "create_claim", id: "claim1", statement: "invalid" }],
+  }), false);
+  assert.equal(Check(contracts.change.parameters, {
+    rationale: "Reject an unnamespaced node identifier.",
+    operations: [{ type: "create_node", id: "node1", title: "invalid", objective: "invalid" }],
   }), false);
 });
 
@@ -432,6 +440,15 @@ test("normalized tool-error envelopes keep lifecycle retries in the prior phase"
   assert.equal(toolEventIsError({ details: { envelope: { schema_version: "tspi-tool-result/1", ok: true } } }), false);
 });
 
+test("requiredContinuations reads the canonical required continuation projection", () => {
+  const required = requiredContinuations({
+    schema_version: "research-continuation/1",
+    required: [{ id: "continuation_node_1", status: "required", scope: "node", target_id: "node_1" }],
+    continuations: [],
+  });
+  assert.deepEqual(required, [{ id: "continuation_node_1", status: "required", scope: "node", target_id: "node_1" }]);
+});
+
 test("decision aliases normalize claim and node selectors without rejecting compatibility fields", async () => {
   const calls = [];
   const source = {
@@ -736,20 +753,16 @@ test("Harness transcript persists a structured envelope for argument validation 
   }
 });
 
-test("Research Turn hook continues an explicit required disposition", async () => {
+test("Research Turn hook leaves a canonical continue_required plan for the next turn", async () => {
   const hook = createContinuationLivenessHook({
     cwd: process.cwd(),
     statusReader: async () => ({
       schema_version: "research-liveness/1",
-      lifecycle: "required",
-      required: [{ id: "cont_1", scope: "node", target_id: "node_1", action: "inspect", status: "required" }],
+      lifecycle: "continue_required",
+      continue_required: [{ id: "cont_1", scope: "node", target_id: "node_1", action: "inspect", status: "required" }],
     }),
   });
-  const result = await hook({ runId: "run-required" }, context);
-  assert.match(result.followUp, /cont_1/);
-  assert.match(result.followUp, /research_read with mode=context/);
-  assert.match(result.followUp, /research_continuation with operation=status/);
-  assert.doesNotMatch(result.followUp, /legacy continuation ledger/);
+  assert.equal(await hook({ runId: "run-required" }, context), undefined);
 });
 
 test("production checkpoint mode treats continue_required as a valid next-turn plan", async () => {
@@ -793,7 +806,7 @@ test("Research Turn hook binds the canonical checkpoint to the current run", asy
     maxFollowUps: 1,
     statusReader: async (_signal, turnId) => {
       observedTurnId = turnId;
-      return { schema_version: "research-liveness/1", lifecycle: "terminal", required: [] };
+      return { schema_version: "research-liveness/1", lifecycle: "terminal" };
     },
   });
   assert.equal(await hook({ runId: "run-boundary-1" }, context), undefined);
@@ -871,7 +884,7 @@ test("Harness follow-up requires context before recording the next action", asyn
           lifecycle: "decision_needed",
           decision_needed: [{ scope: "node", target_id: "node_1" }],
         }
-        : { schema_version: "research-liveness/1", lifecycle: "terminal", required: [] };
+        : { schema_version: "research-liveness/1", lifecycle: "terminal" };
     },
   });
   const created = await AgentHarness.create({
@@ -915,7 +928,7 @@ test("Research Turn hook leaves valid waits, plans, and terminal states alone", 
   for (const lifecycle of ["continue_required", "waiting_external", "blocked", "terminal", "idle"]) {
     const hook = createContinuationLivenessHook({
       cwd: process.cwd(),
-      statusReader: async () => ({ schema_version: "research-liveness/1", lifecycle, required: [] }),
+      statusReader: async () => ({ schema_version: "research-liveness/1", lifecycle }),
     });
     assert.equal(await hook({ runId: `run-${lifecycle}` }, context), undefined, lifecycle);
   }

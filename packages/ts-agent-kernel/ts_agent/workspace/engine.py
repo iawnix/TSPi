@@ -32,6 +32,12 @@ LEGACY_FILES = (
 
 
 def init_workspace(root: str | Path) -> dict[str, Any]:
+    raise ContractError(
+        "the retired ResearchMap workspace initializer is unavailable; "
+        "use ts_agent.runtime.workspace_mode.initialize_workspace"
+    )
+    # Kept below only as historical source context; the canonical runtime
+    # must never execute this JSON/SQLite producer.
     root_path = lexical_path(root)
     if path_has_symlink(root_path):
         raise ContractError("workspace root cannot be a symbolic link")
@@ -89,8 +95,12 @@ def init_workspace(root: str | Path) -> dict[str, Any]:
 
 
 def load_research_map(root: str | Path) -> ResearchMap:
-    return ResearchKernel(root).load()
+    raise ContractError(
+        "the retired JSON/SQLite ResearchKernel is unavailable for canonical workspaces"
+    )
 
 
 def change_workspace(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
-    return ResearchKernel(root).apply(request)
+    raise ContractError(
+        "the retired JSON/SQLite ResearchKernel is unavailable; use the filesystem Kernel boundary"
+    )

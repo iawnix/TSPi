@@ -37,9 +37,11 @@ Python 测试按 `tests/unit/`、`tests/contract/` 和 `tests/integration/` 分�
 
 ## 科学模型与验证规则
 
-规范文件只有 `workspace.json`、`research_map.json` 与 `transactions.jsonl`。
-`ResearchMap` 直接拥有 phase、claim、claim relation、node、typed finding、gate、focus
-和 revision；Node 的执行记录位于 `nodes/<node_id>/`，不是另一套科学 registry。
+规范身份文件是 `workspace_manifest.json`。Research workspace 的科学状态位于
+`research_map/context.json`，生命周期位于 `lifecycle/liveness.json`，Kernel 元数据投影位于
+`memory/index.json`。`ResearchMap` 直接拥有 phase、claim、claim relation、node、typed
+finding、gate、focus 和 revision；Node 的执行记录位于 `nodes/<node_id>/`，不是另一套科学
+registry。已废弃的 `workspace.json`、`research_map.json` 和 `transactions.jsonl` 不是运行时权威。
 
 验证必须是确定性的并绑定 revision。Gate 评估声明的 map criteria 与 evidence ref；
 Root Agent 通过 ResearchMap ChangeSet 记录 Claim 或 Node 的解释。不支持的旧文件会在

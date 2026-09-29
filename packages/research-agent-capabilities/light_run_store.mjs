@@ -1,6 +1,7 @@
 import { lstat, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
+import { is_workspace_id } from "../research-agent-core/workspace_id.mjs";
 
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$/u;
 const SCHEMA = "research_agent_light_run_1";
@@ -35,6 +36,13 @@ function object(value, field) {
 function identifier(value, field) {
   if (typeof value !== "string" || !IDENTIFIER.test(value)) {
     throw new LightRunStoreError("invalid_request", `${field} must be a non-empty identifier`);
+  }
+  return value;
+}
+
+function workspace_identifier(value) {
+  if (!is_workspace_id(value)) {
+    throw new LightRunStoreError("invalid_request", "workspace_id must be a valid workspace identifier");
   }
   return value;
 }
@@ -86,7 +94,7 @@ function manifest_path(root, run_id) {
 function validate_manifest(value, expected_root, expected_run_id = undefined) {
   const manifest = object(value, "manifest");
   if (manifest.schema_version !== SCHEMA) throw new LightRunStoreError("invalid_run_manifest", "unsupported light run manifest schema");
-  identifier(manifest.workspace_id, "manifest.workspace_id");
+  workspace_identifier(manifest.workspace_id);
   identifier(manifest.run_id, "manifest.run_id");
   if (expected_run_id !== undefined && manifest.run_id !== expected_run_id) throw new LightRunStoreError("run_id_mismatch", "run manifest run_id does not match its path");
   if (resolve(manifest.workspace_root) !== expected_root) throw new LightRunStoreError("workspace_root_mismatch", "run manifest workspace_root does not match the request");
@@ -122,7 +130,7 @@ export function create_light_run_store({ clock = null } = {}) {
     const manifest = {
       schema_version: SCHEMA,
       protocol_version: LIGHT_RUN_STORE_VERSION,
-      workspace_id: identifier(value.workspace_id, "workspace_id"),
+      workspace_id: workspace_identifier(value.workspace_id),
       workspace_root: root,
       workspace_mode: "light",
       run_id,

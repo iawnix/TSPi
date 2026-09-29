@@ -11,13 +11,13 @@ not route to a successor node.
 
 | Concern | Owner |
 | --- | --- |
-| phases, claims, nodes, findings, gates | `ResearchMap` and `ResearchKernel` |
+| phases, claims, nodes, findings, gates | filesystem Research Kernel context |
 | procedure and capability guidance | Skills |
 | software invocation and parsing | Backends |
 | named local/remote execution and Backend bindings | Compute Environment |
 | remote transport and scheduler details | Platform |
 | attempts, artifacts, scheduler receipts | workspace operational records |
-| browser display | TS Web reading `ResearchMap.to_dict()` |
+| browser display | TS Web reading the canonical context projection |
 
 `FactFinding` and `IssueFinding` are the only scientific outputs recorded by a
 Node. Parser output can be retained as an operational artifact until the Root

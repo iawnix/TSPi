@@ -1,4 +1,9 @@
-"""CLI for the canonical ResearchMap workspace."""
+"""Read-only diagnostics and execution-ID CLI for canonical workspaces.
+
+Workspace creation/admission belongs to ``ts_workspace_mode.py`` and the
+Host.  The retired ResearchMap initializer and bootstrap commands are not
+part of this command boundary.
+"""
 
 from __future__ import annotations
 
@@ -7,8 +12,6 @@ import json
 import sys
 from typing import Any
 
-from .bootstrap import bootstrap_workspace
-from .engine import init_workspace
 from .errors import ContractError
 from .operational_ids import allocate_operational_id
 from .validator import validate_workspace
@@ -16,14 +19,12 @@ from .doctor import inspect_workspace
 
 
 def main(argv: list[str] | None = None, **_: Any) -> int:
-    parser = argparse.ArgumentParser(prog="ts_workspace", description="ResearchMap workspace control")
+    parser = argparse.ArgumentParser(prog="ts_workspace", description="Canonical Research Agent workspace diagnostics")
     sub = parser.add_subparsers(dest="command", required=True)
 
     for name, help_text in (
-        ("init_workspace", "initialize one fresh workspace"),
-        ("bootstrap", "initialize or validate one ResearchMap workspace"),
-        ("validate_workspace", "validate one ResearchMap workspace"),
-        ("doctor", "inspect new and legacy ResearchMap storage without writing"),
+        ("validate_workspace", "validate one canonical workspace"),
+        ("doctor", "validate canonical workspace state without writing"),
     ):
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--root", required=True)
@@ -33,11 +34,7 @@ def main(argv: list[str] | None = None, **_: Any) -> int:
 
     args = parser.parse_args(argv)
     try:
-        if args.command == "init_workspace":
-            result = init_workspace(args.root)
-        elif args.command == "bootstrap":
-            result = bootstrap_workspace(args.root)
-        elif args.command == "validate_workspace":
+        if args.command == "validate_workspace":
             result = validate_workspace(args.root)
         elif args.command == "doctor":
             result = inspect_workspace(args.root)

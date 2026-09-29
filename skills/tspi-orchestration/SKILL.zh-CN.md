@@ -30,13 +30,19 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
 每轮结束前，读取 `research_read` 的 `mode=context` 或 `mode=liveness`，并使用
 `research_checkpoint` 结束生命周期。需要时先记录 strategy 和 Attempt interpretation，再选择一个
 明确 disposition：`continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
-`user_input_required`。`research_continuation` 只是旧 required-action 记录的兼容 ledger，不是主要
+`user_input_required`。`research_continuation` 是辅助 required-action ledger，不是主要
 turn checkpoint。Attempt 或 Continuation 完成本身都不是研究结论。若 liveness 返回
 `decision_needed`，必须继续当前 turn 并记录 checkpoint。`continue_required` 是合法的下一轮计划，
 Harness 不应在同一 turn 强行执行它。Harness 不得替 Agent 发明方法，Monitor 的 `next_run` 也不是
 新的科学指令。
 
-Review 只提供有边界的反方审查，不拥有规范状态。本地与远端环境使用同一组
+Review 只提供有边界的反方审查，不拥有规范状态。`analysis_run` 仅用于从分析目录中发现的
+精确 capability/version；它是已注册的确定性本地分析，没有计算生命周期。对需要审计的
+local/remote 计算，`compute_run` 是计算生命周期入口，负责 Attempt、Artifact、Monitor 以及
+launch 生命周期。`light_compute` 仅限 light workspace 的有界 geometry/provider 运行，不创建
+ResearchMap Attempt。Review 只能提供
+建议，不能写入 ResearchMap、改变 Claim/Node 状态、选择方法、启动或取消 Compute。
+`review_respond` 后由 Root 使用普通 `research_change` 记录接受、拒绝或附带条件的解释。本地与远端环境使用同一组
 `launch`、`inspect`、`finalize`、`cancel` 生命周期。`launch` 返回提交结果（包括结果不确定）后应结束当前
 turn，让持久化 Monitor 投递 `next_run`；不要用 `bash sleep`、`wait` 或手动轮询等待
 调度器任务。收到 Monitor 唤醒或用户稍后明确请求后，重新读取状态并先执行
@@ -52,5 +58,7 @@ turn，让持久化 Monitor 投递 `next_run`；不要用 `bash sleep`、`wait` 
   [program_runtime_failures.zh-CN.md](references/program_runtime_failures.zh-CN.md)。
 - Root 工具和 slash command 见
   [pi_agent_adapter.zh-CN.md](references/pi_agent_adapter.zh-CN.md)。
+- Agent Runtime、Host/App Server、memory、Kernel、Monitor 与 compute 所有权边界见
+  [runtime_boundaries.zh-CN.md](references/runtime_boundaries.zh-CN.md)。
 - 仅在检查已安装包源码时读取
   [package_sources.zh-CN.md](references/package_sources.zh-CN.md)。

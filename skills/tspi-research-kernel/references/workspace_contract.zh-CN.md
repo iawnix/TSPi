@@ -1,12 +1,62 @@
 # 研究 Workspace 合同
 
+## 内容
+
+- [规范状态](#规范状态)
+- [初始化与身份](#初始化与身份)
+- [写入边界](#写入边界)
+- [关系](#关系)
+- [运行记录](#运行记录)
+
 ## 规范状态
 
-每个研究 workspace 由不可变的 `workspace_manifest.json` 绑定。规范科学状态位于
-`research_map/context.json`，生命周期位于 `lifecycle/liveness.json`，有界 memory projection
-位于 `memory/index.json`。三者共享 workspace ID 与 revision，由 Filesystem Research Kernel
-原子写入；运行时不存在 JSON/SQLite 的备用权威。Compute Attempt 与 Artifact 的原始 payload
+每个研究 workspace 由保持 identity 不变的 `workspace_manifest.json` 绑定。其合同要求
+`schema_version=research_agent_workspace_1`、`workspace_mode=research`、绝对路径
+`workspace_root`、稳定的 `workspace_id`，以及 `state` 为 `admission_pending` 或 `ready`。
+Manifest 负责 admission 与路由绑定；ResearchMap revision 保存在 context 与 lifecycle
+投影中。
+规范 workspace ID 必须匹配
+`^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$`；Host 路由、Kernel 请求、本地运行记录与远端计算
+intent 使用同一个值。
+
+Manifest 还固定 authority split 与目录面。Research workspace 必须包含
+`profile_id=research_workspace_1`、`memory_profile=session`、`memory_scope=session`、
+`research_state_scope=workspace`、`execution_profile=audited`，以及
+`research_kernel={initialized:true, admission_required:<state 不是 ready>,
+revision:<非负整数>}`。必需目录严格为 `inputs`、`artifacts`、`runs`、`logs`、
+`research_map`、`memory`、`lifecycle`、`checkpoints`、`nodes`、`evidence`、`monitor`、
+`environments`。Light workspace 使用同一 schema，但字段为
+`profile_id=light_workspace_1`、`research_state_scope=none`、`execution_profile=bounded`、
+`research_kernel={initialized:false, admission_required:false, revision:null}`，目录为
+`inputs`、`artifacts`、`runs`、`logs`、`scratch`、`sessions`。Host、App Server、Kernel 与
+Monitor 读取方都必须校验这些字段；缺失或改写时直接拒绝，不能根据路径推断默认值。
+
+规范科学状态位于 `research_map/context.json`，且必须使用
+`schema_version=research_map_context_1`。即使为空，也必须存在完整的 collection surface。
+必需的数组 collection 为：
+
+```text
+phases、claims、nodes、findings、gates、claim_relations、
+attempts、artifacts、evidence_links、continuations、
+strategy_plans、strategy_reviews、attempt_interpretations
+```
+
+必须存在 `focus`，且其中 `claim_ids`、`node_ids` 都必须是数组。Context 的 `workspace_id`
+和 `workspace_mode=research` 必须与 Manifest 一致。
+
+生命周期 admission 位于 `lifecycle/liveness.json`，使用
+`schema_version=research_liveness_1`；其 `workspace_id`、`state` 与 `revision` 必须和
+Context 一致。有界运行时投影位于 `memory/index.json`，使用
+`schema_version=research_memory_index_1`。它只携带 `context_revision`、生命周期、focus
+metadata 与显式登记的 entries，是 metadata/lifecycle projection，不是第二个 ResearchMap，
+也不是科学权威。Context、liveness 与 memory projection 由 Filesystem Research Kernel 原子
+写入；运行时不存在 JSON/SQLite 的备用权威。Compute Attempt 与 Artifact 的原始 payload
 保留在 Node/Artifact store，context 只保存类型化元数据。
+
+Agent Core 的 `memory_profile` 与 `memory_scope` 在 research 模式下仍然都是
+`session`。持久科学状态属于 Research Kernel，由
+`research_state_scope=workspace` 表示；不要把 memory projection 当作会话记忆，
+也不要通过 Core memory port 写入科学事实。
 
 ## 初始化与身份
 
@@ -28,6 +78,9 @@ research_read -> Root interpretation -> research_change
 ```json
 {"principal":"root_agent","authority":"kernel_write"}
 ```
+
+该身份由 Host 附加到内部 Kernel request；公共 `research_change` tool payload 不包含这两个
+authority 字段。
 
 `research_change` 在 workspace lock 内加载 canonical context，检查 `expectedRevision`，在
 独立副本上应用 ChangeSet 并校验完整 post-state，然后原子提交 context、liveness、memory

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -10,23 +10,21 @@ import {
   recordMonitorTurn,
   sendNotification,
 } from "../../../apps/app-server/pi-monitor-worker.mjs";
+import { create_workspace_initializer } from "../../../packages/research-agent-core/workspace.mjs";
 
 async function fixture(t) {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "tspi-monitor-worker-test-"));
   t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const workspace = join(temporaryRoot, "ts_001");
-  await mkdir(workspace);
   const canonicalId = "ws_" + "a".repeat(24);
-  await writeFile(join(workspace, "workspace_manifest.json"), JSON.stringify({
-    schema_version: "research_agent_workspace_1",
-    workspace_id: canonicalId,
-    workspace_mode: "research",
-  }));
+  const initializer = create_workspace_initializer();
+  await initializer.initialize_workspace({ workspace_root: workspace, workspace_id: canonicalId, workspace_mode: "research" });
+  await initializer.admit_workspace(workspace);
   const event = { event_id: "evt_1", monitor_id: "mon_1", workspace_id: canonicalId, node_id: "node_1", intent_id: "calc_1", state: "completed" };
   const delivery = { event_id: event.event_id, session_id: "existing-session", request_id: "monitor:evt_1" };
   const completed = new Set();
   const receipts = [];
-  return { workspace, event, delivery, completed, receipts,
+  return { workspace, canonicalId, event, delivery, completed, receipts,
     async runJson(command, _workspace, args) {
       if (command === "event") return event;
       const channel = args[args.indexOf("--channel") + 1];
@@ -54,10 +52,10 @@ test("notification retries preserve the wake acknowledgement and original sessio
   assert.deepEqual(await deliverMonitorEvent(dependencies), []);
   assert.equal(wakes.length, 1);
   assert.equal(notifications, 2);
-  assert.equal(wakes[0].workspace_id, "ts_001");
+  assert.equal(wakes[0].workspace_id, state.canonicalId);
   assert.equal(wakes[0].session_id, "existing-session");
   assert.equal(wakes[0].client_message_id, "monitor:evt_1");
-  assert.equal(wakes[0].mode, "auto");
+  assert.equal(wakes[0].mode, "next_run");
   assert.equal(wakes[0].source, "monitor");
 });
 

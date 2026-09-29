@@ -9,6 +9,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { require_workspace_id } from "../research-agent-core/workspace_id.mjs";
 
 export const KERNEL_BRIDGE_PORT_VERSION = "kernel_bridge_port_1";
 export const KERNEL_BRIDGE_METHODS = Object.freeze([
@@ -72,9 +73,7 @@ function ensure_result(value, method) {
  */
 export function create_research_kernel_bridge({ workspace_root, workspace_id, transport } = {}) {
   const root = require_workspace_root(workspace_root);
-  if (workspace_id !== undefined && (typeof workspace_id !== "string" || workspace_id.length === 0)) {
-    throw new TypeError("workspace_id must be a non-empty string");
-  }
+  if (workspace_id !== undefined) require_workspace_id(workspace_id);
   const channel = require_transport(transport);
 
   async function invoke(method, request = {}) {
@@ -130,12 +129,6 @@ root_dir = Path.cwd().resolve()
 sys.path.insert(0, str(root_dir / "packages" / "ts-agent-kernel"))
 
 try:
-    from ts_agent.api import execute
-except Exception as import_error:
-    execute = None
-    _import_error = import_error
-
-try:
     from ts_agent.research.agent_workspace import dispatch as dispatch_agent_workspace, has_state_files
 except Exception as agent_workspace_import_error:
     dispatch_agent_workspace = None
@@ -147,6 +140,13 @@ def _object(value, label):
     if not isinstance(value, dict):
         raise ValueError(label + " must be an object")
     return value
+
+
+RESEARCH_CONTEXT_COLLECTIONS = (
+    "phases", "claims", "nodes", "findings", "gates", "claim_relations",
+    "attempts", "artifacts", "evidence_links", "continuations",
+    "strategy_plans", "strategy_reviews", "attempt_interpretations",
+)
 
 
 def _read_json(path, label):
@@ -172,6 +172,15 @@ def _state_files(root):
         raise ValueError("research_workspace_id_mismatch")
     if context.get("lifecycle_state") != liveness.get("state"):
         raise ValueError("research_lifecycle_state_mismatch")
+    missing = [name for name in RESEARCH_CONTEXT_COLLECTIONS if name not in context]
+    if missing:
+        raise ValueError("research_context_missing_collections: " + ", ".join(missing))
+    invalid = [name for name in RESEARCH_CONTEXT_COLLECTIONS if not isinstance(context[name], list)]
+    if invalid:
+        raise ValueError("research_context_collections_must_be_arrays: " + ", ".join(invalid))
+    focus = context.get("focus")
+    if not isinstance(focus, dict) or not isinstance(focus.get("claim_ids"), list) or not isinstance(focus.get("node_ids"), list):
+        raise ValueError("research_context_focus_invalid")
     return context_path, liveness_path, context, liveness
 
 
@@ -193,95 +202,21 @@ def _atomic_json(path, value):
         raise
 
 
-def _filesystem_admission(root, payload):
-    context_path = root / "research_map" / "context.json"
-    liveness_path = root / "lifecycle" / "liveness.json"
-    if not context_path.exists() and not liveness_path.exists():
-        if execute is None:
-            raise RuntimeError("cannot import ts_agent.api: " + str(_import_error))
-        if payload.get("authority") != "host":
-            raise ValueError("research admission requires Host authority")
-        execute("research.validate", root, {})
-        return {"schema_version": "research_admission_result", "request_id": payload.get("request_id"),
-                "workspace_id": payload.get("workspace_id"), "accepted": True, "state": "admitted", "reason": None}
-    context_path, liveness_path, context, liveness = _state_files(root)
-    workspace_id = context.get("workspace_id")
-    if payload.get("workspace_id") not in (None, workspace_id):
-        raise ValueError("research_workspace_id_mismatch")
-    if payload.get("authority") != "host":
-        raise ValueError("research admission requires Host authority")
-    if context.get("lifecycle_state") == "admitted":
-        return {"schema_version": "research_admission_result", "request_id": payload.get("request_id"),
-                "workspace_id": workspace_id, "accepted": True, "state": "admitted", "reason": None}
-    if context.get("lifecycle_state") != "admission_pending":
-        raise ValueError("research_admission_required")
-    from datetime import datetime, timezone
-    admitted_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    _atomic_json(context_path, {**context, "lifecycle_state": "admitted", "admitted_at": admitted_at})
-    _atomic_json(liveness_path, {**liveness, "state": "admitted", "admitted_at": admitted_at})
-    return {"schema_version": "research_admission_result", "request_id": payload.get("request_id"),
-            "workspace_id": workspace_id, "accepted": True, "state": "admitted", "reason": None}
-
-
-def _require_filesystem_admission_if_present(root):
-    context_path = root / "research_map" / "context.json"
-    liveness_path = root / "lifecycle" / "liveness.json"
-    if not context_path.exists() and not liveness_path.exists():
-        return
-    _, _, context, liveness = _state_files(root)
-    if context.get("lifecycle_state") != "admitted" or liveness.get("state") != "admitted":
-        raise ValueError("research_admission_required")
-
-
 def dispatch(method, payload):
     workspace_root = payload.get("workspace_root")
     if not isinstance(workspace_root, str) or not workspace_root:
         raise ValueError("workspace_root is required")
     root = Path(workspace_root).expanduser().resolve()
-    # New Research Agent workspaces are authoritative in context/liveness
-    # documents.  Route every operation through that boundary, including
-    # mutations and checkpoints; do not fall through to research_map.json.
-    if has_state_files is not None and has_state_files(root):
-        if dispatch_agent_workspace is None:
-            raise RuntimeError("cannot import ts_agent.research.agent_workspace: " + str(_agent_workspace_import_error))
-        return dispatch_agent_workspace(root, method, payload)
-    if method == "admit_workspace":
-        return _filesystem_admission(root, payload)
-    if execute is None:
-        raise RuntimeError("cannot import ts_agent.api: " + str(_import_error))
-    if method == "read_context":
-        try:
-            return execute("research.context", root, {})
-        except Exception:
-            return _state_files(root)[2]
-    if method == "read_liveness":
-        try:
-            return execute("research.liveness", root, {})
-        except Exception:
-            return _state_files(root)[3]
-    if method == "apply_change":
-        _require_filesystem_admission_if_present(root)
-        body = payload.get("request", payload)
-        body = dict(body)
-        for key in ("workspace_root", "root", "workspace_id"):
-            body.pop(key, None)
-        return execute("research.change", root, {"request": body})
-    if method == "checkpoint":
-        _require_filesystem_admission_if_present(root)
-        body = payload.get("request", payload)
-        body = dict(body)
-        for key in ("workspace_root", "root", "workspace_id"):
-            body.pop(key, None)
-        return execute("research.checkpoint", root, {"request": body})
-    if method == "turn":
-        body = payload.get("request", payload)
-        body = dict(body)
-        for key in ("workspace_root", "root", "workspace_id"):
-            body.pop(key, None)
-        if body.get("operation") in {"checkpoint", "end"}:
-            _require_filesystem_admission_if_present(root)
-        return execute("research.turn", root, {"request": body})
-    raise ValueError("unsupported kernel bridge method: " + str(method))
+    # The bridge is a transport for the canonical filesystem Research Kernel.
+    # A missing or partial marker set is a configuration error; it must never
+    # select the retired JSON/SQLite command service.
+    if has_state_files is None:
+        raise RuntimeError("cannot import ts_agent.research.agent_workspace: " + str(_agent_workspace_import_error))
+    if not has_state_files(root):
+        raise ValueError("research workspace requires workspace_manifest.json, research_map/context.json, and lifecycle/liveness.json")
+    if dispatch_agent_workspace is None:
+        raise RuntimeError("cannot import ts_agent.research.agent_workspace: " + str(_agent_workspace_import_error))
+    return dispatch_agent_workspace(root, method, payload)
 
 
 for line in sys.stdin:

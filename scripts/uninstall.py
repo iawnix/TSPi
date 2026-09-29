@@ -307,6 +307,7 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
                 root / ".pi/email",
                 root / ".pi/ts-web",
                 root / ".pi/compute.toml",
+                root / ".pi/name-resolver.toml",
                 root / ".pi/notifications.toml",
                 root / "uninstall.sh",
             ])

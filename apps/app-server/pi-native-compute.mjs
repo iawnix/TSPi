@@ -1,12 +1,12 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
 import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
 import { boundWorkspaceRoot } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
-import { readWorkspaceMode } from "./workspace-mode-tools.mjs";
+import { readWorkspaceManifest, readWorkspaceMode } from "./workspace-mode-tools.mjs";
 import { create_tool_gateway } from "../../packages/research-agent-capabilities/tool_gateway.mjs";
 import { create_compute_orchestrator } from "../../packages/research-agent-capabilities/compute_orchestrator.mjs";
 
@@ -66,7 +66,7 @@ export function createComputeTool(options = {}) {
         const orchestrator = options.computeOrchestrator || options.compute_orchestrator
           || (gateway ? create_compute_orchestrator({ tool_gateway: gateway, artifact_store: gateway.artifact_store }) : null);
         if (!orchestrator) throw new Error("compute_capability_host_not_configured");
-        const workspace_id = toolContext?.workspace_id || toolContext?.workspaceId || basename(root);
+        const workspace_id = (await readWorkspaceManifest(root)).workspace_id;
         const result = await orchestrator.run({
           workspace_id,
           workspace_root: root,
@@ -473,7 +473,7 @@ async function preflightComputeRequest(root, request, signal, onStage) {
     if (typeof raw[key] !== "string" || !raw[key]) throw new Error(`compute preflight has no ${key}`);
   }
   const descriptor = isPlainObject(raw.capability_descriptor) ? raw.capability_descriptor : undefined;
-  if (!descriptor || descriptor.capability !== raw.capability || descriptor.version !== raw.capability_version) {
+  if (!descriptor || descriptor.capability_id !== raw.capability || descriptor.capability_version !== raw.capability_version) {
     throw new Error("compute preflight has no matching capability descriptor");
   }
   if (typeof raw.capability_descriptor_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.capability_descriptor_digest)) {
@@ -799,7 +799,7 @@ function buildCalculationRequest(request) {
         ncpus: resources.ncpus,
         memory: resources.memory,
         walltime: resources.walltime,
-        ngpus: resources.ngpus,
+        ngpus: resources.ngpus ?? 0,
         mpiprocs: resources.mpiprocs ?? null,
         ompthreads: resources.ompthreads ?? null,
       },
@@ -810,8 +810,12 @@ function buildCalculationRequest(request) {
 
 function summarizeCapabilityDescriptor(value) {
   const summary = {
-    capability: requireBindingString(value.capability, "capability_descriptor.capability"),
-    version: requireBindingString(value.version, "capability_descriptor.version"),
+    // The child task packet is an internal calculation-intent projection and
+    // keeps the semantic ``capability``/``version`` names.  The public
+    // catalog and raw preflight descriptor use the canonical
+    // ``capability_id``/``capability_version`` envelope.
+    capability: requireBindingString(value.capability_id, "capability_descriptor.capability_id"),
+    version: requireBindingString(value.capability_version, "capability_descriptor.capability_version"),
     input_roles: requireBindingStringArray(value.input_roles, "capability_descriptor.input_roles"),
     output_roles: requireBindingStringArray(value.output_roles, "capability_descriptor.output_roles"),
     parsers: requireBindingStringArray(value.parsers, "capability_descriptor.parsers"),

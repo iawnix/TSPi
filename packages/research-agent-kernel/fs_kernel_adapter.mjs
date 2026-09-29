@@ -10,11 +10,18 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { require_workspace_id } from "../research-agent-core/workspace_id.mjs";
+import { validate_workspace_files } from "../research-agent-core/workspace.mjs";
 
 export const FS_RESEARCH_KERNEL_VERSION = "fs_research_kernel_1";
 export const RESEARCH_CONTEXT_SCHEMA = "research_map_context_1";
 export const RESEARCH_LIVENESS_SCHEMA = "research_liveness_1";
 export const RESEARCH_CHECKPOINT_SCHEMA = "research_checkpoint_1";
+export const RESEARCH_CONTEXT_COLLECTIONS = Object.freeze([
+  "phases", "claims", "nodes", "findings", "gates", "claim_relations",
+  "attempts", "artifacts", "evidence_links", "continuations",
+  "strategy_plans", "strategy_reviews", "attempt_interpretations",
+]);
 
 /**
  * Operational Attempt lifecycle.  Attempt state is deliberately separate from
@@ -50,6 +57,7 @@ const ATTEMPT_TRANSITIONS = Object.freeze({
 });
 
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u;
+const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/u;
 const NODE_ID = /^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u;
 const CLAIM_ID = /^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u;
 const RESEARCH_STATE = Object.freeze({ pending: "admission_pending", admitted: "admitted" });
@@ -198,8 +206,12 @@ async function restore_json(path, snapshot) {
 function workspace_id_from_documents(context, liveness, configured) {
   const context_id = context.workspace_id;
   const liveness_id = liveness.workspace_id;
-  require_identifier(context_id, "context.workspace_id");
-  require_identifier(liveness_id, "liveness.workspace_id");
+  if (typeof context_id !== "string" || !WORKSPACE_ID.test(context_id)) {
+    throw new Error("context.workspace_id must be a valid workspace identifier");
+  }
+  if (typeof liveness_id !== "string" || !WORKSPACE_ID.test(liveness_id)) {
+    throw new Error("liveness.workspace_id must be a valid workspace identifier");
+  }
   if (context_id !== liveness_id) throw new Error("research_workspace_id_mismatch");
   if (configured !== undefined && context_id !== configured) {
     throw new Error("research_workspace_id_mismatch");
@@ -207,7 +219,7 @@ function workspace_id_from_documents(context, liveness, configured) {
   return context_id;
 }
 
-function validate_documents(context, liveness, configured) {
+function validate_documents(context, liveness, configured, { allow_partial_admission = false } = {}) {
   if (context.schema_version !== RESEARCH_CONTEXT_SCHEMA) {
     throw new Error("unsupported_research_context_schema");
   }
@@ -216,6 +228,17 @@ function validate_documents(context, liveness, configured) {
   }
   if (context.workspace_mode !== "research") {
     throw new Error("research_workspace_mode_required");
+  }
+  if (typeof context.created_at !== "string" || context.created_at.length === 0) {
+    throw new Error("research_context_created_at_missing");
+  }
+  const missing = RESEARCH_CONTEXT_COLLECTIONS.filter((field) => !Object.prototype.hasOwnProperty.call(context, field));
+  if (missing.length > 0) throw new Error(`research_context_missing_collections: ${missing.join(", ")}`);
+  const invalid = RESEARCH_CONTEXT_COLLECTIONS.filter((field) => !Array.isArray(context[field]));
+  if (invalid.length > 0) throw new Error(`research_context_collections_must_be_arrays: ${invalid.join(", ")}`);
+  if (!context.focus || typeof context.focus !== "object" || Array.isArray(context.focus)
+    || !Array.isArray(context.focus.claim_ids) || !Array.isArray(context.focus.node_ids)) {
+    throw new Error("research_context_focus_invalid");
   }
   const workspace_id = workspace_id_from_documents(context, liveness, configured);
   const context_state = context.lifecycle_state;
@@ -226,7 +249,14 @@ function validate_documents(context, liveness, configured) {
   if (!Object.values(RESEARCH_STATE).includes(liveness_state)) {
     throw new Error(`invalid_research_liveness_state: ${String(liveness_state)}`);
   }
-  if (context_state !== liveness_state) throw new Error("research_lifecycle_state_mismatch");
+  if (context_state !== liveness_state && !(
+    allow_partial_admission
+    && context_state !== undefined
+    && liveness_state !== undefined
+    && new Set([context_state, liveness_state]).size === 2
+    && [context_state, liveness_state].includes(RESEARCH_STATE.pending)
+    && [context_state, liveness_state].includes(RESEARCH_STATE.admitted)
+  )) throw new Error("research_lifecycle_state_mismatch");
   if (!Number.isInteger(context.revision) || context.revision < 0) {
     throw new Error("invalid_research_context_revision");
   }
@@ -317,6 +347,12 @@ async function persist_memory_projection(root, context, liveness) {
 
 function liveness_projection(context, liveness, checkpoint = null) {
   const result = { ...liveness };
+  if (context.lifecycle_state !== RESEARCH_STATE.admitted || liveness.state !== RESEARCH_STATE.admitted) {
+    result.lifecycle = RESEARCH_STATE.pending;
+    result.disposition = null;
+    result.checkpoint_id ??= context.checkpoint_id ?? "checkpoint_0";
+    return result;
+  }
   const source = checkpoint && typeof checkpoint === "object" ? checkpoint : null;
   const disposition = source?.disposition;
   if (source && disposition === undefined) {
@@ -1081,32 +1117,28 @@ function apply_operation(context, operation) {
 /** Create a persistent adapter bound to one research workspace directory. */
 export function create_fs_research_kernel({ workspace_root, workspace_id } = {}) {
   const root = require_workspace_root(workspace_root);
-  if (workspace_id !== undefined) require_identifier(workspace_id, "workspace_id");
+  if (workspace_id !== undefined) require_workspace_id(workspace_id);
   const context_path = join(root, "research_map", "context.json");
   const liveness_path = join(root, "lifecycle", "liveness.json");
   const manifest_path = join(root, "workspace_manifest.json");
 
-  async function load_state() {
+  async function load_state({ allow_partial_admission = false } = {}) {
     const context = await read_json(context_path, "research_context");
     const liveness = await read_json(liveness_path, "research_liveness");
-    const id = validate_documents(context, liveness, workspace_id);
+    const id = validate_documents(context, liveness, workspace_id, { allow_partial_admission });
     const manifest = await read_json(manifest_path, "workspace_manifest");
-    if (manifest.schema_version !== "research_agent_workspace_1") {
-      throw new Error("unsupported_workspace_manifest");
-    }
+    await validate_workspace_files(manifest, root, { allow_partial_admission });
     if (manifest.workspace_mode !== "research") {
       throw new Error("research_workspace_mode_required");
     }
     if (manifest.workspace_id !== id) {
       throw new Error("research_workspace_id_mismatch");
     }
-    if (manifest.workspace_root !== undefined && resolve(manifest.workspace_root) !== root) {
-      throw new Error("research_workspace_root_mismatch");
-    }
-    if (!["admission_pending", "ready"].includes(manifest.state)) {
-      throw new Error(`invalid_workspace_manifest_state: ${String(manifest.state)}`);
-    }
-    if ((manifest.state === "ready") !== (context.lifecycle_state === RESEARCH_STATE.admitted)) {
+    // Context/liveness are committed before the final manifest replacement.
+    // If Host crashes in that small window, keep the pair readable so the
+    // next admission call can finalize the manifest. A ready manifest still
+    // requires an admitted Kernel state.
+    if (manifest.state === "ready" && context.lifecycle_state !== RESEARCH_STATE.admitted) {
       throw new Error("research_manifest_state_mismatch");
     }
     return { context, liveness, workspace_id: id };
@@ -1125,7 +1157,7 @@ export function create_fs_research_kernel({ workspace_root, workspace_id } = {})
 
   async function admit_workspace(request = {}) {
     return with_workspace_lock(root, async () => {
-      const state = await load_state();
+      const state = await load_state({ allow_partial_admission: true });
       const manifest = await read_json(manifest_path, "workspace_manifest");
       require_request_workspace(request, state.workspace_id, root);
       if (request.authority !== "host") {
@@ -1134,44 +1166,65 @@ export function create_fs_research_kernel({ workspace_root, workspace_id } = {})
       if (request.expected_state !== undefined && request.expected_state !== RESEARCH_STATE.pending) {
         throw new Error("invalid research admission state");
       }
-      if (state.context.lifecycle_state === RESEARCH_STATE.admitted) {
-        if (manifest.state !== "ready") {
-          await write_json_atomic(manifest_path, {
-            ...manifest,
-            state: "ready",
-            admitted_at: state.context.admitted_at ?? now(),
-            research_kernel: {
-              ...(manifest.research_kernel && typeof manifest.research_kernel === "object" ? manifest.research_kernel : {}),
-              admission_required: false,
-            },
-          });
-        }
-        return {
-          schema_version: "research_admission_result",
-          request_id: request.request_id ?? null,
-          workspace_id: state.workspace_id,
-          accepted: true,
-          state: "admitted",
-          reason: null,
+      const admitted_at = now();
+      let context;
+      let liveness;
+      const context_admitted = state.context.lifecycle_state === RESEARCH_STATE.admitted;
+      const liveness_admitted = state.liveness.state === RESEARCH_STATE.admitted;
+      if (manifest.state === "ready" && context_admitted !== liveness_admitted) {
+        throw new Error("research_manifest_state_mismatch");
+      }
+      if (context_admitted && !liveness_admitted) {
+        context = state.context;
+        liveness = {
+          ...state.liveness,
+          state: RESEARCH_STATE.admitted,
+          lifecycle: state.context.lifecycle ?? "idle",
+          disposition: state.context.disposition ?? null,
+          checkpoint_id: state.context.checkpoint_id ?? "checkpoint_0",
+          admitted_at: state.context.admitted_at ?? admitted_at,
+        };
+      } else if (!context_admitted && liveness_admitted) {
+        liveness = state.liveness;
+        context = {
+          ...state.context,
+          lifecycle_state: RESEARCH_STATE.admitted,
+          lifecycle: state.liveness.lifecycle ?? "idle",
+          disposition: state.liveness.disposition ?? null,
+          checkpoint_id: state.liveness.checkpoint_id ?? "checkpoint_0",
+          admitted_at: state.liveness.admitted_at ?? admitted_at,
+        };
+      } else if (context_admitted && liveness_admitted) {
+        context = state.context;
+        liveness = state.liveness;
+      } else {
+        context = { ...state.context, lifecycle_state: RESEARCH_STATE.admitted, lifecycle: "idle", disposition: null, admitted_at };
+        liveness = {
+          ...state.liveness,
+          state: RESEARCH_STATE.admitted,
+          lifecycle: "idle",
+          disposition: null,
+          checkpoint_id: state.liveness.checkpoint_id ?? "checkpoint_0",
+          admitted_at,
         };
       }
-      const admitted_at = now();
-      const context = { ...state.context, lifecycle_state: RESEARCH_STATE.admitted, lifecycle: "idle", disposition: null, admitted_at };
-      const liveness = { ...state.liveness, state: RESEARCH_STATE.admitted, admitted_at };
       const manifest_admitted = {
         ...manifest,
         state: "ready",
         admitted_at,
-        research_kernel: {
-          ...(manifest.research_kernel && typeof manifest.research_kernel === "object" ? manifest.research_kernel : {}),
-          admission_required: false,
-        },
+          research_kernel: {
+            ...(manifest.research_kernel && typeof manifest.research_kernel === "object" ? manifest.research_kernel : {}),
+            admission_required: false,
+            revision: state.context.revision,
+          },
       };
       const memory_path = join(root, "memory", "index.json");
       const memory_before = await optional_json(memory_path, "research_memory_index");
       try {
-        await write_json_atomic(context_path, context);
-        await write_json_atomic(liveness_path, liveness);
+        if (!context_admitted || !liveness_admitted) {
+          await write_json_atomic(context_path, context);
+          await write_json_atomic(liveness_path, liveness);
+        }
         await persist_memory_projection(root, context, liveness);
         await write_json_atomic(manifest_path, manifest_admitted);
       } catch (error) {
@@ -1215,16 +1268,25 @@ export function create_fs_research_kernel({ workspace_root, workspace_id } = {})
       context.lifecycle = liveness.lifecycle ?? "idle";
       context.disposition = liveness.disposition ?? null;
       context.checkpoint_id = liveness.checkpoint_id ?? null;
+      const manifest = await read_json(manifest_path, "workspace_manifest");
+      const kernel_state = manifest.research_kernel && typeof manifest.research_kernel === "object"
+        ? manifest.research_kernel : {};
+      const updated_manifest = {
+        ...manifest,
+        research_kernel: { ...kernel_state, revision: context.revision },
+      };
       const memory_path = join(root, "memory", "index.json");
       const memory_before = await optional_json(memory_path, "research_memory_index");
       try {
         await write_json_atomic(context_path, context);
         await write_json_atomic(liveness_path, liveness);
         await persist_memory_projection(root, context, liveness);
+        await write_json_atomic(manifest_path, updated_manifest);
       } catch (error) {
         await restore_json(context_path, { existed: true, value: state.context });
         await restore_json(liveness_path, { existed: true, value: state.liveness });
         await restore_json(memory_path, memory_before);
+        await restore_json(manifest_path, { existed: true, value: manifest });
         throw error;
       }
       return {

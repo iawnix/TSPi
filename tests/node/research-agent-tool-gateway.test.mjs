@@ -63,6 +63,15 @@ test("tool gateway discovers and invokes Host-registered providers", async () =>
   });
   assert.deepEqual(result.output, { value: "registered" });
 
+  await assert.rejects(
+    gateway.invoke({ workspace_mode: "light", tool_name: "fixture_echo", input: {} }),
+    (error) => error?.code === "invalid_request" && /tool_name is not part/.test(error.message),
+  );
+  await assert.rejects(
+    gateway.invoke({ workspace_mode: "light", capability_id: "fixture_echo", version: "1", input: {} }),
+    (error) => error?.code === "invalid_request" && /version is not part/.test(error.message),
+  );
+
   assert.throws(() => gateway.register_provider(provider), /provider is already registered/);
   assert.equal(gateway.unregister_provider("fixture_provider"), true);
   await assert.rejects(

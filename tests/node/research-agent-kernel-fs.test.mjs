@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -67,6 +67,37 @@ test("filesystem kernel persists admission and allows changes after restart", as
     assert.equal(checkpoint.accepted, true);
     const saved = JSON.parse(await readFile(join(root, "checkpoints", "checkpoint_1.json"), "utf8"));
     assert.equal(saved.lifecycle_state, "admitted");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("filesystem kernel repairs a liveness-first admission without erasing its projection", async () => {
+  const root = await research_workspace("research-kernel-liveness-first-");
+  try {
+    const livenessPath = join(root, "lifecycle/liveness.json");
+    const liveness = JSON.parse(await readFile(livenessPath, "utf8"));
+    await writeFile(livenessPath, JSON.stringify({
+      ...liveness,
+      state: "admitted",
+      lifecycle: "waiting_external",
+      disposition: "waiting_external",
+      checkpoint_id: "checkpoint_waiting",
+    }));
+    const kernel = create_fs_research_kernel({ workspace_root: root });
+    const admission = await kernel.admit_workspace({
+      workspace_id: "workspace_fs_kernel",
+      authority: "host",
+      expected_state: "admission_pending",
+    });
+    assert.equal(admission.accepted, true);
+    const context = await kernel.read_context();
+    const recovered = JSON.parse(await readFile(livenessPath, "utf8"));
+    assert.equal(context.lifecycle_state, "admitted");
+    assert.equal(context.lifecycle, "waiting_external");
+    assert.equal(context.disposition, "waiting_external");
+    assert.equal(recovered.lifecycle, "waiting_external");
+    assert.equal(recovered.disposition, "waiting_external");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

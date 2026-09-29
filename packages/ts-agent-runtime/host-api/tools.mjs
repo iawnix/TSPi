@@ -225,6 +225,10 @@ export function createPublicToolContracts(Type) {
   const identifier = (maxLength = 256) => Type.String({ minLength: 1, maxLength });
   const text = (maxLength = 12_000) => Type.String({ minLength: 1, maxLength });
   const stringArray = (maxItems = 128) => Type.Array(identifier(), { maxItems, uniqueItems: true });
+  const nodeReference = Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 });
+  const claimReference = Type.String({ pattern: "^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 });
+  const nodeReferences = (maxItems = 128) => Type.Array(nodeReference, { maxItems, uniqueItems: true });
+  const claimReferences = (maxItems = 128) => Type.Array(claimReference, { maxItems, uniqueItems: true });
   const metadata = Type.Object({}, { additionalProperties: true, maxProperties: 32 });
   const operation = (type, properties) => Type.Object({
     type: Type.Literal(type),
@@ -238,12 +242,12 @@ export function createPublicToolContracts(Type) {
   // cannot carry an outcome, while closing a node must carry one.
   const setNodeStateOperation = Type.Union([
     operation("set_node_state", {
-      node_id: identifier(),
+      node_id: nodeReference,
       state: literalUnion(["planned", "active", "paused", "blocked"]),
       summary: Type.Optional(text()),
     }),
     operation("set_node_state", {
-      node_id: identifier(),
+      node_id: nodeReference,
       state: Type.Literal("closed"),
       outcome: literalUnion(["completed", "inconclusive", "stopped"]),
       summary: Type.Optional(text()),
@@ -258,20 +262,20 @@ export function createPublicToolContracts(Type) {
       created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
     }),
     operation("create_claim", {
-      id: identifier(), statement: text(),
+      id: claimReference, statement: text(),
       status: Type.Optional(literalUnion(["proposed", "supported", "contradicted", "inconclusive", "withdrawn"])),
       predictions: Type.Optional(stringArray()), falsifiers: Type.Optional(stringArray()),
       created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
     }),
     operation("create_node", {
-      id: identifier(), title: text(2000), objective: text(),
-      phase_id: Type.Optional(identifier()), claim_ids: Type.Optional(stringArray()),
-      dependency_ids: Type.Optional(stringArray()), created_at: Type.Optional(identifier()),
+      id: nodeReference, title: text(2000), objective: text(),
+      phase_id: Type.Optional(identifier()), claim_ids: Type.Optional(claimReferences()),
+      dependency_ids: Type.Optional(nodeReferences()), created_at: Type.Optional(identifier()),
       metadata: Type.Optional(metadata),
     }),
     operation("create_finding", {
-      id: identifier(), node_id: identifier(), statement: text(),
-      kind: literalUnion(["fact", "issue"]), claim_ids: Type.Optional(stringArray()),
+      id: identifier(), node_id: nodeReference, statement: text(),
+      kind: literalUnion(["fact", "issue"]), claim_ids: Type.Optional(claimReferences()),
       source_refs: Type.Optional(stringArray(256)), value: Type.Optional(Type.Any()),
       datatype: Type.Optional(identifier(128)), unit: Type.Optional(identifier(128)),
       provenance: Type.Optional(metadata),
@@ -302,24 +306,31 @@ export function createPublicToolContracts(Type) {
     }),
     setNodeStateOperation,
     operation("set_claim_status", {
-      claim_id: identifier(), status: literalUnion(["proposed", "supported", "contradicted", "inconclusive", "withdrawn"]),
+      claim_id: claimReference, status: literalUnion(["proposed", "supported", "contradicted", "inconclusive", "withdrawn"]),
     }),
     operation("relate_claims", {
-      source_id: identifier(), target_id: identifier(), relation: identifier(128),
+      source_id: claimReference, target_id: claimReference, relation: identifier(128),
     }),
     operation("set_focus", {
-      claim_ids: stringArray(), node_ids: stringArray(),
+      claim_ids: claimReferences(), node_ids: nodeReferences(),
     }),
   ]);
   const stateFields = {
     root: optionalRoot,
     query: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-    claimId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+    claimId: Type.Optional(claimReference),
+    recordType: Type.Optional(enumString(["attempt", "artifact", "link"])),
+    nodeId: Type.Optional(nodeReference),
+    artifactId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+    subjectId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
     limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2048 })),
-    storageOperation: Type.Optional(enumString(["status", "bootstrap"])),
+    // Canonical Filesystem Kernel storage is a read-only projection. The
+    // retired SQLite bootstrap operation is intentionally not part of the
+    // Agent-facing contract.
+    storageOperation: Type.Optional(Type.Literal("status")),
     kind: Type.Optional(enumString(["phase", "claim", "node", "finding", "gate"])),
     id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-    nodeRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+    nodeRef: Type.Optional(nodeReference),
   };
   const stateReadSchema = Type.Union([
     Type.Object({
@@ -331,7 +342,7 @@ export function createPublicToolContracts(Type) {
       ...stateFields,
       mode: Type.Optional(literalUnion([
         "map", "summary", "context", "liveness", "detail", "locate", "validate",
-        "operations", "decisions", "storage", "artifacts", "runs",
+        "operations", "decisions", "evidence", "storage", "artifacts", "runs",
       ])),
     }, { additionalProperties: false }),
   ]);
@@ -344,7 +355,10 @@ export function createPublicToolContracts(Type) {
     ncpus: Type.Integer({ minimum: 1 }),
     memory: Type.String({ pattern: "^[1-9][0-9]*(?:kb|mb|gb|tb)$" }),
     walltime: Type.String({ pattern: "^[0-9]{1,4}:[0-5][0-9]:[0-5][0-9]$" }),
-    ngpus: Type.Integer({ minimum: 0 }),
+    // The kernel contract defaults ngpus to zero when the scheduler does not
+    // request accelerators. Keep this field optional at the public tool
+    // boundary and materialize the explicit zero in the calculation request.
+    ngpus: Type.Optional(Type.Integer({ minimum: 0 })),
     mpiprocs: Type.Optional(Type.Integer({ minimum: 1 })),
     ompthreads: Type.Optional(Type.Integer({ minimum: 1 })),
   }, { additionalProperties: false });
@@ -750,6 +764,14 @@ function identifierSchema() {
   return { type: "string", minLength: 1, maxLength: 256 };
 }
 
+function nodeIdentifierSchema() {
+  return { type: "string", pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 };
+}
+
+function claimIdentifierSchema() {
+  return { type: "string", pattern: "^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 };
+}
+
 function textSchema(maxLength = 12_000) {
   return { type: "string", minLength: 1, maxLength };
 }
@@ -767,10 +789,10 @@ function strategyPlanSchema() {
   return {
     ...decisionRecordSchema({
     id: identifierSchema(),
-    claimId: identifierSchema(),
-    claim_id: identifierSchema(),
-    nodeId: identifierSchema(),
-    node_id: identifierSchema(),
+    claimId: claimIdentifierSchema(),
+    claim_id: claimIdentifierSchema(),
+    nodeId: nodeIdentifierSchema(),
+    node_id: nodeIdentifierSchema(),
     objective: textSchema(),
     rationale: textSchema(),
     steps: { type: "array", maxItems: 128, items: { type: "object", additionalProperties: true } },
@@ -799,8 +821,8 @@ function claimBoundRecordSchema(record) {
 function strategyReviewSchema() {
   return claimBoundRecordSchema(decisionRecordSchema({
     id: identifierSchema(),
-    claimId: identifierSchema(),
-    claim_id: identifierSchema(),
+    claimId: claimIdentifierSchema(),
+    claim_id: claimIdentifierSchema(),
     decision: { enum: ["continue", "switch", "stop", "blocked"] },
     rationale: textSchema(),
     selectedStrategyId: identifierSchema(),
@@ -817,10 +839,10 @@ function strategyReviewSchema() {
 function interpretationSchema() {
   return decisionRecordSchema({
     id: identifierSchema(),
-    claimId: identifierSchema(),
-    claim_id: identifierSchema(),
-    nodeId: identifierSchema(),
-    node_id: identifierSchema(),
+    claimId: claimIdentifierSchema(),
+    claim_id: claimIdentifierSchema(),
+    nodeId: nodeIdentifierSchema(),
+    node_id: nodeIdentifierSchema(),
     attemptRef: identifierSchema(),
     attempt_ref: identifierSchema(),
     summary: textSchema(),
@@ -838,10 +860,10 @@ function checkpointSchema() {
     disposition: { enum: ["waiting_external", "continue_required", "deferred", "blocked", "terminal", "user_input_required"] },
     status: { enum: ["waiting_external", "continue_required", "deferred", "blocked", "terminal", "user_input_required"] },
     reason: textSchema(),
-    claimIds: { type: "array", maxItems: 128, items: identifierSchema() },
-    claim_ids: { type: "array", maxItems: 128, items: identifierSchema() },
-    nodeIds: { type: "array", maxItems: 128, items: identifierSchema() },
-    node_ids: { type: "array", maxItems: 128, items: identifierSchema() },
+    claimIds: { type: "array", maxItems: 128, items: claimIdentifierSchema() },
+    claim_ids: { type: "array", maxItems: 128, items: claimIdentifierSchema() },
+    nodeIds: { type: "array", maxItems: 128, items: nodeIdentifierSchema() },
+    node_ids: { type: "array", maxItems: 128, items: nodeIdentifierSchema() },
     unresolvedRefs: { type: "array", maxItems: 128, items: identifierSchema() },
     unresolved_refs: { type: "array", maxItems: 128, items: identifierSchema() },
     mapRevision: { type: "integer", minimum: 0 },
@@ -884,10 +906,10 @@ const DECISION_ALIAS_SCHEMAS = Object.freeze({
       review: strategyReviewSchema(),
       // Accept these at the alias boundary for compatibility with model
       // payloads that place the Claim/Node selectors beside `plan`.
-      claimId: identifierSchema(),
-      claim_id: identifierSchema(),
-      nodeId: identifierSchema(),
-      node_id: identifierSchema(),
+      claimId: claimIdentifierSchema(),
+      claim_id: claimIdentifierSchema(),
+      nodeId: nodeIdentifierSchema(),
+      node_id: nodeIdentifierSchema(),
       rationale: { type: "string", minLength: 1, maxLength: 12_000 },
       basisRefs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
       expectedRevision: { type: "integer", minimum: 0 },
@@ -916,10 +938,10 @@ const DECISION_ALIAS_SCHEMAS = Object.freeze({
     type: "object",
     properties: {
       interpretation: interpretationSchema(),
-      claimId: identifierSchema(),
-      claim_id: identifierSchema(),
-      nodeId: identifierSchema(),
-      node_id: identifierSchema(),
+      claimId: claimIdentifierSchema(),
+      claim_id: claimIdentifierSchema(),
+      nodeId: nodeIdentifierSchema(),
+      node_id: nodeIdentifierSchema(),
       attemptRef: identifierSchema(),
       attempt_ref: identifierSchema(),
       rationale: { type: "string", minLength: 1, maxLength: 12_000 },

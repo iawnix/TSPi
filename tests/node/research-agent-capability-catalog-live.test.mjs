@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { createStateTool } from "../../apps/app-server/pi-native-tools.mjs";
+import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
 
 test("research_read compute capabilities uses the injected live Host catalog", async () => {
   const root = await mkdtemp(join(tmpdir(), "research-agent-live-catalog-"));
   try {
-    await writeFile(join(root, "workspace_manifest.json"), JSON.stringify({ workspace_mode: "research" }), "utf8");
+    const initializer = create_workspace_initializer();
+    await initializer.initialize_workspace({ workspace_root: root, workspace_id: "catalog-live", workspace_mode: "research" });
+    await initializer.admit_workspace(root);
     const descriptor = {
       protocol: "capability_descriptor",
       version: 1,

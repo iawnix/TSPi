@@ -39,7 +39,7 @@ from .decisions import (
 )
 from .evidence import ArtifactManifest, AttemptRecord, EvidenceLink, EvidenceModelError
 from .kernel import ResearchKernel, ResearchKernelError
-from .memory import ContextReader, KernelMemoryStore, LivenessReader, MemoryStore, ResearchMemoryService
+from .memory import ContextReader, FilesystemMemoryStore, KernelMemoryStore, LivenessReader, MemoryStore, ResearchMemoryService
 from .sqlite import ResearchSqliteError, ResearchSqliteRepository
 from .context import ContextBuilder, ContextPack
 from .agent_workspace import (
@@ -86,6 +86,7 @@ __all__ = [
     "ResearchKernelError",
     "ResearchMemoryService",
     "MemoryStore",
+    "FilesystemMemoryStore",
     "KernelMemoryStore",
     "ContextReader",
     "LivenessReader",

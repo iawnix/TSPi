@@ -34,7 +34,7 @@ has been established.
 
 ## After A Change
 
-Read the returned revision and, when useful, `research.summary`. A Node can be
+Read the returned revision and, when useful, `research_read mode=summary`. A Node can be
 closed as `completed` only when its completion criteria are satisfied and every
 attached NodeGate has a passing latest evaluation. Use `inconclusive` or
 `stopped` when the question is not resolved. Update Claim status explicitly;
@@ -46,12 +46,12 @@ Node, Findings, Gates, Artifacts, and Attempts as history.
 
 ## Research Turn Checkpoint
 
-At the end of every turn, read the bounded `research.context` or
-`research.liveness` view, record any needed strategy or Attempt interpretation,
+At the end of every turn, read the bounded `research_read mode=context` or
+`research_read mode=liveness` view, record any needed strategy or Attempt interpretation,
 and call `research_checkpoint` with an explicit disposition:
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
-`user_input_required`. `research_continuation` remains available for the legacy
-required-action ledger and migration; it is not the turn boundary. Parsed or
+`user_input_required`. `research_continuation` is a secondary required-action
+ledger; it is not the turn boundary. Parsed or
 completed operational records do not close a scientific question by themselves.
 `decision_needed` requires the Root Agent to continue and record a checkpoint;
 a Harness follow-up may enforce that boundary but never chooses a method. A
@@ -60,6 +60,15 @@ to execute in the same turn. Monitor `next_run` is only an operational wake-up.
 
 ## Review
 
-Review is advisory and never writes the map. Give Review only the Claim and
-Artifacts it needs, answer it through `review_respond`, and record Root's accepted,
-rejected, or qualified interpretation with ordinary map operations.
+Review is an isolated advisory assessment and never writes the map. Give it
+only the Claim and registered Artifacts it needs. It cannot mutate Claims,
+Nodes, Findings, Gates, choose a method, launch/cancel Compute, or serve as
+evidence by itself. Answer it through `review_respond`, then record Root's
+accepted, rejected, or qualified interpretation with ordinary map operations.
+
+`analysis_run` is a separate registered deterministic analysis boundary. It
+requires an exact catalog capability/version, an existing open Node, and
+role-to-array lists of registered Artifact IDs. It does not select an
+execution environment, create a Claim/Finding, or run a scheduler lifecycle;
+use `compute_run` for auditable local/remote calculations. `light_compute` is
+reserved for bounded light-workspace geometry/provider runs.

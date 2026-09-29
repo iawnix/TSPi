@@ -1,8 +1,9 @@
 # ChangeSet 合同
 
-`research_change` 是 `ResearchMap` 唯一的公共变更边界。它接受一个对象，其中包含
-`principal=root_agent`、`authority=kernel_write`、`rationale`、可选 `basisRefs`、可选
-`expectedRevision` 和非空 `operations` 数组。
+`research_change` 是 `ResearchMap` 唯一的公共变更边界。其公共 payload 包含
+`rationale`、可选 `basisRefs`、可选 `expectedRevision` 和非空 `operations` 数组。Host 会在发往
+Kernel 的内部请求中附加 `principal=root_agent` 与 `authority=kernel_write`；这两个 authority 字段
+不是公共 tool 参数。
 使用不熟悉的 operation 前，先查询 `research_read mode=operations` 获取当前目录。
 
 ## Operations

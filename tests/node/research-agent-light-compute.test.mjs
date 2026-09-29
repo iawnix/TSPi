@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,13 +11,11 @@ import {
 import { filterWorkspaceTools } from "../../apps/app-server/workspace-mode-tools.mjs";
 import { wrapToolForHarness } from "../../packages/ts-agent-runtime/host-api/tool-envelope.mjs";
 import { createToolExecutionContext } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
+import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
 
 async function light_workspace(prefix) {
   const root = await mkdtemp(join(tmpdir(), `${prefix}-`));
-  await writeFile(
-    join(root, "workspace_manifest.json"),
-    JSON.stringify({ workspace_mode: "light" }),
-  );
+  await create_workspace_initializer().initialize_workspace({ workspace_root: root, workspace_id: "light-compute", workspace_mode: "light" });
   return root;
 }
 
@@ -91,10 +89,8 @@ test("light_compute inspects XYZ descriptively without creating an artifact", as
 
 test("light_compute is bounded to light workspaces", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-light-compute-research-"));
-  await writeFile(
-    join(root, "workspace_manifest.json"),
-    JSON.stringify({ workspace_mode: "research" }),
-  );
+  await create_workspace_initializer().initialize_workspace({ workspace_root: root, workspace_id: "research-compute", workspace_mode: "research" });
+  await create_workspace_initializer().admit_workspace(root);
   try {
     await assert.rejects(
       invoke(createLightComputeTool(), { operation: "generate_xyz", molecule: "methane" }, root),

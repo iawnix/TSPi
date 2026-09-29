@@ -4,6 +4,7 @@ export * from "./session_mode.mjs";
 export * from "./turn_router.mjs";
 export * from "./workspace.mjs";
 export * from "./workspace_catalog.mjs";
+export * from "./workspace_id.mjs";
 export * from "./session_store.mjs";
 export * from "./memory.mjs";
 export * from "./context.mjs";

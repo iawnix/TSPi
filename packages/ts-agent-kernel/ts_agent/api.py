@@ -9,28 +9,12 @@ from __future__ import annotations
 
 import json
 import hashlib
-from datetime import datetime, timezone
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from .research import (
-    ArtifactManifest,
-    AttemptInterpretation,
-    AttemptRecord,
-    EvidenceLink,
-    KernelMemoryStore,
-    ResearchKernel,
-    ResearchKernelError,
-    ResearchMemoryService,
-    StrategyPlan,
-    StrategyReview,
-    TurnCheckpoint,
-)
-from .research.context import ContextBuilder
 from .workspace.operation_registry import operation_catalog
-from .io import append_jsonl, sha256_json
-from .workspace.transactions import workspace_lock
+from .io import sha256_json
 
 
 def _load_command_catalog() -> dict[str, Any]:
@@ -54,18 +38,6 @@ COMPUTE_COMMANDS = frozenset(
 )
 COMMANDS = RESEARCH_COMMANDS | COMPUTE_COMMANDS
 
-# Research Memory is durable and unbounded; an Agent turn is not.  These
-# limits belong to the context/liveness read models rather than the canonical
-# ResearchMap so focused detail queries can still expose the full record.
-_CONTEXT_FOCUS_LIMIT = 8
-_CONTEXT_CONTINUATION_LIMIT = 8
-_CONTEXT_ATTEMPT_LIMIT = 8
-_CONTEXT_DECISION_LIMIT = 8
-_CONTEXT_REFERENCE_LIMIT = 8
-_LIVENESS_RECORD_LIMIT = 32
-_CONTEXT_TEXT_LIMIT = 512
-
-
 class CommandError(ValueError):
     """A canonical command request is invalid or cannot be served."""
 
@@ -84,190 +56,325 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
         raise CommandError(f"{command} requires {', '.join(missing)}")
     if command.startswith("research."):
         # The filesystem Research Agent protocol is the only public research
-        # workspace path. The retired ResearchKernel/SQLite layout remains
-        # available to explicitly isolated kernel fixtures, but it is not a
-        # transport fallback for a current installation.
+        # workspace path. The retired JSON/SQLite implementation is not a
+        # fallback and cannot be selected by the public command service.
         from .research.agent_workspace import dispatch as dispatch_agent_workspace, has_partial_state_files, has_state_files
 
-        if has_state_files(root) or has_partial_state_files(root):
-            action = command.removeprefix("research.")
-            request = value.get("request") if isinstance(value.get("request"), dict) else value
-            method = {
-                "context": "read_context",
-                "map": "read_context",
-                "summary": "read_context",
-                "liveness": "read_liveness",
-                "validate": "read_context",
-                "turn": "turn",
-                "change": "apply_change",
-                "checkpoint": "checkpoint",
-            }.get(action)
-            if method is not None:
-                result = dispatch_agent_workspace(root, method, request)
-                if action == "validate":
-                    return {"schema_version": "research-validation/1", "valid": True, "revision": result.get("revision")}
-                return result
-            # Route unsupported or partial canonical commands through the new
-            # validator so malformed state fails closed instead of reaching
-            # the retired implementation.
-            return dispatch_agent_workspace(root, "read_context", request)
-        # A workspace with none of the canonical filesystem markers is an
-        # explicitly legacy ResearchKernel fixture. Keep that migration path
-        # available, while any new marker above is routed through the strict
-        # manifest/context/liveness validator and cannot fall back silently.
-        # Legacy callers predate the identity envelope; bind their request to
-        # the compatibility Root Agent boundary before invoking the old store.
-        legacy_value = dict(value)
-        legacy_mutation = command.removeprefix("research.") in {
-            "change", "continuation", "strategy", "interpretation", "checkpoint", "evidence.register",
-        }
-        if legacy_mutation and isinstance(legacy_value.get("request"), dict):
-            legacy_value["request"] = {
-                **legacy_value["request"],
-                "principal": legacy_value["request"].get("principal", "root_agent"),
-                "authority": legacy_value["request"].get("authority", "kernel_write"),
-            }
-        elif legacy_mutation:
-            legacy_value.setdefault("principal", "root_agent")
-            legacy_value.setdefault("authority", "kernel_write")
-        return _research(command.removeprefix("research."), root, legacy_value)
-    return _compute(command.removeprefix("compute."), root, value)
-
-
-def _research(action: str, root: str | Path, params: dict[str, Any]) -> dict[str, Any]:
-    kernel = ResearchKernel(root)
-    # Read projections cross the Memory Service boundary. The Kernel remains
-    # the transaction/invariant engine; the service adds no second store.
-    memory = ResearchMemoryService(root, store=KernelMemoryStore(kernel))
-    if action == "map":
-        return memory.read_projection("map")
-    if action == "context":
-        return memory.read_projection("context")
-    if action == "liveness":
-        return memory.read_projection("liveness")
-    if action == "turn":
-        request = params.get("request")
-        if not isinstance(request, dict):
-            raise CommandError("research.turn requires params.request")
-        return _research_turn(kernel, root, request)
-    if action == "summary":
-        return memory.read_projection("summary")
-    if action == "validate":
-        kernel.load()
-        return {"schema_version": "research-validation/1", "valid": True}
-    if action == "operations":
-        return operation_catalog()
-    if action == "continuation":
-        request = params.get("request")
-        if request is None:
-            return _continuation_status(
-                kernel.load(),
-                scope=params.get("scope"),
-                target_id=params.get("target_id") or params.get("target_ref"),
+        if not has_state_files(root) and not has_partial_state_files(root):
+            raise CommandError(
+                "research commands require an initialized filesystem Research Agent workspace"
             )
-        if not isinstance(request, dict):
-            raise CommandError("research.continuation requires an object request")
-        return _apply_continuation_request(kernel, request)
-    if action == "decisions":
-        claim_id = params.get("claim_id") or params.get("claimId")
-        if claim_id is not None and (not isinstance(claim_id, str) or not claim_id.strip()):
-            raise CommandError("research.decisions claim_id must be a non-empty string")
-        limit = params.get("limit", 128)
-        if type(limit) is not int or not 1 <= limit <= 2048:
-            raise CommandError("research.decisions limit must be an integer between 1 and 2048")
-        return memory.decisions(claim_id=claim_id, limit=limit)
-    if action == "evidence":
-        record_type = params.get("record_type") or params.get("recordType")
-        if record_type is not None and record_type not in {"attempt", "artifact", "link"}:
-            raise CommandError("research.evidence record_type must be attempt, artifact, or link")
-        limit = params.get("limit", 128)
-        if type(limit) is not int or not 1 <= limit <= 2048:
-            raise CommandError("research.evidence limit must be an integer between 1 and 2048")
-        filters = {
-            "node_id": params.get("node_id") or params.get("nodeId"),
-            "artifact_id": params.get("artifact_id") or params.get("artifactId"),
-            "subject_id": params.get("subject_id") or params.get("subjectId"),
-        }
-        for key, value in filters.items():
-            if value is not None and (not isinstance(value, str) or not value.strip()):
-                raise CommandError(f"research.evidence {key} must be a non-empty string")
-        return memory.evidence(record_type=record_type, limit=limit, **filters)
-    if action == "evidence.register":
-        request = params.get("request")
-        if not isinstance(request, dict):
-            raise CommandError("research.evidence.register requires params.request")
-        _require_kernel_write_principal(request)
-        return _register_evidence_request(kernel, request)
-    if action == "storage":
-        operation = params.get("operation", "status")
-        if operation not in {"status", "bootstrap"}:
-            raise CommandError("research.storage operation must be status or bootstrap")
-        database = Path(root) / "research.db"
-        if operation == "bootstrap":
-            result = kernel.ensure_sqlite()
-            return {**result, "backend": "sqlite", "path": str(database)}
-        return {
-            "schema_version": "research-storage/1",
-            "backend": "sqlite" if database.is_file() else "json",
-            "sqlite": database.is_file(),
-            "path": str(database),
-        }
+        action = command.removeprefix("research.")
+        request = value.get("request") if isinstance(value.get("request"), dict) else value
+        method = {
+            "context": "read_context",
+            "map": "read_context",
+            "summary": "read_context",
+            "liveness": "read_liveness",
+            "validate": "read_context",
+            "turn": "turn",
+            "change": "apply_change",
+            "checkpoint": "checkpoint",
+        }.get(action)
+        if method is not None:
+            result = dispatch_agent_workspace(root, method, request)
+            # Native Host and the Python command transport expose the same
+            # checkpoint/liveness envelope. A checkpoint writes the durable
+            # projection first; read it back so callers never have to infer
+            # lifecycle state from the mutation receipt alone.
+            if action == "checkpoint" or (action == "turn" and request.get("operation") == "checkpoint"):
+                liveness = dispatch_agent_workspace(root, "read_liveness", request)
+                return {
+                    **result,
+                    "lifecycle": liveness.get("lifecycle"),
+                    "disposition": liveness.get("disposition"),
+                    "liveness": liveness,
+                }
+            if action == "map":
+                return _filesystem_map_document(result)
+            if action == "summary":
+                return _filesystem_research_summary(result)
+            if action == "validate":
+                return {"schema_version": "research-validation/1", "valid": True, "revision": result.get("revision")}
+            return result
+        if action in {"strategy", "interpretation"}:
+            return _filesystem_decision(root, action, request, dispatch_agent_workspace)
+        if action == "continuation":
+            return _filesystem_continuation(root, request, dispatch_agent_workspace)
+        if action in {"detail", "locate", "operations", "decisions", "evidence", "storage"}:
+            context = dispatch_agent_workspace(root, "read_context", request)
+            if action == "operations":
+                return operation_catalog()
+            if action == "storage":
+                operation = value.get("operation", "status")
+                if operation != "status":
+                    raise CommandError("research.storage supports only operation=status")
+                return {
+                    "schema_version": "research-storage/1",
+                    "backend": "filesystem",
+                    "sqlite": False,
+                    "path": str(Path(root) / "research_map" / "context.json"),
+                    "revision": context.get("revision", 0),
+                }
+            if action == "detail":
+                kind = _string(value, "kind")
+                identifier = _string(value, "id")
+                collection = {"phase": "phases", "claim": "claims", "node": "nodes", "finding": "findings", "gate": "gates"}.get(kind)
+                if collection is None:
+                    raise CommandError("research.detail kind must be phase, claim, node, finding, or gate")
+                item = next((row for row in context.get(collection, []) if row.get("id") == identifier), None)
+                if item is None:
+                    raise CommandError(f"unknown {kind} id: {identifier}")
+                # Native Host and Python command transports expose the same
+                # detail envelope. ``item`` is the canonical record field;
+                # callers must not branch on a transport-specific ``object``
+                # alias or depend on an incidental map_id projection.
+                return {"schema_version": "research-detail/1", "kind": kind, "id": identifier, "item": item}
+            if action == "locate":
+                query = _string(value, "query").casefold()
+                matches = []
+                for collection in ("phases", "claims", "nodes", "findings", "gates"):
+                    for item in context.get(collection, []):
+                        if query in _json_text(item).casefold():
+                            matches.append({**item, "collection": collection[:-1], "object_type": item.get("type", collection[:-1])})
+                return {"schema_version": "research-locate/1", "map_id": _filesystem_map_document(context)["map_id"], "matches": matches}
+            if action == "decisions":
+                claim_id = value.get("claim_id") or value.get("claimId")
+                records = [
+                    *[{**item, "decision_type": "strategy_plan"} for item in context.get("strategy_plans", [])],
+                    *[{**item, "decision_type": "strategy_review"} for item in context.get("strategy_reviews", [])],
+                    *[{**item, "decision_type": "attempt_interpretation"} for item in context.get("attempt_interpretations", [])],
+                ]
+                if claim_id is not None:
+                    records = [item for item in records if item.get("claim_id") == claim_id]
+                limit = value.get("limit", 128)
+                if type(limit) is not int or not 1 <= limit <= 2048:
+                    raise CommandError("research.decisions limit must be an integer between 1 and 2048")
+                return {"schema_version": "research-decisions/1", "claim_id": claim_id, "records": records[:limit]}
+            record_type = value.get("record_type") or value.get("recordType")
+            groups = {"attempt": "attempts", "artifact": "artifacts", "link": "evidence_links"}
+            if record_type is not None and record_type not in groups:
+                raise CommandError("research.evidence record_type must be attempt, artifact, or link")
+            names = [groups[record_type]] if record_type in groups else list(groups.values())
+            records = [item for name in names for item in context.get(name, [])]
+            filters = {
+                "node_id": value.get("node_id") or value.get("nodeId"),
+                "artifact_id": value.get("artifact_id") or value.get("artifactId"),
+                "subject_id": value.get("subject_id") or value.get("subjectId"),
+            }
+            for field, expected in filters.items():
+                if expected is None:
+                    continue
+                records = [
+                    item for item in records
+                    if item.get(field) == expected
+                    or (isinstance(item.get("subject"), dict) and item["subject"].get(field) == expected)
+                    or (isinstance(item.get(f"{field}s"), list) and expected in item[f"{field}s"])
+                ]
+            limit = value.get("limit", 128)
+            if type(limit) is not int or not 1 <= limit <= 2048:
+                raise CommandError("research.evidence limit must be an integer between 1 and 2048")
+            return {"schema_version": "research-evidence/1", "record_type": record_type, "records": records[:limit]}
+        raise CommandError(
+            f"research.{action} is served by the Host filesystem Research Kernel; use the native command boundary"
+        )
+    if command.startswith("compute."):
+        return _compute(command.removeprefix("compute."), root, value)
+    raise CommandError(f"unsupported command family: {command}")
+
+
+def _filesystem_map_document(context: dict[str, Any]) -> dict[str, Any]:
+    """Project the filesystem context into the canonical ResearchMap shape."""
+
+    focus = context.get("focus") if isinstance(context.get("focus"), dict) else {}
+    map_id = context.get("map_id") or f"map_{context.get('workspace_id', '')}"
+    created_at = context.get("created_at")
+    if not isinstance(created_at, str) or not created_at:
+        raise CommandError("research context created_at is required")
+    phases = context.get("phases", [])
+    claims = context.get("claims", [])
+    nodes = context.get("nodes", [])
+    findings = context.get("findings", [])
+    gates = context.get("gates", [])
+    return {
+        "schema_version": "research-map/1",
+        "map_id": str(map_id),
+        "title": str(context.get("title") or context.get("workspace_id") or map_id),
+        "created_at": created_at,
+        "revision": context.get("revision", 0),
+        "phases": phases,
+        "claims": claims,
+        "nodes": nodes,
+        "findings": findings,
+        "gates": gates,
+        "continuations": context.get("continuations", []),
+        "claim_relations": context.get("claim_relations", []),
+        "focus_claim_ids": list(focus.get("claim_ids", [])),
+        "focus_node_ids": list(focus.get("node_ids", [])),
+        "metadata": context.get("metadata", {}) if isinstance(context.get("metadata"), dict) else {},
+        "progress": {
+            "phase_count": len(phases),
+            "claim_count": len(claims),
+            "node_count": len(nodes),
+            "finding_count": len(findings),
+            "gate_count": len(gates),
+            "closed_node_count": sum(item.get("state") == "closed" for item in nodes if isinstance(item, dict)),
+            "open_issue_count": sum(item.get("kind") == "issue" and item.get("status") == "open" for item in findings if isinstance(item, dict)),
+        },
+    }
+
+
+def _filesystem_research_summary(context: dict[str, Any]) -> dict[str, Any]:
+    phases = context.get("phases", [])
+    claims = context.get("claims", [])
+    nodes = context.get("nodes", [])
+    findings = context.get("findings", [])
+    gates = context.get("gates", [])
+    return {
+        "schema_version": "research-summary/1",
+        "mode": "summary",
+        "map_id": context.get("map_id") or f"map_{context.get('workspace_id', '')}",
+        "workspace_id": context.get("workspace_id"),
+        "workspace_mode": context.get("workspace_mode"),
+        "revision": context.get("revision", 0),
+        "lifecycle_state": context.get("lifecycle_state"),
+        "phases": phases,
+        "claims": claims,
+        "nodes": nodes,
+        "findings": findings,
+        "gates": gates,
+        "focus": context.get("focus", {"claim_ids": [], "node_ids": []}),
+        "progress": {
+            "phase_count": len(phases),
+            "claim_count": len(claims),
+            "node_count": len(nodes),
+            "finding_count": len(findings),
+            "gate_count": len(gates),
+            "closed_node_count": sum(item.get("state") == "closed" for item in nodes if isinstance(item, dict)),
+            "open_issue_count": sum(item.get("kind") == "issue" and item.get("status") == "open" for item in findings if isinstance(item, dict)),
+        },
+    }
+
+
+def _filesystem_decision(root: str | Path, action: str, request: dict[str, Any], dispatch: Any) -> dict[str, Any]:
+    """Apply the same typed strategy/interpretation envelope as Native Host."""
+
+    operation_name = request.get("operation")
     if action == "strategy":
-        request = params.get("request")
-        if not isinstance(request, dict):
-            raise CommandError("research.strategy requires params.request")
-        return _commit_strategy_request(kernel, request)
-    if action == "interpretation":
-        request = params.get("request")
-        if not isinstance(request, dict):
-            raise CommandError("research.interpretation requires params.request")
-        return _commit_interpretation_request(kernel, root, request)
-    if action == "checkpoint":
-        request = params.get("request")
-        if not isinstance(request, dict):
-            raise CommandError("research.checkpoint requires params.request")
-        return _commit_checkpoint_request(kernel, root, request)
-    if action == "detail":
-        research_map = kernel.load().to_dict()
-        kind = _string(params, "kind")
-        identifier = _string(params, "id")
-        collection = {
-            "phase": "phases",
-            "claim": "claims",
-            "node": "nodes",
-            "finding": "findings",
-            "gate": "gates",
-        }.get(kind)
-        if collection is None:
-            raise CommandError("research.detail kind must be phase, claim, node, finding, or gate")
-        item = next((row for row in research_map[collection] if row.get("id") == identifier), None)
-        if item is None:
-            raise CommandError(f"unknown {kind} id: {identifier}")
-        return {"schema_version": "research-detail/1", "map_id": research_map["map_id"], "object": item}
-    if action == "locate":
-        query = _string(params, "query").casefold()
-        research_map = kernel.load().to_dict()
-        matches = []
-        for collection in ("phases", "claims", "nodes", "findings", "gates"):
-            kind = collection[:-1]
-            for item in research_map[collection]:
-                if query in _json_text(item).casefold():
-                    matches.append({**item, "collection": kind, "object_type": item.get("type", kind)})
-        return {"schema_version": "research-locate/1", "map_id": research_map["map_id"], "matches": matches}
-    if action == "change":
-        request = params.get("request")
-        if not isinstance(request, dict):
-            raise CommandError("research.change requires params.request")
-        _require_kernel_write_principal(request)
-        # Authorization belongs to this public command boundary. The
-        # historical ResearchKernel transaction format predates the identity
-        # envelope, so strip the already-validated transport fields before
-        # handing it the legacy ChangeSet shape.
-        legacy_request = dict(request)
-        legacy_request.pop("principal", None)
-        legacy_request.pop("authority", None)
-        return kernel.apply(legacy_request)
-    raise CommandError(f"unsupported research command: {action}")
+        source = request.get(operation_name) if isinstance(operation_name, str) else None
+        source = source or request.get("plan") or request.get("review") or request.get("strategy")
+        operation_type = "create_strategy_review" if operation_name == "review" else "create_strategy_plan"
+    else:
+        source = request.get("interpretation")
+        operation_type = "create_interpretation"
+    if not isinstance(source, dict) or isinstance(source, list):
+        raise CommandError(f"research.{action} requires a decision object")
+    change_request = {
+        **request,
+        "operations": [{"type": operation_type, **source}],
+    }
+    commit = dispatch(root, "apply_change", change_request)
+    return {
+        "schema_version": f"research-{action}-result/1",
+        "operation": operation_name or action,
+        "record": source,
+        "commit": commit,
+    }
+
+
+def _filesystem_continuation(root: str | Path, request: dict[str, Any], dispatch: Any) -> dict[str, Any]:
+    """Expose the canonical continuation ledger without a second state store."""
+
+    context = dispatch(root, "read_context", request)
+    operation = request.get("operation") or "status"
+    records = [item for item in context.get("continuations", []) if isinstance(item, dict)]
+    if operation == "status":
+        return _continuation_status_document(context, request)
+    allowed_operations = {"set", "set_required", "set_deferred", "set_blocked", "set_completed", "resolve", "clear"}
+    if operation not in allowed_operations:
+        raise CommandError("continuation operation must be status, set, resolve, or a supported set_* alias")
+    status = {
+        "set_deferred": "deferred", "set_blocked": "blocked", "set_completed": "completed",
+        "set_required": "required",
+        "resolve": request.get("status", "completed"),
+        "clear": "completed",
+    }.get(operation, request.get("status", "required"))
+    if status not in {"required", "deferred", "blocked", "completed"}:
+        raise CommandError("continuation status must be required, deferred, blocked, or completed")
+    target_id = request.get("target_id") or request.get("targetId") or request.get("target_ref")
+    continuation_id = request.get("continuation_id") or request.get("continuationId") or request.get("id")
+    if operation in {"set_deferred", "set_blocked", "set_completed"} and not continuation_id:
+        candidates = [
+            item for item in records
+            if item.get("status") == "required"
+            and item.get("scope") == request.get("scope")
+            and item.get("target_id") == target_id
+            and (request.get("action") is None or item.get("action") == request.get("action"))
+        ]
+        if len(candidates) > 1:
+            raise CommandError("continuation disposition is ambiguous; provide continuationId")
+        if len(candidates) == 1:
+            continuation_id = candidates[0].get("id")
+    if operation in {"resolve", "clear"} or (continuation_id and operation in {"set", "set_required", "set_deferred", "set_blocked", "set_completed"}):
+        if not isinstance(continuation_id, str) or not continuation_id:
+            raise CommandError(f"research.continuation {operation} requires continuationId")
+        existing = next((item for item in records if item.get("id") == continuation_id), None)
+        if existing is None:
+            raise CommandError(f"unknown continuation {continuation_id}")
+        for field, supplied in (("scope", request.get("scope")), ("target_id", target_id), ("action", request.get("action"))):
+            if supplied is not None and supplied != existing.get(field):
+                raise CommandError(f"continuation {continuation_id} {field} does not match the existing record")
+        operation_value = {
+            "type": "resolve_continuation", "id": continuation_id,
+            "status": "completed" if operation == "clear" else status,
+        }
+        for field in ("reason", "request_id"):
+            if field in request:
+                operation_value[field] = request[field]
+    else:
+        scope, action = request.get("scope"), request.get("action")
+        if not all(isinstance(item, str) and item for item in (scope, target_id, action)):
+            raise CommandError(f"research.continuation {operation} requires scope, targetId, and action")
+        operation_value = {
+            "type": "set_continuation", "id": continuation_id or f"continuation_{scope}_{target_id}_{action}",
+            "scope": scope, "target_id": target_id, "action": action, "status": status,
+        }
+        for field in ("reason", "request_id"):
+            if field in request:
+                operation_value[field] = request[field]
+    commit_request = {**request, "operations": [operation_value]}
+    commit = dispatch(root, "apply_change", commit_request)
+    updated = dispatch(root, "read_context", request)
+    return {
+        "schema_version": "research-continuation-result/1",
+        "operation": operation,
+        "commit": commit,
+        "change": commit,
+        **_continuation_status_document(updated, request),
+    }
+
+
+def _continuation_status_document(context: dict[str, Any], request: dict[str, Any] | None = None) -> dict[str, Any]:
+    request = request or {}
+    records = [item for item in context.get("continuations", []) if isinstance(item, dict)]
+    if request.get("scope") is not None:
+        records = [item for item in records if item.get("scope") == request.get("scope")]
+    target_id = request.get("target_id") or request.get("targetId") or request.get("target_ref")
+    if target_id is not None:
+        records = [item for item in records if item.get("target_id") == target_id]
+    required = [item for item in records if item.get("status") == "required"]
+    limit = request.get("limit", 32)
+    if type(limit) is not int or not 1 <= limit <= 2048:
+        limit = 32
+    return {
+        "schema_version": "research-continuation/1",
+        "map_id": context.get("map_id") or f"map_{context.get('workspace_id', '')}",
+        "revision": context.get("revision", 0),
+        "continuations": records[:limit],
+        "required": required[:limit],
+        "counts": {"continuations": len(records), "required": len(required)},
+        "truncated": {"continuations": len(records) > limit, "required": len(required) > limit},
+    }
 
 
 def _compute(action: str, root: str | Path, params: dict[str, Any]) -> dict[str, Any]:
@@ -396,1031 +503,8 @@ def _string(params: dict[str, Any], key: str) -> str:
     return value.strip()
 
 
-def _continuation_status(
-    research_map: Any,
-    *,
-    scope: str | None = None,
-    target_id: str | None = None,
-) -> dict[str, Any]:
-    """Return the durable continuation queue without choosing a next action."""
-
-    records = []
-    for record in getattr(research_map, "continuations", {}).values():
-        value = record.to_dict() if hasattr(record, "to_dict") else dict(record)
-        if scope is not None and value.get("scope") != scope:
-            continue
-        if target_id is not None and value.get("target_id") != target_id:
-            continue
-        records.append(value)
-    records.sort(key=lambda item: (item.get("created_at", ""), item.get("id", "")))
-    required = [item for item in records if item.get("status") == "required"]
-    counts = {
-        "continuations": len(records),
-        "required": len(required),
-    }
-    return {
-        "schema_version": "research-continuation/1",
-        "map_id": research_map.map_id,
-        "revision": research_map.revision,
-        "continuations": [_compact_continuation(item) for item in records[:_LIVENESS_RECORD_LIMIT]],
-        "required": [_compact_continuation(item) for item in required[:_LIVENESS_RECORD_LIMIT]],
-        "counts": counts,
-        "truncated": {key: value > _LIVENESS_RECORD_LIMIT for key, value in counts.items()},
-    }
-
-
-def _research_context(research_map: Any, root: str | Path) -> dict[str, Any]:
-    """Build the bounded Context Pack projected from durable Research Memory."""
-
-    runtime = _runtime_status(root)
-    liveness = _research_liveness(research_map, root, runtime=runtime)
-    return ContextBuilder(
-        focus_limit=_CONTEXT_FOCUS_LIMIT,
-        continuation_limit=_CONTEXT_CONTINUATION_LIMIT,
-        attempt_limit=_CONTEXT_ATTEMPT_LIMIT,
-        decision_limit=_CONTEXT_DECISION_LIMIT,
-        reference_limit=_CONTEXT_REFERENCE_LIMIT,
-        text_limit=_CONTEXT_TEXT_LIMIT,
-    ).build(research_map, liveness=liveness, runtime=runtime)
-
-
-def _research_liveness(
-    research_map: Any,
-    root: str | Path,
-    *,
-    runtime: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Derive the bounded research turn state from canonical sources.
-
-    ``continue_required`` is the canonical explicit Agent work queue.
-    The ``required`` field remains a read-only compatibility alias for older
-    clients. ``waiting_external``
-    is derived from non-terminal execution Attempts, while ``decision_needed`` detects
-    an active/focused Node that has neither an external wait nor an explicit
-    continuation/disposition.  No scientific action is inferred here.
-    """
-
-    runtime = runtime if runtime is not None else _runtime_status(root)
-    records = [
-        item.to_dict() if hasattr(item, "to_dict") else dict(item)
-        for item in research_map.continuations.values()
-    ]
-    required = [item for item in records if item.get("status") == "required"]
-    deferred = [item for item in records if item.get("status") == "deferred"]
-    blocked = [item for item in records if item.get("status") == "blocked"]
-
-    terminal_attempt_states = {"failed", "stopped", "collected", "parsed"}
-    # ``prepared`` is a local, pre-submission binding. It has no external
-    # event for Monitor to observe, so an active scope must remain eligible for
-    # an Agent decision (submit, revise, retry, or close) instead of waiting
-    # indefinitely for a wake-up that cannot arrive.
-    non_external_attempt_states = {"prepared", *terminal_attempt_states}
-    waiting_external = []
-    for row in runtime.get("attempts", runtime.get("calculation_attempts", [])):
-        if not isinstance(row, dict):
-            continue
-        attempt_id = row.get("attempt_id") or row.get("intent_id")
-        node_id = row.get("node_ref") or row.get("node_id")
-        state = row.get("state") or row.get("status")
-        if state in non_external_attempt_states or not attempt_id:
-            continue
-        waiting_external.append({
-            "attempt_id": attempt_id,
-            "intent_id": row.get("intent_id"),
-            "node_id": node_id,
-            "state": state,
-            "path": row.get("path"),
-        })
-
-    active_node_ids = []
-    candidate_node_ids = list(dict.fromkeys([
-        *getattr(research_map, "focus_node_ids", []),
-        *[
-            node.id for node in research_map.nodes.values()
-            if getattr(node.state, "value", node.state) == "active"
-        ],
-    ]))
-    decision_needed = []
-    held_node_ids = set()
-    held_scope_refs = set()
-    deferred_scope_refs = set()
-    blocked_scope_refs = set()
-    pending_node_ids = {item.get("node_id") for item in waiting_external}
-    required_scope_refs = {
-        (item.get("scope"), item.get("target_id"))
-        for item in required
-        if item.get("scope") and item.get("target_id")
-    }
-    for node_id in candidate_node_ids:
-        node = research_map.nodes.get(node_id)
-        if node is None:
-            continue
-        state = getattr(node.state, "value", node.state)
-        if state not in {"active", "planned"}:
-            continue
-        active_node_ids.append(node_id)
-        node_records = [
-            item for item in records
-            if item.get("scope") == "node" and item.get("target_id") == node_id
-        ]
-        if any(item.get("status") in {"deferred", "blocked"} for item in node_records):
-            held_node_ids.add(node_id)
-            held_scope_refs.add(("node", node_id))
-            if any(item.get("status") == "blocked" for item in node_records):
-                blocked_scope_refs.add(("node", node_id))
-            else:
-                deferred_scope_refs.add(("node", node_id))
-        if (
-            node_id not in pending_node_ids
-            and ("node", node_id) not in required_scope_refs
-            and ("node", node_id) not in held_scope_refs
-        ):
-            decision_needed.append({
-                "scope": "node",
-                "target_id": node_id,
-                "title": node.title,
-                "objective": node.objective,
-                "reason": "active research scope has no continue_required checkpoint or pending Attempt",
-            })
-
-    # Claims and Gates are first-class research scopes too. Keep the candidate
-    # set bounded to focus claims and claims attached to an active Node; this
-    # prevents a large historical map from becoming a per-turn wake source.
-    active_node_set = set(active_node_ids)
-    candidate_claim_ids = list(dict.fromkeys([
-        *getattr(research_map, "focus_claim_ids", []),
-        *[
-            claim.id for claim in research_map.claims.values()
-            if active_node_set.intersection(getattr(claim, "node_ids", []))
-        ],
-    ]))
-    for claim_id in candidate_claim_ids:
-        claim = research_map.claims.get(claim_id)
-        if claim is None:
-            continue
-        linked_pending = any(
-            node_id in pending_node_ids for node_id in getattr(claim, "node_ids", [])
-        )
-        status = getattr(claim.status, "value", claim.status)
-        claim_records = [
-            item for item in records
-            if item.get("scope") == "claim" and item.get("target_id") == claim_id
-        ]
-        if any(item.get("status") in {"deferred", "blocked"} for item in claim_records):
-            held_scope_refs.add(("claim", claim_id))
-            if any(item.get("status") == "blocked" for item in claim_records):
-                blocked_scope_refs.add(("claim", claim_id))
-            else:
-                deferred_scope_refs.add(("claim", claim_id))
-        if (
-            status in {"proposed", "inconclusive"}
-            and not linked_pending
-            and ("claim", claim_id) not in required_scope_refs
-            and ("claim", claim_id) not in held_scope_refs
-        ):
-            decision_needed.append({
-                "scope": "claim",
-                "target_id": claim_id,
-                "title": claim.statement,
-                "objective": "interpret current evidence and decide the next bounded research action",
-                "reason": "focus Claim has no continue_required checkpoint or explicit disposition",
-            })
-
-    candidate_gate_ids = []
-    for node_id in active_node_ids:
-        node = research_map.nodes.get(node_id)
-        if node is not None:
-            candidate_gate_ids.extend(getattr(node, "gate_ids", []))
-    for claim_id in candidate_claim_ids:
-        claim = research_map.claims.get(claim_id)
-        if claim is not None:
-            candidate_gate_ids.extend(getattr(claim, "gate_ids", []))
-    for gate_id in dict.fromkeys(candidate_gate_ids):
-        gate = research_map.gates.get(gate_id)
-        if gate is None:
-            continue
-        scope = getattr(gate.scope, "value", gate.scope)
-        gate_ref = (scope, gate.target_id)
-        gate_records = [
-            item for item in records
-            if item.get("scope") == "gate" and item.get("target_id") == gate_id
-        ]
-        if any(item.get("status") in {"deferred", "blocked"} for item in gate_records):
-            held_scope_refs.add(("gate", gate_id))
-            if any(item.get("status") == "blocked" for item in gate_records):
-                blocked_scope_refs.add(("gate", gate_id))
-            else:
-                deferred_scope_refs.add(("gate", gate_id))
-        latest = gate.latest()
-        verdict = getattr(latest.verdict, "value", latest.verdict) if latest else None
-        linked_pending = scope == "node" and gate.target_id in pending_node_ids
-        if (
-            verdict in {None, "inconclusive", "blocked", "fail"}
-            and not linked_pending
-            and ("gate", gate_id) not in required_scope_refs
-            and ("gate", gate_id) not in held_scope_refs
-        ):
-            decision_needed.append({
-                "scope": "gate",
-                "target_id": gate_id,
-                "title": f"Evaluate gate for {scope} {gate.target_id}",
-                "objective": "evaluate the gate against the current evidence",
-                "reason": "research Gate has no settled evaluation or disposition",
-            })
-
-    if required:
-        lifecycle = "continue_required"
-    elif decision_needed:
-        lifecycle = "decision_needed"
-    elif waiting_external:
-        lifecycle = "waiting_external"
-    elif blocked_scope_refs:
-        lifecycle = "blocked"
-    elif deferred_scope_refs:
-        lifecycle = "deferred"
-    elif active_node_ids:
-        lifecycle = "decision_needed"
-    elif research_map.nodes:
-        lifecycle = "terminal"
-    else:
-        lifecycle = "idle"
-
-    counts = {
-        "continue_required": len(required),
-        # Compatibility count for older bounded-context consumers.
-        "required": len(required),
-        "deferred": len(deferred),
-        "blocked": len(blocked),
-        "waiting_external": len(waiting_external),
-        "decision_needed": len(decision_needed),
-        "active_nodes": len(active_node_ids),
-        "held_scopes": len(held_scope_refs),
-        "deferred_scopes": len(deferred_scope_refs),
-        "blocked_scopes": len(blocked_scope_refs),
-    }
-    return {
-        "schema_version": "research-liveness/1",
-        "map_id": research_map.map_id,
-        "map_revision": research_map.revision,
-        "runtime_revision": runtime.get("runtime_revision"),
-        "lifecycle": lifecycle,
-        "continue_required": [_compact_continuation(item) for item in required[:_LIVENESS_RECORD_LIMIT]],
-        # Compatibility alias; new callers should use continue_required.
-        "required": [_compact_continuation(item) for item in required[:_LIVENESS_RECORD_LIMIT]],
-        "deferred": [_compact_continuation(item) for item in deferred[:_LIVENESS_RECORD_LIMIT]],
-        "blocked": [_compact_continuation(item) for item in blocked[:_LIVENESS_RECORD_LIMIT]],
-        "waiting_external": [_compact_attempt(item) for item in waiting_external[:_LIVENESS_RECORD_LIMIT]],
-        "active_nodes": active_node_ids[:_LIVENESS_RECORD_LIMIT],
-        "held_scopes": [
-            {"scope": scope, "target_id": target_id}
-            for scope, target_id in sorted(held_scope_refs)[:_LIVENESS_RECORD_LIMIT]
-        ],
-        "deferred_scopes": [
-            {"scope": scope, "target_id": target_id}
-            for scope, target_id in sorted(deferred_scope_refs)[:_LIVENESS_RECORD_LIMIT]
-        ],
-        "blocked_scopes": [
-            {"scope": scope, "target_id": target_id}
-            for scope, target_id in sorted(blocked_scope_refs)[:_LIVENESS_RECORD_LIMIT]
-        ],
-        "decision_needed": [_compact_decision(item) for item in decision_needed[:_LIVENESS_RECORD_LIMIT]],
-        "counts": counts,
-        "truncated": {key: value > _LIVENESS_RECORD_LIMIT for key, value in counts.items()},
-    }
-
-
-def _runtime_status(root: str | Path) -> dict[str, Any]:
-    from .workspace.operational import runtime_status
-
-    return runtime_status(root)
-
-
-def _decision_request_envelope(request: dict[str, Any], *, schema: str) -> tuple[str | None, int | None, str | None, list[str]]:
-    """Validate shared metadata for Claim decisions without copying payloads."""
-
-    if request.get("schema_version", schema) != schema:
-        raise CommandError(f"unsupported {schema} request schema")
-    event_id = request.get("event_id")
-    if event_id is not None and (not isinstance(event_id, str) or not event_id.strip()):
-        raise CommandError("decision event_id must be a non-empty string")
-    expected_revision = request.get("expected_revision")
-    if expected_revision is not None and (type(expected_revision) is not int or expected_revision < 0):
-        raise CommandError("decision expected_revision must be a non-negative integer")
-    rationale = request.get("rationale")
-    if rationale is not None and (not isinstance(rationale, str) or not rationale.strip()):
-        raise CommandError("decision rationale must be a non-empty string")
-    basis_refs = request.get("basis_refs", [])
-    if not isinstance(basis_refs, list) or any(not isinstance(item, str) or not item.strip() for item in basis_refs):
-        raise CommandError("decision basis_refs must be a list of non-empty strings")
-    return event_id, expected_revision, rationale, basis_refs
-
-
-def _register_evidence_request(kernel: ResearchKernel, request: dict[str, Any]) -> dict[str, Any]:
-    """Validate the runtime-to-Kernel evidence admission envelope."""
-
-    allowed = {"schema_version", "event_id", "request_digest", "attempts", "artifacts", "links"}
-    unknown = sorted(set(request) - allowed)
-    if unknown:
-        raise CommandError("research.evidence.register contains unsupported fields: " + ", ".join(unknown))
-    if request.get("schema_version", "research-evidence-request/1") != "research-evidence-request/1":
-        raise CommandError("unsupported research-evidence-request/1 schema")
-    event_id = request.get("event_id")
-    request_digest = request.get("request_digest")
-    for name, value in (("event_id", event_id), ("request_digest", request_digest)):
-        if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > 512):
-            raise CommandError(f"research.evidence.register {name} must be a bounded string")
-    def rows(key: str, factory: Any) -> list[Any]:
-        value = request.get(key, [])
-        if not isinstance(value, list) or len(value) > 256:
-            raise CommandError(f"research.evidence.register {key} must be a bounded list")
-        try:
-            normalized = []
-            for item in value:
-                item = dict(item)
-                item.setdefault("created_at", _now())
-                normalized.append(factory(item))
-            return normalized
-        except (TypeError, ValueError, KeyError) as exc:
-            raise CommandError(f"research.evidence.register {key} contains an invalid record") from exc
-    for key in ("attempts", "artifacts", "links"):
-        value = request.get(key, [])
-        if not isinstance(value, list) or len(value) > 256:
-            raise CommandError(f"research.evidence.register {key} must be a bounded list")
-        if any(not isinstance(item, dict) for item in value):
-            raise CommandError("research.evidence.register records must be objects")
-    try:
-        result = kernel.register_evidence(
-            attempts=rows("attempts", AttemptRecord.from_dict),
-            artifacts=rows("artifacts", ArtifactManifest.from_dict),
-            links=rows("links", EvidenceLink.from_dict),
-            event_id=event_id,
-            request_digest=request_digest,
-        )
-    except ResearchKernelError as exc:
-        raise CommandError(str(exc)) from exc
-    return {"schema_version": "research-evidence-result/1", "operation": "register", "commit": result}
-
-
-def _commit_strategy_request(kernel: ResearchKernel, request: dict[str, Any]) -> dict[str, Any]:
-    _require_kernel_write_principal(request)
-    _decision_unknown_fields(request, {"schema_version", "operation", "event_id", "expected_revision", "rationale", "basis_refs", "plan", "review", "principal", "authority"})
-    event_id, expected_revision, rationale, basis_refs = _decision_request_envelope(
-        request, schema="research-strategy-request/1",
-    )
-    operation = request.get("operation")
-    if operation not in {"plan", "review"}:
-        raise CommandError("research.strategy operation must be plan or review")
-    payload = request.get("plan" if operation == "plan" else "review")
-    if not isinstance(payload, dict):
-        raise CommandError(f"research.strategy {operation} requires a {operation} object")
-    value = dict(payload)
-    value.setdefault("created_at", _now())
-    if operation == "plan":
-        record = StrategyPlan.from_dict(value)
-        request_digest = sha256_json({"operation": operation, "record": record.to_dict(), "rationale": rationale, "basis_refs": basis_refs})
-        result = _commit_decisions(kernel,
-            expected_revision=expected_revision,
-            event_id=event_id,
-            request_digest=request_digest,
-            rationale=rationale,
-            basis_refs=basis_refs,
-            strategy_plans=[record],
-        )
-    else:
-        record = StrategyReview.from_dict(value)
-        request_digest = sha256_json({"operation": operation, "record": record.to_dict(), "rationale": rationale, "basis_refs": basis_refs})
-        result = _commit_decisions(kernel,
-            expected_revision=expected_revision,
-            event_id=event_id,
-            request_digest=request_digest,
-            rationale=rationale,
-            basis_refs=basis_refs,
-            strategy_reviews=[record],
-        )
-    return {"schema_version": "research-strategy-result/1", "operation": operation, "record": record.to_dict(), "commit": result}
-
-
-def _commit_interpretation_request(kernel: ResearchKernel, root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
-    _require_kernel_write_principal(request)
-    _decision_unknown_fields(request, {"schema_version", "event_id", "expected_revision", "rationale", "basis_refs", "interpretation", "principal", "authority"})
-    event_id, expected_revision, rationale, basis_refs = _decision_request_envelope(
-        request, schema="research-interpretation-request/1",
-    )
-    payload = request.get("interpretation")
-    if not isinstance(payload, dict):
-        raise CommandError("research.interpretation requires an interpretation object")
-    value = dict(payload)
-    value.setdefault("created_at", _now())
-    record = AttemptInterpretation.from_dict(value)
-    runtime = _runtime_status(root)
-    attempt_ids = {
-        row.get("attempt_id") or row.get("intent_id")
-        for row in runtime.get("attempts", runtime.get("calculation_attempts", []))
-        if isinstance(row, dict)
-    }
-    if record.attempt_ref not in attempt_ids:
-        raise CommandError(f"interpretation references unknown Attempt {record.attempt_ref}")
-    request_digest = sha256_json({"record": record.to_dict(), "rationale": rationale, "basis_refs": basis_refs})
-    result = _commit_decisions(kernel,
-        expected_revision=expected_revision,
-        event_id=event_id,
-        request_digest=request_digest,
-        rationale=rationale,
-        basis_refs=basis_refs,
-        interpretations=[record],
-    )
-    return {"schema_version": "research-interpretation-result/1", "record": record.to_dict(), "commit": result}
-
-
-def _commit_checkpoint_request(kernel: ResearchKernel, root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
-    _require_kernel_write_principal(request)
-    _decision_unknown_fields(request, {"schema_version", "event_id", "expected_revision", "rationale", "basis_refs", "checkpoint", "principal", "authority"})
-    event_id, expected_revision, rationale, basis_refs = _decision_request_envelope(
-        request, schema="research-checkpoint-request/1",
-    )
-    payload = request.get("checkpoint")
-    if not isinstance(payload, dict):
-        raise CommandError("research.checkpoint requires a checkpoint object")
-    value = dict(payload)
-    value.setdefault("created_at", _now())
-    record = TurnCheckpoint.from_dict(value)
-    current = kernel.load()
-    runtime = _runtime_status(root)
-    decisions = kernel.decision_records()
-    _validate_checkpoint_lifecycle(record, current, runtime, decisions)
-    request_digest = sha256_json({"record": record.to_dict(), "rationale": rationale, "basis_refs": basis_refs})
-    result = _commit_decisions(kernel,
-        expected_revision=expected_revision,
-        event_id=event_id,
-        request_digest=request_digest,
-        rationale=rationale,
-        basis_refs=basis_refs,
-        checkpoint=record,
-    )
-    # SQLite binds the checkpoint to the revision committed in the same
-    # transaction; expose that canonical value rather than the request's
-    # optional placeholder.
-    record.map_revision = result["revision"]
-    return {"schema_version": "research-checkpoint-result/1", "record": record.to_dict(), "commit": result}
-
-
-def _decision_unknown_fields(request: dict[str, Any], allowed: set[str]) -> None:
-    unknown = sorted(set(request) - allowed)
-    if unknown:
-        raise CommandError("decision request contains unsupported fields: " + ", ".join(unknown))
-
-
-def _require_kernel_write_principal(request: dict[str, Any]) -> None:
-    if request.get("principal") != "root_agent":
-        raise CommandError("research mutation requires the Root Agent principal")
-    if request.get("authority") != "kernel_write":
-        raise CommandError("research mutation requires authority=kernel_write")
-
-
-def _commit_decisions(kernel: ResearchKernel, **kwargs: Any) -> dict[str, Any]:
-    try:
-        return kernel.commit_decisions(**kwargs)
-    except ResearchKernelError as exc:
-        raise CommandError(str(exc)) from exc
-
-
-def _validate_checkpoint_lifecycle(
-    checkpoint: Any,
-    research_map: Any,
-    runtime: dict[str, Any],
-    decisions: dict[str, Any],
-) -> None:
-    """Enforce the non-negotiable evidence/lifecycle bindings at close time."""
-
-    disposition = checkpoint.disposition.value
-    attempts = [row for row in runtime.get("attempts", runtime.get("calculation_attempts", [])) if isinstance(row, dict)]
-    by_id = {row.get("attempt_id") or row.get("intent_id"): row for row in attempts}
-    unresolved = set(checkpoint.unresolved_refs)
-    if disposition == "waiting_external":
-        if not unresolved:
-            raise CommandError("waiting_external checkpoint requires unresolved_refs")
-        missing = sorted(ref for ref in unresolved if ref not in by_id)
-        if missing:
-            raise CommandError("waiting_external checkpoint references unknown Attempts: " + ", ".join(missing))
-        terminal = {"failed", "stopped", "collected", "parsed"}
-        finished = sorted(ref for ref in unresolved if (by_id[ref].get("state") or by_id[ref].get("status")) in terminal)
-        if finished:
-            raise CommandError("waiting_external checkpoint references terminal Attempts: " + ", ".join(finished))
-
-    if disposition == "continue_required":
-        plans = decisions.get("records", {}).get("strategy_plans", [])
-        strategy_ids = set(checkpoint.metadata.get("strategy_ids", [])) if isinstance(checkpoint.metadata, dict) else set()
-        valid_claims = {
-            row.get("claim_id") for row in plans
-            if row.get("status") in {"proposed", "active"}
-            and (not strategy_ids or row.get("id") in strategy_ids)
-        }
-        missing = sorted(set(checkpoint.claim_ids) - valid_claims)
-        if missing:
-            raise CommandError("continue_required checkpoint needs an active StrategyPlan for Claims: " + ", ".join(missing))
-
-    if disposition == "terminal":
-        scoped_nodes = set(checkpoint.node_ids)
-        for claim in research_map.claims.values():
-            if claim.id in checkpoint.claim_ids:
-                scoped_nodes.update(claim.node_ids)
-        open_nodes = sorted(
-            node_id for node_id in scoped_nodes
-            if node_id in research_map.nodes
-            and getattr(research_map.nodes[node_id].state, "value", research_map.nodes[node_id].state) != "closed"
-        )
-        if open_nodes:
-            raise CommandError("terminal checkpoint requires closed Nodes: " + ", ".join(open_nodes))
-
-    # Parsed is a scientific result, not merely a scheduler state. Every
-    # parsed Attempt in the checkpoint scope must have an interpretation.
-    scoped_nodes = set(checkpoint.node_ids)
-    scoped_claims = set(checkpoint.claim_ids)
-    for claim in research_map.claims.values():
-        if claim.id in scoped_claims:
-            scoped_nodes.update(claim.node_ids)
-    interpreted = {
-        row.get("attempt_ref")
-        for row in decisions.get("records", {}).get("attempt_interpretations", [])
-    }
-    missing_interpretations = sorted(
-        (row.get("attempt_id") or row.get("intent_id"))
-        for row in attempts
-        if (row.get("state") or row.get("status")) == "parsed"
-        and (not scoped_nodes or (row.get("node_ref") or row.get("node_id")) in scoped_nodes)
-        and (row.get("attempt_id") or row.get("intent_id")) not in interpreted
-    )
-    if missing_interpretations:
-        raise CommandError("parsed Attempts require AttemptInterpretation before checkpoint: " + ", ".join(missing_interpretations))
-
-
-def _research_turn(kernel: ResearchKernel, root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
-    """Run one domain-neutral Research Turn boundary.
-
-    This is deliberately a checkpoint/read operation, not a planner.  The
-    Kernel derives the disposition from ResearchMap and runtime evidence; the
-    Host uses ``accepted`` to decide whether a bounded Agent follow-up is
-    needed.  A ``continue_required`` disposition is a valid end state because
-    it is an explicit next-turn plan, whereas ``decision_needed`` is not.
-    """
-
-    allowed = {
-        "schema_version", "operation", "turn_id", "session_id", "trigger", "request_id",
-        "event_id", "monitor_id", "intent_id",
-    }
-    unknown = sorted(set(request) - allowed)
-    if unknown:
-        raise CommandError("research.turn request contains unsupported fields: " + ", ".join(unknown))
-    if request.get("schema_version", "research-turn-request/1") != "research-turn-request/1":
-        raise CommandError("unsupported research turn request schema")
-    operation = request.get("operation")
-    if operation not in {"start", "orient", "checkpoint", "end", "wake"}:
-        raise CommandError("research.turn operation must be start, orient, checkpoint, end, or wake")
-    turn_id = request.get("turn_id")
-    if turn_id is not None and (not isinstance(turn_id, str) or not turn_id.strip() or len(turn_id) > 256):
-        raise CommandError("research.turn turn_id must be a non-empty string of at most 256 characters")
-    session_id = request.get("session_id")
-    if session_id is not None and (not isinstance(session_id, str) or not session_id.strip() or len(session_id) > 256):
-        raise CommandError("research.turn session_id must be a non-empty string of at most 256 characters")
-    request_id = request.get("request_id")
-    if request_id is not None and (not isinstance(request_id, str) or not request_id.strip() or len(request_id) > 256):
-        raise CommandError("research.turn request_id must be a non-empty string of at most 256 characters")
-    trigger = request.get("trigger", "agent")
-    if not isinstance(trigger, str) or not trigger.strip() or len(trigger) > 128:
-        raise CommandError("research.turn trigger must be a non-empty string of at most 128 characters")
-    for key in ("event_id", "monitor_id", "intent_id"):
-        value = request.get(key)
-        if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > 256):
-            raise CommandError(f"research.turn {key} must be a non-empty string of at most 256 characters")
-
-    # A request id is an idempotency key, not a globally reusable label.  Keep
-    # the comparison surface explicit and bounded so a retry with the same
-    # semantic request is replayable while accidental key reuse is rejected.
-    request_identity = {
-        "operation": operation,
-        "turn_id": turn_id,
-        "session_id": session_id,
-        "trigger": trigger,
-        "event_id": request.get("event_id"),
-        "monitor_id": request.get("monitor_id"),
-        "intent_id": request.get("intent_id"),
-    }
-
-    research_map = kernel.load()
-    runtime = _runtime_status(root)
-    liveness = _research_liveness(research_map, root, runtime=runtime)
-    accepted = not (operation in {"checkpoint", "end"} and liveness["lifecycle"] == "decision_needed")
-    result: dict[str, Any] = {
-        "schema_version": "research-turn-result/1",
-        "operation": operation,
-        "turn_id": turn_id,
-        "session_id": session_id,
-        "trigger": trigger,
-        "event_id": request.get("event_id"),
-        "monitor_id": request.get("monitor_id"),
-        "intent_id": request.get("intent_id"),
-        "accepted": accepted,
-        "requires_disposition": not accepted,
-        "lifecycle": liveness["lifecycle"],
-        "liveness": liveness,
-    }
-    # Mirror the bounded diagnostic fields at the turn boundary so Host
-    # adapters do not need to know which nested read model produced them.
-    for key in ("continue_required", "required", "deferred", "blocked", "waiting_external", "decision_needed", "counts"):
-        result[key] = liveness.get(key, [] if key != "counts" else {})
-    if operation == "orient":
-        result["context"] = _research_context(research_map, root)
-    event = {
-        "schema_version": "research-turn-event/1",
-        "operation": operation,
-        "turn_id": turn_id,
-        "session_id": session_id,
-        "request_id": request.get("request_id"),
-        "trigger": trigger,
-        "event_id": request.get("event_id"),
-        "monitor_id": request.get("monitor_id"),
-        "intent_id": request.get("intent_id"),
-        "accepted": accepted,
-        "lifecycle": liveness["lifecycle"],
-        "map_revision": research_map.revision,
-        "runtime_revision": runtime.get("runtime_revision"),
-        "recorded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-    }
-    # Turn events are operational audit, not ResearchMap facts.  They live in
-    # the workspace operations area and are never read as scientific evidence.
-    turn_log = Path(root) / "operations" / "research_turns.jsonl"
-    replayed = False
-    with workspace_lock(Path(root)):
-        if request.get("request_id") and turn_log.exists():
-            # Request IDs are the replay key for Host retries.  The current
-            # liveness is still returned, but the audit log is not duplicated.
-            # Reusing a key for a different operation would otherwise make a
-            # failed/late delivery indistinguishable from a valid retry.
-            for line in turn_log.read_text(encoding="utf-8").splitlines():
-                row = _json_load_object(line)
-                if not isinstance(row, dict) or row.get("request_id") != request["request_id"]:
-                    continue
-                existing_identity = {
-                    key: row.get(key)
-                    for key in request_identity
-                }
-                if existing_identity != request_identity:
-                    raise CommandError(
-                        f"research.turn request_id {request['request_id']} is already bound to another request"
-                    )
-                replayed = True
-                break
-        if not replayed:
-            append_jsonl(turn_log, event)
-    result["replayed"] = replayed
-    return result
-
-
-def _node_context(node: Any, research_map: Any) -> dict[str, Any]:
-    gate_summaries = []
-    for gate_id in node.gate_ids[:_CONTEXT_REFERENCE_LIMIT]:
-        gate = research_map.gates.get(gate_id)
-        if gate is None:
-            continue
-        latest = gate.latest()
-        criteria = list(gate.criteria)
-        gate_summaries.append({
-            "id": gate.id,
-            "scope": gate.scope.value,
-            "criteria": [_bounded_text(item) for item in criteria[:_CONTEXT_REFERENCE_LIMIT]],
-            "latest_verdict": latest.verdict.value if latest else None,
-            "truncated": {
-                "criteria": len(criteria) > _CONTEXT_REFERENCE_LIMIT
-                or any(len(str(item)) > _CONTEXT_TEXT_LIMIT for item in criteria),
-            },
-        })
-    claim_ids, claim_ids_truncated = _bounded_refs(node.claim_ids)
-    finding_ids, finding_ids_truncated = _bounded_refs(node.finding_ids)
-    gate_ids, gate_ids_truncated = _bounded_refs(node.gate_ids)
-    attempt_refs, attempt_refs_truncated = _bounded_refs(node.attempt_refs)
-    artifact_refs, artifact_refs_truncated = _bounded_refs(node.artifact_refs)
-    return {
-        "id": node.id,
-        "title": _bounded_text(node.title),
-        "objective": _bounded_text(node.objective),
-        "state": node.state.value,
-        "outcome": node.outcome.value if node.outcome else None,
-        "claim_ids": claim_ids,
-        "finding_ids": finding_ids,
-        "gate_ids": gate_ids,
-        "attempt_refs": attempt_refs,
-        "artifact_refs": artifact_refs,
-        "gates": gate_summaries,
-        "truncated": {
-            "title": len(str(node.title)) > _CONTEXT_TEXT_LIMIT,
-            "objective": len(str(node.objective)) > _CONTEXT_TEXT_LIMIT,
-            "claim_ids": claim_ids_truncated,
-            "finding_ids": finding_ids_truncated,
-            "gate_ids": gate_ids_truncated,
-            "attempt_refs": attempt_refs_truncated,
-            "artifact_refs": artifact_refs_truncated,
-            "gates": len(node.gate_ids) > _CONTEXT_REFERENCE_LIMIT,
-        },
-    }
-
-
-def _claim_context(claim: Any) -> dict[str, Any]:
-    node_ids, node_ids_truncated = _bounded_refs(claim.node_ids)
-    finding_ids, finding_ids_truncated = _bounded_refs(claim.finding_ids)
-    gate_ids, gate_ids_truncated = _bounded_refs(claim.gate_ids)
-    return {
-        "id": claim.id,
-        "statement": _bounded_text(claim.statement),
-        "status": claim.status.value,
-        "node_ids": node_ids,
-        "finding_ids": finding_ids,
-        "gate_ids": gate_ids,
-        "truncated": {
-            "statement": len(str(claim.statement)) > _CONTEXT_TEXT_LIMIT,
-            "node_ids": node_ids_truncated,
-            "finding_ids": finding_ids_truncated,
-            "gate_ids": gate_ids_truncated,
-        },
-    }
-
-
-def _bounded_text(value: Any, limit: int = _CONTEXT_TEXT_LIMIT) -> Any:
-    """Return a compact text value without copying arbitrary durable data."""
-
-    if value is None or not isinstance(value, str):
-        return value
-    if len(value) <= limit:
-        return value
-    marker = "...[truncated]"
-    return f"{value[:max(0, limit - len(marker))]}{marker}"
-
-
-def _bounded_refs(values: Any, limit: int = _CONTEXT_REFERENCE_LIMIT) -> tuple[list[str], bool]:
-    if not isinstance(values, (list, tuple)):
-        return [], bool(values)
-    normalized = [str(value) for value in values if isinstance(value, str) and value]
-    return normalized[:limit], len(normalized) > limit
-
-
-def _compact_continuation(value: dict[str, Any]) -> dict[str, Any]:
-    metadata = value.get("metadata")
-    previous_truncated = value.get("truncated") if isinstance(value.get("truncated"), dict) else {}
-    if isinstance(metadata, dict):
-        metadata_keys = sorted(str(key) for key in metadata)[:_CONTEXT_REFERENCE_LIMIT]
-        metadata_keys_truncated = len(metadata) > _CONTEXT_REFERENCE_LIMIT
-    else:
-        metadata_keys = [str(key) for key in value.get("metadata_keys", [])[:_CONTEXT_REFERENCE_LIMIT]]
-        metadata_keys_truncated = bool(previous_truncated.get("metadata_keys"))
-    reason = value.get("reason")
-    reason_truncated = bool(previous_truncated.get("reason"))
-    if isinstance(reason, str):
-        reason_truncated = reason_truncated or len(reason) > _CONTEXT_TEXT_LIMIT
-    return {
-        "id": value.get("id"),
-        "scope": value.get("scope"),
-        "target_id": value.get("target_id"),
-        "action": value.get("action"),
-        "status": value.get("status"),
-        "reason": _bounded_text(reason),
-        "request_id": _bounded_text(value.get("request_id"), 128),
-        "metadata_keys": metadata_keys,
-        "truncated": {
-            "reason": reason_truncated,
-            "metadata_keys": metadata_keys_truncated,
-        },
-    }
-
-
-def _compact_attempt(value: dict[str, Any]) -> dict[str, Any]:
-    previous_truncated = value.get("truncated") if isinstance(value.get("truncated"), dict) else {}
-    path = value.get("path")
-    return {
-        "attempt_id": value.get("attempt_id"),
-        "intent_id": value.get("intent_id"),
-        "node_id": value.get("node_id"),
-        "state": value.get("state"),
-        "path": _bounded_text(path, 768),
-        "truncated": {
-            "path": bool(previous_truncated.get("path"))
-            or isinstance(path, str) and len(path) > 768,
-        },
-    }
-
-
-def _compact_decision(value: dict[str, Any]) -> dict[str, Any]:
-    previous_truncated = value.get("truncated") if isinstance(value.get("truncated"), dict) else {}
-    return {
-        "scope": value.get("scope"),
-        "target_id": value.get("target_id"),
-        "title": _bounded_text(value.get("title")),
-        "objective": _bounded_text(value.get("objective")),
-        "reason": _bounded_text(value.get("reason")),
-        "truncated": {
-            key: bool(previous_truncated.get(key))
-            or isinstance(value.get(key), str) and len(value[key]) > _CONTEXT_TEXT_LIMIT
-            for key in ("title", "objective", "reason")
-        },
-    }
-
-
-def _has_truncated_fields(value: Any) -> bool:
-    truncated = value.get("truncated") if isinstance(value, dict) else None
-    return bool(
-        truncated is True
-        or isinstance(truncated, dict) and any(truncated.values())
-    )
-
-
-def _liveness_count(value: dict[str, Any], key: str) -> int:
-    counts = value.get("counts")
-    return int(counts.get(key, 0)) if isinstance(counts, dict) else len(value.get(key, []))
-
-
-def _apply_continuation_request(kernel: ResearchKernel, request: dict[str, Any]) -> dict[str, Any]:
-    schema_version = request.get("schema_version", "ts-continuation-request/1")
-    if schema_version != "ts-continuation-request/1":
-        raise CommandError(f"unsupported continuation request schema: {schema_version}")
-    operation = request.get("operation")
-    if operation == "status":
-        research_map = kernel.load()
-        return _continuation_status(
-            research_map,
-            scope=request.get("scope"),
-            target_id=request.get("target_id") or request.get("target_ref"),
-        )
-    _require_kernel_write_principal(request)
-    if operation == "set" or operation in {"set_required", "set_deferred", "set_blocked", "set_completed"}:
-        # The canonical envelope has one set operation and a status field.
-        # Keep operation-specific spellings as aliases for existing tools.
-        status = request.get("status") if operation == "set" else operation.removeprefix("set_")
-        if status is None:
-            status = "required"
-        if status not in {"required", "deferred", "blocked", "completed"}:
-            raise CommandError("continuation set status must be required, deferred, blocked, or completed")
-        continuation_id = request.get("continuation_id") or request.get("id")
-        target_id = request.get("target_id") or request.get("target_ref")
-
-        # A disposition can refer to the only required record for a scope and
-        # target without making the model echo its generated continuation ID.
-        # Resolve only an unambiguous required record; the Host never guesses
-        # between competing obligations.
-        if operation in {"set_deferred", "set_blocked", "set_completed"} and not continuation_id:
-            scope = request.get("scope")
-            action = request.get("action")
-            if scope and target_id:
-                current = kernel.load()
-                candidates = [
-                    item for item in current.continuations.values()
-                    if item.status.value == "required"
-                    and item.scope.value == scope
-                    and item.target_id == target_id
-                    and (not action or item.action.value == action)
-                ]
-                if len(candidates) == 1:
-                    continuation_id = candidates[0].id
-                elif len(candidates) > 1:
-                    raise CommandError("continuation disposition is ambiguous; provide continuationId")
-
-        # Tool-facing aliases update an existing record when an ID is given.
-        # `set_required` is also used to resume a deferred/blocked record; it
-        # must not attempt to create a duplicate continuation with that ID.
-        if operation in {"set", "set_required", "set_deferred", "set_blocked", "set_completed"} and continuation_id:
-            current = kernel.load()
-            existing = current.continuations.get(continuation_id)
-            if existing is None:
-                raise CommandError(f"unknown continuation {continuation_id}")
-            for key, expected in (("scope", existing.scope.value), ("target_id", existing.target_id), ("action", existing.action.value)):
-                supplied = request.get(key) or (request.get("target_ref") if key == "target_id" else None)
-                if supplied is not None and supplied != expected:
-                    raise CommandError(f"continuation {continuation_id} {key} does not match the existing record")
-            operation_value = {
-                "type": "resolve_continuation",
-                "id": continuation_id,
-                "status": status,
-            }
-            if request.get("reason") is not None:
-                operation_value["reason"] = request["reason"]
-            if request.get("request_id") is not None:
-                operation_value["request_id"] = request["request_id"]
-        else:
-            operation_value = {
-                "type": "set_continuation",
-                "scope": request.get("scope"),
-                "target_id": target_id,
-                "action": request.get("action"),
-                "status": status,
-                "id": continuation_id,
-                "reason": request.get("reason"),
-                "request_id": request.get("request_id"),
-                "metadata": request.get("metadata", {}),
-            }
-    elif operation == "resolve" or operation == "clear":
-        continuation_id = request.get("continuation_id") or request.get("id")
-        status = request.get("status", "completed")
-        if status not in {"required", "deferred", "blocked", "completed"}:
-            raise CommandError("continuation resolve status must be required, deferred, blocked, or completed")
-        operation_value = {
-            "type": "resolve_continuation",
-            "id": continuation_id,
-            "status": status,
-        }
-        if operation == "clear":
-            operation_value["status"] = "completed"
-        if request.get("reason") is not None:
-            operation_value["reason"] = request["reason"]
-        if request.get("request_id") is not None:
-            operation_value["request_id"] = request["request_id"]
-    else:
-        raise CommandError("continuation operation must be status, set, resolve, or a supported set_* alias")
-    change_set = {
-        "schema_version": "ts-change-request/1",
-        "rationale": request.get("rationale") or f"Record continuation disposition: {operation}",
-        "basis_refs": request.get("basis_refs", []),
-        "expected_revision": request.get("expected_revision"),
-        "operations": [operation_value],
-    }
-    # Tool callers may omit an ID for a newly created legacy required-action record.
-    # Allocate it from the current map and pin the revision so a concurrent
-    # writer fails cleanly instead of producing a duplicate record.
-    if operation_value["type"] == "set_continuation" and not operation_value.get("id"):
-        current = kernel.load()
-        operation_value["id"] = _next_continuation_id(current)
-        if change_set.get("expected_revision") is None:
-            change_set["expected_revision"] = current.revision
-    change_set = {key: value for key, value in change_set.items() if value is not None}
-    # An exact request-id retry is already committed.  Return the current
-    # ledger without creating a synthetic revision for a no-op replay.
-    request_id = request.get("request_id")
-    if request_id is not None and operation_value["type"] == "set_continuation":
-        current = kernel.load()
-        for existing in current.continuations.values():
-            if existing.request_id != request_id:
-                continue
-            if (
-                existing.scope.value == operation_value.get("scope")
-                and existing.target_id == operation_value.get("target_id")
-                and existing.action.value == operation_value.get("action")
-            ):
-                return _continuation_result(current, created_ids=[existing.id])
-            raise CommandError(f"request_id {request_id} is already bound to another continuation")
-    if request_id is not None and operation_value["type"] == "resolve_continuation":
-        current = kernel.load()
-        existing = current.continuations.get(operation_value["id"])
-        if existing is not None and existing.request_id == request_id:
-            desired = operation_value["status"]
-            if existing.status.value == desired and (
-                "reason" not in operation_value or existing.reason == operation_value["reason"]
-            ):
-                return _continuation_result(current)
-            raise CommandError(f"request_id {request_id} is already bound to another continuation disposition")
-    result = kernel.apply(change_set)
-    current = kernel.load()
-    status = _continuation_status(current)
-    return {**status, "schema_version": "research-continuation-result/1", "change": result}
-
-
-def _continuation_result(research_map: Any, *, created_ids: list[str] | None = None) -> dict[str, Any]:
-    """Return the same envelope as a committed continuation request replay."""
-
-    return {
-        **_continuation_status(research_map),
-        "schema_version": "research-continuation-result/1",
-        "change": {
-            "schema_version": "research-change-result/1",
-            "map_id": research_map.map_id,
-            "revision": research_map.revision,
-            "created_ids": list(created_ids or []),
-            "operation_count": 1,
-        },
-    }
-
-
-def _next_continuation_id(research_map: Any) -> str:
-    """Return the next stable ``cont_N`` ID without reusing map object IDs."""
-
-    all_ids = set()
-    for collection in ("phases", "claims", "nodes", "findings", "gates", "continuations"):
-        all_ids.update(getattr(research_map, collection, {}).keys())
-    index = 1
-    while f"cont_{index}" in all_ids:
-        index += 1
-    return f"cont_{index}"
-
-
 def _json_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _json_load_object(value: str) -> dict[str, Any]:
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
 
 
 __all__ = [

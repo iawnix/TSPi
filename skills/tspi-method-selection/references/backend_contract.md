@@ -29,6 +29,20 @@ Use the catalog to construct `compute_run` requests. Select
 and result contract are the same. Remote readiness is checked during calculation
 preflight; it is not a separate calculation API.
 
+The live catalog is authoritative for capability identity and version. Skill
+prose, a Backend descriptor, an installed executable, or a directory listing
+does not register a capability or prove that it is runnable. Query the exact
+`capability_id@version`, then query `compute_readiness` with that capability,
+the selected `environment_id`, and `execution_kind`. A readiness result of
+`unknown` or `deferred` is not executable health; use the environment doctor or
+`TSPi --check-remote doctor` before a real launch.
+
+Local/remote is an execution-environment property independent of capability
+identity. A remote request must use Native `compute_run` with
+`operation=launch` and an `executionTarget`; the generic capability invocation
+form must not receive a remote selector and cannot create a scheduler-bound
+intent. Both targets use the same lifecycle and immutable intent.
+
 For example, a local request can bind `{"kind":"local","environment":"local"}`;
 the same capability can bind `{"kind":"remote","environment":"cluster_1w",...}`.
 
@@ -52,12 +66,12 @@ scientific-intent digests plus same-Node Attempt lineage. Any changed method,
 input, command-relevant parameter, or expected output needs a new recalculation
 intent.
 
-The execution boundary is explicit but not remote-only: local targets support
-deterministic preparation when `dry_run=true` and start a bounded, durable
-Attempt-local worker when `dry_run=false`. Remote targets use the configured
-remote environment only when `dry_run=false`; remote dry-runs generate and
-validate a submission plan without contacting the scheduler. Check the selected
-environment and Backend binding before launching.
+The execution boundary is explicit and shared by local and remote targets. The
+public launch contract has no `dry_run` field: a launch validates the selected
+environment and Backend binding, then executes one bounded Attempt lifecycle.
+Use `compute_readiness` and Host preflight diagnostics when only preparation or
+environment health needs to be checked; those checks do not create a
+calculation Attempt.
 
 ## Record Scientific Results
 

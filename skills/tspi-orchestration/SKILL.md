@@ -37,8 +37,8 @@ Before ending every turn, read `research_read` with `mode=context` or `mode=live
 and close the lifecycle with `research_checkpoint`. Record strategy and Attempt
 interpretation first when applicable, then use one explicit disposition:
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
-`user_input_required`. `research_continuation` is a compatibility ledger for
-older required-action records; it is not the primary turn checkpoint. A
+`user_input_required`. `research_continuation` is a secondary required-action
+ledger; it is not the primary turn checkpoint. A
 completed Attempt or completed Continuation alone is not a research conclusion.
 If liveness returns `decision_needed`, continue the turn and record the
 checkpoint disposition. A `continue_required` plan is a valid next-turn plan;
@@ -46,6 +46,16 @@ the Harness must not force it to execute in the same turn. Do not invent a
 method in the Harness or treat Monitor's `next_run` as a scientific instruction.
 
 Use Review for a bounded counterargument, not as a source of canonical state.
+Use `analysis_run` only for an exact capability/version discovered from the
+analysis catalog; it is a registered deterministic local analysis and has no
+calculation lifecycle. Use `compute_run` as the calculation lifecycle entry
+point for auditable local/remote work: it owns the Attempt, Artifact, Monitor,
+and launch lifecycle. `light_compute` is limited to bounded light-workspace
+geometry/provider runs and does not create ResearchMap Attempts.
+Review is advisory: it cannot write the ResearchMap, mutate Claim/Node status,
+choose a method, or launch/cancel Compute. After `review_respond`, Root records
+the accepted, rejected, or qualified interpretation through ordinary
+`research_change` operations.
 Use the same `launch`, `inspect`, `finalize`, and `cancel` compute lifecycle for
 local and remote environments. After `launch` returns after submission,
 including an uncertain result, finish the current turn and let the durable Monitor enqueue a `next_run`; do not use `bash sleep`,
@@ -64,5 +74,7 @@ or changing ResearchMap. Operational success is not scientific support.
   when an Attempt fails or has an unknown effect.
 - Read [pi_agent_adapter.md](references/pi_agent_adapter.md) for Root tools and
   slash commands.
+- Read [runtime_boundaries.md](references/runtime_boundaries.md) for Agent
+  Runtime, Host/App Server, memory, Kernel, Monitor, and compute ownership.
 - Read [package_sources.md](references/package_sources.md) only when inspecting
   installed package sources.

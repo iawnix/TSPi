@@ -1,0 +1,95 @@
+# Runtime, Host, Kernel, Memory, and Monitor Boundaries
+
+This reference defines the ownership boundary behind the public TSPi tools. It
+is part of the agent-facing protocol; implementation modules and process names
+do not create additional agent APIs.
+
+## Agent Runtime
+
+The Agent Runtime owns one conversation/session turn and the in-process
+lifecycle lane. It routes a request to the workspace-bound Host and admits
+tools according to the lifecycle phase (`orient`, `advance`, `prepare`,
+`execute`, `interpret`, or `checkpoint`). A monitor wake starts in `wake` and
+admits one orientation read before normal work can continue. The Runtime does
+not choose a method, write a Claim or Node, or infer a scientific result.
+
+The Runtime memory port is always session-scoped:
+
+```json
+{
+  "schema_version": "agent_memory_read_1",
+  "memory_scope": "session",
+  "memory_authority": "agent_core_session",
+  "entries": []
+}
+```
+
+Conversation memory is not ResearchMap state. In a research workspace a
+request for `scope=workspace` on the Agent Core memory port fails with
+`research_memory_authority_required`; workspace scientific state must cross the
+Kernel boundary through `research_read`/`research_change` and typed lifecycle
+commands.
+
+## Host and App Server
+
+The App Server is the transport and composition boundary. Before opening a
+workspace-bound session or tool call, it must resolve an admitted
+`workspace_manifest.json`; the process-wide Runtime may exist before that
+binding, but a session cannot use it until the manifest is validated. A
+missing, symlinked, mismatched, legacy, or partially admitted workspace fails
+closed; the Host never derives identity from a filesystem basename or a legacy
+store.
+
+The Host binds `workspace_id`, `workspace_root`, and `workspace_mode` to the
+request context. Agent parameters may select a ResearchMap object, capability,
+Node, Artifact, or configured environment, but may not replace the bound root
+or identity. Host-owned writes carry `principal=root_agent` and
+`authority=kernel_write`; the Agent supplies rationale and operations, while
+the Kernel validates and commits them.
+
+Public semantic tool names are the only Agent API:
+`research_read`, `research_change`, `research_strategy`,
+`research_interpretation`, `research_checkpoint`, `research_continuation`,
+`compute_environment`, `compute_catalog`, `compute_readiness`, `compute_run`,
+`light_compute` (light-workspace-only bounded geometry/provider helper),
+`analysis_run`, and the artifact/review tools listed in
+[pi_agent_adapter.md](pi_agent_adapter.md). Private `ts_*` factory names and
+slash commands are transport details and are not alternate protocols.
+
+## Research Kernel and Memory Projection
+
+The Research Kernel owns the canonical research documents and the atomic
+revision. A successful `research_change` commits the context, liveness,
+`memory/index.json`, and manifest revision as one workspace transaction. The
+memory index is a bounded metadata/lifecycle projection; it is not conversation
+memory and never becomes a second scientific authority. Root must inspect the
+returned revision before relying on a change.
+
+## Monitor
+
+The Monitor owns operational polling and wake delivery for a bound calculation
+Attempt. It may inspect scheduler/program state, collect declared outputs, and
+enqueue a `next_run` wake when state changes. A wake is an operational trigger,
+not a scientific instruction: it must not choose a method, mutate a Claim or
+Node, or launch another calculation. The Root session rereads liveness and the
+Attempt, then chooses `inspect`, `finalize`, `cancel`, interpretation, or a
+checkpoint through the normal public tools.
+
+## Compute Plane
+
+Capability identity and execution environment are independent. Compute
+descriptors use `capability_id` and `capability_version`; the analysis catalog
+uses `capability` and `version`, and `analysis_run` requests use
+`capability` plus `capability_version`. These are two explicit catalog
+contracts, not interchangeable aliases. The live catalog is the only source
+of registered capabilities. `compute_run` is the calculation entry point for
+both targets and uses `launch`, `inspect`, `finalize`, or `cancel`;
+`analysis_run` is deterministic local analysis and has no scheduler lifecycle.
+Remote execution must use Native `compute_run` with
+`executionTarget.kind="remote"` and a configured environment. The generic
+mode-neutral capability invocation cannot create a remote scheduler intent.
+The `tool_gateway_1` request uses `capability_id`, optional
+`capability_version` (default `"1"`), `workspace_mode`, and `input`; it does
+not accept `tool_name`, top-level `version`, or `params` aliases. Those fields
+are rejected so a capability descriptor cannot silently drift from the
+invocation contract.

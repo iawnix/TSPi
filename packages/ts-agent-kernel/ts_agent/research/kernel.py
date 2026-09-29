@@ -63,9 +63,14 @@ class ResearchKernel:
     """
 
     def __init__(self, root: str | Path):
-        self.root = Path(root).expanduser().absolute()
-        self.path = self.root / MAP_FILE
-        self.sqlite = ResearchSqliteRepository(self.root)
+        # The JSON/SQLite ResearchKernel is retired completely. Canonical
+        # workspaces are served by ``agent_workspace`` and the filesystem
+        # Kernel; constructing this class would reintroduce a second state
+        # authority even when the target directory is empty.
+        raise ResearchKernelError(
+            "the retired JSON/SQLite ResearchKernel is unavailable; "
+            "use an initialized filesystem Research Agent workspace"
+        )
 
     def load(self) -> ResearchMap:
         with self._lock():

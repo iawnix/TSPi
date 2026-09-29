@@ -1,5 +1,6 @@
-# Copy to <installation>/.pi/name-resolver.toml and keep it owner-readable.
-# The default installation does not enable network name lookup.
+# The installer does not copy this example automatically. Copy it to
+# <installation>/.pi/name-resolver.toml to enable deterministic lookup,
+# and keep the resulting file owner-readable (mode 0600).
 default_resolver = "pubchem"
 
 [backends.pubchem]

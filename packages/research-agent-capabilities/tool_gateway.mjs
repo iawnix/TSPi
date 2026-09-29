@@ -183,7 +183,7 @@ function normalize_provider_descriptor(value, provider_id, provider_version) {
   }
   const unknown_fields = Object.keys(value).filter((field) => !new Set([
     "protocol", "version", "capability_id", "capability_version", "kind", "summary",
-    "input_schema", "output_schema", "supported_workspace_modes", "provider", "limits", "effects",
+    "input_schema", "output_schema", "supported_workspace_modes", "provider", "limits", "effects", "execution_routes",
   ]).has(field));
   if (unknown_fields.length > 0) throw provider_error(`provider descriptor contains unknown field: ${unknown_fields[0]}`);
   const capability_id = value.capability_id;
@@ -217,6 +217,12 @@ function normalize_provider_descriptor(value, provider_id, provider_version) {
       || new Set(value.effects).size !== value.effects.length)) {
     throw provider_error("provider descriptor effects is invalid");
   }
+  if (value.execution_routes !== undefined && (!Array.isArray(value.execution_routes)
+      || value.execution_routes.length === 0 || value.execution_routes.length > 8
+      || value.execution_routes.some((route) => typeof route !== "string" || !/^[a-z][a-z0-9_]{0,63}$/u.test(route))
+      || new Set(value.execution_routes).size !== value.execution_routes.length)) {
+    throw provider_error("provider descriptor execution_routes is invalid");
+  }
   const advertised_provider = value.provider;
   if (advertised_provider !== undefined && (!advertised_provider || typeof advertised_provider !== "object" || Array.isArray(advertised_provider))) {
     throw provider_error("provider descriptor provider must be an object");
@@ -247,6 +253,7 @@ function normalize_provider_descriptor(value, provider_id, provider_version) {
     provider: { provider_id, provider_version },
     ...(value.limits === undefined ? {} : { limits: value.limits }),
     ...(value.effects === undefined ? {} : { effects: value.effects }),
+    ...(value.execution_routes === undefined ? {} : { execution_routes: [...value.execution_routes] }),
   };
   let expected_digest;
   try {
@@ -265,6 +272,7 @@ function normalize_provider_descriptor(value, provider_id, provider_version) {
     supported_workspace_modes: Object.freeze([...base.supported_workspace_modes]),
     ...(base.limits === undefined ? {} : { limits: immutable_json(base.limits) }),
     ...(base.effects === undefined ? {} : { effects: immutable_json(base.effects) }),
+    ...(base.execution_routes === undefined ? {} : { execution_routes: Object.freeze([...base.execution_routes]) }),
     provider: Object.freeze({ ...base.provider, descriptor_digest: expected_digest }),
   });
 }
@@ -624,9 +632,20 @@ export function create_tool_gateway({ workspace_mode, artifact_root, providers =
     },
     async invoke(request) {
       require_object(request, "invoke request");
-      const capability_id = request.capability_id || request.tool_name;
-      const capability_version = request.capability_version || request.version || "1";
-      const mode = assert_workspace_mode(request.workspace_mode || bound_workspace_mode || "light");
+      for (const retired of ["tool_name", "version", "params"]) {
+        if (Object.prototype.hasOwnProperty.call(request, retired)) {
+          throw new CapabilityToolError("invalid_request", `${retired} is not part of the tool_gateway_1 request; use the canonical field`);
+        }
+      }
+      const capability_id = request.capability_id;
+      if (typeof capability_id !== "string" || !CAPABILITY_ID_PATTERN.test(capability_id)) {
+        throw new CapabilityToolError("invalid_request", "capability_id is required and must be a valid identifier");
+      }
+      const capability_version = request.capability_version === undefined ? "1" : request.capability_version;
+      if (typeof capability_version !== "string" || !CAPABILITY_VERSION_PATTERN.test(capability_version)) {
+        throw new CapabilityToolError("invalid_request", "capability_version must be a valid identifier");
+      }
+      const mode = assert_workspace_mode(request.workspace_mode ?? bound_workspace_mode ?? "light");
       if (bound_workspace_mode !== null && mode !== bound_workspace_mode) {
         throw new CapabilityToolError("workspace_mode_mismatch", "workspace mode does not match the gateway");
       }
@@ -636,7 +655,7 @@ export function create_tool_gateway({ workspace_mode, artifact_root, providers =
       if (!item.supported_workspace_modes.includes(mode)) {
         throw new CapabilityToolError("capability_mode_not_supported", "capability is not supported in this workspace mode");
       }
-      const input = require_object(request.input || request.params || {}, "input");
+      const input = require_object(request.input ?? {}, "input");
       const provider_environment_broker = invocation_environment_broker(environment_broker, request);
       const raw_result = await registration.provider.invoke({
         descriptor: item,

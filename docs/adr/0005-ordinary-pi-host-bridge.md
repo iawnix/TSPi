@@ -42,9 +42,9 @@ notification delivery are independent, leased, retryable, and deduplicated.
 An accepted wake is not an agent completion. Monitor never finalizes a
 calculation or writes ResearchMap state.
 
-Scientific `workspace.json` identity (`ws_<hex>`) is distinct from Host's route
-identity (the direct-child directory name). A worker verifies ownership before
-translating between them.
+The canonical `workspace_manifest.json` binds the scientific `workspace_id` and
+Host route to one identity. A worker verifies that manifest before routing; it
+does not translate a legacy identity alias.
 
 Compatibility history is never silently converted or opened writable. Host
 exposes workspace format-3 files read-only; an explicit import creates a new

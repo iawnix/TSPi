@@ -17,8 +17,8 @@ from typing import Any, Sequence
 from urllib.parse import unquote
 
 from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
+from ts_agent.runtime.workspace_mode import WorkspaceModeError, validate_workspace_manifest
 
-from .kernel import ResearchKernel, ResearchKernelError
 from .registry import (
     ensure_state_dir,
     find_workspace,
@@ -35,6 +35,11 @@ ERROR_SCHEMA = "research-map-error/1"
 WORKSPACE_LIST_SCHEMA = "research-workspace-list/1"
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,160}$")
 WORKSPACE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+RESEARCH_CONTEXT_COLLECTIONS = (
+    "phases", "claims", "nodes", "findings", "gates", "claim_relations",
+    "attempts", "artifacts", "evidence_links", "continuations",
+    "strategy_plans", "strategy_reviews", "attempt_interpretations",
+)
 
 
 class ResearchWebError(ValueError):
@@ -73,9 +78,8 @@ def handle_request(
     source_root = row.get("source_root")
     if not isinstance(source_root, str) or not source_root:
         raise ResearchWebError(f"workspace {workspace_id} has no registered location")
-    # ``workspace_id`` may be a legacy registry alias.  Keep the canonical ID
-    # from the resolved row in response envelopes so one workspace has one
-    # public identity even when an old client still routes by its former ID.
+    # Registry lookup is canonical-only. The resolved row carries the immutable
+    # manifest identity through every response envelope.
     return _route({**row, "source_root": source_root}, route.strip("/"), query)
 
 
@@ -166,7 +170,7 @@ def _summary(row: dict[str, Any], research_map: Any | None = None) -> dict[str, 
     if research_map is None:
         try:
             research_map = _load_map(source_root)
-        except (ResearchKernelError, OSError, ValueError) as error:
+        except (OSError, ValueError, ResearchWebError) as error:
             base["load_error"] = _sanitize(str(error), source_root)
             return base
     base.update({"available": True, "valid": True, "revision": research_map.revision, "progress": research_map.progress()})
@@ -200,25 +204,27 @@ def _route(row: dict[str, Any], route: str, query: dict[str, str]) -> Any:
 
 
 def _load_map(source_root: str) -> Any:
-    if _has_new_research_state(source_root):
-        try:
-            return _FilesystemResearchMap(source_root)
-        except (OSError, ValueError, ResearchWebError) as error:
-            raise ResearchWebError(str(error), retryable=True) from error
+    if not _has_new_research_state(source_root):
+        raise ResearchWebError("workspace is not an initialized Research Agent workspace")
     try:
-        return ResearchKernel(source_root).load_read_only()
-    except ResearchKernelError as error:
+        return _FilesystemResearchMap(source_root)
+    except (OSError, ValueError, ResearchWebError) as error:
         raise ResearchWebError(str(error), retryable=True) from error
 
 
 def _has_new_research_state(source_root: str | Path) -> bool:
     root = lexical_path(source_root)
-    return (
-        not path_has_symlink(root)
-        and (root / "workspace_manifest.json").is_file()
-        and (root / "research_map" / "context.json").is_file()
-        and (root / "lifecycle" / "liveness.json").is_file()
-    )
+    if path_has_symlink(root) or not (root / "workspace_manifest.json").is_file():
+        return False
+    try:
+        manifest = _read_object(root / "workspace_manifest.json", "workspace_manifest")
+        # The provider is a read-only consumer of an admitted workspace.  A
+        # manifest in ``admission_pending`` is an internal Host transition and
+        # must not become externally routable through the Web protocol.
+        validate_workspace_manifest(manifest, root, require_ready=True)
+    except (OSError, ValueError, ResearchWebError, WorkspaceModeError):
+        return False
+    return manifest.get("workspace_mode") == "research"
 
 
 class _FilesystemResearchMap:
@@ -236,8 +242,10 @@ class _FilesystemResearchMap:
         manifest = _read_object(self.root / "workspace_manifest.json", "workspace_manifest")
         context = _read_object(self.root / "research_map" / "context.json", "research_context")
         liveness = _read_object(self.root / "lifecycle" / "liveness.json", "research_liveness")
-        if manifest.get("schema_version") != "research_agent_workspace_1":
-            raise ResearchWebError("unsupported_workspace_manifest")
+        try:
+            manifest = validate_workspace_manifest(manifest, self.root)
+        except WorkspaceModeError as exc:
+            raise ResearchWebError("invalid_workspace_manifest") from exc
         manifest_root = manifest.get("workspace_root")
         if not isinstance(manifest_root, str) or lexical_path(manifest_root) != self.root:
             raise ResearchWebError("workspace_root_mismatch")
@@ -252,12 +260,33 @@ class _FilesystemResearchMap:
             raise ResearchWebError("unsupported_research_context_schema")
         if liveness.get("schema_version") != "research_liveness_1":
             raise ResearchWebError("unsupported_research_liveness_schema")
+        if manifest.get("state") != "ready":
+            raise ResearchWebError("invalid_workspace_state")
+        if context.get("lifecycle_state") != "admitted":
+            raise ResearchWebError("invalid_research_lifecycle_state")
+        if liveness.get("state") != context.get("lifecycle_state"):
+            raise ResearchWebError("research_lifecycle_state_mismatch")
+        if liveness.get("state") != "admitted":
+            raise ResearchWebError("research_lifecycle_state_mismatch")
         revision = context.get("revision")
         if type(revision) is not int or revision < 0 or liveness.get("revision") != revision:
             raise ResearchWebError("research_revision_mismatch")
+        missing = [name for name in RESEARCH_CONTEXT_COLLECTIONS if name not in context]
+        if missing:
+            raise ResearchWebError("research_context_missing_collections: " + ", ".join(missing))
+        invalid = [name for name in RESEARCH_CONTEXT_COLLECTIONS if not isinstance(context[name], list)]
+        if invalid:
+            raise ResearchWebError("research_context_collections_must_be_arrays: " + ", ".join(invalid))
+        focus = context.get("focus")
+        if not isinstance(focus, dict) or not isinstance(focus.get("claim_ids"), list) or not isinstance(focus.get("node_ids"), list):
+            raise ResearchWebError("research_context_focus_invalid")
         self.context = context
-        self.created_at = str(context.get("created_at") or manifest.get("created_at") or "unknown")
-        self.map_id = str(context.get("map_id") or workspace_id)
+        self.created_at = str(context.get("created_at") or manifest.get("created_at") or "")
+        if not self.created_at:
+            raise ResearchWebError("research_context_created_at_missing")
+        self.map_id = str(context.get("map_id") or f"map_{workspace_id}")
+        if not self.map_id:
+            raise ResearchWebError("research_context_map_id_missing")
         self.revision = revision
         self.nodes = {
             item["id"]: item
@@ -266,7 +295,7 @@ class _FilesystemResearchMap:
         }
 
     def _collection(self, name: str) -> list[dict[str, Any]]:
-        value = self.context.get(name, [])
+        value = self.context.get(name)
         if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
             raise ResearchWebError(f"research_context_{name}_invalid")
         return value

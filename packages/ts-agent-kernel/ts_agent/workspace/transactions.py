@@ -1,7 +1,7 @@
 """Workspace lock shared by runtime records and file-backed operations.
 
-Scientific state is committed by :class:`ResearchKernel`; calculation and
-analysis writers use this lock for their own operational files so they cannot
+Scientific state is committed by the filesystem Research Kernel boundary;
+calculation and analysis writers use this lock for their own operational files so they cannot
 race a workspace-level mutation. The old decision staging protocol is gone.
 """
 

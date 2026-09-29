@@ -126,6 +126,7 @@ export async function create_compute_config_capability_host({
     environment_broker,
   });
   for (const provider of capability_assembly.providers) gateway.register_provider(provider);
+  register_native_lifecycle_capabilities(gateway, document.capabilities);
   return Object.freeze({
     config_path: document.config_path,
     source: "compute.toml",
@@ -134,6 +135,58 @@ export async function create_compute_config_capability_host({
     capability_assembly,
     tool_gateway: gateway,
     allowlist: Object.freeze(allowlist.map((item) => Object.freeze({ ...item }))),
+  });
+}
+
+/**
+ * Python's ``ts_compute`` registry owns the scheduler-backed calculation
+ * lifecycle.  Keep those descriptors in the same live Host catalog as the
+ * optional in-process providers.  A synthetic provider is deliberately
+ * non-executable: its only valid route is Native ``compute_run`` launch,
+ * which resolves the descriptor again during Python preflight.
+ */
+function register_native_lifecycle_capabilities(gateway, values) {
+  if (!Array.isArray(values)) return;
+  const existing = new Set(gateway.describe({ workspace_mode: "light" })
+    .filter((item) => item?.kind === "compute")
+    .map((item) => `${item.capability_id}@${item.capability_version}`));
+  const descriptors = values
+    .filter((item) => item && typeof item === "object"
+      && typeof item.capability_id === "string"
+      && typeof item.capability_version === "string"
+      && item.kind === "compute")
+    .filter((item) => !existing.has(`${item.capability_id}@${item.capability_version}`))
+    .map((item) => Object.freeze({
+      protocol: "capability_descriptor",
+      version: 1,
+      capability_id: item.capability_id,
+      capability_version: item.capability_version,
+      kind: "compute",
+      summary: typeof item.summary === "string" && item.summary.length > 0
+        ? item.summary
+        : `Run the registered ${item.capability_id} calculation through the Native lifecycle.`,
+      input_schema: item.parameter_schema && typeof item.parameter_schema === "object"
+        ? item.parameter_schema
+        : { type: "object" },
+      output_schema: {
+        type: "object",
+        required: Array.isArray(item.output_roles) ? [...item.output_roles] : [],
+      },
+      supported_workspace_modes: ["light", "research"],
+      limits: item.limits && typeof item.limits === "object" ? item.limits : {},
+      effects: ["compute", "native_lifecycle"],
+      execution_routes: ["native_lifecycle"],
+    }));
+  if (descriptors.length === 0) return;
+  gateway.register_provider({
+    provider_id: "ts_compute_native",
+    provider_version: "1",
+    descriptors: () => descriptors,
+    async invoke({ descriptor }) {
+      const error = new Error(`${descriptor.capability_id} requires Native compute_run operation=launch`);
+      error.code = "native_lifecycle_required";
+      throw error;
+    },
   });
 }
 

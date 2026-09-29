@@ -256,6 +256,8 @@ def test_purge_config_removes_local_uninstaller_and_ownership_marker(tmp_path: P
     web_token = root / ".pi/ts-web/auth.token"
     web_token.parent.mkdir(parents=True)
     web_token.write_text("w" * 43)
+    resolver_config = root / ".pi/name-resolver.toml"
+    resolver_config.write_text("default_resolver = 'pubchem'\n", encoding="utf-8")
 
     result = uninstall(_args(root, purge_config=True))
 
@@ -263,6 +265,7 @@ def test_purge_config_removes_local_uninstaller_and_ownership_marker(tmp_path: P
     assert not (root / "uninstall.sh").exists()
     assert not (root / ".pi/tspi").exists()
     assert not web_token.exists()
+    assert not resolver_config.exists()
 
 
 def test_purge_removes_unified_host_sessions_and_credentials(tmp_path: Path) -> None:

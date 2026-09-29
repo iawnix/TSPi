@@ -10,6 +10,7 @@ from ts_agent.research.agent_workspace import (
     ADMISSION_PENDING,
     CONTEXT_SCHEMA,
     LIVENESS_SCHEMA,
+    RESEARCH_CONTEXT_COLLECTIONS,
     AgentWorkspaceError,
     admit_workspace,
     apply_change,
@@ -19,51 +20,11 @@ from ts_agent.research.agent_workspace import (
     turn,
 )
 from ts_agent.api import execute
+from ts_agent.runtime.workspace_mode import initialize_workspace
 
 
 def _workspace(root: Path) -> None:
-    (root / "research_map").mkdir()
-    (root / "lifecycle").mkdir()
-    (root / "workspace_manifest.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "research_agent_workspace_1",
-                "workspace_id": "workspace_python_unit",
-                "workspace_mode": "research",
-                "state": "admission_pending",
-                "workspace_root": str(root),
-            }
-        ),
-        encoding="utf-8",
-    )
-    (root / "research_map" / "context.json").write_text(
-        json.dumps(
-            {
-                "schema_version": CONTEXT_SCHEMA,
-                "workspace_id": "workspace_python_unit",
-                "workspace_mode": "research",
-                "revision": 0,
-                "lifecycle_state": ADMISSION_PENDING,
-                "phases": [],
-                "claims": [],
-                "nodes": [],
-                "gates": [],
-                "focus": {"claim_ids": [], "node_ids": []},
-            }
-        ),
-        encoding="utf-8",
-    )
-    (root / "lifecycle" / "liveness.json").write_text(
-        json.dumps(
-            {
-                "schema_version": LIVENESS_SCHEMA,
-                "workspace_id": "workspace_python_unit",
-                "revision": 0,
-                "state": ADMISSION_PENDING,
-            }
-        ),
-        encoding="utf-8",
-    )
+    initialize_workspace(root, "workspace_python_unit", "research")
 
 
 def test_new_workspace_change_checkpoint_and_turn_are_durable(tmp_path: Path) -> None:
@@ -146,7 +107,7 @@ def test_manifest_state_must_match_canonical_admission_state(tmp_path: Path) -> 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["state"] = "ready"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    with pytest.raises(AgentWorkspaceError, match="research_manifest_state_mismatch"):
+    with pytest.raises(AgentWorkspaceError, match="workspace_research_kernel_mismatch"):
         read_context(tmp_path)
 
 
@@ -186,6 +147,22 @@ def test_new_workspace_requires_an_explicit_research_mode(tmp_path: Path) -> Non
         read_context(tmp_path)
 
 
+def test_new_workspace_requires_the_complete_research_context_surface(tmp_path: Path) -> None:
+    _workspace(tmp_path)
+    context_path = tmp_path / "research_map" / "context.json"
+    context = json.loads(context_path.read_text(encoding="utf-8"))
+    context.pop("attempts")
+    context_path.write_text(json.dumps(context), encoding="utf-8")
+
+    with pytest.raises(AgentWorkspaceError, match="research_context_missing_collections: attempts"):
+        read_context(tmp_path)
+
+    context["attempts"] = {}
+    context_path.write_text(json.dumps(context), encoding="utf-8")
+    with pytest.raises(AgentWorkspaceError, match="research_context_collections_must_be_arrays: attempts"):
+        read_context(tmp_path)
+
+
 def test_new_workspace_requires_a_bound_canonical_manifest(tmp_path: Path) -> None:
     _workspace(tmp_path)
     (tmp_path / "workspace_manifest.json").unlink()
@@ -208,7 +185,7 @@ def test_new_workspace_requires_a_bound_canonical_manifest(tmp_path: Path) -> No
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["workspace_root"] = str(tmp_path / "other")
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    with pytest.raises(AgentWorkspaceError, match="research_workspace_root_mismatch"):
+    with pytest.raises(AgentWorkspaceError, match="workspace_root_mismatch"):
         read_context(tmp_path)
 
 

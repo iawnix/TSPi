@@ -432,16 +432,12 @@ def test_host_environment_publishes_owner_only_worker_diagnostics(tmp_path: Path
         os.environ.update(original_environment)
 
 
-def test_cli_workspace_storage_bootstraps_sqlite(tmp_path: Path) -> None:
+def test_cli_workspace_storage_rejects_retired_sqlite_bootstrap(tmp_path: Path) -> None:
     installation = _installation(tmp_path)
     workspace = launcher.prepare_workspace(installation, "sqlite-check")
-    from ts_agent.workspace.bootstrap import bootstrap_workspace
-
-    bootstrap_workspace(workspace)
-    result = launcher.ensure_workspace_sqlite(workspace)
-
-    assert result["created"] is True
-    assert (workspace / "research.db").is_file()
+    with pytest.raises(launcher.TSPiHostError, match="SQLite ResearchMap storage is retired"):
+        launcher.ensure_workspace_sqlite(workspace)
+    assert not (workspace / "research.db").exists()
 
 
 def test_host_state_rejects_an_insecure_installation_pi_directory(tmp_path: Path) -> None:

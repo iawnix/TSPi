@@ -30,7 +30,7 @@ def test_capability_catalog_keeps_adapters_separate_from_readiness() -> None:
 
 def test_catalog_describes_executor_contracts_without_strategy_routing() -> None:
     catalog = calculation_capabilities()
-    capabilities = {item["capability"]: item for item in catalog["capabilities"]}
+    capabilities = {item["capability_id"]: item for item in catalog["capabilities"]}
 
     assert {
         "gaussian.sp",

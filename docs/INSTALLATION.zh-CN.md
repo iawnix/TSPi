@@ -279,8 +279,9 @@ workspace 内写入 registration、event 和 delivery 回执。`monitor/list`、
 确认、租约和退避；wake 只表示 Pi 接受了输入，不表示 agent turn 已完成。Root Agent
 必须重新读取 `research_read`、检查计算后才能修改 ResearchMap。
 
-`workspace.json` 中稳定的 `ws_<hex>` 身份会先被验证，再映射到 Host 使用的直接目录名，
-防止 foreign event 投递到错误项目。
+规范的 `workspace_manifest.json` identity 会先被验证，再由 Monitor 用于 Host 路由。其
+`workspace_id` 在 Kernel、本地运行记录和远程计算 intent 中保持一致；不存在独立的
+`workspace.json` 身份或 alias 层。
 
 ## 会话历史
 
@@ -291,8 +292,9 @@ session 格式。
 ## 工作区初始化
 
 首次运行 `./ResearchAgent --workspace <name>` 时，客户端会在配置的 workspace root 下创建 0700 工作区
-及规范科学文件。Host 的 WorkspaceDirectory 也提供同一操作给 TS Phone。Host 不会创建无名项目；
-初始化会验证已有 JSON，遇到不支持的状态时拒绝而不是重写。
+以及规范的 `workspace_manifest.json`、`research_map/context.json`、`lifecycle/liveness.json` 和
+`memory/index.json`。Host 的 WorkspaceDirectory 也提供同一操作给 TS Phone。Host 不会创建无名项目；
+初始化会验证规范协议，遇到旧格式或不完整状态时拒绝而不是重写。
 
 ## 运行 TS Web Research Explorer
 

@@ -1,5 +1,6 @@
 import { resolve_mode_policy } from "./mode_policy.mjs";
 import { assert_session_mode, assert_workspace_mode, require_matching_mode } from "./session_mode.mjs";
+import { require_workspace_id } from "./workspace_id.mjs";
 
 export const TURN_ROUTER_VERSION = "turn_router_1";
 export const TURN_PROTOCOLS = Object.freeze({
@@ -77,7 +78,7 @@ function build_request(metadata, request = {}) {
   assert_bound_modes(request, metadata);
   const protocol = resolve_turn_protocol(metadata);
   const request_id = require_identifier(request.request_id, "request_id");
-  const workspace_id = require_identifier(request.workspace_id, "workspace_id");
+  const workspace_id = require_workspace_id(request.workspace_id);
   const context = request.context === undefined ? undefined : require_object(request.context, "context");
 
   if (protocol === TURN_PROTOCOLS.light) {

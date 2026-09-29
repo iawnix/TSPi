@@ -146,8 +146,9 @@ test("native analysis discovers contracts and journals explicit mapping results"
     )).content[0].text);
     const state = createStateTool();
     const catalog = await invoke(state, { mode: "capabilities", capabilityKind: "analysis" });
-    assert.equal(catalog.capabilities[0].capability, "reaction.mapping.validate");
-    assert.equal(catalog.capabilities[0].parameter_schema, undefined);
+    const mappingCapability = catalog.capabilities.find((item) => item.capability === "reaction.mapping.validate");
+    assert.ok(mappingCapability);
+    assert.equal(mappingCapability.parameter_schema, undefined);
     const detail = await invoke(state, {
       mode: "capabilities", capabilityKind: "analysis", query: "reaction.mapping.validate@1",
     });
@@ -182,9 +183,9 @@ test("native analysis discovers contracts and journals explicit mapping results"
     await assert.rejects(invoke(analyze, params), /analysis parameters/);
     const nodeDetail = await invoke(state, { mode: "detail", kind: "node", id: "node_1" });
     assert.equal(nodeDetail.schema_version, "research-detail/1");
-    assert.equal(nodeDetail.object.id, "node_1");
+    assert.equal(nodeDetail.item.id, "node_1");
     assert.match(result.summary, /mapped atom pairs/);
-    assert.equal(await readFile(join(workspace, "research_map.json"), "utf8").then(Boolean), true);
+    assert.equal(await readFile(join(workspace, "research_map", "context.json"), "utf8").then(Boolean), true);
     const generic = { operation: "run", nodeId: "node_1", capability: "reaction.parse", capabilityVersion: "1", inputArtifacts: {},
       parameters: { reaction_smiles: "O>>O", multiplicities: { reactants: [1], products: [1] } } };
     assert.equal((await invoke(state, { mode: "capabilities", capabilityKind: "analysis", query: "reaction.parse" })).ok, true);
@@ -194,6 +195,63 @@ test("native analysis discovers contracts and journals explicit mapping results"
     await assert.rejects(invoke(analyze, generic), /node_dispatch_paused/);
     await invoke(dispatch, { operation: "resume", nodeId: "node_1", rationale: "Continue selected branch" });
     assert.equal((await invoke(analyze, generic)).verdict, "valid");
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("native analysis_run journals a zero-input chemical resolver result", {
+  skip: !kernelPython(),
+}, async () => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-native-name-analysis-"));
+  const workspace = join(root, "workspace");
+  const python = kernelPython();
+  const previous = {
+    TSPI_PACKAGE_ROOT: process.env.TSPI_PACKAGE_ROOT,
+    TS_AGENT_PYTHON: process.env.TS_AGENT_PYTHON,
+    TSPI_NATIVE_WRITES: process.env.TSPI_NATIVE_WRITES,
+    TSPI_NAME_RESOLVER_CONFIG: process.env.TSPI_NAME_RESOLVER_CONFIG,
+    TSPI_INSTALL_ROOT: process.env.TSPI_INSTALL_ROOT,
+  };
+  process.env.TSPI_PACKAGE_ROOT = process.cwd();
+  process.env.TS_AGENT_PYTHON = python;
+  process.env.TSPI_NATIVE_WRITES = "1";
+  delete process.env.TSPI_NAME_RESOLVER_CONFIG;
+  delete process.env.TSPI_INSTALL_ROOT;
+  try {
+    await executeFile(python, ["scripts/ts_workspace_mode.py", "--root", workspace, "--workspace-id", "workspace_name_analysis", "--mode", "research"], {
+      cwd: process.cwd(),
+      env: { ...process.env, TS_AGENT_DISABLE_RUNTIME_REEXEC: "1", PYTHONNOUSERSITE: "1" },
+    });
+    await executeFile(python, ["-c", [
+      "import sys",
+      "from pathlib import Path",
+      "from tests.support.workspace_helpers import start_research_node",
+      "start_research_node(Path(sys.argv[1]))",
+    ].join("\n"), workspace], {
+      cwd: process.cwd(),
+      env: { ...process.env, PYTHONPATH: join(process.cwd(), "packages/ts-agent-kernel") },
+    });
+    const { createAnalyzeTool } = await import("../../../apps/app-server/pi-native-tools.mjs");
+    const result = JSON.parse((await createAnalyzeTool().execute("name-analysis", {
+      operation: "run", nodeId: "node_1", capability: "chemical.name.resolve", capabilityVersion: "1",
+      inputArtifacts: {}, parameters: { name: "test compound", resolver: "auto" },
+    }, undefined, { cwd: workspace }, undefined, { abortSignal: new AbortController().signal })).content[0].text);
+    assert.equal(result.schema_version, "ts-analysis-result/1");
+    assert.equal(result.verdict, "unsupported");
+    assert.match(result.analysis_artifact.path, /^nodes\/node_1\/outputs\/analysis\//);
+    const context = JSON.parse(await readFile(join(workspace, "research_map", "context.json"), "utf8"));
+    assert.deepEqual(context.findings, []);
+    const analysis = JSON.parse(await readFile(join(workspace, ...result.analysis_artifact.path.split("/")), "utf8"));
+    assert.equal(analysis.schema_version, "ts-scientific-analysis/1");
+    assert.equal(analysis.node_id, "node_1");
+    assert.equal(analysis.capability, "chemical.name.resolve");
+    assert.deepEqual(analysis.input_artifacts, {});
+    assert.deepEqual(analysis.result.data.candidates, []);
   } finally {
     for (const [name, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[name];
@@ -219,12 +277,12 @@ test("native ts_import writes a semantic input basename", {
   process.env.TS_AGENT_PYTHON = python;
   process.env.TSPI_NATIVE_WRITES = "1";
   try {
-    await executeFile(python, ["scripts/ts_workspace.py", "init_workspace", "--root", workspace], {
+    await executeFile(python, ["scripts/ts_workspace_mode.py", "--root", workspace, "--workspace-id", "workspace_native_import", "--mode", "research"], {
       cwd: process.cwd(),
       env: { ...process.env, TS_AGENT_DISABLE_RUNTIME_REEXEC: "1", PYTHONNOUSERSITE: "1" },
     });
     const nativeTools = await import(pathToFileURL(join(process.cwd(), "apps/app-server/pi-native-tools.mjs")).href);
-    const toolContext = { cwd: workspace };
+    const toolContext = { cwd: workspace, principal: "root_agent", authority: "kernel_write" };
     const context = { abortSignal: new AbortController().signal };
     const changed = await nativeTools.createChangeTool().execute("create-node", {
       rationale: "Create one bounded Node for semantic import naming.",
@@ -384,7 +442,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
   process.env.TS_AGENT_PYTHON = python;
   delete process.env.TSPI_NATIVE_WRITES;
   try {
-    await executeFile(python, ["scripts/ts_workspace.py", "init_workspace", "--root", workspace], {
+    await executeFile(python, ["scripts/ts_workspace_mode.py", "--root", workspace, "--workspace-id", "workspace_native_tools", "--mode", "research"], {
       cwd: process.cwd(),
       env: { ...process.env, TS_AGENT_DISABLE_RUNTIME_REEXEC: "1", PYTHONNOUSERSITE: "1" },
     });
@@ -714,7 +772,6 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
           ncpus: 1,
           memory: "1gb",
           walltime: "00:05:00",
-          ngpus: 0,
         },
       },
     };

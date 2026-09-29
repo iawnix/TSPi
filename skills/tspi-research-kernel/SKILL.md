@@ -9,11 +9,19 @@ description: Read, validate, and atomically update the canonical TSPi ResearchMa
 
 Use this Skill for project research state: status queries, object lookup,
 ResearchMap validation, bounded Research Memory reads, and atomic changes through
-`research_read` and `research_change`. The ResearchMap is persisted in
-`research_map/context.json`; `workspace_manifest.json`, `lifecycle/liveness.json`,
-and `memory/index.json` bind identity and lifecycle as one canonical Filesystem
-Kernel projection. Decision records and the Evidence Registry are Kernel-owned
-metadata, exposed through `research.decisions` and `research.evidence`.
+`research_read` and `research_change`. A research workspace must have
+`workspace_manifest.json` (`research_agent_workspace_1`),
+`research_map/context.json` (`research_map_context_1`), and
+`lifecycle/liveness.json` (`research_liveness_1`). Context always contains the
+array collections `phases`, `claims`, `nodes`, `findings`, `gates`,
+`claim_relations`, `attempts`, `artifacts`, `evidence_links`, `continuations`,
+`strategy_plans`, `strategy_reviews`, and `attempt_interpretations`; `focus.claim_ids`
+and `focus.node_ids` are arrays. `memory/index.json` uses
+`research_memory_index_1` and is only a metadata/lifecycle projection, never a
+second ResearchMap authority. Decision records and the Evidence Registry are
+Kernel-owned metadata, exposed through `research_read` modes `decisions` and
+`evidence` (the internal command IDs are `research.decisions` and
+`research.evidence`).
 
 `ResearchClaim`, `ResearchNode`, `Finding`, and `Gate` are the core research
 objects. `FactFinding` and `IssueFinding` are typed Finding specializations;
@@ -23,9 +31,10 @@ outcome represent progress independently of Claim status.
 
 Read with the narrowest `research_read` mode that answers the question. Query
 `mode=operations` before an unfamiliar write. Submit every mutation as one
-explicit ChangeSet through `research_change`, with `principal=root_agent` and
-`authority=kernel_write`, using `expectedRevision` when a stale write would be
-unsafe. Never edit canonical workspace documents directly or target a legacy
+explicit ChangeSet through `research_change`, using `expectedRevision` when a
+stale write would be unsafe. The Host attaches `principal=root_agent` and
+`authority=kernel_write` to the internal Kernel request; these authority fields
+are not public tool parameters. Never edit canonical workspace documents directly or target a legacy
 JSON/SQLite store.
 
 The ChangeSet `type` must be one of the canonical operations in

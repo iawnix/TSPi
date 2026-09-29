@@ -15,7 +15,7 @@ from scripts._wheel import release_wheel
 from scripts.build_package import build_package
 from scripts.install_package import install_package
 from tests.integration.test_release_install import _synthetic_release
-from ts_agent.workspace import init_workspace
+from ts_agent.runtime.workspace_mode import admit_research_workspace, initialize_workspace
 
 
 @pytest.fixture(autouse=True)
@@ -110,7 +110,8 @@ def test_package_install_migrates_research_workspace_without_pi_state(tmp_path: 
 
     install_root = tmp_path / "install"
     workspace = install_root / "workspaces" / "ts_001"
-    init_workspace(workspace)
+    initialize_workspace(workspace, "workspace_release", "research")
+    admit_research_workspace(workspace)
     assert not (workspace / ".pi").exists()
 
     installed = install_package(Path(built["manifest"]), None, install_root, allow_dirty=True)

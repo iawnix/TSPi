@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, rmdir, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
 import { commandArguments, createCommandService } from "../../packages/ts-agent-runtime/host-api/commands.mjs";
@@ -14,7 +14,7 @@ import { checkpointFollowUp, continuationFollowUp } from "../../packages/ts-agen
 import { createComputeTool } from "./pi-native-compute.mjs";
 import { createNotifyTool } from "./pi-native-notify.mjs";
 import { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
-import { readWorkspaceMode } from "./workspace-mode-tools.mjs";
+import { readWorkspaceManifest, readWorkspaceMode } from "./workspace-mode-tools.mjs";
 import { create_tool_gateway } from "../../packages/research-agent-capabilities/tool_gateway.mjs";
 import { create_compute_orchestrator } from "../../packages/research-agent-capabilities/compute_orchestrator.mjs";
 import { create_local_xyz_provider } from "../../packages/research-agent-capabilities/local_xyz_provider.mjs";
@@ -110,7 +110,7 @@ export function createLightComputeTool(options = {}) {
         const orchestrator = options.computeOrchestrator || options.compute_orchestrator
           || (gateway ? create_compute_orchestrator({ tool_gateway: gateway, artifact_store: gateway.artifact_store }) : null);
         if (!orchestrator) throw new Error("light_compute_capability_host_not_configured");
-        const workspaceId = toolContext?.workspace_id || toolContext?.workspaceId || basename(root);
+        const workspaceId = (await readWorkspaceManifest(root)).workspace_id;
         const input = bindLightInputArtifact({
           gateway,
           capabilityId: params.capabilityId,
@@ -203,21 +203,19 @@ export function createStateTool(options = {}) {
         if (!params.capabilityKind) throw new Error("research.read mode=capabilities requires capabilityKind=compute or analysis (tool research_read)");
         if (params.capabilityKind === "compute") {
           // Compute discovery uses the same Host-owned live gateway as
-          // compute_catalog. Keep the legacy command only for Pi-only
-          // fixtures that do not inject a Host gateway.
+          // compute_catalog. A missing gateway is a composition error; the
+          // research tool must not query a second legacy catalog.
           const gateway = options.toolGateway || options.tool_gateway;
-          if (gateway && typeof gateway.describe === "function") {
-            const mode = await readWorkspaceMode(root);
-            const capabilities = gateway.describe({ workspace_mode: mode })
-              .filter((item) => item?.kind === "compute");
-            return toolResult({
-              protocol_version: "compute_catalog_1",
-              workspace_mode: mode,
-              catalog: capabilities,
-              capabilities,
-            });
-          }
-          return toolResult(await NATIVE_COMMANDS.execute("compute.capabilities", root, {}, context?.abortSignal));
+          if (!gateway || typeof gateway.describe !== "function") throw new Error("capability_host_not_configured");
+          const mode = await readWorkspaceMode(root);
+          const capabilities = gateway.describe({ workspace_mode: mode })
+            .filter((item) => item?.kind === "compute");
+          return toolResult({
+            protocol_version: "compute_catalog_1",
+            workspace_mode: mode,
+            catalog: capabilities,
+            capabilities,
+          });
         }
         if (params.capabilityKind === "analysis") {
           const selector = params.query?.split("@");
@@ -239,6 +237,9 @@ export function createStateTool(options = {}) {
         }, context?.abortSignal));
       }
       if (mode === "storage") {
+        if (params.storageOperation !== undefined && params.storageOperation !== "status") {
+          throw new Error("research.storage supports only operation=status");
+        }
         return toolResult(await NATIVE_COMMANDS.execute("research.storage", root, {
           operation: params.storageOperation || "status",
         }, context?.abortSignal));
@@ -246,7 +247,15 @@ export function createStateTool(options = {}) {
       const command = `research.${mode}`;
       const commandParams = mode === "detail"
         ? { kind: params.kind, id: params.id }
-        : mode === "locate" ? { query: params.query } : {};
+        : mode === "locate" ? { query: params.query }
+          : mode === "decisions" ? { claimId: params.claimId, limit: params.limit }
+            : mode === "evidence" ? {
+              recordType: params.recordType,
+              nodeId: params.nodeId,
+              artifactId: params.artifactId,
+              subjectId: params.subjectId,
+              limit: params.limit,
+            } : {};
       const result = await NATIVE_COMMANDS.execute(command, root, commandParams, context?.abortSignal);
       return { ...toolResult(result), details: { result } };
     },
@@ -386,8 +395,8 @@ export function normalizeCheckpointPayload(value, toolContext, eventId) {
  * The Kernel derives liveness from ResearchMap plus operational Attempt
  * records. The Host may request one bounded follow-up when the Root failed to
  * record a checkpoint disposition for an active scope; it never chooses the
- * next method or invokes it itself. Legacy continuation records are read only
- * for compatibility and migration.
+ * next method or invokes it itself. Continuation records remain an explicit
+ * secondary ledger and do not replace checkpoint liveness.
  */
 export function createContinuationLivenessHook({
   cwd,
@@ -468,18 +477,44 @@ export function createComputeReadinessTool(options = {}) {
     async execute(_toolCallId, params, _onUpdate, toolContext) {
       const root = boundWorkspaceRoot(params, toolContext);
       const assembly = options.capabilityAssembly || options.capability_assembly;
+      const gateway = options.toolGateway || options.tool_gateway;
+      const mode = await readWorkspaceMode(root);
+      const catalog = gateway && typeof gateway.describe === "function"
+        ? gateway.describe({ workspace_mode: mode }).filter((item) => item?.kind === "compute")
+        : [];
       let readiness;
       if (assembly && typeof assembly.readiness === "function") {
-        readiness = await assembly.readiness({
-          ...(params.manifest_provider_id === undefined ? {} : { manifest_provider_id: params.manifest_provider_id }),
-          ...(params.capability_id === undefined ? {} : { capability_id: params.capability_id }),
-          ...(params.environment_id === undefined ? {} : { environment_id: params.environment_id }),
-          ...(params.execution_kind === undefined ? {} : { execution_kind: params.execution_kind }),
-        });
+        try {
+          readiness = [...await assembly.readiness({
+            ...(params.manifest_provider_id === undefined ? {} : { manifest_provider_id: params.manifest_provider_id }),
+            ...(params.capability_id === undefined ? {} : { capability_id: params.capability_id }),
+            ...(params.environment_id === undefined ? {} : { environment_id: params.environment_id }),
+            ...(params.execution_kind === undefined ? {} : { execution_kind: params.execution_kind }),
+          })];
+        } catch (error) {
+          if (error?.code !== "provider_not_registered") throw error;
+          readiness = [];
+        }
+        // Native lifecycle descriptors are registered in the same gateway
+        // catalog but have no in-process provider assembly. Keep them visible
+        // as explicitly unprobed instead of silently dropping CREST, scan,
+        // MD, or ASE NEB from readiness.
+        const returned = new Set(readiness.map((item) => `${item.capability_id}@${item.capability_version || "1"}`));
+        for (const item of catalog) {
+          const key = `${item.capability_id}@${item.capability_version}`;
+          if (returned.has(key) || (params.capability_id !== undefined && item.capability_id !== params.capability_id)) continue;
+          readiness.push({
+            capability_id: item.capability_id,
+            capability_version: item.capability_version,
+            readiness: {
+              state: "unknown",
+              checks: [{ name: "native_lifecycle", state: "deferred" }],
+              reason: "Native compute preflight resolves this registered capability",
+            },
+          });
+        }
       } else {
-        const gateway = options.toolGateway || options.tool_gateway;
         if (!gateway || typeof gateway.describe !== "function") throw new Error("compute_readiness_not_configured");
-        const mode = await readWorkspaceMode(root);
         const hasEnvironmentSelector = params.manifest_provider_id !== undefined
           || params.environment_id !== undefined
           || params.execution_kind !== undefined;
@@ -1060,25 +1095,23 @@ function validateWorkflowParams(params) {
 function filterContinuationStatus(result, params) {
   if (!params.scope && !params.targetId) return result;
   if (!result || typeof result !== "object" || Array.isArray(result)) return result;
-  const keys = ["continuations", "records", "items"];
-  const key = keys.find((candidate) => Array.isArray(result[candidate]));
-  if (!key) return result;
-  const records = result[key].filter((record) => {
+  const matches = (record) => {
     if (!record || typeof record !== "object") return false;
     const scope = record.scope;
     const target = record.target_ref || record.target_id || record.targetId;
     return (!params.scope || scope === params.scope) && (!params.targetId || target === params.targetId);
-  });
-  const filtered = { ...result, [key]: records };
-  if (Array.isArray(result.required)) {
-    filtered.required = result.required.filter((record) => {
-      if (!record || typeof record !== "object") return false;
-      const scope = record.scope;
-      const target = record.target_ref || record.target_id || record.targetId;
-      return (!params.scope || scope === params.scope) && (!params.targetId || target === params.targetId);
-    });
+  };
+  const filtered = { ...result };
+  for (const key of ["continuations", "records", "items", "required"]) {
+    if (Array.isArray(result[key])) filtered[key] = result[key].filter(matches);
   }
-  if ("required_count" in result) filtered.required_count = records.filter((record) => record?.status === "required").length;
+  if (result.counts && typeof result.counts === "object" && !Array.isArray(result.counts)) {
+    filtered.counts = {
+      ...result.counts,
+      ...(Array.isArray(filtered.continuations) ? { continuations: filtered.continuations.length } : {}),
+      ...(Array.isArray(filtered.required) ? { required: filtered.required.length } : {}),
+    };
+  }
   return filtered;
 }
 

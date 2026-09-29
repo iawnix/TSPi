@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,13 +10,30 @@ import {
   readWorkspaceMode,
   RESEARCH_ONLY_TOOL_NAMES,
 } from "../../../apps/app-server/workspace-mode-tools.mjs";
+import { create_workspace_initializer } from "../../../packages/research-agent-core/workspace.mjs";
 
-test("workspace mode reader defaults legacy roots to research and honors immutable manifests", async () => {
+test("workspace mode reader requires the canonical manifest and honors immutable manifests", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-workspace-mode-"));
   try {
-    assert.equal(await readWorkspaceMode(root), "research");
-    await writeFile(join(root, "workspace_manifest.json"), JSON.stringify({ workspace_mode: "light" }));
+    await assert.rejects(readWorkspaceMode(root), /workspace_manifest_unavailable/);
+    await create_workspace_initializer().initialize_workspace({
+      workspace_root: root,
+      workspace_id: "mode-light",
+      workspace_mode: "light",
+    });
     assert.equal(await readWorkspaceMode(root), "light");
+
+    const researchRoot = await mkdtemp(join(tmpdir(), "tspi-workspace-mode-research-"));
+    try {
+      await create_workspace_initializer().initialize_workspace({
+        workspace_root: researchRoot,
+        workspace_id: "mode-research",
+        workspace_mode: "research",
+      });
+      await assert.rejects(readWorkspaceMode(researchRoot), /workspace_admission_required/);
+    } finally {
+      await rm(researchRoot, { recursive: true, force: true });
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

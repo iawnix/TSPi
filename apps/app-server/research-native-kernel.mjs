@@ -18,7 +18,8 @@ export function isFilesystemResearchWorkspace(root) {
   try {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     return manifest?.schema_version === "research_agent_workspace_1"
-      && manifest.workspace_mode === "research";
+      && manifest.workspace_mode === "research"
+      && manifest.state === "ready";
   } catch {
     return false;
   }
@@ -64,15 +65,22 @@ export async function executeFilesystemResearchCommand(command, root, params = {
       const context = await bridge.read_context(request);
       return researchDetail(context, params.kind, params.id);
     }
+    if (command === "research.locate") {
+      const context = await bridge.read_context(request);
+      return researchLocate(context, params.query);
+    }
     if (command === "research.decisions") {
       const context = await bridge.read_context(request);
-      return researchDecisions(context, params.claimId || params.claim_id);
+      return researchDecisions(context, params.claimId || params.claim_id, params.limit);
     }
     if (command === "research.evidence") {
       const context = await bridge.read_context(request);
       return researchEvidence(context, params);
     }
     if (command === "research.storage") {
+      if (params.operation !== undefined && params.operation !== "status") {
+        throw new Error("research.storage supports only operation=status");
+      }
       const context = await bridge.read_context(request);
       return {
         schema_version: "research-storage/1",
@@ -87,22 +95,12 @@ export async function executeFilesystemResearchCommand(command, root, params = {
       return { schema_version: "research-validation/1", valid: true, revision: context.revision };
     }
     if (command === "research.operations") {
-      return {
-        schema_version: "research-operation-catalog/1",
-        operations: [
-          "create_phase", "create_claim", "create_node", "set_focus",
-          "set_node_state", "set_claim_status", "relate_claims",
-          "set_continuation", "resolve_continuation",
-          "create_finding", "create_gate", "evaluate_gate", "create_artifact",
-          "create_attempt", "transition_attempt", "create_evidence",
-          "create_strategy_plan", "create_strategy_review", "create_interpretation",
-        ],
-      };
+      return researchOperationCatalog();
     }
     if (command === "research.continuation") {
       if (!request.operation || request.operation === "status") {
         const context = await bridge.read_context(request);
-        return continuationStatus(context);
+        return continuationStatus(context, request);
       }
       const contextBefore = await bridge.read_context(request);
       const operation = continuationOperation(request, contextBefore);
@@ -115,7 +113,8 @@ export async function executeFilesystemResearchCommand(command, root, params = {
         schema_version: "research-continuation-result/1",
         operation: request.operation,
         commit,
-        ...continuationStatus(context),
+        change: commit,
+        ...continuationStatus(context, request),
       };
     }
     throw new Error(`unsupported filesystem research command: ${command}`);
@@ -124,22 +123,60 @@ export async function executeFilesystemResearchCommand(command, root, params = {
   }
 }
 
-function continuationStatus(context) {
-  const records = Array.isArray(context?.continuations)
+// Keep the Native route's read model identical to
+// ts_agent.workspace.operation_registry.operation_catalog().  The catalog is
+// descriptive only; all writes still cross the Kernel change boundary.
+function researchOperationCatalog() {
+  const contracts = [
+    ["create_claim", ["id", "statement", "type"], ["created_at", "falsifiers", "metadata", "predictions", "status"]],
+    ["create_finding", ["id", "kind", "node_id", "statement", "type"], ["claim_ids", "created_at", "datatype", "metadata", "provenance", "resolution", "severity", "source_refs", "status", "unit", "value"]],
+    ["create_gate", ["id", "scope", "target_id", "type"], ["created_at", "criteria", "metadata"]],
+    ["create_node", ["id", "objective", "title", "type"], ["claim_ids", "created_at", "dependency_ids", "metadata", "phase_id"]],
+    ["create_phase", ["id", "title", "type"], ["created_at", "metadata", "objective"]],
+    ["evaluate_gate", ["gate_id", "type", "verdict"], ["created_at", "evidence_refs", "message"]],
+    ["relate_claims", ["relation", "source_id", "target_id", "type"], []],
+    ["resolve_continuation", ["id", "status", "type"], ["reason", "request_id"]],
+    ["set_claim_status", ["claim_id", "status", "type"], []],
+    ["set_continuation", ["action", "id", "scope", "target_id", "type"], ["created_at", "metadata", "reason", "request_id", "status"]],
+    ["set_focus", ["claim_ids", "node_ids", "type"], []],
+    ["set_node_state", ["node_id", "state", "type"], ["outcome", "summary"]],
+  ];
+  return {
+    schema_version: "research-operation-catalog/1",
+    selected_operation: null,
+    operations: contracts.map(([type, required_fields, optional_fields]) => ({
+      type, required_fields, optional_fields,
+    })),
+  };
+}
+
+function continuationStatus(context, request = {}) {
+  let records = Array.isArray(context?.continuations)
     ? context.continuations.filter((item) => item && typeof item === "object")
     : [];
-  const groups = Object.fromEntries(["required", "deferred", "blocked", "completed"]
-    .map((status) => [status, records.filter((item) => item.status === status)]));
+  if (request.scope !== undefined) records = records.filter((item) => item.scope === request.scope);
+  const targetId = request.target_id || request.targetId || request.target_ref;
+  if (targetId !== undefined) records = records.filter((item) => item.target_id === targetId);
+  const required = records.filter((item) => item.status === "required");
+  const counts = { continuations: records.length, required: required.length };
+  const limit = Number.isSafeInteger(request.limit) && request.limit >= 1 && request.limit <= 2048
+    ? request.limit : 32;
   return {
-    schema_version: "research-continuation-status/1",
-    continuations: records,
-    ...groups,
-    waiting_external: [],
+    schema_version: "research-continuation/1",
+    map_id: context?.map_id || `map_${context?.workspace_id || ""}`,
+    revision: context?.revision ?? 0,
+    continuations: records.slice(0, limit),
+    required: required.slice(0, limit),
+    counts,
+    truncated: { continuations: records.length > limit, required: required.length > limit },
   };
 }
 
 function continuationOperation(request, context) {
   const operation = request.operation;
+  const targetId = request.target_id || request.targetId || request.target_ref;
+  const continuationIdValue = request.continuation_id || request.continuationId || request.id;
+  const requestId = request.request_id || request.requestId;
   const status = operation === "set_deferred" || operation === "set_blocked"
     ? operation.slice(4)
     : operation === "set_completed" ? "completed"
@@ -153,13 +190,13 @@ function continuationOperation(request, context) {
   if (!["required", "deferred", "blocked", "completed"].includes(status)) {
     throw new Error("continuation status must be required, deferred, blocked, or completed");
   }
-  let continuationId = request.continuation_id || request.id;
+  let continuationId = continuationIdValue;
   const records = Array.isArray(context?.continuations) ? context.continuations : [];
-  const hasTarget = request.scope !== undefined || request.target_id !== undefined || request.action !== undefined;
+  const hasTarget = request.scope !== undefined || targetId !== undefined || request.action !== undefined;
   if (["set_deferred", "set_blocked", "set_completed"].includes(operation) && !continuationId && hasTarget) {
     const candidates = records.filter((item) => item?.status === "required"
       && item.scope === request.scope
-      && (item.target_id === request.target_id || item.target_ref === request.target_id)
+      && (item.target_id === targetId || item.target_ref === targetId)
       && (request.action === undefined || item.action === request.action));
     if (candidates.length === 1) continuationId = candidates[0].id;
     if (candidates.length > 1) throw new Error("continuation disposition is ambiguous; provide continuationId");
@@ -172,8 +209,8 @@ function continuationOperation(request, context) {
     }
     const existing = records.find((item) => item?.id === continuationId);
     if (!existing) throw new Error(`unknown continuation ${continuationId}`);
-    for (const [field, expected] of [["scope", existing.scope], ["target_id", existing.target_id], ["action", existing.action]]) {
-      if (request[field] !== undefined && request[field] !== expected) {
+    for (const [field, supplied, expected] of [["scope", request.scope, existing.scope], ["target_id", targetId, existing.target_id], ["action", request.action, existing.action]]) {
+      if (supplied !== undefined && supplied !== expected) {
         throw new Error(`continuation ${continuationId} ${field} does not match the existing record`);
       }
     }
@@ -182,22 +219,22 @@ function continuationOperation(request, context) {
       id: continuationId,
       status: operation === "clear" ? "completed" : status,
       ...(request.reason === undefined ? {} : { reason: request.reason }),
-      ...(request.request_id === undefined ? {} : { request_id: request.request_id }),
+      ...(requestId === undefined ? {} : { request_id: requestId }),
     };
   }
-  if (typeof request.scope !== "string" || typeof request.target_id !== "string" || typeof request.action !== "string") {
+  if (typeof request.scope !== "string" || typeof targetId !== "string" || typeof request.action !== "string") {
     throw new Error(`research_continuation ${operation} requires scope, targetId, and action`);
   }
-  const id = continuationId || `continuation_${request.scope}_${request.target_id}_${request.action}`;
+  const id = continuationId || `continuation_${request.scope}_${targetId}_${request.action}`;
   return {
     type: "set_continuation",
     id,
     scope: request.scope,
-    target_id: request.target_id,
+    target_id: targetId,
     action: request.action,
     status,
     ...(request.reason === undefined ? {} : { reason: request.reason }),
-    ...(request.request_id === undefined ? {} : { request_id: request.request_id }),
+    ...(requestId === undefined ? {} : { request_id: requestId }),
   };
 }
 
@@ -245,19 +282,84 @@ function collection(context, kind) {
 }
 
 function researchSummary(context, mode) {
+  if (mode === "map") return researchMapDocument(context);
+  const phases = collection(context, "phase");
+  const claims = collection(context, "claim");
+  const nodes = collection(context, "node");
+  const findings = collection(context, "finding");
+  const gates = collection(context, "gate");
   return {
     schema_version: "research-summary/1",
     mode,
+    map_id: typeof context?.map_id === "string" && context.map_id.length
+      ? context.map_id : `map_${context.workspace_id}`,
     workspace_id: context.workspace_id,
     workspace_mode: context.workspace_mode,
     revision: context.revision,
     lifecycle_state: context.lifecycle_state,
-    phases: collection(context, "phase"),
-    claims: collection(context, "claim"),
-    nodes: collection(context, "node"),
-    findings: collection(context, "finding"),
-    gates: collection(context, "gate"),
+    phases,
+    claims,
+    nodes,
+    findings,
+    gates,
     focus: context.focus || { claim_ids: [], node_ids: [] },
+    progress: {
+      phase_count: phases.length,
+      claim_count: claims.length,
+      node_count: nodes.length,
+      finding_count: findings.length,
+      gate_count: gates.length,
+      closed_node_count: nodes.filter((item) => item?.state === "closed").length,
+      open_issue_count: findings.filter((item) => item?.kind === "issue" && item?.status === "open").length,
+    },
+  };
+}
+
+function researchMapDocument(context) {
+  const focus = context?.focus && typeof context.focus === "object" ? context.focus : {};
+  const mapId = typeof context?.map_id === "string" && context.map_id.length
+    ? context.map_id : `map_${context.workspace_id}`;
+  const createdAt = typeof context?.created_at === "string" && context.created_at.length
+    ? context.created_at : null;
+  if (!createdAt) throw new Error("ResearchMap created_at is invalid");
+  const collections = [
+    "phases", "claims", "nodes", "findings", "gates", "claim_relations",
+    "continuations",
+  ];
+  for (const name of collections) {
+    if (!Array.isArray(context?.[name])) throw new Error(`ResearchMap ${name} must be an array`);
+  }
+  if (!Array.isArray(focus.claim_ids) || !Array.isArray(focus.node_ids)) {
+    throw new Error("ResearchMap focus is invalid");
+  }
+  const nodes = context.nodes;
+  const findings = context.findings;
+  return {
+    schema_version: "research-map/1",
+    map_id: mapId,
+    title: typeof context?.title === "string" && context.title.length
+      ? context.title : context.workspace_id,
+    created_at: createdAt,
+    revision: context.revision,
+    phases: context.phases,
+    claims: context.claims,
+    nodes,
+    findings,
+    gates: context.gates,
+    continuations: context.continuations,
+    claim_relations: context.claim_relations,
+    focus_claim_ids: [...focus.claim_ids],
+    focus_node_ids: [...focus.node_ids],
+    metadata: context.metadata && typeof context.metadata === "object" ? context.metadata : {},
+    progress: {
+      phase_count: context.phases.length,
+      claim_count: context.claims.length,
+      node_count: nodes.length,
+      finding_count: findings.length,
+      gate_count: context.gates.length,
+      closed_node_count: nodes.filter((item) => item?.state === "closed").length,
+      open_issue_count: findings.filter((item) => item?.kind === "issue" && item?.status === "open").length,
+    },
   };
 }
 
@@ -267,22 +369,60 @@ function researchDetail(context, kind, id) {
   return { schema_version: "research-detail/1", kind, id, item };
 }
 
-function researchDecisions(context, claimId) {
+function researchDecisions(context, claimId, limit = 128) {
   const rows = [
     ...collection(context, "strategy").map((item) => ({ ...item, decision_type: "strategy_plan" })),
     ...collection(context, "review").map((item) => ({ ...item, decision_type: "strategy_review" })),
     ...collection(context, "interpretation").map((item) => ({ ...item, decision_type: "attempt_interpretation" })),
   ].filter((item) => claimId === undefined || item.claim_id === claimId);
-  return { schema_version: "research-decisions/1", claim_id: claimId || null, records: rows };
+  const bounded = Number.isSafeInteger(limit) && limit >= 1 && limit <= 2048 ? limit : 128;
+  return { schema_version: "research-decisions/1", claim_id: claimId || null, records: rows.slice(0, bounded) };
 }
 
 function researchEvidence(context, params) {
-  const kind = params.recordType || params.record_type;
+  const requestedKind = params.recordType || params.record_type;
+  if (requestedKind !== undefined && !["attempt", "artifact", "link"].includes(requestedKind)) {
+    throw new Error("research.evidence record_type must be attempt, artifact, or link");
+  }
+  const kind = requestedKind === "link" ? "evidence" : requestedKind;
   const groups = kind ? [kind] : ["attempt", "artifact", "evidence"];
-  const rows = groups.flatMap((name) => collection(context, name));
+  let rows = groups.flatMap((name) => collection(context, name));
+  const filters = {
+    node_id: params.nodeId || params.node_id,
+    artifact_id: params.artifactId || params.artifact_id,
+    subject_id: params.subjectId || params.subject_id,
+  };
+  for (const [field, expected] of Object.entries(filters)) {
+    if (expected === undefined) continue;
+    rows = rows.filter((item) => item?.[field] === expected
+      || item?.subject?.[field] === expected
+      || (Array.isArray(item?.[`${field}s`]) && item[`${field}s`].includes(expected)));
+  }
+  const limit = Number.isSafeInteger(params.limit) && params.limit >= 1 && params.limit <= 2048
+    ? params.limit : 128;
   return {
     schema_version: "research-evidence/1",
-    record_type: kind || null,
-    records: rows,
+    record_type: requestedKind || null,
+    records: rows.slice(0, limit),
   };
+}
+
+function researchLocate(context, query) {
+  if (typeof query !== "string" || query.trim() === "") {
+    throw new Error("research.locate query must be a non-empty string");
+  }
+  const needle = query.toLocaleLowerCase();
+  const matches = [];
+  for (const name of ["phases", "claims", "nodes", "findings", "gates"]) {
+    const items = Array.isArray(context?.[name]) ? context[name] : [];
+    for (const item of items) {
+      if (JSON.stringify(item).toLocaleLowerCase().includes(needle)) {
+        const kind = name.slice(0, -1);
+        matches.push({ ...item, collection: kind, object_type: item?.type || kind });
+      }
+    }
+  }
+  const mapId = typeof context?.map_id === "string" && context.map_id.length
+    ? context.map_id : `map_${context.workspace_id}`;
+  return { schema_version: "research-locate/1", map_id: mapId, matches };
 }

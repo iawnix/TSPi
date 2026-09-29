@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { create_fake_agent_runtime } from "../../packages/research-agent-core/fake-runtime.mjs";
+import { COMMAND_DEFINITIONS } from "../../packages/ts-agent-runtime/host-api/commands.mjs";
 import { assert_protocol_id } from "../../packages/research-agent-core/ports.mjs";
 import {
   assert_research_admitted,
@@ -18,6 +19,14 @@ test("framework protocol identifiers use snake_case", () => {
   assert.equal(assert_protocol_id("research_turn_request"), "research_turn_request");
   assert.throws(() => assert_protocol_id("research.turn.request"), /snake_case/);
   assert.throws(() => assert_protocol_id("ResearchTurnRequest"), /snake_case/);
+});
+
+test("public command catalog matches the canonical filesystem command boundary", () => {
+  // Evidence records are created as ResearchMap changes; there is no second
+  // evidence-registration RPC in the Native Filesystem Kernel. Storage is a
+  // read-only diagnostic projection.
+  assert.equal(COMMAND_DEFINITIONS["research.storage"]?.effect, "read");
+  assert.equal(COMMAND_DEFINITIONS["research.evidence.register"], undefined);
 });
 
 test("research turn contracts validate without Pi", () => {
@@ -81,6 +90,29 @@ test("kernel port has no runtime-specific dependency", async () => {
   });
   assert.equal((await kernel.turn(request)).accepted, true);
   assert.deepEqual(calls, ["start"]);
+});
+
+test("kernel port restores admission when a bound implementation is addressed by root", async () => {
+  const calls = [];
+  const kernel = create_research_kernel_port({
+    async read_context(request) { calls.push(request); return { workspace_id: "workspace_bound", lifecycle_state: "admitted" }; },
+    async read_liveness(request) { calls.push(request); return { workspace_id: "workspace_bound", state: "admitted" }; },
+    async apply_change() { return { accepted: true }; },
+    async checkpoint() { return { accepted: true }; },
+    async turn() { return { accepted: true }; },
+    async admit_workspace() { throw new Error("unexpected admission"); },
+  });
+  const result = await kernel.apply_change({
+    workspace_root: "/tmp/workspace-bound",
+    principal: "root_agent",
+    authority: "kernel_write",
+    operations: [{ type: "create_phase", id: "phase_1" }],
+  });
+  assert.equal(result.accepted, true);
+  assert.deepEqual(calls, [
+    { workspace_root: "/tmp/workspace-bound" },
+    { workspace_root: "/tmp/workspace-bound" },
+  ]);
 });
 
 test("Kernel admission is Host-only and blocks ResearchMap changes while pending", async () => {

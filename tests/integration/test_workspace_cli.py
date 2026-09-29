@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / "scripts" / "ts_workspace.py"
+CLI = ROOT / "scripts" / "ts_workspace_mode.py"
 API = ROOT / "scripts" / "ts_api.py"
 
 
@@ -24,12 +24,15 @@ def _run(script: Path, *args: str) -> dict:
     return json.loads(completed.stdout)
 
 
-def test_workspace_cli_roundtrip_uses_research_map(tmp_path: Path) -> None:
+def test_workspace_cli_roundtrip_uses_canonical_research_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    initialized = _run(CLI, "init_workspace", "--root", str(workspace))
-    assert initialized["schema_version"] == "research-map-init-result/1"
+    initialized = _run(CLI, "--root", str(workspace), "--workspace-id", "workspace_cli", "--mode", "research")
+    assert initialized["schema_version"] == "research_agent_workspace_1"
+    assert initialized["state"] == "ready"
 
     request = {
+        "principal": "root_agent",
+        "authority": "kernel_write",
         "expected_revision": 0,
         "operations": [
             {"type": "create_phase", "id": "phase_1", "title": "CLI", "objective": "Exercise the canonical CLI."},
@@ -37,7 +40,7 @@ def test_workspace_cli_roundtrip_uses_research_map(tmp_path: Path) -> None:
             {"type": "create_node", "id": "node_1", "title": "Bounded node", "objective": "Record one result.", "phase_id": "phase_1", "claim_ids": ["claim_1"]},
             {"type": "create_finding", "id": "fnd_1", "node_id": "node_1", "claim_ids": ["claim_1"], "statement": "The assertion was confirmed.", "kind": "fact", "value": True, "datatype": "boolean"},
             {"type": "create_gate", "id": "gate_1", "scope": "node", "target_id": "node_1"},
-            {"type": "evaluate_gate", "gate_id": "gate_1", "verdict": "pass", "evidence_refs": ["fnd_1"]},
+            {"type": "evaluate_gate", "gate_id": "gate_1", "verdict": "pass"},
             {"type": "set_focus", "claim_ids": ["claim_1"], "node_ids": ["node_1"]},
         ],
     }
@@ -48,12 +51,12 @@ def test_workspace_cli_roundtrip_uses_research_map(tmp_path: Path) -> None:
     shown = _run(API, "research.map", "--root", str(workspace))
     assert shown["schema_version"] == "research-map/1"
     assert shown["focus_claim_ids"] == ["claim_1"]
-    assert _run(CLI, "validate_workspace", "--root", str(workspace))["valid"] is True
+    assert _run(API, "research.validate", "--root", str(workspace))["valid"] is True
 
 
 def test_canonical_api_exposes_research_operation_catalog(tmp_path: Path) -> None:
     workspace = tmp_path / "research"
-    _run(CLI, "init_workspace", "--root", str(workspace))
+    _run(CLI, "--root", str(workspace), "--workspace-id", "workspace_catalog", "--mode", "research")
     catalog = _run(API, "research.operations", "--root", str(workspace))
     assert catalog["schema_version"] == "research-operation-catalog/1"
     assert {item["type"] for item in catalog["operations"]} == {

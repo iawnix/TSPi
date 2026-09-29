@@ -122,7 +122,7 @@ Registry。Manifest 显式记录两个 profile：
 | 模式 | memory profile | execution profile | 科研生命周期 |
 | --- | --- | --- | --- |
 | `light` | `session` | `bounded` | 无 ResearchMap、Claim、Node、Attempt、Evidence、Monitor |
-| `research` | `research_map` | `audited` | Kernel ResearchMap，加 Attempt、Evidence、Monitor |
+| `research` | `session` | `audited` | Kernel ResearchMap，加 Attempt、Evidence、Monitor |
 
 `light` 只创建通用的输入、Artifact、运行、日志、临时和 Session 目录，使用普通
 Agent Turn，并保留小型 Session Memory 与每次能力调用对应的 `LightRunStore` 记录。

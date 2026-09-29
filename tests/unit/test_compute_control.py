@@ -41,8 +41,8 @@ from ts_agent.remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguo
 from ts_agent.remote.models import RemoteJobStatus, RemoteReceipt
 from ts_agent.backends.gaussian import parse_log, parse_scan_log, route_settings
 from ts_agent.compute.task_validation import validate_parsed_task
-from ts_agent.workspace.identity import workspace_id
 from ts_agent.workspace.operational import _operational_files
+from ts_agent.runtime.workspace_mode import initialize_workspace
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
@@ -138,7 +138,7 @@ def test_load_prepared_rejects_symlinked_nodes_root(tmp_path: Path) -> None:
     nodes.rename(outside)
     nodes.symlink_to(outside, target_is_directory=True)
 
-    with pytest.raises(ComputeContractError, match="workspace canonical path uses a symbolic link"):
+    with pytest.raises(ComputeContractError, match="invalid canonical workspace"):
         preflight_calculation(workspace, "inspect", "node_1", intent_id="calc_1")
 
 
@@ -503,7 +503,7 @@ def test_remote_target_is_workspace_and_research_node_scoped(
     workspace, node_id = _workspace(tmp_path)
     _configure_remote(tmp_path, monkeypatch)
     created = _create(workspace, node_id, target=_remote_request_target())
-    identity = workspace_id(workspace, create=False)
+    identity = "workspace"
     assert created["execution_target"]["remote_dir"] == (
         f"/remote/ts/workspaces/{identity}/runs/{node_id}/{created['intent_id']}"
     )
@@ -515,21 +515,9 @@ def test_remote_intent_uses_light_execution_scope_without_research_map(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = tmp_path / "light"
-    (workspace / "inputs").mkdir(parents=True)
-    (workspace / "runs").mkdir()
+    initialize_workspace(workspace, "workspace_light_remote", "light")
     (workspace / "inputs" / "candidate.gjf").write_text(
         "%chk=candidate.chk\n#P B3LYP/6-31G(d) opt=(ts,calcfc) freq\n\nTS\n\n0 1\nH 0 0 0\n\n",
-        encoding="utf-8",
-    )
-    (workspace / "workspace_manifest.json").write_text(
-        json.dumps({
-            "schema_version": "research_agent_workspace_1",
-            "workspace_id": "workspace_light_remote",
-            "workspace_mode": "light",
-            "state": "ready",
-            "workspace_root": str(workspace),
-            "created_at": "2026-01-01T00:00:00Z",
-        }),
         encoding="utf-8",
     )
     _configure_remote(tmp_path, monkeypatch)
@@ -553,21 +541,9 @@ def test_remote_intent_rejects_backend_disallowed_queue_during_preflight(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = tmp_path / "light-queue"
-    (workspace / "inputs").mkdir(parents=True)
-    (workspace / "runs").mkdir()
+    initialize_workspace(workspace, "workspace_light_queue", "light")
     (workspace / "inputs" / "candidate.gjf").write_text(
         "%chk=candidate.chk\n#P B3LYP/6-31G(d) opt=(ts,calcfc) freq\n\nTS\n\n0 1\nH 0 0 0\n\n",
-        encoding="utf-8",
-    )
-    (workspace / "workspace_manifest.json").write_text(
-        json.dumps({
-            "schema_version": "research_agent_workspace_1",
-            "workspace_id": "workspace_light_queue",
-            "workspace_mode": "light",
-            "state": "ready",
-            "workspace_root": str(workspace),
-            "created_at": "2026-01-01T00:00:00Z",
-        }),
         encoding="utf-8",
     )
     _configure_remote(tmp_path, monkeypatch)

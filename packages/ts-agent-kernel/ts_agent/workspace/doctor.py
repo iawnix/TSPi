@@ -1,9 +1,9 @@
-"""Read-only checks for split ResearchMap storage.
+"""Read-only diagnostics for canonical Research Agent workspace state.
 
-The standalone workspace manifest/context and the historical Python Kernel
-currently coexist during the migration window.  This module intentionally
-does not repair either side.  It only compares their identities and revisions
-and fails closed when the stores disagree.
+The canonical runtime owns ``workspace_manifest.json`` and
+``research_map/context.json``. Retired JSON/SQLite stores are reported as
+errors so this command cannot accidentally bless a mixed or legacy layout.
+It is never a migration or runtime fallback path.
 """
 
 from __future__ import annotations
@@ -22,10 +22,9 @@ def inspect_workspace(root: str | Path) -> dict[str, Any]:
     """Inspect workspace storage without creating locks, databases, or files.
 
     ``valid`` is false whenever an authoritative-looking source has malformed
-    data or its revision/identity conflicts with another source.  A legacy
-    source that agrees with the new context is reported as a warning while the
-    migration is still in progress; callers can choose to reject warnings
-    once the compatibility window is removed.
+    data, its revision/identity conflicts with another source, or any retired
+    JSON/SQLite source is present. Legacy stores are diagnostics only and are
+    never accepted as an alternate authority.
     """
 
     requested = Path(root).expanduser()
@@ -205,35 +204,24 @@ def _compare_sources(sources: dict[str, dict[str, Any]], findings: list[dict[str
             ",".join(sorted(source["path"] for source in sources.values())),
         )
     legacy = [name for name in ("legacy_json", "sqlite") if name in sources]
-    if "context" in sources and legacy:
-        if len(set(source["revision"] for source in sources.values() if type(source.get("revision")) is int)) == 1:
-            _finding(
-                findings,
-                "warning",
-                "dual_research_map_storage",
-                "new ResearchMap context and legacy ResearchMap storage coexist; run an explicit migration before changing either store",
-                ",".join([sources["context"]["path"], *(sources[name]["path"] for name in legacy)]),
-            )
+    if legacy:
+        _finding(
+            findings,
+            "error",
+            "legacy_research_storage",
+            "retired ResearchMap storage is not supported; remove the legacy files before opening the workspace",
+            ",".join(sources[name]["path"] for name in legacy),
+        )
     identity_sources = {
         name: source.get("map_id")
         for name, source in sources.items()
         if source.get("map_id") is not None
     }
     if len(set(identity_sources.values())) > 1:
-        legacy_ids = {
-            source.get("map_id")
-            for name, source in sources.items()
-            if name in {"legacy_json", "sqlite"} and source.get("map_id") is not None
-        }
-        # The pre-standalone Kernel used an immutable ``ws_<uuid>`` identity,
-        # while the new manifest uses the user-facing workspace identifier.
-        # Treat that known translation as transitional; disagreeing legacy
-        # stores remain a hard conflict.
-        transitional_identity = "context" in sources and len(legacy_ids) == 1
         _finding(
             findings,
-            "warning" if transitional_identity else "error",
-            "dual_identity_translation" if transitional_identity else "research_identity_mismatch",
+            "error",
+            "research_identity_mismatch",
             "ResearchMap storage identities disagree: " + ", ".join(f"{name}={value}" for name, value in sorted(identity_sources.items())),
             ",".join(sorted(source["path"] for source in sources.values())),
         )
@@ -247,8 +235,6 @@ def _result(root: Path, findings: list[dict[str, Any]], sources: dict[str, dict[
     errors = [finding for finding in findings if finding["severity"] == "error"]
     if errors:
         status = "blocked"
-    elif any(finding["code"] == "dual_research_map_storage" for finding in findings):
-        status = "compatibility"
     elif sources:
         status = "healthy"
     else:

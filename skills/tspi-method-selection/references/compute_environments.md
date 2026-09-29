@@ -14,6 +14,13 @@ activation, scratch policy, and process environment. Local and remote environmen
 are defined in this one file; there is no separate remote registry. A calculation
 request selects a named environment and resources within its configured limits.
 
+This file is the single local/remote environment authority. Do not add a
+second `.pi/remote.toml` registry or infer a remote environment from a host
+directory. The configured environment name must be passed as
+`executionTarget.environment` in Native `compute_run` `operation=launch`.
+Capability identity remains the live capability catalog's concern; an
+environment's backend list only describes its binding and readiness.
+
 Use the installation-level `TSPi --check-remote` command for read-only diagnostics:
 
 - `status`: SSH connectivity only;

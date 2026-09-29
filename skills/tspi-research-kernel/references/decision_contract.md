@@ -1,8 +1,10 @@
 # ChangeSet Contract
 
-`research_change` is the only public mutation boundary for `ResearchMap`. It accepts
-one object containing `principal=root_agent`, `authority=kernel_write`, `rationale`, optional `basisRefs`, optional
-`expectedRevision`, and a non-empty `operations` array. Query
+`research_change` is the only public mutation boundary for `ResearchMap`. Its
+public payload contains `rationale`, optional `basisRefs`, optional
+`expectedRevision`, and a non-empty `operations` array. The Host attaches
+`principal=root_agent` and `authority=kernel_write` to the internal Kernel
+request; those authority fields are not public tool parameters. Query
 `research_read mode=operations` for the current catalog before using an unfamiliar
 operation.
 

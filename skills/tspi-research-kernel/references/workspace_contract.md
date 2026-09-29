@@ -1,14 +1,68 @@
 # Research Workspace Contract
 
+## Contents
+
+- [Canonical State](#canonical-state)
+- [Bootstrap And Identity](#bootstrap-and-identity)
+- [Write Boundary](#write-boundary)
+- [Relationships](#relationships)
+- [Runtime Records](#runtime-records)
+
 ## Canonical State
 
-Every research workspace is bound by one immutable `workspace_manifest.json`.
-The manifest records the workspace ID, absolute root, `workspace_mode=research`,
-admission state, and Kernel revision. The scientific read model is
-`research_map/context.json`; lifecycle admission is `lifecycle/liveness.json`;
-the bounded memory projection is `memory/index.json`. These documents share the
-same workspace ID and revision and are written atomically by the Filesystem
-Research Kernel. There is no JSON/SQLite fallback authority.
+Every research workspace is bound by one immutable-identity
+`workspace_manifest.json`. Its contract is
+`schema_version=research_agent_workspace_1`, `workspace_mode=research`, an
+absolute `workspace_root`, a stable `workspace_id`, and `state` equal to
+`admission_pending` or `ready`. The manifest binds admission and routing; the
+ResearchMap revision is stored in the context and liveness projections.
+The canonical workspace ID grammar is
+`^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$`; the same value is used by Host routes,
+Kernel requests, local run records, and remote calculation intents.
+
+The manifest also fixes the authority split and directory surface. Research
+workspaces must contain `profile_id=research_workspace_1`,
+`memory_profile=session`, `memory_scope=session`,
+`research_state_scope=workspace`, `execution_profile=audited`, and
+`research_kernel={initialized:true, admission_required:<state is not ready>,
+revision:<non-negative integer>}`. The required directories are exactly
+`inputs`, `artifacts`, `runs`, `logs`, `research_map`, `memory`, `lifecycle`,
+`checkpoints`, `nodes`, `evidence`, `monitor`, and `environments`. Light
+workspaces use the same schema with `profile_id=light_workspace_1`,
+`research_state_scope=none`, `execution_profile=bounded`,
+`research_kernel={initialized:false, admission_required:false, revision:null}`,
+and directories `inputs`, `artifacts`, `runs`, `logs`, `scratch`, and
+`sessions`. Host, App Server, Kernel, and Monitor readers reject a manifest
+that omits or changes these fields; they do not infer defaults from a path.
+
+The scientific read model is `research_map/context.json` and must use
+`schema_version=research_map_context_1`. It contains the complete collection
+surface, even when a collection is empty. The required array collections are:
+
+```text
+phases, claims, nodes, findings, gates, claim_relations,
+attempts, artifacts, evidence_links, continuations,
+strategy_plans, strategy_reviews, attempt_interpretations
+```
+
+`focus` is required and has array fields `claim_ids` and `node_ids`. The
+context `workspace_id` and `workspace_mode=research` must match the manifest.
+
+Lifecycle admission is `lifecycle/liveness.json` with
+`schema_version=research_liveness_1`; its `workspace_id`, `state` and
+`revision` must agree with context. The bounded runtime projection is
+`memory/index.json` with `schema_version=research_memory_index_1`. It carries
+`context_revision`, lifecycle and focus metadata plus explicitly registered
+entries. It is a metadata/lifecycle projection, never a second ResearchMap or
+scientific authority. Context and liveness are written with the memory
+projection atomically by the Filesystem Research Kernel. There is no
+JSON/SQLite fallback authority.
+
+The Agent Core `memory_profile` and `memory_scope` remain `session` in
+research mode. Durable scientific state belongs to the Research Kernel and is
+selected by `research_state_scope=workspace`; do not treat the memory
+projection as conversation memory or write scientific facts through the Core
+memory port.
 
 Raw execution payloads live under the Node/Attempt and Artifact stores. The
 Kernel context stores typed Claims, Nodes, Findings, Gates, relations, focus,
@@ -42,6 +96,9 @@ All Kernel writes require the Host-bound identity:
 ```json
 {"principal":"root_agent","authority":"kernel_write"}
 ```
+
+This identity is attached by the Host to the internal Kernel request; the
+public `research_change` tool payload does not include these authority fields.
 
 `research_change` loads the current canonical context under the workspace lock,
 checks `expectedRevision`, applies the ordered ChangeSet to a detached copy,

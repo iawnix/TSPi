@@ -14,6 +14,23 @@ const text = "calculation output\n";
 const digest = createHash("sha256").update(text).digest("hex");
 const output_id = `art_${digest}`;
 
+test("research compute rejects an unnamespaced Node before creating an Attempt", async () => {
+  const orchestrator = create_compute_orchestrator({
+    tool_gateway: { invoke: async () => ({ output: {}, artifacts: [] }) },
+    artifact_store: artifact_store(),
+  });
+  await assert.rejects(
+    orchestrator.run({
+      workspace_id: "workspace_orchestrator",
+      workspace_mode: "research",
+      node_id: "node1",
+      capability_id: "mock_compute",
+    }),
+    (error) => error?.code === "invalid_request" && /ResearchNode identifier/u.test(error.message),
+  );
+  await orchestrator.close();
+});
+
 function artifact_store() {
   const content = new Map([[output_id, Buffer.from(text)]]);
   return {

@@ -3,6 +3,7 @@ import { open, readFile, rename, stat, unlink, writeFile, mkdir } from "node:fs/
 import { dirname, join, resolve } from "node:path";
 
 import { assert_session_mode } from "./session_mode.mjs";
+import { require_workspace_id } from "./workspace_id.mjs";
 
 export const SESSION_STORE_PROTOCOL_VERSION = "session_store_1";
 export const SESSION_STORE_SCHEMA = "research_agent_session_store_1";
@@ -51,7 +52,9 @@ function normalize_entry(value, { allow_generated_id = false } = {}) {
   const session_id = value.session_id === undefined && allow_generated_id
     ? `session_${randomUUID()}`
     : require_session_id(value.session_id);
-  const workspace_id = require_optional_string(value.workspace_id, "workspace_id");
+  const workspace_id = value.workspace_id === undefined || value.workspace_id === null
+    ? undefined
+    : require_workspace_id(value.workspace_id);
   const workspace_root = require_optional_string(value.workspace_root, "workspace_root");
   const workspace_mode = value.workspace_mode === undefined ? undefined : assert_session_mode(value.workspace_mode);
   const session_mode = value.session_mode === undefined

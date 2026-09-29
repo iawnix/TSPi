@@ -221,6 +221,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Explicit TS Web token (8-100 URL-safe characters; prefer --web-auth-token-file for secrets).",
     )
     parser.add_argument("--compute-config", help="Unified compute.toml to install as .pi/compute.toml.")
+    parser.add_argument(
+        "--name-resolver-config",
+        help="Deterministic chemical name resolver TOML to install as .pi/name-resolver.toml.",
+    )
     parser.add_argument("--probe-remote", action="store_true", help="Run the remote doctor and fail if the configured environment is not ready.")
     parser.add_argument("--conda-root")
     parser.add_argument(
@@ -299,6 +303,10 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
     args.compute_config = ask(
         "Compute backend TOML path (blank preserves existing configuration)",
         args.compute_config or "",
+    ).strip() or None
+    args.name_resolver_config = ask(
+        "Chemical name resolver TOML path (blank preserves existing configuration)",
+        args.name_resolver_config or "",
     ).strip() or None
     section("Phone connection")
     existing_link = _existing_link_configuration(Path(args.install_root))
@@ -419,6 +427,8 @@ def _menu_choice(args: argparse.Namespace) -> str:
     field("Phone", "Link Relay" if args.phone_access == "link" else "disabled")
     field("Services", args.service_scope or "none")
     field("Email", args.email_binding or ("configured" if (root / ".pi/notifications.toml").is_file() else "not configured"))
+    field("Compute", "configured" if (root / ".pi/compute.toml").is_file() else "not configured")
+    field("Chemical name resolver", "configured" if (root / ".pi/name-resolver.toml").is_file() else "not configured")
     print()
     print("  1) Installation and workspace")
     print("  2) TS Web")
@@ -550,6 +560,10 @@ def interactive_menu_options(args: argparse.Namespace) -> argparse.Namespace:
                 "Compute backend TOML path (blank preserves existing configuration)",
                 args.compute_config or "",
             ).strip() or None
+            args.name_resolver_config = ask(
+                "Chemical name resolver TOML path (blank preserves existing configuration)",
+                args.name_resolver_config or "",
+            ).strip() or None
         elif choice == "4":
             _configure_menu_phone(args)
         elif choice == "5":
@@ -671,6 +685,11 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Pi App Server", "install pinned runtime and verify", tone="success")
     field("Local backend policy", "core Python/runtime only; native tools must be selected explicitly", tone="muted")
     field("Compute backend config", args.compute_config or "preserve <install>/.pi/compute.toml if present", tone="muted")
+    field(
+        "Chemical name resolver config",
+        args.name_resolver_config or "preserve <install>/.pi/name-resolver.toml if present",
+        tone="muted",
+    )
     field("Remote readiness", "probe during installation" if args.probe_remote else "not probed", tone="success" if args.probe_remote else "muted")
     field(
         "App Server service",
@@ -777,6 +796,15 @@ def validate_options(args: argparse.Namespace) -> None:
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
             raise ValueError(f"invalid compute TOML configuration: {source}: {error}") from error
         _validate_compute_config(parsed_compute)
+    if args.name_resolver_config:
+        source = Path(args.name_resolver_config).expanduser()
+        if not source.is_absolute() or source.is_symlink() or not source.is_file():
+            raise ValueError("--name-resolver-config must be an existing absolute regular file")
+        try:
+            parsed_resolver = tomllib.loads(source.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+            raise ValueError(f"invalid name-resolver TOML configuration: {source}: {error}") from error
+        _validate_name_resolver_config(parsed_resolver)
     if args.workspace_root is None:
         args.workspace_root = str(read_workspace_root(Path(args.install_root)))
     args.workspace_root = str(_validate_workspace_root(args.workspace_root, Path(args.install_root)))
@@ -1225,6 +1253,8 @@ def _copy_private_config(source_value: str, destination: Path, *, kind: str) -> 
         raise ValueError(f"invalid {kind} TOML configuration: {source}: {error}") from error
     if kind == "compute":
         _validate_compute_config(parsed)
+    elif kind == "name-resolver":
+        _validate_name_resolver_config(parsed)
     elif kind == "remote":
         _validate_remote_config(parsed, source.parent)
     elif kind == "local":
@@ -1282,6 +1312,61 @@ def _validate_compute_config(parsed: dict[str, object]) -> None:
                 raise ValueError(f"compute environment {name!r} backends.{backend}.activation_script must be absolute")
         if environment["kind"] == "remote":
             _validate_remote_config({"default_environment": name, "environments": {name: environment}}, Path("/"))
+
+
+def _validate_name_resolver_config(parsed: object) -> None:
+    """Validate the installation-owned deterministic name resolver contract."""
+
+    if not isinstance(parsed, dict):
+        raise ValueError("name-resolver config must be a TOML table")
+    default = parsed.get("default_resolver", "auto")
+    if default not in {"auto", "pubchem", "opsin"}:
+        raise ValueError("name-resolver default_resolver must be auto, pubchem, or opsin")
+    backends = parsed.get("backends", {})
+    if not isinstance(backends, dict):
+        raise ValueError("name-resolver config backends must be a table")
+    for name, value in backends.items():
+        if name not in {"pubchem", "opsin"} or not isinstance(value, dict):
+            raise ValueError(f"unsupported name-resolver backend: {name}")
+        enabled = value.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ValueError(f"name-resolver backends.{name}.enabled must be boolean")
+        endpoint = value.get(
+            "endpoint",
+            "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
+            if name == "pubchem"
+            else "https://opsin.ch.cam.ac.uk/opsin",
+        )
+        if not isinstance(endpoint, str) or not endpoint.strip():
+            raise ValueError(f"name-resolver backends.{name}.endpoint must be a URL")
+        parsed_endpoint = urllib.parse.urlparse(endpoint)
+        if parsed_endpoint.scheme not in {"http", "https"} or not parsed_endpoint.netloc:
+            raise ValueError(f"name-resolver backends.{name}.endpoint must be an absolute HTTP(S) URL")
+        timeout = value.get("timeout_seconds", 10)
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 1 <= timeout <= 60:
+            raise ValueError(f"name-resolver backends.{name}.timeout_seconds must be between 1 and 60")
+        cache = value.get("cache", True)
+        if not isinstance(cache, bool):
+            raise ValueError(f"name-resolver backends.{name}.cache must be boolean")
+        cache_dir = value.get("cache_dir")
+        if cache_dir is not None and (not isinstance(cache_dir, str) or not Path(cache_dir).is_absolute()):
+            raise ValueError(f"name-resolver backends.{name}.cache_dir must be an absolute path")
+        user_agent = value.get("user_agent", "TSPi-chemical-name-resolver/1")
+        if not isinstance(user_agent, str) or not user_agent.strip() or len(user_agent) > 256:
+            raise ValueError(f"name-resolver backends.{name}.user_agent must be a non-empty string")
+
+
+def _name_resolver_details(path: Path) -> dict[str, str]:
+    """Return an explicit readiness summary for an installed resolver file."""
+
+    parsed = tomllib.loads(path.read_text(encoding="utf-8"))
+    _validate_name_resolver_config(parsed)
+    backends = parsed.get("backends", {})
+    enabled = sorted(name for name, value in backends.items() if value.get("enabled", True))
+    return {
+        "enabled_backends": ",".join(enabled),
+        "automatic_lookup": "ready" if enabled else "unavailable",
+    }
 
 
 def _validate_remote_config(parsed: dict[str, object], base: Path) -> None:
@@ -1401,9 +1486,42 @@ def configure_backend_configs(args: argparse.Namespace) -> dict[str, dict[str, s
             root / ".pi" / "compute.toml",
             kind="compute",
         )
-        return result
-    destination = root / ".pi" / "compute.toml"
-    result["compute"] = {"status": "preserved" if destination.is_file() else "not_configured", "path": str(destination)}
+    else:
+        destination = root / ".pi" / "compute.toml"
+        result["compute"] = {"status": "preserved" if destination.is_file() else "not_configured", "path": str(destination)}
+
+    resolver_config = getattr(args, "name_resolver_config", None)
+    resolver_destination = root / ".pi" / "name-resolver.toml"
+    if resolver_config:
+        result["name_resolver"] = _copy_private_config(
+            resolver_config,
+            resolver_destination,
+            kind="name-resolver",
+        )
+        result["name_resolver"].update(_name_resolver_details(resolver_destination))
+    elif resolver_destination.is_symlink():
+        raise ValueError(f"existing name-resolver configuration must be a regular file: {resolver_destination}")
+    elif resolver_destination.exists() and not resolver_destination.is_file():
+        raise ValueError(f"existing name-resolver configuration must be a regular file: {resolver_destination}")
+    elif resolver_destination.is_file():
+        # Validate preserved state as part of installation so a stale or
+        # malformed resolver file cannot silently make the capability unusable.
+        try:
+            _validate_name_resolver_config(tomllib.loads(resolver_destination.read_text(encoding="utf-8")))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, ValueError) as error:
+            raise ValueError(f"invalid existing name-resolver configuration: {resolver_destination}: {error}") from error
+        result["name_resolver"] = {
+            "status": "preserved",
+            "path": str(resolver_destination),
+            **_name_resolver_details(resolver_destination),
+        }
+    else:
+        result["name_resolver"] = {
+            "status": "not_configured",
+            "path": str(resolver_destination),
+            "enabled_backends": "",
+            "automatic_lookup": "unavailable",
+        }
     return result
 
 
@@ -1708,6 +1826,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
         ".pi/email/service.env",
         ".pi/email/smtp-password",
         ".pi/compute.toml",
+        ".pi/name-resolver.toml",
     ]
     paths = {str(root / relative): _snapshot_file(root / relative) for relative in relative_paths}
     external_password = getattr(args, "email_password_file", None)
@@ -2731,6 +2850,12 @@ def build_component_summary(
             "status": "preserved" if (root / ".pi/compute.toml").is_file() else "not_configured",
             "path": str(root / ".pi/compute.toml"),
         },
+        "name_resolver": backend_configs.get("name_resolver") if backend_configs else {
+            "status": "preserved" if (root / ".pi/name-resolver.toml").is_file() else "not_configured",
+            "path": str(root / ".pi/name-resolver.toml"),
+            "enabled_backends": "",
+            "automatic_lookup": "unavailable",
+        },
     }
 
 
@@ -2841,6 +2966,25 @@ def show_installed_summary(
         section("Compute backends")
         field("Unified config", compute.get("path", "not configured"))
         field("Status", compute.get("status", "not configured"), tone="success" if compute.get("status") in {"configured", "preserved"} else "warning")
+    resolver = components.get("name_resolver")
+    if isinstance(resolver, dict):
+        section("Chemical name resolution")
+        field("Config", resolver.get("path", "not configured"))
+        field(
+            "Status",
+            resolver.get("status", "not_configured"),
+            tone="success" if resolver.get("status") in {"configured", "preserved"} else "warning",
+        )
+        field("Enabled backends", resolver.get("enabled_backends") or "none")
+        field(
+            "Automatic lookup",
+            resolver.get("automatic_lookup", "unavailable"),
+            tone="success" if resolver.get("automatic_lookup") == "ready" else "warning",
+        )
+        note(
+            "chemical.name.resolve@1 is registered independently; automatic lookup requires an enabled backend in this file.",
+            tone="muted",
+        )
 
 
 def _show_service(value: object) -> None:
@@ -3013,6 +3157,7 @@ def main(argv: list[str] | None = None) -> int:
             f"with_web={bool(args.with_web)}",
             f"service_scope={args.service_scope}",
             f"compute_config={backend_configs.get('compute', {}).get('status', 'not_configured')}",
+            f"name_resolver_config={backend_configs.get('name_resolver', {}).get('status', 'not_configured')}",
             f"phone_manifest={phone_connection.get('manifest', '') if isinstance(phone_connection, dict) else ''}",
             f"model_icons={model_icons.get('status', 'unknown') if isinstance(model_icons, dict) else 'unknown'}",
             f"model_configuration={model_configuration.get('status', 'unknown') if isinstance(model_configuration, dict) else 'unknown'}",

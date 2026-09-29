@@ -16,6 +16,7 @@ import { wrapToolForHarness } from "../../../packages/ts-agent-runtime/host-api/
 import { createToolExecutionContext } from "../../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
 import { createResearchLifecycleController } from "../../../packages/ts-agent-runtime/host-api/lifecycle.mjs";
 import { PUBLIC_TOOL_METADATA } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { create_workspace_initializer } from "../../../packages/research-agent-core/workspace.mjs";
 import { managedPython } from "./test-environment.mjs";
 
 const REPO_ROOT = process.cwd();
@@ -78,38 +79,13 @@ function sha256Json(value) {
 
 async function createResearchFixture(root) {
   const workspace = join(root, "workspace");
-  runJson(["scripts/ts_workspace.py", "init_workspace", "--root", workspace]);
-  const legacyIdentity = JSON.parse(await readFile(join(workspace, "workspace.json"), "utf8"));
-  await writeFile(join(workspace, "workspace_manifest.json"), JSON.stringify({
-    schema_version: "research_agent_workspace_1",
-    workspace_id: legacyIdentity.workspace_id,
-    workspace_mode: "research",
+  const initializer = create_workspace_initializer();
+  await initializer.initialize_workspace({
     workspace_root: workspace,
-    state: "ready",
-    directories: ["inputs", "artifacts", "runs", "logs", "research_map", "memory", "lifecycle", "checkpoints", "nodes", "evidence", "monitor", "environments"],
-  }));
-  await mkdir(join(workspace, "research_map"), { recursive: true });
-  await mkdir(join(workspace, "lifecycle"), { recursive: true });
-  await writeFile(join(workspace, "research_map", "context.json"), JSON.stringify({
-    schema_version: "research_map_context_1",
-    workspace_id: legacyIdentity.workspace_id,
+    workspace_id: "workspace_research_turn",
     workspace_mode: "research",
-    revision: 0,
-    lifecycle_state: "admitted",
-    lifecycle: "idle",
-    disposition: null,
-    checkpoint_id: "checkpoint_0",
-    phases: [], claims: [], nodes: [], findings: [], gates: [], focus: { claim_ids: [], node_ids: [] },
-  }));
-  await writeFile(join(workspace, "lifecycle", "liveness.json"), JSON.stringify({
-    schema_version: "research_liveness_1",
-    workspace_id: legacyIdentity.workspace_id,
-    state: "admitted",
-    revision: 0,
-    lifecycle: "idle",
-    disposition: null,
-    checkpoint_id: "checkpoint_0",
-  }));
+  });
+  await initializer.admit_workspace(workspace);
   const changeFile = join(root, "initial-change.json");
   await writeFile(changeFile, JSON.stringify({
     schema_version: "ts-change-request/1",
@@ -398,7 +374,7 @@ test("one external Attempt completes the generic Research Turn lifecycle", async
     assert.equal(lifecycle.snapshot().lifecycle_phase, "interpret");
     assert.deepEqual(calls.slice(0, 2).map((item) => item.name), ["ts_state", "ts_calc"]);
 
-    const workspaceIdentity = JSON.parse(await readFile(join(fixture.workspace, "workspace.json"), "utf8"));
+    const workspaceIdentity = JSON.parse(await readFile(join(fixture.workspace, "workspace_manifest.json"), "utf8"));
     const event = {
       event_id: "evt_" + "e".repeat(32),
       monitor_id: "mon_" + "e".repeat(24),
@@ -425,7 +401,7 @@ test("one external Attempt completes the generic Research Turn lifecycle", async
       },
       async sendWake(params) {
         monitorWakes.push(params);
-        assert.equal(params.mode, "auto");
+        assert.equal(params.mode, "next_run");
         assert.equal(params.source, "monitor");
         return control.dispatch({
           schema_version: SESSION_CONTROL_PROTOCOL,

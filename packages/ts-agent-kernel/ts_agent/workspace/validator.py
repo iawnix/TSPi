@@ -6,23 +6,23 @@ from pathlib import Path
 from typing import Any
 
 from ts_agent.io import read_json
-from ts_agent.research import ResearchKernel, ResearchKernelError
+from ts_agent.runtime.workspace_mode import WorkspaceModeError, validate_workspace_manifest
 
-from .identity import read_workspace_identity
 from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
-WORKSPACE_SCHEMA = "research-workspace/1"
 VALIDATION_SCHEMA = "research-map-validation/1"
 
 
 def validate_workspace(root: str | Path, *, read_only: bool = False) -> dict[str, Any]:
-    """Validate a workspace, optionally without creating its lock file.
+    """Validate the canonical Research Agent workspace contract.
 
-    ``read_only=True`` is intended for discovery and inspection services whose
-    filesystem view deliberately forbids writes to the workspace.
+    ``read_only`` is retained as a harmless call-site option; validation
+    never creates locks or storage. The retired ``workspace.json`` /
+    ``research_map.json`` / SQLite layout is reported as invalid.
     """
 
+    del read_only
     root_path = lexical_path(root)
     findings: list[dict[str, str]] = []
     if path_has_symlink(root_path):
@@ -31,62 +31,19 @@ def validate_workspace(root: str | Path, *, read_only: bool = False) -> dict[str
     if not root_path.is_dir():
         _finding(findings, "missing_workspace", "workspace root does not exist", ".")
         return _result(findings)
-
-    legacy = (
-        "research_state.json", "phases.json", "claims.json", "claim_relations.json",
-        "research_nodes.json", "observations.json", "proof_specs.json",
-        "validation_results.json", "findings.json", "gate_specs.json", "gate_results.json",
-    )
-    for name in legacy:
-        if (root_path / name).exists():
-            _finding(findings, "legacy_state_present", f"legacy research file is not supported: {name}", name)
-
-    for name in ("workspace.json", "research_map.json", "transactions.jsonl"):
-        path = root_path / name
-        if has_symlink_component(root_path, path) or path.is_symlink():
-            _finding(findings, "symlinked_canonical_file", f"canonical file is a symbolic link: {name}", name)
-        elif not path.is_file():
-            _finding(findings, "missing_canonical_file", f"canonical file is missing: {name}", name)
-    for name in ("nodes", "operations", "scratch", "inputs"):
-        path = root_path / name
-        if has_symlink_component(root_path, path) or path.is_symlink():
-            _finding(findings, "symlinked_canonical_directory", f"canonical directory is a symbolic link: {name}", name)
-        elif not path.is_dir():
-            _finding(findings, "missing_canonical_directory", f"canonical directory is missing: {name}", name)
-    if findings:
+    manifest_path = root_path / "workspace_manifest.json"
+    if has_symlink_component(root_path, manifest_path) or manifest_path.is_symlink():
+        _finding(findings, "workspace_manifest_symlink", "workspace manifest is a symbolic link", "workspace_manifest.json")
         return _result(findings)
-
-    try:
-        workspace = read_json(root_path / "workspace.json")
-    except (OSError, ValueError) as exc:
-        _finding(findings, "invalid_workspace_json", str(exc), "workspace.json")
+    if not manifest_path.is_file():
+        _finding(findings, "workspace_manifest_missing", "workspace manifest is missing", "workspace_manifest.json")
         return _result(findings)
-    if not isinstance(workspace, dict):
-        _finding(findings, "invalid_workspace_document", "workspace.json must contain an object", "workspace.json")
-    else:
-        if workspace.get("schema_version") != WORKSPACE_SCHEMA:
-            _finding(findings, "unsupported_workspace_schema", "workspace.json uses an unsupported schema", "workspace.json")
-        if workspace.get("kernel_protocol") != "research-map/1":
-            _finding(findings, "unsupported_kernel_protocol", "workspace does not use research-map/1", "workspace.json")
-        _validate_identity(root_path, workspace, findings)
-
     try:
-        kernel = ResearchKernel(root_path)
-        loader = kernel.load_read_only if read_only else kernel.load
-        loader()
-    except ResearchKernelError as exc:
-        _finding(findings, "invalid_research_map", str(exc), "research_map.json")
+        manifest = read_json(manifest_path)
+        validate_workspace_manifest(manifest, root_path)
+    except (OSError, ValueError, WorkspaceModeError) as exc:
+        _finding(findings, "invalid_workspace_manifest", str(exc), "workspace_manifest.json")
     return _result(findings)
-
-
-def _validate_identity(root: Path, workspace: dict[str, Any], findings: list[dict[str, str]]) -> None:
-    try:
-        identity = read_workspace_identity(root)
-    except (OSError, ValueError) as exc:
-        _finding(findings, "invalid_workspace_identity", str(exc), ".agents/workspace-identity.json")
-        return
-    if identity.get("workspace_id") != workspace.get("workspace_id"):
-        _finding(findings, "workspace_identity_mismatch", "workspace.json does not match immutable identity", "workspace.json")
 
 
 def _finding(target: list[dict[str, str]], code: str, message: str, path: str) -> None:

@@ -21,6 +21,7 @@ from _bootstrap import bootstrap_python_package
 bootstrap_python_package(ROOT)
 
 from ts_agent.platforms import EnvironmentBroker, EnvironmentRequirement, load_config  # noqa: E402
+from ts_agent.compute.capabilities import calculation_capabilities  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -156,6 +157,10 @@ def bridge(path: Path) -> dict[str, object]:
         "config_path": str(config.source),
         "default_environment": config.default_environment,
         "local_environment_count": len(local),
+        # This is the Host-private Native lifecycle catalog.  It is emitted
+        # independently of executable readiness so a configured-but-unhealthy
+        # backend remains discoverable and can report a typed readiness gap.
+        "capabilities": calculation_capabilities()["capabilities"],
         "bindings": bindings,
     }
 

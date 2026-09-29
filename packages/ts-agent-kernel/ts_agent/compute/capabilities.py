@@ -12,8 +12,6 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Final
 
-from jsonschema import Draft202012Validator
-
 from .registry import CapabilityRegistration, CapabilityRegistry
 
 
@@ -33,15 +31,24 @@ class CapabilityDescriptor:
     parsers: tuple[str, ...]
 
     def public(self) -> dict[str, Any]:
+        # ``capability_id``/``capability_version`` are the cross-runtime
+        # catalog protocol.  The calculation intent still uses the shorter
+        # ``capability``/``capability_version`` fields internally because it
+        # is the semantic request accepted by the Native lifecycle; those
+        # internal names must not leak into the public catalog.
         return {
-            "capability": self.capability,
-            "version": self.version,
+            "capability_id": self.capability,
+            "capability_version": self.version,
+            "kind": "compute",
+            "summary": f"Run a bounded {self.backend} {self.task_type} calculation.",
             "input_roles": sorted(self.input_roles),
             "output_roles": list(self.output_roles),
             "effects": list(self.effects),
             "parameter_schema": deepcopy(self.parameter_schema),
             "limits": deepcopy(self.limits),
             "parsers": list(self.parsers),
+            "supported_workspace_modes": ["light", "research"],
+            "execution_routes": ["native_lifecycle"],
         }
 
 
@@ -505,6 +512,12 @@ def validate_capability_parameters(
     parameters: Any,
 ) -> dict[str, Any]:
     """Validate a Root-authored parameter object against one descriptor."""
+
+    # Catalog/readiness discovery must remain available in the lightweight
+    # Host bridge even when the optional validator dependency is not installed
+    # in the bridge interpreter. Parameter validation still fails explicitly
+    # at the execution boundary if jsonschema is unavailable.
+    from jsonschema import Draft202012Validator
 
     if not isinstance(parameters, dict):
         raise ValueError("capability parameters must be an object")

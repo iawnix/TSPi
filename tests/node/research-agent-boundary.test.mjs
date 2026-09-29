@@ -7,6 +7,29 @@ import { create_agent_runtime_port } from "../../packages/research-agent-core/po
 import { create_pi_runtime_adapter } from "../../packages/research-agent-pi-adapter/index.mjs";
 import { create_app_server } from "../../apps/research-agent-app-server/index.mjs";
 
+function workspace_manifest(workspace_root, workspace_mode, workspace_id = "workspace_boundary") {
+  const research = workspace_mode === "research";
+  return {
+    schema_version: "research_agent_workspace_1",
+    workspace_id,
+    workspace_root,
+    profile_id: `${workspace_mode}_workspace_1`,
+    workspace_mode,
+    memory_profile: "session",
+    memory_scope: "session",
+    research_state_scope: research ? "workspace" : "none",
+    execution_profile: research ? "audited" : "bounded",
+    state: research ? "admission_pending" : "ready",
+    created_at: "2026-09-27T00:00:00Z",
+    directories: research
+      ? ["inputs", "artifacts", "runs", "logs", "research_map", "memory", "lifecycle", "checkpoints", "nodes", "evidence", "monitor", "environments"]
+      : ["inputs", "artifacts", "runs", "logs", "scratch", "sessions"],
+    research_kernel: research
+      ? { initialized: true, admission_required: true, revision: 0 }
+      : { initialized: false, admission_required: false, revision: null },
+  };
+}
+
 test("App Server forwards transport-neutral operations through the Core port", async () => {
   const runtime = create_fake_agent_runtime({ response: "continue_required" });
   const app_server = create_app_server({ runtime_port: runtime });
@@ -56,13 +79,7 @@ test("App Server source has no Pi or vendor runtime import", async () => {
 test("Host rejects a workspace port response that changes an explicit mode", async () => {
   const workspace_port = {
     async initialize_workspace(request) {
-      return {
-        schema_version: "research_agent_workspace_1",
-        workspace_id: "workspace_boundary",
-        workspace_root: request.workspace_root,
-        state: "ready",
-        workspace_mode: request.workspace_mode === "light" ? "research" : "light",
-      };
+      return workspace_manifest(request.workspace_root, request.workspace_mode === "light" ? "research" : "light");
     },
     async attach_workspace() {
       return { workspace_mode: "light" };
@@ -88,13 +105,7 @@ test("Host freezes workspace requests before crossing the WorkspacePort boundary
     async initialize_workspace(request) {
       received = request;
       assert.throws(() => { request.workspace_mode = "research"; }, TypeError);
-      return {
-        schema_version: "research_agent_workspace_1",
-        workspace_id: "workspace_boundary",
-        workspace_root: request.workspace_root,
-        state: "ready",
-        workspace_mode: "light",
-      };
+      return workspace_manifest(request.workspace_root, "light");
     },
     async attach_workspace() {
       return { workspace_mode: "light" };

@@ -42,11 +42,14 @@ must not be added to the default Python suite.
 
 ## Scientific Model
 
-The canonical workspace files are `workspace.json`, `research_map.json`, and
-`transactions.jsonl`. `ResearchMap` owns phases, claims, claim relations,
+The canonical workspace identity is `workspace_manifest.json`. Research
+workspaces store scientific state in `research_map/context.json`, lifecycle in
+`lifecycle/liveness.json`, and the Kernel-owned metadata projection in
+`memory/index.json`. `ResearchMap` owns phases, claims, claim relations,
 nodes, typed findings, gates, focus, and revision. Node execution records live
 under `nodes/<node_id>/` and are operational inputs to the map, not alternate
-scientific registries.
+scientific registries. Retired `workspace.json`, `research_map.json`, and
+`transactions.jsonl` files are not runtime authorities.
 
 ## ResearchMap Validation Rules
 

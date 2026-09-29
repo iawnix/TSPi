@@ -1,9 +1,13 @@
 # ResearchMap 状态模型
 
 `ResearchMap` 是一个研究项目的规范类型化科学状态。Filesystem Research Kernel 将其持久化到
-`research_map/context.json`，把生命周期投影到 `lifecycle/liveness.json`；
-`workspace_manifest.json` 绑定 identity、mode、root、admission 和 revision。SQLite 与
-`research_map.json` 不是运行时权威。
+`research_map/context.json`（`schema_version=research_map_context_1`）。有效 Context 始终包含
+数组 collection：`phases`、`claims`、`nodes`、`findings`、`gates`、`claim_relations`、
+`attempts`、`artifacts`、`evidence_links`、`continuations`、`strategy_plans`、
+`strategy_reviews`、`attempt_interpretations`；`focus.claim_ids` 与 `focus.node_ids` 也必须是
+数组。生命周期投影到 `lifecycle/liveness.json`（`research_liveness_1`）；
+`workspace_manifest.json` 绑定 identity、mode、root 和 admission。已废弃的 SQLite 与
+`research_map.json` 文件会被拒绝，不是运行时权威。
 
 ## 对象
 
@@ -36,7 +40,7 @@ Claim。Map 维护反向索引（`node_ids`、`finding_ids`、`gate_ids`），�
 
 ## 读取与写入
 
-使用以下共享读取命令：
+Kernel command catalog 使用以下内部读取 ID：
 
 ```text
 research.map          完整规范 map
@@ -52,10 +56,24 @@ research.evidence     Attempt/Artifact/EvidenceLink 元数据
 research.storage      canonical Filesystem Kernel 文档与 revision
 ```
 
-`research_read` 还暴露上述有界模式与计算模式（`artifacts`、`capabilities`、`runs`）。交互式读取
+Agent 只能调用公共 `research_read`，并通过对应的有界 `mode`（`map`、`summary`、`detail`、
+`locate`、`validate`、`operations`、`context`、`liveness`、`decisions`、`evidence` 或
+`storage`）访问上述读取。该工具还暴露计算模式（`artifacts`、`capabilities`、`runs`）。交互式读取
 使用 `/research`。Strategy、interpretation、checkpoint、Evidence Registry 与 map 变更都使用
 各自的类型化 Kernel command；不要创建通用 memory write。
 
+`research_read mode=evidence` 可选筛选字段为 `recordType`（`attempt`、`artifact` 或 `link`）、
+`nodeId`、`artifactId`、`subjectId` 和 `limit`（1--2048）。`recordType=link` 读取
+`evidence_links`，不会产生第二套写入协议。
+
+`research_continuation` 是有界的 required-action ledger，不是 turn checkpoint。
+`operation=status` 只读，可选 `scope`、`targetId` 和 `limit`；写入使用 `set`、
+`set_required`、`set_deferred`、`set_blocked`、`set_completed`、`resolve` 或 `clear`，
+按需提供 `scope`、`targetId`、`action`、`continuationId`、`status`、`reason` 和
+`requestId`。disposition 只有在 scope、target、action 唯一匹配一个 required 记录时才可
+省略 `continuationId`。提供 ID 时，scope、target、action 必须与已有记录一致；唯一写入者
+仍然是 Kernel。
+
 不要直接编辑 canonical 文档。ChangeSet 在隔离副本上校验，只递增一次 `revision`，并原子更新
-context、liveness、memory 与 manifest。每次 mutation 都要带 Root Agent 的 `principal` 和
-`kernel_write` `authority`；无效变更不会触碰之前的 revision。
+context、liveness、memory 与 manifest。Host 会在每次内部 mutation request 中附加 Root Agent 的
+`principal` 和 `kernel_write` `authority`；无效变更不会触碰之前的 revision。

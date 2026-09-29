@@ -9,12 +9,14 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { is_workspace_id } from "../research-agent-core/workspace_id.mjs";
 import { create_light_run_store } from "./light_run_store.mjs";
 import { create_compute_service, resolve_compute_input } from "./compute_service.mjs";
 import { create_light_execution_ledger, create_research_execution_ledger } from "./execution_ledger.mjs";
 
 const TERMINAL_STATES = new Set(["succeeded", "failed", "timed_out", "cancelled"]);
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u;
+const NODE_ID = /^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u;
 const ARTIFACT_ID = /^art_[0-9a-f]{64}$/u;
 const MAX_ERROR_TEXT = 4_096;
 
@@ -39,6 +41,20 @@ function require_object(value, field) {
 function require_identifier(value, field) {
   if (typeof value !== "string" || !IDENTIFIER.test(value)) {
     throw new ComputeOrchestratorError("invalid_request", `${field} must be a non-empty identifier`);
+  }
+  return value;
+}
+
+function require_workspace_id(value, field = "workspace_id") {
+  if (!is_workspace_id(value)) {
+    throw new ComputeOrchestratorError("invalid_request", `${field} must be a valid workspace identifier`);
+  }
+  return value;
+}
+
+function require_node_id(value) {
+  if (typeof value !== "string" || !NODE_ID.test(value)) {
+    throw new ComputeOrchestratorError("invalid_request", "node_id must be a ResearchNode identifier");
   }
   return value;
 }
@@ -418,7 +434,7 @@ export function create_compute_orchestrator({
     if (mode !== "light" && mode !== "research") {
       throw new ComputeOrchestratorError("invalid_request", "workspace_mode must be light or research");
     }
-    const workspace_id = require_identifier(value.workspace_id, "workspace_id");
+    const workspace_id = require_workspace_id(value.workspace_id);
     const workspace_root = value.workspace_root ?? value.root;
     if (mode === "light" && (typeof workspace_root !== "string" || workspace_root.trim() === "")) {
       throw new ComputeOrchestratorError("invalid_request", "workspace_root is required");
@@ -432,7 +448,7 @@ export function create_compute_orchestrator({
     const input_artifact_ids = string_list(value.input_artifact_ids, "input_artifact_ids");
     const id_field = mode === "light" ? "run_id" : "attempt_id";
     const execution_id = require_identifier(value[id_field] ?? (mode === "light" ? `run_${randomUUID()}` : make_attempt_id(value)), id_field);
-    const node_id = mode === "research" ? require_identifier(value.node_id, "node_id") : value.node_id;
+    const node_id = mode === "research" ? require_node_id(value.node_id) : value.node_id;
     if (mode === "research" && !kernel && typeof ledger_factory !== "function") {
       throw new ComputeOrchestratorError("kernel_not_configured", "research compute requires a Research Kernel port");
     }

@@ -8,6 +8,8 @@
  * apply_change through the normal model path.
  */
 
+import { is_workspace_id, require_workspace_id } from "../research-agent-core/workspace_id.mjs";
+
 export const RESEARCH_KERNEL_PORT_VERSION = "research_kernel_port_1";
 export const RESEARCH_ADMISSION_REQUEST_SCHEMA = "research_admission_request";
 export const RESEARCH_ADMISSION_RESULT_SCHEMA = "research_admission_result";
@@ -51,7 +53,8 @@ function require_identifier(value, field) {
 }
 
 function workspace_key(value) {
-  const key = value?.workspace_id ?? value?.workspace_root ?? value?.root;
+  if (value?.workspace_id !== undefined) return require_workspace_id(value.workspace_id);
+  const key = value?.workspace_root ?? value?.root;
   return require_identifier(key, "workspace_id");
 }
 
@@ -81,7 +84,7 @@ export function create_research_admission_request({
   expected_state = "admission_pending",
 } = {}) {
   require_identifier(request_id, "request_id");
-  require_identifier(workspace_id, "workspace_id");
+  require_workspace_id(workspace_id);
   if (workspace_root !== undefined && (typeof workspace_root !== "string" || workspace_root.length === 0)) {
     throw new TypeError("workspace_root must be a non-empty string");
   }
@@ -109,7 +112,7 @@ export function create_research_admission_result({
   reason = null,
 } = {}) {
   require_identifier(request_id, "request_id");
-  require_identifier(workspace_id, "workspace_id");
+  require_workspace_id(workspace_id);
   if (typeof accepted !== "boolean") throw new TypeError("accepted must be boolean");
   if (!RESEARCH_ADMISSION_STATES.includes(state)) {
     throw new TypeError("invalid research admission state: " + String(state));
@@ -133,15 +136,15 @@ export function create_research_kernel_port(implementation) {
     // A port may be reconstructed after a host restart. In that case the
     // in-memory admission set is empty, so recover the decision from the
     // Kernel's durable read model instead of requiring admission again.
+    const identity = is_workspace_id(request.workspace_id) ? request.workspace_id : (is_workspace_id(key) ? key : undefined);
+    const root = request.workspace_root ?? request.root ?? (!identity ? key : undefined);
+    const binding = {
+      ...(root === undefined ? {} : { workspace_root: root }),
+      ...(identity === undefined ? {} : { workspace_id: identity }),
+    };
     const [context, liveness] = await Promise.all([
-      implementation.read_context({
-        ...(request.workspace_root === undefined ? {} : { workspace_root: request.workspace_root }),
-        workspace_id: key,
-      }),
-      implementation.read_liveness({
-        ...(request.workspace_root === undefined ? {} : { workspace_root: request.workspace_root }),
-        workspace_id: key,
-      }),
+      implementation.read_context(binding),
+      implementation.read_liveness(binding),
     ]);
     const context_admitted = admission_state(context) === "admitted"
       || admission_state(context) === "ready" && context?.research_kernel?.admission_required === false;
@@ -185,7 +188,7 @@ export function create_research_kernel_port(implementation) {
 export function create_research_turn_request({ operation, request_id, workspace_id, session_id, payload = {} }) {
   if (!RESEARCH_TURN_OPERATIONS.includes(operation)) throw new TypeError("invalid research_turn operation: " + operation);
   require_identifier(request_id, "request_id");
-  require_identifier(workspace_id, "workspace_id");
+  require_workspace_id(workspace_id);
   require_identifier(session_id, "session_id");
   return Object.freeze({
     schema_version: "research_turn_request",

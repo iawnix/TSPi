@@ -104,9 +104,9 @@ with leases and backoff. A wake is an accepted input, not proof that an agent
 turn finished; the Root Agent must reread state and inspect the calculation.
 Monitor never finalizes a calculation or edits `ResearchMap`.
 
-`workspace.json` has a stable scientific identity such as `ws_<hex>`. Host RPC
-addresses the direct-child directory name such as `reaction-a`; Monitor verifies
-the canonical identity before translating it to that route name.
+`workspace_manifest.json` binds the canonical `workspace_id` to both scientific
+state and Host routing. There is no separate scientific identity or direct-child
+alias translation.
 
 ## Session storage
 

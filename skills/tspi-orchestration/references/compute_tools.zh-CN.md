@@ -35,8 +35,39 @@ research_read mode=capabilities capabilityKind=compute
 ```
 
 Artifact catalog 提供逻辑 `art_...` ID、路径、SHA-256、所有者和兼容 role。Capability
-catalog 提供 capability ID/version、参数形状、输入/输出 role 与解析合同；它不能证明实时
-软件或环境处于健康状态。
+catalog 提供 capability ID/version、输入/输出 schema 和参数形状；Native preflight 绑定
+具体 input/output role 与 parser 合同。Catalog 中存在并不能证明实时软件或环境处于健康状态。
+
+所有 compute catalog 条目都使用跨运行时统一的 identity 字段
+`capability_id` 与 `capability_version`：
+
+```json
+{
+  "capability_id": "crest.conformer_search",
+  "capability_version": "1",
+  "kind": "compute",
+  "input_schema": {"type": "object"},
+  "output_schema": {"type": "object"},
+  "execution_routes": ["native_lifecycle"]
+}
+```
+
+`input_schema` 与 `output_schema` 是 catalog 的 wire 字段。Native calculation
+descriptor 还可能在私有 preflight binding 中提供 `input_roles`、`output_roles`、
+`parameter_schema` 和 `parsers`；这些字段不是公共 gateway descriptor 的必需字段。
+Launch 的 `inputArtifacts[].inputRole` 必须与所选 capability 的 preflight binding
+返回的 role 一致。
+
+下面 launch 示例中的 calculation intent 使用语义字段 `capability` 与
+`capabilityVersion`，它们必须解析自上述 catalog identity；不要自行发明另一组名称，也不要
+根据可执行文件、Skill 文本或目录列表推断注册状态。只有 `native_lifecycle` 路由的 descriptor
+必须使用 `operation=launch` 形式，本地目标也一样。
+
+`compute_catalog` 与 `research_read` 的 compute 分支返回
+`protocol_version="compute_catalog_1"`，包含 `catalog`（以及等价的 `capabilities` 数组）。
+`compute_readiness` 返回 `protocol_version="compute_readiness_1"` 和 `readiness` 数组。每个
+条目都绑定请求的 capability；若指定，还绑定 environment 与 execution kind；`state=unknown`
+或 `deferred` 表示明确的不确定性，不是允许启动的授权。
 
 选择执行目标前，使用精确的 `capability_id`、`environment_id` 和 `execution_kind`
 （`local` 或 `remote`）调用 `compute_readiness`。不带环境选择器的 readiness 只描述 Host
@@ -73,6 +104,9 @@ Launch 接受完整语义请求和所选执行目标：
 }
 ```
 
+`resources.ngpus` 可省略，默认值为 `0`；`mpiprocs` 与 `ompthreads` 也可省略，省略时会物化为
+`null`。Host 会在 Python 校验 `ts-calculation-request/5` 前写入这些明确字段。
+
 子 Agent 启动前，Host 创建并校验新的 `ts-calculation-intent/7`，绑定当前 Node 合同，
 解析路径与摘要，分配预期 Artifact，并冻结科学与执行绑定。子 Agent 随后调用 prepare，
 且仅在已知 prepare 成功后调用 submit。Submit 只能调用一次；效果未知会结束生命周期并
@@ -86,12 +120,29 @@ Launch 接受完整语义请求和所选执行目标：
 状态变化时排队 `next_run` 唤醒。等待期间不要调用 `bash sleep`、`wait` 或手动状态循环；
 收到 Monitor 唤醒或稍后明确请求后再执行 `inspect`。
 
-执行目标和 `dry_run` 是独立控制项。`executionTarget.kind=local` 时，`dry_run=true`
-准备并校验本地计划但不启动程序；`dry_run=false` 在 workspace 的持久化 Attempt 本地
-worker 中启动所选 Backend，并支持完整 `submit/status/tail/collect/cancel` 生命周期。
-`executionTarget.kind=remote` 时，`dry_run=true` 只准备并校验远端计划；
-`dry_run=false` 通过配置的远端环境提交。Host 始终拒绝任意 shell，并将每个命令绑定到
-已校验 capability 与不可变 calculation intent。
+公共 `compute_run` 的 launch 请求没有 `dry_run` 开关。Launch 总是为选定目标创建并校验
+不可变 intent，准备 Backend，并执行有边界的 `prepare -> submit` 生命周期。只准备不执行
+属于 Host 的 readiness/preflight 接口；不能把这种检查伪装成成功的 Calculation Attempt。
+Host 始终拒绝任意 shell，并将每个命令绑定到已校验 capability 与不可变 calculation intent。
+
+`compute_run` 还接受另一种不使用调度器 intent 生命周期的、面向已注册本地 provider 的
+mode-neutral capability 形式：
+
+```json
+{
+  "capability_id": "xtb.sp",
+  "capability_version": "1",
+  "run_id": "run_001",
+  "input": {"input_artifact_id": "art_...", "method": "gfn2"},
+  "input_artifact_ids": ["art_..."],
+  "timeout_ms": 120000
+}
+```
+
+此形式仅限本地 provider，不包含 `operation`、`nodeId`、`executionTarget`、调度回执或
+remote selector；远程请求必须使用上面的 Native lifecycle 形式。`input` 与
+`input_artifact_ids` 如何绑定由 provider descriptor 决定，返回的 run/artifact manifest 是此
+形式的运行记录。
 
 ## Inspect
 

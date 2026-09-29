@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import Any, Sequence
 
 from ts_agent.io import now_iso, read_json, write_json
 from ts_agent.path_safety import lexical_path, path_has_symlink
-from ts_agent.workspace.validator import validate_workspace
+from ts_agent.runtime.workspace_mode import WorkspaceModeError, validate_workspace_manifest
 
 
 def ensure_state_dir(state_dir: str | Path, *, source_root: str | Path | None = None) -> Path:
@@ -35,7 +34,6 @@ def register_workspaces(source_roots: list[str | Path], state_dir: str | Path, l
         ensure_state_dir(state, source_root=source)
         row = {"workspace_id": workspace_id_for(source), "source_root": str(source), "label": labels[index] if index < len(labels) else source.name, "registered_at": now_iso()}
         matches = [item for item in rows if isinstance(item, dict) and _same_row(item, row)]
-        row = _with_legacy_aliases(row, matches)
         rows = [item for item in rows if not isinstance(item, dict) or not _same_row(item, row)]
         rows.append(row)
         registered.append(_public_row(row))
@@ -47,7 +45,20 @@ def list_workspaces(state_dir: str | Path) -> list[dict[str, Any]]:
     rows = _read_registry(ensure_state_dir(state_dir)).get("workspaces", [])
     if not isinstance(rows, list):
         return []
-    return [_canonicalize_row(row) for row in rows if _valid_row(row)]
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if not _valid_row(row):
+            continue
+        try:
+            result.append(_canonicalize_row(row))
+        except ValueError:
+            # A registered workspace can be transiently unavailable while
+            # Host admission is committing its manifest.  Do not leak a raw
+            # identity/canonicalization exception from the Web transport;
+            # reconciliation will discard the stale row and callers receive
+            # the normal "unknown workspace" boundary error.
+            continue
+    return result
 
 
 def find_workspace(state_dir: str | Path, workspace_id: str) -> dict[str, Any] | None:
@@ -103,39 +114,17 @@ def reconcile_workspace_registry(state_dir: str | Path, workspace_roots: Sequenc
 
 
 def workspace_id_for(source_root: str | Path) -> str:
-    """Return the workspace's persisted identity, with a legacy fallback.
-
-    Older Web registries derived a short ID from the source path.  Initialized
-    workspaces now carry a canonical identity in ``.agents``; using it here
-    keeps the Web catalog, ResearchMap, monitor, and remote receipts aligned.
-    The path-derived value remains the fallback for incomplete or legacy
-    directories so discovery stays read-only and backwards compatible.
-    """
+    """Return the immutable identity from a canonical research workspace."""
 
     source = lexical_path(source_root)
     manifest_id = _new_workspace_id(source)
-    if manifest_id is not None:
-        return manifest_id
-    from ts_agent.workspace.identity import IDENTITY_REF, workspace_id as persisted_workspace_id
-
-    identity_path = source / IDENTITY_REF
-    if not identity_path.exists() and not identity_path.is_symlink():
-        return _legacy_workspace_id_for(source)
-    try:
-        return persisted_workspace_id(source, create=False)
-    except OSError:
-        return _legacy_workspace_id_for(source)
+    if manifest_id is None:
+        raise ValueError("workspace is not an initialized Research Agent workspace")
+    return manifest_id
 
 
 def _is_workspace(path: Path) -> bool:
-    if _is_new_research_workspace(path):
-        return True
-    if not (path / "workspace.json").is_file() or not (path / "research_map.json").is_file():
-        return False
-    try:
-        return validate_workspace(path, read_only=True).get("valid") is True
-    except (OSError, ValueError):
-        return False
+    return _is_new_research_workspace(path)
 
 
 def _is_new_research_workspace(path: Path) -> bool:
@@ -177,12 +166,9 @@ def _read_new_manifest(path: Path) -> dict[str, Any] | None:
         value = read_json(manifest_path)
     except (OSError, ValueError):
         return None
-    if value.get("schema_version") != "research_agent_workspace_1":
-        return None
-    if not isinstance(value.get("workspace_id"), str) or not value.get("workspace_id"):
-        return None
-    manifest_root = value.get("workspace_root")
-    if not isinstance(manifest_root, str) or lexical_path(manifest_root) != path:
+    try:
+        value = validate_workspace_manifest(value, path, require_ready=True)
+    except WorkspaceModeError:
         return None
     return value
 
@@ -194,70 +180,26 @@ def _valid_row(row: object) -> bool:
         return False
     if not row.get("workspace_id") or not row.get("source_root"):
         return False
-    aliases = row.get("legacy_workspace_ids")
-    return aliases is None or (
-        isinstance(aliases, list)
-        and all(isinstance(value, str) and bool(value) for value in aliases)
-    )
+    return True
 
 
 def _same_row(left: dict[str, Any], right: dict[str, Any]) -> bool:
     return left.get("workspace_id") == right.get("workspace_id") or left.get("source_root") == right.get("source_root")
 
 
-def _legacy_workspace_id_for(source_root: str | Path) -> str:
-    return "ws_" + hashlib.sha256(str(lexical_path(source_root)).encode("utf-8")).hexdigest()[:12]
-
-
 def _canonicalize_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Normalize one registry row while retaining its old lookup ID."""
+    """Normalize one registry row to the immutable manifest identity."""
 
     source = lexical_path(str(row["source_root"]))
     canonical = workspace_id_for(source)
-    aliases = _legacy_aliases(row)
-    previous = row.get("workspace_id")
-    if isinstance(previous, str) and previous != canonical:
-        aliases.append(previous)
-    legacy = _legacy_workspace_id_for(source)
-    if legacy != canonical:
-        aliases.append(legacy)
     normalized = dict(row)
     normalized["workspace_id"] = canonical
-    aliases = sorted(set(alias for alias in aliases if alias and alias != canonical))
-    if aliases:
-        normalized["legacy_workspace_ids"] = aliases
-    else:
-        normalized.pop("legacy_workspace_ids", None)
+    normalized.pop("legacy_workspace_ids", None)
     return normalized
-
-
-def _with_legacy_aliases(row: dict[str, Any], matches: Sequence[dict[str, Any]]) -> dict[str, Any]:
-    aliases: list[str] = []
-    for match in matches:
-        aliases.extend(_legacy_aliases(match))
-        previous = match.get("workspace_id")
-        if isinstance(previous, str):
-            aliases.append(previous)
-    normalized = dict(row)
-    canonical = str(row["workspace_id"])
-    aliases = sorted(set(alias for alias in aliases if alias and alias != canonical))
-    if aliases:
-        normalized["legacy_workspace_ids"] = aliases
-    return normalized
-
-
-def _legacy_aliases(row: dict[str, Any]) -> list[str]:
-    value = row.get("legacy_workspace_ids")
-    return [item for item in value if isinstance(item, str) and item] if isinstance(value, list) else []
 
 
 def _row_matches_id(row: dict[str, Any], workspace_id: str) -> bool:
-    if row.get("workspace_id") == workspace_id:
-        return True
-    if workspace_id in _legacy_aliases(row):
-        return True
-    source = row.get("source_root")
-    return isinstance(source, str) and _legacy_workspace_id_for(source) == workspace_id
+    return row.get("workspace_id") == workspace_id
 
 
 def _public_row(row: dict[str, Any]) -> dict[str, str]:

@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { assert_workspace_mode, require_matching_mode } from "./session_mode.mjs";
 import { WORKSPACE_STATES } from "./workspace.mjs";
+import { require_workspace_id } from "./workspace_id.mjs";
 
 export const WORKSPACE_CATALOG_PROTOCOL_VERSION = "workspace_catalog_1";
 export const WORKSPACE_CATALOG_SCHEMA = "research_agent_workspace_catalog_1";
@@ -11,15 +12,6 @@ export const WORKSPACE_CATALOG_SCHEMA = "research_agent_workspace_catalog_1";
 const LOCK_RETRY_MS = 10;
 const LOCK_TIMEOUT_MS = 5000;
 const LOCK_STALE_MS = 30000;
-const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u;
-
-function require_workspace_id(value) {
-  if (typeof value !== "string" || !WORKSPACE_ID.test(value)) {
-    throw new TypeError("workspace_id must be a non-empty identifier");
-  }
-  return value;
-}
-
 function require_workspace_root(value) {
   if (typeof value !== "string" || value.length === 0) {
     throw new TypeError("workspace_root is required");

@@ -1,6 +1,6 @@
 """Canonical ResearchMap ChangeSet operation catalog.
 
-The ResearchKernel is the source of mutation semantics. This module only
+The filesystem Research Kernel is the source of mutation semantics. This module only
 describes the small public envelope used by callers that need to inspect the
 available operation fields; it intentionally has no second compiler or state
 model.

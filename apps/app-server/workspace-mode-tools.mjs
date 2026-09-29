@@ -1,11 +1,12 @@
 import { lstat, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { classify_tool_class, is_tool_class_allowed } from "../../packages/research-agent-core/mode_policy.mjs";
+import { validate_workspace_files, validate_workspace_manifest } from "../../packages/research-agent-core/workspace.mjs";
 
 export const WORKSPACE_MODES = Object.freeze(["light", "research"]);
 
 // Derived from the framework mode policy. Research-only names are retained as
-// a public migration marker, but admission itself uses the shared class
+// a public vocabulary marker, but admission itself uses the shared class
 // classifier below so the app server cannot silently drift from Core policy.
 export const RESEARCH_ONLY_TOOL_NAMES = Object.freeze(new Set([
   "research_read",
@@ -20,25 +21,29 @@ export const RESEARCH_ONLY_TOOL_NAMES = Object.freeze(new Set([
   "notify_send",
 ]));
 
-// Retained as an internal migration marker only. It is no longer part of the
+// Retained as an internal vocabulary marker only. It is no longer part of the
 // active Agent inventory; compute_run is the sole compute entry point.
 export const LIGHT_ONLY_TOOL_NAMES = Object.freeze(new Set(["light_compute"]));
 
 /**
  * Read the immutable framework mode bound by ResearchAgent.
  *
- * A missing manifest means an older Pi-only fixture or workspace. Keep those
- * on the research tool surface for compatibility; a present manifest is
- * authoritative and invalid values fail closed.
+ * Every Host workspace is initialized by the canonical workspace initializer.
+ * A missing or incomplete manifest is therefore a configuration error; mode
+ * selection must never fall back to a legacy Pi-only workspace.
  */
 export async function readWorkspaceMode(workspaceRoot) {
+  return (await readWorkspaceManifest(workspaceRoot)).workspace_mode;
+}
+
+export async function readWorkspaceManifest(workspaceRoot) {
   const root = resolve(requireAbsolutePath(workspaceRoot));
   const manifestPath = join(root, "workspace_manifest.json");
   let info;
   try {
     info = await lstat(manifestPath);
   } catch (error) {
-    if (error?.code === "ENOENT") return "research";
+    if (error?.code === "ENOENT") throw new Error(`workspace_manifest_unavailable: ${manifestPath}`);
     throw new Error(`workspace_manifest_unavailable: ${manifestPath}`, { cause: error });
   }
   if (!info.isFile() || info.isSymbolicLink()) {
@@ -50,9 +55,18 @@ export async function readWorkspaceMode(workspaceRoot) {
   } catch (error) {
     throw new Error(`workspace_manifest_invalid: ${manifestPath}`, { cause: error });
   }
-  const mode = manifest?.workspace_mode;
-  if (!WORKSPACE_MODES.includes(mode)) throw new Error(`workspace_manifest_invalid_mode: ${String(mode)}`);
-  return mode;
+  try {
+    // Tool inventory is a runtime boundary, so it may only be built after
+    // Host admission has committed the manifest.  An admission_pending
+    // workspace is an internal initialization state and cannot own a session.
+    validate_workspace_manifest(manifest, root);
+    if (manifest.state !== "ready") throw new Error(`workspace_admission_required: ${manifest.state}`);
+    await validate_workspace_files(manifest, root);
+  } catch (error) {
+    if (error?.message?.startsWith("workspace_admission_required:")) throw error;
+    throw new Error(`workspace_manifest_invalid: ${manifestPath}`, { cause: error });
+  }
+  return Object.freeze(manifest);
 }
 
 export function filterWorkspaceTools(tools, workspaceMode) {

@@ -1,10 +1,15 @@
 # ResearchMap State Model
 
 `ResearchMap` is the canonical, typed scientific state of one research project.
-The Filesystem Research Kernel persists it in `research_map/context.json` and
-projects lifecycle state to `lifecycle/liveness.json`; `workspace_manifest.json`
-binds identity, mode, root, admission, and revision. SQLite and
-`research_map.json` are not runtime authorities.
+The Filesystem Research Kernel persists it in `research_map/context.json` with
+`schema_version=research_map_context_1`. A valid context always has array
+collections `phases`, `claims`, `nodes`, `findings`, `gates`, `claim_relations`,
+`attempts`, `artifacts`, `evidence_links`, `continuations`, `strategy_plans`,
+`strategy_reviews`, and `attempt_interpretations`; its `focus.claim_ids` and
+`focus.node_ids` are arrays. Lifecycle is projected to
+`lifecycle/liveness.json` (`research_liveness_1`); `workspace_manifest.json`
+binds identity, mode, root, and admission. Retired SQLite and
+`research_map.json` files are rejected and are not runtime authorities.
 
 ## Objects
 
@@ -43,7 +48,7 @@ save.
 
 ## Reads And Writes
 
-Use these shared read commands:
+The Kernel command catalog uses these internal read IDs:
 
 ```text
 research.map          complete canonical map
@@ -59,13 +64,30 @@ research.evidence    Attempt/Artifact/EvidenceLink metadata
 research.storage     canonical Filesystem Kernel documents and revision
 ```
 
-The `research_read` tool exposes these bounded modes plus compute modes
+Agents call the public `research_read` tool with the corresponding bounded
+`mode` (`map`, `summary`, `detail`, `locate`, `validate`, `operations`,
+`context`, `liveness`, `decisions`, `evidence`, or `storage`). The tool also
+exposes compute modes
 (`artifacts`, `capabilities`, `runs`). Use `/research` for interactive reads.
 Strategy, interpretation, checkpoint, Evidence Registry, and map mutations use
 their typed Kernel commands; do not create a generic memory write.
 
+For `research_read mode=evidence`, optional selectors are `recordType` (`attempt`,
+`artifact`, or `link`), `nodeId`, `artifactId`, `subjectId`, and `limit` (1--2048).
+`recordType=link` selects `evidence_links`; it is not a second write protocol.
+
+`research_continuation` is a bounded required-action ledger, not the turn
+checkpoint. `operation=status` is read-only and accepts optional `scope`,
+`targetId`, and `limit`; mutations use `set`, `set_required`,
+`set_deferred`, `set_blocked`, `set_completed`, `resolve`, or `clear` with
+`scope`, `targetId`, `action`, `continuationId`, `status`, `reason`, and
+`requestId` as applicable. A disposition may omit `continuationId` only when
+one required record uniquely matches its scope, target, and action. A request
+that supplies an ID must match the existing record's scope, target, and action;
+the Kernel remains the only writer.
+
 Do not edit canonical documents directly. A ChangeSet is validated against an
 isolated copy, increments `revision` once, and atomically updates context,
-liveness, memory, and manifest. Every mutation carries the Root Agent
-`principal` and `kernel_write` `authority`; an invalid change leaves the prior
-revision untouched.
+liveness, memory, and manifest. The Host attaches the Root Agent `principal`
+and `kernel_write` `authority` to every internal mutation request; an invalid
+change leaves the prior revision untouched.

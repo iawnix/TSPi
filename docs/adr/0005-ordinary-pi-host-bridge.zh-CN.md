@@ -36,8 +36,8 @@ Host 为 workspace root 启动一个 Monitor worker。Monitor 持久化 registra
 按通道 delivery 回执；wake 与 notification 独立确认，带租约、重试和去重。wake 被接受
 不代表 agent 已完成；Monitor 不会自动 finalize 或写 ResearchMap。
 
-科学 `workspace.json` 身份（`ws_<hex>`）与 Host 路由身份（直接子目录名）分离。worker
-必须先验证归属，再做两者转换。
+规范 `workspace_manifest.json` 将科学 `workspace_id` 与 Host 路由绑定为同一身份。worker
+路由前验证该 manifest，不再转换旧 identity alias。
 
 兼容历史不会被静默转换，也不会以可写方式打开。Host 只读列出 workspace format-3
 文件；显式 import 会创建新的安装级 format-4 session，保留源文件并写入 provenance
