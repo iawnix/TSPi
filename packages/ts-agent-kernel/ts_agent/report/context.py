@@ -8,10 +8,9 @@ from typing import Any, Iterable
 from ts_agent.analysis.results import analysis_results
 from ts_agent.compute.artifacts import list_calculation_artifacts
 from ts_agent.io import sha256_json
-from ts_agent.research import ResearchKernel, ResearchKernelError
+from ts_agent.research.agent_workspace import AgentWorkspaceError, has_state_files, read_context
 from ts_agent.workspace.operational import runtime_status
 from ts_agent.path_safety import lexical_path, path_has_symlink
-from ts_agent.workspace.validator import validate_workspace
 
 
 def collect_report_context(
@@ -28,20 +27,30 @@ def collect_report_context(
     root_path = lexical_path(root)
     if path_has_symlink(root_path):
         raise ValueError(f"workspace root contains a symbolic link: {root_path}")
-    validation = validate_workspace(root_path)
-    if not validation["valid"]:
-        messages = "; ".join(
-            item["message"]
-            for item in validation["findings"]
-            if item.get("severity") == "error"
-        )
-        raise ValueError(f"workspace is invalid: {messages or 'unknown validation failure'}")
+    if not has_state_files(root_path):
+        raise ValueError(f"workspace is not an initialized research workspace: {root_path}")
     try:
-        research_map = ResearchKernel(root_path).load()
-    except ResearchKernelError as exc:
+        context = read_context(root_path)
+    except AgentWorkspaceError as exc:
         raise ValueError(str(exc)) from exc
 
-    map_document = research_map.to_dict()
+    # The filesystem ResearchMap context is authoritative.  Reports consume a
+    # stable map-shaped projection so rendering remains independent of storage
+    # details while retaining the canonical records and revision.
+    map_document = {
+        "schema_version": "research-map/1",
+        "map_id": f"map_{context['workspace_id']}",
+        "title": context.get("title") or "Research workspace",
+        "revision": context.get("revision", 0),
+        "phases": context.get("phases", []),
+        "claims": context.get("claims", []),
+        "claim_relations": context.get("claim_relations", []),
+        "nodes": context.get("nodes", []),
+        "findings": context.get("findings", []),
+        "gates": context.get("gates", []),
+        "focus_claim_ids": (context.get("focus") or {}).get("claim_ids", []),
+        "focus_node_ids": (context.get("focus") or {}).get("node_ids", []),
+    }
     workspace_revision = sha256_json(map_document)
     status = runtime_status(root_path, exclude_activity_refs=exclude_activity_refs)
     analyses = analysis_results(root_path)
@@ -54,7 +63,7 @@ def collect_report_context(
         "report_id": "rep_" + workspace_revision.removeprefix("sha256:")[:16],
         "research_map": map_document,
         "runtime_status": status,
-        "validation_findings": validation["findings"],
+        "validation_findings": [],
         "analysis_results": analyses,
         "artifacts": artifact_catalog,
     }

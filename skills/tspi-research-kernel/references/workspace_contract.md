@@ -16,6 +16,9 @@ Attempt records, Artifact manifests, EvidenceLinks, decisions, and revision.
 Artifacts are referenced by their logical `art_<sha256>` IDs; absolute or
 remote paths never become scientific object references.
 
+Execution records are rooted at `nodes/<node_id>/` and remain operational
+records referenced by the canonical context.
+
 ## Bootstrap And Identity
 
 Only the Host may initialize and admit a research workspace. Initialization

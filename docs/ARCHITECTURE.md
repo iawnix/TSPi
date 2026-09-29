@@ -52,20 +52,20 @@ authorization role.
 
 ## Scientific State Model
 
-Each workspace has one canonical ResearchMap and one durable metadata backend:
+Each research workspace has one filesystem ResearchMap context and one durable lifecycle projection:
 
 ```text
-research.db                # SQLite authority for map and bounded metadata
-research_map.json           # synchronized ResearchMap snapshot
-workspace.json           # validated workspace identity and schema marker
+workspace_manifest.json     # immutable identity, mode, root, and admission state
+research_map/context.json   # canonical ResearchMap scientific records
+lifecycle/liveness.json     # lifecycle and decision-needed projection
+memory/index.json           # bounded memory projection
 nodes/<node_id>/          # Attempt and Artifact execution records
 inputs/                   # workspace-relative imported input artifacts
-transactions.jsonl       # append-only ChangeSet receipts
 operations/               # turn, monitor, and execution receipts
 ```
 
-`ResearchMap` is the canonical project object. It is not assembled as a
-derived view from separate scientific registries. It contains `ResearchPhase`,
+`ResearchMap` is the canonical project object serialized in
+`research_map/context.json`. It is not assembled as a derived view from separate scientific registries. It contains `ResearchPhase`,
 `ResearchClaim`, `ResearchNode`, typed `Finding` objects, and typed `Gate`
 objects, together with their dependency, output, and target references.
 

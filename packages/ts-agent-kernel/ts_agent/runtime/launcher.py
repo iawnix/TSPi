@@ -939,7 +939,10 @@ def configure_process_environment(installation: Installation, workspace: Path, w
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.chmod(0o700)
     os.environ["PYTHONPYCACHEPREFIX"] = str(python_cache)
-    cache_option = f"--cache-dir={pytest_cache}"
+    # pytest exposes cache_dir as an ini option; ``--cache-dir`` was removed
+    # from modern pytest and makes isolated runtime invocations fail before
+    # the requested command is started.
+    cache_option = f"-o cache_dir={pytest_cache}"
     existing = os.environ.get("PYTEST_ADDOPTS", "")
     os.environ["PYTEST_ADDOPTS"] = f"{existing} {cache_option}".strip()
 
@@ -973,7 +976,7 @@ def configure_host_process_environment(installation: Installation) -> None:
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.chmod(0o700)
     os.environ["PYTHONPYCACHEPREFIX"] = str(python_cache)
-    cache_option = f"--cache-dir={pytest_cache}"
+    cache_option = f"-o cache_dir={pytest_cache}"
     existing = os.environ.get("PYTEST_ADDOPTS", "")
     os.environ["PYTEST_ADDOPTS"] = f"{existing} {cache_option}".strip()
 

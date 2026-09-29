@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from ts_agent.workspace import init_workspace
+from tests.support.workspace_helpers import bootstrap_workspace_fixture
 from ts_agent.workspace.operational import runtime_status
 from ts_agent.workspace.operational_ids import allocate_operational_id
 
 
 def test_operational_ids_are_workspace_wide_monotonic_and_private(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    init_workspace(workspace)
+    bootstrap_workspace_fixture(workspace)
 
     assert allocate_operational_id(workspace, "calc")["identifier"] == "calc_1"
     assert allocate_operational_id(workspace, "sub")["identifier"] == "sub_1"
@@ -33,7 +33,7 @@ def test_operational_ids_are_workspace_wide_monotonic_and_private(tmp_path: Path
 
 def test_operational_allocator_reconciles_human_ids_and_ignores_uuid_history(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    init_workspace(workspace)
+    bootstrap_workspace_fixture(workspace)
     (workspace / "nodes" / "node_1" / "attempts" / "calc_7").mkdir(parents=True)
     (workspace / "nodes" / "node_1" / "attempts" / "calc_7" / "runs" / "sub_9").mkdir(parents=True)
     (workspace / "reviews" / "claim_1" / "runs" / "sub_028def15-cbb5-42b4-bbfc-cfbd256c4a0b").mkdir(parents=True)
@@ -46,7 +46,7 @@ def test_operational_allocator_reconciles_human_ids_and_ignores_uuid_history(tmp
 
 def test_operational_allocator_never_reuses_reserved_ordinals(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    init_workspace(workspace)
+    bootstrap_workspace_fixture(workspace)
 
     assert allocate_operational_id(workspace, "sub")["identifier"] == "sub_1"
     assert allocate_operational_id(workspace, "sub")["identifier"] == "sub_2"
@@ -55,7 +55,7 @@ def test_operational_allocator_never_reuses_reserved_ordinals(tmp_path: Path) ->
 
 def test_operational_id_state_is_part_of_the_runtime_revision(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    init_workspace(workspace)
+    bootstrap_workspace_fixture(workspace)
     before = runtime_status(workspace)
 
     allocate_operational_id(workspace, "op")
@@ -67,7 +67,7 @@ def test_operational_id_state_is_part_of_the_runtime_revision(tmp_path: Path) ->
 
 def test_operational_allocator_serializes_concurrent_callers(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    init_workspace(workspace)
+    bootstrap_workspace_fixture(workspace)
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         identifiers = list(executor.map(lambda _: allocate_operational_id(workspace, "op")["identifier"], range(24)))
@@ -79,7 +79,7 @@ def test_operational_allocator_serializes_concurrent_callers(tmp_path: Path) -> 
 
 def test_operational_allocator_rejects_invalid_kind_and_symlink_state(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    init_workspace(workspace)
+    bootstrap_workspace_fixture(workspace)
     with pytest.raises(ValueError, match="unsupported operational ID kind"):
         allocate_operational_id(workspace, "review")
 

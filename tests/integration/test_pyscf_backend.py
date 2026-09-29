@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
+from tests.support.workspace_helpers import apply_filesystem_change, bootstrap_workspace_fixture, start_research_node
 from ts_agent.backends.pyscf import PYSCF_ARTIFACTS, normalize_pyscf_settings
 from ts_agent.compute import (
     create_calculation_intent,
@@ -34,7 +34,13 @@ command = \"/opt/pyscf/bin/python\"
     monkeypatch.setenv("TS_COMPUTE_CONFIG", str(compute_config))
 
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
-    node_id = start_research_node(workspace, objective="Run one CF22D single point.")["node_id"]
+    refs = start_research_node(workspace, objective="Run one CF22D single point.")
+    node_id = refs["node_id"]
+    apply_filesystem_change(workspace, {"operations": [{
+        "type": "create_strategy_plan", "id": "strategy_1", "claim_id": refs["claim_id"],
+        "node_id": node_id, "objective": "Run the PySCF validation.",
+        "rationale": "The node has an explicit compute plan.", "status": "active",
+    }]})
     input_path = workspace / "inputs" / "molecule.xyz"
     input_path.parent.mkdir(parents=True, exist_ok=True)
     input_path.write_text("2\nH2\nH 0 0 0\nH 0 0 0.7\n", encoding="utf-8")

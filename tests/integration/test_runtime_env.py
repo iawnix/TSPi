@@ -381,13 +381,13 @@ def test_configured_python_ignores_stale_runtime_manifest(tmp_path: Path) -> Non
     assert configured_python(package) is None
 
 
-def test_runtime_one_manifest_is_rejected(tmp_path: Path) -> None:
+def test_runtime_one_manifest_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     package = tmp_path / "skill"
     package.mkdir()
     _write_runtime_specs(package)
     _write_test_python_payload(package)
     manifest = runtime_manifest_path(package)
-    manifest.parent.mkdir(parents=True)
+    manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text(
         json.dumps(
             {
@@ -701,7 +701,8 @@ def test_damaged_scientific_base_requires_conda_for_repair(
         )
 
 
-def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path) -> None:
+def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TS_WORKSPACE_ROOT", raising=False)
     completed = subprocess.run(
         [
             sys.executable,

@@ -3168,6 +3168,18 @@ def _register_parsed_evidence(
         # to the calculation directory and is not projected into ResearchMap
         # evidence or scientific memory.
         return
+    # Canonical Research Agent workspaces persist the ResearchMap projection
+    # in ``research_map/context.json``.  Parsed calculation metadata must cross
+    # that Root Agent/kernel-write boundary directly; the removed JSON/SQLite
+    # ResearchKernel store is not a valid backing store for these workspaces.
+    try:
+        manifest_path = workspace / "workspace_manifest.json"
+        manifest = read_json(manifest_path)
+    except (OSError, ValueError):
+        manifest = None
+    if isinstance(manifest, dict) and manifest.get("workspace_mode") == "research":
+        _register_parsed_evidence_filesystem(workspace, intent, result)
+        return
     from ts_agent.research import ArtifactManifest, AttemptRecord, ResearchKernel
 
     manifest = result["artifact_manifest"]
@@ -3221,6 +3233,91 @@ def _register_parsed_evidence(
         event_id=f"compute:{intent['intent_id']}:{digest.removeprefix('sha256:')[:32]}",
         request_digest=digest,
     )
+
+
+def _register_parsed_evidence_filesystem(
+    workspace: Path,
+    intent: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    """Register parsed outputs in the canonical filesystem ResearchMap view."""
+
+    from ts_agent.research.agent_workspace import (
+        AgentWorkspaceError,
+        apply_change as apply_agent_workspace_change,
+        read_context as read_agent_workspace_context,
+    )
+
+    manifest = result["artifact_manifest"]
+    parsed_at = (
+        result.get("provenance", {}).get("parsed_at")
+        if isinstance(result.get("provenance"), dict)
+        else None
+    ) or now_iso()
+    output_ids: list[str] = []
+    operations: list[dict[str, Any]] = []
+    for item in manifest:
+        if not isinstance(item, dict):
+            raise ComputeContractError("parsed calculation artifact_manifest contains a non-object")
+        artifact_id = item.get("artifact_id")
+        location = item.get("path")
+        if not isinstance(artifact_id, str) or not isinstance(location, str):
+            raise ComputeContractError("parsed calculation artifact_manifest is missing artifact identity")
+        output_ids.append(artifact_id)
+        operations.append({
+            "type": "register_artifact",
+            "id": artifact_id,
+            "node_id": intent["node_id"],
+            "kind": "calculation_output",
+            "format": Path(location).suffix.removeprefix(".") or "binary",
+            "location": location,
+            "sha256": item.get("sha256"),
+            "size_bytes": item.get("size_bytes"),
+            "input_artifact_ids": [],
+            "metadata": {"role": item.get("role"), "source_intent_id": intent["intent_id"]},
+            "created_at": parsed_at,
+        })
+    operations.append({
+        "type": "register_attempt",
+        "id": str(intent["intent_id"]),
+        "node_id": str(intent["node_id"]),
+        "capability": str(intent["capability"]),
+        "capability_version": str(intent["capability_version"]),
+        "state": "completed",
+        "environment": (result.get("provenance") or {}).get("environment")
+        if isinstance(result.get("provenance"), dict)
+        else None,
+        "input_artifact_ids": [],
+        "output_artifact_ids": output_ids,
+        "metadata": {
+            "program_status": result.get("program_status"),
+            "error_class": result.get("error_class"),
+            "result_digest": sha256_json(result),
+        },
+        "created_at": parsed_at,
+        "updated_at": parsed_at,
+    })
+    operations.append({
+        "type": "update_attempt",
+        "attempt_id": str(intent["intent_id"]),
+        "node_id": str(intent["node_id"]),
+        "state": "completed",
+        "output_artifact_ids": output_ids,
+        "updated_at": parsed_at,
+    })
+    try:
+        context = read_agent_workspace_context(workspace)
+        existing_artifacts = {row.get("id") for row in context.get("artifacts", []) if isinstance(row, dict)}
+        existing_attempts = {row.get("id") for row in context.get("attempts", []) if isinstance(row, dict)}
+        if str(intent["intent_id"]) in existing_attempts and set(output_ids) <= existing_artifacts:
+            return
+        apply_agent_workspace_change(workspace, {
+            "principal": "root_agent",
+            "authority": "kernel_write",
+            "operations": operations,
+        })
+    except AgentWorkspaceError as exc:
+        raise ComputeContractError(f"cannot register parsed evidence in canonical workspace: {exc}") from exc
 
 
 def _result(

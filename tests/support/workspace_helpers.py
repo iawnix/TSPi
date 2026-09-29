@@ -7,11 +7,8 @@ from typing import Any
 
 from ts_agent.io import sha256_json
 from ts_agent.runtime.workspace_mode import admit_research_workspace, initialize_workspace
-from ts_agent.workspace import init_workspace
-from ts_agent.research import ResearchKernel
 from ts_agent.research.agent_workspace import apply_change as _apply_filesystem_change
 from ts_agent.research.agent_workspace import read_context as read_filesystem_context
-from tests.support.kernel_helpers import apply_compiled_change, compile_change
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -21,46 +18,16 @@ _DIGEST_B = "sha256:" + "b" * 64
 
 
 def apply_change(root: Path, request: dict[str, Any]) -> dict[str, Any]:
-    drafted = compile_change(root, request)
-    return apply_compiled_change(root, drafted["decision"])
-
-
-def bootstrap_kernel_workspace_fixture(root: Path) -> Path:
-    """Create a ResearchKernel-backed fixture for kernel/SQLite tests.
-
-    New filesystem-runtime tests should use ``bootstrap_filesystem_workspace_fixture``;
-    this helper deliberately retains the JSON ResearchMap store required by the
-    ResearchKernel API tests.
-    """
-    init_workspace(root)
-    # Current workspace discovery is keyed by the canonical manifest.  The
-    # ResearchKernel-backed tests still exercise the JSON ResearchMap store,
-    # so keep that map as the scientific kernel fixture while providing the
-    # production workspace identity contract around it.
-    manifest = {
-        "schema_version": "research_agent_workspace_1",
-        "workspace_id": json.loads((root / "workspace.json").read_text(encoding="utf-8"))["workspace_id"],
-        "workspace_mode": "research",
-        "state": "ready",
-        "workspace_root": str(root),
-        "research_kernel": {
-            "initialized": True,
-            "admission_required": False,
-            "revision": 0,
-        },
-    }
-    (root / "workspace_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    return root
+    return apply_filesystem_change(root, request)
 
 
 def bootstrap_workspace_fixture(root: Path) -> Path:
-    """Backward-compatible test alias for the explicit kernel fixture.
+    """Create the canonical filesystem-backed research workspace fixture.
 
-    New filesystem-runtime tests should call
-    ``bootstrap_filesystem_workspace_fixture`` directly.
+    This helper always creates the current filesystem-backed workspace.
     """
 
-    return bootstrap_kernel_workspace_fixture(root)
+    return bootstrap_filesystem_workspace_fixture(root)
 
 
 def bootstrap_filesystem_workspace_fixture(root: Path) -> Path:
@@ -202,7 +169,7 @@ def start_research_node(
     claim_type: str = "test",
     claim_statement: str = "A bounded scientific claim requires evaluation.",
 ) -> dict[str, str]:
-    changed = apply_change(root, {
+    apply_change(root, {
         "operations": [
             {"type": "create_phase", "id": "phase_1", "title": "Test phase", "objective": "Contain the bounded test research."},
             {"type": "create_claim", "id": "claim_1", "statement": claim_statement},
@@ -210,19 +177,23 @@ def start_research_node(
             {"type": "set_focus", "claim_ids": ["claim_1"], "node_ids": ["node_1"]},
         ],
     })
-    research_map = ResearchKernel(root).load()
-    node = next(node for node in research_map.nodes.values() if node.id in changed.get("created_ids", []))
-    claim = research_map.claims[node.claim_ids[0]]
-    phase = research_map.phases[node.phase_id] if node.phase_id else None
+    context = read_filesystem_context(root)
+    node = next(item for item in context["nodes"] if item["id"] == "node_1")
+    phase = next((item for item in context["phases"] if item["id"] == node.get("phase_id")), None)
     return {
-        "phase_id": phase.id if phase else "",
-        "claim_id": claim.id,
-        "node_id": node.id,
+        "phase_id": phase["id"] if phase else "",
+        "claim_id": node["claim_ids"][0],
+        "node_id": node["id"],
     }
 
 
 def accept_research_claim(root: Path) -> dict[str, str]:
     refs = start_research_node(root, title="Bounded Claim validation", objective="Test the bounded Claim.")
+    apply_change(root, {"operations": [{
+        "type": "create_strategy_plan", "id": "strategy_1", "claim_id": refs["claim_id"],
+        "node_id": refs["node_id"], "objective": "Collect bounded claim evidence.",
+        "rationale": "The claim requires one declared evidence path.", "status": "active",
+    }]})
     apply_change(root, {"operations": [{"type": "create_finding", "id": "finding_1", "node_id": refs["node_id"], "claim_ids": [refs["claim_id"]], "statement": "The bounded condition was observed.", "kind": "fact", "value": True, "datatype": "boolean"}, {"type": "set_claim_status", "claim_id": refs["claim_id"], "status": "supported"}]})
     return refs
 
@@ -236,6 +207,7 @@ def build_review_bundle(
     artifact_ids: list[str] | None = None,
     artifact_catalog: list[dict] | None = None,
 ) -> dict:
+    context = read_filesystem_context(root)
     request = {
         "runId": task_id,
         "workspaceRoot": str(root),
@@ -244,7 +216,20 @@ def build_review_bundle(
             "question": question,
             "artifactIds": artifact_ids or [],
         },
-        "researchMap": ResearchKernel(root).load().to_dict(),
+        "researchMap": {
+            "schema_version": "research-map/1",
+            "map_id": f"map_{context['workspace_id']}",
+            "title": "Research workspace",
+            "revision": context["revision"],
+            "phases": context["phases"],
+            "claims": context["claims"],
+            "claim_relations": context.get("claim_relations", []),
+            "nodes": context["nodes"],
+            "findings": context.get("findings", []),
+            "gates": context.get("gates", []),
+            "focus_claim_ids": context["focus"]["claim_ids"],
+            "focus_node_ids": context["focus"]["node_ids"],
+        },
         "artifactCatalog": artifact_catalog or [],
     }
     request_path = root.parent / f"{task_id}.json"

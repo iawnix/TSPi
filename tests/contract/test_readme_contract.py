@@ -200,15 +200,15 @@ def test_workspace_docs_match_bootstrap_canonical_file_names() -> None:
     contract = (REFERENCES / "workspace_contract.md").read_text(encoding="utf-8")
 
     required = [
-        "workspace.json",
-        "research_map.json",
-        "transactions.jsonl",
+        "workspace_manifest.json",
+        "research_map/context.json",
+        "lifecycle/liveness.json",
         "nodes/<node_id>/",
     ]
     for text in (architecture, contract):
         for name in required:
             assert name in text
-    assert "Bootstrap rejects an unsupported workspace without rewriting it" in contract
+    assert "fail closed" in contract
 
 
 def test_skill_routes_details_through_focused_references() -> None:

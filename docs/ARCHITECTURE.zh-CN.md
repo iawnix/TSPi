@@ -39,19 +39,19 @@ Monitor 都连接同一个 lane，因此共享 `read`、`write`、`bash` 和包�
 
 ## 科学状态模型
 
-每个工作区只有一个规范 `ResearchMap`，并使用一个持久 metadata backend：
+每个 research workspace 只有一套文件系统 `ResearchMap` context 与持久生命周期投影：
 
 ```text
-research.db                # map 与有界 metadata 的 SQLite 权威后端
-research_map.json           # 同步的 ResearchMap snapshot
-workspace.json              # 已校验的 workspace identity 和 schema marker
+workspace_manifest.json     # 不可变 identity、mode、root 与 admission 状态
+research_map/context.json   # ResearchMap 科学状态权威文件
+lifecycle/liveness.json     # 生命周期与 decision-needed 投影
+memory/index.json           # 有界 memory 投影
 nodes/<node_id>/          # Attempt / Artifact 等执行记录
 inputs/                   # 工作区相对路径的输入 artifact
-transactions.jsonl       # 追加式 ChangeSet 回执
 operations/               # turn、monitor 和 execution receipts
 ```
 
-`ResearchMap` 是项目研究进展的规范对象，不是从多个 registry 临时拼接出来的
+`ResearchMap` 序列化于 `research_map/context.json`，是项目研究进展的规范对象，不是从多个 registry 临时拼接出来的
 派生视图。它包含 `ResearchPhase`、`ResearchClaim`、`ResearchNode`、`Finding` 和
 `Gate`，并维护它们之间的依赖、产出和目标引用。
 

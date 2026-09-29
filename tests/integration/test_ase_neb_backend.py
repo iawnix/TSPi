@@ -11,7 +11,7 @@ from ase import Atoms
 from ase.calculators.lj import LennardJones
 from ase.units import Bohr, Hartree
 
-from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
+from tests.support.workspace_helpers import apply_filesystem_change, bootstrap_workspace_fixture, start_research_node
 from ts_agent.backends.ase_neb import (
     ASE_NEB_ARTIFACTS,
     _validate_run_summary,
@@ -702,10 +702,16 @@ def test_ase_neb_compute_flow_prepares_and_parses_bound_artifacts(
     )
     monkeypatch.setenv("TS_COMPUTE_CONFIG", str(compute_config))
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
-    node_id = start_research_node(
+    refs = start_research_node(
         workspace,
         objective="Compute and validate one ASE NEB reaction path.",
-    )["node_id"]
+    )
+    node_id = refs["node_id"]
+    apply_filesystem_change(workspace, {"operations": [{
+        "type": "create_strategy_plan", "id": "strategy_1", "claim_id": refs["claim_id"],
+        "node_id": node_id, "objective": "Run the ASE NEB validation.",
+        "rationale": "The node has an explicit compute plan.", "status": "active",
+    }]})
     inputs = workspace / "inputs"
     inputs.mkdir(parents=True, exist_ok=True)
     reactant, product = _endpoints(inputs)

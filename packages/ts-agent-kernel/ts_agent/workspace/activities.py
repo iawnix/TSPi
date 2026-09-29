@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from ts_agent.io import read_json, sha256_json
-from ts_agent.research import ResearchKernel, ResearchKernelError
+from ts_agent.research.agent_workspace import AgentWorkspaceError, has_state_files, read_context
 from .refs import ACTIVITY_ID, NODE_ID, node_sort_key
 from ts_agent.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
@@ -528,12 +528,18 @@ def _read_optional_document(
 
 def _load_known_nodes(root: Path, findings: list[dict[str, Any]], required: bool) -> set[str]:
     try:
-        research_map = ResearchKernel(root).load()
-    except ResearchKernelError:
+        if not has_state_files(root):
+            raise AgentWorkspaceError("research_context_missing")
+        context = read_context(root)
+    except AgentWorkspaceError:
         if required:
-            _finding(findings, "activity_registry_unavailable", "ResearchMap is unavailable for activity validation", "research_map.json", [])
+            _finding(findings, "activity_registry_unavailable", "ResearchMap context is unavailable for activity validation", "research_map/context.json", [])
         return set()
-    return set(research_map.nodes)
+    return {
+        str(node.get("id"))
+        for node in context.get("nodes", [])
+        if isinstance(node, dict) and isinstance(node.get("id"), str)
+    }
 
 
 def _activity_summaries(

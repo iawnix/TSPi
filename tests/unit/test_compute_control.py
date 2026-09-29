@@ -16,7 +16,12 @@ from pathlib import Path
 
 import pytest
 
-from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
+from tests.support.workspace_helpers import (
+    apply_filesystem_change,
+    bootstrap_workspace_fixture,
+    read_filesystem_context,
+    start_research_node,
+)
 from ts_agent.compute import (
     ComputeContractError,
     calculation_status,
@@ -38,7 +43,6 @@ from ts_agent.backends.gaussian import parse_log, parse_scan_log, route_settings
 from ts_agent.compute.task_validation import validate_parsed_task
 from ts_agent.workspace.identity import workspace_id
 from ts_agent.workspace.operational import _operational_files
-from ts_agent.research import ResearchKernel
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
@@ -48,6 +52,17 @@ def _workspace(tmp_path: Path) -> tuple[Path, str]:
         objective="Run the Root-selected Gaussian validation calculation.",
         claim_type="transition_state",
     )["node_id"]
+    apply_filesystem_change(workspace, {
+        "operations": [{
+            "type": "create_strategy_plan",
+            "id": "strategy_1",
+            "claim_id": "claim_1",
+            "node_id": node_id,
+            "objective": "Run the selected validation calculation.",
+            "rationale": "The node has an explicit compute plan.",
+            "status": "active",
+        }],
+    })
     gjf = workspace / "inputs" / "candidate.gjf"
     gjf.write_text(
         "%chk=candidate.chk\n#P B3LYP/6-31G(d) opt=(ts,calcfc) freq\n\nTS\n\n0 1\nH 0 0 0\n\n",
@@ -753,7 +768,11 @@ def test_gaussian_parse_is_attempt_scoped_idempotent_and_scientifically_read_onl
     log = workspace / artifact_ref
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text(_gaussian_log(), encoding="utf-8")
-    scientific_before = (workspace / "research_map.json").read_bytes()
+    scientific_before = read_filesystem_context(workspace)
+    scientific_projection = {
+        key: scientific_before[key]
+        for key in ("phases", "claims", "nodes", "focus")
+    }
 
     result = parse_calculation(workspace, created["intent_id"], artifact_ref)
     assert result["state"] == "parsed"
@@ -764,7 +783,25 @@ def test_gaussian_parse_is_attempt_scoped_idempotent_and_scientifically_read_onl
     assert "validation_failures" not in result["parser_facts"]
     assert result["task_validation"] == {"status": "completed", "failures": []}
     assert "claim_status" not in result
-    assert scientific_before == (workspace / "research_map.json").read_bytes()
+    scientific_after = read_filesystem_context(workspace)
+    # Parsing records operational attempt/artifact references on the node;
+    # the scientific projection itself remains unchanged.
+    def _scientific_projection(context: dict[str, object]) -> dict[str, object]:
+        projection = {
+            key: context[key]
+            for key in ("phases", "claims", "nodes", "focus")
+        }
+        projection["nodes"] = [
+            {
+                key: value
+                for key, value in node.items()
+                if key not in {"attempt_refs", "artifact_refs"}
+            }
+            for node in projection["nodes"]
+        ]
+        return projection
+
+    assert _scientific_projection(scientific_after) == _scientific_projection(scientific_before)
     assert parse_calculation(workspace, created["intent_id"], artifact_ref) == result
 
     log.write_text(_gaussian_log() + "\nchanged\n", encoding="utf-8")
@@ -791,9 +828,9 @@ def test_gaussian_parse_result_manifest_binds_registered_artifacts_and_replays(
     result = parse_calculation(workspace, created["intent_id"], artifact_ref)
     manifest = result["artifact_manifest"]
     assert manifest
-    evidence = ResearchKernel(workspace).evidence_records()
-    assert [row["id"] for row in evidence["records"]["attempt"]] == [created["intent_id"]]
-    assert {row["id"] for row in evidence["records"]["artifact"]} == {
+    context = read_filesystem_context(workspace)
+    assert [row["id"] for row in context["attempts"]] == [created["intent_id"]]
+    assert {row["id"] for row in context["artifacts"]} == {
         item["artifact_id"] for item in manifest
     }
     assert len({item["role"] for item in manifest}) == len(manifest)

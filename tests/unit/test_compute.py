@@ -8,32 +8,31 @@ from ts_agent.compute.artifacts import import_calculation_artifact, list_calcula
 from ts_agent.compute.errors import ComputeContractError
 from ts_agent.compute.control import create_calculation_intent, prepare_calculation
 from ts_agent.io import read_json, write_json
-from ts_agent.research import ResearchKernel
-from tests.support.kernel_helpers import compile_change
-from ts_agent.workspace.engine import init_workspace
-from tests.support.kernel_helpers import apply_compiled_change
+from tests.support.workspace_helpers import (
+    apply_filesystem_change,
+    bootstrap_filesystem_workspace_fixture,
+    read_filesystem_context,
+    start_filesystem_research_node,
+)
 from ts_agent.workspace.node_contract import node_contract_digest, node_contract_snapshot
 
 
 def _open_node(root: Path) -> str:
-    current = ResearchKernel(root).load()
-    phase_id = f"phase_{len(current.phases) + 1}"
-    claim_id = f"claim_{len(current.claims) + 1}"
-    node_id = f"node_{len(current.nodes) + 1}"
-    drafted = compile_change(
-        root,
-        {
-            "rationale": "Create one bounded calculation node.",
-            "basis_refs": [],
-            "operations": [
-                {"type": "create_phase", "id": phase_id, "title": "Candidate validation", "objective": "Evaluate one transition-state candidate."},
-                {"type": "create_claim", "id": claim_id, "statement": "The candidate may be a transition state."},
-                {"type": "create_node", "id": node_id, "phase_id": phase_id, "claim_ids": [claim_id], "dependency_ids": [], "title": "Bounded research node", "objective": "Evaluate the candidate with Gaussian."},
-            ],
-        },
-    )
-    apply_compiled_change(root, drafted["decision"])
-    return drafted["allocated_refs"]["node"]
+    context = read_filesystem_context(root)
+    if not context["nodes"]:
+        return start_filesystem_research_node(root)["node_id"]
+    ordinal = len(context["nodes"]) + 1
+    phase_id = f"phase_{ordinal}"
+    claim_id = f"claim_{ordinal}"
+    node_id = f"node_{ordinal}"
+    apply_filesystem_change(root, {
+        "operations": [
+            {"type": "create_phase", "id": phase_id, "title": "Candidate validation", "objective": "Evaluate one transition-state candidate."},
+            {"type": "create_claim", "id": claim_id, "statement": "The candidate may be a transition state."},
+            {"type": "create_node", "id": node_id, "phase_id": phase_id, "claim_ids": [claim_id], "dependency_ids": [], "title": "Bounded research node", "objective": "Evaluate the candidate with Gaussian."},
+        ],
+    })
+    return node_id
 
 
 def _gaussian_input(root: Path) -> Path:
@@ -47,7 +46,7 @@ def _gaussian_input(root: Path) -> Path:
 
 def test_artifact_to_prepared_intent_is_research_node_scoped(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    init_workspace(root)
+    bootstrap_filesystem_workspace_fixture(root)
     node_id = _open_node(root)
     _gaussian_input(root)
 
@@ -112,7 +111,7 @@ def test_node_contract_digest_tracks_scope_but_not_runtime_state() -> None:
 
 def test_attempt_lineage_distinguishes_exact_retry_from_recalculation(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    init_workspace(root)
+    bootstrap_filesystem_workspace_fixture(root)
     node_id = _open_node(root)
     _gaussian_input(root)
     artifact_id = list_calculation_artifacts(root)["artifacts"][0]["artifact_id"]
@@ -169,7 +168,7 @@ def test_attempt_lineage_distinguishes_exact_retry_from_recalculation(tmp_path: 
 
 def test_current_intent_rejects_scientific_or_node_contract_drift(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    init_workspace(root)
+    bootstrap_filesystem_workspace_fixture(root)
     node_id = _open_node(root)
     _gaussian_input(root)
     artifact_id = list_calculation_artifacts(root)["artifacts"][0]["artifact_id"]
@@ -195,16 +194,17 @@ def test_current_intent_rejects_scientific_or_node_contract_drift(tmp_path: Path
         prepare_calculation(root, created["intent_ref"])
 
     second = create_calculation_intent(root, request)
-    research_map = ResearchKernel(root).load()
-    research_map.nodes[node_id].objective = "A different principal objective."
-    ResearchKernel(root).save(research_map)
+    context = read_filesystem_context(root)
+    node = next(item for item in context["nodes"] if item["id"] == node_id)
+    node["objective"] = "A different principal objective."
+    write_json(root / "research_map" / "context.json", context)
     with pytest.raises(ComputeContractError, match="current ResearchNode contract"):
         prepare_calculation(root, second["intent_ref"])
 
 
 def test_attempt_lineage_cannot_cross_research_nodes(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    init_workspace(root)
+    bootstrap_filesystem_workspace_fixture(root)
     first_node = _open_node(root)
     _gaussian_input(root)
     artifact_id = list_calculation_artifacts(root)["artifacts"][0]["artifact_id"]
@@ -251,7 +251,7 @@ def test_attempt_lineage_cannot_cross_research_nodes(tmp_path: Path) -> None:
 
 def test_fresh_workspace_imports_first_artifact_before_compute_prepare(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    init_workspace(root)
+    bootstrap_filesystem_workspace_fixture(root)
     node_id = _open_node(root)
     assert list_calculation_artifacts(root)["artifacts"] == []
 
@@ -293,19 +293,13 @@ def test_fresh_workspace_imports_first_artifact_before_compute_prepare(tmp_path:
 
 def test_closed_research_node_cannot_create_a_calculation(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    init_workspace(root)
+    bootstrap_filesystem_workspace_fixture(root)
     node_id = _open_node(root)
-    drafted = compile_change(
-        root,
-        {
-            "rationale": "Close the bounded node.",
-            "basis_refs": [],
-            "operations": [
-                {"type": "set_node_state", "node_id": node_id, "state": "closed", "outcome": "completed", "summary": "No further calculation is needed."}
-            ],
-        },
-    )
-    apply_compiled_change(root, drafted["decision"])
+    apply_filesystem_change(root, {
+        "operations": [
+            {"type": "set_node_state", "node_id": node_id, "state": "closed", "outcome": "completed", "summary": "No further calculation is needed."}
+        ],
+    })
     _gaussian_input(root)
     artifact = list_calculation_artifacts(root)["artifacts"][0]
     with pytest.raises(ComputeContractError, match="open ResearchNode"):

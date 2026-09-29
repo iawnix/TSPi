@@ -358,7 +358,7 @@ def test_catalog_schemas_closed_and_invalid_parameters_rejected(tmp_path):
         Draft202012Validator.check_schema(descriptor["parameter_schema"])
         Draft202012Validator.check_schema(descriptor["input_schema"])
     with pytest.raises(ValueError, match="max_states"):
-        run_analysis(tmp_path, request("node_1", "reaction.mapping.generate", {"max_states": 100001}, {"reaction": ["art_" + "0" * 24]}))
+        run_analysis(tmp_path, request("node_1", "reaction.mapping.generate", {"max_states": 100001}, {"reaction": ["art_" + "0" * 64]}))
 
 
 @pytest.mark.parametrize("legacy_order", [False, True])

@@ -5,41 +5,34 @@ from pathlib import Path
 from ts_agent.io import read_json
 from ts_agent.report import build_final_report, build_report_package
 from ts_agent.report.context import collect_report_context
-from ts_agent.research import ResearchKernel
-from ts_agent.research.evidence import ArtifactManifest
-from ts_agent.workspace.engine import change_workspace, init_workspace
+from tests.support.workspace_helpers import (
+    apply_filesystem_change,
+    bootstrap_workspace_fixture,
+    start_research_node,
+)
 
 
 def _seed(root: Path) -> None:
-    kernel = ResearchKernel(root)
-    kernel.ensure_sqlite()
-    kernel.register_evidence(artifacts=[ArtifactManifest(
-        id="art_report_candidates",
-        node_id=None,
-        kind="analysis",
-        format="json",
-        location="reports/candidates.json",
-        sha256="sha256:" + "0" * 64,
-        size_bytes=1,
-        created_at="2026-01-01T00:00:00Z",
-    )])
-    change_workspace(root, {
-        "expected_revision": 0,
-        "operations": [
-            {"type": "create_phase", "id": "phase_1", "title": "Mechanism", "objective": "Locate a pathway."},
-            {"type": "create_claim", "id": "claim_1", "statement": "A concerted saddle exists.", "falsifiers": ["All candidates relax stepwise."]},
-            {"type": "create_node", "id": "node_1", "title": "Bounded search", "objective": "Search candidate saddles.", "phase_id": "phase_1", "claim_ids": ["claim_1"]},
-            {"type": "create_finding", "id": "fnd_1", "node_id": "node_1", "claim_ids": ["claim_1"], "statement": "Three candidates were retained.", "kind": "fact", "value": 3, "datatype": "integer"},
-            {"type": "create_gate", "id": "gate_1", "scope": "node", "target_id": "node_1", "criteria": [{"kind": "candidate_count"}]},
-            {"type": "evaluate_gate", "gate_id": "gate_1", "verdict": "pass", "evidence_refs": ["art_report_candidates"]},
-            {"type": "set_focus", "claim_ids": ["claim_1"], "node_ids": ["node_1"]},
-        ],
-    })
+    refs = start_research_node(root, title="Bounded search", objective="Search candidate saddles.")
+    apply_filesystem_change(root, {"operations": [{
+        "type": "create_strategy_plan", "id": "strategy_1", "claim_id": refs["claim_id"],
+        "node_id": refs["node_id"], "objective": "Collect report evidence.",
+        "rationale": "The report needs a declared evidence plan.", "status": "active",
+    }]})
+    candidate = root / "reports" / "candidates.json"
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_text("{\"count\": 3}\n", encoding="utf-8")
+    apply_filesystem_change(root, {"operations": [
+        {"type": "register_artifact", "id": "art_" + "0" * 64, "kind": "analysis", "format": "json", "location": "reports/candidates.json", "sha256": "sha256:" + "0" * 64, "size_bytes": candidate.stat().st_size},
+        {"type": "create_finding", "id": "fnd_1", "node_id": refs["node_id"], "claim_ids": [refs["claim_id"]], "statement": "Three candidates were retained.", "kind": "fact", "value": 3, "datatype": "integer"},
+        {"type": "create_gate", "id": "gate_1", "scope": "node", "target_id": refs["node_id"], "criteria": [{"kind": "candidate_count"}]},
+        {"type": "evaluate_gate", "gate_id": "gate_1", "verdict": "pass", "evidence_refs": ["art_" + "0" * 64]},
+    ]})
 
 
 def test_report_reads_the_canonical_research_map(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    init_workspace(root)
+    bootstrap_workspace_fixture(root)
     _seed(root)
 
     context = collect_report_context(root)
@@ -58,20 +51,11 @@ def test_report_reads_the_canonical_research_map(tmp_path: Path) -> None:
 
 def test_report_renders_a_node_without_a_phase(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    init_workspace(root)
-    change_workspace(root, {
-        "expected_revision": 0,
-        "operations": [
-            {"type": "create_claim", "id": "claim_1", "statement": "A saddle exists."},
-            {
-                "type": "create_node",
-                "id": "node_1",
-                "title": "Validate candidate",
-                "objective": "Test the candidate without a navigation group.",
-                "claim_ids": ["claim_1"],
-            },
-        ],
-    })
+    bootstrap_workspace_fixture(root)
+    apply_filesystem_change(root, {"operations": [
+        {"type": "create_claim", "id": "claim_1", "statement": "A saddle exists."},
+        {"type": "create_node", "id": "node_1", "title": "Validate candidate", "objective": "Test the candidate without a navigation group.", "claim_ids": ["claim_1"]},
+    ]})
 
     text = build_final_report(root)
 
@@ -81,7 +65,7 @@ def test_report_renders_a_node_without_a_phase(tmp_path: Path) -> None:
 
 def test_report_package_contains_only_canonical_scientific_records(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    init_workspace(root)
+    bootstrap_workspace_fixture(root)
     _seed(root)
     target = root / "reports" / "study"
 

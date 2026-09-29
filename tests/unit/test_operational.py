@@ -4,13 +4,13 @@ import json
 from pathlib import Path
 
 from tests.support.workspace_helpers import (
+    bootstrap_workspace_fixture,
     calculation_intent_fixture,
     calculation_prepared_fixture,
     calculation_result_fixture,
     start_research_node,
 )
 from ts_agent.workspace.operational import node_completion_blockers, runtime_status
-from ts_agent.workspace.engine import init_workspace
 
 
 def _write(path: Path, value: dict) -> None:
@@ -20,7 +20,7 @@ def _write(path: Path, value: dict) -> None:
 
 def test_runtime_status_separates_activities_reviews_and_controls(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    init_workspace(root)
+    bootstrap_workspace_fixture(root)
     start_research_node(root)
     activity = root / "nodes" / "node_1" / "activities" / "op_1"
     _write(

@@ -770,7 +770,7 @@ print(json.dumps({
     assert result["no_user_site"] == "1"
     assert result["python_cache"] == str(install_root / ".pi" / "runtime-cache" / "python" / "reaction-a")
     assert result["pytest_options"].endswith(
-        f"--cache-dir={install_root / '.pi' / 'runtime-cache' / 'pytest' / 'reaction-a'}"
+        f"-o cache_dir={install_root / '.pi' / 'runtime-cache' / 'pytest' / 'reaction-a'}"
     )
     assert result["compute_config"] is None
     assert result["remote_display"] == "not configured"

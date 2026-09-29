@@ -263,8 +263,8 @@ def test_monitor_records_match_contracts_and_old_completed_delivery_stays_comple
 
 def test_bootstrapped_monitor_uses_host_directory_route_without_changing_canonical_identity(tmp_path, monkeypatch):
     root = bootstrap_workspace_fixture(tmp_path / "ts_001")
-    canonical_id = read_json(root / "workspace.json")["workspace_id"]
-    assert canonical_id.startswith("ws_") and canonical_id != root.name
+    canonical_id = read_json(root / "workspace_manifest.json")["workspace_id"]
+    assert canonical_id == root.name
     _registered(root)
     monkeypatch.setattr("ts_agent.compute.control.calculation_status", lambda *args: {"state": "running"})
     event_id = tick_monitors(root)["monitors"][0]["event_id"]

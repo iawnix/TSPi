@@ -52,7 +52,7 @@ def test_review_request_accepts_only_claim_and_logical_artifact_ids() -> None:
     script = (
         f"const helper=require({json.dumps(str(TASK_PACKET))});"
         "const values=["
-        "{targetClaimId:'claim_1',question:'Review this.',artifactIds:['art_'+ 'b'.repeat(24)]},"
+        "{targetClaimId:'claim_1',question:'Review this.',artifactIds:['art_'+ 'b'.repeat(64)]},"
         "{targetClaimId:'claim_1',question:'Review this.',artifactIds:['../output.log']},"
         "{targetClaimId:'clm_'+ 'a'.repeat(24),question:'Review this.',artifactIds:[]}];"
         "const out=values.map(v=>{try{return {ok:true,value:helper.validateSubagentRequest(v)}}"

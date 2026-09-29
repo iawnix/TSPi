@@ -5,8 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
-from ts_agent.research import ResearchKernel
+from tests.support.workspace_helpers import (
+    apply_filesystem_change,
+    bootstrap_workspace_fixture,
+    read_filesystem_context,
+    start_research_node,
+)
 from ts_agent.backends.base import BackendTask
 from ts_agent.backends.crest import prepare_crest
 from ts_agent.backends.xtb import (
@@ -675,10 +679,21 @@ def test_xtb_scan_prepare_accepts_native_inline_control_before_execution(tmp_pat
 
 def _workspace(tmp_path: Path) -> Path:
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
-    start_research_node(
+    refs = start_research_node(
         workspace,
         objective="Exercise the typed xTB and CREST adapter task matrix.",
     )
+    apply_filesystem_change(workspace, {
+        "operations": [{
+            "type": "create_strategy_plan",
+            "id": "strategy_1",
+            "claim_id": refs["claim_id"],
+            "node_id": refs["node_id"],
+            "objective": "Run the selected adapter validation calculation.",
+            "rationale": "The node has an explicit compute plan.",
+            "status": "active",
+        }],
+    })
     inputs = workspace / "inputs"
     inputs.mkdir(parents=True, exist_ok=True)
     (inputs / "candidate.xyz").write_text(_xyz(-5.0), encoding="utf-8")
@@ -695,7 +710,7 @@ def _workspace(tmp_path: Path) -> Path:
 
 
 def _intent(workspace: Path, backend: str, task_type: str) -> Path:
-    node_id = next(iter(ResearchKernel(workspace).load().nodes))
+    node_id = read_filesystem_context(workspace)["nodes"][0]["id"]
     catalog = list_calculation_artifacts(workspace)
     by_path = {item["path"]: item for item in catalog["artifacts"]}
     input_artifacts = [
