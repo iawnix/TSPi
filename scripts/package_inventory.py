@@ -443,6 +443,7 @@ REQUIRED_TARBALL_FILES = frozenset(
         "config/ase-neb-pixi.lock",
         "config/pi-workspace-session-list.patch",
         "config/pi-process-diagnostics.patch",
+        "config/pi-research-agent-workspace.patch",
         "config/pi-presentation-layout.patch",
         "config/pi-tool-renderers.patch",
         "config/pi-tui-performance.patch",
