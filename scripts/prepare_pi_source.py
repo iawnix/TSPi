@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -619,7 +620,10 @@ def _install_dependencies(source: Path) -> None:
     if npm is None:
         raise PiSourceError("npm is required to install the managed Pi App Server runtime")
     try:
-        subprocess.run([npm, "ci", "--ignore-scripts"], cwd=source, check=True)
+        # Keep stdout reserved for the final source path printed by ``main``.
+        # The installer is commonly used in command substitution by CI; npm's
+        # summary must not become part of the value written to GITHUB_ENV.
+        subprocess.run([npm, "ci", "--ignore-scripts"], cwd=source, check=True, stdout=sys.stderr)
     except (OSError, subprocess.CalledProcessError) as exc:
         raise PiSourceError(f"failed to install pinned Pi dependencies: {exc}") from exc
 
@@ -631,10 +635,10 @@ def _prepare_runtime_build(source: Path) -> None:
         raise PiSourceError("npm is required to prepare the pinned Pi runtime")
     try:
         if not (source / "packages/ai/src/providers/data/amazon-bedrock.json").is_file():
-            subprocess.run([npm, "run", "hydrate:model-data"], cwd=source, check=True)
+            subprocess.run([npm, "run", "hydrate:model-data"], cwd=source, check=True, stdout=sys.stderr)
         required = ("packages/chord/dist/index.js", "packages/coding-agent/dist/bundle")
         if any(not (source / path).exists() for path in required):
-            subprocess.run([npm, "run", "build:offline"], cwd=source, check=True)
+            subprocess.run([npm, "run", "build:offline"], cwd=source, check=True, stdout=sys.stderr)
     except (OSError, subprocess.CalledProcessError) as exc:
         raise PiSourceError(f"failed to build pinned Pi runtime: {exc}") from exc
 
