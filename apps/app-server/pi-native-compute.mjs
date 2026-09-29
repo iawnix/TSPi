@@ -56,8 +56,8 @@ export function createComputeTool(options = {}) {
           ? (selectedEnvironment.kind ?? selectedEnvironment.execution_kind)
           : undefined;
         if (selectedKind === "remote") {
-          const error = new Error("remote compute requires compute_run operation=launch with an executionTarget");
-          error.code = "remote_execution_requires_lifecycle_operation";
+          const error = new Error("Remote compute must use Native compute_run operation=launch with executionTarget");
+          error.code = "remote_execution_requires_native_lifecycle";
           throw error;
         }
         const root = boundWorkspaceRoot(params, toolContext);

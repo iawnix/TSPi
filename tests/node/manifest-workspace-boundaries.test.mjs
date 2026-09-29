@@ -15,6 +15,7 @@ test("monitor identity uses the research workspace manifest", async () => {
       schema_version: "research_agent_workspace_1",
       workspace_id: "workspace_research",
       workspace_mode: "research",
+      state: "ready",
     }));
     assert.equal(await monitorHostWorkspaceId(workspace, { workspace_id: "workspace_research" }), "project-a");
   } finally {

@@ -304,6 +304,7 @@ PACKAGE_FILES = [
     "scripts/ts_api.py",
     "scripts/ts_monitor.py",
     "scripts/ts_workspace.py",
+    "scripts/ts_workspace_mode.py",
     "skills/",
     "themes/*.json",
     "packages/ts-agent-runtime/agent-core/*.cjs",

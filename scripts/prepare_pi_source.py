@@ -88,6 +88,7 @@ def verify(source: Path) -> str:
         "workspace service": "tspi.workspace-directory" in sessions,
         "workspaceId session binding": "workspaceId?: string" in sessions and "createOptions.workspaceId" in server,
         "workspace creation": "createWorkspace: createWorkspaceRoot" in server,
+        "canonical workspace initializer": "TSPI_WORKSPACE_MODE_INITIALIZER" in server and "--workspace-id" in server and "--mode" in server,
         "workspace create service": "createWorkspace(workspaceId: string" in services and "create: (workspaceId, context)" in services,
         "ResearchMap workspace schema": (
             "isSupportedWorkspaceIdentity" in server

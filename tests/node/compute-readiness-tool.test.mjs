@@ -60,7 +60,7 @@ test("capability_id compute route rejects remote before provider execution", asy
         capability_id: "xtb.sp",
         environment: { kind: "remote", environment: "cluster_1w" },
       }, undefined, { cwd: "/tmp", principal: "root_agent" }),
-      (error) => error?.code === "remote_execution_requires_lifecycle_operation",
+      (error) => error?.code === "remote_execution_requires_native_lifecycle",
     );
     assert.equal(invoked, false);
   } finally {

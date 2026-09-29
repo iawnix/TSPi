@@ -235,10 +235,19 @@ class EnvironmentBroker:
         if environment.kind == "remote":
             # The scheduler/SSH doctor owns remote probing.  This check is
             # intentionally non-destructive and does not run a remote command.
+            # A configured remote binding is selectable, but it is not an
+            # executable environment until the remote doctor has verified
+            # SSH, Torque, the workspace root, and the backend runtime.  Use
+            # ``unknown`` here so Agent-facing readiness cannot be mistaken
+            # for a successful transport probe.
             checks.append({"name": "remote_transport", "state": "deferred"})
             if gpu_deferred:
                 checks.append({"name": "gpu", "state": "deferred"})
-            return EnvironmentReadiness("configured", tuple(checks))
+            return EnvironmentReadiness(
+                "unknown",
+                tuple(checks),
+                "remote transport and scheduler readiness require an explicit remote doctor probe",
+            )
         executable = binding.command[0] if binding.command else ""
         available = _executable_available(executable)
         checks.append({"name": "executable", "state": "ready" if available else "failed"})

@@ -116,6 +116,11 @@ def _option_value(cli: object, config: dict[str, object], key: str) -> object:
 def _build_environment(args: argparse.Namespace, config: dict[str, object], package_root: Path) -> dict[str, str]:
     runtime = _option_value(args.runtime_module, config, "runtime_module")
     environment = dict(os.environ)
+    # Keep the installation identity explicit for the Node App Server and its
+    # worker children.  The capability host uses this to resolve the
+    # installation-owned `.pi/compute.toml` when a service manager does not
+    # forward TS_COMPUTE_CONFIG.
+    environment["TSPI_INSTALL_ROOT"] = str(Path(args.install_root).expanduser().resolve())
     if runtime is None and not environment.get("RESEARCH_AGENT_RUNTIME_MODULE"):
         raise LauncherError(
             "runtime_module is required; configure --runtime-module, RESEARCH_AGENT_RUNTIME_MODULE, or the server JSON file"

@@ -8,7 +8,10 @@ from hashlib import sha256
 from typing import Any, Callable, Iterable
 
 
-_READINESS_STATES = frozenset({"configured", "ready", "not_ready", "unknown", "error"})
+# Keep the Python contract in lockstep with the JS EnvironmentBinding and
+# JSON schema. ``unavailable`` is a resolved selector whose required backend
+# or environment checks failed; it is distinct from a malformed request.
+_READINESS_STATES = frozenset({"configured", "ready", "not_ready", "unknown", "error", "unavailable"})
 
 
 class EnvironmentError(ValueError):

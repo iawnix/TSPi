@@ -221,10 +221,12 @@ index 5ec02aaa2..6628e5298 100644
 +	} catch (error) {
 +		if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
 +	}
-+	const bootstrap = process.env.TSPI_WORKSPACE_BOOTSTRAP;
-+	if (!bootstrap) throw new Error("TSPi workspace bootstrap command is not configured");
++	const bootstrap = process.env.TSPI_WORKSPACE_MODE_INITIALIZER;
++	if (!bootstrap) throw new Error("TSPi workspace mode initializer command is not configured");
 +	const python = process.env.TSPI_WORKSPACE_PYTHON || "python3";
-+	await execFileAsync(python, [bootstrap, "bootstrap", "--root", candidate], { env: process.env });
++	const mode = process.env.TSPI_DEFAULT_WORKSPACE_MODE || "light";
++	if (mode !== "light" && mode !== "research") throw new Error("TSPI_DEFAULT_WORKSPACE_MODE must be light or research");
++	await execFileAsync(python, [bootstrap, "--root", candidate, "--workspace-id", workspaceId, "--mode", mode], { env: process.env });
 +	const workspaces = await listWorkspaceRoots();
 +	const result = workspaces.find((item) => item.workspaceId === workspaceId);
 +	if (!result) throw new Error("workspace bootstrap did not register " + workspaceId);

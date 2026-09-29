@@ -43,10 +43,13 @@ export interface ComputeRunRequest {
   readonly signal?: AbortSignal;
   readonly dry_run?: boolean;
   readonly metadata?: Readonly<Record<string, unknown>>;
+  /** Local Host environment selector; remote execution belongs to Native lifecycle launch. */
   readonly environment?: Readonly<Record<string, unknown>>;
-  /** Alias accepted by Host callers for an execution environment selector. */
+  /** Local selector alias accepted by Host callers; remote values are rejected. */
   readonly execution_environment?: Readonly<Record<string, unknown>> | string;
+  /** Local selector alias accepted by Host callers; remote values are rejected. */
   readonly execution_target?: Readonly<Record<string, unknown>> | string;
+  /** Local selector alias accepted by Host callers; remote values are rejected. */
   readonly executionTarget?: Readonly<Record<string, unknown>> | string;
   readonly evidence_links?: readonly Readonly<Record<string, unknown>>[];
 }

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { startTspiHost } from "../../../apps/app-server/tspi-host.mjs";
 import { connectHost } from "../../../apps/app-server/tspi-host-client.mjs";
+import { create_workspace_initializer } from "../../../packages/research-agent-core/workspace.mjs";
 
 const TARGET = { workspace_id: "project-a", session_id: "session-a" };
 
@@ -88,12 +89,9 @@ async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-host-"));
   const workspaceRoot = join(root, "workspaces");
   const workspace = join(workspaceRoot, "project-a");
-  await mkdir(workspace, { recursive: true });
-  await writeFile(join(workspace, "workspace_manifest.json"), JSON.stringify({
-    schema_version: "research_agent_workspace_1",
-    workspace_id: "project-a",
-    workspace_mode: "research",
-  }));
+  const initializer = create_workspace_initializer();
+  await initializer.initialize_workspace({ workspace_root: workspace, workspace_id: "project-a", workspace_mode: "research" });
+  await initializer.admit_workspace(workspace);
   const backend = createBackend(workspaceRoot);
   const host = await startTspiHost({ socketPath: join(root, "host.sock"), workspaceRoot, stateRoot: join(root, "state"), sessionBackend: backend, monitorPollMs: 0 });
   t.after(async () => { await host.close(); await rm(root, { recursive: true, force: true }); });
@@ -120,12 +118,9 @@ test("Native Host exposes only Harness session capabilities and rejects legacy b
 test("Host initialization exposes its selected package release", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-host-release-"));
   const workspaceRoot = join(root, "workspaces");
-  await mkdir(join(workspaceRoot, "project-a"), { recursive: true });
-  await writeFile(join(workspaceRoot, "project-a", "workspace_manifest.json"), JSON.stringify({
-    schema_version: "research_agent_workspace_1",
-    workspace_id: "project-a",
-    workspace_mode: "research",
-  }));
+  const initializer = create_workspace_initializer();
+  await initializer.initialize_workspace({ workspace_root: join(workspaceRoot, "project-a"), workspace_id: "project-a", workspace_mode: "research" });
+  await initializer.admit_workspace(join(workspaceRoot, "project-a"));
   const backend = createBackend(workspaceRoot);
   const host = await startTspiHost({
     socketPath: join(root, "host.sock"),
@@ -144,12 +139,9 @@ test("Host initialization exposes its selected package release", async (t) => {
 test("Host client rejects a stale package release", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-host-release-mismatch-"));
   const workspaceRoot = join(root, "workspaces");
-  await mkdir(join(workspaceRoot, "project-a"), { recursive: true });
-  await writeFile(join(workspaceRoot, "project-a", "workspace_manifest.json"), JSON.stringify({
-    schema_version: "research_agent_workspace_1",
-    workspace_id: "project-a",
-    workspace_mode: "research",
-  }));
+  const initializer = create_workspace_initializer();
+  await initializer.initialize_workspace({ workspace_root: join(workspaceRoot, "project-a"), workspace_id: "project-a", workspace_mode: "research" });
+  await initializer.admit_workspace(join(workspaceRoot, "project-a"));
   const backend = createBackend(workspaceRoot);
   const host = await startTspiHost({
     socketPath: join(root, "host.sock"),
@@ -200,4 +192,48 @@ test("Native Host accepts a manifest-bound light workspace without ResearchMap f
   await env.client.request("initialize", {});
   const listed = await env.client.request("workspace/list", {});
   assert.ok(listed.workspaces.some((workspace) => workspace.workspace_id === "light-a"));
+});
+
+test("Native Host workspace/create writes the canonical manifest protocol", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-native-host-create-"));
+  const workspaceRoot = join(root, "workspaces");
+  const backend = createBackend(workspaceRoot);
+  const host = await startTspiHost({
+    socketPath: join(root, "host.sock"),
+    workspaceRoot,
+    stateRoot: join(root, "state"),
+    sessionBackend: backend,
+    monitorPollMs: 0,
+  });
+  t.after(async () => { await host.close(); await rm(root, { recursive: true, force: true }); });
+  const client = await connectHost({ socketPath: host.socketPath });
+  await client.request("initialize", {});
+  const created = await client.request("workspace/create", {
+    workspace_id: "created-light",
+    workspace_mode: "light",
+    request_id: "create-workspace-1",
+  });
+  assert.equal(created.workspace.workspace_mode, "light");
+  assert.equal(created.workspace.state, "ready");
+  const manifest = JSON.parse(await readFile(join(workspaceRoot, "created-light", "workspace_manifest.json"), "utf8"));
+  assert.equal(manifest.schema_version, "research_agent_workspace_1");
+  assert.equal(manifest.workspace_id, "created-light");
+  assert.equal(manifest.state, "ready");
+  const createdResearch = await client.request("workspace/create", {
+    workspace_id: "created-research",
+    workspace_mode: "research",
+    request_id: "create-workspace-2",
+  });
+  assert.equal(createdResearch.workspace.workspace_mode, "research");
+  assert.equal(createdResearch.workspace.state, "ready");
+  const researchManifest = JSON.parse(await readFile(join(workspaceRoot, "created-research", "workspace_manifest.json"), "utf8"));
+  const context = JSON.parse(await readFile(join(workspaceRoot, "created-research", "research_map", "context.json"), "utf8"));
+  const liveness = JSON.parse(await readFile(join(workspaceRoot, "created-research", "lifecycle", "liveness.json"), "utf8"));
+  assert.equal(researchManifest.state, "ready");
+  assert.equal(context.lifecycle_state, "admitted");
+  assert.equal(liveness.state, "admitted");
+  await assert.rejects(
+    client.request("workspace/create", { workspace_id: "created-light", workspace_mode: "research", request_id: "create-workspace-3" }),
+    /workspace_mode_mismatch/,
+  );
 });

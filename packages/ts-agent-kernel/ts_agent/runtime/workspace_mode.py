@@ -113,8 +113,13 @@ def _research_seed(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "schema_version": "research_map_context_1",
             "workspace_id": workspace_id,
             "workspace_mode": "research",
+            "memory_scope": manifest["memory_scope"],
+            "research_state_scope": manifest["research_state_scope"],
             "revision": 0,
             "lifecycle_state": "admission_pending",
+            "lifecycle": "admission_pending",
+            "disposition": None,
+            "checkpoint_id": "checkpoint_0",
             "phases": [],
             "claims": [],
             "nodes": [],
@@ -124,12 +129,22 @@ def _research_seed(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "liveness": {
             "schema_version": "research_liveness_1",
             "workspace_id": workspace_id,
+            "memory_scope": manifest["memory_scope"],
+            "research_state_scope": manifest["research_state_scope"],
             "state": "admission_pending",
             "revision": 0,
         },
         "memory": {
             "schema_version": "research_memory_index_1",
             "workspace_id": workspace_id,
+            "scope": "workspace",
+            "authority": "research_kernel",
+            "revision": 0,
+            "context_revision": 0,
+            "lifecycle": "admission_pending",
+            "disposition": None,
+            "checkpoint_id": "checkpoint_0",
+            "focus": {"claim_ids": [], "node_ids": []},
             "entries": [],
         },
         "checkpoint": {
@@ -163,6 +178,10 @@ def initialize_workspace(root: str | Path, workspace_id: str, workspace_mode: st
         if manifest["state"] not in {"ready", "admission_pending"}:
             raise WorkspaceModeError(f"workspace_initialization_incomplete: {manifest['state']}")
         return manifest
+
+    for name in ("workspace.json", "research_map.json", "research.db", "transactions.jsonl"):
+        if (path / name).exists() or (path / name).is_symlink():
+            raise WorkspaceModeError(f"legacy_workspace_layout: {name}")
 
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     created_at = _now()

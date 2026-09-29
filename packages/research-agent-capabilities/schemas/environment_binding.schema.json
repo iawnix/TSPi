@@ -26,7 +26,7 @@
       "additionalProperties": false,
       "required": ["state", "checks"],
       "properties": {
-        "state": {"enum": ["configured", "ready", "not_ready", "unknown", "error"]},
+        "state": {"enum": ["configured", "ready", "not_ready", "unknown", "error", "unavailable"]},
         "checks": {"type": "array", "items": {"type": "object"}},
         "reason": {"type": "string", "minLength": 1}
       }

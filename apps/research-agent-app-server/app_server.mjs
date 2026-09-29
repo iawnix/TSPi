@@ -81,6 +81,16 @@ function require_workspace_ready(manifest) {
   return manifest;
 }
 
+function remote_compute_request(value) {
+  if (value?.execution_kind === "remote") return true;
+  for (const field of ["environment", "execution_environment", "execution_target", "executionTarget"]) {
+    const selected = value?.[field];
+    if (selected && typeof selected === "object" && !Array.isArray(selected)
+      && (selected.kind === "remote" || selected.execution_kind === "remote")) return true;
+  }
+  return false;
+}
+
 /**
  * Compose the App Server with the shared Agent Runtime Port. The composition
  * root chooses a Fake, native runtime, or Pi adapter and injects it here.
@@ -409,6 +419,16 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
       if (request === null || typeof request !== "object" || Array.isArray(request)) {
         throw new TypeError("compute request must be an object");
       }
+      // HTTP/App Server compute_run is the local provider API.  Native
+      // lifecycle launch is the sole remote route and carries executionTarget
+      // together with operation=launch; do not resolve a workspace or invoke
+      // an injected JS orchestrator for a remote selector.
+      if (remote_compute_request(request)) {
+        const error = new Error("Remote compute must use Native compute_run operation=launch with executionTarget");
+        error.code = "remote_execution_requires_native_lifecycle";
+        error.details = { route: "native_compute_lifecycle", operation: "launch" };
+        throw error;
+      }
       const manifest = require_workspace_ready(await resolve_workspace(request));
       return compute_orchestrator.run({
         ...request,
@@ -507,7 +527,19 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
           .map((item) => [`${item.capability_id}@${item.capability_version}`, item])).values())];
         return {
           protocol_version: "compute_readiness_1",
-          readiness: capabilities.map((item) => ({ capability_id: item.capability_id, capability_version: item.capability_version, readiness: { state: "registered", checks: [] } })),
+          // A gateway-only composition can prove registration, but it has no
+          // Host EnvironmentBroker to probe the selected execution plane.
+          // Expose that uncertainty explicitly instead of presenting a
+          // registered capability as executable (especially for remote).
+          readiness: capabilities.map((item) => ({
+            capability_id: item.capability_id,
+            capability_version: item.capability_version,
+            readiness: {
+              state: "unknown",
+              checks: [{ name: "host_environment", state: "deferred" }],
+              reason: "Host capability assembly is not configured; execution readiness was not probed",
+            },
+          })),
         };
       }
       if (!capability_assembly) throw new Error("capability_assembly_not_configured");

@@ -20,6 +20,7 @@ function error_code(error) {
   const capability_code = error?.code;
   if (capability_code === "capability_not_found" || capability_code === "artifact_not_found") return "not_found";
   if (capability_code === "capability_mode_not_supported" || capability_code === "workspace_mode_mismatch") return "conflict";
+  if (capability_code === "remote_execution_requires_native_lifecycle") return "conflict";
   if (capability_code === "compute_requires_research_workspace"
     || capability_code === "workspace_admission_required"
     || capability_code === "cancelled"

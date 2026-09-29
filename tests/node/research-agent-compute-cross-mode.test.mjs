@@ -66,30 +66,36 @@ test("Provider failures have the same error semantics in both modes", async () =
   }
 });
 
-test("Compute orchestration preserves the selected execution environment", async () => {
+test("Generic compute orchestration rejects remote selectors before ledger/provider execution", async () => {
   const workspaceRoot = await root("research-agent-environment-target");
   try {
-    let request;
+    let provider_calls = 0;
+    const events = [];
     const gateway = {
       describe: () => [{ capability_id: "fixture_compute", capability_version: "1", kind: "compute", input_schema: { type: "object" }, output_schema: { type: "object" }, supported_workspace_modes: ["light"] }],
-      async invoke(value) {
-        request = value;
+      async invoke() {
+        provider_calls += 1;
         return { status: "ok", output: { ok: true }, artifacts: [] };
       },
     };
     const orchestrator = create_compute_orchestrator({
       tool_gateway: gateway,
-      ledger_factory: () => ledger([], "light"),
+      ledger_factory: () => ledger(events, "light"),
     });
-    await orchestrator.run({
+    await assert.rejects(orchestrator.run({
       workspace_id: "workspace_target",
       workspace_root: workspaceRoot,
       workspace_mode: "light",
       run_id: "run_target",
       capability_id: "fixture_compute",
       environment: { kind: "remote", environment: "agent.1w" },
+    }), (error) => {
+      assert.equal(error.code, "remote_execution_requires_native_lifecycle");
+      assert.equal(error.details.route, "native_compute_lifecycle");
+      return true;
     });
-    assert.deepEqual(request.environment, { kind: "remote", environment: "agent.1w" });
+    assert.equal(provider_calls, 0);
+    assert.deepEqual(events, []);
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });
   }

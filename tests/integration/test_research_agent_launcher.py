@@ -88,3 +88,4 @@ def test_launcher_resolves_local_modules_and_replaces_process(monkeypatch: pytes
     assert "%20" in environment["RESEARCH_AGENT_RUNTIME_MODULE"]
     assert environment["RESEARCH_AGENT_KERNEL_MODULE"].startswith("file:")
     assert environment["TSP_APP_SERVER_PORT"] == "0"
+    assert environment["TSPI_INSTALL_ROOT"] == str(install_root.resolve())

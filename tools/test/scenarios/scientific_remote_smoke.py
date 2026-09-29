@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages/ts-agent-kernel"))
-from ts_agent.workspace import bootstrap_workspace
+from ts_agent.runtime.workspace_mode import admit_research_workspace, initialize_workspace
 from ts_agent.research import ResearchKernel
 from tests.unit.test_scientific_analysis import request
 from ts_agent.compute import import_calculation_artifact, create_calculation_intent, prepare_calculation, submit_calculation, calculation_status, collect_calculation, parse_calculation
@@ -53,7 +53,9 @@ def launch(root, environment, retry_capability=None):
         if manifest["environment"] != environment:
             raise ValueError("existing smoke is bound to another environment")
     else:
-        bootstrap_workspace(root)
+        workspace_id = root.name
+        initialize_workspace(root, workspace_id, "research")
+        admit_research_workspace(root)
         manifest = {"schema_version": "ts-scientific-remote-smoke/1", "environment": environment, "purpose": "real small-system integration smoke; no mechanism acceptance", "attempts": []}
     water = "3\nWater integration probe\nO 0 0 0\nH 0.757 0 0.586\nH -0.757 0 0.586\n"
     for capability in ("gaussian.opt_freq", "xtb.sp", "crest.conformer_search", "ase.neb"):

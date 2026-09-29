@@ -211,6 +211,11 @@ def workspace_root(root: str | Path) -> Path:
         )
     if identity.get("workspace_root") and lexical_path(identity["workspace_root"]) != workspace:
         raise WorkspaceArtifactError("workspace identity does not match canonical root")
+    if any(
+        (workspace / name).exists() or (workspace / name).is_symlink()
+        for name in ("workspace.json", "research_map.json", "research.db", "transactions.jsonl")
+    ):
+        raise WorkspaceArtifactError("legacy ResearchMap storage is not supported by the canonical artifact workspace")
     if (
         isinstance(identity, dict)
         and identity.get("schema_version") == "research_agent_workspace_1"
@@ -226,8 +231,6 @@ def workspace_root(root: str | Path) -> Path:
             if not path.is_dir():
                 raise WorkspaceArtifactError(f"not an initialized TS workspace: missing {required}")
         return workspace
-    if (workspace / "research_map.json").exists() or (workspace / "research.db").exists():
-        raise WorkspaceArtifactError("legacy ResearchMap storage is not supported by the canonical artifact workspace")
     for path in (workspace_doc, context_doc, workspace / "lifecycle" / "liveness.json", workspace / "nodes"):
         if has_symlink_component(workspace, path):
             raise WorkspaceArtifactError(f"workspace canonical path uses a symbolic link: {path.relative_to(workspace)}")

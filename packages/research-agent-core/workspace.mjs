@@ -157,6 +157,18 @@ export function create_workspace_initializer() {
     } catch (error) {
       if (error?.cause?.code !== "ENOENT") throw error;
     }
+    // A canonical manifest cannot coexist with the retired ResearchMap
+    // files. Reject the mixed layout before attaching an existing workspace
+    // so light and research modes have the same no-legacy policy.
+    for (const name of ["workspace.json", "research_map.json", "research.db", "transactions.jsonl"]) {
+      try {
+        await readFile(join(root, name), "utf8");
+        throw new Error(`legacy_workspace_layout: ${name}`);
+      } catch (error) {
+        if (error?.message === `legacy_workspace_layout: ${name}`) throw error;
+        if (error?.cause?.code !== "ENOENT" && error?.code !== "ENOENT") throw error;
+      }
+    }
     if (existing) {
       validate_manifest(existing, root);
       if (!["ready", "admission_pending"].includes(existing.state)) {

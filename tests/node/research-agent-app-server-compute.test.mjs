@@ -49,6 +49,60 @@ test("run_compute reports a stable error when no orchestrator is configured", as
   }
 });
 
+test("run_compute rejects remote selectors before resolving a workspace or invoking JS orchestration", async () => {
+  let invoked = false;
+  const app_server = create_app_server({
+    runtime_port: create_fake_agent_runtime(),
+    compute_orchestrator: {
+      run: async () => {
+        invoked = true;
+        return { state: "succeeded" };
+      },
+    },
+  });
+  try {
+    await assert.rejects(
+      app_server.run_compute({
+        workspace_root: "/this/workspace/is/not/resolved",
+        capability_id: "xtb.sp",
+        executionTarget: { kind: "remote", environment: "cluster_1w" },
+      }),
+      (error) => error?.code === "remote_execution_requires_native_lifecycle",
+    );
+    assert.equal(invoked, false);
+  } finally {
+    await app_server.close();
+  }
+});
+
+test("HTTP compute_run reports the Native lifecycle route for remote selectors", async () => {
+  const app_server = create_app_server({
+    runtime_port: create_fake_agent_runtime(),
+    compute_orchestrator: { run: async () => ({ state: "succeeded" }) },
+  });
+  const server = create_http_server({ app_server });
+  try {
+    const base_url = await listen(server);
+    const client = create_app_server_client({ base_url });
+    await assert.rejects(
+      client.compute_run({
+        workspace_root: "/this/workspace/is/not/resolved",
+        capability_id: "gaussian.sp",
+        environment: { kind: "remote", environment: "cluster_1w" },
+      }),
+      (error) => {
+        assert.equal(error.status, 409);
+        assert.equal(error.code, "conflict");
+        assert.equal(error.body?.error?.code, "conflict");
+        return true;
+      },
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await app_server.close();
+  }
+});
+
 test("run_compute accepts a ready light workspace through the light run ledger", async () => {
   const root = await temporary_root("research-agent-compute-light");
   let app_server;

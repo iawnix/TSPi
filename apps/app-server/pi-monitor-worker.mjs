@@ -63,6 +63,7 @@ export async function monitorHostWorkspaceId(workspace, event) {
   const identity = JSON.parse(await readFile(manifestPath, "utf8"));
   if (identity.schema_version !== "research_agent_workspace_1"
     || identity.workspace_mode !== "research"
+    || identity.state !== "ready"
     || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(identity.workspace_id || "")) {
     throw new Error("monitor workspace identity is invalid");
   }

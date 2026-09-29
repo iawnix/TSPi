@@ -8,6 +8,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRpcPeer, HOST_PROTOCOL, protocolError } from "./tspi-host-client.mjs";
 import { readWorkspaceMode } from "./workspace-mode-tools.mjs";
+import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
 
 const executeFile = promisify(execFile);
 // Host addresses are direct child directory names. The workspace manifest
@@ -54,6 +55,7 @@ export async function startTspiHost(options) {
   // Monitor events are immutable files.  Keep a physical-file marker rather
   // than only the path so a malformed file can be repaired and reprocessed.
   const monitorFiles = new Map();
+  const workspaceInitializer = create_workspace_initializer();
   let monitorSequence = 0;
   let closed = false;
   let polling = false;
@@ -75,7 +77,10 @@ export async function startTspiHost(options) {
         if (manifest.schema_version !== "research_agent_workspace_1"
           || typeof manifest.workspace_id !== "string"
           || !manifest.workspace_id
-          || !["light", "research"].includes(manifest.workspace_mode)) {
+          || !["light", "research"].includes(manifest.workspace_mode)
+          || manifest.state !== "ready"
+          || manifest.workspace_id !== workspaceId
+          || manifest.workspace_root !== path) {
           throw protocolError("invalid_workspace", "Unsupported workspace manifest");
         }
       }
@@ -254,8 +259,19 @@ export async function startTspiHost(options) {
     if (method === "workspace/create") {
       const root = await workspace(params.workspace_id, { allowMissing: true });
       return deduplicate(method, params.request_id, cleanRequest(params), async () => {
-        await executeFile(python, [join(packageRoot, "scripts", "ts_workspace.py"), "bootstrap", "--root", root], { env: { ...process.env, PYTHONNOUSERSITE: "1" }, timeout: 60_000, maxBuffer: 8 * 1024 * 1024 });
-        return { workspace: { workspace_id: params.workspace_id, name: params.workspace_id, root } };
+        const requestedMode = params.workspace_mode === undefined ? "light" : params.workspace_mode;
+        if (!["light", "research"].includes(requestedMode)) {
+          throw protocolError("invalid_workspace_mode", "workspace_mode must be light or research");
+        }
+        const initialized = await workspaceInitializer.initialize_workspace({
+          workspace_root: root,
+          workspace_id: params.workspace_id,
+          workspace_mode: requestedMode,
+        });
+        const manifest = requestedMode === "research"
+          ? await workspaceInitializer.admit_workspace(root)
+          : initialized;
+        return { workspace: { workspace_id: manifest.workspace_id, name: manifest.workspace_id, root, workspace_mode: manifest.workspace_mode, state: manifest.state } };
       });
     }
     if (method === "session/list") return { sessions: (await listSessions(params.workspace_id)).map((session) => stripSessionClient(session)) };
@@ -602,6 +618,7 @@ async function monitorWorkspaceIdentity(project) {
     if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)
       || manifest.schema_version !== "research_agent_workspace_1"
       || manifest.workspace_mode !== "research"
+      || manifest.state !== "ready"
       || typeof manifest.workspace_id !== "string"
       || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(manifest.workspace_id)) return null;
     const canonical = manifest.workspace_id;

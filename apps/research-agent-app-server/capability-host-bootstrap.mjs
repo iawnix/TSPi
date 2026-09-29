@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { lstat, readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { discoverInstalledExtensions } from "../../apps/app-server/extension-manifest-loader.mjs";
@@ -44,7 +44,33 @@ function object(value, field) {
 
 function config_path(value) {
   if (typeof value !== "string" || value.length === 0) return null;
-  return resolve(value);
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("/")) {
+    fail("invalid_capability_config", "capability and compute config paths must be absolute");
+  }
+  return resolve(trimmed);
+}
+
+/**
+ * Resolve the installation-owned compute profile the same way as the Python
+ * launcher.  App Server workers inherit the environment in normal service
+ * startup, but direct worker/server launches do not necessarily run the
+ * launcher validation step first.  Keeping this fallback here makes the
+ * config chain deterministic without allowing a relative or arbitrary path.
+ */
+async function default_compute_config_path(explicit) {
+  const selected = config_path(explicit || process.env.TS_COMPUTE_CONFIG);
+  if (selected) return selected;
+  const install_root = config_path(process.env.TSPI_INSTALL_ROOT);
+  if (!install_root) return null;
+  const candidate = join(install_root, ".pi", "compute.toml");
+  try {
+    const info = await lstat(candidate);
+    if (!info.isFile() || info.isSymbolicLink()) return null;
+    return candidate;
+  } catch {
+    return null;
+  }
 }
 
 async function read_config(path) {
@@ -137,7 +163,7 @@ export async function create_configured_capability_host({
   const path = config_path(configured_path);
   const config = await read_config(path);
   if (config === null) {
-    const computePath = config_path(compute_config_path || process.env.TS_COMPUTE_CONFIG);
+    const computePath = await default_compute_config_path(compute_config_path);
     if (!computePath) return null;
     return create_compute_config_capability_host({
       config_path: computePath,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -112,6 +112,40 @@ test("compute.toml fallback assembles light xTB and Gaussian capabilities", asyn
   }
 });
 
+test("compute.toml is inherited from TSPI_INSTALL_ROOT when worker env omits TS_COMPUTE_CONFIG", async () => {
+  const root = await temporary_root();
+  const previousInstall = process.env.TSPI_INSTALL_ROOT;
+  const previousCompute = process.env.TS_COMPUTE_CONFIG;
+  try {
+    const installRoot = join(root, "install");
+    const configDir = join(installRoot, ".pi");
+    await mkdir(configDir, { recursive: true, mode: 0o700 });
+    const computePath = join(configDir, "compute.toml");
+    await writeFile(computePath, [
+      'default_environment = "local"',
+      "[environments.local]",
+      'kind = "local"',
+      "[environments.local.backends.xtb]",
+      'command = "/bin/true"',
+      "",
+    ].join("\n"), "utf8");
+    process.env.TSPI_INSTALL_ROOT = installRoot;
+    delete process.env.TS_COMPUTE_CONFIG;
+    const host = await create_configured_capability_host({
+      package_root: resolve("."),
+      artifact_root: join(root, "artifacts"),
+    });
+    assert.equal(host.source, "compute.toml");
+    assert.ok(host.tool_gateway.describe({ workspace_mode: "light" }).some((item) => item.capability_id === "xtb.sp"));
+  } finally {
+    if (previousInstall === undefined) delete process.env.TSPI_INSTALL_ROOT;
+    else process.env.TSPI_INSTALL_ROOT = previousInstall;
+    if (previousCompute === undefined) delete process.env.TS_COMPUTE_CONFIG;
+    else process.env.TS_COMPUTE_CONFIG = previousCompute;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("compute.toml keeps local and remote environments separate from capability identity", async () => {
   const root = await temporary_root();
   try {
@@ -183,7 +217,7 @@ test("remote-only compute configuration still registers a transport-neutral capa
       .some((item) => item.capability_id === "xtb.sp"));
     const readiness = await host.capability_assembly.readiness({ capability_id: "xtb.sp" });
     assert.equal(readiness[0].environment_id, "agent.1w");
-    assert.equal(readiness[0].readiness.state, "configured");
+    assert.equal(readiness[0].readiness.state, "unknown");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -223,7 +257,7 @@ test("remote environment readiness accepts the SSH host alias and preserves the 
     });
     assert.equal(readiness[0].environment_id, "cluster_1w");
     assert.equal(readiness[0].environment_kind, "compute");
-    assert.equal(readiness[0].readiness.state, "configured");
+    assert.equal(readiness[0].readiness.state, "unknown");
     assert.equal(readiness[0].readiness.checks.some((check) => check.name === "remote_transport" && check.state === "deferred"), true);
     const unavailable = await host.capability_assembly.readiness({
       capability_id: "xtb.sp",

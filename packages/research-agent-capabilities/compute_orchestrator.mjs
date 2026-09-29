@@ -52,6 +52,38 @@ function string_list(value, field) {
 }
 
 /**
+ * Remote execution is owned by the Native compute lifecycle.  The App Server
+ * capability orchestrator only invokes providers bound to the local Host
+ * process, so accepting a remote selector here would create a misleading
+ * light/research ledger entry before the request fails in a provider.
+ */
+function remote_selector(value) {
+  if (value?.execution_kind === "remote") return value.execution_kind;
+  for (const field of ["environment", "execution_environment", "execution_target", "executionTarget"]) {
+    const selected = value?.[field];
+    if (selected && typeof selected === "object" && !Array.isArray(selected)
+      && (selected.kind === "remote" || selected.execution_kind === "remote")) {
+      return selected;
+    }
+  }
+  return null;
+}
+
+function reject_remote_selector(value) {
+  const selected = remote_selector(value);
+  if (!selected) return;
+  throw new ComputeOrchestratorError(
+    "remote_execution_requires_native_lifecycle",
+    "Remote compute must use Native compute_run operation=launch with executionTarget",
+    {
+      route: "native_compute_lifecycle",
+      operation: "launch",
+      ...(typeof selected === "object" ? { execution_target: structuredClone(selected) } : {}),
+    },
+  );
+}
+
+/**
  * Bind light-run artifact references to the provider input contract.
  *
  * `input_artifact_ids` is provenance at the orchestrator boundary, whereas
@@ -374,6 +406,10 @@ export function create_compute_orchestrator({
   async function run_internal(request = {}) {
     if (closed) throw new ComputeOrchestratorError("compute_orchestrator_closed", "compute orchestrator is closed");
     const value = require_object(request, "run request");
+    // A remote request must never enter the mode-neutral provider path.  Keep
+    // this before mode, capability, input, or ledger validation so no local
+    // execution record can be created for the wrong protocol route.
+    reject_remote_selector(value);
     // App Server always injects workspace_mode. The research fallback keeps
     // this low-level port usable by existing Host adapters that already bind
     // a node to a Research Kernel before invoking it; it is never exposed as

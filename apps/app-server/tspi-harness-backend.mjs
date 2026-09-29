@@ -37,7 +37,7 @@ export async function createTspiHarnessBackend(options = {}) {
   process.env.TSPI_PACKAGE_ROOT = packageRoot;
   process.env.PI_SESSION_WORKER_ENTRY = workerEntry;
   process.env.TSPI_WORKSPACE_ROOT = workspaceRoot;
-  process.env.TSPI_WORKSPACE_BOOTSTRAP = join(packageRoot, "scripts/ts_workspace.py");
+  process.env.TSPI_WORKSPACE_MODE_INITIALIZER = join(packageRoot, "scripts/ts_workspace_mode.py");
   process.env.TSPI_WORKSPACE_PYTHON = process.env.TS_AGENT_PYTHON || process.env.TSPI_WORKSPACE_PYTHON || "python3";
   process.env.TSPI_NATIVE_WRITES = "1";
   await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts")).href);
