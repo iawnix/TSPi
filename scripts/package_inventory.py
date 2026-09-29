@@ -222,6 +222,7 @@ PACKAGE_FILES = [
     "config/pi-workspace-session-list.patch",
     "config/pi-research-workspace.patch",
     "config/pi-workspace-mode.patch",
+    "config/pi-research-agent-workspace.patch",
     "config/pi-system-prompt.patch",
     "config/pi-source-resolver.patch",
     "config/pi-model-data.patch",

@@ -1,0 +1,82 @@
+diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-agent/src/experimental/server.ts
+--- a/packages/coding-agent/src/experimental/server.ts
++++ b/packages/coding-agent/src/experimental/server.ts
+@@ -430,6 +430,54 @@
+ 	}
+ }
+ 
++const RESEARCH_WORKSPACE_DIRECTORIES = Object.freeze([
++	"inputs", "artifacts", "runs", "logs", "research_map", "memory", "lifecycle",
++	"checkpoints", "nodes", "evidence", "monitor", "environments",
++]);
++
++async function isSupportedResearchAgentWorkspace(root: string, manifest: unknown): Promise<boolean> {
++	if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) return false;
++	const value = manifest as Record<string, unknown>;
++	const kernel = value.research_kernel;
++	if (
++		value.schema_version !== WORKSPACE_MANIFEST_SCHEMA
++		|| value.workspace_mode !== "research"
++		|| value.state !== "ready"
++		|| typeof value.workspace_id !== "string"
++		|| !WORKSPACE_NAME.test(value.workspace_id)
++		|| value.workspace_root !== root
++		|| typeof value.created_at !== "string"
++		|| value.created_at.length === 0
++		|| !Array.isArray(value.directories)
++		|| !RESEARCH_WORKSPACE_DIRECTORIES.every((directory) => value.directories.includes(directory))
++		|| !kernel || typeof kernel !== "object" || Array.isArray(kernel)
++		|| (kernel as Record<string, unknown>).initialized !== true
++		|| (kernel as Record<string, unknown>).admission_required !== false
++		|| !Number.isInteger((kernel as Record<string, unknown>).revision)
++		|| ((kernel as Record<string, unknown>).revision as number) < 0
++	) return false;
++	try {
++		for (const directory of RESEARCH_WORKSPACE_DIRECTORIES) {
++			const info = await lstat(join(root, directory));
++			if (info.isSymbolicLink() || !info.isDirectory()) return false;
++		}
++		const context = JSON.parse(await readFile(join(root, "research_map/context.json"), "utf8"));
++		const liveness = JSON.parse(await readFile(join(root, "lifecycle/liveness.json"), "utf8"));
++		const revision = (kernel as Record<string, unknown>).revision;
++		return context?.schema_version === "research_map_context_1"
++			&& context?.workspace_id === value.workspace_id
++			&& context?.workspace_mode === "research"
++			&& context?.lifecycle_state === "admitted"
++			&& context?.revision === revision
++			&& liveness?.schema_version === "research_liveness_1"
++			&& liveness?.workspace_id === value.workspace_id
++			&& liveness?.state === "admitted"
++			&& liveness?.revision === revision;
++	} catch {
++		return false;
++	}
++}
++
+ function isSupportedImmutableIdentity(identity: unknown, workspaceId: string): boolean {
+ 	if (!identity || typeof identity !== "object" || Array.isArray(identity)) return false;
+ 	const value = identity as Record<string, unknown>;
+@@ -464,21 +512,8 @@
+ 		if (manifestInfo.isSymbolicLink() || !manifestInfo.isFile()) return false;
+ 		const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+ 		if (manifest?.workspace_mode === "light") return await isSupportedLightWorkspace(root, manifest);
+-	} catch (error) {
+-		if (error?.code !== "ENOENT") return false;
+-	}
+-	try {
+-		const identity = JSON.parse(await readFile(join(root, "workspace.json"), "utf8"));
+-		if (!isSupportedWorkspaceIdentity(identity)) return false;
+-		const immutableIdentity = JSON.parse(await readFile(join(root, ".agents/workspace-identity.json"), "utf8"));
+-		if (!isSupportedImmutableIdentity(immutableIdentity, (identity as Record<string, unknown>).workspace_id as string)) return false;
+-		const researchMap = JSON.parse(await readFile(join(root, "research_map.json"), "utf8"));
+-		if (!isSupportedResearchMap(researchMap)) return false;
+-		for (const [name, kind] of WORKSPACE_FILE_MARKERS) {
+-			const info = await lstat(join(root, name));
+-			if (info.isSymbolicLink() || (kind === "file" ? !info.isFile() : !info.isDirectory())) return false;
+-		}
+-		return true;
++		if (manifest?.workspace_mode === "research") return await isSupportedResearchAgentWorkspace(root, manifest);
++		return false;
+ 	} catch {
+ 		return false;
+ 	}

@@ -35,6 +35,9 @@ def test_pi_source_pin_is_explicit_and_valid() -> None:
     workspace_mode_patch = (ROOT / "config" / "pi-workspace-mode.patch").read_text(encoding="utf-8")
     assert "isSupportedLightWorkspace" in workspace_mode_patch
     assert "research_agent_workspace_1" in workspace_mode_patch
+    research_agent_workspace_patch = (ROOT / "config" / "pi-research-agent-workspace.patch").read_text(encoding="utf-8")
+    assert "isSupportedResearchAgentWorkspace" in research_agent_workspace_patch
+    assert "research_map_context_1" in research_agent_workspace_patch
     resolver_patch = (ROOT / "config" / "pi-source-resolver.patch").read_text(encoding="utf-8")
     assert "source-resolver.ts" in resolver_patch
     assert "resolveTypeboxPath" in resolver_patch
@@ -178,6 +181,21 @@ def test_workspace_mode_patch_upgrades_an_existing_research_checkout(tmp_path, m
         "apply",
         str(prepare_pi_source.WORKSPACE_MODE_PATCH_PATH),
     ]]
+
+
+def test_research_agent_workspace_patch_is_idempotent_for_an_upgraded_checkout(tmp_path, monkeypatch):
+    from scripts import prepare_pi_source
+
+    source = tmp_path / "pi"
+    server = source / "packages/coding-agent/src/experimental/server.ts"
+    server.parent.mkdir(parents=True)
+    server.write_text("isSupportedResearchAgentWorkspace\nRESEARCH_WORKSPACE_DIRECTORIES\n", encoding="utf-8")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(prepare_pi_source.subprocess, "run", lambda command, **_kwargs: calls.append(command))
+
+    prepare_pi_source.apply_research_agent_workspace_patch(source)
+
+    assert calls == []
 
 
 def test_workspace_session_list_patch_is_idempotent(tmp_path, monkeypatch):
