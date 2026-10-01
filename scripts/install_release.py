@@ -56,6 +56,7 @@ RETIRED_NOTIFICATION_STATE = (
     "ts-email-delivery-policy.json",
     "ts-email-delivery-authorization.json",
 )
+SESSION_GUARD_CONTRACT = "tspi-session-guard/1"
 
 
 class ReleaseInstallError(RuntimeError):
@@ -138,6 +139,7 @@ def install_release(manifest_path: Path, archive_path: Path | None, install_root
     installed_manifest = json.loads((target / ".ts-agent-release.json").read_text(encoding="utf-8"))
     state = {
         "schema_version": INSTALL_SCHEMA_VERSION,
+        "session_guard_contract": SESSION_GUARD_CONTRACT,
         "current_release_id": manifest["release_id"],
         "package_root": str(target),
         "manifest_sha256": hashlib.sha256(canonical_json(installed_manifest)).hexdigest(),

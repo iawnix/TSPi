@@ -329,6 +329,13 @@ def test_host_command_owns_installation_state_and_workspace_root(
     assert state_root.is_dir()
 
 
+def test_service_host_does_not_require_a_workspace_mode() -> None:
+    request = launcher.parse_launch_request(["--service-host"])
+
+    assert request.host is True
+    assert request.workspace_mode == "research"
+
+
 def test_launcher_usage_keeps_internal_transport_modes_out_of_daily_help() -> None:
     assert "ResearchAgent --workspace <name>" in launcher.USAGE
     assert "ts-app-server-tspi.service" in launcher.USAGE

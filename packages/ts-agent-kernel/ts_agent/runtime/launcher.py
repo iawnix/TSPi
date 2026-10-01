@@ -1587,8 +1587,6 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         raise TSPiHostError("--host and --gateway cannot be combined", exit_code=2)
     if request.host and (request.workspace_name or request.session_id or request.continue_latest):
         raise TSPiHostError("--host does not accept workspace or session selection", exit_code=2)
-    if request.host and request.workspace_mode:
-        raise TSPiHostError("--mode requires a workspace client", exit_code=2)
     if request.check_remote and (request.workspace_name or request.session_id or request.continue_latest):
         raise TSPiHostError("--check-remote does not accept workspace or session selection", exit_code=2)
     if request.check_remote and request.workspace_mode:

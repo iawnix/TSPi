@@ -27,6 +27,9 @@ class SessionGuardError(RuntimeError):
 def installation_is_guarded(installation: Path) -> bool:
     path = installation / ".pi" / "packages" / "tspi" / "install-state.json"
     if not path.exists() and not path.is_symlink():
+        direct_path = installation / ".pi" / "packages" / "ts-agent" / "install-state.json"
+        if direct_path.exists() or direct_path.is_symlink():
+            return _direct_installation_is_guarded(installation, direct_path)
         return _standalone_installation_is_guarded(installation)
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -51,6 +54,51 @@ def installation_is_guarded(installation: Path) -> bool:
             raise SessionGuardError("installation guard state does not match this installation")
         return True
     except (OSError, ValueError) as exc:
+        raise SessionGuardError("invalid installation guard state") from exc
+
+
+def _direct_installation_is_guarded(installation: Path, path: Path) -> bool:
+    """Validate the release state written by the standalone release installer."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise SessionGuardError("cannot read installation guard state") from exc
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                    or info.st_mode & 0o077 or info.st_nlink != 1 or info.st_size > HEADER_LIMIT):
+                raise SessionGuardError("installation guard state is not an owner-only regular file")
+            value = json.loads(handle.read(HEADER_LIMIT + 1))
+        if not isinstance(value, dict) or value.get("session_guard_contract") != CONTRACT:
+            return False
+        release_id = value.get("current_release_id")
+        package_root = value.get("package_root")
+        release_store = installation.resolve() / ".pi/packages/ts-agent/releases"
+        expected_root = release_store / release_id if isinstance(release_id, str) else None
+        current = installation / ".pi/packages/ts-agent/current"
+        if (value.get("schema_version") != "ts-agent-install/1"
+                or not isinstance(package_root, str)
+                or expected_root is None
+                or Path(package_root).expanduser() != expected_root
+                or not current.is_symlink()
+                or current.resolve(strict=True) != expected_root
+                or not expected_root.is_dir()):
+            raise SessionGuardError("installation guard state does not match this installation")
+        manifest_path = expected_root / ".ts-agent-release.json"
+        with manifest_path.open("rb") as manifest_handle:
+            manifest = json.loads(manifest_handle.read(HEADER_LIMIT + 1))
+        package = manifest.get("package") if isinstance(manifest, dict) else None
+        return (
+            isinstance(manifest, dict)
+            and manifest.get("schema_version") in {"ts-agent-release/1", "ts-agent-release/2"}
+            and manifest.get("release_id") == release_id
+            and isinstance(package, dict)
+            and package.get("name") == "@iawnix/ts-agent"
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise SessionGuardError("invalid installation guard state") from exc
 
 

@@ -55,6 +55,34 @@ def _standalone_install(root: Path) -> Path:
     return release
 
 
+def _direct_install(root: Path) -> Path:
+    package_home = root / ".pi/packages/ts-agent"
+    release = package_home / "releases/release-1"
+    release.mkdir(parents=True)
+    (release / ".ts-agent-release.json").write_text(
+        json.dumps({
+            "schema_version": "ts-agent-release/2",
+            "release_id": "release-1",
+            "package": {"name": "@iawnix/ts-agent", "version": "0.17.0"},
+        }) + "\n",
+        encoding="utf-8",
+    )
+    (release / ".ts-agent-release.json").chmod(0o600)
+    (package_home / "current").symlink_to("releases/release-1")
+    state = package_home / "install-state.json"
+    state.write_text(
+        json.dumps({
+            "schema_version": "ts-agent-install/1",
+            "session_guard_contract": session_guard.CONTRACT,
+            "current_release_id": "release-1",
+            "package_root": str(release),
+        }) + "\n",
+        encoding="utf-8",
+    )
+    state.chmod(0o600)
+    return release
+
+
 def test_guarded_installation_requires_private_bound_state(tmp_path: Path) -> None:
     state = _install_state(tmp_path)
     assert installation_is_guarded(tmp_path)
@@ -67,6 +95,12 @@ def test_guarded_installation_requires_private_bound_state(tmp_path: Path) -> No
 
 def test_standalone_installation_is_guarded_by_active_release(tmp_path: Path) -> None:
     _standalone_install(tmp_path)
+    assert installation_is_guarded(tmp_path)
+    require_guarded_installation(tmp_path)
+
+
+def test_direct_release_installation_is_guarded_by_selected_package(tmp_path: Path) -> None:
+    _direct_install(tmp_path)
     assert installation_is_guarded(tmp_path)
     require_guarded_installation(tmp_path)
 
