@@ -104,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
             captured.verify()
             digest = sha256_file(packed_path)
             size_bytes = packed_path.stat().st_size
-            release_id = f"{package_version}-sha256-{digest[:16]}"
+            release_id = f"{package_version}-sha256-{digest[:16]}-{captured.git_commit[:12]}"
             archive_name = f"ts-agent-{release_id}.tgz"
             archive_path = output_dir / archive_name
             if archive_path.exists():
