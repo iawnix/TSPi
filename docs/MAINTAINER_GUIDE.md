@@ -3,7 +3,9 @@
 TSPi is a Pi package with an installation Host and a native Pi client launcher.
 Keep the package boundaries explicit: the Pi Harness worker owns sessions and
 turns, Host owns routing and receipts, the Python kernel owns scientific state,
-and optional TS Web only reads workspaces.
+and optional TS Web only reads workspaces. The Node side exposes only the
+Kernel transport bridge and port; it has no alternate filesystem Kernel
+implementation.
 
 ## Development Setup
 

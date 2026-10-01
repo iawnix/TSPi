@@ -139,7 +139,6 @@ function requireAct(root, value) {
   const nodeId = requireString(value, "nodeId", 128);
   if (!NODE_ID.test(nodeId)) throw new Error("nodeId must be a ResearchNode ID");
   const map = readResearchMap(root);
-  if (!map) throw new Error("ResearchMap does not exist");
   const matches = Array.isArray(map.nodes)
     ? map.nodes.filter((item) => isPlainObject(item) && item.id === nodeId)
     : [];
@@ -155,7 +154,6 @@ function requireWorkspaceRoot(value) {
     throw new Error("artifact tools require a ResearchMap workspace");
   }
   const map = readResearchMap(root);
-  if (!map) throw new Error("artifact tools require a ResearchMap");
   return root;
 }
 

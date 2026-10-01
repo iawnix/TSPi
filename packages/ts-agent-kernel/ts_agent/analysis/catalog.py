@@ -78,6 +78,7 @@ DESCRIPTORS = (
             ]),
         limitations=[
             "Automatic lookup requires an installation-owned name-resolver.toml with an enabled deterministic backend.",
+            "The selected backend must recognize the submitted name exactly; language translation and alias guessing are unsupported.",
             "A candidate is not a 3D product structure, reaction mapping, or mechanistic conclusion.",
         ]),
     descriptor("reaction.parse", "Parse explicit molecular reaction identities, stoichiometry and electronic states.", [],

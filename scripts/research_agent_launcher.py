@@ -44,8 +44,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, help="HTTP listen port override.")
     parser.add_argument("--catalog-root", help="Workspace catalog root override.")
     parser.add_argument("--session-root", help="Durable session root override.")
-    parser.add_argument("--artifact-root", help="Artifact store root override.")
-    parser.add_argument("--capability-config", help="Capability Host JSON configuration override.")
     parser.add_argument("--runtime-options", help="Opaque runtime options passed to create_runtime().")
     parser.add_argument("--kernel-options", help="Opaque kernel options passed to create_kernel().")
     parser.add_argument(
@@ -156,8 +154,6 @@ def _build_environment(args: argparse.Namespace, config: dict[str, object], pack
         ("port", "TSP_APP_SERVER_PORT"),
         ("catalog_root", "RESEARCH_AGENT_CATALOG_ROOT"),
         ("session_root", "RESEARCH_AGENT_SESSION_ROOT"),
-        ("artifact_root", "RESEARCH_AGENT_ARTIFACT_ROOT"),
-        ("capability_config", "RESEARCH_AGENT_CAPABILITY_CONFIG"),
         ("runtime_options", "RESEARCH_AGENT_RUNTIME_OPTIONS"),
         ("kernel_options", "RESEARCH_AGENT_KERNEL_OPTIONS"),
     )
@@ -184,8 +180,6 @@ def _config_from_args(args: argparse.Namespace) -> dict[str, object]:
         "port",
         "catalog_root",
         "session_root",
-        "artifact_root",
-        "capability_config",
         "runtime_options",
         "kernel_options",
     ):

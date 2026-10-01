@@ -51,7 +51,6 @@ Public semantic tool names are the only Agent API:
 `research_read`, `research_change`, `research_strategy`,
 `research_interpretation`, `research_checkpoint`, `research_continuation`,
 `compute_environment`, `compute_catalog`, `compute_readiness`, `compute_run`,
-`light_compute` (light-workspace-only bounded geometry/provider helper),
 `analysis_run`, and the artifact/review tools listed in
 [pi_agent_adapter.md](pi_agent_adapter.md). Private `ts_*` factory names and
 slash commands are transport details and are not alternate protocols.
@@ -77,7 +76,7 @@ checkpoint through the normal public tools.
 
 ## Compute Plane
 
-Capability identity and execution environment are independent. Compute
+Capability identity and execution environment are independent. Native Compute
 descriptors use `capability_id` and `capability_version`; the analysis catalog
 uses `capability` and `version`, and `analysis_run` requests use
 `capability` plus `capability_version`. These are two explicit catalog
@@ -86,10 +85,7 @@ of registered capabilities. `compute_run` is the calculation entry point for
 both targets and uses `launch`, `inspect`, `finalize`, or `cancel`;
 `analysis_run` is deterministic local analysis and has no scheduler lifecycle.
 Remote execution must use Native `compute_run` with
-`executionTarget.kind="remote"` and a configured environment. The generic
-mode-neutral capability invocation cannot create a remote scheduler intent.
-The `tool_gateway_1` request uses `capability_id`, optional
-`capability_version` (default `"1"`), `workspace_mode`, and `input`; it does
-not accept `tool_name`, top-level `version`, or `params` aliases. Those fields
-are rejected so a capability descriptor cannot silently drift from the
-invocation contract.
+`executionTarget.kind="remote"` and a configured environment. There is no
+generic capability invocation path: all descriptors come from the Python
+Native registry, and the lifecycle schema is the only public calculation
+request. The retired `capability_id` plus `input` form is rejected.

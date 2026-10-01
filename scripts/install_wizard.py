@@ -81,6 +81,7 @@ SERVICE_CONFIG_RELATIVE = Path(".pi/tspi/service.json")
 PI_AGENT_CONFIG_FILES = ("models.json", "auth.json")
 PI_AGENT_CONFIG_MAX_BYTES = 2 * 1024 * 1024
 DEFAULT_SERVICE_SCOPE = "user"
+DEFAULT_NAME_RESOLVER_CONFIG = ROOT / "config" / "name-resolver.example.toml"
 
 
 def detect_conda_root() -> str:
@@ -305,7 +306,7 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
         args.compute_config or "",
     ).strip() or None
     args.name_resolver_config = ask(
-        "Chemical name resolver TOML path (blank preserves existing configuration)",
+        "Chemical name resolver TOML path (blank uses the bundled PubChem default for a new install)",
         args.name_resolver_config or "",
     ).strip() or None
     section("Phone connection")
@@ -561,7 +562,7 @@ def interactive_menu_options(args: argparse.Namespace) -> argparse.Namespace:
                 args.compute_config or "",
             ).strip() or None
             args.name_resolver_config = ask(
-                "Chemical name resolver TOML path (blank preserves existing configuration)",
+                "Chemical name resolver TOML path (blank uses the bundled PubChem default for a new install)",
                 args.name_resolver_config or "",
             ).strip() or None
         elif choice == "4":
@@ -687,7 +688,7 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Compute backend config", args.compute_config or "preserve <install>/.pi/compute.toml if present", tone="muted")
     field(
         "Chemical name resolver config",
-        args.name_resolver_config or "preserve <install>/.pi/name-resolver.toml if present",
+        args.name_resolver_config or "bundled PubChem default for a new install; preserve existing otherwise",
         tone="muted",
     )
     field("Remote readiness", "probe during installation" if args.probe_remote else "not probed", tone="success" if args.probe_remote else "muted")
@@ -1516,12 +1517,26 @@ def configure_backend_configs(args: argparse.Namespace) -> dict[str, dict[str, s
             **_name_resolver_details(resolver_destination),
         }
     else:
-        result["name_resolver"] = {
-            "status": "not_configured",
-            "path": str(resolver_destination),
-            "enabled_backends": "",
-            "automatic_lookup": "unavailable",
-        }
+        # Name resolution is a registered deterministic capability. A fresh
+        # installation must therefore have a usable backend; otherwise every
+        # automatic `chemical.name.resolve` call can only return
+        # unsupported/unresolved until the user discovers a private config
+        # file that the installer never created. The bundled TOML contains no
+        # credentials and remains replaceable with --name-resolver-config.
+        if DEFAULT_NAME_RESOLVER_CONFIG.is_file():
+            result["name_resolver"] = _copy_private_config(
+                str(DEFAULT_NAME_RESOLVER_CONFIG),
+                resolver_destination,
+                kind="name-resolver",
+            )
+            result["name_resolver"].update(_name_resolver_details(resolver_destination))
+        else:
+            result["name_resolver"] = {
+                "status": "not_configured",
+                "path": str(resolver_destination),
+                "enabled_backends": "",
+                "automatic_lookup": "unavailable",
+            }
     return result
 
 

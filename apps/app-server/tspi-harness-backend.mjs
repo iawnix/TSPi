@@ -1090,7 +1090,7 @@ function readWorkspaceManifestSync(root) {
     const manifest = JSON.parse(readFileSync(join(physical, "workspace_manifest.json"), "utf8"));
     if (manifest?.schema_version !== "research_agent_workspace_1"
       || !WORKSPACE_ID.test(manifest.workspace_id)
-      || !["light", "research"].includes(manifest.workspace_mode)
+      || manifest.workspace_mode !== "research"
       || manifest.state !== "ready"
       || resolve(manifest.workspace_root) !== physical) return null;
     return manifest;

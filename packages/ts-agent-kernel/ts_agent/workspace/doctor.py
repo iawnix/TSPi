@@ -178,8 +178,8 @@ def _validate_manifest_context(
             _finding(findings, "error", "invalid_kernel_revision", "research manifest must contain a non-negative kernel revision", "workspace_manifest.json")
         if context is None:
             _finding(findings, "error", "research_context_missing", "research workspace is missing research_map/context.json", "research_map/context.json")
-    elif mode == "light" and context is not None:
-        _finding(findings, "error", "light_context_present", "light workspace must not contain ResearchMap context", "research_map/context.json")
+    elif mode != "research":
+        _finding(findings, "error", "research_workspace_required", "workspace must use the Research workspace contract", "workspace_manifest.json")
     if context is not None:
         if context.get("schema_version") != "research_map_context_1":
             _finding(findings, "error", "unsupported_research_context", "ResearchMap context schema is unsupported", "research_map/context.json")

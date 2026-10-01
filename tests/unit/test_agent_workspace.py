@@ -136,6 +136,25 @@ def test_started_attempt_projects_waiting_external_liveness(tmp_path: Path) -> N
     assert read_liveness(tmp_path)["lifecycle"] == "decision_needed"
 
 
+def test_active_strategy_marks_focused_scope_executable_before_checkpoint(tmp_path: Path) -> None:
+    _workspace(tmp_path)
+    admit_workspace(tmp_path, {"authority": "host"})
+    apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 0, "operations": [
+        {"type": "create_claim", "id": "claim_1", "statement": "Bounded hypothesis"},
+        {"type": "create_node", "id": "node_1", "title": "Resolve inputs", "objective": "Resolve names", "claim_ids": ["claim_1"]},
+        {"type": "set_focus", "claim_ids": ["claim_1"], "node_ids": ["node_1"]},
+    ]})
+    assert read_liveness(tmp_path)["execution_ready"] is False
+    apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 1, "operations": [
+        {"type": "create_strategy_plan", "id": "strategy_1", "claim_id": "claim_1", "node_id": "node_1",
+         "objective": "Resolve names", "rationale": "Identity must be deterministic", "status": "active"},
+    ]})
+    liveness = read_liveness(tmp_path)
+    assert liveness["lifecycle"] == "decision_needed"
+    assert liveness["execution_ready"] is True
+    assert liveness["decision_needed"][0]["target_id"] == "node_1"
+
+
 def test_new_workspace_requires_an_explicit_research_mode(tmp_path: Path) -> None:
     _workspace(tmp_path)
     context_path = tmp_path / "research_map" / "context.json"

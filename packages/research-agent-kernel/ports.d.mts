@@ -10,6 +10,7 @@ export interface ResearchKernelPort {
   apply_change(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   checkpoint(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   turn(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  close?(): Promise<void>;
 }
 
 export function create_research_kernel_port(implementation: Omit<ResearchKernelPort, "protocol_version">): ResearchKernelPort;

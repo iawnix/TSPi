@@ -43,9 +43,10 @@ Attempt interpretation，然后使用 `research_checkpoint` 写入明确 disposi
 `continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
 `user_input_required`。`research_continuation` 是辅助的 required-action ledger，不是 turn
 边界。解析完成或运行记录完成本身不能关闭科学问题。`decision_needed` 要求 Root Agent 继续并记录
-checkpoint；`continue_required` 是合法的下一轮计划，不能由 Harness 在本轮强制执行。Harness 的
-follow-up 只用于修复缺少 disposition 的边界，不能替 Root 选择方法。Monitor 的 `next_run` 只是
-运行时唤醒。
+checkpoint；如果 liveness 同时返回 `execution_ready=true`，说明 focus 已有 active StrategyPlan，
+Root Agent 可以在该 checkpoint 前执行已声明的计划，但 Host 仍要求 turn 结束前写入 checkpoint。
+`continue_required` 是合法的下一轮计划，不能由 Harness 在本轮强制执行。Harness 的 follow-up 只用于
+修复缺少 disposition 的边界，不能替 Root 选择方法。Monitor 的 `next_run` 只是运行时唤醒。
 
 ## Review
 
@@ -56,4 +57,4 @@ Review 是隔离的建议性评估，不能写入 map。只向 Review 提供所�
 `analysis_run` 是独立的已注册确定性分析边界。它要求目录中的精确 capability/version、已存在且
 未关闭的 Node，以及 role 到已登记 Artifact ID 数组的映射。它不会选择执行环境、创建 Claim/Finding，
 也不会运行调度器生命周期；需要审计的 local/remote 计算使用 `compute_run`。
-`light_compute` 仅用于 light workspace 的有界 geometry/provider 运行。
+light workspace 也使用同一套 Native `compute_run` 生命周期。

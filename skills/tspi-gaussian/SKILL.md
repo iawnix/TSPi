@@ -1,6 +1,6 @@
 ---
 name: tspi-gaussian
-description: Prepare, run, and inspect registered Gaussian single-point, optimization, frequency, scan, transition-state, and IRC calculations, plus QST input guidance.
+description: Prepare, run, and inspect Gaussian calculations from registered input files, including single-point, optimization, frequency, scan, transition-state, IRC, and QST workflows.
 ---
 
 # TSPi Gaussian
@@ -12,18 +12,18 @@ and output checks. Method choice belongs to `tspi-method-selection`; scientific
 TS assessment belongs to `tspi-ts-validation`, and path meaning belongs to
 `tspi-irc`.
 
-Bind each `.gjf` input as a Node-owned Artifact. Preserve route, method, basis,
+Bind each `.gjf` input as a ResearchNode Artifact. Preserve route, method, basis,
 charge, multiplicity, solvent, resources, task, and relevant keywords in the
 immutable intent. Check that the output matches that intent, select the correct
 job section, and assess termination, SCF behavior, optimization convergence,
 frequency evidence, geometry, electronic state, IRC data, thermochemistry, and
-scan profiles without conflating them. A Gaussian relaxed scan must use the
-registered `gaussian.scan@1` capability; do not submit an input containing
-`Scan` as `gaussian.sp`.
+scan profiles without conflating them. The Gaussian Route Section selects the
+calculation mode; submit every supported mode to the registered `gaussian@1`
+executor rather than registering `sp`, `freq`, `opt`, `irc`, or `scan` variants.
 
-QST2/QST3 is input construction and guidance in this release, not a registered
-execution capability. Submit only a catalog descriptor returned by
-`research_read mode=capabilities`; do not label a QST input as `gaussian.ts`.
+QST2/QST3 is expressed in the Gaussian Route Section and remains subject to
+the input and output validation rules. Skills do not register capabilities;
+the live Native catalog is authoritative for `gaussian@1`.
 
 Record parser output only after checking primary files. Normal termination is
 not task validation, and neither is a scientific verdict. Record SCF

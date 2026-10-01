@@ -81,7 +81,6 @@ from ts_agent.workspace.artifacts import WorkspaceArtifactError, workspace_node_
 from .artifacts import resolve_artifact_ref, resolve_input_artifacts, verify_input_bindings
 from ts_agent.workspace.candidates import CANDIDATE_FILE_NAME, build_finding_candidates
 from .capabilities import (
-    BACKEND_TASK_INPUT_ROLES,
     CapabilityDescriptor,
     CapabilityGapError,
     adapter_settings,
@@ -131,15 +130,41 @@ BACKEND_PREPARERS: dict[str, Callable[[BackendTask], PreparedTask]] = {
     "ase_neb": prepare_ase_neb,
     "pyscf": prepare_pyscf,
 }
-BACKENDS: dict[str, dict[str, tuple[set[str], Callable[[BackendTask], PreparedTask]]]] = {
-    backend: {
-        task_type: (set(input_roles), BACKEND_PREPARERS[backend])
-        for task_type, input_roles in tasks.items()
-    }
-    for backend, tasks in BACKEND_TASK_INPUT_ROLES.items()
-}
 OPERATIONS = {"prepare", "submit", "inspect", "collect", "cancel", "parse"}
 _CANONICAL_WORKSPACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
+
+
+def _gaussian_task_type(workspace: Path, intent: dict[str, Any]) -> str:
+    """Classify the requested Gaussian operation from the bound input route."""
+
+    ref = intent.get("input_refs", {}).get("gjf")
+    if not isinstance(ref, str):
+        raise ComputeContractError("Gaussian intent requires a gjf input")
+    try:
+        input_path = workspace / _workspace_ref(workspace, ref, read=True)
+        flags = route_settings(read_gjf_route(input_path))
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise ComputeContractError(f"cannot classify Gaussian Route Section: {exc}") from exc
+    if flags.get("has_irc"):
+        return "irc"
+    if flags.get("has_scan"):
+        return "scan"
+    try:
+        input_text = input_path.read_text(encoding="utf-8", errors="replace")
+    except (OSError, UnicodeError) as exc:
+        raise ComputeContractError(f"cannot read Gaussian input for route classification: {exc}") from exc
+    if flags.get("has_opt") and re.search(
+        r"(?im)^\s*[dabla]\s+(?:\d+\s+){2,4}s\s+\d+(?:\s|$)",
+        input_text,
+    ):
+        return "scan"
+    if flags.get("has_opt") and flags.get("has_freq"):
+        return "opt_freq"
+    if flags.get("has_opt"):
+        return "ts" if flags.get("has_ts") or flags.get("has_qst2") or flags.get("has_qst3") else "opt"
+    if flags.get("has_freq"):
+        return "freq"
+    return "sp"
 
 
 def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
@@ -186,11 +211,6 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
         scientific_digest=scientific_digest,
     )
     attempts_dir = workspace / "nodes" / node_id / "attempts"
-    if _is_light_execution_workspace(workspace):
-        # Light mode has no ResearchMap mutation boundary. Materialize an
-        # operational execution scope only after capability/input validation;
-        # remote staging remains independent from scientific Node state.
-        _ensure_light_execution_scope(workspace, node_id)
     _require_physical_compute_directory(workspace, workspace / "nodes" / node_id, "ResearchNode")
     _require_physical_compute_directory(workspace, attempts_dir, "calculation Attempt")
 
@@ -1271,6 +1291,7 @@ def parse_calculation(
         {"ref": ref, "sha256": _sha256_file(path)}
         for _, (ref, path) in sorted(parse_inputs.items())
     ]
+    gaussian_task = _gaussian_task_type(workspace, intent) if backend == "gaussian" else None
     xtb_control: Path | None = None
     if backend == "xtb" and intent.get("task_type") == "scan":
         control_ref = _workspace_ref(workspace, str(intent["input_refs"]["control"]), read=True)
@@ -1303,8 +1324,8 @@ def parse_calculation(
                 "parse refuses to overwrite a result from different source content; use a new intent_id"
             )
 
-    is_irc = backend == "gaussian" and intent.get("task_type") == "irc"
-    is_scan = backend == "gaussian" and intent.get("task_type") == "scan"
+    is_irc = backend == "gaussian" and gaussian_task == "irc"
+    is_scan = backend == "gaussian" and gaussian_task == "scan"
     if backend == "gaussian":
         expected_route = None
         gjf_ref = intent["input_refs"].get("gjf")
@@ -1356,7 +1377,11 @@ def parse_calculation(
     if len(descriptor.parsers) != 1:
         raise ComputeContractError(f"capability must bind exactly one parser: {intent['capability']}")
     parser_contract = descriptor.parsers[0]
-    task_validation = validate_parsed_task(backend, str(intent["task_type"]), summary)
+    task_validation = validate_parsed_task(
+        backend,
+        gaussian_task if backend == "gaussian" else str(intent["task_type"]),
+        summary,
+    )
     parsed_at = now_iso()
     try:
         if backend == "gaussian" and is_irc:
@@ -1482,10 +1507,19 @@ def _validate_backend_request(
     validate_content: bool = True,
 ) -> None:
     backend = str(intent["backend"])
-    task_type = str(intent["task_type"])
+    descriptor_task_type = str(intent["task_type"])
+    task_type = _gaussian_task_type(workspace, intent) if backend == "gaussian" else descriptor_task_type
     registration = resolve_capability_registration(
         str(intent["capability"]), str(intent["capability_version"])
     )
+    required_inputs = set(registration.descriptor.input_roles)
+    if set(inputs) != required_inputs:
+        missing = sorted(required_inputs - set(inputs))
+        unexpected = sorted(set(inputs) - required_inputs)
+        raise ComputeContractError(
+            f"{backend} input roles must be exactly {sorted(required_inputs)}; "
+            f"missing={missing}; unexpected={unexpected}"
+        )
     provider = registration.provider if registration.provider_id != "builtin" else None
     provider_validator = getattr(provider, "validate_inputs", None)
     if provider is not None and callable(provider_validator):
@@ -1498,39 +1532,17 @@ def _validate_backend_request(
                 f"{intent['capability']} provider rejected calculation inputs: {exc}"
             ) from exc
         return
-    tasks = BACKENDS.get(backend, {})
-    task = tasks.get(task_type)
-    if task is None:
-        provider = registration.provider
-        validator = getattr(provider, "validate_inputs", None)
-        if callable(validator):
-            # Providers own domain-specific content validation.  The kernel
-            # has already checked path safety and descriptor-declared roles.
-            try:
-                validator(workspace=workspace, intent=intent, inputs=dict(inputs))
-            except ComputeContractError:
-                raise
-            except Exception as exc:
-                raise ComputeContractError(
-                    f"{intent['capability']} provider rejected calculation inputs: {exc}"
-                ) from exc
-            return
-        prepare = getattr(provider, "prepare", None)
+    if registration.provider_id != "builtin" and not callable(provider_validator):
+        prepare = getattr(registration.provider, "prepare", None)
         if not callable(prepare):
-            prepare = getattr(provider, "prepare_task", None)
+            prepare = getattr(registration.provider, "prepare_task", None)
         if not callable(prepare):
             raise ComputeContractError(
                 f"capability provider adapter is unavailable for {intent['capability']}@{intent['capability_version']}"
             )
         return
-    required_inputs, _ = task
-    if set(inputs) != required_inputs:
-        missing = sorted(required_inputs - set(inputs))
-        unexpected = sorted(set(inputs) - required_inputs)
-        raise ComputeContractError(
-            f"{backend} input roles must be exactly {sorted(required_inputs)}; "
-            f"missing={missing}; unexpected={unexpected}"
-        )
+    if backend not in BACKEND_PREPARERS:
+        raise ComputeContractError(f"no built-in executor is exposed for backend: {backend}")
     if not validate_content:
         return
     if backend == "xtb" and task_type == "scan":
@@ -1558,7 +1570,7 @@ def _validate_backend_request(
     if gjf.suffix.lower() not in {".gjf", ".com"}:
         raise ComputeContractError("Gaussian input must use .gjf or .com")
     flags = route_settings(read_gjf_route(gjf))
-    if str(intent["task_type"]) == "scan" and not flags.get("has_scan"):
+    if task_type == "scan" and not flags.get("has_scan"):
         input_text = gjf.read_text(encoding="utf-8", errors="replace")
         modredundant_scan = re.search(
             r"(?im)^\s*[dabla]\s+(?:\d+\s+){2,4}s\s+\d+(?:\s|$)",
@@ -1576,10 +1588,10 @@ def _validate_backend_request(
         "irc": {"has_irc"},
         "scan": set(),
         "sp": set(),
-    }[str(intent["task_type"])]
-    missing = sorted(flag for flag in required_flags if not flags.get(flag))
+    }
+    missing = sorted(flag for flag in required_flags.get(task_type, set()) if not flags.get(flag))
     if missing:
-        raise ComputeContractError(f"Gaussian route does not match task_type {intent['task_type']}: missing {missing}")
+        raise ComputeContractError(f"Gaussian route does not satisfy the detected operation {task_type}: missing {missing}")
 
 
 def _materialize_execution_target(
@@ -1663,11 +1675,12 @@ def _raw_prepared_task(
     external_prepare = getattr(external_provider, "prepare", None)
     if not callable(external_prepare):
         external_prepare = getattr(external_provider, "prepare_task", None)
-    task_handler = BACKENDS.get(backend, {}).get(task_type)
     if callable(external_prepare):
         prepare = external_prepare
-    elif task_handler is not None:
-        _, prepare = task_handler
+    elif registration.provider_id == "builtin":
+        prepare = BACKEND_PREPARERS.get(backend)
+        if not callable(prepare):
+            raise ComputeContractError(f"no built-in executor is exposed for backend: {backend}")
     else:
         provider = registration.provider
         prepare = getattr(provider, "prepare", None)
@@ -1677,6 +1690,7 @@ def _raw_prepared_task(
             raise ComputeContractError(
                 f"capability provider adapter is unavailable for {intent['capability']}@{intent['capability_version']}"
             )
+    task_type = _gaussian_task_type(workspace, intent) if backend == "gaussian" else str(intent["task_type"])
     task = BackendTask(
         node_id=str(intent["node_id"]),
         task_type=task_type,
@@ -2325,29 +2339,6 @@ def _workspace_root(root: str | Path) -> Path:
         raise ComputeContractError(str(exc)) from exc
 
 
-def _is_light_execution_workspace(workspace: Path) -> bool:
-    """Return whether this root is the bounded light execution profile."""
-
-    try:
-        manifest = read_json(workspace / "workspace_manifest.json")
-    except (OSError, ValueError):
-        return False
-    return isinstance(manifest, dict) and manifest.get("workspace_mode") == "light"
-
-
-def _ensure_light_execution_scope(workspace: Path, node_id: str) -> None:
-    nodes = workspace / "nodes"
-    node = nodes / node_id
-    attempts = node / "attempts"
-    for path, label in (
-        (nodes, "execution scope root"),
-        (node, "execution scope"),
-        (attempts, "calculation Attempt"),
-    ):
-        _require_physical_compute_directory(workspace, path, label)
-        path.mkdir(parents=True, exist_ok=True)
-
-
 def _intent_source(workspace: Path, value: str | Path) -> tuple[Path, str]:
     source = Path(value).expanduser()
     if source.is_absolute():
@@ -2418,23 +2409,6 @@ def _resolve_capability_contract(capability: str, version: str) -> CapabilityDes
 
 
 def _load_node(workspace: Path, node_id: str) -> dict[str, Any]:
-    if _is_light_execution_workspace(workspace):
-        if not re.fullmatch(r"node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", node_id):
-            raise ComputeContractError(f"invalid execution scope: {node_id}")
-        # This is an operational scope, not a ResearchMap Node. Its stable
-        # contract digest binds calculation files without granting light mode
-        # any claim, finding, or lifecycle authority.
-        return {
-            "type": "execution_scope",
-            "id": node_id,
-            "phase_id": None,
-            "title": "Light execution scope",
-            "objective": "Operational calculation scope; not a ResearchMap Node.",
-            "dependency_ids": [],
-            "claim_ids": [],
-            "created_at": None,
-            "state": "active",
-        }
     try:
         records = workspace_node_records(workspace)
     except WorkspaceArtifactError as exc:
@@ -2472,17 +2446,6 @@ def _validate_intent(intent: dict[str, Any]) -> None:
 
 
 def _validate_intent_node_scope(workspace: Path, intent: dict[str, Any], node: dict[str, Any]) -> None:
-    if _is_light_execution_workspace(workspace):
-        if node.get("type") != "execution_scope":
-            raise ComputeContractError("light calculations require an execution scope")
-        if node.get("state") == "closed":
-            raise ComputeContractError("light calculations require an open execution scope")
-        if intent.get("node_id") != node.get("id"):
-            raise ComputeContractError("calculation intent owner does not match its execution scope")
-        if intent.get("node_contract_digest") != node_contract_digest(node):
-            raise ComputeContractError("calculation intent is not bound to the current execution scope")
-        _validate_current_intent_lineage(workspace, intent)
-        return
     if node.get("type") != "research_node":
         raise ComputeContractError("calculations require a ResearchNode owner")
     if node.get("state") == "closed":
@@ -3180,11 +3143,6 @@ def _register_parsed_evidence(
     """Admit parsed Attempt/Artifact metadata without creating science claims."""
 
     if result.get("state") != "parsed" or not isinstance(result.get("artifact_manifest"), list):
-        return
-    if _is_light_execution_workspace(workspace):
-        # Light mode owns only operational files. Parsed output remains bound
-        # to the calculation directory and is not projected into ResearchMap
-        # evidence or scientific memory.
         return
     # Canonical Research Agent workspaces persist the ResearchMap projection
     # in ``research_map/context.json``.  Parsed calculation metadata must cross

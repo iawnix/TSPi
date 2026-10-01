@@ -22,8 +22,8 @@ export interface WorkspaceManifest {
   readonly profile_id: string;
   readonly memory_profile: "session";
   readonly memory_scope: "session";
-  readonly research_state_scope: "none" | "workspace";
-  readonly execution_profile: "bounded" | "audited";
+  readonly research_state_scope: "workspace";
+  readonly execution_profile: "audited";
   readonly state: "initializing" | "ready" | "admission_pending" | "failed";
   readonly workspace_root: string;
   readonly created_at: string;

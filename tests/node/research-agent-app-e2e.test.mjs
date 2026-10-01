@@ -9,7 +9,9 @@ import { create_fake_agent_runtime } from "../../packages/research-agent-core/fa
 import { create_turn_router } from "../../packages/research-agent-core/turn_router.mjs";
 import { create_workspace_catalog } from "../../packages/research-agent-core/workspace_catalog.mjs";
 import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
-import { create_fs_research_kernel } from "../../packages/research-agent-kernel/fs_kernel_adapter.mjs";
+import { close_test_research_kernels, create_test_research_kernel } from "../support/research_kernel_helpers.mjs";
+
+test.afterEach(close_test_research_kernels);
 
 async function make_root(prefix) {
   return mkdtemp(join(tmpdir(), `${prefix}-`));
@@ -23,15 +25,14 @@ function dynamic_turn_router() {
   };
 }
 
-test("App Server routes light and research workspaces through durable identity and admission", async () => {
+test("App Server routes admitted research workspaces through durable identity", async () => {
   const root = await make_root("research-agent-e2e");
   const catalog_root = await make_root("research-agent-catalog");
-  const light_root = join(root, "light");
   const research_root = join(root, "research");
   try {
     const initializer = create_workspace_initializer();
     const catalog = create_workspace_catalog({ catalog_root });
-    const kernel = create_fs_research_kernel({ workspace_root: research_root, workspace_id: "workspace_research" });
+    const kernel = create_test_research_kernel({ workspace_root: research_root, workspace_id: "workspace_research" });
     const app_server = create_app_server({
       runtime_port: create_fake_agent_runtime(),
       workspace_port: initializer,
@@ -39,17 +40,6 @@ test("App Server routes light and research workspaces through durable identity a
       turn_router: dynamic_turn_router(),
       kernel_port: kernel,
     });
-
-    await app_server.initialize_workspace({ workspace_root: light_root, workspace_id: "workspace_light", workspace_mode: "light" });
-    const light_session = await app_server.create_session({ workspace_id: "workspace_light", session_mode: "light" });
-    assert.equal((await light_session.read_snapshot()).workspace_root, light_root);
-    const light_turn = await app_server.route_turn({
-      workspace_id: "workspace_light",
-      session_id: light_session.session_id,
-      request_id: "req_light",
-      input: "prepare a methane geometry",
-    });
-    assert.equal(light_turn.protocol, "agent_turn_request");
 
     await app_server.initialize_workspace({ workspace_root: research_root, workspace_id: "workspace_research", workspace_mode: "research" });
     await assert.rejects(
@@ -84,7 +74,7 @@ test("App Server routes light and research workspaces through durable identity a
     const restarted_entry = await restarted_catalog.attach_workspace("workspace_research");
     assert.equal(restarted_entry.workspace_root, research_root);
     assert.equal(restarted_entry.state, "ready");
-    const restarted_kernel = create_fs_research_kernel({ workspace_root: restarted_entry.workspace_root, workspace_id: restarted_entry.workspace_id });
+    const restarted_kernel = create_test_research_kernel({ workspace_root: restarted_entry.workspace_root, workspace_id: restarted_entry.workspace_id });
     assert.equal((await restarted_kernel.read_liveness()).state, "admitted");
     assert.deepEqual((await restarted_kernel.read_context()).phases.map((phase) => phase.id), ["phase_1"]);
     assert.equal((await restarted_initializer.attach_workspace(research_root)).workspace_mode, "research");

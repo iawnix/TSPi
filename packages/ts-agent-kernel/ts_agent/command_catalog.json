@@ -21,6 +21,7 @@
     {"id": "compute.environments", "domain": "compute", "effect": "read", "required": []},
     {"id": "compute.environment", "domain": "compute", "effect": "read", "required": ["name"]},
     {"id": "compute.capabilities", "domain": "compute", "effect": "read", "required": []},
+    {"id": "compute.readiness", "domain": "compute", "effect": "read", "required": []},
     {"id": "compute.artifacts", "domain": "compute", "effect": "read", "required": []},
     {"id": "compute.runs", "domain": "compute", "effect": "read", "required": []}
   ],

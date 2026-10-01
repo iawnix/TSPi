@@ -84,7 +84,7 @@ function normalize_entry(request) {
  * memory fails closed so Research Kernel remains the scientific authority.
  */
 export function create_memory_store({
-  workspace_mode = "light",
+  workspace_mode = "research",
   workspace_id,
   session_id,
   max_entries = DEFAULT_MAX_ENTRIES,

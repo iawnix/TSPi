@@ -23,7 +23,9 @@ import {
 } from "../../../packages/ts-agent-runtime/host-api/tool-envelope.mjs";
 import { managedPython } from "./test-environment.mjs";
 import { create_workspace_initializer } from "../../../packages/research-agent-core/workspace.mjs";
-import { create_fs_research_kernel } from "../../../packages/research-agent-kernel/fs_kernel_adapter.mjs";
+import { close_test_research_kernels, create_test_research_kernel } from "../../support/research_kernel_helpers.mjs";
+
+test.afterEach(close_test_research_kernels);
 
 const context = { abortSignal: new AbortController().signal };
 
@@ -382,6 +384,23 @@ test("durable liveness admits only the operations each Kernel disposition permit
   controller.setDurableLiveness({ lifecycle: "decision_needed", disposition: "user_input_required" });
   assert.equal(controller.admitTool({ runId: "run-user-input-admission", toolName: "ts_change" }).code, "research_user_input_required");
   assert.equal(controller.admitTool({ runId: "run-user-input-admission", toolName: "ts_state" }).accepted, true);
+});
+
+test("durable liveness admits execution after the Kernel records an active strategy", () => {
+  const controller = createResearchLifecycleController({ metadata: PUBLIC_TOOL_METADATA });
+  controller.beginRun({ runId: "run-strategy-ready" });
+  controller.setDurableLiveness({
+    lifecycle: "decision_needed",
+    disposition: null,
+    execution_ready: true,
+  });
+  controller.admitTool({ runId: "run-strategy-ready", toolName: "research_read" });
+  controller.completeTool({ runId: "run-strategy-ready", toolName: "research_read" });
+  assert.equal(controller.admitTool({ runId: "run-strategy-ready", toolName: "ts_calc" }).accepted, true);
+
+  controller.beginRun({ runId: "run-strategy-missing" });
+  controller.setDurableLiveness({ lifecycle: "decision_needed", disposition: null, execution_ready: false });
+  assert.equal(controller.admitTool({ runId: "run-strategy-missing", toolName: "ts_calc" }).code, "research_decision_required");
 });
 
 test("Research lifecycle metadata separates strategy, interpretation, and checkpoint phases", () => {
@@ -958,7 +977,7 @@ test("Research Turn hook reads real Kernel liveness through the canonical comman
       workspace_id: "workspace_lifecycle_kernel",
       workspace_mode: "research",
     });
-    await create_fs_research_kernel({ workspace_root: workspace }).admit_workspace({ authority: "host" });
+    await create_test_research_kernel({ workspace_root: workspace }).admit_workspace({ authority: "host" });
     const requestFile = join(root, "change.json");
     await writeFile(requestFile, JSON.stringify({
       schema_version: "ts-change-request/1",

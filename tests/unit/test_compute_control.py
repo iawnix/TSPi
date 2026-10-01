@@ -536,6 +536,24 @@ def test_remote_intent_uses_light_execution_scope_without_research_map(
     assert prepared["prepared"]["execution_policy"]["kind"] == "remote"
 
 
+def test_local_intent_uses_native_light_execution_scope_without_research_map(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "light-local"
+    initialize_workspace(workspace, "workspace_light_local", "light")
+    (workspace / "inputs" / "candidate.gjf").write_text(
+        "%chk=candidate.chk\n#P B3LYP/6-31G(d) opt=(ts,calcfc) freq\n\nTS\n\n0 1\nH 0 0 0\n\n",
+        encoding="utf-8",
+    )
+    created = _create(workspace, "node_execution", target={"kind": "local"})
+
+    assert created["execution_target"]["kind"] == "local"
+    assert not (workspace / "research_map" / "context.json").exists()
+    assert (workspace / "nodes" / "node_execution" / "attempts" / created["intent_id"] / "intent.json").is_file()
+    prepared = prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
+    assert prepared["prepared"]["execution_policy"]["kind"] == "local"
+
+
 def test_remote_intent_rejects_backend_disallowed_queue_during_preflight(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

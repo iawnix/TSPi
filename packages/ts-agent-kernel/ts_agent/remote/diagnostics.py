@@ -86,14 +86,14 @@ def _doctor(client: SSHClient, platform: RemotePlatform) -> dict[str, Any]:
     for name, item in sorted(platform.backends.items()):
         executable = item.command[0]
         command_check = client.run_script(
-            _backend_check_script(),
+            backend_check_script(),
             [item.activation_script or "", executable],
             check=False,
         )
         dependency_check = None
         if name == "ase_neb":
             dependency_check = client.run_script(
-                _ase_neb_check_script(),
+                ase_neb_check_script(),
                 [
                     item.activation_script or "",
                     executable,
@@ -110,7 +110,7 @@ def _doctor(client: SSHClient, platform: RemotePlatform) -> dict[str, Any]:
             )
         elif name == "pyscf":
             dependency_check = client.run_script(
-                _pyscf_check_script(),
+                pyscf_check_script(),
                 [item.activation_script or "", executable],
                 check=False,
             )
@@ -147,7 +147,7 @@ def _doctor(client: SSHClient, platform: RemotePlatform) -> dict[str, Any]:
     return checks
 
 
-def _backend_check_script() -> str:
+def backend_check_script() -> str:
     return r'''set -eo pipefail
 activation=$1
 executable=$2
@@ -160,7 +160,7 @@ fi
 '''
 
 
-def _ase_neb_check_script() -> str:
+def ase_neb_check_script() -> str:
     return r'''set -eo pipefail
 activation=$1
 python_executable=$2
@@ -189,7 +189,7 @@ fi
 '''
 
 
-def _pyscf_check_script() -> str:
+def pyscf_check_script() -> str:
     return r'''set -eo pipefail
 activation=$1
 python_executable=$2

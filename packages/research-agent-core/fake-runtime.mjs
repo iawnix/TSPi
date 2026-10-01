@@ -74,7 +74,7 @@ export function create_fake_agent_runtime({ response = "completed" } = {}) {
   }
 
   return create_agent_runtime_port({
-    async create_session({ workspace_id, workspace_root, session_id, workspace_mode = "light", session_mode = workspace_mode, runtime_snapshot } = {}) {
+    async create_session({ workspace_id, workspace_root, session_id, workspace_mode = "research", session_mode = "research", runtime_snapshot } = {}) {
       if (closed) throw new Error("runtime_closed");
       assert_session_mode(workspace_mode);
       assert_session_mode(session_mode);

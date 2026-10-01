@@ -47,7 +47,6 @@ class CapabilityDescriptor:
             "parameter_schema": deepcopy(self.parameter_schema),
             "limits": deepcopy(self.limits),
             "parsers": list(self.parsers),
-            "supported_workspace_modes": ["light", "research"],
             "execution_routes": ["native_lifecycle"],
         }
 
@@ -236,21 +235,17 @@ def _descriptor(
 # This is an executor registry, not a strategy table.  New scientific domains
 # add a descriptor and an adapter; they do not edit a hypothesis dispatch map.
 CAPABILITY_DESCRIPTORS: Final[tuple[CapabilityDescriptor, ...]] = (
-    _descriptor("gaussian.sp", "gaussian", "sp", frozenset({"gjf"}), ("program_output", "energy"), parser="gaussian.output/2"),
-    _descriptor("gaussian.opt", "gaussian", "opt", frozenset({"gjf"}), ("program_output", "optimized_geometry"), parser="gaussian.output/2"),
-    _descriptor("gaussian.ts", "gaussian", "ts", frozenset({"gjf"}), ("program_output", "optimized_geometry"), parser="gaussian.output/2"),
-    _descriptor("gaussian.freq", "gaussian", "freq", frozenset({"gjf"}), ("program_output", "frequencies"), parser="gaussian.output/2"),
-    _descriptor("gaussian.opt_freq", "gaussian", "opt_freq", frozenset({"gjf"}), ("program_output", "optimized_geometry", "frequencies"), parser="gaussian.output/2"),
-    _descriptor("gaussian.irc", "gaussian", "irc", frozenset({"gjf"}), ("program_output", "reaction_path"), parser="gaussian.irc/2"),
+    # Gaussian is one executor.  The Route Section in the registered .gjf
+    # selects Opt/Freq/IRC/Scan/QST and the parser reports the observations;
+    # those input-level tasks are not separate capability registrations.
     _descriptor(
-        "gaussian.scan",
         "gaussian",
-        "scan",
+        "gaussian",
+        "route",
         frozenset({"gjf"}),
-        ("program_output", "scan_profile"),
-        parser="gaussian.scan/1",
+        ("program_output",),
+        parser="gaussian.output/2",
         parameter_schema=_parameters(),
-        limits={"minimum_points": 2, "energy_unit": "hartree"},
     ),
     _descriptor(
         "xtb.sp", "xtb", "sp", frozenset({"xyz"}), ("program_output", "energy"),
@@ -379,30 +374,6 @@ CAPABILITY_REGISTRY: CapabilityRegistry[CapabilityDescriptor] = CapabilityRegist
 # These maps remain as compatibility views for the existing executor boundary.
 # Resolution and catalog output use CAPABILITY_REGISTRY so a registered
 # provider does not require edits to this module's built-in tuple.
-CAPABILITIES_BY_ID: dict[str, CapabilityDescriptor] = {}
-CAPABILITY_BY_BACKEND_TASK: dict[tuple[str, str], CapabilityDescriptor] = {}
-BACKEND_TASK_INPUT_ROLES: dict[str, dict[str, frozenset[str]]] = {}
-
-
-def _unindex_capability(descriptor: CapabilityDescriptor) -> None:
-    """Remove one descriptor from the legacy executor compatibility views."""
-
-    backend_task = (descriptor.backend, descriptor.task_type)
-    if CAPABILITY_BY_BACKEND_TASK.get(backend_task) is descriptor:
-        CAPABILITY_BY_BACKEND_TASK.pop(backend_task, None)
-    tasks = BACKEND_TASK_INPUT_ROLES.get(descriptor.backend)
-    if tasks is not None and tasks.get(descriptor.task_type) is descriptor.input_roles:
-        tasks.pop(descriptor.task_type, None)
-        if not tasks:
-            BACKEND_TASK_INPUT_ROLES.pop(descriptor.backend, None)
-
-
-def _index_capability(descriptor: CapabilityDescriptor) -> None:
-    CAPABILITIES_BY_ID[descriptor.capability] = descriptor
-    CAPABILITY_BY_BACKEND_TASK[(descriptor.backend, descriptor.task_type)] = descriptor
-    BACKEND_TASK_INPUT_ROLES.setdefault(descriptor.backend, {})[descriptor.task_type] = descriptor.input_roles
-
-
 def register_capability(
     descriptor: CapabilityDescriptor,
     *,
@@ -420,17 +391,12 @@ def register_capability(
 
     if not isinstance(descriptor, CapabilityDescriptor):
         raise TypeError("calculation capability providers must return CapabilityDescriptor values")
-    previous = CAPABILITY_REGISTRY.resolve(descriptor.capability, descriptor.version)
-    registration = CAPABILITY_REGISTRY.register(
+    return CAPABILITY_REGISTRY.register(
         descriptor,
         provider_id=provider_id,
         provider=provider,
         replace=replace,
     )
-    if previous is not None:
-        _unindex_capability(previous.descriptor)
-    _index_capability(descriptor)
-    return registration
 
 
 def register_capability_provider(
@@ -450,23 +416,12 @@ def register_capability_provider(
     descriptors = tuple(source())
     if not all(isinstance(item, CapabilityDescriptor) for item in descriptors):
         raise TypeError("calculation capability providers must return CapabilityDescriptor values")
-    previous = [
-        existing.descriptor
-        for descriptor in descriptors
-        if (existing := CAPABILITY_REGISTRY.resolve(descriptor.capability, descriptor.version)) is not None
-    ]
-    # Keep compatibility indexes in sync and avoid partial installation.
-    registrations = CAPABILITY_REGISTRY.register_many(
+    return CAPABILITY_REGISTRY.register_many(
         descriptors,
         provider_id=identifier,
         provider=provider,
         replace=replace,
     )
-    for descriptor in previous:
-        _unindex_capability(descriptor)
-    for descriptor in descriptors:
-        _index_capability(descriptor)
-    return registrations
 
 
 for _builtin_descriptor in CAPABILITY_DESCRIPTORS:
@@ -496,27 +451,15 @@ def resolve_capability_registration(
     return registration
 
 
-def capability_for_backend_task(backend: str, task_type: str) -> CapabilityDescriptor:
-    matches = CAPABILITY_REGISTRY.find(
-        lambda item: item.backend == backend and item.task_type == task_type
-    )
-    if not matches:
-        raise CapabilityGapError(f"{backend}.{task_type}")
-    # Backend/task is the legacy lookup without an explicit version.  Select
-    # the highest numeric version when a provider publishes multiple versions.
-    return max(matches, key=lambda item: int(item.descriptor.version) if item.descriptor.version.isdigit() else 0).descriptor
-
-
 def validate_capability_parameters(
     descriptor: CapabilityDescriptor,
     parameters: Any,
 ) -> dict[str, Any]:
     """Validate a Root-authored parameter object against one descriptor."""
 
-    # Catalog/readiness discovery must remain available in the lightweight
-    # Host bridge even when the optional validator dependency is not installed
-    # in the bridge interpreter. Parameter validation still fails explicitly
-    # at the execution boundary if jsonschema is unavailable.
+    # Catalog/readiness discovery may run in the Host bridge interpreter where
+    # the optional validator dependency is absent. Execution still fails
+    # explicitly at this boundary when validation cannot be performed.
     from jsonschema import Draft202012Validator
 
     if not isinstance(parameters, dict):

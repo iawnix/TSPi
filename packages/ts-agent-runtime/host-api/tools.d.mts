@@ -162,19 +162,8 @@ export interface ComputeReadinessToolParams extends WorkspaceToolParams {
   execution_kind?: "local" | "remote";
 }
 export interface ComputeToolParams extends WorkspaceToolParams {
-  capability_id?: string;
-  capability_version?: string;
-  run_id?: string;
-  attempt_id?: string;
-  node_id?: string;
-  input?: Record<string, unknown>;
-  input_artifact_ids?: string[];
-  timeout_ms?: number;
-  metadata?: Record<string, unknown>;
-  environment?: Record<string, unknown>;
-  evidence_links?: Record<string, unknown>[];
-  operation?: "launch" | "inspect" | "finalize" | "cancel";
-  nodeId?: string;
+  operation: "launch" | "inspect" | "finalize" | "cancel";
+  nodeId: string;
   intentId?: string;
   purpose?: string;
   capability?: string;

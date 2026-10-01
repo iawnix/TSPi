@@ -21,7 +21,6 @@ Research Agent 按独立 APP 安装。Pi 只是私有 Runtime Adapter，不是�
   etc/                           # 配置和 owner-only 密钥
   var/workspaces/                # 工作区数据
   var/sessions/                  # 持久 Session 元数据
-  var/artifacts/                 # 共享 Capability ArtifactStore
   var/runtime/pi/<commit>/       # 固定版本的 Pi Adapter/runtime cache
   var/log/                       # 服务日志
   var/locks/                     # 安装与激活锁

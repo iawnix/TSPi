@@ -1,25 +1,10 @@
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { resolve } from "node:path";
-
-import { create_host_capability_assembly } from "./host-capability-assembly.mjs";
-import {
-  create_gaussian_provider,
-  create_local_xyz_provider,
-  create_pyscf_provider,
-  create_crest_provider,
-  create_tool_gateway,
-  create_xtb_provider,
-} from "../../packages/research-agent-capabilities/index.mjs";
+import { promisify } from "node:util";
 
 const executeFile = promisify(execFile);
 const BRIDGE_SCHEMA = "research_agent_compute_bridge/1";
-const ADAPTERS = Object.freeze({
-  xtb_local: create_xtb_provider,
-  gaussian_local: create_gaussian_provider,
-  pyscf_local: create_pyscf_provider,
-  crest_local: create_crest_provider,
-});
+const READINESS_SCHEMA = "compute_readiness_1";
 
 export class ComputeConfigCapabilityHostError extends Error {
   constructor(code, message, details = {}) {
@@ -31,14 +16,14 @@ export class ComputeConfigCapabilityHostError extends Error {
 }
 
 /**
- * Adapt the existing installation-owned compute.toml into the JS capability
- * plane.  The Python bridge is trusted Host code and its executable bindings
- * never cross the Agent-facing catalog.
+ * Load the Native Python capability catalog and installation environment
+ * bindings. This boundary is descriptive only: it never imports or constructs
+ * a JavaScript provider, gateway, or orchestrator. Actual execution always
+ * goes through ts_compute.py and the Native lifecycle.
  */
 export async function create_compute_config_capability_host({
   config_path,
   package_root,
-  artifact_root,
   python = process.env.TS_AGENT_PYTHON || "python3",
   bridge_script,
 } = {}) {
@@ -56,7 +41,7 @@ export async function create_compute_config_capability_host({
       maxBuffer: 2 * 1024 * 1024,
     });
   } catch (error) {
-    throw new ComputeConfigCapabilityHostError("compute_config_bridge_failed", "could not load compute.toml capability bridge", {
+    throw new ComputeConfigCapabilityHostError("compute_config_bridge_failed", "could not load compute.toml Native capability catalog", {
       cause: String(error?.stderr || error?.message || error),
     });
   }
@@ -64,194 +49,72 @@ export async function create_compute_config_capability_host({
   try {
     document = JSON.parse(completed.stdout);
   } catch (error) {
-    throw new ComputeConfigCapabilityHostError("compute_config_bridge_invalid", "compute.toml capability bridge returned invalid JSON", {
+    throw new ComputeConfigCapabilityHostError("compute_config_bridge_invalid", "Native capability bridge returned invalid JSON", {
       cause: String(error?.message || error),
     });
   }
-  if (!document || document.schema_version !== BRIDGE_SCHEMA || document.ok !== true || !document.bindings) {
+  if (!document || document.schema_version !== BRIDGE_SCHEMA || document.ok !== true
+      || !Array.isArray(document.capabilities) || !document.bindings) {
     throw new ComputeConfigCapabilityHostError(
       "compute_config_invalid",
-      document?.error || "compute.toml capability bridge is unavailable",
+      document?.error || "Native capability catalog is unavailable",
       { bridge: document },
     );
   }
-
-  const environment_broker = create_environment_broker(document.bindings);
-  const gateway = create_tool_gateway({
-    workspace_mode: undefined,
-    artifact_root,
-    environment_broker,
-    providers: [create_local_xyz_provider({ environment_broker })],
-  });
-  const inventory = [];
-  const allowlist = [];
-  const adapters = {};
-  for (const [adapter_id, factory] of Object.entries(ADAPTERS)) {
-    const binding = document.bindings[adapter_id];
-    if (!binding?.available) continue;
-    const provider = factory({ artifact_store: gateway.artifact_store, environment_broker });
-    const descriptors = provider.descriptors();
-    if (!Array.isArray(descriptors) || descriptors.length === 0) {
-      throw new ComputeConfigCapabilityHostError("provider_invalid", `trusted adapter ${adapter_id} returned an invalid descriptor set`);
-    }
-    const manifest_provider_id = {
-      xtb_local: "xtb",
-      gaussian_local: "gaussian",
-      pyscf_local: "pyscf",
-      crest_local: "crest",
-    }[adapter_id];
-    inventory.push({
-      id: manifest_provider_id,
-      version: "1",
-      kind: "compute",
-    });
-    allowlist.push({
-      manifest_provider_id,
-      adapter_id,
-      kind: "compute",
-      version: "1",
-      capability_ids: descriptors.map((descriptor) => descriptor.capability_id),
-      required_tool_ids: [binding.backend],
-    });
-    adapters[adapter_id] = factory;
-  }
-  if (allowlist.length === 0) {
-    throw new ComputeConfigCapabilityHostError("compute_capability_unavailable", "compute.toml does not configure a supported local compute backend");
-  }
-  const capability_assembly = create_host_capability_assembly({
-    inventory,
-    allowlist,
-    adapters,
-    artifact_store: gateway.artifact_store,
-    environment_broker,
-  });
-  for (const provider of capability_assembly.providers) gateway.register_provider(provider);
-  register_native_lifecycle_capabilities(gateway, document.capabilities);
-  return Object.freeze({
-    config_path: document.config_path,
-    source: "compute.toml",
-    inventory: Object.freeze(inventory.map((item) => Object.freeze({ ...item }))),
-    environment_broker,
-    capability_assembly,
-    tool_gateway: gateway,
-    allowlist: Object.freeze(allowlist.map((item) => Object.freeze({ ...item }))),
-  });
-}
-
-/**
- * Python's ``ts_compute`` registry owns the scheduler-backed calculation
- * lifecycle.  Keep those descriptors in the same live Host catalog as the
- * optional in-process providers.  A synthetic provider is deliberately
- * non-executable: its only valid route is Native ``compute_run`` launch,
- * which resolves the descriptor again during Python preflight.
- */
-function register_native_lifecycle_capabilities(gateway, values) {
-  if (!Array.isArray(values)) return;
-  const existing = new Set(gateway.describe({ workspace_mode: "light" })
-    .filter((item) => item?.kind === "compute")
-    .map((item) => `${item.capability_id}@${item.capability_version}`));
-  const descriptors = values
-    .filter((item) => item && typeof item === "object"
-      && typeof item.capability_id === "string"
-      && typeof item.capability_version === "string"
-      && item.kind === "compute")
-    .filter((item) => !existing.has(`${item.capability_id}@${item.capability_version}`))
-    .map((item) => Object.freeze({
-      protocol: "capability_descriptor",
-      version: 1,
-      capability_id: item.capability_id,
-      capability_version: item.capability_version,
-      kind: "compute",
-      summary: typeof item.summary === "string" && item.summary.length > 0
-        ? item.summary
-        : `Run the registered ${item.capability_id} calculation through the Native lifecycle.`,
-      input_schema: item.parameter_schema && typeof item.parameter_schema === "object"
-        ? item.parameter_schema
-        : { type: "object" },
-      output_schema: {
-        type: "object",
-        required: Array.isArray(item.output_roles) ? [...item.output_roles] : [],
-      },
-      supported_workspace_modes: ["light", "research"],
-      limits: item.limits && typeof item.limits === "object" ? item.limits : {},
-      effects: ["compute", "native_lifecycle"],
-      execution_routes: ["native_lifecycle"],
-    }));
-  if (descriptors.length === 0) return;
-  gateway.register_provider({
-    provider_id: "ts_compute_native",
-    provider_version: "1",
-    descriptors: () => descriptors,
-    async invoke({ descriptor }) {
-      const error = new Error(`${descriptor.capability_id} requires Native compute_run operation=launch`);
-      error.code = "native_lifecycle_required";
-      throw error;
-    },
-  });
-}
-
-function create_environment_broker(bindings) {
-  const values = Object.freeze({ ...bindings });
-  const resolve_binding = async (requirement = {}) => {
-    const provider_id = requirement.provider_id;
-    const configured = values[provider_id];
-    const requested_environment = requirement.environment_id
-      ?? requirement.environment
-      ?? requirement.name;
-    const requested_kind = requirement.execution_kind;
-    const environments = configured?.environments && typeof configured.environments === "object"
-      ? configured.environments
-      : {};
-    const by_alias = requested_environment === undefined
-      ? undefined
-      : Object.values(environments).find((item) => item?.available
-        && (item.environment_id === requested_environment
-          || item.aliases?.includes?.(requested_environment)));
-    let binding = requested_environment === undefined ? configured : by_alias;
-    if (requested_environment === undefined && requested_kind !== undefined
-      && binding?.environment_kind !== requested_kind) {
-      const candidates = Object.values(environments).filter((item) => item?.available && item.environment_kind === requested_kind);
-      if (candidates.length === 1) binding = candidates[0];
-      else if (candidates.length > 1) {
-        throw Object.assign(new Error(`multiple ${requested_kind} compute environments are configured; select one by environment`), {
-          code: "environment_unavailable",
-          details: { environments: candidates.map((item) => item.environment_id) },
-        });
+  const capabilities = Object.freeze(document.capabilities.map((item) => Object.freeze({ ...item })));
+  const bindings = Object.freeze({ ...document.bindings });
+  async function readiness({ capability_id, environment_id, execution_kind } = {}) {
+    for (const [field, value] of [["capability_id", capability_id], ["environment_id", environment_id]]) {
+      if (value !== undefined && (typeof value !== "string" || value.length === 0 || value.includes("\0"))) {
+        throw new TypeError(`${field} must be a non-empty string`);
       }
     }
-    if (!binding?.available) {
-      const backend = binding?.backend || provider_id;
-      const suffix = requested_environment === undefined ? "" : ` in environment ${requested_environment}`;
-      const available = Object.values(environments)
-        .filter((item) => item?.available)
-        .map((item) => item.environment_id)
-        .filter(Boolean);
-      throw Object.assign(new Error(`compute environment does not configure backend: ${backend}${suffix}`), {
-        code: "environment_unavailable",
-        details: { requested_environment, requested_kind, available_environments: available },
+    if (execution_kind !== undefined && execution_kind !== "local" && execution_kind !== "remote") {
+      throw new TypeError("execution_kind must be local or remote");
+    }
+    const args = [
+      `${packageRoot}/scripts/ts_api.py`,
+      "compute.readiness",
+      "--root",
+      packageRoot,
+    ];
+    if (capability_id !== undefined) args.push("--capability-id", capability_id);
+    if (environment_id !== undefined) args.push("--environment-id", environment_id);
+    if (execution_kind !== undefined) args.push("--execution-kind", execution_kind);
+    let result;
+    try {
+      const completed = await executeFile(python, args, {
+        cwd: packageRoot,
+        env: {
+          ...process.env,
+          TS_COMPUTE_CONFIG: resolve(config_path),
+          TSPI_PACKAGE_ROOT: packageRoot,
+          PYTHONNOUSERSITE: "1",
+        },
+        timeout: 60_000,
+        maxBuffer: 8 * 1024 * 1024,
+      });
+      result = JSON.parse(completed.stdout);
+    } catch (error) {
+      throw new ComputeConfigCapabilityHostError("compute_readiness_failed", "Native compute readiness probe failed", {
+        cause: String(error?.stderr || error?.message || error),
       });
     }
-    if (requirement.environment_kind && requirement.environment_kind !== "compute") {
-      throw Object.assign(new Error("compute capability requires a compute environment"), { code: "environment_unavailable" });
-    }
-    if (requested_kind !== undefined && requested_kind !== binding.environment_kind) {
-      throw Object.assign(new Error(`compute environment kind is not available: ${requested_kind}`), {
-        code: "environment_unavailable",
-        details: { environment_id: binding.environment_id, requested_kind },
+    if (!result || result.protocol_version !== READINESS_SCHEMA || !Array.isArray(result.readiness)) {
+      throw new ComputeConfigCapabilityHostError("compute_readiness_invalid", "Native compute readiness returned an invalid response", {
+        result,
       });
     }
-    return {
-      schema_version: "research-agent-environment-binding/1",
-      capability_id: requirement.capability_id,
-      provider_id,
-      environment_id: binding.environment_id,
-      environment_kind: "compute",
-      execution_kind: binding.environment_kind,
-      command: binding.command,
-      env: binding.environment || {},
-      binding_digest: binding.binding_digest,
-      readiness: binding.readiness,
-    };
-  };
-  return Object.freeze({ protocol_version: "environment_broker_1", resolve: resolve_binding, bind: resolve_binding });
+    return Object.freeze(result.readiness.map((item) => Object.freeze({ ...item })));
+  }
+  return Object.freeze({
+    protocol_version: "native_compute_capability_host_1",
+    config_path: document.config_path,
+    source: "compute.toml",
+    catalog() { return capabilities; },
+    list_capabilities() { return capabilities; },
+    readiness,
+    bindings,
+    async close() {},
+  });
 }

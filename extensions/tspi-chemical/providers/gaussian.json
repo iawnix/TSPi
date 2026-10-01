@@ -6,17 +6,9 @@
     {
       "id": "gaussian",
       "version": "1",
-      "aliases": [
-        "gaussian.sp",
-        "gaussian.opt",
-        "gaussian.ts",
-        "gaussian.freq",
-        "gaussian.opt_freq",
-        "gaussian.irc",
-        "gaussian.scan"
-      ]
+      "notes": "Route Section in the bound .gjf selects the Gaussian operation."
     }
   ],
   "implementation": "builtin",
-  "notes": "Inventory entry for the built-in Gaussian capability adapters."
+  "notes": "Inventory entry for the Native Gaussian capability catalog."
 }

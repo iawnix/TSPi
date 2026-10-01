@@ -15,142 +15,14 @@ import { createComputeTool } from "./pi-native-compute.mjs";
 import { createNotifyTool } from "./pi-native-notify.mjs";
 import { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
 import { readWorkspaceManifest, readWorkspaceMode } from "./workspace-mode-tools.mjs";
-import { create_tool_gateway } from "../../packages/research-agent-capabilities/tool_gateway.mjs";
-import { create_compute_orchestrator } from "../../packages/research-agent-capabilities/compute_orchestrator.mjs";
-import { create_local_xyz_provider } from "../../packages/research-agent-capabilities/local_xyz_provider.mjs";
 import {
   executeFilesystemResearchCommand,
   isFilesystemResearchWorkspace,
 } from "./research-native-kernel.mjs";
 
-export { createComputeTool } from "./pi-native-compute.mjs";
+export { createComputeTool, createNativeComputeLifecycle } from "./pi-native-compute.mjs";
 export { createNotifyTool } from "./pi-native-notify.mjs";
 export { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
-
-export function createLightComputeTool(options = {}) {
-  return {
-    ...TOOL_CONTRACTS.lightCompute,
-    async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
-      const root = boundWorkspaceRoot(params, toolContext);
-      const mode = await readWorkspaceMode(root);
-      if (mode !== "light") throw new Error("light_compute_requires_light_workspace");
-      // Geometry preparation remains available even when no optional compute
-      // provider is configured. Registered providers are injected by the Host
-      // for generic light runs; this local gateway is intentionally scoped to
-      // the current workspace's artifact store.
-      const localGateway = create_tool_gateway({
-        workspace_mode: "light",
-        artifact_root: join(root, "artifacts", "light_compute"),
-        providers: [create_local_xyz_provider()],
-      });
-      let result;
-      if (params.operation === "generate_xyz") {
-        const generated = await localGateway.invoke({
-          workspace_mode: "light",
-          capability_id: "local_xyz_generate",
-          input: {
-            molecule: params.molecule,
-            ...(params.logicalRef === undefined ? {} : { logical_ref: params.logicalRef }),
-          },
-          signal: context?.abortSignal,
-        });
-        const generatedArtifact = generated.output?.artifact;
-        const generatedBytes = generatedArtifact?.artifact_id
-          ? await localGateway.artifact_store.read(generatedArtifact.artifact_id)
-          : null;
-        result = {
-          schema_version: "research-agent-light-compute/1",
-          operation: "generate_xyz",
-          status: "completed",
-          workspace_mode: "light",
-          calculation_kind: "local_geometry",
-          scientific_status: "prepared_only",
-          output: {
-            ...generated.output,
-            ...(generatedBytes ? { xyz: generatedBytes.content.toString("utf8") } : {}),
-          },
-          artifacts: generated.artifacts,
-          limitations: [
-            "This is a bounded local light-mode calculation and does not create a ResearchMap Claim, Node, or Attempt.",
-            "The generated geometry is deterministic input preparation, not an optimized quantum-chemical result.",
-          ],
-        };
-      } else if (params.operation === "inspect_xyz") {
-        result = {
-          schema_version: "research-agent-light-compute/1",
-          operation: "inspect_xyz",
-          status: "completed",
-          workspace_mode: "light",
-          calculation_kind: "local_geometry_inspection",
-          scientific_status: "descriptive_only",
-          output: inspect_light_xyz(params.xyz),
-          artifacts: [],
-          limitations: [
-            "This inspection is descriptive and does not validate a chemical model or represent a completed scientific calculation.",
-          ],
-        };
-      } else if (params.operation === "catalog") {
-        const gateway = options.toolGateway || options.tool_gateway || localGateway;
-        const capabilities = gateway.describe({ workspace_mode: "light" });
-        result = {
-          schema_version: "research-agent-light-compute/1",
-          operation: "catalog",
-          status: "completed",
-          workspace_mode: "light",
-          scientific_status: "descriptive_only",
-          output: { capabilities },
-          artifacts: [],
-          limitations: [
-            "Capability descriptors report registered support and limits; they are not calculation results.",
-            "Light runs are recorded in a bounded run manifest and do not create ResearchMap state.",
-          ],
-        };
-      } else if (params.operation === "run") {
-        const gateway = options.toolGateway || options.tool_gateway;
-        const orchestrator = options.computeOrchestrator || options.compute_orchestrator
-          || (gateway ? create_compute_orchestrator({ tool_gateway: gateway, artifact_store: gateway.artifact_store }) : null);
-        if (!orchestrator) throw new Error("light_compute_capability_host_not_configured");
-        const workspaceId = (await readWorkspaceManifest(root)).workspace_id;
-        const input = bindLightInputArtifact({
-          gateway,
-          capabilityId: params.capabilityId,
-          input: params.input || {},
-          inputArtifactIds: params.inputArtifactIds,
-        });
-        const run = await orchestrator.run({
-          workspace_id: workspaceId,
-          workspace_root: root,
-          workspace_mode: "light",
-          ...(params.runId === undefined ? {} : { run_id: params.runId }),
-          capability_id: params.capabilityId,
-          ...(params.capabilityVersion === undefined ? {} : { capability_version: params.capabilityVersion }),
-          input,
-          ...(params.inputArtifactIds === undefined ? {} : { input_artifact_ids: params.inputArtifactIds }),
-          ...(params.timeoutMs === undefined ? {} : { timeout_ms: params.timeoutMs }),
-          request_id: _toolCallId,
-          signal: context?.abortSignal,
-        });
-        result = {
-          schema_version: "research-agent-light-compute/1",
-          operation: "run",
-          status: run.state === "succeeded" ? "completed" : run.state,
-          workspace_mode: "light",
-          scientific_status: run.state === "succeeded" ? "computed" : "execution_failed",
-          run_id: run.run_id,
-          output: run.result,
-          artifacts: run.artifacts || [],
-          limitations: [
-            "This calculation used a registered bounded capability without creating a ResearchMap Claim, Node, or Attempt.",
-            "For auditable scientific interpretation, run the same capability from a research workspace.",
-          ],
-        };
-      } else {
-        throw new Error(`unsupported light_compute operation: ${String(params.operation)}`);
-      }
-      return toolResult(result);
-    },
-  };
-}
 
 const require = createRequire(import.meta.url);
 const { beginActivity, completeActivity, failActivity } = require(
@@ -170,6 +42,14 @@ const { nodeControlArguments } = require("../../packages/ts-agent-runtime/artifa
 
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
 const NATIVE_COMMANDS = createCommandService({ execute: executeNativeCommand });
+
+async function readNativeCapabilityCatalog(options, root, signal) {
+  const host = options?.nativeCapabilityHost || options?.native_capability_host;
+  if (host && typeof host.catalog === "function") {
+    return { schema_version: "ts-capability-catalog/1", capabilities: host.catalog() };
+  }
+  return NATIVE_COMMANDS.execute("compute.capabilities", root, {}, signal);
+}
 
 export function readResearchLiveness(cwd, signal) {
   return NATIVE_COMMANDS.execute("research.liveness", cwd, {}, signal);
@@ -202,14 +82,9 @@ export function createStateTool(options = {}) {
       if (mode === "capabilities") {
         if (!params.capabilityKind) throw new Error("research.read mode=capabilities requires capabilityKind=compute or analysis (tool research_read)");
         if (params.capabilityKind === "compute") {
-          // Compute discovery uses the same Host-owned live gateway as
-          // compute_catalog. A missing gateway is a composition error; the
-          // research tool must not query a second legacy catalog.
-          const gateway = options.toolGateway || options.tool_gateway;
-          if (!gateway || typeof gateway.describe !== "function") throw new Error("capability_host_not_configured");
           const mode = await readWorkspaceMode(root);
-          const capabilities = gateway.describe({ workspace_mode: mode })
-            .filter((item) => item?.kind === "compute");
+          const native = await readNativeCapabilityCatalog(options, root, context?.abortSignal);
+          const capabilities = (native.capabilities || []).filter((item) => item?.kind === "compute");
           return toolResult({
             protocol_version: "compute_catalog_1",
             workspace_mode: mode,
@@ -460,13 +335,12 @@ export function createEnvironmentTool() {
 export function createComputeCatalogTool(options = {}) {
   return {
     ...TOOL_CONTRACTS.computeCatalog,
-    async execute(_toolCallId, params, _onUpdate, toolContext) {
+    async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       const root = boundWorkspaceRoot(params, toolContext);
-      const gateway = options.toolGateway || options.tool_gateway;
-      if (!gateway || typeof gateway.describe !== "function") throw new Error("compute_catalog_not_configured");
       const mode = await readWorkspaceMode(root);
-      const catalog = gateway.describe({ workspace_mode: mode }).filter((item) => item?.kind === "compute");
-      return toolResult({ protocol_version: "compute_catalog_1", workspace_mode: mode, catalog, capabilities: catalog });
+      const native = await readNativeCapabilityCatalog(options, root, context?.abortSignal);
+      const catalog = (native.capabilities || []).filter((item) => item?.kind === "compute");
+      return toolResult({ protocol_version: "compute_catalog_1", catalog, capabilities: catalog });
     },
   };
 }
@@ -474,60 +348,30 @@ export function createComputeCatalogTool(options = {}) {
 export function createComputeReadinessTool(options = {}) {
   return {
     ...TOOL_CONTRACTS.computeReadiness,
-    async execute(_toolCallId, params, _onUpdate, toolContext) {
+    async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       const root = boundWorkspaceRoot(params, toolContext);
-      const assembly = options.capabilityAssembly || options.capability_assembly;
-      const gateway = options.toolGateway || options.tool_gateway;
       const mode = await readWorkspaceMode(root);
-      const catalog = gateway && typeof gateway.describe === "function"
-        ? gateway.describe({ workspace_mode: mode }).filter((item) => item?.kind === "compute")
-        : [];
+      const nativeHost = options?.nativeCapabilityHost || options?.native_capability_host;
+      const native = await readNativeCapabilityCatalog(options, root, context?.abortSignal);
+      const catalog = (native.capabilities || []).filter((item) => item?.kind === "compute"
+        && (params.capability_id === undefined || item.capability_id === params.capability_id));
       let readiness;
-      if (assembly && typeof assembly.readiness === "function") {
-        try {
-          readiness = [...await assembly.readiness({
-            ...(params.manifest_provider_id === undefined ? {} : { manifest_provider_id: params.manifest_provider_id }),
-            ...(params.capability_id === undefined ? {} : { capability_id: params.capability_id }),
-            ...(params.environment_id === undefined ? {} : { environment_id: params.environment_id }),
-            ...(params.execution_kind === undefined ? {} : { execution_kind: params.execution_kind }),
-          })];
-        } catch (error) {
-          if (error?.code !== "provider_not_registered") throw error;
-          readiness = [];
-        }
-        // Native lifecycle descriptors are registered in the same gateway
-        // catalog but have no in-process provider assembly. Keep them visible
-        // as explicitly unprobed instead of silently dropping CREST, scan,
-        // MD, or ASE NEB from readiness.
-        const returned = new Set(readiness.map((item) => `${item.capability_id}@${item.capability_version || "1"}`));
-        for (const item of catalog) {
-          const key = `${item.capability_id}@${item.capability_version}`;
-          if (returned.has(key) || (params.capability_id !== undefined && item.capability_id !== params.capability_id)) continue;
-          readiness.push({
-            capability_id: item.capability_id,
-            capability_version: item.capability_version,
-            readiness: {
-              state: "unknown",
-              checks: [{ name: "native_lifecycle", state: "deferred" }],
-              reason: "Native compute preflight resolves this registered capability",
-            },
-          });
-        }
+      if (nativeHost && typeof nativeHost.readiness === "function") {
+        readiness = await nativeHost.readiness({
+          ...(params.capability_id === undefined ? {} : { capability_id: params.capability_id }),
+          ...(params.environment_id === undefined ? {} : { environment_id: params.environment_id }),
+          ...(params.execution_kind === undefined ? {} : { execution_kind: params.execution_kind }),
+        });
       } else {
-        if (!gateway || typeof gateway.describe !== "function") throw new Error("compute_readiness_not_configured");
-        const hasEnvironmentSelector = params.manifest_provider_id !== undefined
-          || params.environment_id !== undefined
-          || params.execution_kind !== undefined;
-        readiness = gateway.describe({ workspace_mode: mode })
-          .filter((item) => item?.kind === "compute" && (params.capability_id === undefined || item.capability_id === params.capability_id))
-          .map((item) => ({
-            capability_id: item.capability_id,
-            capability_version: item.capability_version,
-            readiness: hasEnvironmentSelector
-              ? { state: "unknown", checks: [], reason: "environment_selector_requires_assembled_host" }
-              : { state: "registered", checks: [] },
-          }));
+        const result = await NATIVE_COMMANDS.execute("compute.readiness", root, {
+          ...(params.capability_id === undefined ? {} : { capability_id: params.capability_id }),
+          ...(params.environment_id === undefined ? {} : { environment_id: params.environment_id }),
+          ...(params.execution_kind === undefined ? {} : { execution_kind: params.execution_kind }),
+        }, context?.abortSignal);
+        readiness = result.readiness;
       }
+      const allowed = new Set(catalog.map((item) => `${item.capability_id}@${item.capability_version}`));
+      readiness = readiness.filter((item) => allowed.has(`${item.capability_id}@${item.capability_version}`));
       return toolResult({ protocol_version: "compute_readiness_1", readiness });
     },
   };
@@ -1150,50 +994,6 @@ function toolResult(result) {
     content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     details: { result },
   };
-}
-
-function inspect_light_xyz(value) {
-  if (typeof value !== "string") throw new Error("inspect_xyz requires an XYZ string");
-  const lines = value.replace(/\r\n?/gu, "\n").trimEnd().split("\n");
-  const atom_count = Number.parseInt(lines[0]?.trim() ?? "", 10);
-  if (!Number.isSafeInteger(atom_count) || atom_count < 1 || lines.length !== atom_count + 2) {
-    throw new Error("invalid XYZ atom count or row count");
-  }
-  const elements = {};
-  const coordinates = [];
-  for (const line of lines.slice(2)) {
-    const fields = line.trim().split(/\s+/u);
-    if (fields.length < 4 || !/^[A-Z][a-z]?$/u.test(fields[0])) throw new Error("invalid XYZ atom row");
-    const xyz = fields.slice(1, 4).map(Number);
-    if (xyz.some((item) => !Number.isFinite(item))) throw new Error("XYZ coordinates must be finite");
-    elements[fields[0]] = (elements[fields[0]] || 0) + 1;
-    coordinates.push(xyz);
-  }
-  const formula = Object.keys(elements).sort().map((element) => `${element}${elements[element] === 1 ? "" : elements[element]}`).join("");
-  return { atom_count, elements, formula };
-}
-
-/**
- * `inputArtifactIds` is run provenance, while providers receive their input
- * through the capability-specific `input` object. For the common single-input
- * providers, bind the artifact only when the descriptor explicitly advertises
- * the canonical `input_artifact_id` field. Generic capabilities keep their own
- * input contracts and are never guessed into a provider-specific shape.
- */
-function bindLightInputArtifact({ gateway, capabilityId, input, inputArtifactIds }) {
-  const normalized = input && typeof input === "object" && !Array.isArray(input) ? { ...input } : {};
-  if (!Array.isArray(inputArtifactIds) || inputArtifactIds.length === 0
-      || normalized.xyz !== undefined || normalized.input_artifact_id !== undefined) {
-    return normalized;
-  }
-  if (inputArtifactIds.length !== 1 || !gateway || typeof gateway.describe !== "function") return normalized;
-  const descriptor = gateway.describe({ workspace_mode: "light" })
-    .find((item) => item?.capability_id === capabilityId);
-  const properties = descriptor?.input_schema?.properties;
-  if (properties && Object.prototype.hasOwnProperty.call(properties, "input_artifact_id")) {
-    normalized.input_artifact_id = inputArtifactIds[0];
-  }
-  return normalized;
 }
 
 function expectedReportRefs(packageRef) {

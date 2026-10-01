@@ -391,6 +391,14 @@ def _compute(action: str, root: str | Path, params: dict[str, Any]) -> dict[str,
         from .compute.capabilities import calculation_capabilities
 
         return calculation_capabilities()
+    if action == "readiness":
+        from .compute.readiness import calculation_readiness
+
+        return calculation_readiness(
+            capability_id=params.get("capability_id"),
+            environment_id=params.get("environment_id"),
+            execution_kind=params.get("execution_kind"),
+        )
     if action == "artifacts":
         from .compute.artifacts import list_calculation_artifacts
 

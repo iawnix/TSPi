@@ -6,15 +6,17 @@ import test from "node:test";
 
 import { createChangeTool } from "../../apps/app-server/pi-native-tools.mjs";
 import { __test as computeTest } from "../../apps/app-server/pi-native-compute.mjs";
-import { create_fs_research_kernel } from "../../packages/research-agent-kernel/fs_kernel_adapter.mjs";
+import { close_test_research_kernels, create_test_research_kernel } from "../support/research_kernel_helpers.mjs";
 import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
+
+test.afterEach(close_test_research_kernels);
 
 test("blocked research liveness stops new mutations but permits a recovery checkpoint", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-blocked-lifecycle-"));
   try {
     const workspace = create_workspace_initializer();
     await workspace.initialize_workspace({ workspace_root: root, workspace_id: "workspace_blocked", workspace_mode: "research" });
-    const kernel = create_fs_research_kernel({ workspace_root: root });
+    const kernel = create_test_research_kernel({ workspace_root: root });
     const write = (request) => ({ principal: "root_agent", authority: "kernel_write", ...request });
     await kernel.admit_workspace({ workspace_id: "workspace_blocked", authority: "host", expected_state: "admission_pending" });
     await kernel.apply_change(write({ expected_revision: 0, operations: [
@@ -97,12 +99,12 @@ test("compute action failures preserve active Attempts for ambiguous or follow-u
   ), "running");
 });
 
-test("filesystem Research Kernel requires the Root Agent kernel-write boundary", async () => {
+test("Python Research Kernel requires the Root Agent kernel-write boundary", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-kernel-authority-"));
   try {
     const workspace = create_workspace_initializer();
     await workspace.initialize_workspace({ workspace_root: root, workspace_id: "workspace_authority", workspace_mode: "research" });
-    const kernel = create_fs_research_kernel({ workspace_root: root });
+    const kernel = create_test_research_kernel({ workspace_root: root });
     await kernel.admit_workspace({ authority: "host" });
     await assert.rejects(
       kernel.apply_change({ expected_revision: 0, operations: [{ type: "create_phase", id: "phase_1", title: "Denied" }] }),

@@ -1,12 +1,12 @@
 import type { ResearchKernelPort } from "./ports.mjs";
 
 export const RESEARCH_KERNEL_FACTORY_VERSION: "research_kernel_factory_1";
-export const RESEARCH_KERNEL_BACKENDS: readonly ["filesystem", "python"];
+export const RESEARCH_KERNEL_BACKENDS: readonly ["python"];
 
 export interface ResearchKernelFactoryOptions {
   readonly kernel_options?: string | Record<string, unknown>;
-  readonly backend?: "filesystem" | "fs" | "python" | "python_bridge";
-  readonly kind?: "filesystem" | "fs" | "python" | "python_bridge";
+  readonly backend?: "python";
+  readonly kind?: "python";
   readonly workspace_root?: string;
   readonly workspace_id?: string;
   readonly command?: string;
@@ -18,7 +18,7 @@ export interface ResearchKernelFactoryOptions {
 
 export interface ResearchKernelFactoryPort extends ResearchKernelPort {
   readonly protocol_version: "research_kernel_factory_1";
-  readonly backend: "filesystem" | "python";
+  readonly backend: "python";
   readonly workspace_root?: string;
   readonly workspace_id?: string;
   close(): Promise<void>;

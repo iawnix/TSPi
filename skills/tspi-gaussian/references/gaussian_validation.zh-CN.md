@@ -16,7 +16,7 @@ Claim 中的成键变化联系后，才能把它作为反应坐标事实。
 
 ## 松弛扫描
 
-对于 `gaussian.scan@1`，核验 route 包含受支持的 `Scan` 或 `ModRedundant` 扫描指令，
+对于 `gaussian@1` 执行器，核验 route 包含受支持的 `Scan` 或 `ModRedundant` 扫描指令，
 不可变 intent 中声明的坐标和点数确实存在，并且解析 profile 包含预期点数、能量和坐标。
 完整扫描只是能量曲线，不是过渡态验证；曲线极大值只能作为后续鞍点工作的候选。
 

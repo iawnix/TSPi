@@ -23,6 +23,18 @@ export const KERNEL_BRIDGE_METHODS = Object.freeze([
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const ACTIVE_KERNEL_CHILDREN = new Set();
+
+// A SessionWorker may be terminated by its owner before its asynchronous
+// cleanup path runs. Kill transport children synchronously with the parent
+// process so a Python Kernel worker cannot be orphaned. Keep one process hook
+// for all bridges to avoid accumulating listeners when short-lived command
+// bridges are used.
+process.once("exit", () => {
+  for (const child of ACTIVE_KERNEL_CHILDREN) {
+    if (!child.killed) child.kill();
+  }
+});
 
 export class KernelBridgeError extends Error {
   constructor(message, options = {}) {
@@ -267,6 +279,7 @@ export function create_jsonl_subprocess_transport({
   let closed = false;
   let sequence = 0;
   const pending = new Map();
+  ACTIVE_KERNEL_CHILDREN.add(child);
 
   function fail_all(error) {
     if (closed) return;
@@ -307,8 +320,12 @@ export function create_jsonl_subprocess_transport({
   child.stderr.on("data", (chunk) => {
     stderr = `${stderr}${chunk}`.slice(-8192);
   });
-  child.once("error", (error) => fail_all(new KernelBridgeError(`Python Kernel process failed: ${error.message}`, { code: "kernel_process_error", cause: error })));
+  child.once("error", (error) => {
+    ACTIVE_KERNEL_CHILDREN.delete(child);
+    fail_all(new KernelBridgeError(`Python Kernel process failed: ${error.message}`, { code: "kernel_process_error", cause: error }));
+  });
   child.once("exit", (code, signal) => {
+    ACTIVE_KERNEL_CHILDREN.delete(child);
     if (!closed) fail_all(new KernelBridgeError(`Python Kernel process exited (${code ?? "signal"} ${signal || ""})${stderr ? `: ${stderr.trim()}` : ""}`, { code: "kernel_process_exit" }));
   });
 
@@ -335,6 +352,7 @@ export function create_jsonl_subprocess_transport({
   async function close() {
     if (closed) return;
     fail_all(new KernelBridgeError("Python Kernel transport closed", { code: "transport_closed" }));
+    ACTIVE_KERNEL_CHILDREN.delete(child);
     child.stdin.end();
     if (!child.killed) child.kill();
   }

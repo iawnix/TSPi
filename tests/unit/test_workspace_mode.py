@@ -10,20 +10,7 @@ from ts_agent.runtime.workspace_mode import (
     WorkspaceModeError,
     admit_research_workspace,
     initialize_workspace,
-    read_workspace_mode,
 )
-
-
-def test_light_workspace_is_ready_and_has_only_light_profile(tmp_path: Path) -> None:
-    root = tmp_path / "light"
-    manifest = initialize_workspace(root, "light_one", "light")
-
-    assert manifest["state"] == "ready"
-    assert manifest["workspace_mode"] == "light"
-    assert (root / "workspace_manifest.json").is_file()
-    assert (root / "scratch").is_dir()
-    assert not (root / "research_map/context.json").exists()
-    assert read_workspace_mode(root) == "light"
 
 
 def test_research_workspace_requires_and_accepts_host_admission(tmp_path: Path) -> None:
@@ -90,10 +77,10 @@ def test_admission_preserves_liveness_first_projection(tmp_path: Path) -> None:
 
 def test_workspace_mode_is_immutable(tmp_path: Path) -> None:
     root = tmp_path / "immutable"
-    initialize_workspace(root, "immutable_one", "light")
+    initialize_workspace(root, "immutable_one", "research")
 
-    with pytest.raises(WorkspaceModeError, match="workspace_mode_mismatch"):
-        initialize_workspace(root, "immutable_one", "research")
+    with pytest.raises(WorkspaceModeError, match="workspace_mode must be research"):
+        initialize_workspace(root, "immutable_one", "light")
 
 
 @pytest.mark.parametrize("retired_name", ["claims.json", "research_nodes.json", "observations.json"])
@@ -103,4 +90,4 @@ def test_initializer_rejects_every_retired_research_file(tmp_path: Path, retired
     (root / retired_name).touch()
 
     with pytest.raises(WorkspaceModeError, match=rf"legacy_workspace_layout: {retired_name}"):
-        initialize_workspace(root, "mixed_one", "light")
+        initialize_workspace(root, "mixed_one", "research")

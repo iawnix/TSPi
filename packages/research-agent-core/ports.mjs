@@ -11,7 +11,6 @@ export const AGENT_SESSION_PORT_VERSION = "agent_session_port_1";
 export const MODEL_PORT_VERSION = "model_port_1";
 export const CONTEXT_PORT_VERSION = "context_port_1";
 export const MEMORY_PORT_VERSION = "memory_port_1";
-export const TOOL_GATEWAY_VERSION = "tool_gateway_1";
 export const SESSION_PORT_VERSION = "session_port_1";
 export const WORKSPACE_PORT_VERSION = "workspace_port_1";
 
@@ -21,7 +20,6 @@ const REQUIRED_METHODS = Object.freeze({
   model_port_1: ["describe", "stream"],
   context_port_1: ["build"],
   memory_port_1: ["read", "append"],
-  tool_gateway_1: ["describe", "invoke"],
   session_port_1: ["create", "list", "attach", "enqueue"],
   workspace_port_1: ["initialize_workspace", "attach_workspace", "admit_workspace"],
 });
@@ -72,10 +70,6 @@ export function create_context_port(implementation) {
 
 export function create_memory_port(implementation) {
   return requireImplementation(MEMORY_PORT_VERSION, implementation);
-}
-
-export function create_tool_gateway(implementation) {
-  return requireImplementation(TOOL_GATEWAY_VERSION, implementation);
 }
 
 export function create_session_port(implementation) {

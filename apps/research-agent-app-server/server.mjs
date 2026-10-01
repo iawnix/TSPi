@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 
 import { create_research_agent_composition } from "./composition_root.mjs";
 import { create_configured_capability_host } from "./capability-host-bootstrap.mjs";
+import { createNativeComputeLifecycle } from "../../apps/app-server/pi-native-compute.mjs";
 
 export const HTTP_SERVER_PROTOCOL_VERSION = "research_agent_http_server_1";
 export const HTTP_ERROR_SCHEMA = "research_agent_http_error_1";
@@ -20,7 +21,7 @@ function error_code(error) {
   const capability_code = error?.code;
   if (capability_code === "capability_not_found" || capability_code === "artifact_not_found") return "not_found";
   if (capability_code === "capability_mode_not_supported" || capability_code === "workspace_mode_mismatch") return "conflict";
-  if (capability_code === "remote_execution_requires_native_lifecycle") return "conflict";
+  if (capability_code === "js_provider_path_removed") return "conflict";
   if (capability_code === "compute_requires_research_workspace"
     || capability_code === "workspace_admission_required"
     || capability_code === "cancelled"
@@ -315,6 +316,11 @@ export async function start_http_server({ app_server, session_store = null, host
 }
 
 async function run_default_server() {
+  // The Native lifecycle invokes the package-owned ts_compute.py worker in
+  // process. Establish the same package identity that the Pi Host workers use
+  // before any runtime or compute request is created.
+  const package_root = resolve(new URL("../..", import.meta.url).pathname);
+  process.env.TSPI_PACKAGE_ROOT = package_root;
   const module_specifier = process.env.RESEARCH_AGENT_RUNTIME_MODULE;
   if (typeof module_specifier !== "string" || module_specifier.length === 0) {
     throw new Error("runtime_module_not_configured: set RESEARCH_AGENT_RUNTIME_MODULE to a module exporting create_runtime()");
@@ -337,21 +343,18 @@ async function run_default_server() {
       kernel_options: process.env.RESEARCH_AGENT_KERNEL_OPTIONS || undefined,
     });
   }
-  const artifact_root = process.env.RESEARCH_AGENT_ARTIFACT_ROOT || undefined;
   const capability_host = await create_configured_capability_host({
-    config_path: process.env.RESEARCH_AGENT_CAPABILITY_CONFIG || undefined,
-    package_root: resolve(new URL("../..", import.meta.url).pathname),
-    artifact_root,
+    compute_config_path: process.env.TS_COMPUTE_CONFIG || undefined,
+    package_root,
   });
+  const native_compute = createNativeComputeLifecycle({ researchKernel: kernel_port });
   const composition = create_research_agent_composition({
     runtime_port,
     kernel_port,
     catalog_root: process.env.RESEARCH_AGENT_CATALOG_ROOT || undefined,
     session_root: process.env.RESEARCH_AGENT_SESSION_ROOT || undefined,
-    artifact_root,
-    tool_gateway: capability_host?.tool_gateway,
-    environment_broker: capability_host?.environment_broker,
-    capability_assembly: capability_host?.capability_assembly ?? null,
+    native_capability_host: capability_host,
+    native_compute,
   });
   const app_server = composition.app_server;
   const server = await start_http_server({

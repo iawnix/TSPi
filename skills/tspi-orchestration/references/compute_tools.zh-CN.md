@@ -54,7 +54,7 @@ catalog 提供 capability ID/version、输入/输出 schema 和参数形状；Na
 
 `input_schema` 与 `output_schema` 是 catalog 的 wire 字段。Native calculation
 descriptor 还可能在私有 preflight binding 中提供 `input_roles`、`output_roles`、
-`parameter_schema` 和 `parsers`；这些字段不是公共 gateway descriptor 的必需字段。
+`parameter_schema` 和 `parsers`；这些字段不是公共 catalog descriptor 的必需字段。
 Launch 的 `inputArtifacts[].inputRole` 必须与所选 capability 的 preflight binding
 返回的 role 一致。
 
@@ -86,7 +86,7 @@ Launch 接受完整语义请求和所选执行目标：
   "operation": "launch",
   "nodeId": "node_1",
   "purpose": "Optimize and characterize one TS candidate.",
-  "capability": "gaussian.opt_freq",
+  "capability": "gaussian",
   "capabilityVersion": "1",
   "attemptKind": "primary",
   "inputArtifacts": [
@@ -125,24 +125,6 @@ Launch 接受完整语义请求和所选执行目标：
 属于 Host 的 readiness/preflight 接口；不能把这种检查伪装成成功的 Calculation Attempt。
 Host 始终拒绝任意 shell，并将每个命令绑定到已校验 capability 与不可变 calculation intent。
 
-`compute_run` 还接受另一种不使用调度器 intent 生命周期的、面向已注册本地 provider 的
-mode-neutral capability 形式：
-
-```json
-{
-  "capability_id": "xtb.sp",
-  "capability_version": "1",
-  "run_id": "run_001",
-  "input": {"input_artifact_id": "art_...", "method": "gfn2"},
-  "input_artifact_ids": ["art_..."],
-  "timeout_ms": 120000
-}
-```
-
-此形式仅限本地 provider，不包含 `operation`、`nodeId`、`executionTarget`、调度回执或
-remote selector；远程请求必须使用上面的 Native lifecycle 形式。`input` 与
-`input_artifact_ids` 如何绑定由 provider descriptor 决定，返回的 run/artifact manifest 是此
-形式的运行记录。
 
 ## Inspect
 

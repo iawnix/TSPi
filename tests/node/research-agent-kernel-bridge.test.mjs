@@ -11,6 +11,7 @@ import {
   create_jsonl_subprocess_transport,
   create_research_kernel_bridge,
 } from "../../packages/research-agent-kernel/python_kernel_bridge.mjs";
+import { create_research_kernel_port } from "../../packages/research-agent-kernel/ports.mjs";
 
 test("kernel bridge binds workspace and forwards all port methods over injected transport", async () => {
   const calls = [];
@@ -35,6 +36,21 @@ test("kernel bridge binds workspace and forwards all port methods over injected 
   ]);
   assert.equal(calls.every(([, payload]) => payload.workspace_root === "/tmp/research-bridge"), true);
   await assert.rejects(bridge.read_context({ workspace_root: "/tmp/other" }), /workspace_root_mismatch/);
+});
+
+test("Kernel port preserves optional bridge cleanup", async () => {
+  let closed = false;
+  const port = create_research_kernel_port({
+    async read_context() { return { workspace_id: "workspace_1" }; },
+    async read_liveness() { return { state: "admitted" }; },
+    async admit_workspace() { return { accepted: true, state: "admitted" }; },
+    async apply_change() { return { accepted: true }; },
+    async checkpoint() { return { accepted: true }; },
+    async turn() { return { accepted: true }; },
+    async close() { closed = true; },
+  });
+  await port.close();
+  assert.equal(closed, true);
 });
 
 test("JSONL subprocess transport rejects malformed or failed responses", async () => {

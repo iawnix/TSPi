@@ -1,6 +1,7 @@
-# The installer does not copy this example automatically. Copy it to
-# <installation>/.pi/name-resolver.toml to enable deterministic lookup,
-# and keep the resulting file owner-readable (mode 0600).
+# The installer copies this example to a fresh installation as
+# <installation>/.pi/name-resolver.toml. Replace it with
+# --name-resolver-config when a different deterministic backend is required;
+# the installed file is owner-readable (mode 0600).
 default_resolver = "pubchem"
 
 [backends.pubchem]

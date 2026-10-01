@@ -4,19 +4,21 @@
  * A Kernel module is loaded once by the App Server, while workspaces are
  * selected by individual requests.  This factory therefore returns a
  * workspace-aware ResearchKernelPort that validates each research manifest
- * before binding a filesystem adapter or a Python bridge for that root.
+ * before binding the canonical Python filesystem Kernel bridge for that root.
  */
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { create_fs_research_kernel } from "./fs_kernel_adapter.mjs";
 import { create_research_kernel_port } from "./ports.mjs";
 import { create_python_kernel_bridge } from "./python_kernel_bridge.mjs";
 import { validate_workspace_files } from "../research-agent-core/workspace.mjs";
 
 export const RESEARCH_KERNEL_FACTORY_VERSION = "research_kernel_factory_1";
-export const RESEARCH_KERNEL_BACKENDS = Object.freeze(["filesystem", "python"]);
+// The filesystem Research Kernel is implemented by the Python workspace
+// boundary.  Node owns transport and port validation only; it must not carry
+// a second state-machine implementation.
+export const RESEARCH_KERNEL_BACKENDS = Object.freeze(["python"]);
 
 const WORKSPACE_MANIFEST_SCHEMA = "research_agent_workspace_1";
 const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
@@ -57,9 +59,7 @@ function parse_options(value) {
 }
 
 function backend_name(value) {
-  const normalized = value === undefined || value === null ? "filesystem" : value;
-  if (normalized === "fs") return "filesystem";
-  if (normalized === "python_bridge") return "python";
+  const normalized = value === undefined || value === null ? "python" : value;
   if (!RESEARCH_KERNEL_BACKENDS.includes(normalized)) {
     throw new TypeError(`unsupported research kernel backend: ${String(value)}`);
   }
@@ -159,9 +159,7 @@ export function create_kernel(options = {}) {
         workspace_root: binding.workspace_root,
         workspace_id: manifest.workspace_id,
       };
-      adapter = backend === "python"
-        ? create_python_kernel_bridge(options_for_adapter)
-        : create_fs_research_kernel(options_for_adapter);
+      adapter = create_python_kernel_bridge(options_for_adapter);
       adapters.set(binding.workspace_root, adapter);
     }
     return {

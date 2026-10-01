@@ -3,7 +3,6 @@ export const AGENT_SESSION_PORT_VERSION: "agent_session_port_1";
 export const MODEL_PORT_VERSION: "model_port_1";
 export const CONTEXT_PORT_VERSION: "context_port_1";
 export const MEMORY_PORT_VERSION: "memory_port_1";
-export const TOOL_GATEWAY_VERSION: "tool_gateway_1";
 export const SESSION_PORT_VERSION: "session_port_1";
 export const WORKSPACE_PORT_VERSION: "workspace_port_1";
 
@@ -61,12 +60,6 @@ export interface WorkspacePort {
   admit_workspace(workspace_root: string): Promise<WorkspaceManifestLike>;
 }
 
-export interface ToolGateway {
-  readonly protocol_version: "tool_gateway_1";
-  describe(request?: Record<string, unknown>): readonly Record<string, unknown>[];
-  invoke(request: Record<string, unknown>): Promise<Record<string, unknown>>;
-}
-
 export interface WorkspaceInitializeRequest {
   readonly workspace_root: string;
   readonly workspace_id?: string;
@@ -88,6 +81,5 @@ export function create_model_port(implementation: Omit<ModelPort, "protocol_vers
 export function create_context_port(implementation: Omit<ContextPort, "protocol_version">): ContextPort;
 export function create_memory_port(implementation: Omit<MemoryPort, "protocol_version">): MemoryPort;
 export function create_workspace_port(implementation: Omit<WorkspacePort, "protocol_version">): WorkspacePort;
-export function create_tool_gateway(implementation: Omit<ToolGateway, "protocol_version">): ToolGateway;
 export function assert_protocol_id(value: unknown): string;
 import type { WorkspaceMode } from "./session_mode.mjs";

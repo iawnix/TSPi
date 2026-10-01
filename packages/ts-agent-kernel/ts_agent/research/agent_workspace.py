@@ -262,10 +262,8 @@ def _load_state(
         raise AgentWorkspaceError("research_workspace_id_mismatch")
     if not isinstance(workspace_id, str) or _WORKSPACE_ID.fullmatch(workspace_id) is None:
         raise AgentWorkspaceError("context.workspace_id must be a valid workspace identifier")
-    # This boundary is for the new Research Agent workspaces only.  A missing
-    # mode is ambiguous (and could accidentally route a light workspace into
-    # the research kernel), so require the immutable mode written by the
-    # workspace initializer.
+    # This boundary accepts only the canonical Research workspace written by
+    # the workspace initializer.
     if context.get("workspace_mode") != "research":
         raise AgentWorkspaceError("research_workspace_mode_required")
     if not isinstance(context.get("created_at"), str) or not context["created_at"]:
@@ -517,6 +515,7 @@ def _liveness_projection(
         result["lifecycle"] = "waiting_external"
         result["waiting_external"] = waiting_external
         result["decision_needed"] = []
+        result["execution_ready"] = False
         return result
 
     nodes_by_id = {
@@ -537,6 +536,35 @@ def _liveness_projection(
         value for value in claim_ids
         if claims_by_id.get(value, {}).get("status", "proposed") in {"proposed", "inconclusive"}
     ]
+    plans = _items(context, "strategy_plans")
+    active_plans = [
+        plan for plan in plans
+        if plan.get("status", "proposed") in {"proposed", "active"}
+    ]
+    covered_nodes = {
+        plan.get("node_id") for plan in active_plans
+        if isinstance(plan.get("node_id"), str)
+    }
+    covered_claims = {
+        plan.get("claim_id") for plan in active_plans
+        if isinstance(plan.get("claim_id"), str)
+    }
+    # `decision_needed` describes the missing scientific decision, while an
+    # active StrategyPlan makes the focused scope executable. The explicit
+    # flag lets the Host admit prepare/execute tools before the final
+    # checkpoint without guessing from a transport-specific context shape.
+    result["execution_ready"] = bool(
+        (open_node_ids or open_claim_ids)
+        and all(
+            value in covered_nodes
+            or any(
+                claim_id in covered_claims
+                for claim_id in nodes_by_id.get(value, {}).get("claim_ids", [])
+            )
+            for value in open_node_ids
+        )
+        and all(value in covered_claims for value in open_claim_ids)
+    )
     if open_node_ids or open_claim_ids:
         result["lifecycle"] = "decision_needed"
         result["decision_needed"] = [
@@ -555,6 +583,8 @@ def _liveness_projection(
     else:
         result["lifecycle"] = "idle"
         result["decision_needed"] = []
+    if not (open_node_ids or open_claim_ids):
+        result["execution_ready"] = False
     return result
 
 

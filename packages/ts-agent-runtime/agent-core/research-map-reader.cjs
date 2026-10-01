@@ -11,10 +11,7 @@ const COLLECTIONS = [
   "strategy_plans", "strategy_reviews", "attempt_interpretations",
 ];
 const COMMON_DIRECTORIES = ["inputs", "artifacts", "runs", "logs"];
-const MODE_DIRECTORIES = {
-  light: ["scratch", "sessions"],
-  research: ["research_map", "memory", "lifecycle", "checkpoints", "nodes", "evidence", "monitor", "environments"],
-};
+const RESEARCH_DIRECTORIES = ["research_map", "memory", "lifecycle", "checkpoints", "nodes", "evidence", "monitor", "environments"];
 
 // The Agent Runtime consumes the same canonical read model as the Research
 // Kernel. It must never silently fall back to research_map.json, because that
@@ -42,8 +39,6 @@ function readResearchMap(rootValue) {
     const path = resolve(root, name);
     if (existsSync(path) || isSymlink(path)) throw new Error(`legacy workspace layout: ${name}`);
   }
-  if (manifest.workspace_mode === "light") return null;
-  if (manifest.workspace_mode !== "research") throw new Error("workspace mode is invalid");
   if (!existsSync(contextPath) || lstatSync(contextPath).isSymbolicLink()) {
     throw new Error("ResearchMap context is missing or symbolic");
   }
@@ -144,20 +139,17 @@ function validateManifest(manifest, root) {
   if (typeof manifest.workspace_id !== "string" || !WORKSPACE_ID.test(manifest.workspace_id)) {
     throw new Error("workspace identity is invalid");
   }
-  if (manifest.workspace_mode !== "light" && manifest.workspace_mode !== "research") {
+  if (manifest.workspace_mode !== "research") {
     throw new Error("workspace mode is invalid");
   }
   if (typeof manifest.workspace_root !== "string" || resolve(manifest.workspace_root) !== root) {
     throw new Error("workspace root is inconsistent");
   }
-  const expectedProfile = `${manifest.workspace_mode}_workspace_1`;
-  const expectedScope = manifest.workspace_mode === "research" ? "workspace" : "none";
-  const expectedExecution = manifest.workspace_mode === "research" ? "audited" : "bounded";
-  if (manifest.profile_id !== expectedProfile
+  if (manifest.profile_id !== "research_workspace_1"
       || manifest.memory_profile !== "session"
       || manifest.memory_scope !== "session"
-      || manifest.research_state_scope !== expectedScope
-      || manifest.execution_profile !== expectedExecution) {
+      || manifest.research_state_scope !== "workspace"
+      || manifest.execution_profile !== "audited") {
     throw new Error("workspace manifest policy is inconsistent");
   }
   if (!["ready", "admission_pending"].includes(manifest.state)) {
@@ -166,7 +158,7 @@ function validateManifest(manifest, root) {
   if (typeof manifest.created_at !== "string" || !manifest.created_at) {
     throw new Error("workspace created_at is invalid");
   }
-  const directories = [...COMMON_DIRECTORIES, ...MODE_DIRECTORIES[manifest.workspace_mode]];
+  const directories = [...COMMON_DIRECTORIES, ...RESEARCH_DIRECTORIES];
   if (!Array.isArray(manifest.directories)
       || manifest.directories.length !== directories.length
       || new Set(manifest.directories).size !== directories.length
@@ -174,16 +166,12 @@ function validateManifest(manifest, root) {
     throw new Error("workspace directories are inconsistent");
   }
   const kernel = manifest.research_kernel;
-  if (!isPlainObject(kernel) || kernel.initialized !== (manifest.workspace_mode === "research")
+  if (!isPlainObject(kernel) || kernel.initialized !== true
       || typeof kernel.admission_required !== "boolean") {
     throw new Error("workspace kernel policy is inconsistent");
   }
-  if (manifest.workspace_mode === "research"
-      && (kernel.admission_required !== (manifest.state !== "ready")
-        || !Number.isSafeInteger(kernel.revision) || kernel.revision < 0)) {
-    throw new Error("workspace kernel policy is inconsistent");
-  }
-  if (manifest.workspace_mode === "light" && (kernel.admission_required || kernel.revision !== null)) {
+  if (kernel.admission_required !== (manifest.state !== "ready")
+      || !Number.isSafeInteger(kernel.revision) || kernel.revision < 0) {
     throw new Error("workspace kernel policy is inconsistent");
   }
 }
@@ -197,7 +185,6 @@ function validateLayout(manifest, root) {
       throw new Error(`workspace directory is invalid: ${directory}`);
     }
   }
-  if (manifest.workspace_mode !== "research") return;
   for (const relative of ["research_map/context.json", "lifecycle/liveness.json", "memory/index.json", "checkpoints/checkpoint_0.json"]) {
     const documentInfo = lstatSync(resolve(root, relative));
     if (!documentInfo.isFile() || documentInfo.isSymbolicLink()) {

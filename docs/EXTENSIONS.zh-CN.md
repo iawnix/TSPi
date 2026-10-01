@@ -31,18 +31,7 @@ manifest 格式为 `tspi-extension/1`，机器可验证的 JSON Schema 位于
 }
 ```
 
-Skill 路径必须包含普通文件 `SKILL.md`。Provider 的 `kind` 必须是
-`compute`、`analysis` 或 `harness` 之一，并且必须声明 descriptor 或 entry。
-可执行的 provider entry 必须带 SHA-256 摘要；App Server loader 只建立清单，
-不会导入或执行 provider 代码。受信任的 capability adapter 可以消费该清单，
-再将其绑定到环境管理器。
-
-对于可执行计算 provider，受信任的 adapter 通过
-`register_capability_provider()` 注册 `CapabilityDescriptor`。其
-`prepare(task)`（或 `prepare_task(task)`）必须返回受约束的 `PreparedTask`；可选的
-`validate_inputs(workspace, intent, inputs)` 负责 provider 自己的输入检查。只有
-adapter 可以把 descriptor 翻译成命令。没有已注册 adapter 的 descriptor 会报告为
-不可用能力，不会退回到 shell 命令或某个后端的默认分支。
+Skill 路径必须包含普通文件 `SKILL.md`。扩展中的 provider entry 只保存元数据；计算 descriptor 由 Python Native registry 解析。App Server loader 只建立清单，不会导入 JavaScript 计算 provider。Native preflight 负责输入校验、命令绑定、intent 物化、执行和解析；缺失的 Native capability 会报告为不可用，不会退回到 shell 命令或后端默认分支。
 
 现有 `extensions/server/extensions.json` 合同保持不变：server 工具仍要求包内
 manifest、allowlist 选择和逐 entry 摘要。已安装 manifest 增加 Skill、provider
@@ -63,5 +52,4 @@ Agent 不能选择 import 路径或绕过 allowlist。
 `tspi-core-tools` 负责研究/生命周期、环境、审查、dispatch、通用计算、artifact
 导入/渲染和报告；`tspi-chemical-tools` 负责化学 artifact 与分析工具
 （`artifact_seed`、`artifact_compare`、`analysis_run`）。默认
-`tspi-chemical` 扩展中的 Gaussian 和 xTB 是 descriptor-only provider 清单项；
-真正的 Python adapter 仍是执行边界，并通过环境管理器选择运行环境。
+`tspi-chemical` 扩展中的 Gaussian 和 xTB 是 descriptor-only 元数据项；Python Native registry 是唯一执行边界。

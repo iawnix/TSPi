@@ -161,9 +161,9 @@ test("Kernel admission is Host-only and blocks ResearchMap changes while pending
 });
 
 test("Core and Kernel source stay independent of Pi", async () => {
-  const roots = ["packages/research-agent-core", "packages/research-agent-kernel", "packages/research-agent-capabilities"];
+  const roots = ["packages/research-agent-core", "packages/research-agent-kernel"];
   for (const root of roots) {
-    const source = await readFile(join(process.cwd(), root, root.endsWith("capabilities") ? "research_agent_capabilities/__init__.py" : root.endsWith("core") ? "ports.mjs" : "ports.mjs"), "utf8");
+    const source = await readFile(join(process.cwd(), root, "ports.mjs"), "utf8");
     assert.doesNotMatch(source, /@earendil-works\/pi|TSPI_PI_SOURCE|pi-session-worker/i, root);
   }
 });

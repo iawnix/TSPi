@@ -30,7 +30,7 @@
     },
     "capability": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9_]*(?:[.][a-z][a-z0-9_]*)+$",
+      "pattern": "^[a-z][a-z0-9_]*(?:[.][a-z][a-z0-9_]*)*$",
       "maxLength": 128
     },
     "capability_version": {"type": "string", "pattern": "^[1-9][0-9]*$", "maxLength": 16},

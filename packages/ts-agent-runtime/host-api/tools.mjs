@@ -24,7 +24,6 @@ const TOOL_ROWS = [
   ["render", "ts_render", "deterministic_artifact"],
   ["report", "ts_report", "deterministic_artifact"],
   ["notify", "ts_notify", "deterministic_external"],
-  ["lightCompute", "ts_light_compute", "light_compute"],
 ];
 
 // Semantic Harness names are the stable interface exposed to Agents. The
@@ -52,7 +51,6 @@ export const PUBLIC_TOOL_CANONICAL_NAMES = Object.freeze({
   render: "artifact_render",
   report: "report_build",
   notify: "notify_send",
-  lightCompute: "light_compute",
 });
 
 export const PUBLIC_TOOL_NAMES = Object.freeze(Object.fromEntries(
@@ -114,7 +112,6 @@ const SOURCE_TOOL_METADATA = Object.freeze({
   ts_render: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "interpret" }),
   ts_report: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "checkpoint" }),
   ts_notify: Object.freeze({ authority: "external_side_effect", effect: "external_write", replay: "never", phase: "checkpoint" }),
-  ts_light_compute: Object.freeze({ authority: "execution_runtime", effect: "artifact_write", replay: "idempotent", phase: "execute" }),
 });
 
 // Canonical tools carry the same lifecycle contract as their private source
@@ -389,7 +386,7 @@ export function createPublicToolContracts(Type) {
       root: optionalRoot,
       intentId: Type.Optional(intentId),
       purpose: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
-      capability: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9_]*(?:[.][a-z][a-z0-9_]*)+$", maxLength: 128 })),
+      capability: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9_]*(?:[.][a-z][a-z0-9_]*)*$", maxLength: 128 })),
       capabilityVersion: Type.Optional(Type.String({ pattern: "^[1-9][0-9]*$", maxLength: 16 })),
       attemptKind: Type.Optional(literalUnion(["primary", "retry", "recalculation"])),
       sourceAttempt: Type.Optional(computeSourceAttempt),
@@ -409,25 +406,6 @@ export function createPublicToolContracts(Type) {
       requiredOperationBranch("cancel", ["intentId"]),
     ]),
   ]);
-  // Mode-neutral capability execution. Host injects workspace mode and the
-  // selected ledger; the Agent supplies only capability identity and input.
-  // Keep this branch separate from the legacy scheduler schema so the active
-  // compute_run contract cannot accidentally require scheduler intent fields.
-  const computeCapabilitySchema = Type.Object({
-    capability_id: Type.String({ pattern: "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$", maxLength: 128 }),
-    capability_version: Type.Optional(Type.String({ minLength: 1, maxLength: 32 })),
-    run_id: Type.Optional(Type.String({ minLength: 1, maxLength: 160, pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$" })),
-    attempt_id: Type.Optional(Type.String({ minLength: 1, maxLength: 160, pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$" })),
-    node_id: Type.Optional(nodeId),
-    input: Type.Optional(Type.Record(Type.String({ minLength: 1, maxLength: 128 }), Type.Any())),
-    input_artifact_ids: Type.Optional(Type.Array(Type.String({ pattern: "^art_[0-9a-f]{64}$" }), { maxItems: 32, uniqueItems: true })),
-    timeout_ms: Type.Optional(Type.Integer({ minimum: 1, maximum: 3_600_000 })),
-    metadata: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
-    environment: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
-    evidence_links: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true, maxProperties: 16 }), { maxItems: 128 })),
-    root: optionalRoot,
-  }, { additionalProperties: false });
-
   const contracts = {
     systemPrompt: contract("systemPrompt", "System Prompt", "Read the effective system prompt and its provenance.", Type.Object({}, {
       additionalProperties: false,
@@ -487,7 +465,7 @@ export function createPublicToolContracts(Type) {
       execution_kind: Type.Optional(literalUnion(["local", "remote"])),
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential", promptSnippet: "Check compute capability readiness" }),
-    compute: contract("compute", "TS Calculate", "Run one mode-neutral registered calculation capability.", Type.Union([computeCapabilitySchema, computeOperationSchema]), {
+    compute: contract("compute", "TS Calculate", "Run one calculation through the Native compute lifecycle.", computeOperationSchema, {
       executionMode: "sequential",
       replay: "never",
       promptSnippet: "Run one calculation operation",
@@ -568,39 +546,6 @@ export function createPublicToolContracts(Type) {
       reportRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 8, uniqueItems: true })),
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential", replay: "never" }),
-    lightCompute: contract("lightCompute", "Light Compute", "Inspect and run registered bounded capabilities without ResearchMap or Attempt lifecycle state.", Type.Union([
-      Type.Object({
-        operation: Type.Literal("generate_xyz"),
-        molecule: enumString(["water", "methane", "methanol"], 32),
-        logicalRef: Type.Optional(Type.String({ minLength: 1, maxLength: 256, pattern: "^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$" })),
-        root: optionalRoot,
-      }, { additionalProperties: false }),
-      Type.Object({
-        operation: Type.Literal("inspect_xyz"),
-        xyz: Type.String({ minLength: 1, maxLength: 131_072 }),
-        root: optionalRoot,
-      }, { additionalProperties: false }),
-      Type.Object({
-        operation: Type.Literal("catalog"),
-        root: optionalRoot,
-      }, { additionalProperties: false }),
-      Type.Object({
-        operation: Type.Literal("run"),
-        capabilityId: Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$" }),
-        capabilityVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 32 })),
-        input: Type.Optional(Type.Record(Type.String({ minLength: 1, maxLength: 128 }), Type.Any())),
-        // CapabilityRuntime artifacts are content-addressed with the full
-        // SHA-256 digest. Legacy native artifact tools retain their own
-        // contract above; light provider calls must use the capability ID.
-        inputArtifactIds: Type.Optional(Type.Array(
-          Type.String({ pattern: "^art_[0-9a-f]{64}$" }),
-          { maxItems: 32, uniqueItems: true },
-        )),
-        runId: Type.Optional(Type.String({ minLength: 1, maxLength: 160, pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$" })),
-        timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 3_600_000 })),
-        root: optionalRoot,
-      }, { additionalProperties: false }),
-    ]), { executionMode: "sequential", replay: "idempotent", promptSnippet: "Run a bounded local light-mode calculation" }),
   };
   return Object.freeze(Object.fromEntries(Object.entries(contracts).map(
     ([key, value]) => [key, Object.freeze(value)],
@@ -754,7 +699,6 @@ const SEMANTIC_ALIAS_SOURCES = Object.freeze({
   "artifact_import": "ts_import",
   "artifact_render": "ts_render",
   "report_build": "ts_report",
-  "light_compute": "ts_light_compute",
 });
 
 // Decision aliases intentionally expose only operation-specific fields. They

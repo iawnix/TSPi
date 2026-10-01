@@ -8,8 +8,8 @@ Backend 是确定性适配器。它描述支持的程序任务、校验参数、
 
 ## 支持的任务
 
-- Gaussian：`sp`、`opt`、`ts`、`freq`、`opt_freq`、`irc`，以及已注册的松弛扫描能力
-  `gaussian.scan@1`。
+- Gaussian：已注册的 `gaussian@1` 执行器。`.gjf` 输入的 Route Section 决定
+  `sp`、`opt`、`ts`、`freq`、`opt_freq`、`irc`、scan、QST 等 Gaussian 模式。
 - xTB：`sp`、`opt`、`freq`、`opt_freq`、`scan`、`md`。
 - CREST：`conformer_search`。
 - ASE NEB：已注册的 `ase.neb@1`，默认使用 xTB CLI calculator；需要 Gaussian 逐 image
@@ -20,7 +20,7 @@ QBICS DMECP 当前不是已注册 capability。Backend 只有具备确定性解�
 
 使用目录构造 `compute_run` 请求。选择 `executionTarget.kind = "local"` 或 `"remote"`；
 安装共享 `compute.toml` 后，还要选择相应环境名。两者使用相同生命周期和结果合同。远端
-就绪状态在计算 preflight 中检查，不是独立计算 API。
+Native `compute_readiness` 执行与计算 preflight 相同的只读环境检查；它不会创建 intent 或提交任务。
 
 实时目录是 capability identity 与 version 的权威来源。Skill 文字、Backend descriptor、已安装
 可执行文件或目录列表都不会注册 capability，也不能证明其可运行。先查询精确的

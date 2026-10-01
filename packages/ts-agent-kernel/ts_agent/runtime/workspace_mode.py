@@ -17,7 +17,7 @@ from typing import Any
 
 
 MANIFEST_SCHEMA = "research_agent_workspace_1"
-WORKSPACE_MODES = frozenset({"light", "research"})
+WORKSPACE_MODE = "research"
 WORKSPACE_STATES = frozenset({"initializing", "ready", "admission_pending", "failed"})
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
@@ -29,9 +29,7 @@ RETIRED_WORKSPACE_FILES = (
     "validation_results.json", "findings.json", "gate_specs.json", "gate_results.json",
     "decision_log.jsonl", "transaction_log.jsonl",
 )
-_MODE_DIRECTORIES = {
-    "light": ("scratch", "sessions"),
-    "research": (
+_RESEARCH_DIRECTORIES = (
         "research_map",
         "memory",
         "lifecycle",
@@ -40,8 +38,7 @@ _MODE_DIRECTORIES = {
         "evidence",
         "monitor",
         "environments",
-    ),
-}
+)
 RESEARCH_CONTEXT_COLLECTIONS = (
     "phases", "claims", "nodes", "findings", "gates", "claim_relations",
     "attempts", "artifacts", "evidence_links", "continuations",
@@ -64,9 +61,9 @@ def _identifier(value: Any, field: str) -> str:
 
 
 def _mode(value: Any) -> str:
-    if value not in WORKSPACE_MODES:
-        raise WorkspaceModeError("workspace_mode must be one of: light, research")
-    return value
+    if value != WORKSPACE_MODE:
+        raise WorkspaceModeError("workspace_mode must be research")
+    return WORKSPACE_MODE
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -107,7 +104,7 @@ def _validate(manifest: dict[str, Any], root: Path) -> dict[str, Any]:
         raise WorkspaceModeError("unsupported_workspace_manifest")
     _identifier(manifest.get("workspace_id"), "workspace_id")
     workspace_mode = _mode(manifest.get("workspace_mode"))
-    expected_state_scope = "workspace" if workspace_mode == "research" else "none"
+    expected_state_scope = "workspace"
     if Path(str(manifest.get("workspace_root", ""))).expanduser().resolve() != root.resolve():
         raise WorkspaceModeError("workspace_root_mismatch")
     if manifest.get("profile_id") != f"{workspace_mode}_workspace_1":
@@ -120,32 +117,29 @@ def _validate(manifest: dict[str, Any], root: Path) -> dict[str, Any]:
         raise WorkspaceModeError(
             f"workspace_research_state_scope_mismatch: expected {expected_state_scope}"
         )
-    if manifest.get("execution_profile") != ("audited" if workspace_mode == "research" else "bounded"):
+    if manifest.get("execution_profile") != "audited":
         raise WorkspaceModeError("workspace_execution_profile_mismatch")
     if not isinstance(manifest.get("created_at"), str) or not manifest["created_at"]:
         raise WorkspaceModeError("workspace_created_at_missing")
     if manifest.get("state") not in WORKSPACE_STATES:
         raise WorkspaceModeError("invalid_workspace_state")
     directories = manifest.get("directories")
-    expected_directories = [*_COMMON_DIRECTORIES, *_MODE_DIRECTORIES[workspace_mode]]
+    expected_directories = [*_COMMON_DIRECTORIES, *_RESEARCH_DIRECTORIES]
     if (not isinstance(directories, list)
             or len(directories) != len(expected_directories)
             or len(set(directories)) != len(expected_directories)
             or any(directory not in directories for directory in expected_directories)):
         raise WorkspaceModeError("workspace_directories_mismatch")
     kernel = manifest.get("research_kernel")
-    if not isinstance(kernel, dict) or kernel.get("initialized") != (workspace_mode == "research"):
+    if not isinstance(kernel, dict) or kernel.get("initialized") is not True:
         raise WorkspaceModeError("workspace_research_kernel_mismatch")
     if not isinstance(kernel.get("admission_required"), bool):
         raise WorkspaceModeError("workspace_research_kernel_mismatch")
-    if workspace_mode == "research":
-        if kernel["admission_required"] != (manifest["state"] != "ready"):
-            raise WorkspaceModeError("workspace_research_kernel_mismatch")
-        if (not isinstance(kernel.get("revision"), int)
-                or isinstance(kernel.get("revision"), bool)
-                or kernel["revision"] < 0):
-            raise WorkspaceModeError("workspace_research_kernel_mismatch")
-    elif kernel["admission_required"] or kernel.get("revision") is not None:
+    if kernel["admission_required"] != (manifest["state"] != "ready"):
+        raise WorkspaceModeError("workspace_research_kernel_mismatch")
+    if (not isinstance(kernel.get("revision"), int)
+            or isinstance(kernel.get("revision"), bool)
+            or kernel["revision"] < 0):
         raise WorkspaceModeError("workspace_research_kernel_mismatch")
     return manifest
 
@@ -173,8 +167,6 @@ def _validate_layout(
         path = root / directory
         if path.is_symlink() or not path.is_dir():
             raise WorkspaceModeError(f"workspace_directory_invalid: {directory}")
-    if manifest["workspace_mode"] != "research":
-        return
     required_files = (
         root / "research_map/context.json",
         root / "lifecycle/liveness.json",
@@ -360,32 +352,24 @@ def initialize_workspace(root: str | Path, workspace_id: str, workspace_mode: st
 
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     created_at = _now()
-    initial_state = "ready" if selected_mode == "light" else "admission_pending"
-    directories = [*_COMMON_DIRECTORIES, *_MODE_DIRECTORIES[selected_mode]]
+    initial_state = "admission_pending"
+    directories = [*_COMMON_DIRECTORIES, *_RESEARCH_DIRECTORIES]
     manifest = {
         "schema_version": MANIFEST_SCHEMA,
         "workspace_id": identifier,
         "workspace_mode": selected_mode,
         "profile_id": f"{selected_mode}_workspace_1",
-        # Keep the Python initializer aligned with the Agent Core workspace
-        # policy.  These fields are part of the immutable mode contract and
-        # are consumed by Host/runtime routing after restart.
-        # Agent Core memory is session-scoped in both modes. Durable
-        # workspace-scoped scientific state belongs to the Research Kernel and
-        # is expressed by research_state_scope below.
+        # The ResearchMap is durable workspace state; conversational memory
+        # remains session-scoped.
         "memory_profile": "session",
         "memory_scope": "session",
-        "research_state_scope": "workspace" if selected_mode == "research" else "none",
-        "execution_profile": "audited" if selected_mode == "research" else "bounded",
+        "research_state_scope": "workspace",
+        "execution_profile": "audited",
         "state": initial_state,
         "workspace_root": str(path),
         "created_at": created_at,
         "directories": directories,
-        "research_kernel": (
-            {"initialized": True, "admission_required": True, "revision": 0}
-            if selected_mode == "research"
-            else {"initialized": False, "admission_required": False, "revision": None}
-        ),
+        "research_kernel": {"initialized": True, "admission_required": True, "revision": 0},
     }
     _write_json(manifest_path, {**manifest, "state": "initializing"})
     try:
@@ -393,12 +377,11 @@ def initialize_workspace(root: str | Path, workspace_id: str, workspace_mode: st
             directory_path = path / directory
             directory_path.mkdir(parents=True, exist_ok=True, mode=0o700)
             directory_path.chmod(0o700)
-        if selected_mode == "research":
-            seed = _research_seed(manifest)
-            _write_json(path / "research_map/context.json", seed["context"])
-            _write_json(path / "lifecycle/liveness.json", seed["liveness"])
-            _write_json(path / "memory/index.json", seed["memory"])
-            _write_json(path / "checkpoints/checkpoint_0.json", seed["checkpoint"])
+        seed = _research_seed(manifest)
+        _write_json(path / "research_map/context.json", seed["context"])
+        _write_json(path / "lifecycle/liveness.json", seed["liveness"])
+        _write_json(path / "memory/index.json", seed["memory"])
+        _write_json(path / "checkpoints/checkpoint_0.json", seed["checkpoint"])
         _write_json(manifest_path, manifest)
         return manifest
     except BaseException as exc:

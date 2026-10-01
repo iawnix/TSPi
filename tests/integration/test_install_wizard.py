@@ -1258,15 +1258,18 @@ def test_name_resolver_toml_is_validated_and_written_private(tmp_path: Path) -> 
     assert stat.S_IMODE(destination.stat().st_mode) == 0o600
 
 
-def test_name_resolver_config_is_explicitly_not_configured_by_default(tmp_path: Path) -> None:
+def test_name_resolver_config_uses_bundled_pubchem_default(tmp_path: Path) -> None:
     args = wizard.parse_args([
         "--install-root", str(tmp_path / "install"), "--without-web", "--service-scope", "none", "--non-interactive",
     ])
     wizard.validate_options(args)
     configs = wizard.configure_backend_configs(args)
 
-    assert configs["name_resolver"]["status"] == "not_configured"
+    assert configs["name_resolver"]["status"] == "configured"
+    assert configs["name_resolver"]["enabled_backends"] == "pubchem"
+    assert configs["name_resolver"]["automatic_lookup"] == "ready"
     assert configs["name_resolver"]["path"].endswith("/.pi/name-resolver.toml")
+    assert stat.S_IMODE((tmp_path / "install/.pi/name-resolver.toml").stat().st_mode) == 0o600
 
 
 def test_invalid_preserved_name_resolver_config_fails_install_configuration(tmp_path: Path) -> None:

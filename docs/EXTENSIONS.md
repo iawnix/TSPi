@@ -32,21 +32,13 @@ The manifest format is `tspi-extension/1`; its JSON Schema is
 }
 ```
 
-Skill paths must contain a regular `SKILL.md`. Provider `kind` is one of
-`compute`, `analysis`, or `harness`; a provider must declare a descriptor or
-entry. Executable provider entries require a SHA-256 digest and are only
-inventoried by the App Server loader. The loader does not import or execute
-provider code. A trusted capability adapter can consume the inventory and
-bind it to the environment manager.
-
-For executable calculation providers, the trusted adapter registers a
-`CapabilityDescriptor` through `register_capability_provider()`. Its
-`prepare(task)` (or `prepare_task(task)`) method returns a bounded
-`PreparedTask`; an optional `validate_inputs(workspace, intent, inputs)` method
-owns provider-specific input checks. The adapter is the only component that
-may translate a descriptor into a command. A descriptor without a registered
-adapter is reported as an unavailable capability, rather than falling through
-to a shell command or a backend-specific default.
+Skill paths must contain a regular `SKILL.md`. Extension provider entries are
+metadata only; compute descriptors are resolved by the Python Native registry.
+The App Server loader inventories extension metadata but never imports a
+JavaScript compute provider. Native preflight owns input checks, command
+bindings, intent materialization, execution, and parsing. A missing Native
+capability is reported as unavailable rather than falling through to a shell
+command or backend default.
 
 The existing `extensions/server/extensions.json` contract remains unchanged:
 server tools still require a package-owned manifest, allowlist selection, and
@@ -71,6 +63,5 @@ keeping one default active tool set. `tspi-core-tools` owns research/lifecycle,
 environment, review, dispatch, generic calculation, artifact import/render,
 and report tools. `tspi-chemical-tools` owns chemical artifact seeding and
 analysis (`artifact_seed`, `artifact_compare`, and `analysis_run`). Gaussian
-and xTB are descriptor-only provider inventory entries in the default
-`tspi-chemical` extension; their trusted Python adapters remain the execution
-boundary and are selected through the environment manager.
+and xTB are descriptor-only metadata entries in the default `tspi-chemical`
+extension; the Python Native registry is the only execution boundary.

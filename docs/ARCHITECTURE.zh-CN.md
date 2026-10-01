@@ -85,7 +85,8 @@ ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
        +----------- ClaimGate / NodeGate
 ```
 
-文件系统 Research Kernel 负责加载、校验、事务提交和持久化规范 workspace projection。
+文件系统 Research Kernel 负责加载、校验、事务提交和持久化规范 workspace projection，
+由 Python Kernel 唯一实现；Node App Server 只提供传输 bridge 和语言无关的 port。
 map-shaped context projection 是给 TS Web 和 Root Agent 的规范序列化，不是第二个科学状态。
 Root Agent 选择问题、
 方法、分支和停止条件；Skill 描述研究流程，Capability 描述可调用操作，Backend 实现
@@ -122,18 +123,9 @@ SessionWorker 创建时加载并缓存正文，但默认 prompt 只放 name、de
 只有显式调用 Skill 时才把正文注入当前 turn。Capability 和
 Compute Environment 在方法选择或 launch 前按需查询。
 
-Capability discovery 是运行时 Registry，而不是框架源码拥有的静态 dispatch 表。
-内置 descriptor 在启动时注册，受信任的 provider 也通过同一接口注册带版本的
-descriptor。对外 catalog 只暴露能力合同；provider 对象、可执行文件路径、激活脚本和
-环境变量值都留在执行边界内。计算 provider 必须显式提供受约束的
-`prepare`/`prepare_task`，也可以提供输入校验；没有受信任 adapter 的 descriptor 会被
-报告为不可用，不会退回到隐式命令。
+Capability discovery 由 Python Native registry 负责。公开 catalog 只包含带版本的 descriptor 合同；可执行绑定、输入校验、intent 物化、本地执行、远程调度控制和解析全部属于 Native Compute lifecycle。该边界不存在 JavaScript provider、gateway 或 adapter。
 
-环境选择由 `EnvironmentBroker`（同时作为 `EnvironmentManager` 边界导出）负责。它将
-provider requirement 绑定到具名的 local 或 remote 环境，返回 readiness 和不透明的
-binding digest；只有受信任的 compute control 可以解包安装级 command binding。因此新增
-provider、scheduler 或 container runtime 不需要修改 ResearchMap、Harness 生命周期或
-Agent prompt。
+Native preflight 解析具名 local/remote 环境，并把 binding digest 写入不可变 calculation intent。light execution scope 和 research Attempt 都通过同一控制路径写入 canonical workspace Artifact，不再存在第二套 ArtifactStore。
 
 运行时边界固定为：
 
@@ -172,8 +164,11 @@ TRIGGER -> ORIENT(context) -> PLAN -> PREPARE -> EXECUTE
 `continue_required`，不是另一套生命周期状态。`research.liveness` 只是有界的生命周期诊断
 投影，不是持久化下一步，也不负责关闭 turn。
 
-如果 active Node 没有合法 disposition，Kernel 返回 `decision_needed`。Harness 只追加有
-界 follow-up，要求 Agent 重新读取 bounded context 并通过 checkpoint 登记 disposition；
+如果 active Node 没有合法 disposition，Kernel 返回 `decision_needed`。如果当前 focus
+已经有 active StrategyPlan，liveness 还会返回 `execution_ready=true`，Host 可以在同一
+turn 放行该计划对应的 prepare/execute；Agent 仍必须在结束 turn 前写入 checkpoint。
+没有 `execution_ready` 时，Host 只放行读取、规划、解释和 checkpoint 修复。Harness 只追加
+有界 follow-up，要求 Agent 重新读取 bounded context 并通过 checkpoint 登记 disposition；
 Harness 不选择科学方法、不创建 Finding，也不把 `next_run` 当成新的研究指令。
 处于 `prepared` 的 Attempt 只有本地、提交前的绑定，因此仍是 Agent 的决策点，
 而不是等待外部事件。只有已提交、排队中、运行中、完成但尚未解析或状态未知的

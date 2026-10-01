@@ -54,9 +54,9 @@ lane 的客户端。直接打开工作区即可：
 ```
 
 Light 工作区只保留轻量的 memory 和生命周期状态，但与 Research 共用同一套计算入口：
-`compute_catalog`、`compute_readiness`、`compute_run` 和 `compute_cancel`。结果记录在
-`runs/<run_id>/manifest.json` 和共享的 compute ArtifactStore 中。Light 不创建 ResearchMap
-Claim/Node、可审计 Attempt、Monitor 状态或科学解释。需要这些生命周期保证时才使用
+`compute_catalog`、`compute_readiness`、`compute_run` 和 `compute_cancel`。Native 结果写入
+`nodes/<execution_scope>/attempts/` 下的 operational execution scope 和 canonical workspace
+Artifact 路径。Light 不创建 ResearchMap Claim/Node、可审计 Attempt、Monitor 状态或科学解释。需要这些生命周期保证时才使用
 `--mode research`，例如过渡态/IRC 验证或比较机理结论。未注册的能力必须明确报告不可用，
 不能用其它方法替代。
 

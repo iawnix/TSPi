@@ -60,7 +60,7 @@ Every compute catalog entry uses the cross-runtime identity fields
 `input_schema` and `output_schema` are the catalog wire fields. A native
 calculation descriptor may additionally expose `input_roles`, `output_roles`,
 `parameter_schema`, and `parsers` in the private preflight binding; those
-fields are not required on the public gateway descriptor. The launch
+fields are not required on the public catalog descriptor. The launch
 `inputArtifacts[].inputRole` values must match the roles returned by the
 selected capability's preflight binding.
 
@@ -92,9 +92,8 @@ callers never create an `art_*` value or workspace path.
 ## Launch
 
 Remote execution uses the lifecycle form below (`operation=launch`) for the
-same capability ID. The lower-level `capability_id` invocation form is for
-mode-neutral local providers and must not be given a remote environment
-selector; it has no calculation intent or scheduler lifecycle to reconcile.
+same capability ID. There is no direct capability invocation path: local and
+remote targets both create and execute the same Native calculation intent.
 
 Launch accepts the complete semantic request and selected execution target:
 
@@ -103,7 +102,7 @@ Launch accepts the complete semantic request and selected execution target:
   "operation": "launch",
   "nodeId": "node_1",
   "purpose": "Optimize and characterize one TS candidate.",
-  "capability": "gaussian.opt_freq",
+  "capability": "gaussian",
   "capabilityVersion": "1",
   "attemptKind": "primary",
   "inputArtifacts": [
@@ -152,25 +151,6 @@ it must not be represented as a successful calculation Attempt. The host still
 rejects arbitrary shell and keeps every command bound to the validated
 capability and immutable calculation intent.
 
-`compute_run` also accepts a separate mode-neutral local capability form for
-registered providers that do not use the scheduler intent lifecycle:
-
-```json
-{
-  "capability_id": "xtb.sp",
-  "capability_version": "1",
-  "run_id": "run_001",
-  "input": {"input_artifact_id": "art_...", "method": "gfn2"},
-  "input_artifact_ids": ["art_..."],
-  "timeout_ms": 120000
-}
-```
-
-This form is local and provider-bound. It has no `operation`, `nodeId`,
-`executionTarget`, scheduler receipt, or remote selector; a remote request must
-use the Native lifecycle form above. The provider descriptor decides how
-`input` and `input_artifact_ids` are bound, and the returned run/artifact
-manifest is the operational record for this form.
 
 ## Inspect
 

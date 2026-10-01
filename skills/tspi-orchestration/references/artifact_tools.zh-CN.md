@@ -125,13 +125,13 @@ research_read mode=capabilities capabilityKind=analysis query=chemical.name.reso
 
 `nodeId` 必须指向已存在且未关闭的 ResearchNode。`inputArtifacts` 是 role 到已登记
 `art_...` ID 数组的映射；物理路径、任意文件名和自行发明的 ID 都无效。Host/Kernel 解析每个
-ID，校验 workspace path、摘要和 input-role schema，然后把不可变内容交给已注册 provider。
+ID，校验 workspace path、摘要和 input-role schema，然后把不可变内容交给 Native analysis executor。
 调用方应在请求中把输入绑定到所属 Node，并保留返回的 owner/path metadata；`parameters` 必须
 满足该 capability 的 parameter schema。名称解析除其他字段外接受 `name`、
 `resolver` 和可选候选记录；自动确定性解析还需要 chemical-input Skill 所述的安装级 resolver
 配置。
 
-Provider 将结果写入 `nodes/<node_id>/outputs/analysis/`，并返回绑定的
+Native analysis executor 将结果写入 `nodes/<node_id>/outputs/analysis/`，并返回绑定的
 `ts-analysis-result/1`，其中包含分析 Artifact 与来源 Artifact ID。Analysis 不会创建 Claim、
 Finding、Gate，也不会改变 Node 状态。Root 必须检查并核验返回 Artifact，然后用
 `research_change` 记录粒度明确的 `FactFinding` 或 `IssueFinding`，并在 `source_refs` 中引用已登记

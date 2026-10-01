@@ -137,14 +137,14 @@ unregistered installed tool. The request contract is:
 role-to-array mapping of registered `art_...` IDs; physical paths, arbitrary
 filenames, and invented IDs are invalid. Host/Kernel resolves each ID, checks
 its workspace path, digest, and input-role schema, then passes immutable bytes
-to the registered provider. Bind inputs to the owning Node in the request and
+to the Native analysis executor. Bind inputs to the owning Node in the request and
 preserve their returned owner/path metadata; `parameters` must satisfy that
 capability's parameter schema. The name resolver accepts (among other fields) `name`, `resolver`, and
 optional candidate records; automatic deterministic resolution requires its
 installation-owned resolver configuration as described in the chemical-input
 Skill.
 
-The provider writes its result below
+The Native analysis executor writes its result below
 `nodes/<node_id>/outputs/analysis/` and returns a bound
 `ts-analysis-result/1` with the analysis Artifact and source Artifact IDs.
 Analysis does not create a Claim, Finding, Gate, or Node status transition.

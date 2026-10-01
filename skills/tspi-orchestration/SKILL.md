@@ -41,17 +41,20 @@ interpretation first when applicable, then use one explicit disposition:
 ledger; it is not the primary turn checkpoint. A
 completed Attempt or completed Continuation alone is not a research conclusion.
 If liveness returns `decision_needed`, continue the turn and record the
-checkpoint disposition. A `continue_required` plan is a valid next-turn plan;
-the Harness must not force it to execute in the same turn. Do not invent a
-method in the Harness or treat Monitor's `next_run` as a scientific instruction.
+checkpoint disposition. When liveness also reports `execution_ready=true`, an
+active StrategyPlan already covers the focused scope and the planned
+prepare/execute work may proceed before that checkpoint; the checkpoint is
+still required before ending the turn. A `continue_required` plan is a valid
+next-turn plan; the Harness must not force it to execute in the same turn. Do
+not invent a method in the Harness or treat Monitor's `next_run` as a
+scientific instruction.
 
 Use Review for a bounded counterargument, not as a source of canonical state.
 Use `analysis_run` only for an exact capability/version discovered from the
 analysis catalog; it is a registered deterministic local analysis and has no
 calculation lifecycle. Use `compute_run` as the calculation lifecycle entry
 point for auditable local/remote work: it owns the Attempt, Artifact, Monitor,
-and launch lifecycle. `light_compute` is limited to bounded light-workspace
-geometry/provider runs and does not create ResearchMap Attempts.
+and launch lifecycle. Every calculation is recorded under a ResearchNode Attempt.
 Review is advisory: it cannot write the ResearchMap, mutate Claim/Node status,
 choose a method, or launch/cancel Compute. After `review_respond`, Root records
 the accepted, rejected, or qualified interpretation through ordinary

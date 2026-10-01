@@ -18,5 +18,5 @@
     }
   ],
   "implementation": "builtin",
-  "notes": "Inventory entry for the built-in PySCF capability adapters."
+  "notes": "Inventory entry for the Native PySCF capability catalog."
 }

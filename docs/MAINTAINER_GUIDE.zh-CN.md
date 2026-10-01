@@ -3,7 +3,8 @@
 [English](MAINTAINER_GUIDE.md) | 简体中文
 
 TSPi 是带安装级 Host 和 Pi 原生 client 启动器的 Pi package。Pi Harness worker 拥有
-会话和 turn，Host 负责路由与回执，Python Research Kernel 拥有规范科学状态，可选的
+会话和 turn，Host 负责路由与回执，Python Research Kernel 拥有规范科学状态。Node
+侧只提供 Kernel transport bridge 和 port，不再包含另一套 filesystem Kernel 实现；可选的
 TS Web 只读取工作区。
 
 ## 开发环境

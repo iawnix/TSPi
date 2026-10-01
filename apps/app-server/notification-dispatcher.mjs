@@ -37,34 +37,6 @@ export function createNotificationDispatcher({ dispatch = null, execute = execut
   });
 }
 
-/**
- * Adapt the generic capability gateway to the Monitor dispatcher port.  The
- * gateway/provider is Host-owned; the Monitor only supplies the event and
- * never selects a transport, profile, recipient, or credential.
- */
-export function createCapabilityNotificationDispatcher({ gateway, workspace_mode = "research" } = {}) {
-  if (!gateway || typeof gateway.invoke !== "function") {
-    throw new TypeError("notification capability gateway must expose invoke(request)");
-  }
-  if (workspace_mode !== "light" && workspace_mode !== "research") {
-    throw new TypeError("notification capability workspace_mode is invalid");
-  }
-  return createNotificationDispatcher({
-    dispatch: async ({ event, signal }) => {
-      const request = monitorNotificationRequest(event);
-      const result = await gateway.invoke({
-        capability_id: "notification_send",
-        capability_version: "1",
-        workspace_mode,
-        input: request,
-        signal,
-      });
-      if (!result || result.status !== "ok") throw new Error("notification capability returned an invalid tool result");
-      return result.output;
-    },
-  });
-}
-
 export async function sendNotification(workspace, event, signal, execute = executeFile) {
   const { operation: _operation, ...notification } = monitorNotificationRequest(event);
   // The SMTP adapter still consumes its narrowly-scoped request schema. The

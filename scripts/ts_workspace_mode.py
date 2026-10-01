@@ -30,12 +30,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ts_workspace_mode")
     parser.add_argument("--root", required=True)
     parser.add_argument("--workspace-id", required=True)
-    parser.add_argument("--mode", choices=("light", "research"), default="light")
     args = parser.parse_args(argv)
     try:
-        manifest = initialize_workspace(args.root, args.workspace_id, args.mode)
-        if args.mode == "research":
-            manifest = admit_research_workspace(args.root)
+        manifest = initialize_workspace(args.root, args.workspace_id, "research")
+        manifest = admit_research_workspace(args.root)
     except (WorkspaceModeError, OSError, ValueError) as exc:
         print(json.dumps({"valid": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 2

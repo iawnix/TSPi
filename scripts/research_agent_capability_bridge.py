@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Emit a private JS capability bridge from the installation compute.toml.
+"""Emit a private Native capability bridge from the installation compute.toml.
 
-The output is consumed only by the trusted App Server Host.  It intentionally
-contains executable bindings and must never be returned through an Agent-facing
-catalog or prompt.
+The output is consumed only by the trusted App Server Host. It contains
+environment bindings for readiness diagnostics; calculation execution remains
+inside the Python Native Kernel and never crosses into a JavaScript provider.
 """
 
 from __future__ import annotations
@@ -184,7 +184,7 @@ def _binding_document(
     *,
     aliases: tuple[str, ...] = (),
 ) -> dict[str, object]:
-    """Serialize one Host-only environment binding for the JS bridge."""
+    """Serialize one Host-only environment binding for Native diagnostics."""
 
     return {
         "available": True,

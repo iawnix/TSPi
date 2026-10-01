@@ -16,7 +16,7 @@ The framework is split into these boundaries:
 Contracts
   -> Agent Core
   -> Research Kernel
-  -> Capability Runtime
+  -> Native Compute Lifecycle (Python Kernel)
   -> App Server
   -> Runtime Adapter / Client Adapter
 ```
@@ -28,9 +28,10 @@ The Research Kernel is the only scientific state authority. It owns
 ResearchMap, Research Memory, Claims, Nodes, Findings, Gates, Evidence Links,
 and lifecycle decisions. It does not select or execute a scientific backend.
 
-Capability Runtime owns versioned Capability descriptors, Provider adapters,
-Compute Attempts, Artifact Manifests, Analysis results, and Environment
-bindings. It never writes scientific Findings or Claim status directly.
+The Native Compute Lifecycle owns versioned capability descriptors, calculation
+intents, Compute Attempts or light execution scopes, canonical Artifacts,
+analysis results, and environment bindings. It never writes scientific Findings
+or Claim status directly.
 
 The App Server is the application composition root. It owns Host RPC,
 workspace and session binding, permissions, receipts, recovery, Monitor, and
@@ -62,14 +63,12 @@ The minimum language-neutral ports are:
 - `MemoryPort`: read and append session-scoped Agent memory. It is not a
   ResearchMap store; workspace-scoped research memory writes must go through
   `KernelPort`.
-- `ToolGateway`: describe and invoke admitted tools;
 - `SessionPort`: create, list, attach, and enqueue session work;
 - `KernelPort`: read context/liveness, apply changes, checkpoint, and execute
   a research turn boundary;
-- `CapabilityRegistry`: describe, resolve, prepare, execute, parse, and
-  finalize a versioned capability;
-- `EnvironmentBroker`: resolve readiness and opaque environment bindings;
-- `ArtifactStore`: create, validate, register, and read bounded artifacts.
+- `NativeComputeLifecycle`: describe capabilities, resolve environments,
+  materialize intents, execute, inspect, finalize, cancel, and write canonical
+  Artifacts.
 
 All public request and result envelopes have versioned JSON schemas. TypeScript
 and Python implementations consume the same schemas rather than importing
@@ -83,24 +82,18 @@ The App Server is wired as:
 App Server
   -> AgentRuntimePort
   -> KernelPort
-  -> CapabilityRuntime
+  -> Native compute lifecycle (Python Kernel)
   -> MonitorPort
   -> Client adapters
 ```
 
-When the Host supplies a full `KernelPort` (`read_context` and
-`apply_change`), the composition root may assemble `ComputeOrchestrator`
-automatically. It reuses the Host `ArtifactStore` exposed by the assembled
-capability gateway, so provider output registration and Kernel artifact
-records cannot diverge. Passing `compute_orchestrator: null` disables this
-convenience for a deployment that does not expose compute execution.
+The Host does not assemble JavaScript providers, gateways, or orchestrators. The Python Native registry owns descriptors, intent materialization, execution, and canonical Artifact records.
 
-The Host exposes `compute_run` and `compute_cancel` as separate snake_case
-operations. Cancellation is scoped to an active Attempt in the current
-Orchestrator and is propagated to cooperative providers through an
-`AbortSignal`; the Kernel remains the authority for the terminal Attempt
-state. Capability inventory and environment readiness are read-only Host
-views and are exposed separately from provider invocation.
+The Host exposes the Native `compute_run` lifecycle as the only calculation
+entry point. Cancellation is scoped to the durable intent and controlled by
+the Python Kernel; the Kernel remains the authority for terminal Attempt or
+execution-scope state. Capability inventory and environment readiness are
+read-only Native views, and there is no provider invocation API.
 
 The default installation injects Pi Adapter. A Fake Runtime is required for
 Core, Kernel, and App Server tests so that those tests do not require Pi,
@@ -127,8 +120,8 @@ does not depend on a system Pi installation.
 
 ## Consequences
 
-- New compute domains can be added through a Capability Provider and Profile
-  without changing Agent Core or Research Kernel.
+- New compute domains can be added through the Python Native registry and backend
+  contract without changing Agent Core or Research Kernel.
 - A future non-Pi Agent Runtime can reuse the App Server and Kernel contracts.
 - Pi version changes are isolated to one adapter and its adapter tests.
 - The initial implementation requires explicit contracts before broad directory
@@ -149,13 +142,11 @@ profiles:
 | `light` | `session` | `bounded` | no ResearchMap, Claim, Node, Attempt, Evidence, or Monitor |
 | `research` | `session` | `audited` | Kernel ResearchMap plus Attempt, Evidence, and Monitor |
 
-The `light` profile creates only common inputs, artifacts, runs, logs, scratch,
-and session directories. It uses the ordinary Agent Turn lifecycle and keeps a
-small session memory plus a `LightRunStore` record for each capability run.
-Light runs contain input/output manifests, environment identity, bounded logs,
-limits, and terminal status, but never become a Claim, Finding, or Evidence
-automatically. Artifact creation and validation remain mandatory for inputs
-used by a capability.
+The `light` profile starts with common inputs, artifacts, runs, logs, scratch,
+and session directories. Native `compute_run` materializes an operational
+execution scope under `nodes/<execution_scope>/attempts/` and writes canonical
+workspace Artifacts. It never creates a ResearchMap Claim, Finding, Evidence,
+Attempt, or Monitor.
 
 The `research` profile creates the common directories plus ResearchMap,
 memory, lifecycle, checkpoints, nodes, evidence, monitor, and environment
@@ -166,12 +157,11 @@ Claim by issuing a normal change while the workspace is still orienting.
 
 Changing scope requires a new workspace or an explicit Host-controlled fork.
 Imported light artifacts remain candidates or inputs and do not become
-Research Evidence automatically. The same Host-assembled Capability Gateway
-serves both profiles. A descriptor may restrict execution to one or both
-modes; the Host applies bounded resource and environment policy in `light`,
-while `research` adds Kernel Attempt/Evidence recording around the same
-provider. Promotion from a light run into research is an explicit
-Host/Kernel operation, never an implicit inference from a successful process.
+Research Evidence automatically. The same Native `compute_run` lifecycle serves both profiles. A descriptor may
+restrict execution to one or both modes; `light` uses an operational execution
+scope while `research` adds Kernel Attempt/Evidence recording. Promotion from
+light into research is an explicit Host/Kernel operation, never an implicit
+inference from a successful process.
 
 The mode also selects the turn contract: `light` sessions use
 `agent_turn_request`/`agent_turn_result`, while `research` sessions use

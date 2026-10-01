@@ -16,12 +16,12 @@ async function workspace(prefix, workspace_id, workspace_mode = "research") {
   return root;
 }
 
-test("kernel factory binds a dynamic filesystem backend to research workspace requests", async () => {
+test("kernel factory binds the Python Research Kernel to workspace requests", async () => {
   const root = await workspace("research-kernel-factory", "workspace_factory");
   try {
-    const kernel = create_kernel({ backend: "fs" });
+    const kernel = create_kernel({ backend: "python" });
     assert.equal(kernel.protocol_version, RESEARCH_KERNEL_FACTORY_VERSION);
-    assert.equal(kernel.backend, "filesystem");
+    assert.equal(kernel.backend, "python");
     assert.equal((await kernel.read_context({ workspace_root: root })).workspace_id, "workspace_factory");
     await assert.rejects(
       kernel.read_context({ workspace_root: root, workspace_id: "other_workspace" }),
@@ -32,6 +32,12 @@ test("kernel factory binds a dynamic filesystem backend to research workspace re
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("kernel factory rejects the retired JavaScript filesystem backend", async () => {
+  assert.throws(() => create_kernel({ backend: "filesystem" }), /unsupported research kernel backend/);
+  assert.throws(() => create_kernel({ backend: "fs" }), /unsupported research kernel backend/);
+  assert.throws(() => create_kernel({ backend: "python_bridge" }), /unsupported research kernel backend/);
 });
 
 test("kernel factory rejects light workspaces before creating an adapter", async () => {

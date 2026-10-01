@@ -12,5 +12,5 @@
     }
   ],
   "implementation": "builtin",
-  "notes": "Inventory entry for the built-in CREST conformer-search adapter."
+  "notes": "Inventory entry for the Native CREST capability catalog."
 }

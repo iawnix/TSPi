@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from ts_agent.compute.capabilities import (
-    BACKEND_TASK_INPUT_ROLES,
     CapabilityGapError,
     calculation_capabilities,
     resolve_capability,
@@ -18,13 +17,6 @@ def test_capability_catalog_keeps_adapters_separate_from_readiness() -> None:
     assert catalog["schema_version"] == "ts-capability-catalog/1"
     assert catalog["readiness"]["state"] == "not_probed"
     assert "transport readiness" in catalog["readiness"]["meaning"]
-    assert set(BACKEND_TASK_INPUT_ROLES) == {
-        "gaussian",
-        "xtb",
-        "crest",
-        "ase_neb",
-        "pyscf",
-    }
     assert all("backend" not in item and "task_type" not in item for item in catalog["capabilities"])
 
 
@@ -33,13 +25,7 @@ def test_catalog_describes_executor_contracts_without_strategy_routing() -> None
     capabilities = {item["capability_id"]: item for item in catalog["capabilities"]}
 
     assert {
-        "gaussian.sp",
-        "gaussian.opt",
-        "gaussian.ts",
-        "gaussian.freq",
-        "gaussian.opt_freq",
-        "gaussian.irc",
-        "gaussian.scan",
+        "gaussian",
         "xtb.scan",
         "crest.conformer_search",
         "pyscf.sp",
@@ -61,20 +47,9 @@ def test_catalog_describes_executor_contracts_without_strategy_routing() -> None
         "optimizers": ["FIRE", "BFGS", "LBFGS", "MDMin"],
     }
     assert "qbics.dmecp" not in capabilities
-    assert capabilities["gaussian.opt_freq"]["input_roles"] == ["gjf"]
-    assert capabilities["gaussian.opt_freq"]["output_roles"] == [
-        "program_output",
-        "optimized_geometry",
-        "frequencies",
-    ]
-    assert capabilities["gaussian.ts"]["input_roles"] == ["gjf"]
-    assert capabilities["gaussian.ts"]["output_roles"] == [
-        "program_output",
-        "optimized_geometry",
-    ]
-    assert capabilities["gaussian.ts"]["parsers"] == ["gaussian.output/2"]
-    assert capabilities["gaussian.scan"]["output_roles"] == ["program_output", "scan_profile"]
-    assert capabilities["gaussian.scan"]["parsers"] == ["gaussian.scan/1"]
+    assert capabilities["gaussian"]["input_roles"] == ["gjf"]
+    assert capabilities["gaussian"]["output_roles"] == ["program_output"]
+    assert capabilities["gaussian"]["parsers"] == ["gaussian.output/2"]
     assert capabilities["pyscf.sp"]["input_roles"] == ["xyz"]
     assert capabilities["pyscf.sp"]["parsers"] == ["pyscf.output/1"]
     assert capabilities["pyscf.sp"]["limits"]["default_xc"] == "CF22D"
@@ -82,7 +57,7 @@ def test_catalog_describes_executor_contracts_without_strategy_routing() -> None
 
 
 def test_capability_effects_advertise_both_local_and_remote_execution() -> None:
-    descriptor = resolve_capability("gaussian.opt_freq", "1").public()
+    descriptor = resolve_capability("gaussian", "1").public()
 
     assert set(descriptor["effects"]) == {
         "local_prepare",

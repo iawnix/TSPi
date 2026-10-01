@@ -182,6 +182,13 @@ export function create_research_kernel_port(implementation) {
     },
   };
 
+  // Bridges may own a subprocess or another transport resource. Keep cleanup
+  // available through the language-neutral port without making it part of the
+  // required Kernel protocol.
+  if (typeof implementation.close === "function") {
+    port.close = implementation.close.bind(implementation);
+  }
+
   return Object.freeze(port);
 }
 

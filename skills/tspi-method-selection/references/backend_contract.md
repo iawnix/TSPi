@@ -11,8 +11,9 @@ public calls.
 
 ## Supported Tasks
 
-- Gaussian: `sp`, `opt`, `ts`, `freq`, `opt_freq`, `irc`, and the registered
-  relaxed-scan capability `gaussian.scan@1`.
+- Gaussian: the registered `gaussian@1` executor. Route Section directives in
+  the `.gjf` input select `sp`, `opt`, `ts`, `freq`, `opt_freq`, `irc`, scan,
+  QST, and other supported Gaussian modes.
 - xTB: `sp`, `opt`, `freq`, `opt_freq`, `scan`, `md`.
 - CREST: `conformer_search`.
 - ASE NEB: the registered `ase.neb@1` capability, using the xTB CLI calculator
@@ -26,8 +27,9 @@ preparer alone is insufficient.
 Use the catalog to construct `compute_run` requests. Select
 `executionTarget.kind = "local"` or `"remote"` and, when a shared
 `compute.toml` is installed, the corresponding environment name; the lifecycle
-and result contract are the same. Remote readiness is checked during calculation
-preflight; it is not a separate calculation API.
+and result contract are the same. Native `compute_readiness` performs the same
+read-only environment checks used by calculation preflight; it does not create
+an intent or submit a job.
 
 The live catalog is authoritative for capability identity and version. Skill
 prose, a Backend descriptor, an installed executable, or a directory listing

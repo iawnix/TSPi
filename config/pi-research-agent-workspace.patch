@@ -5,6 +5,7 @@ diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-
  	}
  }
  
++const WORKSPACE_MANIFEST_SCHEMA = "research_agent_workspace_1";
 +const RESEARCH_WORKSPACE_DIRECTORIES = Object.freeze([
 +	"inputs", "artifacts", "runs", "logs", "research_map", "memory", "lifecycle",
 +	"checkpoints", "nodes", "evidence", "monitor", "environments",

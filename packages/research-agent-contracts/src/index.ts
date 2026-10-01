@@ -1,8 +1,6 @@
 import { readFileSync } from "node:fs";
 
 export const CONTRACT_NAMES = [
-  "agent_turn_request",
-  "agent_turn_result",
   "research_turn_request",
   "research_turn_result",
   "tool_result",
@@ -16,32 +14,10 @@ export const CONTRACT_NAMES = [
 export type ContractName = (typeof CONTRACT_NAMES)[number];
 export type JsonSchema = Record<string, unknown>;
 export type JsonObject = Record<string, unknown>;
-export const WORKSPACE_MODES = ["light", "research"] as const;
-export type WorkspaceMode = (typeof WORKSPACE_MODES)[number];
-
-export interface AgentTurnRequest extends JsonObject {
-  protocol: "agent_turn_request";
-  version: 1;
-  request_id: string;
-  workspace_id: string;
-  session_id: string;
-  input: string;
-  context?: JsonObject;
-}
-
-export interface AgentTurnResult extends JsonObject {
-  protocol: "agent_turn_result";
-  version: 1;
-  request_id: string;
-  status: "completed" | "waiting" | "blocked" | "failed";
-  output: JsonObject;
-  artifacts?: string[];
-  provenance: JsonObject;
-}
+export const WORKSPACE_MODE = "research" as const;
+export type WorkspaceMode = typeof WORKSPACE_MODE;
 
 const SCHEMA_FILES: Record<ContractName, string> = {
-  agent_turn_request: "agent_turn_request.schema.json",
-  agent_turn_result: "agent_turn_result.schema.json",
   research_turn_request: "research_turn_request.schema.json",
   research_turn_result: "research_turn_result.schema.json",
   tool_result: "tool_result.schema.json",
@@ -103,7 +79,6 @@ export interface CapabilityDescriptor extends JsonObject {
   summary: string;
   input_schema: JsonSchema;
   output_schema: JsonSchema;
-  supported_workspace_modes: readonly WorkspaceMode[];
   provider: JsonObject;
 }
 
@@ -138,19 +113,8 @@ export function assertProtocol(
   }
 }
 
-/** Validate the mode-admission portion of a capability descriptor. */
 export function assertCapabilityDescriptor(value: unknown): asserts value is CapabilityDescriptor {
   assertProtocol(value, "capability_descriptor");
-  const candidate = value as Record<string, unknown>;
-  const modes = candidate.supported_workspace_modes;
-  if (
-    !Array.isArray(modes) ||
-    modes.length === 0 ||
-    modes.some((mode) => !WORKSPACE_MODES.includes(mode as WorkspaceMode)) ||
-    new Set(modes).size !== modes.length
-  ) {
-    throw new TypeError("capability_descriptor requires unique supported_workspace_modes: light or research");
-  }
 }
 
 export function parseCapabilityDescriptor(value: unknown): CapabilityDescriptor {

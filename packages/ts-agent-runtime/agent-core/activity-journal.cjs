@@ -115,7 +115,6 @@ function statusDocument(activityId, kind, operation, nodeRefs, status, startedAt
 
 function validateNodeRefs(root, nodeRefs) {
   const map = readResearchMap(root);
-  if (!map) throw new Error("ResearchMap does not exist");
   const known = new Set(
     Array.isArray(map.nodes)
       ? map.nodes.filter(isPlainObject).map((node) => node.id).filter((value) => typeof value === "string")

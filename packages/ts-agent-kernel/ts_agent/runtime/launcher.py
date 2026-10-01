@@ -138,7 +138,7 @@ class Installation:
 
 
 USAGE = """Usage:
-  ResearchAgent --workspace <name> [--mode light|research] [--session-id <id> | -c] [Pi arguments...]
+  ResearchAgent --workspace <name> [--session-id <id> | -c] [Pi arguments...]
   ResearchAgent --check-remote
   ResearchAgent phone pair
   ResearchAgent phone devices
@@ -146,7 +146,6 @@ USAGE = """Usage:
 
 Options:
   --workspace <name>   Open a research workspace.
-  --mode <mode>        Bind a new workspace to light or research mode.
   --session-id <id>   Continue one exact conversation.
   -c, --continue      Continue the latest conversation.
   --check-remote      Check the configured remote compute environment.
@@ -165,14 +164,13 @@ To select another Host session, open the terminal and run /resume. Startup
 def parse_launch_request(argv: list[str]) -> LaunchRequest:
     if argv[:1] == ["phone"]:
         if len(argv) == 2 and argv[1] in {"pair", "devices"}:
-            return LaunchRequest(None, None, False, None, False, False, (), phone_action=argv[1])
+            return LaunchRequest(None, "research", False, None, False, False, (), phone_action=argv[1])
         if len(argv) == 3 and argv[1] == "revoke":
-            return LaunchRequest(None, None, False, None, False, False, (), phone_action="revoke", phone_device_id=argv[2])
+            return LaunchRequest(None, "research", False, None, False, False, (), phone_action="revoke", phone_device_id=argv[2])
         raise TSPiHostError("usage: ResearchAgent phone pair|devices|revoke <device-id>", exit_code=2)
     check_remote = False
     show_help = False
     workspace_name: str | None = None
-    workspace_mode: str | None = None
     session_id: str | None = None
     continue_latest = False
     pi_args: list[str] = []
@@ -227,20 +225,6 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
             workspace_name = argv[index]
         elif value.startswith("--workspace="):
             workspace_name = value.removeprefix("--workspace=")
-        elif value == "--mode":
-            index += 1
-            if index >= len(argv) or not argv[index]:
-                raise TSPiHostError("--mode requires light or research", exit_code=2)
-            workspace_mode = argv[index]
-        elif value.startswith("--mode="):
-            workspace_mode = value.removeprefix("--mode=")
-        elif value == "--workspace-mode":
-            index += 1
-            if index >= len(argv) or not argv[index]:
-                raise TSPiHostError("--workspace-mode requires light or research", exit_code=2)
-            workspace_mode = argv[index]
-        elif value.startswith("--workspace-mode="):
-            workspace_mode = value.removeprefix("--workspace-mode=")
         elif value == "--session-id":
             index += 1
             if index >= len(argv) or not argv[index]:
@@ -261,13 +245,11 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         else:
             pi_args.append(value)
         index += 1
-    if workspace_mode not in {None, "light", "research"}:
-        raise TSPiHostError("--mode must be light or research", exit_code=2)
     if session_id and continue_latest:
         raise TSPiHostError("--session-id and --continue cannot be combined", exit_code=2)
     return LaunchRequest(
         workspace_name=workspace_name,
-        workspace_mode=workspace_mode,
+        workspace_mode="research",
         check_remote=check_remote,
         session_id=session_id,
         continue_latest=continue_latest,
@@ -1030,7 +1012,7 @@ def check_research_workspace_storage(workspace: Path) -> dict[str, object]:
     return result
 
 
-def bind_workspace_mode(workspace: Path, workspace_name: str, requested_mode: str | None) -> dict[str, object]:
+def bind_workspace_mode(workspace: Path, workspace_name: str) -> dict[str, object]:
     """Create/attach the framework manifest before the Pi client starts.
 
     ``ResearchAgent`` is the trusted Host boundary, so research admission is
@@ -1042,17 +1024,11 @@ def bind_workspace_mode(workspace: Path, workspace_name: str, requested_mode: st
         WorkspaceModeError,
         admit_research_workspace,
         initialize_workspace,
-        read_workspace_mode,
     )
 
     try:
-        # Existing CLI invocations historically opened a ResearchMap workspace
-        # when no mode was supplied. Preserve that safe default; light mode is
-        # opt-in and remains immutable once the manifest is written.
-        mode = requested_mode or (read_workspace_mode(workspace) if (workspace / "workspace_manifest.json").is_file() else "research")
-        manifest = initialize_workspace(workspace, workspace_name, mode)
-        if mode == "research":
-            manifest = admit_research_workspace(workspace)
+        manifest = initialize_workspace(workspace, workspace_name, "research")
+        manifest = admit_research_workspace(workspace)
         return manifest
     except WorkspaceModeError as exc:
         raise TSPiHostError(f"ResearchAgent workspace mode initialization failed: {exc}") from exc
@@ -1672,7 +1648,7 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         configure_remote(installation)
         configure_notifications(installation)
         workspace = prepare_workspace(installation, request.workspace_name)
-        manifest = bind_workspace_mode(workspace, request.workspace_name, request.workspace_mode)
+        manifest = bind_workspace_mode(workspace, request.workspace_name)
         os.environ["RESEARCH_AGENT_WORKSPACE_MODE"] = str(manifest["workspace_mode"])
         os.environ["RESEARCH_AGENT_WORKSPACE_ID"] = str(manifest["workspace_id"])
         os.environ["TSPI_WORKSPACE_MODE"] = str(manifest["workspace_mode"])

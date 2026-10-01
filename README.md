@@ -59,10 +59,11 @@ clients of that same lane. Open a workspace directly:
 
 Light workspaces keep memory and lifecycle state small, while using the same
 mode-neutral compute plane as research workspaces: `compute_catalog`,
-`compute_readiness`, `compute_run`, and `compute_cancel`. Results are recorded
-under `runs/<run_id>/manifest.json` and the shared compute ArtifactStore. Light
-mode does not create ResearchMap Claims/Nodes, audited Attempts, scheduler
-Monitor state, or scientific interpretations. Use `--mode research` when those
+`compute_readiness`, `compute_run`, and `compute_cancel`. Native results use an
+operational execution scope under `nodes/<execution_scope>/attempts/` and the
+canonical workspace Artifact paths. Light mode does not create ResearchMap
+Claims/Nodes, audited Attempts, scheduler Monitor state, or scientific
+interpretations. Use `--mode research` when those
 lifecycle guarantees are required, for example for transition-state/IRC
 validation or a comparative mechanistic conclusion.
 

@@ -53,8 +53,11 @@ and call `research_checkpoint` with an explicit disposition:
 `user_input_required`. `research_continuation` is a secondary required-action
 ledger; it is not the turn boundary. Parsed or
 completed operational records do not close a scientific question by themselves.
-`decision_needed` requires the Root Agent to continue and record a checkpoint;
-a Harness follow-up may enforce that boundary but never chooses a method. A
+`decision_needed` requires the Root Agent to continue and record a checkpoint.
+When liveness also reports `execution_ready=true`, an active StrategyPlan covers
+the focused scope and the Root Agent may execute that declared plan before the
+checkpoint; the Host still requires the checkpoint before the turn ends. A
+Harness follow-up may enforce that boundary but never chooses a method. A
 `continue_required` plan is a valid next-turn checkpoint and must not be forced
 to execute in the same turn. Monitor `next_run` is only an operational wake-up.
 
@@ -70,5 +73,4 @@ accepted, rejected, or qualified interpretation with ordinary map operations.
 requires an exact catalog capability/version, an existing open Node, and
 role-to-array lists of registered Artifact IDs. It does not select an
 execution environment, create a Claim/Finding, or run a scheduler lifecycle;
-use `compute_run` for auditable local/remote calculations. `light_compute` is
-reserved for bounded light-workspace geometry/provider runs.
+use `compute_run` for auditable local/remote calculations. Light workspaces use the same Native lifecycle with an operational execution scope.

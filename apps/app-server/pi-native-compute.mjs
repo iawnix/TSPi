@@ -6,9 +6,7 @@ import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
 import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
 import { boundWorkspaceRoot } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
-import { readWorkspaceManifest, readWorkspaceMode } from "./workspace-mode-tools.mjs";
-import { create_tool_gateway } from "../../packages/research-agent-capabilities/tool_gateway.mjs";
-import { create_compute_orchestrator } from "../../packages/research-agent-capabilities/compute_orchestrator.mjs";
+import { readWorkspaceMode } from "./workspace-mode-tools.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -50,45 +48,12 @@ export function createComputeTool(options = {}) {
     ...TOOL_CONTRACTS.compute,
     async execute(toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites(toolContext);
-      if (params && typeof params.capability_id === "string") {
-        const selectedEnvironment = params.environment;
-        const selectedKind = selectedEnvironment && typeof selectedEnvironment === "object"
-          ? (selectedEnvironment.kind ?? selectedEnvironment.execution_kind)
-          : undefined;
-        if (selectedKind === "remote") {
-          const error = new Error("Remote compute must use Native compute_run operation=launch with executionTarget");
-          error.code = "remote_execution_requires_native_lifecycle";
-          throw error;
-        }
-        const root = boundWorkspaceRoot(params, toolContext);
-        const workspace_mode = await readWorkspaceMode(root);
-        const gateway = options.toolGateway || options.tool_gateway;
-        const orchestrator = options.computeOrchestrator || options.compute_orchestrator
-          || (gateway ? create_compute_orchestrator({ tool_gateway: gateway, artifact_store: gateway.artifact_store }) : null);
-        if (!orchestrator) throw new Error("compute_capability_host_not_configured");
-        const workspace_id = (await readWorkspaceManifest(root)).workspace_id;
-        const result = await orchestrator.run({
-          workspace_id,
-          workspace_root: root,
-          workspace_mode,
-          capability_id: params.capability_id,
-          ...(params.capability_version === undefined ? {} : { capability_version: params.capability_version }),
-          ...(params.run_id === undefined ? {} : { run_id: params.run_id }),
-          ...(params.attempt_id === undefined ? {} : { attempt_id: params.attempt_id }),
-          ...(params.node_id === undefined ? {} : { node_id: params.node_id }),
-          input: params.input || {},
-          ...(params.input_artifact_ids === undefined ? {} : { input_artifact_ids: params.input_artifact_ids }),
-          ...(params.timeout_ms === undefined ? {} : { timeout_ms: params.timeout_ms }),
-          ...(params.metadata === undefined ? {} : { metadata: params.metadata }),
-          ...(params.environment === undefined ? {} : { environment: params.environment }),
-          ...(params.evidence_links === undefined ? {} : { evidence_links: params.evidence_links }),
-          request_id: toolCallId,
-          signal: context?.abortSignal,
-        });
-        return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-          details: result,
-        };
+      if (params && typeof params === "object"
+        && ["capability_id", "capability_version", "input", "input_artifact_ids", "run_id", "attempt_id", "timeout_ms", "metadata", "environment", "evidence_links"]
+          .some((field) => Object.hasOwn(params, field))) {
+        const error = new Error("The legacy capability_id/input compute path was removed; use Native compute_run lifecycle fields");
+        error.code = "js_provider_path_removed";
+        throw error;
       }
       validatePublicComputeParameters(params);
       const request = validateComputeRequest({
@@ -256,6 +221,53 @@ export function createComputeTool(options = {}) {
       }
     },
   };
+}
+
+/**
+ * Expose the same Native lifecycle to the transport-neutral App Server port.
+ * The App Server passes a trusted workspace binding; this adapter only
+ * normalizes that transport envelope and delegates to the exact Harness tool
+ * implementation above. It never resolves or constructs a JavaScript
+ * capability provider.
+ */
+export function createNativeComputeLifecycle(options = {}) {
+  const tool = createComputeTool(options);
+  async function run(request = {}) {
+    if (!request || typeof request !== "object" || Array.isArray(request)) {
+      throw new TypeError("Native compute request must be an object");
+    }
+    const root = request.workspace_root || request.root;
+    if (typeof root !== "string" || !root) throw new TypeError("Native compute request requires workspace_root");
+    const sessionId = request.session_id || request.sessionId;
+    if (request.operation === "launch" && request.workspace_mode === "research"
+      && (typeof sessionId !== "string" || !sessionId)) {
+      throw new Error("research Native compute launch requires session_id for monitor ownership");
+    }
+    const params = { ...request, root };
+    delete params.workspace_id;
+    delete params.workspace_root;
+    delete params.workspace_mode;
+    delete params.session_id;
+    delete params.sessionId;
+    delete params.tool_call_id;
+    delete params.abortSignal;
+    const result = await tool.execute(
+      request.tool_call_id || `app_compute_${Date.now()}`,
+      params,
+      undefined,
+      { cwd: root, sessionId: sessionId || "app-server", principal: "root_agent", trusted_host: true },
+      undefined,
+      { abortSignal: request.abortSignal },
+    );
+    return result;
+  }
+  return Object.freeze({
+    run,
+    cancel(request = {}) {
+      return run({ ...request, operation: "cancel" });
+    },
+    async close() {},
+  });
 }
 
 async function recordResearchAttempt(kernel, root, request, binding, operation, details = {}) {
@@ -700,7 +712,7 @@ function validateComputeRequest(request) {
 
 function validatePublicComputeParameters(input) {
   if (!OPERATIONS.includes(input.operation)) throw new Error(`unsupported compute operation: ${input.operation}`);
-  const allowed = new Set(["operation", "nodeId", ...COMPUTE_OPERATION_FIELDS[input.operation]]);
+  const allowed = new Set(["operation", "nodeId", "root", ...COMPUTE_OPERATION_FIELDS[input.operation]]);
   const unexpected = Object.keys(input).filter((key) => !allowed.has(key));
   if (unexpected.length) throw new Error(`${input.operation} does not accept: ${unexpected.sort().join(", ")}`);
   if (input.operation === "launch") validateExecutionTarget(input.executionTarget);
@@ -961,6 +973,7 @@ function nativePython() {
 }
 
 function requireNativeWrites(toolContext) {
+  if (toolContext?.trusted_host === true) return;
   if (process.env.TSPI_NATIVE_WRITES !== "1") {
     throw new Error("compute.run requires the guarded TSPi App Server Root Agent (tool compute_run)");
   }

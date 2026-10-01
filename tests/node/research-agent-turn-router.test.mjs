@@ -8,20 +8,6 @@ import {
   route_turn,
 } from "../../packages/research-agent-core/turn_router.mjs";
 
-test("light mode routes an agent turn request", () => {
-  const router = create_turn_router({ workspace_mode: "light", session_mode: "light" });
-  const request = router.route_turn({
-    request_id: "req_light_1",
-    workspace_id: "workspace_light",
-    session_id: "session_light",
-    input: "run the bounded task",
-  });
-  assert.equal(router.turn_protocol, "agent_turn_request");
-  assert.equal(request.protocol, "agent_turn_request");
-  assert.equal(request.version, 1);
-  assert.equal(request.input, "run the bounded task");
-});
-
 test("admitted research mode routes a research turn request", () => {
   const request = route_turn({
     workspace_mode: "research",
@@ -44,13 +30,6 @@ test("admitted research mode routes a research turn request", () => {
 });
 
 test("create_turn_request exposes the composition-root routing contract", () => {
-  const light = create_turn_request({
-    workspace_mode: "light",
-    request_id: "req_light_2",
-    workspace_id: "workspace_light",
-    session_id: "session_light",
-    input: "hello",
-  });
   const research = create_turn_request({
     workspace_mode: "research",
     workspace_state: "admitted",
@@ -59,7 +38,6 @@ test("create_turn_request exposes the composition-root routing contract", () => 
     operation: "orient",
     payload: { prompt: "read context" },
   });
-  assert.equal(light.protocol, "agent_turn_request");
   assert.equal(research.protocol, "research_turn_request");
   assert.deepEqual(research.input, { prompt: "read context" });
 });
@@ -103,18 +81,18 @@ test("research manifest ready state is an admitted state unless explicitly requi
 });
 
 test("bound workspace and session modes cannot be silently switched", () => {
-  const light = create_turn_router({ workspace_mode: "light", session_mode: "light" });
-  assert.throws(() => light.route_turn({
-    request_id: "req_switch_1",
-    workspace_id: "workspace_light",
-    session_id: "session_light",
-    input: "hello",
-    workspace_mode: "research",
-  }), /workspace_mode_mismatch/);
+  const research = create_turn_router({ workspace_mode: "research", session_mode: "research", admission_state: "admitted" });
   assert.throws(() => create_turn_router({
-    workspace_mode: "light",
+    workspace_mode: "research",
     session_mode: "research",
-  }), /session_mode_mismatch/);
+  }), /workspace_admission_required/);
+  assert.throws(() => research.route_turn({
+    request_id: "req_switch_1",
+    workspace_id: "workspace_research",
+    operation: "orient",
+    input: {},
+    workspace_mode: "light",
+  }), /workspace_mode_mismatch/);
 });
 
 test("research workspace manifest admission state is validated", () => {

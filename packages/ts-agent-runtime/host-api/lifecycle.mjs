@@ -163,11 +163,14 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
         };
       }
     } else if (lifecycle === "decision_needed" || lifecycle === "waiting_external") {
-      // A decision-needed turn may still record a StrategyPlan, an
-      // interpretation, or its checkpoint. It must not launch work, mutate
-      // evidence, or perform an external side effect until that decision is
-      // durable. Waiting for a remote Attempt follows the same rule.
-      if (isExecution || (!isRead && !isDecisionWrite)) {
+      // The Kernel exposes `execution_ready` after an active StrategyPlan
+      // covers the focused scope. That is the same decision boundary enforced
+      // by the filesystem adapter; a checkpoint is still required before the
+      // turn ends, but execution must be able to follow strategy in the same
+      // turn. Waiting for a remote Attempt remains a hard stop.
+      const executionReady = lifecycle === "decision_needed"
+        && durableLiveness?.execution_ready === true;
+      if ((isExecution || (!isRead && !isDecisionWrite)) && !executionReady) {
         return {
           accepted: false,
           code: lifecycle === "waiting_external" ? "research_waiting_external" : "research_decision_required",

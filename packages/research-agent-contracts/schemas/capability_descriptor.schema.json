@@ -3,7 +3,7 @@
   "$id": "capability_descriptor",
   "title": "Capability descriptor",
   "type": "object",
-  "required": ["protocol", "version", "capability_id", "capability_version", "kind", "summary", "input_schema", "output_schema", "supported_workspace_modes", "provider"],
+  "required": ["protocol", "version", "capability_id", "capability_version", "kind", "summary", "input_schema", "output_schema", "provider"],
   "properties": {
     "protocol": {"const": "capability_descriptor"},
     "version": {"const": 1},
@@ -13,12 +13,6 @@
     "summary": {"type": "string", "minLength": 1, "maxLength": 2000},
     "input_schema": {"type": "object"},
     "output_schema": {"type": "object"},
-    "supported_workspace_modes": {
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {"enum": ["light", "research"]}
-    },
     "provider": {
       "type": "object",
       "required": ["provider_id", "provider_version", "descriptor_digest"],

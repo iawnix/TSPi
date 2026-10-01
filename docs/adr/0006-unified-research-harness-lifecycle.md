@@ -27,8 +27,7 @@ next-turn action. The old `required` value is accepted only when reading or migr
 the compatibility `research_continuation` ledger and is normalized to
 `continue_required`; it is not a second lifecycle state.
 Monitor records `research.turn(operation=wake)` before acknowledging a wake delivery; a failed
-boundary leaves the delivery pending for retry. `decision_needed` is the only state that requires a bounded Host follow-up. Host follow-up may
-ask the Agent to read bounded state and record a disposition, but may not choose a method,
+boundary leaves the delivery pending for retry. `decision_needed` is the only state that requires a bounded Host follow-up. When liveness also reports `execution_ready=true`, an active StrategyPlan covers the focused scope and Host may admit its declared prepare/execute work before the checkpoint; the Agent must still write the checkpoint before ending the turn. Host follow-up may ask the Agent to read bounded state and record a disposition, but may not choose a method,
 Capability, Backend, Skill, parameter, or scientific conclusion.
 
 Research Memory is durable workspace state plus bounded per-turn context. Skill manifests only

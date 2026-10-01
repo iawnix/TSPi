@@ -150,6 +150,17 @@ def _http_json(url: str, *, timeout: float, user_agent: str) -> tuple[Any, str]:
     return json.loads(payload.decode("utf-8")), "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
+def _http_failure_diagnostic(backend: str, error: urllib.error.HTTPError) -> str:
+    """Keep backend status visible instead of collapsing it to ``HTTPError``."""
+
+    code = getattr(error, "code", None)
+    if code == 404:
+        return f"{backend} returned HTTP 404: the submitted name is not recognized by this backend"
+    if code == 429:
+        return f"{backend} returned HTTP 429: the resolver backend rate-limited the request"
+    return f"{backend} returned HTTP {code}: deterministic lookup failed"
+
+
 def _pubchem_candidates(name: str, config_path: Path, settings: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any], list[str]]:
     endpoint = settings["endpoint"]
     key = _cache_key("pubchem", name, endpoint)
@@ -195,6 +206,9 @@ def _pubchem_candidates(name: str, config_path: Path, settings: dict[str, Any]) 
         cached_value = {"candidates": candidates, "evidence": evidence, "diagnostics": diagnostics}
         _write_cache(config_path, "pubchem", settings, key, cached_value)
         return candidates, evidence, diagnostics
+    except urllib.error.HTTPError as exc:
+        diagnostics.append(_http_failure_diagnostic("PubChem", exc))
+        return [], evidence, diagnostics
     except (OSError, urllib.error.URLError, TimeoutError, ValueError, TypeError, KeyError, AttributeError) as exc:
         diagnostics.append(f"PubChem lookup failed: {exc.__class__.__name__}")
         return [], evidence, diagnostics
@@ -229,6 +243,9 @@ def _opsin_candidates(name: str, config_path: Path, settings: dict[str, Any]) ->
         cached_value = {"candidates": candidates, "evidence": evidence, "diagnostics": diagnostics}
         _write_cache(config_path, "opsin", settings, key, cached_value)
         return candidates, evidence, diagnostics
+    except urllib.error.HTTPError as exc:
+        diagnostics.append(_http_failure_diagnostic("OPSIN", exc))
+        return [], evidence, diagnostics
     except (OSError, urllib.error.URLError, TimeoutError, ValueError, TypeError, KeyError, AttributeError) as exc:
         diagnostics.append(f"OPSIN lookup failed: {exc.__class__.__name__}")
         return [], evidence, diagnostics

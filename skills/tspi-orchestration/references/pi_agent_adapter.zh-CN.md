@@ -1,7 +1,6 @@
 # Pi 运行时适配器
 
-Pi 是 TSPi 的传输与交互 Host。Host 组合已验证的 capability provider，并将 Native
-计算生命周期路由到确定性的 Kernel/compute service；Pi 读取规范 ResearchMap。
+Pi 是 TSPi 的传输与交互 Host。Host 将 Native 计算生命周期路由到确定性的 Python Kernel/compute service；Pi 读取规范 ResearchMap。
 
 ## 公共接口
 
@@ -17,7 +16,6 @@ research_continuation  暂停工作所需的 required-action ledger
 system_prompt          查看有效 prompt 来源
 compute_environment   本地与远端计算环境目录
 compute_run          一个有边界的计算生命周期
-light_compute        仅限 light workspace 的有界 geometry/provider helper
 execution_dispatch      暂停或恢复一个 Node 的新任务派发
 analysis_run       已注册的本地分析
 artifact_seed           Node 所属的结构 Artifact

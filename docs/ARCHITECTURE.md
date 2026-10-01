@@ -106,8 +106,9 @@ ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
 ```
 
 The filesystem Research Kernel loads, validates, commits, and persists the
-canonical workspace projections. The map-shaped context projection is the
-canonical serialization for TS Web and Root Agent,
+canonical workspace projections. The Python Kernel owns this boundary; the Node
+App Server exposes only the transport bridge and language-neutral port. The
+map-shaped context projection is the canonical serialization for TS Web and Root Agent,
 not a second scientific model. The Root Agent chooses questions, methods,
 branches, and stopping conditions. Skills describe research procedures,
 Capabilities describe callable operations, and Backends implement scientific
@@ -144,21 +145,16 @@ invocation; only names, descriptions, and locations are placed in the model's
 default prompt. Capabilities and Compute
 Environments are queried when selecting or launching a method.
 
-Capability discovery is a runtime registry, not a framework-owned static
-dispatch list. Built-in descriptors are registered at startup and trusted
-providers may register versioned descriptors through the same API. The public
-catalog exposes the descriptor contract only; provider objects, executable
-paths, activation scripts, and environment values stay behind the execution
-boundary. A calculation provider must explicitly supply a bounded preparer
-(`prepare`/`prepare_task`) and may supply input validation. A descriptor with
-no trusted adapter is unavailable rather than routed to an implicit command.
+Capability discovery is owned by the Python Native registry. The public
+catalog contains only versioned descriptor contracts; executable bindings,
+input validation, intent materialization, local execution, remote scheduler
+control, and parsing stay inside the Native Compute lifecycle. There is no
+JavaScript provider, gateway, or provider adapter behind this boundary.
 
-Environment selection is owned by `EnvironmentBroker` (also exposed as the
-`EnvironmentManager` boundary). It maps a provider requirement to a named
-local or remote environment and returns readiness plus an opaque binding
-digest. Only trusted compute control code can unwrap the installation-owned
-command binding. This keeps adding a provider, scheduler, or container
-runtime independent from ResearchMap, Harness lifecycle, and Agent prompts.
+Native preflight resolves a named local or remote environment and records its
+binding digest in the immutable calculation intent. The same control path
+writes canonical workspace Artifacts in both light execution scopes and
+research Attempts, so no second ArtifactStore can diverge from the workspace.
 
 The runtime boundary is explicit:
 
@@ -201,14 +197,18 @@ accepted only while reading or migrating a `research_continuation` ledger and
 is normalized to `continue_required`; it is not a second lifecycle state.
 `research.liveness` is a bounded diagnostic projection, not a persisted next
 step or a turn-closing command. An active Node with no valid disposition yields
-`decision_needed`; the Harness may issue a bounded follow-up asking the Agent
-to read context and checkpoint a disposition, but it never chooses a
-scientific method or creates a Finding. `next_run` is an operational wake-up,
-not a new research instruction. An Attempt in `prepared` state has only a
-local, pre-submission binding and is therefore a decision point for the Agent,
-not an external wait. Only submitted, queued, running, completed-but-unparsed,
-or unknown Attempts hold a scope in `waiting_external` until the Host/Monitor
-produces new evidence.
+`decision_needed`. When the focused scope has an active StrategyPlan, the
+projection also sets `execution_ready=true`, so the Host may admit the planned
+prepare/execute work in the same turn; the Agent must still record a checkpoint
+before ending that turn. Without `execution_ready`, the Host admits only reads,
+planning, interpretation, and checkpoint repair. The Harness may issue a
+bounded follow-up asking the Agent to read context and checkpoint a disposition,
+but it never chooses a scientific method or creates a Finding. `next_run` is an
+operational wake-up, not a new research instruction. An Attempt in `prepared`
+state has only a local, pre-submission binding and is therefore a decision point
+for the Agent, not an external wait. Only submitted, queued, running,
+completed-but-unparsed, or unknown Attempts hold a scope in `waiting_external`
+until the Host/Monitor produces new evidence.
 
 For transport compatibility, the liveness response may mirror the canonical
 `continue_required` records under the read-only `required` field; that alias

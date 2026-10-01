@@ -73,7 +73,7 @@ Kernel 只返回以下状态：
 - `idle`：没有 active scope；
 - `continue_required`：Agent 已登记明确的下一 turn 动作。这是合法的 turn 终态，Host 不得强制本轮执行；
 - `waiting_external`：存在已提交、排队、运行中、完成但未解析或状态未知的 Attempt；
-- `decision_needed`：active Node/Claim/Gate 没有 `continue_required`、等待、deferred、blocked 或 terminal disposition；
+- `decision_needed`：active Node/Claim/Gate 没有 `continue_required`、等待、deferred、blocked 或 terminal disposition。如果 liveness 同时带有 `execution_ready=true`，表示 focus 已有 active StrategyPlan，Host 可以在 checkpoint 前放行已声明的 prepare/execute；Agent 仍必须在 turn 结束前写入 checkpoint；
 - `deferred`：Agent 明确记录了原因和后续恢复条件；
 - `blocked`：Agent 明确记录了阻塞原因和恢复条件；
 - `terminal`：相关 scope 已关闭或研究没有开放 scope。

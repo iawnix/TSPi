@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import urllib.error
 from copy import deepcopy
 
 import pytest
@@ -186,6 +187,26 @@ def test_opsin_name_resolver_uses_configured_http_endpoint(tmp_path, monkeypatch
     assert result["verdict"] == "valid"
     assert result["data"]["status"] == "resolved"
     assert result["data"]["resolver_provenance"]["implementation"] == "OPSIN HTTP API"
+
+
+def test_name_resolver_preserves_http_status_diagnostics(tmp_path, monkeypatch):
+    config = tmp_path / "name-resolver.toml"
+    config.write_text(
+        '[backends.pubchem]\nendpoint = "https://pubchem.test/rest/pug"\ncache = false\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TSPI_NAME_RESOLVER_CONFIG", str(config))
+
+    def missing(request, timeout):
+        raise urllib.error.HTTPError(request.full_url, 404, "not found", {}, None)
+
+    monkeypatch.setattr("urllib.request.urlopen", missing)
+    result = evaluate("chemical.name.resolve", source(), {"name": "中文俗名"})
+    assert result["verdict"] == "unsupported"
+    assert result["data"]["status"] == "unresolved"
+    assert result["diagnostics"] == [
+        "PubChem returned HTTP 404: the submitted name is not recognized by this backend"
+    ]
 
 
 def thermo_parameters(**changes):

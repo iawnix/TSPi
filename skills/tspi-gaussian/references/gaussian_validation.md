@@ -21,7 +21,7 @@ changes before treating it as a reaction-coordinate fact.
 
 ## Relaxed Scan
 
-For `gaussian.scan@1`, verify that the route contains a supported `Scan` or
+For the `gaussian@1` executor, verify that the route contains a supported `Scan` or
 `ModRedundant` scan directive, the requested coordinate and point count are
 present in the immutable intent, and the parsed profile has the expected
 number of points with energies and coordinates. A complete scan is an energy

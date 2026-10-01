@@ -54,7 +54,7 @@ function assert_identity(request, identity) {
  */
 export function create_context_builder({
   memory_port,
-  workspace_mode = "light",
+  workspace_mode = "research",
   workspace_id,
   session_id,
   entry_limit = DEFAULT_ENTRY_LIMIT,
@@ -77,7 +77,7 @@ export function create_context_builder({
     if (!memory || typeof memory !== "object" || Array.isArray(memory)) throw new TypeError("memory_port returned an invalid read result");
     const entries = Array.isArray(memory.entries) ? memory.entries.slice(0, entry_limit).map((entry) => clone_json(entry, "memory.entry")) : [];
     const kernel_context = value.kernel_context === undefined ? undefined : clone_json(require_object(value.kernel_context, "kernel_context"), "kernel_context");
-    if (kernel_context !== undefined && workspace_mode === "research") {
+    if (kernel_context !== undefined) {
       const source = kernel_context.provenance?.memory || kernel_context.provenance?.source;
       if (typeof source !== "string" || !source.toLowerCase().includes("research")) {
         throw new Error("research_context_requires_kernel_source");

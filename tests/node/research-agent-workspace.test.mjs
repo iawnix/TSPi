@@ -7,30 +7,13 @@ import test from "node:test";
 import { create_app_server } from "../../apps/research-agent-app-server/index.mjs";
 import { create_fake_agent_runtime } from "../../packages/research-agent-core/fake-runtime.mjs";
 import { create_workspace_initializer, RESEARCH_CONTEXT_COLLECTIONS } from "../../packages/research-agent-core/workspace.mjs";
-import { create_fs_research_kernel } from "../../packages/research-agent-kernel/fs_kernel_adapter.mjs";
+import { close_test_research_kernels, create_test_research_kernel } from "../support/research_kernel_helpers.mjs";
+
+test.afterEach(close_test_research_kernels);
 
 async function temporary_root(prefix) {
   return mkdtemp(join(tmpdir(), `${prefix}-`));
 }
-
-test("light workspace initializes only the minimal profile", async () => {
-  const root = await temporary_root("research-agent-light");
-  try {
-    const initializer = create_workspace_initializer();
-    const manifest = await initializer.initialize_workspace({
-      workspace_root: root,
-      workspace_id: "workspace_light",
-      workspace_mode: "light",
-    });
-    assert.equal(manifest.state, "ready");
-    assert.equal(manifest.workspace_mode, "light");
-    assert.deepEqual(manifest.directories, ["inputs", "artifacts", "runs", "logs", "scratch", "sessions"]);
-    await assert.rejects(readFile(join(root, "research_map", "context.json")), { code: "ENOENT" });
-    assert.equal((await initializer.attach_workspace(root)).workspace_mode, "light");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
 
 test("research workspace seeds a valid admission-pending kernel state", async () => {
   const root = await temporary_root("research-agent-research");
@@ -71,7 +54,7 @@ test("workspace admission repairs a manifest commit interrupted after Kernel adm
     });
     // Simulate a Host crash after the Kernel atomically admitted the context
     // and liveness documents but before it committed the manifest projection.
-    await create_fs_research_kernel({ workspace_root: root }).admit_workspace({
+    await create_test_research_kernel({ workspace_root: root }).admit_workspace({
       workspace_id: "workspace_admission_recovery",
       authority: "host",
       expected_state: "admission_pending",
@@ -162,7 +145,7 @@ test("workspace admission preserves a liveness projection when context commit wa
   }
 });
 
-test("filesystem workspace reads reject an incomplete ResearchMap context", async () => {
+test("Python Kernel reads reject an incomplete ResearchMap context", async () => {
   const root = await temporary_root("research-agent-incomplete-context");
   try {
     const initializer = create_workspace_initializer();
@@ -171,39 +154,21 @@ test("filesystem workspace reads reject an incomplete ResearchMap context", asyn
     const context = JSON.parse(await readFile(contextPath, "utf8"));
     delete context.attempts;
     await writeFile(contextPath, JSON.stringify(context));
-    const { create_fs_research_kernel } = await import("../../packages/research-agent-kernel/fs_kernel_adapter.mjs");
-    await assert.rejects(create_fs_research_kernel({ workspace_root: root }).read_context(), /research_context_missing_collections: attempts/);
+    await assert.rejects(create_test_research_kernel({ workspace_root: root }).read_context(), /research_context_missing_collections: attempts/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("workspace mode is immutable and sessions inherit it", async () => {
+test("research workspace mode is immutable and sessions inherit it", async () => {
   const root = await temporary_root("research-agent-mode");
   try {
     const initializer = create_workspace_initializer();
-    await initializer.initialize_workspace({ workspace_root: root, workspace_id: "workspace_immutable", workspace_mode: "light" });
+    await initializer.initialize_workspace({ workspace_root: root, workspace_id: "workspace_immutable", workspace_mode: "research" });
     await assert.rejects(
-      initializer.initialize_workspace({ workspace_root: root, workspace_id: "workspace_immutable", workspace_mode: "research" }),
-      /workspace_mode_mismatch/,
+      initializer.initialize_workspace({ workspace_root: root, workspace_id: "workspace_immutable", workspace_mode: "light" }),
+      /workspace_mode must be research/,
     );
-
-    const runtime = create_fake_agent_runtime();
-    const app_server = create_app_server({ runtime_port: runtime, workspace_port: initializer });
-    const session = await app_server.create_session({ workspace_root: root, workspace_mode: "light", session_mode: "light" });
-    const snapshot = await session.read_snapshot();
-    assert.equal(snapshot.workspace_mode, "light");
-    assert.equal(snapshot.session_mode, "light");
-    assert.equal(snapshot.turn_protocol, "agent_turn_request");
-    await assert.rejects(
-      app_server.create_session({ workspace_root: root, workspace_mode: "research", session_mode: "research" }),
-      /workspace_mode_mismatch/,
-    );
-    await assert.rejects(
-      app_server.create_session({ workspace_root: root, session_mode: "research" }),
-      /workspace_mode_mismatch/,
-    );
-    await app_server.close();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -219,10 +184,7 @@ test("research sessions require explicit Host admission", async () => {
       app_server.create_session({ workspace_root: root, workspace_mode: "research", session_mode: "research" }),
       /workspace_admission_required/,
     );
-    await assert.rejects(
-      app_server.attach_workspace({ workspace_root: root, workspace_mode: "light" }),
-      /workspace_mode_mismatch/,
-    );
+    await assert.rejects(app_server.attach_workspace({ workspace_root: root, workspace_mode: "light" }), /session_mode must be research/);
     await app_server.admit_workspace(root);
     const session = await app_server.create_session({ workspace_root: root, workspace_mode: "research", session_mode: "research" });
     const snapshot = await session.read_snapshot();

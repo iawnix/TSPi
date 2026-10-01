@@ -39,8 +39,7 @@ diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-
 +	const bootstrap = process.env.TSPI_WORKSPACE_MODE_INITIALIZER;
 +	if (!bootstrap) throw new Error("TSPi workspace mode initializer command is not configured");
 +	const python = process.env.TSPI_WORKSPACE_PYTHON || "python3";
-+	const mode = process.env.TSPI_DEFAULT_WORKSPACE_MODE || "light";
-+	if (mode !== "light" && mode !== "research") throw new Error("TSPI_DEFAULT_WORKSPACE_MODE must be light or research");
++	const mode = "research";
 +	await execFileAsync(python, [bootstrap, "--root", candidate, "--workspace-id", workspaceId, "--mode", mode], { env: process.env });
 +	const workspaces = await listWorkspaceRoots();
 +	const result = workspaces.find((item) => item.workspaceId === workspaceId);

@@ -94,7 +94,6 @@ def verify(source: Path) -> str:
             "isSupportedWorkspaceIdentity" in server
             or 'identity?.schema_version !== "research-workspace/1"' in server
         ),
-        "Research Agent light workspace schema": "isSupportedLightWorkspace" in server and "research_agent_workspace_1" in server,
         "Research Agent research workspace schema": "isSupportedResearchAgentWorkspace" in server and "RESEARCH_WORKSPACE_DIRECTORIES" in server,
         "workspace validation diagnostic": 'new RoutedServerError("service_invalid_value", `Session cwd is not a supported TSPi workspace:' in server,
         "workspace-scoped session listing": ".filter(sessionMatchesCwd)" in client,
@@ -271,7 +270,7 @@ def apply_research_workspace_patch(source: Path) -> None:
 
 
 def apply_workspace_mode_patch(source: Path) -> None:
-    """Allow the Pi session server to validate Research Agent light manifests."""
+    """Apply the workspace manifest validation prerequisite."""
     server_path = source / "packages" / "coding-agent" / "src" / "experimental" / "server.ts"
     server = server_path.read_text(encoding="utf-8")
     if "isSupportedLightWorkspace" in server:
@@ -279,7 +278,7 @@ def apply_workspace_mode_patch(source: Path) -> None:
     try:
         subprocess.run(["git", "-C", str(source), "apply", str(WORKSPACE_MODE_PATCH_PATH)], check=True, text=True)
     except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply TSPi light workspace validation patch: {exc}") from exc
+        raise PiSourceError(f"failed to apply TSPi workspace manifest validation patch: {exc}") from exc
 
 
 def apply_research_agent_workspace_patch(source: Path) -> None:

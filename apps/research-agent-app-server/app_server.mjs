@@ -73,21 +73,11 @@ function require_workspace_ready(manifest) {
   return manifest;
 }
 
-function remote_compute_request(value) {
-  if (value?.execution_kind === "remote") return true;
-  for (const field of ["environment", "execution_environment", "execution_target", "executionTarget"]) {
-    const selected = value?.[field];
-    if (selected && typeof selected === "object" && !Array.isArray(selected)
-      && (selected.kind === "remote" || selected.execution_kind === "remote")) return true;
-  }
-  return false;
-}
-
 /**
  * Compose the App Server with the shared Agent Runtime Port. The composition
  * root chooses a Fake, native runtime, or Pi adapter and injects it here.
  */
-export function create_app_server({ runtime_port, workspace_port = null, workspace_catalog = null, turn_router = null, kernel_port = null, tool_gateway = null, compute_orchestrator = null, capability_assembly = null, session_store = null } = {}) {
+export function create_app_server({ runtime_port, workspace_port = null, workspace_catalog = null, turn_router = null, kernel_port = null, native_capability_host = null, native_compute = null, session_store = null } = {}) {
   const runtime = create_agent_runtime_port(runtime_port);
   const workspace = workspace_port === null ? null : create_workspace_port(workspace_port);
   if (session_store !== null) {
@@ -105,18 +95,13 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
       if (typeof kernel_port?.[method] !== "function") throw new TypeError(`kernel_port is missing ${method}()`);
     }
   }
-  if (tool_gateway !== null) {
-    for (const method of ["describe", "invoke"]) {
-      if (typeof tool_gateway?.[method] !== "function") throw new TypeError(`tool_gateway is missing ${method}()`);
-    }
-  }
-  if (compute_orchestrator !== null && typeof compute_orchestrator?.run !== "function") {
-    throw new TypeError("compute_orchestrator is missing run()");
-  }
-  if (capability_assembly !== null) {
+  if (native_capability_host !== null) {
     for (const method of ["catalog", "readiness"]) {
-      if (typeof capability_assembly?.[method] !== "function") throw new TypeError(`capability_assembly is missing ${method}()`);
+      if (typeof native_capability_host?.[method] !== "function") throw new TypeError(`native_capability_host is missing ${method}()`);
     }
+  }
+  if (native_compute !== null && typeof native_compute?.run !== "function") {
+    throw new TypeError("native_compute is missing run()");
   }
   let closed = false;
 
@@ -347,14 +332,7 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
         });
         return { accepted: true, protocol: routed.protocol, request: routed, result };
       }
-      require_session_id(routed.session_id);
-      if (session_store) await ensure_runtime_session(routed.session_id);
-      const result = await runtime.submit(routed.session_id, routed.input);
-      if (session_store) {
-        const session = await runtime.attach_session(routed.session_id);
-        await persist_snapshot(routed.session_id, await read_session_snapshot(session));
-      }
-      return { accepted: true, protocol: routed.protocol, request: routed, result };
+      throw new Error("unsupported_turn_protocol");
     },
 
     async submit_research_turn(request) {
@@ -381,48 +359,32 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
 
     async describe_tools(request = {}) {
       ensure_open();
-      if (!tool_gateway) throw new Error("tool_gateway_not_configured");
       const manifest = require_workspace_ready(await resolve_workspace(request));
       return {
         workspace_id: manifest.workspace_id,
         workspace_mode: manifest.workspace_mode,
-        capabilities: await tool_gateway.describe({ workspace_mode: manifest.workspace_mode }),
+        capabilities: native_capability_host ? native_capability_host.catalog() : [],
       };
     },
 
     async invoke_tool(request) {
       ensure_open();
-      if (!tool_gateway) throw new Error("tool_gateway_not_configured");
       if (request === null || typeof request !== "object" || Array.isArray(request)) {
         throw new TypeError("tool request must be an object");
       }
-      const manifest = require_workspace_ready(await resolve_workspace(request));
-      return tool_gateway.invoke({
-        ...request,
-        workspace_id: manifest.workspace_id,
-        workspace_root: manifest.workspace_root,
-        workspace_mode: manifest.workspace_mode,
+      throw Object.assign(new Error("generic capability invocation was removed; use Native compute_run"), {
+        code: "js_provider_path_removed",
       });
     },
 
     async run_compute(request) {
       ensure_open();
-      if (!compute_orchestrator) throw new Error("compute_orchestrator_not_configured");
+      if (!native_compute) throw new Error("native_compute_not_configured");
       if (request === null || typeof request !== "object" || Array.isArray(request)) {
         throw new TypeError("compute request must be an object");
       }
-      // HTTP/App Server compute_run is the local provider API.  Native
-      // lifecycle launch is the sole remote route and carries executionTarget
-      // together with operation=launch; do not resolve a workspace or invoke
-      // an injected JS orchestrator for a remote selector.
-      if (remote_compute_request(request)) {
-        const error = new Error("Remote compute must use Native compute_run operation=launch with executionTarget");
-        error.code = "remote_execution_requires_native_lifecycle";
-        error.details = { route: "native_compute_lifecycle", operation: "launch" };
-        throw error;
-      }
       const manifest = require_workspace_ready(await resolve_workspace(request));
-      return compute_orchestrator.run({
+      return native_compute.run({
         ...request,
         workspace_id: manifest.workspace_id,
         workspace_root: manifest.workspace_root,
@@ -432,14 +394,14 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
 
     async cancel_compute(request) {
       ensure_open();
-      if (!compute_orchestrator || typeof compute_orchestrator.cancel !== "function") {
-        throw new Error("compute_cancel_not_configured");
+      if (!native_compute || typeof native_compute.cancel !== "function") {
+        throw new Error("native_compute_not_configured");
       }
       if (request === null || typeof request !== "object" || Array.isArray(request)) {
         throw new TypeError("compute cancel request must be an object");
       }
       const manifest = require_workspace_ready(await resolve_workspace(request));
-      return compute_orchestrator.cancel({
+      return native_compute.cancel({
         ...request,
         workspace_id: manifest.workspace_id,
         workspace_root: manifest.workspace_root,
@@ -449,16 +411,16 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
 
     async capability_catalog() {
       ensure_open();
-      if (!capability_assembly) throw new Error("capability_assembly_not_configured");
+      if (!native_capability_host) throw new Error("native_capability_host_not_configured");
       return {
-        protocol_version: capability_assembly.protocol_version,
-        catalog: capability_assembly.catalog(),
+        protocol_version: native_capability_host.protocol_version,
+        catalog: native_capability_host.catalog(),
       };
     },
 
     async capability_readiness(request = {}) {
       ensure_open();
-      if (!capability_assembly) throw new Error("capability_assembly_not_configured");
+      if (!native_capability_host) throw new Error("native_capability_host_not_configured");
       if (request === null || typeof request !== "object" || Array.isArray(request)) {
         throw new TypeError("capability readiness request must be an object");
       }
@@ -468,8 +430,8 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
         }
       }
       return {
-        protocol_version: capability_assembly.protocol_version,
-        readiness: await capability_assembly.readiness({
+        protocol_version: native_capability_host.protocol_version,
+        readiness: await native_capability_host.readiness({
           ...(request.manifest_provider_id === undefined ? {} : { manifest_provider_id: request.manifest_provider_id }),
           ...(request.capability_id === undefined ? {} : { capability_id: request.capability_id }),
         }),
@@ -477,24 +439,11 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
     },
 
     // Mode-neutral compute catalog/readiness ports. These are the public
-    // calculation API; capability_catalog remains the broader Host inventory
-    // view used by installation diagnostics.
+    // calculation API backed by the Native Python registry.
     async compute_catalog(request = {}) {
       ensure_open();
-      if (tool_gateway) {
-        const mode = request.workspace_root !== undefined || request.workspace_id !== undefined
-          ? (await resolve_workspace(request)).workspace_mode
-          : request.workspace_mode;
-        const modes = mode === undefined ? ["light", "research"] : [mode];
-        const descriptors = [...new Map(modes.flatMap((workspace_mode) => tool_gateway.describe({ workspace_mode })
-          .filter((item) => item?.kind === "compute")
-          .map((item) => [`${item.capability_id}@${item.capability_version}`, item])).values())];
-        return { protocol_version: "compute_catalog_1", catalog: descriptors, capabilities: descriptors };
-      }
-      if (!capability_assembly) throw new Error("capability_assembly_not_configured");
-      const catalog = capability_assembly.catalog().flatMap((entry) => (entry.capabilities || [])
-        .filter((item) => item?.kind === "compute")
-        .map((item) => ({ ...item, provider: { provider_id: entry.adapter_id, provider_version: entry.adapter_version }, manifest_provider_id: entry.manifest_provider_id })));
+      if (!native_capability_host) throw new Error("native_capability_host_not_configured");
+      const catalog = native_capability_host.catalog().filter((item) => item?.kind === "compute");
       return { protocol_version: "compute_catalog_1", catalog, capabilities: catalog };
     },
 
@@ -509,33 +458,8 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
       if (request.execution_kind !== undefined && request.execution_kind !== "local" && request.execution_kind !== "remote") {
         throw new TypeError("execution_kind must be local or remote");
       }
-      if (!capability_assembly && tool_gateway) {
-        const mode = request.workspace_root !== undefined || request.workspace_id !== undefined
-          ? (await resolve_workspace(request)).workspace_mode
-          : request.workspace_mode;
-        const modes = mode === undefined ? ["light", "research"] : [mode];
-        const capabilities = [...new Map(modes.flatMap((workspace_mode) => tool_gateway.describe({ workspace_mode })
-          .filter((item) => item?.kind === "compute" && (request.capability_id === undefined || item.capability_id === request.capability_id))
-          .map((item) => [`${item.capability_id}@${item.capability_version}`, item])).values())];
-        return {
-          protocol_version: "compute_readiness_1",
-          // A gateway-only composition can prove registration, but it has no
-          // Host EnvironmentBroker to probe the selected execution plane.
-          // Expose that uncertainty explicitly instead of presenting a
-          // registered capability as executable (especially for remote).
-          readiness: capabilities.map((item) => ({
-            capability_id: item.capability_id,
-            capability_version: item.capability_version,
-            readiness: {
-              state: "unknown",
-              checks: [{ name: "host_environment", state: "deferred" }],
-              reason: "Host capability assembly is not configured; execution readiness was not probed",
-            },
-          })),
-        };
-      }
-      if (!capability_assembly) throw new Error("capability_assembly_not_configured");
-      const readiness = await capability_assembly.readiness({
+      if (!native_capability_host) throw new Error("native_capability_host_not_configured");
+      const readiness = await native_capability_host.readiness({
         ...(request.manifest_provider_id === undefined ? {} : { manifest_provider_id: request.manifest_provider_id }),
         ...(request.capability_id === undefined ? {} : { capability_id: request.capability_id }),
         ...(request.environment_id === undefined ? {} : { environment_id: request.environment_id }),
@@ -618,7 +542,7 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
       // of the Pi runtime. Close them before tearing down the runtime, while
       // still attempting every resource so a single provider cannot leak the
       // remaining services.
-      for (const resource of [compute_orchestrator, capability_assembly, tool_gateway, kernel_port]) {
+      for (const resource of [native_compute, native_capability_host, kernel_port]) {
         if (typeof resource?.close !== "function") continue;
         try {
           await resource.close();

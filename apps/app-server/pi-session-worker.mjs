@@ -16,11 +16,7 @@ import { createToolExecutionContext } from "../../packages/ts-agent-runtime/host
 import { createPublicToolAlias } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
 import { createResearchLifecycleController, toolEventIsError } from "../../packages/ts-agent-runtime/host-api/lifecycle.mjs";
 import { filterExtensionToolNames, filterWorkspaceTools, readWorkspaceMode } from "./workspace-mode-tools.mjs";
-import { create_configured_capability_host } from "../research-agent-app-server/capability-host-bootstrap.mjs";
-import { create_tool_gateway } from "../../packages/research-agent-capabilities/tool_gateway.mjs";
-import { create_compute_orchestrator } from "../../packages/research-agent-capabilities/compute_orchestrator.mjs";
-import { create_local_xyz_provider } from "../../packages/research-agent-capabilities/local_xyz_provider.mjs";
-import { create_fs_research_kernel } from "../../packages/research-agent-kernel/fs_kernel_adapter.mjs";
+import { create_python_kernel_bridge } from "../../packages/research-agent-kernel/python_kernel_bridge.mjs";
 import { create_research_kernel_port } from "../../packages/research-agent-kernel/ports.mjs";
 
 export {
@@ -31,7 +27,6 @@ export {
   createComputeCatalogTool,
   createComputeReadinessTool,
   createImportTool,
-  createLightComputeTool,
   createNotifyTool,
   createReplyTool,
   createRenderTool,
@@ -99,41 +94,14 @@ async function createTspiHarness(session, options, executionEnv) {
   if (resolved.error || !resolved.model) throw new Error(resolved.error || "Session worker could not resolve a model");
   const workspaceMode = await readWorkspaceMode(session.metadata.cwd);
   const loadedSkills = await loadTspiSkills(executionEnv);
-  // Assemble the same capability plane used by the standalone App Server for
-  // Light sessions. The gateway is Host-owned; the worker only receives the
-  // already-selected provider boundary and never imports an extension entry.
-  let capabilityHost = null;
-  if (process.env.RESEARCH_AGENT_CAPABILITY_CONFIG || process.env.TS_COMPUTE_CONFIG) {
-    capabilityHost = await create_configured_capability_host({
-      config_path: process.env.RESEARCH_AGENT_CAPABILITY_CONFIG,
-      compute_config_path: process.env.TS_COMPUTE_CONFIG,
-      package_root: loadedSkills.packageRoot,
-      artifact_root: join(session.metadata.cwd, "artifacts", "compute"),
-    });
-  }
-  const computeGateway = capabilityHost?.tool_gateway ?? create_tool_gateway({
-    workspace_mode: workspaceMode,
-    artifact_root: join(session.metadata.cwd, "artifacts", "compute"),
-    providers: [create_local_xyz_provider()],
-  });
-  const researchKernel = workspaceMode === "research"
-    ? create_research_kernel_port(create_fs_research_kernel({ workspace_root: session.metadata.cwd }))
-    : null;
-  const computeOrchestrator = create_compute_orchestrator({
-    tool_gateway: computeGateway,
-    kernel_port: researchKernel,
-    artifact_store: computeGateway.artifact_store,
-  });
+  const researchKernel = create_research_kernel_port(create_python_kernel_bridge({ workspace_root: session.metadata.cwd }));
   const loadedExtensions = await loadServerExtensions({
     packageRoot: loadedSkills.packageRoot,
     reservedToolNames: ["read", "write", "bash", "system_prompt"],
     requiredToolNames: ["research_read", "compute_environment"],
     factoryOptions: {
       workspaceMode,
-      toolGateway: computeGateway,
-      computeOrchestrator,
       researchKernel,
-      capabilityAssembly: capabilityHost?.capability_assembly,
       review: {
         models: modelRuntime,
         model: resolved.model,
@@ -149,9 +117,6 @@ async function createTspiHarness(session, options, executionEnv) {
     ],
     factoryOptions: {
       workspaceMode,
-      toolGateway: computeGateway,
-      computeOrchestrator,
-      capabilityAssembly: capabilityHost?.capability_assembly,
       review: {
         models: modelRuntime,
         model: resolved.model,
@@ -214,10 +179,7 @@ async function createTspiHarness(session, options, executionEnv) {
     ...filterWorkspaceTools(loadedInstalledServerExtensions.tools, workspaceMode).map(wrapToolForHarness),
   ];
   const activeToolNames = tools.map((tool) => tool.name);
-  // Lifecycle admission must describe exactly the tools exposed to this
-  // workspace. In particular, a light workspace must not inherit metadata for
-  // hidden Research Kernel/compute tools merely because the global registry
-  // knows about them.
+  // Lifecycle admission describes exactly the tools exposed to this workspace.
   const toolMetadata = Object.fromEntries(tools
     .filter((tool) => tool.metadata)
     .map((tool) => [tool.name, tool.metadata]));
@@ -236,12 +198,7 @@ async function createTspiHarness(session, options, executionEnv) {
     allowed_authorities: [...new Set(Object.values(toolMetadata).map((metadata) => metadata.authority))],
     allowed_effects: [...new Set(Object.values(toolMetadata).map((metadata) => metadata.effect))],
     allowed_phases: [...new Set(Object.values(toolMetadata).map((metadata) => metadata.phase))],
-    // Research workspaces use the Research Turn phase graph. Light
-    // workspaces deliberately do not: they have no ResearchMap/Attempt
-    // lifecycle, so their exposed capability tools must be callable directly
-    // from an ordinary Agent turn. Metadata and workspace authorization still
-    // apply through this trusted context.
-    ...(workspaceMode === "research" ? { lifecycle_provider: () => lifecycle.contextPatch() } : {}),
+    lifecycle_provider: () => lifecycle.contextPatch(),
     env: executionEnv,
   });
   const created = await AgentHarness.create({
@@ -279,8 +236,7 @@ async function createTspiHarness(session, options, executionEnv) {
     });
   }
   try {
-    if (workspaceMode === "research") {
-      created.harness.hooks.on(
+    created.harness.hooks.on(
         "before_drive",
         (event) => {
           // A cold-resumed durable operation reaches before_drive without a
@@ -367,7 +323,6 @@ async function createTspiHarness(session, options, executionEnv) {
         },
         { id: "tspi.lifecycle.complete-tool" },
       );
-    }
     // Keep the package-source policy in the worker-owned Harness.  Registering
     // it here means every attached presentation shares the same guard, and a
     // phone/monitor client cannot bypass the Native client policy.
@@ -381,15 +336,13 @@ async function createTspiHarness(session, options, executionEnv) {
       markToolEnvelopeError,
       { id: "tspi.tool-error-envelope" },
     );
-    if (workspaceMode === "research") {
-      created.harness.hooks.on(
+    created.harness.hooks.on(
         "before_run_end",
         // `required` is an explicit next-turn plan, so only an unresolved
         // `decision_needed` checkpoint may inject a bounded same-turn repair.
         createContinuationLivenessHook({ cwd: session.metadata.cwd, maxFollowUps: 1, followUpRequired: false }),
         { id: "tspi.continuation-liveness" },
       );
-    }
     const lane = await created.harness.lane("main", TODO_CONTEXT);
     return {
       harness: created.harness,
@@ -412,19 +365,14 @@ async function createTspiHarness(session, options, executionEnv) {
   }
 }
 
-function tspiSystemPrompt(cwd, workspaceMode = "research") {
-  if (workspaceMode === "light") {
-    return `You are the Research Agent light-mode assistant for ${cwd}.
-
-This workspace has no ResearchMap Claim/Node lifecycle or scientific audit protocol, but it uses the same mode-neutral compute plane as research workspaces. Use compute_run for every registered capability and use compute_catalog/compute_readiness when inspecting available providers. Light execution is recorded in runs/<run_id>/manifest.json; it is a bounded calculation result, not an auditable ResearchMap interpretation. Do not call research_read, research_change, research_strategy, research_checkpoint, or other Research lifecycle tools. Do not claim that a missing or unavailable capability ran; inspect the catalog and report the provider error. For transition-state interpretation, IRC validation, comparative mechanism claims, or an auditable research result, open a research workspace with --mode research. When chaining calculations, pass the provider's explicit optimized geometry/input artifact role and never use stdout/stderr as a calculation input. Run IDs are immutable: reuse a succeeded run only, and use a new retry ID for a failed run.`;
-  }
+function tspiSystemPrompt(cwd) {
   return `You are the TSPi research agent for ${cwd}.
 
 The ResearchMap in the Research Kernel is authoritative for scientific state, while execution Attempts and Artifacts are operational evidence referenced by the map. The Harness lifecycle is domain-neutral: chemistry, reaction mechanisms, data analysis, simulation, or another research domain are all expressed as Claims, Nodes, Findings, Gates, Attempts, and Artifacts plus registered Skills and Capabilities.
 
 Follow one explicit Research Turn lifecycle: (1) orient by reading research_read with mode=context, (2) plan the next scientific action and record Claim strategy with research_strategy, (3) prepare and execute through the registered tools, (4) reconcile Monitor evidence, (5) interpret completed Attempts with research_interpretation, and (6) close with research_checkpoint carrying a concrete lifecycle disposition. The Host research.turn call is an admission probe; the durable checkpoint is a Kernel decision record. A continue_required checkpoint is an explicit next-turn plan and a valid end state, not an instruction to execute again in the same turn.
 
-Use research_read with mode=liveness when you need the compact lifecycle diagnosis; use research_read with mode=decisions for Claim strategy and interpretation history and mode=storage for the Kernel backend; use summary, detail, locate, or map only for focused expansion. Before an unfamiliar research_change, read mode=operations and use only its canonical type values; a mechanism hypothesis is create_claim and a mechanism study is create_node, never invent mechanistic operation names. For mode=capabilities, always pass capabilityKind=compute or capabilityKind=analysis. Use research_change for canonical ResearchMap writes; include a concrete rationale, basis references, and auditable operations. A research_strategy plan must explicitly include claimId/claim_id and, when scoped to a Node, nodeId/node_id; the Kernel must not guess a Claim from a Node. A blocked Node is non-terminal and must not carry an outcome; use closed plus outcome=stopped only when deliberately terminating it. Finding source_refs may contain only registered Artifact or EvidenceLink IDs, never StrategyPlan or other decision IDs; use basis_refs for decision rationale. Report a write as recorded only when the tool returned an accepted/applied result; a rejected ChangeSet records nothing and must not be summarized as persisted state. Use compute_environment, research_read capabilities, and public Skill references on demand when selecting a method or execution target; do not load complete Skill text or environment catalogs into every turn. Use the registered execution capability for the current domain; for this package, compute_run is the unified execution lifecycle. Installed extension tools and provider adapters are available only when the Host has selected and verified them; never request or infer an import path, executable, permission, or capability that is absent from the active inventory.
+Use research_read with mode=liveness when you need the compact lifecycle diagnosis; use research_read with mode=decisions for Claim strategy and interpretation history and mode=storage for the Kernel backend; use summary, detail, locate, or map only for focused expansion. Before an unfamiliar research_change, read mode=operations and use only its canonical type values; a mechanism hypothesis is create_claim and a mechanism study is create_node, never invent mechanistic operation names. For mode=capabilities, always pass capabilityKind=compute or capabilityKind=analysis. Use research_change for canonical ResearchMap writes; include a concrete rationale, basis references, and auditable operations. A research_strategy plan must explicitly include claimId/claim_id and, when scoped to a Node, nodeId/node_id; the Kernel must not guess a Claim from a Node. A blocked Node is non-terminal and must not carry an outcome; use closed plus outcome=stopped only when deliberately terminating it. Finding source_refs may contain only registered Artifact or EvidenceLink IDs, never StrategyPlan or other decision IDs; use basis_refs for decision rationale. Report a write as recorded only when the tool returned an accepted/applied result; a rejected ChangeSet records nothing and must not be summarized as persisted state. Use compute_environment, research_read capabilities, and public Skill references on demand when selecting a method or execution target; do not load complete Skill text or environment catalogs into every turn. Use the registered execution capability for the current domain; for this package, compute_run is the unified execution lifecycle. Installed extension tools are available only when the Host has selected and verified them; compute descriptors and executors come exclusively from the Native registry, so never request or infer a JavaScript provider, import path, executable, permission, or capability that is absent from the active inventory.
 
 If research_read reports an empty ResearchMap (revision 0 with no phases, Claims, or Nodes), do not invent or target identifiers such as claim_1 or node_1 and do not create a continuation for them. First use research_change to atomically create the initial phase, Claim, and Node using the registered operation schema, then use the identifiers returned by that change when recording research_strategy. A continuation is only valid after its referenced scope exists.
 
@@ -432,7 +380,7 @@ After every Monitor wake, including a completed or parsed external operation, re
 
 Before ending every turn, record strategy and interpretation decisions when applicable, then use research_checkpoint with disposition=continue_required, waiting_external, deferred, blocked, terminal, or user_input_required. A continue_required checkpoint must reference an active StrategyPlan; a parsed Attempt must have an AttemptInterpretation before the checkpoint is accepted. Do not end with an active scope that has none of these dispositions. The Host may issue a bounded follow-up when liveness is required or a decision is missing, but the Agent remains the only scientific decision-maker. Monitor next_run is an operational wake-up, not a new scientific instruction.
 
-Use artifact_seed or artifact_import for validated calculation inputs; give artifact_import a concise semantic input basename with the correct format extension. Use artifact_compare for deterministic structure comparisons, artifact_render for registered visual artifacts, and report_build for revision-bound report packages. Use review_run for isolated advisory assessment, then record Root's disposition with review_respond before applying its advice. Use system_prompt when the effective system prompt or its provenance must be inspected. When chaining an optimization into a single point, select the provider's explicit role field (optimized_geometry_artifact_id for XYZ providers or optimized_input_artifact_id for Gaussian); never choose a positional member of artifact_ids, and never pass stdout/stderr as an input artifact. Use registered schemas, bounded state/capability catalogs, and public Skill references; do not inspect installed package implementation or tests as research documentation. Do not invent identifiers, artifact paths, or calculation results. Treat tool output as evidence, preserve uncertainty, and keep Claims, Findings, Gate evaluations, and conclusions distinct.`;
+Use artifact_seed or artifact_import for validated calculation inputs; give artifact_import a concise semantic input basename with the correct format extension. Use artifact_compare for deterministic structure comparisons, artifact_render for registered visual artifacts, and report_build for revision-bound report packages. Use review_run for isolated advisory assessment, then record Root's disposition with review_respond before applying its advice. Use system_prompt when the effective system prompt or its provenance must be inspected. When chaining an optimization into a single point, select the capability's explicit role field (optimized_geometry_artifact_id for XYZ capabilities or optimized_input_artifact_id for Gaussian); never choose a positional member of artifact_ids, and never pass stdout/stderr as an input artifact. Use registered schemas, bounded state/capability catalogs, and public Skill references; do not inspect installed package implementation or tests as research documentation. Do not invent identifiers, artifact paths, or calculation results. Treat tool output as evidence, preserve uncertainty, and keep Claims, Findings, Gate evaluations, and conclusions distinct.`;
 }
 
 if (isDirectInternalProcessEntry(import.meta.url)) {

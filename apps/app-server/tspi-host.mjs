@@ -285,18 +285,12 @@ export async function startTspiHost(options) {
     if (method === "workspace/create") {
       const root = await workspace(params.workspace_id, { allowMissing: true });
       return deduplicate(method, params.request_id, cleanRequest(params), async () => {
-        const requestedMode = params.workspace_mode === undefined ? "light" : params.workspace_mode;
-        if (!["light", "research"].includes(requestedMode)) {
-          throw protocolError("invalid_workspace_mode", "workspace_mode must be light or research");
-        }
         const initialized = await workspaceInitializer.initialize_workspace({
           workspace_root: root,
           workspace_id: params.workspace_id,
-          workspace_mode: requestedMode,
+          workspace_mode: "research",
         });
-        const manifest = requestedMode === "research"
-          ? await workspaceInitializer.admit_workspace(root)
-          : initialized;
+        const manifest = await workspaceInitializer.admit_workspace(root);
         return { workspace: { workspace_id: manifest.workspace_id, name: manifest.workspace_id, root, workspace_mode: manifest.workspace_mode, state: manifest.state } };
       });
     }

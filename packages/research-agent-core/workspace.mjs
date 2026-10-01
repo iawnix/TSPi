@@ -23,7 +23,6 @@ export const RESEARCH_CONTEXT_COLLECTIONS = Object.freeze([
 ]);
 
 const COMMON_DIRECTORIES = Object.freeze(["inputs", "artifacts", "runs", "logs"]);
-const LIGHT_DIRECTORIES = Object.freeze(["scratch", "sessions"]);
 const RESEARCH_DIRECTORIES = Object.freeze([
   "research_map",
   "memory",
@@ -53,7 +52,7 @@ export function validate_workspace_manifest(manifest, root, { allow_initializing
   }
   require_workspace_id(manifest.workspace_id);
   assert_workspace_mode(manifest.workspace_mode);
-  const policy = resolve_mode_policy(manifest.workspace_mode);
+  const policy = resolve_mode_policy("research");
   for (const [field, expected] of [
     ["profile_id", `${manifest.workspace_mode}_workspace_1`],
     ["memory_profile", policy.memory_profile],
@@ -74,7 +73,7 @@ export function validate_workspace_manifest(manifest, root, { allow_initializing
   if (typeof manifest.created_at !== "string" || manifest.created_at.length === 0) {
     throw new Error("workspace_created_at_missing");
   }
-  const expected_directories = workspace_directories(manifest.workspace_mode);
+  const expected_directories = workspace_directories();
   if (!Array.isArray(manifest.directories)
     || manifest.directories.length !== expected_directories.length
     || new Set(manifest.directories).size !== expected_directories.length
@@ -83,16 +82,12 @@ export function validate_workspace_manifest(manifest, root, { allow_initializing
   }
   const kernel = manifest.research_kernel;
   if (!kernel || typeof kernel !== "object" || Array.isArray(kernel)
-    || kernel.initialized !== (manifest.workspace_mode === "research")
+    || kernel.initialized !== true
     || typeof kernel.admission_required !== "boolean") {
     throw new Error("workspace_research_kernel_mismatch");
   }
-  if (manifest.workspace_mode === "research") {
-    if (kernel.admission_required !== (manifest.state !== "ready")
-      || !Number.isSafeInteger(kernel.revision) || kernel.revision < 0) {
-      throw new Error("workspace_research_kernel_mismatch");
-    }
-  } else if (kernel.admission_required || kernel.revision !== null) {
+  if (kernel.admission_required !== (manifest.state !== "ready")
+    || !Number.isSafeInteger(kernel.revision) || kernel.revision < 0) {
     throw new Error("workspace_research_kernel_mismatch");
   }
   return manifest;
@@ -131,7 +126,6 @@ export async function validate_workspace_files(manifest, root, { allow_partial_a
     }
   }
   for (const directory of manifest.directories) await physical_directory(join(workspace_root, directory), `workspace_directory_${directory}`);
-  if (manifest.workspace_mode !== "research") return manifest;
 
   const context_path = join(workspace_root, "research_map", "context.json");
   const liveness_path = join(workspace_root, "lifecycle", "liveness.json");
@@ -205,10 +199,8 @@ function now() {
   return new Date().toISOString();
 }
 
-function workspace_directories(workspace_mode) {
-  return workspace_mode === "research"
-    ? [...COMMON_DIRECTORIES, ...RESEARCH_DIRECTORIES]
-    : [...COMMON_DIRECTORIES, ...LIGHT_DIRECTORIES];
+function workspace_directories() {
+  return [...COMMON_DIRECTORIES, ...RESEARCH_DIRECTORIES];
 }
 
 async function write_json_atomic(path, value) {
@@ -292,11 +284,10 @@ function research_seed(manifest) {
 }
 
 /**
- * File-system workspace boundary. It creates either a minimal light workspace
- * or a Research Kernel-ready workspace and never changes a ready mode.
+ * File-system workspace boundary for the single Research Kernel workspace.
  */
 export function create_workspace_initializer() {
-  async function initialize_workspace({ workspace_root, workspace_id, workspace_mode = "light" } = {}) {
+  async function initialize_workspace({ workspace_root, workspace_id, workspace_mode = "research" } = {}) {
     if (typeof workspace_root !== "string" || workspace_root.length === 0) {
       throw new TypeError("workspace_root is required");
     }
@@ -310,9 +301,7 @@ export function create_workspace_initializer() {
     } catch (error) {
       if (error?.cause?.code !== "ENOENT") throw error;
     }
-    // A canonical manifest cannot coexist with the retired ResearchMap
-    // files. Reject the mixed layout before attaching an existing workspace
-    // so light and research modes have the same no-legacy policy.
+    // A canonical manifest cannot coexist with retired ResearchMap files.
     for (const name of RETIRED_WORKSPACE_FILES) {
       try {
         await readFile(join(root, name), "utf8");
@@ -338,7 +327,7 @@ export function create_workspace_initializer() {
       return Object.freeze({ ...existing, workspace_root: root, manifest_path });
     }
 
-    const policy = resolve_mode_policy(workspace_mode);
+    const policy = resolve_mode_policy("research");
     const created_at = now();
   const manifest = {
       schema_version: WORKSPACE_MANIFEST_SCHEMA,
@@ -352,23 +341,19 @@ export function create_workspace_initializer() {
       state: policy.initial_state,
       workspace_root: root,
       created_at,
-      directories: workspace_directories(workspace_mode),
-      research_kernel: workspace_mode === "research"
-        ? { initialized: true, admission_required: true, revision: 0 }
-        : { initialized: false, admission_required: false, revision: null },
+      directories: workspace_directories(),
+      research_kernel: { initialized: true, admission_required: true, revision: 0 },
     };
 
     await mkdir(root, { recursive: true, mode: 0o700 });
     await write_json_atomic(manifest_path, { ...manifest, state: "initializing" });
     try {
       for (const directory of manifest.directories) await mkdir(join(root, directory), { recursive: true, mode: 0o700 });
-      if (workspace_mode === "research") {
-        const seed = research_seed(manifest);
-        await write_json_atomic(join(root, "research_map", "context.json"), seed.context);
-        await write_json_atomic(join(root, "lifecycle", "liveness.json"), seed.liveness);
-        await write_json_atomic(join(root, "memory", "index.json"), seed.memory);
-        await write_json_atomic(join(root, "checkpoints", "checkpoint_0.json"), seed.checkpoint);
-      }
+      const seed = research_seed(manifest);
+      await write_json_atomic(join(root, "research_map", "context.json"), seed.context);
+      await write_json_atomic(join(root, "lifecycle", "liveness.json"), seed.liveness);
+      await write_json_atomic(join(root, "memory", "index.json"), seed.memory);
+      await write_json_atomic(join(root, "checkpoints", "checkpoint_0.json"), seed.checkpoint);
       const ready = { ...manifest, state: policy.initial_state };
       await write_json_atomic(manifest_path, ready);
       return Object.freeze({ ...ready, workspace_root: root, manifest_path });
@@ -393,7 +378,6 @@ export function create_workspace_initializer() {
     const manifest = validate_manifest(await read_json(manifest_path), root);
     await validate_workspace_files(manifest, root, { allow_partial_admission: true });
     const attached = Object.freeze({ ...manifest, workspace_root: root, manifest_path });
-    if (attached.workspace_mode !== "research") throw new Error("workspace_admission_not_required");
     if (!new Set(["ready", "admission_pending"]).has(manifest.state)) {
       throw new Error(`workspace_admission_invalid_state: ${manifest.state}`);
     }

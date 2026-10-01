@@ -23,6 +23,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--kind")
     parser.add_argument("--id")
     parser.add_argument("--name")
+    parser.add_argument("--capability-id")
+    parser.add_argument("--environment-id")
+    parser.add_argument("--execution-kind")
     parser.add_argument("--query")
     parser.add_argument("--claim-id")
     parser.add_argument("--record-type")
@@ -42,6 +45,9 @@ def main(argv: list[str] | None = None) -> int:
                 "kind": args.kind,
                 "id": args.id,
                 "name": args.name,
+                "capability_id": args.capability_id,
+                "environment_id": args.environment_id,
+                "execution_kind": args.execution_kind,
                 "query": args.query,
                 "claim_id": args.claim_id,
                 "record_type": args.record_type,

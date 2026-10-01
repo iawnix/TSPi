@@ -10,5 +10,5 @@
       "import": "./src/index.ts"
     }
   },
-  "files": ["schemas", "src", "python"]
+  "files": ["schemas", "src"]
 }

@@ -22,7 +22,6 @@ The target layout is:
   etc/                           # configuration and owner-only secrets
   var/workspaces/                # workspace data
   var/sessions/                  # durable session metadata
-  var/artifacts/                 # shared capability ArtifactStore
   var/runtime/pi/<commit>/       # pinned Pi adapter source/runtime cache
   var/log/                       # service logs
   var/locks/                     # installation and activation locks

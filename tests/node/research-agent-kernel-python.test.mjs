@@ -5,8 +5,10 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
-import { create_fs_research_kernel } from "../../packages/research-agent-kernel/fs_kernel_adapter.mjs";
+import { close_test_research_kernels, create_test_research_kernel } from "../support/research_kernel_helpers.mjs";
 import { create_research_kernel_port } from "../../packages/research-agent-kernel/ports.mjs";
+
+test.afterEach(close_test_research_kernels);
 
 async function research_workspace(prefix) {
   const root = await mkdtemp(join(tmpdir(), prefix));
@@ -18,10 +20,10 @@ async function research_workspace(prefix) {
   return root;
 }
 
-test("filesystem kernel rejects changes while admission is pending", async () => {
+test("Python Kernel rejects changes while admission is pending", async () => {
   const root = await research_workspace("research-kernel-pending-");
   try {
-    const kernel = create_fs_research_kernel({ workspace_root: root });
+    const kernel = create_test_research_kernel({ workspace_root: root });
     await assert.rejects(
       kernel.apply_change({
         principal: "root_agent", authority: "kernel_write",
@@ -36,10 +38,10 @@ test("filesystem kernel rejects changes while admission is pending", async () =>
   }
 });
 
-test("filesystem kernel persists admission and allows changes after restart", async () => {
+test("Python Kernel persists admission and allows changes after restart", async () => {
   const root = await research_workspace("research-kernel-restart-");
   try {
-    const first = create_fs_research_kernel({ workspace_root: root });
+    const first = create_test_research_kernel({ workspace_root: root });
     const admission = await first.admit_workspace({
       request_id: "request_admit",
       workspace_id: "workspace_fs_kernel",
@@ -52,7 +54,7 @@ test("filesystem kernel persists admission and allows changes after restart", as
     assert.equal(manifest.state, "ready");
     assert.equal(manifest.research_kernel.admission_required, false);
 
-    const restarted = create_fs_research_kernel({ workspace_root: root });
+    const restarted = create_test_research_kernel({ workspace_root: root });
     const change = await restarted.apply_change({
       principal: "root_agent", authority: "kernel_write",
       workspace_id: "workspace_fs_kernel",
@@ -72,7 +74,7 @@ test("filesystem kernel persists admission and allows changes after restart", as
   }
 });
 
-test("filesystem kernel repairs a liveness-first admission without erasing its projection", async () => {
+test("Python Kernel repairs a liveness-first admission without erasing its projection", async () => {
   const root = await research_workspace("research-kernel-liveness-first-");
   try {
     const livenessPath = join(root, "lifecycle/liveness.json");
@@ -84,7 +86,7 @@ test("filesystem kernel repairs a liveness-first admission without erasing its p
       disposition: "waiting_external",
       checkpoint_id: "checkpoint_waiting",
     }));
-    const kernel = create_fs_research_kernel({ workspace_root: root });
+    const kernel = create_test_research_kernel({ workspace_root: root });
     const admission = await kernel.admit_workspace({
       workspace_id: "workspace_fs_kernel",
       authority: "host",
@@ -103,10 +105,10 @@ test("filesystem kernel repairs a liveness-first admission without erasing its p
   }
 });
 
-test("filesystem kernel accepts semantic Node identifiers used by execution bindings", async () => {
+test("Python Kernel accepts semantic Node identifiers used by execution bindings", async () => {
   const root = await research_workspace("research-kernel-semantic-node-");
   try {
-    const kernel = create_fs_research_kernel({ workspace_root: root });
+    const kernel = create_test_research_kernel({ workspace_root: root });
     await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });
     const change = await kernel.apply_change({
       principal: "root_agent", authority: "kernel_write",
@@ -124,10 +126,10 @@ test("filesystem kernel accepts semantic Node identifiers used by execution bind
   }
 });
 
-test("filesystem kernel keeps semantic refs and durable checkpoint liveness aligned", async () => {
+test("Python Kernel keeps semantic refs and durable checkpoint liveness aligned", async () => {
   const root = await research_workspace("research-kernel-semantic-liveness-");
   try {
-    const kernel = create_fs_research_kernel({ workspace_root: root });
+    const kernel = create_test_research_kernel({ workspace_root: root });
     await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });
     await kernel.apply_change({
       principal: "root_agent", authority: "kernel_write",
@@ -148,7 +150,7 @@ test("filesystem kernel keeps semantic refs and durable checkpoint liveness alig
       unresolved_refs: ["node_transition.state.v2"],
     });
     assert.equal(checkpoint.lifecycle, "continue_required");
-    const restarted = create_fs_research_kernel({ workspace_root: root });
+    const restarted = create_test_research_kernel({ workspace_root: root });
     const liveness = await restarted.read_liveness();
     assert.equal(liveness.lifecycle, "continue_required");
     assert.equal(liveness.continue_required[0].id, "node_transition.state.v2");
@@ -168,17 +170,50 @@ test("filesystem kernel keeps semantic refs and durable checkpoint liveness alig
   }
 });
 
+test("Python Kernel marks a focused active StrategyPlan executable before checkpoint", async () => {
+  const root = await research_workspace("research-kernel-strategy-ready-");
+  try {
+    const kernel = create_test_research_kernel({ workspace_root: root });
+    await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });
+    await kernel.apply_change({
+      principal: "root_agent", authority: "kernel_write",
+      workspace_id: "workspace_fs_kernel", expected_revision: 0,
+      operations: [
+        { type: "create_claim", id: "claim_1", statement: "Bounded hypothesis" },
+        { type: "create_node", id: "node_1", title: "Resolve inputs", objective: "Resolve names", claim_ids: ["claim_1"] },
+        { type: "set_focus", claim_ids: ["claim_1"], node_ids: ["node_1"] },
+      ],
+    });
+    const before = await kernel.read_liveness();
+    assert.equal(before.execution_ready, false);
+    await kernel.apply_change({
+      principal: "root_agent", authority: "kernel_write",
+      workspace_id: "workspace_fs_kernel", expected_revision: 1,
+      operations: [{
+        type: "create_strategy_plan", id: "strategy_1", claim_id: "claim_1", node_id: "node_1",
+        objective: "Resolve names", rationale: "Identity must be deterministic", status: "active",
+      }],
+    });
+    const after = await kernel.read_liveness();
+    assert.equal(after.lifecycle, "decision_needed");
+    assert.equal(after.execution_ready, true);
+    assert.equal(after.decision_needed[0].target_id, "node_1");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("kernel port restores durable admission after the Host process is recreated", async () => {
   const root = await research_workspace("research-kernel-port-restart-");
   try {
-    const first = create_research_kernel_port(create_fs_research_kernel({ workspace_root: root }));
+    const first = create_research_kernel_port(create_test_research_kernel({ workspace_root: root }));
     await first.admit_workspace({
       request_id: "request_port_admit",
       workspace_id: "workspace_fs_kernel",
       authority: "host",
       expected_state: "admission_pending",
     });
-    const restarted = create_research_kernel_port(create_fs_research_kernel({ workspace_root: root }));
+    const restarted = create_research_kernel_port(create_test_research_kernel({ workspace_root: root }));
     const change = await restarted.apply_change({
       principal: "root_agent", authority: "kernel_write",
       workspace_id: "workspace_fs_kernel",
@@ -191,10 +226,10 @@ test("kernel port restores durable admission after the Host process is recreated
   }
 });
 
-test("filesystem kernel records findings, gates, attempts, artifacts and interpretations", async () => {
+test("Python Kernel records findings, gates, attempts, artifacts and interpretations", async () => {
   const root = await research_workspace("research-kernel-science-");
   try {
-    const kernel = create_fs_research_kernel({ workspace_root: root });
+    const kernel = create_test_research_kernel({ workspace_root: root });
     await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });
     const result = await kernel.apply_change({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", expected_revision: 0, operations: [
       { type: "create_claim", id: "claim_1", statement: "Hypothesis" },
@@ -218,10 +253,10 @@ test("filesystem kernel records findings, gates, attempts, artifacts and interpr
   }
 });
 
-test("filesystem kernel enforces Attempt transitions and links outputs to evidence", async () => {
+test("Python Kernel enforces Attempt transitions and links outputs to evidence", async () => {
   const root = await research_workspace("research-kernel-attempt-lifecycle-");
   try {
-    const kernel = create_fs_research_kernel({ workspace_root: root });
+    const kernel = create_test_research_kernel({ workspace_root: root });
     await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });
     await kernel.apply_change({ principal: "root_agent", authority: "kernel_write", workspace_id: "workspace_fs_kernel", expected_revision: 0, operations: [
       { type: "create_claim", id: "claim_1", statement: "Hypothesis" },

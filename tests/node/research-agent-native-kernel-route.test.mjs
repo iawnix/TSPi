@@ -6,9 +6,11 @@ import test from "node:test";
 
 import { executeFilesystemResearchCommand, isFilesystemResearchWorkspace } from "../../apps/app-server/research-native-kernel.mjs";
 import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
-import { create_fs_research_kernel } from "../../packages/research-agent-kernel/fs_kernel_adapter.mjs";
+import { close_test_research_kernels, create_test_research_kernel } from "../support/research_kernel_helpers.mjs";
 
-test("native research commands expose the FS kernel operation and liveness contracts", async () => {
+test.afterEach(close_test_research_kernels);
+
+test("native research commands expose the Python Kernel operation and liveness contracts", async () => {
   const root = await mkdtemp(join(tmpdir(), "research-native-route-"));
   try {
     await create_workspace_initializer().initialize_workspace({
@@ -16,7 +18,7 @@ test("native research commands expose the FS kernel operation and liveness contr
       workspace_id: "workspace_native_route",
       workspace_mode: "research",
     });
-    await create_fs_research_kernel({ workspace_root: root }).admit_workspace({ authority: "host" });
+    await create_test_research_kernel({ workspace_root: root }).admit_workspace({ authority: "host" });
     const catalog = await executeFilesystemResearchCommand("research.operations", root);
     assert.ok(catalog.operations.some((item) => item.type === "create_node"));
     await assert.rejects(
@@ -69,7 +71,7 @@ test("native research route permits Root Agent node state and continuation mutat
       workspace_id: "workspace_native_mutations",
       workspace_mode: "research",
     });
-    await create_fs_research_kernel({ workspace_root: root }).admit_workspace({ authority: "host" });
+    await create_test_research_kernel({ workspace_root: root }).admit_workspace({ authority: "host" });
     await executeFilesystemResearchCommand("research.change", root, {
       request: {
         principal: "root_agent",
