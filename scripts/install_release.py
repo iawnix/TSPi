@@ -232,7 +232,8 @@ def load_manifest(path: Path) -> dict[str, Any]:
     ):
         raise ReleaseInstallError("archive.size_bytes must be a positive integer")
     expected_release_id = f"{version}-sha256-{digest[:16]}"
-    if release_id != expected_release_id:
+    release_suffix = release_id.removeprefix(expected_release_id).removeprefix("-")
+    if release_id != expected_release_id and not re.fullmatch(r"[0-9a-f]{12,40}", release_suffix):
         raise ReleaseInstallError("release_id does not match package version and archive SHA-256")
     if filename != f"ts-agent-{release_id}.tgz":
         raise ReleaseInstallError("archive.filename does not match release_id")
