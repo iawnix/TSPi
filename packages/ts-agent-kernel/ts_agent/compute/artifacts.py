@@ -12,6 +12,7 @@ import json
 import math
 import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
@@ -143,6 +144,8 @@ def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> di
         created = _write_artifact_payload(path, payload)
         artifact = _artifact_for_path(workspace, path, _node_ids(workspace))
 
+    _register_imported_artifact(workspace, normalized, artifact, metadata)
+
     return {
         "schema_version": IMPORT_RESULT_SCHEMA_VERSION,
         "operation": "import",
@@ -152,6 +155,74 @@ def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> di
         "chemical_metadata": metadata,
         "artifact": artifact,
     }
+
+
+def _register_imported_artifact(
+    workspace: Path,
+    request: dict[str, Any],
+    artifact: dict[str, Any],
+    chemical_metadata: dict[str, Any],
+) -> None:
+    """Register an imported input in the canonical filesystem ResearchMap.
+
+    The calculation catalog is derived from files, while the research ledger
+    validates Attempt bindings against ``context.artifacts``. Import must
+    update both projections before a compute launch can create its Attempt.
+    """
+
+    from ts_agent.research.agent_workspace import (
+        AgentWorkspaceError,
+        apply_change as apply_agent_workspace_change,
+        read_context as read_agent_workspace_context,
+    )
+
+    operation = {
+        "type": "register_artifact",
+        "id": artifact["artifact_id"],
+        "node_id": request["node_id"],
+        "kind": "calculation_input",
+        "format": request["format"],
+        "location": artifact["path"],
+        "sha256": artifact["sha256"],
+        "size_bytes": artifact["size_bytes"],
+        "input_artifact_ids": [],
+        "metadata": {
+            "input_roles": artifact.get("input_roles", []),
+            "chemical": chemical_metadata,
+        },
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    for _attempt in range(2):
+        context = read_agent_workspace_context(workspace)
+        existing = next(
+            (row for row in context.get("artifacts", [])
+             if isinstance(row, dict) and row.get("id") == artifact["artifact_id"]),
+            None,
+        )
+        if existing is not None:
+            if (
+                existing.get("node_id") != request["node_id"]
+                or existing.get("location") != artifact["path"]
+                or existing.get("sha256") != artifact["sha256"]
+            ):
+                raise ComputeContractError(
+                    f"ResearchMap artifact binding conflicts with imported file: {artifact['artifact_id']}"
+                )
+            return
+        try:
+            apply_agent_workspace_change(workspace, {
+                "principal": "root_agent",
+                "authority": "kernel_write",
+                "expected_revision": context["revision"],
+                "operations": [operation],
+            })
+            return
+        except AgentWorkspaceError as exc:
+            if "research_revision_mismatch" not in str(exc) or _attempt:
+                raise ComputeContractError(
+                    f"cannot register imported artifact in canonical workspace: {exc}"
+                ) from exc
+    raise ComputeContractError("cannot register imported artifact in canonical workspace")
 
 
 def create_structure_seed_artifact(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:

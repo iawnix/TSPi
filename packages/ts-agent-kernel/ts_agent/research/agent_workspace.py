@@ -362,8 +362,14 @@ def _require_decision_ready(
     }
     if any(
         isinstance(item, dict)
-        and (item.get("type") in execution_types
-             or item.get("type") == "set_node_state" and item.get("state") == "active")
+        and not (
+            item.get("type") == "register_artifact"
+            and item.get("kind") == "calculation_input"
+        )
+        and (
+            item.get("type") in execution_types
+            or item.get("type") == "set_node_state" and item.get("state") == "active"
+        )
         for item in operations
     ):
         raise AgentWorkspaceError("research_decision_required")

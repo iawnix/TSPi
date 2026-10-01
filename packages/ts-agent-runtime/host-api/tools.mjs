@@ -363,11 +363,17 @@ export function createPublicToolContracts(Type) {
     Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$" }),
     Type.Union([Type.String({ maxLength: 4096 }), Type.Number(), Type.Boolean()]),
   );
-  const executionTarget = Type.Object({
-    kind: literalUnion(["local", "remote"]),
-    environment: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" })),
-    resources: Type.Optional(remoteResources),
-  }, { additionalProperties: false });
+  const executionTarget = Type.Union([
+    Type.Object({
+      kind: Type.Literal("local"),
+      environment: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" })),
+    }, { additionalProperties: false }),
+    Type.Object({
+      kind: Type.Literal("remote"),
+      environment: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" }),
+      resources: remoteResources,
+    }, { additionalProperties: false }),
+  ]);
   const computeSourceAttempt = Type.Object({
     intentId,
     reason: Type.String({ minLength: 1, maxLength: 1000 }),

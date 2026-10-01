@@ -94,6 +94,20 @@ test("compute launch contract defaults omitted remote GPU resources", () => {
       resources: { queue: "batch", nodes: 1, ncpus: 1, memory: "1gb", walltime: "00:05:00" },
     },
   }), true);
+  assert.equal(Check(contract, {
+    operation: "launch",
+    nodeId: "node_1",
+    purpose: "Run a bounded local calculation.",
+    capability: "xtb.sp",
+    capabilityVersion: "1",
+    attemptKind: "primary",
+    inputArtifacts: [{ inputRole: "xyz", artifactId: `art_${"a".repeat(64)}` }],
+    executionTarget: {
+      kind: "local",
+      environment: "local",
+      resources: { queue: "batch", nodes: 1, ncpus: 1, memory: "1gb", walltime: "00:05:00" },
+    },
+  }), false);
 });
 
 test("legacy compute requests are rejected for both local and remote execution", async () => {

@@ -11,6 +11,7 @@ import pytest
 from tests.support.workspace_helpers import (
     apply_filesystem_change,
     bootstrap_filesystem_workspace_fixture,
+    read_filesystem_context,
     start_filesystem_research_node,
 )
 from ts_agent.compute import (
@@ -146,6 +147,11 @@ def test_artifact_import_uses_safe_semantic_name_and_is_idempotent(tmp_path: Pat
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert first["chemical_metadata"]["atom_order"] == ["H", "H"]
     assert list_calculation_artifacts(workspace, node_id=node_id)["artifacts"] == [artifact]
+    context = read_filesystem_context(workspace)
+    registered = next(row for row in context["artifacts"] if row["id"] == artifact["artifact_id"])
+    assert registered["node_id"] == node_id
+    assert registered["location"] == artifact["path"]
+    assert registered["sha256"] == artifact["sha256"]
 
 
 def test_concurrent_identical_named_import_creates_one_artifact(tmp_path: Path) -> None:
