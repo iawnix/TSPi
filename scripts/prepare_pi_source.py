@@ -217,7 +217,7 @@ def apply_multi_workspace_patch(source: Path) -> None:
         return
     patch_path = MULTI_WORKSPACE_CREATE_PATCH_PATH if "tspi.workspace-directory" in sessions else MULTI_WORKSPACE_PATCH_PATH
     try:
-        subprocess.run(["git", "-C", str(source), "apply", str(patch_path)], check=True, text=True)
+        subprocess.run(["git", "-C", str(source), "apply", "--recount", str(patch_path)], check=True, text=True)
     except (OSError, subprocess.CalledProcessError) as exc:
         # An older release may already carry the list-only workspace patch in
         # its working tree. A three-way apply uses the pinned Pi commit as the
@@ -225,7 +225,7 @@ def apply_multi_workspace_patch(source: Path) -> None:
         # checkout.
         try:
             subprocess.run(
-                ["git", "-C", str(source), "apply", "--3way", str(patch_path)],
+                ["git", "-C", str(source), "apply", "--3way", "--recount", str(patch_path)],
                 check=True,
                 text=True,
             )
@@ -290,7 +290,7 @@ def apply_research_agent_workspace_patch(source: Path) -> None:
         return
     try:
         subprocess.run(
-            ["git", "-C", str(source), "apply", str(RESEARCH_AGENT_WORKSPACE_PATCH_PATH)],
+            ["git", "-C", str(source), "apply", "--recount", str(RESEARCH_AGENT_WORKSPACE_PATCH_PATH)],
             check=True,
             text=True,
         )

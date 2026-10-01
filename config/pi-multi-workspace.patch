@@ -105,7 +105,7 @@ diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-
 index 5ec02aaa2..6628e5298 100644
 --- a/packages/coding-agent/src/experimental/server.ts
 +++ b/packages/coding-agent/src/experimental/server.ts
-@@ -1,7 +1,9 @@
+@@ -1,7 +1,11 @@
 +import { execFile } from "node:child_process";
  import { randomUUID } from "node:crypto";
 +import { promisify } from "node:util";
@@ -126,7 +126,7 @@ index 5ec02aaa2..6628e5298 100644
  import { SessionPluginSelectionConflictError, SessionWorkerManager } from "./session-worker-manager.ts";
  
  export const ENV_SERVER_DIR = "PI_SERVER_DIR";
-@@ -373,6 +375,154 @@ interface RunningServerBackend extends RunningServer {
+@@ -373,6 +375,153 @@ interface RunningServerBackend extends RunningServer {
  	refreshSessions(): Promise<void>;
  }
  
@@ -298,7 +298,7 @@ index 5ec02aaa2..6628e5298 100644
  	});
  	const closeStorage = async (): Promise<void> => {
  		const cleanup = await Promise.allSettled([repo.close(TODO_CONTEXT), executionEnv.cleanup(TODO_CONTEXT)]);
-@@ -420,6 +476,8 @@ async function startServerBackend(
+@@ -420,7 +476,9 @@ async function startServerBackend(
  			(await listSessions(context))
  				.map(summarize)
  				.sort((left, right) => left.sessionId.localeCompare(right.sessionId) || left.createdAt - right.createdAt),
@@ -329,7 +329,7 @@ index 86cc76863..e64208efe 100644
  	create(createOptions: SessionCreateOptions, context: Context): Promise<SessionSummary>;
  	remove(sessionId: string, context: Context): Promise<void>;
  	prepareSessionPlugins(
-@@ -64,9 +67,14 @@ export async function createExperimentalServerServices(options: {
+@@ -64,10 +67,15 @@ export async function createExperimentalServerServices(options: {
  				const provider = new RemoteServiceProvider([
  					{ service: SessionDirectory, mode: "singleton" },
  					{ service: SessionManagement, mode: "singleton" },

@@ -8,7 +8,7 @@ diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-
  import { chmod, lstat, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
  import { homedir } from "node:os";
  import { isAbsolute, join, relative, resolve } from "node:path";
-@@ -374,11 +376,43 @@
+@@ -374,9 +376,42 @@
  }
 
  const WORKSPACE_ROOT_ENV = "TSPI_WORKSPACE_ROOT";
@@ -55,7 +55,7 @@ diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-
  	if (root !== undefined) {
  		const relativePath = relative(root, candidate);
  		if (
-@@ -405,14 +439,14 @@
+@@ -405,13 +439,13 @@
  	return candidate;
  }
 
@@ -81,7 +81,7 @@ diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-
  		const session = await repo.create({ ...createOptions, cwd }, context);
  		try {
  			return session.metadata;
-@@ -477,6 +511,7 @@
+@@ -477,7 +511,8 @@
  				.map(summarize)
  				.sort((left, right) => left.sessionId.localeCompare(right.sessionId) || left.createdAt - right.createdAt),
  		listWorkspaces: listWorkspaceRoots,
@@ -100,7 +100,7 @@ diff --git a/packages/coding-agent/src/experimental/services/server.ts b/package
  	create(createOptions: SessionCreateOptions, context: Context): Promise<SessionSummary>;
  	remove(sessionId: string, context: Context): Promise<void>;
  	prepareSessionPlugins(
-@@ -73,6 +74,7 @@
+@@ -73,7 +74,8 @@
  				provider.provide(SessionDirectory, { state: directory });
  				provider.provide(WorkspaceDirectory, {
  					list: (context) => options.listWorkspaces(context),
@@ -111,7 +111,7 @@ diff --git a/packages/coding-agent/src/experimental/services/server.ts b/package
 diff --git a/packages/coding-agent/src/experimental/services/sessions.ts b/packages/coding-agent/src/experimental/services/sessions.ts
 --- a/packages/coding-agent/src/experimental/services/sessions.ts
 +++ b/packages/coding-agent/src/experimental/services/sessions.ts
-@@ -16,6 +16,8 @@
+@@ -16,5 +16,7 @@
  	id?: string;
  	/** Project directory for a multi-workspace host. */
  	cwd?: string;
@@ -120,7 +120,7 @@ diff --git a/packages/coding-agent/src/experimental/services/sessions.ts b/packa
  }
 
  export interface SessionDirectoryState {
-@@ -46,6 +48,7 @@
+@@ -46,4 +48,5 @@
 
  export interface WorkspaceDirectory {
  	list(context: Context): Promise<WorkspaceSummary[]>;
