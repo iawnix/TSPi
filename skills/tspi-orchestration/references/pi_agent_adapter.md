@@ -13,7 +13,6 @@ research_change        one atomic ResearchMap ChangeSet
 research_strategy     record or review a Claim strategy
 research_interpretation interpret a completed Attempt
 research_checkpoint    close the current Research Turn with a disposition
-research_checkpoint  required-action ledger for paused work
 system_prompt          inspect effective prompt provenance
 compute_environment   local and remote compute environment catalog
 compute_run          one bounded calculation lifecycle

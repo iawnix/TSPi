@@ -18,7 +18,7 @@ from tspi_runtime.runtime.session_guard import (
     require_guarded_installation,
     select_session,
 )
-from tspi_runtime.runtime.workspace_mode import admit_research_workspace, initialize_workspace
+from research_state.workspace import admit_research_workspace, initialize_workspace
 
 
 def _install_state(root: Path) -> Path:

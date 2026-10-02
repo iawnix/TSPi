@@ -4,7 +4,7 @@
 The Filesystem Research Kernel persists it in `research_map/context.json` with
 `schema_version=research_map_context_1`. A valid context always has array
 collections `phases`, `claims`, `nodes`, `findings`, `gates`, `claim_relations`,
-`attempts`, `artifacts`, `evidence_links`, `continuations`, `strategy_plans`,
+`attempts`, `artifacts`, `evidence_links`, `lifecycle_actions`, `strategy_plans`,
 `strategy_reviews`, and `attempt_interpretations`; its `focus.claim_ids` and
 `focus.node_ids` are arrays. Lifecycle is projected to
 `lifecycle/liveness.json` (`research_liveness_1`); `workspace_manifest.json`
@@ -76,15 +76,11 @@ For `research_read mode=evidence`, optional selectors are `recordType` (`attempt
 `artifact`, or `link`), `nodeId`, `artifactId`, `subjectId`, and `limit` (1--2048).
 `recordType=link` selects `evidence_links`; it is not a second write protocol.
 
-`research_checkpoint` is a bounded required-action ledger, not the turn
-checkpoint. `operation=status` is read-only and accepts optional `scope`,
-`targetId`, and `limit`; mutations use `set`, `set_required`,
-`set_deferred`, `set_blocked`, `set_completed`, `resolve`, or `clear` with
-`scope`, `targetId`, `action`, `continuationId`, `status`, `reason`, and
-`requestId` as applicable. A disposition may omit `continuationId` only when
-one required record uniquely matches its scope, target, and action. A request
-that supplies an ID must match the existing record's scope, target, and action;
-the Kernel remains the only writer.
+Lifecycle actions are State records managed through `research.change`; the
+`research_checkpoint` command is the turn checkpoint. Use the canonical
+`set_lifecycle_action` and `resolve_lifecycle_action` operations with explicit
+scope, target, action, status, reason, and request identity. The Kernel remains
+the only writer.
 
 Do not edit canonical documents directly. A ChangeSet is validated against an
 isolated copy, increments `revision` once, and atomically updates context,

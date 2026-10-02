@@ -137,7 +137,7 @@ Durable Research Memory remains in the workspace. Each turn gets a bounded
 `research.context` read model containing the current focus and compact runtime
 summaries; it is not a second scientific state and does not copy full history
 or every Skill into model context. Each category has a fixed item limit and a
-fixed text/reference limit and a truncation marker; arbitrary continuation
+fixed text/reference limit and a truncation marker; arbitrary lifecycle-action
 metadata and large reference lists are reduced to keys and bounded IDs. Full
 records remain available through focused map/detail queries. Skill catalogs are
 loaded when a worker is created and Skill bodies are cached for explicit
@@ -177,8 +177,8 @@ the sole authority for ResearchMap and durable scientific memory.
 ContextPack. `ContextPack.context_id` and provenance identify the source
 revision so a Host can rebuild it after a change or retry. Semantic writes stay
 on `research_change`, `research_strategy`, `research_interpretation`, and
-`research_checkpoint`; new turns do not write through `research_checkpoint`,
-which is retained only to read or migrate old required-action ledger records.
+`research_checkpoint`; lifecycle actions are stored in the canonical State
+`lifecycle_actions` collection.
 There is no generic `memory.commit` operation that could bypass domain
 validation.
 
@@ -192,9 +192,8 @@ TRIGGER -> ORIENT -> PLAN -> PREPARE -> EXECUTE
 Before ending, the Agent must call `research_checkpoint` with one of the
 current dispositions: `continue_required`, `waiting_external`, `deferred`,
 `blocked`, `terminal`, or `user_input_required`. `continue_required` records an
-explicit next-turn action chosen by the Agent. The old `required` value is
-accepted only while reading or migrating a `research_checkpoint` ledger and
-is normalized to `continue_required`; it is not a second lifecycle state.
+explicit next-turn action chosen by the Agent. Lifecycle actions are stored in
+the canonical State `lifecycle_actions` collection.
 `research.liveness` is a bounded diagnostic projection, not a persisted next
 step or a turn-closing command. An active Node with no valid disposition yields
 `decision_needed`. When the focused scope has an active StrategyPlan, the
@@ -210,9 +209,7 @@ for the Agent, not an external wait. Only submitted, queued, running,
 completed-but-unparsed, or unknown Attempts hold a scope in `waiting_external`
 until the Host/Monitor produces new evidence.
 
-For transport compatibility, the liveness response may mirror the canonical
-`continue_required` records under the read-only `required` field; that alias
-does not make `required` a new lifecycle disposition.
+The liveness response exposes canonical `continue_required` records only.
 
 Public tools use one contract and a Harness-bound workspace context. The
 legacy `root` field is accepted only as an equality assertion. Tool contracts
@@ -411,12 +408,9 @@ write `ResearchMap` state. The Monitor never calls `finalize`, writes
 
 Research liveness is a diagnostic projection separate from Monitor
 observations. The turn boundary persists the Agent's disposition through
-`research_checkpoint`. `research_checkpoint` remains only as a compatibility
-ledger: it can list or resolve legacy records through `set`/`resolve` (the old
-`set_*` spellings remain aliases), but new turns must use `checkpoint`.
-Legacy `required` records are migrated to `continue_required`; they do not
-define a second liveness state machine. ChangeSet audit fields belong to
-`research_change`, not to this compatibility request. At a run boundary the
+`research_checkpoint`. It is the canonical checkpoint; lifecycle actions are
+managed by canonical ChangeSet operations. ChangeSet audit fields belong to
+`research_change`. At a run boundary the
 Host follows the checkpoint result and may add at most three bounded
 follow-ups only for `decision_needed`; it never chooses the next method. Thus
 a parsed calculation can continue even when Monitor has no new status event,

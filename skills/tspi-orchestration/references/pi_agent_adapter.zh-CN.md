@@ -12,7 +12,6 @@ research_change        提交一个原子 ResearchMap ChangeSet
 research_strategy      记录或评审 Claim strategy
 research_interpretation 解释已完成 Attempt
 research_checkpoint    用 disposition 结束当前 Research Turn
-research_checkpoint  暂停工作所需的 required-action ledger
 system_prompt          查看有效 prompt 来源
 compute_environment   本地与远端计算环境目录
 compute_run          一个有边界的计算生命周期

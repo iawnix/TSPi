@@ -12,7 +12,7 @@ from typing import Any
 
 from .refs import ACTIVITY_ID, CALCULATION_ID, SUBAGENT_RUN_ID
 from tspi_runtime.path_safety import has_symlink_component, lexical_path, path_has_symlink
-from tspi_runtime.runtime.workspace_mode import WorkspaceModeError, validate_workspace_manifest
+from research_state.workspace import WorkspaceModeError, validate_workspace_manifest
 
 
 STATE_SCHEMA = "ts-operational-id-state/1"

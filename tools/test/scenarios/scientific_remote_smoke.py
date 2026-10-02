@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages/tspi-runtime"))
-from tspi_runtime.runtime.workspace_mode import admit_research_workspace, initialize_workspace
+from research_state.workspace import admit_research_workspace, initialize_workspace
 from research_state import read_context, apply_change
 from tests.unit.test_scientific_analysis import request
 from research_compute import import_calculation_artifact, create_calculation_intent, prepare_calculation, submit_calculation, calculation_status, collect_calculation, parse_calculation

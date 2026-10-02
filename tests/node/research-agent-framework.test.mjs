@@ -38,11 +38,13 @@ test("research turn contracts validate without Pi", () => {
   });
   const result = create_research_turn_result({
     request_id: request.request_id,
-    operation: request.operation,
-    accepted: true,
+    output: { operation: request.operation },
+    provenance: { producer: "test", request_digest: "sha256:" + "a".repeat(64) },
   });
-  assert.equal(request.schema_version, "research_turn_request");
-  assert.equal(result.schema_version, "research_turn_result");
+  assert.equal(request.protocol, "research_turn_request");
+  assert.equal(request.version, 1);
+  assert.equal(result.protocol, "research_turn_result");
+  assert.equal(result.version, 1);
   assert.throws(() => create_research_turn_request({
     operation: "research.turn",
     request_id: "request_2",

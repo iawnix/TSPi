@@ -7,8 +7,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / "scripts" / "workspace_mode.py"
-API = ROOT / "scripts" / "research_api.py"
+CLI = ROOT / "apps" / "agent-cli" / "workspace_mode.py"
+API = ROOT / "apps" / "agent-cli" / "research_api.py"
 
 
 def _run(script: Path, *args: str) -> dict:
@@ -26,7 +26,7 @@ def _run(script: Path, *args: str) -> dict:
 
 def test_workspace_cli_roundtrip_uses_canonical_research_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    initialized = _run(CLI, "--root", str(workspace), "--workspace-id", "workspace_cli", "--mode", "research")
+    initialized = _run(CLI, "--root", str(workspace), "--workspace-id", "workspace_cli")
     assert initialized["schema_version"] == "research_state_workspace_1"
     assert initialized["state"] == "ready"
 
@@ -56,12 +56,12 @@ def test_workspace_cli_roundtrip_uses_canonical_research_workspace(tmp_path: Pat
 
 def test_canonical_api_exposes_research_operation_catalog(tmp_path: Path) -> None:
     workspace = tmp_path / "research"
-    _run(CLI, "--root", str(workspace), "--workspace-id", "workspace_catalog", "--mode", "research")
+    _run(CLI, "--root", str(workspace), "--workspace-id", "workspace_catalog")
     catalog = _run(API, "research.operations", "--root", str(workspace))
     assert catalog["schema_version"] == "research-operation-catalog/1"
     assert {item["type"] for item in catalog["operations"]} == {
         "create_phase", "create_claim", "create_node", "create_finding", "create_gate",
-        "set_continuation", "resolve_continuation", "evaluate_gate", "set_node_state",
+        "set_lifecycle_action", "resolve_lifecycle_action", "evaluate_gate", "set_node_state",
         "set_claim_status", "relate_claims", "set_focus",
     }
     assert all("template_ref" not in item for item in catalog["operations"])

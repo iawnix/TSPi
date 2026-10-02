@@ -27,6 +27,7 @@
     "nodes": [],
     "findings": [],
     "gates": [],
+    "lifecycle_actions": [],
     "claim_relations": [],
     "focus_claim_ids": [],
     "focus_node_ids": [],

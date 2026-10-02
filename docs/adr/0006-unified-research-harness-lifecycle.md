@@ -13,8 +13,8 @@ session binding, tool contracts, recovery, and bounded follow-up. Monitor only o
 Attempts and queues operational wakes. Compute/Workspace Runtime owns Attempt and Artifact
 execution records and never writes scientific Findings or Claims directly.
 
-The Kernel command `research.turn` uses `research-turn-request/1` and
-`research-turn-result/1` for `start`, `orient`, `checkpoint`, `end`, and `wake`. It records
+The Kernel command `research.turn` uses the `research_turn_request` version 1 request
+and `research_turn_result` version 1 result for `start`, `orient`, `checkpoint`, `end`, and `wake`. It records
 operational turn audit under `operations/research_turns.jsonl`; these events are not ResearchMap
 facts. A supplied `request_id` is an idempotency key: an exact retry is marked `replayed` and
 does not append another audit event; reusing that key with a different operation, turn, session,
@@ -23,9 +23,8 @@ trigger, or delivery identity is rejected as a command error.
 `research_checkpoint` is the only turn-closing boundary. Its valid dispositions are
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, and
 `user_input_required`. `continue_required` means the Agent has recorded an explicit
-next-turn action. The old `required` value is accepted only when reading or migrating
-the compatibility `research_checkpoint` ledger and is normalized to
-`continue_required`; it is not a second lifecycle state.
+next-turn action. Lifecycle actions are State records managed through
+`set_lifecycle_action` and `resolve_lifecycle_action`.
 Monitor records `research.turn(operation=wake)` before acknowledging a wake delivery; a failed
 boundary leaves the delivery pending for retry. `decision_needed` is the only state that requires a bounded Host follow-up. When liveness also reports `execution_ready=true`, an active StrategyPlan covers the focused scope and Host may admit its declared prepare/execute work before the checkpoint; the Agent must still write the checkpoint before ending the turn. Host follow-up may ask the Agent to read bounded state and record a disposition, but may not choose a method,
 Capability, Backend, Skill, parameter, or scientific conclusion.
@@ -40,11 +39,10 @@ workspace/session binding, and error taxonomy and use the common result/error en
 `research_read` (including its bounded `liveness` view) and
 `research_checkpoint` are the canonical Agent/Host interfaces for a turn.
 `research.liveness` is diagnostic only; it does not persist a next step.
-`research_checkpoint` remains a compatibility interface for reading or
-migrating older required-action records. `research.turn` remains the lifecycle
-boundary that interprets these records. The Native Worker's `before_run_end`
-boundary invokes the same lifecycle evaluation and must not implement a second
-liveness or continuation state machine.
+`research_checkpoint` is the canonical checkpoint interface. `research.turn`
+remains the lifecycle boundary that interprets the canonical State records. The
+Native Worker's `before_run_end` boundary invokes the same lifecycle evaluation
+and must not implement a second liveness state machine.
 
 Runtime enforcement is centralized at tool admission. Every production tool must expose
 `label`, `description`, a parameter schema, an executable `execute` function, and the exact

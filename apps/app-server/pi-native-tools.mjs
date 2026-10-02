@@ -221,11 +221,11 @@ export function createResearchLifecycleTool() {
 
 export function normalizeCheckpointPayload(value, toolContext, eventId) {
   const checkpoint = { ...value };
+  if (checkpoint.status !== undefined) throw new Error("research_checkpoint uses disposition; status is not a checkpoint field");
+  if (!checkpoint.disposition) throw new Error("research_checkpoint requires disposition");
   const turnId = checkpoint.turn_id || toolContext?.operation_id || eventId || `turn_${Date.now()}`;
   checkpoint.turn_id = turnId;
   checkpoint.id ||= eventId || `checkpoint_${turnId}`;
-  if (!checkpoint.disposition && checkpoint.status) checkpoint.disposition = checkpoint.status;
-  delete checkpoint.status;
   return checkpoint;
 }
 

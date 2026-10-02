@@ -6,9 +6,9 @@
 
 ## 背景
 
-TSPi 之前把 Agent 的 turn 结束、Continuation、Monitor wake 和计算 Attempt
-分散在不同适配器中。一个 continuation 完成后，如果 Agent 没有再登记下一步，
-Host 会把“当前 continuation 已完成”误当成“研究可以结束”；反过来，Host 也可能
+TSPi 之前把 Agent 的 turn 结束、LifecycleAction、Monitor wake 和计算 Attempt
+分散在不同适配器中。一个 lifecycle action 完成后，如果 Agent 没有再登记下一步，
+Host 会把“当前 action 已完成”误当成“研究可以结束”；反过来，Host 也可能
 把一个已经登记的 `required` 下一步在同一个 turn 里再次注入，导致同一研究 scope
 被连续推进。
 
@@ -53,7 +53,7 @@ TRIGGER -> ADMIT -> ORIENT -> PLAN -> PREPARE -> EXECUTE
         -> END 或 WAKE
 ```
 
-Kernel 暴露 `research.turn`（`research-turn-request/1` / `research-turn-result/1`）：
+Kernel 暴露 `research.turn`（`research_turn_request` v1 / `research_turn_result` v1）：
 
 - `start`：登记一次 turn 开始并返回 bounded liveness；
 - `orient`：返回 bounded Research Context 和 liveness；
@@ -78,11 +78,11 @@ Kernel 只返回以下状态：
 - `blocked`：Agent 明确记录了阻塞原因和恢复条件；
 - `terminal`：相关 scope 已关闭或研究没有开放 scope。
 
-旧的 `required` 值只在读取或迁移兼容的 `research_checkpoint` ledger 时接受，并规范化为
-`continue_required`；它不是另一套生命周期状态。`research.liveness` 只是诊断投影，不负责
+生命周期动作是通过 `research.change` 的 `set_lifecycle_action` 和
+`resolve_lifecycle_action` 操作登记的规范 State 记录。`research.liveness` 只是诊断投影，不负责
 持久化下一步或关闭 turn。
 
-Attempt/Artifact/Continuation 的完成都不是研究完成的同义词。只有 ResearchMap 的
+Attempt/Artifact/LifecycleAction 的完成都不是研究完成的同义词。只有 ResearchMap 的
 Node/Claim/Gate 状态和 Finding/Gate 证据决定科学结论。
 
 ### Follow-up 规则
@@ -105,7 +105,7 @@ session/Agent 生命周期转移，也不表示科学下一步。
 Durable Research Memory 保存在 workspace：ResearchMap、ChangeSet、Attempt、Artifact、
 Monitor event、turn audit 和 provenance。模型上下文不是第二份状态。
 
-每个 turn 只生成 bounded `research.context`：当前 focus、Gate/Continuation 摘要、
+每个 turn 只生成 bounded `research.context`：当前 focus、Gate/LifecycleAction 摘要、
 Attempt 状态、liveness 和截断标记。需要完整对象时 Agent 使用 `research_read detail/locate`
 或专门的 Artifact 查询。
 
@@ -155,9 +155,9 @@ policy。这样冷恢复只允许 safe/idempotent 的 reconcile，`replay: never
 `research_read`（包括有界的 `liveness` 视图）和 `research_checkpoint` 是
 Agent/Host 的规范接口：前者提供有界状态，后者以 disposition 结束 turn。
 `research.liveness` 只是诊断；`research_checkpoint` 仅用于读取或迁移旧的
-required-action ledger。所有生命周期语义统一由 `research.turn` 解释。Native
+生命周期动作记录。所有生命周期语义统一由 `research.turn` 解释。Native
 Worker 的 `before_run_end` 只调用同一个 lifecycle boundary，不得实现第二套
-liveness 或 continuation 状态机。
+liveness 状态机。
 
 ## 验证
 

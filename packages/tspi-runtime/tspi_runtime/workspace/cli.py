@@ -1,6 +1,6 @@
 """Read-only diagnostics and execution-ID CLI for canonical workspaces.
 
-Workspace creation/admission belongs to ``workspace_mode.py`` and the
+Workspace creation/admission belongs to ``research_state.workspace`` and the
 Host.  The retired ResearchMap initializer and bootstrap commands are not
 part of this command boundary.
 """

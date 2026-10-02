@@ -270,6 +270,17 @@ export function createPublicToolContracts(Type) {
       criteria: Type.Optional(Type.Array(Type.Any(), { maxItems: 128 })),
       created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
     }),
+    operation("set_lifecycle_action", {
+      id: identifier(), scope: literalUnion(["node", "claim", "gate"]), target_id: identifier(),
+      action: literalUnion(["inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"]),
+      status: Type.Optional(literalUnion(["required", "deferred", "blocked", "completed"])),
+      reason: Type.Optional(text()), request_id: Type.Optional(identifier()),
+      created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
+    }),
+    operation("resolve_lifecycle_action", {
+      id: identifier(), status: literalUnion(["required", "deferred", "blocked", "completed"]),
+      reason: Type.Optional(text()), request_id: Type.Optional(identifier()),
+    }),
     operation("evaluate_gate", {
       gate_id: identifier(), verdict: literalUnion(["pass", "fail", "inconclusive", "blocked"]),
       message: Type.Optional(text()), evidence_refs: Type.Optional(stringArray(256)),
@@ -387,15 +398,7 @@ export function createPublicToolContracts(Type) {
       promptSnippet: "Apply an auditable ResearchMap ChangeSet",
     }),
     lifecycle: contract("lifecycle", "Research Lifecycle", "Record a strategy, interpretation, or checkpoint.", Type.Object({
-      // Keep the operation token compact; the Kernel validates the canonical
-      // set/resolve/status vocabulary and operation aliases at runtime.
-      operation: Type.String({ minLength: 1, maxLength: 32, pattern: "^[a-z][a-z0-9_]*$" }),
-      scope: Type.Optional(enumString(["node", "claim", "gate"])),
-      targetId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-      action: Type.Optional(enumString(["inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"])),
-      status: Type.Optional(enumString(["required", "deferred", "blocked", "completed"])),
-      reason: Type.Optional(Type.String({ minLength: 1 })),
-      requestId: Type.Optional(Type.String({ minLength: 1 })),
+      operation: enumString(["strategy", "interpret", "checkpoint"]),
       strategyOperation: Type.Optional(enumString(["plan", "review"])),
       plan: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
       review: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
@@ -625,19 +628,6 @@ function normalizeCheckpointParams(params = {}) {
   };
 }
 
-function normalizeLifecycleParams(params = {}) {
-  const normalized = { ...params };
-  for (const [snake, camel] of [
-    ["target_id", "targetId"], ["request_id", "requestId"],
-    ["basis_refs", "basisRefs"], ["expected_revision", "expectedRevision"],
-  ]) {
-    if (normalized[camel] === undefined && normalized[snake] !== undefined) normalized[camel] = normalized[snake];
-    delete normalized[snake];
-  }
-  if (normalized.operation === "set_status") normalized.operation = "set";
-  return normalized;
-}
-
 const SEMANTIC_ALIAS_SOURCES = Object.freeze({
   "system_prompt": "sys_prompt",
   "research_read": "research_read",
@@ -762,7 +752,6 @@ function checkpointSchema() {
     turnId: identifierSchema(),
     turn_id: identifierSchema(),
     disposition: { enum: ["waiting_external", "continue_required", "deferred", "blocked", "terminal", "user_input_required"] },
-    status: { enum: ["waiting_external", "continue_required", "deferred", "blocked", "terminal", "user_input_required"] },
     reason: textSchema(),
     claimIds: { type: "array", maxItems: 128, items: claimIdentifierSchema() },
     claim_ids: { type: "array", maxItems: 128, items: claimIdentifierSchema() },
@@ -860,9 +849,7 @@ export function createPublicToolAliases(tools, { includeDecisionAliases = true }
     ].includes(canonicalName)) return [];
     const source = byName.get(sourceName);
     if (!source) return [];
-    const mapParams = canonicalName === "research_lifecycle"
-      ? normalizeLifecycleParams
-      : canonicalName === "research_strategy"
+    const mapParams = canonicalName === "research_strategy"
       ? (params) => ({
         ...normalizeStrategyParams(params),
         operation: "strategy",

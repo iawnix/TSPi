@@ -1642,18 +1642,22 @@ def turn(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, A
     protocol = request.get("protocol")
     if protocol != "research_turn_request":
         raise AgentWorkspaceError("unsupported research turn protocol")
-    if request.get("version", 1) != 1:
+    if request.get("version") != 1:
         raise AgentWorkspaceError("unsupported research turn version")
+    if not isinstance(request.get("input"), dict):
+        raise AgentWorkspaceError("research turn input is required")
+    if "payload" in request:
+        raise AgentWorkspaceError("research turn payload is not supported")
     request_id = request.get("request_id")
     if not isinstance(request_id, str) or not request_id:
         raise AgentWorkspaceError("research turn request_id is required")
     operation = request.get("operation")
     if operation == "checkpoint":
         checkpoint_request = dict(request)
-        # The turn router calls the operation payload ``input``.  Accepting
-        # it here keeps the Kernel boundary independent of the transport's
-        # envelope while preserving the snake_case checkpoint fields.
-        envelope = request.get("input") if isinstance(request.get("input"), dict) else request.get("payload")
+        # The turn router calls the operation input ``input``. Keep the
+        # Kernel boundary aligned with that single transport envelope while
+        # preserving the snake_case checkpoint fields.
+        envelope = request["input"]
         if "checkpoint" not in checkpoint_request and isinstance(envelope, dict):
             checkpoint_request["checkpoint"] = envelope
             for field in ("principal", "authority"):

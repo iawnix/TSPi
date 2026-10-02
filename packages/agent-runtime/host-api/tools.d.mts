@@ -120,6 +120,8 @@ export type ResearchMapOperation =
   | { type: "create_node"; id: string; title: string; objective: string; phase_id?: string; claim_ids?: string[]; dependency_ids?: string[]; created_at?: string; metadata?: Record<string, unknown> }
   | { type: "create_finding"; id: string; node_id: string; statement: string; kind: "fact" | "issue"; claim_ids?: string[]; source_refs?: string[]; value?: unknown; datatype?: string; unit?: string; provenance?: Record<string, unknown>; status?: "open" | "confirmed" | "resolved" | "accepted" | "superseded"; severity?: string; resolution?: string; created_at?: string; metadata?: Record<string, unknown> }
   | { type: "create_gate"; id: string; scope: "node" | "claim"; target_id: string; criteria?: unknown[]; created_at?: string; metadata?: Record<string, unknown> }
+  | { type: "set_lifecycle_action"; id: string; scope: "node" | "claim" | "gate"; target_id: string; action: "inspect" | "finalize" | "launch" | "analyze" | "review" | "evaluate" | "close"; status?: "required" | "deferred" | "blocked" | "completed"; reason?: string; request_id?: string; created_at?: string; metadata?: Record<string, unknown> }
+  | { type: "resolve_lifecycle_action"; id: string; status: "required" | "deferred" | "blocked" | "completed"; reason?: string; request_id?: string }
   | { type: "evaluate_gate"; gate_id: string; verdict: "pass" | "fail" | "inconclusive" | "blocked"; message?: string; evidence_refs?: string[]; created_at?: string }
   | { type: "set_node_state"; node_id: string; state: "planned" | "active" | "paused" | "blocked"; outcome?: never; summary?: string }
   | { type: "set_node_state"; node_id: string; state: "closed"; outcome: "completed" | "inconclusive" | "stopped"; summary?: string }
@@ -133,13 +135,7 @@ export interface ChangeToolParams extends WorkspaceToolParams {
   expectedRevision?: number;
 }
 export interface LifecycleToolParams extends WorkspaceToolParams {
-  operation: "status" | "set" | "set_status" | "resolve" | "clear" | "set_required" | "set_deferred" | "set_blocked" | "set_completed" | "strategy" | "interpret" | "checkpoint";
-  scope?: "node" | "claim" | "gate";
-  targetId?: string;
-  action?: "inspect" | "finalize" | "launch" | "analyze" | "review" | "evaluate" | "close";
-  status?: "required" | "deferred" | "blocked" | "completed";
-  reason?: string;
-  requestId?: string;
+  operation: "strategy" | "interpret" | "checkpoint";
   strategyOperation?: "plan" | "review";
   plan?: Record<string, unknown>;
   review?: Record<string, unknown>;

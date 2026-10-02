@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tspi_runtime.runtime.workspace_mode import (
+from research_state.workspace import (
     RESEARCH_CONTEXT_COLLECTIONS,
     WorkspaceModeError,
     admit_research_workspace,

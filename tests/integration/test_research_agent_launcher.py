@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 from pathlib import Path
 
 import pytest
 
-from scripts import research_agent_launcher as launcher
+
+
+_LAUNCHER_PATH = Path(__file__).resolve().parents[2] / "apps/agent-cli/research_agent_launcher.py"
+_LAUNCHER_SPEC = importlib.util.spec_from_file_location("research_agent_launcher", _LAUNCHER_PATH)
+assert _LAUNCHER_SPEC is not None and _LAUNCHER_SPEC.loader is not None
+launcher = importlib.util.module_from_spec(_LAUNCHER_SPEC)
+_LAUNCHER_SPEC.loader.exec_module(launcher)
 
 
 def test_launcher_writes_owner_only_server_config(tmp_path: Path) -> None:

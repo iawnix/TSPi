@@ -50,9 +50,8 @@ At the end of every turn, read the bounded `research_read mode=context` or
 `research_read mode=liveness` view, record any needed strategy or Attempt interpretation,
 and call `research_checkpoint` with an explicit disposition:
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
-`user_input_required`. `research_checkpoint` is a secondary required-action
-ledger; it is not the turn boundary. Parsed or
-completed operational records do not close a scientific question by themselves.
+`user_input_required`. `research_checkpoint` is the canonical turn checkpoint.
+Parsed or completed operational records do not close a scientific question by themselves.
 `decision_needed` requires the Root Agent to continue and record a checkpoint.
 When liveness also reports `execution_ready=true`, an active StrategyPlan covers
 the focused scope and the Root Agent may execute that declared plan before the

@@ -4,8 +4,8 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createContinuationLivenessHook } from "../../../apps/app-server/pi-native-tools.mjs";
-import { createResearchLifecycleController, requiredContinuations, toolEventIsError } from "../../../packages/agent-runtime/host-api/lifecycle.mjs";
+import { createCheckpointLivenessHook } from "../../../apps/app-server/pi-native-tools.mjs";
+import { createResearchLifecycleController, requiredLifecycleActions, toolEventIsError } from "../../../packages/agent-runtime/host-api/lifecycle.mjs";
 import Type from "../../../apps/app-server/pi-runtime-deps.mjs";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { Agent, AgentHarness, BACKGROUND_CONTEXT, createReadTool, MemorySessionRepo } from "@earendil-works/pi-agent-core";
@@ -499,43 +499,43 @@ test("normalized tool-error envelopes keep lifecycle retries in the prior phase"
   assert.equal(toolEventIsError({ details: { envelope: { schema_version: "tspi-tool-result/1", ok: true } } }), false);
 });
 
-test("requiredContinuations reads the canonical required continuation projection", () => {
-  const required = requiredContinuations({
-    schema_version: "research-continuation/1",
-    required: [{ id: "continuation_node_1", status: "required", scope: "node", target_id: "node_1" }],
-    continuations: [],
+test("requiredLifecycleActions reads the canonical lifecycle action projection", () => {
+  const required = requiredLifecycleActions({
+    schema_version: "research-liveness/1",
+    continue_required: [{ id: "action_node_1", status: "required", scope: "node", target_id: "node_1" }],
   });
-  assert.deepEqual(required, [{ id: "continuation_node_1", status: "required", scope: "node", target_id: "node_1" }]);
+  assert.deepEqual(required, [{ id: "action_node_1", status: "required", scope: "node", target_id: "node_1" }]);
 });
 
-test("decision aliases normalize claim and node selectors without rejecting compatibility fields", async () => {
+test("semantic lifecycle aliases normalize canonical decision payloads", async () => {
   const calls = [];
   const source = {
-    name: "research_checkpoint",
+    name: "research_lifecycle",
     async execute(_toolCallId, params) {
       calls.push(params);
       return { content: [{ type: "text", text: "ok" }] };
     },
   };
   const aliases = createPublicToolAliases([source]);
-  const continuation = aliases.find((tool) => tool.name === "research_checkpoint");
+  const checkpoint = aliases.find((tool) => tool.name === "research_checkpoint");
   const strategy = aliases.find((tool) => tool.name === "research_strategy");
-  assert.ok(continuation);
+  assert.ok(checkpoint);
   const interpretation = aliases.find((tool) => tool.name === "research_interpretation");
   assert.ok(strategy);
   assert.ok(interpretation);
 
-  await continuation.execute("continuation-call", {
-    operation: "set_status",
-    scope: "claim",
-    target_id: "claim_1",
-    action: "inspect",
-    status: "required",
+  await checkpoint.execute("checkpoint-call", {
+    checkpoint: {
+      turnId: "turn_1",
+      disposition: "continue_required",
+      unresolvedRefs: ["node_1"],
+    },
     rationale: "Keep the next action auditable.",
-    expected_revision: 0,
+    expectedRevision: 0,
   });
-  assert.equal(calls[0].operation, "set");
-  assert.equal(calls[0].targetId, "claim_1");
+  assert.equal(calls[0].operation, "checkpoint");
+  assert.equal(calls[0].checkpoint.turn_id, "turn_1");
+  assert.equal(calls[0].checkpoint.disposition, "continue_required");
   assert.equal(calls[0].rationale, "Keep the next action auditable.");
   assert.equal(calls[0].expectedRevision, 0);
 
@@ -584,9 +584,9 @@ test("decision aliases normalize claim and node selectors without rejecting comp
   assert.equal(calls[2].interpretation.attempt_ref, "calc_1");
 });
 
-test("checkpoint payload fills operational identity and maps legacy status", () => {
+test("checkpoint payload fills operational identity and requires disposition", () => {
   const checkpoint = normalizeCheckpointPayload({
-    status: "blocked",
+    disposition: "blocked",
     reason: "The host must initialize the research map.",
   }, { operation_id: "run-checkpoint" }, "checkpoint-event");
   assert.deepEqual(checkpoint, {
@@ -595,6 +595,10 @@ test("checkpoint payload fills operational identity and maps legacy status", () 
     disposition: "blocked",
     reason: "The host must initialize the research map.",
   });
+  assert.throws(
+    () => normalizeCheckpointPayload({ status: "blocked" }, { operation_id: "run-checkpoint" }, "checkpoint-event"),
+    /uses disposition/,
+  );
 });
 
 test("CLI errors keep the actionable exception instead of a full traceback", () => {
@@ -602,9 +606,9 @@ test("CLI errors keep the actionable exception instead of a full traceback", () 
     "Traceback (most recent call last):",
     "  File '/tmp/api.py', line 1, in <module>",
     "    raise ResearchStateError('boom')",
-    "research_state.agent_workspace.AgentWorkspaceError: continuation cont_1 references unknown node node_1",
+    "research_state.agent_workspace.AgentWorkspaceError: lifecycle_action action_1 references unknown node node_1",
   ].join("\n"));
-  assert.equal(message, "research_state.agent_workspace.AgentWorkspaceError: continuation cont_1 references unknown node node_1");
+  assert.equal(message, "research_state.agent_workspace.AgentWorkspaceError: lifecycle_action action_1 references unknown node node_1");
   assert.doesNotMatch(message, /Traceback/);
 });
 
@@ -617,7 +621,7 @@ test("workspace root is bound by Harness context", () => {
   );
 });
 
-test("public tool adapter preserves legacy payloads and adds result/error envelopes", async () => {
+test("public tool adapter adds result and error envelopes", async () => {
   const success = wrapToolWithEnvelope({
     name: "ts_example",
     async execute() {
@@ -815,7 +819,7 @@ test("Harness transcript persists a structured envelope for argument validation 
 });
 
 test("Research Turn hook leaves a canonical continue_required plan for the next turn", async () => {
-  const hook = createContinuationLivenessHook({
+  const hook = createCheckpointLivenessHook({
     cwd: process.cwd(),
     statusReader: async () => ({
       schema_version: "research-liveness/1",
@@ -827,13 +831,17 @@ test("Research Turn hook leaves a canonical continue_required plan for the next 
 });
 
 test("production checkpoint mode treats continue_required as a valid next-turn plan", async () => {
-  const hook = createContinuationLivenessHook({
+  const hook = createCheckpointLivenessHook({
     cwd: process.cwd(),
     followUpRequired: false,
     statusReader: async () => ({
-      schema_version: "research-turn-result/1",
+      protocol: "research_turn_result",
+      version: 1,
+      request_id: "run-required-next-turn",
+      status: "completed",
+      output: {},
+      provenance: { producer: "research_state", request_digest: "sha256:" + "a".repeat(64) },
       lifecycle: "continue_required",
-      accepted: true,
       requires_disposition: false,
       continue_required: [{ id: "cont_1", status: "required" }],
     }),
@@ -842,7 +850,7 @@ test("production checkpoint mode treats continue_required as a valid next-turn p
 });
 
 test("Research Turn hook repairs a missing disposition without selecting science", async () => {
-  const hook = createContinuationLivenessHook({
+  const hook = createCheckpointLivenessHook({
     cwd: process.cwd(),
     maxFollowUps: 1,
     statusReader: async () => ({
@@ -862,7 +870,7 @@ test("Research Turn hook repairs a missing disposition without selecting science
 
 test("Research Turn hook binds the canonical checkpoint to the current run", async () => {
   let observedTurnId;
-  const hook = createContinuationLivenessHook({
+  const hook = createCheckpointLivenessHook({
     cwd: process.cwd(),
     maxFollowUps: 1,
     statusReader: async (_signal, turnId) => {
@@ -875,7 +883,7 @@ test("Research Turn hook binds the canonical checkpoint to the current run", asy
 });
 
 test("Research Turn hook fails closed when canonical liveness cannot be read", async () => {
-  const hook = createContinuationLivenessHook({
+  const hook = createCheckpointLivenessHook({
     cwd: join(tmpdir(), "tspi-liveness-workspace-does-not-exist"),
   });
   await assert.rejects(
@@ -918,8 +926,8 @@ test("Harness follow-up requires context before recording the next action", asyn
     async execute(_toolCallId, params) {
       calls.push({ name: "research_checkpoint", params });
       return {
-        content: [{ type: "text", text: JSON.stringify({ schema_version: "research-continuation-result/1" }) }],
-        details: { result: { schema_version: "research-continuation-result/1" } },
+        content: [{ type: "text", text: JSON.stringify({ schema_version: "research_checkpoint_result/1" }) }],
+        details: { result: { schema_version: "research_checkpoint_result/1" } },
       };
     },
   });
@@ -927,14 +935,14 @@ test("Harness follow-up requires context before recording the next action", asyn
     fauxAssistantMessage("I have reached the end of this turn.", { stopReason: "stop" }),
     fauxAssistantMessage(fauxToolCall("research_read", { mode: "context" }, { id: "call-context" }), { stopReason: "toolUse" }),
     fauxAssistantMessage(fauxToolCall("research_checkpoint", {
-      operation: "set_required",
+      operation: "checkpoint",
       scope: "node",
       targetId: "node_1",
       action: "inspect",
     }, { id: "call-workflow" }), { stopReason: "toolUse" }),
     fauxAssistantMessage("The next action is recorded.", { stopReason: "stop" }),
   ]);
-  const hook = createContinuationLivenessHook({
+  const hook = createCheckpointLivenessHook({
     cwd: process.cwd(),
     maxFollowUps: 1,
     statusReader: async () => {
@@ -962,7 +970,7 @@ test("Harness follow-up requires context before recording the next action", asyn
     assert.equal(run.ok, true);
     assert.deepEqual(calls.map((item) => item.name), ["research_read", "research_checkpoint"]);
     assert.equal(calls[0].params.mode, "context");
-    assert.equal(calls[1].params.operation, "set_required");
+    assert.equal(calls[1].params.operation, "checkpoint");
     // The bounded follow-up is part of the same Harness run boundary, so the
     // liveness reader is consulted once before the follow-up is injected.
     assert.equal(lifecycleReads, 1);
@@ -987,7 +995,7 @@ test("Harness follow-up requires context before recording the next action", asyn
 
 test("Research Turn hook leaves valid waits, plans, and terminal states alone", async () => {
   for (const lifecycle of ["continue_required", "waiting_external", "blocked", "terminal", "idle"]) {
-    const hook = createContinuationLivenessHook({
+    const hook = createCheckpointLivenessHook({
       cwd: process.cwd(),
       statusReader: async () => ({ schema_version: "research-liveness/1", lifecycle }),
     });
@@ -1037,7 +1045,7 @@ test("Research Turn hook reads real Kernel liveness through the canonical comman
 
     const livenessPayload = JSON.parse(run(["apps/agent-cli/research_api.py", "research.liveness", "--root", workspace]));
     assert.equal(livenessPayload.lifecycle, "decision_needed");
-    const hook = createContinuationLivenessHook({
+    const hook = createCheckpointLivenessHook({
       cwd: workspace,
       maxFollowUps: 1,
       statusReader: async () => JSON.parse(run(["apps/agent-cli/research_api.py", "research.liveness", "--root", workspace])),

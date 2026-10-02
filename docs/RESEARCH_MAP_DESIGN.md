@@ -56,7 +56,6 @@ research.turn       unified turn admission/checkpoint boundary
 research.strategy   record or review strategy
 research.interpretation interpret an Attempt
 research.checkpoint close a turn with a disposition
-research.continuation required-action ledger
 research.change     apply one ChangeSet
 ```
 
@@ -65,8 +64,8 @@ commands. `research.context` and `research.liveness` are bounded read models;
 they do not become a second ResearchMap or a second lifecycle authority.
 `research.context` and `research.liveness` are bounded projections. Liveness is
 diagnostic and does not persist a next step. The `research.checkpoint` command
-is the primary turn boundary; `research.continuation` is the explicit
-required-action ledger for the current protocol.
+is the primary turn boundary; lifecycle actions are canonical ResearchMap records
+managed through `research.change`.
 The liveness response exposes the read-only `continue_required` field.
 `research.decisions` and `research.evidence` read bounded metadata without
 loading raw files. `/research` is a presentation spelling of the command

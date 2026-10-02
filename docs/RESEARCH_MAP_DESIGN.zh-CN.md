@@ -50,13 +50,12 @@ research.turn       统一 turn admission/checkpoint 边界
 research.strategy   记录或评审 strategy
 research.interpretation 解释 Attempt
 research.checkpoint 用 disposition 结束 turn
-research.continuation required-action ledger
 research.change     应用一个 ChangeSet
 ```
 
 Kernel port、Pi tools、slash command 和 Root Agent 使用同一组命令。`research.context` 和
 `research.liveness` 是有界的诊断投影，不持久化下一步；`research.checkpoint` 是主要 turn
-边界，`research.continuation` 是当前协议的 required-action ledger。liveness 响应只读地提供
+边界，生命周期动作通过 `research.change` 作为规范 State 记录管理。liveness 响应只读地提供
 `continue_required`。
 `research.decisions` 与 `research.evidence` 读取 filesystem Kernel 投影中的有界元数据，不加载原始文件。
 `/research` 只是命令服务的交互写法，不是另一套 API。

@@ -64,6 +64,7 @@ test("monitor wake records the canonical Research Turn before queue delivery", a
   const calls = [];
   const turn = await recordMonitorTurn({
     workspace: state.workspace,
+    workspace_id: state.canonicalId,
     event: state.event,
     delivery: state.delivery,
     execute: async (_python, args) => {
@@ -71,20 +72,26 @@ test("monitor wake records the canonical Research Turn before queue delivery", a
       const requestPath = args[args.indexOf("--request-file") + 1];
       const request = JSON.parse(await readFile(requestPath, "utf8"));
       assert.deepEqual(request, {
-        schema_version: "research-turn-request/1",
-        operation: "wake",
-        turn_id: "monitor:evt_1",
-        session_id: "existing-session",
+        protocol: "research_turn_request",
+        version: 1,
+        workspace_id: state.canonicalId,
         request_id: "monitor:evt_1",
-        trigger: "monitor.wake",
-        event_id: "evt_1",
-        monitor_id: "mon_1",
-        intent_id: "calc_1",
+        operation: "wake",
+        input: {
+          trigger: "monitor.wake",
+          event_id: "evt_1",
+          monitor_id: "mon_1",
+          intent_id: "calc_1",
+        },
+        context: { session_id: "existing-session" },
       });
-      return { stdout: JSON.stringify({ schema_version: "research-turn-result/1", operation: "wake", accepted: true }) };
+      return { stdout: JSON.stringify({
+        protocol: "research_turn_result", version: 1, request_id: "monitor:evt_1", status: "completed",
+        output: { operation: "wake" }, provenance: { producer: "research_state", request_digest: "sha256:" + "a".repeat(64) },
+      }) };
     },
   });
-  assert.equal(turn.operation, "wake");
+  assert.equal(turn.output.operation, "wake");
   assert.equal(calls.length, 1);
 });
 

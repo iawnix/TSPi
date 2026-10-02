@@ -104,7 +104,7 @@ Agent (唯一科学决策者)
   | 读取 bounded Research Context，选择方法、证据和停止条件
   v
 Research Kernel (唯一科学状态权威)
-  | ResearchMap: Claim / Node / Finding / Gate / Continuation
+  | ResearchMap: Claim / Node / Finding / Gate / LifecycleAction
   | 校验、版本、ChangeSet、引用完整性
   v
 Harness / Host (生命周期与权限控制)
@@ -115,9 +115,9 @@ Harness / Host (生命周期与权限控制)
 
 Research Memory 分为两层：workspace 中的 Durable Research Memory 保存完整 ResearchMap、
 ChangeSet、Attempt、Artifact、事件和审计记录；每个 turn 由 Harness 从这些权威记录动态
-组装有界的 `research.context`，只携带当前 focus Claim/Node、Gate 摘要、Continuation
+组装有界的 `research.context`，只携带当前 focus Claim/Node、Gate 摘要、LifecycleAction
 摘要和运行时摘要；每类记录都有固定条数、文本长度和引用数量上限并返回截断标记，
-任意 Continuation metadata 会缩减为 key，完整内容通过 detail/status 查询获取。Context
+任意 LifecycleAction metadata 会缩减为 key，完整内容通过 State 查询获取。Context
 不是第二份科学状态，也不把完整历史或全部 Skill 正文复制进模型上下文。Skill 在
 SessionWorker 创建时加载并缓存正文，但默认 prompt 只放 name、description 和 location；
 只有显式调用 Skill 时才把正文注入当前 turn。Capability 和
@@ -147,7 +147,7 @@ Core 可以保存有界的 session 对话记忆，但不会写入 workspace 级 
 `ContextPack.context_id` 和 provenance 标识其来源 revision，因此 Host 可以在状态变化
 或重试后重新构造。新的语义写入只能通过 `research_change`、`research_strategy`、
 `research_interpretation` 和 `research_checkpoint`；新的 turn 不通过
-`research_checkpoint` 写入，它只用于读取或迁移旧的 required-action ledger。不提供会
+`research_checkpoint` 写入规范的 turn checkpoint。不提供会
 绕过领域校验的通用 `memory.commit`。
 
 Research Turn 的统一协议是：
@@ -160,8 +160,7 @@ TRIGGER -> ORIENT(context) -> PLAN -> PREPARE -> EXECUTE
 每轮结束前，Agent 必须调用 `research_checkpoint`，登记一种当前 disposition：
 `continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
 `user_input_required`。`continue_required` 表示 Agent 已经选择了下一 turn 的明确动作。
-旧的 `required` 值只在读取或迁移 `research_checkpoint` ledger 时接受，并规范化为
-`continue_required`，不是另一套生命周期状态。`research.liveness` 只是有界的生命周期诊断
+生命周期动作通过规范的 ChangeSet 操作管理。`research.liveness` 只是有界的生命周期诊断
 投影，不是持久化下一步，也不负责关闭 turn。
 
 如果 active Node 没有合法 disposition，Kernel 返回 `decision_needed`。如果当前 focus
@@ -174,8 +173,7 @@ Harness 不选择科学方法、不创建 Finding，也不把 `next_run` 当成�
 而不是等待外部事件。只有已提交、排队中、运行中、完成但尚未解析或状态未知的
 Attempt 才会让 scope 进入 `waiting_external`，直到 Host/Monitor 产生新证据。
 
-为兼容旧 transport，liveness 响应可以在只读的 `required` 字段中镜像规范的
-`continue_required` 记录；这个 alias 不会把 `required` 变成新的生命周期 disposition。
+`research.liveness` 只返回规范的 `continue_required` 记录。
 
 所有公开工具都通过统一 contract 暴露：workspace/session 由 Harness context 绑定，模型
 不能把请求重定向到另一个 root；`root` 只作为旧客户端的兼容断言。工具按 Read、Research
@@ -341,11 +339,8 @@ request id 为 `monitor:<event_id>`；session 不存在、workspace 不匹配或
 写入 Finding/Gate/Node 状态。Monitor 不自动 finalize、不修改 ResearchMap、不做科学判断。
 
 研究推进的 liveness 是独立于 Monitor 观察的诊断投影。turn boundary 通过
-`research_checkpoint` 持久化 Agent 的 disposition。`research_checkpoint` 仅作为旧
-required-action ledger 的兼容接口：可以通过 canonical `set`/`resolve` 查询或迁移旧记录，
-旧的 `set_*` 拼法只作为 alias；新 turn 不应再用它结束生命周期。旧 `required` 记录会被
-规范化为 `continue_required`，不构成第二套 liveness 状态机。ChangeSet 的审计字段属于
-`research_change`，不混入这个兼容请求。每次 run boundary，Host 只会针对
+`research_checkpoint` 持久化 Agent 的 disposition。它是规范 checkpoint；生命周期动作通过
+规范 ChangeSet 操作管理。ChangeSet 的审计字段属于 `research_change`。每次 run boundary，Host 只会针对
 `decision_needed` 追加最多三次 follow-up，并且不会替 Agent 选择方法。这样 parsed 之后
 即使没有新的 Monitor 事件，研究也能继续；阻塞或延期的研究则保持静默且可审计。
 

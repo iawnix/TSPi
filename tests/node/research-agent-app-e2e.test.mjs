@@ -57,7 +57,10 @@ test("App Server routes admitted research workspaces through durable identity", 
     });
     assert.equal(research_turn.protocol, "research_turn_request");
     assert.equal(research_turn.request.operation, "orient");
-    assert.equal(research_turn.result.accepted, true);
+    assert.equal(research_turn.accepted, true);
+    assert.equal(research_turn.result.protocol, "research_turn_result");
+    assert.equal(research_turn.result.status, "completed");
+    assert.equal(research_turn.result.output.operation, "orient");
 
     const change = await kernel.apply_change({
       workspace_id: "workspace_research",

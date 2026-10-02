@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from tspi_runtime.io import sha256_json
-from tspi_runtime.runtime.workspace_mode import admit_research_workspace, initialize_workspace
+from research_state.workspace import admit_research_workspace, initialize_workspace
 from research_state.agent_workspace import apply_change as _apply_filesystem_change
 from research_state.agent_workspace import read_context as read_filesystem_context
 

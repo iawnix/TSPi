@@ -113,6 +113,8 @@ function researchOperationCatalog() {
     ["create_gate", ["id", "scope", "target_id", "type"], ["created_at", "criteria", "metadata"]],
     ["create_node", ["id", "objective", "title", "type"], ["claim_ids", "created_at", "dependency_ids", "metadata", "phase_id"]],
     ["create_phase", ["id", "title", "type"], ["created_at", "metadata", "objective"]],
+    ["resolve_lifecycle_action", ["id", "status", "type"], ["reason", "request_id"]],
+    ["set_lifecycle_action", ["action", "id", "scope", "target_id", "type"], ["created_at", "metadata", "reason", "request_id", "status"]],
     ["evaluate_gate", ["gate_id", "type", "verdict"], ["created_at", "evidence_refs", "message"]],
     ["relate_claims", ["relation", "source_id", "target_id", "type"], []],
     ["set_claim_status", ["claim_id", "status", "type"], []],
@@ -213,7 +215,7 @@ function researchMapDocument(context) {
     ? context.created_at : null;
   if (!createdAt) throw new Error("ResearchMap created_at is invalid");
   const collections = [
-    "phases", "claims", "nodes", "findings", "gates", "claim_relations",
+    "phases", "claims", "nodes", "findings", "gates", "lifecycle_actions", "claim_relations",
   ];
   for (const name of collections) {
     if (!Array.isArray(context?.[name])) throw new Error(`ResearchMap ${name} must be an array`);
@@ -235,6 +237,7 @@ function researchMapDocument(context) {
     nodes,
     findings,
     gates: context.gates,
+    lifecycle_actions: context.lifecycle_actions,
     claim_relations: context.claim_relations,
     focus_claim_ids: [...focus.claim_ids],
     focus_node_ids: [...focus.node_ids],

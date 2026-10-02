@@ -15,7 +15,7 @@ from scripts._wheel import release_wheel
 from scripts.build_package import build_package
 from scripts.install_package import install_package
 from tests.integration.test_release_install import _synthetic_release
-from tspi_runtime.runtime.workspace_mode import admit_research_workspace, initialize_workspace
+from research_state.workspace import admit_research_workspace, initialize_workspace
 
 
 @pytest.fixture(autouse=True)

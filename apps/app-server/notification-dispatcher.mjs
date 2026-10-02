@@ -48,7 +48,7 @@ export async function sendNotification(workspace, event, signal, execute = execu
     const requestFile = join(directory, "request.json");
     await writeFile(requestFile, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
     try {
-      const completed = await execute(python, [join(packageRoot, "scripts", "notify.py"), "notify", "--root", workspace, "--request-file", requestFile, "--json"], {
+      const completed = await execute(python, [join(packageRoot, "apps", "agent-cli", "notify.py"), "notify", "--root", workspace, "--request-file", requestFile, "--json"], {
         cwd: workspace, env: { ...process.env, PYTHONNOUSERSITE: "1" }, maxBuffer: 8 * 1024 * 1024, timeout: NOTIFICATION_TIMEOUT_MS, signal });
       const result = parseNotificationJson(completed.stdout);
       assertNotificationSuccess(result);

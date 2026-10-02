@@ -16,7 +16,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from tspi_runtime.io import read_json
-from tspi_runtime.runtime.workspace_mode import RETIRED_WORKSPACE_FILES, WorkspaceModeError, validate_workspace_manifest
+from research_state.workspace import RETIRED_WORKSPACE_FILES, WorkspaceModeError, validate_workspace_manifest
 from .errors import ContractError
 from tspi_runtime.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .refs import CALCULATION_ID, NODE_ID

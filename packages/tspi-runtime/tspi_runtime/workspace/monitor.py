@@ -19,7 +19,7 @@ from typing import Any
 
 from tspi_runtime.io import now_iso, read_json, sha256_json, write_json
 from tspi_runtime.path_safety import lexical_path, path_has_symlink
-from tspi_runtime.runtime.workspace_mode import WorkspaceModeError, validate_workspace_manifest
+from research_state.workspace import WorkspaceModeError, validate_workspace_manifest
 
 
 REGISTRATION_SCHEMA = "ts-compute-monitor/1"

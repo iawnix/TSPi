@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import Type from "../../../apps/app-server/pi-runtime-deps.mjs";
-import { createContinuationLivenessHook } from "../../../apps/app-server/pi-native-tools.mjs";
+import { createCheckpointLivenessHook } from "../../../apps/app-server/pi-native-tools.mjs";
 import { deliverMonitorEvent } from "../../../apps/app-server/pi-monitor-worker.mjs";
 import { createSessionControl, SESSION_CONTROL_PROTOCOL } from "../../../apps/app-server/pi-session-control.mjs";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, createModels } from "@earendil-works/pi-ai";
@@ -320,7 +320,7 @@ test("one external Attempt completes the generic Research Turn lifecycle", async
     fauxAssistantMessage("The parsed evidence was reconciled and the Node is complete.", { stopReason: "stop" }),
   ]);
 
-  const hook = createContinuationLivenessHook({
+  const hook = createCheckpointLivenessHook({
     cwd: fixture.workspace,
     maxFollowUps: 1,
     statusReader: async () => {

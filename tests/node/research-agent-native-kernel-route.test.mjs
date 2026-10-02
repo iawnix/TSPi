@@ -39,6 +39,10 @@ test("native research commands expose the Python Kernel operation and liveness c
     });
     const result = await executeFilesystemResearchCommand("research.turn", root, {
       request: {
+        protocol: "research_turn_request",
+        version: 1,
+        request_id: "route_checkpoint",
+        workspace_id: "workspace_native_route",
         principal: "root_agent",
         authority: "kernel_write",
         operation: "checkpoint",
@@ -63,7 +67,7 @@ test("native research commands expose the Python Kernel operation and liveness c
   }
 });
 
-test("native research route permits Root Agent node state and continuation mutations", async () => {
+test("native research route permits Root Agent node state and lifecycle action mutations", async () => {
   const root = await mkdtemp(join(tmpdir(), "research-native-mutations-"));
   try {
     await create_workspace_initializer().initialize_workspace({
@@ -84,27 +88,28 @@ test("native research route permits Root Agent node state and continuation mutat
         ],
       },
     });
-    const created = await executeFilesystemResearchCommand("research.continuation", root, {
+    const created = await executeFilesystemResearchCommand("research.change", root, {
       request: {
         principal: "root_agent",
         authority: "kernel_write",
-        operation: "set",
-        scope: "node",
-        target_id: "node_mutation",
-        action: "analyze",
-        request_id: "request_mutation",
+        expected_revision: 1,
+        operations: [{
+          type: "set_lifecycle_action", id: "action_mutation", scope: "node",
+          target_id: "node_mutation", action: "analyze", request_id: "request_mutation",
+        }],
       },
     });
-    assert.equal(created.required[0].status, "required");
-    const continuationId = created.required[0].id;
-    const resolved = await executeFilesystemResearchCommand("research.continuation", root, {
+    assert.deepEqual(created.created_ids, ["action_mutation"]);
+    const resolved = await executeFilesystemResearchCommand("research.change", root, {
       request: {
-        principal: "root_agent", authority: "kernel_write", operation: "resolve",
-        continuationId, scope: "node", targetId: "node_mutation", action: "analyze", status: "completed",
+        principal: "root_agent", authority: "kernel_write", expected_revision: 2,
+        operations: [{ type: "resolve_lifecycle_action", id: "action_mutation", status: "completed" }],
       },
     });
-    assert.equal(resolved.continuations.find((item) => item.id === continuationId)?.status, "completed");
-    assert.equal((await executeFilesystemResearchCommand("research.context", root)).nodes[0].state, "active");
+    assert.deepEqual(resolved.created_ids, []);
+    const context = await executeFilesystemResearchCommand("research.context", root);
+    assert.equal(context.nodes[0].state, "active");
+    assert.equal(context.lifecycle_actions[0].status, "completed");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

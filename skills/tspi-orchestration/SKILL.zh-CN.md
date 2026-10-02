@@ -30,8 +30,8 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
 每轮结束前，读取 `research_read` 的 `mode=context` 或 `mode=liveness`，并使用
 `research_checkpoint` 结束生命周期。需要时先记录 strategy 和 Attempt interpretation，再选择一个
 明确 disposition：`continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
-`user_input_required`。`research_checkpoint` 是辅助 required-action ledger，不是主要
-turn checkpoint。Attempt 或 Continuation 完成本身都不是研究结论。若 liveness 返回
+`user_input_required`。`research_checkpoint` 是规范的 turn checkpoint。
+Attempt 或 lifecycle action 完成本身都不是研究结论。若 liveness 返回
 `decision_needed`，必须继续当前 turn 并记录 checkpoint。如果 liveness 同时返回
 `execution_ready=true`，说明 focus 已有 active StrategyPlan，可以先执行该计划对应的
 prepare/execute，但结束 turn 前仍必须写入 checkpoint。`continue_required` 是合法的下一轮计划，

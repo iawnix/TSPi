@@ -21,7 +21,7 @@ from _bootstrap import bootstrap_python_package
 
 bootstrap_python_package(ROOT, workspace_from_argv=True)
 
-from tspi_runtime.runtime.workspace_mode import (  # noqa: E402
+from research_state.workspace import (  # noqa: E402
     WorkspaceModeError,
     admit_research_workspace,
     initialize_workspace,

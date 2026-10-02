@@ -34,6 +34,7 @@
         "nodes",
         "findings",
         "gates",
+        "lifecycle_actions",
         "claim_relations",
         "focus_claim_ids",
         "focus_node_ids",
@@ -51,7 +52,7 @@
         "nodes": { "type": "array", "items": { "type": "object" } },
         "findings": { "type": "array", "items": { "type": "object" } },
         "gates": { "type": "array", "items": { "type": "object" } },
-        "continuations": { "type": "array", "items": { "$ref": "#/$defs/continuation" } },
+        "lifecycle_actions": { "type": "array", "items": { "$ref": "#/$defs/lifecycle_action" } },
         "claim_relations": { "type": "array", "items": { "type": "object" } },
         "focus_claim_ids": { "type": "array", "items": { "type": "string" } },
         "focus_node_ids": { "type": "array", "items": { "type": "string" } },
@@ -83,7 +84,7 @@
         "open_issue_count": { "type": "integer", "minimum": 0 }
       }
     },
-    "continuation": {
+    "lifecycle_action": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -99,7 +100,7 @@
         "request_id"
       ],
       "properties": {
-        "type": { "const": "continuation_record" },
+        "type": { "const": "lifecycle_action_record" },
         "id": { "type": "string", "minLength": 1 },
         "created_at": { "type": "string", "minLength": 1 },
         "metadata": { "type": "object" },

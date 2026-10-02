@@ -27,9 +27,11 @@ export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWa
       if (channel === "wake") {
         if (!claimed.session_id) throw new Error("monitor has no owning session; wake remains pending");
         if (typeof recordTurn === "function") {
-          const turn = await recordTurn({ workspace, event, delivery: claimed });
-          if (!turn || turn.schema_version !== "research-turn-result/1"
-            || turn.operation !== "wake" || turn.accepted !== true) {
+          const turn = await recordTurn({ workspace, workspace_id: hostWorkspaceId, event, delivery: claimed });
+          if (!turn || turn.protocol !== "research_turn_result" || turn.version !== 1
+            || turn.request_id !== claimed.request_id || turn.status !== "completed"
+            || turn.output?.operation !== "wake" || !turn.provenance
+            || typeof turn.provenance !== "object" || Array.isArray(turn.provenance)) {
             throw new Error("Research Turn wake boundary returned an invalid result");
           }
         }
@@ -144,18 +146,21 @@ export async function runMonitorWorker(options, signal) {
  * durable delivery pending so the wake cannot be acknowledged without an
  * auditable lifecycle event.
  */
-export async function recordMonitorTurn({ workspace, event, delivery, execute = executeFile } = {}) {
-  if (!workspace || !event || !delivery?.session_id) throw new TypeError("monitor turn requires workspace, event, and session binding");
+export async function recordMonitorTurn({ workspace, workspace_id, event, delivery, execute = executeFile } = {}) {
+  if (!workspace || !workspace_id || !event || !delivery?.session_id) throw new TypeError("monitor turn requires workspace, workspace identity, event, and session binding");
   const request = {
-    schema_version: "research-turn-request/1",
-    operation: "wake",
-    turn_id: `monitor:${event.event_id}`,
-    session_id: delivery.session_id,
+    protocol: "research_turn_request",
+    version: 1,
+    workspace_id,
     request_id: delivery.request_id,
-    trigger: "monitor.wake",
-    event_id: event.event_id,
-    monitor_id: event.monitor_id,
-    intent_id: event.intent_id,
+    operation: "wake",
+    input: {
+      trigger: "monitor.wake",
+      event_id: event.event_id,
+      monitor_id: event.monitor_id,
+      intent_id: event.intent_id,
+    },
+    context: { session_id: delivery.session_id },
   };
   const directory = await mkdtemp(join(tmpdir(), "tspi-monitor-turn-"));
   try {
@@ -163,7 +168,7 @@ export async function recordMonitorTurn({ workspace, event, delivery, execute = 
     await writeFile(requestFile, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
     let completed;
     try {
-      completed = await execute(python, [join(packageRoot, "scripts", "research_api.py"), "research.turn", "--root", workspace, "--request-file", requestFile], {
+      completed = await execute(python, [join(packageRoot, "apps", "agent-cli", "research_api.py"), "research.turn", "--root", workspace, "--request-file", requestFile], {
         cwd: workspace,
         env: { ...process.env, PYTHONNOUSERSITE: "1" },
         maxBuffer: 8 * 1024 * 1024,
@@ -206,7 +211,7 @@ function isWorkspace(path) {
   catch { return false; }
 }
 async function runMonitorJson(command, workspace, extra = [], signal) {
-  const completed = await executeFile(python, [join(packageRoot, "scripts", "monitor.py"), command, "--root", workspace, ...extra], {
+  const completed = await executeFile(python, [join(packageRoot, "apps", "agent-cli", "monitor.py"), command, "--root", workspace, ...extra], {
     cwd: workspace, env: { ...process.env, PYTHONNOUSERSITE: "1" }, maxBuffer: 8 * 1024 * 1024, timeout: 60_000, signal });
   const value = JSON.parse(completed.stdout.trim());
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`invalid monitor JSON for ${command}`);

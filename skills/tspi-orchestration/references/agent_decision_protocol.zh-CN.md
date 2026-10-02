@@ -41,7 +41,7 @@ NodeGate 的最新评估均为 `pass` 时，Node 才能以 `completed` 关闭。
 每轮结束时，读取有界的 `research_read mode=context` 或 `research_read mode=liveness`，在需要时记录 strategy 或
 Attempt interpretation，然后使用 `research_checkpoint` 写入明确 disposition：
 `continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
-`user_input_required`。`research_checkpoint` 是辅助的 required-action ledger，不是 turn
+`user_input_required`。`research_checkpoint` 是规范的 turn
 边界。解析完成或运行记录完成本身不能关闭科学问题。`decision_needed` 要求 Root Agent 继续并记录
 checkpoint；如果 liveness 同时返回 `execution_ready=true`，说明 focus 已有 active StrategyPlan，
 Root Agent 可以在该 checkpoint 前执行已声明的计划，但 Host 仍要求 turn 结束前写入 checkpoint。

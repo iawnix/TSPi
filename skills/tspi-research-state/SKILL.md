@@ -14,7 +14,7 @@ ResearchMap validation, bounded Research Memory reads, and atomic changes throug
 `research_map/context.json` (`research_map_context_1`), and
 `lifecycle/liveness.json` (`research_liveness_1`). Context always contains the
 array collections `phases`, `claims`, `nodes`, `findings`, `gates`,
-`claim_relations`, `attempts`, `artifacts`, `evidence_links`, `continuations`,
+`claim_relations`, `attempts`, `artifacts`, `evidence_links`, `lifecycle_actions`,
 `strategy_plans`, `strategy_reviews`, and `attempt_interpretations`; `focus.claim_ids`
 and `focus.node_ids` are arrays. `memory/index.json` uses
 `research_memory_index_1` and is only a metadata/lifecycle projection, never a

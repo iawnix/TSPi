@@ -356,13 +356,7 @@ export function lifecycleActionFollowUp(status) {
 
 export function requiredLifecycleActions(result) {
   if (!result || typeof result !== "object" || Array.isArray(result)) return [];
-  // `required` is the canonical lifecycle_action-status projection returned by
-  // the filesystem Kernel. Keep the older `continue_required` envelope as a
-  // read-only input shape for adapters that still emit it, but never make
-  // callers know which transport produced the status.
-  const candidates = [result.required, result.continue_required]
-    .filter((value) => Array.isArray(value))
-    .flat();
+  const candidates = Array.isArray(result.continue_required) ? result.continue_required : [];
   if (candidates.length > 0) {
     const required = candidates.filter((record) => record && typeof record === "object"
       && (record.status === "required" || record.status === "continue_required"
@@ -375,8 +369,5 @@ export function requiredLifecycleActions(result) {
       return true;
     });
   }
-  const count = result.continue_required_count;
-  return Number.isInteger(count) && count > 0
-    ? Array.from({ length: Math.min(count, 8) }, () => ({ status: "continue_required" }))
-    : [];
+  return [];
 }

@@ -240,7 +240,7 @@ export async function startTspiHost(options) {
   async function runMonitor(method, params) {
     const root = await workspace(params.workspace_id);
     const command = method.slice("monitor/".length);
-    const args = [join(packageRoot, "scripts", "monitor.py"), command, "--root", root];
+    const args = [join(packageRoot, "apps", "agent-cli", "monitor.py"), command, "--root", root];
     if (params.monitor_id !== undefined) {
       validateId(params.monitor_id, "monitor_id");
       args.push("--monitor-id", params.monitor_id);

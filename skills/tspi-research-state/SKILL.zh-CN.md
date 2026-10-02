@@ -12,7 +12,7 @@ description: 读取、校验并原子更新由 Phase、Claim、Node、Finding、
 `workspace_manifest.json`（`research_state_workspace_1`）、`research_map/context.json`
 （`research_map_context_1`）和 `lifecycle/liveness.json`（`research_liveness_1`）。Context
 始终包含数组 collection：`phases`、`claims`、`nodes`、`findings`、`gates`、
-`claim_relations`、`attempts`、`artifacts`、`evidence_links`、`continuations`、
+`claim_relations`、`attempts`、`artifacts`、`evidence_links`、`lifecycle_actions`、
 `strategy_plans`、`strategy_reviews`、`attempt_interpretations`；`focus.claim_ids` 和
 `focus.node_ids` 也必须是数组。`memory/index.json` 使用 `research_memory_index_1`，只是
 metadata/lifecycle projection，不是第二个 ResearchMap 权威。Decision 记录和 Evidence

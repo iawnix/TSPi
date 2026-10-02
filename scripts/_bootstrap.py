@@ -48,14 +48,14 @@ def bootstrap_python_package(
     if install_root is not None:
         runtime.seed_installation_runtime(install_root, authoritative=True)
     python = runtime.ensure_runtime_python(root, required=required)
-    if python is None or importlib.util.find_spec("tspi_runtime") is None:
-        source_roots = [
-            root / "packages" / "tspi-runtime",
-            root / "packages" / "research-state",
-            root / "packages" / "research-memory",
-            root / "packages" / "research-compute",
-        ]
-        for source_root in source_roots:
+    source_packages = (
+        ("tspi_runtime", root / "packages" / "tspi-runtime"),
+        ("research_state", root / "packages" / "research-state"),
+        ("research_memory", root / "packages" / "research-memory"),
+        ("research_compute", root / "packages" / "research-compute"),
+    )
+    for package_name, source_root in source_packages:
+        if importlib.util.find_spec(package_name) is None:
             value = str(source_root)
             if value not in sys.path: sys.path.insert(0, value)
     return runtime

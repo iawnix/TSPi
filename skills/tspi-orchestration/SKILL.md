@@ -37,9 +37,8 @@ Before ending every turn, read `research_read` with `mode=context` or `mode=live
 and close the lifecycle with `research_checkpoint`. Record strategy and Attempt
 interpretation first when applicable, then use one explicit disposition:
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
-`user_input_required`. `research_checkpoint` is a secondary required-action
-ledger; it is not the primary turn checkpoint. A
-completed Attempt or completed Continuation alone is not a research conclusion.
+`user_input_required`. `research_checkpoint` is the canonical turn checkpoint.
+A completed Attempt or lifecycle action alone is not a research conclusion.
 If liveness returns `decision_needed`, continue the turn and record the
 checkpoint disposition. When liveness also reports `execution_ready=true`, an
 active StrategyPlan already covers the focused scope and the planned

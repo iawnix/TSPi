@@ -28,7 +28,7 @@ from research_compute.cli import main as compute_cli_main
 from tspi_runtime.remote.errors import RemoteError
 from tspi_runtime.structures import StructureSeedError, generate_smiles_seed
 from tspi_runtime.workspace.artifacts import workspace_root as canonical_workspace_root, WorkspaceArtifactError
-from tspi_runtime.runtime.workspace_mode import initialize_workspace
+from research_state.workspace import initialize_workspace
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:

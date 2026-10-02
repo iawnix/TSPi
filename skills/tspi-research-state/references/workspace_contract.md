@@ -41,7 +41,7 @@ surface, even when a collection is empty. The required array collections are:
 
 ```text
 phases, claims, nodes, findings, gates, claim_relations,
-attempts, artifacts, evidence_links, continuations,
+attempts, artifacts, evidence_links, lifecycle_actions,
 strategy_plans, strategy_reviews, attempt_interpretations
 ```
 

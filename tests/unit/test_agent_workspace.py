@@ -20,7 +20,7 @@ from research_state.agent_workspace import (
     turn,
 )
 from tspi_runtime.api import execute
-from tspi_runtime.runtime.workspace_mode import initialize_workspace
+from research_state.workspace import initialize_workspace
 
 
 def _workspace(root: Path) -> None:
@@ -57,9 +57,23 @@ def test_new_workspace_change_checkpoint_and_turn_are_durable(tmp_path: Path) ->
         "checkpoint_id": "checkpoint_1",
         "disposition": "deferred",
     })["revision"] == 1
-    orient = turn(tmp_path, {"operation": "orient"})
-    assert orient["schema_version"] == "research-turn-result/1"
-    assert orient["accepted"] is True
+    orient = turn(tmp_path, {
+        "protocol": "research_turn_request", "version": 1, "request_id": "turn_orient",
+        "workspace_id": "workspace_python_unit", "operation": "orient", "input": {},
+    })
+    assert orient["protocol"] == "research_turn_result"
+    assert orient["version"] == 1
+    assert orient["status"] == "completed"
+    with pytest.raises(AgentWorkspaceError, match="unsupported research turn version"):
+        turn(tmp_path, {
+            "protocol": "research_turn_request", "request_id": "turn_missing_version",
+            "workspace_id": "workspace_python_unit", "operation": "orient", "input": {},
+        })
+    with pytest.raises(AgentWorkspaceError, match="payload is not supported"):
+        turn(tmp_path, {
+            "protocol": "research_turn_request", "version": 1, "request_id": "turn_old_payload",
+            "workspace_id": "workspace_python_unit", "operation": "orient", "input": {}, "payload": {},
+        })
 
 
 def test_semantic_refs_and_checkpoint_liveness_are_protocol_stable(tmp_path: Path) -> None:

@@ -1022,7 +1022,7 @@ def bind_workspace_mode(workspace: Path, workspace_name: str) -> dict[str, objec
     client; Kernel and capability implementations remain outside this module.
     """
 
-    from .workspace_mode import (
+    from research_state.workspace import (
         WorkspaceModeError,
         admit_research_workspace,
         initialize_workspace,
