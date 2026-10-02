@@ -8,7 +8,6 @@ export type CommandId =
   | "research.locate"
   | "research.validate"
   | "research.operations"
-  | "research.continuation"
   | "research.strategy"
   | "research.interpretation"
   | "research.checkpoint"

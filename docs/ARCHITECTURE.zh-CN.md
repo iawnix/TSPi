@@ -147,7 +147,7 @@ Core 可以保存有界的 session 对话记忆，但不会写入 workspace 级 
 `ContextPack.context_id` 和 provenance 标识其来源 revision，因此 Host 可以在状态变化
 或重试后重新构造。新的语义写入只能通过 `research_change`、`research_strategy`、
 `research_interpretation` 和 `research_checkpoint`；新的 turn 不通过
-`research_continuation` 写入，它只用于读取或迁移旧的 required-action ledger。不提供会
+`research_checkpoint` 写入，它只用于读取或迁移旧的 required-action ledger。不提供会
 绕过领域校验的通用 `memory.commit`。
 
 Research Turn 的统一协议是：
@@ -160,7 +160,7 @@ TRIGGER -> ORIENT(context) -> PLAN -> PREPARE -> EXECUTE
 每轮结束前，Agent 必须调用 `research_checkpoint`，登记一种当前 disposition：
 `continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
 `user_input_required`。`continue_required` 表示 Agent 已经选择了下一 turn 的明确动作。
-旧的 `required` 值只在读取或迁移 `research_continuation` ledger 时接受，并规范化为
+旧的 `required` 值只在读取或迁移 `research_checkpoint` ledger 时接受，并规范化为
 `continue_required`，不是另一套生命周期状态。`research.liveness` 只是有界的生命周期诊断
 投影，不是持久化下一步，也不负责关闭 turn。
 
@@ -226,7 +226,7 @@ Claim。Gate 记录结果，但不会自动修改 Node 或 Claim；解释和状�
 TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、Gate 和依赖关系
 都是同一个 map 的记录；浏览器不从后端日志或第二套 registry 重建科学状态，也不把
 工具退出码直接当成结论或推断下一步行动。详见
-[ADR 0003](adr/0003-minimal-research-kernel-and-gates.md)。
+[ADR 0003](adr/0003-minimal-research-state-and-gates.md)。
 
 ## App Server 生命周期
 
@@ -341,7 +341,7 @@ request id 为 `monitor:<event_id>`；session 不存在、workspace 不匹配或
 写入 Finding/Gate/Node 状态。Monitor 不自动 finalize、不修改 ResearchMap、不做科学判断。
 
 研究推进的 liveness 是独立于 Monitor 观察的诊断投影。turn boundary 通过
-`research_checkpoint` 持久化 Agent 的 disposition。`research_continuation` 仅作为旧
+`research_checkpoint` 持久化 Agent 的 disposition。`research_checkpoint` 仅作为旧
 required-action ledger 的兼容接口：可以通过 canonical `set`/`resolve` 查询或迁移旧记录，
 旧的 `set_*` 拼法只作为 alias；新 turn 不应再用它结束生命周期。旧 `required` 记录会被
 规范化为 `continue_required`，不构成第二套 liveness 状态机。ChangeSet 的审计字段属于

@@ -13,7 +13,7 @@ from typing import Any
 
 
 DEFAULT_FOCUS_LIMIT = 8
-DEFAULT_CONTINUATION_LIMIT = 8
+DEFAULT_LIFECYCLE_ACTION_LIMIT = 8
 DEFAULT_ATTEMPT_LIMIT = 8
 DEFAULT_DECISION_LIMIT = 8
 DEFAULT_REFERENCE_LIMIT = 8
@@ -52,7 +52,7 @@ def _bounded_refs(values: Any, limit: int = DEFAULT_REFERENCE_LIMIT) -> tuple[li
     return normalized[:limit], len(normalized) > limit
 
 
-def _compact_continuation(
+def _compact_lifecycle_action(
     value: dict[str, Any], *, text_limit: int = DEFAULT_TEXT_LIMIT, reference_limit: int = DEFAULT_REFERENCE_LIMIT,
 ) -> dict[str, Any]:
     metadata = value.get("metadata")
@@ -128,14 +128,14 @@ class ContextBuilder:
         self,
         *,
         focus_limit: int = DEFAULT_FOCUS_LIMIT,
-        continuation_limit: int = DEFAULT_CONTINUATION_LIMIT,
+        lifecycle_action_limit: int = DEFAULT_LIFECYCLE_ACTION_LIMIT,
         attempt_limit: int = DEFAULT_ATTEMPT_LIMIT,
         decision_limit: int = DEFAULT_DECISION_LIMIT,
         reference_limit: int = DEFAULT_REFERENCE_LIMIT,
         text_limit: int = DEFAULT_TEXT_LIMIT,
     ) -> None:
         self.focus_limit = focus_limit
-        self.continuation_limit = continuation_limit
+        self.lifecycle_action_limit = lifecycle_action_limit
         self.attempt_limit = attempt_limit
         self.decision_limit = decision_limit
         self.reference_limit = reference_limit
@@ -152,7 +152,7 @@ class ContextBuilder:
         runtime = runtime or {}
         limits = {
             "focus": self.focus_limit,
-            "continuations": self.continuation_limit,
+            "lifecycle_actions": self.lifecycle_action_limit,
             "attempts": self.attempt_limit,
             "decisions": self.decision_limit,
             "references_per_item": self.reference_limit,
@@ -170,13 +170,13 @@ class ContextBuilder:
             for claim_id in focus_claim_ids[: self.focus_limit]
             if (claim := research_map.claims.get(claim_id)) is not None
         ]
-        compact_continuation = lambda item: _compact_continuation(
+        compact_lifecycle_action = lambda item: _compact_lifecycle_action(
             item, text_limit=self.text_limit, reference_limit=self.reference_limit,
         )
         required_source = liveness.get("continue_required", liveness.get("required", []))
-        required = [compact_continuation(item) for item in required_source[: self.continuation_limit]]
-        deferred = [compact_continuation(item) for item in liveness.get("deferred", [])[: self.continuation_limit]]
-        blocked = [compact_continuation(item) for item in liveness.get("blocked", [])[: self.continuation_limit]]
+        required = [compact_lifecycle_action(item) for item in required_source[: self.lifecycle_action_limit]]
+        deferred = [compact_lifecycle_action(item) for item in liveness.get("deferred", [])[: self.lifecycle_action_limit]]
+        blocked = [compact_lifecycle_action(item) for item in liveness.get("blocked", [])[: self.lifecycle_action_limit]]
         pending = [_compact_attempt(item, text_limit=self.text_limit) for item in liveness.get("waiting_external", [])[: self.attempt_limit]]
         decisions = [_compact_decision(item, text_limit=self.text_limit) for item in liveness.get("decision_needed", [])[: self.decision_limit]]
         selected_scope = scope or {
@@ -196,7 +196,7 @@ class ContextBuilder:
             # deferred/blocked disposition or decision-needed reason could
             # change while the context_id incorrectly stayed the same.
             "focus": [*focus_claims, *focus_nodes],
-            "continuations": [*required, *deferred, *blocked],
+            "lifecycle_actions": [*required, *deferred, *blocked],
             "pending_attempts": pending,
             "decisions": decisions,
             "active_nodes": liveness.get("active_nodes", [])[: self.decision_limit],
@@ -208,7 +208,7 @@ class ContextBuilder:
         for kind, rows, source_revision in (
             ("claim", focus_claims, research_map.revision),
             ("node", focus_nodes, research_map.revision),
-            ("continuation", [*required, *deferred, *blocked], research_map.revision),
+            ("lifecycle_action", [*required, *deferred, *blocked], research_map.revision),
             ("attempt", pending, runtime.get("runtime_revision") or research_map.revision),
             ("decision", decisions, research_map.revision),
         ):
@@ -245,7 +245,7 @@ class ContextBuilder:
                 "nodes": focus_nodes,
             },
             "progress": research_map.progress(),
-            "continuations": {
+            "lifecycle_actions": {
                 "continue_required": required,
                 # Compatibility alias for older clients and persisted prompt
                 # fixtures; new callers should use continue_required.
@@ -269,19 +269,19 @@ class ContextBuilder:
             "truncated": {
                 "focus_claims": len(focus_claim_ids) > self.focus_limit,
                 "focus_nodes": len(focus_node_ids) > self.focus_limit,
-                "continue_required": _count(liveness, "continue_required") > self.continuation_limit
-                or _count(liveness, "required") > self.continuation_limit,
-                "required": _count(liveness, "continue_required") > self.continuation_limit
-                or _count(liveness, "required") > self.continuation_limit,
-                "deferred": _count(liveness, "deferred") > self.continuation_limit,
-                "blocked": _count(liveness, "blocked") > self.continuation_limit,
+                "continue_required": _count(liveness, "continue_required") > self.lifecycle_action_limit
+                or _count(liveness, "required") > self.lifecycle_action_limit,
+                "required": _count(liveness, "continue_required") > self.lifecycle_action_limit
+                or _count(liveness, "required") > self.lifecycle_action_limit,
+                "deferred": _count(liveness, "deferred") > self.lifecycle_action_limit,
+                "blocked": _count(liveness, "blocked") > self.lifecycle_action_limit,
                 "pending_attempts": _count(liveness, "waiting_external") > self.attempt_limit,
                 "decision_needed": _count(liveness, "decision_needed") > self.decision_limit,
             },
             "truncated_fields": {
                 "focus_nodes": any(_has_truncated_fields(item) for item in focus_nodes),
                 "focus_claims": any(_has_truncated_fields(item) for item in focus_claims),
-                "continuations": any(_has_truncated_fields(item) for category in (required, deferred, blocked) for item in category),
+                "lifecycle_actions": any(_has_truncated_fields(item) for category in (required, deferred, blocked) for item in category),
                 "pending_attempts": any(_has_truncated_fields(item) for item in pending),
                 "decision_needed": any(_has_truncated_fields(item) for item in decisions),
             },

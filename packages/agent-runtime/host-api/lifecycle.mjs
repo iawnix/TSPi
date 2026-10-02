@@ -330,7 +330,7 @@ function messageText(message) {
 export function checkpointFollowUp(status) {
   if (!status || typeof status !== "object" || Array.isArray(status)) return undefined;
   if (status.lifecycle !== "decision_needed") return undefined;
-  return continuationFollowUp(status);
+  return lifecycleActionFollowUp(status);
 }
 
 function isExistingAttemptOperation(toolName, args) {
@@ -338,7 +338,7 @@ function isExistingAttemptOperation(toolName, args) {
   return ["inspect", "finalize", "cancel"].includes(args?.operation);
 }
 
-export function continuationFollowUp(status) {
+export function lifecycleActionFollowUp(status) {
   if (!status || typeof status !== "object" || Array.isArray(status)) return undefined;
   const lifecycle = typeof status.lifecycle === "string" ? status.lifecycle : null;
   if (lifecycle !== "decision_needed") return undefined;
@@ -354,9 +354,9 @@ export function continuationFollowUp(status) {
   };
 }
 
-export function requiredContinuations(result) {
+export function requiredLifecycleActions(result) {
   if (!result || typeof result !== "object" || Array.isArray(result)) return [];
-  // `required` is the canonical continuation-status projection returned by
+  // `required` is the canonical lifecycle_action-status projection returned by
   // the filesystem Kernel. Keep the older `continue_required` envelope as a
   // read-only input shape for adapters that still emit it, but never make
   // callers know which transport produced the status.
@@ -369,7 +369,7 @@ export function requiredContinuations(result) {
         || record.disposition === "continue_required"));
     const seen = new Set();
     return required.filter((record) => {
-      const key = record.id || record.continuation_id || `${record.scope || ""}:${record.target_id || ""}:${record.action || ""}`;
+      const key = record.id || record.lifecycle_action_id || `${record.scope || ""}:${record.target_id || ""}:${record.action || ""}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

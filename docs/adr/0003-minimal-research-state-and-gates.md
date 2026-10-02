@@ -1,6 +1,6 @@
 # ADR 0003: Minimal ResearchMap And Gate Contracts
 
-[English](0003-minimal-research-kernel-and-gates.md) | [简体中文](0003-minimal-research-kernel-and-gates.zh-CN.md)
+[English](0003-minimal-research-state-and-gates.md) | [简体中文](0003-minimal-research-state-and-gates.zh-CN.md)
 
 - Status: accepted
 - Date: 2026-09-16

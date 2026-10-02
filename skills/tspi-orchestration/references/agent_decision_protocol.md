@@ -50,7 +50,7 @@ At the end of every turn, read the bounded `research_read mode=context` or
 `research_read mode=liveness` view, record any needed strategy or Attempt interpretation,
 and call `research_checkpoint` with an explicit disposition:
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
-`user_input_required`. `research_continuation` is a secondary required-action
+`user_input_required`. `research_checkpoint` is a secondary required-action
 ledger; it is not the turn boundary. Parsed or
 completed operational records do not close a scientific question by themselves.
 `decision_needed` requires the Root Agent to continue and record a checkpoint.

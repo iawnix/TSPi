@@ -187,7 +187,7 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     package_root = suite_root / "agent"
     package_root.mkdir(parents=True)
     (package_root / "package.json").write_text(
-        json.dumps({"name": "@iawnix/ts-agent", "version": PACKAGE_VERSION}) + "\n",
+        json.dumps({"name": "@iawnix/tspi", "version": PACKAGE_VERSION}) + "\n",
         encoding="utf-8",
     )
     (package_root / "themes").mkdir()
@@ -657,7 +657,7 @@ def test_default_terminal_binds_standalone_release_identity(
 ) -> None:
     installation = replace(
         _installation(tmp_path),
-        package_root=tmp_path / ".pi/packages/ts-agent/releases/release-direct",
+        package_root=tmp_path / ".pi/packages/tspi/releases/release-direct",
     )
     monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
 

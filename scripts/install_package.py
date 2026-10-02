@@ -563,8 +563,8 @@ def inspect_embedded_agent(
         raise SuiteReleaseError(f"embedded Agent archive is invalid: {error}") from error
     # The embedded archive is an Agent release; its manifest contract is
     # represented by the shared wheel/release schema constant.
-    if RELEASE_SCHEMA_VERSION != "ts-agent-release/2":
-        raise SuiteReleaseError("only ts-agent-release/2 is supported")
+    if RELEASE_SCHEMA_VERSION != "tspi-release/1":
+        raise SuiteReleaseError("only tspi-release/1 is supported")
     required_files = REQUIRED_RUNTIME_FILES
     missing = sorted(required_files - files)
     if missing:
@@ -621,7 +621,7 @@ def agent_release_manifest(descriptor: dict[str, Any], created_at_utc: str) -> d
     return {
         "schema_version": RELEASE_SCHEMA_VERSION,
         "release_id": descriptor["release_id"],
-        "package": {"name": "@iawnix/ts-agent", "version": descriptor["version"]},
+        "package": {"name": "@iawnix/tspi", "version": descriptor["version"]},
         "python_distribution": descriptor["python_distribution"],
         "archive": {
             "filename": PurePosixPath(archive["path"]).name,

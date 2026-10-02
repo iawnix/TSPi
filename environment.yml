@@ -1,4 +1,4 @@
-name: ts-agent-skill
+name: tspi-skill
 channels:
   - conda-forge
   - nodefaults

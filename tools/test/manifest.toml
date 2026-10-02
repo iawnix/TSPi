@@ -2,7 +2,7 @@ schema_version = "tspi-test-manifest/1"
 
 [suites.fast]
 kind = "pytest-source"
-environment = "conda:ts-agent-skill"
+environment = "conda:tspi-skill"
 description = "Deterministic unit and public contract tests against the source tree."
 paths = ["tests/unit", "tests/contract"]
 

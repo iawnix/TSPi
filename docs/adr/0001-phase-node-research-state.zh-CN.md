@@ -1,8 +1,8 @@
 # ADR 0001：Phase 与 ResearchNode 内核
 
-[English](0001-phase-node-research-kernel.md) | 简体中文
+[English](0001-phase-node-research-state.md) | 简体中文
 
-- 状态：已接受，由 [ADR 0003](0003-minimal-research-kernel-and-gates.zh-CN.md) 修订
+- 状态：已接受，由 [ADR 0003](0003-minimal-research-state-and-gates.zh-CN.md) 修订
 - 日期：2026-08-23
 
 ## 背景

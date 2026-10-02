@@ -41,7 +41,7 @@ jobs:
       - run: npm ci
       - uses: conda-incubator/setup-miniconda@v3
         with:
-          activate-environment: ts-agent-skill
+          activate-environment: tspi-skill
           environment-file: environment.yml
           auto-activate-base: false
           channels: conda-forge
@@ -65,7 +65,7 @@ jobs:
       - run: npm ci
       - uses: conda-incubator/setup-miniconda@v3
         with:
-          activate-environment: ts-agent-skill
+          activate-environment: tspi-skill
           environment-file: environment.yml
           auto-activate-base: false
           channels: conda-forge

@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ENV_NAME = "ts-agent-skill"
+ENV_NAME = "tspi-skill"
 
 
 def command_version(command: str, args: list[str] | None = None) -> str | None:

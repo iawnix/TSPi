@@ -41,8 +41,8 @@ except ImportError:
 
 
 SCHEMA_VERSION = RELEASE_SCHEMA_VERSION
-INSTALL_SCHEMA_VERSION = "ts-agent-install/1"
-PACKAGE_NAME = "@iawnix/ts-agent"
+INSTALL_SCHEMA_VERSION = "tspi-install/1"
+PACKAGE_NAME = "@iawnix/tspi"
 RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "build", "node_modules", "tests"}
@@ -65,7 +65,7 @@ class ReleaseInstallError(RuntimeError):
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Install one TS Agent release archive.")
-    parser.add_argument("--manifest", required=True, help="Path to ts-agent-release.json.")
+    parser.add_argument("--manifest", required=True, help="Path to tspi-release.json.")
     parser.add_argument("--archive", help="Archive path. Defaults to the manifest archive filename.")
     parser.add_argument("--install-root", required=True, help="TSPi installation root.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable output.")
@@ -114,7 +114,7 @@ def install_release(manifest_path: Path, archive_path: Path | None, install_root
         raise ReleaseInstallError("release archive must contain only the declared Python wheel")
 
     install_root = prepare_install_root(install_root)
-    package_home = ensure_private_directory(install_root / ".pi" / "packages" / "ts-agent")
+    package_home = ensure_private_directory(install_root / ".pi" / "packages" / "tspi")
     releases_root = ensure_private_directory(package_home / "releases")
     target = releases_root / manifest["release_id"]
     created = False
@@ -125,7 +125,7 @@ def install_release(manifest_path: Path, archive_path: Path | None, install_root
         try:
             extract_archive(resolved_archive, members, staging)
             validate_extracted_package(staging, manifest)
-            atomic_write_json(staging / ".ts-agent-release.json", manifest, mode=0o600)
+            atomic_write_json(staging / ".tspi-release.json", manifest, mode=0o600)
             finalize_release_permissions(staging)
             os.replace(staging, target)
             created = True
@@ -136,7 +136,7 @@ def install_release(manifest_path: Path, archive_path: Path | None, install_root
     switch_current(package_home, target)
     archived_notification_state = archive_retired_notification_state(install_root)
     install_launcher(install_root, package_home)
-    installed_manifest = json.loads((target / ".ts-agent-release.json").read_text(encoding="utf-8"))
+    installed_manifest = json.loads((target / ".tspi-release.json").read_text(encoding="utf-8"))
     state = {
         "schema_version": INSTALL_SCHEMA_VERSION,
         "session_guard_contract": SESSION_GUARD_CONTRACT,
@@ -235,7 +235,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
     release_suffix = release_id.removeprefix(expected_release_id).removeprefix("-")
     if release_id != expected_release_id and not re.fullmatch(r"[0-9a-f]{12,40}", release_suffix):
         raise ReleaseInstallError("release_id does not match package version and archive SHA-256")
-    if filename != f"ts-agent-{release_id}.tgz":
+    if filename != f"tspi-{release_id}.tgz":
         raise ReleaseInstallError("archive.filename does not match release_id")
     source = require_object(value.get("source"), "source", {"git_commit", "dirty"})
     if source.get("git_commit") is not None:
@@ -337,7 +337,7 @@ def validate_extracted_package(
 def validate_existing_release(target: Path, manifest: dict[str, Any]) -> None:
     if target.is_symlink() or not target.is_dir():
         raise ReleaseInstallError(f"release target is not a regular directory: {target}")
-    installed_manifest = target / ".ts-agent-release.json"
+    installed_manifest = target / ".tspi-release.json"
     if not installed_manifest.is_file() or installed_manifest.is_symlink():
         raise ReleaseInstallError(f"existing release has no trusted manifest: {target}")
     installed = json.loads(installed_manifest.read_text(encoding="utf-8"))

@@ -49,7 +49,7 @@ the Kernel validates and commits them.
 
 Public semantic tool names are the only Agent API:
 `research_read`, `research_change`, `research_strategy`,
-`research_interpretation`, `research_checkpoint`, `research_continuation`,
+`research_interpretation`, `research_checkpoint`, `research_checkpoint`,
 `compute_environment`, `compute_catalog`, `compute_readiness`, `compute_run`,
 `analysis_run`, and the artifact/review tools listed in
 [pi_agent_adapter.md](pi_agent_adapter.md). Private `ts_*` factory names and

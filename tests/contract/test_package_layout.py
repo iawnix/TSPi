@@ -62,7 +62,7 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     package_root = suite_root / "agent"
     package_root.mkdir(parents=True)
     (package_root / "package.json").write_text(
-        '{"name":"@iawnix/ts-agent","version":"0.10.0"}\n',
+        '{"name":"@iawnix/tspi","version":"0.10.0"}\n',
         encoding="utf-8",
     )
     (package_root / "themes").mkdir()

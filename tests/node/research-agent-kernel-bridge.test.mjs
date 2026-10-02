@@ -71,7 +71,7 @@ test("JSONL subprocess transport rejects malformed or failed responses", async (
 });
 
 test("local Python bridge reads and persists Host admission across bridge restart", async () => {
-  const root = await mkdtemp(join(tmpdir(), "research-kernel-python-"));
+  const root = await mkdtemp(join(tmpdir(), "research-state-python-"));
   try {
     await create_workspace_initializer().initialize_workspace({
       workspace_root: root,
@@ -97,7 +97,7 @@ test("local Python bridge reads and persists Host admission across bridge restar
 });
 
 test("local Python bridge mutates the new context/liveness workspace without research_map.json", async () => {
-  const root = await mkdtemp(join(tmpdir(), "research-kernel-python-native-"));
+  const root = await mkdtemp(join(tmpdir(), "research-state-python-native-"));
   try {
     await create_workspace_initializer().initialize_workspace({
       workspace_root: root,

@@ -78,7 +78,7 @@ Kernel 只返回以下状态：
 - `blocked`：Agent 明确记录了阻塞原因和恢复条件；
 - `terminal`：相关 scope 已关闭或研究没有开放 scope。
 
-旧的 `required` 值只在读取或迁移兼容的 `research_continuation` ledger 时接受，并规范化为
+旧的 `required` 值只在读取或迁移兼容的 `research_checkpoint` ledger 时接受，并规范化为
 `continue_required`；它不是另一套生命周期状态。`research.liveness` 只是诊断投影，不负责
 持久化下一步或关闭 turn。
 
@@ -92,7 +92,7 @@ Host 在 `checkpoint/end` 读取 Kernel 的结果：
 - `accepted=true`：结束当前 turn；`continue_required` 计划留给后续 turn 或 Monitor wake；
 - `requires_disposition=true`：最多追加有界 follow-up，要求 Agent 重新读取
   `research_read(mode=context|liveness)`，然后通过 `research_checkpoint` 或
-  `research_change` 登记 disposition；只有迁移旧记录时才使用 `research_continuation`；
+  `research_change` 登记 disposition；只有迁移旧记录时才使用 `research_checkpoint`；
 - Host 不得在 follow-up 中指定 Capability、Backend、Skill、计算参数或科学结论；
 - 达到 follow-up 上限后保留 `decision_needed`，不能伪造 `terminal`。
 
@@ -154,7 +154,7 @@ policy。这样冷恢复只允许 safe/idempotent 的 reconcile，`replay: never
 
 `research_read`（包括有界的 `liveness` 视图）和 `research_checkpoint` 是
 Agent/Host 的规范接口：前者提供有界状态，后者以 disposition 结束 turn。
-`research.liveness` 只是诊断；`research_continuation` 仅用于读取或迁移旧的
+`research.liveness` 只是诊断；`research_checkpoint` 仅用于读取或迁移旧的
 required-action ledger。所有生命周期语义统一由 `research.turn` 解释。Native
 Worker 的 `before_run_end` 只调用同一个 lifecycle boundary，不得实现第二套
 liveness 或 continuation 状态机。

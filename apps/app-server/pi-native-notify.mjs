@@ -1,13 +1,10 @@
-import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
 import { createPublicToolContracts } from "../../packages/agent-runtime/host-api/tools.mjs";
 import { boundWorkspaceRoot } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
+import { execute_provider } from "./provider-dispatcher.mjs";
 
-const executeFile = promisify(execFile);
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
 
 export function createNotifyTool() {
@@ -20,11 +17,7 @@ export function createNotifyTool() {
         details: { notification: { event: params.event, state: "sending" } },
       }, { checkpoint: true });
       const result = await runNotification(boundWorkspaceRoot(params, toolContext), {
-        schema_version: "ts-user-notification/1",
-        event: params.event,
-        subject: params.subject,
-        summary: params.summary,
-        report_refs: params.reportRefs || [],
+        event: params.event, subject: params.subject, summary: params.summary, report_refs: params.reportRefs || [],
       }, context?.abortSignal);
       if (result?.ok === false) throw notificationError(result);
       if (!isValidNotificationResult(result)) {
@@ -39,33 +32,10 @@ export function createNotifyTool() {
 }
 
 async function runNotification(root, request, signal) {
-  const requestDir = await mkdtemp(join(tmpdir(), "tspi-native-notify-"));
-  const requestFile = join(requestDir, "request.json");
-  try {
-    await writeFile(requestFile, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
-    try {
-      const completed = await executeFile(nativePython(), [
-        packageScript("notify.py"),
-        "notify",
-        "--root", root,
-        "--request-file", requestFile,
-        "--json",
-      ], {
-        cwd: root,
-        env: { ...process.env, PYTHONNOUSERSITE: "1" },
-        maxBuffer: 8 * 1024 * 1024,
-        signal,
-        timeout: 150_000,
-      });
-      return parseJsonObject(completed.stdout);
-    } catch (error) {
-      const structured = tryParseJsonObject(error?.stdout);
-      if (structured) return structured;
-      throw error;
-    }
-  } finally {
-    await rm(requestDir, { recursive: true, force: true });
-  }
+  const extensionRoot = resolve(new URL("../../extensions/tspi-notify/", import.meta.url).pathname);
+  const descriptor = JSON.parse(await readFile(join(extensionRoot, "descriptors/notify_send.json"), "utf8"));
+  const result = await execute_provider({ descriptor, provider_id: "notify_send", entry: join(extensionRoot, "providers/notify_provider.py"), input: { workspace_root: root, notification: request }, parameters: {}, context: { workspace_root: root }, python: nativePython(), timeout_ms: 150_000, signal });
+  return result.result || result;
 }
 
 function parseJsonObject(value) {

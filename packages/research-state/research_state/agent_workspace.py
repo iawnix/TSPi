@@ -10,6 +10,7 @@ the retired JSON/SQLite ResearchState is not a runtime fallback.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import re
@@ -20,12 +21,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Protocol
 
-from tspi_runtime.runtime.workspace_mode import WorkspaceModeError, _validate_layout, validate_workspace_manifest
+from .workspace import WorkspaceModeError, _validate_layout, validate_workspace_manifest
 
 CONTEXT_SCHEMA = "research_map_context_1"
 LIVENESS_SCHEMA = "research_liveness_1"
 CHECKPOINT_SCHEMA = "research_checkpoint_1"
-ADMISSION_RESULT_SCHEMA = "research_admission_result"
+ADMISSION_RESULT_SCHEMA = "research_admission_result/1"
 ADMISSION_PENDING = "admission_pending"
 ADMITTED = "admitted"
 CHECKPOINT_DISPOSITIONS = frozenset({
@@ -39,7 +40,7 @@ _NODE_ID = re.compile(r"^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _CLAIM_ID = re.compile(r"^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 RESEARCH_CONTEXT_COLLECTIONS = (
     "phases", "claims", "nodes", "findings", "gates", "claim_relations",
-    "attempts", "artifacts", "evidence_links", "continuations",
+    "attempts", "artifacts", "evidence_links", "lifecycle_actions",
     "strategy_plans", "strategy_reviews", "attempt_interpretations",
 )
 
@@ -381,11 +382,22 @@ class ProjectionWriter(Protocol):
 
 class _NoopProjectionWriter:
     def write_projection(self, root: str | Path, context: dict[str, Any], liveness: dict[str, Any]) -> None:
-        # Lazy loading keeps State independent of Memory at import time while
-        # providing the default projection for the standalone Python API.
-        import importlib
-        writer = importlib.import_module("research_memory.service").StateProjectionWriter()
-        writer.write_projection(root, context, liveness)
+        # The default protocol endpoint writes only the rebuildable projection
+        # shape. It does not import Memory or execute any Memory behavior.
+        path = Path(root).expanduser().resolve() / "memory" / "index.json"
+        previous = {}
+        try: previous = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError): pass
+        _atomic_json(path, {
+            "schema_version": "research_memory_index_1",
+            "workspace_id": context.get("workspace_id"), "scope": "workspace", "authority": "research_state",
+            "revision": int(context.get("revision", 0)), "context_revision": int(context.get("revision", 0)),
+            "lifecycle": liveness.get("lifecycle", context.get("lifecycle", "idle")),
+            "disposition": liveness.get("disposition", context.get("disposition")),
+            "checkpoint_id": liveness.get("checkpoint_id", context.get("checkpoint_id")),
+            "waiting_external": liveness.get("waiting_external", []), "decision_needed": liveness.get("decision_needed", []),
+            "focus": context.get("focus", {}), "entries": previous.get("entries", []) if isinstance(previous.get("entries"), list) else [],
+        })
 
 _projection_writer: ProjectionWriter = _NoopProjectionWriter()
 
@@ -441,7 +453,7 @@ def _liveness_projection(
     if checkpoint is not None and disposition is None:
         # A new checkpoint without a disposition supersedes the previous
         # projection and must be diagnosed from the current focus instead of
-        # inheriting stale continuation arrays.
+        # inheriting stale lifecycle_action arrays.
         result.pop("disposition", None)
         result.pop("checkpoint_id", None)
         for key in ("continue_required", "waiting_external", "deferred", "blocked", "decision_needed"):
@@ -956,9 +968,9 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             relations.pop()
             raise AgentWorkspaceError("claim relation graph must be acyclic")
         return None
-    if kind == "set_continuation":
-        continuation_id = _identifier(operation.get("id"), "operation.id")
-        continuations = _items(context, "continuations")
+    if kind == "set_lifecycle_action":
+        lifecycle_action_id = _identifier(operation.get("id"), "operation.id")
+        lifecycle_actions = _items(context, "lifecycle_actions")
         scope = operation.get("scope")
         if scope not in {"node", "claim", "gate"}:
             raise AgentWorkspaceError("operation.scope is invalid")
@@ -979,11 +991,11 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
         if reason is not None and (not isinstance(reason, str) or not reason.strip()):
             raise AgentWorkspaceError("operation.reason must be a non-empty string or null")
         if status in {"deferred", "blocked"} and not reason:
-            raise AgentWorkspaceError(f"continuation {continuation_id} {status} status requires a reason")
+            raise AgentWorkspaceError(f"lifecycle_action {lifecycle_action_id} {status} status requires a reason")
         request_id = operation.get("request_id")
         if request_id is not None:
             request_id = _identifier(request_id, "operation.request_id")
-        existing = next((item for item in continuations if item.get("id") == continuation_id), None)
+        existing = next((item for item in lifecycle_actions if item.get("id") == lifecycle_action_id), None)
         if existing is not None:
             if request_id is not None and existing.get("request_id") == request_id and all(
                 existing.get(key) == value for key, value in (
@@ -991,35 +1003,35 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
                 )
             ):
                 return None
-            raise AgentWorkspaceError(f"continuation {continuation_id} already exists")
+            raise AgentWorkspaceError(f"lifecycle_action {lifecycle_action_id} already exists")
         if request_id is not None:
-            for candidate in continuations:
+            for candidate in lifecycle_actions:
                 if candidate.get("request_id") == request_id:
-                    raise AgentWorkspaceError(f"request_id {request_id} is already bound to another continuation")
-        continuations.append({
-            "type": "continuation_record", "id": continuation_id, "created_at": created_at,
+                    raise AgentWorkspaceError(f"request_id {request_id} is already bound to another lifecycle_action")
+        lifecycle_actions.append({
+            "type": "lifecycle_action_record", "id": lifecycle_action_id, "created_at": created_at,
             "metadata": _object_field(operation, "metadata"), "scope": scope,
             "target_id": target_id, "action": action, "status": status,
             "reason": reason, "request_id": request_id,
         })
-        return continuation_id
-    if kind == "resolve_continuation":
-        continuation_id = _identifier(operation.get("id"), "operation.id")
-        continuation = _lookup(context, "continuations", continuation_id, "continuation")
+        return lifecycle_action_id
+    if kind == "resolve_lifecycle_action":
+        lifecycle_action_id = _identifier(operation.get("id"), "operation.id")
+        lifecycle_action = _lookup(context, "lifecycle_actions", lifecycle_action_id, "lifecycle_action")
         status = operation.get("status")
         if status not in {"required", "deferred", "blocked", "completed"}:
             raise AgentWorkspaceError("operation.status is invalid")
-        if continuation.get("status") == "completed" and status != "completed":
-            raise AgentWorkspaceError(f"completed continuation {continuation_id} cannot be reopened")
-        reason = operation.get("reason", continuation.get("reason"))
+        if lifecycle_action.get("status") == "completed" and status != "completed":
+            raise AgentWorkspaceError(f"completed lifecycle_action {lifecycle_action_id} cannot be reopened")
+        reason = operation.get("reason", lifecycle_action.get("reason"))
         if reason is not None and (not isinstance(reason, str) or not reason.strip()):
             raise AgentWorkspaceError("operation.reason must be a non-empty string or null")
         if status in {"deferred", "blocked"} and not reason:
-            raise AgentWorkspaceError(f"continuation {continuation_id} {status} status requires a reason")
-        request_id = operation.get("request_id", continuation.get("request_id"))
+            raise AgentWorkspaceError(f"lifecycle_action {lifecycle_action_id} {status} status requires a reason")
+        request_id = operation.get("request_id", lifecycle_action.get("request_id"))
         if request_id is not None:
             request_id = _identifier(request_id, "operation.request_id")
-        continuation.update({"status": status, "reason": reason, "request_id": request_id})
+        lifecycle_action.update({"status": status, "reason": reason, "request_id": request_id})
         return None
     if kind == "create_finding":
         item_id = _identifier(operation.get("id"), "operation.id")
@@ -1564,7 +1576,7 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
             _restore_json(manifest_path, True, manifest)
             raise
     return {
-        "schema_version": "research_change_result", "accepted": True,
+        "schema_version": "research_change_result/1", "accepted": True,
         "workspace_id": workspace_id, "revision": updated["revision"],
         "created_ids": created_ids, "operation_count": len(operations),
     }
@@ -1617,7 +1629,7 @@ def checkpoint(root: str | Path, request: dict[str, Any] | None = None) -> dict[
             _restore_json(path, checkpoint_existed, checkpoint_before)
             raise
     return {
-        "schema_version": "research_checkpoint_result", "accepted": True,
+        "schema_version": "research_checkpoint_result/1", "accepted": True,
         "workspace_id": workspace_id, "checkpoint_id": checkpoint_id,
         "revision": context["revision"],
         "lifecycle": projected_liveness.get("lifecycle"),
@@ -1627,6 +1639,14 @@ def checkpoint(root: str | Path, request: dict[str, Any] | None = None) -> dict[
 
 def turn(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, Any]:
     request = request or {}
+    protocol = request.get("protocol")
+    if protocol != "research_turn_request":
+        raise AgentWorkspaceError("unsupported research turn protocol")
+    if request.get("version", 1) != 1:
+        raise AgentWorkspaceError("unsupported research turn version")
+    request_id = request.get("request_id")
+    if not isinstance(request_id, str) or not request_id:
+        raise AgentWorkspaceError("research turn request_id is required")
     operation = request.get("operation")
     if operation == "checkpoint":
         checkpoint_request = dict(request)
@@ -1639,24 +1659,39 @@ def turn(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, A
             for field in ("principal", "authority"):
                 if field not in checkpoint_request and field in envelope:
                     checkpoint_request[field] = envelope[field]
-        return checkpoint(root, checkpoint_request)
+        result = checkpoint(root, checkpoint_request)
+        return {
+            "protocol": "research_turn_result", "version": 1,
+            "request_id": request_id, "status": "completed",
+            "output": result,
+            "provenance": {"producer": "research_state", "request_digest": _turn_request_digest(request)},
+        }
     with _workspace_lock(Path(root).expanduser().resolve()):
         _, _, context, liveness = _load_state(root)
         _check_workspace(request, context["workspace_id"])
         if operation in {"start", "orient"}:
             return {
-                "schema_version": "research-turn-result/1",
-                "accepted": True,
-                "operation": operation,
-                "context": context,
-                "liveness": _liveness_projection(context, liveness),
+                "protocol": "research_turn_result", "version": 1,
+                "request_id": request_id, "status": "completed",
+                "output": {"operation": operation, "context": context, "liveness": _liveness_projection(context, liveness)},
+                "provenance": {"producer": "research_state", "request_digest": _turn_request_digest(request)},
             }
         if operation in {"end", "wake"}:
             _require_admitted(context, liveness)
             if liveness.get("lifecycle") == "decision_needed":
                 raise AgentWorkspaceError("research_decision_required")
-            return {"schema_version": "research-turn-result/1", "accepted": True, "operation": operation}
+            return {
+                "protocol": "research_turn_result", "version": 1,
+                "request_id": request_id, "status": "completed",
+                "output": {"operation": operation},
+                "provenance": {"producer": "research_state", "request_digest": _turn_request_digest(request)},
+            }
         raise AgentWorkspaceError(f"invalid research_turn operation: {operation}")
+
+
+def _turn_request_digest(request: dict[str, Any]) -> str:
+    payload = json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 

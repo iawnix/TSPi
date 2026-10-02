@@ -10,7 +10,7 @@ import { loadInstalledServerExtensions, loadServerExtensions } from "./server-ex
 import { discoverInstalledExtensions } from "./extension-manifest-loader.mjs";
 import { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 import { createPackageSourceReadGuard } from "./pi-harness-policy.mjs";
-import { createContinuationLivenessHook, readResearchLiveness } from "./pi-native-tools.mjs";
+import { createLifecycleActionLivenessHook, readResearchLiveness } from "./pi-native-tools.mjs";
 import { markToolEnvelopeError, wrapToolForHarness } from "../../packages/agent-runtime/host-api/tool-envelope.mjs";
 import { createToolExecutionContext } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
 import { createPublicToolAlias } from "../../packages/agent-runtime/host-api/tools.mjs";
@@ -36,7 +36,7 @@ export {
   createSeedTool,
   createStateTool,
   createWorkflowTool,
-  createContinuationLivenessHook,
+  createLifecycleActionLivenessHook,
 } from "./pi-native-tools.mjs";
 export { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 
@@ -339,8 +339,8 @@ async function createTspiHarness(session, options, executionEnv) {
         "before_run_end",
         // `required` is an explicit next-turn plan, so only an unresolved
         // `decision_needed` checkpoint may inject a bounded same-turn repair.
-        createContinuationLivenessHook({ cwd: session.metadata.cwd, maxFollowUps: 1, followUpRequired: false }),
-        { id: "tspi.continuation-liveness" },
+        createLifecycleActionLivenessHook({ cwd: session.metadata.cwd, maxFollowUps: 1, followUpRequired: false }),
+        { id: "tspi.lifecycle_action-liveness" },
       );
     const lane = await created.harness.lane("main", TODO_CONTEXT);
     return {
@@ -373,7 +373,7 @@ Follow one explicit Research Turn lifecycle: (1) orient by reading research_read
 
 Use research_read with mode=liveness when you need the compact lifecycle diagnosis; use research_read with mode=decisions for Claim strategy and interpretation history and mode=storage for the Kernel backend; use summary, detail, locate, or map only for focused expansion. Before an unfamiliar research_change, read mode=operations and use only its canonical type values; a mechanism hypothesis is create_claim and a mechanism study is create_node, never invent mechanistic operation names. For mode=capabilities, always pass capabilityKind=compute or capabilityKind=analysis. Use research_change for canonical ResearchMap writes; include a concrete rationale, basis references, and auditable operations. A research_strategy plan must explicitly include claimId/claim_id and, when scoped to a Node, nodeId/node_id; the Kernel must not guess a Claim from a Node. A blocked Node is non-terminal and must not carry an outcome; use closed plus outcome=stopped only when deliberately terminating it. Finding source_refs may contain only registered Artifact or EvidenceLink IDs, never StrategyPlan or other decision IDs; use basis_refs for decision rationale. Report a write as recorded only when the tool returned an accepted/applied result; a rejected ChangeSet records nothing and must not be summarized as persisted state. Use compute_environment, research_read capabilities, and public Skill references on demand when selecting a method or execution target; do not load complete Skill text or environment catalogs into every turn. Use the registered execution capability for the current domain; for this package, compute_run is the unified execution lifecycle. Installed extension tools are available only when the Host has selected and verified them; compute descriptors and executors come exclusively from the Native registry, so never request or infer a JavaScript provider, import path, executable, permission, or capability that is absent from the active inventory.
 
-If research_read reports an empty ResearchMap (revision 0 with no phases, Claims, or Nodes), do not invent or target identifiers such as claim_1 or node_1 and do not create a continuation for them. First use research_change to atomically create the initial phase, Claim, and Node using the registered operation schema, then use the identifiers returned by that change when recording research_strategy. A continuation is only valid after its referenced scope exists.
+If research_read reports an empty ResearchMap (revision 0 with no phases, Claims, or Nodes), do not invent or target identifiers such as claim_1 or node_1 and do not create a lifecycle_action for them. First use research_change to atomically create the initial phase, Claim, and Node using the registered operation schema, then use the identifiers returned by that change when recording research_strategy. A lifecycle_action is only valid after its referenced scope exists.
 
 After every Monitor wake, including a completed or parsed external operation, read research_read with mode=context or liveness, identify the bound Node and Attempt, and inspect the Attempt before deciding what happens next. After an execution capability submits work, including an uncertain result, end the turn and let Monitor enqueue next_run; do not call bash sleep, wait, or a manual polling loop. Use compute_run with operation=inspect only after a Monitor wake or an explicit later request. A completed scheduler state is not the same as a parsed or validated research result.
 

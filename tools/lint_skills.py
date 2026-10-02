@@ -14,11 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FRONTMATTER = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 FIELD = re.compile(r"(?m)^(name|description):\s*(.+?)\s*$")
 LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
-FORBIDDEN_PUBLIC_NAMES = (
-    "research_read", "research_change", "research_continuation", "compute_run", "ts_environment",
-    "review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze",
-    "ts_dispatch", "ts_import", "render", "report", "ts_notify",
-)
+FORBIDDEN_PUBLIC_NAMES = ("research_" + "continuation", "ts_" + "environment", "ts_" + "reply", "ts_" + "seed", "ts_" + "compare", "ts_" + "analyze", "ts_" + "dispatch", "ts_" + "import", "ts_" + "notify", "ts_" + "render", "ts_" + "report")
 
 
 def _frontmatter(path: Path) -> dict[str, str]:

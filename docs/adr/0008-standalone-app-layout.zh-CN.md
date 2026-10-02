@@ -27,7 +27,7 @@ Research Agent 按独立 APP 安装。Pi 只是私有 Runtime Adapter，不是�
 ```
 
 旧 `.pi/packages/tspi` 目录只作为迁移来源。新布局激活后，生产组件不能再解析归档的
-`ts-agent` 或 `tspi` release。稳定 shim 在进程启动时解析 `current` 并导出
+`tspi` 或 `tspi` release。稳定 shim 在进程启动时解析 `current` 并导出
 `release_id`；单个进程不能混用两个 release 根目录的模块。
 
 ## 激活协议

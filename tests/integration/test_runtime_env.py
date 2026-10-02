@@ -1046,7 +1046,7 @@ def _write_test_python_payload(package: Path) -> str:
     source.mkdir(parents=True)
     (source / "__init__.py").write_text('"""test payload"""\n', encoding="utf-8")
     (package / "package.json").write_text(
-        '{"name":"@iawnix/ts-agent","version":"0.12.0"}\n',
+        '{"name":"@iawnix/tspi","version":"0.12.0"}\n',
         encoding="utf-8",
     )
     return python_payload_sha256(package)

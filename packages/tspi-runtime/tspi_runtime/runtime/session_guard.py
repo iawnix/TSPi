@@ -27,7 +27,7 @@ class SessionGuardError(RuntimeError):
 def installation_is_guarded(installation: Path) -> bool:
     path = installation / ".pi" / "packages" / "tspi" / "install-state.json"
     if not path.exists() and not path.is_symlink():
-        direct_path = installation / ".pi" / "packages" / "ts-agent" / "install-state.json"
+        direct_path = installation / ".pi" / "packages" / "tspi" / "install-state.json"
         if direct_path.exists() or direct_path.is_symlink():
             return _direct_installation_is_guarded(installation, direct_path)
         return _standalone_installation_is_guarded(installation)
@@ -76,10 +76,10 @@ def _direct_installation_is_guarded(installation: Path, path: Path) -> bool:
             return False
         release_id = value.get("current_release_id")
         package_root = value.get("package_root")
-        release_store = installation.resolve() / ".pi/packages/ts-agent/releases"
+        release_store = installation.resolve() / ".pi/packages/tspi/releases"
         expected_root = release_store / release_id if isinstance(release_id, str) else None
-        current = installation / ".pi/packages/ts-agent/current"
-        if (value.get("schema_version") != "ts-agent-install/1"
+        current = installation / ".pi/packages/tspi/current"
+        if (value.get("schema_version") != "tspi-install/1"
                 or not isinstance(package_root, str)
                 or expected_root is None
                 or Path(package_root).expanduser() != expected_root
@@ -87,16 +87,16 @@ def _direct_installation_is_guarded(installation: Path, path: Path) -> bool:
                 or current.resolve(strict=True) != expected_root
                 or not expected_root.is_dir()):
             raise SessionGuardError("installation guard state does not match this installation")
-        manifest_path = expected_root / ".ts-agent-release.json"
+        manifest_path = expected_root / ".tspi-release.json"
         with manifest_path.open("rb") as manifest_handle:
             manifest = json.loads(manifest_handle.read(HEADER_LIMIT + 1))
         package = manifest.get("package") if isinstance(manifest, dict) else None
         return (
             isinstance(manifest, dict)
-            and manifest.get("schema_version") in {"ts-agent-release/1", "ts-agent-release/2"}
+            and manifest.get("schema_version") in {"tspi-release/1"}
             and manifest.get("release_id") == release_id
             and isinstance(package, dict)
-            and package.get("name") == "@iawnix/ts-agent"
+            and package.get("name") == "@iawnix/tspi"
         )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise SessionGuardError("invalid installation guard state") from exc
@@ -113,7 +113,7 @@ def _standalone_installation_is_guarded(installation: Path) -> bool:
         release_root = releases.resolve(strict=True)
         if selected.parent != release_root:
             return False
-        manifest_path = selected / ".ts-agent-release.json"
+        manifest_path = selected / ".tspi-release.json"
         descriptor = os.open(manifest_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         with os.fdopen(descriptor, "rb") as handle:
             info = os.fstat(handle.fileno())
@@ -124,10 +124,10 @@ def _standalone_installation_is_guarded(installation: Path) -> bool:
         package = value.get("package") if isinstance(value, dict) else None
         return (
             isinstance(value, dict)
-            and value.get("schema_version") in {"ts-agent-release/1", "ts-agent-release/2"}
+            and value.get("schema_version") in {"tspi-release/1"}
             and value.get("release_id") == selected.name
             and isinstance(package, dict)
-            and package.get("name") == "@iawnix/ts-agent"
+            and package.get("name") == "@iawnix/tspi"
         )
     except (OSError, ValueError, json.JSONDecodeError):
         return False

@@ -93,7 +93,7 @@ function buildComputeTask({
     parse_artifact_ref: parseArtifactRef,
   };
   const task = validateAgentTask({
-    schema_version: "ts-agent-task/2",
+    schema_version: "tspi-task/2",
     task_id: taskId,
     role: "compute",
     authority: "operational",
@@ -113,7 +113,7 @@ function buildComputeTask({
       remote_authority: binding.executionKind === "remote" ? "execution_mirror" : "local_process",
       external_side_effects: ["launch", "cancel"].includes(operation),
     },
-    output_contract: "ts-agent-result/1",
+    output_contract: "tspi-result/1",
   });
   validateComputeTask(task);
   return task;

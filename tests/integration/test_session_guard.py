@@ -41,38 +41,38 @@ def _install_state(root: Path) -> Path:
 def _standalone_install(root: Path) -> Path:
     release = root / "releases/release-1"
     release.mkdir(parents=True)
-    (release / ".ts-agent-release.json").write_text(
+    (release / ".tspi-release.json").write_text(
         json.dumps({
-            "schema_version": "ts-agent-release/2",
+            "schema_version": "tspi-release/1",
             "release_id": "release-1",
-            "package": {"name": "@iawnix/ts-agent", "version": "0.17.0"},
+            "package": {"name": "@iawnix/tspi", "version": "0.17.0"},
         }) + "\n",
         encoding="utf-8",
     )
-    (release / ".ts-agent-release.json").chmod(0o600)
+    (release / ".tspi-release.json").chmod(0o600)
     (root / "releases").chmod(0o700)
     (root / "current").symlink_to("releases/release-1")
     return release
 
 
 def _direct_install(root: Path) -> Path:
-    package_home = root / ".pi/packages/ts-agent"
+    package_home = root / ".pi/packages/tspi"
     release = package_home / "releases/release-1"
     release.mkdir(parents=True)
-    (release / ".ts-agent-release.json").write_text(
+    (release / ".tspi-release.json").write_text(
         json.dumps({
-            "schema_version": "ts-agent-release/2",
+            "schema_version": "tspi-release/1",
             "release_id": "release-1",
-            "package": {"name": "@iawnix/ts-agent", "version": "0.17.0"},
+            "package": {"name": "@iawnix/tspi", "version": "0.17.0"},
         }) + "\n",
         encoding="utf-8",
     )
-    (release / ".ts-agent-release.json").chmod(0o600)
+    (release / ".tspi-release.json").chmod(0o600)
     (package_home / "current").symlink_to("releases/release-1")
     state = package_home / "install-state.json"
     state.write_text(
         json.dumps({
-            "schema_version": "ts-agent-install/1",
+            "schema_version": "tspi-install/1",
             "session_guard_contract": session_guard.CONTRACT,
             "current_release_id": "release-1",
             "package_root": str(release),

@@ -104,7 +104,7 @@ function buildReviewResult(params: unknown, packet: Record<string, unknown>): Re
   const submission = requiredObject(params, "review submission");
   const scope = requiredObject(packet.scope, "scope");
   return {
-    schema_version: "ts-agent-result/1",
+    schema_version: "tspi-result/1",
     task_id: requiredString(packet.task_id, "task_id"),
     role: "review",
     authority: "advisory",

@@ -7,7 +7,7 @@ const MANIFEST_SCHEMA = "research_state_workspace_1";
 const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 const COLLECTIONS = [
   "phases", "claims", "nodes", "findings", "gates", "claim_relations",
-  "attempts", "artifacts", "evidence_links", "continuations",
+  "attempts", "artifacts", "evidence_links", "lifecycle_actions",
   "strategy_plans", "strategy_reviews", "attempt_interpretations",
 ];
 const COMMON_DIRECTORIES = ["inputs", "artifacts", "runs", "logs"];
@@ -116,7 +116,7 @@ function readResearchMap(rootValue) {
     nodes: context.nodes,
     findings: context.findings,
     gates: context.gates,
-    continuations: context.continuations,
+    lifecycle_actions: context.lifecycle_actions,
     focus_claim_ids: [...context.focus.claim_ids],
     focus_node_ids: [...context.focus.node_ids],
     metadata: isPlainObject(context.metadata) ? context.metadata : {},

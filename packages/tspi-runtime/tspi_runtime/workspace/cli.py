@@ -14,7 +14,7 @@ from typing import Any
 
 from .errors import ContractError
 from .operational_ids import allocate_operational_id
-from .validator import validate_workspace
+from research_state.agent_workspace import validate_workspace
 from .doctor import inspect_workspace
 
 

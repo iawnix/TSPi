@@ -11,8 +11,8 @@
 import { is_workspace_id, require_workspace_id } from "../agent-core/workspace_id.mjs";
 
 export const RESEARCH_KERNEL_PORT_VERSION = "research_state_port_1";
-export const RESEARCH_ADMISSION_REQUEST_SCHEMA = "research_admission_request";
-export const RESEARCH_ADMISSION_RESULT_SCHEMA = "research_admission_result";
+export const RESEARCH_ADMISSION_REQUEST_SCHEMA = "research_admission_request/1";
+export const RESEARCH_ADMISSION_RESULT_SCHEMA = "research_admission_result/1";
 export const RESEARCH_ADMISSION_STATES = Object.freeze(["admission_pending", "admitted"]);
 export const RESEARCH_TURN_OPERATIONS = Object.freeze([
   "start",
@@ -196,30 +196,31 @@ export function create_research_turn_request({ operation, request_id, workspace_
   if (!RESEARCH_TURN_OPERATIONS.includes(operation)) throw new TypeError("invalid research_turn operation: " + operation);
   require_identifier(request_id, "request_id");
   require_workspace_id(workspace_id);
-  require_identifier(session_id, "session_id");
+  if (session_id !== undefined) require_identifier(session_id, "session_id");
   return Object.freeze({
-    schema_version: "research_turn_request",
+    protocol: "research_turn_request",
+    version: 1,
     operation,
     request_id,
     workspace_id,
-    session_id,
-    payload,
+    input: payload,
+    ...(session_id === undefined ? {} : { context: { session_id } }),
   });
 }
 
-export function create_research_turn_result({ request_id, operation, accepted, disposition = null, context = null }) {
+export function create_research_turn_result({ request_id, status = "completed", output = {}, artifacts = [], provenance = {} }) {
   require_identifier(request_id, "request_id");
-  if (!RESEARCH_TURN_OPERATIONS.includes(operation)) throw new TypeError("invalid research_turn operation: " + operation);
-  if (typeof accepted !== "boolean") throw new TypeError("accepted must be boolean");
-  if (disposition !== null && !RESEARCH_DISPOSITIONS.includes(disposition)) {
-    throw new TypeError("invalid research disposition: " + disposition);
-  }
+  if (!["completed", "waiting", "blocked", "failed"].includes(status)) throw new TypeError("invalid research turn status: " + status);
+  if (!output || typeof output !== "object" || Array.isArray(output)) throw new TypeError("output must be an object");
+  if (!Array.isArray(artifacts) || artifacts.some((value) => typeof value !== "string")) throw new TypeError("artifacts must be a string array");
+  if (!provenance || typeof provenance !== "object" || Array.isArray(provenance)) throw new TypeError("provenance must be an object");
   return Object.freeze({
-    schema_version: "research_turn_result",
+    protocol: "research_turn_result",
+    version: 1,
     request_id,
-    operation,
-    accepted,
-    disposition,
-    context,
+    status,
+    output,
+    ...(artifacts.length === 0 ? {} : { artifacts }),
+    provenance,
   });
 }

@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 import hashlib, json
 class ProviderError(RuntimeError): pass
+PROVIDER_PROTOCOL_VERSION = "tspi-provider/1"
 _REQUIRED=("operation","version","input_schema","parameter_schema","result_schema","output_roles","effects","limits")
 @dataclass(frozen=True)
 class CapabilityDescriptor:
@@ -40,6 +41,10 @@ class ProviderRequest:
     def from_dict(cls,v):
         required=("protocol_version","request_id","provider_id","operation","version","inputs","parameters","context")
         if not isinstance(v,dict) or any(k not in v for k in required): raise ProviderError("malformed provider request")
+        if v.get("protocol_version") != PROVIDER_PROTOCOL_VERSION: raise ProviderError("unsupported provider protocol version")
+        if any(not isinstance(v.get(k), str) or not v[k] for k in ("request_id", "provider_id", "operation", "version")): raise ProviderError("malformed provider request identifiers")
+        for key in ("inputs", "parameters", "context"):
+            if not isinstance(v.get(key), dict): raise ProviderError(f"provider request {key} must be an object")
         return cls(*(v[k] for k in required))
 @dataclass(frozen=True)
 class ProviderResult:

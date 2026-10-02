@@ -17,7 +17,7 @@
       "descriptor": "descriptors/notify_send.json",
       "descriptor_sha256": "sha256:faefb99d86bc3c9126fb7c463b5eab5adf9a686269c3d9235f3d4d3e714eae49",
       "entry": "providers/notify_provider.py",
-      "sha256": "sha256:e24846f7f249cee45dbe9325df84be70fee872314b5687d0099818cb64f221f0"
+      "sha256": "sha256:38349fcf2ac7ceeba5c7408c23c01f2d74d8353f3a41cfafed99550f32ae14f9"
     }
   ]
 }

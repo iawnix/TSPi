@@ -66,7 +66,7 @@ Agent 只能调用公共 `research_read`，并通过对应的有界 `mode`（`ma
 `nodeId`、`artifactId`、`subjectId` 和 `limit`（1--2048）。`recordType=link` 读取
 `evidence_links`，不会产生第二套写入协议。
 
-`research_continuation` 是有界的 required-action ledger，不是 turn checkpoint。
+`research_checkpoint` 是有界的 required-action ledger，不是 turn checkpoint。
 `operation=status` 只读，可选 `scope`、`targetId` 和 `limit`；写入使用 `set`、
 `set_required`、`set_deferred`、`set_blocked`、`set_completed`、`resolve` 或 `clear`，
 按需提供 `scope`、`targetId`、`action`、`continuationId`、`status`、`reason` 和

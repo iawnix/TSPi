@@ -276,7 +276,7 @@ function actionDocument(taskId, actions) {
   if (!Array.isArray(actions)) throw new Error("agent-run actions must be an array");
   if (actions.length > 8) throw new Error("agent-run actions exceed 8 entries");
   const document = {
-    schema_version: "ts-agent-actions/1",
+    schema_version: "tspi-actions/1",
     task_id: taskId,
     actions: JSON.parse(JSON.stringify(actions)),
   };
@@ -289,7 +289,7 @@ function actionDocument(taskId, actions) {
 function runDocument(handle, status, metadata, error) {
   if (!isPlainObject(metadata)) throw new Error("agent-run metadata must be an object");
   return {
-    schema_version: "ts-agent-run/1",
+    schema_version: "tspi-run/1",
     task_id: handle.taskId,
     status,
     started_at: handle.startedAt,

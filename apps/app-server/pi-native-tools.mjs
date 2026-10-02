@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, rmdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, rmdir, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -10,8 +10,9 @@ import { commandArguments, createCommandService } from "../../packages/agent-run
 import { createPublicToolAliases, createPublicToolContracts } from "../../packages/agent-runtime/host-api/tools.mjs";
 import { boundWorkspaceRoot } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
 import { wrapToolWithEnvelope } from "../../packages/agent-runtime/host-api/tool-envelope.mjs";
-import { checkpointFollowUp, continuationFollowUp } from "../../packages/agent-runtime/host-api/lifecycle.mjs";
+import { checkpointFollowUp } from "../../packages/agent-runtime/host-api/lifecycle.mjs";
 import { createComputeTool } from "./pi-native-compute.mjs";
+import { execute_provider } from "./provider-dispatcher.mjs";
 import { createNotifyTool } from "./pi-native-notify.mjs";
 import { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
 import { readWorkspaceManifest, readWorkspaceMode } from "./workspace-mode-tools.mjs";
@@ -39,6 +40,24 @@ const {
 } = require("../../packages/agent-runtime/artifacts/request-contract.cjs");
 const executeFile = promisify(execFile);
 const { nodeControlArguments } = require("../../packages/agent-runtime/artifacts/node-control.cjs");
+
+async function runFirstPartyProvider(extension, providerId, input, parameters, context, signal, timeout_ms = 300_000) {
+  const extensionRoot = resolve(new URL(`../../extensions/${extension}/`, import.meta.url).pathname);
+  const descriptor = JSON.parse(await readFile(join(extensionRoot, "descriptors", `${providerId}.json`), "utf8"));
+  const result = await execute_provider({
+    descriptor,
+    provider_id: providerId,
+    entry: join(extensionRoot, "providers", `${extension.replace("tspi-", "")}_provider.py`),
+    input,
+    parameters,
+    context,
+    python: nativePython(),
+    timeout_ms,
+    signal,
+  });
+  if (result.status !== "succeeded") throw new Error(result.diagnostics?.[0]?.message || `${providerId} provider failed`);
+  return result.result && typeof result.result === "object" ? { ...result.result, outputs: result.outputs, provenance: result.provenance } : result;
+}
 
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
 const NATIVE_COMMANDS = createCommandService({ execute: executeNativeCommand });
@@ -174,83 +193,28 @@ export function createChangeTool() {
   };
 }
 
-/**
- * Expose the Kernel continuation ledger without letting the Host choose a
- * scientific action. Writes are typed requests validated by
- * `research_continuation`; status is read-only and may be filtered locally.
- */
-export function createWorkflowTool() {
+/** Execute the three canonical Research lifecycle operations. */
+export function createResearchLifecycleTool() {
   return {
-    ...TOOL_CONTRACTS.workflow,
+    ...TOOL_CONTRACTS.lifecycle,
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       const root = boundWorkspaceRoot(params, toolContext);
-      let result;
-      if (params.operation === "status") {
-        result = await NATIVE_COMMANDS.execute("research.continuation", root, {
-          scope: params.scope,
-          targetId: params.targetId,
-        }, context?.abortSignal);
-        result = filterContinuationStatus(result, params);
-      } else if (params.operation === "strategy") {
+      if (params.operation === "strategy") {
         requireNativeWrites("research_strategy", toolContext);
-        if (!params.strategyOperation || !params[params.strategyOperation]) {
-          throw new Error("research_strategy requires strategyOperation and plan or review");
-        }
-        result = await NATIVE_COMMANDS.execute("research.strategy", root, {
-          request: {
-            schema_version: "research-strategy-request/1",
-            principal: toolContext?.principal,
-            authority: "kernel_write",
-            operation: params.strategyOperation,
-            [params.strategyOperation]: params[params.strategyOperation],
-            rationale: params.rationale,
-            basis_refs: params.basisRefs || [],
-            expected_revision: params.expectedRevision,
-            event_id: params.eventId,
-          },
-        }, context?.abortSignal);
-      } else if (params.operation === "interpret") {
+        if (!params.strategyOperation || !params[params.strategyOperation]) throw new Error("research_strategy requires strategyOperation and plan or review");
+        return toolResult(await NATIVE_COMMANDS.execute("research.strategy", root, { request: { protocol: "research_strategy_request", version: 1, principal: toolContext?.principal, authority: "research_state", operation: params.strategyOperation, [params.strategyOperation]: params[params.strategyOperation], rationale: params.rationale, basis_refs: params.basisRefs || [], expected_revision: params.expectedRevision, event_id: params.eventId } }, context?.abortSignal));
+      }
+      if (params.operation === "interpret") {
         requireNativeWrites("research_interpretation", toolContext);
         if (!params.interpretation) throw new Error("research_interpretation requires interpretation");
-        result = await NATIVE_COMMANDS.execute("research.interpretation", root, {
-          request: {
-            schema_version: "research-interpretation-request/1",
-            principal: toolContext?.principal,
-            authority: "kernel_write",
-            interpretation: params.interpretation,
-            rationale: params.rationale,
-            basis_refs: params.basisRefs || [],
-            expected_revision: params.expectedRevision,
-            event_id: params.eventId,
-          },
-        }, context?.abortSignal);
-      } else if (params.operation === "checkpoint") {
+        return toolResult(await NATIVE_COMMANDS.execute("research.interpretation", root, { request: { protocol: "research_interpretation_request", version: 1, principal: toolContext?.principal, authority: "research_state", interpretation: params.interpretation, rationale: params.rationale, basis_refs: params.basisRefs || [], expected_revision: params.expectedRevision, event_id: params.eventId } }, context?.abortSignal));
+      }
+      if (params.operation === "checkpoint") {
         requireNativeWrites("research_checkpoint", toolContext);
         if (!params.checkpoint) throw new Error("research_checkpoint requires checkpoint");
-        const checkpoint = normalizeCheckpointPayload(params.checkpoint, toolContext, params.eventId);
-        result = await NATIVE_COMMANDS.execute("research.checkpoint", root, {
-          request: {
-            schema_version: "research-checkpoint-request/1",
-            principal: toolContext?.principal,
-            authority: "kernel_write",
-            checkpoint,
-            rationale: params.rationale,
-            basis_refs: params.basisRefs || [],
-            expected_revision: params.expectedRevision,
-            event_id: params.eventId,
-          },
-        }, context?.abortSignal);
-      } else {
-        validateWorkflowParams(params);
-        requireNativeWrites("research_continuation", toolContext);
-        result = await NATIVE_COMMANDS.execute(
-          "research.continuation",
-          root,
-          { request: continuationRequest(params, toolContext) },
-          context?.abortSignal,
-        );
+        return toolResult(await NATIVE_COMMANDS.execute("research.checkpoint", root, { request: { protocol: "research_checkpoint_request", version: 1, principal: toolContext?.principal, authority: "research_state", checkpoint: normalizeCheckpointPayload(params.checkpoint, toolContext, params.eventId), rationale: params.rationale, basis_refs: params.basisRefs || [], expected_revision: params.expectedRevision, event_id: params.eventId } }, context?.abortSignal));
       }
-      return toolResult(result);
+      throw new Error("research lifecycle operation must be strategy, interpret, or checkpoint");
     },
   };
 }
@@ -270,17 +234,17 @@ export function normalizeCheckpointPayload(value, toolContext, eventId) {
  * The Kernel derives liveness from ResearchMap plus operational Attempt
  * records. The Host may request one bounded follow-up when the Root failed to
  * record a checkpoint disposition for an active scope; it never chooses the
- * next method or invokes it itself. Continuation records remain an explicit
+ * next method or invokes it itself. LifecycleAction records remain an explicit
  * secondary ledger and do not replace checkpoint liveness.
  */
-export function createContinuationLivenessHook({
+export function createCheckpointLivenessHook({
   cwd,
   maxFollowUps = 3,
   statusReader,
   checkpointReader,
   followUpRequired = true,
 } = {}) {
-  if (typeof cwd !== "string" || !cwd) throw new TypeError("continuation liveness hook requires cwd");
+  if (typeof cwd !== "string" || !cwd) throw new TypeError("checkpoint liveness hook requires cwd");
   const readStatus = typeof statusReader === "function"
     ? statusReader
     : typeof checkpointReader === "function"
@@ -303,7 +267,7 @@ export function createContinuationLivenessHook({
       throw error;
     }
     const followUp = followUpRequired
-      ? continuationFollowUp(status)
+      ? checkpointFollowUp(status)
       : checkpointFollowUp(status);
     if (!followUp) {
       followUpsByRun.delete(runId);
@@ -559,15 +523,11 @@ export function createRenderTool() {
       const outputDirectory = dirname(request.outputPath);
       try {
         await mkdir(outputDirectory, { recursive: true, mode: 0o700 });
-        const raw = await runJsonCli(
-          packageScript("render.py"),
-          [request.operation, ...request.artifacts.map((item) => item.path), "-o", request.outputPath, "--json"],
-          root,
-          context?.abortSignal,
-          300_000,
-          true,
+        const raw = await runFirstPartyProvider(
+          "tspi-render", "artifact_render",
+          { workspace_root: root, operation: request.operation, artifact_paths: request.artifacts.map((item) => item.path), output_path: request.outputPath },
+          {}, { workspace_root: root }, context?.abortSignal,
         );
-        if (raw.ok !== true) throw renderBackendError(raw);
         const output = validateCreatedRenderOutput(root, request.outputRef);
         const artifact = await resolveArtifactByRef(root, request.outputRef, context?.abortSignal);
         const result = {
@@ -634,18 +594,11 @@ export function createReportTool() {
         details: { activity: { activity_id: activityId, state: "running" } },
       });
       try {
-        const raw = await runJsonCli(
-          packageScript("report.py"),
-          [
-            "--root", root,
-            "--package-dir", request.packagePath,
-            "--exclude-activity-ref", journal.activityRef,
-            ...request.assetArtifactIds.flatMap((artifactId) => ["--asset-artifact-id", artifactId]),
-            "--json",
-          ],
-          root,
-          context?.abortSignal,
-          300_000,
+        const raw = await runFirstPartyProvider(
+          "tspi-report", "report_build",
+          { workspace_root: root, output_path: request.packagePath, asset_artifact_ids: request.assetArtifactIds },
+          { package: true, package_name: request.packageName, exclude_activity_refs: [journal.activityRef] },
+          { workspace_root: root }, context?.abortSignal,
         );
         const refs = expectedReportRefs(request.packageRef);
         assertReportBuilderPaths(root, refs, raw);
@@ -717,7 +670,7 @@ function createCoreToolFactories(options = {}) {
   const tools = [
     createStateTool(options),
     createChangeTool(),
-    createWorkflowTool(),
+    createResearchLifecycleTool(),
     createEnvironmentTool(),
     createComputeCatalogTool(options),
     createComputeReadinessTool(options),
@@ -891,72 +844,6 @@ async function executeNativeCommand({ command, root, params, signal }) {
     return executeFilesystemResearchCommand(command, root, params);
   }
   return runCanonicalApi(command, root, commandArguments(command, params), signal);
-}
-
-function continuationRequest(params, toolContext) {
-  const request = {
-    schema_version: "ts-continuation-request/1",
-    operation: params.operation === "set_status" ? "set" : params.operation,
-    principal: toolContext?.principal,
-    authority: "kernel_write",
-  };
-  if (params.scope !== undefined) request.scope = params.scope;
-  if (params.targetId !== undefined) request.target_id = params.targetId;
-  if (params.action !== undefined) request.action = params.action;
-  if (params.reason !== undefined) request.reason = params.reason;
-  if (params.requestId !== undefined) request.request_id = params.requestId;
-  if (params.continuationId !== undefined) request.continuation_id = params.continuationId;
-  if (params.status !== undefined) request.status = params.status;
-  if (params.rationale !== undefined) request.rationale = params.rationale;
-  if (params.basisRefs !== undefined) request.basis_refs = params.basisRefs;
-  if (params.expectedRevision !== undefined) request.expected_revision = params.expectedRevision;
-  return request;
-}
-
-function validateWorkflowParams(params) {
-  const operation = params.operation;
-  if (["set", "set_required"].includes(operation) && !params.continuationId
-      && (!params.scope || !params.targetId || !params.action)) {
-    throw new Error(`research_continuation ${operation} requires scope, targetId, and action`);
-  }
-  if (["set_deferred", "set_blocked"].includes(operation)
-      || (operation === "set" && ["deferred", "blocked"].includes(params.status))) {
-    if (!params.reason) throw new Error(`research_continuation ${operation} requires reason`);
-  }
-  if (["set", "set_deferred", "set_blocked", "set_completed"].includes(operation)
-      && !params.continuationId && (!params.scope || !params.targetId)) {
-    throw new Error(`research_continuation ${operation} requires continuationId or scope and targetId`);
-  }
-  if (["set", "set_deferred", "set_blocked", "set_completed"].includes(operation)
-      && !params.continuationId && !params.action) {
-    throw new Error(`research_continuation ${operation} requires action when creating a continuation`);
-  }
-  if (operation === "resolve" && !params.continuationId) {
-    throw new Error(`research_continuation ${operation} requires continuationId`);
-  }
-}
-
-function filterContinuationStatus(result, params) {
-  if (!params.scope && !params.targetId) return result;
-  if (!result || typeof result !== "object" || Array.isArray(result)) return result;
-  const matches = (record) => {
-    if (!record || typeof record !== "object") return false;
-    const scope = record.scope;
-    const target = record.target_ref || record.target_id || record.targetId;
-    return (!params.scope || scope === params.scope) && (!params.targetId || target === params.targetId);
-  };
-  const filtered = { ...result };
-  for (const key of ["continuations", "records", "items", "required"]) {
-    if (Array.isArray(result[key])) filtered[key] = result[key].filter(matches);
-  }
-  if (result.counts && typeof result.counts === "object" && !Array.isArray(result.counts)) {
-    filtered.counts = {
-      ...result.counts,
-      ...(Array.isArray(filtered.continuations) ? { continuations: filtered.continuations.length } : {}),
-      ...(Array.isArray(filtered.required) ? { required: filtered.required.length } : {}),
-    };
-  }
-  return filtered;
 }
 
 async function resolveArtifacts(root, artifactIds, signal) {

@@ -20,7 +20,7 @@ def _binding(ref: str, schema_version: str, marker: str) -> dict[str, object]:
 
 def _task() -> dict[str, object]:
     return {
-        "schema_version": "ts-agent-task/2",
+        "schema_version": "tspi-task/2",
         "task_id": "sub_1",
         "role": "review",
         "authority": "advisory",
@@ -56,13 +56,13 @@ def _task() -> dict[str, object]:
             "remote_authority": "execution_mirror",
             "external_side_effects": False,
         },
-        "output_contract": "ts-agent-result/1",
+        "output_contract": "tspi-result/1",
     }
 
 
 def _result(task: dict[str, object]) -> dict[str, object]:
     return {
-        "schema_version": "ts-agent-result/1",
+        "schema_version": "tspi-result/1",
         "task_id": task["task_id"],
         "role": "review",
         "authority": "advisory",
@@ -143,7 +143,7 @@ def test_agent_protocol_rejects_noncanonical_subagent_run_ids() -> None:
 
 def test_agent_protocol_requires_current_schema_and_exact_bound_review_documents() -> None:
     task = _task()
-    task["schema_version"] = "ts-agent-task/1"
+    task["schema_version"] = "tspi-task/1"
     rejected = _run("validateAgentTask", task)
     assert rejected.returncode == 2
     assert "schema_version" in rejected.stderr

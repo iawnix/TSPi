@@ -76,7 +76,7 @@ For `research_read mode=evidence`, optional selectors are `recordType` (`attempt
 `artifact`, or `link`), `nodeId`, `artifactId`, `subjectId`, and `limit` (1--2048).
 `recordType=link` selects `evidence_links`; it is not a second write protocol.
 
-`research_continuation` is a bounded required-action ledger, not the turn
+`research_checkpoint` is a bounded required-action ledger, not the turn
 checkpoint. `operation=status` is read-only and accepts optional `scope`,
 `targetId`, and `limit`; mutations use `set`, `set_required`,
 `set_deferred`, `set_blocked`, `set_completed`, `resolve`, or `clear` with

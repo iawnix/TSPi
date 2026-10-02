@@ -21,7 +21,7 @@ async function research_workspace(prefix) {
 }
 
 test("Python Kernel rejects changes while admission is pending", async () => {
-  const root = await research_workspace("research-kernel-pending-");
+  const root = await research_workspace("research-state-pending-");
   try {
     const kernel = create_test_research_state({ workspace_root: root });
     await assert.rejects(
@@ -39,7 +39,7 @@ test("Python Kernel rejects changes while admission is pending", async () => {
 });
 
 test("Python Kernel persists admission and allows changes after restart", async () => {
-  const root = await research_workspace("research-kernel-restart-");
+  const root = await research_workspace("research-state-restart-");
   try {
     const first = create_test_research_state({ workspace_root: root });
     const admission = await first.admit_workspace({
@@ -75,7 +75,7 @@ test("Python Kernel persists admission and allows changes after restart", async 
 });
 
 test("Python Kernel repairs a liveness-first admission without erasing its projection", async () => {
-  const root = await research_workspace("research-kernel-liveness-first-");
+  const root = await research_workspace("research-state-liveness-first-");
   try {
     const livenessPath = join(root, "lifecycle/liveness.json");
     const liveness = JSON.parse(await readFile(livenessPath, "utf8"));
@@ -106,7 +106,7 @@ test("Python Kernel repairs a liveness-first admission without erasing its proje
 });
 
 test("Python Kernel accepts semantic Node identifiers used by execution bindings", async () => {
-  const root = await research_workspace("research-kernel-semantic-node-");
+  const root = await research_workspace("research-state-semantic-node-");
   try {
     const kernel = create_test_research_state({ workspace_root: root });
     await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });
@@ -127,7 +127,7 @@ test("Python Kernel accepts semantic Node identifiers used by execution bindings
 });
 
 test("Python Kernel keeps semantic refs and durable checkpoint liveness aligned", async () => {
-  const root = await research_workspace("research-kernel-semantic-liveness-");
+  const root = await research_workspace("research-state-semantic-liveness-");
   try {
     const kernel = create_test_research_state({ workspace_root: root });
     await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });
@@ -171,7 +171,7 @@ test("Python Kernel keeps semantic refs and durable checkpoint liveness aligned"
 });
 
 test("Python Kernel marks a focused active StrategyPlan executable before checkpoint", async () => {
-  const root = await research_workspace("research-kernel-strategy-ready-");
+  const root = await research_workspace("research-state-strategy-ready-");
   try {
     const kernel = create_test_research_state({ workspace_root: root });
     await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });
@@ -204,7 +204,7 @@ test("Python Kernel marks a focused active StrategyPlan executable before checkp
 });
 
 test("kernel port restores durable admission after the Host process is recreated", async () => {
-  const root = await research_workspace("research-kernel-port-restart-");
+  const root = await research_workspace("research-state-port-restart-");
   try {
     const first = create_research_state_port(create_test_research_state({ workspace_root: root }));
     await first.admit_workspace({
@@ -227,7 +227,7 @@ test("kernel port restores durable admission after the Host process is recreated
 });
 
 test("Python Kernel records findings, gates, attempts, artifacts and interpretations", async () => {
-  const root = await research_workspace("research-kernel-science-");
+  const root = await research_workspace("research-state-science-");
   try {
     const kernel = create_test_research_state({ workspace_root: root });
     await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });
@@ -254,7 +254,7 @@ test("Python Kernel records findings, gates, attempts, artifacts and interpretat
 });
 
 test("Python Kernel enforces Attempt transitions and links outputs to evidence", async () => {
-  const root = await research_workspace("research-kernel-attempt-lifecycle-");
+  const root = await research_workspace("research-state-attempt-lifecycle-");
   try {
     const kernel = create_test_research_state({ workspace_root: root });
     await kernel.admit_workspace({ workspace_id: "workspace_fs_kernel", authority: "host" });

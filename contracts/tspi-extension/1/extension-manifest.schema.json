@@ -42,7 +42,7 @@
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-._][a-z0-9]+)*$" },
         "version": { "type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+){0,2}(?:[-+][0-9A-Za-z.-]+)?$" },
-        "kind": { "enum": ["compute", "analysis", "harness", "notification"] },
+        "kind": { "enum": ["compute", "analysis", "harness", "notification", "render", "report"] },
         "descriptor": { "$ref": "#/$defs/relative_path" },
         "descriptor_sha256": { "$ref": "#/$defs/sha256" },
         "entry": { "$ref": "#/$defs/relative_path" },

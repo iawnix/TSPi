@@ -17,7 +17,7 @@ from typing import Any
 LAYOUT_SCHEMA_VERSION = "research-agent-layout/1"
 STANDALONE_MARKER = "etc/research-agent-layout.json"
 LEGACY_PACKAGE_HOME = ".pi/packages/tspi"
-DIRECT_PACKAGE_HOME = ".pi/packages/ts-agent"
+DIRECT_PACKAGE_HOME = ".pi/packages/tspi"
 
 
 @dataclass(frozen=True)

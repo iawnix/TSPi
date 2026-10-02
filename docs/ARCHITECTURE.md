@@ -177,7 +177,7 @@ the sole authority for ResearchMap and durable scientific memory.
 ContextPack. `ContextPack.context_id` and provenance identify the source
 revision so a Host can rebuild it after a change or retry. Semantic writes stay
 on `research_change`, `research_strategy`, `research_interpretation`, and
-`research_checkpoint`; new turns do not write through `research_continuation`,
+`research_checkpoint`; new turns do not write through `research_checkpoint`,
 which is retained only to read or migrate old required-action ledger records.
 There is no generic `memory.commit` operation that could bypass domain
 validation.
@@ -193,7 +193,7 @@ Before ending, the Agent must call `research_checkpoint` with one of the
 current dispositions: `continue_required`, `waiting_external`, `deferred`,
 `blocked`, `terminal`, or `user_input_required`. `continue_required` records an
 explicit next-turn action chosen by the Agent. The old `required` value is
-accepted only while reading or migrating a `research_continuation` ledger and
+accepted only while reading or migrating a `research_checkpoint` ledger and
 is normalized to `continue_required`; it is not a second lifecycle state.
 `research.liveness` is a bounded diagnostic projection, not a persisted next
 step or a turn-closing command. An active Node with no valid disposition yields
@@ -354,7 +354,7 @@ and the [operations guide](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md).
 TS Web renders the canonical `ResearchMap` document directly. Findings and Gate
 evaluations are ordinary map records, so the browser never reconstructs
 scientific state from backend logs or a second registry. It does not infer the
-next action from tool exit codes. See [ADR 0003](adr/0003-minimal-research-kernel-and-gates.md).
+next action from tool exit codes. See [ADR 0003](adr/0003-minimal-research-state-and-gates.md).
 
 Public tools validate input paths against the workspace root, normalize
 artifacts, and return machine-readable errors. Scientific backends are
@@ -411,7 +411,7 @@ write `ResearchMap` state. The Monitor never calls `finalize`, writes
 
 Research liveness is a diagnostic projection separate from Monitor
 observations. The turn boundary persists the Agent's disposition through
-`research_checkpoint`. `research_continuation` remains only as a compatibility
+`research_checkpoint`. `research_checkpoint` remains only as a compatibility
 ledger: it can list or resolve legacy records through `set`/`resolve` (the old
 `set_*` spellings remain aliases), but new turns must use `checkpoint`.
 Legacy `required` records are migrated to `continue_required`; they do not

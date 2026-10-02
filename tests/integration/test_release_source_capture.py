@@ -49,7 +49,7 @@ def test_dirty_release_capture_requires_explicit_local_override(tmp_path: Path) 
 def _repository(root: Path) -> Path:
     files = {
         "README.md": "captured source\n",
-        "package.json": '{"name":"@iawnix/ts-agent"}\n',
+        "package.json": '{"name":"@iawnix/tspi"}\n',
         "pyproject.toml": "[build-system]\nrequires = []\n",
         "scripts/build_release.py": "# build fixture\n",
         "scripts/check_package.py": "# check fixture\n",

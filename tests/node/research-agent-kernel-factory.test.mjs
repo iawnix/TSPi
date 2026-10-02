@@ -17,7 +17,7 @@ async function workspace(prefix, workspace_id, workspace_mode = "research") {
 }
 
 test("kernel factory binds the Python Research Kernel to workspace requests", async () => {
-  const root = await workspace("research-kernel-factory", "workspace_factory");
+  const root = await workspace("research-state-factory", "workspace_factory");
   try {
     const kernel = create_kernel({ backend: "python" });
     assert.equal(kernel.protocol_version, RESEARCH_KERNEL_FACTORY_VERSION);

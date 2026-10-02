@@ -50,7 +50,7 @@ const RESULT_KEYS = [
 function validateAgentTask(value) {
   if (!isPlainObject(value)) throw new Error("agent task must be an object");
   rejectUnknownKeys(value, TASK_KEYS, "agent task");
-  if (value.schema_version !== "ts-agent-task/2") throw new Error("invalid agent task schema_version");
+  if (value.schema_version !== "tspi-task/2") throw new Error("invalid agent task schema_version");
   const taskId = requireString(value.task_id, "task_id", 128);
   if (!/^sub_[1-9][0-9]*$/.test(taskId)) throw new Error("task_id must be a subagent run ID");
   const role = requireEnum(value.role, "role", ROLES);
@@ -79,9 +79,9 @@ function validateAgentTask(value) {
   }
   const capabilities = uniqueStringArray(value.capabilities, "capabilities", 32, 128);
   const constraints = validateConstraints(value.constraints);
-  if (value.output_contract !== "ts-agent-result/1") throw new Error("output_contract must be ts-agent-result/1");
+  if (value.output_contract !== "tspi-result/1") throw new Error("output_contract must be tspi-result/1");
   return {
-    schema_version: "ts-agent-task/2",
+    schema_version: "tspi-task/2",
     task_id: taskId,
     role,
     authority,
@@ -92,7 +92,7 @@ function validateAgentTask(value) {
     inputs,
     capabilities,
     constraints,
-    output_contract: "ts-agent-result/1",
+    output_contract: "tspi-result/1",
   };
 }
 
@@ -307,7 +307,7 @@ function validateAgentResult(value, task) {
   if (!isPlainObject(value)) throw new Error("agent result must be an object");
   rejectUnknownKeys(value, RESULT_KEYS, "agent result");
   rejectAuthoritativeFields(value);
-  if (value.schema_version !== "ts-agent-result/1") throw new Error("invalid agent result schema_version");
+  if (value.schema_version !== "tspi-result/1") throw new Error("invalid agent result schema_version");
   assertSame(requireString(value.task_id, "task_id", 128), normalizedTask.task_id, "task_id");
   assertSame(requireEnum(value.role, "role", ROLES), normalizedTask.role, "role");
   assertSame(requireEnum(value.authority, "authority", ["advisory", "operational"]), normalizedTask.authority, "authority");
@@ -321,7 +321,7 @@ function validateAgentResult(value, task) {
   if (!isPlainObject(value.payload)) throw new Error("payload must be an object");
   if (!isPlainObject(value.provenance)) throw new Error("provenance must be an object");
   return {
-    schema_version: "ts-agent-result/1",
+    schema_version: "tspi-result/1",
     task_id: normalizedTask.task_id,
     role: normalizedTask.role,
     authority: normalizedTask.authority,

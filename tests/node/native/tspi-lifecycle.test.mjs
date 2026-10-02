@@ -172,11 +172,11 @@ test("Harness tool invocation enforces Host-owned phase, authority, replay, and 
     },
   });
   const notifyTool = wrapToolForHarness({
-    name: "ts_notify",
+    name: "notify_send",
     label: "TS Notify",
     description: "A canonical external side-effect fixture.",
     parameters: Type.Object({}, { additionalProperties: false }),
-    metadata: PUBLIC_TOOL_METADATA.ts_notify,
+    metadata: PUBLIC_TOOL_METADATA.notify_send,
     async execute() {
       executions.push("notify");
       return { content: [{ type: "text", text: "sent" }] };
@@ -511,14 +511,14 @@ test("requiredContinuations reads the canonical required continuation projection
 test("decision aliases normalize claim and node selectors without rejecting compatibility fields", async () => {
   const calls = [];
   const source = {
-    name: "research_continuation",
+    name: "research_checkpoint",
     async execute(_toolCallId, params) {
       calls.push(params);
       return { content: [{ type: "text", text: "ok" }] };
     },
   };
   const aliases = createPublicToolAliases([source]);
-  const continuation = aliases.find((tool) => tool.name === "research_continuation");
+  const continuation = aliases.find((tool) => tool.name === "research_checkpoint");
   const strategy = aliases.find((tool) => tool.name === "research_strategy");
   assert.ok(continuation);
   const interpretation = aliases.find((tool) => tool.name === "research_interpretation");
@@ -708,7 +708,7 @@ test("Harness tool adapter preserves structured errors through Pi Core", async (
 
 test("recovery interruptions classify non-replayable effects as authorization failures", () => {
   const patch = markToolEnvelopeError({
-    toolName: "ts_notify",
+    toolName: "notify_send",
     toolCallId: "recovery-notify",
     content: [{ type: "text", text: "external outcome is unknown" }],
     isError: true,
@@ -906,8 +906,8 @@ test("Harness follow-up requires context before recording the next action", asyn
     },
   });
   const workflowTool = wrapToolForHarness({
-    name: "research_continuation",
-    label: "research_continuation",
+    name: "research_checkpoint",
+    label: "research_checkpoint",
     description: "Record the explicit next research action.",
     parameters: Type.Object({
       operation: Type.String(),
@@ -916,7 +916,7 @@ test("Harness follow-up requires context before recording the next action", asyn
       action: Type.String(),
     }, { additionalProperties: false }),
     async execute(_toolCallId, params) {
-      calls.push({ name: "research_continuation", params });
+      calls.push({ name: "research_checkpoint", params });
       return {
         content: [{ type: "text", text: JSON.stringify({ schema_version: "research-continuation-result/1" }) }],
         details: { result: { schema_version: "research-continuation-result/1" } },
@@ -926,7 +926,7 @@ test("Harness follow-up requires context before recording the next action", asyn
   faux.setResponses([
     fauxAssistantMessage("I have reached the end of this turn.", { stopReason: "stop" }),
     fauxAssistantMessage(fauxToolCall("research_read", { mode: "context" }, { id: "call-context" }), { stopReason: "toolUse" }),
-    fauxAssistantMessage(fauxToolCall("research_continuation", {
+    fauxAssistantMessage(fauxToolCall("research_checkpoint", {
       operation: "set_required",
       scope: "node",
       targetId: "node_1",
@@ -960,7 +960,7 @@ test("Harness follow-up requires context before recording the next action", asyn
     const lane = await created.harness.lane("main", BACKGROUND_CONTEXT);
     const run = await lane.prompt("Continue the research.", undefined, BACKGROUND_CONTEXT);
     assert.equal(run.ok, true);
-    assert.deepEqual(calls.map((item) => item.name), ["research_read", "research_continuation"]);
+    assert.deepEqual(calls.map((item) => item.name), ["research_read", "research_checkpoint"]);
     assert.equal(calls[0].params.mode, "context");
     assert.equal(calls[1].params.operation, "set_required");
     // The bounded follow-up is part of the same Harness run boundary, so the

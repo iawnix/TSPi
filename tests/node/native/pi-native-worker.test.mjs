@@ -261,7 +261,7 @@ test("native analysis_run journals a zero-input chemical resolver result", {
   }
 });
 
-test("native ts_import writes a semantic input basename", {
+test("native artifact_import writes a semantic input basename", {
   skip: !kernelPython(),
 }, async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-import-"));
@@ -399,7 +399,7 @@ test("native Pi server gives every client the complete Agent tool inventory", { 
     assert.ok(runtime.workerPids.has(summary.sessionId), "native Worker did not start");
     const state = await readExperimentalSessionState(runtime.sessionDir, summary.sessionId);
     assert.deepEqual(state.activeTools, [
-      "read", "system_prompt", "write", "bash", "research_read", "research_change", "research_continuation",
+      "read", "system_prompt", "write", "bash", "research_read", "research_change", "research_checkpoint",
       "research_strategy", "research_interpretation", "research_checkpoint", "compute_environment", "review_run",
       "compute_run", "review_respond", "execution_dispatch", "artifact_import", "artifact_render", "report_build",
       "artifact_seed", "artifact_compare", "analysis_run",
@@ -460,22 +460,22 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     Object.assign(tools, {
       research_read: tools["research_read"],
       research_change: tools["research_change"],
-      research_continuation: tools["research_continuation"],
-      ts_environment: tools["compute_environment"],
+      research_checkpoint: tools["research_checkpoint"],
+      compute_environment: tools["compute_environment"],
       compute_run: tools["compute_run"],
       review: tools["review_run"],
-      ts_reply: tools["review_respond"],
-      ts_seed: tools["artifact_seed"],
-      ts_compare: tools["artifact_compare"],
-      ts_analyze: tools["analysis_run"],
-      ts_dispatch: tools["execution_dispatch"],
-      ts_import: tools["artifact_import"],
+      review_respond: tools["review_respond"],
+      artifact_seed: tools["artifact_seed"],
+      artifact_compare: tools["artifact_compare"],
+      analysis_run: tools["analysis_run"],
+      execution_dispatch: tools["execution_dispatch"],
+      artifact_import: tools["artifact_import"],
       render: tools["artifact_render"],
       report: tools["report_build"],
       // notify_send is Host/Monitor-owned and intentionally absent from the
       // Agent inventory. Exercise its guarded factory directly where this
       // test covers the external delivery boundary.
-      ts_notify: nativeTools.createNotifyTool(),
+      notify_send: nativeTools.createNotifyTool(),
     });
     const stateTool = tools.research_read;
     const changeTool = tools.research_change;
@@ -524,7 +524,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       /research\.change requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
-      tools.ts_seed.execute("seed-disabled", {
+      tools.artifact_seed.execute("seed-disabled", {
         operation: "generate",
         nodeId: "node_1",
         smiles: "C",
@@ -560,8 +560,8 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       /compute\.run requires the guarded TSPi App Server Root Agent/,
     );
     assert.equal(tools.review.replay, "never");
-    assert.equal(tools.ts_reply.replay, "never");
-    assert.equal(tools.ts_notify.replay, "never");
+    assert.equal(tools.review_respond.replay, "never");
+    assert.equal(tools.notify_send.replay, "never");
     await assert.rejects(
       tools.review.execute("review-disabled", {
         targetClaimId: "claim_1",
@@ -570,7 +570,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       /review\.run requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
-      tools.ts_reply.execute("reply-disabled", {
+      tools.review_respond.execute("reply-disabled", {
         taskId: "sub_1",
         reviewRunRef: "reviews/claim_1/runs/sub_1",
         disposition: "deferred",
@@ -579,7 +579,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       /review\.respond requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
-      tools.ts_notify.execute("notify-disabled", {
+      tools.notify_send.execute("notify-disabled", {
         operation: "send",
         event: "progress",
         subject: "Disabled notification",
@@ -627,7 +627,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     const referenceContent = "2\nreference\nH 0 0 0\nH 0 0 0.74\n";
     const targetContent = "2\ntarget\nH 2 1 0\nH 2 1 0.74\n";
     const updates = [];
-    const importedReference = JSON.parse((await tools.ts_import.execute("import-reference", {
+    const importedReference = JSON.parse((await tools.artifact_import.execute("import-reference", {
       operation: "import",
       nodeId,
       format: "xyz_structure",
@@ -636,7 +636,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       charge: 0,
       multiplicity: 1,
     }, (update) => updates.push(update), toolContext, undefined, context)).content[0].text);
-    const importedTarget = JSON.parse((await tools.ts_import.execute("import-target", {
+    const importedTarget = JSON.parse((await tools.artifact_import.execute("import-target", {
       operation: "import",
       nodeId,
       format: "xyz_structure",
@@ -653,7 +653,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     assert.equal(updates[0].details.activity.activity_id, importedReference.activity_id);
     assert.equal(updates[0].details.activity.state, "running");
 
-    const generatedSeed = JSON.parse((await tools.ts_seed.execute("generate-seed", {
+    const generatedSeed = JSON.parse((await tools.artifact_seed.execute("generate-seed", {
       operation: "generate",
       nodeId,
       smiles: "C",
@@ -665,7 +665,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     assert.match(generatedSeed.artifact.artifact_id, /^art_[0-9a-f]{24}$/);
     assert.match(generatedSeed.provenance_artifact.artifact_id, /^art_[0-9a-f]{24}$/);
 
-    const comparison = JSON.parse((await tools.ts_compare.execute("compare-structures", {
+    const comparison = JSON.parse((await tools.artifact_compare.execute("compare-structures", {
       operation: "compare",
       nodeId,
       referenceArtifactId: importedReference.artifact.artifact_id,
@@ -737,7 +737,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     process.env.TS_COMPUTE_CONFIG = computeConfig;
     process.env.PATH = `${fakeBin}:${previous.PATH}`;
     delete process.env.TSPI_NATIVE_WRITES;
-    const environment = JSON.parse((await tools.ts_environment.execute(
+    const environment = JSON.parse((await tools.compute_environment.execute(
       "environment-show",
       { mode: "show", name: "cluster" },
       () => {},
@@ -878,7 +878,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       JSON.parse(await readFile(join(workspace, reviewRunRef, "run.json"), "utf8")).status,
       "completed",
     );
-    const disposition = JSON.parse((await tools.ts_reply.execute("reply-native", {
+    const disposition = JSON.parse((await tools.review_respond.execute("reply-native", {
       taskId: review.details.result.task_id,
       reviewRunRef,
       disposition: "deferred",
@@ -888,7 +888,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     assert.equal(disposition.schema_version, "ts-review-root-disposition/1");
     assert.equal(disposition.disposition, "deferred");
     await assert.rejects(
-      tools.ts_reply.execute("reply-duplicate", {
+      tools.review_respond.execute("reply-duplicate", {
         taskId: review.details.result.task_id,
         reviewRunRef,
         disposition: "accepted",
@@ -988,7 +988,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       subject: "Native notification test",
       summary: "The native Pi notification bridge completed its fixed delivery.",
     };
-    const sent = JSON.parse((await tools.ts_notify.execute(
+    const sent = JSON.parse((await tools.notify_send.execute(
       "notify-native",
       notificationRequest,
       () => {},
@@ -996,7 +996,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       undefined,
       context,
     )).content[0].text);
-    const alreadySent = JSON.parse((await tools.ts_notify.execute(
+    const alreadySent = JSON.parse((await tools.notify_send.execute(
       "notify-native-explicit-repeat",
       notificationRequest,
       () => {},
@@ -1012,7 +1012,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
 
     delete process.env.TS_NOTIFICATION_CONFIG;
     await assert.rejects(
-      tools.ts_notify.execute("notify-unconfigured", {
+      tools.notify_send.execute("notify-unconfigured", {
         operation: "send",
         event: "progress",
         subject: "Native notification test",
@@ -1048,7 +1048,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     assert.equal("smiles" in seedJournal.request, false);
 
     await assert.rejects(
-      tools.ts_compare.execute("compare-invalid", {
+      tools.artifact_compare.execute("compare-invalid", {
         operation: "compare",
         nodeId,
         referenceArtifactId: importedReference.artifact.artifact_id,

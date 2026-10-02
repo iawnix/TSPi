@@ -28,7 +28,7 @@ ELIGIBLE_ARTIFACT_SUFFIXES = frozenset(
 )
 RESEARCH_CONTEXT_COLLECTIONS = (
     "phases", "claims", "nodes", "findings", "gates", "claim_relations",
-    "attempts", "artifacts", "evidence_links", "continuations",
+    "attempts", "artifacts", "evidence_links", "lifecycle_actions",
     "strategy_plans", "strategy_reviews", "attempt_interpretations",
 )
 

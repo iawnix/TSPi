@@ -15,7 +15,10 @@ from _bootstrap import bootstrap_python_package
 
 bootstrap_python_package(ROOT, workspace_from_argv=True)
 
+from research_memory.service import install_state_projection_writer  # noqa: E402
 from tspi_runtime.api import COMMANDS, CommandError, execute  # noqa: E402
+
+install_state_projection_writer()
 
 
 def main(argv: list[str] | None = None) -> int:

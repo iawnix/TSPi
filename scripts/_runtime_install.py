@@ -396,7 +396,7 @@ def _resolved_wheel(
     if bundled is not None:
         yield bundled
         return
-    with tempfile.TemporaryDirectory(prefix="ts-agent-install-wheel-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="tspi-install-wheel-") as temporary:
         wheel_dir = Path(temporary)
         descriptor = build_wheel(package_root, wheel_dir, python=build_python)
         wheel = wheel_dir / descriptor["filename"]

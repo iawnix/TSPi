@@ -28,7 +28,7 @@ def test_review_task_is_graph_scoped_bounded_and_advisory(tmp_path: Path) -> Non
     research_map = bundle["documents"]["research_map"]
     review_context = bundle["documents"]["review_context"]
 
-    assert task["schema_version"] == "ts-agent-task/2"
+    assert task["schema_version"] == "tspi-task/2"
     assert task["role"] == "review"
     assert task["authority"] == "advisory"
     assert task["capabilities"] == ["review_result"]
@@ -253,7 +253,7 @@ process.stdout.write(JSON.stringify({{
 
 def _result(task: dict, basis_ref: str) -> dict:
     return {
-        "schema_version": "ts-agent-result/1",
+        "schema_version": "tspi-result/1",
         "task_id": task["task_id"],
         "role": "review",
         "authority": "advisory",

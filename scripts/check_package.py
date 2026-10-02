@@ -25,7 +25,7 @@ except ImportError:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_NAME = "@iawnix/ts-agent"
+PACKAGE_NAME = "@iawnix/tspi"
 PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 PROJECT_LICENSE = "Apache-2.0"
 THEME_ENTRIES = ["./themes/ts-theme.json"]
@@ -206,7 +206,7 @@ def validate_runtime_entrypoints() -> None:
 
 
 def npm_pack_files() -> set[str]:
-    with tempfile.TemporaryDirectory(prefix="ts-agent-npm-cache-") as cache:
+    with tempfile.TemporaryDirectory(prefix="tspi-npm-cache-") as cache:
         env = dict(os.environ)
         env["npm_config_cache"] = cache
         completed = subprocess.run(

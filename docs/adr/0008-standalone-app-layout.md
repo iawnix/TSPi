@@ -28,7 +28,7 @@ The target layout is:
 ```
 
 The old `.pi/packages/tspi` tree is a migration source only. No production
-component may resolve an archived `ts-agent` or `tspi` release after the new
+component may resolve an archived `tspi` or `tspi` release after the new
 layout is activated. The stable shims resolve `current` at process start and
 export the selected `release_id`; a process never mixes modules from two
 release roots.

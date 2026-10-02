@@ -60,7 +60,7 @@ function buildReviewTaskBundle({ runId, workspaceRoot, request, researchMap, art
   };
   const revision = mapDigest(map);
   const task = {
-    schema_version: "ts-agent-task/2",
+    schema_version: "tspi-task/2",
     task_id: reviewContext.task_id,
     role: "review",
     authority: "advisory",
@@ -80,7 +80,7 @@ function buildReviewTaskBundle({ runId, workspaceRoot, request, researchMap, art
       remote_authority: "execution_mirror",
       external_side_effects: false,
     },
-    output_contract: "ts-agent-result/1",
+    output_contract: "tspi-result/1",
   };
   return validateReviewTaskBundle(task, { research_map: map, review_context: reviewContext });
 }

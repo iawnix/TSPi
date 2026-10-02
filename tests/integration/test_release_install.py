@@ -261,10 +261,10 @@ def test_release_install_is_idempotent_and_preserves_previous_versions(tmp_path:
     assert first["created"] is True
     assert repeated["created"] is False
     assert second["created"] is True
-    releases = install_root / ".pi" / "packages" / "ts-agent" / "releases"
+    releases = install_root / ".pi" / "packages" / "tspi" / "releases"
     assert (releases / release_one).is_dir()
     assert (releases / release_two).is_dir()
-    assert (install_root / ".pi" / "packages" / "ts-agent" / "current").resolve() == releases / release_two
+    assert (install_root / ".pi" / "packages" / "tspi" / "current").resolve() == releases / release_two
 
 
 def test_release_install_archives_obsolete_notification_recipient_state(tmp_path: Path) -> None:
@@ -433,7 +433,7 @@ def _synthetic_release(
     temporary_archive = root / "package.tgz"
     files = {name: b"\n" for name in required_files}
     files["package.json"] = json.dumps(
-        {"name": "@iawnix/ts-agent", "version": version},
+        {"name": "@iawnix/tspi", "version": version},
         separators=(",", ":"),
     ).encode() + b"\n"
     files["ResearchAgent"] = b"#!/usr/bin/env bash\nexit 0\n"
@@ -469,13 +469,13 @@ def _synthetic_release(
             archive.addfile(info, io.BytesIO(content))
     digest = hashlib.sha256(temporary_archive.read_bytes()).hexdigest()
     release_id = f"{version}-sha256-{digest[:16]}"
-    archive_name = f"ts-agent-{release_id}.tgz"
+    archive_name = f"tspi-{release_id}.tgz"
     archive_path = root / archive_name
     temporary_archive.rename(archive_path)
     manifest = {
-        "schema_version": "ts-agent-release/2",
+        "schema_version": "tspi-release/1",
         "release_id": release_id,
-        "package": {"name": "@iawnix/ts-agent", "version": version},
+        "package": {"name": "@iawnix/tspi", "version": version},
         "python_distribution": distribution,
         "archive": {
             "filename": archive_name,
@@ -485,7 +485,7 @@ def _synthetic_release(
         "source": {"git_commit": "test", "dirty": False},
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
     }
-    manifest_path = root / "ts-agent-release.json"
+    manifest_path = root / "tspi-release.json"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     return manifest_path, release_id
 

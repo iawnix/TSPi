@@ -99,8 +99,6 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
             return result
         if action in {"strategy", "interpretation"}:
             return _filesystem_decision(root, action, request, dispatch_agent_workspace)
-        if action == "continuation":
-            return _filesystem_continuation(root, request, dispatch_agent_workspace)
         if action in {"detail", "locate", "operations", "decisions", "evidence", "storage"}:
             context = dispatch_agent_workspace(root, "read_context", request)
             if action == "operations":
@@ -207,7 +205,7 @@ def _filesystem_map_document(context: dict[str, Any]) -> dict[str, Any]:
         "nodes": nodes,
         "findings": findings,
         "gates": gates,
-        "continuations": context.get("continuations", []),
+        "lifecycle_actions": context.get("lifecycle_actions", []),
         "claim_relations": context.get("claim_relations", []),
         "focus_claim_ids": list(focus.get("claim_ids", [])),
         "focus_node_ids": list(focus.get("node_ids", [])),
@@ -281,100 +279,6 @@ def _filesystem_decision(root: str | Path, action: str, request: dict[str, Any],
         "commit": commit,
     }
 
-
-def _filesystem_continuation(root: str | Path, request: dict[str, Any], dispatch: Any) -> dict[str, Any]:
-    """Expose the canonical continuation ledger without a second state store."""
-
-    context = dispatch(root, "read_context", request)
-    operation = request.get("operation") or "status"
-    records = [item for item in context.get("continuations", []) if isinstance(item, dict)]
-    if operation == "status":
-        return _continuation_status_document(context, request)
-    allowed_operations = {"set", "set_required", "set_deferred", "set_blocked", "set_completed", "resolve", "clear"}
-    if operation not in allowed_operations:
-        raise CommandError("continuation operation must be status, set, resolve, or a supported set_* alias")
-    status = {
-        "set_deferred": "deferred", "set_blocked": "blocked", "set_completed": "completed",
-        "set_required": "required",
-        "resolve": request.get("status", "completed"),
-        "clear": "completed",
-    }.get(operation, request.get("status", "required"))
-    if status not in {"required", "deferred", "blocked", "completed"}:
-        raise CommandError("continuation status must be required, deferred, blocked, or completed")
-    target_id = request.get("target_id") or request.get("targetId") or request.get("target_ref")
-    continuation_id = request.get("continuation_id") or request.get("continuationId") or request.get("id")
-    if operation in {"set_deferred", "set_blocked", "set_completed"} and not continuation_id:
-        candidates = [
-            item for item in records
-            if item.get("status") == "required"
-            and item.get("scope") == request.get("scope")
-            and item.get("target_id") == target_id
-            and (request.get("action") is None or item.get("action") == request.get("action"))
-        ]
-        if len(candidates) > 1:
-            raise CommandError("continuation disposition is ambiguous; provide continuationId")
-        if len(candidates) == 1:
-            continuation_id = candidates[0].get("id")
-    if operation in {"resolve", "clear"} or (continuation_id and operation in {"set", "set_required", "set_deferred", "set_blocked", "set_completed"}):
-        if not isinstance(continuation_id, str) or not continuation_id:
-            raise CommandError(f"research.continuation {operation} requires continuationId")
-        existing = next((item for item in records if item.get("id") == continuation_id), None)
-        if existing is None:
-            raise CommandError(f"unknown continuation {continuation_id}")
-        for field, supplied in (("scope", request.get("scope")), ("target_id", target_id), ("action", request.get("action"))):
-            if supplied is not None and supplied != existing.get(field):
-                raise CommandError(f"continuation {continuation_id} {field} does not match the existing record")
-        operation_value = {
-            "type": "resolve_continuation", "id": continuation_id,
-            "status": "completed" if operation == "clear" else status,
-        }
-        for field in ("reason", "request_id"):
-            if field in request:
-                operation_value[field] = request[field]
-    else:
-        scope, action = request.get("scope"), request.get("action")
-        if not all(isinstance(item, str) and item for item in (scope, target_id, action)):
-            raise CommandError(f"research.continuation {operation} requires scope, targetId, and action")
-        operation_value = {
-            "type": "set_continuation", "id": continuation_id or f"continuation_{scope}_{target_id}_{action}",
-            "scope": scope, "target_id": target_id, "action": action, "status": status,
-        }
-        for field in ("reason", "request_id"):
-            if field in request:
-                operation_value[field] = request[field]
-    commit_request = {**request, "operations": [operation_value]}
-    commit = dispatch(root, "apply_change", commit_request)
-    updated = dispatch(root, "read_context", request)
-    return {
-        "schema_version": "research-continuation-result/1",
-        "operation": operation,
-        "commit": commit,
-        "change": commit,
-        **_continuation_status_document(updated, request),
-    }
-
-
-def _continuation_status_document(context: dict[str, Any], request: dict[str, Any] | None = None) -> dict[str, Any]:
-    request = request or {}
-    records = [item for item in context.get("continuations", []) if isinstance(item, dict)]
-    if request.get("scope") is not None:
-        records = [item for item in records if item.get("scope") == request.get("scope")]
-    target_id = request.get("target_id") or request.get("targetId") or request.get("target_ref")
-    if target_id is not None:
-        records = [item for item in records if item.get("target_id") == target_id]
-    required = [item for item in records if item.get("status") == "required"]
-    limit = request.get("limit", 32)
-    if type(limit) is not int or not 1 <= limit <= 2048:
-        limit = 32
-    return {
-        "schema_version": "research-continuation/1",
-        "map_id": context.get("map_id") or f"map_{context.get('workspace_id', '')}",
-        "revision": context.get("revision", 0),
-        "continuations": records[:limit],
-        "required": required[:limit],
-        "counts": {"continuations": len(records), "required": len(required)},
-        "truncated": {"continuations": len(records) > limit, "required": len(required) > limit},
-    }
 
 
 def _compute(action: str, root: str | Path, params: dict[str, Any]) -> dict[str, Any]:

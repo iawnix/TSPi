@@ -189,7 +189,7 @@ def validate_components(
     agent_release_id = require_release_id(agent.get("release_id"), "suite agent release_id")
     agent_version = require_string(agent.get("version"), "suite agent version")
     agent_archive = validate_file_descriptor(agent.get("archive"), "suite agent archive", key="path")
-    expected_agent_archive = f"components/agent/ts-agent-{agent_release_id}.tgz"
+    expected_agent_archive = f"components/agent/tspi-{agent_release_id}.tgz"
     if agent_archive["path"] != expected_agent_archive:
         raise SuiteReleaseError(f"suite Agent archive path must be {expected_agent_archive}")
     try:

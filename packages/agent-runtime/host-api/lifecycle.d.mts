@@ -15,6 +15,6 @@ export function createResearchLifecycleController(options?: {
   contextPatch(): Readonly<Record<string, unknown>>;
   snapshot(): Readonly<Record<string, unknown>>;
 };
-export function continuationFollowUp(status: unknown): { followUp: string } | undefined;
+export function lifecycleActionFollowUp(status: unknown): { followUp: string } | undefined;
 export function checkpointFollowUp(status: unknown): { followUp: string } | undefined;
-export function requiredContinuations(status: unknown): Array<Record<string, unknown>>;
+export function requiredLifecycleActions(status: unknown): Array<Record<string, unknown>>;

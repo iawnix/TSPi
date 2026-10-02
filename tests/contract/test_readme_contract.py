@@ -15,7 +15,7 @@ TERMINAL = ROOT / "docs" / "TERMINAL.md"
 TERMINAL_ZH = ROOT / "docs" / "TERMINAL.zh-CN.md"
 INSTALLATION = ROOT / "docs" / "INSTALLATION.md"
 MAINTAINER = ROOT / "docs" / "MAINTAINER_GUIDE.md"
-ADR = ROOT / "docs" / "adr" / "0001-phase-node-research-kernel.md"
+ADR = ROOT / "docs" / "adr" / "0001-phase-node-research-state.md"
 SKILL_ROOT = ROOT / "skills" / "tspi-research-state"
 SKILL = SKILL_ROOT / "SKILL.md"
 REFERENCES = SKILL_ROOT / "references"
@@ -146,7 +146,7 @@ def test_normal_runtime_docs_expose_only_current_contracts() -> None:
         *focused_files,
     ]
     forbidden = [
-        "ts-research-kernel/4",
+        "ts-research-state/4",
         "ts-workspace/4",
         "ts-research-decision/1",
         "research_acts.json",
@@ -185,9 +185,9 @@ def test_normal_runtime_docs_use_canonical_tool_names() -> None:
         *focused_files,
     ]
     legacy_tool_names = [
-        "research_read", "research_change", "research_continuation", "compute_run", "ts_environment",
-        "review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze",
-        "ts_dispatch", "ts_import", "render", "report", "ts_notify",
+        "research_read", "research_change", "research_checkpoint", "compute_run", "compute_environment",
+        "review", "review_respond", "artifact_seed", "artifact_compare", "analysis_run",
+        "execution_dispatch", "artifact_import", "render", "report", "notify_send",
     ]
     for path in paths:
         text = path.read_text(encoding="utf-8")

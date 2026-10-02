@@ -37,7 +37,7 @@ from .session_guard import (
 )
 
 
-PACKAGE_NAME = "@iawnix/ts-agent"
+PACKAGE_NAME = "@iawnix/tspi"
 SUITE_PACKAGE_NAME = "@iawnix/tspi"
 SUITE_SCHEMA_VERSIONS = ("tspi-package-release/4",)
 WORKSPACE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
@@ -271,7 +271,7 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
     root = requested_install.resolve()
     expected_agent = Path(package_root).expanduser().resolve()
     # A direct ResearchAgent release is stored under the new app-owned
-    # ``.pi/packages/ts-agent`` store and the launcher points at the release
+    # ``.pi/packages/tspi`` store and the launcher points at the release
     # root itself.  The historical suite keeps the Agent one level below a
     # ``.pi/packages/tspi`` release.  Select the store from the launcher
     # shape, then validate that its current pointer selects exactly that
@@ -279,7 +279,7 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
     direct_store = expected_agent.parent.parent if expected_agent.parent.name == "releases" else None
     direct_release = (
         direct_store is not None
-        and (direct_store.name == "ts-agent" or (expected_agent / ".ts-agent-release.json").is_file())
+        and (direct_store.name == "tspi" or (expected_agent / ".tspi-release.json").is_file())
     )
     package_home = direct_store if direct_release else root / ".pi" / "packages" / "tspi"
     releases_root = package_home / "releases"
@@ -428,9 +428,9 @@ def _validate_suite_identity(suite_root: Path, agent_root: Path) -> None:
 
 
 def _validate_agent_identity(agent_root: Path) -> None:
-    """Validate a standalone ``ts-agent`` release selected by its launcher."""
+    """Validate a standalone ``tspi`` release selected by its launcher."""
 
-    release_path = agent_root / ".ts-agent-release.json"
+    release_path = agent_root / ".tspi-release.json"
     package_path = agent_root / "package.json"
     for path, label in ((release_path, "ResearchAgent release manifest"), (package_path, "Agent package manifest")):
         if path.is_symlink() or not path.is_file():
@@ -443,10 +443,10 @@ def _validate_agent_identity(agent_root: Path) -> None:
     package_meta = manifest.get("package") if isinstance(manifest, dict) else None
     if (
         not isinstance(manifest, dict)
-        or manifest.get("schema_version") not in {"ts-agent-release/1", "ts-agent-release/2"}
+        or manifest.get("schema_version") not in {"tspi-release/1"}
         or manifest.get("release_id") != agent_root.name
         or not isinstance(package_meta, dict)
-        or package_meta.get("name") != "@iawnix/ts-agent"
+        or package_meta.get("name") != "@iawnix/tspi"
         or not isinstance(package, dict)
         or package.get("name") != package_meta.get("name")
         or package.get("version") != package_meta.get("version")
@@ -1290,7 +1290,7 @@ def build_host_client_command(
     release_root = installation.package_root.parent
     if release_root.name == "releases":
         # Standalone ResearchAgent layout:
-        #   .pi/packages/ts-agent/releases/<release-id>
+        #   .pi/packages/tspi/releases/<release-id>
         command.extend(["--expected-release-id", installation.package_root.name])
     elif release_root.parent.name == "releases":
         # Historical suite layout:

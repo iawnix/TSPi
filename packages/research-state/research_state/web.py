@@ -17,7 +17,7 @@ from typing import Any, Sequence
 from urllib.parse import unquote
 
 from tspi_runtime.path_safety import has_symlink_component, lexical_path, path_has_symlink
-from tspi_runtime.runtime.workspace_mode import WorkspaceModeError, validate_workspace_manifest
+from .workspace import WorkspaceModeError, validate_workspace_manifest
 
 from .registry import (
     ensure_state_dir,
@@ -37,7 +37,7 @@ REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,160}$")
 WORKSPACE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 RESEARCH_CONTEXT_COLLECTIONS = (
     "phases", "claims", "nodes", "findings", "gates", "claim_relations",
-    "attempts", "artifacts", "evidence_links", "continuations",
+    "attempts", "artifacts", "evidence_links", "lifecycle_actions",
     "strategy_plans", "strategy_reviews", "attempt_interpretations",
 )
 
@@ -186,7 +186,7 @@ def _route(row: dict[str, Any], route: str, query: dict[str, str]) -> Any:
             "workspace": _summary(row, research_map),
             "map": payload,
         }
-    if route in {"phases", "claims", "claim_relations", "nodes", "findings", "gates", "continuations"}:
+    if route in {"phases", "claims", "claim_relations", "nodes", "findings", "gates", "lifecycle_actions"}:
         return {"schema_version": "research-map-collection/1", "map_id": research_map.map_id, route: payload[route]}
     if route.startswith("claim/"):
         return _detail(payload, "claims", route[6:])
@@ -332,7 +332,7 @@ class _FilesystemResearchMap:
             "nodes": copy.deepcopy(self._collection("nodes")),
             "findings": copy.deepcopy(self._collection("findings")),
             "gates": copy.deepcopy(self._collection("gates")),
-            "continuations": copy.deepcopy(self._collection("continuations")),
+            "lifecycle_actions": copy.deepcopy(self._collection("lifecycle_actions")),
             "claim_relations": copy.deepcopy(self.context.get("claim_relations", [])),
             "focus_claim_ids": list(claim_ids),
             "focus_node_ids": list(node_ids),

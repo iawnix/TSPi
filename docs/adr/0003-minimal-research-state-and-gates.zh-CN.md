@@ -1,6 +1,6 @@
 # ADR 0003：最小 ResearchMap 与 Gate 协议
 
-[English](0003-minimal-research-kernel-and-gates.md) | 简体中文
+[English](0003-minimal-research-state-and-gates.md) | 简体中文
 
 - 状态：已接受
 - 日期：2026-09-16

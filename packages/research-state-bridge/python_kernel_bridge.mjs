@@ -143,6 +143,8 @@ for _source_root in ("tspi-runtime", "research-state", "research-memory", "resea
 
 try:
     from research_state.agent_workspace import dispatch as dispatch_agent_workspace, has_state_files
+    from research_memory.service import install_state_projection_writer
+    install_state_projection_writer()
 except Exception as agent_workspace_import_error:
     dispatch_agent_workspace = None
     has_state_files = None
@@ -157,7 +159,7 @@ def _object(value, label):
 
 RESEARCH_CONTEXT_COLLECTIONS = (
     "phases", "claims", "nodes", "findings", "gates", "claim_relations",
-    "attempts", "artifacts", "evidence_links", "continuations",
+    "attempts", "artifacts", "evidence_links", "lifecycle_actions",
     "strategy_plans", "strategy_reviews", "attempt_interpretations",
 )
 

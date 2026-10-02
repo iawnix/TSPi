@@ -64,15 +64,15 @@ class GateVerdict(StrEnum):
     BLOCKED = "blocked"
 
 
-class ContinuationScope(StrEnum):
-    """The ResearchMap object that owns a pending continuation."""
+class LifecycleActionScope(StrEnum):
+    """The ResearchMap object that owns a pending lifecycle_action."""
 
     NODE = "node"
     CLAIM = "claim"
     GATE = "gate"
 
 
-class ContinuationStatus(StrEnum):
+class LifecycleActionStatus(StrEnum):
     """Lifecycle state of one explicitly requested next action."""
 
     REQUIRED = "required"
@@ -81,8 +81,8 @@ class ContinuationStatus(StrEnum):
     COMPLETED = "completed"
 
 
-class ContinuationAction(StrEnum):
-    """Bounded actions a Root may record for a later continuation."""
+class LifecycleActionKind(StrEnum):
+    """Bounded actions a Root may record for a later lifecycle_action."""
 
     INSPECT = "inspect"
     FINALIZE = "finalize"
@@ -118,29 +118,29 @@ class ResearchObject:
 
 
 @dataclass(kw_only=True)
-class ContinuationRecord(ResearchObject):
+class LifecycleActionRecord(ResearchObject):
     """A durable, typed obligation to continue work on a map object.
 
-    Continuations describe liveness, but do not choose or execute a scientific
+    LifecycleActions describe liveness, but do not choose or execute a scientific
     method.  The Host may use a ``required`` record to schedule a bounded wake;
     the Root Agent remains responsible for the actual ChangeSet or action.
     """
 
-    scope: ContinuationScope
+    scope: LifecycleActionScope
     target_id: str
-    action: ContinuationAction
-    status: ContinuationStatus = ContinuationStatus.REQUIRED
+    action: LifecycleActionKind
+    status: LifecycleActionStatus = LifecycleActionStatus.REQUIRED
     reason: str | None = None
     request_id: str | None = None
-    type_name: ClassVar[str] = "continuation_record"
+    type_name: ClassVar[str] = "lifecycle_action_record"
 
     def __post_init__(self) -> None:
         # Keep direct model construction ergonomic while storing only enum
         # values in the validated aggregate.
         for field_name, enum_type in (
-            ("scope", ContinuationScope),
-            ("action", ContinuationAction),
-            ("status", ContinuationStatus),
+            ("scope", LifecycleActionScope),
+            ("action", LifecycleActionKind),
+            ("status", LifecycleActionStatus),
         ):
             value = getattr(self, field_name)
             if isinstance(value, str) and not isinstance(value, enum_type):
@@ -157,33 +157,33 @@ class ContinuationRecord(ResearchObject):
 
     def validate(self, research_map: "ResearchMap") -> None:
         super().validate(research_map)
-        if not isinstance(self.scope, ContinuationScope):
-            raise ResearchModelError(f"continuation {self.id} has an invalid scope")
+        if not isinstance(self.scope, LifecycleActionScope):
+            raise ResearchModelError(f"lifecycle_action {self.id} has an invalid scope")
         if not self.target_id or not isinstance(self.target_id, str):
-            raise ResearchModelError(f"continuation {self.id} target_id must be a non-empty string")
-        if not isinstance(self.action, ContinuationAction):
-            raise ResearchModelError(f"continuation {self.id} has an invalid action")
-        if not isinstance(self.status, ContinuationStatus):
-            raise ResearchModelError(f"continuation {self.id} has an invalid status")
+            raise ResearchModelError(f"lifecycle_action {self.id} target_id must be a non-empty string")
+        if not isinstance(self.action, LifecycleActionKind):
+            raise ResearchModelError(f"lifecycle_action {self.id} has an invalid action")
+        if not isinstance(self.status, LifecycleActionStatus):
+            raise ResearchModelError(f"lifecycle_action {self.id} has an invalid status")
         if self.reason is not None and not isinstance(self.reason, str):
-            raise ResearchModelError(f"continuation {self.id} reason must be a string or null")
+            raise ResearchModelError(f"lifecycle_action {self.id} reason must be a string or null")
         if (
-            self.status in {ContinuationStatus.DEFERRED, ContinuationStatus.BLOCKED}
+            self.status in {LifecycleActionStatus.DEFERRED, LifecycleActionStatus.BLOCKED}
             and (self.reason is None or not self.reason.strip())
         ):
-            raise ResearchModelError(f"continuation {self.id} {self.status.value} status requires a reason")
+            raise ResearchModelError(f"lifecycle_action {self.id} {self.status.value} status requires a reason")
         if self.request_id is not None and (
             not isinstance(self.request_id, str) or not self.request_id
         ):
-            raise ResearchModelError(f"continuation {self.id} request_id must be a non-empty string or null")
+            raise ResearchModelError(f"lifecycle_action {self.id} request_id must be a non-empty string or null")
         target = {
-            ContinuationScope.NODE: research_map.nodes,
-            ContinuationScope.CLAIM: research_map.claims,
-            ContinuationScope.GATE: research_map.gates,
+            LifecycleActionScope.NODE: research_map.nodes,
+            LifecycleActionScope.CLAIM: research_map.claims,
+            LifecycleActionScope.GATE: research_map.gates,
         }[self.scope]
         if self.target_id not in target:
             raise ResearchModelError(
-                f"continuation {self.id} references unknown {self.scope.value} {self.target_id}"
+                f"lifecycle_action {self.id} references unknown {self.scope.value} {self.target_id}"
             )
 
     def to_dict(self) -> dict[str, Any]:
@@ -511,7 +511,7 @@ class ResearchMap:
     nodes: dict[str, ResearchNode] = field(default_factory=dict)
     findings: dict[str, Finding] = field(default_factory=dict)
     gates: dict[str, Gate] = field(default_factory=dict)
-    continuations: dict[str, ContinuationRecord] = field(default_factory=dict)
+    lifecycle_actions: dict[str, LifecycleActionRecord] = field(default_factory=dict)
     claim_relations: list[dict[str, Any]] = field(default_factory=list)
     focus_claim_ids: list[str] = field(default_factory=list)
     focus_node_ids: list[str] = field(default_factory=list)
@@ -557,37 +557,37 @@ class ResearchMap:
         self._add(self.gates, gate)
         _append_unique(target[gate.target_id].gate_ids, gate.id)
 
-    def add_continuation(self, continuation: ContinuationRecord) -> None:
-        continuation.validate(self)
-        self._add(self.continuations, continuation)
+    def add_lifecycle_action(self, lifecycle_action: LifecycleActionRecord) -> None:
+        lifecycle_action.validate(self)
+        self._add(self.lifecycle_actions, lifecycle_action)
 
-    def resolve_continuation(
+    def resolve_lifecycle_action(
         self,
-        continuation_id: str,
-        status: ContinuationStatus,
+        lifecycle_action_id: str,
+        status: LifecycleActionStatus,
         *,
         reason: str | None = None,
         request_id: str | None = None,
-    ) -> ContinuationRecord:
-        continuation = self.continuations.get(continuation_id)
-        if continuation is None:
-            raise ResearchModelError(f"unknown continuation {continuation_id}")
-        if not isinstance(status, ContinuationStatus):
-            raise ResearchModelError("continuation status must be a ContinuationStatus")
-        if continuation.status is ContinuationStatus.COMPLETED and status is not ContinuationStatus.COMPLETED:
-            raise ResearchModelError(f"completed continuation {continuation_id} cannot be reopened")
-        previous = (continuation.status, continuation.reason, continuation.request_id)
-        continuation.status = status
+    ) -> LifecycleActionRecord:
+        lifecycle_action = self.lifecycle_actions.get(lifecycle_action_id)
+        if lifecycle_action is None:
+            raise ResearchModelError(f"unknown lifecycle_action {lifecycle_action_id}")
+        if not isinstance(status, LifecycleActionStatus):
+            raise ResearchModelError("lifecycle_action status must be a LifecycleActionStatus")
+        if lifecycle_action.status is LifecycleActionStatus.COMPLETED and status is not LifecycleActionStatus.COMPLETED:
+            raise ResearchModelError(f"completed lifecycle_action {lifecycle_action_id} cannot be reopened")
+        previous = (lifecycle_action.status, lifecycle_action.reason, lifecycle_action.request_id)
+        lifecycle_action.status = status
         if reason is not None:
-            continuation.reason = reason
+            lifecycle_action.reason = reason
         if request_id is not None:
-            continuation.request_id = request_id
+            lifecycle_action.request_id = request_id
         try:
-            continuation.validate(self)
+            lifecycle_action.validate(self)
         except ResearchModelError:
-            continuation.status, continuation.reason, continuation.request_id = previous
+            lifecycle_action.status, lifecycle_action.reason, lifecycle_action.request_id = previous
             raise
-        return continuation
+        return lifecycle_action
 
     def add_claim_relation(self, source_id: str, target_id: str, relation: str) -> None:
         if source_id not in self.claims or target_id not in self.claims:
@@ -696,7 +696,7 @@ class ResearchMap:
             *self.nodes.values(),
             *self.findings.values(),
             *self.gates.values(),
-            *self.continuations.values(),
+            *self.lifecycle_actions.values(),
         ]
         ids: set[str] = set()
         for item in all_objects:
@@ -784,7 +784,7 @@ class ResearchMap:
             "nodes": [item.to_dict() for item in self.nodes.values()],
             "findings": [item.to_dict() for item in self.findings.values()],
             "gates": [item.to_dict() for item in self.gates.values()],
-            "continuations": [item.to_dict() for item in self.continuations.values()],
+            "lifecycle_actions": [item.to_dict() for item in self.lifecycle_actions.values()],
             "claim_relations": _copy(self.claim_relations),
             "focus_claim_ids": list(self.focus_claim_ids),
             "focus_node_ids": list(self.focus_node_ids),
@@ -898,19 +898,19 @@ class ResearchMap:
                 evaluations=evaluations,
             )
             result.gates[gate.id] = gate
-        for row in _rows(value, "continuations"):
-            continuation = ContinuationRecord(
+        for row in _rows(value, "lifecycle_actions"):
+            lifecycle_action = LifecycleActionRecord(
                 id=_required_string(row, "id"),
                 created_at=_required_string(row, "created_at"),
                 metadata=dict(row.get("metadata", {})),
-                scope=ContinuationScope(row.get("scope")),
+                scope=LifecycleActionScope(row.get("scope")),
                 target_id=_required_string(row, "target_id"),
-                action=ContinuationAction(row.get("action")),
-                status=ContinuationStatus(row.get("status", ContinuationStatus.REQUIRED)),
+                action=LifecycleActionKind(row.get("action")),
+                status=LifecycleActionStatus(row.get("status", LifecycleActionStatus.REQUIRED)),
                 reason=row.get("reason"),
                 request_id=row.get("request_id"),
             )
-            result.continuations[continuation.id] = continuation
+            result.lifecycle_actions[lifecycle_action.id] = lifecycle_action
         result.validate()
         return result
 
@@ -926,7 +926,7 @@ class ResearchMap:
             *self.nodes,
             *self.findings,
             *self.gates,
-            *self.continuations,
+            *self.lifecycle_actions,
         }
 
     def _validate_node_cycles(self) -> None:

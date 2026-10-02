@@ -9,7 +9,7 @@ const TOOL_ROWS = [
   ["systemPrompt", "sys_prompt", "deterministic_runtime"],
   ["state", "research_read", "deterministic_workspace"],
   ["change", "research_change", "deterministic_workspace"],
-  ["workflow", "research_continuation", "deterministic_workspace"],
+  ["lifecycle", "research_lifecycle", "deterministic_workspace"],
   ["environment", "compute_environment", "deterministic_infrastructure"],
   ["computeCatalog", "compute_catalog", "deterministic_infrastructure"],
   ["computeReadiness", "compute_readiness", "deterministic_infrastructure"],
@@ -32,7 +32,6 @@ export const PUBLIC_TOOL_CANONICAL_NAMES = Object.freeze({
   systemPrompt: "system_prompt",
   state: "research_read",
   change: "research_change",
-  workflow: "research_continuation",
   strategy: "research_strategy",
   interpretation: "research_interpretation",
   checkpoint: "research_checkpoint",
@@ -69,7 +68,7 @@ for (const [key, canonicalName] of Object.entries(PUBLIC_TOOL_CANONICAL_NAMES)) 
   if (!TOOL_EXECUTION[canonicalName]) {
     const row = TOOL_ROWS.find(([rowKey]) => rowKey === key);
     const execution = row?.[2] || (key === "strategy" || key === "interpretation" || key === "checkpoint"
-      ? TOOL_ROWS.find(([rowKey]) => rowKey === "workflow")?.[2]
+      ? TOOL_ROWS.find(([rowKey]) => rowKey === "lifecycle")?.[2]
       : undefined);
     if (execution) TOOL_EXECUTION[canonicalName] = execution;
   }
@@ -83,7 +82,7 @@ const SOURCE_TOOL_METADATA = Object.freeze({
   sys_prompt: Object.freeze({ authority: "host_read", effect: "read", replay: "safe", phase: "orient" }),
   research_read: Object.freeze({ authority: "kernel_read", effect: "read", replay: "safe", phase: "orient" }),
   research_change: Object.freeze({ authority: "kernel_write", effect: "research_write", replay: "idempotent", phase: "advance" }),
-  research_continuation: Object.freeze({ authority: "kernel_write", effect: "lifecycle_write", replay: "idempotent", phase: "checkpoint" }),
+  research_lifecycle: Object.freeze({ authority: "kernel_write", effect: "lifecycle_write", replay: "idempotent", phase: "checkpoint" }),
   compute_environment: Object.freeze({ authority: "runtime_read", effect: "read", replay: "safe", phase: "prepare" }),
   compute_catalog: Object.freeze({ authority: "runtime_read", effect: "read", replay: "safe", phase: "prepare" }),
   compute_readiness: Object.freeze({ authority: "runtime_read", effect: "read", replay: "safe", phase: "prepare" }),
@@ -105,8 +104,8 @@ const SOURCE_TOOL_METADATA = Object.freeze({
 // so tool factories remain implementation details.
 const CANONICAL_TOOL_METADATA = Object.fromEntries(
   Object.entries(PUBLIC_TOOL_CANONICAL_NAMES).map(([key, canonicalName]) => {
-    const sourceName = PUBLIC_TOOL_NAMES[key] || "research_continuation";
-    return [canonicalName, SOURCE_TOOL_METADATA[sourceName] || SOURCE_TOOL_METADATA.research_continuation];
+    const sourceName = PUBLIC_TOOL_NAMES[key] || "research_lifecycle";
+    return [canonicalName, SOURCE_TOOL_METADATA[sourceName] || SOURCE_TOOL_METADATA.research_lifecycle];
   }),
 );
 // The workflow source factory serves several semantic decisions. Their
@@ -115,11 +114,11 @@ const CANONICAL_TOOL_METADATA = Object.fromEntries(
 // can advance into planning and completed Attempts can be interpreted before
 // the final checkpoint.
 CANONICAL_TOOL_METADATA.research_strategy = Object.freeze({
-  ...SOURCE_TOOL_METADATA.research_continuation,
+  ...SOURCE_TOOL_METADATA.research_lifecycle,
   phase: "advance",
 });
 CANONICAL_TOOL_METADATA.research_interpretation = Object.freeze({
-  ...SOURCE_TOOL_METADATA.research_continuation,
+  ...SOURCE_TOOL_METADATA.research_lifecycle,
   phase: "interpret",
 });
 export const PUBLIC_TOOL_METADATA = Object.freeze({
@@ -271,17 +270,6 @@ export function createPublicToolContracts(Type) {
       criteria: Type.Optional(Type.Array(Type.Any(), { maxItems: 128 })),
       created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
     }),
-    operation("set_continuation", {
-      id: identifier(), scope: literalUnion(["node", "claim", "gate"]), target_id: identifier(),
-      action: literalUnion(["inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"]),
-      status: Type.Optional(literalUnion(["required", "deferred", "blocked", "completed"])),
-      reason: Type.Optional(text()), request_id: Type.Optional(identifier()),
-      created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
-    }),
-    operation("resolve_continuation", {
-      id: identifier(), status: literalUnion(["required", "deferred", "blocked", "completed"]),
-      reason: Type.Optional(text()), request_id: Type.Optional(identifier()),
-    }),
     operation("evaluate_gate", {
       gate_id: identifier(), verdict: literalUnion(["pass", "fail", "inconclusive", "blocked"]),
       message: Type.Optional(text()), evidence_refs: Type.Optional(stringArray(256)),
@@ -398,7 +386,7 @@ export function createPublicToolContracts(Type) {
       executionMode: "sequential",
       promptSnippet: "Apply an auditable ResearchMap ChangeSet",
     }),
-    workflow: contract("workflow", "TS Workflow", "Record lifecycle state.", Type.Object({
+    lifecycle: contract("lifecycle", "Research Lifecycle", "Record a strategy, interpretation, or checkpoint.", Type.Object({
       // Keep the operation token compact; the Kernel validates the canonical
       // set/resolve/status vocabulary and operation aliases at runtime.
       operation: Type.String({ minLength: 1, maxLength: 32, pattern: "^[a-z][a-z0-9_]*$" }),
@@ -408,7 +396,6 @@ export function createPublicToolContracts(Type) {
       status: Type.Optional(enumString(["required", "deferred", "blocked", "completed"])),
       reason: Type.Optional(Type.String({ minLength: 1 })),
       requestId: Type.Optional(Type.String({ minLength: 1 })),
-      continuationId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
       strategyOperation: Type.Optional(enumString(["plan", "review"])),
       plan: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
       review: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 32 })),
@@ -638,10 +625,10 @@ function normalizeCheckpointParams(params = {}) {
   };
 }
 
-function normalizeContinuationParams(params = {}) {
+function normalizeLifecycleParams(params = {}) {
   const normalized = { ...params };
   for (const [snake, camel] of [
-    ["target_id", "targetId"], ["request_id", "requestId"], ["continuation_id", "continuationId"],
+    ["target_id", "targetId"], ["request_id", "requestId"],
     ["basis_refs", "basisRefs"], ["expected_revision", "expectedRevision"],
   ]) {
     if (normalized[camel] === undefined && normalized[snake] !== undefined) normalized[camel] = normalized[snake];
@@ -655,10 +642,9 @@ const SEMANTIC_ALIAS_SOURCES = Object.freeze({
   "system_prompt": "sys_prompt",
   "research_read": "research_read",
   "research_change": "research_change",
-  "research_continuation": "research_continuation",
-  "research_strategy": "research_continuation",
-  "research_interpretation": "research_continuation",
-  "research_checkpoint": "research_continuation",
+  "research_strategy": "research_lifecycle",
+  "research_interpretation": "research_lifecycle",
+  "research_checkpoint": "research_lifecycle",
   "compute_environment": "compute_environment",
   "compute_catalog": "compute_catalog",
   "compute_readiness": "compute_readiness",
@@ -672,11 +658,12 @@ const SEMANTIC_ALIAS_SOURCES = Object.freeze({
   "artifact_import": "artifact_import",
   "artifact_render": "artifact_render",
   "report_build": "report_build",
+  "notify_send": "notify_send",
 });
 
 // Decision aliases intentionally expose only operation-specific fields. They
 // forward to one workflow implementation without copying the full
-// continuation schema into three additional Agent context slots.
+// lifecycle_action schema into three additional Agent context slots.
 function identifierSchema() {
   return { type: "string", minLength: 1, maxLength: 256 };
 }
@@ -791,30 +778,6 @@ function checkpointSchema() {
 }
 
 const DECISION_ALIAS_SCHEMAS = Object.freeze({
-  "research_continuation": Object.freeze({
-    type: "object",
-    properties: {
-      operation: { enum: ["status", "set", "set_required", "set_deferred", "set_blocked", "set_completed", "set_status", "resolve", "clear"] },
-      scope: { enum: ["node", "claim", "gate"] },
-      targetId: { type: "string", minLength: 1, maxLength: 128 },
-      target_id: { type: "string", minLength: 1, maxLength: 128 },
-      action: { enum: ["inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"] },
-      status: { enum: ["required", "deferred", "blocked", "completed"] },
-      reason: { type: "string", minLength: 1 },
-      requestId: { type: "string", minLength: 1 },
-      request_id: { type: "string", minLength: 1 },
-      continuationId: { type: "string", minLength: 1, maxLength: 128 },
-      continuation_id: { type: "string", minLength: 1, maxLength: 128 },
-      rationale: { type: "string", minLength: 1, maxLength: 12_000 },
-      basisRefs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
-      basis_refs: { type: "array", items: { type: "string" }, maxItems: 256, uniqueItems: true },
-      expectedRevision: { type: "integer", minimum: 0 },
-      expected_revision: { type: "integer", minimum: 0 },
-      root: { type: "string" },
-    },
-    required: ["operation"],
-    additionalProperties: false,
-  }),
   "research_strategy": Object.freeze({
     type: "object",
     properties: {
@@ -897,8 +860,8 @@ export function createPublicToolAliases(tools, { includeDecisionAliases = true }
     ].includes(canonicalName)) return [];
     const source = byName.get(sourceName);
     if (!source) return [];
-    const mapParams = canonicalName === "research_continuation"
-      ? normalizeContinuationParams
+    const mapParams = canonicalName === "research_lifecycle"
+      ? normalizeLifecycleParams
       : canonicalName === "research_strategy"
       ? (params) => ({
         ...normalizeStrategyParams(params),

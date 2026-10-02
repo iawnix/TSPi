@@ -21,7 +21,7 @@ function buildComputeResult(submission, packet, actions) {
       : [];
   }));
   const result = validateAgentResult({
-    schema_version: "ts-agent-result/1",
+    schema_version: "tspi-result/1",
     task_id: task.task_id,
     role: "compute",
     authority: "operational",

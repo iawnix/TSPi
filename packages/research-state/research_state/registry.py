@@ -7,7 +7,7 @@ from typing import Any, Sequence
 
 from tspi_runtime.io import now_iso, read_json, write_json
 from tspi_runtime.path_safety import lexical_path, path_has_symlink
-from tspi_runtime.runtime.workspace_mode import WorkspaceModeError, validate_workspace_manifest
+from .workspace import WorkspaceModeError, validate_workspace_manifest
 
 
 def ensure_state_dir(state_dir: str | Path, *, source_root: str | Path | None = None) -> Path:

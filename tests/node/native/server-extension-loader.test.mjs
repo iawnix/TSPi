@@ -97,7 +97,7 @@ test("default package server manifest keeps complete core and chemical tool inve
   assert.deepEqual(loaded.tools.map((tool) => tool.name), [
     "research_read",
     "research_change",
-    "research_continuation",
+    "research_checkpoint",
     "research_strategy",
     "research_interpretation",
     "research_checkpoint",

@@ -114,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
         record["base_action"] = base_action
         record["conda_executable"] = conda
 
-        with tempfile.TemporaryDirectory(prefix="ts-agent-source-test-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="tspi-source-test-") as temporary:
             temporary_root = Path(temporary)
             wheel_dir = temporary_root / "wheel"
             overlay = temporary_root / "kernel"

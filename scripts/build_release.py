@@ -38,7 +38,7 @@ except ImportError:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST_NAME = "ts-agent-release.json"
+MANIFEST_NAME = "tspi-release.json"
 SCHEMA_VERSION = RELEASE_SCHEMA_VERSION
 
 
@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir = (ROOT / output_dir).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        with tempfile.TemporaryDirectory(prefix="ts-agent-pack-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="tspi-pack-") as temporary:
             temporary_dir = Path(temporary)
             captured = capture_source_tree(
                 ROOT,
@@ -105,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
             digest = sha256_file(packed_path)
             size_bytes = packed_path.stat().st_size
             release_id = f"{package_version}-sha256-{digest[:16]}-{captured.git_commit[:12]}"
-            archive_name = f"ts-agent-{release_id}.tgz"
+            archive_name = f"tspi-{release_id}.tgz"
             archive_path = output_dir / archive_name
             if archive_path.exists():
                 if sha256_file(archive_path) != digest:

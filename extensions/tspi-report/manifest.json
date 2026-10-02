@@ -17,7 +17,7 @@
       "descriptor": "descriptors/report_build.json",
       "descriptor_sha256": "sha256:52391f3e457f47025611317866334cc1f514099d3ce2c4476b569514c68fe24f",
       "entry": "providers/report_provider.py",
-      "sha256": "sha256:4275dfe815787c693638c4e830c5a7b0801f7b3dbdf809712ab404cf05d6949b"
+      "sha256": "sha256:104dfc7bd99766a4f62773b0dfd3904db1c8a65ac156125bb0f35bfc32480423"
     }
   ]
 }

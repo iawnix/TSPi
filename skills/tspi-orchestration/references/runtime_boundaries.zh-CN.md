@@ -39,7 +39,7 @@ root 或 identity。Host 负责在写入请求中携带 `principal=root_agent` �
 
 公共 semantic tool 名称是唯一 Agent API：`research_read`、`research_change`、
 `research_strategy`、`research_interpretation`、`research_checkpoint`、
-`research_continuation`、`compute_environment`、`compute_catalog`、`compute_readiness`、
+`research_checkpoint`、`compute_environment`、`compute_catalog`、`compute_readiness`、
 `compute_run`、
 `analysis_run` 以及 `pi_agent_adapter.md` 中列出的 artifact/review 工具。私有
 `ts_*` factory 名称和 slash command 都是 transport 细节，不是第二套协议。
