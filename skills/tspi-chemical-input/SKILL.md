@@ -22,7 +22,13 @@ or transition-state validation.
    Keep the returned resolver provenance, candidates, diagnostics, and status.
    The capability uses the installation-owned `name-resolver.toml` when a
    deterministic PubChem or OPSIN backend is enabled; `unsupported` means the
-   backend is unavailable and must not be bypassed with an LLM candidate.
+   backend is unavailable, while `invalid` with a 404 diagnostic means the
+   backend was reached but does not recognize the submitted name. Neither
+   result may be bypassed with an unconfirmed LLM candidate.
+   Preserve the user's exact text in `name`. If needed, translate or normalize
+   it into `lookup_name`; the resolver must validate that lookup name before it
+   can establish identity. Do not add `input_text` or a reactant/product
+   `role` there. Put species roles in the later `reaction.parse` request.
 3. Treat `draft` candidates (including LLM-proposed SMILES), unresolved names,
    multiple candidates, and unspecified stereocenters as input issues. Ask a
    focused clarification question or request a SMILES/structure artifact.

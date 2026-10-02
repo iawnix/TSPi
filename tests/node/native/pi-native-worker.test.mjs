@@ -763,17 +763,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
         artifactId: importedReference.artifact.artifact_id,
       }],
       parameters: { charge: 0, uhf: 0 },
-      executionTarget: {
-        kind: "remote",
-        environment: "cluster",
-        resources: {
-          queue: "batch",
-          nodes: 1,
-          ncpus: 1,
-          memory: "1gb",
-          walltime: "00:05:00",
-        },
-      },
+      execution: { environment: "cluster" },
     };
     const scp = join(fakeBin, "scp");
     await writeFile(scp, "#!/usr/bin/env bash\necho 'staging failed' >&2\nexit 2\n", { mode: 0o755 });

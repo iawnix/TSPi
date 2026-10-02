@@ -25,8 +25,8 @@ has a deterministic parser contract and task-validation tests; an input
 preparer alone is insufficient.
 
 Use the catalog to construct `compute_run` requests. Select
-`executionTarget.kind = "local"` or `"remote"` and, when a shared
-`compute.toml` is installed, the corresponding environment name; the lifecycle
+`execution.environment` with the corresponding installation-owned environment
+name; the lifecycle
 and result contract are the same. Native `compute_readiness` performs the same
 read-only environment checks used by calculation preflight; it does not create
 an intent or submit a job.
@@ -41,12 +41,13 @@ the selected `environment_id`, and `execution_kind`. A readiness result of
 
 Local/remote is an execution-environment property independent of capability
 identity. A remote request must use Native `compute_run` with
-`operation=launch` and an `executionTarget`; the generic capability invocation
+`operation=launch` and an `execution.environment`; the generic capability invocation
 form must not receive a remote selector and cannot create a scheduler-bound
 intent. Both targets use the same lifecycle and immutable intent.
 
-For example, a local request can bind `{"kind":"local","environment":"local"}`;
-the same capability can bind `{"kind":"remote","environment":"cluster_1w",...}`.
+For example, a request can bind `{"environment":"local"}` or
+`{"environment":"cluster_1w"}`. Host resolves the local/remote kind and all
+resource details from that installation-owned environment.
 
 ## Adapter Output
 

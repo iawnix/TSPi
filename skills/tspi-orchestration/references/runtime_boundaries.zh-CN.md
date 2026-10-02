@@ -40,7 +40,7 @@ root 或 identity。Host 负责在写入请求中携带 `principal=root_agent` �
 公共 semantic tool 名称是唯一 Agent API：`research_read`、`research_change`、
 `research_strategy`、`research_interpretation`、`research_checkpoint`、
 `research_continuation`、`compute_environment`、`compute_catalog`、`compute_readiness`、
-`compute_run`（light workspace 也使用同一生命周期，仅写入 execution scope）、
+`compute_run`、
 `analysis_run` 以及 `pi_agent_adapter.md` 中列出的 artifact/review 工具。私有
 `ts_*` factory 名称和 slash command 都是 transport 细节，不是第二套协议。
 
@@ -66,5 +66,5 @@ Capability identity 与 execution environment（`environment_id`、`local` 或 `
 `capability_version`。这是两个明确的 catalog 协议，不能把字段当作别名混用。实时 catalog
 是注册 capability 的唯一来源。两种目标都使用 `compute_run` 的 `launch`、`inspect`、
 `finalize` 或 `cancel` 生命周期；`analysis_run` 是没有调度器生命周期的确定性本地分析。
-Remote 必须使用 Native `compute_run`，并提供 `executionTarget.kind="remote"` 与已配置环境。
+Remote 必须使用 Native `compute_run`，并提供已配置的 `execution.environment`；Host 根据环境配置解析执行平台。
 项目不再提供通用 capability invocation；所有 descriptor 均来自 Python Native registry，公开计算请求只能使用生命周期 schema。旧的 `capability_id` 加 `input` 形式会被拒绝。

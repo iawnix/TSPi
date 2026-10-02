@@ -18,6 +18,7 @@ from .control import (
     calculation_tail,
     collect_calculation,
     create_calculation_intent,
+    discard_calculation_intent,
     parse_calculation,
     preflight_calculation,
     prepare_calculation,
@@ -39,6 +40,10 @@ def main(argv: list[str] | None = None) -> int:
     create_intent = sub.add_parser("create-intent")
     create_intent.add_argument("--root", required=True)
     create_intent.add_argument("--request-json", required=True)
+
+    discard_intent = sub.add_parser("discard-intent")
+    discard_intent.add_argument("--root", required=True)
+    discard_intent.add_argument("--intent-id", required=True)
 
     list_artifacts = sub.add_parser("list-artifacts")
     list_artifacts.add_argument("--root", required=True)
@@ -188,6 +193,8 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
         if not isinstance(request, dict):
             raise ComputeContractError("calculation request must be a JSON object")
         return create_calculation_intent(args.root, request)
+    if args.command == "discard-intent":
+        return discard_calculation_intent(args.root, args.intent_id)
     if args.command == "list-artifacts":
         from ts_agent.api import execute
 

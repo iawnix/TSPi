@@ -356,7 +356,7 @@ def _require_decision_ready(
     ):
         return
     execution_types = {
-        "create_attempt", "register_attempt", "transition_attempt", "update_attempt",
+        "create_attempt", "register_attempt", "transition_attempt", "update_attempt", "reconcile_attempt",
         "create_artifact", "register_artifact", "create_evidence", "link_evidence",
         "register_evidence", "create_finding", "create_gate", "evaluate_gate",
     }
@@ -736,10 +736,21 @@ def _attempt_timestamp(value: Any, field: str) -> str | None:
     return value.strip()
 
 
-def _transition_attempt(attempt: dict[str, Any], operation: dict[str, Any], created_at: str) -> None:
+def _transition_attempt(
+    attempt: dict[str, Any],
+    operation: dict[str, Any],
+    created_at: str,
+    *,
+    allow_terminal_recovery: bool = False,
+) -> None:
     previous = _attempt_state(attempt.get("state"), "attempt.state")
     next_state = _attempt_state(operation.get("state"))
-    if next_state not in ATTEMPT_TRANSITIONS[previous]:
+    recoverable = (
+        allow_terminal_recovery
+        and previous in {"failed", "timed_out", "cancelled"}
+        and next_state in {"completed", "succeeded"}
+    )
+    if next_state not in ATTEMPT_TRANSITIONS[previous] and not recoverable:
         raise AgentWorkspaceError(f"invalid_attempt_transition: {previous} -> {next_state}")
     updated_at = _attempt_timestamp(operation.get("updated_at"), "operation.updated_at") or created_at
     started_at = _attempt_timestamp(operation.get("started_at"), "operation.started_at")
@@ -1196,13 +1207,20 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
         attempts.append(attempt)
         _attach_unique(node, "attempt_refs", item_id)
         return item_id
-    if kind in {"transition_attempt", "update_attempt"}:
+    if kind in {"transition_attempt", "update_attempt", "reconcile_attempt"}:
         attempt_id = _identifier(operation.get("attempt_id", operation.get("id")), "operation.attempt_id")
         attempt = _lookup(context, "attempts", attempt_id, "attempt")
         node_id = operation.get("node_id")
         if node_id is not None and _node_identifier(node_id, "operation.node_id") != attempt.get("node_id"):
             raise AgentWorkspaceError("operation.node_id does not match attempt.node_id")
-        _transition_attempt(attempt, operation, created_at)
+        if kind == "reconcile_attempt":
+            _string(operation, "recovery_reason")
+        _transition_attempt(
+            attempt,
+            operation,
+            created_at,
+            allow_terminal_recovery=kind == "reconcile_attempt",
+        )
         input_ids = None if "input_artifact_ids" not in operation else _string_list(operation, "input_artifact_ids")
         output_ids = None if "output_artifact_ids" not in operation else _string_list(operation, "output_artifact_ids")
         known = {row.get("id") for row in _items(context, "artifacts")}
@@ -1635,12 +1653,18 @@ def turn(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, A
         _, _, context, liveness = _load_state(root)
         _check_workspace(request, context["workspace_id"])
         if operation in {"start", "orient"}:
-            return {"accepted": True, "operation": operation, "context": context, "liveness": _liveness_projection(context, liveness)}
+            return {
+                "schema_version": "research-turn-result/1",
+                "accepted": True,
+                "operation": operation,
+                "context": context,
+                "liveness": _liveness_projection(context, liveness),
+            }
         if operation in {"end", "wake"}:
             _require_admitted(context, liveness)
             if liveness.get("lifecycle") == "decision_needed":
                 raise AgentWorkspaceError("research_decision_required")
-            return {"accepted": True, "operation": operation}
+            return {"schema_version": "research-turn-result/1", "accepted": True, "operation": operation}
         raise AgentWorkspaceError(f"invalid research_turn operation: {operation}")
 
 

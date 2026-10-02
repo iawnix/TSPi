@@ -40,12 +40,13 @@ test("kernel factory rejects the retired JavaScript filesystem backend", async (
   assert.throws(() => create_kernel({ backend: "python_bridge" }), /unsupported research kernel backend/);
 });
 
-test("kernel factory rejects light workspaces before creating an adapter", async () => {
-  const root = await workspace("light-kernel-factory", "workspace_light", "light");
+test("workspace initializer rejects retired workspace modes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "invalid-kernel-factory-"));
   try {
-    const kernel = create_kernel();
-    await assert.rejects(kernel.read_context({ workspace_root: root }), /research_workspace_required/);
-    await kernel.close();
+    await assert.rejects(
+      create_workspace_initializer().initialize_workspace({ workspace_root: root, workspace_id: "workspace_invalid", workspace_mode: "invalid" }),
+      /workspace_mode must be research/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

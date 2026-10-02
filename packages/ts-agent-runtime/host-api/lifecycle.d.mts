@@ -10,8 +10,8 @@ export function createResearchLifecycleController(options?: {
     trigger?: string;
     replay_mode?: "normal" | "recovery" | "reconcile";
   }): Readonly<Record<string, unknown>>;
-  admitTool(options: { runId: string; toolName: string }): Readonly<Record<string, unknown>> & { accepted: boolean };
-  completeTool(options: { runId: string; toolName: string; isError?: boolean }): Readonly<Record<string, unknown>>;
+  admitTool(options: { runId: string; toolName: string; toolCallId?: string; args?: Record<string, unknown> }): Readonly<Record<string, unknown>> & { accepted: boolean };
+  completeTool(options: { runId: string; toolName: string; toolCallId?: string; args?: Record<string, unknown>; isError?: boolean }): Readonly<Record<string, unknown>>;
   contextPatch(): Readonly<Record<string, unknown>>;
   snapshot(): Readonly<Record<string, unknown>>;
 };

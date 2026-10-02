@@ -2,7 +2,7 @@
 # <installation>/.pi/name-resolver.toml. Replace it with
 # --name-resolver-config when a different deterministic backend is required;
 # the installed file is owner-readable (mode 0600).
-default_resolver = "pubchem"
+default_resolver = "auto"
 
 [backends.pubchem]
 enabled = true
@@ -12,11 +12,11 @@ cache = true
 # cache_dir = "/absolute/path/to/a/private/cache"
 user_agent = "TSPi-chemical-name-resolver/1"
 
-# OPSIN is an optional deterministic HTTP backend. Enable it when the OPSIN
-# service is reachable from the Host; leave it disabled to use PubChem only.
-# [backends.opsin]
-# enabled = true
-# endpoint = "https://opsin.ch.cam.ac.uk/opsin"
-# timeout_seconds = 10
-# cache = true
-# user_agent = "TSPi-chemical-name-resolver/1"
+# OPSIN provides deterministic IUPAC parsing when PubChem does not index a
+# name. Auto lookup tries each enabled backend in manifest order.
+[backends.opsin]
+enabled = true
+endpoint = "https://opsin.ch.cam.ac.uk/opsin"
+timeout_seconds = 10
+cache = true
+user_agent = "TSPi-chemical-name-resolver/1"

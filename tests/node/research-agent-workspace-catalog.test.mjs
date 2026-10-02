@@ -10,7 +10,7 @@ async function temporary_root(prefix) {
   return mkdtemp(join(tmpdir(), `${prefix}-`));
 }
 
-function manifest(workspace_id, workspace_root, workspace_mode = "light", state = "ready") {
+function manifest(workspace_id, workspace_root, workspace_mode = "research", state = "ready") {
   return { workspace_id, workspace_root, workspace_mode, state };
 }
 
@@ -43,7 +43,7 @@ test("workspace catalog keeps root and mode immutable while allowing state updat
     const catalog = create_workspace_catalog({ catalog_root: root });
     const workspace_root = join(root, "workspace");
     await catalog.register_workspace(manifest("workspace_identity", workspace_root));
-    await catalog.register_workspace(manifest("workspace_identity", workspace_root, "light", "failed"));
+    await catalog.register_workspace(manifest("workspace_identity", workspace_root, "research", "failed"));
     assert.equal((await catalog.attach_workspace("workspace_identity")).state, "failed");
 
     await assert.rejects(
@@ -51,15 +51,15 @@ test("workspace catalog keeps root and mode immutable while allowing state updat
       /workspace_root_mismatch/,
     );
     await assert.rejects(
-      catalog.register_workspace(manifest("workspace_identity", workspace_root, "research")),
-      /workspace_mode_mismatch/,
+      catalog.register_workspace(manifest("workspace_identity", workspace_root, "invalid")),
+      /workspace_mode must be research/,
     );
     await assert.rejects(
       catalog.attach_workspace({ workspace_id: "workspace_identity", workspace_root: join(root, "other") }),
       /workspace_root_mismatch/,
     );
     await assert.rejects(
-      catalog.attach_workspace({ workspace_id: "workspace_identity", workspace_mode: "research" }),
+      catalog.attach_workspace({ workspace_id: "workspace_identity", workspace_mode: "invalid" }),
       /workspace_mode_mismatch/,
     );
   } finally {
@@ -75,7 +75,7 @@ test("workspace catalog serializes concurrent writers from separate instances", 
       create_workspace_catalog({ catalog_root: root }),
     ];
     await Promise.all(Array.from({ length: 8 }, (_, index) => catalogs[index % 2].register_workspace(
-      manifest(`workspace_${index}`, join(root, `workspace-${index}`), index % 2 ? "research" : "light"),
+      manifest(`workspace_${index}`, join(root, `workspace-${index}`), "research"),
     )));
     const entries = await catalogs[0].list_workspaces();
     assert.equal(entries.length, 8);

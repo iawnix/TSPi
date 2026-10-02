@@ -95,7 +95,7 @@ Remote execution uses the lifecycle form below (`operation=launch`) for the
 same capability ID. There is no direct capability invocation path: local and
 remote targets both create and execute the same Native calculation intent.
 
-Launch accepts the complete semantic request and selected execution target:
+Launch accepts the complete semantic request and an installation-owned environment selector:
 
 ```json
 {
@@ -109,21 +109,12 @@ Launch accepts the complete semantic request and selected execution target:
     {"inputRole": "gjf", "artifactId": "art_..."}
   ],
   "parameters": {"method": "M062X", "basis": "6-31G(d)"},
-  "executionTarget": {
-    "kind": "remote",
-    "environment": "cluster_1w",
-    "resources": {
-      "queue": "batch", "nodes": 1, "ncpus": 8,
-      "memory": "16gb", "walltime": "24:00:00", "ngpus": 0
-    }
-  }
+  "execution": {"environment": "cluster_1w"}
 }
 ```
 
-`resources.ngpus` is optional and defaults to `0`; `mpiprocs` and `ompthreads`
-are optional and are materialized as `null` when omitted. The Host always
-writes these explicit fields into `ts-calculation-request/5` before Python
-validation.
+The Host resolves execution kind, scheduler resources, paths, commands, and
+resource defaults from the selected environment before Python validation.
 
 Before the child starts, the host creates and validates a new
 `ts-calculation-intent/7`, binds the current Node contract, resolves paths and

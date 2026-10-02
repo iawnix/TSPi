@@ -172,7 +172,7 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
 
     workspace = _workspace_root(root)
     _validate_calculation_document(REQUEST_SCHEMA, request)
-    _validate_execution_mode(request["execution_target"], request["dry_run"])
+    _validate_execution_mode(request["execution"], request["dry_run"])
     node_id = str(request["node_id"])
     capability = str(request["capability"])
     capability_version = str(request["capability_version"])
@@ -237,7 +237,7 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
             "expected_artifacts": [],
             "execution_target": _materialize_execution_target(
                 workspace,
-                request["execution_target"],
+                request["execution"],
                 node_id,
                 intent_id,
                 backend=backend,
@@ -292,6 +292,32 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
             "intent": intent,
         }
     raise ComputeContractError("calculation intent allocation exhausted after repeated path collisions")
+
+
+def discard_calculation_intent(root: str | Path, intent_id: str) -> dict[str, Any]:
+    """Remove an unprepared intent after a failed launch preflight.
+
+    This is deliberately narrow: only a Kernel-created attempt directory with
+    an intent and no prepared/control records can be discarded. Once prepare or
+    submission has started, the durable attempt is owned by the lifecycle and
+    must be reconciled rather than deleted.
+    """
+    workspace = _workspace_root(root)
+    if not isinstance(intent_id, str) or not re.fullmatch(r"calc_[1-9][0-9]*", intent_id):
+        raise ComputeContractError("invalid calculation intent id")
+    matches = list((workspace / "nodes").glob(f"*/attempts/{intent_id}/intent.json"))
+    if len(matches) != 1:
+        raise ComputeContractError("calculation intent is not uniquely addressable")
+    intent_path = matches[0]
+    attempt_dir = intent_path.parent
+    if any(attempt_dir.joinpath(name).exists() for name in ("prepared.json", "status.json", "control")):
+        raise ComputeContractError("calculation intent is already owned by the compute lifecycle")
+    intent_path.unlink(missing_ok=True)
+    try:
+        attempt_dir.rmdir()
+    except OSError as exc:
+        raise ComputeContractError("calculation intent cleanup left unexpected files") from exc
+    return {"schema_version": "ts-calculation-intent-discarded/1", "intent_id": intent_id}
 
 
 def preflight_calculation(
@@ -1319,6 +1345,10 @@ def parse_calculation(
             same_inputs = provenance.get("parser_inputs") == parser_inputs
             if same_inputs:
                 _validate_artifact_manifest_binding(workspace, intent, previous)
+                # The result file is operational state; canonical admission
+                # may have been interrupted after it was written. Replay the
+                # admission so a retry repairs that split-brain state.
+                _register_parsed_evidence(workspace, intent, previous)
                 return previous
             raise ComputeContractError(
                 "parse refuses to overwrite a result from different source content; use a new intent_id"
@@ -1602,6 +1632,31 @@ def _materialize_execution_target(
     *,
     backend: str | None = None,
 ) -> dict[str, Any]:
+    # Public calculation requests select one installation-owned environment.
+    # The Host resolves its kind and scheduler policy here; callers never
+    # provide resources, remote paths, or commands.
+    if "kind" not in request_target:
+        environment_name = request_target.get("environment")
+        try:
+            configured = load_environment_config().environment(environment_name)
+        except EnvironmentConfigurationError as exc:
+            raise ComputeContractError(f"invalid compute environment: {exc}") from exc
+        request_target = {"kind": configured.kind, "environment": configured.name}
+        if configured.kind == "remote":
+            platform = configured.platform
+            if platform is None:
+                raise ComputeContractError(f"compute environment {configured.name!r} has no remote contract")
+            queue = platform.allowed_queues[0]
+            request_target["resources"] = {
+                "queue": queue,
+                "nodes": 1,
+                "ncpus": 1,
+                "memory": "1gb",
+                "walltime": "00:05:00",
+                "ngpus": 0,
+                "mpiprocs": None,
+                "ompthreads": None,
+            }
     if request_target["kind"] == "local":
         environment_name = request_target.get("environment")
         if environment_name is not None:
@@ -1927,8 +1982,15 @@ def _validate_execution_target(target: dict[str, Any], *, backend: str | None = 
 
 
 def _validate_execution_mode(target: Any, dry_run: Any) -> None:
-    if not isinstance(target, dict) or target.get("kind") not in {"local", "remote"}:
-        raise ComputeContractError("execution_target must select local or remote execution")
+    if isinstance(target, dict) and target.get("kind") in {"local", "remote"}:
+        return
+    if (
+        not isinstance(target, dict)
+        or not isinstance(target.get("environment"), str)
+        or not target.get("environment")
+        or set(target) != {"environment"}
+    ):
+        raise ComputeContractError("execution_target must select an installation-owned environment")
 
 
 def _execution_policy_for_prepare(
@@ -3182,6 +3244,21 @@ def _register_parsed_evidence_filesystem(
     ) or now_iso()
     output_ids: list[str] = []
     operations: list[dict[str, Any]] = []
+    context = read_agent_workspace_context(workspace)
+    existing_artifacts = {
+        row.get("id"): row
+        for row in context.get("artifacts", [])
+        if isinstance(row, dict) and isinstance(row.get("id"), str)
+    }
+    existing_attempt = next(
+        (
+            row for row in context.get("attempts", [])
+            if isinstance(row, dict) and row.get("id") == str(intent["intent_id"])
+        ),
+        None,
+    )
+    if existing_attempt is not None and existing_attempt.get("node_id") != intent["node_id"]:
+        raise ComputeContractError("canonical Attempt belongs to another ResearchNode")
     for item in manifest:
         if not isinstance(item, dict):
             raise ComputeContractError("parsed calculation artifact_manifest contains a non-object")
@@ -3190,6 +3267,18 @@ def _register_parsed_evidence_filesystem(
         if not isinstance(artifact_id, str) or not isinstance(location, str):
             raise ComputeContractError("parsed calculation artifact_manifest is missing artifact identity")
         output_ids.append(artifact_id)
+        existing = existing_artifacts.get(artifact_id)
+        if existing is not None:
+            for field, expected in (
+                ("location", location),
+                ("sha256", item.get("sha256")),
+                ("size_bytes", item.get("size_bytes")),
+            ):
+                if existing.get(field) != expected:
+                    raise ComputeContractError(
+                        f"canonical Artifact {artifact_id} does not match parsed output ({field})"
+                    )
+            continue
         operations.append({
             "type": "register_artifact",
             "id": artifact_id,
@@ -3199,44 +3288,59 @@ def _register_parsed_evidence_filesystem(
             "location": location,
             "sha256": item.get("sha256"),
             "size_bytes": item.get("size_bytes"),
+            "producer_attempt_id": str(intent["intent_id"]),
             "input_artifact_ids": [],
             "metadata": {"role": item.get("role"), "source_intent_id": intent["intent_id"]},
             "created_at": parsed_at,
         })
-    operations.append({
-        "type": "register_attempt",
-        "id": str(intent["intent_id"]),
-        "node_id": str(intent["node_id"]),
-        "capability": str(intent["capability"]),
-        "capability_version": str(intent["capability_version"]),
-        "state": "completed",
-        "environment": (result.get("provenance") or {}).get("environment")
-        if isinstance(result.get("provenance"), dict)
-        else None,
-        "input_artifact_ids": [],
-        "output_artifact_ids": output_ids,
-        "metadata": {
-            "program_status": result.get("program_status"),
-            "error_class": result.get("error_class"),
-            "result_digest": sha256_json(result),
-        },
-        "created_at": parsed_at,
-        "updated_at": parsed_at,
-    })
-    operations.append({
-        "type": "update_attempt",
-        "attempt_id": str(intent["intent_id"]),
-        "node_id": str(intent["node_id"]),
-        "state": "completed",
-        "output_artifact_ids": output_ids,
-        "updated_at": parsed_at,
-    })
+    if existing_attempt is None:
+        # Direct parser use may precede Host lifecycle registration. Create
+        # the Attempt first so producer references are valid in one ChangeSet.
+        operations.insert(0, {
+            "type": "register_attempt",
+            "id": str(intent["intent_id"]),
+            "node_id": str(intent["node_id"]),
+            "capability": str(intent["capability"]),
+            "capability_version": str(intent["capability_version"]),
+            "state": "completed",
+            "environment": (result.get("provenance") or {}).get("environment")
+            if isinstance(result.get("provenance"), dict)
+            else None,
+            "input_artifact_ids": [],
+            "output_artifact_ids": [],
+            "metadata": {
+                "program_status": result.get("program_status"),
+                "error_class": result.get("error_class"),
+                "result_digest": sha256_json(result),
+            },
+            "created_at": parsed_at,
+            "updated_at": parsed_at,
+        })
+    else:
+        previous_outputs = existing_attempt.get("output_artifact_ids")
+        if not isinstance(previous_outputs, list):
+            previous_outputs = []
+        target_state = "succeeded" if existing_attempt.get("state") == "succeeded" else "completed"
+        operations.append({
+            "type": "reconcile_attempt" if existing_attempt.get("state") in {"failed", "timed_out", "cancelled"} else "update_attempt",
+            "attempt_id": str(intent["intent_id"]),
+            "node_id": str(intent["node_id"]),
+            "state": target_state,
+            "output_artifact_ids": list(dict.fromkeys([*previous_outputs, *output_ids])),
+            "metadata": {
+                **(existing_attempt.get("metadata") if isinstance(existing_attempt.get("metadata"), dict) else {}),
+                "program_status": result.get("program_status"),
+                "error_class": result.get("error_class"),
+                "result_digest": sha256_json(result),
+            },
+            **({
+                "recovery_reason": "canonical parsed evidence admission replay",
+                "error": None,
+                "error_class": None,
+            } if existing_attempt.get("state") in {"failed", "timed_out", "cancelled"} else {}),
+            "updated_at": parsed_at,
+        })
     try:
-        context = read_agent_workspace_context(workspace)
-        existing_artifacts = {row.get("id") for row in context.get("artifacts", []) if isinstance(row, dict)}
-        existing_attempts = {row.get("id") for row in context.get("attempts", []) if isinstance(row, dict)}
-        if str(intent["intent_id"]) in existing_attempts and set(output_ids) <= existing_artifacts:
-            return
         apply_agent_workspace_change(workspace, {
             "principal": "root_agent",
             "authority": "kernel_write",

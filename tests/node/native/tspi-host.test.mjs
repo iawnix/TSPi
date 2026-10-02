@@ -174,27 +174,30 @@ test("Native Host routes session and input operations through the Harness backen
   assert.equal(env.backend.closed, false);
 });
 
-test("Native Host accepts a manifest-bound light workspace without ResearchMap files", async (t) => {
+test("Native Host accepts a manifest-bound research workspace", async (t) => {
   const env = await fixture(t);
-  const lightRoot = join(env.workspaceRoot, "light-a");
+  const researchRoot = join(env.workspaceRoot, "research-a");
   await create_workspace_initializer().initialize_workspace({
-    workspace_root: lightRoot,
-    workspace_id: "light-a",
-    workspace_mode: "light",
+    workspace_root: researchRoot,
+    workspace_id: "research-a",
+    workspace_mode: "research",
   });
+  await create_workspace_initializer().admit_workspace(researchRoot);
   await env.client.request("initialize", {});
   const listed = await env.client.request("workspace/list", {});
-  assert.ok(listed.workspaces.some((workspace) => workspace.workspace_id === "light-a"));
+  assert.ok(listed.workspaces.some((workspace) => workspace.workspace_id === "research-a"));
 });
 
-test("Native Host rejects duplicate canonical workspace identities in workspace/list", async (t) => {
+test("Native Host rejects duplicate canonical workspace identities", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-host-duplicate-"));
   const workspaceRoot = join(root, "workspaces");
   const initializer = create_workspace_initializer();
   const first = join(workspaceRoot, "physical-a");
   const second = join(workspaceRoot, "physical-b");
-  await initializer.initialize_workspace({ workspace_root: first, workspace_id: "duplicate-id", workspace_mode: "light" });
-  await initializer.initialize_workspace({ workspace_root: second, workspace_id: "duplicate-id", workspace_mode: "light" });
+  await initializer.initialize_workspace({ workspace_root: first, workspace_id: "duplicate-id", workspace_mode: "research" });
+  await initializer.initialize_workspace({ workspace_root: second, workspace_id: "duplicate-id", workspace_mode: "research" });
+  await initializer.admit_workspace(first);
+  await initializer.admit_workspace(second);
   const backend = createBackend(workspaceRoot);
   await assert.rejects(
     startTspiHost({
@@ -223,21 +226,10 @@ test("Native Host workspace/create writes the canonical manifest protocol", asyn
   t.after(async () => { await host.close(); await rm(root, { recursive: true, force: true }); });
   const client = await connectHost({ socketPath: host.socketPath });
   await client.request("initialize", {});
-  const created = await client.request("workspace/create", {
-    workspace_id: "created-light",
-    workspace_mode: "light",
-    request_id: "create-workspace-1",
-  });
-  assert.equal(created.workspace.workspace_mode, "light");
-  assert.equal(created.workspace.state, "ready");
-  const manifest = JSON.parse(await readFile(join(workspaceRoot, "created-light", "workspace_manifest.json"), "utf8"));
-  assert.equal(manifest.schema_version, "research_agent_workspace_1");
-  assert.equal(manifest.workspace_id, "created-light");
-  assert.equal(manifest.state, "ready");
   const createdResearch = await client.request("workspace/create", {
     workspace_id: "created-research",
     workspace_mode: "research",
-    request_id: "create-workspace-2",
+    request_id: "create-workspace-1",
   });
   assert.equal(createdResearch.workspace.workspace_mode, "research");
   assert.equal(createdResearch.workspace.state, "ready");
@@ -247,8 +239,6 @@ test("Native Host workspace/create writes the canonical manifest protocol", asyn
   assert.equal(researchManifest.state, "ready");
   assert.equal(context.lifecycle_state, "admitted");
   assert.equal(liveness.state, "admitted");
-  await assert.rejects(
-    client.request("workspace/create", { workspace_id: "created-light", workspace_mode: "research", request_id: "create-workspace-3" }),
-    /workspace_mode_mismatch/,
-  );
+  const repeated = await client.request("workspace/create", { workspace_id: "created-research", workspace_mode: "research", request_id: "create-workspace-3" });
+  assert.equal(repeated.workspace.workspace_id, "created-research");
 });

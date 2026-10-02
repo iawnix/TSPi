@@ -21,6 +21,16 @@ cd TSPi
 ./install.sh
 ```
 
+需要非交互、可复现安装时，可以编辑 `install-configured.sh` 顶部的配置变量，或使用对应的
+`TSPI_*` 环境变量覆盖，然后运行：
+
+```bash
+./install-configured.sh
+```
+
+需要固定源码版本时，将 `TSPI_INSTALL_REF` 设置为完整的 commit SHA。该脚本会把 compute、
+name resolver、workspace、服务、Web、Phone 和通知配置统一传给同一个安装器。
+
 核心安装始终包含 Agent、科学运行时和分子渲染；TS Web 是可选组件。安装器配置
 整个安装目录共用的 TSPi Host；不再安装 TS Phone 守护进程。
 

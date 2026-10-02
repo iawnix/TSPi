@@ -166,7 +166,7 @@ test("research workspace mode is immutable and sessions inherit it", async () =>
     const initializer = create_workspace_initializer();
     await initializer.initialize_workspace({ workspace_root: root, workspace_id: "workspace_immutable", workspace_mode: "research" });
     await assert.rejects(
-      initializer.initialize_workspace({ workspace_root: root, workspace_id: "workspace_immutable", workspace_mode: "light" }),
+      initializer.initialize_workspace({ workspace_root: root, workspace_id: "workspace_immutable", workspace_mode: "invalid" }),
       /workspace_mode must be research/,
     );
   } finally {
@@ -184,7 +184,7 @@ test("research sessions require explicit Host admission", async () => {
       app_server.create_session({ workspace_root: root, workspace_mode: "research", session_mode: "research" }),
       /workspace_admission_required/,
     );
-    await assert.rejects(app_server.attach_workspace({ workspace_root: root, workspace_mode: "light" }), /session_mode must be research/);
+    await assert.rejects(app_server.attach_workspace({ workspace_root: root, workspace_mode: "invalid" }), /session_mode must be research/);
     await app_server.admit_workspace(root);
     const session = await app_server.create_session({ workspace_root: root, workspace_mode: "research", session_mode: "research" });
     const snapshot = await session.read_snapshot();

@@ -42,7 +42,6 @@ from ts_agent.remote.models import RemoteJobStatus, RemoteReceipt
 from ts_agent.backends.gaussian import parse_log, parse_scan_log, route_settings
 from ts_agent.compute.task_validation import validate_parsed_task
 from ts_agent.workspace.operational import _operational_files
-from ts_agent.runtime.workspace_mode import initialize_workspace
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
@@ -85,11 +84,8 @@ def _request(
     *,
     target: dict[str, object] | None = None,
     dry_run: bool = True,
-    capability: str = "gaussian.opt_freq",
+    capability: str = "gaussian",
 ) -> dict[str, object]:
-    if capability == "gaussian.sp":
-        route = "%chk=candidate.chk\n#P B3LYP/6-31G(d) sp\n\nTS\n\n0 1\nH 0 0 0\n\n"
-        (workspace / "inputs" / "candidate.gjf").write_text(route, encoding="utf-8")
     return {
         "schema_version": "ts-calculation-request/5",
         "node_id": node_id,
@@ -100,7 +96,7 @@ def _request(
         "capability_version": "1",
         "input_artifacts": [{"input_role": "gjf", "artifact_id": _artifact_id(workspace)}],
         "parameters": {},
-        "execution_target": target or {"kind": "local"},
+        "execution": {"environment": (target or {}).get("environment", "local")},
         "dry_run": dry_run,
     }
 
@@ -111,7 +107,7 @@ def _create(
     *,
     target: dict[str, object] | None = None,
     dry_run: bool = True,
-    capability: str = "gaussian.opt_freq",
+    capability: str = "gaussian",
 ) -> dict:
     return create_calculation_intent(
         workspace,
@@ -402,7 +398,7 @@ def test_unavailable_capability_fails_without_implicit_substitution_or_attempt(t
     assert not attempts.exists()
 
 
-def test_gaussian_ts_capability_requires_an_explicit_opt_ts_route(tmp_path: Path) -> None:
+def test_gaussian_capability_uses_the_bound_route_task(tmp_path: Path) -> None:
     workspace, node_id = _workspace(tmp_path)
     source = workspace / "inputs" / "candidate.gjf"
     source.write_text(
@@ -410,18 +406,12 @@ def test_gaussian_ts_capability_requires_an_explicit_opt_ts_route(tmp_path: Path
         encoding="utf-8",
     )
 
-    created = _create(workspace, node_id, capability="gaussian.ts")
+    created = _create(workspace, node_id, capability="gaussian")
     prepared = prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
 
     assert prepared["result"]["state"] == "prepared"
-    assert prepared["result"]["capability"] == "gaussian.ts"
-
-    source.write_text(
-        "%chk=candidate.chk\n#P M062X/6-31G** Opt\n\nTS\n\n0 1\nH 0 0 0\n\n",
-        encoding="utf-8",
-    )
-    with pytest.raises(ComputeContractError, match="missing.*has_ts"):
-        _create(workspace, node_id, capability="gaussian.ts")
+    assert prepared["result"]["capability"] == "gaussian"
+    assert created["intent"]["task_type"] == "route"
 
 
 def test_intent_paths_ids_and_preflight_are_research_node_bound(tmp_path: Path) -> None:
@@ -442,7 +432,7 @@ def test_intent_paths_ids_and_preflight_are_research_node_bound(tmp_path: Path) 
         workspace,
         "prepare",
         node_id,
-        capability="gaussian.opt_freq",
+        capability="gaussian",
         capability_version="1",
         intent_file=first["intent_ref"],
     )
@@ -508,76 +498,6 @@ def test_remote_target_is_workspace_and_research_node_scoped(
         f"/remote/ts/workspaces/{identity}/runs/{node_id}/{created['intent_id']}"
     )
     assert created["execution_target"]["authority"] == "execution_mirror"
-
-
-def test_remote_intent_uses_light_execution_scope_without_research_map(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = tmp_path / "light"
-    initialize_workspace(workspace, "workspace_light_remote", "light")
-    (workspace / "inputs" / "candidate.gjf").write_text(
-        "%chk=candidate.chk\n#P B3LYP/6-31G(d) opt=(ts,calcfc) freq\n\nTS\n\n0 1\nH 0 0 0\n\n",
-        encoding="utf-8",
-    )
-    _configure_remote(tmp_path, monkeypatch)
-    created = _create(
-        workspace,
-        "node_execution",
-        target=_remote_request_target(),
-    )
-
-    assert created["execution_target"]["kind"] == "remote"
-    assert created["execution_target"]["remote_dir"].endswith(
-        f"/runs/node_execution/{created['intent_id']}"
-    )
-    assert not (workspace / "research_map" / "context.json").exists()
-    prepared = prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
-    assert prepared["prepared"]["execution_policy"]["kind"] == "remote"
-
-
-def test_local_intent_uses_native_light_execution_scope_without_research_map(
-    tmp_path: Path,
-) -> None:
-    workspace = tmp_path / "light-local"
-    initialize_workspace(workspace, "workspace_light_local", "light")
-    (workspace / "inputs" / "candidate.gjf").write_text(
-        "%chk=candidate.chk\n#P B3LYP/6-31G(d) opt=(ts,calcfc) freq\n\nTS\n\n0 1\nH 0 0 0\n\n",
-        encoding="utf-8",
-    )
-    created = _create(workspace, "node_execution", target={"kind": "local"})
-
-    assert created["execution_target"]["kind"] == "local"
-    assert not (workspace / "research_map" / "context.json").exists()
-    assert (workspace / "nodes" / "node_execution" / "attempts" / created["intent_id"] / "intent.json").is_file()
-    prepared = prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
-    assert prepared["prepared"]["execution_policy"]["kind"] == "local"
-
-
-def test_remote_intent_rejects_backend_disallowed_queue_during_preflight(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = tmp_path / "light-queue"
-    initialize_workspace(workspace, "workspace_light_queue", "light")
-    (workspace / "inputs" / "candidate.gjf").write_text(
-        "%chk=candidate.chk\n#P B3LYP/6-31G(d) opt=(ts,calcfc) freq\n\nTS\n\n0 1\nH 0 0 0\n\n",
-        encoding="utf-8",
-    )
-    _configure_remote(tmp_path, monkeypatch)
-    config_path = tmp_path / "compute.toml"
-    config_path.write_text(
-        config_path.read_text(encoding="utf-8").replace(
-            'allowed_queues = ["workq"]',
-            'allowed_queues = ["workq", "otherq"]',
-            1,
-        ),
-        encoding="utf-8",
-    )
-    target = _remote_request_target()
-    target["resources"] = {**target["resources"], "queue": "otherq"}
-    with pytest.raises(ComputeContractError, match="not allowed for backend gaussian"):
-        _create(workspace, "node_execution", target=target)
 
 
 def test_remote_submit_status_tail_collect_and_cancel_are_receipt_bound(
@@ -837,6 +757,45 @@ def test_gaussian_parse_result_manifest_binds_registered_artifacts_and_replays(
     assert parse_calculation(workspace, created["intent_id"], artifact_ref) == result
 
 
+def test_gaussian_parse_admits_outputs_into_an_existing_host_attempt(
+    tmp_path: Path,
+) -> None:
+    """Finalize must update the Attempt created by the Host launch path."""
+    workspace, node_id = _workspace(tmp_path)
+    created = _create(workspace, node_id)
+    prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
+    context = read_filesystem_context(workspace)
+    apply_filesystem_change(workspace, {
+        "expected_revision": context["revision"],
+        "operations": [{
+            "type": "create_attempt",
+            "id": created["intent_id"],
+            "node_id": node_id,
+            "capability": "gaussian",
+            "capability_version": "1",
+            "state": "failed",
+            "input_artifact_ids": [],
+        }],
+    })
+    artifact_ref = f"nodes/{node_id}/attempts/{created['intent_id']}/outputs/gaussian.out"
+    log = workspace / artifact_ref
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(_gaussian_log(), encoding="utf-8")
+
+    result = parse_calculation(workspace, created["intent_id"], artifact_ref)
+    context = read_filesystem_context(workspace)
+    attempt = next(row for row in context["attempts"] if row["id"] == created["intent_id"])
+    assert attempt["state"] == "completed"
+    assert set(attempt["output_artifact_ids"]) == {
+        item["artifact_id"] for item in result["artifact_manifest"]
+    }
+    assert all(
+        item["producer_attempt_id"] == created["intent_id"]
+        for item in context["artifacts"]
+        if item["id"] in attempt["output_artifact_ids"]
+    )
+
+
 def test_gaussian_parse_result_manifest_rejects_tampered_file_on_replay(
     tmp_path: Path,
 ) -> None:
@@ -1029,7 +988,7 @@ def test_compute_result_contract_rejects_scientific_verdict_fields() -> None:
         "job_id": None,
         "intent_id": "calc_1",
         "node_id": "node_1",
-        "capability": "gaussian.opt_freq",
+        "capability": "gaussian",
         "capability_version": "1",
         "expected_output_roles": ["program_output", "optimized_geometry", "frequencies"],
         "state": "prepared",

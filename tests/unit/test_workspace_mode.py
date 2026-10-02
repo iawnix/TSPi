@@ -80,7 +80,7 @@ def test_workspace_mode_is_immutable(tmp_path: Path) -> None:
     initialize_workspace(root, "immutable_one", "research")
 
     with pytest.raises(WorkspaceModeError, match="workspace_mode must be research"):
-        initialize_workspace(root, "immutable_one", "light")
+        initialize_workspace(root, "immutable_one", "invalid")
 
 
 @pytest.mark.parametrize("retired_name", ["claims.json", "research_nodes.json", "observations.json"])

@@ -737,7 +737,7 @@ def test_ase_neb_compute_flow_prepares_and_parses_bound_artifacts(
                 },
             ],
             "parameters": {"images": 3, "interpolation": "linear"},
-            "execution_target": {"kind": "local"},
+            "execution": {"environment": "local"},
             "dry_run": True,
         },
     )

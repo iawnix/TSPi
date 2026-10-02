@@ -40,14 +40,14 @@ test("SessionStore rejects mode conflicts and protects concurrent writers", asyn
   const root = await temporary_root("research-agent-session-store-concurrent");
   try {
     const stores = [create_session_store({ session_root: root }), create_session_store({ session_root: root })];
-    await stores[0].create_session({ session_id: "session_identity", workspace_mode: "light" });
+    await stores[0].create_session({ session_id: "session_identity", workspace_mode: "research" });
     await assert.rejects(
-      stores[1].create_session({ session_id: "session_identity", workspace_mode: "research" }),
-      /session_id_conflict|session_mode_mismatch/,
+      stores[1].create_session({ session_id: "session_identity", workspace_mode: "invalid" }),
+      /session_mode must be research/,
     );
     await Promise.all(Array.from({ length: 8 }, (_, index) => stores[index % 2].create_session({
       session_id: `session_${index}`,
-      workspace_mode: index % 2 ? "research" : "light",
+      workspace_mode: "research",
     })));
     assert.equal((await stores[0].list_sessions()).length, 9);
   } finally {

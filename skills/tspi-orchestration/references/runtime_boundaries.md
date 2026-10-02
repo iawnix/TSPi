@@ -84,8 +84,8 @@ contracts, not interchangeable aliases. The live catalog is the only source
 of registered capabilities. `compute_run` is the calculation entry point for
 both targets and uses `launch`, `inspect`, `finalize`, or `cancel`;
 `analysis_run` is deterministic local analysis and has no scheduler lifecycle.
-Remote execution must use Native `compute_run` with
-`executionTarget.kind="remote"` and a configured environment. There is no
+Remote execution must use Native `compute_run` with a configured
+`execution.environment`. There is no
 generic capability invocation path: all descriptors come from the Python
 Native registry, and the lifecycle schema is the only public calculation
 request. The retired `capability_id` plus `input` form is rejected.

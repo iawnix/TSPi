@@ -203,6 +203,8 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
                 "--native-runtime was removed; ResearchAgent always runs through the Native Pi Harness",
                 exit_code=2,
             )
+        elif value == "--mode" or value.startswith("--mode=") or value == "--workspace-mode" or value.startswith("--workspace-mode="):
+            raise TSPiHostError("workspace mode selection was removed; ResearchAgent always uses research", exit_code=2)
         elif value == "--allow-writes":
             raise TSPiHostError("--allow-writes was removed; App Server is the guarded writable Root Agent", exit_code=2)
         elif value in {"--phone", "--phone-worker", "--phone-access"} or value.startswith("--phone-access="):
@@ -1589,14 +1591,10 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         raise TSPiHostError("--host does not accept workspace or session selection", exit_code=2)
     if request.check_remote and (request.workspace_name or request.session_id or request.continue_latest):
         raise TSPiHostError("--check-remote does not accept workspace or session selection", exit_code=2)
-    if request.check_remote and request.workspace_mode:
-        raise TSPiHostError("--mode requires a workspace client", exit_code=2)
     if request.gateway and not request.workspace_name:
         raise TSPiHostError("--gateway requires --workspace", exit_code=2)
     if request.gateway and not request.session_id:
         raise TSPiHostError("--gateway requires --session-id", exit_code=2)
-    if request.gateway and request.workspace_mode:
-        raise TSPiHostError("--mode requires a workspace client", exit_code=2)
     installation = resolve_installation(package_root, install_root)
     os.environ["TSPI_INSTALL_ROOT"] = str(installation.root)
     configure_model_icon_environment(installation)

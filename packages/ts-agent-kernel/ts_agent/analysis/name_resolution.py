@@ -184,6 +184,13 @@ def _pubchem_candidates(name: str, config_path: Path, settings: dict[str, Any]) 
         cids = cids_payload.get("IdentifierList", {}).get("CID", [])
         if not isinstance(cids, list) or not cids:
             diagnostics.append("PubChem returned no compound CID for this name")
+            _write_cache(
+                config_path,
+                "pubchem",
+                settings,
+                key,
+                {"candidates": [], "evidence": evidence, "diagnostics": diagnostics},
+            )
             return [], evidence, diagnostics
         cids = [int(cid) for cid in cids[:MAX_CANDIDATES]]
         if len(cids) > 1:
@@ -208,6 +215,17 @@ def _pubchem_candidates(name: str, config_path: Path, settings: dict[str, Any]) 
         return candidates, evidence, diagnostics
     except urllib.error.HTTPError as exc:
         diagnostics.append(_http_failure_diagnostic("PubChem", exc))
+        # A 404 is a deterministic "not indexed" answer. Cache it so an
+        # agent retry cannot repeatedly spend network/API budget on the same
+        # name. Transient statuses remain uncached and may be retried.
+        if exc.code == 404:
+            _write_cache(
+                config_path,
+                "pubchem",
+                settings,
+                key,
+                {"candidates": [], "evidence": evidence, "diagnostics": diagnostics},
+            )
         return [], evidence, diagnostics
     except (OSError, urllib.error.URLError, TimeoutError, ValueError, TypeError, KeyError, AttributeError) as exc:
         diagnostics.append(f"PubChem lookup failed: {exc.__class__.__name__}")
@@ -245,6 +263,14 @@ def _opsin_candidates(name: str, config_path: Path, settings: dict[str, Any]) ->
         return candidates, evidence, diagnostics
     except urllib.error.HTTPError as exc:
         diagnostics.append(_http_failure_diagnostic("OPSIN", exc))
+        if exc.code == 404:
+            _write_cache(
+                config_path,
+                "opsin",
+                settings,
+                key,
+                {"candidates": [], "evidence": evidence, "diagnostics": diagnostics},
+            )
         return [], evidence, diagnostics
     except (OSError, urllib.error.URLError, TimeoutError, ValueError, TypeError, KeyError, AttributeError) as exc:
         diagnostics.append(f"OPSIN lookup failed: {exc.__class__.__name__}")
@@ -255,19 +281,46 @@ def _configured_candidates(name: str, requested: str) -> tuple[str, list[dict[st
     config_path, config = _load_config()
     if config_path is None:
         return requested, [], {}, []
-    resolver = requested if requested != "auto" else config["default_resolver"]
-    if resolver == "auto":
-        resolver = "pubchem"
-    settings = config["backends"].get(resolver)
-    if not settings or not settings["enabled"]:
-        return resolver, [], {}, [f"No enabled deterministic resolver backend is configured for {resolver}"]
-    if resolver == "pubchem":
-        candidates, evidence, diagnostics = _pubchem_candidates(name, config_path, settings)
-        return resolver, candidates, evidence, diagnostics
-    if resolver == "opsin":
-        candidates, evidence, diagnostics = _opsin_candidates(name, config_path, settings)
-        return resolver, candidates, evidence, diagnostics
-    return resolver, [], {}, [f"Configured resolver backend {resolver} is not implemented"]
+    if requested != "auto":
+        resolvers = [requested]
+    else:
+        configured_default = config["default_resolver"]
+        resolvers = []
+        if configured_default != "auto":
+            resolvers.append(configured_default)
+        # Auto lookup is a deterministic backend chain. The manifest decides
+        # which backends are enabled; no backend is inferred from an LLM.
+        resolvers.extend(name for name in ("pubchem", "opsin") if name not in resolvers)
+
+    attempts: list[dict[str, Any]] = []
+    diagnostics: list[str] = []
+    for resolver in resolvers:
+        settings = config["backends"].get(resolver)
+        if not settings or not settings["enabled"]:
+            if requested != "auto":
+                return resolver, [], {}, [f"No enabled deterministic resolver backend is configured for {resolver}"]
+            continue
+        if resolver == "pubchem":
+            candidates, evidence, backend_diagnostics = _pubchem_candidates(name, config_path, settings)
+        elif resolver == "opsin":
+            candidates, evidence, backend_diagnostics = _opsin_candidates(name, config_path, settings)
+        else:
+            backend_diagnostics = [f"Configured resolver backend {resolver} is not implemented"]
+            candidates, evidence = [], {}
+        diagnostics.extend(backend_diagnostics)
+        attempts.append({"resolver": resolver, "evidence": evidence, "diagnostics": backend_diagnostics})
+        if candidates:
+            provenance = evidence if len(attempts) == 1 else {"attempts": attempts}
+            return resolver, candidates, provenance, diagnostics
+
+    if not attempts:
+        resolver = requested if requested != "auto" else config["default_resolver"]
+        return resolver, [], {}, diagnostics or [
+            "No enabled deterministic resolver backend is configured for automatic lookup"
+        ]
+    if len(attempts) == 1:
+        return attempts[0]["resolver"], [], attempts[0]["evidence"], diagnostics
+    return "auto", [], {"attempts": attempts}, diagnostics
 
 
 def _inchi_fields(molecule) -> dict[str, str]:
@@ -317,6 +370,9 @@ def _candidate(candidate: dict[str, Any], index: int) -> tuple[dict[str, Any] | 
 
 def resolve(_inputs, parameters: dict[str, Any]) -> dict[str, Any]:
     name = parameters["name"].strip()
+    lookup_name = parameters.get("lookup_name", name).strip()
+    if not lookup_name:
+        raise ValueError("lookup_name must not be empty")
     resolver = parameters.get("resolver", "auto")
     supplied = parameters.get("candidates", [])
     diagnostics: list[str] = []
@@ -324,18 +380,19 @@ def resolve(_inputs, parameters: dict[str, Any]) -> dict[str, Any]:
 
     if not supplied:
         try:
-            resolver, supplied, evidence, lookup_diagnostics = _configured_candidates(name, resolver)
+            resolver, supplied, evidence, lookup_diagnostics = _configured_candidates(lookup_name, resolver)
             diagnostics.extend(lookup_diagnostics)
         except ResolverConfigurationError as exc:
             evidence = {}
             diagnostics.append(str(exc))
             supplied = []
         if not supplied:
+            lookup_attempted = bool(evidence.get("implementation") or evidence.get("attempts"))
             return outcome(
                 "ts-name-resolution/1",
-                {"name": name, "resolver": resolver, "status": "unresolved", "candidates": [],
+                {"name": name, "lookup_name": lookup_name, "resolver": resolver, "status": "unresolved", "candidates": [],
                  "resolver_provenance": evidence},
-                verdict="unsupported",
+                verdict="invalid" if lookup_attempted else "unsupported",
                 diagnostics=diagnostics or [
                     "No registered deterministic name resolver is configured; install or bind OPSIN/PubChem before resolving a name."
                 ],
@@ -372,6 +429,7 @@ def resolve(_inputs, parameters: dict[str, Any]) -> dict[str, Any]:
 
     data = {
         "name": name,
+        "lookup_name": lookup_name,
         "resolver": resolver,
         "status": status,
         "candidates": candidates,

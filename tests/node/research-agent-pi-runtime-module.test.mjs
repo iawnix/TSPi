@@ -52,7 +52,7 @@ test("Pi runtime module maps framework IDs and restores them from its durable ma
     const session = await first.create_session({
       session_id: "session_framework",
       workspace_root,
-      workspace_mode: "light",
+      workspace_mode: "research",
     });
     await first.submit("session_framework", "hello");
     assert.equal((await session.read_snapshot()).session_id, "session_framework");
@@ -166,23 +166,32 @@ test("Pi runtime module completes an App Server create and submit smoke without 
     const app_server = create_app_server({
       runtime_port: runtime,
       workspace_port: create_workspace_initializer(),
-      turn_router: create_turn_router({ workspace_mode: "light" }),
+      turn_router: create_turn_router({ workspace_mode: "research", admission_state: "admitted" }),
+      kernel_port: {
+        async admit_workspace() {},
+        async apply_change() {},
+        async checkpoint() {},
+        async turn(request) { return { session_id: request.session_id, accepted: true }; },
+      },
     });
     await app_server.initialize_workspace({
       workspace_root,
       workspace_id: "workspace_smoke",
-      workspace_mode: "light",
+      workspace_mode: "research",
     });
-    const session = await app_server.create_session({ workspace_root, session_mode: "light" });
+    await app_server.admit_workspace({ workspace_root, workspace_id: "workspace_smoke", workspace_mode: "research" });
+    const session = await app_server.create_session({ workspace_root, session_mode: "research" });
     const result = await app_server.submit_turn({
       workspace_root,
       workspace_id: "workspace_smoke",
       session_id: session.session_id,
       request_id: "request_pi_smoke",
-      input: "prepare a water geometry",
+      operation: "orient",
+      input: { prompt: "prepare a water geometry" },
     });
     assert.equal(result.accepted, true);
-    assert.equal(result.result.session_id, session.session_id);
+    assert.equal(result.result.accepted, true);
+    assert.equal(typeof session.session_id, "string");
     await app_server.close();
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -63,17 +63,17 @@ def test_artifact_to_prepared_intent_is_research_node_scoped(tmp_path: Path) -> 
             "purpose": "Run a bounded Gaussian single point.",
             "attempt_kind": "primary",
             "lineage": None,
-            "capability": "gaussian.sp",
+            "capability": "gaussian",
             "capability_version": "1",
             "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact["artifact_id"]}],
             "parameters": {},
-            "execution_target": {"kind": "local"},
+            "execution": {"environment": "local"},
             "dry_run": True,
         },
     )
     assert created["schema_version"] == "ts-calculation-intent-created/4"
     assert created["intent"]["schema_version"] == "ts-calculation-intent/7"
-    assert created["intent"]["capability"] == "gaussian.sp"
+    assert created["intent"]["capability"] == "gaussian"
     assert created["node_id"] == node_id
     assert created["intent_ref"].startswith(f"nodes/{node_id}/attempts/")
     assert created["input_bindings"][0]["artifact_id"] == artifact["artifact_id"]
@@ -138,11 +138,11 @@ def test_attempt_lineage_distinguishes_exact_retry_from_recalculation(tmp_path: 
                 "relation": kind,
                 "reason": "Verify deterministic Attempt lineage.",
             },
-            "capability": "gaussian.sp",
+            "capability": "gaussian",
             "capability_version": "1",
             "input_artifacts": [{"input_role": "gjf", "artifact_id": input_artifact_id}],
             "parameters": {},
-            "execution_target": {"kind": "local"},
+            "execution": {"environment": "local"},
             "dry_run": True,
         }
 
@@ -178,11 +178,11 @@ def test_current_intent_rejects_scientific_or_node_contract_drift(tmp_path: Path
         "purpose": "Bind one immutable calculation.",
         "attempt_kind": "primary",
         "lineage": None,
-        "capability": "gaussian.sp",
+        "capability": "gaussian",
         "capability_version": "1",
         "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact_id}],
         "parameters": {},
-        "execution_target": {"kind": "local"},
+        "execution": {"environment": "local"},
         "dry_run": True,
     }
     created = create_calculation_intent(root, request)
@@ -216,11 +216,11 @@ def test_attempt_lineage_cannot_cross_research_nodes(tmp_path: Path) -> None:
             "purpose": "Create the source Attempt.",
             "attempt_kind": "primary",
             "lineage": None,
-            "capability": "gaussian.sp",
+            "capability": "gaussian",
             "capability_version": "1",
             "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact_id}],
             "parameters": {},
-            "execution_target": {"kind": "local"},
+            "execution": {"environment": "local"},
             "dry_run": True,
         },
     )
@@ -239,11 +239,11 @@ def test_attempt_lineage_cannot_cross_research_nodes(tmp_path: Path) -> None:
                     "relation": "retry",
                     "reason": "Invalid cross-Node retry.",
                 },
-                "capability": "gaussian.sp",
+                "capability": "gaussian",
                 "capability_version": "1",
                 "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact_id}],
                 "parameters": {},
-                "execution_target": {"kind": "local"},
+                "execution": {"environment": "local"},
                 "dry_run": True,
             },
         )
@@ -279,11 +279,11 @@ def test_fresh_workspace_imports_first_artifact_before_compute_prepare(tmp_path:
             "purpose": "Verify first-artifact bootstrap.",
             "attempt_kind": "primary",
             "lineage": None,
-            "capability": "gaussian.sp",
+            "capability": "gaussian",
             "capability_version": "1",
             "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact_id}],
             "parameters": {},
-            "execution_target": {"kind": "local"},
+            "execution": {"environment": "local"},
             "dry_run": True,
         },
     )
@@ -311,11 +311,11 @@ def test_closed_research_node_cannot_create_a_calculation(tmp_path: Path) -> Non
                 "purpose": "This should be rejected.",
                 "attempt_kind": "primary",
                 "lineage": None,
-                "capability": "gaussian.sp",
+            "capability": "gaussian",
                 "capability_version": "1",
                 "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact["artifact_id"]}],
                 "parameters": {},
-                "execution_target": {"kind": "local"},
+                "execution": {"environment": "local"},
                 "dry_run": True,
             },
         )

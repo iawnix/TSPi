@@ -31,6 +31,15 @@ function retryableToolFailure(error, failureClass) {
   return failureClass === "transient";
 }
 
+function actionOutcome(error, failureClass) {
+  if (error && typeof error.action_outcome === "string"
+    && ["not_executed", "executed", "unknown"].includes(error.action_outcome)) {
+    return error.action_outcome;
+  }
+  if (failureClass === "ambiguous" || error?.code === "submission_ambiguous") return "unknown";
+  return "not_executed";
+}
+
 function assertToolResult(response, toolName) {
   if (!response || typeof response !== "object" || Array.isArray(response)) {
     const error = new TypeError(`${toolName} returned an invalid tool result envelope`);
@@ -85,6 +94,7 @@ export function attachToolErrorEnvelope(error, toolName, toolCallId) {
         message: source.message,
         retryable: retryableToolFailure(source, failureClass),
         failure_class: failureClass,
+        action_outcome: actionOutcome(source, failureClass),
       },
     };
   }
@@ -202,6 +212,7 @@ export function markToolEnvelopeError(event) {
             message: `Tool ${event.toolName || "unknown"} cannot be replayed during recovery`,
             retryable: false,
             failure_class: "authorization",
+            action_outcome: "not_executed",
           },
         },
       },
@@ -222,6 +233,7 @@ export function markToolEnvelopeError(event) {
           message: toolResultText(event.content),
           retryable: failureClass === "transient",
           failure_class: failureClass,
+          action_outcome: "not_executed",
         },
       },
     },

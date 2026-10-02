@@ -93,19 +93,11 @@ Launch 接受完整语义请求和所选执行目标：
     {"inputRole": "gjf", "artifactId": "art_..."}
   ],
   "parameters": {"method": "M062X", "basis": "6-31G(d)"},
-  "executionTarget": {
-    "kind": "remote",
-    "environment": "cluster_1w",
-    "resources": {
-      "queue": "batch", "nodes": 1, "ncpus": 8,
-      "memory": "16gb", "walltime": "24:00:00", "ngpus": 0
-    }
-  }
+  "execution": {"environment": "cluster_1w"}
 }
 ```
 
-`resources.ngpus` 可省略，默认值为 `0`；`mpiprocs` 与 `ompthreads` 也可省略，省略时会物化为
-`null`。Host 会在 Python 校验 `ts-calculation-request/5` 前写入这些明确字段。
+Host 会根据选定的安装环境，在 Python 校验 `ts-calculation-request/5` 前解析执行类型、调度器资源、路径、命令和默认资源。
 
 子 Agent 启动前，Host 创建并校验新的 `ts-calculation-intent/7`，绑定当前 Node 合同，
 解析路径与摘要，分配预期 Artifact，并冻结科学与执行绑定。子 Agent 随后调用 prepare，

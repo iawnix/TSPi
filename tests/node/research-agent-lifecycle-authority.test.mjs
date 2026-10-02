@@ -99,6 +99,17 @@ test("compute action failures preserve active Attempts for ambiguous or follow-u
   ), "running");
 });
 
+test("finalize admission failures remain retryable after parsing succeeds", () => {
+  assert.equal(computeTest.attemptStateForRequest(
+    "finalize",
+    [
+      { tool: "ts_workspace_compute_collect", result: { action_status: "completed", result: { state: "collected" } } },
+      { tool: "ts_workspace_compute_parse", result: { action_status: "completed", result: { state: "parsed" } } },
+      { tool: "research_kernel_write", result: { action_status: "failed" } },
+    ],
+  ), "running");
+});
+
 test("Python Research Kernel requires the Root Agent kernel-write boundary", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-kernel-authority-"));
   try {

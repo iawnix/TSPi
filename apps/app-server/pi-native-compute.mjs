@@ -6,7 +6,6 @@ import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
 import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
 import { boundWorkspaceRoot } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
-import { readWorkspaceMode } from "./workspace-mode-tools.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -36,7 +35,7 @@ const TOOL_CONTRACTS = createPublicToolContracts(Type);
 const COMPUTE_OPERATION_FIELDS = Object.freeze({
   launch: [
     "purpose", "capability", "capabilityVersion", "attemptKind", "sourceAttempt",
-    "inputArtifacts", "parameters", "executionTarget", "timeoutSeconds",
+    "inputArtifacts", "parameters", "execution", "timeoutSeconds",
   ],
   inspect: ["intentId", "tailArtifact", "tailLines", "timeoutSeconds"],
   finalize: ["intentId", "artifacts", "artifactRef", "timeoutSeconds"],
@@ -61,7 +60,6 @@ export function createComputeTool(options = {}) {
         intentRequest: params.operation === "launch" ? buildCalculationRequest(params) : undefined,
       });
       const root = boundWorkspaceRoot(params, toolContext);
-      const workspaceMode = await readWorkspaceMode(root);
       const taskId = await allocateOperationalId(root, "sub", context?.abortSignal);
       const startedAt = Date.now();
       const signal = deadlineSignal(context?.abortSignal, computeTimeoutMs(request));
@@ -91,19 +89,13 @@ export function createComputeTool(options = {}) {
           jobId: binding.jobId,
           executionSummary: binding.executionSummary,
         });
-        if (workspaceMode === "research") {
-          if (request.operation === "launch") {
-            researchAttempt = await recordResearchAttempt(options.researchKernel, root, request, binding, "create");
-          } else {
-            await requireExistingResearchAttempt(options.researchKernel, root, request, binding);
-            researchAttempt = { attempt_id: request.intentId, binding };
-          }
+        if (request.operation === "launch") {
+          researchAttempt = await recordResearchAttempt(options.researchKernel, root, request, binding, "create");
+        } else {
+          await requireExistingResearchAttempt(options.researchKernel, root, request, binding);
+          researchAttempt = { attempt_id: request.intentId, binding };
         }
-        if (request.operation === "launch" && workspaceMode === "research") {
-          // Persist the wake binding before submission only for research
-          // workspaces. Light mode has no lifecycle/monitor authority; its
-          // remote scheduler record is inspected explicitly through the
-          // compute lifecycle operations.
+        if (request.operation === "launch") {
           stagedMonitor = await stageComputeMonitor(root, request, toolContext.sessionId, signal);
         }
         const packet = buildComputeTask({
@@ -127,17 +119,15 @@ export function createComputeTool(options = {}) {
         await executeComputePlan(root, request, actions, signal, (state, action) => {
           publishProgress(onUpdate, taskId, request, state, action, toolCallId);
         });
-        if (workspaceMode === "research") {
-          await recordResearchAttempt(
-            options.researchKernel,
-            root,
-            request,
-            binding,
-            "transition",
-            { state: attemptStateForRequest(request.operation, actions) },
-          );
-          researchAttemptSettled = true;
-        }
+        await recordResearchAttempt(
+          options.researchKernel,
+          root,
+          request,
+          binding,
+          "transition",
+          { state: attemptStateForRequest(request.operation, actions) },
+        );
+        researchAttemptSettled = true;
         if (stagedMonitor && submissionAccepted(actions)) {
           try {
             await reconcileComputeMonitor(root, stagedMonitor.monitor_id, signal);
@@ -239,14 +229,12 @@ export function createNativeComputeLifecycle(options = {}) {
     const root = request.workspace_root || request.root;
     if (typeof root !== "string" || !root) throw new TypeError("Native compute request requires workspace_root");
     const sessionId = request.session_id || request.sessionId;
-    if (request.operation === "launch" && request.workspace_mode === "research"
-      && (typeof sessionId !== "string" || !sessionId)) {
-      throw new Error("research Native compute launch requires session_id for monitor ownership");
+    if (request.operation === "launch" && (typeof sessionId !== "string" || !sessionId)) {
+      throw new Error("compute launch requires session_id for monitor ownership");
     }
     const params = { ...request, root };
     delete params.workspace_id;
     delete params.workspace_root;
-    delete params.workspace_mode;
     delete params.session_id;
     delete params.sessionId;
     delete params.tool_call_id;
@@ -366,7 +354,14 @@ async function requireExistingResearchAttempt(kernel, root, request, binding) {
 function attemptStateForRequest(operation, actions) {
   const canonical = actions.at(-1)?.result?.result;
   const state = canonical?.state;
-  if (actions.some((action) => action?.result?.action_status === "failed")) return "failed";
+  if (actions.some((action) => action?.result?.action_status === "failed")) {
+    // Finalize failures can be canonical admission/registration failures
+    // after a valid program output was parsed. Keep the Attempt retryable so
+    // a replay can complete the ResearchMap write; the scheduler result is
+    // not scientifically failed in that case.
+    if (operation === "finalize") return "running";
+    return "failed";
+  }
   if (actions.some((action) => action?.result?.action_status === "unknown") || state === "unknown") return "running";
   if (operation === "launch") return submissionAccepted(actions) ? "running" : "failed";
   if (operation === "cancel") return actions.some((action) => action.tool === "ts_workspace_compute_cancel"
@@ -440,6 +435,7 @@ async function monitorStatus(root, monitorId, signal) {
 }
 
 async function preflightComputeRequest(root, request, signal, onStage) {
+  let materializedIntentId;
   if (request.operation === "launch") {
     onStage?.("intent_creation");
     const created = await runComputeJson(
@@ -455,70 +451,86 @@ async function preflightComputeRequest(root, request, signal, onStage) {
       error.capabilityGap = created;
       throw error;
     }
-    if (created.schema_version !== "ts-calculation-intent-created/4" || typeof created.intent_ref !== "string") {
+    if (created.schema_version !== "ts-calculation-intent-created/4"
+      || typeof created.intent_ref !== "string"
+      || typeof created.intent_id !== "string") {
       throw new Error("compute intent creation returned an invalid binding");
     }
     request.intentFile = created.intent_ref;
+    request.intentId = materializedIntentId = created.intent_id;
   }
-  const preflightOperation = {
-    launch: "prepare",
-    inspect: "inspect",
-    finalize: "collect",
-    cancel: "cancel",
-  }[request.operation];
-  onStage?.("preflight");
-  const args = ["--operation", preflightOperation, "--node-id", request.nodeId];
-  if (request.operation === "launch") {
-    args.push("--capability", request.capability, "--capability-version", request.capabilityVersion);
-    args.push("--intent-file", request.intentFile);
-  } else {
-    args.push("--intent-id", request.intentId);
+  try {
+    const preflightOperation = {
+      launch: "prepare",
+      inspect: "inspect",
+      finalize: "collect",
+      cancel: "cancel",
+    }[request.operation];
+    onStage?.("preflight");
+    const args = ["--operation", preflightOperation, "--node-id", request.nodeId];
+    if (request.operation === "launch") {
+      args.push("--capability", request.capability, "--capability-version", request.capabilityVersion);
+      args.push("--intent-file", request.intentFile);
+    } else {
+      args.push("--intent-id", request.intentId);
+    }
+    const raw = await runComputeJson(root, "preflight", args, signal, 60_000);
+    if (raw.schema_version !== "ts-compute-binding/1") {
+      throw new Error("compute preflight returned an invalid binding");
+    }
+    if (raw.operation !== preflightOperation || raw.node_id !== request.nodeId) {
+      throw new Error("compute preflight binding does not match the requested operation scope");
+    }
+    for (const key of ["intent_id", "intent_ref", "intent_digest"]) {
+      if (typeof raw[key] !== "string" || !raw[key]) throw new Error(`compute preflight has no ${key}`);
+    }
+    const descriptor = isPlainObject(raw.capability_descriptor) ? raw.capability_descriptor : undefined;
+    if (!descriptor || descriptor.capability_id !== raw.capability || descriptor.capability_version !== raw.capability_version) {
+      throw new Error("compute preflight has no matching capability descriptor");
+    }
+    if (typeof raw.capability_descriptor_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.capability_descriptor_digest)) {
+      throw new Error("compute preflight has no capability descriptor digest");
+    }
+    request.capability = requireBindingString(raw.capability, "capability");
+    request.capabilityVersion = requireBindingString(raw.capability_version, "capability_version");
+    request.capabilityDescriptorDigest = raw.capability_descriptor_digest;
+    request.backend = requireBindingString(raw.backend, "backend");
+    request.outputRoles = Array.isArray(raw.expected_output_roles)
+      ? raw.expected_output_roles.filter((item) => typeof item === "string" && item)
+      : [];
+    const descriptorSummary = summarizeCapabilityDescriptor(descriptor);
+    if (JSON.stringify(descriptorSummary.output_roles) !== JSON.stringify(request.outputRoles)) {
+      throw new Error("compute preflight capability descriptor output roles do not match the bound intent");
+    }
+    request.capabilityDescriptor = descriptorSummary;
+    if (request.operation === "finalize") request.artifactRef ||= requireBindingString(raw.artifact_ref, "artifact_ref");
+    return {
+      intentId: raw.intent_id,
+      intentRef: raw.intent_ref,
+      intentDigest: raw.intent_digest,
+      executionKind: requireBindingString(raw.execution_kind, "execution_kind"),
+      environment: typeof raw.environment === "string" ? raw.environment : undefined,
+      remoteDir: typeof raw.remote_dir === "string" ? raw.remote_dir : undefined,
+      jobId: typeof raw.job_id === "string" ? raw.job_id : undefined,
+      executionSummary: isPlainObject(raw.execution_summary) ? raw.execution_summary : {},
+      actionPlan: isPlainObject(raw.action_plan) ? raw.action_plan : undefined,
+      capability: request.capability,
+      capabilityVersion: request.capabilityVersion,
+      capabilityDescriptor: descriptorSummary,
+      capabilityDescriptorDigest: request.capabilityDescriptorDigest,
+    };
+  } catch (error) {
+    if (materializedIntentId) {
+      try {
+        // Cleanup is a deterministic local operation and must still run when
+        // the compute deadline/abort signal caused preflight to fail.
+        await runComputeJson(root, "discard-intent", ["--intent-id", materializedIntentId], undefined, 60_000);
+      } catch (cleanupError) {
+        error = new Error(`${errorMessage(error)}; failed to discard preflight intent ${materializedIntentId}: ${errorMessage(cleanupError)}`, { cause: error });
+      }
+    }
+    throw error;
   }
-  const raw = await runComputeJson(root, "preflight", args, signal, 60_000);
-  if (raw.schema_version !== "ts-compute-binding/1") {
-    throw new Error("compute preflight returned an invalid binding");
-  }
-  if (raw.operation !== preflightOperation || raw.node_id !== request.nodeId) {
-    throw new Error("compute preflight binding does not match the requested operation scope");
-  }
-  for (const key of ["intent_id", "intent_ref", "intent_digest"]) {
-    if (typeof raw[key] !== "string" || !raw[key]) throw new Error(`compute preflight has no ${key}`);
-  }
-  const descriptor = isPlainObject(raw.capability_descriptor) ? raw.capability_descriptor : undefined;
-  if (!descriptor || descriptor.capability_id !== raw.capability || descriptor.capability_version !== raw.capability_version) {
-    throw new Error("compute preflight has no matching capability descriptor");
-  }
-  if (typeof raw.capability_descriptor_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.capability_descriptor_digest)) {
-    throw new Error("compute preflight has no capability descriptor digest");
-  }
-  request.capability = requireBindingString(raw.capability, "capability");
-  request.capabilityVersion = requireBindingString(raw.capability_version, "capability_version");
-  request.capabilityDescriptorDigest = raw.capability_descriptor_digest;
-  request.backend = requireBindingString(raw.backend, "backend");
-  request.outputRoles = Array.isArray(raw.expected_output_roles)
-    ? raw.expected_output_roles.filter((item) => typeof item === "string" && item)
-    : [];
-  const descriptorSummary = summarizeCapabilityDescriptor(descriptor);
-  if (JSON.stringify(descriptorSummary.output_roles) !== JSON.stringify(request.outputRoles)) {
-    throw new Error("compute preflight capability descriptor output roles do not match the bound intent");
-  }
-  request.capabilityDescriptor = descriptorSummary;
-  if (request.operation === "finalize") request.artifactRef ||= requireBindingString(raw.artifact_ref, "artifact_ref");
-  return {
-    intentId: raw.intent_id,
-    intentRef: raw.intent_ref,
-    intentDigest: raw.intent_digest,
-    executionKind: requireBindingString(raw.execution_kind, "execution_kind"),
-    environment: typeof raw.environment === "string" ? raw.environment : undefined,
-    remoteDir: typeof raw.remote_dir === "string" ? raw.remote_dir : undefined,
-    jobId: typeof raw.job_id === "string" ? raw.job_id : undefined,
-    executionSummary: isPlainObject(raw.execution_summary) ? raw.execution_summary : {},
-    actionPlan: isPlainObject(raw.action_plan) ? raw.action_plan : undefined,
-    capability: request.capability,
-    capabilityVersion: request.capabilityVersion,
-    capabilityDescriptor: descriptorSummary,
-    capabilityDescriptorDigest: request.capabilityDescriptorDigest,
-  };
 }
 
 async function executeComputePlan(root, request, actions, signal, onProgress) {
@@ -715,24 +727,15 @@ function validatePublicComputeParameters(input) {
   const allowed = new Set(["operation", "nodeId", "root", ...COMPUTE_OPERATION_FIELDS[input.operation]]);
   const unexpected = Object.keys(input).filter((key) => !allowed.has(key));
   if (unexpected.length) throw new Error(`${input.operation} does not accept: ${unexpected.sort().join(", ")}`);
-  if (input.operation === "launch") validateExecutionTarget(input.executionTarget);
+  if (input.operation === "launch") validateExecution(input.execution);
 }
 
-function validateExecutionTarget(target) {
-  if (!isPlainObject(target) || (target.kind !== "local" && target.kind !== "remote")) {
-    throw new Error("launch requires executionTarget.kind=local or remote");
-  }
-  if (target.kind === "local") {
-    if (Object.keys(target).some((key) => key !== "kind" && key !== "environment")) {
-      throw new Error("local executionTarget only accepts kind and environment");
-    }
-    if (target.environment !== undefined && typeof target.environment !== "string") {
-      throw new Error("local executionTarget.environment must be a string");
-    }
-    return;
-  }
-  if (typeof target.environment !== "string" || !isPlainObject(target.resources)) {
-    throw new Error("remote executionTarget requires environment and resources");
+function validateExecution(execution) {
+  if (!isPlainObject(execution)
+    || typeof execution.environment !== "string"
+    || !execution.environment
+    || Object.keys(execution).some((key) => key !== "environment")) {
+    throw new Error("launch requires execution.environment; Host resolves the execution platform");
   }
 }
 
@@ -741,10 +744,10 @@ function buildCalculationRequest(request) {
     !request.purpose
     || !request.capability
     || !request.capabilityVersion
-    || !request.executionTarget
+    || !request.execution
     || !request.inputArtifacts?.length
   ) {
-    throw new Error("launch requires purpose, capability, capabilityVersion, inputArtifacts, and an executionTarget");
+    throw new Error("launch requires purpose, capability, capabilityVersion, inputArtifacts, and execution.environment");
   }
   if (!request.attemptKind) throw new Error("launch requires an explicit attemptKind");
   const sourceAttempt = request.sourceAttempt;
@@ -754,36 +757,8 @@ function buildCalculationRequest(request) {
   if (request.attemptKind !== "primary" && (!sourceAttempt?.intentId || !sourceAttempt.reason)) {
     throw new Error(`${request.attemptKind} launch requires sourceAttempt.intentId and sourceAttempt.reason`);
   }
-  const target = request.executionTarget;
-  validateExecutionTarget(target);
-  if (target.kind === "local") {
-    return {
-      schema_version: "ts-calculation-request/5",
-      node_id: request.nodeId,
-      purpose: request.purpose,
-      attempt_kind: request.attemptKind,
-      lineage: sourceAttempt ? {
-        source_node: request.nodeId,
-        source_intent_id: sourceAttempt.intentId,
-        relation: request.attemptKind,
-        reason: sourceAttempt.reason,
-      } : null,
-      capability: request.capability,
-      capability_version: request.capabilityVersion,
-      input_artifacts: request.inputArtifacts.map((item) => ({
-        input_role: item.inputRole,
-        artifact_id: item.artifactId,
-      })),
-      parameters: request.parameters || {},
-      execution_target: {
-        kind: "local",
-        ...(typeof target.environment === "string" ? { environment: target.environment } : {}),
-      },
-      dry_run: false,
-    };
-  }
-  if (target.kind !== "remote") throw new Error("executionTarget.kind must be local or remote");
-  const resources = isPlainObject(target.resources) ? target.resources : {};
+  const execution = request.execution;
+  validateExecution(execution);
   return {
     schema_version: "ts-calculation-request/5",
     node_id: request.nodeId,
@@ -802,20 +777,9 @@ function buildCalculationRequest(request) {
       artifact_id: item.artifactId,
     })),
     parameters: request.parameters || {},
-    execution_target: {
-      kind: "remote",
-      environment: target.environment,
-      resources: {
-        queue: resources.queue,
-        nodes: resources.nodes,
-        ncpus: resources.ncpus,
-        memory: resources.memory,
-        walltime: resources.walltime,
-        ngpus: resources.ngpus ?? 0,
-        mpiprocs: resources.mpiprocs ?? null,
-        ompthreads: resources.ompthreads ?? null,
-      },
-    },
+    // This is an internal request envelope. The kernel resolves the selected
+    // environment to local/remote execution and scheduler details.
+    execution: { environment: execution.environment },
     dry_run: false,
   };
 }
@@ -941,6 +905,12 @@ function classifyComputeFailure(actions, stage) {
 
 function withComputeFailureContext(error, failure, actions, runRef, secondaryFailures) {
   const source = error instanceof Error ? error : new Error(String(error));
+  source.action_outcome = failure.action_outcome === "unknown"
+    ? "unknown"
+    : failure.action_outcome === "not_executed"
+      ? "not_executed"
+      : "executed";
+  source.retry_safe = failure.retry_safe;
   const context = [
     `failure_class=${failure.failure_class}`,
     `action_outcome=${failure.action_outcome}`,
@@ -986,4 +956,4 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-export const __test = Object.freeze({ runComputeAction, attemptStateAfterComputeError });
+export const __test = Object.freeze({ runComputeAction, attemptStateForRequest, attemptStateAfterComputeError });

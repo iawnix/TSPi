@@ -24,6 +24,18 @@ cd TSPi
 ./install.sh
 ```
 
+For a reproducible non-interactive installation, edit the configuration
+variables in `install-configured.sh` (or set its `TSPI_*` environment
+overrides) and run:
+
+```bash
+./install-configured.sh
+```
+
+Pin `TSPI_INSTALL_REF` to a full commit SHA when the installation must use an
+exact source revision. The wrapper passes compute, name resolver, workspace,
+service, Web, Phone, and notification settings to the same installer.
+
 The core installation always includes the Agent, scientific runtime, and
 molecular rendering. TS Web is optional. The installer configures one
 installation-wide TSPi Host; there is no TS Phone daemon to install.

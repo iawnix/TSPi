@@ -172,7 +172,7 @@ export interface ComputeToolParams extends WorkspaceToolParams {
   sourceAttempt?: { intentId: string; reason: string };
   inputArtifacts?: Array<{ inputRole: string; artifactId: string }>;
   parameters?: Record<string, string | number | boolean>;
-  executionTarget?: Record<string, unknown>;
+  execution?: { environment: string };
   tailArtifact?: string;
   tailLines?: number;
   artifacts?: string[];

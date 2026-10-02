@@ -7,7 +7,7 @@ import { create_agent_runtime_port } from "../../packages/research-agent-core/po
 import { create_pi_runtime_adapter } from "../../packages/research-agent-pi-adapter/index.mjs";
 import { create_app_server } from "../../apps/research-agent-app-server/index.mjs";
 
-function workspace_manifest(workspace_root, workspace_mode, workspace_id = "workspace_boundary") {
+function workspace_manifest(workspace_root, workspace_mode = "research", workspace_id = "workspace_boundary") {
   const research = workspace_mode === "research";
   return {
     schema_version: "research_agent_workspace_1",
@@ -76,16 +76,16 @@ test("App Server source has no Pi or vendor runtime import", async () => {
   assert.doesNotMatch(source, /@earendil-works|from ['\"][^'\"]*\/pi(?:[-/]|['\"])/i);
 });
 
-test("Host rejects a workspace port response that changes an explicit mode", async () => {
+test("Host rejects a workspace port response that changes the research mode", async () => {
   const workspace_port = {
     async initialize_workspace(request) {
-      return workspace_manifest(request.workspace_root, request.workspace_mode === "light" ? "research" : "light");
+      return workspace_manifest(request.workspace_root, "invalid");
     },
     async attach_workspace() {
-      return { workspace_mode: "light" };
+      return { workspace_mode: "invalid" };
     },
     async admit_workspace() {
-      return { workspace_mode: "light" };
+      return { workspace_mode: "invalid" };
     },
   };
   const app_server = create_app_server({
@@ -93,8 +93,8 @@ test("Host rejects a workspace port response that changes an explicit mode", asy
     workspace_port,
   });
   await assert.rejects(
-    app_server.initialize_workspace({ workspace_root: "/tmp/fixture", workspace_mode: "light" }),
-    /workspace_mode_mismatch/,
+    app_server.initialize_workspace({ workspace_root: "/tmp/fixture", workspace_mode: "research" }),
+    /invalid_workspace_manifest/,
   );
   await app_server.close();
 });
@@ -105,29 +105,29 @@ test("Host freezes workspace requests before crossing the WorkspacePort boundary
     async initialize_workspace(request) {
       received = request;
       assert.throws(() => { request.workspace_mode = "research"; }, TypeError);
-      return workspace_manifest(request.workspace_root, "light");
+      return workspace_manifest(request.workspace_root, "research");
     },
     async attach_workspace() {
-      return { workspace_mode: "light" };
+      return { workspace_mode: "research" };
     },
     async admit_workspace() {
-      return { workspace_mode: "light" };
+      return { workspace_mode: "research" };
     },
   };
   const app_server = create_app_server({
     runtime_port: create_fake_agent_runtime(),
     workspace_port,
   });
-  const manifest = await app_server.initialize_workspace({ workspace_root: "/tmp/fixture", workspace_mode: "light" });
-  assert.equal(manifest.workspace_mode, "light");
-  assert.equal(received.workspace_mode, "light");
+  const manifest = await app_server.initialize_workspace({ workspace_root: "/tmp/fixture", workspace_mode: "research" });
+  assert.equal(manifest.workspace_mode, "research");
+  assert.equal(received.workspace_mode, "research");
   await app_server.close();
 });
 
 test("Host does not pass an explicit workspace root through without a WorkspacePort", async () => {
   const app_server = create_app_server({ runtime_port: create_fake_agent_runtime() });
   await assert.rejects(
-    app_server.create_session({ workspace_root: "/tmp/unverified-workspace", workspace_mode: "light" }),
+    app_server.create_session({ workspace_root: "/tmp/unverified-workspace", workspace_mode: "research" }),
     /workspace_port_not_configured/,
   );
   await app_server.close();

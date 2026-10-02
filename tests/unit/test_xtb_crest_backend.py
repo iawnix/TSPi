@@ -729,7 +729,7 @@ def _intent(workspace: Path, backend: str, task_type: str) -> Path:
         "capability_version": "1",
         "input_artifacts": input_artifacts,
         "parameters": {},
-        "execution_target": {"kind": "local"},
+        "execution": {"environment": "local"},
         "dry_run": True,
     })
     return workspace / created["intent_ref"]

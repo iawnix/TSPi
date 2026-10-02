@@ -48,9 +48,9 @@ def _require_rdkit() -> None:
     pytest.importorskip("rdkit")
 
 
-def test_workspace_root_rejects_non_ready_light_workspace(tmp_path: Path) -> None:
-    workspace = tmp_path / "light"
-    initialize_workspace(workspace, "workspace_light", "light")
+def test_workspace_root_rejects_non_ready_research_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "research"
+    initialize_workspace(workspace, "workspace_research", "research")
     manifest_path = workspace / "workspace_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["state"] = "initializing"
@@ -72,11 +72,11 @@ def _request(
         "purpose": "Exercise deterministic calculation artifact binding.",
         "attempt_kind": "primary",
         "lineage": None,
-        "capability": "gaussian.sp",
+        "capability": "gaussian",
         "capability_version": "1",
         "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact_id}],
         "parameters": {},
-        "execution_target": execution_target or {"kind": "local"},
+        "execution": {"environment": (execution_target or {}).get("environment", "local")},
         "dry_run": dry_run,
     }
 
@@ -556,13 +556,13 @@ def test_open_research_node_can_run_any_supported_root_selected_task(tmp_path: P
     source.write_text("# HF/STO-3G opt\n\nOpt\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
     artifact = _artifact(list_calculation_artifacts(workspace), "inputs/source.gjf")
     request = _request(node_id, artifact["artifact_id"])
-    request["capability"] = "gaussian.opt"
+    request["capability"] = "gaussian"
 
     created = create_calculation_intent(workspace, request)
     assert created["node_id"] == node_id
-    assert created["intent"]["capability"] == "gaussian.opt"
+    assert created["intent"]["capability"] == "gaussian"
     assert created["intent"]["backend"] == "gaussian"
-    assert created["intent"]["task_type"] == "opt"
+    assert created["intent"]["task_type"] == "route"
     assert created["intent_ref"].startswith(f"nodes/{node_id}/attempts/")
 
 

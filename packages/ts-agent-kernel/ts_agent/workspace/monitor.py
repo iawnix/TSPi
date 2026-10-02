@@ -529,9 +529,34 @@ def read_event(root: str | Path, event_id: str) -> dict[str, Any]:
 
 def _effective_state(workspace: Path, registration: dict[str, Any], observed: dict[str, Any]) -> str:
     if observed.get("state") == "completed":
-        for row in _attempt_rows(workspace, registration["intent_id"]):
-            if row.get("intent_id") == registration["intent_id"] and row.get("state") == "parsed":
-                return "parsed"
+        # A parsed operational result is only authoritative after its
+        # canonical ResearchMap Attempt and output Artifacts agree.  The
+        # parser writes its result before canonical admission, so consulting
+        # the operational file alone can report a false ``parsed`` state.
+        try:
+            from ts_agent.research.agent_workspace import read_context
+
+            context = read_context(workspace)
+            attempt = next(
+                (
+                    row for row in context.get("attempts", [])
+                    if isinstance(row, dict) and row.get("id") == registration["intent_id"]
+                ),
+                None,
+            )
+            if attempt is not None and attempt.get("state") in {"completed", "succeeded"}:
+                output_ids = attempt.get("output_artifact_ids")
+                artifact_ids = {
+                    row.get("id") for row in context.get("artifacts", [])
+                    if isinstance(row, dict)
+                }
+                if isinstance(output_ids, list) and output_ids and set(output_ids) <= artifact_ids:
+                    for row in _attempt_rows(workspace, registration["intent_id"]):
+                        if row.get("intent_id") == registration["intent_id"] and row.get("state") == "parsed":
+                            return "parsed"
+        except Exception:
+            # Monitor must fail closed when canonical state cannot be read.
+            return "unknown"
     state = observed.get("state")
     return state if state in _OBSERVABLE_STATES else "unknown"
 

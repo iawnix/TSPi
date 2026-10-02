@@ -88,11 +88,7 @@ test("compute launch contract defaults omitted remote GPU resources", () => {
     capabilityVersion: "1",
     attemptKind: "primary",
     inputArtifacts: [{ inputRole: "xyz", artifactId: `art_${"a".repeat(64)}` }],
-    executionTarget: {
-      kind: "remote",
-      environment: "cluster_1w",
-      resources: { queue: "batch", nodes: 1, ncpus: 1, memory: "1gb", walltime: "00:05:00" },
-    },
+    execution: { environment: "cluster_1w" },
   }), true);
   assert.equal(Check(contract, {
     operation: "launch",
@@ -102,11 +98,7 @@ test("compute launch contract defaults omitted remote GPU resources", () => {
     capabilityVersion: "1",
     attemptKind: "primary",
     inputArtifacts: [{ inputRole: "xyz", artifactId: `art_${"a".repeat(64)}` }],
-    executionTarget: {
-      kind: "local",
-      environment: "local",
-      resources: { queue: "batch", nodes: 1, ncpus: 1, memory: "1gb", walltime: "00:05:00" },
-    },
+    executionTarget: { kind: "local", environment: "local" },
   }), false);
 });
 

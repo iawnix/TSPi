@@ -5,8 +5,7 @@
   "capabilities": [
     {
       "id": "gaussian",
-      "version": "1",
-      "notes": "Route Section in the bound .gjf selects the Gaussian operation."
+      "version": "1"
     }
   ],
   "implementation": "builtin",

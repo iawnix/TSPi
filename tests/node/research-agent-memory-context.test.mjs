@@ -11,9 +11,9 @@ import {
 } from "../../packages/research-agent-core/ports.mjs";
 
 test("session memory is bounded and does not expose mutable internal records", async () => {
-  const memory = create_memory_store({ workspace_mode: "light", workspace_id: "workspace_light", session_id: "session_1", max_entries: 2 });
+  const memory = create_memory_store({ workspace_mode: "research", workspace_id: "workspace_research", session_id: "session_1", max_entries: 2 });
   const added = await memory.append({
-    workspace_mode: "light",
+    workspace_mode: "research",
     entry: { entry_id: "memory_first", kind: "turn", content: { prompt: "hello" } },
   });
   assert.equal(added.accepted, true);
@@ -35,7 +35,7 @@ test("research session memory cannot become workspace scientific memory", async 
     /research_memory_authority_required/,
   );
   await assert.rejects(
-    memory.read({ workspace_mode: "light" }),
+    memory.read({ workspace_mode: "invalid" }),
     /workspace_mode_mismatch/,
   );
 });
@@ -64,7 +64,7 @@ test("context builder creates a bounded ephemeral pack with Kernel provenance", 
   assert.equal(pack.provenance.kernel_revision, 4);
   assert.equal(pack.bounds.truncated, false);
   await assert.rejects(
-    context.build({ workspace_mode: "light" }),
+    context.build({ workspace_mode: "invalid" }),
     /workspace_mode_mismatch/,
   );
 });

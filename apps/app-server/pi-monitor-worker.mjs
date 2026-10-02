@@ -28,7 +28,8 @@ export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWa
         if (!claimed.session_id) throw new Error("monitor has no owning session; wake remains pending");
         if (typeof recordTurn === "function") {
           const turn = await recordTurn({ workspace, event, delivery: claimed });
-          if (!turn || turn.schema_version !== "research-turn-result/1" || turn.operation !== "wake") {
+          if (!turn || turn.schema_version !== "research-turn-result/1"
+            || turn.operation !== "wake" || turn.accepted !== true) {
             throw new Error("Research Turn wake boundary returned an invalid result");
           }
         }

@@ -18,10 +18,10 @@ test("workspace mode reader requires the canonical manifest and honors immutable
     await assert.rejects(readWorkspaceMode(root), /workspace_manifest_unavailable/);
     await create_workspace_initializer().initialize_workspace({
       workspace_root: root,
-      workspace_id: "mode-light",
-      workspace_mode: "light",
+      workspace_id: "mode-research",
+      workspace_mode: "research",
     });
-    assert.equal(await readWorkspaceMode(root), "light");
+    await assert.rejects(readWorkspaceMode(root), /workspace_admission_required/);
 
     const researchRoot = await mkdtemp(join(tmpdir(), "tspi-workspace-mode-research-"));
     try {
@@ -39,23 +39,20 @@ test("workspace mode reader requires the canonical manifest and honors immutable
   }
 });
 
-test("light mode removes Research lifecycle tools but keeps shared compute and artifact tools", () => {
+test("research mode exposes the complete registered tool inventory", () => {
   const tools = [
     { name: "research_read" },
     { name: "compute_run" },
-    { name: "light_compute" },
     { name: "artifact_seed" },
     { name: "artifact_compare" },
     { name: "artifact_import" },
     { name: "artifact_render" },
     { name: "read" },
   ];
-  assert.deepEqual(filterWorkspaceTools(tools, "light").map((tool) => tool.name), ["compute_run", "artifact_seed", "artifact_compare", "artifact_import", "artifact_render", "read"]);
   assert.deepEqual(filterWorkspaceTools(tools, "research").map((tool) => tool.name), ["research_read", "compute_run", "artifact_seed", "artifact_compare", "artifact_import", "artifact_render", "read"]);
   assert.ok(RESEARCH_ONLY_TOOL_NAMES.has("research_checkpoint"));
   assert.ok(!RESEARCH_ONLY_TOOL_NAMES.has("compute_run"));
-  assert.ok(!RESEARCH_ONLY_TOOL_NAMES.has("light_compute"));
-  assert.deepEqual(filterExtensionToolNames(["research_read", "compute_run", "light_compute", "artifact_seed"], "light"), ["compute_run", "artifact_seed"]);
+  assert.deepEqual(filterExtensionToolNames(["research_read", "compute_run", "artifact_seed"], "research"), ["research_read", "compute_run", "artifact_seed"]);
 });
 
 test("workspace mode reader rejects a manifest symlink", async () => {

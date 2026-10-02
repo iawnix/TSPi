@@ -386,6 +386,38 @@ test("durable liveness admits only the operations each Kernel disposition permit
   assert.equal(controller.admitTool({ runId: "run-user-input-admission", toolName: "ts_state" }).accepted, true);
 });
 
+test("waiting external admits Attempt reconciliation but blocks a second launch", () => {
+  const controller = createResearchLifecycleController({ metadata: PUBLIC_TOOL_METADATA });
+  controller.beginRun({ runId: "run-reconcile" });
+  controller.setDurableLiveness({ lifecycle: "waiting_external", disposition: "waiting_external" });
+
+  assert.equal(controller.admitTool({ runId: "run-reconcile", toolName: "research_read" }).accepted, true);
+  controller.completeTool({ runId: "run-reconcile", toolName: "research_read" });
+
+  assert.equal(controller.admitTool({
+    runId: "run-reconcile",
+    toolName: "compute_run",
+    args: { operation: "launch" },
+  }).code, "research_waiting_external");
+  assert.equal(controller.admitTool({
+    runId: "run-reconcile",
+    toolName: "compute_run",
+    args: { operation: "inspect" },
+  }).accepted, true);
+  controller.completeTool({
+    runId: "run-reconcile",
+    toolName: "compute_run",
+    args: { operation: "inspect" },
+  });
+  assert.equal(controller.snapshot().lifecycle_phase, "execute");
+
+  assert.equal(controller.admitTool({
+    runId: "run-reconcile",
+    toolName: "compute_run",
+    args: { operation: "finalize" },
+  }).accepted, true);
+});
+
 test("durable liveness admits execution after the Kernel records an active strategy", () => {
   const controller = createResearchLifecycleController({ metadata: PUBLIC_TOOL_METADATA });
   controller.beginRun({ runId: "run-strategy-ready" });
@@ -431,6 +463,14 @@ test("Research lifecycle metadata separates strategy, interpretation, and checkp
   assert.equal(controller.admitTool({ runId: "run-interpret", toolName: "research_read" }).accepted, true);
   controller.completeTool({ runId: "run-interpret", toolName: "research_read" });
   assert.equal(controller.snapshot().lifecycle_phase, "advance");
+
+  controller.beginRun({ runId: "run-analysis-evidence" });
+  controller.admitTool({ runId: "run-analysis-evidence", toolName: "analysis_run" });
+  controller.completeTool({ runId: "run-analysis-evidence", toolName: "analysis_run" });
+  assert.equal(controller.snapshot().lifecycle_phase, "advance");
+  assert.equal(controller.admitTool({ runId: "run-analysis-evidence", toolName: "research_change" }).accepted, true);
+  controller.completeTool({ runId: "run-analysis-evidence", toolName: "research_change" });
+  assert.equal(controller.admitTool({ runId: "run-analysis-evidence", toolName: "research_checkpoint" }).accepted, true);
 
   controller.beginRun({ runId: "run-error-retry" });
   controller.admitTool({ runId: "run-error-retry", toolName: "research_read" });
@@ -614,6 +654,7 @@ test("public tool adapter preserves legacy payloads and adds result/error envelo
         message: "temporary failure",
         retryable: true,
         failure_class: "transient",
+        action_outcome: "not_executed",
       },
     });
     return true;
@@ -660,6 +701,7 @@ test("Harness tool adapter preserves structured errors through Pi Core", async (
       message: "direct failure",
       retryable: false,
       failure_class: "execution",
+      action_outcome: "not_executed",
     },
   });
 });

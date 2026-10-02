@@ -346,34 +346,15 @@ export function createPublicToolContracts(Type) {
   const nodeId = Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 });
   const artifactId = Type.String({ pattern: "^art_[0-9a-f]{64}$" });
   const intentId = Type.String({ pattern: "^calc_[1-9][0-9]*$", maxLength: 128 });
-  const remoteResources = Type.Object({
-    queue: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$" }),
-    nodes: Type.Integer({ minimum: 1 }),
-    ncpus: Type.Integer({ minimum: 1 }),
-    memory: Type.String({ pattern: "^[1-9][0-9]*(?:kb|mb|gb|tb)$" }),
-    walltime: Type.String({ pattern: "^[0-9]{1,4}:[0-5][0-9]:[0-5][0-9]$" }),
-    // The kernel contract defaults ngpus to zero when the scheduler does not
-    // request accelerators. Keep this field optional at the public tool
-    // boundary and materialize the explicit zero in the calculation request.
-    ngpus: Type.Optional(Type.Integer({ minimum: 0 })),
-    mpiprocs: Type.Optional(Type.Integer({ minimum: 1 })),
-    ompthreads: Type.Optional(Type.Integer({ minimum: 1 })),
-  }, { additionalProperties: false });
   const calculationParameters = Type.Record(
     Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$" }),
     Type.Union([Type.String({ maxLength: 4096 }), Type.Number(), Type.Boolean()]),
   );
-  const executionTarget = Type.Union([
-    Type.Object({
-      kind: Type.Literal("local"),
-      environment: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" })),
-    }, { additionalProperties: false }),
-    Type.Object({
-      kind: Type.Literal("remote"),
-      environment: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" }),
-      resources: remoteResources,
-    }, { additionalProperties: false }),
-  ]);
+  // The Agent selects an installation-owned environment profile. Host derives
+  // local/remote kind, scheduler resources, paths, and commands from it.
+  const execution = Type.Object({
+    environment: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" }),
+  }, { additionalProperties: false });
   const computeSourceAttempt = Type.Object({
     intentId,
     reason: Type.String({ minLength: 1, maxLength: 1000 }),
@@ -398,7 +379,7 @@ export function createPublicToolContracts(Type) {
       sourceAttempt: Type.Optional(computeSourceAttempt),
       inputArtifacts: Type.Optional(computeInputArtifacts),
       parameters: Type.Optional(calculationParameters),
-      executionTarget: Type.Optional(executionTarget),
+      execution: Type.Optional(execution),
       tailArtifact: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
       tailLines: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
       artifacts: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 255 }), { maxItems: 32 })),
@@ -406,7 +387,7 @@ export function createPublicToolContracts(Type) {
       timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 480 })),
     }, { additionalProperties: false }),
     Type.Union([
-      requiredOperationBranch("launch", ["purpose", "capability", "capabilityVersion", "attemptKind", "inputArtifacts", "executionTarget"]),
+      requiredOperationBranch("launch", ["purpose", "capability", "capabilityVersion", "attemptKind", "inputArtifacts", "execution"]),
       requiredOperationBranch("inspect", ["intentId"]),
       requiredOperationBranch("finalize", ["intentId"]),
       requiredOperationBranch("cancel", ["intentId"]),

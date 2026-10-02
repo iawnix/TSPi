@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import sys
 import tarfile
 import tempfile
@@ -281,6 +282,8 @@ def _install_captured_package(
             if staging.exists():
                 remove_staging_tree(staging)
 
+    ensure_name_resolver_config(install_root, target)
+
     prepare = runtime_preparer or prepare_runtime
     publish = runtime_publisher or publish_runtime
     prepared_runtime = prepare(
@@ -330,6 +333,40 @@ def _install_captured_package(
         "services_activated": False,
         "archived_retired_notification_state": archived_notification_state,
     }
+
+
+def ensure_name_resolver_config(install_root: Path, release_root: Path) -> None:
+    """Install the bundled resolver default on the low-level package path.
+
+    The package installer is a public installation path and does not run the
+    interactive wizard. A fresh installation therefore needs to receive the
+    same deterministic resolver default here. Existing operator configuration
+    is preserved and remains subject to the runtime configuration boundary.
+    """
+    destination = install_root / ".pi" / "name-resolver.toml"
+    if destination.is_symlink():
+        raise SuiteReleaseError(f"existing name-resolver configuration must be a regular file: {destination}")
+    if destination.exists():
+        if not destination.is_file():
+            raise SuiteReleaseError(f"existing name-resolver configuration must be a regular file: {destination}")
+        return
+    source = release_root / "agent" / "config" / "name-resolver.example.toml"
+    if source.is_symlink() or not source.is_file():
+        # Source-based installers keep the same bundled contract beside this
+        # installer. This also lets minimal test releases exercise the
+        # installation path without weakening the real package contract.
+        source = Path(__file__).resolve().parents[1] / "config" / "name-resolver.example.toml"
+    if source.is_symlink() or not source.is_file():
+        raise SuiteReleaseError(f"package installer is missing the bundled name-resolver configuration: {source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.parent / f".{destination.name}.{os.getpid()}.tmp"
+    try:
+        shutil.copyfile(source, temporary)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists() or temporary.is_symlink():
+            temporary.unlink()
 
 
 def _activate_release(

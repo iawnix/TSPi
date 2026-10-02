@@ -57,4 +57,3 @@ Review 是隔离的建议性评估，不能写入 map。只向 Review 提供所�
 `analysis_run` 是独立的已注册确定性分析边界。它要求目录中的精确 capability/version、已存在且
 未关闭的 Node，以及 role 到已登记 Artifact ID 数组的映射。它不会选择执行环境、创建 Claim/Finding，
 也不会运行调度器生命周期；需要审计的 local/remote 计算使用 `compute_run`。
-light workspace 也使用同一套 Native `compute_run` 生命周期。

@@ -18,7 +18,7 @@ Backend 是确定性适配器。它描述支持的程序任务、校验参数、
 QBICS DMECP 当前不是已注册 capability。Backend 只有具备确定性解析合同与任务验证测试后
 才成为公共能力；只有输入准备器并不充分。
 
-使用目录构造 `compute_run` 请求。选择 `executionTarget.kind = "local"` 或 `"remote"`；
+使用目录构造 `compute_run` 请求。选择安装配置中的 `execution.environment`；
 安装共享 `compute.toml` 后，还要选择相应环境名。两者使用相同生命周期和结果合同。远端
 Native `compute_readiness` 执行与计算 preflight 相同的只读环境检查；它不会创建 intent 或提交任务。
 
@@ -29,11 +29,11 @@ Native `compute_readiness` 执行与计算 preflight 相同的只读环境检查
 使用环境 doctor 或 `TSPi --check-remote doctor`。
 
 Local/remote 是独立于 capability identity 的执行环境属性。远端请求必须使用 Native
-`compute_run` 的 `operation=launch` 与 `executionTarget`；通用 capability invocation 形式不能
+`compute_run` 的 `operation=launch` 与 `execution.environment`；通用 capability invocation 形式不能
 携带 remote selector，也不能创建绑定调度器的 intent。两种目标使用相同生命周期和不可变 intent。
 
-例如，本地请求可绑定 `{"kind":"local","environment":"local"}`；同一 capability
-也可绑定 `{"kind":"remote","environment":"cluster_1w",...}`。
+例如，请求可绑定 `{"environment":"local"}` 或 `{"environment":"cluster_1w"}`；Host
+根据安装配置解析 local/remote 类型及其它执行细节。
 
 ## Adapter 输出
 

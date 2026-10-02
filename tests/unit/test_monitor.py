@@ -98,14 +98,35 @@ def test_monitor_keeps_unknown_and_distinguishes_parsed(tmp_path: Path, monkeypa
         "ts_agent.compute.control.calculation_status",
         lambda *args: {"state": "completed", "program_status": "completed"},
     )
+    # A parsed operational file without a canonical Attempt is not enough to
+    # promote a scheduler completion to parsed evidence.
     monkeypatch.setattr(
         "ts_agent.workspace.monitor._attempt_rows",
         lambda *args: [{"intent_id": "calc_1", "state": "parsed"}],
     )
-    parsed = tick_monitors(root)
-    assert parsed["monitors"][0]["state"] == "parsed"
-    assert read_event(root, parsed["monitors"][0]["event_id"])["state"] == "parsed"
+    completed = tick_monitors(root)
+    assert completed["monitors"][0]["state"] == "completed"
+    assert read_event(root, completed["monitors"][0]["event_id"])["state"] == "completed"
     assert runtime_status(root)["runtime_summary"]["tracked_file_count"] == 6
+
+
+def test_monitor_does_not_promote_parsed_file_when_canonical_attempt_failed(tmp_path, monkeypatch) -> None:
+    root = bootstrap_workspace_fixture(tmp_path / "workspace")
+    register_monitor(root, node_id="node_1", intent_id="calc_1", intent_digest="sha256:" + "1" * 64)
+    monkeypatch.setattr(
+        "ts_agent.compute.control.calculation_status",
+        lambda *args: {"state": "completed", "program_status": "completed"},
+    )
+    monkeypatch.setattr(
+        "ts_agent.workspace.monitor._attempt_rows",
+        lambda *args: [{"intent_id": "calc_1", "state": "parsed"}],
+    )
+    monkeypatch.setattr(
+        "ts_agent.research.agent_workspace.read_context",
+        lambda *args: {"attempts": [{"id": "calc_1", "state": "failed", "output_artifact_ids": []}], "artifacts": []},
+    )
+    result = tick_monitors(root)
+    assert result["monitors"][0]["state"] == "completed"
 
 
 def _registered(root: Path, **options):

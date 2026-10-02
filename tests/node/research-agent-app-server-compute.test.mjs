@@ -9,7 +9,9 @@ import { create_workspace_initializer } from "../../packages/research-agent-core
 
 test("App Server rejects generic JS capability execution", async () => {
   const root = await mkdtemp(join(tmpdir(), "native-app-server-"));
-  await create_workspace_initializer().initialize_workspace({ workspace_root: root, workspace_id: "native_app", workspace_mode: "light" });
+  const initializer = create_workspace_initializer();
+  await initializer.initialize_workspace({ workspace_root: root, workspace_id: "native_app", workspace_mode: "research" });
+  await initializer.admit_workspace(root);
   const app = create_app_server({ runtime_port: create_fake_agent_runtime() });
   try {
     await assert.rejects(app.invoke_tool({ workspace_root: root, capability_id: "xtb.sp", input: {} }), /generic capability invocation was removed/);
@@ -22,7 +24,9 @@ test("App Server rejects generic JS capability execution", async () => {
 
 test("App Server forwards compute_run to the Native lifecycle with its workspace binding", async () => {
   const root = await mkdtemp(join(tmpdir(), "native-app-server-forward-"));
-  await create_workspace_initializer().initialize_workspace({ workspace_root: root, workspace_id: "native_forward", workspace_mode: "light" });
+  const initializer = create_workspace_initializer();
+  await initializer.initialize_workspace({ workspace_root: root, workspace_id: "native_forward", workspace_mode: "research" });
+  await initializer.admit_workspace(root);
   const calls = [];
   const app = create_app_server({
     runtime_port: create_fake_agent_runtime(),
@@ -39,7 +43,7 @@ test("App Server forwards compute_run to the Native lifecycle with its workspace
     const result = await app.run_compute({ workspace_root: root, operation: "inspect", nodeId: "node_1", intentId: "calc_1" });
     assert.deepEqual(result, { ok: true, operation: "inspect" });
     assert.equal(calls[0].workspace_root, root);
-    assert.equal(calls[0].workspace_mode, "light");
+    assert.equal(calls[0].workspace_mode, "research");
   } finally {
     await app.close();
     await rm(root, { recursive: true, force: true });

@@ -115,11 +115,6 @@ test("default package server manifest keeps complete core and chemical tool inve
     "artifact_compare",
     "analysis_run",
   ]);
-  const lightNames = filterWorkspaceTools(loaded.tools, "light").map((tool) => tool.name);
-  assert.ok(lightNames.includes("compute_run"));
-  assert.ok(lightNames.includes("compute_catalog"));
-  assert.ok(lightNames.includes("compute_readiness"));
-  assert.ok(!lightNames.includes("light_compute"));
   const researchNames = filterWorkspaceTools(loaded.tools, "research").map((tool) => tool.name);
   assert.ok(!researchNames.includes("light_compute"));
   assert.ok(researchNames.includes("compute_run"));

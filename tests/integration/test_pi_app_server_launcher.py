@@ -364,23 +364,22 @@ def test_session_selection_is_workspace_scoped_and_explicit() -> None:
 
 
 @pytest.mark.parametrize("arguments", [
-    ["--workspace", "reaction-a", "--mode", "light"],
-    ["--workspace=reaction-a", "--workspace-mode=research"],
+    ["--workspace", "reaction-a"],
 ])
 def test_workspace_mode_is_parsed_by_the_public_research_agent_entrypoint(arguments: list[str]) -> None:
     request = launcher.parse_launch_request(arguments)
-    assert request.workspace_mode in {"light", "research"}
+    assert request.workspace_mode == "research"
 
 
 def test_workspace_mode_rejects_unknown_values() -> None:
-    with pytest.raises(launcher.TSPiHostError, match="must be light or research"):
+    with pytest.raises(launcher.TSPiHostError, match="mode selection was removed"):
         launcher.parse_launch_request(["--workspace", "reaction-a", "--mode", "compute"])
 
 
 def test_launcher_binds_and_admits_research_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "workspaces" / "reaction-a"
 
-    manifest = launcher.bind_workspace_mode(workspace, "reaction-a", "research")
+    manifest = launcher.bind_workspace_mode(workspace, "reaction-a")
 
     assert manifest["workspace_mode"] == "research"
     assert manifest["state"] == "ready"

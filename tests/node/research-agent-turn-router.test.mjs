@@ -91,7 +91,7 @@ test("bound workspace and session modes cannot be silently switched", () => {
     workspace_id: "workspace_research",
     operation: "orient",
     input: {},
-    workspace_mode: "light",
+    workspace_mode: "invalid",
   }), /workspace_mode_mismatch/);
 });
 

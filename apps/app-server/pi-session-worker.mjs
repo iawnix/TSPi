@@ -15,7 +15,7 @@ import { markToolEnvelopeError, wrapToolForHarness } from "../../packages/ts-age
 import { createToolExecutionContext } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
 import { createPublicToolAlias } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
 import { createResearchLifecycleController, toolEventIsError } from "../../packages/ts-agent-runtime/host-api/lifecycle.mjs";
-import { filterExtensionToolNames, filterWorkspaceTools, readWorkspaceMode } from "./workspace-mode-tools.mjs";
+import { filterExtensionToolNames, filterWorkspaceTools } from "./workspace-mode-tools.mjs";
 import { create_python_kernel_bridge } from "../../packages/research-agent-kernel/python_kernel_bridge.mjs";
 import { create_research_kernel_port } from "../../packages/research-agent-kernel/ports.mjs";
 
@@ -92,7 +92,6 @@ async function createTspiHarness(session, options, executionEnv) {
     })
     : resolveCliModel({ cliProvider: options.provider, cliModel: options.model, modelRuntime });
   if (resolved.error || !resolved.model) throw new Error(resolved.error || "Session worker could not resolve a model");
-  const workspaceMode = await readWorkspaceMode(session.metadata.cwd);
   const loadedSkills = await loadTspiSkills(executionEnv);
   const researchKernel = create_research_kernel_port(create_python_kernel_bridge({ workspace_root: session.metadata.cwd }));
   const loadedExtensions = await loadServerExtensions({
@@ -100,7 +99,6 @@ async function createTspiHarness(session, options, executionEnv) {
     reservedToolNames: ["read", "write", "bash", "system_prompt"],
     requiredToolNames: ["research_read", "compute_environment"],
     factoryOptions: {
-      workspaceMode,
       researchKernel,
       review: {
         models: modelRuntime,
@@ -116,7 +114,6 @@ async function createTspiHarness(session, options, executionEnv) {
       ...loadedExtensions.tools.map((tool) => tool.name),
     ],
     factoryOptions: {
-      workspaceMode,
       review: {
         models: modelRuntime,
         model: resolved.model,
@@ -127,7 +124,7 @@ async function createTspiHarness(session, options, executionEnv) {
   const promptManifest = createSystemPromptManifest({
     native: {
       source: join(loadedSkills.packageRoot, "apps/app-server/pi-session-worker.mjs"),
-      text: tspiSystemPrompt(session.metadata.cwd, workspaceMode),
+      text: tspiSystemPrompt(session.metadata.cwd),
     },
     skills: {
       source: loadedSkills.skillsRoot,
@@ -137,12 +134,12 @@ async function createTspiHarness(session, options, executionEnv) {
       ...loadedExtensions.inventory.map((extension) => ({
         source: join(loadedSkills.packageRoot, extension.entry),
         inputs: [extension.entry],
-        text: `Server extension ${extension.name} provides: ${filterExtensionToolNames(extension.tools, workspaceMode).join(", ") || "no tools for this workspace mode"}.`,
+        text: `Server extension ${extension.name} provides: ${filterExtensionToolNames(extension.tools).join(", ") || "no tools for this research workspace"}.`,
       })),
       ...loadedInstalledServerExtensions.inventory.map((extension) => ({
         source: extension.entry,
         inputs: [extension.entry],
-        text: `Installed server extension ${extension.name} provides: ${filterExtensionToolNames(extension.tools, workspaceMode).join(", ") || "no tools for this workspace mode"}.`,
+        text: `Installed server extension ${extension.name} provides: ${filterExtensionToolNames(extension.tools).join(", ") || "no tools for this research workspace"}.`,
         metadata: {
           schema_version: "tspi-extension/1",
           name: extension.name,
@@ -175,8 +172,8 @@ async function createTspiHarness(session, options, executionEnv) {
     createPublicToolAlias(systemPromptTool, "system_prompt"),
     createWriteTool(),
     createBashTool(),
-    ...filterWorkspaceTools(loadedExtensions.tools, workspaceMode).map(wrapToolForHarness),
-    ...filterWorkspaceTools(loadedInstalledServerExtensions.tools, workspaceMode).map(wrapToolForHarness),
+    ...filterWorkspaceTools(loadedExtensions.tools).map(wrapToolForHarness),
+    ...filterWorkspaceTools(loadedInstalledServerExtensions.tools).map(wrapToolForHarness),
   ];
   const activeToolNames = tools.map((tool) => tool.name);
   // Lifecycle admission describes exactly the tools exposed to this workspace.
@@ -287,6 +284,7 @@ async function createTspiHarness(session, options, executionEnv) {
             runId: event.runId,
             toolName: event.toolName,
             toolCallId: event.toolCallId,
+            args: event.args,
           });
           if (admission.accepted) return undefined;
           return {
@@ -318,6 +316,7 @@ async function createTspiHarness(session, options, executionEnv) {
             runId: event.runId,
             toolName: event.toolName,
             toolCallId: event.toolCallId,
+            args: event.args,
             isError: toolEventIsError(event),
           });
         },
@@ -380,7 +379,7 @@ After every Monitor wake, including a completed or parsed external operation, re
 
 Before ending every turn, record strategy and interpretation decisions when applicable, then use research_checkpoint with disposition=continue_required, waiting_external, deferred, blocked, terminal, or user_input_required. A continue_required checkpoint must reference an active StrategyPlan; a parsed Attempt must have an AttemptInterpretation before the checkpoint is accepted. Do not end with an active scope that has none of these dispositions. The Host may issue a bounded follow-up when liveness is required or a decision is missing, but the Agent remains the only scientific decision-maker. Monitor next_run is an operational wake-up, not a new scientific instruction.
 
-Use artifact_seed or artifact_import for validated calculation inputs; give artifact_import a concise semantic input basename with the correct format extension. Use artifact_compare for deterministic structure comparisons, artifact_render for registered visual artifacts, and report_build for revision-bound report packages. Use review_run for isolated advisory assessment, then record Root's disposition with review_respond before applying its advice. Use system_prompt when the effective system prompt or its provenance must be inspected. When chaining an optimization into a single point, select the capability's explicit role field (optimized_geometry_artifact_id for XYZ capabilities or optimized_input_artifact_id for Gaussian); never choose a positional member of artifact_ids, and never pass stdout/stderr as an input artifact. Use registered schemas, bounded state/capability catalogs, and public Skill references; do not inspect installed package implementation or tests as research documentation. Do not invent identifiers, artifact paths, or calculation results. Treat tool output as evidence, preserve uncertainty, and keep Claims, Findings, Gate evaluations, and conclusions distinct.`;
+Use artifact_seed or artifact_import for validated calculation inputs; give artifact_import a concise semantic input basename with the correct format extension. Use artifact_compare for deterministic structure comparisons, artifact_render for registered visual artifacts, and report_build for revision-bound report packages. Use review_run for isolated advisory assessment, then record Root's disposition with review_respond before applying its advice. Use system_prompt when the effective system prompt or its provenance must be inspected. When chaining an optimization into a single point, select the capability's explicit role field (optimized_geometry_artifact_id for XYZ capabilities or optimized_input_artifact_id for Gaussian); never choose a positional member of artifact_ids, and never pass stdout/stderr as an input artifact. For compute_run launch, pass only the installation-owned execution.environment selector; Host derives execution kind, scheduler resources, paths, and commands. Use registered schemas, bounded state/capability catalogs, and public Skill references; do not inspect installed package implementation or tests as research documentation. Do not invent identifiers, artifact paths, or calculation results. Treat tool output as evidence, preserve uncertainty, and keep Claims, Findings, Gate evaluations, and conclusions distinct.`;
 }
 
 if (isDirectInternalProcessEntry(import.meta.url)) {

@@ -69,7 +69,7 @@ def descriptor(name, summary, roles, parameters, *, optional=(), multiple=(), li
 
 DESCRIPTORS = (
     descriptor("chemical.name.resolve", "Resolve a chemical name to bounded, provenance-carrying structure candidates.", [],
-        obj({"name": NAME, "resolver": choice("auto", "opsin", "pubchem", "llm"),
+        obj({"name": NAME, "lookup_name": NAME, "resolver": choice("auto", "opsin", "pubchem", "llm"),
              "candidates": array(NAME_CANDIDATE, 16)}, ["name"],
             allOf=[
                 {"if": {"required": ["resolver"], "properties": {"resolver": {"const": "llm"}}},
@@ -78,7 +78,7 @@ DESCRIPTORS = (
             ]),
         limitations=[
             "Automatic lookup requires an installation-owned name-resolver.toml with an enabled deterministic backend.",
-            "The selected backend must recognize the submitted name exactly; language translation and alias guessing are unsupported.",
+            "An Agent may provide a translated or normalized lookup_name, but the selected backend must validate it deterministically; translation alone never establishes structure identity.",
             "A candidate is not a 3D product structure, reaction mapping, or mechanistic conclusion.",
         ]),
     descriptor("reaction.parse", "Parse explicit molecular reaction identities, stoichiometry and electronic states.", [],

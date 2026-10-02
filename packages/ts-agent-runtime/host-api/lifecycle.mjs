@@ -107,7 +107,7 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
     return snapshot();
   }
 
-  function admitTool({ runId, toolName, toolCallId } = {}) {
+  function admitTool({ runId, toolName, toolCallId, args } = {}) {
     ensureRun(runId);
     const metadataForTool = toolMetadata[toolName];
     if (!metadataForTool) return { accepted: true, ignored: true, ...snapshot() };
@@ -136,6 +136,11 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
     const isRead = PURE_READ_EFFECTS.has(effect);
     const isDecisionWrite = RESEARCH_DECISION_EFFECTS.has(effect);
     const isExecution = EXECUTION_EFFECTS.has(effect);
+    // `compute_run` is one public tool with two distinct lifecycle roles. A
+    // follow-up inspect/finalize/cancel acts on an existing Attempt and must be
+    // available while that Attempt is waiting for external reconciliation. The
+    // launch operation remains an execution side effect and is still blocked.
+    const existingAttemptOperation = isExistingAttemptOperation(toolName, args);
     if (lifecycle === "blocked" || disposition === "blocked") {
       // The Kernel permits a checkpoint to replace a blocked disposition. A
       // checkpoint is represented by lifecycle_write plus the checkpoint
@@ -170,7 +175,7 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
       // turn. Waiting for a remote Attempt remains a hard stop.
       const executionReady = lifecycle === "decision_needed"
         && durableLiveness?.execution_ready === true;
-      if ((isExecution || (!isRead && !isDecisionWrite)) && !executionReady) {
+      if ((isExecution || (!isRead && !isDecisionWrite)) && !executionReady && !existingAttemptOperation) {
         return {
           accepted: false,
           code: lifecycle === "waiting_external" ? "research_waiting_external" : "research_decision_required",
@@ -203,7 +208,7 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
     return { accepted: true, ...snapshot() };
   }
 
-  function completeTool({ runId, toolName, toolCallId, isError = false } = {}) {
+  function completeTool({ runId, toolName, toolCallId, args, isError = false } = {}) {
     ensureRun(runId);
     // Ignore stale/out-of-order completions instead of applying their phase
     // transition to whichever tool is currently active. This is important
@@ -230,14 +235,21 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
     // disposition repair is the exception: after checkpoint the Host may ask
     // for one read-only orientation before accepting a strategy or checkpoint.
     const phaseBeforeTool = state.phase_before_tool || state.lifecycle_phase;
-    const nextPhase = phase === "orient"
+    const nextPhase = isExistingAttemptOperation(toolName, args) && args?.operation === "inspect"
+      ? "execute"
+      : phase === "orient"
       ? (phaseBeforeTool === "orient" || phaseBeforeTool === "wake" || phaseBeforeTool === "checkpoint" ? "advance" : phaseBeforeTool)
       : phase === "advance" || phase === "prepare"
         ? "prepare"
         : phase === "execute"
           ? "interpret"
           : phase === "interpret"
-            ? "checkpoint"
+            // Artifact interpretation (analysis/compare/render) produces
+            // evidence that the Agent still needs to record in ResearchMap.
+            // Reopen the planning lane for that write, while canonical
+            // ResearchMap interpretation/advisory tools still close at a
+            // checkpoint.
+            ? metadataForTool.effect === "artifact_write" ? "advance" : "checkpoint"
             : "checkpoint";
     state = { ...state, lifecycle_phase: nextPhase, phase_before_tool: null, active_tool_call_id: null };
     return snapshot();
@@ -273,9 +285,8 @@ function allowedToolPhases(phase) {
   switch (phase) {
     case "wake": return ["orient"];
     case "orient": return ["orient", "advance", "prepare"];
-    // A legacy/domain-specific turn may launch a bounded Attempt directly
-    // after orientation. Keep that compatibility path while still admitting
-    // explicit strategy/change records in the advance phase.
+    // A strategy turn may launch a bounded Attempt after orientation while
+    // still admitting explicit strategy/change records in the advance phase.
     case "advance": return ["orient", "advance", "prepare", "execute", "checkpoint"];
     // Preparation can include read-only environment/capability inspection
     // before the Root records the Claim/Node plan. Keep advance reachable so
@@ -320,6 +331,11 @@ export function checkpointFollowUp(status) {
   if (!status || typeof status !== "object" || Array.isArray(status)) return undefined;
   if (status.lifecycle !== "decision_needed") return undefined;
   return continuationFollowUp(status);
+}
+
+function isExistingAttemptOperation(toolName, args) {
+  if (toolName !== "compute_run" && toolName !== "ts_calc") return false;
+  return ["inspect", "finalize", "cancel"].includes(args?.operation);
 }
 
 export function continuationFollowUp(status) {

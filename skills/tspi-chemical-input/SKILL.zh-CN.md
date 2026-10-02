@@ -18,7 +18,11 @@ description: 在确定性 TSPi 分析或计算前，把自然语言化学名称�
 2. 对名称通过 `analysis_run` 调用 `chemical.name.resolve@1`，保留解析器
    provenance、候选、诊断和状态。
    若安装目录的 `name-resolver.toml` 启用了确定性的 PubChem 或 OPSIN 后端，能力会自动
-   使用它；返回 `unsupported` 表示后端不可用，不能用 LLM 候选绕过这一限制。
+   使用它；返回 `unsupported` 表示后端不可用，返回带 404 诊断的 `invalid` 表示后端可达但
+   不认识该名称。两种结果都不能用未经确认的 LLM 候选绕过。
+   在 `name` 中保留用户原文；必要时由 Agent 翻译或规范化后填入
+   `lookup_name`，再由 resolver 对该名称做确定性核验。不要把 `input_text` 或反应物/产物
+   `role` 放进去。物种角色应在后续的 `reaction.parse` 请求中表达。
 3. 把 `draft` 候选（包括 LLM 提出的 SMILES）、未解析名称、多个候选和未指定
    立体中心记录为输入问题，提出聚焦的澄清问题或请求 SMILES/结构 artifact。
 4. 只有候选被明确确认或由确定性解析器唯一解析后，才能传给 `artifact_seed`。

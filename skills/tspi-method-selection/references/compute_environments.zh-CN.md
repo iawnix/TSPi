@@ -13,7 +13,7 @@ OpenSSH/SCP 与 Torque 传输层，不是另一套公共计算生命周期。公
 
 该文件是 local/remote 唯一的环境权威。不要再增加独立的 `.pi/remote.toml` registry，也不要
 从某个主机目录推断远端环境。配置的环境名必须作为 Native `compute_run` 的
-`operation=launch` 请求中的 `executionTarget.environment` 传入。Capability identity 仍由实时
+`operation=launch` 请求中的 `execution.environment` 传入。Capability identity 仍由实时
 capability catalog 负责；环境的 backend 列表只描述绑定和就绪状态。
 
 使用安装级 `TSPi --check-remote` 做只读诊断：

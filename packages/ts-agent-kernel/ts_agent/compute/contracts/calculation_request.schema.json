@@ -5,7 +5,7 @@
   "required": [
     "schema_version", "node_id", "purpose", "attempt_kind", "lineage",
     "capability", "capability_version", "input_artifacts", "parameters",
-    "execution_target", "dry_run"
+    "execution", "dry_run"
   ],
   "properties": {
     "schema_version": {"const": "ts-calculation-request/5"},
@@ -61,28 +61,13 @@
         ]
       }
     },
-    "execution_target": {
-      "oneOf": [
-        {
-          "type": "object",
-          "required": ["kind"],
-          "properties": {
-            "kind": {"const": "local"},
-            "environment": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"}
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": ["kind", "environment", "resources"],
-          "properties": {
-            "kind": {"const": "remote"},
-            "environment": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
-            "resources": {"$ref": "calculation_intent.schema.json#/$defs/remote_resources"}
-          },
-          "additionalProperties": false
-        }
-      ]
+    "execution": {
+      "type": "object",
+      "required": ["environment"],
+      "properties": {
+        "environment": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"}
+      },
+      "additionalProperties": false
     },
     "dry_run": {"type": "boolean"}
   },

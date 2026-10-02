@@ -189,6 +189,44 @@ def test_opsin_name_resolver_uses_configured_http_endpoint(tmp_path, monkeypatch
     assert result["data"]["resolver_provenance"]["implementation"] == "OPSIN HTTP API"
 
 
+def test_name_resolver_validates_agent_translation_and_preserves_original_name(tmp_path, monkeypatch):
+    config = tmp_path / "name-resolver.toml"
+    config.write_text(
+        '[backends.opsin]\nendpoint = "https://opsin.test/opsin"\ncache = false\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TSPI_NAME_RESOLVER_CONFIG", str(config))
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return json.dumps({"name": "boron trifluoride", "smiles": "FB(F)F"}).encode()
+
+    calls = []
+
+    def lookup(request, timeout):
+        calls.append(request.full_url)
+        return Response()
+
+    monkeypatch.setattr("urllib.request.urlopen", lookup)
+    result = evaluate("chemical.name.resolve", source(), {
+        "name": "三氟化硼",
+        "lookup_name": "boron trifluoride",
+        "resolver": "opsin",
+    })
+
+    assert result["verdict"] == "valid"
+    assert result["data"]["status"] == "resolved"
+    assert result["data"]["name"] == "三氟化硼"
+    assert result["data"]["lookup_name"] == "boron trifluoride"
+    assert calls == ["https://opsin.test/opsin/boron%20trifluoride.json"]
+
+
 def test_name_resolver_preserves_http_status_diagnostics(tmp_path, monkeypatch):
     config = tmp_path / "name-resolver.toml"
     config.write_text(
@@ -202,11 +240,59 @@ def test_name_resolver_preserves_http_status_diagnostics(tmp_path, monkeypatch):
 
     monkeypatch.setattr("urllib.request.urlopen", missing)
     result = evaluate("chemical.name.resolve", source(), {"name": "中文俗名"})
-    assert result["verdict"] == "unsupported"
+    assert result["verdict"] == "invalid"
     assert result["data"]["status"] == "unresolved"
     assert result["diagnostics"] == [
         "PubChem returned HTTP 404: the submitted name is not recognized by this backend"
     ]
+
+
+def test_name_resolver_caches_deterministic_not_found_results(tmp_path, monkeypatch):
+    config = tmp_path / "name-resolver.toml"
+    config.write_text(
+        '[backends.pubchem]\nendpoint = "https://pubchem.test/rest/pug"\ncache = true\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TSPI_NAME_RESOLVER_CONFIG", str(config))
+    calls = []
+
+    def missing(request, timeout):
+        calls.append((request.full_url, timeout))
+        raise urllib.error.HTTPError(request.full_url, 404, "not found", {}, None)
+
+    monkeypatch.setattr("urllib.request.urlopen", missing)
+    first = evaluate("chemical.name.resolve", source(), {"name": "not-indexed"})
+    replay = evaluate("chemical.name.resolve", source(), {"name": "not-indexed"})
+
+    assert first["verdict"] == replay["verdict"] == "invalid"
+    assert first["data"] == replay["data"]
+    assert first["diagnostics"] == replay["diagnostics"] == [
+        "PubChem returned HTTP 404: the submitted name is not recognized by this backend"
+    ]
+    assert len(calls) == 1
+
+
+def test_name_resolver_auto_tries_each_enabled_backend(tmp_path, monkeypatch):
+    config = tmp_path / "name-resolver.toml"
+    config.write_text(
+        '[backends.pubchem]\nendpoint = "https://pubchem.test/rest/pug"\ncache = false\n'
+        '[backends.opsin]\nendpoint = "https://opsin.test/opsin"\ncache = false\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TSPI_NAME_RESOLVER_CONFIG", str(config))
+    calls = []
+
+    def missing(request, timeout):
+        calls.append(request.full_url)
+        raise urllib.error.HTTPError(request.full_url, 404, "not found", {}, None)
+
+    monkeypatch.setattr("urllib.request.urlopen", missing)
+    result = evaluate("chemical.name.resolve", source(), {"name": "not-indexed"})
+
+    assert result["verdict"] == "invalid"
+    assert result["data"]["resolver"] == "auto"
+    assert len(calls) == 2
+    assert [attempt["resolver"] for attempt in result["data"]["resolver_provenance"]["attempts"]] == ["pubchem", "opsin"]
 
 
 def thermo_parameters(**changes):

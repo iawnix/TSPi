@@ -62,7 +62,7 @@ command = \"/opt/pyscf/bin/python\"
                 {"input_role": "xyz", "artifact_id": catalog["inputs/molecule.xyz"]["artifact_id"]}
             ],
             "parameters": {"basis": "def2-svp", "threads": 2},
-            "execution_target": {"kind": "local"},
+            "execution": {"environment": "local"},
             "dry_run": True,
         },
     )

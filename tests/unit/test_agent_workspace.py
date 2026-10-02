@@ -57,7 +57,9 @@ def test_new_workspace_change_checkpoint_and_turn_are_durable(tmp_path: Path) ->
         "checkpoint_id": "checkpoint_1",
         "disposition": "deferred",
     })["revision"] == 1
-    assert turn(tmp_path, {"operation": "orient"})["accepted"] is True
+    orient = turn(tmp_path, {"operation": "orient"})
+    assert orient["schema_version"] == "research-turn-result/1"
+    assert orient["accepted"] is True
 
 
 def test_semantic_refs_and_checkpoint_liveness_are_protocol_stable(tmp_path: Path) -> None:
