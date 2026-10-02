@@ -93,8 +93,8 @@ disposition：`continue_required`、等待已提交 Attempt 的 `waiting_externa
   目录；原始 payload 保存在各自的 artifact store 中；
 - 新的 map 行为应加入模型和 ChangeSet 操作，并配套聚焦测试；
 - 每个新的 map 行为都要更新 Kernel 操作目录和聚焦测试；
-- 更新 `packages/ts-agent-kernel/ts_agent/command_catalog.json` 或
-  `packages/ts-agent-runtime/host-api/tools.mjs`，slash command 和 host adapter 直接
+- 更新 `packages/tspi-runtime/tspi_runtime/command_catalog.json` 或
+  `packages/agent-runtime/host-api/tools.mjs`，slash command 和 host adapter 直接
   消费这些定义；
 - local/remote 计算统一放在一份 `compute.toml` environments 目录后面；
 - 保持 `ResearchMap` 为唯一科学状态模型，不引入平行科学存储或别名。

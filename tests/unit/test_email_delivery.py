@@ -5,8 +5,8 @@ import socket
 
 import pytest
 
-from ts_agent.email import delivery
-from ts_agent.email.errors import NotificationError
+from notify_lib import delivery
+from notify_lib.errors import NotificationError
 
 
 def test_smtp_connection_uses_ipv4_candidates_and_one_timeout_budget(monkeypatch: pytest.MonkeyPatch) -> None:

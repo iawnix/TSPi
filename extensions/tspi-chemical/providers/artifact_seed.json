@@ -6,9 +6,31 @@
     {
       "id": "artifact_seed",
       "version": "1",
-      "aliases": ["artifact.seed"]
+      "aliases": [
+        "artifact.seed"
+      ]
     }
   ],
   "implementation": "builtin",
-  "notes": "Inventory entry for the built-in artifact seeding tool; execution remains harness-owned."
+  "notes": "Inventory entry for the built-in artifact seeding tool; execution remains harness-owned.",
+  "operation": "artifact_seed",
+  "version": "1",
+  "input_schema": {
+    "type": "object"
+  },
+  "parameter_schema": {
+    "type": "object"
+  },
+  "result_schema": {
+    "type": "object"
+  },
+  "output_roles": [
+    "artifact"
+  ],
+  "effects": [
+    "artifact_write"
+  ],
+  "limits": {
+    "timeout_seconds": 3600
+  }
 }

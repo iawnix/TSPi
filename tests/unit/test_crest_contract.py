@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ts_agent.backends.crest import parse_crest_artifacts
+from tspi_runtime.backends.crest import parse_crest_artifacts
 
 
 _FRAME = "3\nenergy: -1.0\nO 0 0 0\nH .75 0 .5\nH -.75 0 .5\n"

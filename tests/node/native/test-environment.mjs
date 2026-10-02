@@ -18,7 +18,7 @@ export function pinnedPiSource() {
 }
 
 export function managedPython() {
-  if (process.env.TS_AGENT_PYTHON) return process.env.TS_AGENT_PYTHON;
+  if (process.env.TSPI_PYTHON) return process.env.TSPI_PYTHON;
   const envRoot = process.env.TSPI_TEST_ENV_ROOT || "/home/iaw/debug/tspi-test-env";
   try {
     const manifest = JSON.parse(readFileSync(join(envRoot, "runtime", "env.json"), "utf8"));

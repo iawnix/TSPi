@@ -38,7 +38,7 @@ RESULT_SCHEMA_VERSION = "ts-source-test/1"
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Build the current ts-agent-kernel wheel and test it in a temporary overlay."
+        description="Build the current tspi-runtime wheel and test it in a temporary overlay."
     )
     parser.add_argument("--package-root", default=str(ROOT))
     parser.add_argument(
@@ -203,7 +203,7 @@ def _validate_test_layout(probe: dict[str, Any], base_prefix: Path, overlay: Pat
     distribution_root = distribution.get("root")
     executable = python.get("executable")
     if not isinstance(distribution_root, str) or not Path(distribution_root).resolve().is_relative_to(overlay):
-        raise RuntimeInstallError("ts-agent-kernel did not load from the temporary overlay")
+        raise RuntimeInstallError("tspi-runtime did not load from the temporary overlay")
     if not isinstance(executable, str) or not Path(executable).resolve().is_relative_to(overlay):
         raise RuntimeInstallError("pytest interpreter did not load from the temporary overlay")
 

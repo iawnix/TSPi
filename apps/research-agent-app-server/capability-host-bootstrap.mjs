@@ -39,7 +39,7 @@ async function default_compute_config_path(explicit) {
 
 /**
  * Build the Native-only capability catalog boundary. Provider adapters and
- * provider allowlists are intentionally unsupported; ts_compute owns the
+ * provider allowlists are intentionally unsupported; compute owns the
  * descriptor registry and execution implementation.
  */
 export async function create_configured_capability_host(options = {}) {

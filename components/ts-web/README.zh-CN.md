@@ -1,7 +1,7 @@
 # TS Web 组件
 
 `@iawnix/ts-web` 是 TSPi 的可选只读浏览器客户端。它负责 HTTP 传输、
-浏览器资源、工作区注册命令和 ResearchMap 客户端，不导入 `ts_agent`，也不拥有
+浏览器资源、工作区注册命令和 ResearchMap 客户端，不导入 `tspi_runtime`，也不拥有
 科研状态。
 
 该组件通过版本化的 `research-map-provider/1` JSON-lines 协议与 TSPi Agent 通信。

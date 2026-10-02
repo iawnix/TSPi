@@ -35,7 +35,7 @@ Monitor 和客户端适配。它接收 `AgentRuntimePort`，不能直接 import 
 
 Pi 只是一个 Runtime Adapter。Pi import、experimental source、patch 校验、Pi
 SessionWorker、Pi AgentHarness 和 Pi 模型集成全部限制在
-`research-agent-pi-adapter` 中。框架不调用系统安装的 `pi` 命令，也不读取环境中的
+`agent-pi-adapter` 中。框架不调用系统安装的 `pi` 命令，也不读取环境中的
 Pi 配置。
 
 所有协议标识使用下划线命名，例如 `research_turn_request`、

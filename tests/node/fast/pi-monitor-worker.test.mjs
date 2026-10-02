@@ -10,7 +10,7 @@ import {
   recordMonitorTurn,
   sendNotification,
 } from "../../../apps/app-server/pi-monitor-worker.mjs";
-import { create_workspace_initializer } from "../../../packages/research-agent-core/workspace.mjs";
+import { create_workspace_initializer } from "../../../packages/agent-core/workspace.mjs";
 
 async function fixture(t) {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "tspi-monitor-worker-test-"));
@@ -114,7 +114,7 @@ test("monitor notifications preserve structured SMTP/provider failures", async (
     },
   };
   const execute = async () => {
-    const error = new Error("Command failed: ts_email.py notify");
+    const error = new Error("Command failed: notify.py notify");
     error.stdout = JSON.stringify(providerFailure);
     error.stderr = "";
     throw error;

@@ -6,11 +6,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
-import { commandArguments, createCommandService } from "../../packages/ts-agent-runtime/host-api/commands.mjs";
-import { createPublicToolAliases, createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
-import { boundWorkspaceRoot } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
-import { wrapToolWithEnvelope } from "../../packages/ts-agent-runtime/host-api/tool-envelope.mjs";
-import { checkpointFollowUp, continuationFollowUp } from "../../packages/ts-agent-runtime/host-api/lifecycle.mjs";
+import { commandArguments, createCommandService } from "../../packages/agent-runtime/host-api/commands.mjs";
+import { createPublicToolAliases, createPublicToolContracts } from "../../packages/agent-runtime/host-api/tools.mjs";
+import { boundWorkspaceRoot } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
+import { wrapToolWithEnvelope } from "../../packages/agent-runtime/host-api/tool-envelope.mjs";
+import { checkpointFollowUp, continuationFollowUp } from "../../packages/agent-runtime/host-api/lifecycle.mjs";
 import { createComputeTool } from "./pi-native-compute.mjs";
 import { createNotifyTool } from "./pi-native-notify.mjs";
 import { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
@@ -26,19 +26,19 @@ export { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
 
 const require = createRequire(import.meta.url);
 const { beginActivity, completeActivity, failActivity } = require(
-  "../../packages/ts-agent-runtime/agent-core/activity-journal.cjs",
+  "../../packages/agent-runtime/agent-core/activity-journal.cjs",
 );
 const { analysisRequest, analysisRequestSummary, validateAnalysisResult } = require(
-  "../../packages/ts-agent-runtime/artifacts/analysis-contract.cjs",
+  "../../packages/agent-runtime/artifacts/analysis-contract.cjs",
 );
 const {
   validateCreatedRenderOutput,
   validateCreatedReportPackage,
   validateRenderRequest,
   validateReportRequest,
-} = require("../../packages/ts-agent-runtime/artifacts/request-contract.cjs");
+} = require("../../packages/agent-runtime/artifacts/request-contract.cjs");
 const executeFile = promisify(execFile);
-const { nodeControlArguments } = require("../../packages/ts-agent-runtime/artifacts/node-control.cjs");
+const { nodeControlArguments } = require("../../packages/agent-runtime/artifacts/node-control.cjs");
 
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
 const NATIVE_COMMANDS = createCommandService({ execute: executeNativeCommand });
@@ -100,7 +100,7 @@ export function createStateTool(options = {}) {
           const args = selector
             ? ["resolve-analysis-capability", "--root", root, "--capability", selector[0], "--version", selector[1] || "1"]
             : ["analysis-capabilities", "--root", root];
-          return toolResult(await runJsonCli(packageScript("ts_compute.py"), args, root, context?.abortSignal));
+          return toolResult(await runJsonCli(packageScript("compute.py"), args, root, context?.abortSignal));
         }
         throw new Error("research.read mode=capabilities requires capabilityKind=compute or analysis (tool research_read)");
       }
@@ -482,7 +482,7 @@ export function createDispatchTool() {
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("execution_dispatch", toolContext);
       const root = boundWorkspaceRoot(params, toolContext);
-      const result = await runJsonCli(packageScript("ts_compute.py"), ["node-dispatch", "--root", root, ...nodeControlArguments(params)], root, context?.abortSignal);
+      const result = await runJsonCli(packageScript("compute.py"), ["node-dispatch", "--root", root, ...nodeControlArguments(params)], root, context?.abortSignal);
       return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
     },
   };
@@ -560,7 +560,7 @@ export function createRenderTool() {
       try {
         await mkdir(outputDirectory, { recursive: true, mode: 0o700 });
         const raw = await runJsonCli(
-          packageScript("ts_render.py"),
+          packageScript("render.py"),
           [request.operation, ...request.artifacts.map((item) => item.path), "-o", request.outputPath, "--json"],
           root,
           context?.abortSignal,
@@ -635,7 +635,7 @@ export function createReportTool() {
       });
       try {
         const raw = await runJsonCli(
-          packageScript("ts_report.py"),
+          packageScript("report.py"),
           [
             "--root", root,
             "--package-dir", request.packagePath,
@@ -760,7 +760,7 @@ async function runDeterministicArtifact(options) {
   try {
     const raw = await runPrivateRequest(
       options.temporaryPrefix,
-      packageScript("ts_compute.py"),
+      packageScript("compute.py"),
       options.command,
       options.root,
       options.request,
@@ -789,7 +789,7 @@ async function runDeterministicArtifact(options) {
 
 async function allocateOperationalId(root, signal) {
   const result = await runJsonCli(
-    packageScript("ts_workspace.py"),
+    packageScript("workspace.py"),
     ["allocate_operational_id", "--root", root, "--kind", "op"],
     root,
     signal,
@@ -866,7 +866,7 @@ async function runCanonicalApi(command, cwd, extraArgs, parentSignal, timeoutMs 
   const signal = parentSignal ? AbortSignal.any([parentSignal, timeoutSignal]) : timeoutSignal;
   let completed;
   try {
-    completed = await executeFile(nativePython(), [packageScript("ts_api.py"), command, "--root", cwd, ...extraArgs], {
+    completed = await executeFile(nativePython(), [packageScript("research_api.py"), command, "--root", cwd, ...extraArgs], {
       cwd,
       env: { ...process.env, PYTHONNOUSERSITE: "1" },
       maxBuffer: 8 * 1024 * 1024,
@@ -961,7 +961,7 @@ function filterContinuationStatus(result, params) {
 
 async function resolveArtifacts(root, artifactIds, signal) {
   const raw = await runJsonCli(
-    packageScript("ts_compute.py"),
+    packageScript("compute.py"),
     ["resolve-artifacts", "--root", root, ...artifactIds.flatMap((artifactId) => ["--artifact-id", artifactId])],
     root,
     signal,
@@ -975,7 +975,7 @@ async function resolveArtifacts(root, artifactIds, signal) {
 
 async function resolveArtifactByRef(root, ref, signal) {
   const raw = await runJsonCli(
-    packageScript("ts_compute.py"),
+    packageScript("compute.py"),
     ["list-artifacts", "--root", root],
     root,
     signal,
@@ -1094,11 +1094,11 @@ export function cliErrorMessage(stderr) {
 function packageScript(name) {
   const packageRoot = process.env.TSPI_PACKAGE_ROOT;
   if (!packageRoot) throw new Error("TSPi native worker requires TSPI_PACKAGE_ROOT");
-  return resolve(packageRoot, "scripts", name);
+  return resolve(packageRoot, "apps", "agent-cli", name);
 }
 
 function nativePython() {
-  return process.env.TS_AGENT_PYTHON || "python3";
+  return process.env.TSPI_PYTHON || "python3";
 }
 
 function requireNativeWrites(toolName, toolContext) {

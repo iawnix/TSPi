@@ -13,7 +13,7 @@ values. Each descriptor declares:
 - the operation version and declared effects.
 
 The kernel discovers providers through
-`ts_agent.compute.artifact_registry.register_artifact_provider`. It exposes
+`research_compute.artifact_registry.register_artifact_provider`. It exposes
 the descriptors in a catalog, validates the result envelope, and checks that
 the result provenance names the registered provider and descriptor digest.
 Provider objects and command paths are never returned by the catalog.

@@ -3,7 +3,7 @@ requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ts-agent-kernel"
+name = "tspi-runtime"
 dynamic = ["version"]
 description = "Deterministic Python kernel for the TS Agent Pi package"
 readme = "README.md"
@@ -24,23 +24,19 @@ dependencies = [
 test = ["pytest>=8,<10"]
 
 [tool.setuptools]
-package-dir = {"" = "packages/ts-agent-kernel"}
+package-dir = {tspi_runtime = "packages/tspi-runtime/tspi_runtime", research_state = "packages/research-state/research_state", research_memory = "packages/research-memory/research_memory", research_compute = "packages/research-compute/research_compute"}
+packages = ["tspi_runtime", "tspi_runtime.backends", "tspi_runtime.remote", "tspi_runtime.runtime", "tspi_runtime.structures", "tspi_runtime.workspace", "tspi_runtime.providers", "tspi_runtime.reaction", "tspi_runtime.analysis", "tspi_runtime.platforms", "tspi_runtime.pyscf", "research_state", "research_memory", "research_compute"]
 include-package-data = false
 
 [tool.setuptools.dynamic]
-version = {attr = "ts_agent._version.__version__"}
-
-[tool.setuptools.packages.find]
-where = ["packages/ts-agent-kernel"]
-include = ["ts_agent*"]
-exclude = ["ts_agent.web", "ts_agent.web.*"]
+version = {attr = "tspi_runtime._version.__version__"}
 
 [tool.setuptools.package-data]
-"ts_agent" = ["command_catalog.json"]
-"ts_agent.compute" = ["contracts/*.json"]
-"ts_agent.remote" = ["*.toml"]
-"ts_agent.workspace" = ["contracts/*.json"]
+"tspi_runtime" = ["command_catalog.json"]
+"research_compute" = ["contracts/*.json"]
+"tspi_runtime.remote" = ["*.toml"]
+"tspi_runtime.workspace" = ["contracts/*.json"]
 
 [tool.pytest.ini_options]
-pythonpath = ["packages/ts-agent-kernel", "."]
+pythonpath = ["packages/tspi-runtime", "packages/research-state", "packages/research-memory", "packages/research-compute", "extensions/tspi-render/providers", "extensions/tspi-report/providers", "extensions/tspi-notify/providers", "."]
 testpaths = ["tests/unit", "tests/contract", "tests/integration"]

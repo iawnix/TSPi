@@ -113,8 +113,8 @@ write a Finding.
   raw payloads remain in their artifact stores;
 - add new map behavior as a model and ChangeSet operation, with focused tests;
 - update the Kernel operation catalog and focused tests for every new map behavior;
-- update `packages/ts-agent-kernel/ts_agent/command_catalog.json` or
-  `packages/ts-agent-runtime/host-api/tools.mjs`; slash commands and host
+- update `packages/tspi-runtime/tspi_runtime/command_catalog.json` or
+  `packages/agent-runtime/host-api/tools.mjs`; slash commands and host
   adapters consume those definitions directly;
 - keep local and remote compute behavior behind the one `compute.toml` environment
   catalog;

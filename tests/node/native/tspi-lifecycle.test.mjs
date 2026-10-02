@@ -5,27 +5,27 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContinuationLivenessHook } from "../../../apps/app-server/pi-native-tools.mjs";
-import { createResearchLifecycleController, requiredContinuations, toolEventIsError } from "../../../packages/ts-agent-runtime/host-api/lifecycle.mjs";
+import { createResearchLifecycleController, requiredContinuations, toolEventIsError } from "../../../packages/agent-runtime/host-api/lifecycle.mjs";
 import Type from "../../../apps/app-server/pi-runtime-deps.mjs";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { Agent, AgentHarness, BACKGROUND_CONTEXT, createReadTool, MemorySessionRepo } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { Check } from "typebox/value";
-import { createPublicToolAliases, createPublicToolContracts, PUBLIC_TOOL_EXECUTION, PUBLIC_TOOL_METADATA, PUBLIC_TOOL_NAMES } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { createPublicToolAliases, createPublicToolContracts, PUBLIC_TOOL_EXECUTION, PUBLIC_TOOL_METADATA, PUBLIC_TOOL_NAMES } from "../../../packages/agent-runtime/host-api/tools.mjs";
 import { cliErrorMessage, normalizeCheckpointPayload } from "../../../apps/app-server/pi-native-tools.mjs";
-import { boundWorkspaceRoot } from "../../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
-import { bindToolExecutionContext, createToolExecutionContext } from "../../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
+import { boundWorkspaceRoot } from "../../../packages/agent-runtime/host-api/workspace-context.mjs";
+import { bindToolExecutionContext, createToolExecutionContext } from "../../../packages/agent-runtime/host-api/workspace-context.mjs";
 import {
   markToolEnvelopeError,
   toolErrorResult,
   wrapToolForHarness,
   wrapToolWithEnvelope,
-} from "../../../packages/ts-agent-runtime/host-api/tool-envelope.mjs";
+} from "../../../packages/agent-runtime/host-api/tool-envelope.mjs";
 import { managedPython } from "./test-environment.mjs";
-import { create_workspace_initializer } from "../../../packages/research-agent-core/workspace.mjs";
-import { close_test_research_kernels, create_test_research_kernel } from "../../support/research_kernel_helpers.mjs";
+import { create_workspace_initializer } from "../../../packages/agent-core/workspace.mjs";
+import { close_test_research_states, create_test_research_state } from "../../support/research_state_helpers.mjs";
 
-test.afterEach(close_test_research_kernels);
+test.afterEach(close_test_research_states);
 
 const context = { abortSignal: new AbortController().signal };
 
@@ -161,11 +161,11 @@ test("Harness tool invocation enforces Host-owned phase, authority, replay, and 
   });
   const executions = [];
   const stateTool = wrapToolForHarness({
-    name: "ts_state",
+    name: "research_read",
     label: "TS State",
     description: "A canonical read fixture.",
     parameters: Type.Object({}, { additionalProperties: false }),
-    metadata: PUBLIC_TOOL_METADATA.ts_state,
+    metadata: PUBLIC_TOOL_METADATA.research_read,
     async execute() {
       executions.push("state");
       return { content: [{ type: "text", text: "ok" }] };
@@ -265,33 +265,33 @@ test("dynamic Harness lifecycle admission advances phases without trusting Agent
   });
   const executions = [];
   const stateTool = wrapToolForHarness({
-    name: "ts_state",
+    name: "research_read",
     label: "TS State",
     description: "Read lifecycle state.",
     parameters: Type.Object({}, { additionalProperties: false }),
-    metadata: PUBLIC_TOOL_METADATA.ts_state,
+    metadata: PUBLIC_TOOL_METADATA.research_read,
     async execute() {
       executions.push("state");
       return { content: [{ type: "text", text: "state" }] };
     },
   });
   const calcTool = wrapToolForHarness({
-    name: "ts_calc",
+    name: "compute_run",
     label: "TS Calculate",
     description: "Execute one bounded attempt.",
     parameters: Type.Object({}, { additionalProperties: false }),
-    metadata: PUBLIC_TOOL_METADATA.ts_calc,
+    metadata: PUBLIC_TOOL_METADATA.compute_run,
     async execute() {
       executions.push("calc");
       return { content: [{ type: "text", text: "calc" }] };
     },
   });
   const changeTool = wrapToolForHarness({
-    name: "ts_change",
+    name: "research_change",
     label: "TS Change",
     description: "Write one research change.",
     parameters: Type.Object({}, { additionalProperties: false }),
-    metadata: PUBLIC_TOOL_METADATA.ts_change,
+    metadata: PUBLIC_TOOL_METADATA.research_change,
     async execute() {
       executions.push("change");
       return { content: [{ type: "text", text: "change" }] };
@@ -307,16 +307,16 @@ test("dynamic Harness lifecycle admission advances phases without trusting Agent
   );
 
   assert.equal((await invoke(stateTool, "state-1")).details.envelope.ok, true);
-  controller.completeTool({ runId: "run-dynamic", toolName: "ts_state" });
-  const admittedChange = controller.admitTool({ runId: "run-dynamic", toolName: "ts_change" });
+  controller.completeTool({ runId: "run-dynamic", toolName: "research_read" });
+  const admittedChange = controller.admitTool({ runId: "run-dynamic", toolName: "research_change" });
   assert.equal(admittedChange.accepted, true);
   const changed = await invoke(changeTool, "change-1");
   assert.equal(changed.details.envelope.ok, true);
-  controller.completeTool({ runId: "run-dynamic", toolName: "ts_change" });
+  controller.completeTool({ runId: "run-dynamic", toolName: "research_change" });
   assert.equal(controller.snapshot().lifecycle_phase, "prepare");
   assert.deepEqual(executions, ["state", "change"]);
 
-  const admittedCalc = controller.admitTool({ runId: "run-dynamic", toolName: "ts_calc" });
+  const admittedCalc = controller.admitTool({ runId: "run-dynamic", toolName: "compute_run" });
   assert.equal(admittedCalc.accepted, true);
   const calculated = await invoke(calcTool, "calc-1");
   assert.equal(calculated.details.envelope.ok, true);
@@ -324,7 +324,7 @@ test("dynamic Harness lifecycle admission advances phases without trusting Agent
   assert.equal(controller.snapshot().lifecycle_phase, "execute");
 
   controller.beginRun({ runId: "run-recovery", replay_mode: "recovery" });
-  assert.equal(controller.admitTool({ runId: "run-recovery", toolName: "ts_state" }).accepted, true);
+  assert.equal(controller.admitTool({ runId: "run-recovery", toolName: "research_read" }).accepted, true);
   const recoveryState = await stateTool.execute(
     "recovery-state",
     {},
@@ -334,9 +334,9 @@ test("dynamic Harness lifecycle admission advances phases without trusting Agent
     {},
   );
   assert.equal(recoveryState.details.envelope.ok, true);
-  controller.completeTool({ runId: "run-recovery", toolName: "ts_state" });
+  controller.completeTool({ runId: "run-recovery", toolName: "research_read" });
   assert.equal(controller.snapshot().lifecycle_phase, "advance");
-  assert.equal(controller.admitTool({ runId: "run-recovery", toolName: "ts_change" }).accepted, true);
+  assert.equal(controller.admitTool({ runId: "run-recovery", toolName: "research_change" }).accepted, true);
   await changeTool.execute(
     "recovery-change",
     {},
@@ -345,8 +345,8 @@ test("dynamic Harness lifecycle admission advances phases without trusting Agent
     { operationId: "run-recovery", workspaceRoot: context.workspace_root, sessionId: context.session_id },
     {},
   );
-  controller.completeTool({ runId: "run-recovery", toolName: "ts_change" });
-  assert.equal(controller.admitTool({ runId: "run-recovery", toolName: "ts_calc" }).accepted, true);
+  controller.completeTool({ runId: "run-recovery", toolName: "research_change" });
+  assert.equal(controller.admitTool({ runId: "run-recovery", toolName: "compute_run" }).accepted, true);
   const replayDenied = await calcTool.execute(
     "recovery-calc",
     {},
@@ -356,7 +356,7 @@ test("dynamic Harness lifecycle admission advances phases without trusting Agent
     {},
   );
   assert.equal(replayDenied.details.envelope.error.code, "tool_replay_forbidden");
-  controller.completeTool({ runId: "run-recovery", toolName: "ts_calc", isError: true });
+  controller.completeTool({ runId: "run-recovery", toolName: "compute_run", isError: true });
   assert.equal(controller.snapshot().lifecycle_phase, "prepare");
   assert.deepEqual(executions, ["state", "change", "calc", "state", "change"]);
 });
@@ -367,23 +367,23 @@ test("durable liveness admits only the operations each Kernel disposition permit
 
   run("run-decision-admission");
   controller.setDurableLiveness({ lifecycle: "decision_needed", disposition: null });
-  assert.equal(controller.admitTool({ runId: "run-decision-admission", toolName: "ts_calc" }).accepted, false);
-  assert.equal(controller.admitTool({ runId: "run-decision-admission", toolName: "ts_change" }).accepted, true);
-  controller.completeTool({ runId: "run-decision-admission", toolName: "ts_change" });
+  assert.equal(controller.admitTool({ runId: "run-decision-admission", toolName: "compute_run" }).accepted, false);
+  assert.equal(controller.admitTool({ runId: "run-decision-admission", toolName: "research_change" }).accepted, true);
+  controller.completeTool({ runId: "run-decision-admission", toolName: "research_change" });
 
   run("run-blocked-admission");
   controller.setDurableLiveness({ lifecycle: "blocked", disposition: "blocked" });
-  assert.equal(controller.admitTool({ runId: "run-blocked-admission", toolName: "ts_calc" }).code, "research_lifecycle_blocked");
-  assert.equal(controller.admitTool({ runId: "run-blocked-admission", toolName: "ts_state" }).accepted, true);
-  controller.completeTool({ runId: "run-blocked-admission", toolName: "ts_state" });
+  assert.equal(controller.admitTool({ runId: "run-blocked-admission", toolName: "compute_run" }).code, "research_lifecycle_blocked");
+  assert.equal(controller.admitTool({ runId: "run-blocked-admission", toolName: "research_read" }).accepted, true);
+  controller.completeTool({ runId: "run-blocked-admission", toolName: "research_read" });
   // Once the recovery read advances the lane, the Kernel-owned checkpoint is
   // the only mutation that can replace a blocked disposition.
   assert.equal(controller.admitTool({ runId: "run-blocked-admission", toolName: "research_checkpoint" }).accepted, true);
 
   run("run-user-input-admission");
   controller.setDurableLiveness({ lifecycle: "decision_needed", disposition: "user_input_required" });
-  assert.equal(controller.admitTool({ runId: "run-user-input-admission", toolName: "ts_change" }).code, "research_user_input_required");
-  assert.equal(controller.admitTool({ runId: "run-user-input-admission", toolName: "ts_state" }).accepted, true);
+  assert.equal(controller.admitTool({ runId: "run-user-input-admission", toolName: "research_change" }).code, "research_user_input_required");
+  assert.equal(controller.admitTool({ runId: "run-user-input-admission", toolName: "research_read" }).accepted, true);
 });
 
 test("waiting external admits Attempt reconciliation but blocks a second launch", () => {
@@ -428,11 +428,11 @@ test("durable liveness admits execution after the Kernel records an active strat
   });
   controller.admitTool({ runId: "run-strategy-ready", toolName: "research_read" });
   controller.completeTool({ runId: "run-strategy-ready", toolName: "research_read" });
-  assert.equal(controller.admitTool({ runId: "run-strategy-ready", toolName: "ts_calc" }).accepted, true);
+  assert.equal(controller.admitTool({ runId: "run-strategy-ready", toolName: "compute_run" }).accepted, true);
 
   controller.beginRun({ runId: "run-strategy-missing" });
   controller.setDurableLiveness({ lifecycle: "decision_needed", disposition: null, execution_ready: false });
-  assert.equal(controller.admitTool({ runId: "run-strategy-missing", toolName: "ts_calc" }).code, "research_decision_required");
+  assert.equal(controller.admitTool({ runId: "run-strategy-missing", toolName: "compute_run" }).code, "research_decision_required");
 });
 
 test("Research lifecycle metadata separates strategy, interpretation, and checkpoint phases", () => {
@@ -511,7 +511,7 @@ test("requiredContinuations reads the canonical required continuation projection
 test("decision aliases normalize claim and node selectors without rejecting compatibility fields", async () => {
   const calls = [];
   const source = {
-    name: "ts_workflow",
+    name: "research_continuation",
     async execute(_toolCallId, params) {
       calls.push(params);
       return { content: [{ type: "text", text: "ok" }] };
@@ -601,10 +601,10 @@ test("CLI errors keep the actionable exception instead of a full traceback", () 
   const message = cliErrorMessage([
     "Traceback (most recent call last):",
     "  File '/tmp/api.py', line 1, in <module>",
-    "    raise ResearchKernelError('boom')",
-    "ts_agent.research.kernel.ResearchKernelError: continuation cont_1 references unknown node node_1",
+    "    raise ResearchStateError('boom')",
+    "research_state.agent_workspace.AgentWorkspaceError: continuation cont_1 references unknown node node_1",
   ].join("\n"));
-  assert.equal(message, "ts_agent.research.kernel.ResearchKernelError: continuation cont_1 references unknown node node_1");
+  assert.equal(message, "research_state.agent_workspace.AgentWorkspaceError: continuation cont_1 references unknown node node_1");
   assert.doesNotMatch(message, /Traceback/);
 });
 
@@ -670,9 +670,9 @@ test("retry policy only retries transient or explicitly replay-safe execution fa
   contract.retry_safe = true;
   const transient = new Error("temporary backend outage");
   transient.failure_class = "transient";
-  assert.equal(toolErrorResult(ambiguous, "ts_calc", "ambiguous-call").details.envelope.error.retryable, false);
-  assert.equal(toolErrorResult(contract, "ts_calc", "contract-call").details.envelope.error.retryable, false);
-  assert.equal(toolErrorResult(transient, "ts_calc", "transient-call").details.envelope.error.retryable, true);
+  assert.equal(toolErrorResult(ambiguous, "compute_run", "ambiguous-call").details.envelope.error.retryable, false);
+  assert.equal(toolErrorResult(contract, "compute_run", "contract-call").details.envelope.error.retryable, false);
+  assert.equal(toolErrorResult(transient, "compute_run", "transient-call").details.envelope.error.retryable, true);
 });
 
 test("Harness tool adapter preserves structured errors through Pi Core", async () => {
@@ -856,7 +856,7 @@ test("Research Turn hook repairs a missing disposition without selecting science
   assert.match(result.followUp, /research_strategy or research_interpretation/);
   assert.match(result.followUp, /research_checkpoint/);
   assert.doesNotMatch(result.followUp, /set its disposition to deferred, blocked, or completed/);
-  assert.doesNotMatch(result.followUp, /ts_calc launch|choose|select/);
+  assert.doesNotMatch(result.followUp, /compute_run launch|choose|select/);
   assert.equal(await hook({ runId: "run-decision" }, context), undefined);
 });
 
@@ -893,12 +893,12 @@ test("Harness follow-up requires context before recording the next action", asyn
   const calls = [];
   let lifecycleReads = 0;
   const stateTool = wrapToolForHarness({
-    name: "ts_state",
-    label: "ts_state",
+    name: "research_read",
+    label: "research_read",
     description: "Read bounded research context.",
     parameters: Type.Object({ mode: Type.String() }, { additionalProperties: false }),
     async execute(_toolCallId, params) {
-      calls.push({ name: "ts_state", params });
+      calls.push({ name: "research_read", params });
       return {
         content: [{ type: "text", text: JSON.stringify({ schema_version: "research-context/1" }) }],
         details: { result: { schema_version: "research-context/1" } },
@@ -906,8 +906,8 @@ test("Harness follow-up requires context before recording the next action", asyn
     },
   });
   const workflowTool = wrapToolForHarness({
-    name: "ts_workflow",
-    label: "ts_workflow",
+    name: "research_continuation",
+    label: "research_continuation",
     description: "Record the explicit next research action.",
     parameters: Type.Object({
       operation: Type.String(),
@@ -916,7 +916,7 @@ test("Harness follow-up requires context before recording the next action", asyn
       action: Type.String(),
     }, { additionalProperties: false }),
     async execute(_toolCallId, params) {
-      calls.push({ name: "ts_workflow", params });
+      calls.push({ name: "research_continuation", params });
       return {
         content: [{ type: "text", text: JSON.stringify({ schema_version: "research-continuation-result/1" }) }],
         details: { result: { schema_version: "research-continuation-result/1" } },
@@ -925,8 +925,8 @@ test("Harness follow-up requires context before recording the next action", asyn
   });
   faux.setResponses([
     fauxAssistantMessage("I have reached the end of this turn.", { stopReason: "stop" }),
-    fauxAssistantMessage(fauxToolCall("ts_state", { mode: "context" }, { id: "call-context" }), { stopReason: "toolUse" }),
-    fauxAssistantMessage(fauxToolCall("ts_workflow", {
+    fauxAssistantMessage(fauxToolCall("research_read", { mode: "context" }, { id: "call-context" }), { stopReason: "toolUse" }),
+    fauxAssistantMessage(fauxToolCall("research_continuation", {
       operation: "set_required",
       scope: "node",
       targetId: "node_1",
@@ -960,7 +960,7 @@ test("Harness follow-up requires context before recording the next action", asyn
     const lane = await created.harness.lane("main", BACKGROUND_CONTEXT);
     const run = await lane.prompt("Continue the research.", undefined, BACKGROUND_CONTEXT);
     assert.equal(run.ok, true);
-    assert.deepEqual(calls.map((item) => item.name), ["ts_state", "ts_workflow"]);
+    assert.deepEqual(calls.map((item) => item.name), ["research_read", "research_continuation"]);
     assert.equal(calls[0].params.mode, "context");
     assert.equal(calls[1].params.operation, "set_required");
     // The bounded follow-up is part of the same Harness run boundary, so the
@@ -976,7 +976,7 @@ test("Harness follow-up requires context before recording the next action", asyn
     const followUpIndex = chronological.indexOf(followUp);
     const stateCallIndex = chronological.findIndex((entry) => entry.type === "message"
       && entry.message?.role === "assistant"
-      && entry.message.content?.some((part) => part.type === "toolCall" && part.name === "ts_state"));
+      && entry.message.content?.some((part) => part.type === "toolCall" && part.name === "research_read"));
     assert.ok(followUpIndex >= 0 && stateCallIndex > followUpIndex,
       "context read should happen after the lifecycle follow-up");
   } finally {
@@ -1003,9 +1003,9 @@ test("Research Turn hook reads real Kernel liveness through the canonical comman
   process.env.TSPI_PACKAGE_ROOT = process.cwd();
   const env = {
     ...process.env,
-    TS_AGENT_PYTHON: python,
+    TSPI_PYTHON: python,
     PYTHONNOUSERSITE: "1",
-    PYTHONPATH: join(process.cwd(), "packages", "ts-agent-kernel"),
+    PYTHONPATH: join(process.cwd(), "packages", "tspi-runtime"),
   };
   const run = (args) => execFileSync(python, args, {
     cwd: process.cwd(),
@@ -1019,7 +1019,7 @@ test("Research Turn hook reads real Kernel liveness through the canonical comman
       workspace_id: "workspace_lifecycle_kernel",
       workspace_mode: "research",
     });
-    await create_test_research_kernel({ workspace_root: workspace }).admit_workspace({ authority: "host" });
+    await create_test_research_state({ workspace_root: workspace }).admit_workspace({ authority: "host" });
     const requestFile = join(root, "change.json");
     await writeFile(requestFile, JSON.stringify({
       schema_version: "ts-change-request/1",
@@ -1033,20 +1033,20 @@ test("Research Turn hook reads real Kernel liveness through the canonical comman
         { type: "set_node_state", node_id: "node_1", state: "active" },
       ],
     }));
-    run(["scripts/ts_api.py", "research.change", "--root", workspace, "--request-file", requestFile]);
+    run(["apps/agent-cli/research_api.py", "research.change", "--root", workspace, "--request-file", requestFile]);
 
-    const livenessPayload = JSON.parse(run(["scripts/ts_api.py", "research.liveness", "--root", workspace]));
+    const livenessPayload = JSON.parse(run(["apps/agent-cli/research_api.py", "research.liveness", "--root", workspace]));
     assert.equal(livenessPayload.lifecycle, "decision_needed");
     const hook = createContinuationLivenessHook({
       cwd: workspace,
       maxFollowUps: 1,
-      statusReader: async () => JSON.parse(run(["scripts/ts_api.py", "research.liveness", "--root", workspace])),
+      statusReader: async () => JSON.parse(run(["apps/agent-cli/research_api.py", "research.liveness", "--root", workspace])),
     });
     const result = await hook({ runId: "real-kernel-run" }, context);
     assert.match(result.followUp, /node_1/);
     assert.match(result.followUp, /research turn ended with an active scope/i);
 
-    const liveness = JSON.parse(run(["scripts/ts_api.py", "research.liveness", "--root", workspace]));
+    const liveness = JSON.parse(run(["apps/agent-cli/research_api.py", "research.liveness", "--root", workspace]));
     assert.equal(liveness.lifecycle, "decision_needed");
     assert.equal(liveness.decision_needed[0].target_id, "node_1");
   } finally {

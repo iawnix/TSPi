@@ -96,7 +96,7 @@ test("Pi Agent Core loads the packaged TSPi skill catalog", async () => {
     "tspi-qbics",
     "tspi-render",
     "tspi-report",
-    "tspi-research-kernel",
+    "tspi-research-state",
     "tspi-ts-candidate-generation",
     "tspi-ts-validation",
     "tspi-xtb",
@@ -107,7 +107,7 @@ test("Pi Agent Core loads the packaged TSPi skill catalog", async () => {
 });
 
 function kernelPython() {
-  const candidate = process.env.TS_AGENT_PYTHON || "python3";
+  const candidate = process.env.TSPI_PYTHON || "python3";
   try {
     execFileSync(candidate, ["-c", "import jsonschema"], { stdio: "ignore" });
     return candidate;
@@ -123,11 +123,11 @@ test("native analysis discovers contracts and journals explicit mapping results"
   const workspace = join(root, "workspace");
   const previous = {
     TSPI_PACKAGE_ROOT: process.env.TSPI_PACKAGE_ROOT,
-    TS_AGENT_PYTHON: process.env.TS_AGENT_PYTHON,
+    TSPI_PYTHON: process.env.TSPI_PYTHON,
     TSPI_NATIVE_WRITES: process.env.TSPI_NATIVE_WRITES,
   };
   process.env.TSPI_PACKAGE_ROOT = process.cwd();
-  process.env.TS_AGENT_PYTHON = kernelPython();
+  process.env.TSPI_PYTHON = kernelPython();
   delete process.env.TSPI_NATIVE_WRITES;
   try {
     await executeFile(kernelPython(), ["-c", [
@@ -137,7 +137,7 @@ test("native analysis discovers contracts and journals explicit mapping results"
       "start_research_node(bootstrap_workspace_fixture(Path(sys.argv[1])))",
     ].join("\n"), workspace], {
       cwd: process.cwd(),
-      env: { ...process.env, PYTHONPATH: join(process.cwd(), "packages/ts-agent-kernel") },
+      env: { ...process.env, PYTHONPATH: join(process.cwd(), "packages/tspi-runtime") },
     });
     const { createAnalyzeTool, createImportTool, createStateTool, createDispatchTool } = await import("../../../apps/app-server/pi-native-tools.mjs");
     const context = { abortSignal: new AbortController().signal };
@@ -212,20 +212,20 @@ test("native analysis_run journals a zero-input chemical resolver result", {
   const python = kernelPython();
   const previous = {
     TSPI_PACKAGE_ROOT: process.env.TSPI_PACKAGE_ROOT,
-    TS_AGENT_PYTHON: process.env.TS_AGENT_PYTHON,
+    TSPI_PYTHON: process.env.TSPI_PYTHON,
     TSPI_NATIVE_WRITES: process.env.TSPI_NATIVE_WRITES,
     TSPI_NAME_RESOLVER_CONFIG: process.env.TSPI_NAME_RESOLVER_CONFIG,
     TSPI_INSTALL_ROOT: process.env.TSPI_INSTALL_ROOT,
   };
   process.env.TSPI_PACKAGE_ROOT = process.cwd();
-  process.env.TS_AGENT_PYTHON = python;
+  process.env.TSPI_PYTHON = python;
   process.env.TSPI_NATIVE_WRITES = "1";
   delete process.env.TSPI_NAME_RESOLVER_CONFIG;
   delete process.env.TSPI_INSTALL_ROOT;
   try {
-    await executeFile(python, ["scripts/ts_workspace_mode.py", "--root", workspace, "--workspace-id", "workspace_name_analysis", "--mode", "research"], {
+    await executeFile(python, ["apps/agent-cli/workspace_mode.py", "--root", workspace, "--workspace-id", "workspace_name_analysis", "--mode", "research"], {
       cwd: process.cwd(),
-      env: { ...process.env, TS_AGENT_DISABLE_RUNTIME_REEXEC: "1", PYTHONNOUSERSITE: "1" },
+      env: { ...process.env, TSPI_DISABLE_RUNTIME_REEXEC: "1", PYTHONNOUSERSITE: "1" },
     });
     await executeFile(python, ["-c", [
       "import sys",
@@ -234,7 +234,7 @@ test("native analysis_run journals a zero-input chemical resolver result", {
       "start_research_node(Path(sys.argv[1]))",
     ].join("\n"), workspace], {
       cwd: process.cwd(),
-      env: { ...process.env, PYTHONPATH: join(process.cwd(), "packages/ts-agent-kernel") },
+      env: { ...process.env, PYTHONPATH: join(process.cwd(), "packages/tspi-runtime") },
     });
     const { createAnalyzeTool } = await import("../../../apps/app-server/pi-native-tools.mjs");
     const result = JSON.parse((await createAnalyzeTool().execute("name-analysis", {
@@ -270,16 +270,16 @@ test("native ts_import writes a semantic input basename", {
   assert.ok(python, "a Python runtime with jsonschema is required");
   const previous = {
     TSPI_PACKAGE_ROOT: process.env.TSPI_PACKAGE_ROOT,
-    TS_AGENT_PYTHON: process.env.TS_AGENT_PYTHON,
+    TSPI_PYTHON: process.env.TSPI_PYTHON,
     TSPI_NATIVE_WRITES: process.env.TSPI_NATIVE_WRITES,
   };
   process.env.TSPI_PACKAGE_ROOT = process.cwd();
-  process.env.TS_AGENT_PYTHON = python;
+  process.env.TSPI_PYTHON = python;
   process.env.TSPI_NATIVE_WRITES = "1";
   try {
-    await executeFile(python, ["scripts/ts_workspace_mode.py", "--root", workspace, "--workspace-id", "workspace_native_import", "--mode", "research"], {
+    await executeFile(python, ["apps/agent-cli/workspace_mode.py", "--root", workspace, "--workspace-id", "workspace_native_import", "--mode", "research"], {
       cwd: process.cwd(),
-      env: { ...process.env, TS_AGENT_DISABLE_RUNTIME_REEXEC: "1", PYTHONNOUSERSITE: "1" },
+      env: { ...process.env, TSPI_DISABLE_RUNTIME_REEXEC: "1", PYTHONNOUSERSITE: "1" },
     });
     const nativeTools = await import(pathToFileURL(join(process.cwd(), "apps/app-server/pi-native-tools.mjs")).href);
     const toolContext = { cwd: workspace, principal: "root_agent", authority: "kernel_write" };
@@ -428,7 +428,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
     PI_OFFLINE: process.env.PI_OFFLINE,
     TSPI_PACKAGE_ROOT: process.env.TSPI_PACKAGE_ROOT,
-    TS_AGENT_PYTHON: process.env.TS_AGENT_PYTHON,
+    TSPI_PYTHON: process.env.TSPI_PYTHON,
     TSPI_NATIVE_WRITES: process.env.TSPI_NATIVE_WRITES,
     TS_RENDER_XYZRENDER: process.env.TS_RENDER_XYZRENDER,
     TS_COMPUTE_CONFIG: process.env.TS_COMPUTE_CONFIG,
@@ -439,12 +439,12 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
   process.env.PI_CODING_AGENT_DIR = join(root, "agent");
   process.env.PI_OFFLINE = "1";
   process.env.TSPI_PACKAGE_ROOT = process.cwd();
-  process.env.TS_AGENT_PYTHON = python;
+  process.env.TSPI_PYTHON = python;
   delete process.env.TSPI_NATIVE_WRITES;
   try {
-    await executeFile(python, ["scripts/ts_workspace_mode.py", "--root", workspace, "--workspace-id", "workspace_native_tools", "--mode", "research"], {
+    await executeFile(python, ["apps/agent-cli/workspace_mode.py", "--root", workspace, "--workspace-id", "workspace_native_tools", "--mode", "research"], {
       cwd: process.cwd(),
-      env: { ...process.env, TS_AGENT_DISABLE_RUNTIME_REEXEC: "1", PYTHONNOUSERSITE: "1" },
+      env: { ...process.env, TSPI_DISABLE_RUNTIME_REEXEC: "1", PYTHONNOUSERSITE: "1" },
     });
     const nativeTools = await import(pathToFileURL(join(process.cwd(), "apps/app-server/pi-native-tools.mjs")).href);
     const piAi = await import(pathToFileURL(join(sourceRoot, "packages/ai/src/index.ts")).href);
@@ -458,27 +458,27 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     // after the historical source tools so the behavioral assertions below
     // remain focused on execution semantics.
     Object.assign(tools, {
-      ts_state: tools["research_read"],
-      ts_change: tools["research_change"],
-      ts_workflow: tools["research_continuation"],
+      research_read: tools["research_read"],
+      research_change: tools["research_change"],
+      research_continuation: tools["research_continuation"],
       ts_environment: tools["compute_environment"],
-      ts_calc: tools["compute_run"],
-      ts_review: tools["review_run"],
+      compute_run: tools["compute_run"],
+      review: tools["review_run"],
       ts_reply: tools["review_respond"],
       ts_seed: tools["artifact_seed"],
       ts_compare: tools["artifact_compare"],
       ts_analyze: tools["analysis_run"],
       ts_dispatch: tools["execution_dispatch"],
       ts_import: tools["artifact_import"],
-      ts_render: tools["artifact_render"],
-      ts_report: tools["report_build"],
+      render: tools["artifact_render"],
+      report: tools["report_build"],
       // notify_send is Host/Monitor-owned and intentionally absent from the
       // Agent inventory. Exercise its guarded factory directly where this
       // test covers the external delivery boundary.
       ts_notify: nativeTools.createNotifyTool(),
     });
-    const stateTool = tools.ts_state;
-    const changeTool = tools.ts_change;
+    const stateTool = tools.research_read;
+    const changeTool = tools.research_change;
     const toolContext = { cwd: workspace, sessionId: "native-tools" };
     const context = { abortSignal: new AbortController().signal };
     const state = await stateTool.execute("state-1", { mode: "summary" }, () => {}, toolContext, undefined, context);
@@ -535,7 +535,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       /artifact\.seed requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
-      tools.ts_render.execute("render-disabled", {
+      tools.render.execute("render-disabled", {
         operation: "render",
         nodeId: "node_1",
         inputArtifactIds: ["art_aaaaaaaaaaaaaaaaaaaaaaaa"],
@@ -544,26 +544,26 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       /artifact\.render requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
-      tools.ts_report.execute("report-disabled", {
+      tools.report.execute("report-disabled", {
         operation: "build",
         packageName: "disabled",
       }, () => {}, toolContext, undefined, context),
       /report\.build requires the guarded TSPi App Server Root Agent/,
     );
-    assert.equal(tools.ts_calc.replay, "never");
+    assert.equal(tools.compute_run.replay, "never");
     await assert.rejects(
-      tools.ts_calc.execute("calc-disabled", {
+      tools.compute_run.execute("calc-disabled", {
         operation: "inspect",
         nodeId: "node_1",
         intentId: "calc_1",
       }, () => {}, toolContext, undefined, context),
       /compute\.run requires the guarded TSPi App Server Root Agent/,
     );
-    assert.equal(tools.ts_review.replay, "never");
+    assert.equal(tools.review.replay, "never");
     assert.equal(tools.ts_reply.replay, "never");
     assert.equal(tools.ts_notify.replay, "never");
     await assert.rejects(
-      tools.ts_review.execute("review-disabled", {
+      tools.review.execute("review-disabled", {
         targetClaimId: "claim_1",
         question: "Review the bounded Claim.",
       }, () => {}, toolContext, undefined, context),
@@ -686,7 +686,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       "",
     ].join("\n"), { mode: 0o755 });
     process.env.TS_RENDER_XYZRENDER = renderer;
-    const rendered = JSON.parse((await tools.ts_render.execute("render-structure", {
+    const rendered = JSON.parse((await tools.render.execute("render-structure", {
       operation: "render",
       nodeId,
       inputArtifactIds: [importedReference.artifact.artifact_id],
@@ -697,7 +697,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     assert.match(rendered.output_artifact_id, /^art_[0-9a-f]{24}$/);
     assert.ok(rendered.output_size_bytes > 0);
 
-    const report = JSON.parse((await tools.ts_report.execute("build-report", {
+    const report = JSON.parse((await tools.report.execute("build-report", {
       operation: "build",
       packageName: "native-report",
       assetArtifactIds: [rendered.output_artifact_id],
@@ -767,7 +767,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     };
     const scp = join(fakeBin, "scp");
     await writeFile(scp, "#!/usr/bin/env bash\necho 'staging failed' >&2\nexit 2\n", { mode: 0o755 });
-    const stagingFailure = await tools.ts_calc.execute(
+    const stagingFailure = await tools.compute_run.execute(
       "calc-staging-failure",
       calculationRequest,
       () => {},
@@ -787,14 +787,14 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     const submitController = new AbortController();
     let submitAbortTimer;
     const computeUpdates = [];
-    const unknownSubmit = await tools.ts_calc.execute(
+    const unknownSubmit = await tools.compute_run.execute(
       "calc-unknown-submit",
       calculationRequest,
       (update, options) => {
         computeUpdates.push({ update, options });
         if (
           update.details?.run?.state === "running"
-          && update.details.run.action === "ts_workspace_compute_submit"
+          && update.details.run.action === "workspace_compute_submit"
           && submitAbortTimer === undefined
         ) {
           submitAbortTimer = setTimeout(() => submitController.abort(), 100);
@@ -812,7 +812,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     assert.equal(unknownResult.program.error_class, "submission_ambiguous");
     assert.ok(computeUpdates.every(({ options }) => options?.checkpoint === true));
     assert.ok(computeUpdates.some(({ update }) => (
-      update.details?.run?.action === "ts_workspace_compute_submit"
+      update.details?.run?.action === "workspace_compute_submit"
       && update.details.run.state === "unknown"
     )));
     const runRef = unknownSubmit.details.run.run_ref;
@@ -822,8 +822,8 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     const durableResult = JSON.parse(await readFile(join(workspace, runRef, "result.json"), "utf8"));
     assert.equal(durableRun.status, "completed");
     assert.deepEqual(durableActions.actions.map((action) => action.tool), [
-      "ts_workspace_compute_prepare",
-      "ts_workspace_compute_submit",
+      "workspace_compute_prepare",
+      "workspace_compute_submit",
     ]);
     assert.equal(durableActions.actions[1].result.action_status, "unknown");
     assert.equal(durableResult.payload.reconciliation_required, true);
@@ -858,11 +858,11 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       limitations: ["The review used only the supplied ResearchMap and allowlisted artifacts."],
     };
     faux.setResponses([piAi.fauxAssistantMessage(
-      piAi.fauxToolCall("ts_review_result", validReviewSubmission),
+      piAi.fauxToolCall("review_result", validReviewSubmission),
       { stopReason: "toolUse" },
     )]);
     const reviewUpdates = [];
-    const review = await tools.ts_review.execute("review-native", {
+    const review = await tools.review.execute("review-native", {
       targetClaimId: "claim_1",
       question: "Does the bounded record currently justify accepting this Claim?",
       reviewerRole: "general",
@@ -900,11 +900,11 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     faux.setResponses([
       piAi.fauxAssistantMessage("The bounded Claim needs one more validation result."),
       piAi.fauxAssistantMessage(
-        piAi.fauxToolCall("ts_review_result", validReviewSubmission),
+        piAi.fauxToolCall("review_result", validReviewSubmission),
         { stopReason: "toolUse" },
       ),
     ]);
-    const repairedReview = await tools.ts_review.execute("review-native-repair", {
+    const repairedReview = await tools.review.execute("review-native-repair", {
       targetClaimId: "claim_1",
       question: "Return the same assessment through the required result tool.",
       reviewerRole: "general",
@@ -923,13 +923,13 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
     const reviewRunsBeforeFailure = new Set(await readdir(reviewRunsRoot));
     faux.setResponses([
       piAi.fauxAssistantMessage(
-        piAi.fauxToolCall("ts_review_result", { outcome: "partial" }),
+        piAi.fauxToolCall("review_result", { outcome: "partial" }),
         { stopReason: "toolUse" },
       ),
       piAi.fauxAssistantMessage("The malformed result could not be submitted."),
     ]);
     await assert.rejects(
-      tools.ts_review.execute("review-native-invalid", {
+      tools.review.execute("review-native-invalid", {
         targetClaimId: "claim_1",
         question: "Reject a schema-invalid result without leaving an open run.",
         reviewerRole: "general",
@@ -1029,7 +1029,7 @@ test("native TSPi tools execute against an isolated Research Kernel workspace", 
       "",
     ].join("\n"), { mode: 0o755 });
     await assert.rejects(
-      tools.ts_render.execute("render-failure", {
+      tools.render.execute("render-failure", {
         operation: "render",
         nodeId,
         inputArtifactIds: [importedReference.artifact.artifact_id],

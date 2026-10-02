@@ -13,7 +13,7 @@ diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-
 +async function isSupportedResearchAgentWorkspace(root: string, manifest: unknown): Promise<boolean> {
 +	if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) return false;
 +	const value = manifest as Record<string, unknown>;
-+	const kernel = value.research_kernel;
++	const kernel = value.research_state;
 +	if (
 +		value.schema_version !== WORKSPACE_MANIFEST_SCHEMA
 +		|| value.workspace_mode !== "research"

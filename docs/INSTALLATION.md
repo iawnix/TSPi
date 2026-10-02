@@ -274,11 +274,11 @@ ephemeral smoke tests. `runtime_module` must export `create_runtime()`;
 `kernel_module`, when present, must export `create_kernel()`.
 
 The release includes an explicit Pi Runtime Module at
-`packages/research-agent-pi-adapter/pi_runtime_module.mjs`. It can be selected
+`packages/agent-pi-adapter/pi_runtime_module.mjs`. It can be selected
 when the host supplies an explicit Pi SDK model configuration:
 
 ```bash
-export RESEARCH_AGENT_RUNTIME_MODULE="$PWD/packages/research-agent-pi-adapter/pi_runtime_module.mjs"
+export RESEARCH_AGENT_RUNTIME_MODULE="$PWD/packages/agent-pi-adapter/pi_runtime_module.mjs"
 export RESEARCH_AGENT_CWD="$PWD/workspaces/demo"
 export RESEARCH_AGENT_SESSION_ROOT="$PWD/.pi/research-agent/sessions"
 export PI_CODING_AGENT_DIR="$PWD/.pi/research-agent/agent"

@@ -7,8 +7,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRpcPeer, HOST_PROTOCOL, protocolError } from "./tspi-host-client.mjs";
-import { create_workspace_initializer, validate_workspace_files } from "../../packages/research-agent-core/workspace.mjs";
-import { is_workspace_id } from "../../packages/research-agent-core/workspace_id.mjs";
+import { create_workspace_initializer, validate_workspace_files } from "../../packages/agent-core/workspace.mjs";
+import { is_workspace_id } from "../../packages/agent-core/workspace_id.mjs";
 
 const executeFile = promisify(execFile);
   // The manifest identity is authoritative. A workspace is normally created
@@ -30,7 +30,7 @@ export async function startTspiHost(options) {
     stateRoot,
     sessionBackend = null,
     serverId = "local",
-    python = process.env.TS_AGENT_PYTHON || "python3",
+    python = process.env.TSPI_PYTHON || "python3",
     packageRoot = PACKAGE_ROOT,
     releaseId = deriveReleaseId(packageRoot),
     monitorPollMs = 2_000,
@@ -240,7 +240,7 @@ export async function startTspiHost(options) {
   async function runMonitor(method, params) {
     const root = await workspace(params.workspace_id);
     const command = method.slice("monitor/".length);
-    const args = [join(packageRoot, "scripts", "ts_monitor.py"), command, "--root", root];
+    const args = [join(packageRoot, "scripts", "monitor.py"), command, "--root", root];
     if (params.monitor_id !== undefined) {
       validateId(params.monitor_id, "monitor_id");
       args.push("--monitor-id", params.monitor_id);
@@ -636,7 +636,7 @@ async function monitorWorkspaceIdentity(project) {
   try {
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
     if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)
-      || manifest.schema_version !== "research_agent_workspace_1"
+      || manifest.schema_version !== "research_state_workspace_1"
       || manifest.workspace_mode !== "research"
       || manifest.state !== "ready"
       || typeof manifest.workspace_id !== "string"

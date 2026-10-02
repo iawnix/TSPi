@@ -56,6 +56,7 @@ export function create_app_server_client({ base_url, fetch_impl = globalThis.fet
     compute_cancel: (payload) => request("compute_cancel", payload),
     capability_catalog: (payload = {}) => request("capability_catalog", payload),
     capability_readiness: (payload = {}) => request("capability_readiness", payload),
+    capability_execute: (payload = {}) => request("capability_execute", payload),
     compute_catalog: (payload = {}) => request("compute_catalog", payload),
     compute_readiness: (payload = {}) => request("compute_readiness", payload),
   });

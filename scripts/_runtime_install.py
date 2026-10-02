@@ -131,7 +131,7 @@ def prepare_runtime(
     if base_action != "reuse" and conda_executable is None:
         raise RuntimeInstallError(
             "conda or mamba not found; set --conda, --conda-root, "
-            "TS_AGENT_CONDA_EXE, or TS_AGENT_CONDA_ROOT"
+            "TSPI_CONDA_EXE, or TSPI_CONDA_ROOT"
         )
     base_action = _prepare_base(
         conda_executable,
@@ -160,7 +160,7 @@ def prepare_runtime(
             completed = _pip_install_wheel(paths["kernel_python"], wheel, paths["package_root"])
             if completed.returncode != 0:
                 _remove_managed_kernel(paths["kernel_prefix"], paths["env_store"])
-                raise RuntimeInstallError("failed to install ts-agent-kernel into the release overlay")
+                raise RuntimeInstallError("failed to install tspi-runtime into the release overlay")
             runtime_probe = _run_runtime_probe(paths["kernel_python"], paths["package_root"])
         else:
             runtime_probe = existing_probe
@@ -456,7 +456,7 @@ def _pip_install_requirements(
 
 def _run_runtime_probe(python: Path, package_root: Path) -> dict[str, Any]:
     completed = subprocess.run(
-        [str(python), "-m", "ts_agent.runtime.probe", "--json"],
+        [str(python), "-m", "tspi_runtime.runtime.probe", "--json"],
         cwd=package_root,
         env=_clean_python_environment(),
         text=True,
@@ -468,11 +468,11 @@ def _run_runtime_probe(python: Path, package_root: Path) -> dict[str, Any]:
 
 
 def _run_base_probe(python: Path, package_root: Path) -> dict[str, Any]:
-    source_root = package_root / "packages" / "ts-agent-kernel"
+    source_root = package_root / "packages" / "tspi-runtime"
     program = (
         "import json,sys;"
         "sys.path.insert(0,sys.argv[1]);"
-        "from ts_agent.runtime.probe import probe_runtime_capabilities;"
+        "from tspi_runtime.runtime.probe import probe_runtime_capabilities;"
         "print(json.dumps(probe_runtime_capabilities(require_distribution=False),sort_keys=True))"
     )
     completed = subprocess.run(
@@ -576,7 +576,7 @@ def _result_payload(
 
 
 def _resolve_conda_root(explicit: str | Path | None) -> Path | None:
-    root = explicit or os.environ.get("TS_AGENT_CONDA_ROOT")
+    root = explicit or os.environ.get("TSPI_CONDA_ROOT")
     if not root:
         return None
     return Path(root).expanduser().resolve()
@@ -586,7 +586,7 @@ def _resolve_conda(explicit: str | None, conda_root: Path | None) -> str | None:
     candidates = [
         explicit,
         *_conda_root_candidates(conda_root),
-        os.environ.get("TS_AGENT_CONDA_EXE"),
+        os.environ.get("TSPI_CONDA_EXE"),
         *_conda_root_candidates(_resolve_conda_root(None) if conda_root is None else None),
         shutil.which("mamba"),
         shutil.which("conda"),

@@ -130,7 +130,7 @@ try:
 except ImportError:
     from _bootstrap import activate_source_package
 activate_source_package(Path(__file__).resolve().parents[1])
-from ts_agent.runtime.session_guard import CONTRACT, SessionGuardError, guard_installation_upgrade
+from tspi_runtime.runtime.session_guard import CONTRACT, SessionGuardError, guard_installation_upgrade
 
 
 def main(argv: list[str] | None = None) -> int:

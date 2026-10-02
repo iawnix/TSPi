@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import Type from "typebox";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createStateTool, createAnalyzeTool, createDispatchTool, createChangeTool } from "../../../apps/app-server/pi-native-tools.mjs";
-import { createPublicToolAlias } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { createPublicToolAlias } from "../../../packages/agent-runtime/host-api/tools.mjs";
 
 const repository = fileURLToPath(new URL("../../..", import.meta.url));
 const [provider, modelId, repetitionsText = "3", outputPath] = process.argv.slice(2);
@@ -61,7 +61,7 @@ const pending = cases.filter(row => !filter || filter.includes(row[0])).flatMap(
 await Promise.all(Array.from({length: 3}, async () => {
 while (pending.length) {
   const [caseId, task, expected, repetition] = pending.shift();
-  const fixture = JSON.parse(execFileSync(process.env.TS_AGENT_PYTHON || "python3", ["-m", "tools.test.scenarios.mechanism_eval_fixture", join(scratch, `${caseId}-${repetition}`), caseId], { cwd: repository, encoding: "utf8" }));
+  const fixture = JSON.parse(execFileSync(process.env.TSPI_PYTHON || "python3", ["-m", "tools.test.scenarios.mechanism_eval_fixture", join(scratch, `${caseId}-${repetition}`), caseId], { cwd: repository, encoding: "utf8" }));
   process.stdout.write(JSON.stringify({ case: caseId, repetition, status: "started" }) + "\n");
   const messages = [{ role: "user", content: `${task}\nWorkspace inputs: ${JSON.stringify(fixture)}\nUse the existing Node. Inspect capability details as needed; explain conclusions and limitations.`, timestamp: Date.now() }];
   const row = { case: caseId, repetition, calls: [], usage: { input: 0, output: 0, totalTokens: 0 }, tool_argument_bytes: 0, administrative_argument_bytes: 0, errors: 0, final: "", completed: false };

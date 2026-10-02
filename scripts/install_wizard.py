@@ -2492,7 +2492,7 @@ def web_unit(args: argparse.Namespace) -> str:
     command_values: list[object] = [
         root / "TSWeb",
         "--provider",
-        root / ".pi/packages/tspi/current/agent/scripts/ts_web_provider.py",
+        root / ".pi/packages/tspi/current/agent/apps/agent-cli/provider_runner.py",
         "serve",
         "--state-dir",
         root / ".pi/ts-web-state",

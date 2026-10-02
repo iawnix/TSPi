@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const executeFile = promisify(execFile);
 const packageRoot = resolve(process.env.TSPI_PACKAGE_ROOT || fileURLToPath(new URL("../..", import.meta.url)));
-const python = process.env.TS_AGENT_PYTHON || process.env.TSPI_WORKSPACE_PYTHON || "python3";
+const python = process.env.TSPI_PYTHON || process.env.TSPI_WORKSPACE_PYTHON || "python3";
 const NOTIFICATION_TIMEOUT_MS = 150_000;
 
 /**
@@ -48,13 +48,13 @@ export async function sendNotification(workspace, event, signal, execute = execu
     const requestFile = join(directory, "request.json");
     await writeFile(requestFile, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
     try {
-      const completed = await execute(python, [join(packageRoot, "scripts", "ts_email.py"), "notify", "--root", workspace, "--request-file", requestFile, "--json"], {
+      const completed = await execute(python, [join(packageRoot, "scripts", "notify.py"), "notify", "--root", workspace, "--request-file", requestFile, "--json"], {
         cwd: workspace, env: { ...process.env, PYTHONNOUSERSITE: "1" }, maxBuffer: 8 * 1024 * 1024, timeout: NOTIFICATION_TIMEOUT_MS, signal });
       const result = parseNotificationJson(completed.stdout);
       assertNotificationSuccess(result);
       return normalizeNotificationResult(result, request);
     } catch (error) {
-      // execFile rejects on a non-zero CLI exit, while ts_email writes its
+      // execFile rejects on a non-zero CLI exit, while notify writes its
       // structured provider/SMTP failure envelope to stdout.
       const structured = tryParseNotificationJson(error?.stdout);
       if (structured) throw notificationError(structured);

@@ -5,7 +5,7 @@ import { delimiter, relative, resolve, sep, join } from "node:path";
 const MANIFEST_SCHEMA = "tspi-extension/1";
 const NAME_PATTERN = /^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$/u;
 const PROVIDER_ID_PATTERN = /^[a-z][a-z0-9]*(?:[-._][a-z0-9]+)*$/u;
-const PROVIDER_KINDS = new Set(["compute", "analysis", "harness", "notification"]);
+const PROVIDER_KINDS = new Set(["compute", "analysis", "harness", "notification", "render", "report"]);
 const TOOL_PATTERN = /^[a-z][a-z0-9_]*$/u;
 const SERVER_PERMISSIONS = new Set([
   "workspace.read",

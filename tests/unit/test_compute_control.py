@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def test_remote_crest_stdout_matches_parser_contract():
-    from ts_agent.compute.control import _remote_stdout_name
+    from research_compute.control import _remote_stdout_name
     assert _remote_stdout_name({"backend": "crest", "expected_artifacts": ["outputs/crest.out", "outputs/crest_best.xyz"]}) == "crest.out"
 
 import json
@@ -22,7 +22,7 @@ from tests.support.workspace_helpers import (
     read_filesystem_context,
     start_research_node,
 )
-from ts_agent.compute import (
+from research_compute import (
     ComputeContractError,
     calculation_status,
     calculation_tail,
@@ -35,13 +35,13 @@ from ts_agent.compute import (
     prepare_calculation,
     submit_calculation,
 )
-from ts_agent.calculation_contracts import CalculationContractError, validate_calculation_contract
-from ts_agent.remote import lifecycle as remote_lifecycle
-from ts_agent.remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguous, RemoteSubmissionRejected
-from ts_agent.remote.models import RemoteJobStatus, RemoteReceipt
-from ts_agent.backends.gaussian import parse_log, parse_scan_log, route_settings
-from ts_agent.compute.task_validation import validate_parsed_task
-from ts_agent.workspace.operational import _operational_files
+from tspi_runtime.calculation_contracts import CalculationContractError, validate_calculation_contract
+from tspi_runtime.remote import lifecycle as remote_lifecycle
+from tspi_runtime.remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguous, RemoteSubmissionRejected
+from tspi_runtime.remote.models import RemoteJobStatus, RemoteReceipt
+from tspi_runtime.backends.gaussian import parse_log, parse_scan_log, route_settings
+from research_compute.task_validation import validate_parsed_task
+from tspi_runtime.workspace.operational import _operational_files
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
@@ -480,7 +480,7 @@ def test_intent_sequence_reservation_is_concurrent_and_failure_atomic(
         path.with_name(f"{path.name}.tmp").write_text("partial", encoding="utf-8")
         raise OSError("simulated intent write failure")
 
-    monkeypatch.setattr("ts_agent.compute.control.write_json", fail_write)
+    monkeypatch.setattr("research_compute.control.write_json", fail_write)
     with pytest.raises(OSError, match="simulated intent write failure"):
         _create(workspace2, node_id2)
     assert not (workspace2 / "nodes" / node_id2 / "attempts").exists()
@@ -537,11 +537,11 @@ def test_remote_submit_status_tail_collect_and_cancel_are_receipt_bound(
         calls["cancel"] += 1
         return {"state": "accepted", "updated_at": "2026-08-12T00:01:00Z"}
 
-    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.submit", fake_submit)
-    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.status", fake_status)
-    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.tail", lambda *_args: "running\n")
-    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.collect", fake_collect)
-    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.cancel", fake_cancel)
+    monkeypatch.setattr("research_compute.control.remote_lifecycle.submit", fake_submit)
+    monkeypatch.setattr("research_compute.control.remote_lifecycle.status", fake_status)
+    monkeypatch.setattr("research_compute.control.remote_lifecycle.tail", lambda *_args: "running\n")
+    monkeypatch.setattr("research_compute.control.remote_lifecycle.collect", fake_collect)
+    monkeypatch.setattr("research_compute.control.remote_lifecycle.cancel", fake_cancel)
 
     submitted = submit_calculation(workspace, created["intent_id"])
     assert submit_calculation(workspace, created["intent_id"]) == submitted
@@ -557,7 +557,7 @@ def test_remote_submit_status_tail_collect_and_cancel_are_receipt_bound(
     assert cancel_calculation(workspace, created["intent_id"], expected_job_id="123.cluster")["state"] == "stopped"
     assert calls == {"submit": 1, "status": 1, "collect": 1, "cancel": 1}
     monkeypatch.setattr(
-        "ts_agent.compute.control._prepared_task_for_intent",
+        "research_compute.control._prepared_task_for_intent",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(ComputeContractError("provider metadata unavailable")),
     )
     assert collect_calculation(workspace, created["intent_id"], ["gaussian.out"]) == collected
@@ -577,7 +577,7 @@ def test_pre_submit_failure_is_retryable_but_scheduler_rejection_is_not(
             raise RemotePreSubmitError("upload", OSError("network unavailable"))
         return _receipt_for(config)
 
-    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.submit", transient)
+    monkeypatch.setattr("research_compute.control.remote_lifecycle.submit", transient)
     failed = submit_calculation(workspace, created["intent_id"])
     assert failed["state"] == "failed"
     assert failed["control"]["effect_attempted"] is False
@@ -586,7 +586,7 @@ def test_pre_submit_failure_is_retryable_but_scheduler_rejection_is_not(
 
     workspace2, _node_id2, created2 = _prepared_remote(tmp_path / "rejected", monkeypatch)
     monkeypatch.setattr(
-        "ts_agent.compute.control.remote_lifecycle.submit",
+        "research_compute.control.remote_lifecycle.submit",
         lambda _config: (_ for _ in ()).throw(
             RemoteSubmissionRejected({"state": "rejected", "error": "queue disabled"})
         ),
@@ -604,7 +604,7 @@ def test_ambiguous_submit_reconciles_only_from_a_matching_durable_record(
 ) -> None:
     workspace, _node_id, created = _prepared_remote(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "ts_agent.compute.control.remote_lifecycle.submit",
+        "research_compute.control.remote_lifecycle.submit",
         lambda _config: (_ for _ in ()).throw(
             RemoteSubmissionAmbiguous({"state": "unknown", "phase": "submit_request_started"})
         ),
@@ -630,7 +630,7 @@ def test_ambiguous_submit_reconciles_only_from_a_matching_durable_record(
         }
 
     monkeypatch.setattr(
-        "ts_agent.compute.control.remote_lifecycle.status",
+        "research_compute.control.remote_lifecycle.status",
         lambda _config, job_id: RemoteJobStatus(
             state="queued",
             program_status="not_run",
@@ -639,14 +639,14 @@ def test_ambiguous_submit_reconciles_only_from_a_matching_durable_record(
         ),
     )
     monkeypatch.setattr(
-        "ts_agent.compute.control.remote_lifecycle.read_submission_record",
+        "research_compute.control.remote_lifecycle.read_submission_record",
         lambda config: durable(config, valid=False),
     )
     with pytest.raises(ComputeContractError, match="reconciliation record does not match"):
         calculation_status(workspace, created["intent_id"])
 
     monkeypatch.setattr(
-        "ts_agent.compute.control.remote_lifecycle.read_submission_record",
+        "research_compute.control.remote_lifecycle.read_submission_record",
         lambda config: durable(config, valid=True),
     )
     assert calculation_status(workspace, created["intent_id"])["state"] == "queued"
@@ -658,14 +658,14 @@ def test_failed_collection_leaves_no_partial_output_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace, node_id, created = _prepared_remote(tmp_path, monkeypatch)
-    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.submit", _receipt_for)
+    monkeypatch.setattr("research_compute.control.remote_lifecycle.submit", _receipt_for)
 
     def fail_collect(_config, _artifacts, staging):
         staging.mkdir(parents=True, exist_ok=True)
         (staging / "gaussian.out").write_text("partial\n", encoding="utf-8")
         raise OSError("simulated transfer failure")
 
-    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.collect", fail_collect)
+    monkeypatch.setattr("research_compute.control.remote_lifecycle.collect", fail_collect)
     submit_calculation(workspace, created["intent_id"])
     with pytest.raises(OSError, match="simulated transfer failure"):
         collect_calculation(workspace, created["intent_id"], ["gaussian.out"])

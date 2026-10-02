@@ -15,7 +15,7 @@ from scripts._wheel import release_wheel
 from scripts.build_package import build_package
 from scripts.install_package import install_package
 from tests.integration.test_release_install import _synthetic_release
-from ts_agent.runtime.workspace_mode import admit_research_workspace, initialize_workspace
+from tspi_runtime.runtime.workspace_mode import admit_research_workspace, initialize_workspace
 
 
 @pytest.fixture(autouse=True)
@@ -30,7 +30,7 @@ def _stub_managed_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
             package_root=Path(package_root),
             manifest_path=manifest_path,
             manifest={
-                "schema_version": "ts-agent-runtime/3",
+                "schema_version": "agent-runtime/3",
                 "package_root": str(package_root),
                 "python_payload_sha256": payload_sha256,
             },
@@ -188,7 +188,7 @@ def test_suite_contract_rejects_retired_phone_component(tmp_path: Path) -> None:
         validate_suite_manifest(manifest)
 
 
-def test_components_contract_accepts_agent_without_optional_services(tmp_path: Path) -> None:
+def test_components_contract_acceptspi_runtime_without_optional_services(tmp_path: Path) -> None:
     agent_manifest, _ = _synthetic_release(tmp_path / "agent", marker="core-only")
     built = build_package(
         output_dir=tmp_path / "package",

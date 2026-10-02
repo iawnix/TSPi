@@ -11,15 +11,15 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages/ts-agent-kernel"))
-from ts_agent.runtime.workspace_mode import admit_research_workspace, initialize_workspace
-from ts_agent.research import ResearchKernel
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages/tspi-runtime"))
+from tspi_runtime.runtime.workspace_mode import admit_research_workspace, initialize_workspace
+from research_state import read_context, apply_change
 from tests.unit.test_scientific_analysis import request
-from ts_agent.compute import import_calculation_artifact, create_calculation_intent, prepare_calculation, submit_calculation, calculation_status, collect_calculation, parse_calculation
-from ts_agent.compute.analysis import run_analysis
-from ts_agent.compute.artifacts import resolve_artifact_ref
-from ts_agent.io import write_json, read_json
-from ts_agent.report.builder import build_report_package
+from research_compute import import_calculation_artifact, create_calculation_intent, prepare_calculation, submit_calculation, calculation_status, collect_calculation, parse_calculation
+from research_compute.analysis import run_analysis
+from research_compute.artifacts import resolve_artifact_ref
+from tspi_runtime.io import write_json, read_json
+from report_lib.builder import build_report_package
 
 
 def xyz(root, node, name, content):
@@ -28,22 +28,15 @@ def xyz(root, node, name, content):
 
 
 def ensure_research_node(root, title: str, objective: str) -> str:
-    research_map = ResearchKernel(root).load()
-    existing = next((node for node in research_map.nodes.values() if node.title == title), None)
-    if existing is not None:
-        return existing.id
-    ordinal = len(research_map.nodes) + 1
-    phase_id = f"phase_{len(research_map.phases) + 1}"
-    claim_id = f"claim_{len(research_map.claims) + 1}"
-    node_id = f"node_{ordinal}"
-    ResearchKernel(root).apply({
-        "expected_revision": research_map.revision,
-        "operations": [
-            {"type": "create_phase", "id": phase_id, "title": "Remote integration smoke"},
-            {"type": "create_claim", "id": claim_id, "statement": f"The {title} software interface is usable."},
-            {"type": "create_node", "id": node_id, "title": title, "objective": objective, "phase_id": phase_id, "claim_ids": [claim_id]},
-        ],
-    })
+    context = read_context(root)
+    existing = next((node for node in context.get("nodes", []) if node.get("title") == title), None)
+    if existing is not None: return existing["id"]
+    ordinal = len(context.get("nodes", [])) + 1
+    phase_id = f"phase_{len(context.get('phases', [])) + 1}"; claim_id = f"claim_{len(context.get('claims', [])) + 1}"; node_id = f"node_{ordinal}"
+    apply_change(root, {"principal":"root_agent", "authority":"kernel_write", "expected_revision":context.get("revision",0), "operations":[
+        {"type":"create_phase", "id":phase_id, "title":"Remote integration smoke"},
+        {"type":"create_claim", "id":claim_id, "statement":f"The {title} software interface is usable."},
+        {"type":"create_node", "id":node_id, "title":title, "objective":objective, "phase_id":phase_id, "claim_ids":[claim_id]}]})
     return node_id
 
 

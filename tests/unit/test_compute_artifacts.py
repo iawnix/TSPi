@@ -14,7 +14,7 @@ from tests.support.workspace_helpers import (
     read_filesystem_context,
     start_filesystem_research_node,
 )
-from ts_agent.compute import (
+from research_compute import (
     ComputeContractError,
     create_calculation_intent,
     create_structure_comparison_artifact,
@@ -24,11 +24,11 @@ from ts_agent.compute import (
     prepare_calculation,
     submit_calculation,
 )
-from ts_agent.compute.cli import main as compute_cli_main
-from ts_agent.remote.errors import RemoteError
-from ts_agent.structures import StructureSeedError, generate_smiles_seed
-from ts_agent.workspace.artifacts import workspace_root as canonical_workspace_root, WorkspaceArtifactError
-from ts_agent.runtime.workspace_mode import initialize_workspace
+from research_compute.cli import main as compute_cli_main
+from tspi_runtime.remote.errors import RemoteError
+from tspi_runtime.structures import StructureSeedError, generate_smiles_seed
+from tspi_runtime.workspace.artifacts import workspace_root as canonical_workspace_root, WorkspaceArtifactError
+from tspi_runtime.runtime.workspace_mode import initialize_workspace
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
@@ -376,7 +376,7 @@ def test_structure_comparison_is_content_addressed_idempotent_and_operational(tm
     assert document["inputs"]["reference"]["sha256"].startswith("sha256:")
     assert document["parameters"]["key_bonds"] == [[0, 1], [0, 2]]
     assert document["units"] == {"angle": "degree", "distance": "angstrom"}
-    assert document["provenance"]["producer"] == "ts_agent.structures.compare_structures"
+    assert document["provenance"]["producer"] == "tspi_runtime.structures.compare_structures"
     assert document["metrics"]["heavy_atom_rmsd"] == 0.0
     assert not (workspace / "observations.json").exists()
 
@@ -720,7 +720,7 @@ def test_compute_cli_serializes_remote_errors(
     def fail_remote(_args) -> dict:
         raise RemoteError("remote status unavailable")
 
-    monkeypatch.setattr("ts_agent.compute.cli._dispatch", fail_remote)
+    monkeypatch.setattr("research_compute.cli._dispatch", fail_remote)
     assert compute_cli_main(["capabilities"]) == 2
     output = capsys.readouterr()
     assert output.out == ""

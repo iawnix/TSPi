@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ts_agent.runtime.workspace_mode import (
+from tspi_runtime.runtime.workspace_mode import (
     RESEARCH_CONTEXT_COLLECTIONS,
     WorkspaceModeError,
     admit_research_workspace,
@@ -25,7 +25,7 @@ def test_research_workspace_requires_and_accepts_host_admission(tmp_path: Path) 
 
     admitted = admit_research_workspace(root)
     assert admitted["state"] == "ready"
-    assert admitted["research_kernel"]["admission_required"] is False
+    assert admitted["research_state"]["admission_required"] is False
     assert json.loads((root / "lifecycle/liveness.json").read_text(encoding="utf-8"))["state"] == "admitted"
     memory = json.loads((root / "memory/index.json").read_text(encoding="utf-8"))
     assert memory["lifecycle"] == "idle"

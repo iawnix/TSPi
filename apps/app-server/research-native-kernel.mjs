@@ -1,7 +1,7 @@
 import { lstatSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { create_python_kernel_bridge } from "../../packages/research-agent-kernel/python_kernel_bridge.mjs";
+import { create_python_kernel_bridge } from "../../packages/research-state-bridge/python_kernel_bridge.mjs";
 
 /**
  * Route native Research tools through the new filesystem Kernel when the
@@ -17,7 +17,7 @@ export function isFilesystemResearchWorkspace(root) {
     || !isPhysicalFile(join(workspaceRoot, "lifecycle", "liveness.json"))) return false;
   try {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    return manifest?.schema_version === "research_agent_workspace_1"
+    return manifest?.schema_version === "research_state_workspace_1"
       && manifest.workspace_mode === "research"
       && manifest.state === "ready";
   } catch {
@@ -124,7 +124,7 @@ export async function executeFilesystemResearchCommand(command, root, params = {
 }
 
 // Keep the Native route's read model identical to
-// ts_agent.workspace.operation_registry.operation_catalog().  The catalog is
+// tspi_runtime.workspace.operation_registry.operation_catalog().  The catalog is
 // descriptive only; all writes still cross the Kernel change boundary.
 function researchOperationCatalog() {
   const contracts = [

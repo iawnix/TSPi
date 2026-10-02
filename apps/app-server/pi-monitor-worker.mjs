@@ -6,13 +6,13 @@ import { promisify } from "node:util";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createNotificationDispatcher, sendNotification } from "./notification-dispatcher.mjs";
-import { validate_workspace_files } from "../../packages/research-agent-core/workspace.mjs";
+import { validate_workspace_files } from "../../packages/agent-core/workspace.mjs";
 
 export { createNotificationDispatcher, sendNotification } from "./notification-dispatcher.mjs";
 
 const executeFile = promisify(execFile);
 const packageRoot = resolve(process.env.TSPI_PACKAGE_ROOT || fileURLToPath(new URL("../..", import.meta.url)));
-const python = process.env.TS_AGENT_PYTHON || process.env.TSPI_WORKSPACE_PYTHON || "python3";
+const python = process.env.TSPI_PYTHON || process.env.TSPI_WORKSPACE_PYTHON || "python3";
 
 // A wake and a notification have independent durable acknowledgements.
 export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWake, sendNotification, recordTurn }) {
@@ -163,7 +163,7 @@ export async function recordMonitorTurn({ workspace, event, delivery, execute = 
     await writeFile(requestFile, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
     let completed;
     try {
-      completed = await execute(python, [join(packageRoot, "scripts", "ts_api.py"), "research.turn", "--root", workspace, "--request-file", requestFile], {
+      completed = await execute(python, [join(packageRoot, "scripts", "research_api.py"), "research.turn", "--root", workspace, "--request-file", requestFile], {
         cwd: workspace,
         env: { ...process.env, PYTHONNOUSERSITE: "1" },
         maxBuffer: 8 * 1024 * 1024,
@@ -201,12 +201,12 @@ function isWorkspace(path) {
     const manifestPath = join(path, "workspace_manifest.json");
     if (!existsSync(manifestPath)) return false;
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    return manifest?.schema_version === "research_agent_workspace_1" && manifest.workspace_mode === "research";
+    return manifest?.schema_version === "research_state_workspace_1" && manifest.workspace_mode === "research";
   }
   catch { return false; }
 }
 async function runMonitorJson(command, workspace, extra = [], signal) {
-  const completed = await executeFile(python, [join(packageRoot, "scripts", "ts_monitor.py"), command, "--root", workspace, ...extra], {
+  const completed = await executeFile(python, [join(packageRoot, "scripts", "monitor.py"), command, "--root", workspace, ...extra], {
     cwd: workspace, env: { ...process.env, PYTHONNOUSERSITE: "1" }, maxBuffer: 8 * 1024 * 1024, timeout: 60_000, signal });
   const value = JSON.parse(completed.stdout.trim());
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`invalid monitor JSON for ${command}`);

@@ -35,12 +35,12 @@ map 上的传输便利接口，不构造另一套 view 或 graph 模型，也不
 变更入口。
 
 发布清单是 payload 的单一来源，包检查和安装器必须验证同一清单。开发测试和生成文件
-不应进入生产归档。当前目录布局将 Kernel 放在 `packages/ts-agent-kernel/`，
-TypeScript runtime 放在 `packages/ts-agent-runtime/`，原生 App Server 放在 `apps/`。
+不应进入生产归档。当前目录布局将 Kernel 放在 `packages/tspi-runtime/`，
+TypeScript runtime 放在 `packages/agent-runtime/`，原生 App Server 放在 `apps/`。
 
 ## Review 边界
 
-`packages/ts-agent-runtime/agents/review/` 实现隔离的 advisory runtime。公开请求可通过
+`packages/agent-runtime/agents/review/` 实现隔离的 advisory runtime。公开请求可通过
 `reviewerRole` 选择角色；当前包提供版本化的 `general` descriptor。runtime 为该角色
 构造类型化 task packet，并记录 prompt revision、继承模型策略、artifact budget 和
 advisory authority。

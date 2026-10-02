@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { create_session_store } from "../../packages/research-agent-core/session_store.mjs";
+import { create_session_store } from "../../packages/agent-core/session_store.mjs";
 
 async function temporary_root(prefix) {
   return mkdtemp(join(tmpdir(), `${prefix}-`));

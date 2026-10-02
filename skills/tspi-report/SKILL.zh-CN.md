@@ -7,7 +7,7 @@ description: 根据规范 ResearchMap、计算历史、Finding 和可视化 Arti
 
 [English version](SKILL.md)
 
-使用 `report_build` 时加载本 Skill。ResearchMap 语义使用 `tspi-research-kernel`，工作流
+使用 `report_build` 时加载本 Skill。ResearchMap 语义使用 `tspi-research-state`，工作流
 历史使用 `tspi-orchestration`，需要图像时加载 `tspi-render`。
 
 报告必须来自有效工作区和已注册逻辑 Artifact。分开展示当前 ResearchMap revision、

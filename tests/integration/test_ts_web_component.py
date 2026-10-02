@@ -17,11 +17,11 @@ ROOT = Path(__file__).resolve().parents[2]
 COMPONENT_ROOT = ROOT / "components" / "ts-web"
 
 
-def test_web_component_source_has_no_private_ts_agent_imports() -> None:
+def test_web_component_source_has_no_private_tspi_runtime_imports() -> None:
     for path in COMPONENT_ROOT.rglob("*.py"):
         source = path.read_text(encoding="utf-8")
-        assert "import ts_agent" not in source
-        assert "from ts_agent" not in source
+        assert "import tspi_runtime" not in source
+        assert "from tspi_runtime" not in source
 
 
 def test_web_component_archive_is_complete_and_validated(tmp_path: Path) -> None:
@@ -93,7 +93,7 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
 
 def test_provider_json_lines_does_not_reuse_a_previous_request_id(tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
-    provider = ROOT / "scripts" / "ts_web_provider.py"
+    provider = ROOT / "scripts" / "provider_runner.py"
     first = {
         "schema_version": "research-map-provider/1",
         "request_id": "first",

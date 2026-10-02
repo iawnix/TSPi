@@ -5,9 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { create_app_server } from "../../apps/research-agent-app-server/app_server.mjs";
-import { create_turn_router } from "../../packages/research-agent-core/turn_router.mjs";
-import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
-import { create_runtime } from "../../packages/research-agent-pi-adapter/pi_runtime_module.mjs";
+import { create_turn_router } from "../../packages/agent-core/turn_router.mjs";
+import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
+import { create_runtime } from "../../packages/agent-pi-adapter/pi_runtime_module.mjs";
 
 class FakeSessionManager {
   static create(cwd, session_root, options = {}) {

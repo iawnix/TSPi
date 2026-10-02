@@ -6,7 +6,7 @@ import {
   create_turn_router,
   resolve_turn_protocol,
   route_turn,
-} from "../../packages/research-agent-core/turn_router.mjs";
+} from "../../packages/agent-core/turn_router.mjs";
 
 test("admitted research mode routes a research turn request", () => {
   const request = route_turn({
@@ -100,7 +100,7 @@ test("research workspace manifest admission state is validated", () => {
     workspace: {
       workspace_mode: "research",
       state: "admission_pending",
-      research_kernel: { admission_required: true },
+      research_state: { admission_required: true },
     },
     session: { session_mode: "research" },
   }), /workspace_admission_required/);
@@ -108,7 +108,7 @@ test("research workspace manifest admission state is validated", () => {
     workspace: {
       workspace_mode: "research",
       state: "ready",
-      research_kernel: { admission_required: false },
+      research_state: { admission_required: false },
     },
     session: { session_mode: "research" },
   }), "research_turn_request");

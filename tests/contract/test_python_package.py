@@ -7,7 +7,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-import ts_agent
+import tspi_runtime
 
 from scripts.check_package import (
     PACKAGE_VERSION,
@@ -15,7 +15,7 @@ from scripts.check_package import (
     validate_version_surfaces,
 )
 from scripts._wheel import build_wheel, inspect_wheel, source_payload_sha256 as wheel_source_payload_sha256
-from ts_agent.runtime.env import python_payload_sha256
+from tspi_runtime.runtime.env import python_payload_sha256
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,29 +27,29 @@ def test_python_distribution_metadata_matches_pi_release() -> None:
 
     validate_python_project()
     validate_version_surfaces()
-    assert project["project"]["name"] == "ts-agent-kernel"
-    assert project["tool"]["setuptools"]["package-dir"] == {"": "packages/ts-agent-kernel"}
-    assert ts_agent.__version__ == package["version"] == PACKAGE_VERSION
+    assert project["project"]["name"] == "tspi-runtime"
+    assert project["tool"]["setuptools"]["package-dir"] == {"": "packages/tspi-runtime"}
+    assert tspi_runtime.__version__ == package["version"] == PACKAGE_VERSION
 
 
 def test_python_payload_digest_covers_code_and_runtime_data() -> None:
     original = python_payload_sha256(ROOT)
     expected_paths = {
-        "packages/ts-agent-kernel/ts_agent/__init__.py",
-        "packages/ts-agent-kernel/ts_agent/compute/contracts/calculation_request.schema.json",
-        "packages/ts-agent-kernel/ts_agent/path_safety.py",
-        "packages/ts-agent-kernel/ts_agent/research/model.py",
-        "packages/ts-agent-kernel/ts_agent/research/kernel.py",
-        "packages/ts-agent-kernel/ts_agent/command_catalog.json",
-        "packages/ts-agent-kernel/ts_agent/analysis/results.py",
-        "packages/ts-agent-kernel/ts_agent/compute/errors.py",
-        "packages/ts-agent-kernel/ts_agent/platforms/config.py",
-        "packages/ts-agent-kernel/ts_agent/workspace/artifacts.py",
-        "packages/ts-agent-kernel/ts_agent/workspace/candidates.py",
-        "packages/ts-agent-kernel/ts_agent/workspace/contracts/finding_candidates.schema.json",
-        "packages/ts-agent-kernel/ts_agent/workspace/contracts/workspace.schema.json",
-        "packages/ts-agent-kernel/ts_agent/workspace/operational.py",
-        "packages/ts-agent-kernel/ts_agent/workspace/operation_registry.py",
+        "packages/tspi-runtime/tspi_runtime/__init__.py",
+        "packages/tspi-runtime/tspi_runtime/compute/contracts/calculation_request.schema.json",
+        "packages/tspi-runtime/tspi_runtime/path_safety.py",
+        "packages/tspi-runtime/tspi_runtime/research/model.py",
+        "packages/tspi-runtime/tspi_runtime/research/kernel.py",
+        "packages/tspi-runtime/tspi_runtime/command_catalog.json",
+        "packages/tspi-runtime/tspi_runtime/analysis/results.py",
+        "packages/tspi-runtime/tspi_runtime/compute/errors.py",
+        "packages/tspi-runtime/tspi_runtime/platforms/config.py",
+        "packages/tspi-runtime/tspi_runtime/workspace/artifacts.py",
+        "packages/tspi-runtime/tspi_runtime/workspace/candidates.py",
+        "packages/tspi-runtime/tspi_runtime/workspace/contracts/finding_candidates.schema.json",
+        "packages/tspi-runtime/tspi_runtime/workspace/contracts/workspace.schema.json",
+        "packages/tspi-runtime/tspi_runtime/workspace/operational.py",
+        "packages/tspi-runtime/tspi_runtime/workspace/operation_registry.py",
     }
 
     assert all((ROOT / path).is_file() for path in expected_paths)
@@ -65,7 +65,7 @@ def test_wheel_build_uses_a_temporary_source_copy(tmp_path: Path) -> None:
 
     wheel = tmp_path / "wheel" / descriptor["filename"]
     assert descriptor == inspect_wheel(wheel)
-    assert descriptor["name"] == "ts-agent-kernel"
+    assert descriptor["name"] == "tspi-runtime"
     assert descriptor["version"] == PACKAGE_VERSION
     assert descriptor["payload_sha256"] == python_payload_sha256(ROOT)
     assert repeated == descriptor
@@ -102,11 +102,11 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
             sys.executable,
             "-c",
             (
-                "import importlib.metadata,json; from pathlib import Path; import ts_agent; "
-                "from ts_agent.analysis.engine import Inputs,evaluate; "
+                "import importlib.metadata,json; from pathlib import Path; import tspi_runtime; "
+                "from tspi_runtime.analysis.engine import Inputs,evaluate; "
                 "reaction=evaluate('reaction.parse',Inputs({},{}),{'reaction_smiles':'CCl.[OH-]>>CO.[Cl-]','multiplicities':{'reactants':[1,1],'products':[1,1]}}); "
-                "root=Path(ts_agent.__file__).resolve().parent; "
-                "print(json.dumps({'version': importlib.metadata.version('ts-agent-kernel'), "
+                "root=Path(tspi_runtime.__file__).resolve().parent; "
+                "print(json.dumps({'version': importlib.metadata.version('tspi-runtime'), "
                 "'schema': (root/'compute/contracts/calculation_request.schema.json').is_file(), "
                 "'candidate_schema': (root/'workspace/contracts/finding_candidates.schema.json').is_file(), "
                 "'candidate_module': (root/'workspace/candidates.py').is_file(), "
@@ -114,7 +114,7 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
                 "'reaction_mapping': (root/'reaction/mapping.py').is_file(), "
                 "'analysis_catalog': (root/'compute/analysis.py').is_file(), "
                 "'scientific_analysis': reaction['verdict'], "
-                "'research_kernel': (root/'research/kernel.py').is_file(), "
+                "'research_state': (root/'research/kernel.py').is_file(), "
                 "'web': (root/'web/static/app.js').is_file()}))"
             ),
         ],
@@ -135,6 +135,6 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
         "reaction_mapping": True,
         "analysis_catalog": True,
         "scientific_analysis": "valid",
-        "research_kernel": True,
+        "research_state": True,
         "web": False,
     }

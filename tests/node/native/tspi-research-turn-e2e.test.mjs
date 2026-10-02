@@ -12,11 +12,11 @@ import { deliverMonitorEvent } from "../../../apps/app-server/pi-monitor-worker.
 import { createSessionControl, SESSION_CONTROL_PROTOCOL } from "../../../apps/app-server/pi-session-control.mjs";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, createModels } from "@earendil-works/pi-ai";
 import { AgentHarness, BACKGROUND_CONTEXT, MemorySessionRepo } from "@earendil-works/pi-agent-core";
-import { wrapToolForHarness } from "../../../packages/ts-agent-runtime/host-api/tool-envelope.mjs";
-import { createToolExecutionContext } from "../../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
-import { createResearchLifecycleController } from "../../../packages/ts-agent-runtime/host-api/lifecycle.mjs";
-import { PUBLIC_TOOL_METADATA } from "../../../packages/ts-agent-runtime/host-api/tools.mjs";
-import { create_workspace_initializer } from "../../../packages/research-agent-core/workspace.mjs";
+import { wrapToolForHarness } from "../../../packages/agent-runtime/host-api/tool-envelope.mjs";
+import { createToolExecutionContext } from "../../../packages/agent-runtime/host-api/workspace-context.mjs";
+import { createResearchLifecycleController } from "../../../packages/agent-runtime/host-api/lifecycle.mjs";
+import { PUBLIC_TOOL_METADATA } from "../../../packages/agent-runtime/host-api/tools.mjs";
+import { create_workspace_initializer } from "../../../packages/agent-core/workspace.mjs";
 import { managedPython } from "./test-environment.mjs";
 
 const REPO_ROOT = process.cwd();
@@ -26,10 +26,10 @@ const HARNESS_CONTEXT = { abortSignal: new AbortController().signal };
 function runJson(args, cwd = REPO_ROOT) {
   const environment = {
     ...process.env,
-    TS_AGENT_PYTHON: PYTHON,
+    TSPI_PYTHON: PYTHON,
     TSPI_PACKAGE_ROOT: REPO_ROOT,
     PYTHONNOUSERSITE: "1",
-    PYTHONPATH: join(REPO_ROOT, "packages", "ts-agent-kernel"),
+    PYTHONPATH: join(REPO_ROOT, "packages", "tspi-runtime"),
   };
   const output = execFileSync(PYTHON, args, {
     cwd,
@@ -114,7 +114,7 @@ async function createResearchFixture(root) {
       { type: "set_node_state", node_id: "node_1", state: "active" },
     ],
   }));
-  runJson(["scripts/ts_api.py", "research.change", "--root", workspace, "--request-file", changeFile]);
+  runJson(["apps/agent-cli/research_api.py", "research.change", "--root", workspace, "--request-file", changeFile]);
 
   const intent = {
     schema_version: "ts-calculation-intent/7",
@@ -224,25 +224,25 @@ test("one external Attempt completes the generic Research Turn lifecycle", async
   models.setProvider(faux.provider);
 
   const stateTool = wrapToolForHarness({
-    name: "ts_state",
-    label: "ts_state",
+    name: "research_read",
+    label: "research_read",
     description: "Read the bounded canonical research context.",
     parameters: Type.Object({ mode: Type.String() }, { additionalProperties: false }),
-    metadata: PUBLIC_TOOL_METADATA.ts_state,
+    metadata: PUBLIC_TOOL_METADATA.research_read,
     async execute(_toolCallId, params) {
-      calls.push({ name: "ts_state", params });
-      return resultEnvelope(runJson(["scripts/ts_api.py", `research.${params.mode}`, "--root", fixture.workspace]), "research-context/1");
+      calls.push({ name: "research_read", params });
+      return resultEnvelope(runJson(["apps/agent-cli/research_api.py", `research.${params.mode}`, "--root", fixture.workspace]), "research-context/1");
     },
   });
 
   const computeTool = wrapToolForHarness({
-    name: "ts_calc",
-    label: "ts_calc",
+    name: "compute_run",
+    label: "compute_run",
     description: "Launch or inspect one operational Attempt.",
     parameters: Type.Object({ operation: Type.String(), nodeId: Type.String(), intentId: Type.String() }, { additionalProperties: false }),
-    metadata: PUBLIC_TOOL_METADATA.ts_calc,
+    metadata: PUBLIC_TOOL_METADATA.compute_run,
     async execute(_toolCallId, params) {
-      calls.push({ name: "ts_calc", params });
+      calls.push({ name: "compute_run", params });
       const state = params.operation === "launch" ? "submitted" : "parsed";
       const programStatus = params.operation === "launch" ? "submitted" : "completed";
       await writeFile(resultPath, JSON.stringify(calculationResult(
@@ -253,7 +253,7 @@ test("one external Attempt completes the generic Research Turn lifecycle", async
       )));
       // The operational result file is not ResearchMap state. Mirror the
       // Host execution ledger so canonical liveness can observe this Attempt.
-      const context = runJson(["scripts/ts_api.py", "research.context", "--root", fixture.workspace]);
+      const context = runJson(["apps/agent-cli/research_api.py", "research.context", "--root", fixture.workspace]);
       const requestFile = join(root, `attempt-${calls.length}.json`);
       await writeFile(requestFile, JSON.stringify({
         schema_version: "ts-change-request/1",
@@ -277,19 +277,19 @@ test("one external Attempt completes the generic Research Turn lifecycle", async
             metadata: { program_status: programStatus },
           }],
       }));
-      runJson(["scripts/ts_api.py", "research.change", "--root", fixture.workspace, "--request-file", requestFile]);
+      runJson(["apps/agent-cli/research_api.py", "research.change", "--root", fixture.workspace, "--request-file", requestFile]);
       return resultEnvelope({ operation: params.operation, state }, "ts-calculation-result/2");
     },
   });
 
   const changeTool = wrapToolForHarness({
-    name: "ts_change",
-    label: "ts_change",
+    name: "research_change",
+    label: "research_change",
     description: "Apply one explicit ResearchMap ChangeSet.",
     parameters: Type.Object({ rationale: Type.String(), operations: Type.Array(Type.Object({}, { additionalProperties: true })) }, { additionalProperties: false }),
-    metadata: PUBLIC_TOOL_METADATA.ts_change,
+    metadata: PUBLIC_TOOL_METADATA.research_change,
     async execute(_toolCallId, params) {
-      calls.push({ name: "ts_change", params });
+      calls.push({ name: "research_change", params });
       const requestFile = join(root, `change-${calls.length}.json`);
       await writeFile(requestFile, JSON.stringify({
         schema_version: "ts-change-request/1",
@@ -298,19 +298,19 @@ test("one external Attempt completes the generic Research Turn lifecycle", async
         rationale: params.rationale,
         operations: params.operations,
       }));
-      const result = runJson(["scripts/ts_api.py", "research.change", "--root", fixture.workspace, "--request-file", requestFile]);
+      const result = runJson(["apps/agent-cli/research_api.py", "research.change", "--root", fixture.workspace, "--request-file", requestFile]);
       if (result.ok === false) throw new Error(`fixture change failed: ${JSON.stringify(result)}`);
       return resultEnvelope(result, "research-change-result/1");
     },
   });
 
   faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("ts_state", { mode: "context" }, { id: "turn-1-state" }), { stopReason: "toolUse" }),
-    fauxAssistantMessage(fauxToolCall("ts_calc", { operation: "launch", nodeId: "node_1", intentId: fixture.created.intent_id }, { id: "turn-1-launch" }), { stopReason: "toolUse" }),
+    fauxAssistantMessage(fauxToolCall("research_read", { mode: "context" }, { id: "turn-1-state" }), { stopReason: "toolUse" }),
+    fauxAssistantMessage(fauxToolCall("compute_run", { operation: "launch", nodeId: "node_1", intentId: fixture.created.intent_id }, { id: "turn-1-launch" }), { stopReason: "toolUse" }),
     fauxAssistantMessage("The Attempt was submitted and this turn is waiting for the external result.", { stopReason: "stop" }),
-    fauxAssistantMessage(fauxToolCall("ts_state", { mode: "context" }, { id: "turn-2-state" }), { stopReason: "toolUse" }),
-    fauxAssistantMessage(fauxToolCall("ts_calc", { operation: "inspect", nodeId: "node_1", intentId: fixture.created.intent_id }, { id: "turn-2-inspect" }), { stopReason: "toolUse" }),
-    fauxAssistantMessage(fauxToolCall("ts_change", {
+    fauxAssistantMessage(fauxToolCall("research_read", { mode: "context" }, { id: "turn-2-state" }), { stopReason: "toolUse" }),
+    fauxAssistantMessage(fauxToolCall("compute_run", { operation: "inspect", nodeId: "node_1", intentId: fixture.created.intent_id }, { id: "turn-2-inspect" }), { stopReason: "toolUse" }),
+    fauxAssistantMessage(fauxToolCall("research_change", {
       rationale: "The parsed Attempt is reconciled and the bounded Node is complete.",
       operations: [
         { type: "set_node_state", node_id: "node_1", state: "closed", outcome: "completed", summary: "External Attempt parsed and reconciled." },
@@ -324,7 +324,7 @@ test("one external Attempt completes the generic Research Turn lifecycle", async
     cwd: fixture.workspace,
     maxFollowUps: 1,
     statusReader: async () => {
-      const status = runJson(["scripts/ts_api.py", "research.liveness", "--root", fixture.workspace]);
+      const status = runJson(["apps/agent-cli/research_api.py", "research.liveness", "--root", fixture.workspace]);
       lifecycleReads.push(status.lifecycle);
       return status;
     },
@@ -372,7 +372,7 @@ test("one external Attempt completes the generic Research Turn lifecycle", async
     assert.equal(firstRun.ok, true);
     assert.equal(lifecycleReads.at(-1), "waiting_external");
     assert.equal(lifecycle.snapshot().lifecycle_phase, "interpret");
-    assert.deepEqual(calls.slice(0, 2).map((item) => item.name), ["ts_state", "ts_calc"]);
+    assert.deepEqual(calls.slice(0, 2).map((item) => item.name), ["research_read", "compute_run"]);
 
     const workspaceIdentity = JSON.parse(await readFile(join(fixture.workspace, "workspace_manifest.json"), "utf8"));
     const event = {
@@ -420,16 +420,16 @@ test("one external Attempt completes the generic Research Turn lifecycle", async
     assert.equal(lifecycleReads.at(-1), "terminal", JSON.stringify({ lifecycleReads, calls }));
     assert.equal(lifecycle.snapshot().lifecycle_phase, "prepare");
 
-    assert.deepEqual(calls.map((item) => item.name), ["ts_state", "ts_calc", "ts_state", "ts_calc", "ts_change"]);
+    assert.deepEqual(calls.map((item) => item.name), ["research_read", "compute_run", "research_read", "compute_run", "research_change"]);
     assert.equal(calls[0].params.mode, "context");
     assert.equal(calls[2].params.mode, "context");
     assert.equal(calls[3].params.operation, "inspect");
     assert.deepEqual(calls[4].params.operations.map((operation) => operation.type), ["set_node_state", "set_claim_status"]);
 
-    const map = runJson(["scripts/ts_api.py", "research.map", "--root", fixture.workspace]);
+    const map = runJson(["apps/agent-cli/research_api.py", "research.map", "--root", fixture.workspace]);
     assert.equal(map.nodes.find((node) => node.id === "node_1").state, "closed");
     assert.equal(map.nodes.find((node) => node.id === "node_1").outcome, "completed");
-    assert.equal(runJson(["scripts/ts_api.py", "research.liveness", "--root", fixture.workspace]).lifecycle, "terminal");
+    assert.equal(runJson(["apps/agent-cli/research_api.py", "research.liveness", "--root", fixture.workspace]).lifecycle, "terminal");
   } finally {
     control.close();
     await created.harness.close(BACKGROUND_CONTEXT);

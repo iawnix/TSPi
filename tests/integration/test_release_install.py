@@ -118,15 +118,15 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "config/pi-transcript-json.patch" in names
     assert "config/pi-session-navigation.patch" in names
     assert "scripts/prepare_pi_source.py" in names
-    assert not any(name.startswith("packages/ts-agent-kernel/ts_agent/web/") for name in names)
-    assert "packages/ts-agent-kernel/ts_agent/workspace/artifacts.py" in names
-    assert "packages/ts-agent-kernel/ts_agent/workspace/candidates.py" in names
-    assert "packages/ts-agent-kernel/ts_agent/workspace/contracts/finding_candidates.schema.json" in names
-    assert "packages/ts-agent-kernel/ts_agent/compute/capabilities.py" in names
-    assert "packages/ts-agent-kernel/ts_agent/research/model.py" in names
-    assert "packages/ts-agent-kernel/ts_agent/research/kernel.py" in names
+    assert not any(name.startswith("packages/tspi-runtime/tspi_runtime/web/") for name in names)
+    assert "packages/tspi-runtime/tspi_runtime/workspace/artifacts.py" in names
+    assert "packages/tspi-runtime/tspi_runtime/workspace/candidates.py" in names
+    assert "packages/tspi-runtime/tspi_runtime/workspace/contracts/finding_candidates.schema.json" in names
+    assert "packages/tspi-runtime/tspi_runtime/compute/capabilities.py" in names
+    assert "packages/tspi-runtime/tspi_runtime/research/model.py" in names
+    assert "packages/tspi-runtime/tspi_runtime/research/kernel.py" in names
     assert distribution == build_result["python_distribution"]
-    assert distribution["name"] == "ts-agent-kernel"
+    assert distribution["name"] == "tspi-runtime"
     assert distribution["version"] == json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
     assert distribution["path"] in names
     assert sum(name.startswith("python-dist/") and name.endswith(".whl") for name in names) == 1
@@ -159,11 +159,11 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "config" / "pi-transcript-json.patch").is_file()
     assert (package_root / "config" / "pi-session-navigation.patch").is_file()
     assert (package_root / "scripts" / "prepare_pi_source.py").is_file()
-    assert not (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web").exists()
-    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "artifacts.py").is_file()
-    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "candidates.py").is_file()
-    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "contracts" / "finding_candidates.schema.json").is_file()
-    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "research" / "model.py").is_file()
+    assert not (package_root / "packages" / "tspi-runtime" / "tspi_runtime" / "web").exists()
+    assert (package_root / "packages" / "tspi-runtime" / "tspi_runtime" / "workspace" / "artifacts.py").is_file()
+    assert (package_root / "packages" / "tspi-runtime" / "tspi_runtime" / "workspace" / "candidates.py").is_file()
+    assert (package_root / "packages" / "tspi-runtime" / "tspi_runtime" / "workspace" / "contracts" / "finding_candidates.schema.json").is_file()
+    assert (package_root / "packages" / "tspi-runtime" / "tspi_runtime" / "research" / "model.py").is_file()
     installed_wheel = package_root / distribution["path"]
     assert installed_wheel.is_file()
     assert inspect_wheel(installed_wheel)["payload_sha256"] == distribution["payload_sha256"]
@@ -191,7 +191,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
         check=False,
     )
     assert wheel_install.returncode == 0, wheel_install.stderr
-    assert (wheel_site / "ts_agent" / "__init__.py").is_file()
+    assert (wheel_site / "tspi_runtime" / "__init__.py").is_file()
     assert not list(package_root.rglob("*.egg-info"))
     runtime_plan = subprocess.run(
         [
@@ -440,9 +440,9 @@ def _synthetic_release(
     files["README.md"] = f"release {marker}\n".encode()
     files.update(extra_files or {})
     python_payload = {
-        normalized.removeprefix("packages/ts-agent-kernel/"): content
+        normalized.removeprefix("packages/tspi-runtime/"): content
         for name, content in files.items()
-        if (normalized := name.removeprefix("package/")).startswith("packages/ts-agent-kernel/ts_agent/")
+        if (normalized := name.removeprefix("package/")).startswith("packages/tspi-runtime/tspi_runtime/")
     }
     wheel = _synthetic_wheel(root, version=version, package_files=python_payload)
     wheel_descriptor = inspect_wheel(
@@ -465,7 +465,7 @@ def _synthetic_release(
         for name, content in sorted(files.items()):
             info = tarfile.TarInfo(name if name.startswith("package/") else f"package/{name}")
             info.size = len(content)
-            info.mode = 0o755 if name in {"ResearchAgent", "scripts/ts_web_provider.py"} else 0o644
+            info.mode = 0o755 if name in {"ResearchAgent", "apps/agent-cli/provider_runner.py"} else 0o644
             archive.addfile(info, io.BytesIO(content))
     digest = hashlib.sha256(temporary_archive.read_bytes()).hexdigest()
     release_id = f"{version}-sha256-{digest[:16]}"
@@ -491,15 +491,15 @@ def _synthetic_release(
 
 
 def _synthetic_wheel(root: Path, *, version: str, package_files: dict[str, bytes]) -> Path:
-    wheel = root / f"ts_agent_kernel-{version}-py3-none-any.whl"
-    metadata = f"Metadata-Version: 2.4\nName: ts-agent-kernel\nVersion: {version}\n\n".encode()
+    wheel = root / f"tspi_runtime_kernel-{version}-py3-none-any.whl"
+    metadata = f"Metadata-Version: 2.4\nName: tspi-runtime\nVersion: {version}\n\n".encode()
     with zipfile.ZipFile(wheel, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, content in sorted(package_files.items()):
             archive.writestr(name, content)
-        archive.writestr(f"ts_agent_kernel-{version}.dist-info/METADATA", metadata)
+        archive.writestr(f"tspi_runtime_kernel-{version}.dist-info/METADATA", metadata)
         archive.writestr(
-            f"ts_agent_kernel-{version}.dist-info/WHEEL",
+            f"tspi_runtime_kernel-{version}.dist-info/WHEEL",
             "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
         )
-        archive.writestr(f"ts_agent_kernel-{version}.dist-info/RECORD", "")
+        archive.writestr(f"tspi_runtime_kernel-{version}.dist-info/RECORD", "")
     return wheel

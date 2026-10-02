@@ -227,11 +227,11 @@ Package release。
 `create_kernel()`。
 
 发行包内置显式的 Pi Runtime Module：
-`packages/research-agent-pi-adapter/pi_runtime_module.mjs`。当 Host 已配置 Pi SDK
+`packages/agent-pi-adapter/pi_runtime_module.mjs`。当 Host 已配置 Pi SDK
 模型时，可以直接使用：
 
 ```bash
-export RESEARCH_AGENT_RUNTIME_MODULE="$PWD/packages/research-agent-pi-adapter/pi_runtime_module.mjs"
+export RESEARCH_AGENT_RUNTIME_MODULE="$PWD/packages/agent-pi-adapter/pi_runtime_module.mjs"
 export RESEARCH_AGENT_CWD="$PWD/workspaces/demo"
 export RESEARCH_AGENT_SESSION_ROOT="$PWD/.pi/research-agent/sessions"
 export PI_CODING_AGENT_DIR="$PWD/.pi/research-agent/agent"

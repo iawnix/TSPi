@@ -14,24 +14,24 @@ import Type from "./pi-runtime-deps.mjs";
 import {
   createPublicToolContracts,
   PUBLIC_TOOL_CANONICAL_NAMES,
-} from "../../packages/ts-agent-runtime/host-api/tools.mjs";
-import { boundWorkspaceRoot } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
+} from "../../packages/agent-runtime/host-api/tools.mjs";
+import { boundWorkspaceRoot } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
 import {
   createReviewArtifactReadCapture,
   createReviewArtifactReadTool,
-} from "../../packages/ts-agent-runtime/agents/review/artifact-tool.ts";
+} from "../../packages/agent-runtime/agents/review/artifact-tool.ts";
 import {
   createReviewResultCapture,
   createReviewResultTool,
   REVIEW_RESULT_TOOL_NAME,
-} from "../../packages/ts-agent-runtime/agents/review/result-tool.ts";
+} from "../../packages/agent-runtime/agents/review/result-tool.ts";
 
 const require = createRequire(import.meta.url);
 const {
   buildReviewPromptPayload,
   buildReviewTaskBundle,
   validateSubagentRequest,
-} = require("../../packages/ts-agent-runtime/agents/review/task-packet.cjs");
+} = require("../../packages/agent-runtime/agents/review/task-packet.cjs");
 const {
   beginAgentRun,
   completeAgentRun,
@@ -39,12 +39,12 @@ const {
   settleFailedAgentRun,
   writeInvalidReviewOutput,
   writeReviewRootDisposition,
-} = require("../../packages/ts-agent-runtime/agent-core/run-journal.cjs");
+} = require("../../packages/agent-runtime/agent-core/run-journal.cjs");
 const {
   classifyUpstreamModelFailure,
-} = require("../../packages/ts-agent-runtime/agent-core/failure-taxonomy.cjs");
+} = require("../../packages/agent-runtime/agent-core/failure-taxonomy.cjs");
 const { loadReviewerRole } = require(
-  "../../packages/ts-agent-runtime/agents/review/roles.cjs",
+  "../../packages/agent-runtime/agents/review/roles.cjs",
 );
 const executeFile = promisify(execFile);
 
@@ -73,7 +73,7 @@ export function createReviewTool(runtime) {
       try {
         publishProgress(onUpdate, toolCallId, taskId, request, "loading");
         const researchMap = await runJsonCli(
-          packageScript("ts_api.py"),
+          packageScript("research_api.py"),
           ["research.map", "--root", root],
           root,
           context?.abortSignal,
@@ -81,7 +81,7 @@ export function createReviewTool(runtime) {
         );
         const artifactCatalog = request.artifactIds.length
           ? (await runJsonCli(
-              packageScript("ts_api.py"),
+              packageScript("research_api.py"),
               ["compute.artifacts", "--root", root],
               root,
               context?.abortSignal,
@@ -351,7 +351,7 @@ async function lastAssistantText(lane, context) {
 
 function reviewSystemPrompt(context) {
   const role = loadReviewerRole(context.reviewer_role?.role_id || "general");
-  const root = resolve(packageRoot(), "packages/ts-agent-runtime/agents/review/prompts");
+  const root = resolve(packageRoot(), "packages/agent-runtime/agents/review/prompts");
   const core = readFileSync(resolve(root, "core.md"), "utf8").trim();
   const task = readFileSync(resolve(root, "claim-review.md"), "utf8").trim();
   return `${core}\n\nReviewer role (${role.role_id}, revision ${role.prompt_revision}): ${role.title}.\nSpecialty: ${role.specialty}.\nRole boundary: ${role.description}\n\nReview mode instructions:\n${task}`;
@@ -359,7 +359,7 @@ function reviewSystemPrompt(context) {
 
 function reviewTaskPrompt(promptPayload, hasArtifacts) {
   const artifactInstruction = hasArtifacts
-    ? " You may call ts_review_artifact_read once with a bounded batch if needed; otherwise submit directly."
+    ? " You may call review_artifact_read once with a bounded batch if needed; otherwise submit directly."
     : "";
   return `Review this ResearchMap task.${artifactInstruction} Submit exactly once through ${REVIEW_RESULT_TOOL_NAME}; free text is not a result.\n\n${JSON.stringify(promptPayload)}`;
 }
@@ -377,7 +377,7 @@ function classifyValidationStage(result) {
   const message = toolResultText(result);
   if (message.includes("exactly one valid call")) return "duplicate_tool_call";
   if (
-    message.startsWith("ts_review_result raw arguments violate the review schema")
+    message.startsWith("review_result raw arguments violate the review schema")
     || message.startsWith("Validation failed for tool")
   ) {
     return "tool_schema";
@@ -409,7 +409,7 @@ function publishProgress(onUpdate, toolCallId, taskId, request, state, runRef) {
 
 async function allocateOperationalId(root, signal) {
   const result = await runJsonCli(
-    packageScript("ts_workspace.py"),
+    packageScript("workspace.py"),
     ["allocate_operational_id", "--root", root, "--kind", "sub"],
     root,
     signal,
@@ -471,7 +471,7 @@ function packageScript(name) {
 }
 
 function nativePython() {
-  return process.env.TS_AGENT_PYTHON || "python3";
+  return process.env.TSPI_PYTHON || "python3";
 }
 
 function requireNativeWrites(toolName, toolContext) {

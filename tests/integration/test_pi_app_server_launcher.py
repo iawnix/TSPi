@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from tests.support.runtime_helpers import write_test_runtime_manifest, write_test_suite_manifest
-from ts_agent.runtime import launcher
+from tspi_runtime.runtime import launcher
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -199,8 +199,8 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     for name in ("_bootstrap.py", "tspi_launcher.py", "pi-loader.mjs"):
         shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
     shutil.copytree(
-        ROOT / "packages/ts-agent-kernel",
-        package_root / "packages/ts-agent-kernel",
+        ROOT / "packages/tspi-runtime",
+        package_root / "packages/tspi-runtime",
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
     )
     shutil.copy2(ROOT / "environment.yml", package_root / "environment.yml")

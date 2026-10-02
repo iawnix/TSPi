@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
-import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
-import { boundWorkspaceRoot } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
+import { createPublicToolContracts } from "../../packages/agent-runtime/host-api/tools.mjs";
+import { boundWorkspaceRoot } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
 
 const executeFile = promisify(execFile);
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
@@ -45,7 +45,7 @@ async function runNotification(root, request, signal) {
     await writeFile(requestFile, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
     try {
       const completed = await executeFile(nativePython(), [
-        packageScript("ts_email.py"),
+        packageScript("notify.py"),
         "notify",
         "--root", root,
         "--request-file", requestFile,
@@ -119,11 +119,11 @@ function isValidNotificationResult(result) {
 function packageScript(name) {
   const packageRoot = process.env.TSPI_PACKAGE_ROOT;
   if (!packageRoot) throw new Error("TSPi native worker requires TSPI_PACKAGE_ROOT");
-  return resolve(packageRoot, "scripts", name);
+  return resolve(packageRoot, "apps", "agent-cli", name);
 }
 
 function nativePython() {
-  return process.env.TS_AGENT_PYTHON || "python3";
+  return process.env.TSPI_PYTHON || "python3";
 }
 
 function requireNativeWrites(toolContext) {

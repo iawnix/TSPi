@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { create_agent_runtime_port, create_workspace_port } from "../../packages/research-agent-core/ports.mjs";
-import { assert_session_mode, require_matching_mode } from "../../packages/research-agent-core/session_mode.mjs";
-import { validate_workspace_manifest } from "../../packages/research-agent-core/workspace.mjs";
-import { require_workspace_id } from "../../packages/research-agent-core/workspace_id.mjs";
+import { create_agent_runtime_port, create_workspace_port } from "../../packages/agent-core/ports.mjs";
+import { assert_session_mode, require_matching_mode } from "../../packages/agent-core/session_mode.mjs";
+import { validate_workspace_manifest } from "../../packages/agent-core/workspace.mjs";
+import { require_workspace_id } from "../../packages/agent-core/workspace_id.mjs";
 
 export const APP_SERVER_PROTOCOL_VERSION = "research_agent_app_server_1";
 
@@ -313,7 +313,7 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
         workspace_mode: manifest.workspace_mode,
         session_mode: manifest.workspace_mode,
         admission_state: manifest.state,
-        admission_required: manifest.research_kernel?.admission_required,
+        admission_required: manifest.research_state?.admission_required,
       });
     },
 
@@ -436,6 +436,13 @@ export function create_app_server({ runtime_port, workspace_port = null, workspa
           ...(request.capability_id === undefined ? {} : { capability_id: request.capability_id }),
         }),
       };
+    },
+
+    async capability_execute(request = {}) {
+      ensure_open();
+      if (!native_capability_host || typeof native_capability_host.execute !== "function") throw new Error("provider_dispatcher_not_configured");
+      if (request === null || typeof request !== "object" || Array.isArray(request)) throw new TypeError("capability execute request must be an object");
+      return native_capability_host.execute(request);
     },
 
     // Mode-neutral compute catalog/readiness ports. These are the public

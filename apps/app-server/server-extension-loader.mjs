@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { resolve, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { validateHarnessToolDefinition } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { validateHarnessToolDefinition } from "../../packages/agent-runtime/host-api/tools.mjs";
 
 const MANIFEST_SCHEMA = "tspi-server-extensions/1";
 const NAME_PATTERN = /^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$/u;

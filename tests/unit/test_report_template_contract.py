@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
-from ts_agent.report import build_final_report
+from report_lib import build_final_report
 
 
 ROOT = Path(__file__).resolve().parents[2]

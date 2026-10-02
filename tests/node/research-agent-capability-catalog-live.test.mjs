@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
+import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 import { createStateTool } from "../../apps/app-server/pi-native-tools.mjs";
 
 test("research_read uses the injected Native catalog", async () => {

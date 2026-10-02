@@ -19,7 +19,7 @@ RULES = (
     (re.compile(r"\bevidence\s+(?:layers?|roles?)\b", re.I),
      "ambiguous evidence category: name Artifact, FactFinding, or IssueFinding"),
     (re.compile(r"\bts-reviewers\b", re.I),
-     "unregistered public name: use Review or ts_review"),
+     "unregistered public name: use Review or review"),
     (re.compile(r"\b(?:stage_router|gate_router)\b", re.I),
      "retired routing concept: Root chooses the next research action"),
 )

@@ -9,7 +9,7 @@ from tests.support.workspace_helpers import accept_research_claim, bootstrap_wor
 
 ROOT = Path(__file__).resolve().parents[2]
 TS_LOADER = ROOT / "tests" / "support" / "typescript_loader.mjs"
-RUNTIME_ROOT = ROOT / "packages" / "ts-agent-runtime"
+RUNTIME_ROOT = ROOT / "packages" / "agent-runtime"
 OUTPUT_SCHEMA = RUNTIME_ROOT / "agents" / "review" / "output-schema.cjs"
 RESULT_TOOL = RUNTIME_ROOT / "agents" / "review" / "result-tool.ts"
 RUNTIME = RUNTIME_ROOT / "agents" / "review" / "runtime.ts"
@@ -31,7 +31,7 @@ def test_review_task_is_graph_scoped_bounded_and_advisory(tmp_path: Path) -> Non
     assert task["schema_version"] == "ts-agent-task/2"
     assert task["role"] == "review"
     assert task["authority"] == "advisory"
-    assert task["capabilities"] == ["ts_review_result"]
+    assert task["capabilities"] == ["review_result"]
     assert task["scope"]["node_refs"] == [refs["node_id"]]
     assert task["scope"]["claim_refs"] == [refs["claim_id"]]
     assert set(task["inputs"]) == {"research_map", "review_context"}
@@ -141,11 +141,11 @@ process.stdout.write(JSON.stringify({{
 def test_review_runtime_can_force_named_tool_without_adding_function_strict() -> None:
     script = f"""
 import {{ forceReviewResultToolChoice }} from {json.dumps(RUNTIME.as_uri())};
-const payload=forceReviewResultToolChoice({{model:"probe",tools:[{{type:"function",function:{{name:"ts_review_result",parameters:{{type:"object"}}}}}}]}});
+const payload=forceReviewResultToolChoice({{model:"probe",tools:[{{type:"function",function:{{name:"review_result",parameters:{{type:"object"}}}}}}]}});
 process.stdout.write(JSON.stringify(payload));
 """
     payload = json.loads(_node_ts(script).stdout)
-    assert payload["tool_choice"] == {"type": "function", "function": {"name": "ts_review_result"}}
+    assert payload["tool_choice"] == {"type": "function", "function": {"name": "review_result"}}
     assert "strict" not in payload["tools"][0]["function"]
     source = RUNTIME.read_text(encoding="utf-8")
     assert "assertProviderTurnSucceeded" in source
@@ -180,14 +180,14 @@ const canonical=(state,control={{effect_outcome:"succeeded",reconciliation_requi
   provenance:{{intent_digest:"sha256:"+"a".repeat(64),capability:"gaussian.opt_freq",capability_version:"1",capability_descriptor_digest:descriptorDigest}},
 }});
 const successActions=[
-  {{tool:"ts_workspace_compute_prepare",result:{{action_status:"completed",result:canonical("prepared")}}}},
-  {{tool:"ts_workspace_compute_submit",result:{{action_status:"completed",result:canonical("submitted")}}}},
+  {{tool:"workspace_compute_prepare",result:{{action_status:"completed",result:canonical("prepared")}}}},
+  {{tool:"workspace_compute_submit",result:{{action_status:"completed",result:canonical("submitted")}}}},
 ];
 const ambiguousResult=canonical("unknown",{{effect_outcome:"unknown",reconciliation_required:true}});
 ambiguousResult.error_class="submission_ambiguous";
 const ambiguousActions=[
   successActions[0],
-  {{tool:"ts_workspace_compute_submit",result:{{action_status:"unknown",result:ambiguousResult}}}},
+  {{tool:"workspace_compute_submit",result:{{action_status:"unknown",result:ambiguousResult}}}},
 ];
 const success=resultHelper.buildComputeResult({{summary:"Launch completed.",limitations:[]}},task,successActions);
 const ambiguous=resultHelper.buildComputeResult({{summary:"Submission requires reconciliation.",limitations:["Scheduler result is unknown."]}},task,ambiguousActions);
@@ -224,8 +224,8 @@ const task=taskHelper.buildComputeTask({{
   binding:{{intentId:"calc_1",intentDigest:"sha256:"+"b".repeat(64),executionKind:"remote",capabilityDescriptorDigest:descriptorDigest}},tailLines:80,
 }});
 const result={{schema_version:"ts-calculation-result/2",intent_id:"calc_1",node_id:"node_1",capability:"gaussian.opt_freq",capability_version:"1",expected_output_roles:descriptor.output_roles,state:"running",program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],parser_facts:{{}},provenance:{{intent_digest:"sha256:"+"b".repeat(64),capability:"gaussian.opt_freq",capability_version:"1",capability_descriptor_digest:descriptorDigest}}}};
-const status={{tool:"ts_workspace_compute_status",result:{{action_status:"completed",result}}}};
-const tail={{tool:"ts_workspace_compute_tail",result:{{action_status:"completed",result:{{...result,schema_version:"ts-calculation-tail/1"}}}}}};
+const status={{tool:"workspace_compute_status",result:{{action_status:"completed",result}}}};
+const tail={{tool:"workspace_compute_tail",result:{{action_status:"completed",result:{{...result,schema_version:"ts-calculation-tail/1"}}}}}};
 const actions=[];
 const tool=createComputeResultTool(task,actions,createComputeResultCapture());
 const check=Compile(tool.parameters);

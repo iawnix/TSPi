@@ -34,7 +34,7 @@ def test_pi_source_pin_is_explicit_and_valid() -> None:
     assert "service_invalid_value" in workspace_patch
     workspace_mode_patch = (ROOT / "config" / "pi-workspace-mode.patch").read_text(encoding="utf-8")
     assert "isSupportedLightWorkspace" in workspace_mode_patch
-    assert "research_agent_workspace_1" in workspace_mode_patch
+    assert "research_state_workspace_1" in workspace_mode_patch
     research_agent_workspace_patch = (ROOT / "config" / "pi-research-agent-workspace.patch").read_text(encoding="utf-8")
     assert "isSupportedResearchAgentWorkspace" in research_agent_workspace_patch
     assert "research_map_context_1" in research_agent_workspace_patch

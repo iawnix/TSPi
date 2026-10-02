@@ -19,19 +19,19 @@ export class ComputeConfigCapabilityHostError extends Error {
  * Load the Native Python capability catalog and installation environment
  * bindings. This boundary is descriptive only: it never imports or constructs
  * a JavaScript provider, gateway, or orchestrator. Actual execution always
- * goes through ts_compute.py and the Native lifecycle.
+ * goes through compute.py and the Native lifecycle.
  */
 export async function create_compute_config_capability_host({
   config_path,
   package_root,
-  python = process.env.TS_AGENT_PYTHON || "python3",
+  python = process.env.TSPI_PYTHON || "python3",
   bridge_script,
 } = {}) {
   if (typeof config_path !== "string" || config_path.length === 0) {
     throw new ComputeConfigCapabilityHostError("compute_config_required", "compute.toml path is required");
   }
   const packageRoot = resolve(package_root || process.cwd());
-  const script = resolve(bridge_script || `${packageRoot}/scripts/research_agent_capability_bridge.py`);
+  const script = resolve(bridge_script || `${packageRoot}/apps/agent-cli/research_agent_capability_bridge.py`);
   let completed;
   try {
     completed = await executeFile(python, [script, "--config", resolve(config_path)], {
@@ -73,7 +73,7 @@ export async function create_compute_config_capability_host({
       throw new TypeError("execution_kind must be local or remote");
     }
     const args = [
-      `${packageRoot}/scripts/ts_api.py`,
+      `${packageRoot}/apps/agent-cli/research_api.py`,
       "compute.readiness",
       "--root",
       packageRoot,

@@ -7,7 +7,7 @@ import {
   parseSlashCommand,
   slashCompletions,
   SLASH_COMMAND_DEFINITIONS,
-} from "../../packages/ts-agent-runtime/host-api/commands.mjs";
+} from "../../packages/agent-runtime/host-api/commands.mjs";
 
 const executeFile = promisify(execFile);
 
@@ -40,8 +40,8 @@ export async function createTspiNativeClientFacet({ sourceRoot, packageRoot = pr
     import("../../extensions/pi/tui-package/src/document-viewer.ts"),
   ]);
   const root = typeof packageRoot === "string" && packageRoot.length > 0 ? packageRoot : process.cwd();
-  const python = process.env.TSPI_WORKSPACE_PYTHON || process.env.TS_AGENT_PYTHON || "python3";
-  const apiScript = join(root, "scripts/ts_api.py");
+  const python = process.env.TSPI_WORKSPACE_PYTHON || process.env.TSPI_PYTHON || "python3";
+  const apiScript = join(root, "apps/agent-cli/research_api.py");
 
   return defineFacet({
     id: "@tspi/native-client-commands",

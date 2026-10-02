@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ts_agent.io import read_json
-from ts_agent.report import build_final_report, build_report_package
-from ts_agent.report.context import collect_report_context
+from tspi_runtime.io import read_json
+from report_lib import build_final_report, build_report_package
+from report_lib.context import collect_report_context
 from tests.support.workspace_helpers import (
     apply_filesystem_change,
     bootstrap_workspace_fixture,

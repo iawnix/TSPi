@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { startTspiHost } from "../../../apps/app-server/tspi-host.mjs";
 import { connectHost } from "../../../apps/app-server/tspi-host-client.mjs";
-import { create_workspace_initializer } from "../../../packages/research-agent-core/workspace.mjs";
+import { create_workspace_initializer } from "../../../packages/agent-core/workspace.mjs";
 
 const TARGET = { workspace_id: "project-a", session_id: "session-a" };
 

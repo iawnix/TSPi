@@ -7,8 +7,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / "scripts" / "ts_workspace_mode.py"
-API = ROOT / "scripts" / "ts_api.py"
+CLI = ROOT / "scripts" / "workspace_mode.py"
+API = ROOT / "scripts" / "research_api.py"
 
 
 def _run(script: Path, *args: str) -> dict:
@@ -27,7 +27,7 @@ def _run(script: Path, *args: str) -> dict:
 def test_workspace_cli_roundtrip_uses_canonical_research_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     initialized = _run(CLI, "--root", str(workspace), "--workspace-id", "workspace_cli", "--mode", "research")
-    assert initialized["schema_version"] == "research_agent_workspace_1"
+    assert initialized["schema_version"] == "research_state_workspace_1"
     assert initialized["state"] == "ready"
 
     request = {

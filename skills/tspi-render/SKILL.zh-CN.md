@@ -8,7 +8,7 @@ description: 将分子结构、轨迹、反应机理和科学曲线渲染为 TSP
 [English version](SKILL.md)
 
 使用 `artifact_render` 将已注册结构和数值 Artifact 制作成图像；Node 所属和 map 变更使用
-`tspi-research-kernel`。
+`tspi-research-state`。
 
 不要把渲染图像当作新的科学证据。引用到 Finding 前必须核对来源 Artifact、标签、单位和
 ResearchMap revision。

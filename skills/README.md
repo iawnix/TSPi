@@ -10,7 +10,7 @@ redefining state.
 
 | Skill | Responsibility |
 | --- | --- |
-| [tspi-research-kernel](tspi-research-kernel/SKILL.md) | ResearchMap reads, validation, Findings, Gates, and atomic changes |
+| [tspi-research-state](tspi-research-state/SKILL.md) | ResearchMap reads, validation, Findings, Gates, and atomic changes |
 | [tspi-orchestration](tspi-orchestration/SKILL.md) | Task planning, branches, recovery, review, and stopping |
 | [tspi-ts-candidate-generation](tspi-ts-candidate-generation/SKILL.md) | TS candidate construction, scans, QST, NEB, and sampling |
 | [tspi-ts-validation](tspi-ts-validation/SKILL.md) | Saddle, mode, structure, electronic-state, and stereochemical validation |
@@ -38,4 +38,4 @@ Kernel.
 Each Skill has matching English and Chinese entrypoints. Every detailed
 reference also has an English and Simplified Chinese version; each entrypoint
 links only to references in the same language. Shared terminology is in the
-[glossary](tspi-research-kernel/references/glossary.md).
+[glossary](tspi-research-state/references/glossary.md).

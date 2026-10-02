@@ -7,7 +7,7 @@ description: Build TSPi research reports from the canonical ResearchMap, calcula
 
 [Chinese version](SKILL.zh-CN.md)
 
-Use this Skill for `report_build`. Use `tspi-research-kernel` for ResearchMap
+Use this Skill for `report_build`. Use `tspi-research-state` for ResearchMap
 semantics, `tspi-orchestration` for workflow history, and `tspi-render` when a
 report needs figures.
 

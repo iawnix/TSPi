@@ -1,0 +1,14 @@
+{
+  "name": "@iawnix/agent-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Language-neutral contracts for research agents and tool providers.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "files": ["schemas", "src"]
+}

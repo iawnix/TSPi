@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
-import { create_fake_agent_runtime } from "../../packages/research-agent-core/fake-runtime.mjs";
-import { create_agent_runtime_port } from "../../packages/research-agent-core/ports.mjs";
-import { create_pi_runtime_adapter } from "../../packages/research-agent-pi-adapter/index.mjs";
+import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
+import { create_agent_runtime_port } from "../../packages/agent-core/ports.mjs";
+import { create_pi_runtime_adapter } from "../../packages/agent-pi-adapter/index.mjs";
 import { create_app_server } from "../../apps/research-agent-app-server/index.mjs";
 
 function workspace_manifest(workspace_root, workspace_mode = "research", workspace_id = "workspace_boundary") {
   const research = workspace_mode === "research";
   return {
-    schema_version: "research_agent_workspace_1",
+    schema_version: "research_state_workspace_1",
     workspace_id,
     workspace_root,
     profile_id: `${workspace_mode}_workspace_1`,
@@ -24,7 +24,7 @@ function workspace_manifest(workspace_root, workspace_mode = "research", workspa
     directories: research
       ? ["inputs", "artifacts", "runs", "logs", "research_map", "memory", "lifecycle", "checkpoints", "nodes", "evidence", "monitor", "environments"]
       : ["inputs", "artifacts", "runs", "logs", "scratch", "sessions"],
-    research_kernel: research
+    research_state: research
       ? { initialized: true, admission_required: true, revision: 0 }
       : { initialized: false, admission_required: false, revision: null },
   };

@@ -16,7 +16,7 @@ TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装�
   源码的 Pi worker 加载 TSPi tools、skills、hooks、策略和 system prompt。
 - `services/tspi-link-relay/` 负责 TSPi Link 注册、配对、设备授权和不透明帧转发；它不拥有
   workspace/session/research，也不解析 Host RPC。
-- `packages/ts-agent-kernel/ts_agent/` 管理 `ResearchMap`、引用完整性、验证和事务。
+- `packages/tspi-runtime/tspi_runtime/` 管理 `ResearchMap`、引用完整性、验证和事务。
   计算控制面负责本地子进程的持久化生命周期，并通过配置好的
   `compute_run` 对 local 和 remote 使用同一套计算生命周期；统一的
   `compute.environments` 查询同时返回两类环境。渲染、报告和邮件仍由
@@ -211,9 +211,9 @@ Claim。Gate 记录结果，但不会自动修改 Node 或 Claim；解释和状�
 ## 独立科学能力与节点管理
 
 `analysis_run` 通过按需能力目录派发 22 项版本化独立分析能力；对外目录由
-`packages/ts-agent-kernel/ts_agent/compute/analysis.py` 组装，领域描述由
-`packages/ts-agent-kernel/ts_agent/analysis/catalog.py` 定义，领域实现位于
-`packages/ts-agent-kernel/ts_agent/analysis/`。结果绑定 Node、输入 digest、生成文件
+`packages/tspi-runtime/tspi_runtime/compute/analysis.py` 组装，领域描述由
+`packages/tspi-runtime/tspi_runtime/analysis/catalog.py` 定义，领域实现位于
+`packages/tspi-runtime/tspi_runtime/analysis/`。结果绑定 Node、输入 digest、生成文件
 和候选事实；选定事实通过已有 `research_change`
 入口重算校验后登记。能力不选择下一科学步骤，不接受 Claim。化学网络使用带计量
 的超边并允许有环，独立于研究 Node DAG。

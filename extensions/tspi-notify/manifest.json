@@ -1,0 +1,23 @@
+{
+  "schema_version": "tspi-extension/1",
+  "name": "tspi-notify",
+  "version": "1.0.0",
+  "skills": [
+    {
+      "name": "tspi-notify",
+      "path": ".",
+      "sha256": "sha256:17506bac7916e738173f2c491264119a92cdce55e4f64d10b46b81c1ead760a6"
+    }
+  ],
+  "providers": [
+    {
+      "id": "notify_send",
+      "version": "1",
+      "kind": "notification",
+      "descriptor": "descriptors/notify_send.json",
+      "descriptor_sha256": "sha256:faefb99d86bc3c9126fb7c463b5eab5adf9a686269c3d9235f3d4d3e714eae49",
+      "entry": "providers/notify_provider.py",
+      "sha256": "sha256:e24846f7f249cee45dbe9325df84be70fee872314b5687d0099818cb64f221f0"
+    }
+  ]
+}

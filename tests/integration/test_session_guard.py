@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from ts_agent.runtime import session_guard
-from ts_agent.runtime.session_guard import (
+from tspi_runtime.runtime import session_guard
+from tspi_runtime.runtime.session_guard import (
     SessionGuardError,
     acquire_directory_guard,
     acquire_session_guard,
@@ -18,7 +18,7 @@ from ts_agent.runtime.session_guard import (
     require_guarded_installation,
     select_session,
 )
-from ts_agent.runtime.workspace_mode import admit_research_workspace, initialize_workspace
+from tspi_runtime.runtime.workspace_mode import admit_research_workspace, initialize_workspace
 
 
 def _install_state(root: Path) -> Path:

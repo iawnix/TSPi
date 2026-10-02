@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { monitorHostWorkspaceId } from "../../apps/app-server/pi-monitor-worker.mjs";
-import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
+import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 
 test("monitor identity uses the research workspace manifest", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-manifest-boundary-"));

@@ -10,16 +10,16 @@ from tests.support.workspace_helpers import (
     bootstrap_filesystem_workspace_fixture,
     start_filesystem_research_node,
 )
-from ts_agent.compute import (
+from research_compute import (
     ComputeContractError,
     create_reaction_mapping_validation_artifact,
     import_calculation_artifact,
     list_calculation_artifacts,
 )
-from ts_agent.workspace.candidates import load_finding_candidate, FindingCandidateError
-from ts_agent.reaction.mapping import validate_atom_mapping
-from ts_agent.compute.analysis import analysis_capabilities, resolve_analysis_capability, run_analysis
-from ts_agent.research.agent_workspace import checkpoint as filesystem_checkpoint
+from tspi_runtime.workspace.candidates import load_finding_candidate, FindingCandidateError
+from tspi_runtime.reaction.mapping import validate_atom_mapping
+from research_compute.analysis import analysis_capabilities, resolve_analysis_capability, run_analysis
+from research_state.agent_workspace import checkpoint as filesystem_checkpoint
 
 
 def _register_analysis_artifact(workspace: Path, node_id: str, artifact: dict) -> None:
@@ -285,10 +285,10 @@ def test_analysis_candidates_promote_through_existing_change_and_retain_sources(
             "type": "create_finding", "id": "fnd_1", "node_id": node_id,
             "kind": "fact", "statement": "All supplied atoms have one element-preserving correspondence.",
             "value": True, "datatype": "boolean", "source_refs": [selected["artifactId"]],
-            "provenance": {"producer": "ts_agent.reaction.mapping.validate_atom_mapping", "candidate_id": selected["candidateId"]},
+            "provenance": {"producer": "tspi_runtime.reaction.mapping.validate_atom_mapping", "candidate_id": selected["candidateId"]},
         }],
     })
-    from ts_agent.research.agent_workspace import read_context
+    from research_state.agent_workspace import read_context
 
     context = read_context(workspace)
     finding = next(item for item in context["findings"] if item["id"] == "fnd_1")

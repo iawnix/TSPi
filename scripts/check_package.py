@@ -39,16 +39,16 @@ REMOVED_PREFIXES = (
     "review-agent/",
     "templates/",
     "ts_backends/",
-    "ts_compute/",
-    "ts_email/",
+    "compute/",
+    "notify/",
     "ts_remote/",
-    "ts_render/",
-    "ts_report/",
+    "render/",
+    "report/",
     "ts_runtime/",
     "ts_structures/",
     "ts_validation/",
     "ts_web/",
-    "ts_workspace/",
+    "workspace/",
 )
 FORBIDDEN_PARTS = {
     ".agents",
@@ -68,7 +68,7 @@ FORBIDDEN_RUNTIME_FILES = {
     "scripts/check_package.py",
     "scripts/test_source.py",
 }
-REQUIRED_EXECUTABLE_FILES = {"ResearchAgent", "scripts/ts_web_provider.py"}
+REQUIRED_EXECUTABLE_FILES = {"ResearchAgent", "apps/agent-cli/provider_runner.py"}
 
 
 class PackageCheckError(RuntimeError):
@@ -146,19 +146,25 @@ def validate_python_project() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     metadata = project.get("project")
     setuptools = project.get("tool", {}).get("setuptools", {})
-    version_source = ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "_version.py"
-    namespace = ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "__init__.py"
+    version_source = ROOT / "packages" / "tspi-runtime" / "tspi_runtime" / "_version.py"
+    namespace = ROOT / "packages" / "tspi-runtime" / "tspi_runtime" / "__init__.py"
     errors: list[str] = []
-    if not isinstance(metadata, dict) or metadata.get("name") != "ts-agent-kernel":
-        errors.append("pyproject project.name must be ts-agent-kernel")
+    if not isinstance(metadata, dict) or metadata.get("name") != "tspi-runtime":
+        errors.append("pyproject project.name must be tspi-runtime")
     if not isinstance(metadata, dict) or metadata.get("license") != PROJECT_LICENSE:
         errors.append(f"pyproject license must be {PROJECT_LICENSE}")
     if not isinstance(metadata, dict) or metadata.get("dynamic") != ["version"]:
-        errors.append("pyproject version must be sourced from ts_agent._version")
-    if setuptools.get("package-dir") != {"": "packages/ts-agent-kernel"}:
-        errors.append("pyproject must use the packages/ts-agent-kernel source root")
+        errors.append("pyproject version must be sourced from tspi_runtime._version")
+    expected_package_dir = {
+        "tspi_runtime": "packages/tspi-runtime/tspi_runtime",
+        "research_state": "packages/research-state/research_state",
+        "research_memory": "packages/research-memory/research_memory",
+        "research_compute": "packages/research-compute/research_compute",
+    }
+    if setuptools.get("package-dir") != expected_package_dir:
+        errors.append("pyproject package-dir must declare tspi_runtime, research_state, research_memory, and research_compute")
     if not version_source.is_file() or not namespace.is_file():
-        errors.append("Python ts_agent namespace or version source is missing")
+        errors.append("Python tspi_runtime namespace or version source is missing")
     else:
         expected = f'__version__ = "{PACKAGE_VERSION}"'
         if expected not in version_source.read_text(encoding="utf-8"):

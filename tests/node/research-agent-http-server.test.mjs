@@ -7,9 +7,9 @@ import test from "node:test";
 import { create_app_server } from "../../apps/research-agent-app-server/app_server.mjs";
 import { create_app_server_client, AppServerClientError } from "../../apps/research-agent-app-server/client.mjs";
 import { create_http_server } from "../../apps/research-agent-app-server/server.mjs";
-import { create_fake_agent_runtime } from "../../packages/research-agent-core/fake-runtime.mjs";
-import { create_turn_router } from "../../packages/research-agent-core/turn_router.mjs";
-import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
+import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
+import { create_turn_router } from "../../packages/agent-core/turn_router.mjs";
+import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 
 async function listen(server) {
   await new Promise((resolve, reject) => {

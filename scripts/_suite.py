@@ -405,7 +405,7 @@ def validate_web_archive_files(files: set[str]) -> None:
         for name in files
         if set(PurePosixPath(name).parts) & {".git", "__pycache__", "build", "dist", "node_modules", "tests"}
         or name.endswith((".pyc", ".pyo"))
-        or name.startswith(("ts_agent/", "packages/", "source/"))
+        or name.startswith(("tspi_runtime/", "packages/", "source/"))
     )
     if forbidden:
         raise SuiteReleaseError(f"TS Web component archive contains forbidden runtime content: {', '.join(forbidden)}")
@@ -448,7 +448,7 @@ def validate_web_component_archive(content: bytes, manifest: dict[str, Any]) -> 
             if entrypoint_member is None or not entrypoint_member.mode & 0o111:
                 raise SuiteReleaseError("TS Web component entrypoint is not executable")
             for name in files:
-                if name.endswith(".py") and b"ts_agent" in read_member(name):
+                if name.endswith(".py") and b"tspi_runtime" in read_member(name):
                     raise SuiteReleaseError(f"TS Web component imports private TSPi module: {name}")
     except (OSError, tarfile.TarError) as error:
         raise SuiteReleaseError(f"could not validate TS Web component archive: {error}") from error

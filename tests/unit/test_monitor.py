@@ -7,10 +7,10 @@ import subprocess
 
 import pytest
 
-from ts_agent.io import read_json, write_json
+from tspi_runtime.io import read_json, write_json
 
 from tests.support.workspace_helpers import bootstrap_workspace_fixture
-from ts_agent.workspace.monitor import (
+from tspi_runtime.workspace.monitor import (
     claim_delivery,
     complete_delivery,
     list_pending_deliveries,
@@ -22,7 +22,7 @@ from ts_agent.workspace.monitor import (
     reconcile_registrations,
     set_monitor_enabled,
 )
-from ts_agent.workspace.operational import runtime_status
+from tspi_runtime.workspace.operational import runtime_status
 
 
 def test_monitor_ticks_state_changes_once_and_persists_delivery(tmp_path: Path, monkeypatch) -> None:
@@ -37,7 +37,7 @@ def test_monitor_ticks_state_changes_once_and_persists_delivery(tmp_path: Path, 
     )
 
     observed = {"state": "running", "program_status": "not_run", "job_id": "job-1"}
-    monkeypatch.setattr("ts_agent.compute.control.calculation_status", lambda *args: dict(observed))
+    monkeypatch.setattr("research_compute.control.calculation_status", lambda *args: dict(observed))
 
     first = tick_monitors(root, observed_at="2026-09-20T00:00:00+00:00")
     row = first["monitors"][0]
@@ -87,7 +87,7 @@ def test_monitor_keeps_unknown_and_distinguishes_parsed(tmp_path: Path, monkeypa
         intent_digest="sha256:" + "b" * 64,
     )
     monkeypatch.setattr(
-        "ts_agent.compute.control.calculation_status",
+        "research_compute.control.calculation_status",
         lambda *args: {"state": "unknown", "program_status": "not_run", "error_class": "local_process_unknown"},
     )
     unknown = tick_monitors(root)
@@ -95,13 +95,13 @@ def test_monitor_keeps_unknown_and_distinguishes_parsed(tmp_path: Path, monkeypa
     assert read_event(root, unknown["monitors"][0]["event_id"])["state"] == "unknown"
 
     monkeypatch.setattr(
-        "ts_agent.compute.control.calculation_status",
+        "research_compute.control.calculation_status",
         lambda *args: {"state": "completed", "program_status": "completed"},
     )
     # A parsed operational file without a canonical Attempt is not enough to
     # promote a scheduler completion to parsed evidence.
     monkeypatch.setattr(
-        "ts_agent.workspace.monitor._attempt_rows",
+        "tspi_runtime.workspace.monitor._attempt_rows",
         lambda *args: [{"intent_id": "calc_1", "state": "parsed"}],
     )
     completed = tick_monitors(root)
@@ -114,15 +114,15 @@ def test_monitor_does_not_promote_parsed_file_when_canonical_attempt_failed(tmp_
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
     register_monitor(root, node_id="node_1", intent_id="calc_1", intent_digest="sha256:" + "1" * 64)
     monkeypatch.setattr(
-        "ts_agent.compute.control.calculation_status",
+        "research_compute.control.calculation_status",
         lambda *args: {"state": "completed", "program_status": "completed"},
     )
     monkeypatch.setattr(
-        "ts_agent.workspace.monitor._attempt_rows",
+        "tspi_runtime.workspace.monitor._attempt_rows",
         lambda *args: [{"intent_id": "calc_1", "state": "parsed"}],
     )
     monkeypatch.setattr(
-        "ts_agent.research.agent_workspace.read_context",
+        "research_state.agent_workspace.read_context",
         lambda *args: {"attempts": [{"id": "calc_1", "state": "failed", "output_artifact_ids": []}], "artifacts": []},
     )
     result = tick_monitors(root)
@@ -138,7 +138,7 @@ def test_repeated_state_is_a_new_event_after_recovery(tmp_path, monkeypatch):
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
     _registered(root)
     observed = {"state": "running"}
-    monkeypatch.setattr("ts_agent.compute.control.calculation_status", lambda *args: dict(observed))
+    monkeypatch.setattr("research_compute.control.calculation_status", lambda *args: dict(observed))
     ids = []
     for state in ("running", "unknown", "running"):
         observed["state"] = state
@@ -149,10 +149,10 @@ def test_repeated_state_is_a_new_event_after_recovery(tmp_path, monkeypatch):
 
 
 def test_event_commit_recovers_missing_delivery_and_state(tmp_path, monkeypatch):
-    import ts_agent.workspace.monitor as monitor
+    import tspi_runtime.workspace.monitor as monitor
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
     _registered(root)
-    monkeypatch.setattr("ts_agent.compute.control.calculation_status", lambda *args: {"state": "queued"})
+    monkeypatch.setattr("research_compute.control.calculation_status", lambda *args: {"state": "queued"})
     original = monitor._ensure_event_delivery
     monkeypatch.setattr(monitor, "_ensure_event_delivery", lambda *args: (_ for _ in ()).throw(OSError("simulated crash")))
     with pytest.raises(OSError, match="simulated crash"):
@@ -167,7 +167,7 @@ def test_event_commit_recovers_missing_delivery_and_state(tmp_path, monkeypatch)
 def test_wake_and_notification_ack_retry_independently(tmp_path, monkeypatch):
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
     _registered(root, notify_policy="configured")
-    monkeypatch.setattr("ts_agent.compute.control.calculation_status", lambda *args: {"state": "running"})
+    monkeypatch.setattr("research_compute.control.calculation_status", lambda *args: {"state": "running"})
     event_id = tick_monitors(root)["monitors"][0]["event_id"]
     at = "2026-09-21T00:00:00+00:00"
     wake = claim_delivery(root, event_id, channel="wake", at=at)
@@ -188,7 +188,7 @@ def test_wake_and_notification_ack_retry_independently(tmp_path, monkeypatch):
 def test_claims_are_exclusive_and_stale_completion_cannot_overwrite(tmp_path, monkeypatch):
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
     _registered(root)
-    monkeypatch.setattr("ts_agent.compute.control.calculation_status", lambda *args: {"state": "running"})
+    monkeypatch.setattr("research_compute.control.calculation_status", lambda *args: {"state": "running"})
     event_id = tick_monitors(root)["monitors"][0]["event_id"]
     with ThreadPoolExecutor(max_workers=4) as pool:
         claims = list(pool.map(lambda _: claim_delivery(root, event_id, at="2026-09-21T00:00:00+00:00"), range(4)))
@@ -205,7 +205,7 @@ def test_disable_stops_poll_and_delivery_and_unchanged_tick_updates_health(tmp_p
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
     registered = _registered(root)
     calls = []
-    monkeypatch.setattr("ts_agent.compute.control.calculation_status", lambda *args: calls.append(1) or {"state": "submitted"})
+    monkeypatch.setattr("research_compute.control.calculation_status", lambda *args: calls.append(1) or {"state": "submitted"})
     tick_monitors(root, observed_at="2026-09-21T00:00:00+00:00")
     tick_monitors(root, observed_at="2026-09-21T00:01:00+00:00")
     state = monitor_status(root)["monitors"][0]["state"]
@@ -224,14 +224,14 @@ def test_staged_binding_is_recovered_after_submission_without_resubmit(tmp_path,
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
     binding = dict(node_id="node_1", intent_id="calc_1", intent_digest="sha256:" + "d" * 64, session_id="session-1")
     staged = stage_registration(root, **binding)
-    monkeypatch.setattr("ts_agent.compute.control._load_prepared", lambda *args: (root, binding, {}))
-    monkeypatch.setattr("ts_agent.compute.control._read_control_result", lambda *args: None)
-    monkeypatch.setattr("ts_agent.compute.control._read_control_guard", lambda *args: None)
+    monkeypatch.setattr("research_compute.control._load_prepared", lambda *args: (root, binding, {}))
+    monkeypatch.setattr("research_compute.control._read_control_result", lambda *args: None)
+    monkeypatch.setattr("research_compute.control._read_control_guard", lambda *args: None)
     assert reconcile_registrations(root)["registrations"] == []
     assert monitor_status(root)["monitors"] == []
     # A guard without a receipt represents an interrupted submission, never a
     # reason to submit again. Monitoring reconciles its unknown outcome.
-    monkeypatch.setattr("ts_agent.compute.control._read_control_guard", lambda *args: {"attempt": 1})
+    monkeypatch.setattr("research_compute.control._read_control_guard", lambda *args: {"attempt": 1})
     assert reconcile_registrations(root, force=True)["registrations"][0]["status"] == "registered"
     assert monitor_status(root)["monitors"][0]["monitor_id"] == staged["monitor_id"]
     assert monitor_status(root)["pending_registrations"] == []
@@ -241,12 +241,12 @@ def test_staged_registration_error_remains_visible_and_retries(tmp_path, monkeyp
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
     binding = dict(node_id="node_1", intent_id="calc_1", intent_digest="sha256:" + "e" * 64, session_id="session-1")
     stage_registration(root, **binding)
-    monkeypatch.setattr("ts_agent.compute.control._load_prepared", lambda *args: (_ for _ in ()).throw(OSError("receipt unavailable")))
+    monkeypatch.setattr("research_compute.control._load_prepared", lambda *args: (_ for _ in ()).throw(OSError("receipt unavailable")))
     reconcile_registrations(root)
     assert monitor_status(root)["pending_registrations"][0]["last_error"] == "receipt unavailable"
-    monkeypatch.setattr("ts_agent.compute.control._load_prepared", lambda *args: (root, binding, {}))
-    monkeypatch.setattr("ts_agent.compute.control._read_control_result", lambda *args: {"state": "submitted"})
-    monkeypatch.setattr("ts_agent.compute.control._read_control_guard", lambda *args: {"attempt": 1})
+    monkeypatch.setattr("research_compute.control._load_prepared", lambda *args: (root, binding, {}))
+    monkeypatch.setattr("research_compute.control._read_control_result", lambda *args: {"state": "submitted"})
+    monkeypatch.setattr("research_compute.control._read_control_guard", lambda *args: {"attempt": 1})
     assert reconcile_registrations(root, force=True)["registrations"][0]["status"] == "registered"
 
 
@@ -254,9 +254,9 @@ def test_staged_registration_rejects_non_submitted_control_receipt(tmp_path, mon
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
     binding = dict(node_id="node_1", intent_id="calc_1", intent_digest="sha256:" + "f" * 64, session_id="session-1")
     stage_registration(root, **binding)
-    monkeypatch.setattr("ts_agent.compute.control._load_prepared", lambda *args: (root, binding, {}))
-    monkeypatch.setattr("ts_agent.compute.control._read_control_result", lambda *args: {"state": "unknown"})
-    monkeypatch.setattr("ts_agent.compute.control._read_control_guard", lambda *args: None)
+    monkeypatch.setattr("research_compute.control._load_prepared", lambda *args: (root, binding, {}))
+    monkeypatch.setattr("research_compute.control._read_control_result", lambda *args: {"state": "unknown"})
+    monkeypatch.setattr("research_compute.control._read_control_guard", lambda *args: None)
     assert reconcile_registrations(root, force=True)["registrations"] == []
     assert monitor_status(root)["monitors"] == []
 
@@ -265,7 +265,7 @@ def test_monitor_records_match_contracts_and_old_completed_delivery_stays_comple
     from jsonschema import Draft202012Validator
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
     registered = _registered(root, notify_policy="configured")
-    monkeypatch.setattr("ts_agent.compute.control.calculation_status", lambda *args: {"state": "queued"})
+    monkeypatch.setattr("research_compute.control.calculation_status", lambda *args: {"state": "queued"})
     event_id = tick_monitors(root)["monitors"][0]["event_id"]
     delivery = list_pending_deliveries(root)[0]
     schema_dir = Path(__file__).resolve().parents[2] / "contracts" / "tspi-monitor" / "1"
@@ -287,7 +287,7 @@ def test_bootstrapped_monitor_uses_host_directory_route_without_changing_canonic
     canonical_id = read_json(root / "workspace_manifest.json")["workspace_id"]
     assert canonical_id == root.name
     _registered(root)
-    monkeypatch.setattr("ts_agent.compute.control.calculation_status", lambda *args: {"state": "running"})
+    monkeypatch.setattr("research_compute.control.calculation_status", lambda *args: {"state": "running"})
     event_id = tick_monitors(root)["monitors"][0]["event_id"]
     event = read_event(root, event_id)
     delivery = list_pending_deliveries(root)[0]

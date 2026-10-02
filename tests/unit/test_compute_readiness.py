@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ts_agent.compute.readiness import calculation_readiness
-from ts_agent.remote.client import CommandResult
+from research_compute.readiness import calculation_readiness
+from tspi_runtime.remote.client import CommandResult
 
 
 def _remote_config(tmp_path: Path) -> Path:
@@ -51,7 +51,7 @@ class _FakeSSH:
 
 def test_remote_readiness_runs_scheduler_and_backend_probes(tmp_path, monkeypatch):
     config = _remote_config(tmp_path)
-    monkeypatch.setattr("ts_agent.compute.readiness.SSHClient", _FakeSSH)
+    monkeypatch.setattr("research_compute.readiness.SSHClient", _FakeSSH)
 
     result = calculation_readiness(
         capability_id="xtb.sp",
@@ -76,7 +76,7 @@ def test_remote_readiness_runs_scheduler_and_backend_probes(tmp_path, monkeypatc
 def test_remote_readiness_reports_queue_gap_without_submitting(tmp_path, monkeypatch):
     config = _remote_config(tmp_path)
     monkeypatch.setattr(
-        "ts_agent.compute.readiness.SSHClient",
+        "research_compute.readiness.SSHClient",
         lambda platform: _FakeSSH(platform, queue_enabled=False),
     )
 

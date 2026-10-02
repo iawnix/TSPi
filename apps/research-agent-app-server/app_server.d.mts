@@ -4,12 +4,12 @@ import type {
   WorkspaceInitializeRequest,
   WorkspaceManifestLike,
   WorkspacePort,
-} from "../../packages/research-agent-core/ports.mjs";
-import type { WorkspaceMode } from "../../packages/research-agent-core/session_mode.mjs";
-import type { WorkspaceCatalog } from "../../packages/research-agent-core/workspace_catalog.mjs";
-import type { TurnRouter } from "../../packages/research-agent-core/turn_router.mjs";
-import type { ResearchKernelPort } from "../../packages/research-agent-kernel/ports.mjs";
-import type { SessionStore } from "../../packages/research-agent-core/session_store.mjs";
+} from "../../packages/agent-core/ports.mjs";
+import type { WorkspaceMode } from "../../packages/agent-core/session_mode.mjs";
+import type { WorkspaceCatalog } from "../../packages/agent-core/workspace_catalog.mjs";
+import type { TurnRouter } from "../../packages/agent-core/turn_router.mjs";
+import type { ResearchStatePort } from "../../packages/research-state-bridge/ports.mjs";
+import type { SessionStore } from "../../packages/agent-core/session_store.mjs";
 import type { NativeCapabilityHost } from "./compute-config-capability-host.mjs";
 
 export const APP_SERVER_PROTOCOL_VERSION: "research_agent_app_server_1";
@@ -49,6 +49,7 @@ export interface AppServer {
     readonly protocol_version: string;
     readonly readiness: readonly Record<string, unknown>[];
   }>;
+  capability_execute(request: Record<string, unknown>): Promise<Record<string, unknown>>;
   compute_catalog(request?: Record<string, unknown>): Promise<{
     readonly protocol_version: string;
     readonly catalog: readonly Record<string, unknown>[];
@@ -84,7 +85,7 @@ export function create_app_server(options: {
   workspace_port?: WorkspacePort | null;
   workspace_catalog?: WorkspaceCatalog | null;
   turn_router?: TurnRouter | null;
-  kernel_port?: Pick<ResearchKernelPort, "admit_workspace" | "apply_change" | "checkpoint" | "turn"> | null;
+  kernel_port?: Pick<ResearchStatePort, "admit_workspace" | "apply_change" | "checkpoint" | "turn"> | null;
   native_capability_host?: NativeCapabilityHost | null;
   native_compute?: {
     readonly run(request: Record<string, unknown>): Promise<Record<string, unknown>>;

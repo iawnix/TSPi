@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { create_workspace_catalog } from "../../packages/research-agent-core/workspace_catalog.mjs";
+import { create_workspace_catalog } from "../../packages/agent-core/workspace_catalog.mjs";
 
 async function temporary_root(prefix) {
   return mkdtemp(join(tmpdir(), `${prefix}-`));

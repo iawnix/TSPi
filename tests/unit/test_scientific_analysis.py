@@ -9,12 +9,12 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
-from ts_agent.analysis.engine import Inputs, evaluate, outcome
-from ts_agent.analysis.catalog import DESCRIPTORS
-from ts_agent.analysis.thermochemistry import R_KJ, HARTREE_KJ_MOL
-from ts_agent.compute.analysis import run_analysis
-from ts_agent.compute.artifacts import list_calculation_artifacts
-from ts_agent.workspace.candidates import load_finding_candidate, FindingCandidateError
+from tspi_runtime.analysis.engine import Inputs, evaluate, outcome
+from tspi_runtime.analysis.catalog import DESCRIPTORS
+from tspi_runtime.analysis.thermochemistry import R_KJ, HARTREE_KJ_MOL
+from research_compute.analysis import run_analysis
+from research_compute.artifacts import list_calculation_artifacts
+from tspi_runtime.workspace.candidates import load_finding_candidate, FindingCandidateError
 
 
 def source(**roles):
@@ -354,7 +354,7 @@ def test_spin_parity_and_reindex_assembly():
 
 
 def test_species_identity_keeps_stereo_isotope_and_spin_distinct():
-    from ts_agent.analysis.reaction import species_record
+    from tspi_runtime.analysis.reaction import species_record
 
     for left, right in [(species_record("a", "[CH2]", 1), species_record("b", "[CH2]", 3)),
                         (species_record("a", "F[C@H](Cl)Br", 1), species_record("b", "F[C@@H](Cl)Br", 1)),

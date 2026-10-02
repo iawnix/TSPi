@@ -7,7 +7,7 @@
 ## 软件与依赖
 
 受管理 runtime 提供 Python、RDKit、ASE、NumPy、jsonschema、渲染支持和
-`ts-agent-kernel` wheel。Gaussian、xTB、CREST 等原生程序仍由管理员配置为 Backend。
+`tspi-runtime` wheel。Gaussian、xTB、CREST 等原生程序仍由管理员配置为 Backend。
 请通过版本化能力目录发现可用能力，不要假定某个命令已经安装。
 
 ## Node 操作与恢复

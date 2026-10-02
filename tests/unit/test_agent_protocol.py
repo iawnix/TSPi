@@ -6,7 +6,7 @@ import json
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PROTOCOL = ROOT / "packages" / "ts-agent-runtime" / "agent-core" / "agent-protocol.cjs"
+PROTOCOL = ROOT / "packages" / "agent-runtime" / "agent-core" / "agent-protocol.cjs"
 
 
 def _binding(ref: str, schema_version: str, marker: str) -> dict[str, object]:
@@ -48,7 +48,7 @@ def _task() -> dict[str, object]:
                 "c",
             ),
         },
-        "capabilities": ["ts_review_result"],
+        "capabilities": ["review_result"],
         "constraints": {
             "canonical_workspace_mutation": False,
             "scientific_decision": False,

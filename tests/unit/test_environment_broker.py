@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ts_agent.platforms import (
+from tspi_runtime.platforms import (
     EnvironmentBroker,
     EnvironmentConfigurationError,
     EnvironmentRequirement,

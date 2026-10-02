@@ -11,13 +11,13 @@ import { discoverInstalledExtensions } from "./extension-manifest-loader.mjs";
 import { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 import { createPackageSourceReadGuard } from "./pi-harness-policy.mjs";
 import { createContinuationLivenessHook, readResearchLiveness } from "./pi-native-tools.mjs";
-import { markToolEnvelopeError, wrapToolForHarness } from "../../packages/ts-agent-runtime/host-api/tool-envelope.mjs";
-import { createToolExecutionContext } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
-import { createPublicToolAlias } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
-import { createResearchLifecycleController, toolEventIsError } from "../../packages/ts-agent-runtime/host-api/lifecycle.mjs";
+import { markToolEnvelopeError, wrapToolForHarness } from "../../packages/agent-runtime/host-api/tool-envelope.mjs";
+import { createToolExecutionContext } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
+import { createPublicToolAlias } from "../../packages/agent-runtime/host-api/tools.mjs";
+import { createResearchLifecycleController, toolEventIsError } from "../../packages/agent-runtime/host-api/lifecycle.mjs";
 import { filterExtensionToolNames, filterWorkspaceTools } from "./workspace-mode-tools.mjs";
-import { create_python_kernel_bridge } from "../../packages/research-agent-kernel/python_kernel_bridge.mjs";
-import { create_research_kernel_port } from "../../packages/research-agent-kernel/ports.mjs";
+import { create_python_kernel_bridge } from "../../packages/research-state-bridge/python_kernel_bridge.mjs";
+import { create_research_state_port } from "../../packages/research-state-bridge/ports.mjs";
 
 export {
   createAnalyzeTool,
@@ -93,7 +93,7 @@ async function createTspiHarness(session, options, executionEnv) {
     : resolveCliModel({ cliProvider: options.provider, cliModel: options.model, modelRuntime });
   if (resolved.error || !resolved.model) throw new Error(resolved.error || "Session worker could not resolve a model");
   const loadedSkills = await loadTspiSkills(executionEnv);
-  const researchKernel = create_research_kernel_port(create_python_kernel_bridge({ workspace_root: session.metadata.cwd }));
+  const researchKernel = create_research_state_port(create_python_kernel_bridge({ workspace_root: session.metadata.cwd }));
   const loadedExtensions = await loadServerExtensions({
     packageRoot: loadedSkills.packageRoot,
     reservedToolNames: ["read", "write", "bash", "system_prompt"],

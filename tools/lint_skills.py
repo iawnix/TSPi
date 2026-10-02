@@ -15,9 +15,9 @@ FRONTMATTER = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 FIELD = re.compile(r"(?m)^(name|description):\s*(.+?)\s*$")
 LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 FORBIDDEN_PUBLIC_NAMES = (
-    "ts_state", "ts_change", "ts_workflow", "ts_calc", "ts_environment",
-    "ts_review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze",
-    "ts_dispatch", "ts_import", "ts_render", "ts_report", "ts_notify",
+    "research_read", "research_change", "research_continuation", "compute_run", "ts_environment",
+    "review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze",
+    "ts_dispatch", "ts_import", "render", "report", "ts_notify",
 )
 
 

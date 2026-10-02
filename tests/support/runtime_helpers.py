@@ -6,7 +6,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from ts_agent.runtime.env import python_payload_sha256, spec_sha256
+from tspi_runtime.runtime.env import python_payload_sha256, spec_sha256
 
 
 def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> Path:
@@ -73,7 +73,7 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
     runtime_home.mkdir(parents=True, exist_ok=True)
     manifest_path = runtime_home / "env.json"
     payload = {
-        "schema_version": "ts-agent-runtime/3",
+        "schema_version": "agent-runtime/3",
         "package_root": str(package_root),
         "environment_spec": str(environment_spec),
         "runtime_requirements": str(package_root / "requirements-runtime.txt"),
@@ -88,7 +88,7 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
             "ok": True,
             "python": {"version": sys.version.split()[0], "executable": str(kernel_bin / "python")},
             "distribution": {
-                "name": "ts-agent-kernel",
+                "name": "tspi-runtime",
                 "installed": True,
                 "version": package["version"],
                 "root": str(kernel_prefix),

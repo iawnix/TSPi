@@ -3,17 +3,17 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
-import { create_fake_agent_runtime } from "../../packages/research-agent-core/fake-runtime.mjs";
-import { COMMAND_DEFINITIONS } from "../../packages/ts-agent-runtime/host-api/commands.mjs";
-import { assert_protocol_id } from "../../packages/research-agent-core/ports.mjs";
+import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
+import { COMMAND_DEFINITIONS } from "../../packages/agent-runtime/host-api/commands.mjs";
+import { assert_protocol_id } from "../../packages/agent-core/ports.mjs";
 import {
   assert_research_admitted,
   create_research_admission_request,
   create_research_admission_result,
-  create_research_kernel_port,
+  create_research_state_port,
   create_research_turn_request,
   create_research_turn_result,
-} from "../../packages/research-agent-kernel/ports.mjs";
+} from "../../packages/research-state-bridge/ports.mjs";
 
 test("framework protocol identifiers use snake_case", () => {
   assert.equal(assert_protocol_id("research_turn_request"), "research_turn_request");
@@ -66,7 +66,7 @@ test("fake runtime completes a turn through the Agent Runtime Port", async () =>
 
 test("kernel port has no runtime-specific dependency", async () => {
   const calls = [];
-  const kernel = create_research_kernel_port({
+  const kernel = create_research_state_port({
     async read_context() { calls.push("context"); return { workspace_id: "workspace_1" }; },
     async read_liveness() { calls.push("liveness"); return { state: "idle" }; },
     async apply_change() { calls.push("change"); return { accepted: true }; },
@@ -94,7 +94,7 @@ test("kernel port has no runtime-specific dependency", async () => {
 
 test("kernel port restores admission when a bound implementation is addressed by root", async () => {
   const calls = [];
-  const kernel = create_research_kernel_port({
+  const kernel = create_research_state_port({
     async read_context(request) { calls.push(request); return { workspace_id: "workspace_bound", lifecycle_state: "admitted" }; },
     async read_liveness(request) { calls.push(request); return { workspace_id: "workspace_bound", state: "admitted" }; },
     async apply_change() { return { accepted: true }; },
@@ -117,7 +117,7 @@ test("kernel port restores admission when a bound implementation is addressed by
 
 test("Kernel admission is Host-only and blocks ResearchMap changes while pending", async () => {
   const changes = [];
-  const kernel = create_research_kernel_port({
+  const kernel = create_research_state_port({
     async read_context() { return { lifecycle_state: "admission_pending" }; },
     async read_liveness() { return { state: "admission_pending" }; },
     async apply_change(request) { changes.push(request); return { accepted: true }; },
@@ -161,7 +161,7 @@ test("Kernel admission is Host-only and blocks ResearchMap changes while pending
 });
 
 test("Core and Kernel source stay independent of Pi", async () => {
-  const roots = ["packages/research-agent-core", "packages/research-agent-kernel"];
+  const roots = ["packages/agent-core", "packages/research-state-bridge"];
   for (const root of roots) {
     const source = await readFile(join(process.cwd(), root, "ports.mjs"), "utf8");
     assert.doesNotMatch(source, /@earendil-works\/pi|TSPI_PI_SOURCE|pi-session-worker/i, root);

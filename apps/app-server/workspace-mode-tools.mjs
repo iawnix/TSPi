@@ -1,7 +1,7 @@
 import { lstat, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { classify_tool_class, is_tool_class_allowed } from "../../packages/research-agent-core/mode_policy.mjs";
-import { validate_workspace_files, validate_workspace_manifest } from "../../packages/research-agent-core/workspace.mjs";
+import { classify_tool_class, is_tool_class_allowed } from "../../packages/agent-core/mode_policy.mjs";
+import { validate_workspace_files, validate_workspace_manifest } from "../../packages/agent-core/workspace.mjs";
 
 export const WORKSPACE_MODE = "research";
 

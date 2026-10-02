@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from ts_agent.compute.capabilities import (
+from research_compute.capabilities import (
     CapabilityGapError,
     calculation_capabilities,
     resolve_capability,

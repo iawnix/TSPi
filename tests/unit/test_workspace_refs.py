@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from ts_agent.workspace.activities import _node_sort_key, build_activity_index
-from ts_agent.workspace.refs import (
+from tspi_runtime.workspace.activities import _node_sort_key, build_activity_index
+from tspi_runtime.workspace.refs import (
     WorkspaceRefError,
     claim_ordinal,
     claim_sort_key,

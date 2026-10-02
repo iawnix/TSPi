@@ -16,7 +16,7 @@ TERMINAL_ZH = ROOT / "docs" / "TERMINAL.zh-CN.md"
 INSTALLATION = ROOT / "docs" / "INSTALLATION.md"
 MAINTAINER = ROOT / "docs" / "MAINTAINER_GUIDE.md"
 ADR = ROOT / "docs" / "adr" / "0001-phase-node-research-kernel.md"
-SKILL_ROOT = ROOT / "skills" / "tspi-research-kernel"
+SKILL_ROOT = ROOT / "skills" / "tspi-research-state"
 SKILL = SKILL_ROOT / "SKILL.md"
 REFERENCES = SKILL_ROOT / "references"
 ORCHESTRATION_ROOT = ROOT / "skills" / "tspi-orchestration"
@@ -185,9 +185,9 @@ def test_normal_runtime_docs_use_canonical_tool_names() -> None:
         *focused_files,
     ]
     legacy_tool_names = [
-        "ts_state", "ts_change", "ts_workflow", "ts_calc", "ts_environment",
-        "ts_review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze",
-        "ts_dispatch", "ts_import", "ts_render", "ts_report", "ts_notify",
+        "research_read", "research_change", "research_continuation", "compute_run", "ts_environment",
+        "review", "ts_reply", "ts_seed", "ts_compare", "ts_analyze",
+        "ts_dispatch", "ts_import", "render", "report", "ts_notify",
     ]
     for path in paths:
         text = path.read_text(encoding="utf-8")
@@ -290,7 +290,7 @@ def test_compute_reference_uses_the_registered_gaussian_input_role() -> None:
 
 
 def test_final_report_builder_renders_phase_node_and_scientific_objects() -> None:
-    text = (ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "report" / "builder.py").read_text(encoding="utf-8")
+    text = (ROOT / "packages" / "tspi-runtime" / "tspi_runtime" / "report" / "builder.py").read_text(encoding="utf-8")
 
     for phrase in [
         "Research Roadmap",

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from ts_agent.runtime.env import (
+from tspi_runtime.runtime.env import (
     PACKAGE_ROOT_OVERRIDE,
     RuntimeEnvironmentError,
     bind_runtime_process_environment,
@@ -30,9 +30,9 @@ from ts_agent.runtime.env import (
     spec_sha256,
     write_manifest,
 )
-import ts_agent.runtime.probe as runtime_probe_module
-import ts_agent.runtime.cli as runtime_cli
-from ts_agent.runtime.probe import probe_runtime_capabilities
+import tspi_runtime.runtime.probe as runtime_probe_module
+import tspi_runtime.runtime.cli as runtime_cli
+from tspi_runtime.runtime.probe import probe_runtime_capabilities
 from scripts import _runtime_install as runtime_install
 from scripts._bootstrap import bootstrap_python_package
 
@@ -56,7 +56,7 @@ def test_resolve_package_root_honors_process_binding(monkeypatch, tmp_path: Path
 
 def test_package_bootstrap_replaces_an_inherited_package_root(monkeypatch) -> None:
     monkeypatch.setenv(PACKAGE_ROOT_OVERRIDE, "/tmp/other-tspi-release")
-    monkeypatch.setenv("TS_AGENT_DISABLE_RUNTIME_REEXEC", "1")
+    monkeypatch.setenv("TSPI_DISABLE_RUNTIME_REEXEC", "1")
 
     bootstrap_python_package(ROOT)
 
@@ -65,13 +65,13 @@ def test_package_bootstrap_replaces_an_inherited_package_root(monkeypatch) -> No
 
 def test_package_root_detection_uses_package_markers_with_nested_skill(tmp_path: Path) -> None:
     package = tmp_path / "package"
-    source_file = package / "packages" / "ts-agent-runtime" / "agents" / "compute" / "runtime.ts"
+    source_file = package / "packages" / "agent-runtime" / "agents" / "compute" / "runtime.ts"
     source_file.parent.mkdir(parents=True)
     source_file.write_text("export {};\n", encoding="utf-8")
     (package / "scripts").mkdir()
-    skill = package / "skills" / "tspi-research-kernel" / "SKILL.md"
+    skill = package / "skills" / "tspi-research-state" / "SKILL.md"
     skill.parent.mkdir(parents=True)
-    skill.write_text("---\nname: tspi-research-kernel\ndescription: test\n---\n", encoding="utf-8")
+    skill.write_text("---\nname: tspi-research-state\ndescription: test\n---\n", encoding="utf-8")
     (package / "package.json").write_text("{}\n", encoding="utf-8")
 
     assert package_root_from_file(source_file) == package
@@ -123,7 +123,7 @@ def test_default_kernel_prefix_is_python_payload_scoped(tmp_path: Path) -> None:
 
 
 def test_default_env_store_is_package_relative_without_override(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("TS_AGENT_ENV_ROOT", raising=False)
+    monkeypatch.delenv("TSPI_ENV_ROOT", raising=False)
     monkeypatch.delenv("TS_WORKSPACE_ROOT", raising=False)
     package = tmp_path / "skill"
     package.mkdir()
@@ -152,9 +152,9 @@ def test_installed_current_entrypoint_seeds_installation_owned_runtime_paths(tmp
     runtime_home = installation / ".agents" / "runtime" / "tspi"
     assert resolved == installation
     assert environment == {
-        "TS_AGENT_RUNTIME_HOME": str(runtime_home),
-        "TS_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "TS_AGENT_ENV_ROOT": str(
+        "TSPI_RUNTIME_HOME": str(runtime_home),
+        "TSPI_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "TSPI_ENV_ROOT": str(
             installation / ".agents" / "envs" / "tspi"
         ),
     }
@@ -190,9 +190,9 @@ def test_unified_suite_entrypoint_seeds_installation_owned_runtime_paths(
     runtime_home = installation / ".agents" / "runtime" / "tspi"
     assert resolved == installation
     assert environment == {
-        "TS_AGENT_RUNTIME_HOME": str(runtime_home),
-        "TS_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "TS_AGENT_ENV_ROOT": str(
+        "TSPI_RUNTIME_HOME": str(runtime_home),
+        "TSPI_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "TSPI_ENV_ROOT": str(
             installation / ".agents" / "envs" / "tspi"
         ),
     }
@@ -239,9 +239,9 @@ def test_suite_web_launcher_seeds_installation_owned_runtime_paths(
     runtime_home = installation / ".agents" / "runtime" / "tspi"
     assert resolved == installation
     assert environment == {
-        "TS_AGENT_RUNTIME_HOME": str(runtime_home),
-        "TS_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "TS_AGENT_ENV_ROOT": str(installation / ".agents" / "envs" / "tspi"),
+        "TSPI_RUNTIME_HOME": str(runtime_home),
+        "TSPI_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "TSPI_ENV_ROOT": str(installation / ".agents" / "envs" / "tspi"),
     }
 
 
@@ -249,9 +249,9 @@ def test_runtime_path_seed_preserves_explicit_configuration_and_ignores_authored
     tmp_path: Path,
 ) -> None:
     explicit = {
-        "TS_AGENT_RUNTIME_HOME": "/configured/runtime",
-        "TS_AGENT_RUNTIME_MANIFEST": "/configured/env.json",
-        "TS_AGENT_ENV_ROOT": "/configured/envs",
+        "TSPI_RUNTIME_HOME": "/configured/runtime",
+        "TSPI_RUNTIME_MANIFEST": "/configured/env.json",
+        "TSPI_ENV_ROOT": "/configured/envs",
     }
     stable = tmp_path / ".pi" / "packages" / "tspi" / "current" / "web" / "bin" / "ts-web"
     release = tmp_path / ".pi" / "packages" / "tspi" / "releases" / "release-a" / "web" / "bin"
@@ -262,9 +262,9 @@ def test_runtime_path_seed_preserves_explicit_configuration_and_ignores_authored
 
     assert seed_installation_runtime_from_entrypoint(stable, environ=explicit) == tmp_path
     assert explicit == {
-        "TS_AGENT_RUNTIME_HOME": "/configured/runtime",
-        "TS_AGENT_RUNTIME_MANIFEST": "/configured/env.json",
-        "TS_AGENT_ENV_ROOT": "/configured/envs",
+        "TSPI_RUNTIME_HOME": "/configured/runtime",
+        "TSPI_RUNTIME_MANIFEST": "/configured/env.json",
+        "TSPI_ENV_ROOT": "/configured/envs",
     }
 
     authored_environment: dict[str, str] = {}
@@ -278,24 +278,24 @@ def test_runtime_path_seed_preserves_explicit_configuration_and_ignores_authored
 
 def test_authoritative_installation_seed_replaces_stale_runtime_paths(tmp_path: Path) -> None:
     environment = {
-        "TS_AGENT_RUNTIME_HOME": "/stale/runtime",
-        "TS_AGENT_RUNTIME_MANIFEST": "/stale/env.json",
-        "TS_AGENT_ENV_ROOT": "/stale/envs",
+        "TSPI_RUNTIME_HOME": "/stale/runtime",
+        "TSPI_RUNTIME_MANIFEST": "/stale/env.json",
+        "TSPI_ENV_ROOT": "/stale/envs",
     }
 
     seed_installation_runtime(tmp_path, environ=environment, authoritative=True)
 
     runtime_home = tmp_path / ".agents" / "runtime" / "tspi"
     assert environment == {
-        "TS_AGENT_RUNTIME_HOME": str(runtime_home),
-        "TS_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "TS_AGENT_ENV_ROOT": str(tmp_path / ".agents" / "envs" / "tspi"),
+        "TSPI_RUNTIME_HOME": str(runtime_home),
+        "TSPI_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "TSPI_ENV_ROOT": str(tmp_path / ".agents" / "envs" / "tspi"),
     }
 
 
 def test_workspace_root_owns_runtime_home_and_env_store(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("TS_AGENT_ENV_ROOT", raising=False)
-    monkeypatch.delenv("TS_AGENT_RUNTIME_HOME", raising=False)
+    monkeypatch.delenv("TSPI_ENV_ROOT", raising=False)
+    monkeypatch.delenv("TSPI_RUNTIME_HOME", raising=False)
     workspace = tmp_path / "workspace"
     package = tmp_path / "pi" / "git" / "github.com" / "iawnix" / "TSPi"
     workspace.mkdir()
@@ -338,7 +338,7 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
     manifest_path = write_manifest(
         package,
         {
-            "schema_version": "ts-agent-runtime/3",
+            "schema_version": "agent-runtime/3",
             "python_executable": str(python),
             "env_prefix": str(base_prefix),
             "base_python_executable": str(base_python),
@@ -372,7 +372,7 @@ def test_configured_python_ignores_stale_runtime_manifest(tmp_path: Path) -> Non
     write_manifest(
         package,
         {
-            "schema_version": "ts-agent-runtime/3",
+            "schema_version": "agent-runtime/3",
             "python_executable": sys.executable,
             "spec_sha256": "stale",
         },
@@ -391,7 +391,7 @@ def test_runtime_one_manifest_is_rejected(tmp_path: Path, monkeypatch: pytest.Mo
     manifest.write_text(
         json.dumps(
             {
-                "schema_version": "ts-agent-runtime/1",
+                "schema_version": "agent-runtime/1",
                 "env_prefix": str(tmp_path / "previous-runtime"),
                 "python_executable": sys.executable,
             }
@@ -421,7 +421,7 @@ def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) 
         path.write_text("# test runtime file\n", encoding="utf-8")
     xyzrender.chmod(0o755)
     base = {
-        "schema_version": "ts-agent-runtime/3",
+        "schema_version": "agent-runtime/3",
         "python_executable": str(python),
         "env_prefix": str(env_prefix),
         "base_python_executable": str(base_python),
@@ -462,7 +462,7 @@ def test_required_runtime_fails_closed_for_stale_manifest(tmp_path: Path) -> Non
     write_manifest(
         package,
         {
-            "schema_version": "ts-agent-runtime/3",
+            "schema_version": "agent-runtime/3",
             "python_executable": sys.executable,
             "spec_sha256": "stale",
         },
@@ -480,7 +480,7 @@ def test_runtime_process_binding_owns_python_commands(monkeypatch: pytest.Monkey
 
     bind_runtime_process_environment(executable)
 
-    assert os.environ["TS_AGENT_PYTHON"] == str(executable)
+    assert os.environ["TSPI_PYTHON"] == str(executable)
     assert os.environ["PATH"].split(os.pathsep)[0] == str(executable.parent)
     assert os.environ["PATH"].split(os.pathsep).count(str(executable.parent)) == 1
     assert os.environ["PYTHONNOUSERSITE"] == "1"
@@ -731,11 +731,11 @@ def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path, monkeypatch: 
     assert payload["manifest_path"].endswith("/.runtime/tspi/env.json")
     assert payload["runtime_requirements"] == str(ROOT / "requirements-runtime.txt")
     assert payload["python_executable"].endswith("/bin/python")
-    assert payload["python_distribution"] == "ts-agent-kernel"
+    assert payload["python_distribution"] == "tspi-runtime"
     assert payload["python_payload_sha256"] == python_payload_sha256(ROOT)
 
 
-def test_install_env_dry_run_accepts_workspace_runtime_home(tmp_path: Path) -> None:
+def test_install_env_dry_run_accepworkspace_runtime_home(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     completed = subprocess.run(
@@ -850,7 +850,7 @@ def test_install_env_reuses_scientific_base_and_isolates_kernel_overlay(tmp_path
     assert reused["kernel_action"] == "reuse"
     assert kernel_prefix.parent == env_root / "kernels"
     assert Path(created["python_executable"]).is_relative_to(kernel_prefix)
-    assert manifest["schema_version"] == "ts-agent-runtime/3"
+    assert manifest["schema_version"] == "agent-runtime/3"
     assert Path(manifest["runtime_probe"]["distribution"]["root"]).is_relative_to(kernel_prefix)
     for name in ("numpy", "rdkit", "matplotlib"):
         assert Path(manifest["runtime_probe"]["modules"][name]["origin"]).is_relative_to(base_prefix)
@@ -883,11 +883,11 @@ def test_ts_runtime_isolated_run_strips_workspace_runtime_context(monkeypatch) -
     calls: dict[str, object] = {}
     runtime_values = {
         "TS_WORKSPACE_ROOT": "/tmp/live-workspace",
-        "TS_AGENT_PYTHON": "/tmp/override-python",
-        "TS_AGENT_DISABLE_RUNTIME_REEXEC": "1",
-        "TS_AGENT_ENV_ROOT": "/tmp/live-envs",
-        "TS_AGENT_RUNTIME_HOME": "/tmp/live-runtime",
-        "TS_AGENT_RUNTIME_MANIFEST": "/tmp/live-runtime/env.json",
+        "TSPI_PYTHON": "/tmp/override-python",
+        "TSPI_DISABLE_RUNTIME_REEXEC": "1",
+        "TSPI_ENV_ROOT": "/tmp/live-envs",
+        "TSPI_RUNTIME_HOME": "/tmp/live-runtime",
+        "TSPI_RUNTIME_MANIFEST": "/tmp/live-runtime/env.json",
     }
     for name, value in runtime_values.items():
         monkeypatch.setenv(name, value)
@@ -913,7 +913,7 @@ def test_ts_runtime_isolated_run_cannot_modify_workspace_manifest(tmp_path: Path
     manifest = write_manifest(
         ROOT,
         {
-            "schema_version": "ts-agent-runtime/3",
+            "schema_version": "agent-runtime/3",
             "python_executable": sys.executable,
             "env_prefix": str(Path(sys.base_prefix).resolve()),
             "base_python_executable": str(Path(sys._base_executable).resolve()),
@@ -931,7 +931,7 @@ def test_ts_runtime_isolated_run_cannot_modify_workspace_manifest(tmp_path: Path
     completed = subprocess.run(
         [
             sys.executable,
-            str(ROOT / "scripts" / "ts_runtime.py"),
+            str(ROOT / "scripts" / "runtime.py"),
             "run-isolated",
             "-m",
             "pytest",
@@ -954,7 +954,7 @@ def test_ts_runtime_script_passes_dash_m_arguments() -> None:
     completed = subprocess.run(
         [
             sys.executable,
-            str(ROOT / "scripts" / "ts_runtime.py"),
+            str(ROOT / "scripts" / "runtime.py"),
             "run",
             "-c",
             "print('runtime-ok')",
@@ -974,16 +974,16 @@ def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> No
     workspace.mkdir()
     env = dict(os.environ)
     for name in (
-        "TS_AGENT_PYTHON",
-        "TS_AGENT_RUNTIME_HOME",
-        "TS_AGENT_RUNTIME_MANIFEST",
-        "TS_AGENT_ENV_ROOT",
+        "TSPI_PYTHON",
+        "TSPI_RUNTIME_HOME",
+        "TSPI_RUNTIME_MANIFEST",
+        "TSPI_ENV_ROOT",
     ):
         env.pop(name, None)
     completed = subprocess.run(
         [
             sys.executable,
-            str(ROOT / "scripts" / "ts_runtime.py"),
+            str(ROOT / "scripts" / "runtime.py"),
             "resolve",
             "--workspace-root",
             str(workspace),
@@ -1017,7 +1017,7 @@ def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
         "ok": True,
         "python": {"version": sys.version.split()[0], "executable": str(executable)},
         "distribution": {
-            "name": "ts-agent-kernel",
+            "name": "tspi-runtime",
             "installed": True,
             "version": "0.12.0",
             "root": str(kernel_prefix),
@@ -1042,7 +1042,7 @@ def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
 
 
 def _write_test_python_payload(package: Path) -> str:
-    source = package / "packages" / "ts-agent-kernel" / "ts_agent"
+    source = package / "packages" / "tspi-runtime" / "tspi_runtime"
     source.mkdir(parents=True)
     (source / "__init__.py").write_text('"""test payload"""\n', encoding="utf-8")
     (package / "package.json").write_text(

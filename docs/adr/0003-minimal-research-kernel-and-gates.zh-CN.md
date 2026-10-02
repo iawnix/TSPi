@@ -7,7 +7,7 @@
 
 ## 决定
 
-`ResearchKernel` 是一个项目唯一规范 `ResearchMap` 的事务和完整性边界。
+`ResearchState` 是一个项目唯一规范 `ResearchMap` 的事务和完整性边界。
 `ResearchMap` 是有类型的聚合对象，规范序列化位于 `research_map/context.json`；
 `memory/index.json` 只是 Kernel 拥有的有界元数据/生命周期投影。已废弃的 SQLite/JSON
 文件只允许用于诊断，永远不是运行时权威。

@@ -5,11 +5,11 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { create_app_server } from "../../apps/research-agent-app-server/index.mjs";
-import { create_fake_agent_runtime } from "../../packages/research-agent-core/fake-runtime.mjs";
-import { create_workspace_initializer, RESEARCH_CONTEXT_COLLECTIONS } from "../../packages/research-agent-core/workspace.mjs";
-import { close_test_research_kernels, create_test_research_kernel } from "../support/research_kernel_helpers.mjs";
+import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
+import { create_workspace_initializer, RESEARCH_CONTEXT_COLLECTIONS } from "../../packages/agent-core/workspace.mjs";
+import { close_test_research_states, create_test_research_state } from "../support/research_state_helpers.mjs";
 
-test.afterEach(close_test_research_kernels);
+test.afterEach(close_test_research_states);
 
 async function temporary_root(prefix) {
   return mkdtemp(join(tmpdir(), `${prefix}-`));
@@ -25,7 +25,7 @@ test("research workspace seeds a valid admission-pending kernel state", async ()
       workspace_mode: "research",
     });
     assert.equal(manifest.state, "admission_pending");
-    assert.equal(manifest.research_kernel.admission_required, true);
+    assert.equal(manifest.research_state.admission_required, true);
     assert.equal(manifest.memory_profile, "session");
     assert.equal(manifest.memory_scope, "session");
     assert.equal(manifest.research_state_scope, "workspace");
@@ -37,7 +37,7 @@ test("research workspace seeds a valid admission-pending kernel state", async ()
     assert.equal(checkpoint.kind, "workspace_genesis");
     const admitted = await initializer.admit_workspace(root);
     assert.equal(admitted.state, "ready");
-    assert.equal((await initializer.attach_workspace(root)).research_kernel.admission_required, false);
+    assert.equal((await initializer.attach_workspace(root)).research_state.admission_required, false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -54,7 +54,7 @@ test("workspace admission repairs a manifest commit interrupted after Kernel adm
     });
     // Simulate a Host crash after the Kernel atomically admitted the context
     // and liveness documents but before it committed the manifest projection.
-    await create_test_research_kernel({ workspace_root: root }).admit_workspace({
+    await create_test_research_state({ workspace_root: root }).admit_workspace({
       workspace_id: "workspace_admission_recovery",
       authority: "host",
       expected_state: "admission_pending",
@@ -64,12 +64,12 @@ test("workspace admission repairs a manifest commit interrupted after Kernel adm
     await writeFile(manifestPath, JSON.stringify({
       ...manifest,
       state: "admission_pending",
-      research_kernel: { ...manifest.research_kernel, admission_required: true },
+      research_state: { ...manifest.research_state, admission_required: true },
     }));
 
     const recovered = await initializer.admit_workspace(root);
     assert.equal(recovered.state, "ready");
-    assert.equal(recovered.research_kernel.admission_required, false);
+    assert.equal(recovered.research_state.admission_required, false);
     const context = JSON.parse(await readFile(join(root, "research_map", "context.json"), "utf8"));
     const liveness = JSON.parse(await readFile(join(root, "lifecycle", "liveness.json"), "utf8"));
     assert.equal(context.lifecycle_state, "admitted");
@@ -154,7 +154,7 @@ test("Python Kernel reads reject an incomplete ResearchMap context", async () =>
     const context = JSON.parse(await readFile(contextPath, "utf8"));
     delete context.attempts;
     await writeFile(contextPath, JSON.stringify(context));
-    await assert.rejects(create_test_research_kernel({ workspace_root: root }).read_context(), /research_context_missing_collections: attempts/);
+    await assert.rejects(create_test_research_state({ workspace_root: root }).read_context(), /research_context_missing_collections: attempts/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

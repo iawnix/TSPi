@@ -233,7 +233,7 @@ intent after that prior lifecycle has ended safely.
 
 ## Result Authority
 
-The model fills only `summary` and `limitations` in `ts_compute_result`. The
+The model fills only `summary` and `limitations` in `compute_result`. The
 host derives action outcome, program state, artifacts, facts, provenance, and
 reconciliation flags from the typed action journal. A structured tool return is
 not proof of execution success. Program failure is not Claim contradiction, and

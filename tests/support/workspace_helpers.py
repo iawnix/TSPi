@@ -5,10 +5,10 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from ts_agent.io import sha256_json
-from ts_agent.runtime.workspace_mode import admit_research_workspace, initialize_workspace
-from ts_agent.research.agent_workspace import apply_change as _apply_filesystem_change
-from ts_agent.research.agent_workspace import read_context as read_filesystem_context
+from tspi_runtime.io import sha256_json
+from tspi_runtime.runtime.workspace_mode import admit_research_workspace, initialize_workspace
+from research_state.agent_workspace import apply_change as _apply_filesystem_change
+from research_state.agent_workspace import read_context as read_filesystem_context
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

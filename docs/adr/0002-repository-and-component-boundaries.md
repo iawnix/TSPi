@@ -57,7 +57,7 @@ contracts are explicit.
 **TSPi** remains the product and the name of the required core repository.
 The TSPi repository owns:
 
-- the public Skill family, led by `tspi-research-kernel` for state and
+- the public Skill family, led by `tspi-research-state` for state and
   `tspi-orchestration` for task planning;
 - the deterministic Research Kernel and canonical workspace contract;
 - deterministic compute, artifact, report, remote, and notification mechanisms;
@@ -205,8 +205,8 @@ The first implementation should classify and document current paths, then
 move one boundary at a time while retaining stable entrypoint shims.
 
 The first staged move places the Python kernel under
-`packages/ts-agent-kernel/` and the TypeScript runtime under
-`packages/ts-agent-runtime/`. The native App Server lives under `apps/`; the
+`packages/tspi-runtime/` and the TypeScript runtime under
+`packages/agent-runtime/`. The native App Server lives under `apps/`; the
 terminal is Pi's client mode and TS Phone is an external TSPi Link client. Stable
 package entrypoints and release manifests now point at these explicit
 locations. The remaining `scripts/` transition is intentionally separate so
@@ -267,7 +267,7 @@ removing compatibility fixtures.
 
 ### 7. Reviewers and subagent boundary
 
-`packages/ts-agent-runtime/agents/review/` is the implementation location for
+`packages/agent-runtime/agents/review/` is the implementation location for
 the isolated advisory runtime. A public request may choose `reviewerRole`; the
 current package ships the versioned `general` descriptor. The runtime builds a
 typed task packet for that role and records its prompt revision, inherited model
@@ -354,7 +354,7 @@ for local changes.
 - expose the canonical ResearchMap behind the versioned
   `research-map-provider/1` request/response contract;
 - make the Web client under `components/ts-web/` consume only that contract;
-- add archive and source tests proving the client has no `ts_agent` imports;
+- add archive and source tests proving the client has no `tspi_runtime` imports;
 - package the Web UI as an independently validated optional component.
 
 ### Phase 3: make optional installation explicit (completed)
@@ -404,7 +404,7 @@ The restructuring is ready for implementation completion only when:
   path discovery;
 - Phone schemas have one canonical source and TSPi has compatibility tests;
 - Web communicates through a versioned read-only ResearchMap transport and has no private
-  `ts_agent` imports;
+  `tspi_runtime` imports;
 - protocol, component, and theme revisions are visible in diagnostics and
   checked during assembly;
 - release membership is derived from one inventory;

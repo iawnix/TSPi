@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 from pathlib import Path
 
-from ts_agent.backends.base import PreparedTask
-from ts_agent.compute.capabilities import CapabilityDescriptor
-from ts_agent.compute.registry import (
+from tspi_runtime.backends.base import PreparedTask
+from research_compute.capabilities import CapabilityDescriptor
+from research_compute.registry import (
     CapabilityRegistry,
     CapabilityRegistryError,
     DuplicateCapabilityError,
@@ -95,8 +95,8 @@ def test_provider_without_descriptor_method_is_rejected() -> None:
 
 
 def test_registered_execution_provider_is_an_explicit_prepare_boundary(tmp_path: Path) -> None:
-    from ts_agent.compute.capabilities import register_capability_provider
-    from ts_agent.compute.control import _raw_prepared_task
+    from research_compute.capabilities import register_capability_provider
+    from research_compute.control import _raw_prepared_task
 
     class Provider:
         provider_id = "fixture-execution-provider"
@@ -136,7 +136,7 @@ def test_registered_execution_provider_is_an_explicit_prepare_boundary(tmp_path:
 
 
 def test_calculation_intent_contract_allows_provider_owned_backend_ids() -> None:
-    from ts_agent.calculation_contracts import validate_calculation_contract
+    from tspi_runtime.calculation_contracts import validate_calculation_contract
     from tests.support.workspace_helpers import calculation_intent_fixture
 
     intent = calculation_intent_fixture("node_1", "calc_1")

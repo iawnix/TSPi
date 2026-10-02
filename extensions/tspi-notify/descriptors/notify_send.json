@@ -1,0 +1,32 @@
+{
+  "operation": "notify_send",
+  "version": "1",
+  "input_schema": {
+    "type": "object"
+  },
+  "parameter_schema": {
+    "type": "object"
+  },
+  "result_schema": {
+    "type": "object"
+  },
+  "output_roles": [
+    "receipt"
+  ],
+  "effects": [
+    "external_write"
+  ],
+  "limits": {
+    "timeout_seconds": 120
+  },
+  "schema_version": "tspi-provider-descriptor/1",
+  "provider_id": "notify_send",
+  "kind": "notification",
+  "capabilities": [
+    {
+      "id": "notify_send",
+      "version": "1"
+    }
+  ],
+  "implementation": "adapter"
+}

@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from ts_agent.compute.artifact_registry import (
+from research_compute.artifact_registry import (
     ArtifactOperationDescriptor,
     artifact_operation_catalog,
     artifact_operation_digest,

@@ -4,11 +4,11 @@ import test from "node:test";
 import {
   create_context_builder,
   create_memory_store,
-} from "../../packages/research-agent-core/index.mjs";
+} from "../../packages/agent-core/index.mjs";
 import {
   create_model_port,
   create_memory_port,
-} from "../../packages/research-agent-core/ports.mjs";
+} from "../../packages/agent-core/ports.mjs";
 
 test("session memory is bounded and does not expose mutable internal records", async () => {
   const memory = create_memory_store({ workspace_mode: "research", workspace_id: "workspace_research", session_id: "session_1", max_entries: 2 });

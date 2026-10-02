@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
+import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 import {
   RESEARCH_KERNEL_FACTORY_VERSION,
   create_kernel,
-} from "../../packages/research-agent-kernel/kernel_factory.mjs";
+} from "../../packages/research-state-bridge/kernel_factory.mjs";
 
 async function workspace(prefix, workspace_id, workspace_mode = "research") {
   const root = await mkdtemp(join(tmpdir(), `${prefix}-`));
@@ -28,7 +28,7 @@ test("kernel factory binds the Python Research Kernel to workspace requests", as
       /research_workspace_id_mismatch/,
     );
     await kernel.close();
-    await assert.rejects(kernel.read_context({ workspace_root: root }), /research_kernel_closed/);
+    await assert.rejects(kernel.read_context({ workspace_root: root }), /research_state_closed/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

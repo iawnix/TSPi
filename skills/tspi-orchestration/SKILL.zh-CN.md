@@ -8,7 +8,7 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
 [English version](SKILL.md)
 
 当 Root 需要决定下一步研究工作时使用本 Skill。ResearchMap 的结构、读取和写入由
-`tspi-research-kernel` 负责；本 Skill 不重复定义该模型。
+`tspi-research-state` 负责；本 Skill 不重复定义该模型。
 
 ## 工作流
 

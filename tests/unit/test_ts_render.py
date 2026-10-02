@@ -9,12 +9,12 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from ts_agent.render import MolVisualizer
-from ts_agent.render.config import ENGINES
-from ts_agent.render.curves import render_curve
+from render_lib import MolVisualizer
+from render_lib.config import ENGINES
+from render_lib.curves import render_curve
 
 
-def test_ts_render_exposes_only_xyzrender_engine() -> None:
+def test_render_exposes_only_xyzrender_engine() -> None:
     assert ENGINES == ("xyzrender",)
 
 
@@ -46,7 +46,7 @@ def test_curve_render_rejects_mismatched_series(tmp_path: Path) -> None:
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_ts_render_builds_command_and_writes_output(tmp_path: Path, monkeypatch) -> None:
+def test_render_builds_command_and_writes_output(tmp_path: Path, monkeypatch) -> None:
     fake = _fake_xyzrender(tmp_path)
     monkeypatch.setenv("TS_RENDER_XYZRENDER", str(fake))
     input_xyz = tmp_path / "h2.xyz"
@@ -63,7 +63,7 @@ def test_ts_render_builds_command_and_writes_output(tmp_path: Path, monkeypatch)
     assert "-S" in result.command
 
 
-def test_ts_render_missing_xyzrender_is_structured_failure(tmp_path: Path, monkeypatch) -> None:
+def test_render_missing_xyzrender_is_structured_failure(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("TS_RENDER_XYZRENDER", str(tmp_path / "missing_xyzrender"))
     monkeypatch.setenv("PATH", "")
 
@@ -74,11 +74,11 @@ def test_ts_render_missing_xyzrender_is_structured_failure(tmp_path: Path, monke
     assert "xyzrender" in result.stderr
 
 
-def test_ts_render_cli_diagnostic_json(tmp_path: Path, monkeypatch) -> None:
+def test_render_cli_diagnostic_json(tmp_path: Path, monkeypatch) -> None:
     fake = _fake_xyzrender(tmp_path)
     env = dict(**os_environ_without_runtime_reexec(), TS_RENDER_XYZRENDER=str(fake))
     completed = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "ts_render.py"), "diagnostic", "--json"],
+        [sys.executable, str(ROOT / "scripts" / "render.py"), "diagnostic", "--json"],
         cwd=ROOT,
         env=env,
         text=True,
@@ -225,5 +225,5 @@ def os_environ_without_runtime_reexec() -> dict[str, str]:
     import os
 
     env = dict(os.environ)
-    env["TS_AGENT_DISABLE_RUNTIME_REEXEC"] = "1"
+    env["TSPI_DISABLE_RUNTIME_REEXEC"] = "1"
     return env

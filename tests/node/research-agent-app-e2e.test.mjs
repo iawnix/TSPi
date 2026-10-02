@@ -5,13 +5,13 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { create_app_server } from "../../apps/research-agent-app-server/index.mjs";
-import { create_fake_agent_runtime } from "../../packages/research-agent-core/fake-runtime.mjs";
-import { create_turn_router } from "../../packages/research-agent-core/turn_router.mjs";
-import { create_workspace_catalog } from "../../packages/research-agent-core/workspace_catalog.mjs";
-import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
-import { close_test_research_kernels, create_test_research_kernel } from "../support/research_kernel_helpers.mjs";
+import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
+import { create_turn_router } from "../../packages/agent-core/turn_router.mjs";
+import { create_workspace_catalog } from "../../packages/agent-core/workspace_catalog.mjs";
+import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
+import { close_test_research_states, create_test_research_state } from "../support/research_state_helpers.mjs";
 
-test.afterEach(close_test_research_kernels);
+test.afterEach(close_test_research_states);
 
 async function make_root(prefix) {
   return mkdtemp(join(tmpdir(), `${prefix}-`));
@@ -32,7 +32,7 @@ test("App Server routes admitted research workspaces through durable identity", 
   try {
     const initializer = create_workspace_initializer();
     const catalog = create_workspace_catalog({ catalog_root });
-    const kernel = create_test_research_kernel({ workspace_root: research_root, workspace_id: "workspace_research" });
+    const kernel = create_test_research_state({ workspace_root: research_root, workspace_id: "workspace_research" });
     const app_server = create_app_server({
       runtime_port: create_fake_agent_runtime(),
       workspace_port: initializer,
@@ -74,7 +74,7 @@ test("App Server routes admitted research workspaces through durable identity", 
     const restarted_entry = await restarted_catalog.attach_workspace("workspace_research");
     assert.equal(restarted_entry.workspace_root, research_root);
     assert.equal(restarted_entry.state, "ready");
-    const restarted_kernel = create_test_research_kernel({ workspace_root: restarted_entry.workspace_root, workspace_id: restarted_entry.workspace_id });
+    const restarted_kernel = create_test_research_state({ workspace_root: restarted_entry.workspace_root, workspace_id: restarted_entry.workspace_id });
     assert.equal((await restarted_kernel.read_liveness()).state, "admitted");
     assert.deepEqual((await restarted_kernel.read_context()).phases.map((phase) => phase.id), ["phase_1"]);
     assert.equal((await restarted_initializer.attach_workspace(research_root)).workspace_mode, "research");

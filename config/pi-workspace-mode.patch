@@ -5,7 +5,7 @@ diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-
  		&& value.created_at.length > 0;
  }
  
-+const WORKSPACE_MANIFEST_SCHEMA = "research_agent_workspace_1";
++const WORKSPACE_MANIFEST_SCHEMA = "research_state_workspace_1";
 +const LIGHT_WORKSPACE_DIRECTORIES = Object.freeze(["inputs", "artifacts", "runs", "logs", "scratch", "sessions"]);
 +
 +async function isSupportedLightWorkspace(root: string, manifest: unknown): Promise<boolean> {

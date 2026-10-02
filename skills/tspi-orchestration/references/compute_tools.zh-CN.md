@@ -198,7 +198,7 @@ Attempt lineage。
 
 ## 结果权威性
 
-模型只填写 `ts_compute_result` 中的 `summary` 与 `limitations`。Host 从类型化 action
+模型只填写 `compute_result` 中的 `summary` 与 `limitations`。Host 从类型化 action
 journal 推导动作结果、程序状态、Artifact、事实、来源和协调标记。结构化工具返回不能证明
 执行成功。程序失败不等于 Claim 被反驳，解析器失败也不等于程序失败。
 

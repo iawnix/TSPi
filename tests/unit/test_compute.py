@@ -4,17 +4,17 @@ from pathlib import Path
 
 import pytest
 
-from ts_agent.compute.artifacts import import_calculation_artifact, list_calculation_artifacts, resolve_artifact_ids
-from ts_agent.compute.errors import ComputeContractError
-from ts_agent.compute.control import create_calculation_intent, prepare_calculation
-from ts_agent.io import read_json, write_json
+from research_compute.artifacts import import_calculation_artifact, list_calculation_artifacts, resolve_artifact_ids
+from research_compute.errors import ComputeContractError
+from research_compute.control import create_calculation_intent, prepare_calculation
+from tspi_runtime.io import read_json, write_json
 from tests.support.workspace_helpers import (
     apply_filesystem_change,
     bootstrap_filesystem_workspace_fixture,
     read_filesystem_context,
     start_filesystem_research_node,
 )
-from ts_agent.workspace.node_contract import node_contract_digest, node_contract_snapshot
+from tspi_runtime.workspace.node_contract import node_contract_digest, node_contract_snapshot
 
 
 def _open_node(root: Path) -> str:

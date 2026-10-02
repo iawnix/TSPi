@@ -10,7 +10,7 @@ import {
   readWorkspaceMode,
   RESEARCH_ONLY_TOOL_NAMES,
 } from "../../../apps/app-server/workspace-mode-tools.mjs";
-import { create_workspace_initializer } from "../../../packages/research-agent-core/workspace.mjs";
+import { create_workspace_initializer } from "../../../packages/agent-core/workspace.mjs";
 
 test("workspace mode reader requires the canonical manifest and honors immutable manifests", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-workspace-mode-"));

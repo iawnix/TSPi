@@ -6,17 +6,17 @@ import test from "node:test";
 
 import { createChangeTool } from "../../apps/app-server/pi-native-tools.mjs";
 import { __test as computeTest } from "../../apps/app-server/pi-native-compute.mjs";
-import { close_test_research_kernels, create_test_research_kernel } from "../support/research_kernel_helpers.mjs";
-import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
+import { close_test_research_states, create_test_research_state } from "../support/research_state_helpers.mjs";
+import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 
-test.afterEach(close_test_research_kernels);
+test.afterEach(close_test_research_states);
 
 test("blocked research liveness stops new mutations but permits a recovery checkpoint", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-blocked-lifecycle-"));
   try {
     const workspace = create_workspace_initializer();
     await workspace.initialize_workspace({ workspace_root: root, workspace_id: "workspace_blocked", workspace_mode: "research" });
-    const kernel = create_test_research_kernel({ workspace_root: root });
+    const kernel = create_test_research_state({ workspace_root: root });
     const write = (request) => ({ principal: "root_agent", authority: "kernel_write", ...request });
     await kernel.admit_workspace({ workspace_id: "workspace_blocked", authority: "host", expected_state: "admission_pending" });
     await kernel.apply_change(write({ expected_revision: 0, operations: [
@@ -49,7 +49,7 @@ test("blocked research liveness stops new mutations but permits a recovery check
     assert.equal(recovered.disposition, "continue_required");
     const memory = JSON.parse(await readFile(join(root, "memory", "index.json"), "utf8"));
     const context = JSON.parse(await readFile(join(root, "research_map", "context.json"), "utf8"));
-    assert.equal(memory.authority, "research_kernel");
+    assert.equal(memory.authority, "research_state");
     assert.equal(memory.disposition, "continue_required");
     assert.equal(memory.context_revision, 3);
     assert.equal(context.lifecycle_state, "admitted");
@@ -83,19 +83,19 @@ test("native research writes reject a non-root principal in Host context", async
 test("compute action failures preserve active Attempts for ambiguous or follow-up operations", () => {
   assert.equal(computeTest.attemptStateAfterComputeError(
     { operation: "launch" },
-    [{ tool: "ts_workspace_compute_submit", result: { action_status: "unknown" } }],
+    [{ tool: "workspace_compute_submit", result: { action_status: "unknown" } }],
   ), "running");
   assert.equal(computeTest.attemptStateAfterComputeError(
     { operation: "launch" },
-    [{ tool: "ts_workspace_compute_submit", result: { action_status: "completed" } }],
+    [{ tool: "workspace_compute_submit", result: { action_status: "completed" } }],
   ), "running");
   assert.equal(computeTest.attemptStateAfterComputeError(
     { operation: "launch" },
-    [{ tool: "ts_workspace_compute_submit", result: { action_status: "failed" } }],
+    [{ tool: "workspace_compute_submit", result: { action_status: "failed" } }],
   ), "failed");
   assert.equal(computeTest.attemptStateAfterComputeError(
     { operation: "finalize" },
-    [{ tool: "ts_workspace_compute_parse", result: { action_status: "failed" } }],
+    [{ tool: "workspace_compute_parse", result: { action_status: "failed" } }],
   ), "running");
 });
 
@@ -103,9 +103,9 @@ test("finalize admission failures remain retryable after parsing succeeds", () =
   assert.equal(computeTest.attemptStateForRequest(
     "finalize",
     [
-      { tool: "ts_workspace_compute_collect", result: { action_status: "completed", result: { state: "collected" } } },
-      { tool: "ts_workspace_compute_parse", result: { action_status: "completed", result: { state: "parsed" } } },
-      { tool: "research_kernel_write", result: { action_status: "failed" } },
+      { tool: "workspace_compute_collect", result: { action_status: "completed", result: { state: "collected" } } },
+      { tool: "workspace_compute_parse", result: { action_status: "completed", result: { state: "parsed" } } },
+      { tool: "research_state_write", result: { action_status: "failed" } },
     ],
   ), "running");
 });
@@ -115,7 +115,7 @@ test("Python Research Kernel requires the Root Agent kernel-write boundary", asy
   try {
     const workspace = create_workspace_initializer();
     await workspace.initialize_workspace({ workspace_root: root, workspace_id: "workspace_authority", workspace_mode: "research" });
-    const kernel = create_test_research_kernel({ workspace_root: root });
+    const kernel = create_test_research_state({ workspace_root: root });
     await kernel.admit_workspace({ authority: "host" });
     await assert.rejects(
       kernel.apply_change({ expected_revision: 0, operations: [{ type: "create_phase", id: "phase_1", title: "Denied" }] }),

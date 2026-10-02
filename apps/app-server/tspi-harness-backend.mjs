@@ -38,8 +38,8 @@ export async function createTspiHarnessBackend(options = {}) {
   process.env.TSPI_PACKAGE_ROOT = packageRoot;
   process.env.PI_SESSION_WORKER_ENTRY = workerEntry;
   process.env.TSPI_WORKSPACE_ROOT = workspaceRoot;
-  process.env.TSPI_WORKSPACE_MODE_INITIALIZER = join(packageRoot, "scripts/ts_workspace_mode.py");
-  process.env.TSPI_WORKSPACE_PYTHON = process.env.TS_AGENT_PYTHON || process.env.TSPI_WORKSPACE_PYTHON || "python3";
+  process.env.TSPI_WORKSPACE_MODE_INITIALIZER = join(packageRoot, "apps/agent-cli/workspace_mode.py");
+  process.env.TSPI_WORKSPACE_PYTHON = process.env.TSPI_PYTHON || process.env.TSPI_WORKSPACE_PYTHON || "python3";
   process.env.TSPI_NATIVE_WRITES = "1";
   await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts")).href);
 
@@ -1088,7 +1088,7 @@ function readWorkspaceManifestSync(root) {
     const info = lstatSync(physical);
     if (!info.isDirectory() || info.isSymbolicLink()) return null;
     const manifest = JSON.parse(readFileSync(join(physical, "workspace_manifest.json"), "utf8"));
-    if (manifest?.schema_version !== "research_agent_workspace_1"
+    if (manifest?.schema_version !== "research_state_workspace_1"
       || !WORKSPACE_ID.test(manifest.workspace_id)
       || manifest.workspace_mode !== "research"
       || manifest.state !== "ready"

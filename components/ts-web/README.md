@@ -2,7 +2,7 @@
 
 `@iawnix/ts-web` is an optional, read-only browser client for TSPi. It owns
 the HTTP transport, browser assets, workspace registry commands, and the
-ResearchMap client. It does not import `ts_agent` or own scientific state.
+ResearchMap client. It does not import `tspi_runtime` or own scientific state.
 
 The component talks to the TSPi Agent through the versioned
 `research-map-provider/1` JSON-lines protocol. TSPi keeps physical workspace

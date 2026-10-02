@@ -12,14 +12,14 @@ from ase.calculators.lj import LennardJones
 from ase.units import Bohr, Hartree
 
 from tests.support.workspace_helpers import apply_filesystem_change, bootstrap_workspace_fixture, start_research_node
-from ts_agent.backends.ase_neb import (
+from tspi_runtime.backends.ase_neb import (
     ASE_NEB_ARTIFACTS,
     _validate_run_summary,
     parse_ase_neb_artifacts,
     prepare_ase_neb,
     validate_ase_neb_endpoints,
 )
-from ts_agent.backends.ase_neb_runner import (
+from tspi_runtime.backends.ase_neb_runner import (
     NebRunConfig,
     GaussianCliCalculator,
     XtbCliCalculator,
@@ -28,17 +28,17 @@ from ts_agent.backends.ase_neb_runner import (
     main as ase_neb_runner_main,
     run_ase_neb,
 )
-from ts_agent.backends.base import BackendTask
-from ts_agent.compute.control import _apply_compute_environment
-from ts_agent.compute import (
+from tspi_runtime.backends.base import BackendTask
+from research_compute.control import _apply_compute_environment
+from research_compute import (
     ComputeContractError,
     create_calculation_intent,
     list_calculation_artifacts,
     parse_calculation,
     prepare_calculation,
 )
-from ts_agent.compute.task_validation import validate_parsed_task
-from ts_agent.platforms import BackendBinding
+from research_compute.task_validation import validate_parsed_task
+from tspi_runtime.platforms import BackendBinding
 
 
 def test_ase_neb_preparer_emits_bounded_explicit_runner_command() -> None:
@@ -72,7 +72,7 @@ def test_ase_neb_preparer_emits_bounded_explicit_runner_command() -> None:
     assert prepared.backend == "ase_neb"
     assert prepared.command[1:5] == [
         "-m",
-        "ts_agent.backends.ase_neb_runner",
+        "tspi_runtime.backends.ase_neb_runner",
         "--reactant",
         "reactant.xyz",
     ]
@@ -322,7 +322,7 @@ print(' Normal termination of Gaussian 16')
 def test_ase_neb_prefers_injected_xtb_binding(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TS_ASE_NEB_XTB", "/managed/xtb/bin/xtb")
     monkeypatch.setattr(
-        "ts_agent.backends.ase_neb_runner.configured_backend_command",
+        "tspi_runtime.backends.ase_neb_runner.configured_backend_command",
         lambda _backend: pytest.fail("local compute config should not be consulted"),
     )
     assert _configured_xtb_executable() == "/managed/xtb/bin/xtb"
@@ -332,7 +332,7 @@ def test_ase_neb_remote_binding_requires_explicit_xtb_executable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "ts_agent.compute.control._backend_binding",
+        "research_compute.control._backend_binding",
         lambda *_args: BackendBinding(command=("/managed/ase/bin/python",)),
     )
     task = prepare_ase_neb(

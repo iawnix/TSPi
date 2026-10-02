@@ -18,11 +18,11 @@ from tests.support.runtime_helpers import write_test_runtime_manifest, write_tes
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL_ROOT = ROOT / "skills" / "tspi-research-kernel"
+SKILL_ROOT = ROOT / "skills" / "tspi-research-state"
 ORCHESTRATION_SKILL_ROOT = ROOT / "skills" / "tspi-orchestration"
-RUNTIME_ROOT = ROOT / "packages" / "ts-agent-runtime"
+RUNTIME_ROOT = ROOT / "packages" / "agent-runtime"
 AGENTS_ROOT = RUNTIME_ROOT / "agents"
-PYTHON_PACKAGE = ROOT / "packages" / "ts-agent-kernel" / "ts_agent"
+PYTHON_PACKAGE = ROOT / "packages" / "tspi-runtime" / "tspi_runtime"
 THEME_PATH = ROOT / "themes" / "ts-theme.json"
 TSPI_LAUNCHER = ROOT / "ResearchAgent"
 GENERATION_BRAND = re.compile(
@@ -119,11 +119,11 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     shutil.copy2(TSPI_LAUNCHER, package_root / "ResearchAgent")
     (package_root / "ResearchAgent").chmod(0o755)
     (package_root / "scripts").mkdir()
-    for name in ("_bootstrap.py", "tspi_launcher.py", "ts_compute.py"):
+    for name in ("_bootstrap.py", "tspi_launcher.py", "compute.py"):
         shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
     shutil.copytree(
-        ROOT / "packages" / "ts-agent-kernel",
-        package_root / "packages" / "ts-agent-kernel",
+        ROOT / "packages" / "tspi-runtime",
+        package_root / "packages" / "tspi-runtime",
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
     )
     shutil.copy2(ROOT / "pyproject.toml", package_root / "pyproject.toml")
@@ -247,7 +247,7 @@ def test_public_skill_uses_nested_pi_skill_layout() -> None:
 
 def test_public_skill_family_matches_the_owned_capabilities() -> None:
     expected = {
-        "tspi-research-kernel",
+        "tspi-research-state",
         "tspi-orchestration",
         "tspi-ts-candidate-generation",
         "tspi-ts-validation",
@@ -283,7 +283,7 @@ def test_current_sources_do_not_use_generation_branded_language_or_paths() -> No
         RUNTIME_ROOT,
         ROOT / "apps",
         ROOT / "tests",
-        ROOT / "packages" / "ts-agent-kernel",
+        ROOT / "packages" / "tspi-runtime",
     ]
     files: set[Path] = set()
     for root in roots:
@@ -360,8 +360,8 @@ def test_package_manifest_exposes_the_public_skill_family_and_allowlisted_runtim
     assert manifest["private"] is True
     assert "tests/" not in manifest["files"]
     assert "docs/*.md" in manifest["files"]
-    assert "packages/ts-agent-kernel/ts_agent/research/*.py" in manifest["files"]
-    assert "packages/ts-agent-kernel/ts_agent/projection/*.py" not in manifest["files"]
+    assert "packages/tspi-runtime/tspi_runtime/research/*.py" in manifest["files"]
+    assert "packages/tspi-runtime/tspi_runtime/projection/*.py" not in manifest["files"]
     assert "python-dist/*.whl" in manifest["files"]
     assert "scripts/_runtime_install.py" in manifest["files"]
     assert "scripts/_wheel.py" in manifest["files"]
@@ -385,14 +385,14 @@ def test_package_manifest_exposes_the_public_skill_family_and_allowlisted_runtim
     assert "dependencies" not in manifest
     for name in ("ARCHITECTURE.md", "INSTALLATION.md", "MAINTAINER_GUIDE.md"):
         assert (ROOT / "docs" / name).is_file()
-    assert all("packages/ts-agent-runtime/agents" not in entry for entry in manifest["pi"]["skills"])
+    assert all("packages/agent-runtime/agents" not in entry for entry in manifest["pi"]["skills"])
 
 
 def test_repository_layout_has_named_source_boundaries() -> None:
     assert not (ROOT / "python").exists()
     assert not (ROOT / "src").exists()
-    assert (ROOT / "packages" / "ts-agent-kernel" / "ts_agent").is_dir()
-    assert (ROOT / "packages" / "ts-agent-runtime").is_dir()
+    assert (ROOT / "packages" / "tspi-runtime" / "tspi_runtime").is_dir()
+    assert (ROOT / "packages" / "agent-runtime").is_dir()
     assert (ROOT / "apps" / "app-server").is_dir()
     assert (ROOT / "apps" / "app-server" / "pi-app-server.mjs").is_file()
     assert not (ROOT / "apps" / "host").exists()
@@ -411,11 +411,11 @@ def test_tspi_shell_is_a_thin_executable_shim() -> None:
     source = TSPI_LAUNCHER.read_text(encoding="utf-8")
     assert completed.returncode == 0, completed.stderr
     assert TSPI_LAUNCHER.stat().st_mode & 0o111
-    assert (ROOT / "scripts" / "ts_web_provider.py").stat().st_mode & 0o111
+    assert (ROOT / "scripts" / "provider_runner.py").stat().st_mode & 0o111
     assert len(source.splitlines()) <= 20
-    assert "scripts/tspi_launcher.py" in source
-    assert "TS_AGENT_INSTALL_ROOT" in source
-    for mechanism in ("configure_remote", "configure_notifications", "acquire_root_agent_lock", "ts_compute.py"):
+    assert "apps/agent-cli/tspi_launcher.py" in source
+    assert "TSPI_INSTALL_ROOT" in source
+    for mechanism in ("configure_remote", "configure_notifications", "acquire_root_agent_lock", "compute.py"):
         assert mechanism not in source
     help_result = subprocess.run(
         [str(TSPI_LAUNCHER), "--help"],
@@ -450,7 +450,7 @@ command = ["xtb"]
 ''',
         encoding="utf-8",
     )
-    diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
+    diagnostic = _installed_package_root(install_root) / "scripts" / "compute.py"
     diagnostic.write_text("raise SystemExit('remote probe must not run')\n", encoding="utf-8")
     write_test_runtime_manifest(_installed_package_root(install_root), install_root)
     fake_pi = _fake_pi(
@@ -573,7 +573,7 @@ def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:
         f'default_environment = "cluster"\n[environments.cluster]\nkind = "remote"\nssh_host = "cluster-login"\nssh_config = "{ssh_config}"\nscheduler = "torque"\nremote_root = "/remote/ts"\nallowed_queues = ["batch"]\nmax_nodes = 1\n[environments.cluster.backends.xtb]\ncommand = ["xtb"]\n',
         encoding="utf-8",
     )
-    diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
+    diagnostic = _installed_package_root(install_root) / "scripts" / "compute.py"
     invocation = tmp_path / "diagnostic-argv.json"
     diagnostic.write_text(
         "import json, sys\n"
@@ -631,7 +631,7 @@ command = ["xtb"]
 ''',
         encoding="utf-8",
     )
-    diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
+    diagnostic = _installed_package_root(install_root) / "scripts" / "compute.py"
     invocation = tmp_path / "diagnostic-argv.json"
     diagnostic.write_text(
         "import json, sys\n"
@@ -682,7 +682,7 @@ def test_tspi_remote_diagnostic_preserves_structured_failure(tmp_path: Path) -> 
         f'default_environment = "cluster"\n[environments.cluster]\nkind = "remote"\nssh_host = "cluster-login"\nssh_config = "{ssh_config}"\nscheduler = "torque"\nremote_root = "/remote/ts"\nallowed_queues = ["batch"]\nmax_nodes = 1\n[environments.cluster.backends.xtb]\ncommand = ["xtb"]\n',
         encoding="utf-8",
     )
-    diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
+    diagnostic = _installed_package_root(install_root) / "scripts" / "compute.py"
     diagnostic.write_text(
         "print('{\"ok\": false, \"error\": {\"class\": \"ssh_unreachable\"}}')\nraise SystemExit(3)\n",
         encoding="utf-8",
@@ -722,10 +722,10 @@ print(json.dumps({
     "workspace": os.environ["TS_WORKSPACE_ROOT"],
     "notification_config": os.environ.get("TS_NOTIFICATION_CONFIG"),
     "notification_display": os.environ["TS_NOTIFICATION_DISPLAY_TARGET"],
-    "runtime_home": os.environ["TS_AGENT_RUNTIME_HOME"],
-    "runtime_manifest": os.environ["TS_AGENT_RUNTIME_MANIFEST"],
-    "env_root": os.environ["TS_AGENT_ENV_ROOT"],
-    "managed_python": os.environ["TS_AGENT_PYTHON"],
+    "runtime_home": os.environ["TSPI_RUNTIME_HOME"],
+    "runtime_manifest": os.environ["TSPI_RUNTIME_MANIFEST"],
+    "env_root": os.environ["TSPI_ENV_ROOT"],
+    "managed_python": os.environ["TSPI_PYTHON"],
     "path_python": __import__("shutil").which("python"),
     "path_python3": __import__("shutil").which("python3"),
     "no_user_site": os.environ.get("PYTHONNOUSERSITE"),
@@ -746,9 +746,9 @@ print(json.dumps({
         pi_bin=fake_pi,
         env={
             "TS_NOTIFICATION_CONFIG": "",
-            "TS_AGENT_RUNTIME_HOME": "/tmp/old-runtime",
-            "TS_AGENT_RUNTIME_MANIFEST": "/tmp/old-runtime/env.json",
-            "TS_AGENT_ENV_ROOT": "/tmp/old-env",
+            "TSPI_RUNTIME_HOME": "/tmp/old-runtime",
+            "TSPI_RUNTIME_MANIFEST": "/tmp/old-runtime/env.json",
+            "TSPI_ENV_ROOT": "/tmp/old-env",
         },
     )
 
@@ -793,7 +793,7 @@ print(json.dumps({
     manifest = json.loads((workspace / "workspace_manifest.json").read_text(encoding="utf-8"))
     context = json.loads((workspace / "research_map" / "context.json").read_text(encoding="utf-8"))
     liveness = json.loads((workspace / "lifecycle" / "liveness.json").read_text(encoding="utf-8"))
-    assert manifest["schema_version"] == "research_agent_workspace_1"
+    assert manifest["schema_version"] == "research_state_workspace_1"
     assert manifest["workspace_id"] == "reaction-a"
     assert context["schema_version"] == "research_map_context_1"
     assert context["workspace_id"] == manifest["workspace_id"]

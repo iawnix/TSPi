@@ -19,7 +19,7 @@ replacement UI.
 - `services/tspi-link-relay/` owns TSPi Link enrollment, pairing, device
   authorization, and opaque frame forwarding. It has no workspace, session, or
   research APIs and does not decode Host RPC.
-- `packages/ts-agent-kernel/ts_agent/` owns the `ResearchMap`, reference
+- `packages/tspi-runtime/tspi_runtime/` owns the `ResearchMap`, reference
   integrity, validation, and transactions. Its
   `compute_run` control plane uses one lifecycle for local subprocesses and remote
   scheduler jobs; the configured remote adapter supplies transport and
@@ -444,9 +444,9 @@ are separate from the scientific operation journal.
 ## Contract Locations
 
 - Host and client adapter entrypoints: `apps/app-server/*.mjs`.
-- Installation/runtime launcher: `TSPi`, `scripts/tspi_launcher.py`, and
-  `packages/ts-agent-kernel/ts_agent/runtime/launcher.py`.
-- Scientific contracts: `packages/ts-agent-kernel/ts_agent/**`.
+- Installation/runtime launcher: `TSPi`, `apps/agent-cli/tspi_launcher.py`, and
+  `packages/tspi-runtime/tspi_runtime/runtime/launcher.py`.
+- Scientific contracts: `packages/tspi-runtime/tspi_runtime/**`.
 - Skills and extension manifests: `skills/`, `package.json`, and
   `extensions/server/extensions.json`.
 - TS Web contracts: `contracts/ts-web/`.

@@ -8,7 +8,7 @@ contracts. It is an operational reference, not a second research protocol.
 ## Software And Dependencies
 
 The managed runtime supplies Python, RDKit, ASE, NumPy, jsonschema, rendering
-support, and the `ts-agent-kernel` wheel. Gaussian, xTB, CREST, and other
+support, and the `tspi-runtime` wheel. Gaussian, xTB, CREST, and other
 native programs remain administrator-managed Backends. Discover supported
 capabilities through the versioned catalog rather than assuming a command is
 installed.

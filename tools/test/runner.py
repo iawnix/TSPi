@@ -108,7 +108,7 @@ def _run_scenario(selected: dict[str, object], extra: list[str]) -> int:
         raise SystemExit("scenario suites must declare exactly one executable path")
     scenario = ROOT / paths[0]
     if scenario.suffix == ".py":
-        python = os.environ.get("TS_AGENT_PYTHON") or sys.executable
+        python = os.environ.get("TSPI_PYTHON") or sys.executable
         module = ".".join(scenario.relative_to(ROOT).with_suffix("").parts)
         command = [python, "-m", module, *extra]
     elif scenario.suffix == ".mjs":

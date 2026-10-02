@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { createPublicToolContracts } from "../../packages/agent-runtime/host-api/tools.mjs";
 import Type from "../../apps/app-server/pi-runtime-deps.mjs";
 
 test("compute contract contains only Native lifecycle operations", () => {

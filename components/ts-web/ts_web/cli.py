@@ -99,8 +99,8 @@ def _provider(value: str | None) -> str:
         return configured
     component_root = Path(__file__).resolve().parents[1]
     candidates = (
-        component_root.parent / "agent" / "scripts" / "ts_web_provider.py",
-        component_root.parent.parent / "scripts" / "ts_web_provider.py",
+        component_root.parent / "agent" / "scripts" / "provider_runner.py",
+        component_root.parent.parent / "scripts" / "provider_runner.py",
     )
     for candidate in candidates:
         if candidate.is_file():

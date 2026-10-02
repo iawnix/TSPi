@@ -4,18 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
+import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 import {
   KernelBridgeError,
   create_python_kernel_bridge,
   create_jsonl_subprocess_transport,
-  create_research_kernel_bridge,
-} from "../../packages/research-agent-kernel/python_kernel_bridge.mjs";
-import { create_research_kernel_port } from "../../packages/research-agent-kernel/ports.mjs";
+  create_research_state_bridge,
+} from "../../packages/research-state-bridge/python_kernel_bridge.mjs";
+import { create_research_state_port } from "../../packages/research-state-bridge/ports.mjs";
 
 test("kernel bridge binds workspace and forwards all port methods over injected transport", async () => {
   const calls = [];
-  const bridge = create_research_kernel_bridge({
+  const bridge = create_research_state_bridge({
     workspace_root: "/tmp/research-bridge",
     workspace_id: "workspace_1",
     transport: {
@@ -40,7 +40,7 @@ test("kernel bridge binds workspace and forwards all port methods over injected 
 
 test("Kernel port preserves optional bridge cleanup", async () => {
   let closed = false;
-  const port = create_research_kernel_port({
+  const port = create_research_state_port({
     async read_context() { return { workspace_id: "workspace_1" }; },
     async read_liveness() { return { state: "admitted" }; },
     async admit_workspace() { return { accepted: true, state: "admitted" }; },

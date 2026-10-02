@@ -4,8 +4,8 @@ import sys
 import time
 from pathlib import Path
 
-from ts_agent.compute import local_lifecycle
-from ts_agent.compute.local_lifecycle import LocalJobConfig, collect, status, submit
+from research_compute import local_lifecycle
+from research_compute.local_lifecycle import LocalJobConfig, collect, status, submit
 
 
 def test_systemd_user_preflight_rejects_an_unavailable_user_bus(monkeypatch) -> None:

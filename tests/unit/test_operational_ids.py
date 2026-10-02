@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from tests.support.workspace_helpers import bootstrap_workspace_fixture
-from ts_agent.workspace.operational import runtime_status
-from ts_agent.workspace.operational_ids import allocate_operational_id
+from tspi_runtime.workspace.operational import runtime_status
+from tspi_runtime.workspace.operational_ids import allocate_operational_id
 
 
 def test_operational_ids_are_workspace_wide_monotonic_and_private(tmp_path: Path) -> None:

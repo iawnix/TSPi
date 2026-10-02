@@ -6,12 +6,12 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages/ts-agent-kernel"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages/tspi-runtime"))
 from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
 from tests.unit.test_scientific_analysis import gaussian_log, barrier, reaction, source
-from ts_agent.analysis.engine import evaluate
-from ts_agent.compute.artifacts import list_calculation_artifacts
-from ts_agent.workspace.dispatch import set_node_dispatch
+from tspi_runtime.analysis.engine import evaluate
+from research_compute.artifacts import list_calculation_artifacts
+from tspi_runtime.workspace.dispatch import set_node_dispatch
 
 
 def create(root, case_id):

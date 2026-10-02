@@ -62,7 +62,7 @@ rejected explicitly during bootstrap.
 
 ## Deterministic Tool Contracts
 
-Backend adapters live in `packages/ts-agent-kernel/ts_agent/backends/` and must
+Backend adapters live in `packages/tspi-runtime/tspi_runtime/backends/` and must
 parse only their own formats. Every artifact gets a content digest and a safe
 workspace-relative path. Remote jobs record scheduler, job ID, command, and
 retrieval outcome without overwriting earlier evidence.

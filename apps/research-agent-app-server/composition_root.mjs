@@ -1,8 +1,8 @@
 import { create_app_server } from "./app_server.mjs";
-import { create_session_store } from "../../packages/research-agent-core/session_store.mjs";
-import { create_turn_router } from "../../packages/research-agent-core/turn_router.mjs";
-import { create_workspace_catalog } from "../../packages/research-agent-core/workspace_catalog.mjs";
-import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
+import { create_session_store } from "../../packages/agent-core/session_store.mjs";
+import { create_turn_router } from "../../packages/agent-core/turn_router.mjs";
+import { create_workspace_catalog } from "../../packages/agent-core/workspace_catalog.mjs";
+import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 
 export const RESEARCH_AGENT_COMPOSITION_VERSION = "research_agent_composition_2";
 

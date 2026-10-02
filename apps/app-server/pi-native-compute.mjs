@@ -4,8 +4,8 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
-import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
-import { boundWorkspaceRoot } from "../../packages/ts-agent-runtime/host-api/workspace-context.mjs";
+import { createPublicToolContracts } from "../../packages/agent-runtime/host-api/tools.mjs";
+import { boundWorkspaceRoot } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -13,12 +13,12 @@ const {
   completeAgentRun,
   readAgentRunInputs,
   settleFailedAgentRun,
-} = require("../../packages/ts-agent-runtime/agent-core/run-journal.cjs");
+} = require("../../packages/agent-runtime/agent-core/run-journal.cjs");
 const { buildComputeTask } = require(
-  "../../packages/ts-agent-runtime/agents/compute/task-packet.cjs",
+  "../../packages/agent-runtime/agents/compute/task-packet.cjs",
 );
 const { actionOutcome, buildComputeResult } = require(
-  "../../packages/ts-agent-runtime/agents/compute/output-schema.cjs",
+  "../../packages/agent-runtime/agents/compute/output-schema.cjs",
 );
 const {
   completeAction,
@@ -26,7 +26,7 @@ const {
   failAction,
   reserveAction,
   sanitizeActionError,
-} = require("../../packages/ts-agent-runtime/agents/compute/action-log.cjs");
+} = require("../../packages/agent-runtime/agents/compute/action-log.cjs");
 const executeFile = promisify(execFile);
 
 const OPERATIONS = ["launch", "inspect", "finalize", "cancel"];
@@ -364,10 +364,10 @@ function attemptStateForRequest(operation, actions) {
   }
   if (actions.some((action) => action?.result?.action_status === "unknown") || state === "unknown") return "running";
   if (operation === "launch") return submissionAccepted(actions) ? "running" : "failed";
-  if (operation === "cancel") return actions.some((action) => action.tool === "ts_workspace_compute_cancel"
+  if (operation === "cancel") return actions.some((action) => action.tool === "workspace_compute_cancel"
     && action?.result?.action_status === "completed") ? "cancelled" : "running";
   if (operation === "finalize") {
-    const parsed = actions.find((action) => action.tool === "ts_workspace_compute_parse");
+    const parsed = actions.find((action) => action.tool === "workspace_compute_parse");
     return parsed?.result?.action_status === "completed" ? "succeeded" : "running";
   }
   // Inspecting a scheduler state is not equivalent to parsing a scientific
@@ -387,7 +387,7 @@ function attemptStateForRequest(operation, actions) {
 function attemptStateAfterComputeError(request, actions) {
   if (actions.some((action) => action?.result?.action_status === "unknown")) return "running";
   if (request.operation !== "launch") return "running";
-  const submission = actions.find((action) => action.tool === "ts_workspace_compute_submit");
+  const submission = actions.find((action) => action.tool === "workspace_compute_submit");
   if (submission && ["completed", "unknown"].includes(submission.result?.action_status)) return "running";
   return "failed";
 }
@@ -404,7 +404,7 @@ async function stageComputeMonitor(root, request, sessionId, signal) {
     "--intent-digest", request.intentDigest,
     "--session-id", sessionId,
   ];
-  const result = await runJsonCli(packageScript("ts_monitor.py"), args, root, signal, 60_000);
+  const result = await runJsonCli(packageScript("monitor.py"), args, root, signal, 60_000);
   if (!isPlainObject(result) || typeof result.monitor_id !== "string" || !MONITOR_ID.test(result.monitor_id)) {
     throw new Error("compute monitor staging returned an invalid monitor binding");
   }
@@ -416,7 +416,7 @@ async function reconcileComputeMonitor(root, monitorId, signal) {
     throw new Error("compute monitor reconciliation requires a valid monitor id");
   }
   await runJsonCli(
-    packageScript("ts_monitor.py"),
+    packageScript("monitor.py"),
     ["reconcile", "--root", root, "--force"],
     root,
     signal,
@@ -426,7 +426,7 @@ async function reconcileComputeMonitor(root, monitorId, signal) {
 
 async function monitorStatus(root, monitorId, signal) {
   return runJsonCli(
-    packageScript("ts_monitor.py"),
+    packageScript("monitor.py"),
     ["status", "--root", root, "--monitor-id", monitorId],
     root,
     signal,
@@ -545,18 +545,18 @@ async function executeComputePlan(root, request, actions, signal, onProgress) {
     onProgress,
   );
   if (request.operation === "launch") {
-    await run("ts_workspace_compute_prepare", [
+    await run("workspace_compute_prepare", [
       "--intent-file", request.intentFile,
       "--expected-intent-digest", request.intentDigest,
     ], 60_000);
     if (lastActionCompleted(actions)) {
-      await run("ts_workspace_compute_submit", [
+      await run("workspace_compute_submit", [
         "--intent-id", request.intentId,
         "--expected-intent-digest", request.intentDigest,
       ], 300_000);
     }
   } else if (request.operation === "inspect") {
-    await run("ts_workspace_compute_status", [
+    await run("workspace_compute_status", [
       "--intent-id", request.intentId,
       "--expected-intent-digest", request.intentDigest,
     ], 45_000);
@@ -567,7 +567,7 @@ async function executeComputePlan(root, request, actions, signal, onProgress) {
         "--expected-intent-digest", request.intentDigest,
       ];
       if (request.tailArtifact) args.push("--artifact", request.tailArtifact);
-      await run("ts_workspace_compute_tail", args, 45_000);
+      await run("workspace_compute_tail", args, 45_000);
     }
   } else if (request.operation === "finalize") {
     const args = [
@@ -575,9 +575,9 @@ async function executeComputePlan(root, request, actions, signal, onProgress) {
       "--expected-intent-digest", request.intentDigest,
       ...(request.artifacts || []).flatMap((artifact) => ["--artifact", artifact]),
     ];
-    await run("ts_workspace_compute_collect", args, 300_000);
+    await run("workspace_compute_collect", args, 300_000);
     if (lastActionCompleted(actions)) {
-      await run("ts_workspace_compute_parse", [
+      await run("workspace_compute_parse", [
         "--intent-id", request.intentId,
         "--artifact-ref", request.artifactRef,
         "--expected-intent-digest", request.intentDigest,
@@ -589,7 +589,7 @@ async function executeComputePlan(root, request, actions, signal, onProgress) {
       "--expected-intent-digest", request.intentDigest,
     ];
     if (request.jobId) args.push("--expected-job-id", request.jobId);
-    await run("ts_workspace_compute_cancel", args, 120_000);
+    await run("workspace_compute_cancel", args, 120_000);
   }
 }
 
@@ -610,13 +610,13 @@ async function runComputeAction(root, request, actions, toolName, args, signal, 
 
 function actionCommand(toolName) {
   return {
-    ts_workspace_compute_prepare: "prepare",
-    ts_workspace_compute_submit: "submit",
-    ts_workspace_compute_status: "status",
-    ts_workspace_compute_tail: "tail",
-    ts_workspace_compute_collect: "collect",
-    ts_workspace_compute_parse: "parse",
-    ts_workspace_compute_cancel: "cancel",
+    workspace_compute_prepare: "prepare",
+    workspace_compute_submit: "submit",
+    workspace_compute_status: "status",
+    workspace_compute_tail: "tail",
+    workspace_compute_collect: "collect",
+    workspace_compute_parse: "parse",
+    workspace_compute_cancel: "cancel",
   }[toolName];
 }
 
@@ -625,13 +625,13 @@ function lastActionCompleted(actions) {
 }
 
 function submissionAccepted(actions) {
-  const submission = actions.find((action) => action.tool === "ts_workspace_compute_submit");
+  const submission = actions.find((action) => action.tool === "workspace_compute_submit");
   return ["completed", "unknown"].includes(submission?.result?.action_status);
 }
 
 async function runComputeJson(root, command, args, signal, timeout) {
   return runJsonCli(
-    packageScript("ts_compute.py"),
+    packageScript("compute.py"),
     [command, "--root", root, ...args],
     root,
     signal,
@@ -641,7 +641,7 @@ async function runComputeJson(root, command, args, signal, timeout) {
 
 async function allocateOperationalId(root, kind, signal) {
   const result = await runJsonCli(
-    packageScript("ts_workspace.py"),
+    packageScript("workspace.py"),
     ["allocate_operational_id", "--root", root, "--kind", kind],
     root,
     signal,
@@ -935,11 +935,11 @@ function deadlineSignal(parent, timeoutMs) {
 function packageScript(name) {
   const packageRoot = process.env.TSPI_PACKAGE_ROOT;
   if (!packageRoot) throw new Error("TSPi native worker requires TSPI_PACKAGE_ROOT");
-  return resolve(packageRoot, "scripts", name);
+  return resolve(packageRoot, "apps", "agent-cli", name);
 }
 
 function nativePython() {
-  return process.env.TS_AGENT_PYTHON || "python3";
+  return process.env.TSPI_PYTHON || "python3";
 }
 
 function requireNativeWrites(toolContext) {

@@ -40,7 +40,7 @@ runtime implementation directly.
 
 Pi is one Runtime Adapter. Pi imports, experimental source access, patch
 verification, Pi SessionWorker, Pi AgentHarness, and Pi model integration are
-confined to `research-agent-pi-adapter`. The framework does not invoke a
+confined to `agent-pi-adapter`. The framework does not invoke a
 system-installed `pi` executable or consume ambient Pi configuration.
 
 Protocol identifiers use snake_case. Examples are

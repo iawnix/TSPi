@@ -7,8 +7,8 @@ import { join } from "node:path";
 import { createComputeTool } from "../../apps/app-server/pi-native-compute.mjs";
 import { createComputeReadinessTool } from "../../apps/app-server/pi-native-tools.mjs";
 import Type from "../../apps/app-server/pi-runtime-deps.mjs";
-import { create_workspace_initializer } from "../../packages/research-agent-core/workspace.mjs";
-import { createPublicToolContracts } from "../../packages/ts-agent-runtime/host-api/tools.mjs";
+import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
+import { createPublicToolContracts } from "../../packages/agent-runtime/host-api/tools.mjs";
 import { Check } from "typebox/value";
 
 test("compute_readiness preserves environment selectors for the Native catalog", async () => {

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ts_agent.research import ContextBuilder, ResearchClaim, ResearchMap, ResearchNode
+from research_state import ContextBuilder, ResearchClaim, ResearchMap, ResearchNode
 
 
 def _map() -> ResearchMap:

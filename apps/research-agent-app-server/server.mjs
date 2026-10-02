@@ -283,6 +283,9 @@ export function create_http_server({ app_server, session_store = null, max_body_
         case "capability_readiness":
           result = await app_server.capability_readiness(body);
           break;
+        case "capability_execute":
+          result = await app_server.capability_execute(body);
+          break;
         case "compute_catalog":
           result = await app_server.compute_catalog(body);
           break;
@@ -316,7 +319,7 @@ export async function start_http_server({ app_server, session_store = null, host
 }
 
 async function run_default_server() {
-  // The Native lifecycle invokes the package-owned ts_compute.py worker in
+  // The Native lifecycle invokes the package-owned compute.py worker in
   // process. Establish the same package identity that the Pi Host workers use
   // before any runtime or compute request is created.
   const package_root = resolve(new URL("../..", import.meta.url).pathname);

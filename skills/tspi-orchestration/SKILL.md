@@ -8,7 +8,7 @@ description: Plan and steer a TSPi research task across Skills, ResearchNodes, b
 [Chinese version](SKILL.zh-CN.md)
 
 Use this Skill when Root must decide what research work happens next. Use
-`tspi-research-kernel` for the ResearchMap schema, reads, and writes; this Skill
+`tspi-research-state` for the ResearchMap schema, reads, and writes; this Skill
 does not redefine that model.
 
 ## Workflow

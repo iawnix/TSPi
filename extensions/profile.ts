@@ -1,4 +1,4 @@
-import { SLASH_COMMAND_NAMES } from "../packages/ts-agent-runtime/host-api/commands.mjs";
+import { SLASH_COMMAND_NAMES } from "../packages/agent-runtime/host-api/commands.mjs";
 
 export const TS_PACKAGE_PROFILE = Object.freeze({
   displayName: "TSPi",
@@ -6,7 +6,7 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
   title: "TSPi research workspace",
   description: "Domain-neutral ResearchMap scientific workflows with deterministic execution.",
   skills: Object.freeze([
-    Object.freeze({ name: "tspi-research-kernel", path: "./skills/tspi-research-kernel" }),
+    Object.freeze({ name: "tspi-research-state", path: "./skills/tspi-research-state" }),
     Object.freeze({ name: "tspi-orchestration", path: "./skills/tspi-orchestration" }),
     Object.freeze({ name: "tspi-ts-candidate-generation", path: "./skills/tspi-ts-candidate-generation" }),
     Object.freeze({ name: "tspi-ts-validation", path: "./skills/tspi-ts-validation" }),

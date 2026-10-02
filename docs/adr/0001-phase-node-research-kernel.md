@@ -90,7 +90,7 @@ another scientific state store. The canonical paths are `workspace_manifest.json
 
 ## Invariants
 
-- Only ResearchKernel ChangeSet apply mutates canonical scientific state after bootstrap.
+- Only ResearchState ChangeSet apply mutates canonical scientific state after bootstrap.
 - A Node may reference at most one existing Phase; `phase_id` may be null.
 - A Claim may be referenced by many Nodes and a Node may reference many Claims.
 - Phase metadata never authorizes an operation.

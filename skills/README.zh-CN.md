@@ -8,7 +8,7 @@ Research Kernel Skill 管理规范 ResearchMap 合同；编排 Skill 选择下�
 
 | Skill | 职责 |
 | --- | --- |
-| [tspi-research-kernel](tspi-research-kernel/SKILL.zh-CN.md) | ResearchMap 读取、校验、Finding、Gate 与原子变更 |
+| [tspi-research-state](tspi-research-state/SKILL.zh-CN.md) | ResearchMap 读取、校验、Finding、Gate 与原子变更 |
 | [tspi-orchestration](tspi-orchestration/SKILL.zh-CN.md) | 任务规划、分支、恢复、评审与停止 |
 | [tspi-ts-candidate-generation](tspi-ts-candidate-generation/SKILL.zh-CN.md) | TS 候选构造、扫描、QST、NEB 与采样 |
 | [tspi-ts-validation](tspi-ts-validation/SKILL.zh-CN.md) | 鞍点、振动模式、结构、电子态与立体化学验证 |
@@ -32,4 +32,4 @@ Skill 仍保持清楚边界：候选生成产生结构，TS 验证建立鞍点�
 
 每个 Skill 都有内容对应的英文和中文入口，每份详细参考文档也同时维护英文与简体中文
 版本；两种语言的入口只链接同语言参考文档。常用术语见
-[术语表](tspi-research-kernel/references/glossary.zh-CN.md)。
+[术语表](tspi-research-state/references/glossary.zh-CN.md)。

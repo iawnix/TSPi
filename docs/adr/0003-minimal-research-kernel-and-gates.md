@@ -7,7 +7,7 @@
 
 ## Decision
 
-`ResearchKernel` is the transaction and integrity boundary for one canonical
+`ResearchState` is the transaction and integrity boundary for one canonical
 `ResearchMap`. The map is a typed aggregate serialized in
 `research_map/context.json`; `memory/index.json` is only a Kernel-owned bounded
 metadata/lifecycle projection. Retired SQLite/JSON files are diagnostic inputs,

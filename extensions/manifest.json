@@ -2,43 +2,98 @@
   "schema_version": "tspi-extension/1",
   "name": "tspi-chemical",
   "version": "0.17.0",
-  "skills": [],
+  "skills": [
+    {
+      "name": "tspi-render",
+      "path": "tspi-render/.",
+      "sha256": "sha256:711a034cbb8d8396144c579dc68e95bd022145ac3e5d21710253bbd2f548b8ca"
+    },
+    {
+      "name": "tspi-report",
+      "path": "tspi-report/.",
+      "sha256": "sha256:45632e3c572c356d2b994ea642a02ad45fcd34f85f04bc49802cce4d72c2e2e9"
+    },
+    {
+      "name": "tspi-notify",
+      "path": "tspi-notify/.",
+      "sha256": "sha256:17506bac7916e738173f2c491264119a92cdce55e4f64d10b46b81c1ead760a6"
+    }
+  ],
   "providers": [
     {
       "id": "artifact_seed",
       "version": "1",
       "kind": "harness",
-      "descriptor": "tspi-chemical/providers/artifact_seed.json"
+      "descriptor": "tspi-chemical/providers/artifact_seed.json",
+      "entry": "tspi-chemical/providers/chemical_provider.py",
+      "sha256": "sha256:35342370654f704c40304d0e085d97f8c70327449525dbaecd83d97b5659c1f4"
     },
     {
       "id": "chemical.analysis",
       "version": "1",
       "kind": "analysis",
-      "descriptor": "tspi-chemical/providers/chemical.analysis.json"
+      "descriptor": "tspi-chemical/providers/chemical.analysis.json",
+      "entry": "tspi-chemical/providers/chemical_provider.py",
+      "sha256": "sha256:35342370654f704c40304d0e085d97f8c70327449525dbaecd83d97b5659c1f4"
     },
     {
       "id": "crest",
       "version": "1",
       "kind": "compute",
-      "descriptor": "tspi-chemical/providers/crest.json"
+      "descriptor": "tspi-chemical/providers/crest.json",
+      "entry": "tspi-chemical/providers/chemical_provider.py",
+      "sha256": "sha256:35342370654f704c40304d0e085d97f8c70327449525dbaecd83d97b5659c1f4"
     },
     {
       "id": "gaussian",
       "version": "1",
       "kind": "compute",
-      "descriptor": "tspi-chemical/providers/gaussian.json"
+      "descriptor": "tspi-chemical/providers/gaussian.json",
+      "entry": "tspi-chemical/providers/chemical_provider.py",
+      "sha256": "sha256:35342370654f704c40304d0e085d97f8c70327449525dbaecd83d97b5659c1f4"
     },
     {
       "id": "pyscf",
       "version": "1",
       "kind": "compute",
-      "descriptor": "tspi-chemical/providers/pyscf.json"
+      "descriptor": "tspi-chemical/providers/pyscf.json",
+      "entry": "tspi-chemical/providers/chemical_provider.py",
+      "sha256": "sha256:35342370654f704c40304d0e085d97f8c70327449525dbaecd83d97b5659c1f4"
     },
     {
       "id": "xtb",
       "version": "1",
       "kind": "compute",
-      "descriptor": "tspi-chemical/providers/xtb.json"
+      "descriptor": "tspi-chemical/providers/xtb.json",
+      "entry": "tspi-chemical/providers/chemical_provider.py",
+      "sha256": "sha256:35342370654f704c40304d0e085d97f8c70327449525dbaecd83d97b5659c1f4"
+    },
+    {
+      "id": "artifact_render",
+      "version": "1",
+      "kind": "render",
+      "descriptor": "tspi-render/descriptors/artifact_render.json",
+      "descriptor_sha256": "sha256:799f9594f3e0e619040fe8b4a89b1dfccea5b61e7bc591e90e862a54eaa2dd02",
+      "entry": "tspi-render/providers/render_provider.py",
+      "sha256": "sha256:7e6386bf03a81ae3d3a6769d4e2d968c8d04348865224f2a74df32eb1da45ed0"
+    },
+    {
+      "id": "report_build",
+      "version": "1",
+      "kind": "report",
+      "descriptor": "tspi-report/descriptors/report_build.json",
+      "descriptor_sha256": "sha256:52391f3e457f47025611317866334cc1f514099d3ce2c4476b569514c68fe24f",
+      "entry": "tspi-report/providers/report_provider.py",
+      "sha256": "sha256:4275dfe815787c693638c4e830c5a7b0801f7b3dbdf809712ab404cf05d6949b"
+    },
+    {
+      "id": "notify_send",
+      "version": "1",
+      "kind": "notification",
+      "descriptor": "tspi-notify/descriptors/notify_send.json",
+      "descriptor_sha256": "sha256:faefb99d86bc3c9126fb7c463b5eab5adf9a686269c3d9235f3d4d3e714eae49",
+      "entry": "tspi-notify/providers/notify_provider.py",
+      "sha256": "sha256:e24846f7f249cee45dbe9325df84be70fee872314b5687d0099818cb64f221f0"
     }
   ]
 }

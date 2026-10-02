@@ -15,9 +15,10 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
-PYTHON_DISTRIBUTION = "ts-agent-kernel"
+PYTHON_DISTRIBUTION = "tspi-runtime"
 PI_PACKAGE = "@iawnix/ts-agent"
-PYTHON_PACKAGE_NAME = "ts_agent"
+PYTHON_PACKAGE_NAME = "tspi_runtime"
+PYTHON_PACKAGE_NAMES = ("tspi_runtime", "research_state", "research_memory", "research_compute")
 PYTHON_PAYLOAD_SUFFIXES = frozenset({".css", ".html", ".js", ".json", ".py", ".svg", ".toml"})
 RELEASE_MANIFEST = ".ts-agent-release.json"
 RELEASE_SCHEMA_VERSION = "ts-agent-release/2"
@@ -52,14 +53,23 @@ def build_wheel(
             if not path.is_file() or path.is_symlink():
                 raise WheelContractError(f"wheel source file is missing or unsafe: {path}")
             shutil.copy2(path, source / name)
-        package_source = root / "packages" / "ts-agent-kernel" / PYTHON_PACKAGE_NAME
-        if not package_source.is_dir() or package_source.is_symlink():
-            raise WheelContractError(f"Python package source is missing or unsafe: {package_source}")
-        shutil.copytree(
-            package_source,
-            source / "packages" / "ts-agent-kernel" / PYTHON_PACKAGE_NAME,
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", "*.egg-info"),
-        )
+        source_roots = {
+            "tspi_runtime": root / "packages" / "tspi-runtime" / "tspi_runtime",
+            "research_state": root / "packages" / "research-state" / "research_state",
+            "research_memory": root / "packages" / "research-memory" / "research_memory",
+            "research_compute": root / "packages" / "research-compute" / "research_compute",
+        }
+        destinations = {
+            "tspi_runtime": source / "packages" / "tspi-runtime" / "tspi_runtime",
+            "research_state": source / "packages" / "research-state" / "research_state",
+            "research_memory": source / "packages" / "research-memory" / "research_memory",
+            "research_compute": source / "packages" / "research-compute" / "research_compute",
+        }
+        for package_name, package_source in source_roots.items():
+            if not package_source.is_dir() or package_source.is_symlink():
+                raise WheelContractError(f"Python package source is missing or unsafe: {package_source}")
+            shutil.copytree(package_source, destinations[package_name],
+                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", "*.egg-info"))
 
         environment = dict(os.environ)
         environment.pop("PYTHONHOME", None)
@@ -133,7 +143,7 @@ def inspect_wheel(path: str | Path) -> dict[str, Any]:
                 content = archive.read(item)
                 if relative.name == "METADATA" and relative.parent.name.endswith(".dist-info"):
                     metadata_documents.append(content)
-                if relative.parts[0] == PYTHON_PACKAGE_NAME:
+                if relative.parts[0] in PYTHON_PACKAGE_NAMES:
                     if not is_python_payload_path(relative):
                         raise WheelContractError(f"wheel contains unsupported package payload: {name}")
                     records.append((relative.as_posix(), content))
@@ -145,7 +155,7 @@ def inspect_wheel(path: str | Path) -> dict[str, Any]:
     if len(metadata_documents) != 1:
         raise WheelContractError("wheel must contain exactly one dist-info/METADATA document")
     if not records:
-        raise WheelContractError("wheel contains no ts_agent package payload")
+        raise WheelContractError("wheel contains no Python package payload")
     metadata = email.parser.BytesParser().parsebytes(metadata_documents[0])
     name = metadata.get("Name")
     version = metadata.get("Version")
@@ -212,7 +222,7 @@ def validate_descriptor(value: object) -> dict[str, Any]:
         or not relative.name.endswith(".whl")
     ):
         raise WheelContractError("python_distribution.path must name one wheel under python-dist/")
-    if not relative.name.startswith(f"ts_agent_kernel-{value['version']}-"):
+    if not relative.name.startswith(f"tspi_runtime-{value['version']}-"):
         raise WheelContractError("Python wheel filename does not match the distribution version")
     if len(value["sha256"]) != 64 or any(character not in "0123456789abcdef" for character in value["sha256"]):
         raise WheelContractError("python_distribution.sha256 must be a lowercase SHA-256 digest")
@@ -238,16 +248,19 @@ def source_payload_sha256(
     package_root: str | Path,
 ) -> str:
     package_root = Path(package_root).expanduser().resolve()
-    root = package_root / "packages" / "ts-agent-kernel"
-    if not root.is_dir():
-        raise WheelContractError(f"Python source root is missing: {root}")
+    roots = {
+        "tspi_runtime": package_root / "packages" / "tspi-runtime" / "tspi_runtime",
+        "research_state": package_root / "packages" / "research-state" / "research_state",
+        "research_memory": package_root / "packages" / "research-memory" / "research_memory",
+        "research_compute": package_root / "packages" / "research-compute" / "research_compute",
+    }
     records: list[tuple[str, bytes]] = []
-    for path in sorted(root.rglob("*")):
-        if not path.is_file() or path.is_symlink():
-            continue
-        relative = PurePosixPath(path.relative_to(root).as_posix())
-        if is_python_payload_path(relative):
-            records.append((relative.as_posix(), path.read_bytes()))
+    for name, root in roots.items():
+        if not root.is_dir(): raise WheelContractError(f"Python source root is missing: {root}")
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path.is_symlink(): continue
+            relative = PurePosixPath(name) / PurePosixPath(path.relative_to(root).as_posix())
+            if is_python_payload_path(relative): records.append((relative.as_posix(), path.read_bytes()))
     if not records:
         raise WheelContractError(f"Python source payload is empty: {root}")
     return payload_records_sha256(records)
@@ -272,7 +285,7 @@ def package_identity(package_root: str | Path) -> dict[str, str]:
 def is_python_payload_path(path: PurePosixPath) -> bool:
     return (
         bool(path.parts)
-        and path.parts[0] == PYTHON_PACKAGE_NAME
+        and path.parts[0] in PYTHON_PACKAGE_NAMES
         and (len(path.parts) < 2 or path.parts[1] != "web")
         and "__pycache__" not in path.parts
         and not any(part.endswith(".egg-info") for part in path.parts)

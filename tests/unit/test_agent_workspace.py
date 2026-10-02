@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ts_agent.research.agent_workspace import (
+from research_state.agent_workspace import (
     ADMITTED,
     ADMISSION_PENDING,
     CONTEXT_SCHEMA,
@@ -19,8 +19,8 @@ from ts_agent.research.agent_workspace import (
     read_liveness,
     turn,
 )
-from ts_agent.api import execute
-from ts_agent.runtime.workspace_mode import initialize_workspace
+from tspi_runtime.api import execute
+from tspi_runtime.runtime.workspace_mode import initialize_workspace
 
 
 def _workspace(root: Path) -> None:
@@ -100,7 +100,7 @@ def test_admission_updates_manifest_and_kernel_admission_flag(tmp_path: Path) ->
     admit_workspace(tmp_path, {"authority": "host"})
     manifest = json.loads((tmp_path / "workspace_manifest.json").read_text(encoding="utf-8"))
     assert manifest["state"] == "ready"
-    assert manifest["research_kernel"]["admission_required"] is False
+    assert manifest["research_state"]["admission_required"] is False
 
 
 def test_manifest_state_must_match_canonical_admission_state(tmp_path: Path) -> None:
@@ -109,7 +109,7 @@ def test_manifest_state_must_match_canonical_admission_state(tmp_path: Path) -> 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["state"] = "ready"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    with pytest.raises(AgentWorkspaceError, match="workspace_research_kernel_mismatch"):
+    with pytest.raises(AgentWorkspaceError, match="workspace_research_state_mismatch"):
         read_context(tmp_path)
 
 
@@ -194,7 +194,7 @@ def test_new_workspace_requires_a_bound_canonical_manifest(tmp_path: Path) -> No
     manifest_path.write_text(
         json.dumps(
             {
-                "schema_version": "research_agent_workspace_1",
+                "schema_version": "research_state_workspace_1",
                 "workspace_id": "workspace_python_unit",
                 "workspace_mode": "research",
                 "state": "admission_pending",

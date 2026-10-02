@@ -25,7 +25,7 @@ const socketPath = join(resolve(options.directory), `${options["server-id"]}.soc
 // uses the same server-id-derived socket name, so keep its coordinator and
 // public socket in a private child directory to avoid endpoint collisions.
 const piServerDirectory = join(resolve(options.directory), "pi");
-const python = process.env.TS_AGENT_PYTHON || "python3";
+const python = process.env.TSPI_PYTHON || "python3";
 const provider = options.provider ?? process.env.TSPI_PROVIDER;
 const model = options.model ?? process.env.TSPI_MODEL;
 const backendMode = (process.env.TSPI_HOST_BACKEND || "harness").trim().toLowerCase();

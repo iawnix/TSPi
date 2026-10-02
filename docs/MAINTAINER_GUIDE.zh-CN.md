@@ -50,7 +50,7 @@ bootstrap 时明确拒绝。
 
 ## 工具合同维护
 
-后端 adapter 位于 `packages/ts-agent-kernel/ts_agent/backends/`，只能解析自己的格式。
+后端 adapter 位于 `packages/tspi-runtime/tspi_runtime/backends/`，只能解析自己的格式。
 每个 artifact 都必须有 digest 和安全的工作区相对路径。远程作业记录 scheduler、job
 ID、命令和收集结果，不覆盖已有证据。
 

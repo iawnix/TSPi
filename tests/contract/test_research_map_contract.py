@@ -7,12 +7,12 @@ import pytest
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
-from ts_agent.research.registry import (
+from research_state.registry import (
     reconcile_workspace_registry,
     workspace_id_for,
 )
-from ts_agent.research.web import ResearchWebError, handle_request, register_sources
-from ts_agent.runtime.workspace_mode import admit_research_workspace, initialize_workspace
+from research_state.web import ResearchWebError, handle_request, register_sources
+from tspi_runtime.runtime.workspace_mode import admit_research_workspace, initialize_workspace
 
 
 ROOT = Path(__file__).resolve().parents[2]

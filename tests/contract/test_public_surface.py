@@ -24,7 +24,7 @@ def test_scientific_vocabulary_and_execution_terms_remain_open() -> None:
 
 
 def test_private_code_and_historical_docs_are_outside_public_lint(tmp_path: Path) -> None:
-    (tmp_path / "README.md").write_text("Use ts_review.", encoding="utf-8")
+    (tmp_path / "README.md").write_text("Use review.", encoding="utf-8")
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs/old-contract.md").write_text("Retired required_gates.", encoding="utf-8")
     assert check_public_surface(tmp_path) == []

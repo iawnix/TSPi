@@ -11,23 +11,23 @@ from tests.support.workspace_helpers import (
     read_filesystem_context,
     start_research_node,
 )
-from ts_agent.backends.base import BackendTask
-from ts_agent.backends.crest import prepare_crest
-from ts_agent.backends.xtb import (
+from tspi_runtime.backends.base import BackendTask
+from tspi_runtime.backends.crest import prepare_crest
+from tspi_runtime.backends.xtb import (
     parse_vibrational_spectrum,
     parse_xtb_artifacts,
     prepare_xtb,
 )
-from ts_agent.backends.xtb_scan import parse_xtb_scan_control
-from ts_agent.compute import (
+from tspi_runtime.backends.xtb_scan import parse_xtb_scan_control
+from research_compute import (
     ComputeContractError,
     create_calculation_intent,
     list_calculation_artifacts,
     parse_calculation,
     prepare_calculation,
 )
-from ts_agent.compute.task_validation import validate_parsed_task
-from ts_agent.io import sha256_json
+from research_compute.task_validation import validate_parsed_task
+from tspi_runtime.io import sha256_json
 
 
 def test_xtb_prepares_typed_task_matrix() -> None:
