@@ -23,7 +23,7 @@ from urllib.parse import quote
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_RELATIVE = Path(".pi/research-agent/server.json")
 CONFIG_SCHEMA = "research_agent_server/1"
-NODE_SERVER = ROOT / "apps/research-agent-app-server/server.mjs"
+NODE_SERVER = ROOT / "apps/app-server/server.mjs"
 
 
 class LauncherError(ValueError):

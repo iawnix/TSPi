@@ -6,8 +6,8 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 import { createFacetHost } from "@earendil-works/chord";
-import { RunHistoryBrowser, runRecords } from "../../../extensions/pi/tui-package/src/runs.ts";
-import { WrappedDocumentViewer } from "../../../extensions/pi/tui-package/src/document-viewer.ts";
+import { RunHistoryBrowser, runRecords } from "../../../packages/agent-ui/tui-package/src/runs.ts";
+import { WrappedDocumentViewer } from "../../../packages/agent-ui/tui-package/src/document-viewer.ts";
 import {
   createTspiPackageRootRestoreFacet,
   withTspiPackageRootHidden,

@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "@iawnix/tspi"
 PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 PROJECT_LICENSE = "Apache-2.0"
-THEME_ENTRIES = ["./themes/ts-theme.json"]
+THEME_ENTRIES = ["./packages/agent-ui/themes/ts-theme.json"]
 EXTENSION_ENTRIES: list[str] = []
 REMOVED_PREFIXES = (
     "agent-core/",

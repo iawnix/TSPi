@@ -36,8 +36,8 @@ export async function createTspiNativeClientFacet({ sourceRoot, packageRoot = pr
     fromSource("packages/coding-agent/src/experimental/services/presentation-layout.ts"),
     fromSource("packages/coding-agent/src/experimental/services/presentation-ui.ts"),
     fromSource("packages/coding-agent/src/experimental/services/slash-commands-provider.ts"),
-    import("../../extensions/pi/tui-package/src/runs.ts"),
-    import("../../extensions/pi/tui-package/src/document-viewer.ts"),
+    import("../../packages/agent-ui/tui-package/src/runs.ts"),
+    import("../../packages/agent-ui/tui-package/src/document-viewer.ts"),
   ]);
   const root = typeof packageRoot === "string" && packageRoot.length > 0 ? packageRoot : process.cwd();
   const python = process.env.TSPI_WORKSPACE_PYTHON || process.env.TSPI_PYTHON || "python3";

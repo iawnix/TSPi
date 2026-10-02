@@ -12,7 +12,7 @@ import { boundWorkspaceRoot } from "../../packages/agent-runtime/host-api/worksp
 import { wrapToolWithEnvelope } from "../../packages/agent-runtime/host-api/tool-envelope.mjs";
 import { checkpointFollowUp } from "../../packages/agent-runtime/host-api/lifecycle.mjs";
 import { createComputeTool } from "./pi-native-compute.mjs";
-import { execute_provider } from "./provider-dispatcher.mjs";
+import { execute_provider } from "../../packages/agent-runtime/providers/dispatcher.mjs";
 import { createNotifyTool } from "./pi-native-notify.mjs";
 import { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
 import { readWorkspaceManifest, readWorkspaceMode } from "./workspace-mode-tools.mjs";
@@ -47,7 +47,7 @@ async function runFirstPartyProvider(extension, providerId, input, parameters, c
   const result = await execute_provider({
     descriptor,
     provider_id: providerId,
-    entry: join(extensionRoot, "providers", `${extension.replace("tspi-", "")}_provider.py`),
+    entry: join(extensionRoot, "providers", `${extension}_provider.py`),
     input,
     parameters,
     context,
@@ -524,7 +524,7 @@ export function createRenderTool() {
       try {
         await mkdir(outputDirectory, { recursive: true, mode: 0o700 });
         const raw = await runFirstPartyProvider(
-          "tspi-render", "artifact_render",
+          "render", "artifact_render",
           { workspace_root: root, operation: request.operation, artifact_paths: request.artifacts.map((item) => item.path), output_path: request.outputPath },
           {}, { workspace_root: root }, context?.abortSignal,
         );
@@ -595,7 +595,7 @@ export function createReportTool() {
       });
       try {
         const raw = await runFirstPartyProvider(
-          "tspi-report", "report_build",
+          "report", "report_build",
           { workspace_root: root, output_path: request.packagePath, asset_artifact_ids: request.assetArtifactIds },
           { package: true, package_name: request.packageName, exclude_activity_refs: [journal.activityRef] },
           { workspace_root: root }, context?.abortSignal,
@@ -691,8 +691,8 @@ function createChemicalToolFactories(_options = {}) {
 }
 
 function exposeTools(tools) {
-  // Expose semantic canonical names to the Agent. The ts_* source factories
-  // remain private implementation details and are deliberately not duplicated
+  // Expose semantic canonical names to the Agent. Source factories remain
+  // private implementation details and are deliberately not duplicated
   // in the active inventory (which would inflate every prompt schema).
   return createPublicToolAliases(tools).map(wrapToolWithEnvelope);
 }

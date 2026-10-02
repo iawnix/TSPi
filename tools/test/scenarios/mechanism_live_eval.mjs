@@ -23,8 +23,8 @@ const scratch = await mkdtemp(join(tmpdir(), "tspi-mechanism-eval-"));
 process.env.TSPI_NATIVE_WRITES = "1";
 process.env.TSPI_PACKAGE_ROOT = repository;
 const skills = (await Promise.all([
-  "tspi-mechanism-reasoning", "tspi-ts-candidate-generation", "tspi-ts-validation",
-  "tspi-irc", "tspi-energetics",
+  "mechanism-reasoning", "candidate-generation", "validation",
+  "irc", "energetics",
 ].map(name => readFile(join(repository, `skills/${name}/SKILL.md`), "utf8")))).join("\n\n");
 const tools = [
   [createStateTool(), "research_read"],

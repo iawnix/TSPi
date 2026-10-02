@@ -1,0 +1,123 @@
+{
+  "schema_version": "tspi-extension/1",
+  "name": "chemical",
+  "version": "0.17.0",
+  "skills": [
+    {
+      "name": "candidate-generation",
+      "path": "skills/candidate-generation",
+      "sha256": "sha256:77fccb42425c7a18d145cedbdd4213f69899f2cbcdfc5b125783552d32adc592"
+    },
+    {
+      "name": "validation",
+      "path": "skills/validation",
+      "sha256": "sha256:726008fc109e0ae82621716723b7af4b96b4d997e2ff5bfe343e87cce5dc270e"
+    },
+    {
+      "name": "irc",
+      "path": "skills/irc",
+      "sha256": "sha256:bdc668b085b9afd010f8942ec283bd37fd1d092dfbce6afc826cd755c192a33b"
+    },
+    {
+      "name": "energetics",
+      "path": "skills/energetics",
+      "sha256": "sha256:3aa3dc906a95664494547e32cf5cc4c8da9b328c1753912feff8589a1407f0d7"
+    },
+    {
+      "name": "method-selection",
+      "path": "skills/method-selection",
+      "sha256": "sha256:dba9d4654d068ec2624ccbc5faea0f070a8453216411febd339a408cec145ff4"
+    },
+    {
+      "name": "cf22d",
+      "path": "skills/cf22d",
+      "sha256": "sha256:a1be72b691bcda449523d28b651d98896c1a45d6b18ae4d9626af9b4b4328ca1"
+    },
+    {
+      "name": "xtb",
+      "path": "skills/xtb",
+      "sha256": "sha256:7b2b51a63613831f316fc7439361f21475914c49806d3219485f0116ea59757a"
+    },
+    {
+      "name": "crest",
+      "path": "skills/crest",
+      "sha256": "sha256:ae33249838ea6a8960559e32a0311ed4aeb68c6fafe6a85eb487241064231ec1"
+    },
+    {
+      "name": "qbics",
+      "path": "skills/qbics",
+      "sha256": "sha256:34ff6e8ce94c3e772c1808bd5c62cf6dd0f8922e40ec83e0396b9d92f619fdb3"
+    },
+    {
+      "name": "gaussian",
+      "path": "skills/gaussian",
+      "sha256": "sha256:66690babb831fb7e114ae8f41bc24720c4e35a00f266df3c8eaf540b31674447"
+    },
+    {
+      "name": "chemical-input",
+      "path": "skills/chemical-input",
+      "sha256": "sha256:79babe92bc92d6aa0d4cf3912e9987a9676c18578dea38c252d17bc5f55cd55c"
+    },
+    {
+      "name": "mechanism-reasoning",
+      "path": "skills/mechanism-reasoning",
+      "sha256": "sha256:584a773552eafc60e272f163c82e58beb2ce30e799036973491691a58cae7aa4"
+    }
+  ],
+  "providers": [
+    {
+      "id": "artifact_seed",
+      "version": "1",
+      "kind": "harness",
+      "descriptor": "providers/artifact_seed.json",
+      "entry": "providers/chemical_provider.py",
+      "sha256": "sha256:35342370654f704c40304d0e085d97f8c70327449525dbaecd83d97b5659c1f4",
+      "descriptor_sha256": "sha256:4b8c88337dfeb0f8ce69e026be7b7c46aa8508d944f0010d328371019086a5bb"
+    },
+    {
+      "id": "chemical.analysis",
+      "version": "1",
+      "kind": "analysis",
+      "descriptor": "providers/chemical.analysis.json",
+      "entry": "providers/chemical_provider.py",
+      "sha256": "sha256:35342370654f704c40304d0e085d97f8c70327449525dbaecd83d97b5659c1f4",
+      "descriptor_sha256": "sha256:92d5bc7bcd9d74d0fdbfdafa206ee1d4d670736e4e8f62e796bffce0f5b1bbda"
+    },
+    {
+      "id": "crest",
+      "version": "1",
+      "kind": "compute",
+      "descriptor": "providers/crest.json",
+      "entry": "providers/chemical_provider.py",
+      "sha256": "sha256:35342370654f704c40304d0e085d97f8c70327449525dbaecd83d97b5659c1f4",
+      "descriptor_sha256": "sha256:a36adec4de8e2bfb5a9ffbc69b245c559ab4d123765fff7b35736413420250fe"
+    },
+    {
+      "id": "gaussian",
+      "version": "1",
+      "kind": "compute",
+      "descriptor": "providers/gaussian.json",
+      "entry": "providers/chemical_provider.py",
+      "sha256": "sha256:35342370654f704c40304d0e085d97f8c70327449525dbaecd83d97b5659c1f4",
+      "descriptor_sha256": "sha256:b7a49dad939cacb7fa846db70177d275501382782bd80ab900edc966f1054489"
+    },
+    {
+      "id": "pyscf",
+      "version": "1",
+      "kind": "compute",
+      "descriptor": "providers/pyscf.json",
+      "entry": "providers/chemical_provider.py",
+      "sha256": "sha256:35342370654f704c40304d0e085d97f8c70327449525dbaecd83d97b5659c1f4",
+      "descriptor_sha256": "sha256:e44423ffaf4c8a0fa63f2dda505e2dc5519895321cebcca7036465b7c36bda89"
+    },
+    {
+      "id": "xtb",
+      "version": "1",
+      "kind": "compute",
+      "descriptor": "providers/xtb.json",
+      "entry": "providers/chemical_provider.py",
+      "sha256": "sha256:35342370654f704c40304d0e085d97f8c70327449525dbaecd83d97b5659c1f4",
+      "descriptor_sha256": "sha256:93588ec1d36b92b6901b7a432d53d82c6a69b1bcee24c4b60bdbed061ea6131b"
+    }
+  ]
+}

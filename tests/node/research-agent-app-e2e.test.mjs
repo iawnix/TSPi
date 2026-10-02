@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { create_app_server } from "../../apps/research-agent-app-server/index.mjs";
+import { create_app_server } from "../../apps/app-server/index.mjs";
 import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
 import { create_turn_router } from "../../packages/agent-core/turn_router.mjs";
 import { create_workspace_catalog } from "../../packages/agent-core/workspace_catalog.mjs";

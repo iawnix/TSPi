@@ -74,7 +74,7 @@ SERVICE_CONFIG_SCHEMA = "tspi-service/1"
 SERVICE_CONFIG_RELATIVE = Path(".pi/tspi/service.json")
 REMOTE_ENVIRONMENT_ENV = "TS_REMOTE_ENVIRONMENT"
 PI_AGENT_SETTINGS_RELATIVE = Path(".pi/agent/settings.json")
-TSPI_THEME_RELATIVE = Path("themes/ts-theme.json")
+TSPI_THEME_RELATIVE = Path("packages/agent-ui/themes/ts-theme.json")
 TSPI_THEME_NAME = "ts-theme"
 EMAIL_ADDRESS = re.compile(r"^[^@\s]+@[^@\s]+$")
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -603,7 +603,7 @@ def _restore_native_pi_settings(installation: Installation) -> None:
                 relative = candidate.resolve().relative_to(package_home)
             except (OSError, ValueError):
                 return False
-            return relative.parts[-3:] == ("agent", "themes", "ts-theme.json")
+            return relative.parts[-5:] == ("agent", "packages", "agent-ui", "themes", "ts-theme.json")
 
         filtered_themes = [theme for theme in themes if not is_managed_theme(theme)]
         if filtered_themes != themes:
@@ -840,7 +840,7 @@ def check_remote(installation: Installation) -> int:
     completed = subprocess.run(
         [
             sys.executable,
-            str(installation.package_root / "scripts" / "compute.py"),
+            str(installation.package_root / "apps" / "agent-cli" / "compute.py"),
             "remote-diagnostic",
             "--mode",
             "doctor",

@@ -18,12 +18,12 @@ from tests.support.runtime_helpers import write_test_runtime_manifest, write_tes
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL_ROOT = ROOT / "skills" / "tspi-research-state"
-ORCHESTRATION_SKILL_ROOT = ROOT / "skills" / "tspi-orchestration"
+SKILL_ROOT = ROOT / "skills" / "research-state"
+ORCHESTRATION_SKILL_ROOT = ROOT / "skills" / "orchestration"
 RUNTIME_ROOT = ROOT / "packages" / "agent-runtime"
 AGENTS_ROOT = RUNTIME_ROOT / "agents"
 PYTHON_PACKAGE = ROOT / "packages" / "tspi-runtime" / "tspi_runtime"
-THEME_PATH = ROOT / "themes" / "ts-theme.json"
+THEME_PATH = ROOT / "packages" / "agent-ui" / "themes" / "ts-theme.json"
 TSPI_LAUNCHER = ROOT / "ResearchAgent"
 GENERATION_BRAND = re.compile(
     r"(?i)(?<![A-Za-z0-9])v[2-5](?![A-Za-z0-9])"
@@ -65,8 +65,8 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
         '{"name":"@iawnix/tspi","version":"0.10.0"}\n',
         encoding="utf-8",
     )
-    (package_root / "themes").mkdir()
-    shutil.copy2(ROOT / "themes" / "ts-theme.json", package_root / "themes" / "ts-theme.json")
+    (package_root / "packages" / "agent-ui" / "themes").mkdir(parents=True)
+    shutil.copy2(THEME_PATH, package_root / "packages" / "agent-ui" / "themes" / "ts-theme.json")
     app_server = package_root / "apps" / "app-server" / "pi-app-server.mjs"
     app_server.parent.mkdir(parents=True)
     app_server.write_text("// test app server entry\n", encoding="utf-8")
@@ -119,13 +119,21 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     shutil.copy2(TSPI_LAUNCHER, package_root / "ResearchAgent")
     (package_root / "ResearchAgent").chmod(0o755)
     (package_root / "scripts").mkdir()
-    for name in ("_bootstrap.py", "tspi_launcher.py", "compute.py"):
-        shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
+    shutil.copy2(ROOT / "scripts" / "_bootstrap.py", package_root / "scripts" / "_bootstrap.py")
+    (package_root / "apps" / "agent-cli").mkdir(parents=True)
+    for name in ("tspi_launcher.py", "compute.py"):
+        shutil.copy2(ROOT / "apps" / "agent-cli" / name, package_root / "apps" / "agent-cli" / name)
     shutil.copytree(
         ROOT / "packages" / "tspi-runtime",
         package_root / "packages" / "tspi-runtime",
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
     )
+    for package_name in ("research-state", "research-memory", "research-compute"):
+        shutil.copytree(
+            ROOT / "packages" / package_name,
+            package_root / "packages" / package_name,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
+        )
     shutil.copy2(ROOT / "pyproject.toml", package_root / "pyproject.toml")
     shutil.copy2(ROOT / "environment.yml", package_root / "environment.yml")
     shutil.copy2(ROOT / "requirements-runtime.txt", package_root / "requirements-runtime.txt")
@@ -247,28 +255,31 @@ def test_public_skill_uses_nested_pi_skill_layout() -> None:
 
 def test_public_skill_family_matches_the_owned_capabilities() -> None:
     expected = {
-        "tspi-research-state",
-        "tspi-orchestration",
-        "tspi-ts-candidate-generation",
-        "tspi-ts-validation",
-        "tspi-irc",
-        "tspi-energetics",
-        "tspi-method-selection",
+        "research-state",
+        "orchestration",
+        "candidate-generation",
+        "validation",
+        "irc",
+        "energetics",
+        "method-selection",
         "cf22d",
-        "tspi-xtb",
-        "tspi-crest",
-        "tspi-qbics",
-        "tspi-gaussian",
-        "tspi-report",
-        "tspi-render",
-        "tspi-email",
-        "tspi-mechanism-reasoning",
-        "tspi-chemical-input",
+        "xtb",
+        "crest",
+        "qbics",
+        "gaussian",
+        "report",
+        "render",
+        "email",
+        "mechanism-reasoning",
+        "chemical-input",
     }
     actual = {path.name for path in (ROOT / "skills").iterdir() if path.is_dir()}
+    actual |= {path.name for root in (ROOT / "extensions").glob("*/skills") for path in root.iterdir() if path.is_dir()}
+    actual |= {path.name for path in (ROOT / "extensions").iterdir() if (path / "SKILL.md").is_file()}
     assert actual == expected
     for name in expected:
-        skill = ROOT / "skills" / name
+        skill = next((candidate for candidate in [ROOT / "skills" / name, ROOT / "extensions" / name, ROOT / "extensions" / "chemical" / "skills" / name] if candidate.is_dir()), None)
+        assert skill is not None
         assert (skill / "SKILL.md").is_file()
         assert (skill / "SKILL.zh-CN.md").is_file()
 
@@ -310,10 +321,10 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert (RUNTIME_ROOT / "host-api" / "commands.mjs").is_file()
     assert (RUNTIME_ROOT / "host-api" / "tools.mjs").is_file()
     assert (RUNTIME_ROOT / "host-api" / "model-readiness.ts").is_file()
-    assert (ROOT / "extensions" / "server" / "tspi-tools.mjs").is_file()
-    assert not (ROOT / "extensions" / "pi" / "runtime.ts").exists()
+    assert (ROOT / "extensions" / "server" / "tools.mjs").is_file()
+    assert not (ROOT / "packages" / "agent-ui" / "runtime.ts").exists()
     for name in ("research", "review", "compute", "artifacts"):
-        assert not (ROOT / "extensions" / "pi" / name).exists()
+        assert not (ROOT / "packages" / "agent-ui" / name).exists()
     for removed in ("adapters", "core", "shared", "ts-workflow-control", "ts-workflow-ui", "ts-workflow-review", "ts-workflow-compute", "ts-workflow-artifacts"):
         assert not (ROOT / "extensions" / removed).exists()
     for name in ("agent-protocol.cjs", "fact-kinds.cjs", "failure-taxonomy.cjs", "run-journal.cjs", "session-lifecycle.cjs"):
@@ -332,11 +343,10 @@ def test_native_harness_is_the_only_public_pi_tool_entrypoint() -> None:
     manifest = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert manifest["pi"]["extensions"] == []
     assert (ROOT / "extensions" / "server" / "extensions.json").is_file()
-    assert not list((ROOT / "extensions" / "pi").glob("**/index.ts"))
-    assert (PYTHON_PACKAGE / "research" / "kernel.py").is_file()
-    assert (PYTHON_PACKAGE / "research" / "model.py").is_file()
-    assert (PYTHON_PACKAGE / "workspace" / "bootstrap.py").is_file()
-    assert (PYTHON_PACKAGE / "workspace" / "engine.py").is_file()
+    assert not list((ROOT / "packages" / "agent-ui").glob("**/index.ts"))
+    assert (ROOT / "packages" / "research-state" / "research_state" / "agent_workspace.py").is_file()
+    assert (ROOT / "packages" / "research-state" / "research_state" / "model.py").is_file()
+    assert (ROOT / "packages" / "research-state" / "research_state" / "workspace.py").is_file()
     assert not list((PYTHON_PACKAGE / "workspace").glob("*_v[0-9]*.py"))
     assert not (PYTHON_PACKAGE / "workspace" / "validators").exists()
     assert not any(path.is_dir() for path in ROOT.glob("ts_*"))
@@ -355,13 +365,13 @@ def test_child_agent_sources_do_not_embed_skills_or_artifact_operators() -> None
 def test_package_manifest_exposes_the_public_skill_family_and_allowlisted_runtime() -> None:
     manifest = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert manifest["pi"]["skills"] == SKILL_ENTRIES
-    assert manifest["pi"]["themes"] == ["./themes/ts-theme.json"]
+    assert manifest["pi"]["themes"] == ["./packages/agent-ui/themes/ts-theme.json"]
     assert manifest["files"] == PACKAGE_FILES
     assert manifest["private"] is True
     assert "tests/" not in manifest["files"]
     assert "docs/*.md" in manifest["files"]
-    assert "packages/tspi-runtime/tspi_runtime/research/*.py" in manifest["files"]
-    assert "packages/tspi-runtime/tspi_runtime/projection/*.py" not in manifest["files"]
+    assert "packages/research-state/research_state/*.py" in manifest["files"]
+    assert "packages/research-memory/research_memory/*.py" in manifest["files"]
     assert "python-dist/*.whl" in manifest["files"]
     assert "scripts/_runtime_install.py" in manifest["files"]
     assert "scripts/_wheel.py" in manifest["files"]
@@ -411,7 +421,7 @@ def test_tspi_shell_is_a_thin_executable_shim() -> None:
     source = TSPI_LAUNCHER.read_text(encoding="utf-8")
     assert completed.returncode == 0, completed.stderr
     assert TSPI_LAUNCHER.stat().st_mode & 0o111
-    assert (ROOT / "scripts" / "provider_runner.py").stat().st_mode & 0o111
+    assert (ROOT / "apps" / "agent-cli" / "provider_runner.py").stat().st_mode & 0o111
     assert len(source.splitlines()) <= 20
     assert "apps/agent-cli/tspi_launcher.py" in source
     assert "TSPI_INSTALL_ROOT" in source
@@ -450,7 +460,7 @@ command = ["xtb"]
 ''',
         encoding="utf-8",
     )
-    diagnostic = _installed_package_root(install_root) / "scripts" / "compute.py"
+    diagnostic = _installed_package_root(install_root) / "apps" / "agent-cli" / "compute.py"
     diagnostic.write_text("raise SystemExit('remote probe must not run')\n", encoding="utf-8")
     write_test_runtime_manifest(_installed_package_root(install_root), install_root)
     fake_pi = _fake_pi(
@@ -552,14 +562,12 @@ def test_tspi_requires_an_installed_release(tmp_path: Path) -> None:
     shutil.copy2(TSPI_LAUNCHER, launcher)
     launcher.chmod(0o755)
     (install_root / "scripts").mkdir()
-    for name in ("_bootstrap.py", "tspi_launcher.py"):
-        shutil.copy2(ROOT / "scripts" / name, install_root / "scripts" / name)
+    shutil.copy2(ROOT / "scripts" / "_bootstrap.py", install_root / "scripts" / "_bootstrap.py")
 
     completed = _run_tspi(launcher, "--workspace", "release-required")
 
     assert completed.returncode == 1
-    assert "no installed Agent component" in completed.stderr
-    assert "install a validated Research Agent package" in completed.stderr
+    assert "launcher is missing from the active package" in completed.stderr
 
 
 def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:
@@ -573,7 +581,7 @@ def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:
         f'default_environment = "cluster"\n[environments.cluster]\nkind = "remote"\nssh_host = "cluster-login"\nssh_config = "{ssh_config}"\nscheduler = "torque"\nremote_root = "/remote/ts"\nallowed_queues = ["batch"]\nmax_nodes = 1\n[environments.cluster.backends.xtb]\ncommand = ["xtb"]\n',
         encoding="utf-8",
     )
-    diagnostic = _installed_package_root(install_root) / "scripts" / "compute.py"
+    diagnostic = _installed_package_root(install_root) / "apps" / "agent-cli" / "compute.py"
     invocation = tmp_path / "diagnostic-argv.json"
     diagnostic.write_text(
         "import json, sys\n"
@@ -631,7 +639,7 @@ command = ["xtb"]
 ''',
         encoding="utf-8",
     )
-    diagnostic = _installed_package_root(install_root) / "scripts" / "compute.py"
+    diagnostic = _installed_package_root(install_root) / "apps" / "agent-cli" / "compute.py"
     invocation = tmp_path / "diagnostic-argv.json"
     diagnostic.write_text(
         "import json, sys\n"
@@ -682,7 +690,7 @@ def test_tspi_remote_diagnostic_preserves_structured_failure(tmp_path: Path) -> 
         f'default_environment = "cluster"\n[environments.cluster]\nkind = "remote"\nssh_host = "cluster-login"\nssh_config = "{ssh_config}"\nscheduler = "torque"\nremote_root = "/remote/ts"\nallowed_queues = ["batch"]\nmax_nodes = 1\n[environments.cluster.backends.xtb]\ncommand = ["xtb"]\n',
         encoding="utf-8",
     )
-    diagnostic = _installed_package_root(install_root) / "scripts" / "compute.py"
+    diagnostic = _installed_package_root(install_root) / "apps" / "agent-cli" / "compute.py"
     diagnostic.write_text(
         "print('{\"ok\": false, \"error\": {\"class\": \"ssh_unreachable\"}}')\nraise SystemExit(3)\n",
         encoding="utf-8",

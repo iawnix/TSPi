@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { create_app_server } from "../../apps/research-agent-app-server/app_server.mjs";
+import { create_app_server } from "../../apps/app-server/app_server.mjs";
 import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
 import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 

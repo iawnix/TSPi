@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { create_app_server } from "../../apps/research-agent-app-server/app_server.mjs";
+import { create_app_server } from "../../apps/app-server/app_server.mjs";
 import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
 
 function nativeHost() {

@@ -77,8 +77,25 @@ def _check_links(path: Path, text: str) -> list[str]:
 
 def validate_skills(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
-    skills_root = root / "skills"
-    for skill_root in sorted(path for path in skills_root.iterdir() if path.is_dir()):
+    skill_roots = [path for path in (root / "skills").iterdir() if path.is_dir()]
+    for extension_root in (root / "extensions").iterdir():
+        if not extension_root.is_dir() or extension_root.name == "server":
+            continue
+        skill_roots.extend(path for path in extension_root.rglob("*") if path.is_dir() and (path / "SKILL.md").is_file())
+        if (extension_root / "SKILL.md").is_file():
+            skill_roots.append(extension_root)
+    seen_names: dict[str, Path] = {}
+    for skill_root in sorted(skill_roots):
+        if (skill_root / "SKILL.md").is_file():
+            try:
+                frontmatter_name = _frontmatter(skill_root / "SKILL.md").get("name")
+            except ValueError as error:
+                errors.append(str(error))
+                continue
+            if frontmatter_name in seen_names:
+                errors.append(f"duplicate Skill name {frontmatter_name}: {seen_names[frontmatter_name].relative_to(root)} and {skill_root.relative_to(root)}")
+                continue
+            seen_names[frontmatter_name] = skill_root
         english = skill_root / "SKILL.md"
         chinese = skill_root / "SKILL.zh-CN.md"
         if not english.is_file() or not chinese.is_file():
@@ -141,7 +158,8 @@ def main() -> int:
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    count = sum(1 for path in (ROOT / "skills").iterdir() if path.is_dir())
+    count = len([path for path in (ROOT / "skills").iterdir() if path.is_dir()])
+    count += sum(1 for extension_root in (ROOT / "extensions").iterdir() if extension_root.is_dir() for path in extension_root.rglob("SKILL.md"))
     print(f"skill contract check passed: {count} skills")
     return 0
 

@@ -1,0 +1,11 @@
+{
+  "name": "@iawnix/tspi-link",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./protocol.mjs",
+    "./protocol": "./protocol.mjs",
+    "./backpressure": "./backpressure.mjs"
+  }
+}

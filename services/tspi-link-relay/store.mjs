@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { isUuidV4 } from "./protocol.mjs";
+import { isUuidV4 } from "../../packages/tspi-link/protocol.mjs";
 
 const CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const DEVICE_NAME = /^[^\u0000-\u001f\u007f]{1,80}$/u;

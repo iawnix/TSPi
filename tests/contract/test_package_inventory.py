@@ -33,16 +33,16 @@ def test_required_release_members_are_in_the_npm_allowlist() -> None:
     assert "contracts/ts-web/provider-request.schema.json" in package_inventory.REQUIRED_TARBALL_FILES
     assert "contracts/ts-web/provider-response.schema.json" in package_inventory.REQUIRED_RUNTIME_FILES
     assert "contracts/ts-web/research-map-response.schema.json" in package_inventory.REQUIRED_TARBALL_FILES
-    assert not any(path.startswith("extensions/pi/") and path.endswith("/index.ts") for path in package_inventory.PACKAGE_FILES)
+    assert not any(path.startswith("packages/agent-ui/") and path.endswith("/index.ts") for path in package_inventory.PACKAGE_FILES)
     assert manifest["pi"]["extensions"] == []
     for retired in (
-        "extensions/pi/runtime.ts",
-        "extensions/pi/research/*.ts",
-        "extensions/pi/compute/*.ts",
-        "extensions/pi/review/*.ts",
-        "extensions/pi/artifacts/*.ts",
-        "extensions/pi/ui/*.ts",
-        "extensions/pi/bridge/*",
+        "packages/agent-ui/runtime.ts",
+        "packages/agent-ui/research/*.ts",
+        "packages/agent-ui/compute/*.ts",
+        "packages/agent-ui/review/*.ts",
+        "packages/agent-ui/artifacts/*.ts",
+        "packages/agent-ui/ui/*.ts",
+        "packages/agent-ui/bridge/*",
     ):
         assert retired not in package_inventory.PACKAGE_FILES
     for retired in (

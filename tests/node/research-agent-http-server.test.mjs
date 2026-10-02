@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { create_app_server } from "../../apps/research-agent-app-server/app_server.mjs";
-import { create_app_server_client, AppServerClientError } from "../../apps/research-agent-app-server/client.mjs";
-import { create_http_server } from "../../apps/research-agent-app-server/server.mjs";
+import { create_app_server } from "../../apps/app-server/app_server.mjs";
+import { create_app_server_client, AppServerClientError } from "../../apps/app-server/client.mjs";
+import { create_http_server } from "../../apps/app-server/server.mjs";
 import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
 import { create_turn_router } from "../../packages/agent-core/turn_router.mjs";
 import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";

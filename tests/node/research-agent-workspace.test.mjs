@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { create_app_server } from "../../apps/research-agent-app-server/index.mjs";
+import { create_app_server } from "../../apps/app-server/index.mjs";
 import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
 import { create_workspace_initializer, RESEARCH_CONTEXT_COLLECTIONS } from "../../packages/agent-core/workspace.mjs";
 import { close_test_research_states, create_test_research_state } from "../support/research_state_helpers.mjs";

@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
 import { create_agent_runtime_port } from "../../packages/agent-core/ports.mjs";
 import { create_pi_runtime_adapter } from "../../packages/agent-pi-adapter/index.mjs";
-import { create_app_server } from "../../apps/research-agent-app-server/index.mjs";
+import { create_app_server } from "../../apps/app-server/index.mjs";
 
 function workspace_manifest(workspace_root, workspace_mode = "research", workspace_id = "workspace_boundary") {
   const research = workspace_mode === "research";
@@ -72,7 +72,7 @@ test("Pi adapter translates Pi method names while exposing only snake_case port 
 });
 
 test("App Server source has no Pi or vendor runtime import", async () => {
-  const source = await readFile(new URL("../../apps/research-agent-app-server/app_server.mjs", import.meta.url), "utf8");
+  const source = await readFile(new URL("../../apps/app-server/app_server.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(source, /@earendil-works|from ['\"][^'\"]*\/pi(?:[-/]|['\"])/i);
 });
 

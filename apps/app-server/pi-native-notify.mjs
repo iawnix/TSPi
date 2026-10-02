@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import Type from "./pi-runtime-deps.mjs";
 import { createPublicToolContracts } from "../../packages/agent-runtime/host-api/tools.mjs";
 import { boundWorkspaceRoot } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
-import { execute_provider } from "./provider-dispatcher.mjs";
+import { execute_provider } from "../../packages/agent-runtime/providers/dispatcher.mjs";
 
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
 
@@ -32,7 +32,7 @@ export function createNotifyTool() {
 }
 
 async function runNotification(root, request, signal) {
-  const extensionRoot = resolve(new URL("../../extensions/tspi-notify/", import.meta.url).pathname);
+  const extensionRoot = resolve(new URL("../../extensions/email/", import.meta.url).pathname);
   const descriptor = JSON.parse(await readFile(join(extensionRoot, "descriptors/notify_send.json"), "utf8"));
   const result = await execute_provider({ descriptor, provider_id: "notify_send", entry: join(extensionRoot, "providers/notify_provider.py"), input: { workspace_root: root, notification: request }, parameters: {}, context: { workspace_root: root }, python: nativePython(), timeout_ms: 150_000, signal });
   return result.result || result;

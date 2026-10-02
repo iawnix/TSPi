@@ -28,7 +28,7 @@ def test_installed_extension_manifest_schema_accepts_minimal_provider() -> None:
         "server": {
             "entry": "server/index.mjs",
             "sha256": "sha256:" + "a" * 64,
-            "tools": ["ts_amber"],
+            "tools": ["amber_run"],
             "permissions": ["workspace.read"],
         },
     })
@@ -52,7 +52,7 @@ def test_installed_extension_manifest_schema_rejects_unpinned_entry() -> None:
 
 
 def test_default_chemical_extension_inventory_validates_provider_descriptors() -> None:
-    manifest = json.loads((ROOT / "extensions" / "manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads((ROOT / "extensions" / "chemical" / "manifest.json").read_text(encoding="utf-8"))
     manifest_schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     Draft202012Validator(manifest_schema).validate(manifest)
     provider_schema = json.loads(PROVIDER_SCHEMA.read_text(encoding="utf-8"))
@@ -60,7 +60,7 @@ def test_default_chemical_extension_inventory_validates_provider_descriptors() -
     provider_ids = {item["id"] for item in manifest["providers"]}
     assert provider_ids == {"artifact_seed", "chemical.analysis", "crest", "gaussian", "pyscf", "xtb"}
     for item in manifest["providers"]:
-        descriptor = json.loads((ROOT / "extensions" / item["descriptor"]).read_text(encoding="utf-8"))
+        descriptor = json.loads((ROOT / "extensions" / "chemical" / item["descriptor"]).read_text(encoding="utf-8"))
         validator.validate(descriptor)
         assert descriptor["provider_id"] == item["id"]
         assert descriptor["kind"] == item["kind"]

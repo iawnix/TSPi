@@ -12,20 +12,24 @@ replacement UI.
 
 ## Component Responsibilities
 
-- `apps/app-server/` contains the `tspi-host/1` control plane, the installation
-  Pi App Server owner, native remote-client launcher, Monitor worker, browser
-  adapter, and history migration tools. The pinned Pi worker loads TSPi's
+- `apps/app-server/` contains the `tspi-host/1` control plane, the unified
+  Research Agent HTTP server, installation Pi App Server owner, native
+  remote-client launcher, Monitor worker, browser adapter, and history
+  migration tools. The pinned Pi worker loads TSPi's
   worker facet (tools, skills, hooks, policy, and system prompt).
 - `services/tspi-link-relay/` owns TSPi Link enrollment, pairing, device
   authorization, and opaque frame forwarding. It has no workspace, session, or
   research APIs and does not decode Host RPC.
-- `packages/tspi-runtime/tspi_runtime/` owns the `ResearchMap`, reference
-  integrity, validation, and transactions. Its
-  `compute_run` control plane uses one lifecycle for local subprocesses and remote
-  scheduler jobs; the configured remote adapter supplies transport and
-  readiness operations. Rendering, reporting, and email remain
-  Skill/Plugin tools.
-- `extensions/pi/` contains only the small Native TUI presentation helpers
+- `packages/research-state/` owns the canonical `ResearchMap`, admission,
+  reference integrity, validation, revisions, and transactions. `packages/research-memory/`
+  builds bounded context and session projections. `packages/research-compute/`
+  owns compute intents, readiness, and lifecycle control. The shared Link
+  protocol and backpressure codec live in `packages/tspi-link/`; the relay
+  service is only its deployment composition.
+- `extensions/` contains first-party Provider implementations and the Skills
+  that describe their scientific use. Render, report, email, chemical compute,
+  and analysis execute through the generic Provider dispatcher.
+- `packages/agent-ui/` contains only the small Native TUI presentation helpers
   required by the client facet. Direct ExtensionAPI adapters and their public
   entrypoints have been removed; they are not selected by the launcher or
   loaded by the Native Pi Worker.

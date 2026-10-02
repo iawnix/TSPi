@@ -10,8 +10,8 @@ import {
   encodeControl,
   encodeHostData,
   isUuidV4,
-} from "./protocol.mjs";
-import { createWebSocketForwarder } from "./backpressure.mjs";
+} from "../../packages/tspi-link/protocol.mjs";
+import { createWebSocketForwarder } from "../../packages/tspi-link/backpressure.mjs";
 import { RelayStore, RelayStoreError } from "./store.mjs";
 
 const MAX_JSON_BYTES = 16 * 1024;

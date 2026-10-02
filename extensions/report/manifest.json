@@ -1,0 +1,23 @@
+{
+  "schema_version": "tspi-extension/1",
+  "name": "report",
+  "version": "0.17.0",
+  "skills": [
+    {
+      "name": "report",
+      "path": ".",
+      "sha256": "sha256:45377a005d682697217a72f2995fd813e8566f20feaff5ed371e2229db65256c"
+    }
+  ],
+  "providers": [
+    {
+      "id": "report_build",
+      "version": "1",
+      "kind": "report",
+      "descriptor": "descriptors/report_build.json",
+      "descriptor_sha256": "sha256:52391f3e457f47025611317866334cc1f514099d3ce2c4476b569514c68fe24f",
+      "entry": "providers/report_provider.py",
+      "sha256": "sha256:104dfc7bd99766a4f62773b0dfd3904db1c8a65ac156125bb0f35bfc32480423"
+    }
+  ]
+}

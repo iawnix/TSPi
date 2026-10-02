@@ -11,17 +11,14 @@ TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装�
 
 ## 组件职责
 
-- `apps/app-server/` 提供 `tspi-host/1` control plane、安装级 Pi App Server owner、
-  native remote client launcher、Monitor worker、browser adapter 和历史迁移工具。固定
+- `apps/app-server/` 提供 `tspi-host/1` control plane、统一 Research Agent HTTP server、
+  安装级 Pi App Server owner、native remote client launcher、Monitor worker、browser adapter 和历史迁移工具。固定
   源码的 Pi worker 加载 TSPi tools、skills、hooks、策略和 system prompt。
 - `services/tspi-link-relay/` 负责 TSPi Link 注册、配对、设备授权和不透明帧转发；它不拥有
   workspace/session/research，也不解析 Host RPC。
-- `packages/tspi-runtime/tspi_runtime/` 管理 `ResearchMap`、引用完整性、验证和事务。
-  计算控制面负责本地子进程的持久化生命周期，并通过配置好的
-  `compute_run` 对 local 和 remote 使用同一套计算生命周期；统一的
-  `compute.environments` 查询同时返回两类环境。渲染、报告和邮件仍由
-  Skill/Plugin 工具提供。
-- `extensions/pi/` 仅包含 Native client facet 所需的少量 presentation helper。
+- `packages/research-state/` 管理规范 `ResearchMap`、admission、引用完整性、验证、revision 和事务；`packages/research-memory/` 构建 bounded context 与 session projection；`packages/research-compute/` 管理计算 intent、readiness 和生命周期。共享 Link 协议与 backpressure codec 位于 `packages/tspi-link/`，`services/tspi-link-relay/` 只负责服务组合。
+- `extensions/` 包含第一方 Provider 实现及其科学使用规则 Skill。Render、Report、Email、化学计算和分析都通过通用 Provider dispatcher 执行。
+- `packages/agent-ui/` 仅包含 Native client facet 所需的少量 presentation helper。
   直接 ExtensionAPI 适配器及其公共入口已经移除；启动器和 Native Pi Worker 不会加载
   旧的 ExtensionAPI 路径。
   `extensions/server/` 是唯一的包内 server 工具入口。App Server 只加载经过 allowlist 和

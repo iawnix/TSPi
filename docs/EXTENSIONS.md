@@ -3,8 +3,8 @@
 TSPi keeps the Agent and Research Kernel independent from installed scientific
 software. An installed extension is a directory with a `manifest.json`; the
 App Server discovers manifests listed in `TSPI_EXTENSION_MANIFESTS` (an OS
-path-list), passed by its host configuration, or the optional package-owned
-`extensions/manifest.json`.
+path-list), passed by its host configuration, or every package-owned
+`extensions/*/manifest.json` file.
 
 The manifest format is `tspi-extension/1`; its JSON Schema is
 `contracts/tspi-extension/1/extension-manifest.schema.json`:
@@ -26,7 +26,7 @@ The manifest format is `tspi-extension/1`; its JSON Schema is
   "server": {
     "entry": "server/index.mjs",
     "sha256": "sha256:<64 hex characters>",
-    "tools": ["ts_amber"],
+    "tools": ["amber_run"],
     "permissions": ["workspace.read"]
   }
 }
@@ -59,9 +59,9 @@ checked during discovery and immediately before import; the Agent cannot
 choose an import path or bypass the allowlist.
 
 The package-owned server inventory is split into two signed entries while
-keeping one default active tool set. `tspi-core-tools` owns research/lifecycle,
+keeping one default active tool set. `core-tools` owns research/lifecycle,
 environment, review, dispatch, generic calculation, artifact import/render,
-and report tools. `tspi-chemical-tools` owns chemical artifact seeding and
+and report tools. `chemical-tools` owns chemical artifact seeding and
 analysis (`artifact_seed`, `artifact_compare`, and `analysis_run`). Gaussian
-and xTB are descriptor-only metadata entries in the default `tspi-chemical`
+and xTB are descriptor-only metadata entries in the default `chemical`
 extension; the Python Native registry is the only execution boundary.

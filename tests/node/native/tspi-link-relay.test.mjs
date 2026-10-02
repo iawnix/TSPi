@@ -14,8 +14,8 @@ import {
   MAX_PAYLOAD_BYTES,
   decodeHostData,
   encodeHostData,
-} from "../../../services/tspi-link-relay/protocol.mjs";
-import { createWebSocketForwarder } from "../../../services/tspi-link-relay/backpressure.mjs";
+} from "../../../packages/tspi-link/protocol.mjs";
+import { createWebSocketForwarder } from "../../../packages/tspi-link/backpressure.mjs";
 import { createRelayServer } from "../../../services/tspi-link-relay/server.mjs";
 import { RelayStore } from "../../../services/tspi-link-relay/store.mjs";
 

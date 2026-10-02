@@ -57,8 +57,8 @@ contracts are explicit.
 **TSPi** remains the product and the name of the required core repository.
 The TSPi repository owns:
 
-- the public Skill family, led by `tspi-research-state` for state and
-  `tspi-orchestration` for task planning;
+- the public Skill family, led by `research-state` for state and
+  `orchestration` for task planning;
 - the deterministic Research Kernel and canonical workspace contract;
 - deterministic compute, artifact, report, remote, and notification mechanisms;
 - the TSPi ResearchMap provider for canonical workspace data;

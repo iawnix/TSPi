@@ -1,0 +1,23 @@
+{
+  "schema_version": "tspi-extension/1",
+  "name": "email",
+  "version": "0.17.0",
+  "skills": [
+    {
+      "name": "email",
+      "path": ".",
+      "sha256": "sha256:8c1d05f4ab407a6777955983a3fb748f959d1802acacde7934f61f6a23807724"
+    }
+  ],
+  "providers": [
+    {
+      "id": "notify_send",
+      "version": "1",
+      "kind": "notification",
+      "descriptor": "descriptors/notify_send.json",
+      "descriptor_sha256": "sha256:faefb99d86bc3c9126fb7c463b5eab5adf9a686269c3d9235f3d4d3e714eae49",
+      "entry": "providers/notify_provider.py",
+      "sha256": "sha256:11732312afc49732e84ee8f41b33ab6c3ccda36bf2b9866bb9bc5c8dee1d0c33"
+    }
+  ]
+}

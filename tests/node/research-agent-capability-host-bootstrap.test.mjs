@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { create_configured_capability_host } from "../../apps/research-agent-app-server/capability-host-bootstrap.mjs";
+import { create_configured_capability_host } from "../../apps/app-server/capability-host-bootstrap.mjs";
 
 test("legacy capability config is rejected", async () => {
   await assert.rejects(

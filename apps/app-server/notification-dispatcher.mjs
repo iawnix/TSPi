@@ -1,11 +1,8 @@
-import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { promisify } from "node:util";
+import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execute_provider } from "../../packages/agent-runtime/providers/dispatcher.mjs";
 
-const executeFile = promisify(execFile);
 const packageRoot = resolve(process.env.TSPI_PACKAGE_ROOT || fileURLToPath(new URL("../..", import.meta.url)));
 const python = process.env.TSPI_PYTHON || process.env.TSPI_WORKSPACE_PYTHON || "python3";
 const NOTIFICATION_TIMEOUT_MS = 150_000;
@@ -17,8 +14,8 @@ const NOTIFICATION_TIMEOUT_MS = 150_000;
  * Deployments can inject any transport with the same `dispatch` method; the
  * Monitor never selects a provider or constructs a transport-specific command.
  */
-export function createNotificationDispatcher({ dispatch = null, execute = executeFile } = {}) {
-  const handler = dispatch ?? ((request) => sendNotification(request.workspace, request.event, request.signal, execute));
+export function createNotificationDispatcher({ dispatch = null } = {}) {
+  const handler = dispatch ?? ((request) => sendNotification(request.workspace, request.event, request.signal));
   if (typeof handler !== "function") throw new TypeError("notification dispatcher must expose dispatch(request)");
   return Object.freeze({
     protocol_version: "notification_dispatcher_1",
@@ -37,31 +34,37 @@ export function createNotificationDispatcher({ dispatch = null, execute = execut
   });
 }
 
-export async function sendNotification(workspace, event, signal, execute = executeFile) {
-  const { operation: _operation, ...notification } = monitorNotificationRequest(event);
-  // The SMTP adapter still consumes its narrowly-scoped request schema. The
-  // generic operation field is kept at the capability boundary and is not
-  // forwarded into this transport adapter.
-  const request = { schema_version: "ts-user-notification/1", ...notification };
-  const directory = await mkdtemp(join(tmpdir(), "tspi-monitor-notify-"));
-  try {
-    const requestFile = join(directory, "request.json");
-    await writeFile(requestFile, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
+export async function sendNotification(workspace, event, signal, executeOverride = undefined) {
+  const notification = monitorNotificationRequest(event);
+  if (executeOverride !== undefined) {
     try {
-      const completed = await execute(python, [join(packageRoot, "apps", "agent-cli", "notify.py"), "notify", "--root", workspace, "--request-file", requestFile, "--json"], {
-        cwd: workspace, env: { ...process.env, PYTHONNOUSERSITE: "1" }, maxBuffer: 8 * 1024 * 1024, timeout: NOTIFICATION_TIMEOUT_MS, signal });
-      const result = parseNotificationJson(completed.stdout);
+      const value = await executeOverride({ workspace, event: notification, signal });
+      const result = value?.result || value;
       assertNotificationSuccess(result);
-      return normalizeNotificationResult(result, request);
+      return normalizeNotificationResult(result, notification);
     } catch (error) {
-      // execFile rejects on a non-zero CLI exit, while notify writes its
-      // structured provider/SMTP failure envelope to stdout.
       const structured = tryParseNotificationJson(error?.stdout);
       if (structured) throw notificationError(structured);
-      if (isNotificationTimeout(error)) throw notificationTimeoutError();
+      if (error?.code === "ETIMEDOUT" || error?.timedOut === true) throw notificationTimeoutError();
       throw error;
     }
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  }
+  const extensionRoot = resolve(packageRoot, "extensions", "email");
+  const descriptor = JSON.parse(await readFile(join(extensionRoot, "descriptors", "notify_send.json"), "utf8"));
+  const result = await execute_provider({
+    descriptor,
+    provider_id: "notify_send",
+    entry: join(extensionRoot, "providers", "notify_provider.py"),
+    input: { workspace_root: workspace, notification },
+    parameters: {},
+    context: { workspace_root: workspace },
+    python,
+    timeout_ms: NOTIFICATION_TIMEOUT_MS,
+    signal,
+  });
+  const value = result.result || result;
+  assertNotificationSuccess(value);
+  return normalizeNotificationResult(value, notification);
 }
 
 export function monitorNotificationRequest(event) {
@@ -94,20 +97,19 @@ function normalizeNotificationResult(result, request) {
   };
 }
 
-function parseNotificationJson(value) {
-  const parsed = JSON.parse(String(value || "").trim());
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("notification CLI returned invalid JSON");
-  return parsed;
-}
-
-function tryParseNotificationJson(value) {
-  try { return parseNotificationJson(value); } catch (_error) { return undefined; }
-}
-
 function assertNotificationSuccess(result) {
   if (result?.ok === false) throw notificationError(result);
   if (result?.ok !== true || !["sent", "already_sent"].includes(result.state)) {
     throw new Error("monitor notification did not return a successful receipt");
+  }
+}
+
+function tryParseNotificationJson(value) {
+  try {
+    const parsed = JSON.parse(String(value || "").trim());
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined;
+  } catch (_error) {
+    return undefined;
   }
 }
 
@@ -127,15 +129,8 @@ function notificationError(payload) {
   return error;
 }
 
-function isNotificationTimeout(error) {
-  return error?.code === "ETIMEDOUT" || error?.timedOut === true;
-}
-
 function notificationTimeoutError() {
-  const error = new Error(
-    `email notification process timed out after ${NOTIFICATION_TIMEOUT_MS}ms; `
-    + "delivery status is unknown; inspect the delivery receipt before retrying",
-  );
+  const error = new Error("email notification process timed out; delivery status is unknown; inspect the delivery receipt before retrying");
   error.name = "NotificationError";
   error.code = "NOTIFICATION_DELIVERY_TIMEOUT";
   error.error_class = "delivery_ambiguous";

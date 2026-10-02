@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { create_research_agent_composition } from "../../apps/research-agent-app-server/composition_root.mjs";
+import { create_research_agent_composition } from "../../apps/app-server/composition_root.mjs";
 import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
 
 test("composition root requires an explicit runtime", () => {

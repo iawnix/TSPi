@@ -90,14 +90,13 @@ test("default package server manifest keeps complete core and chemical tool inve
     reservedToolNames: ["read", "write", "bash", "system_prompt"],
     requiredToolNames: ["research_read", "compute_environment", "compute_run", "analysis_run"],
   });
-  assert.deepEqual(loaded.inventory.map((item) => item.name), ["tspi-core-tools", "tspi-chemical-tools"]);
-  const coreInventory = loaded.inventory.find((item) => item.name === "tspi-core-tools");
+  assert.deepEqual(loaded.inventory.map((item) => item.name), ["core-tools", "chemical-tools"]);
+  const coreInventory = loaded.inventory.find((item) => item.name === "core-tools");
   assert.ok(coreInventory.permissions.includes("notify.send"));
-  assert.ok(!loaded.tools.some((tool) => tool.name === "notify_send"));
+  assert.ok(loaded.tools.some((tool) => tool.name === "notify_send"));
   assert.deepEqual(loaded.tools.map((tool) => tool.name), [
     "research_read",
     "research_change",
-    "research_checkpoint",
     "research_strategy",
     "research_interpretation",
     "research_checkpoint",
@@ -111,6 +110,7 @@ test("default package server manifest keeps complete core and chemical tool inve
     "artifact_import",
     "artifact_render",
     "report_build",
+    "notify_send",
     "artifact_seed",
     "artifact_compare",
     "analysis_run",

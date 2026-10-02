@@ -13,8 +13,8 @@ import {
   decodeHostData,
   encodeControl,
   encodeHostData,
-} from "../../services/tspi-link-relay/protocol.mjs";
-import { createWebSocketForwarder, holdSocket, releaseSocket } from "../../services/tspi-link-relay/backpressure.mjs";
+} from "../../packages/tspi-link/protocol.mjs";
+import { createWebSocketForwarder, holdSocket, releaseSocket } from "../../packages/tspi-link/backpressure.mjs";
 
 const options = parseArguments(process.argv.slice(2));
 const createWebSocket = await resolveWebSocketFactory();

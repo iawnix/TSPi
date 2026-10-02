@@ -22,7 +22,7 @@ async function fixture() {
   await writeFile(entry, "export function createProvider() {}\n");
   const serverEntry = join(root, "server.mjs");
   await writeFile(serverEntry, `export function createServerExtension() { return { tools: [{
-    name: "ts_amber",
+    name: "amber_run",
     label: "Amber tool",
     description: "An installed extension fixture.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
@@ -45,7 +45,7 @@ async function fixture() {
     server: {
       entry: "server.mjs",
       sha256: digest(await readFile(serverEntry)),
-      tools: ["ts_amber"],
+      tools: ["amber_run"],
       permissions: ["workspace.read"],
     },
   };
@@ -66,7 +66,7 @@ test("extension discovery inventories Skills and providers without importing pro
     assert.equal(discovered.providers[0].entry, join(root, "providers", "amber.mjs"));
     assert.equal(discovered.providers[0].descriptor_data.capability, "amber.md");
     assert.match(discovered.providers[0].descriptor_digest, /^sha256:[0-9a-f]{64}$/u);
-    assert.equal(discovered.extensions[0].server.tools[0], "ts_amber");
+    assert.equal(discovered.extensions[0].server.tools[0], "amber_run");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -137,7 +137,7 @@ test("installed server entries require an explicit allowlist and pass the Harnes
       allowlist: ["amber-tools"],
       reservedToolNames: ["read"],
     });
-    assert.deepEqual(loaded.tools.map((tool) => tool.name), ["ts_amber"]);
+    assert.deepEqual(loaded.tools.map((tool) => tool.name), ["amber_run"]);
     assert.deepEqual(loaded.tools[0].metadata, {
       authority: "runtime_read",
       effect: "read",

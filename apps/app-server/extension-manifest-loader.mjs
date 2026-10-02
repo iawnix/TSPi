@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import { delimiter, relative, resolve, sep, join } from "node:path";
 
 const MANIFEST_SCHEMA = "tspi-extension/1";
@@ -92,17 +92,33 @@ async function resolveManifestPaths(options) {
   const configured = options.manifestPaths === undefined
     ? (process.env.TSPI_EXTENSION_MANIFESTS || "").split(delimiter).map((value) => value.trim()).filter(Boolean)
     : Array.isArray(options.manifestPaths) ? options.manifestPaths : [options.manifestPaths];
-  const packageManifest = options.packageRoot && options.manifestPaths === undefined && !process.env.TSPI_EXTENSION_MANIFESTS && !configured.length
-    ? join(requireAbsoluteFile(options.packageRoot, "package root"), "extensions", "manifest.json")
-    : undefined;
   const paths = configured.map((value) => requireAbsoluteFile(value, "extension manifest"));
-  if (packageManifest) {
+  if (options.packageRoot && options.manifestPaths === undefined && !process.env.TSPI_EXTENSION_MANIFESTS && !configured.length) {
+    const extensionsRoot = join(requireAbsoluteFile(options.packageRoot, "package root"), "extensions");
+    const packageManifest = join(extensionsRoot, "manifest.json");
     try {
       const info = await lstat(packageManifest);
       if (!info.isFile() || info.isSymbolicLink()) throw new Error(`package extension manifest must be a regular file: ${packageManifest}`);
       paths.push(packageManifest);
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
+      let entries;
+      try {
+        entries = await readdir(extensionsRoot, { withFileTypes: true });
+      } catch (directoryError) {
+        if (directoryError?.code === "ENOENT") return [];
+        throw directoryError;
+      }
+      for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+        if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+        const manifest = join(extensionsRoot, entry.name, "manifest.json");
+        try {
+          const manifestInfo = await lstat(manifest);
+          if (manifestInfo.isFile() && !manifestInfo.isSymbolicLink()) paths.push(manifest);
+        } catch (manifestError) {
+          if (manifestError?.code !== "ENOENT") throw manifestError;
+        }
+      }
     }
   }
   return [...new Set(paths)];

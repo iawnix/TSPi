@@ -39,7 +39,7 @@ def _installation(tmp_path: Path) -> launcher.Installation:
     entry = package / "apps/app-server/pi-app-server.mjs"
     entry.parent.mkdir(parents=True)
     entry.write_text("// test entry\n", encoding="utf-8")
-    theme = package / "themes/ts-theme.json"
+    theme = package / "packages/agent-ui/themes/ts-theme.json"
     theme.parent.mkdir(parents=True)
     theme.write_text(json.dumps({"name": "ts-theme"}) + "\n", encoding="utf-8")
     root = tmp_path / "install"
@@ -105,7 +105,7 @@ def test_native_pi_settings_preserve_custom_theme_and_remove_old_release_theme(
     installation = _installation(tmp_path)
     settings = installation.root / launcher.PI_AGENT_SETTINGS_RELATIVE
     settings.parent.mkdir(parents=True)
-    theme_path = installation.root / ".pi/packages/tspi/releases/old/agent/themes/ts-theme.json"
+    theme_path = installation.root / ".pi/packages/tspi/releases/old/agent/packages/agent-ui/themes/ts-theme.json"
     settings.write_text(
         json.dumps({"theme": "lab-dark", "themes": [str(theme_path), "./custom-theme.json"]}) + "\n",
         encoding="utf-8",
