@@ -31,6 +31,12 @@ cd TSPi
 需要固定源码版本时，将 `TSPI_INSTALL_REF` 设置为完整的 commit SHA。该脚本会把 compute、
 name resolver、workspace、服务、Web、Phone 和通知配置统一传给同一个安装器。
 
+也可以在同一次非交互安装中部署公网 Link Relay：在脚本中设置
+`TSPI_WITH_LINK_RELAY=true`、`TSPI_PHONE_ACCESS=link` 和
+`TSPI_LINK_URL=https://relay.example`。安装器会创建 Relay 服务、生成一次性 Host
+enrollment code，并自动完成 Host 注册。Relay 必须部署在另一台机器时，仍可单独使用
+`install-link-relay.sh`。
+
 核心安装始终包含 Agent、科学运行时和分子渲染；TS Web 是可选组件。安装器配置
 整个安装目录共用的 TSPi Host；不再安装 TS Phone 守护进程。
 

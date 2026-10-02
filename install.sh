@@ -3,6 +3,16 @@ set -Eeuo pipefail
 
 REPO_URL="${TSPI_INSTALL_REPO:-https://github.com/iawnix/TSPi.git}"
 REPO_REF="${TSPI_INSTALL_REF:-main}"
+WITH_LINK_RELAY="${TSPI_WITH_LINK_RELAY:-false}"
+RELAY_INSTALL_ROOT="${TSPI_LINK_RELAY_ROOT:-}"
+RELAY_STATE_DIR="${TSPI_LINK_RELAY_STATE_DIR:-}"
+RELAY_PUBLIC_URL="${TSPI_LINK_URL:-}"
+RELAY_LISTEN="${TSPI_LINK_RELAY_LISTEN:-127.0.0.1}"
+RELAY_PORT="${TSPI_LINK_RELAY_PORT:-8788}"
+RELAY_SERVICE_SCOPE="${TSPI_LINK_RELAY_SERVICE_SCOPE:-user}"
+RELAY_SERVICE_USER="${TSPI_LINK_RELAY_SERVICE_USER:-tspi-link-relay}"
+RELAY_ENABLE_SERVICES="${TSPI_LINK_RELAY_ENABLE_SERVICES:-true}"
+RELAY_START_SERVICES="${TSPI_LINK_RELAY_START_SERVICES:-true}"
 FORWARD_ARGS=()
 
 if [[ -t 2 && ! -v NO_COLOR && "${TERM:-}" != "dumb" ]]; then
@@ -16,6 +26,42 @@ fail() {
   printf '%bTSPi installer failed:%b %s\n' "${BOOTSTRAP_DANGER}" "${BOOTSTRAP_RESET}" "$1" >&2
   exit "${2:-1}"
 }
+
+truthy() {
+  case "${1,,}" in
+    1|true|yes|on) return 0 ;;
+    0|false|no|off) return 1 ;;
+    *) fail "invalid boolean value: $1" 2 ;;
+  esac
+}
+
+usage() {
+  cat <<'EOF'
+Usage: install.sh [installer options]
+
+This bootstrap resolves the selected Git revision, then invokes the Python
+installer from that immutable checkout. All options not handled here are
+forwarded to scripts/install_wizard.py.
+
+Bootstrap options:
+  --tspi-repo URL, --tspi-ref REF
+  --with-link-relay / --without-link-relay
+  --relay-install-root PATH, --relay-state-dir PATH
+  --relay-public-url URL, --relay-listen HOST, --relay-port PORT
+  --relay-service-scope {user,system,none}
+  --relay-service-user ACCOUNT
+  --relay-enable-services / --relay-no-enable-services
+  --relay-start-services / --relay-no-start-services
+
+Relay integration is non-interactive. It installs the Relay first, obtains a
+one-time enrollment code, and forwards the code to the Host installer.
+EOF
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
 
 command -v python3 >/dev/null 2>&1 || fail "Python 3.11 or newer is required." 127
 python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' || fail "Python 3.11 or newer is required."
@@ -44,6 +90,93 @@ while (( $# )); do
     --tspi-commit|--tspi-commit=*)
       fail "--tspi-commit is reserved for the installer bootstrap."
       ;;
+    --with-link-relay)
+      WITH_LINK_RELAY=true
+      shift
+      ;;
+    --without-link-relay)
+      WITH_LINK_RELAY=false
+      shift
+      ;;
+    --relay-install-root)
+      (( $# >= 2 )) || fail "--relay-install-root requires a value."
+      RELAY_INSTALL_ROOT="$2"
+      shift 2
+      ;;
+    --relay-install-root=*)
+      RELAY_INSTALL_ROOT="${1#*=}"
+      shift
+      ;;
+    --relay-state-dir)
+      (( $# >= 2 )) || fail "--relay-state-dir requires a value."
+      RELAY_STATE_DIR="$2"
+      shift 2
+      ;;
+    --relay-state-dir=*)
+      RELAY_STATE_DIR="${1#*=}"
+      shift
+      ;;
+    --relay-public-url)
+      (( $# >= 2 )) || fail "--relay-public-url requires a value."
+      RELAY_PUBLIC_URL="$2"
+      shift 2
+      ;;
+    --relay-public-url=*)
+      RELAY_PUBLIC_URL="${1#*=}"
+      shift
+      ;;
+    --relay-listen)
+      (( $# >= 2 )) || fail "--relay-listen requires a value."
+      RELAY_LISTEN="$2"
+      shift 2
+      ;;
+    --relay-listen=*)
+      RELAY_LISTEN="${1#*=}"
+      shift
+      ;;
+    --relay-port)
+      (( $# >= 2 )) || fail "--relay-port requires a value."
+      RELAY_PORT="$2"
+      shift 2
+      ;;
+    --relay-port=*)
+      RELAY_PORT="${1#*=}"
+      shift
+      ;;
+    --relay-service-scope)
+      (( $# >= 2 )) || fail "--relay-service-scope requires a value."
+      RELAY_SERVICE_SCOPE="$2"
+      shift 2
+      ;;
+    --relay-service-scope=*)
+      RELAY_SERVICE_SCOPE="${1#*=}"
+      shift
+      ;;
+    --relay-service-user)
+      (( $# >= 2 )) || fail "--relay-service-user requires a value."
+      RELAY_SERVICE_USER="$2"
+      shift 2
+      ;;
+    --relay-service-user=*)
+      RELAY_SERVICE_USER="${1#*=}"
+      shift
+      ;;
+    --relay-enable-services)
+      RELAY_ENABLE_SERVICES=true
+      shift
+      ;;
+    --relay-no-enable-services)
+      RELAY_ENABLE_SERVICES=false
+      shift
+      ;;
+    --relay-start-services)
+      RELAY_START_SERVICES=true
+      shift
+      ;;
+    --relay-no-start-services)
+      RELAY_START_SERVICES=false
+      shift
+      ;;
     *)
       FORWARD_ARGS+=("$1")
       shift
@@ -53,6 +186,26 @@ done
 [[ -n "${REPO_URL}" ]] || fail "--tspi-repo must not be empty."
 if [[ ! "${REPO_REF}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$ || "${REPO_REF}" == *..* ]]; then
   fail "--tspi-ref must be a branch, tag, or full 40-character commit SHA."
+fi
+truthy "${WITH_LINK_RELAY}" >/dev/null || true
+truthy "${RELAY_ENABLE_SERVICES}" >/dev/null || true
+truthy "${RELAY_START_SERVICES}" >/dev/null || true
+[[ "${RELAY_SERVICE_SCOPE}" == system || "${RELAY_SERVICE_SCOPE}" == user || "${RELAY_SERVICE_SCOPE}" == none ]] \
+  || fail "--relay-service-scope must be system, user, or none."
+if truthy "${WITH_LINK_RELAY}"; then
+  [[ -n "${RELAY_PUBLIC_URL}" ]] || fail "--relay-public-url is required with --with-link-relay."
+  if [[ "${RELAY_SERVICE_SCOPE}" == system ]]; then
+    [[ -n "${RELAY_INSTALL_ROOT}" ]] || RELAY_INSTALL_ROOT=/opt/tspi-link-relay
+    [[ -n "${RELAY_STATE_DIR}" ]] || RELAY_STATE_DIR=/var/lib/tspi-link-relay
+  else
+    [[ -n "${RELAY_INSTALL_ROOT}" ]] || RELAY_INSTALL_ROOT="${HOME}/.local/share/tspi-link-relay"
+    [[ -n "${RELAY_STATE_DIR}" ]] || RELAY_STATE_DIR="${HOME}/.local/state/tspi-link-relay"
+  fi
+  non_interactive=false
+  for argument in "${FORWARD_ARGS[@]}"; do
+    [[ "${argument}" == "--non-interactive" ]] && non_interactive=true
+  done
+  [[ "${non_interactive}" == true ]] || fail "--with-link-relay requires --non-interactive so Relay side effects occur only after explicit configuration."
 fi
 readonly REPO_URL REPO_REF
 
@@ -161,6 +314,67 @@ git_fetch_revision() {
   return 1
 }
 
+extract_relay_enrollment_code() {
+  local output_path="$1"
+  python3 - "${output_path}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+decoder = json.JSONDecoder()
+objects = []
+for index, character in enumerate(text):
+    if character != "{":
+        continue
+    try:
+        value, _ = decoder.raw_decode(text[index:])
+    except json.JSONDecodeError:
+        continue
+    if isinstance(value, dict):
+        objects.append(value)
+for value in reversed(objects):
+    enrollment = value.get("enrollment")
+    code = enrollment.get("code") if isinstance(enrollment, dict) else None
+    if isinstance(code, str) and code:
+        print(code)
+        raise SystemExit(0)
+raise SystemExit("Link Relay installer did not return an enrollment code")
+PY
+}
+
+install_embedded_relay() {
+  local relay_log="${TEMP_ROOT}/link-relay-install.log"
+  local -a relay_args=(
+    python3 "${TEMP_ROOT}/TSPi/scripts/install_link_relay.py"
+    --install-root "${RELAY_INSTALL_ROOT}"
+    --state-dir "${RELAY_STATE_DIR}"
+    --public-url "${RELAY_PUBLIC_URL}"
+    --listen "${RELAY_LISTEN}"
+    --port "${RELAY_PORT}"
+    --service-scope "${RELAY_SERVICE_SCOPE}"
+    --service-user "${RELAY_SERVICE_USER}"
+    --source-root "${TEMP_ROOT}/TSPi"
+    --non-interactive
+    --yes
+    --json
+  )
+  if [[ "${RELAY_SERVICE_SCOPE}" != none ]]; then
+    if truthy "${RELAY_ENABLE_SERVICES}"; then relay_args+=(--enable-services); fi
+    if truthy "${RELAY_START_SERVICES}"; then relay_args+=(--start-services); fi
+  fi
+  run_bootstrap_step "Link Relay installation" "${relay_args[@]}"
+  cp -- "${BOOTSTRAP_LOG}" "${relay_log}"
+  RELAY_ENROLLMENT_CODE="$(extract_relay_enrollment_code "${relay_log}")" \
+    || fail "Link Relay installation did not produce an enrollment code; see ${relay_log}."
+  FORWARD_ARGS+=(
+    --phone-access link
+    --link-relay-root "${RELAY_INSTALL_ROOT}"
+    --link-url "${RELAY_PUBLIC_URL}"
+    --link-enrollment-code "${RELAY_ENROLLMENT_CODE}"
+  )
+}
+
 run_bootstrap_step "repository access" git_clone_source "${TEMP_ROOT}/TSPi"
 run_bootstrap_step "revision ${REPO_REF}" git_fetch_revision "${TEMP_ROOT}/TSPi"
 run_bootstrap_step "source checkout" git -C "${TEMP_ROOT}/TSPi" checkout --quiet --detach FETCH_HEAD
@@ -169,6 +383,9 @@ RESOLVED_COMMIT="$(git -C "${TEMP_ROOT}/TSPi" rev-parse --verify 'HEAD^{commit}'
 [[ "${RESOLVED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
   || fail "resolved TSPi revision is not a full commit SHA."
 readonly RESOLVED_COMMIT
+if truthy "${WITH_LINK_RELAY}"; then
+  install_embedded_relay
+fi
 wizard=(python3 "${TEMP_ROOT}/TSPi/scripts/install_wizard.py"
   --tspi-repo "${REPO_URL}" --tspi-ref "${REPO_REF}"
   --tspi-commit "${RESOLVED_COMMIT}" "${FORWARD_ARGS[@]}")

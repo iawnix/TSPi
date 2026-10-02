@@ -2,8 +2,9 @@
 
 [English](INSTALLATION.md) | 简体中文
 
-本指南安装 TSPi Agent 及可选的 TS Web 只读浏览器。TS Phone 是独立的 Flutter
-应用。TSPi 本地安装只包含 Host 侧 Link 客户端；公网 TSPi Link Relay 使用独立安装器。
+本指南安装 TSPi Agent、可选的 TS Web 只读浏览器，以及按需安装的公网 TSPi Link Relay。
+TS Phone 是独立的 Flutter 应用。Relay 仍然是独立服务和独立安装目录，但主安装器可以
+在一次安装中部署 Relay 并完成 Host 注册。
 
 ## 前置条件
 
@@ -24,6 +25,12 @@
 
 运行 `./install.sh`，确认安装目录、TSPi revision、workspace root、Conda root、
 可选 TS Web 组件和服务策略。Core Agent、科学运行时和分子渲染工具始终安装。
+
+如果希望在一次非交互安装中同时部署 Relay，使用 `install-configured.sh`，并设置
+`TSPI_WITH_LINK_RELAY=true`、`TSPI_PHONE_ACCESS=link` 以及 Relay 的 HTTPS 地址
+`TSPI_LINK_URL`。Relay 相关配置还包括 `TSPI_LINK_RELAY_ROOT`、
+`TSPI_LINK_RELAY_STATE_DIR`、`TSPI_LINK_RELAY_LISTEN`、`TSPI_LINK_RELAY_PORT`、
+`TSPI_LINK_RELAY_SERVICE_SCOPE` 和 `TSPI_LINK_RELAY_SERVICE_USER`。
 非交互安装可使用 `--workspace-root /absolute/path`；默认值为
 `<install>/workspaces`。Host、终端、TS Web 和卸载器共享
 `.pi/tspi/workspace-root.json` 中记录的值。
@@ -179,6 +186,20 @@ system scope 安装省略 `--user`。Host 是终端、Phone 和后台 Monitor �
 会设置 `HOME`、`PI_CODING_AGENT_DIR` 和私有运行时目录，确保 Host 身份和本地 Pi 连接使用
 服务账户。Host worker facet、server-extension allowlist 和 native client 都来自已验证的
 Package release。
+
+## 安装器会创建哪些服务
+
+服务列表取决于 scope 和可选组件：
+
+| 组件 | unit | 创建条件 |
+| --- | --- | --- |
+| TSPi Host | `ts-app-server-tspi.service` | `--service-scope user` 或 `system` |
+| TS Web | `ts-web-tspi.service` | `--with-web` 且 Host 使用 service scope |
+| Link Relay | `tspi-link-relay.service` | `--with-link-relay` 且 `--relay-service-scope user` 或 `system` |
+
+使用 `--*-service-scope none` 时只安装文件和配置，不注册对应的 systemd unit。Host
+会管理 Monitor 和 session worker，它们不是额外的常驻 unit。TS Phone 是独立的 Flutter
+客户端，不会在安装主机上创建服务。
 
 ## ResearchAgent 与内部 App Server
 

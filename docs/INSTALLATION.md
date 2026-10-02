@@ -2,9 +2,10 @@
 
 [English](INSTALLATION.md) | [简体中文](INSTALLATION.zh-CN.md)
 
-This guide installs the TSPi Agent package and its optional TS Web browser.
-TS Phone is a separate Flutter application. TSPi installs only the Host-side
-Link client; the public TSPi Link Relay has its own standalone installer.
+This guide installs the TSPi Agent package, its optional TS Web browser, and,
+when requested, the public TSPi Link Relay. TS Phone is a separate Flutter
+application. The Relay remains an independent service and installation root,
+but the main installer can provision it and enroll the Host in one run.
 
 ## Prerequisites
 
@@ -30,6 +31,14 @@ repository:
 Run `./install.sh` and confirm the installation directory, TSPi revision,
 workspace root, Conda root, optional TS Web component, and service policy. Core
 Agent, scientific runtime, and molecular rendering are always installed.
+
+For a single non-interactive installation that also provisions a Relay, use
+`install-configured.sh` and set `TSPI_WITH_LINK_RELAY=true`,
+`TSPI_PHONE_ACCESS=link`, and `TSPI_LINK_URL` to the Relay HTTPS origin. The
+Relay-specific settings include `TSPI_LINK_RELAY_ROOT`,
+`TSPI_LINK_RELAY_STATE_DIR`, `TSPI_LINK_RELAY_LISTEN`,
+`TSPI_LINK_RELAY_PORT`, `TSPI_LINK_RELAY_SERVICE_SCOPE`, and
+`TSPI_LINK_RELAY_SERVICE_USER`.
 
 For non-interactive installation, `--workspace-root /absolute/path` selects the
 directory containing named projects. The default is `<install>/workspaces`.
@@ -219,6 +228,21 @@ are usable by the same account as the service user. The Host worker facet,
 server-extension allowlist, and native client are selected from the validated
 Package release.
 
+## Services Created By The Installer
+
+The service list depends on the selected scopes and optional components:
+
+| Component | Unit | Created when |
+| --- | --- | --- |
+| TSPi Host | `ts-app-server-tspi.service` | `--service-scope user` or `system` |
+| TS Web | `ts-web-tspi.service` | `--with-web` and a Host service scope |
+| Link Relay | `tspi-link-relay.service` | `--with-link-relay` and `--relay-service-scope user` or `system` |
+
+`--*-service-scope none` installs files and configuration without registering
+that component's systemd unit. Host Monitor and session workers are managed by
+the Host; they are not additional permanent units. TS Phone is a separate
+Flutter client and does not create a service on the installation host.
+
 ## ResearchAgent And The Internal App Server
 
 `ResearchAgent` is the normal user entrypoint. It selects or verifies the
@@ -305,11 +329,13 @@ installs still provide it with `--link-enrollment-code`. The installer writes
 `.pi/app-server-host/host.token`. The Host then maintains an outbound WSS
 connection; no App Server port is exposed to the Relay or Internet.
 
-When a Relay is already installed locally, the installer discovers known roots
-(including `/home/iaw/soft/tspi-link`) and reads its
-`tspi-link-relay.service` to prefill the Relay origin. Use
-`--link-relay-root /path/to/tspi-link` to select another installation. The Relay
-remains a separate service and is never installed twice by the Host installer.
+When a Relay is already installed locally, leave `TSPI_WITH_LINK_RELAY=false`.
+The installer discovers known roots (including `/home/iaw/soft/tspi-link`) and
+reads its `tspi-link-relay.service` to prefill the Relay origin. Use
+`--link-relay-root /path/to/tspi-link` to select another installation. The
+Relay remains a separate service even when provisioned by the unified installer.
+The embedded Relay path is non-interactive so its side effects occur only after
+all wrapper configuration has been explicitly supplied.
 
 After the Host is online, create and manage Phone authorization with:
 

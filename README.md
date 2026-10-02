@@ -36,6 +36,14 @@ Pin `TSPI_INSTALL_REF` to a full commit SHA when the installation must use an
 exact source revision. The wrapper passes compute, name resolver, workspace,
 service, Web, Phone, and notification settings to the same installer.
 
+The public Link Relay can be installed in the same non-interactive run. Set
+`TSPI_WITH_LINK_RELAY=true`, `TSPI_PHONE_ACCESS=link`, and
+`TSPI_LINK_URL=https://relay.example` in the wrapper configuration. The
+installer provisions the Relay service, creates a one-time Host enrollment
+code, and enrolls the Host automatically. The standalone
+`install-link-relay.sh` remains available when the Relay must run on a
+separate machine.
+
 The core installation always includes the Agent, scientific runtime, and
 molecular rendering. TS Web is optional. The installer configures one
 installation-wide TSPi Host; there is no TS Phone daemon to install.

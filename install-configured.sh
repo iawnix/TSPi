@@ -31,6 +31,17 @@ SERVICE_USER="${TSPI_SERVICE_USER:-}"
 ENABLE_SERVICES="${TSPI_ENABLE_SERVICES:-true}"
 START_SERVICES="${TSPI_START_SERVICES:-true}"
 
+WITH_LINK_RELAY="${TSPI_WITH_LINK_RELAY:-false}"
+RELAY_INSTALL_ROOT="${TSPI_LINK_RELAY_ROOT:-$HOME/.local/share/tspi-link-relay}"
+RELAY_STATE_DIR="${TSPI_LINK_RELAY_STATE_DIR:-$HOME/.local/state/tspi-link-relay}"
+RELAY_PUBLIC_URL="${TSPI_LINK_URL:-}"
+RELAY_LISTEN="${TSPI_LINK_RELAY_LISTEN:-127.0.0.1}"
+RELAY_PORT="${TSPI_LINK_RELAY_PORT:-8788}"
+RELAY_SERVICE_SCOPE="${TSPI_LINK_RELAY_SERVICE_SCOPE:-user}"
+RELAY_SERVICE_USER="${TSPI_LINK_RELAY_SERVICE_USER:-tspi-link-relay}"
+RELAY_ENABLE_SERVICES="${TSPI_LINK_RELAY_ENABLE_SERVICES:-true}"
+RELAY_START_SERVICES="${TSPI_LINK_RELAY_START_SERVICES:-true}"
+
 WITH_WEB="${TSPI_WITH_WEB:-false}"
 WEB_PORT="${TSPI_WEB_PORT:-}"
 WEB_HOST="${TSPI_WEB_HOST:-127.0.0.1}"
@@ -90,6 +101,10 @@ Important variables:
   TSPI_INSTALL_ROOT, TSPI_WORKSPACE_ROOT, TSPI_INSTALL_REPO, TSPI_INSTALL_REF
   TSPI_COMPUTE_CONFIG, TSPI_NAME_RESOLVER_CONFIG, TSPI_CONDA_ROOT
   TSPI_SERVICE_SCOPE, TSPI_SERVICE_USER, TSPI_ENABLE_SERVICES, TSPI_START_SERVICES
+  TSPI_WITH_LINK_RELAY, TSPI_LINK_RELAY_ROOT, TSPI_LINK_RELAY_STATE_DIR
+  TSPI_LINK_URL, TSPI_LINK_RELAY_LISTEN, TSPI_LINK_RELAY_PORT
+  TSPI_LINK_RELAY_SERVICE_SCOPE, TSPI_LINK_RELAY_SERVICE_USER
+  TSPI_LINK_RELAY_ENABLE_SERVICES, TSPI_LINK_RELAY_START_SERVICES
   TSPI_WITH_WEB, TSPI_WEB_PORT, TSPI_WEB_HOST, TSPI_ALLOW_REMOTE
   TSPI_WEB_AUTH_TOKEN_FILE, TSPI_WEB_AUTH_TOKEN
   TSPI_PHONE_ACCESS, TSPI_LINK_RELAY_ROOT, TSPI_LINK_URL
@@ -131,6 +146,9 @@ validate_boolean "$ALLOW_REMOTE"
 validate_boolean "$PROBE_REMOTE"
 validate_boolean "$ENABLE_SERVICES"
 validate_boolean "$START_SERVICES"
+validate_boolean "$WITH_LINK_RELAY"
+validate_boolean "$RELAY_ENABLE_SERVICES"
+validate_boolean "$RELAY_START_SERVICES"
 
 INSTALL_ARGS=(
   --install-root "$INSTALL_ROOT"
@@ -163,6 +181,35 @@ append_value --email-security "$EMAIL_SECURITY"
 append_value --clawemail-root "$CLAWEMAIL_ROOT"
 append_value --email-password-env "$EMAIL_PASSWORD_ENV"
 append_value --email-password-file "$EMAIL_PASSWORD_FILE"
+
+if truthy "$WITH_LINK_RELAY"; then
+  [[ "$PHONE_ACCESS" == link ]] || {
+    printf 'TSPI_PHONE_ACCESS must be link when TSPI_WITH_LINK_RELAY is enabled\n' >&2
+    exit 2
+  }
+  [[ -n "$RELAY_PUBLIC_URL" ]] || {
+    printf 'TSPI_LINK_URL is required when TSPI_WITH_LINK_RELAY is enabled\n' >&2
+    exit 2
+  }
+  INSTALL_ARGS+=(
+    --with-link-relay
+    --relay-install-root "$RELAY_INSTALL_ROOT"
+    --relay-state-dir "$RELAY_STATE_DIR"
+    --relay-public-url "$RELAY_PUBLIC_URL"
+    --relay-listen "$RELAY_LISTEN"
+    --relay-port "$RELAY_PORT"
+    --relay-service-scope "$RELAY_SERVICE_SCOPE"
+    --relay-service-user "$RELAY_SERVICE_USER"
+  )
+  if [[ "$RELAY_SERVICE_SCOPE" == none ]]; then
+    # The Relay installer rejects service actions with scope=none. Treat this
+    # scope as an explicit request to install the release and state only.
+    INSTALL_ARGS+=(--relay-no-enable-services --relay-no-start-services)
+  else
+    if truthy "$RELAY_ENABLE_SERVICES"; then INSTALL_ARGS+=(--relay-enable-services); else INSTALL_ARGS+=(--relay-no-enable-services); fi
+    if truthy "$RELAY_START_SERVICES"; then INSTALL_ARGS+=(--relay-start-services); else INSTALL_ARGS+=(--relay-no-start-services); fi
+  fi
+fi
 
 if truthy "$WITH_WEB"; then INSTALL_ARGS+=(--with-web); else INSTALL_ARGS+=(--without-web); fi
 if truthy "$WITH_MODEL_ICONS"; then INSTALL_ARGS+=(--with-model-icons); else INSTALL_ARGS+=(--without-model-icons); fi
