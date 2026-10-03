@@ -100,7 +100,7 @@ def test_core_package_build_is_deterministic_and_installs_app_server_payload(tmp
     resolver_config = install_root / ".pi" / "name-resolver.toml"
     assert resolver_config.is_file()
     assert stat.S_IMODE(resolver_config.stat().st_mode) == 0o600
-    assert "default_resolver = \"opsin\"" in resolver_config.read_text(encoding="utf-8")
+    assert "default_resolver = \"auto\"" in resolver_config.read_text(encoding="utf-8")
 
 
 def test_package_install_migrates_research_workspace_without_pi_state(tmp_path: Path) -> None:
