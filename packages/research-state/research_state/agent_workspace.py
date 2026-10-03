@@ -382,22 +382,9 @@ class ProjectionWriter(Protocol):
 
 class _NoopProjectionWriter:
     def write_projection(self, root: str | Path, context: dict[str, Any], liveness: dict[str, Any]) -> None:
-        # The default protocol endpoint writes only the rebuildable projection
-        # shape. It does not import Memory or execute any Memory behavior.
-        path = Path(root).expanduser().resolve() / "memory" / "index.json"
-        previous = {}
-        try: previous = json.loads(path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError): pass
-        _atomic_json(path, {
-            "schema_version": "research_memory_index_1",
-            "workspace_id": context.get("workspace_id"), "scope": "workspace", "authority": "research_state",
-            "revision": int(context.get("revision", 0)), "context_revision": int(context.get("revision", 0)),
-            "lifecycle": liveness.get("lifecycle", context.get("lifecycle", "idle")),
-            "disposition": liveness.get("disposition", context.get("disposition")),
-            "checkpoint_id": liveness.get("checkpoint_id", context.get("checkpoint_id")),
-            "waiting_external": liveness.get("waiting_external", []), "decision_needed": liveness.get("decision_needed", []),
-            "focus": context.get("focus", {}), "entries": previous.get("entries", []) if isinstance(previous.get("entries"), list) else [],
-        })
+        # State commits the canonical ResearchMap only.  A host may register
+        # research_memory.FileProjectionWriter when it wants a projection.
+        return None
 
 _projection_writer: ProjectionWriter = _NoopProjectionWriter()
 

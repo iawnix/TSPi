@@ -16,47 +16,9 @@ import shutil
 import tempfile
 from dataclasses import asdict, replace
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable
+from typing import Any
 
-from chemical_runtime.backends.ase_neb import (
-    ASE_NEB_REQUIRED_ARTIFACTS,
-    parse_ase_neb_artifacts,
-    prepare_ase_neb,
-    validate_ase_neb_endpoints,
-    write_ase_neb_parse_artifacts,
-)
-from chemical_runtime.backends.base import BackendTask, PreparedTask
-from chemical_runtime.backends.crest import (
-    CREST_REQUIRED_ARTIFACTS,
-    parse_crest_artifacts,
-    prepare_crest,
-    write_crest_parse_artifacts,
-)
-from chemical_runtime.backends.gaussian import (
-    parse_irc_log,
-    parse_log,
-    parse_scan_log,
-    prepare_gaussian,
-    read_gjf_route,
-    route_settings,
-    write_irc_parse_artifacts,
-    write_parse_artifacts,
-    write_scan_parse_artifacts,
-)
-from chemical_runtime.backends.pyscf import (
-    PYSCF_REQUIRED_ARTIFACTS,
-    parse_pyscf_artifacts,
-    prepare_pyscf,
-    write_pyscf_parse_artifacts,
-)
-from chemical_runtime.backends.xtb import (
-    XTB_REQUIRED_ARTIFACTS,
-    parse_xtb_artifacts,
-    prepare_xtb,
-    write_xtb_parse_artifacts,
-)
-from chemical_runtime.backends.xtb_scan import parse_xtb_scan_control
-from chemical_runtime.backends.xyz import xyz_frame_metadata
+from .provider import BackendTask, PreparedTask, ProviderUnavailable, resolve_compute_provider
 from research_compute.calculation_contracts import (
     CalculationContractError,
     validate_calculation_contract,
@@ -123,48 +85,17 @@ def _validate_result_binding(
         validate_calculation_result_binding(intent, result, label=label)
     except CalculationContractError as exc:
         raise ComputeContractError(str(exc)) from exc
-BACKEND_PREPARERS: dict[str, Callable[[BackendTask], PreparedTask]] = {
-    "gaussian": prepare_gaussian,
-    "xtb": prepare_xtb,
-    "crest": prepare_crest,
-    "ase_neb": prepare_ase_neb,
-    "pyscf": prepare_pyscf,
-}
 OPERATIONS = {"prepare", "submit", "inspect", "collect", "cancel", "parse"}
 _CANONICAL_WORKSPACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
 
 
 def _gaussian_task_type(workspace: Path, intent: dict[str, Any]) -> str:
-    """Classify the requested Gaussian operation from the bound input route."""
-
-    ref = intent.get("input_refs", {}).get("gjf")
-    if not isinstance(ref, str):
-        raise ComputeContractError("Gaussian intent requires a gjf input")
     try:
-        input_path = workspace / _workspace_ref(workspace, ref, read=True)
-        flags = route_settings(read_gjf_route(input_path))
+        return resolve_compute_provider(str(intent["backend"])).classify_task(workspace, intent)
+    except ProviderUnavailable as exc:
+        raise ComputeContractError(str(exc)) from exc
     except (OSError, UnicodeError, ValueError) as exc:
-        raise ComputeContractError(f"cannot classify Gaussian Route Section: {exc}") from exc
-    if flags.get("has_irc"):
-        return "irc"
-    if flags.get("has_scan"):
-        return "scan"
-    try:
-        input_text = input_path.read_text(encoding="utf-8", errors="replace")
-    except (OSError, UnicodeError) as exc:
-        raise ComputeContractError(f"cannot read Gaussian input for route classification: {exc}") from exc
-    if flags.get("has_opt") and re.search(
-        r"(?im)^\s*[dabla]\s+(?:\d+\s+){2,4}s\s+\d+(?:\s|$)",
-        input_text,
-    ):
-        return "scan"
-    if flags.get("has_opt") and flags.get("has_freq"):
-        return "opt_freq"
-    if flags.get("has_opt"):
-        return "ts" if flags.get("has_ts") or flags.get("has_qst2") or flags.get("has_qst3") else "opt"
-    if flags.get("has_freq"):
-        return "freq"
-    return "sp"
+        raise ComputeContractError(f"cannot classify calculation task: {exc}") from exc
 
 
 def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
@@ -1356,42 +1287,17 @@ def parse_calculation(
 
     is_irc = backend == "gaussian" and gaussian_task == "irc"
     is_scan = backend == "gaussian" and gaussian_task == "scan"
-    if backend == "gaussian":
-        expected_route = None
-        gjf_ref = intent["input_refs"].get("gjf")
-        if gjf_ref:
-            expected_route = read_gjf_route(workspace / _workspace_ref(workspace, gjf_ref, read=True))
-        if is_irc:
-            parsed = parse_irc_log(source)
-        elif is_scan:
-            parsed = parse_scan_log(source, expected_route=expected_route)
-        else:
-            parsed = parse_log(source, expected_route=expected_route)
-    elif backend == "xtb":
-        parsed = parse_xtb_artifacts(
-            str(intent["task_type"]),
-            {name: path for name, (_, path) in parse_inputs.items()},
-            control=xtb_control,
+    try:
+        parsed = resolve_compute_provider(backend).parse(
+            workspace, intent, source, parse_inputs,
+            gaussian_task=gaussian_task,
+            xtb_control=xtb_control,
+            ase_neb_endpoints=ase_neb_endpoints,
         )
-    elif backend == "crest":
-        input_ref = _workspace_ref(workspace, str(intent["input_refs"]["xyz"]), read=True)
-        parsed = parse_crest_artifacts(
-            {name: path for name, (_, path) in parse_inputs.items()},
-            input_xyz=workspace / input_ref,
-        )
-    elif backend == "pyscf":
-        parsed = parse_pyscf_artifacts(
-            str(intent["task_type"]),
-            {name: path for name, (_, path) in parse_inputs.items()},
-            expected_settings=adapter_settings(intent["parameters"]),
-        )
-    else:
-        parsed = parse_ase_neb_artifacts(
-            {name: path for name, (_, path) in parse_inputs.items()},
-            reactant=ase_neb_endpoints["reactant"],
-            product=ase_neb_endpoints["product"],
-            expected_settings=adapter_settings(intent["parameters"]),
-        )
+    except ProviderUnavailable as exc:
+        raise ComputeContractError(str(exc)) from exc
+    except (OSError, UnicodeError, ValueError, KeyError, TypeError) as exc:
+        raise ComputeContractError(f"{backend} provider could not parse output: {exc}") from exc
     summary = parsed.get("summary")
     if not isinstance(summary, dict):
         raise ComputeContractError(f"{backend} parser returned an invalid summary")
@@ -1402,7 +1308,7 @@ def parse_calculation(
         raise ComputeContractError("parse output path is not a directory")
     if parse_dir.exists() and any(parse_dir.iterdir()):
         raise ComputeContractError("parse output directory is non-empty without a matching calculation result")
-    parser_name = _parser_name(backend, is_irc, is_scan)
+    parser_name = resolve_compute_provider(backend).parser_name(backend, is_irc=is_irc, is_scan=is_scan)
     descriptor = resolve_capability(str(intent["capability"]), str(intent["capability_version"]))
     if len(descriptor.parsers) != 1:
         raise ComputeContractError(f"capability must bind exactly one parser: {intent['capability']}")
@@ -1414,20 +1320,9 @@ def parse_calculation(
     )
     parsed_at = now_iso()
     try:
-        if backend == "gaussian" and is_irc:
-            write_irc_parse_artifacts(parsed, parse_dir, source.stem, source.name)
-        elif backend == "gaussian" and is_scan:
-            write_scan_parse_artifacts(parsed, parse_dir)
-        elif backend == "gaussian":
-            write_parse_artifacts(parsed, parse_dir, source.stem, source.name)
-        elif backend == "xtb":
-            write_xtb_parse_artifacts(parsed, parse_dir)
-        elif backend == "crest":
-            write_crest_parse_artifacts(parsed, parse_dir)
-        elif backend == "pyscf":
-            write_pyscf_parse_artifacts(parsed, parse_dir)
-        else:
-            write_ase_neb_parse_artifacts(parsed, parse_dir)
+        resolve_compute_provider(backend).write_parse_artifacts(
+            parsed, parse_dir, source, backend=backend, gaussian_task=gaussian_task,
+        )
         parser_output_refs = sorted(
             path.relative_to(workspace).as_posix()
             for path in parse_dir.glob("*")
@@ -1513,22 +1408,6 @@ def _bound_parse_artifacts(
     return artifacts
 
 
-def _parser_name(backend: str, is_irc: bool, is_scan: bool = False) -> str:
-    if backend == "gaussian":
-        if is_irc:
-            return "chemical_runtime.backends.gaussian.parse_irc_log"
-        if is_scan:
-            return "chemical_runtime.backends.gaussian.parse_scan_log"
-        return "chemical_runtime.backends.gaussian.parse_log"
-    if backend == "xtb":
-        return "chemical_runtime.backends.xtb.parse_xtb_artifacts"
-    if backend == "crest":
-        return "chemical_runtime.backends.crest.parse_crest_artifacts"
-    if backend == "pyscf":
-        return "chemical_runtime.backends.pyscf.parse_pyscf_artifacts"
-    return "chemical_runtime.backends.ase_neb.parse_ase_neb_artifacts"
-
-
 def _validate_backend_request(
     intent: dict[str, Any],
     inputs: dict[str, str],
@@ -1537,8 +1416,6 @@ def _validate_backend_request(
     validate_content: bool = True,
 ) -> None:
     backend = str(intent["backend"])
-    descriptor_task_type = str(intent["task_type"])
-    task_type = _gaussian_task_type(workspace, intent) if backend == "gaussian" else descriptor_task_type
     registration = resolve_capability_registration(
         str(intent["capability"]), str(intent["capability_version"])
     )
@@ -1550,78 +1427,37 @@ def _validate_backend_request(
             f"{backend} input roles must be exactly {sorted(required_inputs)}; "
             f"missing={missing}; unexpected={unexpected}"
         )
-    provider = registration.provider if registration.provider_id != "builtin" else None
-    provider_validator = getattr(provider, "validate_inputs", None)
-    if provider is not None and callable(provider_validator):
+    capability_provider = registration.provider if registration.provider_id != "builtin" else None
+    capability_validate = getattr(capability_provider, "validate_inputs", None)
+    capability_prepare = getattr(capability_provider, "prepare", None)
+    if callable(capability_validate):
         try:
-            provider_validator(workspace=workspace, intent=intent, inputs=dict(inputs))
+            capability_validate(workspace=workspace, intent=intent, inputs=dict(inputs))
         except ComputeContractError:
             raise
         except Exception as exc:
-            raise ComputeContractError(
-                f"{intent['capability']} provider rejected calculation inputs: {exc}"
-            ) from exc
+            raise ComputeContractError(f"{intent['capability']} provider rejected calculation inputs: {exc}") from exc
         return
-    if registration.provider_id != "builtin" and not callable(provider_validator):
-        prepare = getattr(registration.provider, "prepare", None)
-        if not callable(prepare):
-            prepare = getattr(registration.provider, "prepare_task", None)
-        if not callable(prepare):
-            raise ComputeContractError(
-                f"capability provider adapter is unavailable for {intent['capability']}@{intent['capability_version']}"
-            )
+    if callable(capability_prepare):
         return
-    if backend not in BACKEND_PREPARERS:
-        raise ComputeContractError(f"no built-in executor is exposed for backend: {backend}")
+    provider = None
+    if registration.provider_id != "builtin":
+        candidate = getattr(registration.provider, "prepare", None)
+        if callable(candidate):
+            provider = registration.provider
+    if provider is None:
+        try:
+            provider = resolve_compute_provider(backend)
+        except ProviderUnavailable as exc:
+            raise ComputeContractError(str(exc)) from exc
     if not validate_content:
         return
-    if backend == "xtb" and task_type == "scan":
-        try:
-            geometry = xyz_frame_metadata(workspace / inputs["xyz"])
-            parse_xtb_scan_control(
-                workspace / inputs["control"],
-                atom_count=int(geometry["atom_count"]),
-            )
-        except (OSError, UnicodeError, ValueError) as exc:
-            raise ComputeContractError(f"invalid xTB scan control input: {exc}") from exc
-        return
-    if backend == "ase_neb":
-        try:
-            validate_ase_neb_endpoints(
-                workspace / inputs["reactant"],
-                workspace / inputs["product"],
-            )
-        except (OSError, UnicodeError, ValueError) as exc:
-            raise ComputeContractError(f"invalid ASE NEB endpoints: {exc}") from exc
-        return
-    if backend != "gaussian":
-        return
-    gjf = workspace / inputs["gjf"]
-    if gjf.suffix.lower() not in {".gjf", ".com"}:
-        raise ComputeContractError("Gaussian input must use .gjf or .com")
-    flags = route_settings(read_gjf_route(gjf))
-    if task_type == "scan" and not flags.get("has_scan"):
-        input_text = gjf.read_text(encoding="utf-8", errors="replace")
-        modredundant_scan = re.search(
-            r"(?im)^\s*[dabla]\s+(?:\d+\s+){2,4}s\s+\d+(?:\s|$)",
-            input_text,
-        ) is not None
-        if not modredundant_scan:
-            raise ComputeContractError(
-                "Gaussian route/input does not contain a scan directive"
-            )
-    required_flags = {
-        "opt": {"has_opt"},
-        "ts": {"has_ts"},
-        "freq": {"has_freq"},
-        "opt_freq": {"has_opt", "has_freq"},
-        "irc": {"has_irc"},
-        "scan": set(),
-        "sp": set(),
-    }
-    missing = sorted(flag for flag in required_flags.get(task_type, set()) if not flags.get(flag))
-    if missing:
-        raise ComputeContractError(f"Gaussian route does not satisfy the detected operation {task_type}: missing {missing}")
+    try:
+        provider.validate_inputs(workspace=workspace, intent=intent, inputs=dict(inputs))
+    except ComputeContractError:
+        raise
+    except Exception as exc:
+        raise ComputeContractError(f"{intent['capability']} provider rejected calculation inputs: {exc}") from exc
 
 
 def _materialize_execution_target(
@@ -1726,25 +1562,14 @@ def _raw_prepared_task(
     registration = resolve_capability_registration(
         str(intent["capability"]), str(intent["capability_version"])
     )
-    external_provider = registration.provider if registration.provider_id != "builtin" else None
-    external_prepare = getattr(external_provider, "prepare", None)
-    if not callable(external_prepare):
-        external_prepare = getattr(external_provider, "prepare_task", None)
-    if callable(external_prepare):
-        prepare = external_prepare
-    elif registration.provider_id == "builtin":
-        prepare = BACKEND_PREPARERS.get(backend)
-        if not callable(prepare):
-            raise ComputeContractError(f"no built-in executor is exposed for backend: {backend}")
-    else:
+    provider = None
+    if registration.provider_id != "builtin" and callable(getattr(registration.provider, "prepare", None)):
         provider = registration.provider
-        prepare = getattr(provider, "prepare", None)
-        if not callable(prepare):
-            prepare = getattr(provider, "prepare_task", None)
-        if not callable(prepare):
-            raise ComputeContractError(
-                f"capability provider adapter is unavailable for {intent['capability']}@{intent['capability_version']}"
-            )
+    if provider is None:
+        try:
+            provider = resolve_compute_provider(backend)
+        except ProviderUnavailable as exc:
+            raise ComputeContractError(str(exc)) from exc
     task_type = _gaussian_task_type(workspace, intent) if backend == "gaussian" else str(intent["task_type"])
     task = BackendTask(
         node_id=str(intent["node_id"]),
@@ -1752,9 +1577,10 @@ def _raw_prepared_task(
         work_dir=f"nodes/{intent['node_id']}",
         inputs=inputs,
         settings=adapter_settings(intent["parameters"]),
+        backend=backend,
     )
     try:
-        prepared = prepare(task)
+        prepared = provider.prepare(task)
     except ComputeContractError:
         raise
     except Exception as exc:
@@ -1911,16 +1737,10 @@ def _apply_compute_environment(
 def _validate_required_backend_artifacts(intent: dict[str, Any], prepared: PreparedTask) -> None:
     backend = str(intent["backend"])
     task_type = str(intent["task_type"])
-    if backend == "xtb":
-        required = XTB_REQUIRED_ARTIFACTS[task_type]
-    elif backend == "crest":
-        required = CREST_REQUIRED_ARTIFACTS
-    elif backend == "ase_neb":
-        required = ASE_NEB_REQUIRED_ARTIFACTS
-    elif backend == "pyscf":
-        required = PYSCF_REQUIRED_ARTIFACTS[task_type]
-    else:
-        return
+    try:
+        required = resolve_compute_provider(backend).required_artifacts(backend, task_type)
+    except ProviderUnavailable as exc:
+        raise ComputeContractError(str(exc)) from exc
     names = {Path(ref).name for ref in prepared.expected_artifacts}
     missing = sorted(required - names)
     if missing:

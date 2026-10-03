@@ -170,7 +170,7 @@ if [[ -n "$activation" ]]; then source "$activation"; fi
 if [[ -z "$xtb_executable" && -z "$gaussian_executable" ]]; then
   exit 1
 fi
-"$python_executable" -c 'import ase, numpy; import chemical_runtime.backends.ase_neb_runner'
+"$python_executable" -c 'import ase, numpy'
 if [[ -n "$xtb_executable" ]]; then
   if [[ "$xtb_executable" == /* ]]; then
     test -x "$xtb_executable"
@@ -204,7 +204,6 @@ import pyscf.dispersion as pyscf_dispersion
 import numpy
 import psutil
 import yaml
-import chemical_runtime.backends.pyscf_runner
 from pyscf import dft, gto
 from pyscf.scf import dispersion as scf_dispersion
 mol = gto.M(atom="H 0 0 0; H 0 0 1.4", basis="sto-3g", verbose=0)

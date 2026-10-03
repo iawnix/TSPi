@@ -170,7 +170,6 @@ def _validate_layout(
     required_files = (
         root / "research_map/context.json",
         root / "lifecycle/liveness.json",
-        root / "memory/index.json",
         root / "checkpoints/checkpoint_0.json",
     )
     if any(path.is_symlink() or not path.is_file() for path in required_files):
@@ -178,7 +177,6 @@ def _validate_layout(
     try:
         context = _read_json(root / "research_map/context.json")
         liveness = _read_json(root / "lifecycle/liveness.json")
-        memory = _read_json(root / "memory/index.json")
         checkpoint = _read_json(root / "checkpoints/checkpoint_0.json")
     except WorkspaceModeError as exc:
         raise WorkspaceModeError("research_workspace_documents_invalid") from exc
@@ -217,15 +215,6 @@ def _validate_layout(
             or type(revision) is not int or revision < 0
             or liveness["revision"] != revision):
         raise WorkspaceModeError("research_revision_mismatch")
-    if (memory.get("schema_version") != "research_memory_index_1"
-            or memory.get("workspace_id") != manifest["workspace_id"]
-            or memory.get("scope") != "workspace"
-            or memory.get("authority") != "research_state"
-            or type(memory.get("revision")) is not int
-            or memory["revision"] != revision
-            or memory.get("context_revision") != revision
-            or not isinstance(memory.get("entries"), list)):
-        raise WorkspaceModeError("research_memory_invalid")
     if (checkpoint.get("schema_version") != "research_checkpoint_1"
             or checkpoint.get("workspace_id") != manifest["workspace_id"]):
         raise WorkspaceModeError("research_checkpoint_invalid")
@@ -295,7 +284,8 @@ def _research_seed(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "schema_version": "research_memory_index_1",
             "workspace_id": workspace_id,
             "scope": "workspace",
-            "authority": "research_state",
+            "authority": "research_memory",
+            "state_authority": "research_state",
             "revision": 0,
             "context_revision": 0,
             "lifecycle": "admission_pending",
@@ -380,6 +370,8 @@ def initialize_workspace(root: str | Path, workspace_id: str, workspace_mode: st
         seed = _research_seed(manifest)
         _write_json(path / "research_map/context.json", seed["context"])
         _write_json(path / "lifecycle/liveness.json", seed["liveness"])
+        # Initial projection is a workspace bootstrap artifact. Subsequent
+        # revisions are written only by research-memory's ProjectionWriter.
         _write_json(path / "memory/index.json", seed["memory"])
         _write_json(path / "checkpoints/checkpoint_0.json", seed["checkpoint"])
         _write_json(manifest_path, manifest)
@@ -484,30 +476,6 @@ def admit_research_workspace(root: str | Path) -> dict[str, Any]:
             **liveness, "state": "admitted", "lifecycle": "idle", "disposition": None,
             "checkpoint_id": liveness.get("checkpoint_id", "checkpoint_0"), "admitted_at": admitted_at,
         })
-    memory_path = path / "memory/index.json"
-    try:
-        memory = _read_json(memory_path)
-    except WorkspaceModeError as exc:
-        if "missing" not in str(exc):
-            raise
-        memory = _research_seed(manifest)["memory"]
-    _write_json(memory_path, {
-        **memory,
-        "revision": context.get("revision", 0),
-        "context_revision": context.get("revision", 0),
-        "lifecycle": (
-            context.get("lifecycle", "idle") if context_admitted
-            else liveness.get("lifecycle", "idle") if liveness_admitted
-            else "idle"
-        ),
-        "disposition": (
-            context.get("disposition") if context_admitted
-            else liveness.get("disposition") if liveness_admitted
-            else None
-        ),
-        "checkpoint_id": context.get("checkpoint_id", "checkpoint_0"),
-        "focus": context.get("focus", {"claim_ids": [], "node_ids": []}),
-    })
     admitted = {
         **manifest,
         "state": "ready",

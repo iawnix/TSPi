@@ -98,6 +98,8 @@ export function create_context_builder({
       ...(session_id === undefined ? {} : { session_id }),
       memory: {
         scope: "session",
+        authority: "agent_session",
+        scientific_authority: "research_state",
         revision: Number.isInteger(memory.revision) ? memory.revision : 0,
         entries,
       },

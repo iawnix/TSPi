@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from research_memory import FileProjectionWriter
 
 from research_state.workspace import (
     RESEARCH_CONTEXT_COLLECTIONS,
@@ -24,6 +25,11 @@ def test_research_workspace_requires_and_accepts_host_admission(tmp_path: Path) 
         assert context[collection] == []
 
     admitted = admit_research_workspace(root)
+    FileProjectionWriter().write_projection(
+        root,
+        json.loads((root / "research_map/context.json").read_text(encoding="utf-8")),
+        json.loads((root / "lifecycle/liveness.json").read_text(encoding="utf-8")),
+    )
     assert admitted["state"] == "ready"
     assert admitted["research_state"]["admission_required"] is False
     assert json.loads((root / "lifecycle/liveness.json").read_text(encoding="utf-8"))["state"] == "admitted"

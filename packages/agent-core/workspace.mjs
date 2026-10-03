@@ -174,10 +174,11 @@ export async function validate_workspace_files(manifest, root, { allow_partial_a
   if (memory.schema_version !== "research_memory_index_1"
     || memory.workspace_id !== manifest.workspace_id
     || memory.scope !== "workspace"
-    || memory.authority !== "research_state"
+    || memory.authority !== "research_memory"
+    || memory.state_authority !== "research_state"
     || !Number.isSafeInteger(memory.revision) || memory.revision < 0
-    || memory.revision !== context.revision
-    || memory.context_revision !== context.revision
+    || memory.revision > context.revision
+    || memory.context_revision > context.revision
     || !Array.isArray(memory.entries)) {
     throw new Error("research_memory_invalid");
   }
@@ -262,7 +263,8 @@ function research_seed(manifest) {
       schema_version: "research_memory_index_1",
       workspace_id: manifest.workspace_id,
       scope: "workspace",
-      authority: "research_state",
+      authority: "research_memory",
+      state_authority: "research_state",
       revision: 0,
       context_revision: 0,
       lifecycle: "admission_pending",

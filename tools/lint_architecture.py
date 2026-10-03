@@ -43,6 +43,8 @@ def check() -> list[str]:
         text = path.read_text(encoding="utf-8")
         if re.search(r"\btspi_runtime\b", text):
             errors.append(f"research_compute imports tspi_runtime: {path.relative_to(ROOT)}")
+        if re.search(r"\bchemical_runtime\b", text):
+            errors.append(f"research_compute imports a Chemistry implementation: {path.relative_to(ROOT)}")
 
     for root in (ROOT / "packages", ROOT / "extensions", ROOT / "apps", ROOT / "scripts", ROOT / "tools"):
         for path in _python_files(root):

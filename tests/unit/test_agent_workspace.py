@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from research_memory import install_state_projection_writer
 
 from research_state.agent_workspace import (
     ADMITTED,
@@ -24,6 +25,7 @@ from research_state.workspace import initialize_workspace
 
 
 def _workspace(root: Path) -> None:
+    install_state_projection_writer()
     initialize_workspace(root, "workspace_python_unit", "research")
 
 

@@ -13,20 +13,16 @@ from typing import Any, Final
 from jsonschema import Draft202012Validator
 
 from .errors import ComputeContractError
-from .registry import CapabilityRegistration
-from chemical_runtime.analysis.catalog import (
-    ANALYSIS_CAPABILITIES_BY_ID,
-    ANALYSIS_REGISTRY,
-    DESCRIPTORS,
-    register_analysis_descriptor,
-)
+from .registry import CapabilityRegistration, CapabilityRegistry
 
 
-from chemical_runtime.analysis.catalog import MAPPING_VALIDATION_DESCRIPTOR
+def _analysis_key(descriptor: dict[str, Any]) -> tuple[str, str]:
+    if not isinstance(descriptor, dict) or not isinstance(descriptor.get("capability"), str) or not isinstance(descriptor.get("version"), str):
+        raise ValueError("analysis descriptor must expose capability and version")
+    return descriptor["capability"], descriptor["version"]
 
-ANALYSIS_DESCRIPTORS: Final[tuple[dict[str, Any], ...]] = (MAPPING_VALIDATION_DESCRIPTOR,)
 
-ANALYSIS_CAPABILITY_REGISTRY = ANALYSIS_REGISTRY
+ANALYSIS_CAPABILITY_REGISTRY: CapabilityRegistry[dict[str, Any]] = CapabilityRegistry(key=_analysis_key)
 
 
 def register_analysis_capability(
@@ -38,14 +34,9 @@ def register_analysis_capability(
 ) -> CapabilityRegistration[dict[str, Any]]:
     """Register one analysis descriptor with the runtime provider catalog."""
 
-    registration = register_analysis_descriptor(
-        descriptor,
-        provider_id=provider_id,
-        provider=provider,
-        replace=replace,
+    return ANALYSIS_CAPABILITY_REGISTRY.register(
+        descriptor, provider_id=provider_id, provider=provider, replace=replace,
     )
-    ANALYSIS_CAPABILITIES_BY_ID[descriptor["capability"]] = descriptor
-    return registration
 
 
 def register_analysis_provider(
@@ -56,17 +47,7 @@ def register_analysis_provider(
 ) -> tuple[CapabilityRegistration[dict[str, Any]], ...]:
     """Register all analysis descriptors exposed by a provider object."""
 
-    registrations = ANALYSIS_REGISTRY.register_provider(provider, provider_id=provider_id, replace=replace)
-    for registration in registrations:
-        descriptor = registration.descriptor
-        ANALYSIS_CAPABILITIES_BY_ID[descriptor["capability"]] = descriptor
-    return registrations
-
-
-# The built-in analysis catalog is registered by ``analysis.catalog``.  The
-# mapping validator is implemented by this module and is the only additional
-# descriptor that must be installed here.
-register_analysis_capability(ANALYSIS_DESCRIPTORS[0])
+    return ANALYSIS_CAPABILITY_REGISTRY.register_provider(provider, provider_id=provider_id, replace=replace)
 
 
 def analysis_capabilities() -> dict[str, Any]:
@@ -120,23 +101,18 @@ def run_analysis(root: str, request: dict[str, Any]) -> dict[str, Any]:
         if error is not None:
             location = ".".join([field, *(str(part) for part in error.absolute_path)])
             raise ComputeContractError(f"analysis {location}: {error.message}")
-    if capability != "reaction.mapping.validate":
-        from chemical_runtime.analysis.engine import run_scientific_analysis
-        return run_scientific_analysis(root, request)
-    # Imports stay local: catalog discovery does not load scientific libraries.
-    from .artifacts import create_reaction_mapping_validation_artifact
-
-    result = create_reaction_mapping_validation_artifact(root, {
-        "schema_version": "ts-reaction-mapping-validate-request/1",
-        "node_id": request["node_id"],
-        "reactants": [{"artifact_id": item} for item in request["input_artifacts"]["reactants"]],
-        "products": [{"artifact_id": item} for item in request["input_artifacts"]["products"]],
-        "mapping": request["parameters"]["mapping"],
-    })
-    return {
-        **result,
-        "schema_version": "ts-analysis-result/1",
-        "analysis_schema_version": result["schema_version"],
-        "operation": "run",
-        "summary": f"{capability}@{version}: {result['verdict']}; {result['mapping_count']} mapped atom pairs.",
-    }
+    registration = ANALYSIS_CAPABILITY_REGISTRY.resolve(capability, version)
+    provider = registration.provider if registration is not None else None
+    runner = getattr(provider, "run_analysis", None)
+    if not callable(runner):
+        return {
+            "schema_version": "ts-capability-gap/1", "ok": False, "status": "rejected",
+            "reason": "capability_provider_unavailable", "requested": f"{capability}@{version}",
+            "retryable": False,
+        }
+    try:
+        return runner(root, request)
+    except ComputeContractError:
+        raise
+    except Exception as exc:
+        raise ComputeContractError(f"analysis provider failed: {exc}") from exc

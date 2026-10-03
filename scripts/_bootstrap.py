@@ -10,6 +10,35 @@ from pathlib import Path
 from types import ModuleType
 
 
+def register_first_party_providers(package_root: str | Path) -> None:
+    """Register extension implementations after the generic packages load.
+
+    Provider registration belongs to the application/bootstrap boundary.  The
+    research-compute package itself never imports a domain extension.
+    """
+    root = Path(package_root).expanduser().resolve()
+    source = root / "extensions" / "chemical" / "providers" / "chemical_compute_provider.py"
+    if not source.is_file():
+        return
+    name = f"_tspi_chemical_compute_{hashlib.sha256(str(source).encode()).hexdigest()[:12]}"
+    module = sys.modules.get(name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(name, source)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"cannot load compute provider: {source}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    from research_compute.provider import register_compute_provider
+    register_compute_provider(module.chemical_compute_provider, replace=True)
+    from research_compute.capabilities import CAPABILITY_DESCRIPTORS, register_capability
+    for descriptor in CAPABILITY_DESCRIPTORS:
+        if descriptor.backend in module.chemical_compute_provider.backends:
+            register_capability(descriptor, provider_id="chemical", provider=module.chemical_compute_provider, replace=True)
+    from research_compute.analysis import register_analysis_provider
+    register_analysis_provider(module.chemical_compute_provider, provider_id="chemical", replace=True)
+
+
 def load_runtime_environment(package_root: str | Path) -> ModuleType:
     root = Path(package_root).expanduser().resolve()
     source = root / "packages" / "tspi-foundation" / "tspi_foundation" / "env.py"
@@ -62,6 +91,7 @@ def bootstrap_python_package(
         if importlib.util.find_spec(package_name) is None:
             value = str(source_root)
             if value not in sys.path: sys.path.insert(0, value)
+    register_first_party_providers(root)
     return runtime
 
 

@@ -3,6 +3,7 @@ import type { WorkspaceMode } from "./session_mode.mjs";
 
 export const MEMORY_READ_SCHEMA: "agent_memory_read_1";
 export const MEMORY_ENTRY_SCHEMA: "agent_memory_entry_1";
+export const AGENT_SESSION_MEMORY_SCHEMA: "agent_session_memory_1";
 export const MEMORY_SCOPE: "session";
 export const MEMORY_AUTHORITY: "agent_core_session";
 

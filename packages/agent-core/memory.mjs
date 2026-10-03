@@ -6,6 +6,7 @@ import { require_workspace_id } from "./workspace_id.mjs";
 
 export const MEMORY_READ_SCHEMA = "agent_memory_read_1";
 export const MEMORY_ENTRY_SCHEMA = "agent_memory_entry_1";
+export const AGENT_SESSION_MEMORY_SCHEMA = "agent_session_memory_1";
 // Agent Core memory is deliberately ephemeral session context in both modes.
 // In research mode the Research State, not this port, owns workspace-scoped
 // scientific memory (ResearchMap, liveness, and checkpoints).

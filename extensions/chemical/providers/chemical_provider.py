@@ -62,11 +62,11 @@ def handle(request: ProviderRequest) -> dict[str, Any]:
     if request.provider_id in {"xtb", "crest", "gaussian", "pyscf"}:
         result = _prepare(request)
     elif request.provider_id == "chemical.analysis":
-        from research_compute.analysis import run_analysis
+        from chemical_compute_provider import chemical_compute_provider
         root = request.context.get("workspace_root")
         if not isinstance(root, str) or not root.startswith("/"):
             raise ValueError("chemical analysis requires an absolute workspace_root context")
-        result = run_analysis(root, request.inputs.get("request", request.inputs))
+        result = chemical_compute_provider.run_analysis(Path(root), request.inputs.get("request", request.inputs))
     elif request.provider_id == "artifact_seed":
         from chemical_runtime.structures.seed import generate_smiles_seed
         result = generate_smiles_seed(str(request.inputs.get("smiles", "")),

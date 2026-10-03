@@ -54,8 +54,8 @@ class ExecutionCapabilityProvider(CapabilityProvider[T], Protocol[T]):
 
     ``validate_inputs`` is optional at runtime; when present it receives
     keyword arguments ``workspace``, ``intent`` and ``inputs``.  ``prepare``
-    (or the legacy spelling ``prepare_task``) must return a
-    :class:`~chemical_runtime.backends.base.PreparedTask`.  This protocol is kept
+    (or the legacy spelling ``prepare_task``) must return a provider-owned
+    prepared task record. This protocol is kept
     structural so third-party packages do not import a framework base class.
     """
 

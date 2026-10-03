@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from research_compute.registry import CapabilityRegistration, CapabilityRegistry
 
 
 def obj(properties=None, required=(), **keywords):
@@ -179,67 +178,3 @@ MAPPING_VALIDATION_DESCRIPTOR = {
         "Element agreement does not validate isotope, charge, spin, connectivity, or chemical plausibility.",
     ],
 }
-
-
-# Runtime view of this declarative catalog.  ``DESCRIPTORS`` remains available
-# as the built-in compatibility snapshot; callers adding analysis providers
-# should register through this registry instead of editing the tuple.
-ANALYSIS_REGISTRY: CapabilityRegistry[dict[str, Any]] = CapabilityRegistry()
-ANALYSIS_CAPABILITIES_BY_ID: dict[str, dict[str, Any]] = {}
-
-
-def register_analysis_descriptor(
-    descriptor: dict[str, Any],
-    *,
-    provider_id: str = "builtin",
-    provider: object | None = None,
-    replace: bool = False,
-) -> CapabilityRegistration[dict[str, Any]]:
-    registration = ANALYSIS_REGISTRY.register(
-        descriptor,
-        provider_id=provider_id,
-        provider=provider,
-        replace=replace,
-    )
-    ANALYSIS_CAPABILITIES_BY_ID[descriptor["capability"]] = descriptor
-    return registration
-
-
-def register_analysis_capability(
-    descriptor: dict[str, Any],
-    *,
-    provider_id: str = "builtin",
-    provider: object | None = None,
-    replace: bool = False,
-) -> CapabilityRegistration[dict[str, Any]]:
-    """Compatibility alias for extensions using capability terminology."""
-
-    return register_analysis_descriptor(
-        descriptor,
-        provider_id=provider_id,
-        provider=provider,
-        replace=replace,
-    )
-
-
-def register_analysis_provider(
-    provider: object,
-    *,
-    provider_id: str | None = None,
-    replace: bool = False,
-) -> tuple[CapabilityRegistration[dict[str, Any]], ...]:
-    """Register descriptors exposed by an analysis provider object."""
-
-    registrations = ANALYSIS_REGISTRY.register_provider(
-        provider,
-        provider_id=provider_id,
-        replace=replace,
-    )
-    for registration in registrations:
-        descriptor = registration.descriptor
-        ANALYSIS_CAPABILITIES_BY_ID[descriptor["capability"]] = descriptor
-    return registrations
-
-
-for _builtin_descriptor in DESCRIPTORS:
-    register_analysis_descriptor(_builtin_descriptor)
