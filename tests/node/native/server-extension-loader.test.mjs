@@ -111,7 +111,7 @@ test("default package server manifest keeps complete core and chemical tool inve
     "artifact_render",
     "report_build",
     "notify_send",
-    "artifact_seed",
+    "create_mol_structure",
     "artifact_compare",
     "analysis_run",
   ]);

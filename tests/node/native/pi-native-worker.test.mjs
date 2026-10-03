@@ -430,7 +430,7 @@ test("native Pi server gives every client the complete Agent tool inventory", { 
       "read", "system_prompt", "write", "bash", "research_read", "research_change", "research_checkpoint",
       "research_strategy", "research_interpretation", "research_checkpoint", "compute_environment", "review_run",
       "compute_run", "review_respond", "execution_dispatch", "artifact_import", "artifact_render", "report_build",
-      "artifact_seed", "artifact_compare", "analysis_run",
+      "create_mol_structure", "artifact_compare", "analysis_run",
     ]);
   } finally {
     await sessionServices?.dispose(BACKGROUND_CONTEXT).catch(() => {});
@@ -493,7 +493,7 @@ test("native TSPi tools execute against an isolated Research State workspace", {
       compute_run: tools["compute_run"],
       review: tools["review_run"],
       review_respond: tools["review_respond"],
-      artifact_seed: tools["artifact_seed"],
+      create_mol_structure: tools["create_mol_structure"],
       artifact_compare: tools["artifact_compare"],
       analysis_run: tools["analysis_run"],
       execution_dispatch: tools["execution_dispatch"],
@@ -552,7 +552,7 @@ test("native TSPi tools execute against an isolated Research State workspace", {
       /research\.change requires the guarded TSPi App Server Root Agent/,
     );
     await assert.rejects(
-      tools.artifact_seed.execute("seed-disabled", {
+      tools.create_mol_structure.execute("seed-disabled", {
         operation: "generate",
         nodeId: "node_1",
         smiles: "C",
@@ -681,7 +681,7 @@ test("native TSPi tools execute against an isolated Research State workspace", {
     assert.equal(updates[0].details.activity.activity_id, importedReference.activity_id);
     assert.equal(updates[0].details.activity.state, "running");
 
-    const generatedSeed = JSON.parse((await tools.artifact_seed.execute("generate-seed", {
+    const generatedSeed = JSON.parse((await tools.create_mol_structure.execute("generate-seed", {
       operation: "generate",
       nodeId,
       smiles: "C",
@@ -689,7 +689,7 @@ test("native TSPi tools execute against an isolated Research State workspace", {
       multiplicity: 1,
       optimization: "none",
     }, () => {}, toolContext, undefined, context)).content[0].text);
-    assert.equal(generatedSeed.schema_version, "ts-structure-seed-result/1");
+    assert.equal(generatedSeed.schema_version, "ts-create-mol-structure-result/1");
     assert.match(generatedSeed.artifact.artifact_id, /^art_[0-9a-f]{24}$/);
     assert.match(generatedSeed.provenance_artifact.artifact_id, /^art_[0-9a-f]{24}$/);
 

@@ -85,7 +85,7 @@ An unqualified readiness query describes only the Host default and is not proof
 that a named remote environment is usable.
 
 If a fresh workspace has no suitable input, start a non-closed ResearchNode. Use
-`artifact_seed` for one connected SMILES or `artifact_import` for
+`create_mol_structure` for one connected SMILES or `artifact_import` for
 bounded Gaussian, XYZ, or xTB control text. The host returns the logical ID;
 callers never create an `art_*` value or workspace path.
 

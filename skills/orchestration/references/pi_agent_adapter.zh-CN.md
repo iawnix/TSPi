@@ -17,7 +17,7 @@ compute_environment   本地与远端计算环境目录
 compute_run          一个有边界的计算生命周期
 execution_dispatch      暂停或恢复一个 Node 的新任务派发
 analysis_run       已注册的本地分析
-artifact_seed           Node 所属的结构 Artifact
+create_mol_structure           Node 所属的结构 Artifact
 artifact_import         Node 所属的输入 Artifact
 artifact_compare       确定性结构比较
 artifact_render        已注册的可视化 Artifact

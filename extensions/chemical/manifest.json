@@ -56,7 +56,7 @@
     {
       "name": "chemical-input",
       "path": "skills/chemical-input",
-      "sha256": "sha256:79babe92bc92d6aa0d4cf3912e9987a9676c18578dea38c252d17bc5f55cd55c"
+      "sha256": "sha256:212b4ed03b2341f8fd4188dbce24fd455672af06e0171070ee79840eb074fb3c"
     },
     {
       "name": "mechanism-reasoning",
@@ -66,13 +66,13 @@
   ],
   "providers": [
     {
-      "id": "artifact_seed",
+      "id": "create_mol_structure",
       "version": "1",
       "kind": "harness",
-      "descriptor": "providers/artifact_seed.json",
+      "descriptor": "providers/create_mol_structure.json",
       "entry": "providers/chemical_provider.py",
-      "sha256": "sha256:2920c4c86aba8d62bd9bb003ddca154a50f90ea86b4a3aad053826dac393d1be",
-      "descriptor_sha256": "sha256:4b8c88337dfeb0f8ce69e026be7b7c46aa8508d944f0010d328371019086a5bb"
+      "sha256": "sha256:3cf1fb62c5f742daa9abb47b1de0ec7144b0433746c4d0ba994ba9e62a82754e",
+      "descriptor_sha256": "sha256:37d2cdda23db05bb47ccbf1fe7042e4fd4a5e11e761258652f50b4c0c78824fa"
     },
     {
       "id": "chemical.analysis",
@@ -80,7 +80,7 @@
       "kind": "analysis",
       "descriptor": "providers/chemical.analysis.json",
       "entry": "providers/chemical_provider.py",
-      "sha256": "sha256:2920c4c86aba8d62bd9bb003ddca154a50f90ea86b4a3aad053826dac393d1be",
+      "sha256": "sha256:3cf1fb62c5f742daa9abb47b1de0ec7144b0433746c4d0ba994ba9e62a82754e",
       "descriptor_sha256": "sha256:92d5bc7bcd9d74d0fdbfdafa206ee1d4d670736e4e8f62e796bffce0f5b1bbda"
     },
     {
@@ -89,7 +89,7 @@
       "kind": "compute",
       "descriptor": "providers/crest.json",
       "entry": "providers/chemical_provider.py",
-      "sha256": "sha256:2920c4c86aba8d62bd9bb003ddca154a50f90ea86b4a3aad053826dac393d1be",
+      "sha256": "sha256:3cf1fb62c5f742daa9abb47b1de0ec7144b0433746c4d0ba994ba9e62a82754e",
       "descriptor_sha256": "sha256:a36adec4de8e2bfb5a9ffbc69b245c559ab4d123765fff7b35736413420250fe"
     },
     {
@@ -98,7 +98,7 @@
       "kind": "compute",
       "descriptor": "providers/gaussian.json",
       "entry": "providers/chemical_provider.py",
-      "sha256": "sha256:2920c4c86aba8d62bd9bb003ddca154a50f90ea86b4a3aad053826dac393d1be",
+      "sha256": "sha256:3cf1fb62c5f742daa9abb47b1de0ec7144b0433746c4d0ba994ba9e62a82754e",
       "descriptor_sha256": "sha256:b7a49dad939cacb7fa846db70177d275501382782bd80ab900edc966f1054489"
     },
     {
@@ -107,7 +107,7 @@
       "kind": "compute",
       "descriptor": "providers/pyscf.json",
       "entry": "providers/chemical_provider.py",
-      "sha256": "sha256:2920c4c86aba8d62bd9bb003ddca154a50f90ea86b4a3aad053826dac393d1be",
+      "sha256": "sha256:3cf1fb62c5f742daa9abb47b1de0ec7144b0433746c4d0ba994ba9e62a82754e",
       "descriptor_sha256": "sha256:e44423ffaf4c8a0fa63f2dda505e2dc5519895321cebcca7036465b7c36bda89"
     },
     {
@@ -116,7 +116,7 @@
       "kind": "compute",
       "descriptor": "providers/xtb.json",
       "entry": "providers/chemical_provider.py",
-      "sha256": "sha256:2920c4c86aba8d62bd9bb003ddca154a50f90ea86b4a3aad053826dac393d1be",
+      "sha256": "sha256:3cf1fb62c5f742daa9abb47b1de0ec7144b0433746c4d0ba994ba9e62a82754e",
       "descriptor_sha256": "sha256:93588ec1d36b92b6901b7a432d53d82c6a69b1bcee24c4b60bdbed061ea6131b"
     }
   ]

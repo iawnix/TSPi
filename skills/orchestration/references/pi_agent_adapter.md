@@ -18,7 +18,7 @@ compute_environment   local and remote compute environment catalog
 compute_run          one bounded calculation lifecycle
 execution_dispatch      pause or resume new work dispatch for one Node
 analysis_run       registered local analysis
-artifact_seed         Node-owned structure artifacts
+create_mol_structure         Node-owned structure artifacts
 artifact_import       Node-owned input artifacts
 artifact_compare       deterministic structure comparison
 artifact_render        registered visual artifact

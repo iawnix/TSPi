@@ -59,5 +59,5 @@ provenance and diagnostics. An installed program directory or arbitrary
 endpoint does not register a capability.
 
 Name lookup and structure identity are separate from 3D generation. After a
-candidate is confirmed, call `artifact_seed`, then validate the reaction and mapping
+candidate is confirmed, call `create_mol_structure`, then validate the reaction and mapping
 with the existing analysis capabilities.

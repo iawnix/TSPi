@@ -1,17 +1,17 @@
 # Deterministic Artifact Tools
 
-Structure Seed, Structure Compare, and Import are host tools for preparing and
+Molecular Structure, Structure Compare, and Import are host tools for preparing and
 analyzing Node-owned input artifacts.
 
 ## Contents
 
-- [Generate A Structure Seed](#generate-a-structure-seed)
+- [Create A Molecular Structure](#create-a-molecular-structure)
 - [Compare Registered Structures](#compare-registered-structures)
 - [Import An Existing Input](#import-an-existing-input)
 - [Run Registered Analysis](#run-registered-analysis)
 - [Activity And Provenance](#activity-and-provenance)
 
-## Generate A Structure Seed
+## Create A Molecular Structure
 
 For one connected molecule described by SMILES:
 

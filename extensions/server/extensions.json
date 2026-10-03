@@ -38,7 +38,7 @@
       "scope": "server",
       "sha256": "sha256:73798b2df14034275522240b967e922ffd46512c1eb4fa851fb2ee6a584b7cdc",
       "tools": [
-        "artifact_seed",
+        "create_mol_structure",
         "artifact_compare",
         "analysis_run"
       ],

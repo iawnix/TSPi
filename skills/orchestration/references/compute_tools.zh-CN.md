@@ -74,7 +74,7 @@ Launch 的 `inputArtifacts[].inputRole` 必须与所选 capability 的 preflight
 默认环境，不能证明命名的远端环境可用。
 
 若新 workspace 没有合适输入，先启动一个未关闭的 ResearchNode。对单个连通 SMILES
-使用 `artifact_seed`，对有边界的 Gaussian、XYZ 或 xTB control 文本使用 `artifact_import`。Host
+使用 `create_mol_structure`，对有边界的 Gaussian、XYZ 或 xTB control 文本使用 `artifact_import`。Host
 返回逻辑 ID；调用方不得自行创建 `art_*` 值或 workspace 路径。
 
 ## Launch

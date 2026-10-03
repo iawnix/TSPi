@@ -362,11 +362,11 @@ export function createComputeReadinessTool(options = {}) {
   };
 }
 
-export function createSeedTool() {
+export function createMoleculeStructureTool() {
   return {
-    ...TOOL_CONTRACTS.seed,
+    ...TOOL_CONTRACTS.moleculeStructure,
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("artifact_seed", toolContext);
+      requireNativeWrites("create_mol_structure", toolContext);
       return runDeterministicArtifact({
         root: boundWorkspaceRoot(params, toolContext),
         kind: "structure_seed",
@@ -381,19 +381,19 @@ export function createSeedTool() {
           optimization: params.optimization,
           generator: "rdkit_etkdgv3",
         },
-        progressLabel: `TS Structure seed: ${params.nodeId}`,
-        temporaryPrefix: "tspi-native-structure-seed-",
-        command: "structure-seed",
+        progressLabel: `TS Molecular structure: ${params.nodeId}`,
+        temporaryPrefix: "tspi-native-create-mol-structure-",
+        command: "create-mol-structure",
         request: {
-          schema_version: "ts-structure-seed-request/1",
+          schema_version: "ts-create-mol-structure-request/1",
           node_id: params.nodeId,
           smiles: params.smiles,
           charge: params.charge,
           multiplicity: params.multiplicity,
           optimization: params.optimization,
         },
-        resultSchema: "ts-structure-seed-result/1",
-        invalidResultMessage: "structure seed generator returned an invalid result",
+        resultSchema: "ts-create-mol-structure-result/1",
+        invalidResultMessage: "molecular structure generator returned an invalid result",
         onUpdate,
         signal: context?.abortSignal,
       });
@@ -708,7 +708,7 @@ function createCoreToolFactories(options = {}) {
 }
 
 function createChemicalToolFactories(_options = {}) {
-  return [createSeedTool(), createCompareTool(), createAnalyzeTool()];
+  return [createMoleculeStructureTool(), createCompareTool(), createAnalyzeTool()];
 }
 
 function exposeTools(tools) {

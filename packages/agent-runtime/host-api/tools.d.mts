@@ -10,7 +10,7 @@ import type { Component } from "@earendil-works/pi-tui";
 
 export type PublicToolKey =
   | "systemPrompt" | "state" | "change" | "workflow" | "environment" | "computeCatalog" | "computeReadiness" | "review"
-  | "compute" | "reply" | "seed" | "compare" | "analyze" | "dispatch"
+  | "compute" | "reply" | "moleculeStructure" | "compare" | "analyze" | "dispatch"
   | "importArtifact" | "render" | "report" | "notify";
 
 export const PUBLIC_TOOL_CANONICAL_NAMES: Readonly<Record<string, string>>;
@@ -77,7 +77,7 @@ export interface PublicToolContracts {
   readonly review: ToolContract<ReviewToolParams>;
   readonly compute: ToolContract<ComputeToolParams>;
   readonly reply: ToolContract<ReplyToolParams>;
-  readonly seed: ToolContract<SeedToolParams>;
+  readonly moleculeStructure: ToolContract<MoleculeStructureToolParams>;
   readonly compare: ToolContract<CompareToolParams>;
   readonly analyze: ToolContract<AnalyzeToolParams>;
   readonly dispatch: ToolContract<DispatchToolParams>;
@@ -191,7 +191,7 @@ export interface DispatchToolParams extends WorkspaceToolParams {
   nodeId: string;
   rationale: string;
 }
-export interface SeedToolParams extends WorkspaceToolParams {
+export interface MoleculeStructureToolParams extends WorkspaceToolParams {
   operation: "generate";
   nodeId: string;
   smiles: string;

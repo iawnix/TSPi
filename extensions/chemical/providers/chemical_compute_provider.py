@@ -51,12 +51,11 @@ class ChemicalComputeProvider:
 
     def structure_operation(self, operation: str, root: Path, request: dict[str, Any]) -> dict[str, Any]:
         from chemical_artifacts import (
-            import_calculation_artifact, create_structure_seed_artifact,
+            create_mol_structure_artifact,
             create_structure_comparison_artifact, create_reaction_mapping_validation_artifact,
         )
         handlers = {
-            "import_artifact": import_calculation_artifact,
-            "structure_seed": create_structure_seed_artifact,
+            "create_mol_structure": create_mol_structure_artifact,
             "structure_compare": create_structure_comparison_artifact,
             "mapping_validate": create_reaction_mapping_validation_artifact,
         }

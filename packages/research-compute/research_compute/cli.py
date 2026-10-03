@@ -58,9 +58,9 @@ def main(argv: list[str] | None = None) -> int:
     import_artifact.add_argument("--root", required=True)
     import_artifact.add_argument("--request-file", required=True)
 
-    structure_seed = sub.add_parser("structure-seed")
-    structure_seed.add_argument("--root", required=True)
-    structure_seed.add_argument("--request-file", required=True)
+    molecule_structure = sub.add_parser("create-mol-structure")
+    molecule_structure.add_argument("--root", required=True)
+    molecule_structure.add_argument("--request-file", required=True)
 
     structure_compare = sub.add_parser("structure-compare")
     structure_compare.add_argument("--root", required=True)
@@ -216,11 +216,11 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
 
         request = _read_private_request(args.request_file, "artifact import", 2 * 128 * 1024)
         return import_calculation_artifact(args.root, request)
-    if args.command == "structure-seed":
-        from .artifacts import create_structure_seed_artifact
+    if args.command == "create-mol-structure":
+        from .artifacts import create_mol_structure_artifact
 
-        request = _read_private_request(args.request_file, "structure seed", 16 * 1024)
-        return create_structure_seed_artifact(args.root, request)
+        request = _read_private_request(args.request_file, "molecular structure", 16 * 1024)
+        return create_mol_structure_artifact(args.root, request)
     if args.command == "structure-compare":
         from .artifacts import create_structure_comparison_artifact
 

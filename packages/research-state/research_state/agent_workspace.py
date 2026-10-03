@@ -363,10 +363,10 @@ def _require_decision_ready(
     }
     if any(
         isinstance(item, dict)
-        and not (
-            item.get("type") == "register_artifact"
-            and item.get("kind") == "calculation_input"
-        )
+            and not (
+                item.get("type") == "register_artifact"
+                and item.get("kind") in {"calculation_input", "provenance"}
+            )
         and (
             item.get("type") in execution_types
             or item.get("type") == "set_node_state" and item.get("state") == "active"

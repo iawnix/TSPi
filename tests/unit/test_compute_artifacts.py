@@ -18,7 +18,7 @@ from research_compute import (
     ComputeContractError,
     create_calculation_intent,
     create_structure_comparison_artifact,
-    create_structure_seed_artifact,
+    create_mol_structure_artifact,
     import_calculation_artifact,
     list_calculation_artifacts,
     prepare_calculation,
@@ -220,12 +220,12 @@ def test_rdkit_structure_seed_is_deterministic_and_explicit_about_limitations() 
     )
 
     assert first == second
-    assert first["schema_version"] == "ts-structure-seed/1"
+    assert first["schema_version"] == "ts-create-mol-structure/1"
     assert first["chemical_metadata"]["formula"] == "C6H10"
     assert first["chemical_metadata"]["atom_count"] == 16
     assert first["parameters"]["random_seed"] == 61_453
     assert first["parameters"]["optimization"] == "uff"
-    assert first["xyz"].startswith("16\nts-structure-seed/1 ")
+    assert first["xyz"].startswith("16\nts-create-mol-structure/1 ")
     assert any("not a stationary point" in item for item in first["limitations"])
 
 
@@ -253,7 +253,7 @@ def test_structure_seed_artifact_is_private_content_addressed_and_idempotent(tmp
     _require_rdkit()
     workspace, node_id = _workspace(tmp_path)
     request = {
-        "schema_version": "ts-structure-seed-request/1",
+        "schema_version": "ts-create-mol-structure-request/1",
         "node_id": node_id,
         "smiles": "C1=CCCCC1",
         "charge": 0,
@@ -261,15 +261,15 @@ def test_structure_seed_artifact_is_private_content_addressed_and_idempotent(tmp
         "optimization": "uff",
     }
 
-    first = create_structure_seed_artifact(workspace, request)
-    second = create_structure_seed_artifact(workspace, request)
+    first = create_mol_structure_artifact(workspace, request)
+    second = create_mol_structure_artifact(workspace, request)
     artifact = first["artifact"]
     provenance_artifact = first["provenance_artifact"]
     xyz_path = workspace / artifact["path"]
     provenance_path = workspace / provenance_artifact["path"]
     provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
 
-    assert first["schema_version"] == "ts-structure-seed-result/1"
+    assert first["schema_version"] == "ts-create-mol-structure-result/1"
     assert first["created"] is True
     assert second["created"] is False
     assert second["artifact"] == artifact
@@ -284,6 +284,12 @@ def test_structure_seed_artifact_is_private_content_addressed_and_idempotent(tmp
     assert stat.S_IMODE(xyz_path.stat().st_mode) == 0o600
     assert stat.S_IMODE(provenance_path.stat().st_mode) == 0o600
     assert len(list_calculation_artifacts(workspace, node_id=node_id)["artifacts"]) == 2
+    context = read_filesystem_context(workspace)
+    registered = {row["id"]: row for row in context["artifacts"]}
+    assert artifact["artifact_id"] in registered
+    assert provenance_artifact["artifact_id"] in registered
+    assert registered[artifact["artifact_id"]]["kind"] == "calculation_input"
+    assert registered[provenance_artifact["artifact_id"]]["kind"] == "provenance"
 
 
 def test_structure_seed_accepts_semantic_research_node_ids(tmp_path: Path) -> None:
@@ -304,8 +310,8 @@ def test_structure_seed_accepts_semantic_research_node_ids(tmp_path: Path) -> No
             },
         ],
     })
-    result = create_structure_seed_artifact(workspace, {
-        "schema_version": "ts-structure-seed-request/1",
+    result = create_mol_structure_artifact(workspace, {
+        "schema_version": "ts-create-mol-structure-request/1",
         "node_id": node_id,
         "smiles": "O",
         "charge": 0,
@@ -320,7 +326,7 @@ def test_structure_seed_rejects_chemical_and_contract_mismatches(tmp_path: Path)
     _require_rdkit()
     workspace, node_id = _workspace(tmp_path)
     base = {
-        "schema_version": "ts-structure-seed-request/1",
+        "schema_version": "ts-create-mol-structure-request/1",
         "node_id": node_id,
         "smiles": "CC",
         "charge": 0,
@@ -329,11 +335,11 @@ def test_structure_seed_rejects_chemical_and_contract_mismatches(tmp_path: Path)
     }
 
     with pytest.raises(ComputeContractError, match="formal charge"):
-        create_structure_seed_artifact(workspace, {**base, "charge": 1})
+        create_mol_structure_artifact(workspace, {**base, "charge": 1})
     with pytest.raises(ComputeContractError, match="one connected molecule"):
-        create_structure_seed_artifact(workspace, {**base, "smiles": "C.C"})
+        create_mol_structure_artifact(workspace, {**base, "smiles": "C.C"})
     with pytest.raises(ComputeContractError, match=r"unexpected=\['output_path'\]"):
-        create_structure_seed_artifact(workspace, {**base, "output_path": "/tmp/seed.xyz"})
+        create_mol_structure_artifact(workspace, {**base, "output_path": "/tmp/seed.xyz"})
     with pytest.raises(StructureSeedError, match="electron-count parity"):
         generate_smiles_seed("CC", charge=0, multiplicity=2, optimization="none")
 
@@ -630,10 +636,10 @@ def test_structure_seed_cli_uses_private_bounded_request_file(
 ) -> None:
     _require_rdkit()
     workspace, node_id = _workspace(tmp_path)
-    request = tmp_path / "structure-seed.json"
+    request = tmp_path / "create-mol-structure.json"
     request.write_text(
         json.dumps({
-            "schema_version": "ts-structure-seed-request/1",
+            "schema_version": "ts-create-mol-structure-request/1",
             "node_id": node_id,
             "smiles": "CCO",
             "charge": 0,
@@ -645,7 +651,7 @@ def test_structure_seed_cli_uses_private_bounded_request_file(
     request.chmod(0o600)
 
     assert compute_cli_main([
-        "structure-seed",
+        "create-mol-structure",
         "--root",
         str(workspace),
         "--request-file",
@@ -657,7 +663,7 @@ def test_structure_seed_cli_uses_private_bounded_request_file(
 
     request.chmod(0o644)
     assert compute_cli_main([
-        "structure-seed",
+        "create-mol-structure",
         "--root",
         str(workspace),
         "--request-file",

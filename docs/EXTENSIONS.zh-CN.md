@@ -51,5 +51,5 @@ Agent 不能选择 import 路径或绕过 allowlist。
 包内 server 清单现在拆为两个带摘要的 entry，但默认 active tool 集合保持完整。
 `core-tools` 负责研究/生命周期、环境、审查、dispatch、通用计算、artifact
 导入/渲染和报告；`chemical-tools` 负责化学 artifact 与分析工具
-（`artifact_seed`、`artifact_compare`、`analysis_run`）。默认
+（`create_mol_structure`、`artifact_compare`、`analysis_run`）。默认
 `chemical` 扩展中的 Gaussian 和 xTB 是 descriptor-only 元数据项；Python Native registry 是唯一执行边界。

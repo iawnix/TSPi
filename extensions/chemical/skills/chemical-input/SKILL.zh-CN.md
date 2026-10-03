@@ -25,7 +25,7 @@ description: 在确定性 TSPi 分析或计算前，把自然语言化学名称�
    `role` 放进去。物种角色应在后续的 `reaction.parse` 请求中表达。
 3. 把 `draft` 候选（包括 LLM 提出的 SMILES）、未解析名称、多个候选和未指定
    立体中心记录为输入问题，提出聚焦的澄清问题或请求 SMILES/结构 artifact。
-4. 只有候选被明确确认或由确定性解析器唯一解析后，才能传给 `artifact_seed`。
+4. 只有候选被明确确认或由确定性解析器唯一解析后，才能传给 `create_mol_structure`。
    seed 只是初始几何，不是驻点，也不能证明连接关系。
 5. 用确认后的物种执行 `reaction.parse`，检查守恒、映射候选和键变化；必须显式
    选择 atom mapping，不能把唯一图编辑当作机理证明。

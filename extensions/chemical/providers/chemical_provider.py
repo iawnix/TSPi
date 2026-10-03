@@ -67,7 +67,7 @@ def handle(request: ProviderRequest) -> dict[str, Any]:
         if not isinstance(root, str) or not root.startswith("/"):
             raise ValueError("chemical analysis requires an absolute workspace_root context")
         result = chemical_compute_provider.run_analysis(Path(root), request.inputs.get("request", request.inputs))
-    elif request.provider_id == "artifact_seed":
+    elif request.provider_id == "create_mol_structure":
         from chemical_runtime.structures.seed import generate_smiles_seed
         result = generate_smiles_seed(str(request.inputs.get("smiles", "")),
                                       charge=int(request.parameters.get("charge", 0)),

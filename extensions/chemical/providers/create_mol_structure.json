@@ -1,19 +1,16 @@
 {
   "schema_version": "tspi-provider-descriptor/1",
-  "provider_id": "artifact_seed",
+  "provider_id": "create_mol_structure",
   "kind": "harness",
   "capabilities": [
     {
-      "id": "artifact_seed",
-      "version": "1",
-      "aliases": [
-        "artifact.seed"
-      ]
+      "id": "create_mol_structure",
+      "version": "1"
     }
   ],
   "implementation": "builtin",
-  "notes": "Inventory entry for the built-in artifact seeding tool; execution remains harness-owned.",
-  "operation": "artifact_seed",
+  "notes": "Inventory entry for deterministic molecular structure creation.",
+  "operation": "create_mol_structure",
   "version": "1",
   "input_schema": {
     "type": "object"

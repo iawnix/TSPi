@@ -6,7 +6,7 @@ import hashlib
 from typing import Any
 
 
-SEED_SCHEMA_VERSION = "ts-structure-seed/1"
+SEED_SCHEMA_VERSION = "ts-create-mol-structure/1"
 RANDOM_SEED = 61_453
 MAX_ATOMS = 512
 OPTIMIZATIONS = frozenset({"none", "uff"})
