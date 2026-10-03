@@ -1,7 +1,7 @@
-import { create_agent_runtime_port, create_agent_session_port } from "../agent-core/ports.mjs";
+import { create_pi_session_port, create_agent_session_port } from "../agent-core/ports.mjs";
 
 /**
- * Adapt a Pi-owned runtime to the shared Agent Runtime Port. Pi session
+ * Adapt the Pi SDK session runtime to the TSPi Pi Session Port. Pi session
  * objects remain private to this module; callers receive only session summaries
  * and the core port's transport-neutral operations.
  */
@@ -85,7 +85,7 @@ export function create_pi_runtime_adapter({ pi_runtime, create_session, attach_s
     });
   }
 
-  return create_agent_runtime_port({
+  return create_pi_session_port({
     async create_session(request) {
       ensure_open();
       if (typeof start !== "function") throw new TypeError("Pi runtime cannot create sessions");
@@ -134,23 +134,5 @@ export function create_pi_runtime_adapter({ pi_runtime, create_session, attach_s
       sessions.clear();
       if (typeof pi_runtime.close === "function") await pi_runtime.close.call(pi_runtime);
     },
-  });
-}
-
-/**
- * Load a Pi-owned composition module only from the adapter boundary. The
- * module must export create_runtime; callers can inject a fake runtime in
- * tests without loading Pi at all.
- */
-export async function load_pi_runtime({ module_specifier, options } = {}) {
-  if (typeof module_specifier !== "string" || module_specifier.length === 0) {
-    throw new TypeError("module_specifier is required");
-  }
-  const module_namespace = await import(module_specifier);
-  if (typeof module_namespace.create_runtime !== "function") {
-    throw new TypeError("Pi runtime module must export create_runtime()");
-  }
-  return create_pi_runtime_adapter({
-    pi_runtime: await module_namespace.create_runtime(options),
   });
 }

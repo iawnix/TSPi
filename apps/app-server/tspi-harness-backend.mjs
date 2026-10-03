@@ -22,7 +22,7 @@ const EVENT_HISTORY_LIMIT = 256;
  * Phone request always reach the same durable lane.
  */
 export async function createTspiHarnessBackend(options = {}) {
-  const sourceRoot = absolute(options.sourceRoot || process.env.TSPI_PI_SOURCE, "sourceRoot");
+  const sourceRoot = absolute(options.sourceRoot || process.env.TSPI_PI_RUNTIME_ROOT, "sourceRoot");
   const packageRoot = absolute(options.packageRoot || process.env.TSPI_PACKAGE_ROOT, "packageRoot");
   const workspaceRoot = absolute(options.workspaceRoot, "workspaceRoot");
   const serverDirectory = absolute(options.serverDirectory, "serverDirectory");
@@ -34,7 +34,7 @@ export async function createTspiHarnessBackend(options = {}) {
 
   // Install Pi's source aliases before importing any TypeScript source module.
   process.env.PI_EXPERIMENTAL = "1";
-  process.env.TSPI_PI_SOURCE = sourceRoot;
+  process.env.TSPI_PI_RUNTIME_ROOT = sourceRoot;
   process.env.TSPI_PACKAGE_ROOT = packageRoot;
   process.env.PI_SESSION_WORKER_ENTRY = workerEntry;
   process.env.TSPI_WORKSPACE_ROOT = workspaceRoot;

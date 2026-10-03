@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { create_agent_runtime_port, create_workspace_port } from "../../packages/agent-core/ports.mjs";
+import { create_pi_session_port, create_workspace_port } from "../../packages/agent-core/ports.mjs";
 import { assert_session_mode, require_matching_mode } from "../../packages/agent-core/session_mode.mjs";
 import { validate_workspace_manifest } from "../../packages/agent-core/workspace.mjs";
 import { require_workspace_id } from "../../packages/agent-core/workspace_id.mjs";
@@ -74,11 +74,11 @@ function require_workspace_ready(manifest) {
 }
 
 /**
- * Compose the App Server with the shared Agent Runtime Port. The composition
- * root chooses a Fake, native runtime, or Pi adapter and injects it here.
+ * Compose the App Server with the installation-owned Pi Session Port. Tests
+ * may inject a deterministic session double at this boundary.
  */
-export function create_app_server({ runtime_port, workspace_port = null, workspace_catalog = null, turn_router = null, kernel_port = null, native_capability_host = null, native_compute = null, session_store = null } = {}) {
-  const runtime = create_agent_runtime_port(runtime_port);
+export function create_app_server({ pi_session_port, workspace_port = null, workspace_catalog = null, turn_router = null, kernel_port = null, native_capability_host = null, native_compute = null, session_store = null } = {}) {
+  const runtime = create_pi_session_port(pi_session_port);
   const workspace = workspace_port === null ? null : create_workspace_port(workspace_port);
   if (session_store !== null) {
     for (const method of ["create_session", "attach_session", "list_sessions", "close_session"]) {

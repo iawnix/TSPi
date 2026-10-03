@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { create_app_server } from "../../apps/app-server/index.mjs";
-import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
+import { create_fake_pi_session_port } from "../support/fake-pi-session-port.mjs";
 import { create_workspace_initializer, RESEARCH_CONTEXT_COLLECTIONS } from "../../packages/agent-core/workspace.mjs";
 import { close_test_research_states, create_test_research_state } from "../support/research_state_helpers.mjs";
 
@@ -179,7 +179,7 @@ test("research sessions require explicit Host admission", async () => {
   try {
     const initializer = create_workspace_initializer();
     await initializer.initialize_workspace({ workspace_root: root, workspace_id: "workspace_admission", workspace_mode: "research" });
-    const app_server = create_app_server({ runtime_port: create_fake_agent_runtime(), workspace_port: initializer });
+    const app_server = create_app_server({ pi_session_port: create_fake_pi_session_port(), workspace_port: initializer });
     await assert.rejects(
       app_server.create_session({ workspace_root: root, workspace_mode: "research", session_mode: "research" }),
       /workspace_admission_required/,

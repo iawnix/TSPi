@@ -82,10 +82,9 @@ APP_SERVER_FILES = [
     "apps/app-server/tspi-link-host.mjs",
 ]
 
-# The framework's own runtime is intentionally independent of the legacy Pi
-# app-server files above.  Keep this explicit list in the release inventory so
-# a runtime installation cannot silently omit the new Host/Core/Research State stack.
-RESEARCH_AGENT_RUNTIME_FILES = [
+# Keep the TSPi Host and Pi integration explicit in the release inventory so
+# installation cannot silently omit the Host/Core/Research State stack.
+TSPI_HOST_FILES = [
     "apps/app-server/capability-host-bootstrap.d.mts",
     "apps/app-server/capability-host-bootstrap.mjs",
     "apps/app-server/compute-config-capability-host.mjs",
@@ -103,7 +102,6 @@ RESEARCH_AGENT_RUNTIME_FILES = [
     "apps/agent-cli/research_agent_launcher.py",
     "apps/agent-cli/research_agent_capability_bridge.py",
     "scripts/link_relay_discovery.py",
-    "packages/agent-core/fake-runtime.mjs",
     "packages/agent-core/context.d.mts",
     "packages/agent-core/context.mjs",
     "packages/agent-core/index.d.mts",
@@ -133,7 +131,7 @@ RESEARCH_AGENT_RUNTIME_FILES = [
     "packages/research-state-bridge/ports.mjs",
     "packages/research-state-bridge/python_kernel_bridge.d.mts",
     "packages/research-state-bridge/python_kernel_bridge.mjs",
-    "packages/agent-pi-adapter/agent_runtime_port.mjs",
+    "packages/agent-pi-adapter/pi_session_port.mjs",
     "packages/agent-pi-adapter/index.d.mts",
     "packages/agent-pi-adapter/index.mjs",
     "packages/agent-pi-adapter/pi_runtime_adapter.d.mts",
@@ -312,7 +310,7 @@ REQUIRED_TARBALL_FILES = frozenset(
         *CONTRACT_FILES,
         *LINK_RELAY_FILES,
         *APP_SERVER_FILES,
-        *RESEARCH_AGENT_RUNTIME_FILES,
+        *TSPI_HOST_FILES,
         "package.json",
         "packages/agent-contracts/package.json",
         *[f"packages/agent-contracts/schemas/{name}.schema.json" for name in (
@@ -329,7 +327,6 @@ REQUIRED_TARBALL_FILES = frozenset(
         "apps/app-server/client.d.mts",
         "apps/app-server/client.mjs",
         "apps/app-server/server.mjs",
-        "packages/agent-core/fake-runtime.mjs",
         "packages/agent-core/context.d.mts",
         "packages/agent-core/context.mjs",
         "packages/agent-core/index.d.mts",
@@ -357,7 +354,7 @@ REQUIRED_TARBALL_FILES = frozenset(
         "packages/research-state-bridge/index.mjs",
         "packages/research-state-bridge/python_kernel_bridge.d.mts",
         "packages/research-state-bridge/python_kernel_bridge.mjs",
-        "packages/agent-pi-adapter/agent_runtime_port.mjs",
+        "packages/agent-pi-adapter/pi_session_port.mjs",
         "packages/agent-pi-adapter/index.d.mts",
         "packages/agent-pi-adapter/index.mjs",
         "packages/agent-pi-adapter/pi_runtime_adapter.d.mts",
@@ -456,13 +453,11 @@ REQUIRED_TARBALL_FILES = frozenset(
         "packages/agent-runtime/agent-core/failure-taxonomy.cjs",
         "packages/agent-runtime/agent-core/activity-journal.cjs",
         "packages/agent-runtime/agent-core/provider-turn.cjs",
-        "packages/agent-runtime/agents/compute/runtime.ts",
         "packages/agent-runtime/agents/compute/task-packet.cjs",
         "packages/agent-runtime/agents/compute/scheduler-plan.cjs",
         "packages/agent-runtime/agents/compute/output-schema.cjs",
         "packages/agent-runtime/agents/compute/result-tool.ts",
         "packages/agent-runtime/agents/compute/prompts/core.md",
-        "packages/agent-runtime/agents/review/runtime.ts",
         "packages/agent-runtime/agents/review/roles.cjs",
         "packages/agent-runtime/agents/review/roles/general.json",
         "packages/agent-runtime/agents/review/aggregator.cjs",
@@ -516,7 +511,7 @@ REQUIRED_TARBALL_FILES = frozenset(
 
 REQUIRED_RUNTIME_FILES = frozenset(
     {
-        *RESEARCH_AGENT_RUNTIME_FILES,
+        *TSPI_HOST_FILES,
         *ANALYSIS_FILES,
         "packages/research-compute/research_compute/workspace/dispatch.py",
         "packages/agent-runtime/artifacts/node-control.cjs",
@@ -619,11 +614,9 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "packages/agent-runtime/agents/compute/output-schema.cjs",
         "packages/agent-runtime/agents/compute/prompts/core.md",
         "packages/agent-runtime/agents/compute/result-tool.ts",
-        "packages/agent-runtime/agents/compute/runtime.ts",
         "packages/agent-runtime/agents/compute/task-packet.cjs",
         "packages/agent-runtime/agents/compute/scheduler-plan.cjs",
         "packages/agent-runtime/agents/review/prompts/core.md",
-        "packages/agent-runtime/agents/review/runtime.ts",
         "packages/agent-runtime/agents/review/roles.cjs",
         "packages/agent-runtime/agents/review/roles/general.json",
         "packages/agent-runtime/artifacts/request-contract.cjs",

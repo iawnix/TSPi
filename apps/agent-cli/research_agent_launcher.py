@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Launch the installed Research Agent App Server.
 
-The launcher is deliberately separate from the legacy ``TSPi`` Host.  It
-loads one owner-only JSON configuration file, validates the module boundary,
-then replaces itself with Node so signals and exit status belong to the App
-Server process.
+ The launcher starts the installation-owned Pi SDK and TSPi Host. It loads one
+ owner-only JSON configuration file, validates the installed Runtime binding,
+ then replaces itself with Node so signals and exit status belong to the App
+ Server process.
 """
 
 from __future__ import annotations
@@ -12,12 +12,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shlex
 import shutil
-import subprocess
 import sys
 from pathlib import Path
-from urllib.parse import quote
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,47 +35,23 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="Research Agent JSON configuration (default: <install-root>/.pi/research-agent/server.json).",
     )
-    parser.add_argument("--runtime-module", help="Module exporting create_runtime().")
-    parser.add_argument("--kernel-module", help="Optional module exporting create_kernel().")
     parser.add_argument("--host", help="HTTP listen host override.")
     parser.add_argument("--port", type=int, help="HTTP listen port override.")
     parser.add_argument("--catalog-root", help="Workspace catalog root override.")
     parser.add_argument("--session-root", help="Durable session root override.")
-    parser.add_argument("--runtime-options", help="Opaque runtime options passed to create_runtime().")
-    parser.add_argument("--kernel-options", help="Opaque kernel options passed to create_kernel().")
     parser.add_argument(
         "--write-config",
         action="store_true",
-        help="Write the supplied module and server options to --config, then exit.",
+        help="Write the server options to --config, then exit.",
     )
     parser.add_argument("arguments", nargs=argparse.REMAINDER, help="Arguments forwarded to the Node entrypoint after --.")
     return parser
 
 
-def _module_specifier(value: object, *, field: str, package_root: Path) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise LauncherError(f"{field} must be a non-empty module path or package specifier")
-    value = value.strip()
-    if value.startswith("file:"):
-        return value
-    # Bare package names are resolved by Node's normal module resolver.  Paths
-    # are converted to file URLs so spaces and platform-specific characters do
-    # not change import semantics.
-    if value.startswith(".") or value.startswith("/"):
-        path = Path(value).expanduser()
-        if not path.is_absolute():
-            path = package_root / path
-        path = path.resolve()
-        if not path.is_file() or path.is_symlink():
-            raise LauncherError(f"{field} does not name a regular module file: {path}")
-        return "file://" + quote(str(path))
-    return value
-
-
 def _load_config(path: Path) -> dict[str, object]:
     if path.is_symlink() or not path.is_file():
         raise LauncherError(
-            f"Research Agent config is missing: {path}; provide --runtime-module or create this file with --write-config"
+            f"Research Agent config is missing: {path}; create this file with --write-config"
         )
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -89,6 +62,11 @@ def _load_config(path: Path) -> dict[str, object]:
     schema = value.get("schema_version")
     if schema != CONFIG_SCHEMA:
         raise LauncherError(f"Research Agent config schema_version must be {CONFIG_SCHEMA!r}: {path}")
+    retired = sorted(set(value) & {"runtime_module", "kernel_module", "runtime_options", "kernel_options"})
+    if retired:
+        raise LauncherError(
+            "Research Agent config contains removed Runtime injection fields: " + ", ".join(retired)
+        )
     return value
 
 
@@ -112,50 +90,35 @@ def _option_value(cli: object, config: dict[str, object], key: str) -> object:
 
 
 def _build_environment(args: argparse.Namespace, config: dict[str, object], package_root: Path) -> dict[str, str]:
-    runtime = _option_value(args.runtime_module, config, "runtime_module")
     environment = dict(os.environ)
     # Keep the installation identity explicit for the Node App Server and its
     # worker children.  The capability host uses this to resolve the
     # installation-owned `.pi/compute.toml` when a service manager does not
     # forward TS_COMPUTE_CONFIG.
     environment["TSPI_INSTALL_ROOT"] = str(Path(args.install_root).expanduser().resolve())
-    if runtime is None and not environment.get("RESEARCH_AGENT_RUNTIME_MODULE"):
-        raise LauncherError(
-            "runtime_module is required; configure --runtime-module, RESEARCH_AGENT_RUNTIME_MODULE, or the server JSON file"
-        )
-    if runtime is not None:
-        environment["RESEARCH_AGENT_RUNTIME_MODULE"] = _module_specifier(
-            runtime, field="runtime_module", package_root=package_root
-        )
-
-    kernel = _option_value(args.kernel_module, config, "kernel_module")
-    if kernel is not None:
-        environment["RESEARCH_AGENT_KERNEL_MODULE"] = _module_specifier(
-            kernel, field="kernel_module", package_root=package_root
-        )
-
-    # The standalone ResearchAgentServer runtime must load the explicitly pinned Pi
-    # source prepared by the installation. It must never fall back to ~/.pi.
+    # The App Server always uses the installation-owned Pi SDK. A caller may
+    # not replace the Agent Runtime by injecting a module or source checkout.
     pin_path = package_root / "config" / "pi-source.json"
-    if not environment.get("RESEARCH_AGENT_PI_SOURCE") and not environment.get("TSPI_PI_SOURCE"):
-        try:
-            pin = json.loads(pin_path.read_text(encoding="utf-8"))
-            commit = pin.get("commit") if isinstance(pin, dict) else None
-            if isinstance(commit, str) and commit:
-                source = Path(args.install_root).resolve() / ".pi" / "runtime-cache" / "pi" / commit
-                if source.is_dir() and not source.is_symlink():
-                    environment["RESEARCH_AGENT_PI_SOURCE"] = str(source)
-                    environment["TSPI_PI_SOURCE"] = str(source)
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            pass
+    try:
+        pin = json.loads(pin_path.read_text(encoding="utf-8"))
+        commit = pin.get("commit") if isinstance(pin, dict) else None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise LauncherError(f"cannot read installed Pi Runtime descriptor: {pin_path}") from error
+    if not isinstance(commit, str) or not commit:
+        raise LauncherError(f"installed Pi Runtime descriptor has no commit: {pin_path}")
+    source = Path(args.install_root).resolve() / ".pi" / "runtime-cache" / "pi" / commit
+    if not source.is_dir() or source.is_symlink():
+        raise LauncherError(f"installed Pi Runtime is missing or invalid: {source}")
+    configured_source = environment.get("TSPI_PI_RUNTIME_ROOT")
+    if configured_source and Path(configured_source).expanduser().resolve() != source.resolve():
+        raise LauncherError("TSPI_PI_RUNTIME_ROOT is installation-managed and cannot be overridden")
+    environment["TSPI_PI_RUNTIME_ROOT"] = str(source)
 
     mappings = (
         ("host", "TSP_APP_SERVER_HOST"),
         ("port", "TSP_APP_SERVER_PORT"),
         ("catalog_root", "RESEARCH_AGENT_CATALOG_ROOT"),
         ("session_root", "RESEARCH_AGENT_SESSION_ROOT"),
-        ("runtime_options", "RESEARCH_AGENT_RUNTIME_OPTIONS"),
-        ("kernel_options", "RESEARCH_AGENT_KERNEL_OPTIONS"),
     )
     for config_key, env_key in mappings:
         value = _option_value(getattr(args, config_key), config, config_key)
@@ -174,20 +137,14 @@ def _build_environment(args: argparse.Namespace, config: dict[str, object], pack
 def _config_from_args(args: argparse.Namespace) -> dict[str, object]:
     config: dict[str, object] = {"schema_version": CONFIG_SCHEMA}
     for key in (
-        "runtime_module",
-        "kernel_module",
         "host",
         "port",
         "catalog_root",
         "session_root",
-        "runtime_options",
-        "kernel_options",
     ):
         value = getattr(args, key)
         if value is not None:
             config[key] = value
-    if "runtime_module" not in config:
-        raise LauncherError("--write-config requires --runtime-module")
     return config
 
 

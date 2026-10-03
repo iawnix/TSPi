@@ -13,7 +13,7 @@ import {
   withTspiPackageRootHidden,
 } from "../../../apps/app-server/native-client-env.mjs";
 
-const sourceRoot = process.env.TSPI_PI_SOURCE;
+const sourceRoot = process.env.TSPI_TEST_PI_RUNTIME_ROOT;
 const piSlashModules = sourceRoot
   ? await Promise.all([
       import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/services/slash-commands-provider.ts")).href),

@@ -7,7 +7,7 @@
 ## 决定
 
 新框架统一命名为 **Research Agent Framework**。本实现不承担 TSPi 兼容层；
-TSPi 将来作为可以建立在该框架上的 Chemistry Profile。
+TSPi 是基于 Pi SDK 的完整产品；Chemistry 是其中的一个 Extension Profile。
 
 框架边界固定为：
 
@@ -17,11 +17,11 @@ Contracts
   -> Research State
   -> Native Compute Lifecycle（research-state runtime）
   -> App Server
-  -> Runtime Adapter / Client Adapter
+  -> Pi SDK Runtime / TSPi Adapter
 ```
 
-Agent Core 负责 turn、模型请求、工具调用、上下文、重试和恢复，不拥有科研状态，
-也不依赖某个具体 Agent 引擎。
+Agent Core 负责 TSPi 与 Pi 的合同、Context 和 session port，不重新实现 turn、模型请求、
+工具调用、重试或恢复。上述 Agent Runtime 能力全部由 Pi SDK 提供。
 
 Research State 是唯一的科研状态权威，负责 ResearchMap、Research Memory、Claim、
 Node、Finding、Gate、Evidence Link 和生命周期决策。它不选择或执行科研后端。
@@ -30,12 +30,12 @@ Native Compute lifecycle 负责版本化 capability descriptor、calculation int
 Attempt 或 light execution scope、canonical Artifact、analysis 结果和 Environment 绑定。
 它不能直接写入科研 Finding 或 Claim 状态。
 
-App Server 是应用组合根，负责 Host RPC、workspace/session 绑定、权限、回执、恢复、
-Monitor 和客户端适配。它接收 `AgentRuntimePort`，不能直接 import 某个 runtime 实现。
+App Server 是 TSPi 应用组合根，负责 Host RPC、workspace/session 绑定、权限、回执、恢复、
+Monitor 和客户端适配。它只连接安装目录中的 Pi SDK Runtime。
 
-Pi 只是一个 Runtime Adapter。Pi import、experimental source、patch 校验、Pi
-SessionWorker、Pi AgentHarness 和 Pi 模型集成全部限制在
-`agent-pi-adapter` 中。框架不调用系统安装的 `pi` 命令，也不读取环境中的
+Pi SDK 是唯一的 Agent Runtime。Pi import、experimental source、patch 校验、Pi
+SessionWorker、Pi AgentHarness 和 Pi 模型集成由 `agent-pi-adapter` 与 App Server 组合；
+TSPi 不复制 Pi 的 Agent loop。框架不调用系统安装的 `pi` 命令，也不读取环境中的
 Pi 配置。
 
 所有协议标识使用下划线命名，例如 `research_turn_request`、
@@ -45,11 +45,11 @@ Pi 配置。
 新实现不保留 TSPi runtime 兼容路径、旧工具名、点号协议别名或旧生命周期入口。迁移时
 可以复用科研算法和数据格式，但必须重新放到新合同后面实现。
 
-## Runtime Port
+## Pi Session Port
 
 最小的语言无关 Port 包括：
 
-- `AgentRuntimePort`：创建、附着、提交、订阅、中断、关闭；
+- `PiSessionPort`：TSPi 与 Pi Session 的内部连接边界；生产实现只有 Pi Adapter；
 - `ModelPort`：描述模型并流式执行请求；
 - `ContextPort`：从已准入输入构建有界、临时的 turn context；
 - `MemoryPort`：读取和追加 session 级 Agent 记忆。它不是 ResearchMap 存储；
@@ -65,15 +65,15 @@ Pi 配置。
 
 ```text
 App Server
-  -> AgentRuntimePort
+  -> Pi SDK Runtime（唯一 Agent Runtime）
   -> ResearchStatePort
   -> Native Compute Lifecycle（research-state runtime）
   -> MonitorPort
   -> Client adapters
 ```
 
-默认安装注入 Pi Adapter。Core、Research State 和 App Server 测试必须提供 Fake Runtime，
-不要求 Pi、网络、凭证或真实模型服务。
+默认安装固定注入 Pi Adapter。Core、Research State 和 App Server 测试可以提供确定性的
+Fake Session Port，但它不属于产品 Runtime。
 
 Native Compute lifecycle 由 research-state runtime 唯一实现。组合根不再装配 JavaScript provider、Capability Gateway 或 Orchestrator；Native registry 负责 descriptor、intent、执行、解析和 canonical Artifact。`compute_run` 是唯一公开计算入口，取消和终态由 Research State 的持久记录控制。
 ## 科研 Artifact 边界
@@ -95,7 +95,7 @@ patch digest 共同选择。生产启动拒绝安装目录外的 source。框架
 
 - 新计算领域只需在 Python Native registry 和 backend contract 中增加能力，不需要修改
   Agent Core 或 Research State；
-- 将来可以用非 Pi Agent Runtime 复用 App Server 和 Research State；
+- 产品不提供非 Pi Agent Runtime 插件点；所有 Agent loop 变化都通过 Pi SDK 扩展点处理；
 - Pi 版本变化被限制在一个 Adapter 和其测试中；
 - 在大规模移动目录或增加领域功能前，必须先建立并验证公共合同。
 

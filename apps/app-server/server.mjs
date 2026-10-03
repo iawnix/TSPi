@@ -1,11 +1,13 @@
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { create_research_agent_composition } from "./composition_root.mjs";
 import { create_configured_capability_host } from "./capability-host-bootstrap.mjs";
 import { createNativeComputeLifecycle } from "../../apps/app-server/pi-native-compute.mjs";
+import { create_runtime } from "../../packages/agent-pi-adapter/pi_runtime_module.mjs";
+import { create_kernel } from "../../packages/research-state-bridge/kernel_factory.mjs";
 
 export const HTTP_SERVER_PROTOCOL_VERSION = "research_agent_http_server_1";
 export const HTTP_ERROR_SCHEMA = "research_agent_http_error_1";
@@ -324,35 +326,26 @@ async function run_default_server() {
   // before any runtime or compute request is created.
   const package_root = resolve(new URL("../..", import.meta.url).pathname);
   process.env.TSPI_PACKAGE_ROOT = package_root;
-  const module_specifier = process.env.RESEARCH_AGENT_RUNTIME_MODULE;
-  if (typeof module_specifier !== "string" || module_specifier.length === 0) {
-    throw new Error("runtime_module_not_configured: set RESEARCH_AGENT_RUNTIME_MODULE to a module exporting create_runtime()");
-  }
-  const runtime_module = await import(module_specifier);
-  if (typeof runtime_module.create_runtime !== "function") {
-    throw new Error("runtime_module_invalid: module must export create_runtime()");
-  }
-  const runtime_port = await runtime_module.create_runtime({
-    runtime_options: process.env.RESEARCH_AGENT_RUNTIME_OPTIONS || undefined,
+  const install_root = process.env.TSPI_INSTALL_ROOT;
+  const pi_source = process.env.TSPI_PI_RUNTIME_ROOT;
+  if (!install_root || !pi_source) throw new Error("installation_pi_runtime_not_configured");
+  const pi_session_port = await create_runtime({
+    pi_source,
+    cwd: process.env.RESEARCH_AGENT_CWD || process.env.TSPI_WORKSPACE_ROOT || package_root,
+    workspace_root: process.env.TSPI_WORKSPACE_ROOT || package_root,
+    session_root: process.env.RESEARCH_AGENT_SESSION_ROOT || join(install_root, ".pi/research-agent/sessions"),
+    agent_dir: process.env.RESEARCH_AGENT_AGENT_DIR || join(install_root, ".pi/agent"),
+    model_provider: process.env.RESEARCH_AGENT_MODEL_PROVIDER || process.env.TSPI_PROVIDER,
+    model_id: process.env.RESEARCH_AGENT_MODEL_ID || process.env.TSPI_MODEL,
   });
-  let kernel_port = null;
-  const kernel_specifier = process.env.RESEARCH_AGENT_KERNEL_MODULE;
-  if (kernel_specifier) {
-    const kernel_module = await import(kernel_specifier);
-    if (typeof kernel_module.create_kernel !== "function") {
-      throw new Error("kernel_module_invalid: module must export create_kernel()");
-    }
-    kernel_port = await kernel_module.create_kernel({
-      kernel_options: process.env.RESEARCH_AGENT_KERNEL_OPTIONS || undefined,
-    });
-  }
+  const kernel_port = create_kernel({});
   const capability_host = await create_configured_capability_host({
     compute_config_path: process.env.TS_COMPUTE_CONFIG || undefined,
     package_root,
   });
   const native_compute = createNativeComputeLifecycle({ researchKernel: kernel_port });
   const composition = create_research_agent_composition({
-    runtime_port,
+    pi_session_port,
     kernel_port,
     catalog_root: process.env.RESEARCH_AGENT_CATALOG_ROOT || undefined,
     session_root: process.env.RESEARCH_AGENT_SESSION_ROOT || undefined,
@@ -368,6 +361,7 @@ async function run_default_server() {
   const shutdown = async () => {
     await new Promise((resolve_promise) => server.close(() => resolve_promise()));
     await composition.close();
+    await kernel_port.close?.();
   };
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);

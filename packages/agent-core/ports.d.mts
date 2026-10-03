@@ -1,4 +1,4 @@
-export const AGENT_RUNTIME_PORT_VERSION: "agent_runtime_port_1";
+export const PI_SESSION_PORT_VERSION: "pi_session_port_1";
 export const AGENT_SESSION_PORT_VERSION: "agent_session_port_1";
 export const MODEL_PORT_VERSION: "model_port_1";
 export const CONTEXT_PORT_VERSION: "context_port_1";
@@ -15,8 +15,8 @@ export interface AgentSessionPort {
   interrupt(request?: unknown): Promise<unknown>;
 }
 
-export interface AgentRuntimePort {
-  readonly protocol_version: "agent_runtime_port_1";
+export interface PiSessionPort {
+  readonly protocol_version: "pi_session_port_1";
   create_session(request: Record<string, unknown>): Promise<AgentSessionPort>;
   attach_session(session_id: string): Promise<AgentSessionPort>;
   submit(session_id: string, input: string): Promise<Record<string, unknown>>;
@@ -75,7 +75,7 @@ export interface WorkspaceManifestLike {
   readonly [key: string]: unknown;
 }
 
-export function create_agent_runtime_port(implementation: Omit<AgentRuntimePort, "protocol_version">): AgentRuntimePort;
+export function create_pi_session_port(implementation: Omit<PiSessionPort, "protocol_version">): PiSessionPort;
 export function create_agent_session_port(implementation: Omit<AgentSessionPort, "protocol_version">): AgentSessionPort;
 export function create_model_port(implementation: Omit<ModelPort, "protocol_version">): ModelPort;
 export function create_context_port(implementation: Omit<ContextPort, "protocol_version">): ContextPort;

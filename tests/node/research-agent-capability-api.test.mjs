@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { create_app_server } from "../../apps/app-server/app_server.mjs";
-import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
+import { create_fake_pi_session_port } from "../support/fake-pi-session-port.mjs";
 
 function nativeHost() {
   const catalog = [{ capability_id: "fixture_compute", capability_version: "1", kind: "compute" }];
@@ -15,7 +15,7 @@ function nativeHost() {
 }
 
 test("App Server exposes the Native capability catalog and readiness", async () => {
-  const app = create_app_server({ runtime_port: create_fake_agent_runtime(), native_capability_host: nativeHost() });
+  const app = create_app_server({ pi_session_port: create_fake_pi_session_port(), native_capability_host: nativeHost() });
   try {
     assert.deepEqual((await app.capability_catalog()).catalog[0].capability_id, "fixture_compute");
     assert.equal((await app.capability_readiness({ capability_id: "fixture_compute" })).readiness[0].capability_id, "fixture_compute");
@@ -24,7 +24,7 @@ test("App Server exposes the Native capability catalog and readiness", async () 
 });
 
 test("capability operations require an explicitly configured Native host", async () => {
-  const app = create_app_server({ runtime_port: create_fake_agent_runtime() });
+  const app = create_app_server({ pi_session_port: create_fake_pi_session_port() });
   try {
     await assert.rejects(app.capability_catalog(), /native_capability_host_not_configured/);
     await assert.rejects(app.compute_catalog(), /native_capability_host_not_configured/);

@@ -1,4 +1,4 @@
-import type { AgentRuntimePort } from "../agent-core/ports.mjs";
+import type { PiSessionPort } from "../agent-core/ports.mjs";
 
 export const PI_RUNTIME_MODULE_VERSION: "pi_runtime_module_1";
 
@@ -23,5 +23,5 @@ export interface PiRuntimeModuleOptions {
   readonly [key: string]: unknown;
 }
 
-/** Create an explicit Pi-backed Agent Runtime Port. */
-export function create_runtime(options?: PiRuntimeModuleOptions): Promise<AgentRuntimePort>;
+/** Create the installation-owned Pi SDK session port. */
+export function create_runtime(options?: PiRuntimeModuleOptions): Promise<PiSessionPort>;

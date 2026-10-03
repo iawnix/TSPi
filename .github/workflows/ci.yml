@@ -26,7 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           source_root="$(python3 scripts/prepare_pi_source.py --install "$RUNNER_TEMP/tspi")"
-          echo "TSPI_PI_SOURCE=$source_root" >> "$GITHUB_ENV"
+          echo "TSPI_PI_RUNTIME_ROOT=$source_root" >> "$GITHUB_ENV"
       - run: npm run test:native-pi
 
   python-fast:

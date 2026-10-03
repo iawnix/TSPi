@@ -207,31 +207,25 @@ Package release。
 研究模式的 Host admission，然后再打开终端。`ResearchAgentServer` 是供框架客户端和
 管理员使用的内部 HTTP 服务，普通终端流程不需要用户手动启动它。
 
-如果要单独部署 App Server，再显式配置 runtime module；需要研究工作区准入和持久化研究
-状态时，再配置 Research State bridge（传输层选项仍为 `--kernel-module`）：
+如果要单独部署 App Server，直接使用发行包安装的 Pi Runtime。Runtime 和 Research State
+模块由 TSPi 固定选择，不再允许用户注入模块：
 
 ```bash
 ./ResearchAgentServer \
-  --runtime-module /absolute/path/to/runtime-module.mjs \
-  --kernel-module /absolute/path/to/kernel-module.mjs \
   --port 8787 \
   --write-config
 ./ResearchAgentServer
 ```
 
 配置会以 `0600` 写入 `<install>/.pi/research-agent/server.json`，schema 为
-`research_agent_server/1`。相对 module 路径相对于当前 Package release 解析；
-裸 package 名称交给 Node 的 module resolver。临时 smoke test 也可以使用
-`RESEARCH_AGENT_RUNTIME_MODULE` 和 `RESEARCH_AGENT_KERNEL_MODULE` 环境变量。
-`runtime_module` 必须导出 `create_runtime()`；提供 `kernel_module` 时必须导出
-`create_kernel()`。
+`research_agent_server/1`。旧的 `runtime_module`、`kernel_module` 和模块注入环境变量
+会被直接拒绝。
 
-发行包内置显式的 Pi Runtime Module：
-`packages/agent-pi-adapter/pi_runtime_module.mjs`。当 Host 已配置 Pi SDK
-模型时，可以直接使用：
+发行包内置 Pi SDK Runtime descriptor 和 adapter：
+`packages/agent-pi-adapter/pi_runtime_module.mjs`。安装器会把固定 checkout 安装到
+`<install>/.pi/runtime-cache/pi/<commit>`，启动器只把解析后的内部路径传给子进程：
 
 ```bash
-export RESEARCH_AGENT_RUNTIME_MODULE="$PWD/packages/agent-pi-adapter/pi_runtime_module.mjs"
 export RESEARCH_AGENT_CWD="$PWD/workspaces/demo"
 export RESEARCH_AGENT_SESSION_ROOT="$PWD/.pi/research-agent/sessions"
 export PI_CODING_AGENT_DIR="$PWD/.pi/research-agent/agent"
@@ -240,17 +234,12 @@ export RESEARCH_AGENT_MODEL_ID="claude-sonnet-4-5"
 ./ResearchAgentServer --port 8787
 ```
 
-该模块不会隐式读取 `~/.pi`。导入 Pi SDK 前必须显式提供 `cwd` 或
-`workspace_root`、`session_root`、`agent_dir`，以及 `model`/`model_runtime` 或成对的
-`model_provider` 与 `model_id`。
-如果部署需要在代码中构造模型对象或 `ModelRuntime`，应提供一个导出
-`create_runtime(options)` 的小模块，再委托给该模块；文件路径不能直接作为
-`model_runtime` 值。测试环境可以注入
-`create_agent_session` 和 `session_manager_class`，无需网络或模型服务。
+Pi SDK 直接拥有 Agent loop、ModelProvider 调用、Tool 调用、Session、Transcript、Lane、
+Retry、Timeout、Cancel 和子 Agent。TSPi 只在其外围增加 workspace policy、ContextPack、
+权限、Provider 调度、Artifact 和 provenance。
 
-`ResearchAgentServer` 与 `ts-app-server-tspi.service` 完全独立。现有 systemd 单元仍
-然启动旧版 TSPi Host；完成 module 配置验证后，请为 Research Agent 使用独立的
-service 或 supervisor。
+`ResearchAgentServer` 与 `ts-app-server-tspi.service` 使用同一份安装后的 Pi Runtime 和
+TSPi Host 路径，不再存在可替换的生产 Agent Runtime。
 
 创建新会话或继续项目中的最新会话：
 
@@ -352,8 +341,8 @@ token 文件不存在时，安装器会生成随机 TS Web token。也可以传�
 再次运行 `./install.sh` 并选择相同安装根目录。安装器下载或构建新的 content-addressed release，
 验证 package inventory，再原子切换 `.pi/packages/tspi/current`。已有 workspace、App Server
 identity 和 TS Web credential 会保留。
-启动器会把固定 Pi checkout 作为 Native client 使用的内部变量 `TSPI_PI_SOURCE` 导出，用户不应
-手工设置它。如果旧 release 报告 `TSPI_PI_SOURCE is required for the native Pi client`，请升级
+启动器会把固定 Pi checkout 作为 Native client 使用的内部变量 `TSPI_PI_RUNTIME_ROOT` 导出，用户不应
+手工设置它。如果旧 release 报告 `TSPI_PI_RUNTIME_ROOT is required for the native Pi client`，请升级
 该安装；修复后的启动器会根据 `config/pi-source.json` 自动选择
 `<install>/.pi/runtime-cache/pi` 中的固定 checkout。
 

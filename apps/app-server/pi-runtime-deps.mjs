@@ -5,14 +5,14 @@
  * from the exact Pi source selected by the launcher.
  *
  * The development fallback keeps direct imports from the repository useful;
- * installed App Server processes always set TSPI_PI_SOURCE before loading the
+ * installed App Server processes always set TSPI_PI_RUNTIME_ROOT before loading the
  * Worker.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const sourceRoot = process.env.TSPI_PI_SOURCE;
+const sourceRoot = process.env.TSPI_PI_RUNTIME_ROOT;
 const runtimeTypebox = sourceRoot
   ? join(sourceRoot, "node_modules/typebox/build/index.mjs")
   : undefined;

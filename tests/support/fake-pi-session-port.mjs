@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { create_agent_runtime_port, create_agent_session_port } from "./ports.mjs";
-import { assert_session_mode } from "./session_mode.mjs";
-import { resolve_mode_policy } from "./mode_policy.mjs";
-import { require_workspace_id } from "./workspace_id.mjs";
+import { create_pi_session_port, create_agent_session_port } from "../../packages/agent-core/ports.mjs";
+import { assert_session_mode } from "../../packages/agent-core/session_mode.mjs";
+import { resolve_mode_policy } from "../../packages/agent-core/mode_policy.mjs";
+import { require_workspace_id } from "../../packages/agent-core/workspace_id.mjs";
 
 const SESSION_ID = /^session_[A-Za-z0-9_-]{1,127}$/u;
 
@@ -10,7 +10,7 @@ const SESSION_ID = /^session_[A-Za-z0-9_-]{1,127}$/u;
  * Deterministic runtime used by Core and App Server tests. It intentionally
  * has no model, filesystem, Pi, or network dependency.
  */
-export function create_fake_agent_runtime({ response = "completed" } = {}) {
+export function create_fake_pi_session_port({ response = "completed" } = {}) {
   const sessions = new Map();
   const listeners = new Map();
   let closed = false;
@@ -73,7 +73,7 @@ export function create_fake_agent_runtime({ response = "completed" } = {}) {
     });
   }
 
-  return create_agent_runtime_port({
+  return create_pi_session_port({
     async create_session({ workspace_id, workspace_root, session_id, workspace_mode = "research", session_mode = "research", runtime_snapshot } = {}) {
       if (closed) throw new Error("runtime_closed");
       assert_session_mode(workspace_mode);

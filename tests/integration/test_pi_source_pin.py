@@ -66,7 +66,7 @@ def test_pi_source_pin_is_explicit_and_valid() -> None:
 
 
 def test_prepare_pi_source_verifies_a_matching_checkout() -> None:
-    configured = os.environ.get("TSPI_PI_SOURCE")
+    configured = os.environ.get("TSPI_TEST_PI_RUNTIME_ROOT")
     if not configured:
         return
     source = Path(configured)

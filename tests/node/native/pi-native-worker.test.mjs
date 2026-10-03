@@ -11,7 +11,7 @@ import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { createSystemPromptManifest, createSystemPromptTool } from "../../../apps/app-server/system-prompt.mjs";
 import { discoverInstalledExtensions } from "../../../apps/app-server/extension-manifest-loader.mjs";
 
-const sourceRoot = process.env.TSPI_PI_SOURCE;
+const sourceRoot = process.env.TSPI_TEST_PI_RUNTIME_ROOT;
 const executeFile = promisify(execFile);
 const PYTHONPATH = [
   join(process.cwd(), "packages", "tspi-foundation"),

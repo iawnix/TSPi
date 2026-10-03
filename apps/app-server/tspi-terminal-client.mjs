@@ -173,8 +173,8 @@ async function main() {
   }
 
   const connect = descriptorConnect(descriptor);
-  const sourceRoot = process.env.TSPI_PI_SOURCE;
-  if (!sourceRoot) throw new Error("TSPI_PI_SOURCE is required for the native Pi client");
+  const sourceRoot = process.env.TSPI_PI_RUNTIME_ROOT;
+  if (!sourceRoot) throw new Error("TSPI_PI_RUNTIME_ROOT is required for the native Pi client");
   const resolver = resolve(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts");
   const client = resolve(packageRoot, "apps/app-server/pi-native-client.mjs");
   const childArgs = ["--import", resolver, client, "--connect", connect, "--session-id", descriptor.session_id, ...kept];

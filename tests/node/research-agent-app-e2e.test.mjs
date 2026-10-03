@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { create_app_server } from "../../apps/app-server/index.mjs";
-import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
+import { create_fake_pi_session_port } from "../support/fake-pi-session-port.mjs";
 import { create_turn_router } from "../../packages/agent-core/turn_router.mjs";
 import { create_workspace_catalog } from "../../packages/agent-core/workspace_catalog.mjs";
 import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
@@ -34,7 +34,7 @@ test("App Server routes admitted research workspaces through durable identity", 
     const catalog = create_workspace_catalog({ catalog_root });
     const kernel = create_test_research_state({ workspace_root: research_root, workspace_id: "workspace_research" });
     const app_server = create_app_server({
-      runtime_port: create_fake_agent_runtime(),
+      pi_session_port: create_fake_pi_session_port(),
       workspace_port: initializer,
       workspace_catalog: catalog,
       turn_router: dynamic_turn_router(),

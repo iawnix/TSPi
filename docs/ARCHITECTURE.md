@@ -331,11 +331,12 @@ The selected release, worker facet, server-extension allowlist, and pinned Pi
 source are deterministic and package-validated. Presentation facets remain
 client-side and optional; they cannot change the worker's tool inventory.
 
-## Isolated Agent Runtimes
+## Isolated Pi subagents
 
 Compute and Review agents run as bounded Pi subagents with explicit task and
-result schemas. They receive only the context and tools declared by the App
-Server package; skills remain top-level Pi capabilities.
+result schemas through the same Pi Harness lane implementation. They receive
+only the context and tools declared by the App Server package; skills remain
+top-level Pi capabilities. TSPi does not provide a second Agent Runtime.
 
 ## Deterministic Tool Plane
 

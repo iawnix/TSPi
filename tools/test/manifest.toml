@@ -23,7 +23,7 @@ paths = [
 
 [suites.native-pi]
 kind = "node-native"
-environment = "Node.js 22 + pinned Pi checkout (TSPI_PI_SOURCE)"
+environment = "Node.js 22 + pinned Pi checkout (TSPI_TEST_PI_RUNTIME_ROOT)"
 description = "Pi Harness server, native TUI client, recovery, Monitor, and Native session checks."
 paths = [
   "tests/node/native/pi-app-server.test.mjs",

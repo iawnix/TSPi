@@ -47,7 +47,7 @@ function config_from_env(options) {
     agent_dir: pick(options.agent_dir, "RESEARCH_AGENT_PI_AGENT_DIR", "PI_CODING_AGENT_DIR", "RESEARCH_AGENT_AGENT_DIR"),
     model_provider: pick(options.model_provider, "RESEARCH_AGENT_PI_MODEL_PROVIDER", "RESEARCH_AGENT_MODEL_PROVIDER"),
     model_id: pick(options.model_id, "RESEARCH_AGENT_PI_MODEL_ID", "RESEARCH_AGENT_MODEL_ID"),
-    pi_source: pick(options.pi_source, "RESEARCH_AGENT_PI_SOURCE", "TSPI_PI_SOURCE"),
+    pi_source: pick(options.pi_source, "RESEARCH_AGENT_PI_RUNTIME_ROOT", "TSPI_PI_RUNTIME_ROOT"),
   };
 }
 
@@ -128,12 +128,13 @@ function pi_options(config, request, manager, cwd) {
 }
 
 /**
- * Build the Pi-owned runtime used by the App Server.
+ * Build the Pi SDK session adapter used by the TSPi App Server.
  *
  * Pi is loaded lazily and only this adapter package imports it. The default
  * path requires all filesystem/model inputs explicitly; no ~/.pi settings are
- * discovered implicitly. Tests and alternate hosts may inject
- * `create_agent_session` and `session_manager_class` without loading Pi.
+ * discovered implicitly. Tests may inject `create_agent_session` and
+ * `session_manager_class` without loading Pi; production always uses the
+ * installation-owned Pi SDK.
  */
 export async function create_runtime(raw_options = {}) {
   const options = config_from_env(merge_options(raw_options));

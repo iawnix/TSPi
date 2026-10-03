@@ -40,8 +40,8 @@ export {
 } from "./pi-native-tools.mjs";
 export { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 
-const sourceRoot = process.env.TSPI_PI_SOURCE;
-if (!sourceRoot) throw new Error("TSPi worker requires TSPI_PI_SOURCE");
+const sourceRoot = process.env.TSPI_PI_RUNTIME_ROOT;
+if (!sourceRoot) throw new Error("TSPi worker requires TSPI_PI_RUNTIME_ROOT");
 const workerModule = await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/session-worker.ts")).href);
 const processModule = await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/process.ts")).href);
 const modelResolver = await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/core/model-resolver.ts")).href);

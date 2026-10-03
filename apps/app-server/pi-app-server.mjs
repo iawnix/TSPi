@@ -13,7 +13,7 @@ const options = {};
 for (let index = 0; index < args.length; index++) {
   const match = /^--([^=]+)=(.*)$/u.exec(args[index]);
   const key = match?.[1] || args[index].slice(2);
-  if (!["workspace", "directory", "server-id", "state-root", "session-dir", "source-root", "provider", "model"].includes(key)) throw new Error(`Unknown Host option: ${args[index]}`);
+  if (!["workspace", "directory", "server-id", "state-root", "session-dir", "provider", "model"].includes(key)) throw new Error(`Unknown Host option: ${args[index]}`);
   options[key] = match?.[2] || args[++index];
 }
 const installRoot = process.env.TSPI_INSTALL_ROOT;
@@ -130,11 +130,14 @@ startupPromise = (async () => {
     mkdirSync(piServerDirectory, { recursive: true, mode: 0o700 });
     mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
     const pin = JSON.parse(readFileSync(join(packageRoot, "config/pi-source.json"), "utf8"));
-    const sourceRoot = resolve(options["source-root"] || process.env.TSPI_PI_SOURCE || join(installRoot, ".pi/runtime-cache/pi", pin.commit));
+    const sourceRoot = resolve(join(installRoot, ".pi/runtime-cache/pi", pin.commit));
+    if (process.env.TSPI_PI_RUNTIME_ROOT && resolve(process.env.TSPI_PI_RUNTIME_ROOT) !== sourceRoot) {
+      throw new Error("TSPI_PI_RUNTIME_ROOT is installation-managed and cannot be overridden");
+    }
     if (!existsSync(join(sourceRoot, "packages/coding-agent/src/experimental/server.ts"))) {
       throw new Error(`managed Pi experimental source is unavailable: ${sourceRoot}`);
     }
-    process.env.TSPI_PI_SOURCE = sourceRoot;
+    process.env.TSPI_PI_RUNTIME_ROOT = sourceRoot;
     sessionBackend = await createTspiHarnessBackend({
       sourceRoot,
       packageRoot,

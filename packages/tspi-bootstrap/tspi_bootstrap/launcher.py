@@ -1314,8 +1314,13 @@ def resolve_pi_source(installation: Installation) -> Path:
     commit = pin.get("commit") if isinstance(pin, dict) else None
     if not isinstance(commit, str) or not commit:
         raise TSPiHostError(f"pinned Pi source descriptor has no commit: {pin_path}")
-    source = os.environ.get("TSPI_PI_SOURCE") or installation.root / ".pi/runtime-cache/pi" / commit
-    return Path(source).expanduser().resolve()
+    source = (installation.root / ".pi/runtime-cache/pi" / commit).resolve()
+    configured = os.environ.get("TSPI_PI_RUNTIME_ROOT")
+    if configured and Path(configured).expanduser().resolve() != source:
+        raise TSPiHostError("TSPI_PI_RUNTIME_ROOT is installation-managed and cannot be overridden")
+    if not source.is_dir() or source.is_symlink():
+        raise TSPiHostError(f"installed Pi Runtime is missing or invalid: {source}")
+    return source
 
 
 def build_harness_client_command(installation: Installation, request: LaunchRequest) -> list[str]:
@@ -1339,7 +1344,7 @@ def launch_harness_client(installation: Installation, request: LaunchRequest, wo
     if request.session_id and not SESSION_ID.fullmatch(request.session_id):
         raise TSPiHostError("invalid session identity", exit_code=2)
     os.environ["TSPI_SESSION_CWD"] = str(workspace)
-    os.environ["TSPI_PI_SOURCE"] = str(resolve_pi_source(installation))
+    os.environ["TSPI_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
     os.environ["PI_SERVER_DIR"] = str(installation.root / ".pi/app-server-host/pi-server")
     os.environ["PI_EXPERIMENTAL"] = "1"
     os.environ["TSPI_PACKAGE_ROOT"] = str(installation.package_root)
@@ -1556,7 +1561,7 @@ def launch_terminal(installation: Installation, request: LaunchRequest, workspac
             f"unsupported TSPI_HOST_BACKEND={backend!r}; Native Pi Harness is the only supported backend",
             exit_code=2,
         )
-    os.environ["TSPI_PI_SOURCE"] = str(resolve_pi_source(installation))
+    os.environ["TSPI_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
     os.environ["TSPI_SESSION_CWD"] = str(workspace)
     try:
         socket_path = ensure_host_running(installation)

@@ -5,7 +5,7 @@ import { join } from "node:path";
 export const TEST_ROOT = process.env.TSPI_TEST_ROOT || "/tmp/tspi-test-root";
 
 export function pinnedPiSource() {
-  if (process.env.TSPI_PI_SOURCE) return process.env.TSPI_PI_SOURCE;
+  if (process.env.TSPI_TEST_PI_RUNTIME_ROOT) return process.env.TSPI_TEST_PI_RUNTIME_ROOT;
   try {
     const pin = JSON.parse(readFileSync(join(process.cwd(), "config", "pi-source.json"), "utf8"));
     if (typeof pin.commit === "string" && pin.commit) {

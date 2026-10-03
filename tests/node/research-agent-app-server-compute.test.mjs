@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { create_app_server } from "../../apps/app-server/app_server.mjs";
-import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
+import { create_fake_pi_session_port } from "../support/fake-pi-session-port.mjs";
 import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 
 test("App Server rejects generic JS capability execution", async () => {
@@ -12,7 +12,7 @@ test("App Server rejects generic JS capability execution", async () => {
   const initializer = create_workspace_initializer();
   await initializer.initialize_workspace({ workspace_root: root, workspace_id: "native_app", workspace_mode: "research" });
   await initializer.admit_workspace(root);
-  const app = create_app_server({ runtime_port: create_fake_agent_runtime() });
+  const app = create_app_server({ pi_session_port: create_fake_pi_session_port() });
   try {
     await assert.rejects(app.invoke_tool({ workspace_root: root, capability_id: "xtb.sp", input: {} }), /generic capability invocation was removed/);
     await assert.rejects(app.run_compute({ workspace_root: root, operation: "launch" }), /native_compute_not_configured/);
@@ -29,7 +29,7 @@ test("App Server forwards compute_run to the Native lifecycle with its workspace
   await initializer.admit_workspace(root);
   const calls = [];
   const app = create_app_server({
-    runtime_port: create_fake_agent_runtime(),
+    pi_session_port: create_fake_pi_session_port(),
     workspace_port: create_workspace_initializer(),
     native_compute: {
       async run(request) {

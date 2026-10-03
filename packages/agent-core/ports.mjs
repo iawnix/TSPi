@@ -1,12 +1,12 @@
 /**
- * Language-neutral ports for the Research Agent Framework.
+ * Language-neutral ports for the TSPi/Pi integration boundary.
  *
  * Protocol identifiers are deliberately snake_case. These ports contain no
- * Pi imports and can be implemented by a native runtime, a test runtime, or
- * an adapter for an external agent engine.
+ * Pi imports. Production supplies the Pi SDK adapter; deterministic test
+ * doubles may be injected at this boundary without becoming product runtimes.
  */
 
-export const AGENT_RUNTIME_PORT_VERSION = "agent_runtime_port_1";
+export const PI_SESSION_PORT_VERSION = "pi_session_port_1";
 export const AGENT_SESSION_PORT_VERSION = "agent_session_port_1";
 export const MODEL_PORT_VERSION = "model_port_1";
 export const CONTEXT_PORT_VERSION = "context_port_1";
@@ -15,7 +15,7 @@ export const SESSION_PORT_VERSION = "session_port_1";
 export const WORKSPACE_PORT_VERSION = "workspace_port_1";
 
 const REQUIRED_METHODS = Object.freeze({
-  agent_runtime_port_1: ["create_session", "attach_session", "submit", "subscribe", "interrupt", "close"],
+  pi_session_port_1: ["create_session", "attach_session", "submit", "subscribe", "interrupt", "close"],
   agent_session_port_1: ["submit", "subscribe", "read_snapshot", "interrupt"],
   model_port_1: ["describe", "stream"],
   context_port_1: ["build"],
@@ -25,7 +25,7 @@ const REQUIRED_METHODS = Object.freeze({
 });
 
 const OPTIONAL_METHODS = Object.freeze({
-  agent_runtime_port_1: ["close_session"],
+  pi_session_port_1: ["close_session"],
   memory_port_1: ["clear"],
 });
 
@@ -52,8 +52,8 @@ function requireImplementation(version, implementation) {
   return Object.freeze({ ...exposed, protocol_version: version });
 }
 
-export function create_agent_runtime_port(implementation) {
-  return requireImplementation(AGENT_RUNTIME_PORT_VERSION, implementation);
+export function create_pi_session_port(implementation) {
+  return requireImplementation(PI_SESSION_PORT_VERSION, implementation);
 }
 
 export function create_agent_session_port(implementation) {

@@ -201,7 +201,7 @@ function linkWebSocketUrl(value) {
 }
 
 async function resolveWebSocketFactory() {
-  const sourceRoot = process.env.TSPI_PI_SOURCE;
+  const sourceRoot = process.env.TSPI_PI_RUNTIME_ROOT;
   const modulePath = sourceRoot
     ? resolve(sourceRoot, "node_modules/ws/wrapper.mjs")
     : resolve(import.meta.dirname, "../../node_modules/ws/wrapper.mjs");

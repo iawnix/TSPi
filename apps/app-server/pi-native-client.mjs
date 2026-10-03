@@ -7,8 +7,8 @@ import { formatError } from "./tspi-terminal-errors.mjs";
 import { createTspiPackageRootRestoreFacet, withTspiPackageRootHidden } from "./native-client-env.mjs";
 import { connectHost } from "./tspi-host-client.mjs";
 
-if (!process.env.TSPI_PI_SOURCE) throw new Error("remote Pi client requires TSPI_PI_SOURCE");
-const sourceRoot = resolve(process.env.TSPI_PI_SOURCE);
+if (!process.env.TSPI_PI_RUNTIME_ROOT) throw new Error("remote Pi client requires TSPI_PI_RUNTIME_ROOT");
+const sourceRoot = resolve(process.env.TSPI_PI_RUNTIME_ROOT);
 const fromSource = (relative) => import(pathToFileURL(join(sourceRoot, relative)).href);
 
 const [commandModule, clientModule, tuiModule] = await Promise.all([

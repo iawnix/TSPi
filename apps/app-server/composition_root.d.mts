@@ -1,5 +1,5 @@
 import type { AppServer } from "./app_server.mjs";
-import type { AgentRuntimePort, WorkspacePort } from "../../packages/agent-core/ports.mjs";
+import type { PiSessionPort, WorkspacePort } from "../../packages/agent-core/ports.mjs";
 import type { SessionStore } from "../../packages/agent-core/session_store.mjs";
 import type { WorkspaceCatalog } from "../../packages/agent-core/workspace_catalog.mjs";
 import type { TurnRouter } from "../../packages/agent-core/turn_router.mjs";
@@ -10,7 +10,7 @@ export const RESEARCH_AGENT_COMPOSITION_VERSION: "research_agent_composition_2";
 export interface ResearchAgentComposition {
   readonly protocol_version: "research_agent_composition_2";
   readonly app_server: AppServer;
-  readonly runtime_port: AgentRuntimePort;
+  readonly pi_session_port: PiSessionPort;
   readonly workspace_port: WorkspacePort;
   readonly workspace_catalog: WorkspaceCatalog | null;
   readonly session_store: SessionStore | null;
@@ -25,9 +25,7 @@ export interface ResearchAgentComposition {
   close(): Promise<void>;
 }
 export interface ResearchAgentCompositionOptions {
-  readonly runtime_port?: AgentRuntimePort;
-  readonly runtime_factory?: (options?: unknown) => AgentRuntimePort;
-  readonly runtime_options?: unknown;
+  readonly pi_session_port?: PiSessionPort;
   readonly workspace_port?: WorkspacePort;
   readonly workspace_factory?: () => WorkspacePort;
   readonly workspace_catalog?: WorkspaceCatalog | null;

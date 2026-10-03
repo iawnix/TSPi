@@ -69,9 +69,9 @@ def _run_python_suite(name: str, kind: str, script_options: list[str], extra: li
 
 
 def _run_native_pi(selected: dict[str, object], extra: list[str]) -> int:
-    pi_source = os.environ.get("TSPI_PI_SOURCE")
+    pi_source = os.environ.get("TSPI_TEST_PI_RUNTIME_ROOT")
     if not pi_source:
-        raise SystemExit("native-pi tests require TSPI_PI_SOURCE pointing at a prepared Pi checkout")
+        raise SystemExit("native-pi tests require TSPI_TEST_PI_RUNTIME_ROOT pointing at a prepared Pi checkout")
     verification = subprocess.run(
         [
             sys.executable,
@@ -94,6 +94,10 @@ def _run_native_pi(selected: dict[str, object], extra: list[str]) -> int:
     node = shutil.which("node")
     if not node:
         raise SystemExit("native-pi tests require Node.js")
+    # The test harness may point at a prepared checkout explicitly; production
+    # launchers never accept this override. Child Pi workers receive the same
+    # resolved internal binding as an installed launch.
+    os.environ["TSPI_PI_RUNTIME_ROOT"] = pi_source
     resolver = Path(pi_source) / "packages" / "coding-agent" / "src" / "experimental" / "source-resolver.ts"
     # Node treats test-runner flags as global options; keep them before the
     # file list so filters such as --test-name-pattern are not mistaken for

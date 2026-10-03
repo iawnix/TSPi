@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
-import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
-import { create_agent_runtime_port } from "../../packages/agent-core/ports.mjs";
+import { create_fake_pi_session_port } from "../support/fake-pi-session-port.mjs";
+import { create_pi_session_port } from "../../packages/agent-core/ports.mjs";
 import { create_pi_runtime_adapter } from "../../packages/agent-pi-adapter/index.mjs";
 import { create_app_server } from "../../apps/app-server/index.mjs";
 
@@ -31,8 +31,8 @@ function workspace_manifest(workspace_root, workspace_mode = "research", workspa
 }
 
 test("App Server forwards transport-neutral operations through the Core port", async () => {
-  const runtime = create_fake_agent_runtime({ response: "continue_required" });
-  const app_server = create_app_server({ runtime_port: runtime });
+  const runtime = create_fake_pi_session_port({ response: "continue_required" });
+  const app_server = create_app_server({ pi_session_port: runtime });
   const session = await app_server.create_session({ workspace_id: "workspace_1" });
   const events = [];
   const unsubscribe = app_server.subscribe(session.session_id, (event) => events.push(event));
@@ -89,7 +89,7 @@ test("Host rejects a workspace port response that changes the research mode", as
     },
   };
   const app_server = create_app_server({
-    runtime_port: create_fake_agent_runtime(),
+    pi_session_port: create_fake_pi_session_port(),
     workspace_port,
   });
   await assert.rejects(
@@ -115,7 +115,7 @@ test("Host freezes workspace requests before crossing the WorkspacePort boundary
     },
   };
   const app_server = create_app_server({
-    runtime_port: create_fake_agent_runtime(),
+    pi_session_port: create_fake_pi_session_port(),
     workspace_port,
   });
   const manifest = await app_server.initialize_workspace({ workspace_root: "/tmp/fixture", workspace_mode: "research" });
@@ -125,7 +125,7 @@ test("Host freezes workspace requests before crossing the WorkspacePort boundary
 });
 
 test("Host does not pass an explicit workspace root through without a WorkspacePort", async () => {
-  const app_server = create_app_server({ runtime_port: create_fake_agent_runtime() });
+  const app_server = create_app_server({ pi_session_port: create_fake_pi_session_port() });
   await assert.rejects(
     app_server.create_session({ workspace_root: "/tmp/unverified-workspace", workspace_mode: "research" }),
     /workspace_port_not_configured/,
@@ -145,8 +145,8 @@ test("Port wrappers preserve implementation receivers and own the protocol id", 
   }
   const implementation = new Runtime();
   implementation.protocol_version = "incorrect_protocol";
-  const port = create_agent_runtime_port(implementation);
+  const port = create_pi_session_port(implementation);
   await port.create_session();
   assert.equal(implementation.created, 1);
-  assert.equal(port.protocol_version, "agent_runtime_port_1");
+  assert.equal(port.protocol_version, "pi_session_port_1");
 });

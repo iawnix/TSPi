@@ -61,6 +61,33 @@ def check() -> list[str]:
     for path in required:
         if not path.is_file():
             errors.append(f"canonical implementation is missing: {path.relative_to(ROOT)}")
+
+    # Pi SDK is the only production Agent Runtime. Keep runtime selection
+    # installation-owned and prevent the removed standalone Compute/Review
+    # session loops from returning.
+    for relative in (
+        Path("packages/agent-runtime/agents/compute") / "runtime.ts",
+        Path("packages/agent-runtime/agents/review") / "runtime.ts",
+    ):
+        path = ROOT / relative
+        if path.exists():
+            errors.append(f"duplicate Pi sub-agent runtime remains: {relative}")
+    forbidden_runtime_markers = (
+        "RESEARCH_AGENT_" + "RUNTIME_MODULE",
+        "RESEARCH_AGENT_" + "KERNEL_MODULE",
+        "load_pi_" + "runtime(",
+    )
+    for root in (ROOT / "apps", ROOT / "packages", ROOT / "scripts"):
+        for path in sorted(root.rglob("*.mjs")):
+            if any(part in {"node_modules", ".git"} for part in path.parts):
+                continue
+            text = path.read_text(encoding="utf-8")
+            for marker in forbidden_runtime_markers:
+                if marker in text:
+                    errors.append(f"removed alternate Pi runtime boundary {marker!r}: {path.relative_to(ROOT)}")
+    app_server = ROOT / "apps" / "app-server" / "pi-app-server.mjs"
+    if "source-root" in app_server.read_text(encoding="utf-8"):
+        errors.append("pi-app-server exposes a replaceable source-root option")
     return errors
 
 

@@ -1,5 +1,5 @@
 import type {
-  AgentRuntimePort,
+  PiSessionPort,
   AgentSessionPort,
   WorkspaceInitializeRequest,
   WorkspaceManifestLike,
@@ -81,7 +81,7 @@ export interface WorkspaceReferenceRequest {
 }
 
 export function create_app_server(options: {
-  runtime_port: AgentRuntimePort;
+  pi_session_port: PiSessionPort;
   workspace_port?: WorkspacePort | null;
   workspace_catalog?: WorkspaceCatalog | null;
   turn_router?: TurnRouter | null;

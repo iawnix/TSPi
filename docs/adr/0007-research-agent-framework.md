@@ -18,11 +18,12 @@ Contracts
   -> Research State
   -> Native Compute Lifecycle (research-state runtime)
   -> App Server
-  -> Runtime Adapter / Client Adapter
+  -> Pi SDK Runtime / TSPi Adapter
 ```
 
-The Agent Core owns turns, model requests, tool invocation, context, retry,
-and recovery. It does not own scientific state or a particular agent engine.
+The Agent Core owns TSPi contracts, Context, and the session port. It does not
+reimplement turns, model requests, tool invocation, retry, or recovery; those
+Agent Runtime capabilities belong to the Pi SDK.
 
 The Research State is the only scientific state authority. It owns
 ResearchMap, Research Memory, Claims, Nodes, Findings, Gates, Evidence Links,
@@ -33,15 +34,14 @@ intents, Compute Attempts or light execution scopes, canonical Artifacts,
 analysis results, and environment bindings. It never writes scientific Findings
 or Claim status directly.
 
-The App Server is the application composition root. It owns Host RPC,
+The App Server is the TSPi application composition root. It owns Host RPC,
 workspace and session binding, permissions, receipts, recovery, Monitor, and
-client adapters. It receives an `AgentRuntimePort` and does not import a
-runtime implementation directly.
+client adapters. It connects only to the installation-owned Pi SDK Runtime.
 
-Pi is one Runtime Adapter. Pi imports, experimental source access, patch
-verification, Pi SessionWorker, Pi AgentHarness, and Pi model integration are
-confined to `agent-pi-adapter`. The framework does not invoke a
-system-installed `pi` executable or consume ambient Pi configuration.
+Pi SDK is the only production Agent Runtime. Pi imports, experimental source
+access, patch verification, Pi SessionWorker, Pi AgentHarness, and Pi model
+integration are composed by `agent-pi-adapter` and the App Server. TSPi does
+not duplicate the Pi Agent loop or consume ambient Pi configuration.
 
 Protocol identifiers use snake_case. Examples are
 `research_turn_request`, `research_turn_result`, `tool_result`,
@@ -53,11 +53,12 @@ old tool names, dotted protocol aliases, or old lifecycle entrypoints. A
 migration may reuse scientific algorithms and data formats only when they are
 explicitly reimplemented behind the new contracts.
 
-## Runtime ports
+## Pi session port
 
 The minimum language-neutral ports are:
 
-- `AgentRuntimePort`: create, attach, submit, subscribe, interrupt, close;
+- `PiSessionPort`: the internal TSPi-to-Pi session boundary; production has
+  only the Pi adapter;
 - `ModelPort`: describe and stream model requests;
 - `ContextPort`: build a bounded, disposable turn context from admitted inputs;
 - `MemoryPort`: read and append session-scoped Agent memory. It is not a
@@ -80,7 +81,7 @@ The App Server is wired as:
 
 ```text
 App Server
-  -> AgentRuntimePort
+  -> Pi SDK Runtime (the only Agent Runtime)
   -> ResearchStatePort
   -> Native compute lifecycle (research-state runtime)
   -> MonitorPort
@@ -95,9 +96,9 @@ the research-state runtime; the Research State remains the authority for termina
 execution-scope state. Capability inventory and environment readiness are
 read-only Native views, and there is no provider invocation API.
 
-The default installation injects Pi Adapter. A Fake Runtime is required for
-Core, Research State, and App Server tests so that those tests do not require Pi,
-network access, credentials, or a model provider.
+The default installation fixes the Pi Adapter. Core, Research State, and App
+Server tests may inject deterministic session doubles, but those doubles are not
+product runtimes.
 
 ## Scientific artifact boundary
 
@@ -122,7 +123,8 @@ does not depend on a system Pi installation.
 
 - New compute domains can be added through the Python Native registry and backend
   contract without changing Agent Core or Research State.
-- A future non-Pi Agent Runtime can reuse the App Server and Research State contracts.
+- Pi SDK is the only production Agent Runtime. The contracts describe TSPi's
+  integration boundary and deterministic test doubles, not a runtime plugin API.
 - Pi version changes are isolated to one adapter and its adapter tests.
 - The initial implementation requires explicit contracts before broad directory
   movement or domain-specific feature work.

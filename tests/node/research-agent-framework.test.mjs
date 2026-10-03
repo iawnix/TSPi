@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
-import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
+import { create_fake_pi_session_port } from "../support/fake-pi-session-port.mjs";
 import { COMMAND_DEFINITIONS } from "../../packages/agent-runtime/host-api/commands.mjs";
 import { assert_protocol_id } from "../../packages/agent-core/ports.mjs";
 import {
@@ -53,8 +53,8 @@ test("research turn contracts validate without Pi", () => {
   }), /invalid research_turn operation/);
 });
 
-test("fake runtime completes a turn through the Agent Runtime Port", async () => {
-  const runtime = create_fake_agent_runtime({ response: "continue_required" });
+test("fake Pi session port completes a turn through the TSPi session boundary", async () => {
+  const runtime = create_fake_pi_session_port({ response: "continue_required" });
   const session = await runtime.create_session({ workspace_id: "workspace_1" });
   const events = [];
   const unsubscribe = runtime.subscribe(session.session_id, (event) => events.push(event));
@@ -166,6 +166,6 @@ test("Core and Research State source stay independent of Pi", async () => {
   const roots = ["packages/agent-core", "packages/research-state-bridge"];
   for (const root of roots) {
     const source = await readFile(join(process.cwd(), root, "ports.mjs"), "utf8");
-    assert.doesNotMatch(source, /@earendil-works\/pi|TSPI_PI_SOURCE|pi-session-worker/i, root);
+    assert.doesNotMatch(source, /@earendil-works\/pi|TSPI_PI_RUNTIME_ROOT|pi-session-worker/i, root);
   }
 });

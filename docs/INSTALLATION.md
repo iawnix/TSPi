@@ -251,14 +251,12 @@ before opening the terminal. `ResearchAgentServer` is the internal HTTP
 service used by framework clients and administrators; it is not required for
 the ordinary terminal workflow.
 
-For an explicit App Server deployment, configure the runtime module (and the
-Research State bridge, selected by the `--kernel-module` transport option, when
-research workspace admission and durable research state are required):
+For an explicit App Server deployment, use the Pi Runtime installed with the
+release. Runtime and Research State modules are selected by TSPi itself; they
+are not user supplied plugin points:
 
 ```bash
 ./ResearchAgentServer \
-  --runtime-module /absolute/path/to/runtime-module.mjs \
-  --kernel-module /absolute/path/to/kernel-module.mjs \
   --port 8787 \
   --write-config
 ./ResearchAgentServer
@@ -266,19 +264,15 @@ research workspace admission and durable research state are required):
 
 This writes the owner-only configuration at
 `<install>/.pi/research-agent/server.json` with schema
-`research_agent_server/1`. Relative module paths are resolved from the
-selected Package release; bare package specifiers are passed to Node's module
-resolver. The same values can be supplied through
-`RESEARCH_AGENT_RUNTIME_MODULE` and `RESEARCH_AGENT_KERNEL_MODULE` for
-ephemeral smoke tests. `runtime_module` must export `create_runtime()`;
-`kernel_module`, when present, must export `create_kernel()`.
+`research_agent_server/1`. Old `runtime_module`, `kernel_module`, and module
+injection environment fields are rejected.
 
-The release includes an explicit Pi Runtime Module at
-`packages/agent-pi-adapter/pi_runtime_module.mjs`. It can be selected
-when the host supplies an explicit Pi SDK model configuration:
+The release includes the Pi SDK Runtime descriptor and adapter at
+`packages/agent-pi-adapter/pi_runtime_module.mjs`. The installer prepares the
+pinned checkout under `<install>/.pi/runtime-cache/pi/<commit>` and passes its
+resolved location internally. Configure only the model selected by Pi:
 
 ```bash
-export RESEARCH_AGENT_RUNTIME_MODULE="$PWD/packages/agent-pi-adapter/pi_runtime_module.mjs"
 export RESEARCH_AGENT_CWD="$PWD/workspaces/demo"
 export RESEARCH_AGENT_SESSION_ROOT="$PWD/.pi/research-agent/sessions"
 export PI_CODING_AGENT_DIR="$PWD/.pi/research-agent/agent"
@@ -287,18 +281,13 @@ export RESEARCH_AGENT_MODEL_ID="claude-sonnet-4-5"
 ./ResearchAgentServer --port 8787
 ```
 
-The module never discovers `~/.pi` implicitly. Before importing the Pi SDK it
-requires explicit `cwd` or `workspace_root`, `session_root`, `agent_dir`, and
-either a model/model runtime or a `model_provider` plus `model_id`. Deployments that construct a model object or
-`ModelRuntime` in code should provide a small module exporting
-`create_runtime(options)` and delegate to this module; a filesystem path is not
-a valid `model_runtime` value. Tests may inject
-`create_agent_session` and `session_manager_class` without network access.
+The adapter never discovers `~/.pi` implicitly. The Pi SDK owns the Agent loop,
+ModelProvider calls, tools, sessions, transcript, lanes, retry, cancellation,
+and sub-agent execution. TSPi supplies workspace policy, ContextPack, tools,
+permissions, Provider dispatch, artifacts, and provenance around that runtime.
 
-`ResearchAgentServer` is intentionally separate from `ts-app-server-tspi.service`.
-The existing systemd unit continues to launch the legacy TSPi Host. Run the
-Research Agent command under a separately managed service or supervisor after
-its module configuration has been validated.
+`ResearchAgentServer` and `ts-app-server-tspi.service` use the same installed
+Pi Runtime and TSPi Host path. There is no alternate production Agent Runtime.
 
 Create a new conversation or continue the latest conversation in a project:
 
@@ -430,9 +419,9 @@ Run `./install.sh` again and choose the same installation root. The installer
 downloads or builds a new content-addressed release, validates its package
 inventory, and switches `.pi/packages/tspi/current` atomically. Existing
 workspaces, App Server identities, and TS Web credentials are retained.
-The launcher exports the pinned Pi checkout as the internal `TSPI_PI_SOURCE`
+The launcher exports the pinned Pi checkout as the internal `TSPI_PI_RUNTIME_ROOT`
 variable for the Native client; users should not set it manually. If an older
-release reports `TSPI_PI_SOURCE is required for the native Pi client`, upgrade
+release reports `TSPI_PI_RUNTIME_ROOT is required for the native Pi client`, upgrade
 the installation so the launcher can select `<install>/.pi/runtime-cache/pi`
 from `config/pi-source.json`.
 

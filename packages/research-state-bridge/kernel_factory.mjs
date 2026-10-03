@@ -104,7 +104,7 @@ function adapter_options(options) {
 }
 
 /**
- * Create a Research State Port suitable for `RESEARCH_AGENT_KERNEL_MODULE`.
+ * Create the single Research State Port used by the TSPi Host.
  *
  * `workspace_root`/`workspace_id` may be supplied for a single-workspace
  * deployment.  When omitted, every request must provide `workspace_root` and

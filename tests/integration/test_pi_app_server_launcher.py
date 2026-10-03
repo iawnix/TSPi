@@ -692,7 +692,7 @@ def test_default_terminal_exports_installation_pinned_pi_source(
         captured["workspace"] = workspace
         raise RuntimeError("stop test client")
 
-    monkeypatch.delenv("TSPI_PI_SOURCE", raising=False)
+    monkeypatch.delenv("TSPI_PI_RUNTIME_ROOT", raising=False)
     monkeypatch.setattr(launcher, "ensure_host_running", lambda _installation: endpoint)
     monkeypatch.setattr(launcher, "exec_pi", stop_exec)
 
@@ -703,7 +703,7 @@ def test_default_terminal_exports_installation_pinned_pi_source(
             installation.workspaces_root / "reaction-a",
         )
 
-    assert os.environ["TSPI_PI_SOURCE"] == str(source.resolve())
+    assert os.environ["TSPI_PI_RUNTIME_ROOT"] == str(source.resolve())
     assert captured["workspace"] == installation.workspaces_root / "reaction-a"
 
 

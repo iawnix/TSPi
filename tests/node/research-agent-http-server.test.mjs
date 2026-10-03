@@ -7,7 +7,7 @@ import test from "node:test";
 import { create_app_server } from "../../apps/app-server/app_server.mjs";
 import { create_app_server_client, AppServerClientError } from "../../apps/app-server/client.mjs";
 import { create_http_server } from "../../apps/app-server/server.mjs";
-import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
+import { create_fake_pi_session_port } from "../support/fake-pi-session-port.mjs";
 import { create_turn_router } from "../../packages/agent-core/turn_router.mjs";
 import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 
@@ -23,7 +23,7 @@ test("HTTP App Server exposes workspace/session routes and the Native compute bo
   const root = await mkdtemp(join(tmpdir(), "native-http-"));
   const workspace = join(root, "workspace");
   const app = create_app_server({
-    runtime_port: create_fake_agent_runtime({ response: "completed" }),
+    pi_session_port: create_fake_pi_session_port({ response: "completed" }),
     workspace_port: create_workspace_initializer(),
     turn_router: { route_turn(request) { return create_turn_router(request).route_turn(request); } },
     native_capability_host: {

@@ -25,7 +25,7 @@ a prepared checkout
 whose commit matches `config/pi-source.json`:
 
 ```bash
-export TSPI_PI_SOURCE=/path/to/prepared/pi
+export TSPI_TEST_PI_RUNTIME_ROOT=/path/to/prepared/pi
 npm run test:native-pi
 ```
 

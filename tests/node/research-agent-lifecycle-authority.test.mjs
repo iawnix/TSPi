@@ -52,7 +52,8 @@ test("blocked research liveness stops new mutations but permits a recovery check
     assert.equal(recovered.disposition, "continue_required");
     const memory = JSON.parse(await readFile(join(root, "memory", "index.json"), "utf8"));
     const context = JSON.parse(await readFile(join(root, "research_map", "context.json"), "utf8"));
-    assert.equal(memory.authority, "research_state");
+    assert.equal(memory.authority, "research_memory");
+    assert.equal(memory.state_authority, "research_state");
     assert.equal(memory.disposition, "continue_required");
     assert.equal(memory.context_revision, 3);
     assert.equal(context.lifecycle_state, "admitted");

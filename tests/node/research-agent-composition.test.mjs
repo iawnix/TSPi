@@ -5,16 +5,16 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { create_research_agent_composition } from "../../apps/app-server/composition_root.mjs";
-import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
+import { create_fake_pi_session_port } from "../support/fake-pi-session-port.mjs";
 
 test("composition root requires an explicit runtime", () => {
-  assert.throws(() => create_research_agent_composition(), /runtime_port is required/);
+  assert.throws(() => create_research_agent_composition(), /pi_session_port is required/);
 });
 
 test("composition root rejects removed JavaScript capability boundaries", () => {
   assert.throws(
     () => create_research_agent_composition({
-      runtime_port: create_fake_agent_runtime(),
+      pi_session_port: create_fake_pi_session_port(),
       tool_gateway: {},
     }),
     (error) => error?.code === "js_provider_path_removed",
@@ -24,7 +24,7 @@ test("composition root rejects removed JavaScript capability boundaries", () => 
 test("composition root wires filesystem workspace and session boundaries", async () => {
   const root = await mkdtemp(join(tmpdir(), "native-composition-boundaries-"));
   const composition = create_research_agent_composition({
-    runtime_port: create_fake_agent_runtime(),
+    pi_session_port: create_fake_pi_session_port(),
     catalog_root: join(root, "catalog"),
     session_root: join(root, "sessions"),
   });
@@ -50,7 +50,7 @@ test("composition exposes only the Native capability host boundary", async () =>
   };
   const nativeCompute = { run: async () => ({ ok: true }), close: async () => {} };
   const composition = create_research_agent_composition({
-    runtime_port: create_fake_agent_runtime(),
+    pi_session_port: create_fake_pi_session_port(),
     native_capability_host: nativeHost,
     native_compute: nativeCompute,
     catalog_root: join(root, "catalog"),

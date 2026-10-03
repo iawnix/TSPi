@@ -23,7 +23,7 @@ extension/provider 边界。运行时必须使用与
 `config/pi-source.json` commit 一致的准备好 checkout：
 
 ```bash
-export TSPI_PI_SOURCE=/path/to/prepared/pi
+export TSPI_TEST_PI_RUNTIME_ROOT=/path/to/prepared/pi
 npm run test:native-pi
 ```
 

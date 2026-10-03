@@ -164,7 +164,7 @@ test("Pi runtime module completes an App Server create and submit smoke without 
     });
     const workspace_root = join(root, "workspace");
     const app_server = create_app_server({
-      runtime_port: runtime,
+      pi_session_port: runtime,
       workspace_port: create_workspace_initializer(),
       turn_router: create_turn_router({ workspace_mode: "research", admission_state: "admitted" }),
       kernel_port: {

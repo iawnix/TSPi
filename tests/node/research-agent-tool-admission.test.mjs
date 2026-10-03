@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { create_app_server } from "../../apps/app-server/app_server.mjs";
-import { create_fake_agent_runtime } from "../../packages/agent-core/fake-runtime.mjs";
+import { create_fake_pi_session_port } from "../support/fake-pi-session-port.mjs";
 import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 
 test("research tool description still requires Host admission", async () => {
@@ -16,7 +16,7 @@ test("research tool description still requires Host admission", async () => {
     readiness: async () => [],
   };
   const app = create_app_server({
-    runtime_port: create_fake_agent_runtime(),
+    pi_session_port: create_fake_pi_session_port(),
     workspace_port: create_workspace_initializer(),
     native_capability_host: nativeHost,
   });

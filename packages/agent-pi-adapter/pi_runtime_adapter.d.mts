@@ -1,4 +1,4 @@
-import type { AgentRuntimePort } from "../agent-core/ports.mjs";
+import type { PiSessionPort } from "../agent-core/ports.mjs";
 
 export interface PiSessionLike {
   readonly session_id?: string;
@@ -27,9 +27,4 @@ export function create_pi_runtime_adapter(options: {
   pi_runtime: PiRuntimeLike;
   create_session?: (request: Record<string, unknown>) => Promise<PiSessionLike>;
   attach_session?: (session_id: string) => Promise<PiSessionLike>;
-}): AgentRuntimePort;
-
-export function load_pi_runtime(options: {
-  module_specifier: string;
-  options?: unknown;
-}): Promise<AgentRuntimePort>;
+}): PiSessionPort;

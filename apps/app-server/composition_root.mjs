@@ -13,6 +13,16 @@ function require_port(value, field) {
   return value;
 }
 
+function instantiate_boundary(factory, options, field) {
+  if (factory === undefined) return undefined;
+  if (typeof factory !== "function") throw new TypeError(`${field} must be a function`);
+  const value = factory(options);
+  if (value && typeof value.then === "function") {
+    throw new TypeError(`${field} must return a port synchronously`);
+  }
+  return require_port(value, field);
+}
+
 function create_dynamic_turn_router() {
   return Object.freeze({
     protocol_version: "turn_router_1",
@@ -25,24 +35,13 @@ function create_dynamic_turn_router() {
   });
 }
 
-function instantiate(factory, options, field) {
-  if (factory === undefined) return undefined;
-  if (typeof factory !== "function") throw new TypeError(`${field} must be a function`);
-  const value = factory(options);
-  if (value && typeof value.then === "function") {
-    throw new TypeError(`${field} must return a port synchronously; use an already-created port`);
-  }
-  return require_port(value, field);
-}
-
 /**
- * Build the transport-neutral application around the Native compute lifecycle.
- * No JavaScript capability provider, gateway, or orchestrator is accepted.
+ * Build the transport-neutral TSPi application around the Pi session port and
+ * Native compute lifecycle. Pi is the only production Agent Runtime; tests may
+ * inject a deterministic session port without creating another runtime.
  */
 export function create_research_agent_composition({
-  runtime_port,
-  runtime_factory,
-  runtime_options,
+  pi_session_port,
   workspace_port,
   workspace_factory,
   workspace_catalog,
@@ -77,17 +76,13 @@ export function create_research_agent_composition({
     error.code = "js_provider_path_removed";
     throw error;
   }
-  if (runtime_port !== undefined && runtime_factory !== undefined) {
-    throw new TypeError("provide runtime_port or runtime_factory, not both");
-  }
-  const runtime = runtime_port ?? instantiate(runtime_factory, runtime_options, "runtime_factory");
-  require_port(runtime, "runtime_port");
+  const runtime = require_port(pi_session_port, "pi_session_port");
 
   if (workspace_port !== undefined && workspace_factory !== undefined) {
     throw new TypeError("provide workspace_port or workspace_factory, not both");
   }
   const workspace = workspace_port
-    ?? instantiate(workspace_factory, undefined, "workspace_factory")
+    ?? instantiate_boundary(workspace_factory, undefined, "workspace_factory")
     ?? create_workspace_initializer();
 
   if (workspace_catalog !== undefined && catalog_root !== undefined) {
@@ -100,7 +95,7 @@ export function create_research_agent_composition({
     throw new TypeError("provide session_store, session_root, or session_store_factory");
   }
   const sessions = session_store
-    ?? instantiate(session_store_factory, { session_root }, "session_store_factory")
+    ?? instantiate_boundary(session_store_factory, { session_root }, "session_store_factory")
     ?? (session_root === undefined ? null : create_session_store({ session_root }));
 
   if (kernel_port !== undefined && kernel_port !== null) require_port(kernel_port, "kernel_port");
@@ -108,7 +103,7 @@ export function create_research_agent_composition({
   if (native_compute !== null) require_port(native_compute, "native_compute");
   const router = turn_router ?? create_dynamic_turn_router();
   const app_server = create_app_server({
-    runtime_port: runtime,
+    pi_session_port: runtime,
     workspace_port: workspace,
     workspace_catalog: catalog,
     session_store: sessions,
@@ -121,7 +116,7 @@ export function create_research_agent_composition({
   return Object.freeze({
     protocol_version: RESEARCH_AGENT_COMPOSITION_VERSION,
     app_server,
-    runtime_port: runtime,
+    pi_session_port: runtime,
     workspace_port: workspace,
     workspace_catalog: catalog,
     session_store: sessions,
