@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
-from tspi_runtime.io import read_json
-from tspi_runtime.workspace.artifacts import (
+from tspi_foundation.io import read_json
+from research_compute.workspace.artifacts import (
     WorkspaceArtifactError,
     artifact_for_path as workspace_artifact_for_path,
     artifact_for_ref as workspace_artifact_for_ref,
@@ -28,13 +28,13 @@ from tspi_runtime.workspace.artifacts import (
     workspace_node_records,
     workspace_root,
 )
-from tspi_runtime.workspace.refs import NODE_ID
-from tspi_runtime.path_safety import has_symlink_component
-from tspi_runtime.workspace.transactions import workspace_lock
-from tspi_runtime.structures.api import compare_structures
-from tspi_runtime.structures.internals import read_xyz
-from tspi_runtime.structures.seed import StructureSeedError, generate_smiles_seed
-from tspi_runtime.reaction.mapping import mapping_finding_candidates, validate_atom_mapping
+from research_compute.workspace.refs import NODE_ID
+from tspi_foundation.path_safety import has_symlink_component
+from research_compute.workspace.transactions import workspace_lock
+from chemical_runtime.structures.api import compare_structures
+from chemical_runtime.structures.internals import read_xyz
+from chemical_runtime.structures.seed import StructureSeedError, generate_smiles_seed
+from chemical_runtime.reaction.mapping import mapping_finding_candidates, validate_atom_mapping
 
 from .errors import ComputeContractError
 
@@ -230,7 +230,7 @@ def create_structure_seed_artifact(root: str | Path, request: dict[str, Any]) ->
 
     workspace = _workspace_root(root)
     normalized = _validate_structure_seed_request(request)
-    from tspi_runtime.workspace.dispatch import require_dispatch_allowed
+    from research_compute.workspace.dispatch import require_dispatch_allowed
     with workspace_lock(workspace):
         require_dispatch_allowed(workspace, normalized["node_id"])
     try:
@@ -312,7 +312,7 @@ def create_structure_comparison_artifact(root: str | Path, request: dict[str, An
     normalized = _validate_structure_compare_request(request)
     input_ids = [normalized["reference_artifact_id"], normalized["target_artifact_id"]]
     with workspace_lock(workspace):
-        from tspi_runtime.workspace.dispatch import require_dispatch_allowed
+        from research_compute.workspace.dispatch import require_dispatch_allowed
         require_dispatch_allowed(workspace, normalized["node_id"])
         node = _node_record(workspace, normalized["node_id"])
         if node.get("state") == "closed":
@@ -364,7 +364,7 @@ def create_structure_comparison_artifact(root: str | Path, request: dict[str, An
             "metrics": comparison["metrics"],
             "diagnostics": comparison["diagnostics"],
             "provenance": {
-                "producer": "tspi_runtime.structures.compare_structures",
+                "producer": "chemical_runtime.structures.compare_structures",
                 "producer_version": "1",
                 "input_digests": [item["sha256"] for item in artifacts],
             },
@@ -408,7 +408,7 @@ def create_reaction_mapping_validation_artifact(root: str | Path, request: dict[
             raise ComputeContractError(
                 f"reaction mapping validation requires an open ResearchNode: {normalized['node_id']}"
             )
-        from tspi_runtime.workspace.dispatch import require_dispatch_allowed
+        from research_compute.workspace.dispatch import require_dispatch_allowed
         require_dispatch_allowed(workspace, normalized["node_id"])
         # Roles are ordered species occurrences; a catalyst or a repeated
         # stoichiometric species may bind the same immutable XYZ more than once.
@@ -463,7 +463,7 @@ def create_reaction_mapping_validation_artifact(root: str | Path, request: dict[
             "diagnostics": validation["diagnostics"],
             "finding_candidates": candidates,
             "provenance": {
-                "producer": "tspi_runtime.reaction.mapping.validate_atom_mapping",
+                "producer": "chemical_runtime.reaction.mapping.validate_atom_mapping",
                 "producer_version": "1",
                 "input_digests": [artifact_by_id[item_id]["sha256"] for item_id in input_ids],
             },

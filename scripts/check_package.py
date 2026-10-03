@@ -157,12 +157,16 @@ def validate_python_project() -> None:
         errors.append("pyproject version must be sourced from tspi_runtime._version")
     expected_package_dir = {
         "tspi_runtime": "packages/tspi-runtime/tspi_runtime",
+        "tspi_foundation": "packages/tspi-foundation/tspi_foundation",
+        "tspi_provider_runtime": "packages/tspi-provider-runtime/tspi_provider_runtime",
+        "tspi_bootstrap": "packages/tspi-bootstrap/tspi_bootstrap",
         "research_state": "packages/research-state/research_state",
         "research_memory": "packages/research-memory/research_memory",
         "research_compute": "packages/research-compute/research_compute",
+        "chemical_runtime": "extensions/chemical/providers/chemical_runtime",
     }
     if setuptools.get("package-dir") != expected_package_dir:
-        errors.append("pyproject package-dir must declare tspi_runtime, research_state, research_memory, and research_compute")
+        errors.append("pyproject package-dir must declare the canonical TSPi namespaces")
     if not version_source.is_file() or not namespace.is_file():
         errors.append("Python tspi_runtime namespace or version source is missing")
     else:

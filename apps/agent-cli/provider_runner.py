@@ -37,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
         module = runpy.run_path(args.entry)
         handler = module.get("handle")
         if not callable(handler): raise SystemExit("provider entry must define handle(request)")
-        from tspi_runtime.providers.runner import run_jsonl_provider
+        from tspi_provider_runtime.runner import run_jsonl_provider
         return run_jsonl_provider(handler)
     parser = argparse.ArgumentParser(prog="provider_runner")
     parser.add_argument("--state-dir", required=True)

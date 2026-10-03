@@ -11,7 +11,7 @@ manifest 与环境前缀。正式 release 包含一个受 manifest 绑定的 `ts
 RDKit、兼容范围的 NumPy、Matplotlib 和 `xyzrender` 是核心依赖。写入 runtime manifest
 前，安装器会验证 NumPy/RDKit/Matplotlib 导入、SMILES 解析、固定种子的 ETKDG 嵌入、
 UFF 优化和 `xyzrender` 可执行程序，并记录版本与来源。只有源码和已安装 distribution
-摘要仍匹配时，`packages/tspi-runtime/tspi_runtime/runtime/launcher.py` 才接受 manifest。
+摘要仍匹配时，`packages/tspi-bootstrap/tspi_bootstrap/launcher.py` 才接受 manifest。
 
 研究 workspace 保存状态与 Artifact；安装 runtime store 保存 Python 环境；release 目录
 保存有版本的程序文件。

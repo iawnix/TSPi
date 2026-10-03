@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from tspi_runtime.backends.base import BackendTask
-from tspi_runtime.backends import pyscf as pyscf_backend
-from tspi_runtime.backends.pyscf import (
+from chemical_runtime.backends.base import BackendTask
+from chemical_runtime.backends import pyscf as pyscf_backend
+from chemical_runtime.backends.pyscf import (
     PYSCF_ARTIFACTS,
     normalize_pyscf_settings,
     parse_pyscf_artifacts,
     prepare_pyscf,
 )
-from tspi_runtime.pyscf import runner as pyscf_runner
+from chemical_runtime.pyscf import runner as pyscf_runner
 
 
 def test_pyscf_preparer_emits_explicit_runner_and_fixed_artifacts() -> None:
@@ -31,7 +31,7 @@ def test_pyscf_preparer_emits_explicit_runner_and_fixed_artifacts() -> None:
     assert prepared.backend == "pyscf"
     assert prepared.command[1:7] == [
         "-m",
-        "tspi_runtime.backends.pyscf_runner",
+        "chemical_runtime.backends.pyscf_runner",
         "--xyz",
         "nodes/node_1/inputs/start.xyz",
         "--task",

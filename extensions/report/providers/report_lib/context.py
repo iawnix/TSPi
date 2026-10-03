@@ -5,12 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Iterable
 
-from tspi_runtime.analysis.results import analysis_results
+from chemical_runtime.analysis.results import analysis_results
 from research_compute.artifacts import list_calculation_artifacts
-from tspi_runtime.io import sha256_json
+from tspi_foundation.io import sha256_json
 from research_state.agent_workspace import AgentWorkspaceError, has_state_files, read_context
-from tspi_runtime.workspace.operational import runtime_status
-from tspi_runtime.path_safety import lexical_path, path_has_symlink
+from research_compute.workspace.operational import runtime_status
+from tspi_foundation.path_safety import lexical_path, path_has_symlink
 
 
 def collect_report_context(

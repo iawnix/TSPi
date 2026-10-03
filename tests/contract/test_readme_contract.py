@@ -22,21 +22,13 @@ REFERENCES = SKILL_ROOT / "references"
 ORCHESTRATION_ROOT = ROOT / "skills" / "orchestration"
 FOCUSED_SKILLS = {
     "orchestration": ORCHESTRATION_ROOT,
-    "candidate-generation": ROOT / "skills" / "candidate-generation",
-    "validation": ROOT / "skills" / "validation",
-    "irc": ROOT / "skills" / "irc",
-    "energetics": ROOT / "skills" / "energetics",
-    "method-selection": ROOT / "skills" / "method-selection",
-    "cf22d": ROOT / "skills" / "cf22d",
-    "xtb": ROOT / "skills" / "xtb",
-    "crest": ROOT / "skills" / "crest",
-    "qbics": ROOT / "skills" / "qbics",
-    "gaussian": ROOT / "skills" / "gaussian",
-    "render": ROOT / "skills" / "render",
-    "report": ROOT / "skills" / "report",
-    "email": ROOT / "skills" / "email",
-    "mechanism-reasoning": ROOT / "skills" / "mechanism-reasoning",
-    "chemical-input": ROOT / "skills" / "chemical-input",
+    **{name: ROOT / "extensions" / "chemical" / "skills" / name for name in (
+        "candidate-generation", "validation", "irc", "energetics", "method-selection",
+        "cf22d", "xtb", "crest", "qbics", "gaussian", "mechanism-reasoning", "chemical-input",
+    )},
+    "render": ROOT / "extensions" / "render",
+    "report": ROOT / "extensions" / "report",
+    "email": ROOT / "extensions" / "email",
 }
 
 
@@ -184,11 +176,7 @@ def test_normal_runtime_docs_use_canonical_tool_names() -> None:
         *sorted(REFERENCES.glob("*.md")),
         *focused_files,
     ]
-    legacy_tool_names = [
-        "research_read", "research_change", "research_checkpoint", "compute_run", "compute_environment",
-        "review", "review_respond", "artifact_seed", "artifact_compare", "analysis_run",
-        "execution_dispatch", "artifact_import", "render", "report", "notify_send",
-    ]
+    legacy_tool_names = ["ts_" + name for name in ("render", "report", "email", "compute", "agent")]
     for path in paths:
         text = path.read_text(encoding="utf-8")
         for name in legacy_tool_names:
@@ -290,7 +278,7 @@ def test_compute_reference_uses_the_registered_gaussian_input_role() -> None:
 
 
 def test_final_report_builder_renders_phase_node_and_scientific_objects() -> None:
-    text = (ROOT / "packages" / "tspi-runtime" / "tspi_runtime" / "report" / "builder.py").read_text(encoding="utf-8")
+    text = (ROOT / "extensions" / "report" / "providers" / "report_lib" / "builder.py").read_text(encoding="utf-8")
 
     for phrase in [
         "Research Roadmap",

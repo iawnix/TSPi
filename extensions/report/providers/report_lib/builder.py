@@ -12,9 +12,9 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
-from tspi_runtime.workspace.artifacts import resolve_workspace_artifact_ids
-from tspi_runtime.path_safety import has_symlink_component, lexical_path, path_has_symlink
-from tspi_runtime.io import write_json as write_json_atomic, write_text_atomic
+from research_compute.workspace.artifacts import resolve_workspace_artifact_ids
+from tspi_foundation.path_safety import has_symlink_component, lexical_path, path_has_symlink
+from tspi_foundation.io import write_json as write_json_atomic, write_text_atomic
 
 from .context import collect_report_context
 

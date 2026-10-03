@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tspi_runtime.io import append_jsonl, append_markdown, read_json, write_json, write_text_atomic
+from tspi_foundation.io import append_jsonl, append_markdown, read_json, write_json, write_text_atomic
 
 
 def test_read_json_rejects_symbolic_link(tmp_path: Path) -> None:

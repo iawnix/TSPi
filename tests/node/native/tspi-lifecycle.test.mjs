@@ -27,6 +27,17 @@ import { close_test_research_states, create_test_research_state } from "../../su
 
 test.afterEach(close_test_research_states);
 
+const PYTHONPATH = [
+  join(process.cwd(), "packages", "tspi-foundation"),
+  join(process.cwd(), "packages", "tspi-provider-runtime"),
+  join(process.cwd(), "packages", "tspi-bootstrap"),
+  join(process.cwd(), "packages", "research-state"),
+  join(process.cwd(), "packages", "research-memory"),
+  join(process.cwd(), "packages", "research-compute"),
+  join(process.cwd(), "packages", "tspi-runtime"),
+  join(process.cwd(), "extensions", "chemical", "providers"),
+].join(":");
+
 const context = { abortSignal: new AbortController().signal };
 
 test("trusted tool context preserves the Pi ExecutionEnv capability", async () => {
@@ -1013,7 +1024,7 @@ test("Research Turn hook reads real Research State liveness through the canonica
     ...process.env,
     TSPI_PYTHON: python,
     PYTHONNOUSERSITE: "1",
-    PYTHONPATH: join(process.cwd(), "packages", "tspi-runtime"),
+    PYTHONPATH,
   };
   const run = (args) => execFileSync(python, args, {
     cwd: process.cwd(),

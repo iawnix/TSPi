@@ -119,12 +119,12 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "config/pi-session-navigation.patch" in names
     assert "scripts/prepare_pi_source.py" in names
     assert not any(name.startswith("packages/tspi-runtime/tspi_runtime/web/") for name in names)
-    assert "packages/tspi-runtime/tspi_runtime/workspace/artifacts.py" in names
-    assert "packages/tspi-runtime/tspi_runtime/workspace/candidates.py" in names
-    assert "packages/tspi-runtime/tspi_runtime/workspace/contracts/finding_candidates.schema.json" in names
-    assert "packages/tspi-runtime/tspi_runtime/compute/capabilities.py" in names
-    assert "packages/tspi-runtime/tspi_runtime/research/model.py" in names
-    assert "packages/tspi-runtime/tspi_runtime/research/kernel.py" in names
+    assert "packages/research-compute/research_compute/workspace/artifacts.py" in names
+    assert "packages/research-compute/research_compute/workspace/candidates.py" in names
+    assert "packages/research-state/research_state/contracts/finding_candidates.schema.json" in names
+    assert "packages/research-compute/research_compute/registry.py" in names
+    assert "packages/research-state/research_state/model.py" in names
+    assert "packages/research-state/research_state/agent_workspace.py" in names
     assert distribution == build_result["python_distribution"]
     assert distribution["name"] == "tspi-runtime"
     assert distribution["version"] == json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
@@ -160,10 +160,10 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "config" / "pi-session-navigation.patch").is_file()
     assert (package_root / "scripts" / "prepare_pi_source.py").is_file()
     assert not (package_root / "packages" / "tspi-runtime" / "tspi_runtime" / "web").exists()
-    assert (package_root / "packages" / "tspi-runtime" / "tspi_runtime" / "workspace" / "artifacts.py").is_file()
-    assert (package_root / "packages" / "tspi-runtime" / "tspi_runtime" / "workspace" / "candidates.py").is_file()
-    assert (package_root / "packages" / "tspi-runtime" / "tspi_runtime" / "workspace" / "contracts" / "finding_candidates.schema.json").is_file()
-    assert (package_root / "packages" / "tspi-runtime" / "tspi_runtime" / "research" / "model.py").is_file()
+    assert (package_root / "packages" / "research-compute" / "research_compute" / "workspace" / "artifacts.py").is_file()
+    assert (package_root / "packages" / "research-compute" / "research_compute" / "workspace" / "candidates.py").is_file()
+    assert (package_root / "packages" / "research-state" / "research_state" / "contracts" / "finding_candidates.schema.json").is_file()
+    assert (package_root / "packages" / "research-state" / "research_state" / "model.py").is_file()
     installed_wheel = package_root / distribution["path"]
     assert installed_wheel.is_file()
     assert inspect_wheel(installed_wheel)["payload_sha256"] == distribution["payload_sha256"]
@@ -245,7 +245,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
         check=False,
     )
     assert startup.returncode == 1
-    assert "no selected TSPi Package release" in startup.stderr
+    assert "installation guard state does not match this installation" in startup.stderr
     assert not (install_root / "workspaces" / "release-smoke").exists()
 
 
@@ -491,15 +491,15 @@ def _synthetic_release(
 
 
 def _synthetic_wheel(root: Path, *, version: str, package_files: dict[str, bytes]) -> Path:
-    wheel = root / f"tspi_runtime_kernel-{version}-py3-none-any.whl"
+    wheel = root / f"tspi_runtime-{version}-py3-none-any.whl"
     metadata = f"Metadata-Version: 2.4\nName: tspi-runtime\nVersion: {version}\n\n".encode()
     with zipfile.ZipFile(wheel, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, content in sorted(package_files.items()):
             archive.writestr(name, content)
-        archive.writestr(f"tspi_runtime_kernel-{version}.dist-info/METADATA", metadata)
+        archive.writestr(f"tspi_runtime-{version}.dist-info/METADATA", metadata)
         archive.writestr(
-            f"tspi_runtime_kernel-{version}.dist-info/WHEEL",
+            f"tspi_runtime-{version}.dist-info/WHEEL",
             "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
         )
-        archive.writestr(f"tspi_runtime_kernel-{version}.dist-info/RECORD", "")
+        archive.writestr(f"tspi_runtime-{version}.dist-info/RECORD", "")
     return wheel

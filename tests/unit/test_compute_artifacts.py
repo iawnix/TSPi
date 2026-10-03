@@ -25,9 +25,9 @@ from research_compute import (
     submit_calculation,
 )
 from research_compute.cli import main as compute_cli_main
-from tspi_runtime.remote.errors import RemoteError
-from tspi_runtime.structures import StructureSeedError, generate_smiles_seed
-from tspi_runtime.workspace.artifacts import workspace_root as canonical_workspace_root, WorkspaceArtifactError
+from research_compute.remote.errors import RemoteError
+from chemical_runtime.structures import StructureSeedError, generate_smiles_seed
+from research_compute.workspace.artifacts import workspace_root as canonical_workspace_root, WorkspaceArtifactError
 from research_state.workspace import initialize_workspace
 
 
@@ -376,7 +376,7 @@ def test_structure_comparison_is_content_addressed_idempotent_and_operational(tm
     assert document["inputs"]["reference"]["sha256"].startswith("sha256:")
     assert document["parameters"]["key_bonds"] == [[0, 1], [0, 2]]
     assert document["units"] == {"angle": "degree", "distance": "angstrom"}
-    assert document["provenance"]["producer"] == "tspi_runtime.structures.compare_structures"
+    assert document["provenance"]["producer"] == "chemical_runtime.structures.compare_structures"
     assert document["metrics"]["heavy_atom_rmsd"] == 0.0
     assert not (workspace / "observations.json").exists()
 

@@ -17,7 +17,7 @@
       "descriptor": "descriptors/artifact_render.json",
       "descriptor_sha256": "sha256:799f9594f3e0e619040fe8b4a89b1dfccea5b61e7bc591e90e862a54eaa2dd02",
       "entry": "providers/render_provider.py",
-      "sha256": "sha256:6bb8a330eec6372ed753f364c2f427dfdc4a71081d4f7197da17d16517e5697e"
+      "sha256": "sha256:064e1b53a439a2fc2089cc2b3694caab2bb27b655ebedcb0eaf13eef648822a5"
     }
   ]
 }

@@ -6,12 +6,18 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages/tspi-runtime"))
+ROOT = Path(__file__).resolve().parents[3]
+for source in (
+    "packages/tspi-foundation", "packages/tspi-provider-runtime", "packages/tspi-bootstrap",
+    "packages/research-state", "packages/research-memory", "packages/research-compute",
+    "packages/tspi-runtime", "extensions/chemical/providers",
+):
+    sys.path.insert(0, str(ROOT / source))
 from tests.support.workspace_helpers import bootstrap_workspace_fixture, start_research_node
 from tests.unit.test_scientific_analysis import gaussian_log, barrier, reaction, source
-from tspi_runtime.analysis.engine import evaluate
+from chemical_runtime.analysis.engine import evaluate
 from research_compute.artifacts import list_calculation_artifacts
-from tspi_runtime.workspace.dispatch import set_node_dispatch
+from research_compute.workspace.dispatch import set_node_dispatch
 
 
 def create(root, case_id):

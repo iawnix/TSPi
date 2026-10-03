@@ -35,13 +35,13 @@ from research_compute import (
     prepare_calculation,
     submit_calculation,
 )
-from tspi_runtime.calculation_contracts import CalculationContractError, validate_calculation_contract
-from tspi_runtime.remote import lifecycle as remote_lifecycle
-from tspi_runtime.remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguous, RemoteSubmissionRejected
-from tspi_runtime.remote.models import RemoteJobStatus, RemoteReceipt
-from tspi_runtime.backends.gaussian import parse_log, parse_scan_log, route_settings
+from research_compute.calculation_contracts import CalculationContractError, validate_calculation_contract
+from research_compute.remote import lifecycle as remote_lifecycle
+from research_compute.remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguous, RemoteSubmissionRejected
+from research_compute.remote.models import RemoteJobStatus, RemoteReceipt
+from chemical_runtime.backends.gaussian import parse_log, parse_scan_log, route_settings
 from research_compute.task_validation import validate_parsed_task
-from tspi_runtime.workspace.operational import _operational_files
+from research_compute.workspace.operational import _operational_files
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:

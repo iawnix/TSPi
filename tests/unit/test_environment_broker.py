@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tspi_runtime.platforms import (
+from research_compute.platforms import (
     EnvironmentBroker,
     EnvironmentConfigurationError,
     EnvironmentRequirement,

@@ -15,12 +15,12 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from tspi_runtime.platforms import EnvironmentBroker, EnvironmentRequirement, load_config
-from tspi_runtime.remote.client import SSHClient
-from tspi_runtime.remote.diagnostics import ase_neb_check_script, backend_check_script, pyscf_check_script
-from tspi_runtime.remote.errors import RemoteError
-from tspi_runtime.remote.torque import parse_records
-from tspi_runtime.runtime.env import configured_python
+from research_compute.platforms import EnvironmentBroker, EnvironmentRequirement, load_config
+from research_compute.remote.client import SSHClient
+from research_compute.remote.diagnostics import ase_neb_check_script, backend_check_script, pyscf_check_script
+from research_compute.remote.errors import RemoteError
+from research_compute.remote.torque import parse_records
+from tspi_foundation.env import configured_python
 
 from .capabilities import CAPABILITY_REGISTRY
 

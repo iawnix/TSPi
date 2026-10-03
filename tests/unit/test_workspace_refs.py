@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from tspi_runtime.workspace.activities import _node_sort_key, build_activity_index
-from tspi_runtime.workspace.refs import (
+from research_compute.workspace.activities import _node_sort_key, build_activity_index
+from research_compute.workspace.refs import (
     WorkspaceRefError,
     claim_ordinal,
     claim_sort_key,

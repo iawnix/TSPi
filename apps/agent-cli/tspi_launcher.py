@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     # execution mode. A thin UI must not initialize the scientific environment.
     # Native Pi, Worker, and lifecycle paths still require it inside launch().
     activate_source_package(ROOT)
-    from tspi_runtime.runtime.launcher import main as launcher_main
+    from tspi_bootstrap.launcher import main as launcher_main
 
     return launcher_main(forwarded, package_root=ROOT, install_root=args.install_root)
 

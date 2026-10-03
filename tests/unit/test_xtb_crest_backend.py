@@ -11,14 +11,14 @@ from tests.support.workspace_helpers import (
     read_filesystem_context,
     start_research_node,
 )
-from tspi_runtime.backends.base import BackendTask
-from tspi_runtime.backends.crest import prepare_crest
-from tspi_runtime.backends.xtb import (
+from chemical_runtime.backends.base import BackendTask
+from chemical_runtime.backends.crest import prepare_crest
+from chemical_runtime.backends.xtb import (
     parse_vibrational_spectrum,
     parse_xtb_artifacts,
     prepare_xtb,
 )
-from tspi_runtime.backends.xtb_scan import parse_xtb_scan_control
+from chemical_runtime.backends.xtb_scan import parse_xtb_scan_control
 from research_compute import (
     ComputeContractError,
     create_calculation_intent,
@@ -27,7 +27,7 @@ from research_compute import (
     prepare_calculation,
 )
 from research_compute.task_validation import validate_parsed_task
-from tspi_runtime.io import sha256_json
+from tspi_foundation.io import sha256_json
 
 
 def test_xtb_prepares_typed_task_matrix() -> None:

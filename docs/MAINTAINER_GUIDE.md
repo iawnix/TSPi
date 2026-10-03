@@ -62,15 +62,17 @@ rejected explicitly during bootstrap.
 
 ## Deterministic Tool Contracts
 
-Backend adapters live in `packages/tspi-runtime/tspi_runtime/backends/` and must
+Backend adapters live in `extensions/chemical/providers/chemical_runtime/backends/` and must
 parse only their own formats. Every artifact gets a content digest and a safe
 workspace-relative path. Remote jobs record scheduler, job ID, command, and
 retrieval outcome without overwriting earlier evidence.
 
 ## Scientific Analysis Maintenance
 
-Independent analyses use the closed ID/version registry in `analysis/catalog.py`
-and handler dispatch in `analysis/engine.py`. New scientific algorithms require
+Independent analyses use the closed ID/version registry in
+`extensions/chemical/providers/chemical_runtime/analysis/catalog.py` and handler
+dispatch in `extensions/chemical/providers/chemical_runtime/analysis/engine.py`.
+Generic capability contracts remain in `packages/research-compute/`. New scientific algorithms require
 bounded inputs, explicit applicability, counterexamples, replayable candidates
 and a version change when deterministic output semantics change. Keep domain
 schemas out of the always-loaded tools. Do not add scientific successor routing.

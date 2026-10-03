@@ -15,7 +15,7 @@ from _bootstrap import bootstrap_python_package
 
 bootstrap_python_package(ROOT, workspace_from_argv=True)
 
-from tspi_runtime.workspace.monitor import (  # noqa: E402
+from research_compute.workspace.monitor import (  # noqa: E402
     claim_delivery,
     complete_delivery,
     list_monitors,

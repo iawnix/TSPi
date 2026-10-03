@@ -9,8 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from tspi_runtime.runtime import load_manifest
-from tspi_runtime.runtime import resolve_package_root
+from tspi_foundation.env import load_manifest
+from tspi_foundation.env import resolve_package_root
 
 XYZRENDER_OVERRIDE = "TS_RENDER_XYZRENDER"
 

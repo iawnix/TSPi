@@ -12,7 +12,7 @@ from types import ModuleType
 
 def load_runtime_environment(package_root: str | Path) -> ModuleType:
     root = Path(package_root).expanduser().resolve()
-    source = root / "packages" / "tspi-runtime" / "tspi_runtime" / "runtime" / "env.py"
+    source = root / "packages" / "tspi-foundation" / "tspi_foundation" / "env.py"
     if not source.is_file():
         raise RuntimeError(f"TS Agent runtime bootstrap module is missing: {source}")
     name = f"_tspi_runtime_runtime_env_{hashlib.sha256(str(source).encode()).hexdigest()[:12]}"
@@ -50,9 +50,13 @@ def bootstrap_python_package(
     python = runtime.ensure_runtime_python(root, required=required)
     source_packages = (
         ("tspi_runtime", root / "packages" / "tspi-runtime"),
+        ("tspi_foundation", root / "packages" / "tspi-foundation"),
+        ("tspi_provider_runtime", root / "packages" / "tspi-provider-runtime"),
+        ("tspi_bootstrap", root / "packages" / "tspi-bootstrap"),
         ("research_state", root / "packages" / "research-state"),
         ("research_memory", root / "packages" / "research-memory"),
         ("research_compute", root / "packages" / "research-compute"),
+        ("chemical_runtime", root / "extensions" / "chemical" / "providers"),
     )
     for package_name, source_root in source_packages:
         if importlib.util.find_spec(package_name) is None:
@@ -65,6 +69,15 @@ def activate_source_package(package_root: str | Path) -> None:
     """Expose the authored package only for installer and runtime-control code."""
 
     root = Path(package_root).expanduser().resolve()
-    for source_root in (root / "packages" / "tspi-runtime", root / "packages" / "research-state", root / "packages" / "research-memory", root / "packages" / "research-compute"):
+    for source_root in (
+        root / "packages" / "tspi-runtime",
+        root / "packages" / "tspi-foundation",
+        root / "packages" / "tspi-provider-runtime",
+        root / "packages" / "tspi-bootstrap",
+        root / "packages" / "research-state",
+        root / "packages" / "research-memory",
+        root / "packages" / "research-compute",
+        root / "extensions" / "chemical" / "providers",
+    ):
         value = str(source_root)
         if value not in sys.path: sys.path.insert(0, value)

@@ -23,6 +23,7 @@ ORCHESTRATION_SKILL_ROOT = ROOT / "skills" / "orchestration"
 RUNTIME_ROOT = ROOT / "packages" / "agent-runtime"
 AGENTS_ROOT = RUNTIME_ROOT / "agents"
 PYTHON_PACKAGE = ROOT / "packages" / "tspi-runtime" / "tspi_runtime"
+FOUNDATION_PACKAGE = ROOT / "packages" / "tspi-foundation" / "tspi_foundation"
 THEME_PATH = ROOT / "packages" / "agent-ui" / "themes" / "ts-theme.json"
 TSPI_LAUNCHER = ROOT / "ResearchAgent"
 GENERATION_BRAND = re.compile(
@@ -123,17 +124,17 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     (package_root / "apps" / "agent-cli").mkdir(parents=True)
     for name in ("tspi_launcher.py", "compute.py"):
         shutil.copy2(ROOT / "apps" / "agent-cli" / name, package_root / "apps" / "agent-cli" / name)
-    shutil.copytree(
-        ROOT / "packages" / "tspi-runtime",
-        package_root / "packages" / "tspi-runtime",
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
-    )
-    for package_name in ("research-state", "research-memory", "research-compute"):
+    for package_name in ("tspi-runtime", "tspi-foundation", "tspi-provider-runtime", "tspi-bootstrap", "research-state", "research-memory", "research-compute"):
         shutil.copytree(
             ROOT / "packages" / package_name,
             package_root / "packages" / package_name,
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
         )
+    shutil.copytree(
+        ROOT / "extensions" / "chemical" / "providers" / "chemical_runtime",
+        package_root / "extensions" / "chemical" / "providers" / "chemical_runtime",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
+    )
     shutil.copy2(ROOT / "pyproject.toml", package_root / "pyproject.toml")
     shutil.copy2(ROOT / "environment.yml", package_root / "environment.yml")
     shutil.copy2(ROOT / "requirements-runtime.txt", package_root / "requirements-runtime.txt")
@@ -335,8 +336,8 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert (AGENTS_ROOT / "compute" / "prompts" / "core.md").is_file()
     assert {path.name for path in AGENTS_ROOT.iterdir()} == {"compute", "review"}
     assert (RUNTIME_ROOT / "artifacts" / "request-contract.cjs").is_file()
-    assert (PYTHON_PACKAGE / "runtime" / "probe.py").is_file()
-    assert (PYTHON_PACKAGE / "structures" / "seed.py").is_file()
+    assert (ROOT / "packages" / "tspi-bootstrap" / "tspi_bootstrap" / "probe.py").is_file()
+    assert (ROOT / "extensions" / "chemical" / "providers" / "chemical_runtime" / "structures" / "seed.py").is_file()
 
 
 def test_native_harness_is_the_only_public_pi_tool_entrypoint() -> None:
@@ -347,8 +348,8 @@ def test_native_harness_is_the_only_public_pi_tool_entrypoint() -> None:
     assert (ROOT / "packages" / "research-state" / "research_state" / "agent_workspace.py").is_file()
     assert (ROOT / "packages" / "research-state" / "research_state" / "model.py").is_file()
     assert (ROOT / "packages" / "research-state" / "research_state" / "workspace.py").is_file()
-    assert not list((PYTHON_PACKAGE / "workspace").glob("*_v[0-9]*.py"))
-    assert not (PYTHON_PACKAGE / "workspace" / "validators").exists()
+    assert not list((ROOT / "packages" / "research-state" / "research_state").glob("*_v[0-9]*.py"))
+    assert not (ROOT / "packages" / "research-state" / "research_state" / "validators").exists()
     assert not any(path.is_dir() for path in ROOT.glob("ts_*"))
     for removed in ("agent-core", "review-agent", "compute-agent", "artifact-agent", "agent-skills"):
         assert not (ROOT / removed).exists()

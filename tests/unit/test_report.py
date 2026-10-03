@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tspi_runtime.io import read_json
+from tspi_foundation.io import read_json
 from report_lib import build_final_report, build_report_package
 from report_lib.context import collect_report_context
 from tests.support.workspace_helpers import (

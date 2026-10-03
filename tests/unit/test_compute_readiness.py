@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from research_compute.readiness import calculation_readiness
-from tspi_runtime.remote.client import CommandResult
+from research_compute.remote.client import CommandResult
 
 
 def _remote_config(tmp_path: Path) -> Path:

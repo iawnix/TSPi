@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 ROOT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(ROOT / "packages" / "tspi-runtime"), str(Path(__file__).resolve().parent)]
-from tspi_runtime.providers.runner import run_jsonl_provider
+from tspi_provider_runtime.runner import run_jsonl_provider
 from render_lib import MolVisualizer
 from render_lib.config import parse_resolution
 

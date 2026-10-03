@@ -12,7 +12,7 @@ from _bootstrap import bootstrap_python_package
 
 bootstrap_python_package(ROOT)
 
-from tspi_runtime.backends.cli import main  # noqa: E402
+from chemical_runtime.backends.cli import main  # noqa: E402
 
 
 if __name__ == "__main__":

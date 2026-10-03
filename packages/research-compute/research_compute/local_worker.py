@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from tspi_runtime.io import now_iso, read_json, write_json
+from tspi_foundation.io import now_iso, read_json, write_json
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from tspi_runtime.runtime import link
+from tspi_bootstrap import link
 
 
 HOST_ID = "123e4567-e89b-42d3-a456-426614174000"

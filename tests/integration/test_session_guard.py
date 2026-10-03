@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from tspi_runtime.runtime import session_guard
-from tspi_runtime.runtime.session_guard import (
+from tspi_bootstrap import session_guard
+from tspi_bootstrap.session_guard import (
     SessionGuardError,
     acquire_directory_guard,
     acquire_session_guard,

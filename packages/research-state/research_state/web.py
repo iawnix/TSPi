@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Sequence
 from urllib.parse import unquote
 
-from tspi_runtime.path_safety import has_symlink_component, lexical_path, path_has_symlink
+from tspi_foundation.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .workspace import WorkspaceModeError, validate_workspace_manifest
 
 from .registry import (

@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from tests.support.runtime_helpers import write_test_runtime_manifest, write_test_suite_manifest
-from tspi_runtime.runtime import launcher
+from tspi_bootstrap import launcher
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -190,14 +190,15 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
         json.dumps({"name": "@iawnix/tspi", "version": PACKAGE_VERSION}) + "\n",
         encoding="utf-8",
     )
-    (package_root / "themes").mkdir()
-    shutil.copy2(ROOT / "themes" / "ts-theme.json", package_root / "themes" / "ts-theme.json")
+    (package_root / "packages" / "agent-ui" / "themes").mkdir(parents=True)
+    shutil.copy2(ROOT / "packages" / "agent-ui" / "themes" / "ts-theme.json", package_root / "packages" / "agent-ui" / "themes" / "ts-theme.json")
     write_test_suite_manifest(suite_root, version=PACKAGE_VERSION)
     shutil.copy2(ROOT / "ResearchAgent", package_root / "ResearchAgent")
     (package_root / "ResearchAgent").chmod(0o755)
     (package_root / "scripts").mkdir()
-    for name in ("_bootstrap.py", "tspi_launcher.py", "pi-loader.mjs"):
-        shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
+    shutil.copy2(ROOT / "scripts" / "_bootstrap.py", package_root / "scripts" / "_bootstrap.py")
+    shutil.copy2(ROOT / "apps" / "agent-cli" / "tspi_launcher.py", package_root / "scripts" / "tspi_launcher.py")
+    shutil.copy2(ROOT / "scripts" / "pi-loader.mjs", package_root / "scripts" / "pi-loader.mjs")
     shutil.copytree(
         ROOT / "packages/tspi-runtime",
         package_root / "packages/tspi-runtime",

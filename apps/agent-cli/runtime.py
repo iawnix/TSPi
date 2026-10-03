@@ -12,7 +12,7 @@ from _bootstrap import activate_source_package
 
 activate_source_package(ROOT)
 
-from tspi_runtime.runtime.cli import main  # noqa: E402
+from tspi_bootstrap.cli import main  # noqa: E402
 
 
 if __name__ == "__main__":

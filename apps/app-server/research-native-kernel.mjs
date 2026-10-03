@@ -104,7 +104,7 @@ export async function executeFilesystemResearchCommand(command, root, params = {
 }
 
 // Keep the Native route's read model identical to
-// tspi_runtime.workspace.operation_registry.operation_catalog().  The catalog is
+// research_state.operation_registry.operation_catalog().  The catalog is
 // descriptive only; all writes still cross the Research State change boundary.
 function researchOperationCatalog() {
   const contracts = [

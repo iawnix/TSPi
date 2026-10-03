@@ -21,6 +21,16 @@ import { managedPython } from "./test-environment.mjs";
 
 const REPO_ROOT = process.cwd();
 const PYTHON = managedPython();
+const PYTHONPATH = [
+  join(REPO_ROOT, "packages", "tspi-foundation"),
+  join(REPO_ROOT, "packages", "tspi-provider-runtime"),
+  join(REPO_ROOT, "packages", "tspi-bootstrap"),
+  join(REPO_ROOT, "packages", "research-state"),
+  join(REPO_ROOT, "packages", "research-memory"),
+  join(REPO_ROOT, "packages", "research-compute"),
+  join(REPO_ROOT, "packages", "tspi-runtime"),
+  join(REPO_ROOT, "extensions", "chemical", "providers"),
+].join(":");
 const HARNESS_CONTEXT = { abortSignal: new AbortController().signal };
 
 function runJson(args, cwd = REPO_ROOT) {
@@ -29,7 +39,7 @@ function runJson(args, cwd = REPO_ROOT) {
     TSPI_PYTHON: PYTHON,
     TSPI_PACKAGE_ROOT: REPO_ROOT,
     PYTHONNOUSERSITE: "1",
-    PYTHONPATH: join(REPO_ROOT, "packages", "tspi-runtime"),
+    PYTHONPATH,
   };
   const output = execFileSync(PYTHON, args, {
     cwd,

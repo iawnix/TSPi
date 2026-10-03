@@ -17,7 +17,7 @@ from _bootstrap import bootstrap_python_package
 
 bootstrap_python_package(ROOT, workspace_from_argv=True)
 
-from tspi_runtime.workspace.cli import main
+from workspace_cli import main
 
 
 def _load_artifact_catalog(root: str | Path) -> dict[str, object]:

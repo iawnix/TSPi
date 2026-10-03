@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.support.workspace_helpers import apply_filesystem_change, bootstrap_workspace_fixture, start_research_node
-from tspi_runtime.backends.pyscf import PYSCF_ARTIFACTS, normalize_pyscf_settings
+from chemical_runtime.backends.pyscf import PYSCF_ARTIFACTS, normalize_pyscf_settings
 from research_compute import (
     create_calculation_intent,
     list_calculation_artifacts,

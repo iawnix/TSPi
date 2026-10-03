@@ -7,10 +7,10 @@ import subprocess
 
 import pytest
 
-from tspi_runtime.io import read_json, write_json
+from tspi_foundation.io import read_json, write_json
 
 from tests.support.workspace_helpers import bootstrap_workspace_fixture
-from tspi_runtime.workspace.monitor import (
+from research_compute.workspace.monitor import (
     claim_delivery,
     complete_delivery,
     list_pending_deliveries,
@@ -22,7 +22,7 @@ from tspi_runtime.workspace.monitor import (
     reconcile_registrations,
     set_monitor_enabled,
 )
-from tspi_runtime.workspace.operational import runtime_status
+from research_compute.workspace.operational import runtime_status
 
 
 def test_monitor_ticks_state_changes_once_and_persists_delivery(tmp_path: Path, monkeypatch) -> None:
@@ -101,7 +101,7 @@ def test_monitor_keeps_unknown_and_distinguishes_parsed(tmp_path: Path, monkeypa
     # A parsed operational file without a canonical Attempt is not enough to
     # promote a scheduler completion to parsed evidence.
     monkeypatch.setattr(
-        "tspi_runtime.workspace.monitor._attempt_rows",
+        "research_compute.workspace.monitor._attempt_rows",
         lambda *args: [{"intent_id": "calc_1", "state": "parsed"}],
     )
     completed = tick_monitors(root)
@@ -118,7 +118,7 @@ def test_monitor_does_not_promote_parsed_file_when_canonical_attempt_failed(tmp_
         lambda *args: {"state": "completed", "program_status": "completed"},
     )
     monkeypatch.setattr(
-        "tspi_runtime.workspace.monitor._attempt_rows",
+        "research_compute.workspace.monitor._attempt_rows",
         lambda *args: [{"intent_id": "calc_1", "state": "parsed"}],
     )
     monkeypatch.setattr(
@@ -149,7 +149,7 @@ def test_repeated_state_is_a_new_event_after_recovery(tmp_path, monkeypatch):
 
 
 def test_event_commit_recovers_missing_delivery_and_state(tmp_path, monkeypatch):
-    import tspi_runtime.workspace.monitor as monitor
+    import research_compute.workspace.monitor as monitor
     root = bootstrap_workspace_fixture(tmp_path / "workspace")
     _registered(root)
     monkeypatch.setattr("research_compute.control.calculation_status", lambda *args: {"state": "queued"})

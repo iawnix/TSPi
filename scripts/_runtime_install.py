@@ -456,7 +456,7 @@ def _pip_install_requirements(
 
 def _run_runtime_probe(python: Path, package_root: Path) -> dict[str, Any]:
     completed = subprocess.run(
-        [str(python), "-m", "tspi_runtime.runtime.probe", "--json"],
+        [str(python), "-m", "tspi_bootstrap.probe", "--json"],
         cwd=package_root,
         env=_clean_python_environment(),
         text=True,
@@ -472,7 +472,7 @@ def _run_base_probe(python: Path, package_root: Path) -> dict[str, Any]:
     program = (
         "import json,sys;"
         "sys.path.insert(0,sys.argv[1]);"
-        "from tspi_runtime.runtime.probe import probe_runtime_capabilities;"
+        "from tspi_bootstrap.probe import probe_runtime_capabilities;"
         "print(json.dumps(probe_runtime_capabilities(require_distribution=False),sort_keys=True))"
     )
     completed = subprocess.run(

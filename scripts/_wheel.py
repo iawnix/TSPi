@@ -18,7 +18,16 @@ from typing import Any
 PYTHON_DISTRIBUTION = "tspi-runtime"
 PI_PACKAGE = "@iawnix/tspi"
 PYTHON_PACKAGE_NAME = "tspi_runtime"
-PYTHON_PACKAGE_NAMES = ("tspi_runtime", "research_state", "research_memory", "research_compute")
+PYTHON_PACKAGE_NAMES = (
+    "tspi_runtime",
+    "tspi_foundation",
+    "tspi_provider_runtime",
+    "tspi_bootstrap",
+    "research_state",
+    "research_memory",
+    "research_compute",
+    "chemical_runtime",
+)
 PYTHON_PAYLOAD_SUFFIXES = frozenset({".css", ".html", ".js", ".json", ".py", ".svg", ".toml"})
 RELEASE_MANIFEST = ".tspi-release.json"
 RELEASE_SCHEMA_VERSION = "tspi-release/1"
@@ -55,15 +64,23 @@ def build_wheel(
             shutil.copy2(path, source / name)
         source_roots = {
             "tspi_runtime": root / "packages" / "tspi-runtime" / "tspi_runtime",
+            "tspi_foundation": root / "packages" / "tspi-foundation" / "tspi_foundation",
+            "tspi_provider_runtime": root / "packages" / "tspi-provider-runtime" / "tspi_provider_runtime",
+            "tspi_bootstrap": root / "packages" / "tspi-bootstrap" / "tspi_bootstrap",
             "research_state": root / "packages" / "research-state" / "research_state",
             "research_memory": root / "packages" / "research-memory" / "research_memory",
             "research_compute": root / "packages" / "research-compute" / "research_compute",
+            "chemical_runtime": root / "extensions" / "chemical" / "providers" / "chemical_runtime",
         }
         destinations = {
             "tspi_runtime": source / "packages" / "tspi-runtime" / "tspi_runtime",
+            "tspi_foundation": source / "packages" / "tspi-foundation" / "tspi_foundation",
+            "tspi_provider_runtime": source / "packages" / "tspi-provider-runtime" / "tspi_provider_runtime",
+            "tspi_bootstrap": source / "packages" / "tspi-bootstrap" / "tspi_bootstrap",
             "research_state": source / "packages" / "research-state" / "research_state",
             "research_memory": source / "packages" / "research-memory" / "research_memory",
             "research_compute": source / "packages" / "research-compute" / "research_compute",
+            "chemical_runtime": source / "extensions" / "chemical" / "providers" / "chemical_runtime",
         }
         for package_name, package_source in source_roots.items():
             if not package_source.is_dir() or package_source.is_symlink():
@@ -110,7 +127,7 @@ def build_wheel(
     package = package_identity(root)
     if descriptor["name"] != PYTHON_DISTRIBUTION or descriptor["version"] != package["version"]:
         raise WheelContractError("wheel identity does not match package.json")
-    source_digest = source_payload_sha256(root)
+    source_digest = source_payload_sha256(root, package_names=_wheel_package_names(created[0]))
     if descriptor["payload_sha256"] != source_digest:
         raise WheelContractError("wheel payload does not match the authored Python source")
     return descriptor
@@ -198,7 +215,7 @@ def release_wheel(
     wheel = root.joinpath(*relative.parts)
     actual = inspect_wheel(wheel)
     validate_descriptor_match(expected, actual)
-    source_digest = source_payload_sha256(root)
+    source_digest = source_payload_sha256(root, package_names=_wheel_package_names(wheel))
     if actual["payload_sha256"] != source_digest:
         raise WheelContractError("bundled wheel payload does not match the release source payload")
     return wheel, {**actual, "path": relative.as_posix(), "source": "bundled-release-wheel"}
@@ -246,17 +263,32 @@ def validate_descriptor_match(expected: dict[str, Any], actual: dict[str, Any]) 
 
 def source_payload_sha256(
     package_root: str | Path,
+    *,
+    package_names: set[str] | None = None,
 ) -> str:
     package_root = Path(package_root).expanduser().resolve()
     roots = {
         "tspi_runtime": package_root / "packages" / "tspi-runtime" / "tspi_runtime",
+        "tspi_foundation": package_root / "packages" / "tspi-foundation" / "tspi_foundation",
+        "tspi_provider_runtime": package_root / "packages" / "tspi-provider-runtime" / "tspi_provider_runtime",
+        "tspi_bootstrap": package_root / "packages" / "tspi-bootstrap" / "tspi_bootstrap",
         "research_state": package_root / "packages" / "research-state" / "research_state",
         "research_memory": package_root / "packages" / "research-memory" / "research_memory",
         "research_compute": package_root / "packages" / "research-compute" / "research_compute",
+        "chemical_runtime": package_root / "extensions" / "chemical" / "providers" / "chemical_runtime",
     }
     records: list[tuple[str, bytes]] = []
     for name, root in roots.items():
-        if not root.is_dir(): raise WheelContractError(f"Python source root is missing: {root}")
+        if package_names is not None and name not in package_names:
+            continue
+        # Minimal installer fixtures may contain only the canonical runtime
+        # namespace. Real release builds include every namespace declared in
+        # pyproject.toml; optional roots are included in the digest whenever
+        # they are present.
+        if not root.is_dir():
+            if name == "tspi_runtime":
+                raise WheelContractError(f"Python source root is missing: {root}")
+            continue
         for path in sorted(root.rglob("*")):
             if not path.is_file() or path.is_symlink(): continue
             relative = PurePosixPath(name) / PurePosixPath(path.relative_to(root).as_posix())
@@ -264,6 +296,18 @@ def source_payload_sha256(
     if not records:
         raise WheelContractError(f"Python source payload is empty: {root}")
     return payload_records_sha256(records)
+
+
+def _wheel_package_names(path: Path) -> set[str]:
+    """Return Python payload namespaces present in a wheel archive."""
+
+    names: set[str] = set()
+    with zipfile.ZipFile(path) as archive:
+        for member in archive.namelist():
+            first = PurePosixPath(member).parts[:1]
+            if first and first[0] in PYTHON_PACKAGE_NAMES:
+                names.add(first[0])
+    return names
 
 
 def package_identity(package_root: str | Path) -> dict[str, str]:

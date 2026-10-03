@@ -13,6 +13,16 @@ import { discoverInstalledExtensions } from "../../../apps/app-server/extension-
 
 const sourceRoot = process.env.TSPI_PI_SOURCE;
 const executeFile = promisify(execFile);
+const PYTHONPATH = [
+  join(process.cwd(), "packages", "tspi-foundation"),
+  join(process.cwd(), "packages", "tspi-provider-runtime"),
+  join(process.cwd(), "packages", "tspi-bootstrap"),
+  join(process.cwd(), "packages", "research-state"),
+  join(process.cwd(), "packages", "research-memory"),
+  join(process.cwd(), "packages", "research-compute"),
+  join(process.cwd(), "packages", "tspi-runtime"),
+  join(process.cwd(), "extensions", "chemical", "providers"),
+].join(":");
 
 test("system prompt manifest reports the exact effective prompt by origin", async () => {
   const manifest = createSystemPromptManifest({
@@ -155,7 +165,7 @@ test("native analysis discovers contracts and journals explicit mapping results"
       "start_research_node(bootstrap_workspace_fixture(Path(sys.argv[1])))",
     ].join("\n"), workspace], {
       cwd: process.cwd(),
-      env: { ...process.env, PYTHONPATH: join(process.cwd(), "packages/tspi-runtime") },
+      env: { ...process.env, PYTHONPATH },
     });
     const { createAnalyzeTool, createImportTool, createStateTool, createDispatchTool } = await import("../../../apps/app-server/pi-native-tools.mjs");
     const context = { abortSignal: new AbortController().signal };
@@ -252,7 +262,7 @@ test("native analysis_run journals a zero-input chemical resolver result", {
       "start_research_node(Path(sys.argv[1]))",
     ].join("\n"), workspace], {
       cwd: process.cwd(),
-      env: { ...process.env, PYTHONPATH: join(process.cwd(), "packages/tspi-runtime") },
+      env: { ...process.env, PYTHONPATH },
     });
     const { createAnalyzeTool } = await import("../../../apps/app-server/pi-native-tools.mjs");
     const result = JSON.parse((await createAnalyzeTool().execute("name-analysis", {

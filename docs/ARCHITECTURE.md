@@ -340,7 +340,9 @@ Server package; skills remain top-level Pi capabilities.
 ## Deterministic Tool Plane
 
 `analysis_run` dispatches 22 independent versioned analysis capabilities from an
-on-demand catalog. Domain code lives in `analysis/`; Node-owned artifacts bind
+on-demand catalog. Generic analysis contracts live in
+`packages/research-compute/research_compute/analysis.py`; chemistry domain code
+lives in `extensions/chemical/providers/chemical_runtime/analysis/`. Node-owned artifacts bind
 inputs, digests and generated files. Selected facts enter the existing
 `research_change` candidate path after replay validation. No capability schedules a
 scientific successor or accepts a Claim. Chemical networks use stoichiometric
@@ -443,8 +445,12 @@ are separate from the scientific operation journal.
 
 - Host and client adapter entrypoints: `apps/app-server/*.mjs`.
 - Installation/runtime launcher: `TSPi`, `apps/agent-cli/tspi_launcher.py`, and
-  `packages/tspi-runtime/tspi_runtime/runtime/launcher.py`.
-- Scientific contracts: `packages/tspi-runtime/tspi_runtime/**`.
+  `packages/tspi-bootstrap/tspi_bootstrap/launcher.py`.
+- Python namespaces: `packages/tspi-foundation/`,
+  `packages/tspi-provider-runtime/`, `packages/tspi-bootstrap/`,
+  `packages/research-state/`, `packages/research-memory/`,
+  `packages/research-compute/`, and the chemistry implementation under
+  `extensions/chemical/providers/chemical_runtime/`.
 - Skills and extension manifests: `skills/`, `package.json`, and
   `extensions/server/extensions.json`.
 - TS Web contracts: `contracts/ts-web/`.

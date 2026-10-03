@@ -18,21 +18,21 @@ from dataclasses import asdict, replace
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
-from tspi_runtime.backends.ase_neb import (
+from chemical_runtime.backends.ase_neb import (
     ASE_NEB_REQUIRED_ARTIFACTS,
     parse_ase_neb_artifacts,
     prepare_ase_neb,
     validate_ase_neb_endpoints,
     write_ase_neb_parse_artifacts,
 )
-from tspi_runtime.backends.base import BackendTask, PreparedTask
-from tspi_runtime.backends.crest import (
+from chemical_runtime.backends.base import BackendTask, PreparedTask
+from chemical_runtime.backends.crest import (
     CREST_REQUIRED_ARTIFACTS,
     parse_crest_artifacts,
     prepare_crest,
     write_crest_parse_artifacts,
 )
-from tspi_runtime.backends.gaussian import (
+from chemical_runtime.backends.gaussian import (
     parse_irc_log,
     parse_log,
     parse_scan_log,
@@ -43,43 +43,43 @@ from tspi_runtime.backends.gaussian import (
     write_parse_artifacts,
     write_scan_parse_artifacts,
 )
-from tspi_runtime.backends.pyscf import (
+from chemical_runtime.backends.pyscf import (
     PYSCF_REQUIRED_ARTIFACTS,
     parse_pyscf_artifacts,
     prepare_pyscf,
     write_pyscf_parse_artifacts,
 )
-from tspi_runtime.backends.xtb import (
+from chemical_runtime.backends.xtb import (
     XTB_REQUIRED_ARTIFACTS,
     parse_xtb_artifacts,
     prepare_xtb,
     write_xtb_parse_artifacts,
 )
-from tspi_runtime.backends.xtb_scan import parse_xtb_scan_control
-from tspi_runtime.backends.xyz import xyz_frame_metadata
-from tspi_runtime.calculation_contracts import (
+from chemical_runtime.backends.xtb_scan import parse_xtb_scan_control
+from chemical_runtime.backends.xyz import xyz_frame_metadata
+from research_compute.calculation_contracts import (
     CalculationContractError,
     validate_calculation_contract,
     validate_calculation_result_binding,
 )
-from tspi_runtime.remote import lifecycle as remote_lifecycle
-from tspi_runtime.remote.errors import (
+from research_compute.remote import lifecycle as remote_lifecycle
+from research_compute.remote.errors import (
     RemoteCancellationAmbiguous,
     RemoteConfigurationError,
     RemotePreSubmitError,
     RemoteSubmissionAmbiguous,
     RemoteSubmissionRejected,
 )
-from tspi_runtime.remote.models import RemoteJobConfig, RemoteResources
-from tspi_runtime.io import now_iso, read_json, sha256_json, write_json
-from tspi_runtime.workspace.operational_ids import allocate_operational_id
-from tspi_runtime.workspace.identity import WorkspaceIdentityError
-from tspi_runtime.workspace.node_contract import node_contract_digest
-from tspi_runtime.path_safety import has_symlink_component, lexical_path, path_has_symlink
-from tspi_runtime.workspace.artifacts import WorkspaceArtifactError, workspace_node_records, workspace_root as canonical_workspace_root
+from research_compute.remote.models import RemoteJobConfig, RemoteResources
+from tspi_foundation.io import now_iso, read_json, sha256_json, write_json
+from research_compute.workspace.operational_ids import allocate_operational_id
+from research_state.identity import WorkspaceIdentityError
+from research_compute.workspace.node_contract import node_contract_digest
+from tspi_foundation.path_safety import has_symlink_component, lexical_path, path_has_symlink
+from research_compute.workspace.artifacts import WorkspaceArtifactError, workspace_node_records, workspace_root as canonical_workspace_root
 
 from .artifacts import resolve_artifact_ref, resolve_input_artifacts, verify_input_bindings
-from tspi_runtime.workspace.candidates import CANDIDATE_FILE_NAME, build_finding_candidates
+from research_compute.workspace.candidates import CANDIDATE_FILE_NAME, build_finding_candidates
 from .capabilities import (
     CapabilityDescriptor,
     CapabilityGapError,
@@ -91,7 +91,7 @@ from .capabilities import (
 from .errors import ComputeContractError
 from .task_validation import parsed_program_outcome, validate_parsed_task
 from . import local_lifecycle
-from tspi_runtime.platforms import (
+from research_compute.platforms import (
     BackendBinding,
     EnvironmentBroker,
     EnvironmentConfigurationError,
@@ -1516,17 +1516,17 @@ def _bound_parse_artifacts(
 def _parser_name(backend: str, is_irc: bool, is_scan: bool = False) -> str:
     if backend == "gaussian":
         if is_irc:
-            return "tspi_runtime.backends.gaussian.parse_irc_log"
+            return "chemical_runtime.backends.gaussian.parse_irc_log"
         if is_scan:
-            return "tspi_runtime.backends.gaussian.parse_scan_log"
-        return "tspi_runtime.backends.gaussian.parse_log"
+            return "chemical_runtime.backends.gaussian.parse_scan_log"
+        return "chemical_runtime.backends.gaussian.parse_log"
     if backend == "xtb":
-        return "tspi_runtime.backends.xtb.parse_xtb_artifacts"
+        return "chemical_runtime.backends.xtb.parse_xtb_artifacts"
     if backend == "crest":
-        return "tspi_runtime.backends.crest.parse_crest_artifacts"
+        return "chemical_runtime.backends.crest.parse_crest_artifacts"
     if backend == "pyscf":
-        return "tspi_runtime.backends.pyscf.parse_pyscf_artifacts"
-    return "tspi_runtime.backends.ase_neb.parse_ase_neb_artifacts"
+        return "chemical_runtime.backends.pyscf.parse_pyscf_artifacts"
+    return "chemical_runtime.backends.ase_neb.parse_ase_neb_artifacts"
 
 
 def _validate_backend_request(
@@ -2893,8 +2893,8 @@ def _read_control_guard(
 
 
 def _claim_control(workspace: Path, intent: dict[str, Any], operation: str) -> int:
-    from tspi_runtime.workspace.transactions import workspace_lock
-    from tspi_runtime.workspace.dispatch import require_dispatch_allowed
+    from research_compute.workspace.transactions import workspace_lock
+    from research_compute.workspace.dispatch import require_dispatch_allowed
 
     with workspace_lock(workspace):
         if operation == "submit":

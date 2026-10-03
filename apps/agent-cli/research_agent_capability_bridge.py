@@ -21,7 +21,7 @@ from _bootstrap import bootstrap_python_package
 
 bootstrap_python_package(ROOT)
 
-from tspi_runtime.platforms import EnvironmentBroker, EnvironmentRequirement, load_config  # noqa: E402
+from research_compute.platforms import EnvironmentBroker, EnvironmentRequirement, load_config  # noqa: E402
 from research_compute.capabilities import calculation_capabilities  # noqa: E402
 
 
@@ -221,7 +221,7 @@ def _pyscf_runtime_readiness(
         "import pyscf; import pyscf.geomopt.geometric_solver; "
         "importlib.import_module('pyscf.dispersion'); "
         "importlib.metadata.version('pyscf-dispersion'); "
-        "import tspi_runtime.backends.pyscf_runner"
+        "import chemical_runtime.backends.pyscf_runner"
     )
     executable = command[0]
     try:

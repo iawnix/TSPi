@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pathlib import Path
 
-from tspi_runtime.backends.base import PreparedTask
+from chemical_runtime.backends.base import PreparedTask
 from research_compute.capabilities import CapabilityDescriptor
 from research_compute.registry import (
     CapabilityRegistry,
@@ -136,7 +136,7 @@ def test_registered_execution_provider_is_an_explicit_prepare_boundary(tmp_path:
 
 
 def test_calculation_intent_contract_allows_provider_owned_backend_ids() -> None:
-    from tspi_runtime.calculation_contracts import validate_calculation_contract
+    from research_compute.calculation_contracts import validate_calculation_contract
     from tests.support.workspace_helpers import calculation_intent_fixture
 
     intent = calculation_intent_fixture("node_1", "calc_1")

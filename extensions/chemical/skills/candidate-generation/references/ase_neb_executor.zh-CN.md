@@ -56,7 +56,7 @@ Artifact。
 
 远端 environment 的 `ase_neb` Backend binding 必须选择由运维人员管理的版本化环境中的 Python
 解释器。该解释器必须能导入 ASE、NumPy，以及与准备计算的 TSPi 版本一致的
-`tspi_runtime.backends.ase_neb_runner`。`calculator` 默认是 `xtb_cli`；xTB 模式在 Backend binding 的环境变量中将
+`chemical_runtime.backends.ase_neb_runner`。`calculator` 默认是 `xtb_cli`；xTB 模式在 Backend binding 的环境变量中将
 `TS_ASE_NEB_XTB` 设为已验证的 xTB 可执行文件，Gaussian 模式设置
 `TS_ASE_NEB_GAUSSIAN`；不依赖交互式 shell 的 `PATH`。
 

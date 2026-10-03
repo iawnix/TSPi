@@ -11,6 +11,7 @@ from typing import Any
 
 from .analysis import analysis_capabilities, resolve_analysis_capability, run_analysis
 from .capabilities import CapabilityGapError, calculation_capabilities, resolve_capability_result
+from .environment_catalog import environment_catalog
 from .errors import ComputeContractError
 from .control import (
     cancel_calculation,
@@ -24,8 +25,8 @@ from .control import (
     prepare_calculation,
     submit_calculation,
 )
-from tspi_runtime.remote.diagnostics import MODES as REMOTE_DIAGNOSTIC_MODES, diagnose as diagnose_remote
-from tspi_runtime.remote.errors import RemoteError
+from research_compute.remote.diagnostics import MODES as REMOTE_DIAGNOSTIC_MODES, diagnose as diagnose_remote
+from research_compute.remote.errors import RemoteError
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -165,9 +166,7 @@ def _capability_gap_payload(error: CapabilityGapError) -> dict[str, Any]:
 
 def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "capabilities":
-        from tspi_runtime.api import execute
-
-        return execute("compute.capabilities", args.root or ".")
+        return calculation_capabilities()
     if args.command == "analysis-capabilities":
         return analysis_capabilities()
     if args.command == "resolve-analysis-capability":
@@ -177,17 +176,22 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "remote-diagnostic":
         return diagnose_remote(args.mode, environment_name=args.environment)
     if args.command == "environments":
-        from tspi_runtime.api import execute
-
-        return execute("compute.environments", args.root)
+        return environment_catalog(detail=False)
     if args.command == "environment":
-        from tspi_runtime.api import execute
-
-        return execute("compute.environment", args.root, {"name": args.name})
+        catalog = environment_catalog(detail=True)
+        item = next((value for value in catalog["environments"] if value["name"] == args.name), None)
+        if item is None:
+            raise ComputeContractError(f"unknown compute environment: {args.name}")
+        return {"schema_version": "compute-environment/1", "environment": item}
     if args.command == "runs":
-        from tspi_runtime.api import execute
-
-        return execute("compute.runs", args.root)
+        from .workspace.operational import runtime_status
+        status = runtime_status(args.root)
+        return {
+            "schema_version": "compute-runs/1",
+            "runs": status.get("agent_runs", []),
+            "attempts": status.get("calculation_attempts", []),
+            "summary": status.get("runtime_summary", {}),
+        }
     if args.command == "create-intent":
         request = json.loads(args.request_json)
         if not isinstance(request, dict):
@@ -196,9 +200,8 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "discard-intent":
         return discard_calculation_intent(args.root, args.intent_id)
     if args.command == "list-artifacts":
-        from tspi_runtime.api import execute
-
-        return execute("compute.artifacts", args.root, {"node_id": args.node_id})
+        from .artifacts import list_calculation_artifacts
+        return list_calculation_artifacts(args.root, node_id=args.node_id)
     if args.command == "resolve-artifacts":
         from .artifacts import resolve_artifact_ids
 
@@ -243,7 +246,7 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
             artifact_ref=args.artifact_ref,
         )
     if args.command == "node-dispatch":
-        from tspi_runtime.workspace.dispatch import set_node_dispatch
+        from research_compute.workspace.dispatch import set_node_dispatch
         return set_node_dispatch(args.root, args.node_id, args.operation, args.rationale)
     if args.command == "prepare":
         return prepare_calculation(args.root, args.intent_file, args.expected_intent_digest)

@@ -13,8 +13,8 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from .workspace.operation_registry import operation_catalog
-from .io import sha256_json
+from research_state.operation_registry import operation_catalog
+from tspi_foundation.io import sha256_json
 
 
 def _load_command_catalog() -> dict[str, Any]:
@@ -292,11 +292,11 @@ def _compute(action: str, root: str | Path, params: dict[str, Any]) -> dict[str,
             raise CommandError(f"unknown compute environment: {name}")
         return {"schema_version": "compute-environment/1", "environment": item}
     if action == "capabilities":
-        from .compute.capabilities import calculation_capabilities
+        from research_compute.capabilities import calculation_capabilities
 
         return calculation_capabilities()
     if action == "readiness":
-        from .compute.readiness import calculation_readiness
+        from research_compute.readiness import calculation_readiness
 
         return calculation_readiness(
             capability_id=params.get("capability_id"),
@@ -304,11 +304,11 @@ def _compute(action: str, root: str | Path, params: dict[str, Any]) -> dict[str,
             execution_kind=params.get("execution_kind"),
         )
     if action == "artifacts":
-        from .compute.artifacts import list_calculation_artifacts
+        from research_compute.artifacts import list_calculation_artifacts
 
         return list_calculation_artifacts(root, node_id=params.get("node_id"))
     if action == "runs":
-        from .workspace.operational import runtime_status
+        from research_compute.workspace.operational import runtime_status
 
         status = runtime_status(root)
         return {
@@ -321,7 +321,7 @@ def _compute(action: str, root: str | Path, params: dict[str, Any]) -> dict[str,
 
 
 def _environment_catalog(*, detail: bool) -> dict[str, Any]:
-    from .platforms import EnvironmentBroker, EnvironmentConfigurationError, EnvironmentRequirement, load_config
+    from research_compute.platforms import EnvironmentBroker, EnvironmentConfigurationError, EnvironmentRequirement, load_config
 
     try:
         config = load_config()

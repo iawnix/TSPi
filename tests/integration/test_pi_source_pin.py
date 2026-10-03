@@ -130,7 +130,7 @@ def test_multi_workspace_patch_upgrades_a_list_only_checkout(tmp_path, monkeypat
 
     prepare_pi_source.apply_multi_workspace_patch(source)
 
-    assert calls == [["git", "-C", str(source), "apply", str(prepare_pi_source.MULTI_WORKSPACE_CREATE_PATCH_PATH)]]
+    assert calls == [["git", "-C", str(source), "apply", "--recount", str(prepare_pi_source.MULTI_WORKSPACE_CREATE_PATCH_PATH)]]
 
 
 def test_research_workspace_patch_upgrades_an_existing_patched_checkout(tmp_path, monkeypatch):

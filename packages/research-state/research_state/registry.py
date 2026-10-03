@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Sequence
 
-from tspi_runtime.io import now_iso, read_json, write_json
-from tspi_runtime.path_safety import lexical_path, path_has_symlink
+from tspi_foundation.io import now_iso, read_json, write_json
+from tspi_foundation.path_safety import lexical_path, path_has_symlink
 from .workspace import WorkspaceModeError, validate_workspace_manifest
 
 

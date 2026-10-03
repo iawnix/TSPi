@@ -11,19 +11,19 @@ from pathlib import Path
 import pytest
 
 from research_compute.cli import main as compute_cli_main
-from tspi_runtime.remote.client import CommandResult
-from tspi_runtime.platforms import EnvironmentConfigurationError, load_config
-from tspi_runtime.remote.diagnostics import MODES, _doctor, diagnose
-from tspi_runtime.remote.errors import (
+from research_compute.remote.client import CommandResult
+from research_compute.platforms import EnvironmentConfigurationError, load_config
+from research_compute.remote.diagnostics import MODES, _doctor, diagnose
+from research_compute.remote.errors import (
     RemoteConfigurationError,
     RemoteError,
     RemotePreSubmitError,
     RemoteSubmissionAmbiguous,
 )
-from tspi_runtime.remote.lifecycle import _parse_record, _submit_script, collect, status, submit
-from tspi_runtime.remote.models import RemoteJobConfig, RemoteResources, TransferRecord
-from tspi_runtime.remote.torque import parse_records, render_job_script, scheduler_semantics
-from tspi_runtime.remote.transfer import upload_verified
+from research_compute.remote.lifecycle import _parse_record, _submit_script, collect, status, submit
+from research_compute.remote.models import RemoteJobConfig, RemoteResources, TransferRecord
+from research_compute.remote.torque import parse_records, render_job_script, scheduler_semantics
+from research_compute.remote.transfer import upload_verified
 
 
 def test_remote_diagnostic_modes_exclude_redundant_cluster_alias() -> None:
@@ -585,7 +585,7 @@ def test_crest_collection_keeps_actual_capture_provenance(tmp_path, monkeypatch,
         destination.write_bytes(b"CREST terminated normally.\n")
         return TransferRecord(remote_path=directory + "/" + remote_name, size=26, sha256="sha256:" + "a" * 64)
 
-    monkeypatch.setattr("tspi_runtime.remote.lifecycle.download_verified", download)
+    monkeypatch.setattr("research_compute.remote.lifecycle.download_verified", download)
     downloaded, manifest = collect(config, ["crest.out"], tmp_path / "collected", client=object())
     assert downloaded == ["crest.out"]
     assert manifest[0]["remote_path"].endswith("/" + stdout_name)
@@ -616,9 +616,9 @@ def test_submit_reconciles_durable_receipt_after_ssh_disconnect(
         def run_script(self, *_args, **_kwargs):
             raise TimeoutError("SSH disconnected after request start")
 
-    monkeypatch.setattr("tspi_runtime.remote.lifecycle.ensure_directory", lambda *_args: None)
+    monkeypatch.setattr("research_compute.remote.lifecycle.ensure_directory", lambda *_args: None)
     monkeypatch.setattr(
-        "tspi_runtime.remote.lifecycle.upload_verified",
+        "research_compute.remote.lifecycle.upload_verified",
         lambda _client, source, remote_dir, name: TransferRecord(
             remote_path=f"{remote_dir}/{name}",
             size=source.stat().st_size,
@@ -626,7 +626,7 @@ def test_submit_reconciles_durable_receipt_after_ssh_disconnect(
         ),
     )
     monkeypatch.setattr(
-        "tspi_runtime.remote.lifecycle.read_submission_record",
+        "research_compute.remote.lifecycle.read_submission_record",
         lambda *_args, **_kwargs: {
             "schema_version": "ts-remote-submission/1",
             "submission_id": config.submission_id,
@@ -653,9 +653,9 @@ def test_submit_disconnect_without_durable_record_is_ambiguous(
         def run_script(self, *_args, **_kwargs):
             raise TimeoutError("SSH disconnected after request start")
 
-    monkeypatch.setattr("tspi_runtime.remote.lifecycle.ensure_directory", lambda *_args: None)
+    monkeypatch.setattr("research_compute.remote.lifecycle.ensure_directory", lambda *_args: None)
     monkeypatch.setattr(
-        "tspi_runtime.remote.lifecycle.upload_verified",
+        "research_compute.remote.lifecycle.upload_verified",
         lambda _client, source, remote_dir, name: TransferRecord(
             remote_path=f"{remote_dir}/{name}",
             size=source.stat().st_size,
@@ -663,7 +663,7 @@ def test_submit_disconnect_without_durable_record_is_ambiguous(
         ),
     )
     monkeypatch.setattr(
-        "tspi_runtime.remote.lifecycle.read_submission_record",
+        "research_compute.remote.lifecycle.read_submission_record",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError("record missing")),
     )
 
@@ -873,7 +873,7 @@ def test_torque_renders_ase_neb_platform_python_and_xtb_environment(tmp_path: Pa
         base,
         backend="ase_neb",
         platform=platform,
-        command=("/local/python", "-m", "tspi_runtime.backends.ase_neb_runner", "--images", "7"),
+        command=("/local/python", "-m", "chemical_runtime.backends.ase_neb_runner", "--images", "7"),
         expected_artifacts=("ase_neb.out", "neb.traj", "neb_path.xyz", "neb_summary.json"),
         stdout_name="ase_neb.out",
     )
@@ -881,7 +881,7 @@ def test_torque_renders_ase_neb_platform_python_and_xtb_environment(tmp_path: Pa
     script = render_job_script(config)
 
     assert "export TS_ASE_NEB_XTB=/opt/xtb/bin/xtb" in script
-    assert "/opt/ase-neb/bin/python -m tspi_runtime.backends.ase_neb_runner --images 7" in script
+    assert "/opt/ase-neb/bin/python -m chemical_runtime.backends.ase_neb_runner --images 7" in script
     assert "> ase_neb.out" in script
 
 
@@ -897,7 +897,7 @@ def test_torque_renders_pyscf_platform_python_and_activation(tmp_path: Path) -> 
         base,
         backend="pyscf",
         platform=platform,
-        command=("/local/python", "-m", "tspi_runtime.backends.pyscf_runner", "--task", "sp"),
+        command=("/local/python", "-m", "chemical_runtime.backends.pyscf_runner", "--task", "sp"),
         input_paths=(tmp_path / "candidate.xyz",),
         expected_artifacts=("pyscf.out", "pyscf_result.json"),
         stdout_name="pyscf.out",
@@ -907,5 +907,5 @@ def test_torque_renders_pyscf_platform_python_and_activation(tmp_path: Path) -> 
     script = render_job_script(config)
 
     assert "source /opt/pyscf/activate.sh" in script
-    assert "/opt/pyscf/bin/python -m tspi_runtime.backends.pyscf_runner --task sp" in script
+    assert "/opt/pyscf/bin/python -m chemical_runtime.backends.pyscf_runner --task sp" in script
     assert "> pyscf.out" in script

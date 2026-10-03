@@ -17,7 +17,11 @@ from typing import Any
 LAYOUT_SCHEMA_VERSION = "research-agent-layout/1"
 STANDALONE_MARKER = "etc/research-agent-layout.json"
 LEGACY_PACKAGE_HOME = ".pi/packages/tspi"
-DIRECT_PACKAGE_HOME = ".pi/packages/tspi"
+# A direct package store is distinct from the historical Pi-managed store.
+# Keeping these paths separate prevents a legacy installation from being
+# misclassified as a mixed layout merely because it contains its own release
+# directory.
+DIRECT_PACKAGE_HOME = "packages/tspi"
 
 
 @dataclass(frozen=True)

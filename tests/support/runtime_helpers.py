@@ -6,7 +6,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from tspi_runtime.runtime.env import python_payload_sha256, spec_sha256
+from tspi_foundation.env import python_payload_sha256, spec_sha256
 
 
 def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> Path:

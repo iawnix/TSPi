@@ -14,7 +14,7 @@ from jsonschema import Draft202012Validator
 
 from .errors import ComputeContractError
 from .registry import CapabilityRegistration
-from tspi_runtime.analysis.catalog import (
+from chemical_runtime.analysis.catalog import (
     ANALYSIS_CAPABILITIES_BY_ID,
     ANALYSIS_REGISTRY,
     DESCRIPTORS,
@@ -22,64 +22,9 @@ from tspi_runtime.analysis.catalog import (
 )
 
 
-ATOM_REFERENCE = {
-    "type": "object",
-    "required": ["species", "atom"],
-    "properties": {
-        "species": {"type": "integer", "minimum": 0, "maximum": 63},
-        "atom": {"type": "integer", "minimum": 0, "maximum": 4095},
-    },
-    "additionalProperties": False,
-}
-SPECIES_ARTIFACTS = {
-    "type": "array",
-    "items": {"type": "string", "pattern": "^art_[0-9a-f]{64}$"},
-    "minItems": 1,
-    "maxItems": 64,
-}
+from chemical_runtime.analysis.catalog import MAPPING_VALIDATION_DESCRIPTOR
 
-ANALYSIS_DESCRIPTORS: Final[tuple[dict[str, Any], ...]] = (
-    {
-        "capability": "reaction.mapping.validate",
-        "version": "1",
-        "capability_kind": "analysis",
-        "summary": "Check an explicit element-preserving atom bijection across ordered XYZ species.",
-        "input_roles": ["reactants", "products"],
-        "output_roles": ["mapping_validation", "analysis_artifact", "finding_candidates"],
-        "effects": ["local_prepare", "local_analysis"],
-        "input_schema": {
-            "type": "object",
-            "required": ["reactants", "products"],
-            "properties": {"reactants": SPECIES_ARTIFACTS, "products": SPECIES_ARTIFACTS},
-            "additionalProperties": False,
-        },
-        "parameter_schema": {
-            "type": "object",
-            "required": ["mapping"],
-            "properties": {
-                "mapping": {
-                    "type": "array",
-                    "maxItems": 4096,
-                    "items": {
-                        "type": "object",
-                        "required": ["reactant", "product"],
-                        "properties": {"reactant": ATOM_REFERENCE, "product": ATOM_REFERENCE},
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "additionalProperties": False,
-        },
-        "limits": {"max_species_per_side": 64, "max_atoms_per_species": 4096, "max_atoms_per_side": 4096, "max_mapping_pairs": 4096},
-        "parsers": ["ts.reaction.mapping/1"],
-        "scientific_scope": "Validate an explicit atom mapping; does not generate one.",
-        "limitations": [
-            "Ambiguous symmetry and proton-transfer choices remain unresolved.",
-            "Input XYZ atom identity and element labels must already be reliable.",
-            "Element agreement does not validate isotope, charge, spin, connectivity, or chemical plausibility.",
-        ],
-    },
-) + DESCRIPTORS
+ANALYSIS_DESCRIPTORS: Final[tuple[dict[str, Any], ...]] = (MAPPING_VALIDATION_DESCRIPTOR,)
 
 ANALYSIS_CAPABILITY_REGISTRY = ANALYSIS_REGISTRY
 
@@ -176,7 +121,7 @@ def run_analysis(root: str, request: dict[str, Any]) -> dict[str, Any]:
             location = ".".join([field, *(str(part) for part in error.absolute_path)])
             raise ComputeContractError(f"analysis {location}: {error.message}")
     if capability != "reaction.mapping.validate":
-        from tspi_runtime.analysis.engine import run_scientific_analysis
+        from chemical_runtime.analysis.engine import run_scientific_analysis
         return run_scientific_analysis(root, request)
     # Imports stay local: catalog discovery does not load scientific libraries.
     from .artifacts import create_reaction_mapping_validation_artifact

@@ -1252,7 +1252,7 @@ def test_name_resolver_toml_is_validated_and_written_private(tmp_path: Path) -> 
 
     destination = root / ".pi/name-resolver.toml"
     assert configs["name_resolver"]["status"] == "configured"
-    assert configs["name_resolver"]["enabled_backends"] == "pubchem"
+    assert configs["name_resolver"]["enabled_backends"] == "opsin,pubchem"
     assert configs["name_resolver"]["automatic_lookup"] == "ready"
     assert destination.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
     assert stat.S_IMODE(destination.stat().st_mode) == 0o600
@@ -1266,7 +1266,7 @@ def test_name_resolver_config_uses_bundled_pubchem_default(tmp_path: Path) -> No
     configs = wizard.configure_backend_configs(args)
 
     assert configs["name_resolver"]["status"] == "configured"
-    assert configs["name_resolver"]["enabled_backends"] == "pubchem"
+    assert configs["name_resolver"]["enabled_backends"] == "opsin,pubchem"
     assert configs["name_resolver"]["automatic_lookup"] == "ready"
     assert configs["name_resolver"]["path"].endswith("/.pi/name-resolver.toml")
     assert stat.S_IMODE((tmp_path / "install/.pi/name-resolver.toml").stat().st_mode) == 0o600

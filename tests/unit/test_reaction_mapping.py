@@ -16,8 +16,8 @@ from research_compute import (
     import_calculation_artifact,
     list_calculation_artifacts,
 )
-from tspi_runtime.workspace.candidates import load_finding_candidate, FindingCandidateError
-from tspi_runtime.reaction.mapping import validate_atom_mapping
+from research_compute.workspace.candidates import load_finding_candidate, FindingCandidateError
+from chemical_runtime.reaction.mapping import validate_atom_mapping
 from research_compute.analysis import analysis_capabilities, resolve_analysis_capability, run_analysis
 from research_state.agent_workspace import checkpoint as filesystem_checkpoint
 
@@ -285,7 +285,7 @@ def test_analysis_candidates_promote_through_existing_change_and_retain_sources(
             "type": "create_finding", "id": "fnd_1", "node_id": node_id,
             "kind": "fact", "statement": "All supplied atoms have one element-preserving correspondence.",
             "value": True, "datatype": "boolean", "source_refs": [selected["artifactId"]],
-            "provenance": {"producer": "tspi_runtime.reaction.mapping.validate_atom_mapping", "candidate_id": selected["candidateId"]},
+            "provenance": {"producer": "chemical_runtime.reaction.mapping.validate_atom_mapping", "candidate_id": selected["candidateId"]},
         }],
     })
     from research_state.agent_workspace import read_context

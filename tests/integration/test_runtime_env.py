@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from tspi_runtime.runtime.env import (
+from tspi_foundation.env import (
     PACKAGE_ROOT_OVERRIDE,
     RuntimeEnvironmentError,
     bind_runtime_process_environment,
@@ -30,9 +30,9 @@ from tspi_runtime.runtime.env import (
     spec_sha256,
     write_manifest,
 )
-import tspi_runtime.runtime.probe as runtime_probe_module
-import tspi_runtime.runtime.cli as runtime_cli
-from tspi_runtime.runtime.probe import probe_runtime_capabilities
+import tspi_bootstrap.probe as runtime_probe_module
+import tspi_bootstrap.cli as runtime_cli
+from tspi_bootstrap.probe import probe_runtime_capabilities
 from scripts import _runtime_install as runtime_install
 from scripts._bootstrap import bootstrap_python_package
 
@@ -488,6 +488,7 @@ def test_runtime_process_binding_owns_python_commands(monkeypatch: pytest.Monkey
 
 
 def test_scientific_runtime_probe_exercises_required_capabilities(monkeypatch) -> None:
+    pytest.importorskip("rdkit")
     monkeypatch.setattr(
         runtime_probe_module,
         "_probe_render_capabilities",
@@ -798,6 +799,7 @@ def test_install_env_accepts_user_conda_root(tmp_path: Path) -> None:
 
 def test_install_env_reuses_scientific_base_and_isolates_kernel_overlay(tmp_path: Path) -> None:
     import numpy
+    pytest.importorskip("rdkit")
     import rdkit
 
     if shutil.which("xyzrender") is None:
@@ -931,7 +933,7 @@ def test_ts_runtime_isolated_run_cannot_modify_workspace_manifest(tmp_path: Path
     completed = subprocess.run(
         [
             sys.executable,
-            str(ROOT / "scripts" / "runtime.py"),
+                str(ROOT / "apps" / "agent-cli" / "runtime.py"),
             "run-isolated",
             "-m",
             "pytest",
@@ -954,7 +956,7 @@ def test_ts_runtime_script_passes_dash_m_arguments() -> None:
     completed = subprocess.run(
         [
             sys.executable,
-            str(ROOT / "scripts" / "runtime.py"),
+                str(ROOT / "apps" / "agent-cli" / "runtime.py"),
             "run",
             "-c",
             "print('runtime-ok')",
@@ -983,7 +985,7 @@ def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> No
     completed = subprocess.run(
         [
             sys.executable,
-            str(ROOT / "scripts" / "runtime.py"),
+            str(ROOT / "apps" / "agent-cli" / "runtime.py"),
             "resolve",
             "--workspace-root",
             str(workspace),
@@ -1006,6 +1008,7 @@ def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> No
 
 def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
     import numpy
+    pytest.importorskip("rdkit")
     import rdkit
 
     executable = Path(sys.executable).resolve()

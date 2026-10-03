@@ -15,7 +15,7 @@ from typing import Any, Iterable, Protocol
 
 from jsonschema import Draft202012Validator
 
-from tspi_runtime.io import sha256_json
+from tspi_foundation.io import sha256_json
 
 from .registry import CapabilityRegistration, CapabilityRegistry, CapabilityRegistryError
 

@@ -11,14 +11,20 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages/tspi-runtime"))
+ROOT = Path(__file__).resolve().parents[3]
+for source in (
+    "packages/tspi-foundation", "packages/tspi-provider-runtime", "packages/tspi-bootstrap",
+    "packages/research-state", "packages/research-memory", "packages/research-compute",
+    "packages/tspi-runtime", "extensions/chemical/providers",
+):
+    sys.path.insert(0, str(ROOT / source))
 from research_state.workspace import admit_research_workspace, initialize_workspace
 from research_state import read_context, apply_change
 from tests.unit.test_scientific_analysis import request
 from research_compute import import_calculation_artifact, create_calculation_intent, prepare_calculation, submit_calculation, calculation_status, collect_calculation, parse_calculation
 from research_compute.analysis import run_analysis
 from research_compute.artifacts import resolve_artifact_ref
-from tspi_runtime.io import write_json, read_json
+from tspi_foundation.io import write_json, read_json
 from report_lib.builder import build_report_package
 
 

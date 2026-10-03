@@ -57,7 +57,16 @@ def main(argv: list[str] | None = None) -> int:
     environment.pop("PYTEST_ADDOPTS", None)
     environment.pop("PYTEST_PLUGINS", None)
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    pythonpath = [str(package_root / "packages" / "tspi-runtime"), str(package_root)]
+    pythonpath = [
+        str(package_root / "packages" / "tspi-runtime"),
+        str(package_root / "packages" / "tspi-foundation"),
+        str(package_root / "packages" / "tspi-provider-runtime"),
+        str(package_root / "packages" / "research-state"),
+        str(package_root / "packages" / "research-memory"),
+        str(package_root / "packages" / "research-compute"),
+        str(package_root / "extensions" / "chemical" / "providers"),
+        str(package_root),
+    ]
     existing_pythonpath = environment.get("PYTHONPATH")
     if existing_pythonpath:
         pythonpath.append(existing_pythonpath)

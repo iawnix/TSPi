@@ -50,12 +50,13 @@ bootstrap 时明确拒绝。
 
 ## 工具合同维护
 
-后端 adapter 位于 `packages/tspi-runtime/tspi_runtime/backends/`，只能解析自己的格式。
+后端 adapter 位于 `extensions/chemical/providers/chemical_runtime/backends/`，只能解析自己的格式。
 每个 artifact 都必须有 digest 和安全的工作区相对路径。远程作业记录 scheduler、job
 ID、命令和收集结果，不覆盖已有证据。
 
-独立分析使用 `analysis/catalog.py` 的闭合 ID/version registry 和
-`analysis/engine.py` 的 handler dispatch。新增算法必须声明有界输入、适用条件、反例、
+独立分析使用 `extensions/chemical/providers/chemical_runtime/analysis/catalog.py` 的闭合
+ID/version registry 和 `extensions/chemical/providers/chemical_runtime/analysis/engine.py` 的
+handler dispatch。通用能力合同位于 `packages/research-compute/`。新增算法必须声明有界输入、适用条件、反例、
 可重放候选，并在确定性输出语义变化时提升版本。不要加入科学 successor routing。
 
 Node 暂停/恢复回执属于操作状态；提交和分析边界必须保留共享工作区锁，同时保持查看、

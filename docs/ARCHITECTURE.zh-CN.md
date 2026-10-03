@@ -206,9 +206,8 @@ Claim。Gate 记录结果，但不会自动修改 Node 或 Claim；解释和状�
 ## 独立科学能力与节点管理
 
 `analysis_run` 通过按需能力目录派发 22 项版本化独立分析能力；对外目录由
-`packages/research-compute/research_compute/analysis.py` 组装，领域描述由
-`packages/research-compute/research_compute/catalog.py` 定义，领域实现位于
-`packages/research-compute/research_compute/analysis/`。结果绑定 Node、输入 digest、生成文件
+`packages/research-compute/research_compute/analysis.py` 只组装通用分析合同；化学领域描述和实现位于
+`extensions/chemical/providers/chemical_runtime/analysis/`。结果绑定 Node、输入 digest、生成文件
 和候选事实；选定事实通过已有 `research_change`
 入口重算校验后登记。能力不选择下一科学步骤，不接受 Claim。化学网络使用带计量
 的超边并允许有环，独立于研究 Node DAG。

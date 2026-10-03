@@ -77,10 +77,24 @@ def test_render_missing_xyzrender_is_structured_failure(tmp_path: Path, monkeypa
 def test_render_cli_diagnostic_json(tmp_path: Path, monkeypatch) -> None:
     fake = _fake_xyzrender(tmp_path)
     env = dict(**os_environ_without_runtime_reexec(), TS_RENDER_XYZRENDER=str(fake))
+    input_xyz = tmp_path / "h2.xyz"
+    input_xyz.write_text("2\nh2\nH 0 0 0\nH 0 0 0.74\n", encoding="utf-8")
+    output_png = tmp_path / "out.png"
+    request = {
+        "protocol_version": "tspi-provider/1",
+        "request_id": "render-test",
+        "provider_id": "render",
+        "operation": "artifact_render",
+        "version": "1",
+        "inputs": {"operation": "render", "artifact_paths": [str(input_xyz)], "output_path": str(output_png)},
+        "parameters": {},
+        "context": {},
+    }
     completed = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "render.py"), "diagnostic", "--json"],
+        [sys.executable, str(ROOT / "extensions" / "render" / "providers" / "render_provider.py")],
         cwd=ROOT,
         env=env,
+        input=json.dumps(request) + "\n",
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -88,11 +102,9 @@ def test_render_cli_diagnostic_json(tmp_path: Path, monkeypatch) -> None:
     )
     payload = json.loads(completed.stdout)
 
-    assert payload["xyzrender"]["available"] is True
-    assert payload["xyzrender"]["path"] == str(fake)
-    assert "blender" not in payload
-    assert "ffmpeg" not in payload
-    assert "obabel" not in payload
+    assert payload["status"] == "succeeded"
+    assert payload["provenance"]["provider_id"] == "render"
+    assert output_png.is_file()
 
 
 def test_mechanism_composes_labeled_arrow_panels_without_xyzrender_annotations(

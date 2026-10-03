@@ -14,7 +14,7 @@ RDKit, a compatible NumPy range, Matplotlib, and `xyzrender` are core
 dependencies. Before writing the runtime manifest, the installer proves
 NumPy/RDKit/Matplotlib imports, SMILES parsing, fixed-seed ETKDG embedding, UFF
 optimization, and the `xyzrender` executable, recording versions and origins.
-`packages/tspi-runtime/tspi_runtime/runtime/launcher.py` accepts the manifest only when
+`packages/tspi-bootstrap/tspi_bootstrap/launcher.py` accepts the manifest only when
 the source and installed distribution digests still match.
 
 Research workspaces store state and artifacts. The installation runtime store

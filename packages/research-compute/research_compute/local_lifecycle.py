@@ -19,8 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from tspi_runtime.io import now_iso, read_json, write_json
-from tspi_runtime.path_safety import path_has_symlink
+from tspi_foundation.io import now_iso, read_json, write_json
+from tspi_foundation.path_safety import path_has_symlink
 
 
 @dataclass(frozen=True)
@@ -115,10 +115,19 @@ def submit(config: LocalJobConfig) -> LocalReceipt:
     if receipt_path.exists():
         raise ValueError("local receipt is not a regular file")
 
-    package_root = Path(__file__).resolve().parents[2]
+    package_root = Path(__file__).resolve().parents[3]
     inherited_pythonpath = os.environ.get("PYTHONPATH", "")
     pythonpath = os.pathsep.join(
-        item for item in (str(package_root), inherited_pythonpath) if item
+        item for item in (
+            str(package_root / "packages" / "tspi-foundation"),
+            str(package_root / "packages" / "tspi-provider-runtime"),
+            str(package_root / "packages" / "research-state"),
+            str(package_root / "packages" / "research-memory"),
+            str(package_root / "packages" / "research-compute"),
+            str(package_root / "packages" / "tspi-runtime"),
+            str(package_root / "extensions" / "chemical" / "providers"),
+            inherited_pythonpath,
+        ) if item
     )
     worker = _start_worker(config, worker_config, pythonpath)
     try:

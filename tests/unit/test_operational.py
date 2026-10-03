@@ -10,7 +10,7 @@ from tests.support.workspace_helpers import (
     calculation_result_fixture,
     start_research_node,
 )
-from tspi_runtime.workspace.operational import node_completion_blockers, runtime_status
+from research_compute.workspace.operational import node_completion_blockers, runtime_status
 
 
 def _write(path: Path, value: dict) -> None:
