@@ -12,11 +12,10 @@ TS_LOADER = ROOT / "tests" / "support" / "typescript_loader.mjs"
 RUNTIME_ROOT = ROOT / "packages" / "agent-runtime"
 OUTPUT_SCHEMA = RUNTIME_ROOT / "agents" / "review" / "output-schema.cjs"
 RESULT_TOOL = RUNTIME_ROOT / "agents" / "review" / "result-tool.ts"
-RUNTIME = RUNTIME_ROOT / "agents" / "review" / "runtime.ts"
+PROVIDER_TURN = RUNTIME_ROOT / "agent-core" / "provider-turn.cjs"
 TASK_PACKET = RUNTIME_ROOT / "agents" / "review" / "task-packet.cjs"
 COMPUTE_OUTPUT_SCHEMA = RUNTIME_ROOT / "agents" / "compute" / "output-schema.cjs"
 COMPUTE_RESULT_TOOL = RUNTIME_ROOT / "agents" / "compute" / "result-tool.ts"
-COMPUTE_RUNTIME = RUNTIME_ROOT / "agents" / "compute" / "runtime.ts"
 COMPUTE_TASK_PACKET = RUNTIME_ROOT / "agents" / "compute" / "task-packet.cjs"
 
 
@@ -140,17 +139,15 @@ process.stdout.write(JSON.stringify({{
 
 def test_review_runtime_can_force_named_tool_without_adding_function_strict() -> None:
     script = f"""
-import {{ forceReviewResultToolChoice }} from {json.dumps(RUNTIME.as_uri())};
-const payload=forceReviewResultToolChoice({{model:"probe",tools:[{{type:"function",function:{{name:"review_result",parameters:{{type:"object"}}}}}}]}});
+const {{ forceNamedToolChoice, assertProviderTurnSucceeded }} = require({json.dumps(str(PROVIDER_TURN))});
+const payload=forceNamedToolChoice({{model:"probe",tools:[{{type:"function",function:{{name:"review_result",parameters:{{type:"object"}}}}}}]}}, "review_result");
 process.stdout.write(JSON.stringify(payload));
 """
-    payload = json.loads(_node_ts(script).stdout)
+    payload = json.loads(_node(script).stdout)
     assert payload["tool_choice"] == {"type": "function", "function": {"name": "review_result"}}
     assert "strict" not in payload["tools"][0]["function"]
-    source = RUNTIME.read_text(encoding="utf-8")
+    source = PROVIDER_TURN.read_text(encoding="utf-8")
     assert "assertProviderTurnSucceeded" in source
-    assert "repairMissingToolCall" in source
-    assert source.index("assertProviderTurnSucceeded") < source.index("repairMissingToolCall")
 
 
 def test_compute_and_review_are_the_only_model_child_runtimes() -> None:
@@ -161,6 +158,13 @@ def test_compute_and_review_are_the_only_model_child_runtimes() -> None:
         if path.is_file()
     }
     assert packaged_namespaces == {"compute", "review"}
+
+
+def test_removed_standalone_subagent_runtimes_are_not_packaged() -> None:
+    """Pi SDK owns the child-agent loop; TSPi only ships task/result contracts."""
+
+    assert not (RUNTIME_ROOT / "agents" / "review" / "runtime.ts").exists()
+    assert not (RUNTIME_ROOT / "agents" / "compute" / "runtime.ts").exists()
 
 
 def test_compute_task_and_result_are_bound_to_typed_actions(tmp_path: Path) -> None:
@@ -213,9 +217,9 @@ def test_compute_result_tool_is_local_and_inspect_retains_optional_tail(tmp_path
     script = f"""
 import {{ Compile }} from "typebox/compile";
 import {{ createComputeResultCapture,createComputeResultTool }} from {json.dumps(COMPUTE_RESULT_TOOL.as_uri())};
-import {{ shouldForceComputeResult }} from {json.dumps(COMPUTE_RUNTIME.as_uri())};
 import {{ createRequire }} from "node:module";
 const require=createRequire(import.meta.url);
+const {{ isComputePlanReady }}=require({json.dumps(str(COMPUTE_OUTPUT_SCHEMA))});
 const taskHelper=require({json.dumps(str(COMPUTE_TASK_PACKET))});
 const descriptor={{capability:"gaussian.opt_freq",version:"1",input_roles:["gjf"],output_roles:["program_output","optimized_geometry","frequencies"],parsers:["gaussian.output/2"]}};
 const descriptorDigest="sha256:"+"c".repeat(64);
@@ -233,10 +237,9 @@ process.stdout.write(JSON.stringify({{
   constrainedSampling:Object.hasOwn(tool,"constrainedSampling"),
   keys:Object.keys(tool.parameters.properties).sort(),
   valid:check.Check({{summary:"Status checked.",limitations:[]}}),
-  before:shouldForceComputeResult(task,[]),
-  afterStatus:shouldForceComputeResult(task,[status]),
-  afterTail:shouldForceComputeResult(task,[status,tail]),
-  repair:shouldForceComputeResult(task,[status],true),
+  before:isComputePlanReady(task,[]),
+  afterStatus:isComputePlanReady(task,[status]),
+  afterTail:isComputePlanReady(task,[status,tail]),
 }}));
 """
     result = json.loads(_node_ts(script, str(tmp_path)).stdout)
@@ -245,9 +248,8 @@ process.stdout.write(JSON.stringify({{
         "keys": ["limitations", "summary"],
         "valid": True,
         "before": False,
-        "afterStatus": False,
+        "afterStatus": True,
         "afterTail": True,
-        "repair": True,
     }
 
 

@@ -35,9 +35,9 @@ try:
         validate_suite_manifest,
         verify_archive_descriptor,
     )
-    from .install_release import (
+    from ._component_release import (
         REQUIRED_RUNTIME_FILES,
-        ReleaseInstallError,
+        ComponentArchiveError,
         archive_retired_notification_state,
         ensure_private_directory,
         extract_archive,
@@ -84,9 +84,9 @@ except ImportError:
         validate_suite_manifest,
         verify_archive_descriptor,
     )
-    from install_release import (
+    from _component_release import (
         REQUIRED_RUNTIME_FILES,
-        ReleaseInstallError,
+        ComponentArchiveError,
         archive_retired_notification_state,
         ensure_private_directory,
         extract_archive,
@@ -121,7 +121,6 @@ LAUNCHER_PATHS = {
     "ResearchAgentServer": ("agent", "ResearchAgentServer"),
     "TSWeb": ("web", "bin", "ts-web"),
 }
-LEGACY_LAUNCHER_NAMES = ("TSPi",)
 STABLE_APP_LAUNCHERS = ("ResearchAgent", "ResearchAgentServer", "TSWeb")
 
 # Installer control code is standard-library-only and must precede runtime activation.
@@ -165,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     except (
         SuiteReleaseError,
-        ReleaseInstallError,
+        ComponentArchiveError,
         RuntimeInstallError,
         SessionGuardError,
         WheelContractError,
@@ -383,7 +382,7 @@ def _activate_release(
 
     current = package_home / "current"
     state_path = package_home / "install-state.json"
-    launcher_paths = [install_root / name for name in (*LAUNCHER_PATHS, *LEGACY_LAUNCHER_NAMES)]
+    launcher_paths = [install_root / name for name in LAUNCHER_PATHS]
     stable_current = install_root / "current"
     stable_bin = install_root / "bin"
     stable_launcher_paths = [stable_bin / name for name in STABLE_APP_LAUNCHERS]
@@ -559,7 +558,7 @@ def inspect_embedded_agent(
     )
     try:
         members, files = inspect_archive(archive)
-    except ReleaseInstallError as error:
+    except ComponentArchiveError as error:
         raise SuiteReleaseError(f"embedded Agent archive is invalid: {error}") from error
     # The embedded archive is an Agent release; its manifest contract is
     # represented by the shared wheel/release schema constant.
@@ -612,7 +611,7 @@ def validate_agent_runtime(
 ) -> None:
     try:
         validate_extracted_package(root, manifest)
-    except (ReleaseInstallError, WheelContractError) as error:
+    except (ComponentArchiveError, WheelContractError) as error:
         raise SuiteReleaseError(f"installed Agent component is invalid: {error}") from error
 
 
@@ -642,7 +641,7 @@ def validate_agent_release_contract(
         if release_identity(installed) != release_identity(expected):
             raise SuiteReleaseError("installed Agent release manifest does not match the suite component")
         bundled = release_wheel(root)
-    except (ReleaseInstallError, WheelContractError) as error:
+    except (ComponentArchiveError, WheelContractError) as error:
         raise SuiteReleaseError(f"installed Agent wheel contract is invalid: {error}") from error
     if bundled is None:
         raise SuiteReleaseError("installed Agent release has no trusted wheel contract")
@@ -662,9 +661,9 @@ def install_launchers(
         for name, relative in paths.items()
     }
     enabled = {"ResearchAgent"}
-    # ResearchAgentServer is part of current releases. Keep synthetic/legacy Agent
-    # archives usable when the optional entrypoint is present only as a
-    # non-executable fixture; a real npm release carries it executable.
+    # ResearchAgentServer is part of current releases. Synthetic component
+    # fixtures may carry it only as a non-executable placeholder; a real npm
+    # release carries it executable.
     research_agent_target = targets["ResearchAgentServer"]
     if research_agent_target.is_file() and os.access(research_agent_target, os.X_OK):
         enabled.add("ResearchAgentServer")
@@ -680,13 +679,6 @@ def install_launchers(
                 link.unlink()
             continue
         install_symlink(link, target)
-    for name in LEGACY_LAUNCHER_NAMES:
-        link = install_root / name
-        if link.is_symlink():
-            releases_root = (package_home / "releases").resolve()
-            if not _launcher_points_into_package_store(link, releases_root):
-                raise SuiteReleaseError(f"stale legacy entrypoint escapes the package store: {link}")
-            link.unlink()
     return {name: str(install_root / name) for name in enabled}
 
 
@@ -697,7 +689,7 @@ def install_stable_app_shims(
     *,
     release_root: Path | None = None,
 ) -> dict[str, str]:
-    """Install reversible standalone APP shims alongside the legacy layout.
+    """Install reversible application shims alongside the package store.
 
     The package store remains authoritative during this migration.  A root
     ``current`` pointer follows ``.pi/packages/tspi/current`` and stable
@@ -756,7 +748,7 @@ def validate_launcher_slots(
         enabled.add("TSWeb")
     conflicts = [
         str(install_root / name)
-        for name in (*LAUNCHER_PATHS, *LEGACY_LAUNCHER_NAMES)
+        for name in LAUNCHER_PATHS
         if (install_root / name).exists() and not (install_root / name).is_symlink()
     ]
     if conflicts:
@@ -764,7 +756,7 @@ def validate_launcher_slots(
             "refusing to replace non-symlink package entrypoints: " + ", ".join(conflicts)
         )
     releases_root = (package_home / "releases").resolve()
-    for name in (*LAUNCHER_PATHS, *LEGACY_LAUNCHER_NAMES):
+    for name in LAUNCHER_PATHS:
         link = install_root / name
         if name not in enabled and link.is_symlink() and not _launcher_points_into_package_store(link, releases_root):
             raise SuiteReleaseError(f"stale optional component entrypoint escapes the package store: {link}")

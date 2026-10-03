@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from _bootstrap import load_runtime_environment
+from _extension_validation import validate_extensions
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     package_root = Path(args.package_root).expanduser().resolve()
+    validate_extensions(package_root)
     pytest_args = list(args.pytest_args)
     if pytest_args[:1] == ["--"]:
         pytest_args = pytest_args[1:]
@@ -53,20 +55,13 @@ def main(argv: list[str] | None = None) -> int:
         pytest_args.extend(suite_paths("fast"))
 
     python = _resolve_python(package_root, args.python, Path(args.env_root).expanduser().resolve())
+    runtime = load_runtime_environment(package_root)
     environment = dict(os.environ)
     environment.pop("PYTEST_ADDOPTS", None)
     environment.pop("PYTEST_PLUGINS", None)
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    pythonpath = [
-        str(package_root / "packages" / "tspi-runtime"),
-        str(package_root / "packages" / "tspi-foundation"),
-        str(package_root / "packages" / "tspi-provider-runtime"),
-        str(package_root / "packages" / "research-state"),
-        str(package_root / "packages" / "research-memory"),
-        str(package_root / "packages" / "research-compute"),
-        str(package_root / "extensions" / "chemical" / "providers"),
-        str(package_root),
-    ]
+    pythonpath = [str(path) for path in runtime.source_python_paths(package_root)]
+    pythonpath.append(str(package_root))
     existing_pythonpath = environment.get("PYTHONPATH")
     if existing_pythonpath:
         pythonpath.append(existing_pythonpath)

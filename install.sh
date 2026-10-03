@@ -90,6 +90,9 @@ while (( $# )); do
     --tspi-commit|--tspi-commit=*)
       fail "--tspi-commit is reserved for the installer bootstrap."
       ;;
+    --source-root|--source-root=*)
+      fail "--source-root is reserved for the installer bootstrap."
+      ;;
     --with-link-relay)
       WITH_LINK_RELAY=true
       shift
@@ -388,7 +391,8 @@ if truthy "${WITH_LINK_RELAY}"; then
 fi
 wizard=(python3 "${TEMP_ROOT}/TSPi/scripts/install_wizard.py"
   --tspi-repo "${REPO_URL}" --tspi-ref "${REPO_REF}"
-  --tspi-commit "${RESOLVED_COMMIT}" "${FORWARD_ARGS[@]}")
+  --tspi-commit "${RESOLVED_COMMIT}" --source-root "${TEMP_ROOT}/TSPi"
+  "${FORWARD_ARGS[@]}")
 non_interactive=false
 for argument in "${FORWARD_ARGS[@]}"; do
   [[ "${argument}" == "--non-interactive" ]] && non_interactive=true

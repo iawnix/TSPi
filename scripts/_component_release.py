@@ -1,16 +1,18 @@
-#!/usr/bin/env python3
-"""Install a validated TS Agent release into an isolated versioned directory."""
+"""Validate and extract the Agent component embedded in a TSPi package.
+
+This module is intentionally private.  A component archive is an internal
+build artifact consumed by :mod:`install_package`; it is not an independent
+installation format or a public runtime entry point.
+"""
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import os
 import re
 import shutil
 import stat
-import sys
 import tarfile
 import tempfile
 from datetime import datetime, timezone
@@ -20,7 +22,6 @@ from typing import Any
 try:
     from ._wheel import (
         RELEASE_SCHEMA_VERSION,
-        WheelContractError,
         inspect_wheel,
         validate_descriptor,
         validate_descriptor_match,
@@ -28,7 +29,6 @@ try:
 except ImportError:
     from _wheel import (
         RELEASE_SCHEMA_VERSION,
-        WheelContractError,
         inspect_wheel,
         validate_descriptor,
         validate_descriptor_match,
@@ -41,7 +41,6 @@ except ImportError:
 
 
 SCHEMA_VERSION = RELEASE_SCHEMA_VERSION
-INSTALL_SCHEMA_VERSION = "tspi-install/1"
 PACKAGE_NAME = "@iawnix/tspi"
 RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -56,106 +55,10 @@ RETIRED_NOTIFICATION_STATE = (
     "ts-email-delivery-policy.json",
     "ts-email-delivery-authorization.json",
 )
-SESSION_GUARD_CONTRACT = "tspi-session-guard/1"
 
 
-class ReleaseInstallError(RuntimeError):
+class ComponentArchiveError(RuntimeError):
     pass
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Install one TS Agent release archive.")
-    parser.add_argument("--manifest", required=True, help="Path to tspi-release.json.")
-    parser.add_argument("--archive", help="Archive path. Defaults to the manifest archive filename.")
-    parser.add_argument("--install-root", required=True, help="TSPi installation root.")
-    parser.add_argument("--json", action="store_true", help="Print machine-readable output.")
-    args = parser.parse_args(argv)
-
-    try:
-        result = install_release(
-            Path(args.manifest).expanduser().resolve(),
-            Path(args.archive).expanduser().resolve() if args.archive else None,
-            Path(args.install_root).expanduser(),
-        )
-        if args.json:
-            print(json.dumps(result, indent=2, sort_keys=True))
-        else:
-            print(f"installed: {result['release_id']}")
-            print(f"package_root: {result['package_root']}")
-            print(f"launcher: {result['launcher']}")
-        return 0
-    except (OSError, ReleaseInstallError, ValueError, WheelContractError, json.JSONDecodeError, tarfile.TarError) as error:
-        print(f"release install failed: {error}", file=sys.stderr)
-        return 1
-
-
-def install_release(manifest_path: Path, archive_path: Path | None, install_root: Path) -> dict[str, Any]:
-    manifest = load_manifest(manifest_path)
-    archive = manifest["archive"]
-    resolved_archive = archive_path or (manifest_path.parent / archive["filename"])
-    if not resolved_archive.is_file() or resolved_archive.is_symlink():
-        raise ReleaseInstallError(f"release archive must be a regular file: {resolved_archive}")
-    if resolved_archive.name != archive["filename"]:
-        raise ReleaseInstallError("archive filename does not match release manifest")
-    if resolved_archive.stat().st_size != archive["size_bytes"]:
-        raise ReleaseInstallError("archive size does not match release manifest")
-    if sha256_file(resolved_archive) != archive["sha256"]:
-        raise ReleaseInstallError("archive SHA-256 does not match release manifest")
-
-    members, archive_files = inspect_archive(resolved_archive)
-    missing = sorted(REQUIRED_RUNTIME_FILES - archive_files)
-    if missing:
-        raise ReleaseInstallError(f"release archive is missing runtime files: {', '.join(missing)}")
-    wheel_path = manifest["python_distribution"]["path"]
-    if wheel_path not in archive_files:
-        raise ReleaseInstallError(f"release archive is missing the declared Python wheel: {wheel_path}")
-    wheels = sorted(name for name in archive_files if name.startswith("python-dist/") and name.endswith(".whl"))
-    if wheels != [wheel_path]:
-        raise ReleaseInstallError("release archive must contain only the declared Python wheel")
-
-    install_root = prepare_install_root(install_root)
-    package_home = ensure_private_directory(install_root / ".pi" / "packages" / "tspi")
-    releases_root = ensure_private_directory(package_home / "releases")
-    target = releases_root / manifest["release_id"]
-    created = False
-    if target.exists() or target.is_symlink():
-        validate_existing_release(target, manifest)
-    else:
-        staging = Path(tempfile.mkdtemp(prefix=".install-", dir=releases_root))
-        try:
-            extract_archive(resolved_archive, members, staging)
-            validate_extracted_package(staging, manifest)
-            atomic_write_json(staging / ".tspi-release.json", manifest, mode=0o600)
-            finalize_release_permissions(staging)
-            os.replace(staging, target)
-            created = True
-        finally:
-            if staging.exists():
-                remove_staging_tree(staging)
-
-    switch_current(package_home, target)
-    archived_notification_state = archive_retired_notification_state(install_root)
-    install_launcher(install_root, package_home)
-    installed_manifest = json.loads((target / ".tspi-release.json").read_text(encoding="utf-8"))
-    state = {
-        "schema_version": INSTALL_SCHEMA_VERSION,
-        "session_guard_contract": SESSION_GUARD_CONTRACT,
-        "current_release_id": manifest["release_id"],
-        "package_root": str(target),
-        "manifest_sha256": hashlib.sha256(canonical_json(installed_manifest)).hexdigest(),
-        "installed_at_utc": datetime.now(timezone.utc).isoformat(),
-    }
-    atomic_write_json(package_home / "install-state.json", state, mode=0o600)
-    return {
-        "ok": True,
-        "created": created,
-        "release_id": manifest["release_id"],
-        "package_root": str(target),
-        "current": str(package_home / "current"),
-        "launcher": str(install_root / "ResearchAgent"),
-        "research_agent_server_launcher": str(install_root / "ResearchAgentServer"),
-        "archived_retired_notification_state": archived_notification_state,
-    }
 
 
 def archive_retired_notification_state(install_root: Path) -> list[str]:
@@ -167,7 +70,7 @@ def archive_retired_notification_state(install_root: Path) -> list[str]:
         return []
     for source in sources:
         if source.is_symlink() or not source.is_file():
-            raise ReleaseInstallError(f"retired notification state must be a regular file: {source}")
+            raise ComponentArchiveError(f"retired notification state must be a regular file: {source}")
     archive_root = ensure_private_directory(pi_root / "archive" / "retired-notification-state")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     archive_dir = archive_root / stamp
@@ -178,7 +81,7 @@ def archive_retired_notification_state(install_root: Path) -> list[str]:
         os.replace(source, target)
         os.chmod(target, 0o600)
         archived.append(target.relative_to(install_root).as_posix())
-    atomic_write_json(
+    _atomic_write_json(
         archive_dir / "archive.json",
         {
             "schema_version": "ts-legacy-notification-state-archive/1",
@@ -193,10 +96,10 @@ def archive_retired_notification_state(install_root: Path) -> list[str]:
 
 def load_manifest(path: Path) -> dict[str, Any]:
     if not path.is_file() or path.is_symlink():
-        raise ReleaseInstallError(f"release manifest must be a regular file: {path}")
+        raise ComponentArchiveError(f"release manifest must be a regular file: {path}")
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
-        raise ReleaseInstallError("release manifest must contain an object")
+        raise ComponentArchiveError("release manifest must contain an object")
     expected = {
         "schema_version",
         "release_id",
@@ -207,41 +110,41 @@ def load_manifest(path: Path) -> dict[str, Any]:
         "created_at_utc",
     }
     if set(value) != expected or value.get("schema_version") != SCHEMA_VERSION:
-        raise ReleaseInstallError("invalid release manifest schema")
+        raise ComponentArchiveError("invalid release manifest schema")
     release_id = require_string(value.get("release_id"), "release_id")
     if not RELEASE_ID.fullmatch(release_id):
-        raise ReleaseInstallError("release_id contains unsupported characters")
+        raise ComponentArchiveError("release_id contains unsupported characters")
     package = require_object(value.get("package"), "package", {"name", "version"})
     if package.get("name") != PACKAGE_NAME:
-        raise ReleaseInstallError(f"release package name must be {PACKAGE_NAME}")
+        raise ComponentArchiveError(f"release package name must be {PACKAGE_NAME}")
     version = require_string(package.get("version"), "package.version")
     distribution = validate_descriptor(value.get("python_distribution"))
     if distribution["version"] != version:
-        raise ReleaseInstallError("Python distribution version does not match package.version")
+        raise ComponentArchiveError("Python distribution version does not match package.version")
     archive = require_object(value.get("archive"), "archive", {"filename", "sha256", "size_bytes"})
     filename = require_string(archive.get("filename"), "archive.filename")
     if Path(filename).name != filename or not filename.endswith(".tgz"):
-        raise ReleaseInstallError("archive.filename must be one .tgz basename")
+        raise ComponentArchiveError("archive.filename must be one .tgz basename")
     digest = require_string(archive.get("sha256"), "archive.sha256")
     if not SHA256.fullmatch(digest):
-        raise ReleaseInstallError("archive.sha256 must be a lowercase SHA-256 digest")
+        raise ComponentArchiveError("archive.sha256 must be a lowercase SHA-256 digest")
     if (
         not isinstance(archive.get("size_bytes"), int)
         or isinstance(archive["size_bytes"], bool)
         or archive["size_bytes"] <= 0
     ):
-        raise ReleaseInstallError("archive.size_bytes must be a positive integer")
+        raise ComponentArchiveError("archive.size_bytes must be a positive integer")
     expected_release_id = f"{version}-sha256-{digest[:16]}"
     release_suffix = release_id.removeprefix(expected_release_id).removeprefix("-")
     if release_id != expected_release_id and not re.fullmatch(r"[0-9a-f]{12,40}", release_suffix):
-        raise ReleaseInstallError("release_id does not match package version and archive SHA-256")
+        raise ComponentArchiveError("release_id does not match package version and archive SHA-256")
     if filename != f"tspi-{release_id}.tgz":
-        raise ReleaseInstallError("archive.filename does not match release_id")
+        raise ComponentArchiveError("archive.filename does not match release_id")
     source = require_object(value.get("source"), "source", {"git_commit", "dirty"})
     if source.get("git_commit") is not None:
         require_string(source.get("git_commit"), "source.git_commit")
     if not isinstance(source.get("dirty"), bool):
-        raise ReleaseInstallError("source.dirty must be boolean")
+        raise ComponentArchiveError("source.dirty must be boolean")
     require_string(value.get("created_at_utc"), "created_at_utc")
     return value
 
@@ -254,26 +157,26 @@ def inspect_archive(path: Path) -> tuple[list[tuple[tarfile.TarInfo, PurePosixPa
         for member in archive.getmembers():
             raw = PurePosixPath(member.name)
             if raw.is_absolute() or not raw.parts or raw.parts[0] != "package" or ".." in raw.parts:
-                raise ReleaseInstallError(f"archive member escapes package root: {member.name}")
+                raise ComponentArchiveError(f"archive member escapes package root: {member.name}")
             relative = PurePosixPath(*raw.parts[1:])
             if not relative.parts:
                 if not member.isdir():
-                    raise ReleaseInstallError("archive package root must be a directory")
+                    raise ComponentArchiveError("archive package root must be a directory")
                 continue
             name = relative.as_posix()
             if name in seen:
-                raise ReleaseInstallError(f"archive contains duplicate member: {name}")
+                raise ComponentArchiveError(f"archive contains duplicate member: {name}")
             seen.add(name)
             if not member.isdir() and not member.isreg():
-                raise ReleaseInstallError(f"archive contains unsupported member type: {name}")
+                raise ComponentArchiveError(f"archive contains unsupported member type: {name}")
             if (
                 FORBIDDEN_PARTS.intersection(relative.parts)
                 or any(part.endswith(".egg-info") for part in relative.parts)
                 or name in FORBIDDEN_RUNTIME_FILES
             ):
-                raise ReleaseInstallError(f"archive contains development-only content: {name}")
+                raise ComponentArchiveError(f"archive contains development-only content: {name}")
             if relative.name.startswith(".env") or relative.suffix in {".pyc", ".pyo"}:
-                raise ReleaseInstallError(f"archive contains forbidden runtime file: {name}")
+                raise ComponentArchiveError(f"archive contains forbidden runtime file: {name}")
             inspected.append((member, relative))
             if member.isreg():
                 files.add(name)
@@ -294,7 +197,7 @@ def extract_archive(
             target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             source = archive.extractfile(member)
             if source is None:
-                raise ReleaseInstallError(f"could not read archive member: {relative.as_posix()}")
+                raise ComponentArchiveError(f"could not read archive member: {relative.as_posix()}")
             with source, target.open("xb") as handle:
                 shutil.copyfileobj(source, handle)
                 handle.flush()
@@ -310,14 +213,14 @@ def validate_extracted_package(
     package = json.loads(package_path.read_text(encoding="utf-8"))
     expected = manifest["package"]
     if package.get("name") != expected["name"] or package.get("version") != expected["version"]:
-        raise ReleaseInstallError("extracted package identity does not match release manifest")
+        raise ComponentArchiveError("extracted package identity does not match release manifest")
     launcher = root / "ResearchAgent"
     if not launcher.is_file() or not os.access(launcher, os.X_OK):
-        raise ReleaseInstallError("extracted ResearchAgent launcher is not executable")
+        raise ComponentArchiveError("extracted ResearchAgent launcher is not executable")
     research_launcher = root / "ResearchAgentServer"
     if research_launcher.exists():
         if not research_launcher.is_file():
-            raise ReleaseInstallError("extracted ResearchAgentServer launcher is not a regular file")
+            raise ComponentArchiveError("extracted ResearchAgentServer launcher is not a regular file")
         # Source fixtures used by older release tests may carry a placeholder
         # entrypoint without executable mode. A real launcher has a shebang,
         # and that production artifact must remain executable.
@@ -325,26 +228,13 @@ def validate_extracted_package(
             with research_launcher.open("rb") as handle:
                 has_shebang = handle.read(2) == b"#!"
         except OSError as error:
-            raise ReleaseInstallError("could not inspect extracted ResearchAgentServer launcher") from error
+            raise ComponentArchiveError("could not inspect extracted ResearchAgentServer launcher") from error
         if has_shebang and not os.access(research_launcher, os.X_OK):
-            raise ReleaseInstallError("extracted ResearchAgentServer launcher is not executable")
+            raise ComponentArchiveError("extracted ResearchAgentServer launcher is not executable")
     expected_distribution = manifest["python_distribution"]
     wheel = root.joinpath(*PurePosixPath(expected_distribution["path"]).parts)
     actual_distribution = inspect_wheel(wheel)
     validate_descriptor_match(expected_distribution, actual_distribution)
-
-
-def validate_existing_release(target: Path, manifest: dict[str, Any]) -> None:
-    if target.is_symlink() or not target.is_dir():
-        raise ReleaseInstallError(f"release target is not a regular directory: {target}")
-    installed_manifest = target / ".tspi-release.json"
-    if not installed_manifest.is_file() or installed_manifest.is_symlink():
-        raise ReleaseInstallError(f"existing release has no trusted manifest: {target}")
-    installed = json.loads(installed_manifest.read_text(encoding="utf-8"))
-    if release_identity(installed) != release_identity(manifest):
-        raise ReleaseInstallError(f"existing release manifest does not match: {target}")
-    validate_extracted_package(target, manifest)
-    validate_release_permissions(target)
 
 
 def finalize_release_permissions(root: Path) -> None:
@@ -363,7 +253,7 @@ def finalize_release_permissions(root: Path) -> None:
 def validate_release_permissions(root: Path) -> None:
     for path in [root, *root.rglob("*")]:
         if stat.S_IMODE(path.stat().st_mode) & 0o222:
-            raise ReleaseInstallError(f"existing release contains a writable path: {path}")
+            raise ComponentArchiveError(f"existing release contains a writable path: {path}")
 
 
 def remove_staging_tree(root: Path) -> None:
@@ -392,14 +282,14 @@ def prepare_install_root(path: Path) -> Path:
     path = validate_install_root(path)
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     if not path.is_dir():
-        raise ReleaseInstallError(f"install root is not a directory: {path}")
+        raise ComponentArchiveError(f"install root is not a directory: {path}")
     return path
 
 
 def ensure_private_directory(path: Path) -> Path:
     if path.exists() or path.is_symlink():
         if path.is_symlink() or not path.is_dir():
-            raise ReleaseInstallError(f"installation path must be a regular directory: {path}")
+            raise ComponentArchiveError(f"installation path must be a regular directory: {path}")
     else:
         ensure_private_directory(path.parent)
         path.mkdir(mode=0o700)
@@ -410,7 +300,7 @@ def ensure_private_directory(path: Path) -> Path:
 def switch_current(package_home: Path, target: Path) -> None:
     current = package_home / "current"
     if current.exists() and not current.is_symlink():
-        raise ReleaseInstallError(f"current package pointer must be a symbolic link: {current}")
+        raise ComponentArchiveError(f"current package pointer must be a symbolic link: {current}")
     relative_target = os.path.relpath(target, package_home)
     temporary = package_home / f".current.{os.getpid()}"
     if temporary.exists() or temporary.is_symlink():
@@ -423,25 +313,18 @@ def switch_current(package_home: Path, target: Path) -> None:
             temporary.unlink()
 
 
-def install_launcher(install_root: Path, package_home: Path) -> None:
-    for name in ("ResearchAgent", "ResearchAgentServer"):
-        launcher = install_root / name
-        desired = os.path.relpath(package_home / "current" / name, install_root)
-        temporary = install_root / f".{name}.{os.getpid()}"
-        if temporary.exists() or temporary.is_symlink():
-            temporary.unlink()
-        try:
-            temporary.symlink_to(desired)
-            os.replace(temporary, launcher)
-        finally:
-            if temporary.exists() or temporary.is_symlink():
-                temporary.unlink()
-    legacy = install_root / "TSPi"
-    if legacy.is_symlink():
-        legacy.unlink()
+def release_identity(manifest: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": manifest.get("schema_version"),
+        "release_id": manifest.get("release_id"),
+        "package": manifest.get("package"),
+        "python_distribution": manifest.get("python_distribution"),
+        "archive": manifest.get("archive"),
+        "source": manifest.get("source"),
+    }
 
 
-def atomic_write_json(path: Path, value: dict[str, Any], *, mode: int) -> None:
+def _atomic_write_json(path: Path, value: dict[str, Any], *, mode: int) -> None:
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
@@ -456,21 +339,6 @@ def atomic_write_json(path: Path, value: dict[str, Any], *, mode: int) -> None:
             os.unlink(temporary)
 
 
-def canonical_json(value: dict[str, Any]) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
-
-
-def release_identity(manifest: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "schema_version": manifest.get("schema_version"),
-        "release_id": manifest.get("release_id"),
-        "package": manifest.get("package"),
-        "python_distribution": manifest.get("python_distribution"),
-        "archive": manifest.get("archive"),
-        "source": manifest.get("source"),
-    }
-
-
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -481,15 +349,11 @@ def sha256_file(path: Path) -> str:
 
 def require_object(value: object, label: str, keys: set[str]) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != keys:
-        raise ReleaseInstallError(f"{label} must contain exactly: {', '.join(sorted(keys))}")
+        raise ComponentArchiveError(f"{label} must contain exactly: {', '.join(sorted(keys))}")
     return value
 
 
 def require_string(value: object, label: str) -> str:
     if not isinstance(value, str) or not value:
-        raise ReleaseInstallError(f"{label} must be a non-empty string")
+        raise ComponentArchiveError(f"{label} must be a non-empty string")
     return value
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

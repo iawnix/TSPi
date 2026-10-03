@@ -1,12 +1,9 @@
 from __future__ import annotations
 
+import json
 import hashlib
 import io
-import json
-import os
-import stat
 import subprocess
-import sys
 import tarfile
 import zipfile
 from datetime import datetime, timezone
@@ -14,14 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from scripts.install_release import REQUIRED_RUNTIME_FILES, install_release, prepare_install_root
+from scripts._component_release import REQUIRED_RUNTIME_FILES, prepare_install_root
 from scripts._wheel import inspect_wheel
-from tests.support.runtime_helpers import write_test_runtime_manifest
 
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILD_RELEASE = ROOT / "scripts" / "build_release.py"
-INSTALL_RELEASE = ROOT / "scripts" / "install_release.py"
 PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 
 
@@ -66,17 +61,7 @@ def test_prepare_install_root_rejects_symbolic_link_parent(tmp_path: Path) -> No
     assert not (physical_parent / "install").exists()
 
 
-def test_release_install_rejects_relative_install_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    manifest_path, _ = _synthetic_release(tmp_path / "release", marker="relative-install-root")
-    monkeypatch.chdir(tmp_path)
-
-    with pytest.raises(ValueError, match="must be absolute"):
-        install_release(manifest_path, None, Path("install"))
-
-    assert not (tmp_path / "install").exists()
-
-
-def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path) -> None:
+def test_real_release_build_excludes_development_tree(tmp_path: Path) -> None:
     output = tmp_path / "dist"
     built = subprocess.run(
         [
@@ -102,7 +87,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
         names = {member.name.removeprefix("package/") for member in handle.getmembers()}
     release_manifest = json.loads(manifest.read_text(encoding="utf-8"))
     distribution = release_manifest["python_distribution"]
-    assert "scripts/install_release.py" in names
+    assert "scripts/_component_release.py" in names
     assert "docs/ARCHITECTURE.md" in names
     assert "docs/INSTALLATION.md" in names
     assert "docs/MAINTAINER_GUIDE.md" in names
@@ -134,291 +119,6 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "scripts/build_release.py" not in names
     assert not any(name.startswith("tests/") for name in names)
     assert not any("node_modules" in Path(name).parts for name in names)
-
-    install_root = tmp_path / "install"
-    installed = _install(manifest, install_root)
-
-    assert installed["release_id"] == build_result["release_id"]
-    package_root = Path(installed["package_root"])
-    assert package_root.is_dir()
-    assert not (package_root / "tests").exists()
-    assert not (package_root / ".git").exists()
-    assert not (package_root / "node_modules").exists()
-    assert (package_root / "docs" / "ARCHITECTURE.md").is_file()
-    assert (package_root / "docs" / "INSTALLATION.md").is_file()
-    assert (package_root / "docs" / "MAINTAINER_GUIDE.md").is_file()
-    assert (package_root / "apps" / "app-server" / "pi-app-server.mjs").is_file()
-    assert (package_root / "apps" / "app-server" / "pi-session-worker.mjs").is_file()
-    assert (package_root / "config" / "pi-source.json").is_file()
-    assert (package_root / "config" / "pi-worker-entry.patch").is_file()
-    assert (package_root / "config" / "pi-process-diagnostics.patch").is_file()
-    assert (package_root / "config" / "pi-multi-workspace-create.patch").is_file()
-    assert (package_root / "config" / "pi-workspace-session-list.patch").is_file()
-    assert (package_root / "config" / "pi-research-workspace.patch").is_file()
-    assert (package_root / "config" / "pi-system-prompt.patch").is_file()
-    assert (package_root / "config" / "pi-transcript-json.patch").is_file()
-    assert (package_root / "config" / "pi-session-navigation.patch").is_file()
-    assert (package_root / "scripts" / "prepare_pi_source.py").is_file()
-    assert not (package_root / "packages" / "tspi-runtime" / "tspi_runtime" / "web").exists()
-    assert (package_root / "packages" / "research-compute" / "research_compute" / "workspace" / "artifacts.py").is_file()
-    assert (package_root / "packages" / "research-compute" / "research_compute" / "workspace" / "candidates.py").is_file()
-    assert (package_root / "packages" / "research-state" / "research_state" / "contracts" / "finding_candidates.schema.json").is_file()
-    assert (package_root / "packages" / "research-state" / "research_state" / "model.py").is_file()
-    installed_wheel = package_root / distribution["path"]
-    assert installed_wheel.is_file()
-    assert inspect_wheel(installed_wheel)["payload_sha256"] == distribution["payload_sha256"]
-    assert stat.S_IMODE(package_root.stat().st_mode) == 0o500
-    assert all(stat.S_IMODE(path.stat().st_mode) & 0o222 == 0 for path in package_root.rglob("*"))
-    wheel_site = tmp_path / "wheel-site"
-    wheel_install = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--disable-pip-version-check",
-            "--no-deps",
-            "--no-cache-dir",
-            "--target",
-            str(wheel_site),
-            str(installed_wheel),
-        ],
-        cwd=install_root,
-        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    assert wheel_install.returncode == 0, wheel_install.stderr
-    assert (wheel_site / "tspi_runtime" / "__init__.py").is_file()
-    assert not list(package_root.rglob("*.egg-info"))
-    runtime_plan = subprocess.run(
-        [
-            sys.executable,
-            str(package_root / "scripts" / "install_env.py"),
-            "--package-root",
-            str(package_root),
-            "--env-root",
-            str(tmp_path / "envs"),
-            "--dry-run",
-            "--json",
-        ],
-        cwd=install_root,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    assert runtime_plan.returncode == 0, runtime_plan.stderr
-    runtime_payload = json.loads(runtime_plan.stdout)
-    assert runtime_payload["python_install_source"] == "bundled-release-wheel"
-    assert runtime_payload["python_wheel"]["sha256"] == distribution["sha256"]
-    assert (install_root / "ResearchAgent").is_symlink()
-    assert (install_root / "ResearchAgent").resolve() == package_root / "ResearchAgent"
-    help_result = subprocess.run(
-        [str(install_root / "ResearchAgent"), "--help"],
-        cwd=install_root,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    assert help_result.returncode == 0, help_result.stderr
-    assert "Usage:" in help_result.stdout
-    fake_pi = tmp_path / "fake-pi.py"
-    fake_pi.write_text(
-        "#!/usr/bin/env python3\n"
-        "import json, os\n"
-        "print(json.dumps({\"package_root\": os.environ[\"TS_PACKAGE_ROOT\"]}))\n",
-        encoding="utf-8",
-    )
-    fake_pi.chmod(0o755)
-    write_test_runtime_manifest(package_root, install_root)
-    startup = subprocess.run(
-        [str(install_root / "ResearchAgent"), "--workspace", "release-smoke"],
-        cwd=install_root,
-        env={**os.environ, "PI_BIN": str(fake_pi)},
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    assert startup.returncode == 1
-    assert "installation guard state does not match this installation" in startup.stderr
-    assert not (install_root / "workspaces" / "release-smoke").exists()
-
-
-def test_release_install_is_idempotent_and_preserves_previous_versions(tmp_path: Path) -> None:
-    manifest_one, release_one = _synthetic_release(tmp_path / "one", marker="one")
-    manifest_two, release_two = _synthetic_release(tmp_path / "two", marker="two")
-    install_root = tmp_path / "install"
-
-    first = _install(manifest_one, install_root)
-    repeated = _install(manifest_one, install_root)
-    second = _install(manifest_two, install_root)
-
-    assert first["created"] is True
-    assert repeated["created"] is False
-    assert second["created"] is True
-    releases = install_root / ".pi" / "packages" / "tspi" / "releases"
-    assert (releases / release_one).is_dir()
-    assert (releases / release_two).is_dir()
-    assert (install_root / ".pi" / "packages" / "tspi" / "current").resolve() == releases / release_two
-
-
-def test_release_install_archives_obsolete_notification_recipient_state(tmp_path: Path) -> None:
-    manifest, _release = _synthetic_release(tmp_path / "release", marker="notification-cleanup")
-    install_root = tmp_path / "install"
-    pi_root = install_root / ".pi"
-    pi_root.mkdir(parents=True)
-    retired_names = (
-        "ts-email-delivery-policy.json",
-        "ts-email-delivery-authorization.json",
-    )
-    for name in retired_names:
-        path = pi_root / name
-        path.write_text('{"retired": true}\n', encoding="utf-8")
-        path.chmod(0o600)
-
-    installed = _install(manifest, install_root)
-
-    assert all(not (pi_root / name).exists() for name in retired_names)
-    archived = [install_root / ref for ref in installed["archived_retired_notification_state"]]
-    assert {path.name for path in archived} == set(retired_names)
-    assert all(path.read_text(encoding="utf-8") == '{"retired": true}\n' for path in archived)
-    assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in archived)
-    archive_metadata = archived[0].parent / "archive.json"
-    assert json.loads(archive_metadata.read_text(encoding="utf-8"))["schema_version"] == "ts-legacy-notification-state-archive/1"
-
-    repeated = _install(manifest, install_root)
-    assert repeated["archived_retired_notification_state"] == []
-
-
-def test_release_install_treats_build_time_as_non_identity_metadata(tmp_path: Path) -> None:
-    manifest_path, release_id = _synthetic_release(tmp_path / "release", marker="same-content")
-    install_root = tmp_path / "install"
-    first = _install(manifest_path, install_root)
-    rebuilt = json.loads(manifest_path.read_text(encoding="utf-8"))
-    rebuilt["created_at_utc"] = "2099-01-01T00:00:00+00:00"
-    manifest_path.write_text(json.dumps(rebuilt), encoding="utf-8")
-
-    repeated = _install(manifest_path, install_root)
-
-    assert first["created"] is True
-    assert repeated["created"] is False
-    assert repeated["release_id"] == release_id
-
-
-def test_release_install_rejects_a_modified_archive_before_creating_state(tmp_path: Path) -> None:
-    manifest_path, _ = _synthetic_release(tmp_path / "release", marker="original")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    archive = manifest_path.parent / manifest["archive"]["filename"]
-    content = bytearray(archive.read_bytes())
-    content[len(content) // 2] ^= 1
-    archive.write_bytes(content)
-    install_root = tmp_path / "install"
-
-    completed = subprocess.run(
-        ["python3", str(INSTALL_RELEASE), "--manifest", str(manifest_path), "--install-root", str(install_root)],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-
-    assert completed.returncode == 1
-    assert "SHA-256" in completed.stderr
-    assert not (install_root / ".pi").exists()
-
-
-def test_release_install_rejects_a_release_id_not_bound_to_the_archive(tmp_path: Path) -> None:
-    manifest_path, _ = _synthetic_release(tmp_path / "release", marker="identity")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["release_id"] = f"{manifest['package']['version']}-sha256-0000000000000000"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    install_root = tmp_path / "install"
-
-    completed = subprocess.run(
-        ["python3", str(INSTALL_RELEASE), "--manifest", str(manifest_path), "--install-root", str(install_root)],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-
-    assert completed.returncode == 1
-    assert "release_id does not match" in completed.stderr
-    assert not install_root.exists()
-
-
-def test_release_install_rejects_an_extra_python_wheel(tmp_path: Path) -> None:
-    manifest_path, _ = _synthetic_release(
-        tmp_path / "release",
-        marker="extra-wheel",
-        extra_files={"package/python-dist/other-0-py3-none-any.whl": b"not a wheel"},
-    )
-    install_root = tmp_path / "install"
-
-    completed = subprocess.run(
-        ["python3", str(INSTALL_RELEASE), "--manifest", str(manifest_path), "--install-root", str(install_root)],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-
-    assert completed.returncode == 1
-    assert "only the declared Python wheel" in completed.stderr
-    assert not (install_root / ".pi").exists()
-
-
-@pytest.mark.parametrize("member_name", ["package/../escape", "package/tests/private_probe.py"])
-def test_release_install_rejects_unsafe_or_development_members(tmp_path: Path, member_name: str) -> None:
-    manifest_path, _ = _synthetic_release(
-        tmp_path / "release",
-        marker="unsafe",
-        extra_files={member_name: b"private\n"},
-    )
-    install_root = tmp_path / "install"
-
-    completed = subprocess.run(
-        ["python3", str(INSTALL_RELEASE), "--manifest", str(manifest_path), "--install-root", str(install_root)],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-
-    assert completed.returncode == 1
-    assert "archive" in completed.stderr
-    assert not (install_root / ".pi").exists()
-    assert not (tmp_path / "escape").exists()
-
-
-def _install(manifest: Path, install_root: Path) -> dict:
-    completed = subprocess.run(
-        [
-            "python3",
-            str(INSTALL_RELEASE),
-            "--manifest",
-            str(manifest),
-            "--install-root",
-            str(install_root),
-            "--json",
-        ],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-    return json.loads(completed.stdout)
 
 
 def _synthetic_release(

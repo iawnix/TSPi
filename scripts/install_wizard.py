@@ -40,7 +40,7 @@ try:
         title,
     )
     from .install_from_github import install_uninstaller, validate_commit, validate_ref, validate_repo
-    from .install_release import validate_install_root
+    from ._component_release import validate_install_root
     from .link_relay_discovery import discover_link_relay
     from .model_icons import install_model_icon_font
 except ImportError:
@@ -59,7 +59,7 @@ except ImportError:
         title,
     )
     from install_from_github import install_uninstaller, validate_commit, validate_ref, validate_repo
-    from install_release import validate_install_root
+    from _component_release import validate_install_root
     from link_relay_discovery import discover_link_relay
     from model_icons import install_model_icon_font
 
@@ -195,6 +195,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--tspi-repo", default=DEFAULT_REPO)
     parser.add_argument("--tspi-ref", default=os.environ.get("TSPI_INSTALL_REF", "main"))
     parser.add_argument("--tspi-commit", help=argparse.SUPPRESS)
+    parser.add_argument("--source-root", help=argparse.SUPPRESS)
     web = parser.add_mutually_exclusive_group()
     web.add_argument("--with-web", dest="with_web", action="store_true", help="Install TS Web.")
     web.add_argument("--without-web", dest="with_web", action="store_false", help="Skip TS Web installation.")
@@ -251,9 +252,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     email.add_argument("--email-recipient")
     email.add_argument(
         "--email-address",
-        "--email-username",
         dest="email_username",
-        help="SMTP sender email address (email-username is a compatibility alias).",
+        help="SMTP sender email address.",
     )
     email.add_argument("--email-port", type=int)
     email.add_argument("--email-security", choices=("ssl", "starttls"))
@@ -1059,7 +1059,7 @@ def validate_email_options(args: argparse.Namespace) -> None:
     args.email_security = args.email_security or "ssl"
     if args.email_security not in {"ssl", "starttls"}:
         raise ValueError("--email-security must be ssl or starttls")
-    _validate_email_address(args.email_username, "--email-username")
+    _validate_email_address(args.email_username, "--email-address")
     if (args.email_password_env is None) == (args.email_password_file is None):
         raise ValueError("SMTP requires exactly one of --email-password-env or --email-password-file")
     if args.email_password_env is not None and not ENV_NAME.fullmatch(args.email_password_env):
@@ -1721,6 +1721,9 @@ def run_install(args: argparse.Namespace) -> dict[str, object]:
     ]
     if args.tspi_commit:
         command.extend(["--resolved-commit", args.tspi_commit])
+    source_root = getattr(args, "source_root", None)
+    if source_root:
+        command.extend(["--source-root", source_root])
     if not args.with_web:
         command.append("--without-web")
     if args.conda_root:
@@ -1776,7 +1779,7 @@ def snapshot_active_release(root: Path) -> dict[str, object] | None:
         return None
     launchers = {
         name: os.readlink(root / name)
-        for name in ("ResearchAgent", "ResearchAgentServer", "TSPi", "TSWeb", "bin/ResearchAgent", "bin/ResearchAgentServer", "bin/TSWeb")
+        for name in ("ResearchAgent", "ResearchAgentServer", "TSWeb", "bin/ResearchAgent", "bin/ResearchAgentServer", "bin/TSWeb")
         if (root / name).is_symlink()
     }
     stable_current = os.readlink(root / "current") if (root / "current").is_symlink() else None

@@ -244,6 +244,14 @@ def expanded_allowlisted_files() -> set[str]:
                 if path.is_file()
             )
             continue
+        if entry.endswith("/**"):
+            directory = ROOT / entry[:-3]
+            files.update(
+                path.relative_to(ROOT).as_posix()
+                for path in directory.rglob("*")
+                if path.is_file()
+            )
+            continue
         files.update(
             path.relative_to(ROOT).as_posix()
             for path in ROOT.glob(entry)

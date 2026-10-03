@@ -935,10 +935,8 @@ def test_ts_runtime_isolated_run_cannot_modify_workspace_manifest(tmp_path: Path
             sys.executable,
                 str(ROOT / "apps" / "agent-cli" / "runtime.py"),
             "run-isolated",
-            "-m",
-            "pytest",
-            "-q",
-            "tests/integration/test_runtime_env.py::test_configured_python_ignores_stale_runtime_manifest",
+            "-c",
+            "print('isolated-runtime-ok')",
         ],
         cwd=ROOT,
         env=env,
@@ -949,6 +947,7 @@ def test_ts_runtime_isolated_run_cannot_modify_workspace_manifest(tmp_path: Path
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert completed.stdout.strip() == "isolated-runtime-ok"
     assert manifest.read_bytes() == before
 
 

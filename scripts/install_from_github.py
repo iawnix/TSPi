@@ -159,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", required=True, help="GitHub repository URL")
     parser.add_argument("--ref", required=True, help="Branch, tag, or full commit SHA")
     parser.add_argument("--resolved-commit", help=argparse.SUPPRESS)
+    parser.add_argument("--source-root", help=argparse.SUPPRESS)
     parser.add_argument("--install-root", required=True)
     parser.add_argument("--without-web", action="store_true", help="Omit the ts-web component")
     parser.add_argument("--conda")
@@ -172,15 +173,27 @@ def main(argv: list[str] | None = None) -> int:
             validate_commit(args.resolved_commit)
         validate_repo(args.repo)
         with tempfile.TemporaryDirectory(prefix="tspi-github-") as temp:
-            checkout = Path(temp) / "tspi"
-            progress_message = (
-                "Checking out the locked TSPi revision"
-                if args.resolved_commit
-                else "Resolving the selected TSPi revision"
-            )
-            emit_progress(args.progress, progress_message)
-            checkout_ref = args.resolved_commit or args.ref
-            commit = checkout_github(args.repo, checkout_ref, checkout)
+            if args.source_root:
+                source_root = Path(args.source_root).expanduser()
+                if source_root.is_symlink() or not source_root.is_dir():
+                    raise ValueError("--source-root must be a physical source directory")
+                checkout = source_root.resolve()
+                top_level = Path(run(["git", "rev-parse", "--show-toplevel"], cwd=checkout)).resolve()
+                if top_level != checkout:
+                    raise ValueError("--source-root must be the top level of its Git checkout")
+                commit = run(["git", "rev-parse", "--verify", "HEAD"], cwd=checkout)
+                validate_commit(commit)
+                emit_progress(args.progress, "Using the locked TSPi source checkout")
+            else:
+                checkout = Path(temp) / "tspi"
+                progress_message = (
+                    "Checking out the locked TSPi revision"
+                    if args.resolved_commit
+                    else "Resolving the selected TSPi revision"
+                )
+                emit_progress(args.progress, progress_message)
+                checkout_ref = args.resolved_commit or args.ref
+                commit = checkout_github(args.repo, checkout_ref, checkout)
             if args.resolved_commit and commit.lower() != args.resolved_commit.lower():
                 raise ValueError(
                     f"locked TSPi commit mismatch: expected {args.resolved_commit}, checked out {commit}"

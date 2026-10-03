@@ -26,6 +26,22 @@ class ChemicalComputeProvider:
         return tuple(DESCRIPTORS)
 
     def run_analysis(self, root: Path, request: dict[str, Any]) -> dict[str, Any]:
+        # Mapping validation has an artifact-backed result contract of its
+        # own.  Adapt the generic analysis request into that contract at the
+        # extension boundary; the generic research-compute package remains
+        # unaware of chemistry-specific request shapes.
+        if request.get("capability") == "reaction.mapping.validate":
+            from chemical_artifacts import create_reaction_mapping_validation_artifact
+
+            inputs = request["input_artifacts"]
+            parameters = request["parameters"]
+            return create_reaction_mapping_validation_artifact(root, {
+                "schema_version": "ts-reaction-mapping-validate-request/1",
+                "node_id": request["node_id"],
+                "reactants": [{"artifact_id": artifact_id} for artifact_id in inputs["reactants"]],
+                "products": [{"artifact_id": artifact_id} for artifact_id in inputs["products"]],
+                "mapping": parameters["mapping"],
+            })
         from chemical_runtime.analysis.engine import run_scientific_analysis
         return run_scientific_analysis(str(root), request)
 

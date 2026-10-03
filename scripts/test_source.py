@@ -27,6 +27,7 @@ from _runtime_install import (
     _resolve_conda_root,
     _run_runtime_probe,
 )
+from _extension_validation import ExtensionValidationError, validate_extensions
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -95,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
     }
     try:
+        _assert_clean_build_tree(package_root)
+        validate_extensions(package_root)
         conda_root = _resolve_conda_root(args.conda_root)
         conda = _resolve_conda(args.conda, conda_root)
         base_action = _base_action(base_prefix, base_python, args.force_base)
@@ -142,8 +145,6 @@ def main(argv: list[str] | None = None) -> int:
                 str(overlay_python),
                 "-m",
                 "pytest",
-                "--override-ini",
-                "pythonpath=.",
                 *pytest_args,
             ]
             completed = subprocess.run(
@@ -155,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             record["pytest"]["returncode"] = completed.returncode
             record["ok"] = completed.returncode == 0
-    except (OSError, RuntimeInstallError, WheelContractError) as exc:
+    except (OSError, RuntimeInstallError, WheelContractError, ExtensionValidationError) as exc:
         record["error"] = {"class": type(exc).__name__, "message": str(exc)}
         returncode = 1
     else:
@@ -166,6 +167,21 @@ def main(argv: list[str] | None = None) -> int:
     if not record["ok"] and "error" in record:
         print(f"managed source test failed: {record['error']['message']}", file=sys.stderr)
     return returncode
+
+
+def _assert_clean_build_tree(package_root: Path) -> None:
+    """Prevent ignored setuptools output from shadowing the authored source."""
+
+    stale = [
+        path
+        for path in (package_root / "build", *package_root.glob("*.egg-info"))
+        if path.exists()
+    ]
+    if stale:
+        names = ", ".join(str(path.relative_to(package_root)) for path in stale)
+        raise RuntimeInstallError(
+            f"stale Python build output is present in the source tree: {names}; clean it before testing"
+        )
 
 
 def _create_test_overlay(base_python: Path, prefix: Path) -> None:

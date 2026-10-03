@@ -60,6 +60,7 @@ def test_launcher_rejects_removed_runtime_injection_config(tmp_path: Path, capsy
 
 
 def test_launcher_resolves_installed_pi_runtime_and_replaces_process(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("TSPI_PI_RUNTIME_ROOT", raising=False)
     install_root = tmp_path / "install"
     pin = json.loads((launcher.ROOT / "config/pi-source.json").read_text(encoding="utf-8"))
     source = install_root / ".pi/runtime-cache/pi" / pin["commit"]

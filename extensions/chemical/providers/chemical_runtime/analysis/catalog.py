@@ -178,3 +178,8 @@ MAPPING_VALIDATION_DESCRIPTOR = {
         "Element agreement does not validate isotope, charge, spin, connectivity, or chemical plausibility.",
     ],
 }
+
+# Keep the artifact backed mapping validator in the same provider catalog as
+# the other analysis capabilities.  It is declared after ``DESCRIPTORS`` so
+# that the reusable schema helpers above remain local to this module.
+DESCRIPTORS = (*DESCRIPTORS, MAPPING_VALIDATION_DESCRIPTOR)
