@@ -97,7 +97,7 @@ function require_method(request, route) {
 
 /**
  * Create the production HTTP boundary around an injected AppServer.
- * No runtime, filesystem, or Kernel implementation is selected here.
+ * No runtime, filesystem, or Research State implementation is selected here.
  */
 export function create_http_server({ app_server, session_store = null, max_body_bytes = DEFAULT_MAX_BODY_BYTES } = {}) {
   if (!app_server || typeof app_server !== "object") throw new TypeError("app_server is required");

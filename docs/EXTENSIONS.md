@@ -1,6 +1,6 @@
 # Installed Extension Contract
 
-TSPi keeps the Agent and Research Kernel independent from installed scientific
+TSPi keeps the Agent and Research State independent from installed scientific
 software. An installed extension is a directory with a `manifest.json`; the
 App Server discovers manifests listed in `TSPI_EXTENSION_MANIFESTS` (an OS
 path-list), passed by its host configuration, or every package-owned

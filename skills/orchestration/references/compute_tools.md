@@ -218,7 +218,7 @@ the same Node:
 }
 ```
 
-The Kernel derives `changed_fields`; callers do not declare their own diff.
+The Research State derives `changed_fields`; callers do not declare their own diff.
 Preserve the source Attempt. A method variation used to answer the same bounded
 question is a recalculation. An independent method branch, changed hypothesis,
 new endpoint question, or different principal deliverable starts a dependent
@@ -241,4 +241,4 @@ parser failure is not program failure.
 
 If a submit or cancel action loses its typed client result, it is recorded as
 `client_result_unknown` and requires reconciliation. This does not replace the
-more precise retryable pre-submit upload result returned by the compute kernel.
+more precise retryable pre-submit upload result returned by the compute runtime.

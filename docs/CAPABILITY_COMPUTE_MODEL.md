@@ -4,14 +4,14 @@
 
 Capabilities are execution descriptions, not research state. A capability
 declares bounded inputs, outputs, versions, and deterministic failure behavior.
-The Root Agent chooses when to invoke one for a ResearchNode; the kernel does
+The Root Agent chooses when to invoke one for a ResearchNode; the Research State runtime does
 not route to a successor node.
 
 ## Ownership
 
 | Concern | Owner |
 | --- | --- |
-| phases, claims, nodes, findings, gates | filesystem Research Kernel context |
+| phases, claims, nodes, findings, gates | Research State filesystem boundary context |
 | procedure and capability guidance | Skills |
 | software invocation and parsing | Backends |
 | named local/remote execution and Backend bindings | Compute Environment |

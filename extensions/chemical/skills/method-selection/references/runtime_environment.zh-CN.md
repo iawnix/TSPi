@@ -1,7 +1,7 @@
 # 运行环境合同
 
 TSPi 使用由安装管理、供多个 workspace 共享的 Python runtime：科学依赖位于按摘要寻址的
-Conda 环境，所选 Kernel wheel 位于 venv。
+Conda 环境，所选 `tspi-runtime` wheel 位于 venv。
 
 `scripts/install_env.py` 绑定包根目录、环境 spec 摘要、解释器、必需渲染依赖、runtime
 manifest 与环境前缀。正式 release 包含一个受 manifest 绑定的 `tspi-runtime` wheel；

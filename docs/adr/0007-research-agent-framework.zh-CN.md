@@ -14,8 +14,8 @@ TSPi 将来作为可以建立在该框架上的 Chemistry Profile。
 ```text
 Contracts
   -> Agent Core
-  -> Research Kernel
-  -> Native Compute Lifecycle（Python Kernel）
+  -> Research State
+  -> Native Compute Lifecycle（research-state runtime）
   -> App Server
   -> Runtime Adapter / Client Adapter
 ```
@@ -23,7 +23,7 @@ Contracts
 Agent Core 负责 turn、模型请求、工具调用、上下文、重试和恢复，不拥有科研状态，
 也不依赖某个具体 Agent 引擎。
 
-Research Kernel 是唯一的科研状态权威，负责 ResearchMap、Research Memory、Claim、
+Research State 是唯一的科研状态权威，负责 ResearchMap、Research Memory、Claim、
 Node、Finding、Gate、Evidence Link 和生命周期决策。它不选择或执行科研后端。
 
 Native Compute lifecycle 负责版本化 capability descriptor、calculation intent、Compute
@@ -53,9 +53,9 @@ Pi 配置。
 - `ModelPort`：描述模型并流式执行请求；
 - `ContextPort`：从已准入输入构建有界、临时的 turn context；
 - `MemoryPort`：读取和追加 session 级 Agent 记忆。它不是 ResearchMap 存储；
-  workspace 级科研记忆写入必须经过 `KernelPort`；
+  workspace 级科研记忆写入必须经过 `ResearchStatePort`；
 - `SessionPort`：创建、列出、附着和排队 session 工作；
-- `KernelPort`：读取 context/liveness、应用 change、checkpoint 和执行研究 turn；
+- `ResearchStatePort`：读取 context/liveness、应用 change、checkpoint 和执行研究 turn；
 - `NativeComputeLifecycle`：描述 capability、解析环境、物化 intent，执行、检查、finalize、cancel，并写入 canonical Artifact。
 
 所有公共 request/result envelope 都使用版本化 JSON Schema。TypeScript 和 Python
@@ -66,21 +66,21 @@ Pi 配置。
 ```text
 App Server
   -> AgentRuntimePort
-  -> KernelPort
-  -> Native Compute Lifecycle（Python Kernel）
+  -> ResearchStatePort
+  -> Native Compute Lifecycle（research-state runtime）
   -> MonitorPort
   -> Client adapters
 ```
 
-默认安装注入 Pi Adapter。Core、Kernel 和 App Server 测试必须提供 Fake Runtime，
+默认安装注入 Pi Adapter。Core、Research State 和 App Server 测试必须提供 Fake Runtime，
 不要求 Pi、网络、凭证或真实模型服务。
 
-Native Compute lifecycle 由 Python Kernel 唯一实现。组合根不再装配 JavaScript provider、Capability Gateway 或 Orchestrator；Native registry 负责 descriptor、intent、执行、解析和 canonical Artifact。`compute_run` 是唯一公开计算入口，取消和终态由 Kernel 的持久记录控制。
+Native Compute lifecycle 由 research-state runtime 唯一实现。组合根不再装配 JavaScript provider、Capability Gateway 或 Orchestrator；Native registry 负责 descriptor、intent、执行、解析和 canonical Artifact。`compute_run` 是唯一公开计算入口，取消和终态由 Research State 的持久记录控制。
 ## 科研 Artifact 边界
 
 普通 `read`、`write`、`bash` 可以产生 scratch 文件，但不能自动产生被接受的科研
 Artifact。科研输入必须经过 `artifact_create`、验证和登记。登记后的 Artifact 才能
-绑定 Compute Attempt，并由显式 Kernel change 提升为 Evidence。
+绑定 Compute Attempt，并由显式 Research State change 提升为 Evidence。
 
 因此水或甲醇这类简单系统可以在结构验证通过后直接生成；复杂或有歧义的结构必须先经过
 候选和确认流程。
@@ -94,8 +94,8 @@ patch digest 共同选择。生产启动拒绝安装目录外的 source。框架
 ## 后果
 
 - 新计算领域只需在 Python Native registry 和 backend contract 中增加能力，不需要修改
-  Agent Core 或 Research Kernel；
-- 将来可以用非 Pi Agent Runtime 复用 App Server 和 Kernel；
+  Agent Core 或 Research State；
+- 将来可以用非 Pi Agent Runtime 复用 App Server 和 Research State；
 - Pi 版本变化被限制在一个 Adapter 和其测试中；
 - 在大规模移动目录或增加领域功能前，必须先建立并验证公共合同。
 
@@ -110,7 +110,7 @@ Registry。Manifest 显式记录两个 profile：
 | 模式 | memory profile | execution profile | 科研生命周期 |
 | --- | --- | --- | --- |
 | `light` | `session` | `bounded` | 无 ResearchMap、Claim、Node、Attempt、Evidence、Monitor |
-| `research` | `session` | `audited` | Kernel ResearchMap，加 Attempt、Evidence、Monitor |
+| `research` | `session` | `audited` | Research State ResearchMap，加 Attempt、Evidence、Monitor |
 
 `light` 初始化时只创建通用的输入、Artifact、运行、日志、临时和 Session 目录，使用普通
 Agent Turn；Native `compute_run` 会在 `nodes/<execution_scope>/attempts/` 下物化
@@ -120,13 +120,13 @@ operational execution scope，并写入 canonical workspace Artifact。
 `research` 配置除了通用目录，还创建 ResearchMap、Memory、Lifecycle、
 Checkpoint、Node、Evidence、Monitor 和 Environment 目录，并以
 `admission_pending` 生命周期状态和 genesis checkpoint 初始化一个空的合法
-Kernel 状态。Host 通过独立的 `workspace_port_1` 准入操作推进状态；在仍处于
+Research State 状态。Host 通过独立的 `workspace_port_1` 准入操作推进状态；在仍处于
 orient/准入阶段时，模型不能通过普通 change 操作直接创建第一个 Phase 或 Claim。
 
 改变任务范围需要新建工作区或由 Host 显式 fork。轻量工作区导入的 Artifact
 只能作为 candidate 或 input，不会自动变成 Research Evidence。两种 profile 使用同一套 Native `compute_run` 生命周期。Descriptor 可以声明只支持某一种
-或同时支持两种模式；`light` 使用 operational execution scope，`research` 增加 Kernel
-Attempt/Evidence 记录。Light 到 research 的提升必须经过显式 Host/Kernel 操作，不能因为
+或同时支持两种模式；`light` 使用 operational execution scope，`research` 增加 Research State
+Attempt/Evidence 记录。Light 到 research 的提升必须经过显式 Host/Research State 操作，不能因为
 进程成功就隐式提升。
 
 模式同时决定回合合同：`light` Session 使用

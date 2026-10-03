@@ -231,7 +231,7 @@ export function normalizeCheckpointPayload(value, toolContext, eventId) {
 
 /**
  * Enforce the Research Turn end protocol without choosing scientific work.
- * The Kernel derives liveness from ResearchMap plus operational Attempt
+ * The Research State derives liveness from ResearchMap plus operational Attempt
  * records. The Host may request one bounded follow-up when the Root failed to
  * record a checkpoint disposition for an active scope; it never chooses the
  * next method or invokes it itself. LifecycleAction records remain an explicit
@@ -833,12 +833,12 @@ async function runCanonicalApi(command, cwd, extraArgs, parentSignal, timeoutMs 
 }
 
 async function executeNativeCommand({ command, root, params, signal }) {
-  // Research workspaces have one durable filesystem Kernel authority. A
+  // Research workspaces have one durable filesystem Research State authority. A
   // partial or legacy layout is an invalid workspace, not a reason to route
   // a request into the retired ResearchMap/SQLite implementation.
   if (command.startsWith("research.")) {
     if (!isFilesystemResearchWorkspace(root)) {
-      throw new Error(`canonical command ${command} failed: canonical Research Kernel workspace is required`);
+      throw new Error(`canonical command ${command} failed: canonical Research State workspace is required`);
     }
     if (signal?.aborted) throw new Error(`canonical command ${command} was cancelled`);
     return executeFilesystemResearchCommand(command, root, params);

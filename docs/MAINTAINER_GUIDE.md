@@ -2,9 +2,9 @@
 
 TSPi is a Pi package with an installation Host and a native Pi client launcher.
 Keep the package boundaries explicit: the Pi Harness worker owns sessions and
-turns, Host owns routing and receipts, the Python kernel owns scientific state,
+turns, Host owns routing and receipts, the Python Research State runtime owns scientific state,
 and optional TS Web only reads workspaces. The Node side exposes only the
-Kernel transport bridge and port; it has no alternate filesystem Kernel
+Research State transport bridge and port; it has no alternate Research State filesystem boundary
 implementation.
 
 ## Development Setup
@@ -46,7 +46,7 @@ must not be added to the default Python suite.
 
 The canonical workspace identity is `workspace_manifest.json`. Research
 workspaces store scientific state in `research_map/context.json`, lifecycle in
-`lifecycle/liveness.json`, and the Kernel-owned metadata projection in
+`lifecycle/liveness.json`, and the Research State-owned metadata projection in
 `memory/index.json`. `ResearchMap` owns phases, claims, claim relations,
 nodes, typed findings, gates, focus, and revision. Node execution records live
 under `nodes/<node_id>/` and are operational inputs to the map, not alternate
@@ -101,7 +101,7 @@ broker, or alternate session owner.
 | Change | Required updates |
 | --- | --- |
 | TSPi Host protocol or service | `apps/app-server/`, launcher tests, TS Phone client, architecture docs |
-| Workspace schema | kernel contract, bootstrap, validation tests, workspace references |
+| Workspace schema | Research State runtime contract, bootstrap, validation tests, workspace references |
 | Scientific backend | backend parser, capability registry, focused skill reference, tests |
 | Scientific analysis | analysis registry/handler, replay validation, scientific counterexamples, report/Web transport, wheel inventory |
 | Node dispatch | operational receipt chain, submission guard, native/extension tools, restart and pause tests |

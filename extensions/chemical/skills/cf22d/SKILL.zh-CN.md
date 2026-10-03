@@ -56,7 +56,7 @@ Python。
 
 将 adapter 的 `memory_mb`（源 Runner 称为 `max_memory_mb`）视为 PySCF 预算，而不是操作系统硬限制。配置的 scratch 基目录只能
 包含 Runner 自己创建的运行子目录；清理时不得删除基目录或无关文件。核对 capability
-声明的主要输出后，再通过 Research Kernel 分别记录 FactFinding 或 IssueFinding。独立
+声明的主要输出后，再通过 Research State 分别记录 FactFinding 或 IssueFinding。独立
 Runner 通常写出 `run.log`、`result.json`、任务记录、几何、Hessian/频率和热化学文件；
 TSPi adapter 也可能声明 `pyscf.out`、`pyscf_result.json` 和 `pyscf_*` JSON/XYZ
 Artifact。实时 capability 的 Artifact manifest 才是权威，不要根据本文件猜文件名。解析

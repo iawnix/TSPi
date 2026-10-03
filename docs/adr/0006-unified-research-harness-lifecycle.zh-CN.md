@@ -12,7 +12,7 @@ Host 会把“当前 action 已完成”误当成“研究可以结束”；反�
 把一个已经登记的 `required` 下一步在同一个 turn 里再次注入，导致同一研究 scope
 被连续推进。
 
-研究状态必须由 Research Kernel 推导，生命周期必须由 Harness 统一执行。Host/Monitor
+研究状态必须由 Research State 推导，生命周期必须由 Harness 统一执行。Host/Monitor
 不能替 Agent 选择科学方法，Attempt 的终止也不能自动生成 Finding 或 Claim 结论。
 
 ## 决策
@@ -26,7 +26,7 @@ Agent
   在每轮结束调用 research_checkpoint 登记 continue_required、waiting_external、
   deferred、blocked、terminal 或 user_input_required disposition
 
-Research Kernel
+Research State
   唯一科学状态权威：ResearchMap、ChangeSet、引用完整性和 liveness
   推导研究是否需要决策，不执行计算、不解释 Artifact、不选择方法
 
@@ -53,7 +53,7 @@ TRIGGER -> ADMIT -> ORIENT -> PLAN -> PREPARE -> EXECUTE
         -> END 或 WAKE
 ```
 
-Kernel 暴露 `research.turn`（`research_turn_request` v1 / `research_turn_result` v1）：
+Research State 暴露 `research.turn`（`research_turn_request` v1 / `research_turn_result` v1）：
 
 - `start`：登记一次 turn 开始并返回 bounded liveness；
 - `orient`：返回 bounded Research Context 和 liveness；
@@ -68,7 +68,7 @@ Kernel 暴露 `research.turn`（`research_turn_request` v1 / `research_turn_resu
 
 ### Liveness 语义
 
-Kernel 只返回以下状态：
+Research State 只返回以下状态：
 
 - `idle`：没有 active scope；
 - `continue_required`：Agent 已登记明确的下一 turn 动作。这是合法的 turn 终态，Host 不得强制本轮执行；
@@ -87,7 +87,7 @@ Node/Claim/Gate 状态和 Finding/Gate 证据决定科学结论。
 
 ### Follow-up 规则
 
-Host 在 `checkpoint/end` 读取 Kernel 的结果：
+Host 在 `checkpoint/end` 读取 Research State 的结果：
 
 - `accepted=true`：结束当前 turn；`continue_required` 计划留给后续 turn 或 Monitor wake；
 - `requires_disposition=true`：最多追加有界 follow-up，要求 Agent 重新读取
@@ -124,7 +124,7 @@ authority  effect  replay/idempotency  phase
 workspace/session binding  input schema  output schema  error taxonomy
 ```
 
-Research Write 只能经过 Kernel ChangeSet；Execution 只能创建 Attempt/Artifact；Read
+Research Write 只能经过 Research State ChangeSet；Execution 只能创建 Attempt/Artifact；Read
 只能返回 bounded read model；Advisory 不拥有科学状态；External Side Effect 必须显式
 标记并禁止科学状态自动重试。所有 transport 使用 `tspi-tool-result/1` 和
 `tspi-tool-error/1` envelope。

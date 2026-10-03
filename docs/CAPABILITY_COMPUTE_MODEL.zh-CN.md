@@ -3,13 +3,13 @@
 [English](CAPABILITY_COMPUTE_MODEL.md) | 简体中文
 
 Capability 是执行描述，不是研究状态。它声明有界输入、输出、版本和确定性的失败
-行为。Root Agent 决定何时为 ResearchNode 调用能力；Kernel 不负责路由到下一个 Node。
+行为。Root Agent 决定何时为 ResearchNode 调用能力；Research State 不负责路由到下一个 Node。
 
 ## 所有权
 
 | 内容 | 所有者 |
 | --- | --- |
-| phase、claim、node、finding、gate | 文件系统 Research Kernel context |
+| phase、claim、node、finding、gate | 文件系统 Research State context |
 | 流程和能力指导 | Skill |
 | 软件调用与解析 | Backend |
 | 命名本地/远端执行环境及 Backend 绑定 | Compute Environment |

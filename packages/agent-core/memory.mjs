@@ -7,7 +7,7 @@ import { require_workspace_id } from "./workspace_id.mjs";
 export const MEMORY_READ_SCHEMA = "agent_memory_read_1";
 export const MEMORY_ENTRY_SCHEMA = "agent_memory_entry_1";
 // Agent Core memory is deliberately ephemeral session context in both modes.
-// In research mode the Research Kernel, not this port, owns workspace-scoped
+// In research mode the Research State, not this port, owns workspace-scoped
 // scientific memory (ResearchMap, liveness, and checkpoints).
 export const MEMORY_SCOPE = "session";
 export const MEMORY_AUTHORITY = "agent_core_session";
@@ -81,7 +81,7 @@ function normalize_entry(request) {
  *
  * It deliberately has no workspace filesystem and no ResearchMap knowledge.
  * In research mode it remains session-scoped; a request to write workspace
- * memory fails closed so Research Kernel remains the scientific authority.
+ * memory fails closed so Research State remains the scientific authority.
  */
 export function create_memory_store({
   workspace_mode = "research",

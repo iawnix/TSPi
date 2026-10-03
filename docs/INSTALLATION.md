@@ -251,9 +251,9 @@ before opening the terminal. `ResearchAgentServer` is the internal HTTP
 service used by framework clients and administrators; it is not required for
 the ordinary terminal workflow.
 
-For an explicit App Server deployment, configure the runtime module (and a
-Kernel module when research workspace admission and durable research state are
-required):
+For an explicit App Server deployment, configure the runtime module (and the
+Research State bridge, selected by the `--kernel-module` transport option, when
+research workspace admission and durable research state are required):
 
 ```bash
 ./ResearchAgentServer \
@@ -366,7 +366,7 @@ it does not mean that the agent turn completed. The Root Agent must reread
 
 The canonical `workspace_manifest.json` identity is verified before Monitor
 maps events to the Host route. Its `workspace_id` is the same value used by
-Kernel, local runs, and remote calculation intents; there is no separate
+Research State, local runs, and remote calculation intents; there is no separate
 `workspace.json` identity or alias layer.
 
 ## Session history

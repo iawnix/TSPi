@@ -1,6 +1,6 @@
 # ResearchMap 状态模型
 
-`ResearchMap` 是一个研究项目的规范类型化科学状态。Filesystem Research Kernel 将其持久化到
+`ResearchMap` 是一个研究项目的规范类型化科学状态。Research State filesystem boundary 将其持久化到
 `research_map/context.json`（`schema_version=research_map_context_1`）。有效 Context 始终包含
 数组 collection：`phases`、`claims`、`nodes`、`findings`、`gates`、`claim_relations`、
 `attempts`、`artifacts`、`evidence_links`、`lifecycle_actions`、`strategy_plans`、
@@ -22,7 +22,7 @@
 | `Gate` | 面向一个 Node 或 Claim 的 criteria 与 evaluations | `scope`、`target_id`、`criteria`、`evaluations` |
 | `NodeGate` / `ClaimGate` | Gate 的类型化实现 | `scope=node` / `scope=claim` |
 
-`Finding` 是科学结论的共同数据结构。运行证据由 Kernel 单独管理：`AttemptRecord`、
+`Finding` 是科学结论的共同数据结构。运行证据由 Research State 单独管理：`AttemptRecord`、
 `ArtifactManifest` 与 `EvidenceLink` 构成 Evidence Registry；原始 payload 保留在 Node
 目录或外部 Artifact store。`GateEvaluation` 保存 verdict（`pass`、`fail`、`inconclusive`、`blocked`）、时间戳、
 message、证据引用与输入 revision。
@@ -40,7 +40,7 @@ Claim。Map 维护反向索引（`node_ids`、`finding_ids`、`gate_ids`），�
 
 ## 读取与写入
 
-Kernel command catalog 使用以下内部读取 ID：
+Research State command catalog 使用以下内部读取 ID：
 
 ```text
 research.map          完整规范 map
@@ -53,14 +53,14 @@ research.context      有界 turn context
 research.liveness     生命周期诊断
 research.decisions    有界 strategy/interpretation/checkpoint 历史
 research.evidence     Attempt/Artifact/EvidenceLink 元数据
-research.storage      canonical Filesystem Kernel 文档与 revision
+research.storage      canonical Research State filesystem boundary 文档与 revision
 ```
 
 Agent 只能调用公共 `research_read`，并通过对应的有界 `mode`（`map`、`summary`、`detail`、
 `locate`、`validate`、`operations`、`context`、`liveness`、`decisions`、`evidence` 或
 `storage`）访问上述读取。该工具还暴露计算模式（`artifacts`、`capabilities`、`runs`）。交互式读取
 使用 `/research`。Strategy、interpretation、checkpoint、Evidence Registry 与 map 变更都使用
-各自的类型化 Kernel command；不要创建通用 memory write。
+各自的类型化 Research State command；不要创建通用 memory write。
 
 `research_read mode=evidence` 可选筛选字段为 `recordType`（`attempt`、`artifact` 或 `link`）、
 `nodeId`、`artifactId`、`subjectId` 和 `limit`（1--2048）。`recordType=link` 读取
@@ -68,7 +68,7 @@ Agent 只能调用公共 `research_read`，并通过对应的有界 `mode`（`ma
 
 生命周期动作是通过 `research.change` 管理的 State 记录，`research_checkpoint` 是 turn checkpoint。
 使用规范的 `set_lifecycle_action` 和 `resolve_lifecycle_action` 操作，并显式提供 scope、target、
-action、status、reason 和 request identity。唯一写入者仍然是 Kernel。
+action、status、reason 和 request identity。唯一写入者仍然是 Research State。
 
 不要直接编辑 canonical 文档。ChangeSet 在隔离副本上校验，只递增一次 `revision`，并原子更新
 context、liveness、memory 与 manifest。Host 会在每次内部 mutation request 中附加 Root Agent 的

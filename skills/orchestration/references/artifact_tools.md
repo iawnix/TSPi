@@ -62,7 +62,7 @@ Compare exactly two registered XYZ artifacts:
 ```
 
 All atom indices are zero-based. `parameters` is optional; detailed checks are
-validated by the deterministic Python kernel so their schema does not consume
+validated by the deterministic Python Research State runtime so their schema does not consume
 every Root turn. Omitted thresholds default to 0.5 and 0.25 angstrom. The host
 binds both input IDs and digests and writes an idempotent private JSON artifact
 under `nodes/<node_id>/outputs/analysis/`. The document includes the expanded
@@ -135,7 +135,7 @@ unregistered installed tool. The request contract is:
 
 `nodeId` must identify an existing open ResearchNode. `inputArtifacts` is a
 role-to-array mapping of registered `art_...` IDs; physical paths, arbitrary
-filenames, and invented IDs are invalid. Host/Kernel resolves each ID, checks
+filenames, and invented IDs are invalid. Host/Research State resolves each ID, checks
 its workspace path, digest, and input-role schema, then passes immutable bytes
 to the Native analysis executor. Bind inputs to the owning Node in the request and
 preserve their returned owner/path metadata; `parameters` must satisfy that

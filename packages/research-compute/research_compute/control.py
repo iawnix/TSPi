@@ -297,7 +297,7 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
 def discard_calculation_intent(root: str | Path, intent_id: str) -> dict[str, Any]:
     """Remove an unprepared intent after a failed launch preflight.
 
-    This is deliberately narrow: only a Kernel-created attempt directory with
+    This is deliberately narrow: only a Research State-created attempt directory with
     an intent and no prepared/control records can be discarded. Once prepare or
     submission has started, the durable attempt is owned by the lifecycle and
     must be reconciled rather than deleted.
@@ -2422,7 +2422,7 @@ def _intent_source(workspace: Path, value: str | Path) -> tuple[Path, str]:
         and parts[3].startswith("calc_")
     )
     if not generated_source:
-        raise ComputeContractError("calculation intent file must be a Kernel-generated ResearchNode attempt intent")
+        raise ComputeContractError("calculation intent file must be a Research State-generated ResearchNode attempt intent")
     if has_symlink_component(workspace, resolved) or resolved.is_symlink():
         raise ComputeContractError(f"calculation intent path contains a symbolic link: {ref}")
     return resolved, ref

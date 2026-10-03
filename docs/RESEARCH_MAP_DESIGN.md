@@ -14,7 +14,7 @@ same `Finding` structure. `NodeGate` and `ClaimGate` are specializations of
 the same `Gate` structure. Reverse indexes and graph dependencies are stored
 in the map and checked by the model. The canonical runtime document is
 `research_map/context.json`, selected by `workspace_manifest.json`; retired
-JSON/SQLite files are diagnostic inputs only and are never Kernel authority.
+JSON/SQLite files are diagnostic inputs only and are never Research State authority.
 
 ```text
 ResearchClaim -> ResearchNode -> Finding
@@ -29,10 +29,10 @@ state machine. A Node has an explicit `state` (`planned`, `active`, `paused`,
 status. A Node can close with `completed` only when every attached NodeGate has
 a latest `pass` evaluation.
 
-## Kernel Boundary
+## Research State Boundary
 
-The filesystem Research Kernel is the only mutation authority. Callers submit
-one ChangeSet with an expected revision and ordered operations. The Kernel
+The Research State filesystem boundary is the only mutation authority. Callers submit
+one ChangeSet with an expected revision and ordered operations. The Research State
 validates the operation catalog, references, reverse indexes, cycles, and state
 transitions, then atomically commits the context, liveness, memory projection,
 checkpoint, and manifest revision. A failed request leaves the previous
@@ -59,7 +59,7 @@ research.checkpoint close a turn with a disposition
 research.change     apply one ChangeSet
 ```
 
-The Kernel port, Pi tools, slash commands, and Root Agent use these same
+The Research State port, Pi tools, slash commands, and Root Agent use these same
 commands. `research.context` and `research.liveness` are bounded read models;
 they do not become a second ResearchMap or a second lifecycle authority.
 `research.context` and `research.liveness` are bounded projections. Liveness is
@@ -111,7 +111,7 @@ write a Finding.
   metadata, and Node-owned execution directories as research workspace state;
   raw payloads remain in their artifact stores;
 - add new map behavior as a model and ChangeSet operation, with focused tests;
-- update the Kernel operation catalog and focused tests for every new map behavior;
+- update the Research State operation catalog and focused tests for every new map behavior;
 - update `packages/tspi-runtime/tspi_runtime/command_catalog.json` or
   `packages/agent-runtime/host-api/tools.mjs`; slash commands and host
   adapters consume those definitions directly;
@@ -120,6 +120,6 @@ write a Finding.
 - keep `ResearchMap` as the only scientific state model; do not introduce
   parallel scientific stores or aliases.
 - keep `tests/node/native/tspi-research-turn-e2e.test.mjs` as the domain-neutral
-  acceptance trace for Agent -> Kernel -> Host -> Monitor -> Agent progress;
+  acceptance trace for Agent -> Research State -> Host -> Monitor -> Agent progress;
   domain-specific workflows must pass this lifecycle contract before adding
   scientific policy.

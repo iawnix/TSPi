@@ -1,5 +1,5 @@
 /**
- * Transport-neutral bridge to the Python Research Kernel command boundary.
+ * Transport-neutral bridge to the Python Research State command boundary.
  *
  * The bridge accepts an injected request transport for hosts that already own
  * a process or RPC channel. The default JSONL transport starts a dedicated
@@ -27,7 +27,7 @@ const ACTIVE_KERNEL_CHILDREN = new Set();
 
 // A SessionWorker may be terminated by its owner before its asynchronous
 // cleanup path runs. Kill transport children synchronously with the parent
-// process so a Python Kernel worker cannot be orphaned. Keep one process hook
+// process so a Research State runtime worker cannot be orphaned. Keep one process hook
 // for all bridges to avoid accumulating listeners when short-lived command
 // bridges are used.
 process.once("exit", () => {
@@ -69,7 +69,7 @@ function require_transport(transport) {
 
 function ensure_result(value, method) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new KernelBridgeError(`Python Kernel returned a non-object result for ${method}`, {
+    throw new KernelBridgeError(`Research State runtime returned a non-object result for ${method}`, {
       code: "invalid_kernel_result",
     });
   }
@@ -77,7 +77,7 @@ function ensure_result(value, method) {
 }
 
 /**
- * Build a Research Kernel bridge over any async request transport.
+ * Build a Research State bridge over any async request transport.
  *
  * The transport receives `(method, payload)` where payload always contains
  * the immutable bridge workspace_root. It may return a Promise for a JSON
@@ -108,7 +108,7 @@ export function create_research_state_bridge({ workspace_root, workspace_id, tra
       return ensure_result(await channel.request(method, payload), method);
     } catch (error) {
       if (error instanceof KernelBridgeError) throw error;
-      throw new KernelBridgeError(`Python Kernel ${method} failed: ${error?.message || String(error)}`, {
+      throw new KernelBridgeError(`Research State runtime ${method} failed: ${error?.message || String(error)}`, {
         code: "kernel_request_failed",
         cause: error,
       });
@@ -222,7 +222,7 @@ def dispatch(method, payload):
     if not isinstance(workspace_root, str) or not workspace_root:
         raise ValueError("workspace_root is required")
     root = Path(workspace_root).expanduser().resolve()
-    # The bridge is a transport for the canonical filesystem Research Kernel.
+    # The bridge is a transport for the canonical Research State filesystem boundary.
     # A missing or partial marker set is a configuration error; it must never
     # select the retired JSON/SQLite command service.
     if has_state_files is None:
@@ -307,7 +307,7 @@ export function create_jsonl_subprocess_transport({
       try {
         response = JSON.parse(line);
       } catch (error) {
-        fail_all(new KernelBridgeError("invalid JSONL response from Python Kernel", { code: "invalid_kernel_response", cause: error }));
+        fail_all(new KernelBridgeError("invalid JSONL response from Research State runtime", { code: "invalid_kernel_response", cause: error }));
         return;
       }
       const entry = pending.get(response?.id);
@@ -315,7 +315,7 @@ export function create_jsonl_subprocess_transport({
       pending.delete(response.id);
       clearTimeout(entry.timer);
       if (response.ok === true) entry.resolve(response.result);
-      else entry.reject(new KernelBridgeError(response?.error?.message || "Python Kernel request failed", {
+      else entry.reject(new KernelBridgeError(response?.error?.message || "Research State runtime request failed", {
         code: response?.error?.code || "python_kernel_error",
       }));
     }
@@ -325,36 +325,36 @@ export function create_jsonl_subprocess_transport({
   });
   child.once("error", (error) => {
     ACTIVE_KERNEL_CHILDREN.delete(child);
-    fail_all(new KernelBridgeError(`Python Kernel process failed: ${error.message}`, { code: "kernel_process_error", cause: error }));
+    fail_all(new KernelBridgeError(`Research State runtime process failed: ${error.message}`, { code: "kernel_process_error", cause: error }));
   });
   child.once("exit", (code, signal) => {
     ACTIVE_KERNEL_CHILDREN.delete(child);
-    if (!closed) fail_all(new KernelBridgeError(`Python Kernel process exited (${code ?? "signal"} ${signal || ""})${stderr ? `: ${stderr.trim()}` : ""}`, { code: "kernel_process_exit" }));
+    if (!closed) fail_all(new KernelBridgeError(`Research State runtime process exited (${code ?? "signal"} ${signal || ""})${stderr ? `: ${stderr.trim()}` : ""}`, { code: "kernel_process_exit" }));
   });
 
   async function request(method, payload = {}) {
     require_method(method);
-    if (closed) throw new KernelBridgeError("Python Kernel transport is closed", { code: "transport_closed" });
+    if (closed) throw new KernelBridgeError("Research State runtime transport is closed", { code: "transport_closed" });
     const id = `bridge_${++sequence}`;
     const message = `${JSON.stringify({ id, method, payload })}\n`;
     return new Promise((resolve_result, reject) => {
       const timer = setTimeout(() => {
         pending.delete(id);
-        reject(new KernelBridgeError(`Python Kernel request timed out: ${method}`, { code: "kernel_request_timeout" }));
+        reject(new KernelBridgeError(`Research State runtime request timed out: ${method}`, { code: "kernel_request_timeout" }));
       }, timeout_ms);
       pending.set(id, { resolve: resolve_result, reject, timer });
       child.stdin.write(message, (error) => {
         if (!error) return;
         clearTimeout(timer);
         pending.delete(id);
-        reject(new KernelBridgeError(`cannot write Python Kernel request: ${error.message}`, { code: "kernel_request_write_error", cause: error }));
+        reject(new KernelBridgeError(`cannot write Research State runtime request: ${error.message}`, { code: "kernel_request_write_error", cause: error }));
       });
     });
   }
 
   async function close() {
     if (closed) return;
-    fail_all(new KernelBridgeError("Python Kernel transport closed", { code: "transport_closed" }));
+    fail_all(new KernelBridgeError("Research State runtime transport closed", { code: "transport_closed" }));
     ACTIVE_KERNEL_CHILDREN.delete(child);
     child.stdin.end();
     if (!child.killed) child.kill();

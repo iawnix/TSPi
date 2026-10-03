@@ -1,6 +1,6 @@
 # Root Agent 变更协议
 
-Root 负责科学判断，Kernel 负责结构有效性与原子存储；两者职责必须分开。
+Root 负责科学判断，Research State 负责结构有效性与原子存储；两者职责必须分开。
 
 ## 变更前
 

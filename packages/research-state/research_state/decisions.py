@@ -1,6 +1,6 @@
 """Claim-scoped research decisions and turn checkpoint records.
 
-These records are durable Kernel metadata.  They reference operational
+These records are durable Research State metadata.  They reference operational
 Attempts and Artifacts by ID, but never embed their raw payloads.
 """
 

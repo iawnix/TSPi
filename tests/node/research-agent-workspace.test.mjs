@@ -43,7 +43,7 @@ test("research workspace seeds a valid admission-pending kernel state", async ()
   }
 });
 
-test("workspace admission repairs a manifest commit interrupted after Kernel admission", async () => {
+test("workspace admission repairs a manifest commit interrupted after Research State admission", async () => {
   const root = await temporary_root("research-agent-admission-recovery");
   try {
     const initializer = create_workspace_initializer();
@@ -52,7 +52,7 @@ test("workspace admission repairs a manifest commit interrupted after Kernel adm
       workspace_id: "workspace_admission_recovery",
       workspace_mode: "research",
     });
-    // Simulate a Host crash after the Kernel atomically admitted the context
+    // Simulate a Host crash after the Research State atomically admitted the context
     // and liveness documents but before it committed the manifest projection.
     await create_test_research_state({ workspace_root: root }).admit_workspace({
       workspace_id: "workspace_admission_recovery",
@@ -145,7 +145,7 @@ test("workspace admission preserves a liveness projection when context commit wa
   }
 });
 
-test("Python Kernel reads reject an incomplete ResearchMap context", async () => {
+test("Research State runtime reads reject an incomplete ResearchMap context", async () => {
   const root = await temporary_root("research-agent-incomplete-context");
   try {
     const initializer = create_workspace_initializer();

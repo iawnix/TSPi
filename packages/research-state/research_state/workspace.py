@@ -471,7 +471,7 @@ def admit_research_workspace(root: str | Path) -> dict[str, Any]:
             raise WorkspaceModeError("research_manifest_state_mismatch")
         return manifest
     elif not context_admitted:
-        # Kernel admission may have completed both projections before the
+        # Research State admission may have completed both projections before the
         # Host crashed while replacing the manifest. Preserve that durable
         # pair on retry; only perform the initial admission write when the
         # projections are still pending. Resetting an already-admitted

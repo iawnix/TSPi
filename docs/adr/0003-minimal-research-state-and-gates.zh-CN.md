@@ -9,7 +9,7 @@
 
 `ResearchState` 是一个项目唯一规范 `ResearchMap` 的事务和完整性边界。
 `ResearchMap` 是有类型的聚合对象，规范序列化位于 `research_map/context.json`；
-`memory/index.json` 只是 Kernel 拥有的有界元数据/生命周期投影。已废弃的 SQLite/JSON
+`memory/index.json` 只是 Research State 拥有的有界元数据/生命周期投影。已废弃的 SQLite/JSON
 文件只允许用于诊断，永远不是运行时权威。
 `nodes/<node_id>/` 下的执行记录属于执行平面，不是另一套科研状态；有界的决策和证据
 元数据与它们一起保存在同一个 Research Memory 后端。
@@ -45,7 +45,7 @@ RootAgent 通过 ChangeSet 明确修改。Gate 评估不会隐式修改目标对
 
 ## 责任边界
 
-Kernel 校验引用和依赖环、执行 Node 状态转换、处理乐观 revision，并原子提交规范的
+Research State 校验引用和依赖环、执行 Node 状态转换、处理乐观 revision，并原子提交规范的
 filesystem context、liveness 和 metadata projection。它不选择方法、不运行 Backend、不提交远程任务，
 也不根据工具成功推断 Claim 状态。
 
@@ -65,10 +65,10 @@ Skill 描述流程和能力，Backend 实现具体科学软件或执行器。Com
 - `ResearchMap` 是唯一规范科学状态模型。
 - `research_map/context.json` 是规范持久化科学状态；`memory/index.json` 是有界投影，
   不是第二套权威。
-- Decision、Attempt、Artifact 和 Evidence Link 元数据只在 Kernel context/projection 中登记一次；
+- Decision、Attempt、Artifact 和 Evidence Link 元数据只在 Research State context/projection 中登记一次；
   原始日志和二进制 payload 保存在外部存储。
 
 旧 registry 集合和 view/graph 协议不再兼容。TS Web、RootAgent、报告及其他客户端都消费
 ResearchMap 序列化和有界 Research Memory read model；执行工具可以保留 Attempt/Artifact
-文件，但只有 Kernel 能登记 manifest，并把类型化 Evidence Link 提升为 Finding 或 Gate
+文件，但只有 Research State 能登记 manifest，并把类型化 Evidence Link 提升为 Finding 或 Gate
 证据引用。

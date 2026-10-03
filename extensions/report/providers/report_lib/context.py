@@ -18,7 +18,7 @@ def collect_report_context(
     *,
     exclude_activity_refs: Iterable[str] = (),
 ) -> dict[str, Any]:
-    """Load one immutable report input from the canonical filesystem Kernel.
+    """Load one immutable report input from the canonical Research State filesystem boundary.
 
     The report is a consumer of the same map that TS Web and the public
     research commands return. It does not rebuild state from legacy registries.

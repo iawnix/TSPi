@@ -1,6 +1,6 @@
 # Root Agent Change Protocol
 
-Root owns scientific judgment. The Kernel owns structural validity and atomic
+Root owns scientific judgment. The Research State owns structural validity and atomic
 storage. Keep those responsibilities separate.
 
 ## Before A Change

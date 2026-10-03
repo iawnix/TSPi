@@ -10,7 +10,7 @@
 ## Context
 
 TSPi is currently both a product name and a repository/package boundary. The
-repository contains the TSPi Skill family, Pi extensions, the Python research kernel,
+repository contains the TSPi Skill family, Pi extensions, the Python research state,
 deterministic compute and report services, the Web implementation, Phone
 integration, release tooling, and user entrypoints. This is workable for one
 release line, but it makes ownership and change cost difficult to see.
@@ -42,7 +42,7 @@ contracts are explicit.
 
 | Area | Current fact | Consequence |
 | --- | --- | --- |
-| TSPi | Owns the kernel, Pi package, Web implementation, release assembly, and installation boundary | It is the natural required core repository and product release owner |
+| TSPi | Owns the Research State runtime, Pi package, Web implementation, release assembly, and installation boundary | It is the natural required core repository and product release owner |
 | `ts-phone` | Independent repository with the Flutter presentation client and mobile release tooling | It remains independently developed; its runtime dependency is the versioned TSPi Host transport |
 | `ts-web` | Client, registry, server, and static UI under `components/ts-web/`; it consumes the canonical ResearchMap through `research-map-provider/1` | The component can be archived and installed independently from Agent |
 | Phone transport | TS Phone carries `tspi-host/1` through TSPi Link; the Relay authorizes devices and forwards opaque bytes | TSPi owns Link transport and Host routing while the Pi Harness worker remains the session authority |
@@ -59,7 +59,7 @@ The TSPi repository owns:
 
 - the public Skill family, led by `research-state` for state and
   `orchestration` for task planning;
-- the deterministic Research Kernel and canonical workspace contract;
+- the deterministic Research State and canonical workspace contract;
 - deterministic compute, artifact, report, remote, and notification mechanisms;
 - the TSPi ResearchMap provider for canonical workspace data;
 - core Pi extensions and lifecycle entrypoints;
@@ -81,7 +81,7 @@ This distinction is deliberate:
 TSPi product
 |
 +-- TSPi Core repository             required
-|     kernel, Root runtime, provider, suite installer
+|     Research State runtime, Root runtime, provider, suite installer
 |
 +-- ts-phone repository              optional client
 |     mobile client and release tooling
@@ -178,7 +178,7 @@ languages into one directory:
 ```text
 TSPi/
   contracts/          versioned public schemas and compatibility fixtures
-  packages/           reusable kernel/runtime libraries
+  packages/           reusable Research State runtime/runtime libraries
   components/         independently packaged optional clients
   apps/               user-facing launchers and host entrypoints
   extensions/         Pi extension implementations
@@ -204,7 +204,7 @@ This is a staged target, not an instruction to move the whole repository now.
 The first implementation should classify and document current paths, then
 move one boundary at a time while retaining stable entrypoint shims.
 
-The first staged move places the Python kernel under
+The first staged move places the Python Research State runtime under
 `packages/tspi-runtime/` and the TypeScript runtime under
 `packages/agent-runtime/`. The native App Server lives under `apps/`; the
 terminal is Pi's client mode and TS Phone is an external TSPi Link client. Stable
@@ -252,7 +252,7 @@ The following are implementation terms and should not become public scientific
 routing concepts:
 
 - `stage` for a private execution or failure location;
-- `transaction prepare/commit` for Kernel internals;
+- `transaction prepare/commit` for Research State internals;
 - ad hoc gate fields used as a workflow router; evaluation belongs to the
   scoped `Gate` contract;
 - `Evidence layer` or `Evidence role` when the actual owner is an Artifact or
@@ -386,7 +386,7 @@ for local changes.
 ## Non-Goals
 
 - This ADR does not immediately split the Git repositories.
-- It does not prescribe a complete rewrite of the Python kernel or Pi runtime.
+- It does not prescribe a complete rewrite of the Python Research State runtime or Pi runtime.
 - It does not make Web or Phone a second scientific state owner.
 - It does not replace open scientific vocabulary with closed enums.
 - It does not rename every internal `stage` field or historical fixture.

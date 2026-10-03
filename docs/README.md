@@ -9,7 +9,7 @@ the normative runtime and research contracts.
 | Need | Read |
 | --- | --- |
 | Install, configure, upgrade, recover | [Installation and Operations](INSTALLATION.md) |
-| Understand Agent, Kernel, Host, Monitor, Memory, and Compute boundaries | [Architecture](ARCHITECTURE.md) |
+| Understand Agent, Research State, Host, Monitor, Memory, and Compute boundaries | [Architecture](ARCHITECTURE.md) |
 | Understand ResearchMap objects and turn checkpoints | [ResearchMap Design](RESEARCH_MAP_DESIGN.md) and [ADR 0006](adr/0006-unified-research-harness-lifecycle.md) |
 | Select and run a registered scientific capability | [Capability and Compute Model](CAPABILITY_COMPUTE_MODEL.md) and [Scientific Capabilities Operations](SCIENTIFIC_CAPABILITIES_OPERATIONS.md) |
 | Use the terminal, Phone, browser, or Monitor | [Terminal](TERMINAL.md), [TSPi Link](TSPi_LINK.md) |

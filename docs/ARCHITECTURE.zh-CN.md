@@ -24,7 +24,7 @@ TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装�
   `extensions/server/` 是唯一的包内 server 工具入口。App Server 只加载经过 allowlist 和
   SHA-256 校验的条目，不执行客户端提交的代码；worker 还统一加载 package skills、hooks、
   策略和 system prompt，所有 transport 使用同一份工具 runtime。
-- `components/ts-web/` 是可选的只读浏览器客户端，直接渲染 Kernel 序列化的
+- `components/ts-web/` 是可选的只读浏览器客户端，直接渲染 Research State 序列化的
   `ResearchMap`；浏览器控制通过显式启动的
   `apps/app-server/tspi-browser-gateway.mjs` 适配器附着到已有 Host session，不会创建第二个 Worker。
 - TS Phone 是独立 Flutter 客户端，通过 TSPi Link 连接 Host。
@@ -53,8 +53,8 @@ operations/               # turn、monitor 和 execution receipts
 `Gate`，并维护它们之间的依赖、产出和目标引用。
 
 Attempt 和 Artifact 不属于 ResearchMap 的科学事实集合。它们由 Compute/Workspace
-Runtime 产生，但其稳定身份、digest、来源、lineage 和证据引用由 Research Kernel 的
-Evidence Registry 管理。原始文件仍保存在 workspace 或对象存储中；Kernel 只保存
+Runtime 产生，但其稳定身份、digest、来源、lineage 和证据引用由 Research State 的
+Evidence Registry 管理。原始文件仍保存在 workspace 或对象存储中；Research State 只保存
 Artifact Manifest 和 Evidence Link，不把调度状态或文件内容直接解释成 Finding 或
 Claim 结论。
 
@@ -69,7 +69,7 @@ Artifact 不是 Finding。Artifact 是可验证的数据对象，Evidence Link �
 基于这些证据提交的科学陈述。大型日志、轨迹和图像不进入 ResearchMap 或模型上下文；
 Agent 通过有界 manifest、摘要和按需 excerpt 读取它们。
 
-### ResearchMap 与 Research Kernel
+### ResearchMap 与 Research State
 
 `ResearchMap` 是一个有类型的研究图。`ResearchClaim` 表示科学命题，`ResearchNode`
 表示有界工作，`ResearchPhase` 只是可选的导航分组。Node 产生统一的 `Finding`，其中
@@ -82,8 +82,8 @@ ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
        +----------- ClaimGate / NodeGate
 ```
 
-文件系统 Research Kernel 负责加载、校验、事务提交和持久化规范 workspace projection，
-由 Python Kernel 唯一实现；Node App Server 只提供传输 bridge 和语言无关的 port。
+文件系统 Research State 负责加载、校验、事务提交和持久化规范 workspace projection，
+由 research-state runtime 唯一实现；Node App Server 只提供传输 bridge 和语言无关的 port。
 map-shaped context projection 是给 TS Web 和 Root Agent 的规范序列化，不是第二个科学状态。
 Root Agent 选择问题、
 方法、分支和停止条件；Skill 描述研究流程，Capability 描述可调用操作，Backend 实现
@@ -94,13 +94,13 @@ Root Agent 选择问题、
 
 Research Harness 是领域无关的研究运行时。反应机理、分子计算、数据分析、模拟或其他
 研究领域都使用同一套对象和生命周期；领域差异只进入 Skill、Capability、Backend 和
-Artifact schema，不能进入 Host 的调度判断或 Kernel 的 liveness 规则。
+Artifact schema，不能进入 Host 的调度判断或 Research State 的 liveness 规则。
 
 ```text
 Agent (唯一科学决策者)
   | 读取 bounded Research Context，选择方法、证据和停止条件
   v
-Research Kernel (唯一科学状态权威)
+Research State (唯一科学状态权威)
   | ResearchMap: Claim / Node / Finding / Gate / LifecycleAction
   | 校验、版本、ChangeSet、引用完整性
   v
@@ -116,7 +116,7 @@ ChangeSet、Attempt、Artifact、事件和审计记录；每个 turn 由 Harness
 摘要和运行时摘要；每类记录都有固定条数、文本长度和引用数量上限并返回截断标记，
 任意 LifecycleAction metadata 会缩减为 key，完整内容通过 State 查询获取。Context
 不是第二份科学状态，也不把完整历史或全部 Skill 正文复制进模型上下文。Skill 在
-SessionWorker 创建时加载并缓存正文，但默认 prompt 只放 name、description 和 location；
+SessionWorker 创建时加载并缓存正文，但默认 prompt 放 name、description、location，以及两个核心系统 Skill 的 `system` scope 标记；
 只有显式调用 Skill 时才把正文注入当前 turn。Capability 和
 Compute Environment 在方法选择或 launch 前按需查询。
 
@@ -137,7 +137,7 @@ Research Memory（持久记录）
 Agent Core 通过语言无关的 `ContextPort` 和 `MemoryPort` 暴露这条边界。
 Core 可以保存有界的 session 对话记忆，但不会写入 workspace 级 Research Memory。
 在 research 工作区中，`MemoryPort` 只能使用 session 范围；所有科研上下文都是由
-`KernelPort` 提供的只读投影，Research Kernel 仍然是 ResearchMap 和持久科研记忆的
+`ResearchStatePort` 提供的只读投影，Research State 仍然是 ResearchMap 和持久科研记忆的
 唯一权威。
 
 `ResearchMemoryService` 不缓存第二份 ResearchMap，也不持久化 ContextPack。
@@ -160,7 +160,7 @@ TRIGGER -> ORIENT(context) -> PLAN -> PREPARE -> EXECUTE
 生命周期动作通过规范的 ChangeSet 操作管理。`research.liveness` 只是有界的生命周期诊断
 投影，不是持久化下一步，也不负责关闭 turn。
 
-如果 active Node 没有合法 disposition，Kernel 返回 `decision_needed`。如果当前 focus
+如果 active Node 没有合法 disposition，Research State 返回 `decision_needed`。如果当前 focus
 已经有 active StrategyPlan，liveness 还会返回 `execution_ready=true`，Host 可以在同一
 turn 放行该计划对应的 prepare/execute；Agent 仍必须在结束 turn 前写入 checkpoint。
 没有 `execution_ready` 时，Host 只放行读取、规划、解释和 checkpoint 修复。Harness 只追加
@@ -175,7 +175,7 @@ Attempt 才会让 scope 进入 `waiting_external`，直到 Host/Monitor 产生�
 所有公开工具都通过统一 contract 暴露：workspace/session 由 Harness context 绑定，模型
 不能把请求重定向到另一个 root；`root` 只作为旧客户端的兼容断言。工具按 Read、Research
 Write、Execution/Artifact、Advisory、External Side Effect 分类，并声明 authority、
-replay/idempotency、所需 lifecycle phase 和输出 schema。Research Write 只能通过 Kernel
+replay/idempotency、所需 lifecycle phase 和输出 schema。Research Write 只能通过 Research State
 ChangeSet；Execution 工具只产生 Attempt/Artifact；Advisory 工具不拥有科学状态；Host
 只负责执行边界和恢复。
 Server extension loader 会在工具进入 Worker 前拒绝缺少完整 `label`、`description`、参数
@@ -206,9 +206,9 @@ Claim。Gate 记录结果，但不会自动修改 Node 或 Claim；解释和状�
 ## 独立科学能力与节点管理
 
 `analysis_run` 通过按需能力目录派发 22 项版本化独立分析能力；对外目录由
-`packages/tspi-runtime/tspi_runtime/compute/analysis.py` 组装，领域描述由
-`packages/tspi-runtime/tspi_runtime/analysis/catalog.py` 定义，领域实现位于
-`packages/tspi-runtime/tspi_runtime/analysis/`。结果绑定 Node、输入 digest、生成文件
+`packages/research-compute/research_compute/analysis.py` 组装，领域描述由
+`packages/research-compute/research_compute/catalog.py` 定义，领域实现位于
+`packages/research-compute/research_compute/analysis/`。结果绑定 Node、输入 digest、生成文件
 和候选事实；选定事实通过已有 `research_change`
 入口重算校验后登记。能力不选择下一科学步骤，不接受 Claim。化学网络使用带计量
 的超边并允许有环，独立于研究 Node DAG。
@@ -284,7 +284,7 @@ cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
 
 ## 其他契约
 
-ChangeSet 的操作定义位于文件系统 Research Kernel 使用的 ResearchMap operation catalog；
+ChangeSet 的操作定义位于文件系统 Research State 使用的 ResearchMap operation catalog；
 `compute_run` 对 local/remote 使用相同的四个公开操作：
 
 ```text
@@ -295,7 +295,7 @@ cancel   -> cancel
 ```
 
 右侧是 child runtime 的内部动作，不是额外的公开操作。对于
-`execution_target.kind=local` 和 `execution_target.kind=remote`，Research Kernel
+`execution_target.kind=local` 和 `execution_target.kind=remote`，Research State
 工作区始终是唯一规范存储：本地执行在 Attempt 的 execution 目录暂存输入并把输出
 收集回工作区，远程目录只是临时执行镜像，TS Web 不需要访问远程文件系统。推荐的
 `compute.toml` 将 local/remote 计算环境放在同一份 environments 目录中，每个环境在
@@ -326,7 +326,7 @@ operations/monitors/<monitor_id>/
 
 Monitor registration、event 和 delivery 使用 `ts-compute-monitor/1`、
 `ts-compute-monitor-event/1`、`ts-monitor-delivery/1` 合同。worker 的 tick 直接读取
-Compute Kernel 的 durable status：`completed` 只表示程序或 scheduler 已结束，`parsed`
+Compute runtime 的 durable status：`completed` 只表示程序或 scheduler 已结束，`parsed`
 才表示收集和解析完成；`unknown` 保持不确定性。状态没有变化时不会重复产生事件。
 
 事件 delivery 默认通过绑定 session 的 `next_run` 排队唤醒 Root，不打断当前推理。稳定

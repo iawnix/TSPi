@@ -1,4 +1,4 @@
-# ADR 0001: Phase And ResearchNode Kernel
+# ADR 0001: Phase And ResearchNode Research State
 
 [English](0001-phase-node-research-state.md) | [简体中文](0001-phase-node-research-state.zh-CN.md)
 
@@ -27,7 +27,7 @@ into workflow policy.
 
 ## Decision
 
-The research kernel uses three orthogonal map object types:
+The research state uses three orthogonal map object types:
 
 ```text
 ResearchPhase -> optional human navigation and roadmap grouping
@@ -74,7 +74,7 @@ recorded on the Gate and do not silently mutate the target status.
 
 The Root Agent selects scientific questions, methods, alternatives,
 counterexamples, backtracking, and stopping. ChangeSet callers supply
-workspace-local scientific object IDs. The Research Kernel validates those IDs,
+workspace-local scientific object IDs. The Research State validates those IDs,
 references, schemas, and graph invariants, applies ChangeSets, and persists
 canonical state. Compute, Render, Report, remote control, imports, and
 notifications are deterministic tools. Compute and Review child sessions are
@@ -86,7 +86,7 @@ bounded operational and advisory mechanisms, not scientific state owners.
 query that document directly; they may choose a focused view but do not create
 another scientific state store. The canonical paths are `workspace_manifest.json`,
 `research_map/context.json`, `lifecycle/liveness.json`, and
-`nodes/<node_id>/...`; `memory/index.json` is only a Kernel projection.
+`nodes/<node_id>/...`; `memory/index.json` is only a Research State projection.
 
 ## Invariants
 

@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { create_python_kernel_bridge } from "../../packages/research-state-bridge/python_kernel_bridge.mjs";
 
 /**
- * Route native Research tools through the new filesystem Kernel when the
+ * Route native Research tools through the new Research State filesystem boundary when the
  * workspace has the complete canonical manifest/state tuple. Partial or
  * legacy layouts are rejected by the public Python command boundary rather
  * than silently selecting a second ResearchMap authority.
@@ -105,7 +105,7 @@ export async function executeFilesystemResearchCommand(command, root, params = {
 
 // Keep the Native route's read model identical to
 // tspi_runtime.workspace.operation_registry.operation_catalog().  The catalog is
-// descriptive only; all writes still cross the Kernel change boundary.
+// descriptive only; all writes still cross the Research State change boundary.
 function researchOperationCatalog() {
   const contracts = [
     ["create_claim", ["id", "statement", "type"], ["created_at", "falsifiers", "metadata", "predictions", "status"]],

@@ -20,7 +20,7 @@ async function research_workspace(prefix) {
   return root;
 }
 
-test("Python Kernel rejects changes while admission is pending", async () => {
+test("Research State runtime rejects changes while admission is pending", async () => {
   const root = await research_workspace("research-state-pending-");
   try {
     const kernel = create_test_research_state({ workspace_root: root });
@@ -38,7 +38,7 @@ test("Python Kernel rejects changes while admission is pending", async () => {
   }
 });
 
-test("Python Kernel persists admission and allows changes after restart", async () => {
+test("Research State runtime persists admission and allows changes after restart", async () => {
   const root = await research_workspace("research-state-restart-");
   try {
     const first = create_test_research_state({ workspace_root: root });
@@ -74,7 +74,7 @@ test("Python Kernel persists admission and allows changes after restart", async 
   }
 });
 
-test("Python Kernel repairs a liveness-first admission without erasing its projection", async () => {
+test("Research State runtime repairs a liveness-first admission without erasing its projection", async () => {
   const root = await research_workspace("research-state-liveness-first-");
   try {
     const livenessPath = join(root, "lifecycle/liveness.json");
@@ -105,7 +105,7 @@ test("Python Kernel repairs a liveness-first admission without erasing its proje
   }
 });
 
-test("Python Kernel accepts semantic Node identifiers used by execution bindings", async () => {
+test("Research State runtime accepts semantic Node identifiers used by execution bindings", async () => {
   const root = await research_workspace("research-state-semantic-node-");
   try {
     const kernel = create_test_research_state({ workspace_root: root });
@@ -126,7 +126,7 @@ test("Python Kernel accepts semantic Node identifiers used by execution bindings
   }
 });
 
-test("Python Kernel keeps semantic refs and durable checkpoint liveness aligned", async () => {
+test("Research State runtime keeps semantic refs and durable checkpoint liveness aligned", async () => {
   const root = await research_workspace("research-state-semantic-liveness-");
   try {
     const kernel = create_test_research_state({ workspace_root: root });
@@ -170,7 +170,7 @@ test("Python Kernel keeps semantic refs and durable checkpoint liveness aligned"
   }
 });
 
-test("Python Kernel marks a focused active StrategyPlan executable before checkpoint", async () => {
+test("Research State runtime marks a focused active StrategyPlan executable before checkpoint", async () => {
   const root = await research_workspace("research-state-strategy-ready-");
   try {
     const kernel = create_test_research_state({ workspace_root: root });
@@ -203,7 +203,7 @@ test("Python Kernel marks a focused active StrategyPlan executable before checkp
   }
 });
 
-test("kernel port restores durable admission after the Host process is recreated", async () => {
+test("Research State port restores durable admission after the Host process is recreated", async () => {
   const root = await research_workspace("research-state-port-restart-");
   try {
     const first = create_research_state_port(create_test_research_state({ workspace_root: root }));
@@ -226,7 +226,7 @@ test("kernel port restores durable admission after the Host process is recreated
   }
 });
 
-test("Python Kernel records findings, gates, attempts, artifacts and interpretations", async () => {
+test("Research State runtime records findings, gates, attempts, artifacts and interpretations", async () => {
   const root = await research_workspace("research-state-science-");
   try {
     const kernel = create_test_research_state({ workspace_root: root });
@@ -253,7 +253,7 @@ test("Python Kernel records findings, gates, attempts, artifacts and interpretat
   }
 });
 
-test("Python Kernel enforces Attempt transitions and links outputs to evidence", async () => {
+test("Research State runtime enforces Attempt transitions and links outputs to evidence", async () => {
   const root = await research_workspace("research-state-attempt-lifecycle-");
   try {
     const kernel = create_test_research_state({ workspace_root: root });

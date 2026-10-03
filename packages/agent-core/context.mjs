@@ -49,7 +49,7 @@ function assert_identity(request, identity) {
 
 /**
  * Build a bounded, disposable Agent context from session memory and an
- * optional read-only Research Kernel projection. The builder never writes the
+ * optional read-only Research State projection. The builder never writes the
  * projection and never treats it as a second scientific state store.
  */
 export function create_context_builder({

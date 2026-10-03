@@ -39,7 +39,7 @@
   <text x="60" y="99" class="subtitle">From a falsifiable scientific claim to validated, provenance-preserving mechanistic conclusions</text>
 
   <text x="60" y="147" class="section">SCIENTIFIC DIRECTION</text>
-  <text x="390" y="147" class="section">RESEARCH KERNEL &#183; CANONICAL STATE</text>
+  <text x="390" y="147" class="section">RESEARCH STATE &#183; CANONICAL STATE</text>
   <text x="1190" y="147" class="section">DIRECT MAP VIEW</text>
 
   <!-- Root Agent -->
@@ -56,16 +56,16 @@
   <text x="84" y="364" class="small inverse" opacity=".85">scientific interpretation and control</text>
   <text x="84" y="388" class="small inverse" opacity=".85">never delegated to a plugin</text>
 
-  <!-- Research Kernel -->
+  <!-- Research State -->
   <g class="card">
     <rect x="390" y="170" width="730" height="430" rx="18" fill="#EEF8F6" stroke="#65AAA2" stroke-width="2"/>
   </g>
   <circle cx="429" cy="211" r="17" fill="#CDEAE5"/>
   <path d="M420 211h18M429 202v18" stroke="#1D8078" stroke-width="2.6" stroke-linecap="round"/>
-  <text x="458" y="218" class="heading">Research Kernel</text>
+  <text x="458" y="218" class="heading">Research State</text>
   <text x="428" y="247" class="body">schema, references, revisions, provenance, and transactional mutation</text>
 
-  <!-- Kernel state cards -->
+  <!-- Research State state cards -->
   <g>
     <rect x="428" y="278" width="203" height="145" rx="12" fill="#FFFFFF" stroke="#1D8078" stroke-width="1.8"/>
     <circle cx="458" cy="310" r="14" fill="#D8F0EC"/>
@@ -114,7 +114,7 @@
   <text x="1218" y="294" class="body">dependencies &#183; outcomes &#183; revision history</text>
   <line x1="1218" y1="320" x2="1490" y2="320" stroke="#D5E2E5" stroke-width="1"/>
   <text x="1218" y="351" class="small-strong">canonical map state</text>
-  <text x="1218" y="376" class="small">same ResearchMap used by the Kernel</text>
+  <text x="1218" y="376" class="small">same ResearchMap used by Research State</text>
 
   <!-- Main connectors -->
   <path d="M345 287H390" class="flow"/>

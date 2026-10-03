@@ -38,7 +38,7 @@ test("kernel bridge binds workspace and forwards all port methods over injected 
   await assert.rejects(bridge.read_context({ workspace_root: "/tmp/other" }), /workspace_root_mismatch/);
 });
 
-test("Kernel port preserves optional bridge cleanup", async () => {
+test("Research State port preserves optional bridge cleanup", async () => {
   let closed = false;
   const port = create_research_state_port({
     async read_context() { return { workspace_id: "workspace_1" }; },
@@ -149,13 +149,17 @@ test("local Python bridge mutates the new context/liveness workspace without res
     const context = await restarted.read_context();
     assert.equal(context.nodes[0].id, "node_1");
     assert.deepEqual(context.focus, { claim_ids: ["claim_1"], node_ids: ["node_1"] });
-    assert.equal((await restarted.turn({ operation: "orient" })).accepted, true);
     assert.equal((await restarted.turn({
+      protocol: "research_turn_request", version: 1, request_id: "turn_orient_1",
+      operation: "orient", input: {},
+    })).protocol, "research_turn_result");
+    assert.equal((await restarted.turn({
+      protocol: "research_turn_request", version: 1, request_id: "turn_checkpoint_2",
       principal: "root_agent",
       authority: "kernel_write",
       operation: "checkpoint",
       input: { checkpoint_id: "checkpoint_2", disposition: "continue_required" },
-    })).checkpoint_id, "checkpoint_2");
+    })).output.checkpoint_id, "checkpoint_2");
     await restarted.close();
 
     await assert.rejects(access(join(root, "research_map.json")), /ENOENT/);

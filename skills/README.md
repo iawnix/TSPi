@@ -3,7 +3,7 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 TSPi provides a domain-neutral Research Harness with 17 focused Skills in the
-current computational-chemistry bundle. Core lifecycle Skills remain under `skills/`; provider-bound Skills live beside their Provider under `extensions/`. The Research Kernel Skill owns the
+current computational-chemistry bundle. `orchestration` and `research-state` are the two Core System Skills: their summaries are always included in the system prompt and their full references are available to the Agent. Provider-bound Skills live beside their Provider under `extensions/`. The Research State Skill owns the
 canonical ResearchMap contract; orchestration chooses the next bounded task;
 scientific and delivery Skills handle one method or output concern without
 redefining state.
@@ -33,7 +33,7 @@ research domains. The bundled transition-state study Skills keep their own
 boundaries: candidate generation creates a structure, TS validation establishes
 saddle evidence, IRC assigns endpoints, and energetics compares corrected
 quantities. Root records verified outputs in the same ResearchMap through the
-Kernel.
+Research State.
 
 Each Skill has matching English and Chinese entrypoints. Every detailed
 reference also has an English and Simplified Chinese version; each entrypoint

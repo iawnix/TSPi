@@ -1,10 +1,10 @@
 /**
- * Host-owned Research Kernel factory.
+ * Host-owned Research State factory.
  *
- * A Kernel module is loaded once by the App Server, while workspaces are
+ * A Research State module is loaded once by the App Server, while workspaces are
  * selected by individual requests.  This factory therefore returns a
  * workspace-aware ResearchStatePort that validates each research manifest
- * before binding the canonical Python filesystem Kernel bridge for that root.
+ * before binding the canonical Python Research State filesystem boundary bridge for that root.
  */
 
 import { readFile } from "node:fs/promises";
@@ -15,7 +15,7 @@ import { create_python_kernel_bridge } from "./python_kernel_bridge.mjs";
 import { validate_workspace_files } from "../agent-core/workspace.mjs";
 
 export const RESEARCH_KERNEL_FACTORY_VERSION = "research_state_factory_1";
-// The filesystem Research Kernel is implemented by the Python workspace
+// The Research State filesystem boundary is implemented by the Python workspace
 // boundary.  Node owns transport and port validation only; it must not carry
 // a second state-machine implementation.
 export const RESEARCH_KERNEL_BACKENDS = Object.freeze(["python"]);
@@ -61,7 +61,7 @@ function parse_options(value) {
 function backend_name(value) {
   const normalized = value === undefined || value === null ? "python" : value;
   if (!RESEARCH_KERNEL_BACKENDS.includes(normalized)) {
-    throw new TypeError(`unsupported research kernel backend: ${String(value)}`);
+    throw new TypeError(`unsupported Research State backend: ${String(value)}`);
   }
   return normalized;
 }
@@ -104,7 +104,7 @@ function adapter_options(options) {
 }
 
 /**
- * Create a Kernel Port suitable for `RESEARCH_AGENT_KERNEL_MODULE`.
+ * Create a Research State Port suitable for `RESEARCH_AGENT_KERNEL_MODULE`.
  *
  * `workspace_root`/`workspace_id` may be supplied for a single-workspace
  * deployment.  When omitted, every request must provide `workspace_root` and

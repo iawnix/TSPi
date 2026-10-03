@@ -6,7 +6,7 @@
 
 ## 决定
 
-TSPi 是核心产品和必需仓库，拥有 Root Agent 集成、Research Kernel、规范工作区、
+TSPi 是核心产品和必需仓库，拥有 Root Agent 集成、Research State、规范工作区、
 确定性计算/产物/报告/远程/通知机制、TS Web ResearchMap provider、Pi extensions、
 组件兼容性和安装器。
 
@@ -16,7 +16,7 @@ session broker，也不重新定义 Pi wire protocol。`components/ts-web/` 是�
 ResearchMap，不得导入 TSPi 私有 Python 模块或直接读取工作区物理路径。
 
 ```text
-TSPi 核心仓库       -> kernel、Root runtime、ResearchMap provider、suite installer
+TSPi 核心仓库       -> Research State runtime、Root runtime、ResearchMap provider、suite installer
 ts-phone 独立仓库   -> 移动客户端和发布工具
 components/ts-web/  -> 浏览器 ResearchMap client 和 HTTP/UI
 ```
@@ -35,7 +35,7 @@ map 上的传输便利接口，不构造另一套 view 或 graph 模型，也不
 变更入口。
 
 发布清单是 payload 的单一来源，包检查和安装器必须验证同一清单。开发测试和生成文件
-不应进入生产归档。当前目录布局将 Kernel 放在 `packages/tspi-runtime/`，
+不应进入生产归档。当前目录布局将 Research State 放在 `packages/tspi-runtime/`，
 TypeScript runtime 放在 `packages/agent-runtime/`，原生 App Server 放在 `apps/`。
 
 ## Review 边界

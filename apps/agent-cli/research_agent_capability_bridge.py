@@ -3,7 +3,7 @@
 
 The output is consumed only by the trusted App Server Host. It contains
 environment bindings for readiness diagnostics; calculation execution remains
-inside the Python Native Kernel and never crosses into a JavaScript provider.
+inside the Python Native Research State runtime and never crosses into a JavaScript provider.
 """
 
 from __future__ import annotations

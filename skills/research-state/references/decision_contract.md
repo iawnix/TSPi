@@ -3,7 +3,7 @@
 `research_change` is the only public mutation boundary for `ResearchMap`. Its
 public payload contains `rationale`, optional `basisRefs`, optional
 `expectedRevision`, and a non-empty `operations` array. The Host attaches
-`principal=root_agent` and `authority=kernel_write` to the internal Kernel
+`principal=root_agent` and `authority=kernel_write` to the internal Research State
 request; those authority fields are not public tool parameters. Query
 `research_read mode=operations` for the current catalog before using an unfamiliar
 operation.
@@ -33,7 +33,7 @@ single ChangeSet; unrelated changes should use separate requests.
 
 ## Commit Rules
 
-The Kernel locks the workspace, loads canonical context, checks
+The Research State locks the workspace, loads canonical context, checks
 `expected_revision` when present, applies operations to a detached copy, runs
 the full map validator, increments `revision`, and atomically replaces context,
 liveness, memory, and manifest revision. A rejected request does not alter the

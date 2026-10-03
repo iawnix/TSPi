@@ -1,8 +1,8 @@
-"""Kernel-owned metadata for execution attempts and research evidence.
+"""Research State-owned metadata for execution attempts and research evidence.
 
 Raw files remain in the workspace or an object store.  These records provide
 the stable identity, provenance, and admissible links that let the Research
-Kernel reason about evidence without loading large payloads into the map or a
+Research State reason about evidence without loading large payloads into the map or a
 turn context.
 """
 
@@ -15,7 +15,7 @@ from .model import ClaimGate, NodeGate, ResearchMap, ResearchModelError
 
 
 class EvidenceModelError(ResearchModelError):
-    """Raised when an evidence record violates its Kernel contract."""
+    """Raised when an evidence record violates its Research State contract."""
 
 
 def validate_artifact_refs(

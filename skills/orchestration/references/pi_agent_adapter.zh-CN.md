@@ -1,6 +1,6 @@
 # Pi 运行时适配器
 
-Pi 是 TSPi 的传输与交互 Host。Host 将 Native 计算生命周期路由到确定性的 Python Kernel/compute service；Pi 读取规范 ResearchMap。
+Pi 是 TSPi 的传输与交互 Host。Host 将 Native 计算生命周期路由到确定性的 Research State 与 Compute service；Pi 读取规范 ResearchMap。
 
 ## 公共接口
 

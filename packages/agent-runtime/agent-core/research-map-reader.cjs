@@ -14,7 +14,7 @@ const COMMON_DIRECTORIES = ["inputs", "artifacts", "runs", "logs"];
 const RESEARCH_DIRECTORIES = ["research_map", "memory", "lifecycle", "checkpoints", "nodes", "evidence", "monitor", "environments"];
 
 // The Agent Runtime consumes the same canonical read model as the Research
-// Kernel. It must never silently fall back to research_map.json, because that
+// Research State. It must never silently fall back to research_map.json, because that
 // would create a second authority after a workspace has migrated.
 function readResearchMap(rootValue) {
   const root = resolve(rootValue);
@@ -85,7 +85,7 @@ function readResearchMap(rootValue) {
   }
   // The filesystem context is the storage document; all Runtime consumers
   // receive the transport-neutral research-map/1 projection.  Keep the
-  // collection surface identical to the Kernel seed so a missing collection
+  // collection surface identical to the Research State seed so a missing collection
   // is reported as a corrupt workspace instead of being silently treated as
   // an empty list.
   for (const field of COLLECTIONS) {

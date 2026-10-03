@@ -233,7 +233,7 @@ def _load_state(
         raise AgentWorkspaceError(str(exc)) from exc
     try:
         # Keep the Python bridge on the same closed-world document/layout
-        # contract as the Native filesystem Kernel. This validates the
+        # contract as the Native Research State boundary. This validates the
         # memory projection, genesis checkpoint, physical directories, and
         # retired-file rejection before any command reads or writes state.
         _validate_layout(manifest, path, allow_partial_admission=allow_partial_admission)
@@ -283,7 +283,7 @@ def _load_state(
     # Context/liveness are committed before the final manifest replacement.
     # If Host crashes in that small window, keep the pair readable so the
     # next admission call can finalize the manifest. A ready manifest still
-    # requires an admitted Kernel state.
+    # requires an admitted Research State state.
     if manifest_state == "ready" and context.get("lifecycle_state") != ADMITTED:
         raise AgentWorkspaceError("research_manifest_state_mismatch")
     context_revision = context.get("revision", 0)
@@ -439,7 +439,7 @@ def _liveness_projection(
 
     The JS lifecycle controller is only a per-run admission guard.  This
     projection is the restart-safe source used by the turn-end hook, so a
-    resumed worker sees the same disposition that was written by the Kernel.
+    resumed worker sees the same disposition that was written by the Research State.
     """
 
     result = dict(liveness)
@@ -497,7 +497,7 @@ def _liveness_projection(
     node_ids = [item for item in focus.get("node_ids", []) if isinstance(item, str)]
     claim_ids = [item for item in focus.get("claim_ids", []) if isinstance(item, str)]
 
-    # Operational Attempts are the Kernel-owned bridge between a Research
+    # Operational Attempts are the Research State-owned bridge between a Research
     # Node and the Host/Monitor plane. A started/running Attempt is an
     # external wait; prepared or terminal records remain an Agent decision
     # point. Orphaned files under nodes/ cannot advance lifecycle state.
@@ -1655,7 +1655,7 @@ def turn(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, A
     if operation == "checkpoint":
         checkpoint_request = dict(request)
         # The turn router calls the operation input ``input``. Keep the
-        # Kernel boundary aligned with that single transport envelope while
+        # Research State boundary aligned with that single transport envelope while
         # preserving the snake_case checkpoint fields.
         envelope = request["input"]
         if "checkpoint" not in checkpoint_request and isinstance(envelope, dict):

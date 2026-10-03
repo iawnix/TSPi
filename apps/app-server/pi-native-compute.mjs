@@ -191,7 +191,7 @@ export function createComputeTool(options = {}) {
               });
             }
           } catch (recordError) {
-            error = new Error(`${errorMessage(error)}; Research Kernel Attempt settlement failed: ${errorMessage(recordError)}`, { cause: error });
+            error = new Error(`${errorMessage(error)}; Research State Attempt settlement failed: ${errorMessage(recordError)}`, { cause: error });
           }
         }
         const compactActions = compactCompletedActions(actions);
@@ -260,11 +260,11 @@ export function createNativeComputeLifecycle(options = {}) {
 
 async function recordResearchAttempt(kernel, root, request, binding, operation, details = {}) {
   if (!kernel || typeof kernel.read_context !== "function" || typeof kernel.apply_change !== "function") {
-    throw new Error("research compute requires a Research Kernel ledger");
+    throw new Error("research compute requires a Research State ledger");
   }
   const context = await kernel.read_context({ workspace_root: root });
   const workspaceId = context?.workspace_id;
-  if (typeof workspaceId !== "string" || !workspaceId) throw new Error("Research Kernel context has no workspace_id");
+  if (typeof workspaceId !== "string" || !workspaceId) throw new Error("Research State context has no workspace_id");
   const attemptId = request.intentId || binding.intentId;
   if (typeof attemptId !== "string" || !attemptId) throw new Error("compute binding has no intent_id for Attempt ledger");
   const expectedRevision = context.revision;
@@ -290,9 +290,9 @@ async function recordResearchAttempt(kernel, root, request, binding, operation, 
     const existing = Array.isArray(context.attempts)
       ? context.attempts.find((item) => item?.id === attemptId)
       : null;
-    if (!existing) throw new Error(`Research Kernel has no Attempt for compute intent ${attemptId}`);
+    if (!existing) throw new Error(`Research State has no Attempt for compute intent ${attemptId}`);
     if (existing.node_id !== request.nodeId) {
-      throw new Error(`Research Kernel Attempt ${attemptId} belongs to another Node`);
+      throw new Error(`Research State Attempt ${attemptId} belongs to another Node`);
     }
     const terminal = ["succeeded", "failed", "timed_out", "cancelled", "completed"];
     if (terminal.includes(existing.state) && existing.state !== details.state) {
@@ -302,7 +302,7 @@ async function recordResearchAttempt(kernel, root, request, binding, operation, 
       if (request.operation === "inspect" && details.state === "running") {
         return { attempt_id: attemptId, binding, revision: expectedRevision, unchanged: true };
       }
-      throw new Error(`Research Kernel Attempt ${attemptId} is already terminal (${existing.state})`);
+      throw new Error(`Research State Attempt ${attemptId} is already terminal (${existing.state})`);
     }
   }
   const change = operation === "create"
@@ -331,7 +331,7 @@ async function recordResearchAttempt(kernel, root, request, binding, operation, 
 
 async function requireExistingResearchAttempt(kernel, root, request, binding) {
   if (!kernel || typeof kernel.read_context !== "function") {
-    throw new Error("research compute requires a Research Kernel ledger");
+    throw new Error("research compute requires a Research State ledger");
   }
   const context = await kernel.read_context({ workspace_root: root });
   const attemptId = request.intentId || binding.intentId;
@@ -339,12 +339,12 @@ async function requireExistingResearchAttempt(kernel, root, request, binding) {
     ? context.attempts.find((item) => item?.id === attemptId)
     : null;
   if (!attempt) {
-    const error = new Error(`Research Kernel has no Attempt for compute intent ${attemptId}`);
+    const error = new Error(`Research State has no Attempt for compute intent ${attemptId}`);
     error.code = "research_attempt_not_found";
     throw error;
   }
   if (attempt.node_id !== request.nodeId) {
-    const error = new Error(`Research Kernel Attempt ${attemptId} belongs to another Node`);
+    const error = new Error(`Research State Attempt ${attemptId} belongs to another Node`);
     error.code = "research_attempt_scope_mismatch";
     throw error;
   }
@@ -777,7 +777,7 @@ function buildCalculationRequest(request) {
       artifact_id: item.artifactId,
     })),
     parameters: request.parameters || {},
-    // This is an internal request envelope. The kernel resolves the selected
+    // This is an internal request envelope. The Research State resolves the selected
     // environment to local/remote execution and scheduler details.
     execution: { environment: execution.environment },
     dry_run: false,

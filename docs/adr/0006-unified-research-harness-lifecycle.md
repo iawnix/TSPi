@@ -7,13 +7,13 @@ Accepted.
 ## Decision
 
 TSPi uses one domain-neutral Research Turn boundary for ordinary prompts, Monitor wakes,
-recovery, and retries. The Agent is the only scientific decision-maker. Research Kernel is
+recovery, and retries. The Agent is the only scientific decision-maker. Research State is
 the only scientific state authority. Host/Harness owns lifecycle, permissions, workspace and
 session binding, tool contracts, recovery, and bounded follow-up. Monitor only observes external
 Attempts and queues operational wakes. Compute/Workspace Runtime owns Attempt and Artifact
 execution records and never writes scientific Findings or Claims directly.
 
-The Kernel command `research.turn` uses the `research_turn_request` version 1 request
+The Research State command `research.turn` uses the `research_turn_request` version 1 request
 and `research_turn_result` version 1 result for `start`, `orient`, `checkpoint`, `end`, and `wake`. It records
 operational turn audit under `operations/research_turns.jsonl`; these events are not ResearchMap
 facts. A supplied `request_id` is an idempotency key: an exact retry is marked `replayed` and

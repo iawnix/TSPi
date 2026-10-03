@@ -8,6 +8,7 @@ import {
 } from "../../packages/agent-runtime/host-api/system-prompt.mjs";
 
 const SYSTEM_PROMPT_CONTRACT = createPublicToolContracts(Type).systemPrompt;
+const CORE_SKILL_NAMES = new Set(["orchestration", "research-state"]);
 
 export function createSystemPromptTool(manifestOrResolver) {
   return createTool(manifestOrResolver, SYSTEM_PROMPT_CONTRACT);
@@ -44,6 +45,8 @@ function modelVisibleSkillSection(skills) {
         location: skill.filePath,
         digest: typeof skill.digest === "string" ? skill.digest : null,
         provenance_schema: skill.provenance_schema || "tspi-skill-provenance/1",
+        scope: CORE_SKILL_NAMES.has(skill.name) ? "system" : "extension",
+        always_visible: CORE_SKILL_NAMES.has(skill.name),
       })),
     },
   });

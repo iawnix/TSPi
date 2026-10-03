@@ -228,11 +228,11 @@ def _has_new_research_state(source_root: str | Path) -> bool:
 
 
 class _FilesystemResearchMap:
-    """Read-only ResearchMap projection for the new filesystem Kernel.
+    """Read-only ResearchMap projection for the new Research State filesystem boundary.
 
-    The Web contract still speaks ``research-map/1`` while the new Kernel
+    The Web contract still speaks ``research-map/1`` while the new Research State
     stores its context as ``research_map_context_1``.  This adapter translates
-    only the read shape; all mutations remain owned by the filesystem Kernel.
+    only the read shape; all mutations remain owned by the Research State filesystem boundary.
     """
 
     def __init__(self, source_root: str | Path) -> None:

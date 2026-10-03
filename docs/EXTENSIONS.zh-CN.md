@@ -1,6 +1,6 @@
 # 已安装扩展合同
 
-TSPi 将 Agent、Research Kernel 与具体计算软件解耦。已安装扩展是带有
+TSPi 将 Agent、Research State 与具体计算软件解耦。已安装扩展是带有
 `manifest.json` 的目录；App Server 从 `TSPI_EXTENSION_MANIFESTS`（按系统路径
 分隔符分割）、Host 显式配置，或包内所有 `extensions/*/manifest.json` 中发现
 这些 manifest。

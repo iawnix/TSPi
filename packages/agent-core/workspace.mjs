@@ -36,7 +36,7 @@ const RESEARCH_DIRECTORIES = Object.freeze([
 
 /**
  * Validate the immutable workspace identity contract shared by Host, App
- * Server and Kernel readers.  Keeping this check here prevents each boundary
+ * Server and Research State readers.  Keeping this check here prevents each boundary
  * from accepting a different subset of the manifest fields.
  */
 export function validate_workspace_manifest(manifest, root, { allow_initializing = false } = {}) {
@@ -284,7 +284,7 @@ function research_seed(manifest) {
 }
 
 /**
- * File-system workspace boundary for the single Research Kernel workspace.
+ * File-system workspace boundary for the single Research State workspace.
  */
 export function create_workspace_initializer() {
   async function initialize_workspace({ workspace_root, workspace_id, workspace_mode = "research" } = {}) {
@@ -440,7 +440,7 @@ export function create_workspace_initializer() {
       }
       return manifest;
     }
-    // Kernel admission may have completed before a Host crash interrupted
+    // Research State admission may have completed before a Host crash interrupted
     // the manifest commit. Treat that durable pair as a recoverable commit
     // point and only finalize the manifest on retry.
     if (!context_admitted) {

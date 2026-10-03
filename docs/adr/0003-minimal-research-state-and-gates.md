@@ -9,7 +9,7 @@
 
 `ResearchState` is the transaction and integrity boundary for one canonical
 `ResearchMap`. The map is a typed aggregate serialized in
-`research_map/context.json`; `memory/index.json` is only a Kernel-owned bounded
+`research_map/context.json`; `memory/index.json` is only a Research State-owned bounded
 metadata/lifecycle projection. Retired SQLite/JSON files are diagnostic inputs,
 never a runtime authority. Execution records under `nodes/<node_id>/` remain
 outside the scientific aggregate, while bounded decision and evidence metadata
@@ -52,7 +52,7 @@ ChangeSet. Gate evaluation never silently mutates either target.
 
 ## Responsibilities
 
-The Kernel validates references and dependency cycles, enforces Node state
+The Research State validates references and dependency cycles, enforces Node state
 transitions, applies optimistic revisions, and atomically commits the canonical
 filesystem context, liveness, and metadata projection. It does not select a method,
 run a Backend, submit a remote job, or infer a Claim status from tool success.
@@ -77,7 +77,7 @@ scientific object types in the map.
 - `research_map/context.json` is the canonical durable scientific state;
   `memory/index.json` is a bounded projection and never a second authority.
 - Decision, Attempt, Artifact, and Evidence Link metadata is indexed once in
-  the Kernel context/projection; raw logs and binary payloads stay in external stores.
+  the Research State context/projection; raw logs and binary payloads stay in external stores.
 
 ## Consequences
 
@@ -85,5 +85,5 @@ The old scientific registry set and view/graph protocol are deliberately not
 compatible with this design. TS Web, RootAgent, reports, and future clients
 must consume `ResearchMap` serialization and the bounded Research Memory read
 models. Operational tooling may keep durable Attempt and Artifact files, but
-only the Kernel can register their manifests and promote typed Evidence Links
+only the Research State can register their manifests and promote typed Evidence Links
 to Findings or Gate evidence.

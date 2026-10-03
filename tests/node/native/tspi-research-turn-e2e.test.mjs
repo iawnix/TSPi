@@ -98,7 +98,7 @@ async function createResearchFixture(root) {
         type: "create_node",
         id: "node_1",
         title: "Generic external observation",
-        objective: "Exercise the domain-neutral Agent, Kernel, Host, and Monitor lifecycle.",
+        objective: "Exercise the domain-neutral Agent, Research State, Host, and Monitor lifecycle.",
         claim_ids: ["claim_1"],
         dependency_ids: [],
       },

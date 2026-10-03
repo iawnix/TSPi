@@ -26,7 +26,7 @@ from .refs import NODE_ID, ACTIVITY_ID, CALCULATION_ID, CLAIM_ID, MONITOR_EVENT_
 # intent that never left ``prepared`` has no external effect and is safe to
 # abandon by closing its Node; submitted/queued/running/unknown and
 # completed-but-unparsed Attempts are not.  Keeping this rule here gives the
-# Kernel, Context, and Web the same operational interpretation without making
+# Research State, Context, and Web the same operational interpretation without making
 # the browser infer it from raw files.
 _TERMINAL_ATTEMPT_STATES = frozenset({"failed", "stopped", "parsed"})
 _COMPLETION_SAFE_ATTEMPT_STATES = frozenset({"prepared", *_TERMINAL_ATTEMPT_STATES})

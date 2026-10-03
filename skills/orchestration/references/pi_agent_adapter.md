@@ -1,7 +1,7 @@
 # Pi Runtime Adapter
 
 Pi is a transport and interaction host for TSPi. The Host routes the Native calculation lifecycle to the
-deterministic Python Kernel/compute services; Pi reads the canonical ResearchMap.
+deterministic Research State and Compute services; Pi reads the canonical ResearchMap.
 
 ## Public Surface
 

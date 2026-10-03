@@ -2,7 +2,7 @@
 
 TSPi uses an installation-managed Python runtime shared by workspaces: a
 hash-addressed Conda environment for scientific dependencies and a venv for the
-selected kernel wheel.
+selected `tspi-runtime` wheel.
 
 `scripts/install_env.py` binds package root, environment-spec digest,
 interpreter, required render dependencies, runtime manifest, and environment

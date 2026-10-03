@@ -35,7 +35,7 @@ export interface ModelPort {
   ): AsyncIterable<Record<string, unknown>> | Promise<AsyncIterable<Record<string, unknown>>>;
 }
 
-/** Ephemeral turn context built from memory and optional Kernel projections. */
+/** Ephemeral turn context built from memory and optional Research State projections. */
 export interface ContextPort {
   readonly protocol_version: "context_port_1";
   build(request: Readonly<Record<string, unknown>>): Promise<Record<string, unknown>>;
@@ -43,7 +43,7 @@ export interface ContextPort {
 
 /**
  * Session memory boundary. Implementations must not treat this as a second
- * ResearchMap. Research-mode workspace memory is Kernel-owned and cannot be
+ * ResearchMap. Research-mode workspace memory is Research State-owned and cannot be
  * written through this generic port.
  */
 export interface MemoryPort {

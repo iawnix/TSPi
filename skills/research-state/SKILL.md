@@ -3,7 +3,7 @@ name: research-state
 description: Read, validate, and atomically update the canonical TSPi ResearchMap of Phases, Claims, Nodes, Findings, Gates, relations, and focus.
 ---
 
-# TSPi Research Kernel
+# TSPi Research State
 
 [Chinese version](SKILL.zh-CN.md)
 
@@ -19,7 +19,7 @@ array collections `phases`, `claims`, `nodes`, `findings`, `gates`,
 and `focus.node_ids` are arrays. `memory/index.json` uses
 `research_memory_index_1` and is only a metadata/lifecycle projection, never a
 second ResearchMap authority. Decision records and the Evidence Registry are
-Kernel-owned metadata, exposed through `research_read` modes `decisions` and
+Research State-owned metadata, exposed through `research_read` modes `decisions` and
 `evidence` (the internal command IDs are `research.decisions` and
 `research.evidence`).
 
@@ -33,7 +33,7 @@ Read with the narrowest `research_read` mode that answers the question. Query
 `mode=operations` before an unfamiliar write. Submit every mutation as one
 explicit ChangeSet through `research_change`, using `expectedRevision` when a
 stale write would be unsafe. The Host attaches `principal=root_agent` and
-`authority=kernel_write` to the internal Kernel request; these authority fields
+`authority=kernel_write` to the internal Research State request; these authority fields
 are not public tool parameters. Never edit canonical workspace documents directly or target a legacy
 JSON/SQLite store.
 
@@ -49,7 +49,7 @@ For a turn, prefer `context` or `liveness`; expand to `detail`, `decisions`,
 it. Attempts and Artifacts are operational evidence: register their manifests
 and typed links before citing them in an Interpretation, Finding, or Gate.
 
-The Kernel validates references, indexes, graph acyclicity, states, Gate rules,
+The Research State validates references, indexes, graph acyclicity, states, Gate rules,
 and the complete post-change map before committing one revision. Findings and
 Gate evaluations never change Node or Claim status implicitly. Every attached
 NodeGate must have a latest `pass` evaluation before a Node closes with the

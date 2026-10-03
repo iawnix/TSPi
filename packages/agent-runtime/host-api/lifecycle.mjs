@@ -1,7 +1,7 @@
 /**
  * Transport-neutral helpers for the Research Turn boundary.
  *
- * The Kernel remains the authority for lifecycle state. These functions only
+ * The Research State remains the authority for lifecycle state. These functions only
  * reduce its bounded liveness read model into a Host/adapter follow-up.
  */
 
@@ -42,7 +42,7 @@ export function toolEventIsError(event) {
 
 const DEFAULT_TOOL_PHASES = Object.freeze(["orient", "advance", "prepare", "execute", "interpret", "checkpoint"]);
 
-// Durable Research Kernel liveness is a semantic boundary, not a generic
+// Durable Research State liveness is a semantic boundary, not a generic
 // `read`/`write` switch. Keep the sets here in sync with the public tool
 // metadata registry so a newly named effect cannot accidentally bypass a
 // blocked or decision-needed workspace.
@@ -142,7 +142,7 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
     // launch operation remains an execution side effect and is still blocked.
     const existingAttemptOperation = isExistingAttemptOperation(toolName, args);
     if (lifecycle === "blocked" || disposition === "blocked") {
-      // The Kernel permits a checkpoint to replace a blocked disposition. A
+      // The Research State permits a checkpoint to replace a blocked disposition. A
       // checkpoint is represented by lifecycle_write plus the checkpoint
       // phase; all other mutations and side effects remain stopped.
       const isRecoveryCheckpoint = isDecisionWrite && targetPhase === "checkpoint";
@@ -150,7 +150,7 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
         return {
           accepted: false,
           code: "research_lifecycle_blocked",
-          reason: "durable Research Kernel liveness is blocked",
+          reason: "durable Research State liveness is blocked",
           ...snapshot(),
         };
       }
@@ -163,12 +163,12 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
         return {
           accepted: false,
           code: "research_user_input_required",
-          reason: "durable Research Kernel liveness requires user input",
+          reason: "durable Research State liveness requires user input",
           ...snapshot(),
         };
       }
     } else if (lifecycle === "decision_needed" || lifecycle === "waiting_external") {
-      // The Kernel exposes `execution_ready` after an active StrategyPlan
+      // The Research State exposes `execution_ready` after an active StrategyPlan
       // covers the focused scope. That is the same decision boundary enforced
       // by the filesystem adapter; a checkpoint is still required before the
       // turn ends, but execution must be able to follow strategy in the same
@@ -180,8 +180,8 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
           accepted: false,
           code: lifecycle === "waiting_external" ? "research_waiting_external" : "research_decision_required",
           reason: lifecycle === "waiting_external"
-            ? "durable Research Kernel liveness is waiting for an external Attempt"
-            : "durable Research Kernel liveness requires a scientific decision",
+            ? "durable Research State liveness is waiting for an external Attempt"
+            : "durable Research State liveness requires a scientific decision",
           ...snapshot(),
         };
       }

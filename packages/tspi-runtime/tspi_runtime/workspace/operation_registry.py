@@ -1,6 +1,6 @@
 """Canonical ResearchMap ChangeSet operation catalog.
 
-The filesystem Research Kernel is the source of mutation semantics. This module only
+The Research State filesystem boundary is the source of mutation semantics. This module only
 describes the small public envelope used by callers that need to inspect the
 available operation fields; it intentionally has no second compiler or state
 model.
@@ -108,7 +108,7 @@ def input_operation_names() -> frozenset[str]:
 
 
 def operation_catalog(operation: str | None = None) -> dict[str, object]:
-    """Return the same lightweight field catalog exposed by the Kernel."""
+    """Return the same lightweight field catalog exposed by the Research State."""
 
     names = input_operation_names()
     if operation is not None and operation not in names:

@@ -84,7 +84,7 @@ APP_SERVER_FILES = [
 
 # The framework's own runtime is intentionally independent of the legacy Pi
 # app-server files above.  Keep this explicit list in the release inventory so
-# a runtime installation cannot silently omit the new Host/Core/Kernel stack.
+# a runtime installation cannot silently omit the new Host/Core/Research State stack.
 RESEARCH_AGENT_RUNTIME_FILES = [
     "apps/app-server/capability-host-bootstrap.d.mts",
     "apps/app-server/capability-host-bootstrap.mjs",

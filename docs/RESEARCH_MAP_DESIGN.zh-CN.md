@@ -12,7 +12,7 @@
 `ClaimGate` 是同一个 `Gate` 结构的特化。反向索引和图依赖都属于 map，并由模型
 统一校验。运行时权威文档是由 `workspace_manifest.json` 选定的
 `research_map/context.json`；已废弃的 JSON/SQLite 文件只允许作为显式诊断输入，永远不是
-Kernel 权威。
+Research State 权威。
 
 ```text
 ResearchClaim -> ResearchNode -> Finding
@@ -26,10 +26,10 @@ ResearchClaim -> ResearchNode -> Finding
 有独立的 status。Node 只有在所有关联 NodeGate 的最新评估都是 `pass` 时，才能以
 `completed` 结果关闭。
 
-## Kernel 边界
+## Research State 边界
 
-文件系统 Research Kernel 是唯一的变更权威。调用方提交带期望 revision 的 ChangeSet 和有序
-操作。Kernel 校验操作目录、引用、反向索引、循环和状态转换，然后原子提交 context、liveness、
+文件系统 Research State 是唯一的变更权威。调用方提交带期望 revision 的 ChangeSet 和有序
+操作。Research State 校验操作目录、引用、反向索引、循环和状态转换，然后原子提交 context、liveness、
 memory projection、checkpoint 以及 manifest revision。失败请求不会改变旧 revision。
 
 统一命令面为：
@@ -53,11 +53,11 @@ research.checkpoint 用 disposition 结束 turn
 research.change     应用一个 ChangeSet
 ```
 
-Kernel port、Pi tools、slash command 和 Root Agent 使用同一组命令。`research.context` 和
+Research State port、Pi tools、slash command 和 Root Agent 使用同一组命令。`research.context` 和
 `research.liveness` 是有界的诊断投影，不持久化下一步；`research.checkpoint` 是主要 turn
 边界，生命周期动作通过 `research.change` 作为规范 State 记录管理。liveness 响应只读地提供
 `continue_required`。
-`research.decisions` 与 `research.evidence` 读取 filesystem Kernel 投影中的有界元数据，不加载原始文件。
+`research.decisions` 与 `research.evidence` 读取 Research State filesystem boundary 投影中的有界元数据，不加载原始文件。
 `/research` 只是命令服务的交互写法，不是另一套 API。
 TS Web 通过 ResearchMap provider 读取 map snapshot。`/compute` 通过 `compute.environments`
 和 `compute_environment` 查询统一的本地/远端环境目录。
@@ -91,12 +91,12 @@ disposition：`continue_required`、等待已提交 Attempt 的 `waiting_externa
 - 研究状态包含规范 context/liveness/memory projection、Evidence/Decision 元数据和 Node 执行
   目录；原始 payload 保存在各自的 artifact store 中；
 - 新的 map 行为应加入模型和 ChangeSet 操作，并配套聚焦测试；
-- 每个新的 map 行为都要更新 Kernel 操作目录和聚焦测试；
+- 每个新的 map 行为都要更新 Research State 操作目录和聚焦测试；
 - 更新 `packages/tspi-runtime/tspi_runtime/command_catalog.json` 或
   `packages/agent-runtime/host-api/tools.mjs`，slash command 和 host adapter 直接
   消费这些定义；
 - local/remote 计算统一放在一份 `compute.toml` environments 目录后面；
 - 保持 `ResearchMap` 为唯一科学状态模型，不引入平行科学存储或别名。
-- 保持 `tests/node/native/tspi-research-turn-e2e.test.mjs` 作为 Agent -> Kernel ->
+- 保持 `tests/node/native/tspi-research-turn-e2e.test.mjs` 作为 Agent -> Research State ->
   Host -> Monitor -> Agent 的领域无关验收轨迹；任何领域工作流在增加科学策略前都必须
   先通过这一生命周期契约。

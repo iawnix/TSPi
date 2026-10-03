@@ -361,7 +361,7 @@ test("dynamic Harness lifecycle admission advances phases without trusting Agent
   assert.deepEqual(executions, ["state", "change", "calc", "state", "change"]);
 });
 
-test("durable liveness admits only the operations each Kernel disposition permits", () => {
+test("durable liveness admits only the operations each Research State disposition permits", () => {
   const controller = createResearchLifecycleController({ metadata: PUBLIC_TOOL_METADATA });
   const run = (runId) => controller.beginRun({ runId });
 
@@ -376,7 +376,7 @@ test("durable liveness admits only the operations each Kernel disposition permit
   assert.equal(controller.admitTool({ runId: "run-blocked-admission", toolName: "compute_run" }).code, "research_lifecycle_blocked");
   assert.equal(controller.admitTool({ runId: "run-blocked-admission", toolName: "research_read" }).accepted, true);
   controller.completeTool({ runId: "run-blocked-admission", toolName: "research_read" });
-  // Once the recovery read advances the lane, the Kernel-owned checkpoint is
+  // Once the recovery read advances the lane, the Research State-owned checkpoint is
   // the only mutation that can replace a blocked disposition.
   assert.equal(controller.admitTool({ runId: "run-blocked-admission", toolName: "research_checkpoint" }).accepted, true);
 
@@ -418,7 +418,7 @@ test("waiting external admits Attempt reconciliation but blocks a second launch"
   }).accepted, true);
 });
 
-test("durable liveness admits execution after the Kernel records an active strategy", () => {
+test("durable liveness admits execution after the Research State records an active strategy", () => {
   const controller = createResearchLifecycleController({ metadata: PUBLIC_TOOL_METADATA });
   controller.beginRun({ runId: "run-strategy-ready" });
   controller.setDurableLiveness({
@@ -1003,7 +1003,7 @@ test("Research Turn hook leaves valid waits, plans, and terminal states alone", 
   }
 });
 
-test("Research Turn hook reads real Kernel liveness through the canonical command", async () => {
+test("Research Turn hook reads real Research State liveness through the canonical command", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-lifecycle-kernel-"));
   const workspace = join(root, "workspace");
   const python = managedPython();

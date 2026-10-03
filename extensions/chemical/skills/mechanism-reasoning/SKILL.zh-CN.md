@@ -15,7 +15,7 @@ description: 使用明确的物种身份、原子映射、基元步骤、替代�
 表达。ResearchNode 依赖表示研究顺序，不表示化学连通性。
 
 将机理概念映射到 canonical ResearchMap 模型：机理假设使用 Claim（`create_claim`），有界
-机理研究或交付物使用 Node（`create_node`）。写入前先查询 Research Kernel 操作目录；不要把
+机理研究或交付物使用 Node（`create_node`）。写入前先查询 Research State 操作目录；不要把
 “mechanistic hypothesis”或“mechanism study”等标签编造成新的操作类型。
 
 将物种身份、基元步骤连通性、鞍点证据、能量学、动力学与稳健性拆成可以独立失败的问题。

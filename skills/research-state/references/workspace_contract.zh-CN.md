@@ -16,7 +16,7 @@
 Manifest 负责 admission 与路由绑定；ResearchMap revision 保存在 context 与 lifecycle
 投影中。
 规范 workspace ID 必须匹配
-`^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$`；Host 路由、Kernel 请求、本地运行记录与远端计算
+`^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$`；Host 路由、Research State 请求、本地运行记录与远端计算
 intent 使用同一个值。
 
 Manifest 还固定 authority split 与目录面。Research workspace 必须包含
@@ -28,7 +28,7 @@ revision:<非负整数>}`。必需目录严格为 `inputs`、`artifacts`、`runs
 `environments`。Light workspace 使用同一 schema，但字段为
 `profile_id=light_workspace_1`、`research_state_scope=none`、`execution_profile=bounded`、
 `research_state={initialized:false, admission_required:false, revision:null}`，目录为
-`inputs`、`artifacts`、`runs`、`logs`、`scratch`、`sessions`。Host、App Server、Kernel 与
+`inputs`、`artifacts`、`runs`、`logs`、`scratch`、`sessions`。Host、App Server、Research State 与
 Monitor 读取方都必须校验这些字段；缺失或改写时直接拒绝，不能根据路径推断默认值。
 
 规范科学状态位于 `research_map/context.json`，且必须使用
@@ -49,12 +49,12 @@ strategy_plans、strategy_reviews、attempt_interpretations
 Context 一致。有界运行时投影位于 `memory/index.json`，使用
 `schema_version=research_memory_index_1`。它只携带 `context_revision`、生命周期、focus
 metadata 与显式登记的 entries，是 metadata/lifecycle projection，不是第二个 ResearchMap，
-也不是科学权威。Context、liveness 与 memory projection 由 Filesystem Research Kernel 原子
+也不是科学权威。Context、liveness 与 memory projection 由 Research State filesystem boundary 原子
 写入；运行时不存在 JSON/SQLite 的备用权威。Compute Attempt 与 Artifact 的原始 payload
 保留在 Node/Artifact store，context 只保存类型化元数据。
 
 Agent Core 的 `memory_profile` 与 `memory_scope` 在 research 模式下仍然都是
-`session`。持久科学状态属于 Research Kernel，由
+`session`。持久科学状态属于 Research State，由
 `research_state_scope=workspace` 表示；不要把 memory projection 当作会话记忆，
 也不要通过 Core memory port 写入科学事实。
 
@@ -73,13 +73,13 @@ admitted/ready。每次读取都校验 manifest、物理文件、root、mode、I
 research_read -> Root interpretation -> research_change
 ```
 
-所有 Kernel 写入都必须携带 Host 绑定的身份：
+所有 Research State 写入都必须携带 Host 绑定的身份：
 
 ```json
 {"principal":"root_agent","authority":"kernel_write"}
 ```
 
-该身份由 Host 附加到内部 Kernel request；公共 `research_change` tool payload 不包含这两个
+该身份由 Host 附加到内部 Research State request；公共 `research_change` tool payload 不包含这两个
 authority 字段。
 
 `research_change` 在 workspace lock 内加载 canonical context，检查 `expectedRevision`，在

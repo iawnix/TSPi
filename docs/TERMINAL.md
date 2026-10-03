@@ -15,7 +15,7 @@ New workspaces may be explicitly bound to one immutable framework mode:
 ```
 
 `light` creates the minimal workspace profile. `research` creates the Research
-Kernel state and performs Host admission before the terminal session starts.
+Research State state and performs Host admission before the terminal session starts.
 For an existing framework workspace, omitting `--mode` uses the recorded mode;
 a workspace cannot be converted between modes.
 

@@ -23,7 +23,7 @@ test("framework protocol identifiers use snake_case", () => {
 
 test("public command catalog matches the canonical filesystem command boundary", () => {
   // Evidence records are created as ResearchMap changes; there is no second
-  // evidence-registration RPC in the Native Filesystem Kernel. Storage is a
+  // evidence-registration RPC in the Native Research State boundary. Storage is a
   // read-only diagnostic projection.
   assert.equal(COMMAND_DEFINITIONS["research.storage"]?.effect, "read");
   assert.equal(COMMAND_DEFINITIONS["research.evidence.register"], undefined);
@@ -66,7 +66,7 @@ test("fake runtime completes a turn through the Agent Runtime Port", async () =>
   await runtime.close();
 });
 
-test("kernel port has no runtime-specific dependency", async () => {
+test("Research State port has no runtime-specific dependency", async () => {
   const calls = [];
   const kernel = create_research_state_port({
     async read_context() { calls.push("context"); return { workspace_id: "workspace_1" }; },
@@ -94,7 +94,7 @@ test("kernel port has no runtime-specific dependency", async () => {
   assert.deepEqual(calls, ["start"]);
 });
 
-test("kernel port restores admission when a bound implementation is addressed by root", async () => {
+test("Research State port restores admission when a bound implementation is addressed by root", async () => {
   const calls = [];
   const kernel = create_research_state_port({
     async read_context(request) { calls.push(request); return { workspace_id: "workspace_bound", lifecycle_state: "admitted" }; },
@@ -117,7 +117,7 @@ test("kernel port restores admission when a bound implementation is addressed by
   ]);
 });
 
-test("Kernel admission is Host-only and blocks ResearchMap changes while pending", async () => {
+test("Research State admission is Host-only and blocks ResearchMap changes while pending", async () => {
   const changes = [];
   const kernel = create_research_state_port({
     async read_context() { return { lifecycle_state: "admission_pending" }; },
@@ -162,7 +162,7 @@ test("Kernel admission is Host-only and blocks ResearchMap changes while pending
   assert.equal(changes.length, 1);
 });
 
-test("Core and Kernel source stay independent of Pi", async () => {
+test("Core and Research State source stay independent of Pi", async () => {
   const roots = ["packages/agent-core", "packages/research-state-bridge"];
   for (const root of roots) {
     const source = await readFile(join(process.cwd(), root, "ports.mjs"), "utf8");

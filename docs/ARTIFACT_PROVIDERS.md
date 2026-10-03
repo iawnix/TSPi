@@ -12,7 +12,7 @@ values. Each descriptor declares:
 - output roles and a provenance schema identifier;
 - the operation version and declared effects.
 
-The kernel discovers providers through
+The Research State runtime discovers providers through
 `research_compute.artifact_registry.register_artifact_provider`. It exposes
 the descriptors in a catalog, validates the result envelope, and checks that
 the result provenance names the registered provider and descriptor digest.
@@ -51,4 +51,4 @@ class MyProvider:
 The generic contract does not move existing chemical handlers. Gaussian,
 xTB, structure generation, and analysis can adopt it incrementally. Until an
 extension registers an adapter, a Skill can only describe a capability and the
-kernel must report a capability gap; it must not infer an executable command.
+Research State runtime must report a capability gap; it must not infer an executable command.

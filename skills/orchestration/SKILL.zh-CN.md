@@ -18,7 +18,7 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
    Skill、Backend 与计算环境。对命名的执行目标，必须使用精确的 capability、environment
    和 execution kind 查询 readiness；默认 readiness 不验证其他环境。
 4. 在所属 Node 下启动或检查任务，并将 Attempt 与 Artifact 留在该 Node 下。
-5. 检查原始输出后，通过 Kernel 记录粒度明确的 FactFinding 与 IssueFinding。Finding
+5. 检查原始输出后，通过 Research State 记录粒度明确的 FactFinding 与 IssueFinding。Finding
    本身不会改变 Node 或 Claim 的状态。
 6. 对照替代解释与停止条件决定：继续同一 Node、为新问题建立依赖 Node、为竞争方法或
    假设建立分支，或显式停止。
@@ -59,7 +59,7 @@ turn，让持久化 Monitor 投递 `next_run`；不要用 `bash sleep`、`wait` 
   [program_runtime_failures.zh-CN.md](references/program_runtime_failures.zh-CN.md)。
 - Root 工具和 slash command 见
   [pi_agent_adapter.zh-CN.md](references/pi_agent_adapter.zh-CN.md)。
-- Agent Runtime、Host/App Server、memory、Kernel、Monitor 与 compute 所有权边界见
+- Agent Runtime、Host/App Server、memory、Research State、Monitor 与 compute 所有权边界见
   [runtime_boundaries.zh-CN.md](references/runtime_boundaries.zh-CN.md)。
 - 仅在检查已安装包源码时读取
   [package_sources.zh-CN.md](references/package_sources.zh-CN.md)。

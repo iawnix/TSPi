@@ -15,8 +15,8 @@ The framework is split into these boundaries:
 ```text
 Contracts
   -> Agent Core
-  -> Research Kernel
-  -> Native Compute Lifecycle (Python Kernel)
+  -> Research State
+  -> Native Compute Lifecycle (research-state runtime)
   -> App Server
   -> Runtime Adapter / Client Adapter
 ```
@@ -24,7 +24,7 @@ Contracts
 The Agent Core owns turns, model requests, tool invocation, context, retry,
 and recovery. It does not own scientific state or a particular agent engine.
 
-The Research Kernel is the only scientific state authority. It owns
+The Research State is the only scientific state authority. It owns
 ResearchMap, Research Memory, Claims, Nodes, Findings, Gates, Evidence Links,
 and lifecycle decisions. It does not select or execute a scientific backend.
 
@@ -62,9 +62,9 @@ The minimum language-neutral ports are:
 - `ContextPort`: build a bounded, disposable turn context from admitted inputs;
 - `MemoryPort`: read and append session-scoped Agent memory. It is not a
   ResearchMap store; workspace-scoped research memory writes must go through
-  `KernelPort`.
+  `ResearchStatePort`.
 - `SessionPort`: create, list, attach, and enqueue session work;
-- `KernelPort`: read context/liveness, apply changes, checkpoint, and execute
+- `ResearchStatePort`: read context/liveness, apply changes, checkpoint, and execute
   a research turn boundary;
 - `NativeComputeLifecycle`: describe capabilities, resolve environments,
   materialize intents, execute, inspect, finalize, cancel, and write canonical
@@ -81,8 +81,8 @@ The App Server is wired as:
 ```text
 App Server
   -> AgentRuntimePort
-  -> KernelPort
-  -> Native compute lifecycle (Python Kernel)
+  -> ResearchStatePort
+  -> Native compute lifecycle (research-state runtime)
   -> MonitorPort
   -> Client adapters
 ```
@@ -91,12 +91,12 @@ The Host does not assemble JavaScript providers, gateways, or orchestrators. The
 
 The Host exposes the Native `compute_run` lifecycle as the only calculation
 entry point. Cancellation is scoped to the durable intent and controlled by
-the Python Kernel; the Kernel remains the authority for terminal Attempt or
+the research-state runtime; the Research State remains the authority for terminal Attempt or
 execution-scope state. Capability inventory and environment readiness are
 read-only Native views, and there is no provider invocation API.
 
 The default installation injects Pi Adapter. A Fake Runtime is required for
-Core, Kernel, and App Server tests so that those tests do not require Pi,
+Core, Research State, and App Server tests so that those tests do not require Pi,
 network access, credentials, or a model provider.
 
 ## Scientific artifact boundary
@@ -105,7 +105,7 @@ Plain `read`, `write`, and `bash` operations may create scratch files, but they
 do not create accepted scientific artifacts. Scientific inputs must pass
 `artifact_create`, validation, and registration. A registered artifact may be
 bound to a Compute Attempt and later promoted to Evidence by an explicit
-Kernel change.
+Research State change.
 
 This allows simple systems such as water or methanol to be generated directly
 when their structure validates, while keeping ambiguous complex structures in
@@ -121,8 +121,8 @@ does not depend on a system Pi installation.
 ## Consequences
 
 - New compute domains can be added through the Python Native registry and backend
-  contract without changing Agent Core or Research Kernel.
-- A future non-Pi Agent Runtime can reuse the App Server and Kernel contracts.
+  contract without changing Agent Core or Research State.
+- A future non-Pi Agent Runtime can reuse the App Server and Research State contracts.
 - Pi version changes are isolated to one adapter and its adapter tests.
 - The initial implementation requires explicit contracts before broad directory
   movement or domain-specific feature work.
@@ -140,7 +140,7 @@ profiles:
 | mode | memory profile | execution profile | scientific lifecycle |
 | --- | --- | --- | --- |
 | `light` | `session` | `bounded` | no ResearchMap, Claim, Node, Attempt, Evidence, or Monitor |
-| `research` | `session` | `audited` | Kernel ResearchMap plus Attempt, Evidence, and Monitor |
+| `research` | `session` | `audited` | Research State ResearchMap plus Attempt, Evidence, and Monitor |
 
 The `light` profile starts with common inputs, artifacts, runs, logs, scratch,
 and session directories. Native `compute_run` materializes an operational
@@ -150,7 +150,7 @@ Attempt, or Monitor.
 
 The `research` profile creates the common directories plus ResearchMap,
 memory, lifecycle, checkpoints, nodes, evidence, monitor, and environment
-directories. It seeds an empty, valid Kernel state with lifecycle state
+directories. It seeds an empty, valid Research State state with lifecycle state
 `admission_pending` and a genesis checkpoint. Host admission is a separate
 `workspace_port_1` operation; the model must not create the first Phase or
 Claim by issuing a normal change while the workspace is still orienting.
@@ -159,8 +159,8 @@ Changing scope requires a new workspace or an explicit Host-controlled fork.
 Imported light artifacts remain candidates or inputs and do not become
 Research Evidence automatically. The same Native `compute_run` lifecycle serves both profiles. A descriptor may
 restrict execution to one or both modes; `light` uses an operational execution
-scope while `research` adds Kernel Attempt/Evidence recording. Promotion from
-light into research is an explicit Host/Kernel operation, never an implicit
+scope while `research` adds Research State Attempt/Evidence recording. Promotion from
+light into research is an explicit Host/Research State operation, never an implicit
 inference from a successful process.
 
 The mode also selects the turn contract: `light` sessions use

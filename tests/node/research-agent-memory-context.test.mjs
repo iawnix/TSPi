@@ -40,7 +40,7 @@ test("research session memory cannot become workspace scientific memory", async 
   );
 });
 
-test("context builder creates a bounded ephemeral pack with Kernel provenance", async () => {
+test("context builder creates a bounded ephemeral pack with Research State provenance", async () => {
   const memory = create_memory_store({ workspace_mode: "research", workspace_id: "workspace_research", session_id: "session_1" });
   await memory.append({ entry: { kind: "turn", content: "hello" } });
   const context = create_context_builder({

@@ -1,4 +1,4 @@
-# ADR 0001：Phase 与 ResearchNode 内核
+# ADR 0001：Phase 与 ResearchNode Research State
 
 [English](0001-phase-node-research-state.md) | 简体中文
 
@@ -12,7 +12,7 @@
 
 ## 决定
 
-Research Kernel 使用三个正交层次：
+Research State 使用三个正交层次：
 
 ```text
 ResearchPhase -> 可选的人类导航和路线分组
@@ -32,7 +32,7 @@ Claim 独立于执行。Node 产出统一的 `Finding`，按 `kind` 特化为 `F
 ## 权威边界
 
 Root Agent 选择问题、方法、替代方案、反例、回溯和停止条件。ChangeSet 调用方提供
-工作区内的科学对象 ID；Research Kernel 校验 ID、引用、schema 和图不变量，应用
+工作区内的科学对象 ID；Research State 校验 ID、引用、schema 和图不变量，应用
 ChangeSet 并持久化规范状态。Compute、Render、Report、远程控制、导入和通知是确定性
 工具；Review 只提供 advisory 评估。
 

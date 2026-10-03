@@ -16,7 +16,7 @@ async function workspace(prefix, workspace_id, workspace_mode = "research") {
   return root;
 }
 
-test("kernel factory binds the Python Research Kernel to workspace requests", async () => {
+test("kernel factory binds the Python Research State to workspace requests", async () => {
   const root = await workspace("research-state-factory", "workspace_factory");
   try {
     const kernel = create_kernel({ backend: "python" });
@@ -35,9 +35,9 @@ test("kernel factory binds the Python Research Kernel to workspace requests", as
 });
 
 test("kernel factory rejects the retired JavaScript filesystem backend", async () => {
-  assert.throws(() => create_kernel({ backend: "filesystem" }), /unsupported research kernel backend/);
-  assert.throws(() => create_kernel({ backend: "fs" }), /unsupported research kernel backend/);
-  assert.throws(() => create_kernel({ backend: "python_bridge" }), /unsupported research kernel backend/);
+  assert.throws(() => create_kernel({ backend: "filesystem" }), /unsupported Research State backend/);
+  assert.throws(() => create_kernel({ backend: "fs" }), /unsupported Research State backend/);
+  assert.throws(() => create_kernel({ backend: "python_bridge" }), /unsupported Research State backend/);
 });
 
 test("workspace initializer rejects retired workspace modes", async () => {

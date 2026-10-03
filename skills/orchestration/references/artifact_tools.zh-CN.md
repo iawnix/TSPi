@@ -58,7 +58,7 @@ activity 请求只保留 SMILES 摘要，不保留正文。来源记录包含 ca
 }
 ```
 
-所有原子索引均从零开始。`parameters` 可选；详细检查由确定性 Python Kernel 校验，避免
+所有原子索引均从零开始。`parameters` 可选；详细检查由确定性 Research State runtime 校验，避免
 其 schema 占用每个 Root 回合的上下文。省略阈值时默认分别为 0.5 和 0.25 angstrom。
 Host 绑定两个输入 ID 与摘要，并在 `nodes/<node_id>/outputs/analysis/` 下写入幂等的私有
 JSON Artifact。文档包含展开后的参数、verdict、不确定性、RMSD/内坐标/立体化学指标、
@@ -124,7 +124,7 @@ research_read mode=capabilities capabilityKind=analysis query=chemical.name.reso
 ```
 
 `nodeId` 必须指向已存在且未关闭的 ResearchNode。`inputArtifacts` 是 role 到已登记
-`art_...` ID 数组的映射；物理路径、任意文件名和自行发明的 ID 都无效。Host/Kernel 解析每个
+`art_...` ID 数组的映射；物理路径、任意文件名和自行发明的 ID 都无效。Host/Research State 解析每个
 ID，校验 workspace path、摘要和 input-role schema，然后把不可变内容交给 Native analysis executor。
 调用方应在请求中把输入绑定到所属 Node，并保留返回的 owner/path metadata；`parameters` 必须
 满足该 capability 的 parameter schema。名称解析除其他字段外接受 `name`、

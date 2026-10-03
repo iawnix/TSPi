@@ -35,5 +35,5 @@
 
 Tetrahedral 检查使用 `center` 和四个 `neighbors`；alkene 检查使用两个 `atoms` 与两个
 `substituents`；dihedral 检查使用四个 `atoms`，并可将 `maxDeltaDegrees` 设为 0 到 180。
-Kernel 拒绝重复/越界 index、错误的类型特定字段、非 XYZ 输入、已改变摘要和已关闭的输出
+Research State runtime 拒绝重复/越界 index、错误的类型特定字段、非 XYZ 输入、已改变摘要和已关闭的输出
 Node。

@@ -235,7 +235,7 @@ export function createPublicToolContracts(Type) {
       summary: Type.Optional(text()),
     }),
   ]);
-  // ResearchMap mutation names are a Kernel contract, not domain labels. Keep
+  // ResearchMap mutation names are a Research State contract, not domain labels. Keep
   // the public schema discriminated so a model cannot invent operations such
   // as `mechanistic_hypothesis` and only discover the mistake after execution.
   const changeOperation = Type.Union([
@@ -306,7 +306,7 @@ export function createPublicToolContracts(Type) {
     artifactId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
     subjectId: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
     limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2048 })),
-    // Canonical Filesystem Kernel storage is a read-only projection. The
+    // Canonical Research State filesystem boundary storage is a read-only projection. The
     // retired SQLite bootstrap operation is intentionally not part of the
     // Agent-facing contract.
     storageOperation: Type.Optional(Type.Literal("status")),

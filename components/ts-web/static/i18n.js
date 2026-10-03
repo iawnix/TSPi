@@ -8,7 +8,7 @@
   const dictionaries = {
     en: {
       "brand.title": "TS Research Explorer",
-      "brand.protocol": "Research Kernel",
+      "brand.protocol": "Research State",
       "controls.workspace": "Workspace",
       "controls.language": "Switch to Chinese",
       "controls.theme.dark": "Use dark theme",

@@ -10,7 +10,7 @@ import { close_test_research_states, create_test_research_state } from "../suppo
 
 test.afterEach(close_test_research_states);
 
-test("native research commands expose the Python Kernel operation and liveness contracts", async () => {
+test("native research commands expose the Research State runtime operation and liveness contracts", async () => {
   const root = await mkdtemp(join(tmpdir(), "research-native-route-"));
   try {
     await create_workspace_initializer().initialize_workspace({

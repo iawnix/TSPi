@@ -74,7 +74,7 @@ Treat the adapter's `memory_mb` (the source runner calls this
 A configured scratch base may contain only runner-owned run subdirectories;
 cleanup must never remove the base directory or unrelated files. Verify the
 declared primary outputs before recording separate FactFindings or IssueFindings
-through the Research Kernel. The standalone runner normally writes `run.log`,
+through the Research State. The standalone runner normally writes `run.log`,
 `result.json`, task records, geometry, Hessian/frequency, and thermochemistry
 files; a TSPi adapter may instead declare names such as `pyscf.out`,
 `pyscf_result.json`, and `pyscf_*` JSON/XYZ artifacts. The live capability's

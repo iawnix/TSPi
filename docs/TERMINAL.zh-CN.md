@@ -13,7 +13,7 @@ Pi 的 header、editor、命令目录、transcript、extension 或输入循环�
 ./ResearchAgent --workspace reaction-a --mode research
 ```
 
-`light` 创建最小工作区；`research` 创建 Research Kernel 状态，并在终端会话启动前完成
+`light` 创建最小工作区；`research` 创建 Research State 状态，并在终端会话启动前完成
 Host admission。已有框架工作区省略 `--mode` 时使用 manifest 中记录的模式，工作区创建后
 不能在两种模式之间转换。
 

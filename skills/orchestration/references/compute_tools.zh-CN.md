@@ -186,7 +186,7 @@ Cancel 针对一个已绑定 intent：
 }
 ```
 
-Kernel 推导 `changed_fields`，调用方不自行声明 diff。保留源 Attempt。为了回答同一个有
+Research State 推导 `changed_fields`，调用方不自行声明 diff。保留源 Attempt。为了回答同一个有
 边界问题而改变方法属于 recalculation。独立方法分支、变化的假设、新端点问题或不同主要
 交付物需要启动依赖 ResearchNode，并通过 Artifact 绑定消费之前的输出，不能跨 Node 建立
 Attempt lineage。
@@ -203,4 +203,4 @@ journal 推导动作结果、程序状态、Artifact、事实、来源和协调�
 执行成功。程序失败不等于 Claim 被反驳，解析器失败也不等于程序失败。
 
 如果 submit 或 cancel 动作丢失类型化客户端结果，则记录为 `client_result_unknown` 并要求
-协调确认。这不能取代 compute Kernel 在提交前上传阶段返回的、更精确的可重试结果。
+协调确认。这不能取代 Compute runtime 在提交前上传阶段返回的、更精确的可重试结果。

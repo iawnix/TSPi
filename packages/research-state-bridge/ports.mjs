@@ -1,8 +1,8 @@
 /**
- * Research Kernel boundary. The implementation may be Python, TypeScript,
+ * Research State boundary. The implementation may be Python, TypeScript,
  * or a remote process; the App Server only depends on this port.
  *
- * Admission is deliberately a Host-only operation. A Kernel port returned by
+ * Admission is deliberately a Host-only operation. A Research State port returned by
  * this module keeps the admitted workspace set separate from model-provided
  * ResearchMap changes, so an admission_pending workspace cannot reach
  * apply_change through the normal model path.
@@ -135,7 +135,7 @@ export function create_research_state_port(implementation) {
   async function is_persistently_admitted(key, request = {}) {
     // A port may be reconstructed after a host restart. In that case the
     // in-memory admission set is empty, so recover the decision from the
-    // Kernel's durable read model instead of requiring admission again.
+    // Research State's durable read model instead of requiring admission again.
     const identity = is_workspace_id(request.workspace_id) ? request.workspace_id : (is_workspace_id(key) ? key : undefined);
     const root = request.workspace_root ?? request.root ?? (!identity ? key : undefined);
     const binding = {
@@ -184,7 +184,7 @@ export function create_research_state_port(implementation) {
 
   // Bridges may own a subprocess or another transport resource. Keep cleanup
   // available through the language-neutral port without making it part of the
-  // required Kernel protocol.
+  // required Research State protocol.
   if (typeof implementation.close === "function") {
     port.close = implementation.close.bind(implementation);
   }

@@ -20,7 +20,7 @@ describe study order, not chemical connectivity.
 
 Map mechanism concepts onto the canonical ResearchMap model: a mechanism
 hypothesis is a Claim (`create_claim`), while a bounded mechanism study or
-deliverable is a Node (`create_node`). Use the Research Kernel operation catalog
+deliverable is a Node (`create_node`). Use the Research State operation catalog
 before writing; do not turn labels such as "mechanistic hypothesis" or
 "mechanism study" into new operation types.
 

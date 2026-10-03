@@ -968,10 +968,10 @@ def configure_host_process_environment(installation: Installation) -> None:
 def ensure_workspace_sqlite(workspace: Path) -> dict[str, object]:
     """Reject the retired SQLite bootstrap entry point.
 
-    Canonical workspaces use ``research_map/context.json`` plus the Kernel
+    Canonical workspaces use ``research_map/context.json`` plus the Research State
     liveness and memory projections. Creating ``research.db`` here would
     reintroduce a second authority after installation, so callers must use
-    the Host workspace initializer and filesystem Kernel instead.
+    the Host workspace initializer and Research State filesystem boundary instead.
     """
 
     raise TSPiHostError(
@@ -1019,7 +1019,7 @@ def bind_workspace_mode(workspace: Path, workspace_name: str) -> dict[str, objec
 
     ``ResearchAgent`` is the trusted Host boundary, so research admission is
     completed here.  The immutable mode is then exported to the downstream
-    client; Kernel and capability implementations remain outside this module.
+    client; Research State and capability implementations remain outside this module.
     """
 
     from research_state.workspace import (
@@ -1649,7 +1649,7 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         os.environ["RESEARCH_AGENT_WORKSPACE_ID"] = str(manifest["workspace_id"])
         os.environ["TSPI_WORKSPACE_MODE"] = str(manifest["workspace_mode"])
         if manifest["workspace_mode"] == "research":
-            # The filesystem Research Kernel owns the canonical state. A
+            # The Research State filesystem boundary owns the canonical state. A
             # workspace that also contains the retired JSON/SQLite store has
             # two competing write authorities and is rejected outright.
             if has_legacy_research_storage(workspace):

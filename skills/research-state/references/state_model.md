@@ -1,7 +1,7 @@
 # ResearchMap State Model
 
 `ResearchMap` is the canonical, typed scientific state of one research project.
-The Filesystem Research Kernel persists it in `research_map/context.json` with
+The Research State filesystem boundary persists it in `research_map/context.json` with
 `schema_version=research_map_context_1`. A valid context always has array
 collections `phases`, `claims`, `nodes`, `findings`, `gates`, `claim_relations`,
 `attempts`, `artifacts`, `evidence_links`, `lifecycle_actions`, `strategy_plans`,
@@ -25,7 +25,7 @@ binds identity, mode, root, and admission. Retired SQLite and
 | `NodeGate` / `ClaimGate` | typed Gate specializations | `scope=node` / `scope=claim` |
 
 `Finding` is the common scientific conclusion structure. Execution evidence is
-separate Kernel metadata: `AttemptRecord`, `ArtifactManifest`, and
+separate Research State metadata: `AttemptRecord`, `ArtifactManifest`, and
 `EvidenceLink` form the Evidence Registry; raw payloads remain in Node-owned
 directories or an external Artifact store. `GateEvaluation` stores a
 verdict (`pass`, `fail`, `inconclusive`, `blocked`), timestamp, message,
@@ -48,7 +48,7 @@ save.
 
 ## Reads And Writes
 
-The Kernel command catalog uses these internal read IDs:
+The Research State command catalog uses these internal read IDs:
 
 ```text
 research.map          complete canonical map
@@ -61,7 +61,7 @@ research.context      bounded turn context
 research.liveness     lifecycle diagnosis
 research.decisions   bounded strategy/interpretation/checkpoint history
 research.evidence    Attempt/Artifact/EvidenceLink metadata
-research.storage     canonical Filesystem Kernel documents and revision
+research.storage     canonical Research State filesystem boundary documents and revision
 ```
 
 Agents call the public `research_read` tool with the corresponding bounded
@@ -70,7 +70,7 @@ Agents call the public `research_read` tool with the corresponding bounded
 exposes compute modes
 (`artifacts`, `capabilities`, `runs`). Use `/research` for interactive reads.
 Strategy, interpretation, checkpoint, Evidence Registry, and map mutations use
-their typed Kernel commands; do not create a generic memory write.
+their typed Research State commands; do not create a generic memory write.
 
 For `research_read mode=evidence`, optional selectors are `recordType` (`attempt`,
 `artifact`, or `link`), `nodeId`, `artifactId`, `subjectId`, and `limit` (1--2048).
@@ -79,7 +79,7 @@ For `research_read mode=evidence`, optional selectors are `recordType` (`attempt
 Lifecycle actions are State records managed through `research.change`; the
 `research_checkpoint` command is the turn checkpoint. Use the canonical
 `set_lifecycle_action` and `resolve_lifecycle_action` operations with explicit
-scope, target, action, status, reason, and request identity. The Kernel remains
+scope, target, action, status, reason, and request identity. The Research State remains
 the only writer.
 
 Do not edit canonical documents directly. A ChangeSet is validated against an

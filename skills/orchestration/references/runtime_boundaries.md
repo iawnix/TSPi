@@ -1,4 +1,4 @@
-# Runtime, Host, Kernel, Memory, and Monitor Boundaries
+# Runtime, Host, Research State, Memory, and Monitor Boundaries
 
 This reference defines the ownership boundary behind the public TSPi tools. It
 is part of the agent-facing protocol; implementation modules and process names
@@ -27,7 +27,7 @@ The Runtime memory port is always session-scoped:
 Conversation memory is not ResearchMap state. In a research workspace a
 request for `scope=workspace` on the Agent Core memory port fails with
 `research_memory_authority_required`; workspace scientific state must cross the
-Kernel boundary through `research_read`/`research_change` and typed lifecycle
+Research State boundary through `research_read`/`research_change` and typed lifecycle
 commands.
 
 ## Host and App Server
@@ -45,19 +45,19 @@ request context. Agent parameters may select a ResearchMap object, capability,
 Node, Artifact, or configured environment, but may not replace the bound root
 or identity. Host-owned writes carry `principal=root_agent` and
 `authority=kernel_write`; the Agent supplies rationale and operations, while
-the Kernel validates and commits them.
+the Research State validates and commits them.
 
 Public semantic tool names are the only Agent API:
 `research_read`, `research_change`, `research_strategy`,
 `research_interpretation`, `research_checkpoint`, `research_checkpoint`,
 `compute_environment`, `compute_catalog`, `compute_readiness`, `compute_run`,
 `analysis_run`, and the artifact/review tools listed in
-[pi_agent_adapter.md](pi_agent_adapter.md). Private `ts_*` factory names and
+[pi_agent_adapter.md](pi_agent_adapter.md). Private source factory names and
 slash commands are transport details and are not alternate protocols.
 
-## Research Kernel and Memory Projection
+## Research State and Memory Projection
 
-The Research Kernel owns the canonical research documents and the atomic
+The Research State owns the canonical research documents and the atomic
 revision. A successful `research_change` commits the context, liveness,
 `memory/index.json`, and manifest revision as one workspace transaction. The
 memory index is a bounded metadata/lifecycle projection; it is not conversation

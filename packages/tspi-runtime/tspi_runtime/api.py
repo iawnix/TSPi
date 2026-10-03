@@ -174,7 +174,7 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
                 raise CommandError("research.evidence limit must be an integer between 1 and 2048")
             return {"schema_version": "research-evidence/1", "record_type": record_type, "records": records[:limit]}
         raise CommandError(
-            f"research.{action} is served by the Host filesystem Research Kernel; use the native command boundary"
+            f"research.{action} is served by the Host Research State filesystem boundary; use the native command boundary"
         )
     if command.startswith("compute."):
         return _compute(command.removeprefix("compute."), root, value)

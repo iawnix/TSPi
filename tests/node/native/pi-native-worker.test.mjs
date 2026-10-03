@@ -9,6 +9,7 @@ import test from "node:test";
 import { formatSkillsForSystemPrompt, loadSkills, TODO_CONTEXT } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { createSystemPromptManifest, createSystemPromptTool } from "../../../apps/app-server/system-prompt.mjs";
+import { discoverInstalledExtensions } from "../../../apps/app-server/extension-manifest-loader.mjs";
 
 const sourceRoot = process.env.TSPI_PI_SOURCE;
 const executeFile = promisify(execFile);
@@ -80,9 +81,15 @@ test("system prompt skill provenance excludes skills hidden from the model", () 
 
 test("Pi Agent Core loads the packaged TSPi skill catalog", async () => {
   const env = new NodeExecutionEnv({ cwd: process.cwd() });
-  const loaded = await loadSkills(env, join(process.cwd(), "skills"), TODO_CONTEXT);
+  const installed = await discoverInstalledExtensions({ packageRoot: process.cwd() });
+  const loaded = await loadSkills(
+    env,
+    [join(process.cwd(), "skills"), ...installed.skillRoots],
+    TODO_CONTEXT,
+  );
   assert.deepEqual(loaded.diagnostics, []);
-  assert.deepEqual(loaded.skills.map((skill) => skill.name), [
+  assert.deepEqual(loaded.skills.map((skill) => skill.name).sort(), [
+    "candidate-generation",
     "cf22d",
     "chemical-input",
     "crest",
@@ -97,13 +104,24 @@ test("Pi Agent Core loads the packaged TSPi skill catalog", async () => {
     "render",
     "report",
     "research-state",
-    "candidate-generation",
     "validation",
     "xtb",
   ]);
   const prompt = formatSkillsForSystemPrompt(loaded.skills);
   assert.match(prompt, /<available_skills>/);
   assert.match(prompt, /qbics/);
+
+  const manifest = createSystemPromptManifest({
+    native: { source: "native.mjs", text: "native instructions" },
+    skills: { source: "skills", items: loaded.skills },
+  });
+  const core = new Map(manifest.contributors[1].metadata.skills.map((skill) => [skill.name, skill]));
+  assert.deepEqual(
+    [core.get("orchestration")?.scope, core.get("research-state")?.scope],
+    ["system", "system"],
+  );
+  assert.equal(core.get("orchestration")?.always_visible, true);
+  assert.equal(core.get("research-state")?.always_visible, true);
 });
 
 function kernelPython() {
@@ -417,7 +435,7 @@ test("native Pi server gives every client the complete Agent tool inventory", { 
   }
 });
 
-test("native TSPi tools execute against an isolated Research Kernel workspace", {
+test("native TSPi tools execute against an isolated Research State workspace", {
   skip: !kernelPython(),
 }, async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-tools-"));

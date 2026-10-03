@@ -8,7 +8,7 @@
 | 需求 | 文档 |
 | --- | --- |
 | 安装、配置、升级、恢复 | [安装与运维](INSTALLATION.zh-CN.md) |
-| 理解 Agent、Kernel、Host、Monitor、Memory 和 Compute 边界 | [架构](ARCHITECTURE.zh-CN.md) |
+| 理解 Agent、Research State、Host、Monitor、Memory 和 Compute 边界 | [架构](ARCHITECTURE.zh-CN.md) |
 | 理解 ResearchMap 对象与 turn checkpoint | [ResearchMap 设计](RESEARCH_MAP_DESIGN.zh-CN.md) 与 [ADR 0006](adr/0006-unified-research-harness-lifecycle.zh-CN.md) |
 | 选择并运行已注册科学能力 | [Capability 与计算模型](CAPABILITY_COMPUTE_MODEL.zh-CN.md) 与 [科学能力运维](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md) |
 | 使用终端、Phone、浏览器或 Monitor | [终端](TERMINAL.zh-CN.md)、[TSPi Link](TSPi_LINK.zh-CN.md) |

@@ -208,7 +208,7 @@ Package release。
 管理员使用的内部 HTTP 服务，普通终端流程不需要用户手动启动它。
 
 如果要单独部署 App Server，再显式配置 runtime module；需要研究工作区准入和持久化研究
-状态时，再配置 Kernel module：
+状态时，再配置 Research State bridge（传输层选项仍为 `--kernel-module`）：
 
 ```bash
 ./ResearchAgentServer \
@@ -301,7 +301,7 @@ workspace 内写入 registration、event 和 delivery 回执。`monitor/list`、
 必须重新读取 `research_read`、检查计算后才能修改 ResearchMap。
 
 规范的 `workspace_manifest.json` identity 会先被验证，再由 Monitor 用于 Host 路由。其
-`workspace_id` 在 Kernel、本地运行记录和远程计算 intent 中保持一致；不存在独立的
+`workspace_id` 在 Research State、本地运行记录和远程计算 intent 中保持一致；不存在独立的
 `workspace.json` 身份或 alias 层。
 
 ## 会话历史

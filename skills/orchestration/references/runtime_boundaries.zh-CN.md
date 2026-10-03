@@ -1,4 +1,4 @@
-# Runtime、Host、Kernel、Memory 与 Monitor 边界
+# Runtime、Host、Research State、Memory 与 Monitor 边界
 
 本参考定义 TSPi 公共工具背后的所有权边界。它属于 Agent 可见协议；实现模块名称和进程
 名称不会产生额外的 Agent API。
@@ -23,7 +23,7 @@ Runtime 的 memory port 始终是 session scope：
 
 Conversation memory 不是 ResearchMap 状态。在 research workspace 中，Agent Core memory port
 收到 `scope=workspace` 会以 `research_memory_authority_required` 失败；workspace 科学状态必须
-通过 `research_read`/`research_change` 和类型化 lifecycle 命令跨越 Kernel 边界。
+通过 `research_read`/`research_change` 和类型化 lifecycle 命令跨越 Research State 边界。
 
 ## Host 与 App Server
 
@@ -35,18 +35,18 @@ App Server 是 transport 与组合边界。打开绑定 workspace 的 session �
 Host 将 `workspace_id`、`workspace_root` 和 `workspace_mode` 绑定到 request context。Agent
 参数可以选择 ResearchMap 对象、capability、Node、Artifact 或已配置环境，但不能替换绑定的
 root 或 identity。Host 负责在写入请求中携带 `principal=root_agent` 和
-`authority=kernel_write`；Agent 只提供 rationale 和 operations，Kernel 负责校验和提交。
+`authority=kernel_write`；Agent 只提供 rationale 和 operations，Research State 负责校验和提交。
 
 公共 semantic tool 名称是唯一 Agent API：`research_read`、`research_change`、
 `research_strategy`、`research_interpretation`、`research_checkpoint`、
 `research_checkpoint`、`compute_environment`、`compute_catalog`、`compute_readiness`、
 `compute_run`、
 `analysis_run` 以及 `pi_agent_adapter.md` 中列出的 artifact/review 工具。私有
-`ts_*` factory 名称和 slash command 都是 transport 细节，不是第二套协议。
+私有 source factory 名称和 slash command 都是 transport 细节，不是第二套协议。
 
-## Research Kernel 与 Memory Projection
+## Research State 与 Memory Projection
 
-Research Kernel 拥有规范研究文档和原子 revision。成功的 `research_change` 会把 context、
+Research State 拥有规范研究文档和原子 revision。成功的 `research_change` 会把 context、
 liveness、`memory/index.json` 和 manifest revision 作为一次 workspace transaction 提交。
 Memory index 只是有界 metadata/lifecycle projection，不是 conversation memory，也不能成为第二
 个科学权威。Root 必须检查返回 revision 后才能依赖这次变更。

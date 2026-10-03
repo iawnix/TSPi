@@ -3,8 +3,8 @@
 [English](MAINTAINER_GUIDE.md) | 简体中文
 
 TSPi 是带安装级 Host 和 Pi 原生 client 启动器的 Pi package。Pi Harness worker 拥有
-会话和 turn，Host 负责路由与回执，Python Research Kernel 拥有规范科学状态。Node
-侧只提供 Kernel transport bridge 和 port，不再包含另一套 filesystem Kernel 实现；可选的
+会话和 turn，Host 负责路由与回执，Python Research State 拥有规范科学状态。Node
+侧只提供 Research State transport bridge 和 port，不再包含另一套 Research State filesystem boundary 实现；可选的
 TS Web 只读取工作区。
 
 ## 开发环境
@@ -39,7 +39,7 @@ Python 测试按 `tests/unit/`、`tests/contract/` 和 `tests/integration/` 分�
 ## 科学模型与验证规则
 
 规范身份文件是 `workspace_manifest.json`。Research workspace 的科学状态位于
-`research_map/context.json`，生命周期位于 `lifecycle/liveness.json`，Kernel 元数据投影位于
+`research_map/context.json`，生命周期位于 `lifecycle/liveness.json`，Research State 元数据投影位于
 `memory/index.json`。`ResearchMap` 直接拥有 phase、claim、claim relation、node、typed
 finding、gate、focus 和 revision；Node 的执行记录位于 `nodes/<node_id>/`，不是另一套科学
 registry。已废弃的 `workspace.json`、`research_map.json` 和 `transactions.jsonl` 不是运行时权威。
@@ -80,7 +80,7 @@ session owner。
 | 变更 | 必须同步 |
 |---|---|
 | TSPi Host 协议或服务 | `apps/app-server/`、启动器测试、TS Phone 客户端、架构文档 |
-| 工作区 schema | Kernel 合同、bootstrap、验证测试、工作区参考 |
+| 工作区 schema | Research State 合同、bootstrap、验证测试、工作区参考 |
 | 科学后端 | parser、能力 registry、对应 Skill、测试 |
 | 科学分析 | registry/handler、重放验证、反例、报告/Web transport、wheel inventory |
 | Node 派发 | 操作回执链、提交 guard、原生/extension 工具、重启和暂停测试 |

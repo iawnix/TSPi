@@ -7,7 +7,7 @@
 | 术语 | 含义 |
 | --- | --- |
 | Root Agent | 选择研究问题、方法、分支、解释和停止条件。 |
-| Research Kernel | 校验并原子持久化一个项目的 `ResearchMap`，不运行科学软件。 |
+| Research State | 校验并原子持久化一个项目的 `ResearchMap`，不运行科学软件。 |
 | ResearchMap | 项目的规范类型化聚合对象，序列化为 `research_map/context.json`。 |
 | ResearchPhase | 相关研究 Node 的导航分组，不拥有独立生命周期。 |
 | ResearchClaim | 带有预测、反证条件和状态的待研究陈述。 |
@@ -18,7 +18,7 @@
 | Attempt | Node 所属的一次有边界的计算或执行记录。重试仍是 Attempt；问题改变时才创建新 Node。 |
 | Compute environment | 绑定 Backend 的命名本地或远端执行环境，用 `compute_environment` 或 `/compute` 查询。 |
 | Claim relation | Claim 之间的有向关系，例如支持、冲突或依赖。 |
-| ChangeSet | 通过 `research_change` 提交的一组显式 map 操作，由 Kernel 一次校验并提交一个 revision。 |
+| ChangeSet | 通过 `research_change` 提交的一组显式 map 操作，由 Research State 一次校验并提交一个 revision。 |
 | Review | 隔离的建议性评估，由 Root 把决定记录回 map。 |
 | Skill | Agent 的方法指导，可以选择工具和解释结果，但不拥有规范研究状态。 |
 | Backend | 计算使用的科学软件或执行器。 |

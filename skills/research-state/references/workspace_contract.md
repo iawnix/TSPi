@@ -18,7 +18,7 @@ absolute `workspace_root`, a stable `workspace_id`, and `state` equal to
 ResearchMap revision is stored in the context and liveness projections.
 The canonical workspace ID grammar is
 `^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$`; the same value is used by Host routes,
-Kernel requests, local run records, and remote calculation intents.
+Research State requests, local run records, and remote calculation intents.
 
 The manifest also fixes the authority split and directory surface. Research
 workspaces must contain `profile_id=research_workspace_1`,
@@ -32,7 +32,7 @@ workspaces use the same schema with `profile_id=light_workspace_1`,
 `research_state_scope=none`, `execution_profile=bounded`,
 `research_state={initialized:false, admission_required:false, revision:null}`,
 and directories `inputs`, `artifacts`, `runs`, `logs`, `scratch`, and
-`sessions`. Host, App Server, Kernel, and Monitor readers reject a manifest
+`sessions`. Host, App Server, Research State, and Monitor readers reject a manifest
 that omits or changes these fields; they do not infer defaults from a path.
 
 The scientific read model is `research_map/context.json` and must use
@@ -55,17 +55,17 @@ Lifecycle admission is `lifecycle/liveness.json` with
 `context_revision`, lifecycle and focus metadata plus explicitly registered
 entries. It is a metadata/lifecycle projection, never a second ResearchMap or
 scientific authority. Context and liveness are written with the memory
-projection atomically by the Filesystem Research Kernel. There is no
+projection atomically by the Research State filesystem boundary. There is no
 JSON/SQLite fallback authority.
 
 The Agent Core `memory_profile` and `memory_scope` remain `session` in
-research mode. Durable scientific state belongs to the Research Kernel and is
+research mode. Durable scientific state belongs to the Research State and is
 selected by `research_state_scope=workspace`; do not treat the memory
 projection as conversation memory or write scientific facts through the Core
 memory port.
 
 Raw execution payloads live under the Node/Attempt and Artifact stores. The
-Kernel context stores typed Claims, Nodes, Findings, Gates, relations, focus,
+Research State context stores typed Claims, Nodes, Findings, Gates, relations, focus,
 Attempt records, Artifact manifests, EvidenceLinks, decisions, and revision.
 Artifacts are referenced by their logical `art_<sha256>` IDs; absolute or
 remote paths never become scientific object references.
@@ -91,13 +91,13 @@ The normal flow is:
 research_read -> Root interpretation -> research_change
 ```
 
-All Kernel writes require the Host-bound identity:
+All Research State writes require the Host-bound identity:
 
 ```json
 {"principal":"root_agent","authority":"kernel_write"}
 ```
 
-This identity is attached by the Host to the internal Kernel request; the
+This identity is attached by the Host to the internal Research State request; the
 public `research_change` tool payload does not include these authority fields.
 
 `research_change` loads the current canonical context under the workspace lock,

@@ -44,7 +44,10 @@ test("blocked research liveness stops new mutations but permits a recovery check
       kernel.apply_change(write({ expected_revision: 3, operations: [{ type: "set_focus", claim_ids: ["claim_1"], node_ids: ["node_1"] }] })),
       /research_lifecycle_blocked/,
     );
-    await assert.rejects(kernel.turn({ operation: "end" }), /research_lifecycle_blocked/);
+    await assert.rejects(kernel.turn({
+      protocol: "research_turn_request", version: 1, request_id: "turn_end_blocked",
+      operation: "end", input: {},
+    }), /research_lifecycle_blocked/);
     const recovered = await kernel.checkpoint(write({ id: "checkpoint_recovered", disposition: "continue_required", unresolved_refs: ["node_1"] }));
     assert.equal(recovered.disposition, "continue_required");
     const memory = JSON.parse(await readFile(join(root, "memory", "index.json"), "utf8"));
@@ -110,7 +113,7 @@ test("finalize admission failures remain retryable after parsing succeeds", () =
   ), "running");
 });
 
-test("Python Research Kernel requires the Root Agent kernel-write boundary", async () => {
+test("Python Research State requires the Root Agent kernel-write boundary", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-kernel-authority-"));
   try {
     const workspace = create_workspace_initializer();
@@ -135,10 +138,11 @@ test("Python Research Kernel requires the Root Agent kernel-write boundary", asy
     });
     assert.equal(accepted.revision, 1);
     const turned = await kernel.turn({
+      protocol: "research_turn_request", version: 1, request_id: "turn_checkpoint_input",
       principal: "root_agent", authority: "kernel_write", operation: "checkpoint",
       input: { id: "checkpoint_input", disposition: "user_input_required" },
     });
-    assert.equal(turned.checkpoint_id, "checkpoint_input");
+    assert.equal(turned.output.checkpoint_id, "checkpoint_input");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

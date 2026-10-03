@@ -23,7 +23,7 @@ does not redefine that model.
 4. Launch or inspect work under the owning Node. Keep Attempts and Artifacts
    attached to that Node.
 5. Inspect primary outputs, then record narrow FactFindings and IssueFindings
-   through the Kernel. Findings do not change Node or Claim status by
+   through the Research State. Findings do not change Node or Claim status by
    themselves.
 6. Compare the result with alternatives and stopping criteria. Continue the
    Node for the same question, create a dependent Node for a changed question,
@@ -77,6 +77,6 @@ or changing ResearchMap. Operational success is not scientific support.
 - Read [pi_agent_adapter.md](references/pi_agent_adapter.md) for Root tools and
   slash commands.
 - Read [runtime_boundaries.md](references/runtime_boundaries.md) for Agent
-  Runtime, Host/App Server, memory, Kernel, Monitor, and compute ownership.
+  Runtime, Host/App Server, memory, Research State, Monitor, and compute ownership.
 - Read [package_sources.md](references/package_sources.md) only when inspecting
   installed package sources.

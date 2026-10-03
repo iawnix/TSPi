@@ -31,7 +31,7 @@
     {
       "name": "cf22d",
       "path": "skills/cf22d",
-      "sha256": "sha256:a1be72b691bcda449523d28b651d98896c1a45d6b18ae4d9626af9b4b4328ca1"
+      "sha256": "sha256:73e012bd711e9e2e3f38bf18b0c13c071bb4fffe87e746491598107593c79d5d"
     },
     {
       "name": "xtb",
@@ -61,7 +61,7 @@
     {
       "name": "mechanism-reasoning",
       "path": "skills/mechanism-reasoning",
-      "sha256": "sha256:584a773552eafc60e272f163c82e58beb2ce30e799036973491691a58cae7aa4"
+      "sha256": "sha256:002a83b213eaae168e7aab61001c881099544a2f78a9e75c8132f11171df0130"
     }
   ],
   "providers": [

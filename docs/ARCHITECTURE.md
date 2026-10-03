@@ -76,8 +76,8 @@ objects, together with their dependency, output, and target references.
 Attempts and Artifacts are not scientific facts inside the ResearchMap. They
 are produced by the Compute/Workspace runtime, while their stable identity,
 digest, provenance, lineage, and evidence references are governed by the
-Research Kernel's Evidence Registry. Raw files remain in the workspace or an
-object store; the Kernel stores bounded Artifact Manifests and Evidence Links,
+Research State's Evidence Registry. Raw files remain in the workspace or an
+object store; the Research State stores bounded Artifact Manifests and Evidence Links,
 and never turns scheduler state or file contents into a Finding or Claim
 conclusion by itself.
 
@@ -94,7 +94,7 @@ evidence. Large logs, trajectories, and images stay out of the ResearchMap and
 model context; Agents read bounded manifests, summaries, and on-demand
 excerpts.
 
-### ResearchMap And Research Kernel
+### ResearchMap And Research State
 
 `ResearchMap` is a typed research graph. `ResearchClaim` represents a scientific
 statement, `ResearchNode` represents bounded work, and `ResearchPhase` is an
@@ -109,8 +109,8 @@ ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
        +----------- ClaimGate / NodeGate
 ```
 
-The filesystem Research Kernel loads, validates, commits, and persists the
-canonical workspace projections. The Python Kernel owns this boundary; the Node
+The Research State filesystem boundary loads, validates, commits, and persists the
+canonical workspace projections. The research-state runtime owns this boundary; the Node
 App Server exposes only the transport bridge and language-neutral port. The
 map-shaped context projection is the canonical serialization for TS Web and Root Agent,
 not a second scientific model. The Root Agent chooses questions, methods,
@@ -127,11 +127,11 @@ The Research Harness is domain-neutral. Chemistry, reaction mechanisms, data
 analysis, simulation, and other research domains use the same Claims, Nodes,
 Findings, Gates, Attempts, and Artifacts. Domain-specific behavior belongs in
 Skills, Capabilities, Backends, and Artifact schemas; it must not be encoded in
-Host scheduling or Kernel liveness rules.
+Host scheduling or Research State liveness rules.
 
 ```text
 Agent (only scientific decision-maker)
-  -> bounded Research Context -> Research Kernel (canonical ResearchMap)
+  -> bounded Research Context -> Research State (canonical ResearchMap)
   -> Harness/Host (turn admission, authority, recovery, follow-up)
        +-> Monitor (external observation and next_run wake-up)
        +-> Compute/Workspace runtime (Attempts, Artifacts, environments)
@@ -145,8 +145,8 @@ fixed text/reference limit and a truncation marker; arbitrary lifecycle-action
 metadata and large reference lists are reduced to keys and bounded IDs. Full
 records remain available through focused map/detail queries. Skill catalogs are
 loaded when a worker is created and Skill bodies are cached for explicit
-invocation; only names, descriptions, and locations are placed in the model's
-default prompt. Capabilities and Compute
+invocation; names, descriptions, locations, and the `system` scope marker for
+the two Core System Skills are placed in the model's default prompt. Capabilities and Compute
 Environments are queried when selecting or launching a method.
 
 Capability discovery is owned by the Python Native registry. The public
@@ -174,7 +174,7 @@ Agent Core exposes this boundary through a language-neutral `ContextPort` and
 `MemoryPort`. The Core implementation may keep bounded session conversation
 memory, but it never writes workspace-scoped Research Memory. In a research
 workspace, the `MemoryPort` is session-only and all scientific context is a
-read-only projection supplied by the `KernelPort`; the Research Kernel remains
+read-only projection supplied by the `ResearchStatePort`; the Research State remains
 the sole authority for ResearchMap and durable scientific memory.
 
 `ResearchMemoryService` does not cache a second ResearchMap or persist a
@@ -218,7 +218,7 @@ The liveness response exposes canonical `continue_required` records only.
 Public tools use one contract and a Harness-bound workspace context. The
 legacy `root` field is accepted only as an equality assertion. Tool contracts
 declare authority, side effects, replay/idempotency, lifecycle phase, and
-output schema; Research Writes go through Kernel ChangeSets, execution tools
+output schema; Research Writes go through Research State ChangeSets, execution tools
 produce Attempts/Artifacts, and advisory tools never own scientific state.
 The server-extension loader rejects tools that do not provide the complete
 `label`, `description`, parameter schema, executable, and four-field Harness
@@ -254,7 +254,7 @@ interpretation through a Map ChangeSet.
 ## ChangeSets And Browser Clients
 
 Native server tools, Host commands, and slash commands all submit the same
-small ChangeSet envelope to the filesystem Research Kernel port. The Kernel
+small ChangeSet envelope to the Research State filesystem boundary port. The Research State
 validates operation fields, references, optimistic revision, and graph
 invariants before atomically committing the canonical context/liveness
 projections and manifest revision. A failed ChangeSet leaves the previous
@@ -371,7 +371,7 @@ cancel   -> cancel
 
 These right-hand actions are private child-runtime steps, not additional public
 operations. For either `execution_target.kind=local` or `remote`, the Research
-Kernel workspace is always canonical, while a remote directory is only a
+Research State workspace is always canonical, while a remote directory is only a
 temporary execution mirror. Local runs stage inputs under the Attempt's execution directory and
 collect outputs back into the same workspace paths, so TS Web needs no remote
 filesystem access. Local workers are launched in an independent transient
@@ -397,7 +397,7 @@ deliveries/<event_id>.json
 
 The registration, event, and delivery envelopes are versioned by
 `ts-compute-monitor/1`, `ts-compute-monitor-event/1`, and
-`ts-monitor-delivery/1`. A tick calls the Compute Kernel status API directly.
+`ts-monitor-delivery/1`. A tick calls the Compute runtime status API directly.
 `completed` means that the program or scheduler ended; `parsed` means that
 collection and parsing completed. `unknown` remains uncertainty, and an
 unchanged observation does not create another event.
