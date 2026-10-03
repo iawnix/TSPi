@@ -58,7 +58,8 @@ function readResearchMap(rootValue) {
   if (!isPlainObject(memory) || memory.schema_version !== "research_memory_index_1"
       || memory.workspace_id !== manifest.workspace_id
       || memory.scope !== "workspace"
-      || memory.authority !== "research_state"
+      || memory.authority !== "research_memory"
+      || memory.state_authority !== "research_state"
       || !Number.isInteger(memory.revision) || memory.revision < 0
       || !Array.isArray(memory.entries)) {
     throw new Error("ResearchMap memory schema is invalid");
