@@ -20,6 +20,11 @@ import {
   executeFilesystemResearchCommand,
   isFilesystemResearchWorkspace,
 } from "./research-native-kernel.mjs";
+import {
+  create_research_lifecycle_request,
+  RESEARCH_STATE_WRITE_PRINCIPAL,
+  RESEARCH_STATE_WRITE_AUTHORITY,
+} from "../../packages/research-state-bridge/ports.mjs";
 
 export { createComputeTool, createNativeComputeLifecycle } from "./pi-native-compute.mjs";
 export { createNotifyTool } from "./pi-native-notify.mjs";
@@ -165,7 +170,7 @@ export function createChangeTool() {
       const result = await NATIVE_COMMANDS.execute("research.change", root, { request: {
           schema_version: "ts-change-request/1",
           principal: toolContext?.principal,
-          authority: "kernel_write",
+          authority: RESEARCH_STATE_WRITE_AUTHORITY,
           rationale: params.rationale,
           expected_revision: params.expectedRevision,
           basis_refs: params.basisRefs || [],
@@ -202,17 +207,33 @@ export function createResearchLifecycleTool() {
       if (params.operation === "strategy") {
         requireNativeWrites("research_strategy", toolContext);
         if (!params.strategyOperation || !params[params.strategyOperation]) throw new Error("research_strategy requires strategyOperation and plan or review");
-        return toolResult(await NATIVE_COMMANDS.execute("research.strategy", root, { request: { protocol: "research_strategy_request", version: 1, principal: toolContext?.principal, authority: "research_state", operation: params.strategyOperation, [params.strategyOperation]: params[params.strategyOperation], rationale: params.rationale, basis_refs: params.basisRefs || [], expected_revision: params.expectedRevision, event_id: params.eventId } }, context?.abortSignal));
+        return toolResult(await NATIVE_COMMANDS.execute("research.strategy", root, { request: create_research_lifecycle_request({
+          operation: "strategy", principal: toolContext?.principal,
+          strategy_operation: params.strategyOperation,
+          plan: params.plan, review: params.review,
+          rationale: params.rationale, basis_refs: params.basisRefs || [],
+          expected_revision: params.expectedRevision, event_id: params.eventId,
+        }) }, context?.abortSignal));
       }
       if (params.operation === "interpret") {
         requireNativeWrites("research_interpretation", toolContext);
         if (!params.interpretation) throw new Error("research_interpretation requires interpretation");
-        return toolResult(await NATIVE_COMMANDS.execute("research.interpretation", root, { request: { protocol: "research_interpretation_request", version: 1, principal: toolContext?.principal, authority: "research_state", interpretation: params.interpretation, rationale: params.rationale, basis_refs: params.basisRefs || [], expected_revision: params.expectedRevision, event_id: params.eventId } }, context?.abortSignal));
+        return toolResult(await NATIVE_COMMANDS.execute("research.interpretation", root, { request: create_research_lifecycle_request({
+          operation: "interpretation", principal: toolContext?.principal,
+          interpretation: params.interpretation, rationale: params.rationale,
+          basis_refs: params.basisRefs || [], expected_revision: params.expectedRevision,
+          event_id: params.eventId,
+        }) }, context?.abortSignal));
       }
       if (params.operation === "checkpoint") {
         requireNativeWrites("research_checkpoint", toolContext);
         if (!params.checkpoint) throw new Error("research_checkpoint requires checkpoint");
-        return toolResult(await NATIVE_COMMANDS.execute("research.checkpoint", root, { request: { protocol: "research_checkpoint_request", version: 1, principal: toolContext?.principal, authority: "research_state", checkpoint: normalizeCheckpointPayload(params.checkpoint, toolContext, params.eventId), rationale: params.rationale, basis_refs: params.basisRefs || [], expected_revision: params.expectedRevision, event_id: params.eventId } }, context?.abortSignal));
+        return toolResult(await NATIVE_COMMANDS.execute("research.checkpoint", root, { request: create_research_lifecycle_request({
+          operation: "checkpoint", principal: toolContext?.principal,
+          checkpoint: normalizeCheckpointPayload(params.checkpoint, toolContext, params.eventId),
+          rationale: params.rationale, basis_refs: params.basisRefs || [],
+          expected_revision: params.expectedRevision, event_id: params.eventId,
+        }) }, context?.abortSignal));
       }
       throw new Error("research lifecycle operation must be strategy, interpret, or checkpoint");
     },
@@ -996,7 +1017,7 @@ function requireNativeWrites(toolName, toolContext) {
   // Actual Harness invocations carry a Host-bound principal. Keep the
   // environment check for older direct integrations and unit fixtures, but
   // never accept a non-root principal from a trusted execution context.
-  if (toolContext?.principal !== undefined && toolContext.principal !== "root_agent") {
+  if (toolContext?.principal !== undefined && toolContext.principal !== RESEARCH_STATE_WRITE_PRINCIPAL) {
     throw new Error(`${toolName} requires the Root Agent principal`);
   }
 }

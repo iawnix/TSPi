@@ -13,6 +13,12 @@ import { is_workspace_id, require_workspace_id } from "../agent-core/workspace_i
 export const RESEARCH_KERNEL_PORT_VERSION = "research_state_port_1";
 export const RESEARCH_ADMISSION_REQUEST_SCHEMA = "research_admission_request/1";
 export const RESEARCH_ADMISSION_RESULT_SCHEMA = "research_admission_result/1";
+// These values are part of the Research State write protocol.  Keep them in
+// the State bridge so Host adapters cannot silently invent a second authority
+// spelling for the same request boundary.
+export const RESEARCH_STATE_WRITE_PRINCIPAL = "root_agent";
+export const RESEARCH_STATE_WRITE_AUTHORITY = "kernel_write";
+export const RESEARCH_LIFECYCLE_REQUEST_VERSION = 1;
 export const RESEARCH_ADMISSION_STATES = Object.freeze(["admission_pending", "admitted"]);
 export const RESEARCH_TURN_OPERATIONS = Object.freeze([
   "start",
@@ -223,4 +229,58 @@ export function create_research_turn_result({ request_id, status = "completed", 
     ...(artifacts.length === 0 ? {} : { artifacts }),
     provenance,
   });
+}
+
+/**
+ * Construct one canonical durable decision request for the Python State
+ * boundary.  Strategy, interpretation, and checkpoint remain separate
+ * semantic operations, but they share one authenticated write envelope.
+ */
+export function create_research_lifecycle_request({
+  operation,
+  principal,
+  strategy_operation,
+  plan,
+  review,
+  interpretation,
+  checkpoint,
+  rationale,
+  basis_refs = [],
+  expected_revision,
+  event_id,
+} = {}) {
+  const protocols = {
+    strategy: "research_strategy_request",
+    interpretation: "research_interpretation_request",
+    checkpoint: "research_checkpoint_request",
+  };
+  if (!Object.hasOwn(protocols, operation)) {
+    throw new TypeError("invalid research lifecycle operation: " + String(operation));
+  }
+  if (principal !== undefined && (typeof principal !== "string" || principal.length === 0)) {
+    throw new TypeError("principal must be a non-empty string");
+  }
+  if (!Array.isArray(basis_refs)) throw new TypeError("basis_refs must be an array");
+  const request = {
+    protocol: protocols[operation],
+    version: RESEARCH_LIFECYCLE_REQUEST_VERSION,
+    authority: RESEARCH_STATE_WRITE_AUTHORITY,
+    ...(principal === undefined ? {} : { principal }),
+    ...(rationale === undefined ? {} : { rationale }),
+    basis_refs,
+    ...(expected_revision === undefined ? {} : { expected_revision }),
+    ...(event_id === undefined ? {} : { event_id }),
+  };
+  if (operation === "strategy") {
+    if (strategy_operation !== "plan" && strategy_operation !== "review") {
+      throw new TypeError("strategy operation must be plan or review");
+    }
+    request.operation = strategy_operation;
+    request[strategy_operation] = strategy_operation === "plan" ? plan : review;
+  } else if (operation === "interpretation") {
+    request.interpretation = interpretation;
+  } else {
+    request.checkpoint = checkpoint;
+  }
+  return Object.freeze(request);
 }

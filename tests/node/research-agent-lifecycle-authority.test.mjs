@@ -4,10 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createChangeTool } from "../../apps/app-server/pi-native-tools.mjs";
+import { createChangeTool, createResearchLifecycleTool } from "../../apps/app-server/pi-native-tools.mjs";
 import { __test as computeTest } from "../../apps/app-server/pi-native-compute.mjs";
 import { close_test_research_states, create_test_research_state } from "../support/research_state_helpers.mjs";
 import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
+import {
+  create_research_lifecycle_request,
+  RESEARCH_LIFECYCLE_REQUEST_VERSION,
+  RESEARCH_STATE_WRITE_AUTHORITY,
+} from "../../packages/research-state-bridge/ports.mjs";
 
 test.afterEach(close_test_research_states);
 
@@ -81,6 +86,92 @@ test("native research writes reject a non-root principal in Host context", async
   } finally {
     if (previous === undefined) delete process.env.TSPI_NATIVE_WRITES;
     else process.env.TSPI_NATIVE_WRITES = previous;
+  }
+});
+
+test("Research lifecycle envelopes use one canonical State write authority", () => {
+  const common = {
+    principal: "root_agent",
+    rationale: "Protocol contract",
+    basis_refs: [],
+    expected_revision: 0,
+    event_id: "event_1",
+  };
+  const requests = [
+    create_research_lifecycle_request({
+      ...common, operation: "strategy", strategy_operation: "plan",
+      plan: { id: "strategy_1", claim_id: "claim_1" },
+    }),
+    create_research_lifecycle_request({
+      ...common, operation: "interpretation",
+      interpretation: { id: "interpretation_1", claim_id: "claim_1", attempt_ref: "attempt_1" },
+    }),
+    create_research_lifecycle_request({
+      ...common, operation: "checkpoint",
+      checkpoint: { id: "checkpoint_1", disposition: "blocked" },
+    }),
+  ];
+  for (const request of requests) {
+    assert.equal(request.version, RESEARCH_LIFECYCLE_REQUEST_VERSION);
+    assert.equal(request.authority, RESEARCH_STATE_WRITE_AUTHORITY);
+    assert.notEqual(request.authority, "research_state");
+  }
+});
+
+test("Native strategy and checkpoint writes reach the canonical Python State boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-native-lifecycle-authority-"));
+  const previous = process.env.TSPI_NATIVE_WRITES;
+  process.env.TSPI_NATIVE_WRITES = "1";
+  try {
+    const workspace = create_workspace_initializer();
+    await workspace.initialize_workspace({ workspace_root: root, workspace_id: "workspace_native_lifecycle", workspace_mode: "research" });
+    await workspace.admit_workspace(root);
+    const toolContext = { cwd: root, principal: "root_agent" };
+    const context = { abortSignal: new AbortController().signal };
+    await createChangeTool().execute("create-scope", {
+      expectedRevision: 0,
+      rationale: "Create lifecycle protocol fixture",
+      operations: [
+        { type: "create_claim", id: "claim_1", statement: "A bounded claim" },
+        { type: "create_node", id: "node_1", title: "Bounded node", objective: "Exercise lifecycle writes", claim_ids: ["claim_1"] },
+        { type: "set_focus", claim_ids: ["claim_1"], node_ids: ["node_1"] },
+      ],
+    }, undefined, toolContext, undefined, context);
+    const lifecycle = createResearchLifecycleTool();
+    const strategy = await lifecycle.execute("strategy", {
+      operation: "strategy",
+      strategyOperation: "plan",
+      plan: {
+        id: "strategy_1",
+        claim_id: "claim_1",
+        node_id: "node_1",
+        objective: "Choose a bounded execution",
+        rationale: "The lifecycle protocol must persist the decision",
+      },
+      rationale: "Record the strategy before execution",
+    }, undefined, toolContext, undefined, context);
+    assert.equal(strategy.details.result.commit.accepted, true);
+    const checkpoint = await lifecycle.execute("checkpoint", {
+      operation: "checkpoint",
+      checkpoint: {
+        id: "checkpoint_1",
+        disposition: "continue_required",
+        claim_ids: ["claim_1"],
+        node_ids: ["node_1"],
+        unresolved_refs: ["node_1"],
+        map_revision: 2,
+        reason: "Continue with the selected strategy",
+      },
+      rationale: "Close the turn with an explicit continuation",
+    }, undefined, toolContext, undefined, context);
+    assert.equal(checkpoint.details.result.accepted, true);
+    const durable = JSON.parse(await readFile(join(root, "research_map", "context.json"), "utf8"));
+    assert.equal(durable.strategy_plans.length, 1);
+    assert.equal(durable.lifecycle, "continue_required");
+  } finally {
+    if (previous === undefined) delete process.env.TSPI_NATIVE_WRITES;
+    else process.env.TSPI_NATIVE_WRITES = previous;
+    await rm(root, { recursive: true, force: true });
   }
 });
 

@@ -6,6 +6,10 @@ import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
 import { createPublicToolContracts } from "../../packages/agent-runtime/host-api/tools.mjs";
 import { boundWorkspaceRoot } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
+import {
+  RESEARCH_STATE_WRITE_AUTHORITY,
+  RESEARCH_STATE_WRITE_PRINCIPAL,
+} from "../../packages/research-state-bridge/ports.mjs";
 
 const require = createRequire(import.meta.url);
 const {
@@ -243,7 +247,7 @@ export function createNativeComputeLifecycle(options = {}) {
       request.tool_call_id || `app_compute_${Date.now()}`,
       params,
       undefined,
-      { cwd: root, sessionId: sessionId || "app-server", principal: "root_agent", trusted_host: true },
+      { cwd: root, sessionId: sessionId || "app-server", principal: RESEARCH_STATE_WRITE_PRINCIPAL, trusted_host: true },
       undefined,
       { abortSignal: request.abortSignal },
     );
@@ -271,8 +275,8 @@ async function recordResearchAttempt(kernel, root, request, binding, operation, 
   const common = {
     workspace_id: workspaceId,
     workspace_root: root,
-    principal: "root_agent",
-    authority: "kernel_write",
+    principal: RESEARCH_STATE_WRITE_PRINCIPAL,
+    authority: RESEARCH_STATE_WRITE_AUTHORITY,
     expected_revision: expectedRevision,
   };
   const inputArtifactIds = Array.isArray(request.inputArtifacts)

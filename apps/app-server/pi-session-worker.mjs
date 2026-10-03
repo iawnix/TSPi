@@ -17,7 +17,10 @@ import { createPublicToolAlias } from "../../packages/agent-runtime/host-api/too
 import { createResearchLifecycleController, toolEventIsError } from "../../packages/agent-runtime/host-api/lifecycle.mjs";
 import { filterExtensionToolNames, filterWorkspaceTools } from "./workspace-mode-tools.mjs";
 import { create_python_kernel_bridge } from "../../packages/research-state-bridge/python_kernel_bridge.mjs";
-import { create_research_state_port } from "../../packages/research-state-bridge/ports.mjs";
+import {
+  create_research_state_port,
+  RESEARCH_STATE_WRITE_PRINCIPAL,
+} from "../../packages/research-state-bridge/ports.mjs";
 
 export {
   createAnalyzeTool,
@@ -190,7 +193,7 @@ async function createTspiHarness(session, options, executionEnv) {
     // This identity is bound by the trusted worker, independently of the
     // per-tool authority metadata. Native write tools use it as the actor
     // boundary; process environment flags remain only a legacy launch guard.
-    principal: "root_agent",
+    principal: RESEARCH_STATE_WRITE_PRINCIPAL,
     allowed_authorities: [...new Set(Object.values(toolMetadata).map((metadata) => metadata.authority))],
     allowed_effects: [...new Set(Object.values(toolMetadata).map((metadata) => metadata.effect))],
     allowed_phases: [...new Set(Object.values(toolMetadata).map((metadata) => metadata.phase))],
