@@ -227,10 +227,11 @@ The transition should:
 4. make installation consume the validated manifest;
 5. keep development-only test and build files outside production archives.
 
-The current `package.json`, `scripts/check_package.py`, and
-`scripts/install_release.py` overlap in release knowledge. They should be
-reduced incrementally, with a contract test that fails when their effective
-payload sets diverge.
+The current `package.json`, `scripts/check_package.py`, and the private
+`scripts/_component_release.py` module share release knowledge.  The public
+installer is `scripts/install_package.py`; component validation is an internal
+step of that installer and must not grow a second standalone installation
+protocol.  A contract test fails when their effective payload sets diverge.
 
 ### 6. Skill terminology
 

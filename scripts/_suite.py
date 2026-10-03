@@ -17,10 +17,10 @@ from typing import Any, Iterable
 
 try:
     from ._wheel import WheelContractError, validate_descriptor
-    from .install_release import ReleaseInstallError, load_manifest as _load_agent_manifest
+    from ._component_release import ComponentArchiveError, load_manifest as _load_agent_manifest
 except ImportError:
     from _wheel import WheelContractError, validate_descriptor
-    from install_release import ReleaseInstallError, load_manifest as _load_agent_manifest
+    from _component_release import ComponentArchiveError, load_manifest as _load_agent_manifest
 
 
 SUITE_SCHEMA_VERSION = "tspi-package-release/4"
@@ -74,7 +74,7 @@ class SuiteReleaseError(RuntimeError):
 def load_agent_manifest(path: Path) -> dict[str, Any]:
     try:
         return _load_agent_manifest(path)
-    except (ReleaseInstallError, WheelContractError) as error:
+    except (ComponentArchiveError, WheelContractError) as error:
         raise SuiteReleaseError(f"invalid Agent component manifest: {error}") from error
 
 

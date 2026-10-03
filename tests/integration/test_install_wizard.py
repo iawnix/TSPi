@@ -717,7 +717,7 @@ def test_interactive_smtp_password_is_written_to_the_default_private_file(tmp_pa
         "--email-binding", "smtp",
         "--email-preset", "163",
         "--email-recipient", "receiver@example.org",
-        "--email-username", "sender@163.com",
+        "--email-address", "sender@163.com",
         "--email-password-file", str(password_file),
     ])
     args._email_password = "163-authorization-code"
@@ -1144,7 +1144,7 @@ def test_custom_smtp_provider_writes_explicit_host(tmp_path: Path) -> None:
         "--email-binding", "smtp", "--email-preset", "custom",
         "--email-host", "mail.example.test", "--email-port", "587",
         "--email-security", "starttls", "--email-recipient", "receiver@example.org",
-        "--email-username", "sender@example.org", "--email-password-file", str(password_file),
+        "--email-address", "sender@example.org", "--email-password-file", str(password_file),
     ])
     wizard.validate_options(args)
 
@@ -1252,7 +1252,7 @@ def test_name_resolver_toml_is_validated_and_written_private(tmp_path: Path) -> 
 
     destination = root / ".pi/name-resolver.toml"
     assert configs["name_resolver"]["status"] == "configured"
-    assert configs["name_resolver"]["enabled_backends"] == "opsin,pubchem"
+    assert configs["name_resolver"]["enabled_backends"] == "pubchem"
     assert configs["name_resolver"]["automatic_lookup"] == "ready"
     assert destination.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
     assert stat.S_IMODE(destination.stat().st_mode) == 0o600

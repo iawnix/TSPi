@@ -220,9 +220,32 @@ if [[ "$SERVICE_SCOPE" != none ]] && truthy "$START_SERVICES"; then INSTALL_ARGS
 
 INSTALL_ARGS+=("${EXTRA_ARGS[@]}")
 
+print_dry_run_args() {
+  local redact_next=false argument
+  for argument in "$@"; do
+    if [[ "$redact_next" == true ]]; then
+      printf '%q ' '[REDACTED]'
+      redact_next=false
+      continue
+    fi
+    case "$argument" in
+      --web-auth-token|--link-enrollment-code)
+        printf '%q ' "$argument"
+        redact_next=true
+        ;;
+      --web-auth-token=*|--link-enrollment-code=*)
+        printf '%q ' "${argument%%=*}=[REDACTED]"
+        ;;
+      *)
+        printf '%q ' "$argument"
+        ;;
+    esac
+  done
+}
+
 if [[ "$DRY_RUN" == true ]]; then
   printf 'Would run:\n  '
-  printf '%q ' "$SCRIPT_DIR/install.sh" "${INSTALL_ARGS[@]}"
+  print_dry_run_args "$SCRIPT_DIR/install.sh" "${INSTALL_ARGS[@]}"
   printf '\n'
   exit 0
 fi
