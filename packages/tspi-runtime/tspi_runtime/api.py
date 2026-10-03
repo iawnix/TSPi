@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from research_state.operation_registry import operation_catalog
+from research_state.projection import research_map_document, research_summary_document
 from tspi_foundation.io import sha256_json
 
 
@@ -91,9 +92,9 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
                     "liveness": liveness,
                 }
             if action == "map":
-                return _filesystem_map_document(result)
+                return research_map_document(result)
             if action == "summary":
-                return _filesystem_research_summary(result)
+                return research_summary_document(result)
             if action == "validate":
                 return {"schema_version": "research-validation/1", "valid": True, "revision": result.get("revision")}
             return result
@@ -135,7 +136,7 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
                     for item in context.get(collection, []):
                         if query in _json_text(item).casefold():
                             matches.append({**item, "collection": collection[:-1], "object_type": item.get("type", collection[:-1])})
-                return {"schema_version": "research-locate/1", "map_id": _filesystem_map_document(context)["map_id"], "matches": matches}
+                return {"schema_version": "research-locate/1", "map_id": research_map_document(context)["map_id"], "matches": matches}
             if action == "decisions":
                 claim_id = value.get("claim_id") or value.get("claimId")
                 records = [
@@ -179,79 +180,6 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
     if command.startswith("compute."):
         return _compute(command.removeprefix("compute."), root, value)
     raise CommandError(f"unsupported command family: {command}")
-
-
-def _filesystem_map_document(context: dict[str, Any]) -> dict[str, Any]:
-    """Project the filesystem context into the canonical ResearchMap shape."""
-
-    focus = context.get("focus") if isinstance(context.get("focus"), dict) else {}
-    map_id = context.get("map_id") or f"map_{context.get('workspace_id', '')}"
-    created_at = context.get("created_at")
-    if not isinstance(created_at, str) or not created_at:
-        raise CommandError("research context created_at is required")
-    phases = context.get("phases", [])
-    claims = context.get("claims", [])
-    nodes = context.get("nodes", [])
-    findings = context.get("findings", [])
-    gates = context.get("gates", [])
-    return {
-        "schema_version": "research-map/1",
-        "map_id": str(map_id),
-        "title": str(context.get("title") or context.get("workspace_id") or map_id),
-        "created_at": created_at,
-        "revision": context.get("revision", 0),
-        "phases": phases,
-        "claims": claims,
-        "nodes": nodes,
-        "findings": findings,
-        "gates": gates,
-        "lifecycle_actions": context.get("lifecycle_actions", []),
-        "claim_relations": context.get("claim_relations", []),
-        "focus_claim_ids": list(focus.get("claim_ids", [])),
-        "focus_node_ids": list(focus.get("node_ids", [])),
-        "metadata": context.get("metadata", {}) if isinstance(context.get("metadata"), dict) else {},
-        "progress": {
-            "phase_count": len(phases),
-            "claim_count": len(claims),
-            "node_count": len(nodes),
-            "finding_count": len(findings),
-            "gate_count": len(gates),
-            "closed_node_count": sum(item.get("state") == "closed" for item in nodes if isinstance(item, dict)),
-            "open_issue_count": sum(item.get("kind") == "issue" and item.get("status") == "open" for item in findings if isinstance(item, dict)),
-        },
-    }
-
-
-def _filesystem_research_summary(context: dict[str, Any]) -> dict[str, Any]:
-    phases = context.get("phases", [])
-    claims = context.get("claims", [])
-    nodes = context.get("nodes", [])
-    findings = context.get("findings", [])
-    gates = context.get("gates", [])
-    return {
-        "schema_version": "research-summary/1",
-        "mode": "summary",
-        "map_id": context.get("map_id") or f"map_{context.get('workspace_id', '')}",
-        "workspace_id": context.get("workspace_id"),
-        "workspace_mode": context.get("workspace_mode"),
-        "revision": context.get("revision", 0),
-        "lifecycle_state": context.get("lifecycle_state"),
-        "phases": phases,
-        "claims": claims,
-        "nodes": nodes,
-        "findings": findings,
-        "gates": gates,
-        "focus": context.get("focus", {"claim_ids": [], "node_ids": []}),
-        "progress": {
-            "phase_count": len(phases),
-            "claim_count": len(claims),
-            "node_count": len(nodes),
-            "finding_count": len(findings),
-            "gate_count": len(gates),
-            "closed_node_count": sum(item.get("state") == "closed" for item in nodes if isinstance(item, dict)),
-            "open_issue_count": sum(item.get("kind") == "issue" and item.get("status") == "open" for item in findings if isinstance(item, dict)),
-        },
-    }
 
 
 def _filesystem_decision(root: str | Path, action: str, request: dict[str, Any], dispatch: Any) -> dict[str, Any]:

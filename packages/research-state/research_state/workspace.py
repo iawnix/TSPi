@@ -170,6 +170,7 @@ def _validate_layout(
     required_files = (
         root / "research_map/context.json",
         root / "lifecycle/liveness.json",
+        root / "memory/index.json",
         root / "checkpoints/checkpoint_0.json",
     )
     if any(path.is_symlink() or not path.is_file() for path in required_files):
@@ -177,6 +178,7 @@ def _validate_layout(
     try:
         context = _read_json(root / "research_map/context.json")
         liveness = _read_json(root / "lifecycle/liveness.json")
+        memory = _read_json(root / "memory/index.json")
         checkpoint = _read_json(root / "checkpoints/checkpoint_0.json")
     except WorkspaceModeError as exc:
         raise WorkspaceModeError("research_workspace_documents_invalid") from exc
@@ -205,6 +207,21 @@ def _validate_layout(
             or liveness["revision"] < 0):
         raise WorkspaceModeError("research_liveness_invalid")
     revision = context.get("revision")
+    if (memory.get("schema_version") != "research_memory_index_1"
+            or memory.get("workspace_id") != manifest["workspace_id"]
+            or memory.get("scope") != "workspace"
+            or memory.get("authority") != "research_memory"
+            or memory.get("state_authority") != "research_state"
+            or type(memory.get("revision")) is not int
+            or memory["revision"] < 0
+            or type(memory.get("context_revision")) is not int
+            or memory["context_revision"] < 0
+            or not isinstance(memory.get("entries"), list)
+            or type(revision) is not int
+            or isinstance(revision, bool)
+            or memory["revision"] > revision
+            or memory["context_revision"] > revision):
+        raise WorkspaceModeError("research_memory_invalid")
     if (context.get("lifecycle_state") not in {"admission_pending", "admitted"}
             or (context.get("lifecycle_state") != liveness.get("state")
                 and not (

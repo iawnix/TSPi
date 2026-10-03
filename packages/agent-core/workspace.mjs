@@ -177,6 +177,7 @@ export async function validate_workspace_files(manifest, root, { allow_partial_a
     || memory.authority !== "research_memory"
     || memory.state_authority !== "research_state"
     || !Number.isSafeInteger(memory.revision) || memory.revision < 0
+    || !Number.isSafeInteger(memory.context_revision) || memory.context_revision < 0
     || memory.revision > context.revision
     || memory.context_revision > context.revision
     || !Array.isArray(memory.entries)) {

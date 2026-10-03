@@ -13,6 +13,7 @@ import { require_workspace_id } from "../agent-core/workspace_id.mjs";
 
 export const KERNEL_BRIDGE_PORT_VERSION = "kernel_bridge_port_1";
 export const KERNEL_BRIDGE_METHODS = Object.freeze([
+  "execute_command",
   "read_context",
   "read_liveness",
   "admit_workspace",
@@ -118,6 +119,11 @@ export function create_research_state_bridge({ workspace_root, workspace_id, tra
   return Object.freeze({
     protocol_version: KERNEL_BRIDGE_PORT_VERSION,
     workspace_root: root,
+    execute_command: (command, params = {}) => {
+      if (typeof command !== "string" || command.length === 0) throw new TypeError("command is required");
+      require_object(params, "command params");
+      return invoke("execute_command", { command, params });
+    },
     read_context: (request = {}) => invoke("read_context", request),
     read_liveness: (request = {}) => invoke("read_liveness", request),
     admit_workspace: (request = {}) => invoke("admit_workspace", request),
@@ -132,13 +138,11 @@ export function create_research_state_bridge({ workspace_root, workspace_id, tra
 
 const PYTHON_WORKER = String.raw`
 import json
-import os
 import sys
-import tempfile
 from pathlib import Path
 
 root_dir = Path.cwd().resolve()
-for _source_root in ("tspi-runtime", "research-state", "research-memory", "research-compute"):
+for _source_root in ("tspi-runtime", "tspi-foundation", "tspi-provider-runtime", "research-state", "research-memory", "research-compute"):
     sys.path.insert(0, str(root_dir / "packages" / _source_root))
 
 try:
@@ -157,66 +161,6 @@ def _object(value, label):
     return value
 
 
-RESEARCH_CONTEXT_COLLECTIONS = (
-    "phases", "claims", "nodes", "findings", "gates", "claim_relations",
-    "attempts", "artifacts", "evidence_links", "lifecycle_actions",
-    "strategy_plans", "strategy_reviews", "attempt_interpretations",
-)
-
-
-def _read_json(path, label):
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as error:
-        raise ValueError(label + "_missing") from error
-    except (OSError, json.JSONDecodeError) as error:
-        raise ValueError(label + "_invalid") from error
-    return _object(value, label)
-
-
-def _state_files(root):
-    context_path = root / "research_map" / "context.json"
-    liveness_path = root / "lifecycle" / "liveness.json"
-    context = _read_json(context_path, "research_context")
-    liveness = _read_json(liveness_path, "research_liveness")
-    if context.get("schema_version") != "research_map_context_1":
-        raise ValueError("unsupported_research_context_schema")
-    if liveness.get("schema_version") != "research_liveness_1":
-        raise ValueError("unsupported_research_liveness_schema")
-    if context.get("workspace_id") != liveness.get("workspace_id"):
-        raise ValueError("research_workspace_id_mismatch")
-    if context.get("lifecycle_state") != liveness.get("state"):
-        raise ValueError("research_lifecycle_state_mismatch")
-    missing = [name for name in RESEARCH_CONTEXT_COLLECTIONS if name not in context]
-    if missing:
-        raise ValueError("research_context_missing_collections: " + ", ".join(missing))
-    invalid = [name for name in RESEARCH_CONTEXT_COLLECTIONS if not isinstance(context[name], list)]
-    if invalid:
-        raise ValueError("research_context_collections_must_be_arrays: " + ", ".join(invalid))
-    focus = context.get("focus")
-    if not isinstance(focus, dict) or not isinstance(focus.get("claim_ids"), list) or not isinstance(focus.get("node_ids"), list):
-        raise ValueError("research_context_focus_invalid")
-    return context_path, liveness_path, context, liveness
-
-
-def _atomic_json(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(value, handle, ensure_ascii=False, indent=2, sort_keys=True)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    except Exception:
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
-        raise
-
-
 def dispatch(method, payload):
     workspace_root = payload.get("workspace_root")
     if not isinstance(workspace_root, str) or not workspace_root:
@@ -229,6 +173,15 @@ def dispatch(method, payload):
         raise RuntimeError("cannot import research_state.agent_workspace: " + str(_agent_workspace_import_error))
     if not has_state_files(root):
         raise ValueError("research workspace requires workspace_manifest.json, research_map/context.json, and lifecycle/liveness.json")
+    if method == "execute_command":
+        command = payload.get("command")
+        params = payload.get("params", {})
+        if not isinstance(command, str) or not command:
+            raise ValueError("command is required")
+        if not isinstance(params, dict):
+            raise ValueError("command params must be an object")
+        from tspi_runtime.api import execute
+        return execute(command, root, params)
     if dispatch_agent_workspace is None:
         raise RuntimeError("cannot import research_state.agent_workspace: " + str(_agent_workspace_import_error))
     return dispatch_agent_workspace(root, method, payload)
@@ -244,7 +197,7 @@ for line in sys.stdin:
         method = request.get("method")
         if not isinstance(request_id, str) or not request_id:
             raise ValueError("bridge request id is required")
-        if method not in {"read_context", "read_liveness", "admit_workspace", "apply_change", "checkpoint", "turn"}:
+        if method not in {"execute_command", "read_context", "read_liveness", "admit_workspace", "apply_change", "checkpoint", "turn"}:
             raise ValueError("unsupported kernel bridge method: " + str(method))
         result = dispatch(method, _object(request.get("payload", {}), "bridge payload"))
         print(json.dumps({"id": request_id, "ok": True, "result": result}, ensure_ascii=False, separators=(",", ":")), flush=True)

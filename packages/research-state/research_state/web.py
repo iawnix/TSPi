@@ -18,6 +18,7 @@ from urllib.parse import unquote
 
 from tspi_foundation.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .workspace import WorkspaceModeError, validate_workspace_manifest
+from .projection import research_map_document
 
 from .registry import (
     ensure_state_dir,
@@ -314,34 +315,10 @@ class _FilesystemResearchMap:
         }
 
     def to_dict(self) -> dict[str, Any]:
-        focus = self.context.get("focus", {})
-        if not isinstance(focus, dict):
-            raise ResearchWebError("research_context_focus_invalid")
-        claim_ids = focus.get("claim_ids", [])
-        node_ids = focus.get("node_ids", [])
-        if not isinstance(claim_ids, list) or not isinstance(node_ids, list):
-            raise ResearchWebError("research_context_focus_invalid")
-        payload = {
-            "schema_version": "research-map/1",
-            "map_id": self.map_id,
-            "title": str(self.context.get("title") or self.root.name or self.map_id),
-            "created_at": self.created_at,
-            "revision": self.revision,
-            "phases": copy.deepcopy(self._collection("phases")),
-            "claims": copy.deepcopy(self._collection("claims")),
-            "nodes": copy.deepcopy(self._collection("nodes")),
-            "findings": copy.deepcopy(self._collection("findings")),
-            "gates": copy.deepcopy(self._collection("gates")),
-            "lifecycle_actions": copy.deepcopy(self._collection("lifecycle_actions")),
-            "claim_relations": copy.deepcopy(self.context.get("claim_relations", [])),
-            "focus_claim_ids": list(claim_ids),
-            "focus_node_ids": list(node_ids),
-            "metadata": copy.deepcopy(self.context.get("metadata", {})),
-            "progress": self.progress(),
-        }
-        if not isinstance(payload["claim_relations"], list) or not isinstance(payload["metadata"], dict):
-            raise ResearchWebError("research_context_projection_invalid")
-        return payload
+        try:
+            return research_map_document(self.context)
+        except ValueError as exc:
+            raise ResearchWebError("research_context_projection_invalid") from exc
 
 
 def _read_object(path: Path, label: str) -> dict[str, Any]:

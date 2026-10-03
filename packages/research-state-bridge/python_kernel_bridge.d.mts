@@ -1,5 +1,6 @@
 export const KERNEL_BRIDGE_PORT_VERSION: "kernel_bridge_port_1";
 export const KERNEL_BRIDGE_METHODS: readonly [
+  "execute_command",
   "read_context",
   "read_liveness",
   "admit_workspace",
@@ -21,6 +22,7 @@ export interface KernelBridgeTransport {
 export interface ResearchStateBridge {
   readonly protocol_version: "kernel_bridge_port_1";
   readonly workspace_root: string;
+  execute_command(command: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>;
   read_context(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   read_liveness(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   admit_workspace(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
