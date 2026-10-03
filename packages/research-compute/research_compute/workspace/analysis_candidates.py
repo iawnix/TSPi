@@ -6,10 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from research_compute.provider import ProviderUnavailable, resolve_compute_provider
-
-
-class FindingCandidateError(ValueError):
-    """The provider produced an invalid or stale finding candidate."""
+from .candidates import FindingCandidateError
 
 
 def load_analysis_candidate(

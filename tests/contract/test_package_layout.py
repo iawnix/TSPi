@@ -330,9 +330,9 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
         assert not (ROOT / "extensions" / removed).exists()
     for name in ("agent-protocol.cjs", "fact-kinds.cjs", "failure-taxonomy.cjs", "run-journal.cjs", "session-lifecycle.cjs"):
         assert (RUNTIME_ROOT / "agent-core" / name).is_file()
-    assert (AGENTS_ROOT / "review" / "runtime.ts").is_file()
+    assert (AGENTS_ROOT / "review" / "result-tool.ts").is_file()
     assert (AGENTS_ROOT / "review" / "prompts" / "core.md").is_file()
-    assert (AGENTS_ROOT / "compute" / "runtime.ts").is_file()
+    assert (AGENTS_ROOT / "compute" / "result-tool.ts").is_file()
     assert (AGENTS_ROOT / "compute" / "prompts" / "core.md").is_file()
     assert {path.name for path in AGENTS_ROOT.iterdir()} == {"compute", "review"}
     assert (RUNTIME_ROOT / "artifacts" / "request-contract.cjs").is_file()

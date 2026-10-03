@@ -655,7 +655,7 @@ def test_xtb_scan_prepare_rejects_invalid_bound_control_before_execution(tmp_pat
         "$constrain\n  distance: 1, 2, auto\n$metadyn\n  save=10\n$end\n",
         encoding="utf-8",
     )
-    with pytest.raises(ComputeContractError, match="invalid xTB scan control.*unsupported.*section"):
+    with pytest.raises(ComputeContractError, match="unsupported xTB scan control section"):
         _intent(workspace, "xtb", "scan")
 
 

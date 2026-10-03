@@ -762,7 +762,7 @@ def test_ase_neb_compute_flow_prepares_and_parses_bound_artifacts(
     assert (output_dir / "parsed/reaction_path.json").is_file()
 
     product.write_text(reactant.read_text(encoding="utf-8"), encoding="utf-8")
-    with pytest.raises(ComputeContractError, match="different source content"):
+    with pytest.raises(ComputeContractError, match="ASE NEB endpoints must differ beyond rigid rotation and translation"):
         parse_calculation(
             workspace,
             created["intent_id"],
