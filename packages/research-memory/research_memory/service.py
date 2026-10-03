@@ -33,7 +33,7 @@ class ContextPack:
         }
 
 
-class ContextBuilder:
+class ResearchContextBuilder:
     """Read State and its projection to construct a bounded context pack."""
 
     def build(self, root: str | Path) -> ContextPack:
@@ -48,7 +48,7 @@ class ContextBuilder:
         return ContextPack(int(state.get("revision", 0)), state, liveness, memory)
 
 
-class ResearchMemoryService(ContextBuilder):
+class ResearchMemoryService(ResearchContextBuilder):
     def project(self, root: str | Path, state: dict[str, Any], revision: int | None = None) -> dict[str, Any]:
         liveness = {"lifecycle": state.get("lifecycle", "idle"), "disposition": state.get("disposition"), "checkpoint_id": state.get("checkpoint_id")}
         return FileProjectionWriter().write_projection(root, state, liveness, revision=revision)
@@ -101,28 +101,4 @@ def install_state_projection_writer() -> None:
     register_projection_writer(FileProjectionWriter())
 
 
-class AgentSessionMemory:
-    """Session notes, separate from persistent scientific Research Memory."""
-
-    def __init__(self, root: str | Path, session_id: str):
-        self.root = Path(root); self.session_id = session_id
-
-    @property
-    def path(self) -> Path:
-        return self.root / "memory" / "sessions" / f"{self.session_id}.jsonl"
-
-    def append(self, entry: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(entry, dict): raise TypeError("session memory entry must be an object")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        value = {"session_id": self.session_id, "authority": "agent_session", **entry}
-        with self.path.open("a", encoding="utf-8") as handle: handle.write(json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n")
-        return value
-
-    def read(self, limit: int = 128) -> list[dict[str, Any]]:
-        if limit < 0: raise ValueError("limit must be non-negative")
-        try: rows = [json.loads(line) for line in self.path.read_text(encoding="utf-8").splitlines() if line.strip()]
-        except FileNotFoundError: return []
-        return rows[-limit:] if limit else []
-
-
-__all__ = ["ProjectionWriter", "ContextPack", "ContextBuilder", "ResearchMemoryService", "FileProjectionWriter", "AgentSessionMemory", "install_state_projection_writer"]
+__all__ = ["ProjectionWriter", "ContextPack", "ResearchContextBuilder", "ResearchMemoryService", "FileProjectionWriter", "install_state_projection_writer"]

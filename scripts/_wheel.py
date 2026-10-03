@@ -62,6 +62,17 @@ def build_wheel(
             if not path.is_file() or path.is_symlink():
                 raise WheelContractError(f"wheel source file is missing or unsafe: {path}")
             shutil.copy2(path, source / name)
+        # Setuptools records package files using the package-dir target.  The
+        # chemical namespace lives in an extension tree in the repository;
+        # stage it at a normal top-level package path so the wheel RECORD,
+        # installed files, and runtime digest all describe the same payload.
+        pyproject = source / "pyproject.toml"
+        pyproject.write_text(
+            pyproject.read_text(encoding="utf-8").replace(
+                "extensions/chemical/providers/chemical_runtime", "chemical_runtime"
+            ),
+            encoding="utf-8",
+        )
         source_roots = {
             "tspi_runtime": root / "packages" / "tspi-runtime" / "tspi_runtime",
             "tspi_foundation": root / "packages" / "tspi-foundation" / "tspi_foundation",
@@ -80,7 +91,7 @@ def build_wheel(
             "research_state": source / "packages" / "research-state" / "research_state",
             "research_memory": source / "packages" / "research-memory" / "research_memory",
             "research_compute": source / "packages" / "research-compute" / "research_compute",
-            "chemical_runtime": source / "extensions" / "chemical" / "providers" / "chemical_runtime",
+            "chemical_runtime": source / "chemical_runtime",
         }
         for package_name, package_source in source_roots.items():
             if not package_source.is_dir() or package_source.is_symlink():

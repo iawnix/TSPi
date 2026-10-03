@@ -457,7 +457,9 @@ def _pip_install_requirements(
 def _run_runtime_probe(python: Path, package_root: Path) -> dict[str, Any]:
     completed = subprocess.run(
         [str(python), "-m", "tspi_bootstrap.probe", "--json"],
-        cwd=package_root,
+        # Do not run from the source checkout: an ignored ``*.egg-info``
+        # directory there can shadow the freshly installed wheel metadata.
+        cwd=package_root.parent,
         env=_clean_python_environment(),
         text=True,
         stdout=subprocess.PIPE,
@@ -468,16 +470,17 @@ def _run_runtime_probe(python: Path, package_root: Path) -> dict[str, Any]:
 
 
 def _run_base_probe(python: Path, package_root: Path) -> dict[str, Any]:
-    source_root = package_root / "packages" / "tspi-runtime"
+    runtime = load_runtime_environment(package_root)
+    source_roots = [str(path) for path in runtime.source_python_paths(package_root)]
     program = (
         "import json,sys;"
-        "sys.path.insert(0,sys.argv[1]);"
+        "sys.path[:0]=sys.argv[1:];"
         "from tspi_bootstrap.probe import probe_runtime_capabilities;"
         "print(json.dumps(probe_runtime_capabilities(require_distribution=False),sort_keys=True))"
     )
     completed = subprocess.run(
-        [str(python), "-c", program, str(source_root)],
-        cwd=package_root,
+        [str(python), "-c", program, *source_roots],
+        cwd=package_root.parent,
         env=_clean_python_environment(),
         text=True,
         stdout=subprocess.PIPE,

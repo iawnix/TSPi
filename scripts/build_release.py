@@ -25,6 +25,7 @@ try:
         build_wheel,
         source_payload_sha256,
     )
+    from ._extension_validation import validate_extensions
 except ImportError:
     from _source_capture import SourceCaptureError, capture_source_tree
     from _wheel import (
@@ -35,6 +36,7 @@ except ImportError:
         build_wheel,
         source_payload_sha256,
     )
+    from _extension_validation import validate_extensions
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -64,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             source_root = captured.root
             validate_package(source_root)
+            validate_extensions(source_root)
             package = json.loads((source_root / "package.json").read_text(encoding="utf-8"))
             package_name = require_string(package.get("name"), "package name")
             package_version = require_string(package.get("version"), "package version")

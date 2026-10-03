@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from research_memory import ContextBuilder, FileProjectionWriter
+from research_memory import FileProjectionWriter, ResearchContextBuilder
 from research_state import admit_workspace, read_context, read_liveness
 from research_state.workspace import initialize_workspace
 
@@ -14,7 +14,7 @@ def _workspace(tmp_path: Path) -> Path:
 
 def test_memory_context_builder_reads_state_and_projection(tmp_path: Path) -> None:
     root = _workspace(tmp_path)
-    pack = ContextBuilder().build(root)
+    pack = ResearchContextBuilder().build(root)
 
     assert pack.revision == 0
     assert pack.context["workspace_id"] == "workspace_memory"
@@ -29,4 +29,4 @@ def test_memory_projection_writer_is_rebuildable_and_state_is_read_only(tmp_path
     after = read_context(root)
 
     assert after == before
-    assert ContextBuilder().build(root).memory["revision"] == before["revision"]
+    assert ResearchContextBuilder().build(root).memory["revision"] == before["revision"]

@@ -160,6 +160,13 @@ def test_compute_and_review_are_the_only_model_child_runtimes() -> None:
     assert packaged_namespaces == {"compute", "review"}
 
 
+def test_removed_standalone_subagent_runtimes_are_not_packaged() -> None:
+    """Pi SDK owns the child-agent loop; TSPi only ships task/result contracts."""
+
+    assert not (RUNTIME_ROOT / "agents" / "review" / "runtime.ts").exists()
+    assert not (RUNTIME_ROOT / "agents" / "compute" / "runtime.ts").exists()
+
+
 def test_compute_task_and_result_are_bound_to_typed_actions(tmp_path: Path) -> None:
     script = f"""
 const taskHelper=require({json.dumps(str(COMPUTE_TASK_PACKET))});

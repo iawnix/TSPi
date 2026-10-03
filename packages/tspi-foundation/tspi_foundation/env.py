@@ -45,6 +45,29 @@ PYTHON_PACKAGE_NAMES = frozenset(PYTHON_SOURCE_ROOTS)
 PYTHON_PAYLOAD_SUFFIXES = frozenset({".css", ".html", ".js", ".json", ".py", ".svg", ".toml"})
 
 
+def source_python_paths(package_root: str | Path) -> tuple[Path, ...]:
+    """Return the authored source parents for every first-party namespace.
+
+    Every entry in :data:`PYTHON_SOURCE_ROOTS` points at a package directory;
+    Python needs its parent on ``sys.path``.  Keeping this derivation here
+    gives bootstrap, probes, and source-test runners one authoritative layout
+    instead of maintaining subtly different lists.
+    """
+
+    root = Path(package_root).expanduser().resolve()
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for relative in PYTHON_SOURCE_ROOTS.values():
+        package = root / relative
+        if not package.is_dir():
+            continue
+        parent = package.parent
+        if parent not in seen:
+            seen.add(parent)
+            paths.append(parent)
+    return tuple(paths)
+
+
 class RuntimeEnvironmentError(RuntimeError):
     """The installation-owned Python runtime cannot be used safely."""
 
