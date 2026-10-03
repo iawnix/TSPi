@@ -10,7 +10,7 @@ import { loadInstalledServerExtensions, loadServerExtensions } from "./server-ex
 import { discoverInstalledExtensions } from "./extension-manifest-loader.mjs";
 import { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 import { createPackageSourceReadGuard } from "./pi-harness-policy.mjs";
-import { createLifecycleActionLivenessHook, readResearchLiveness } from "./pi-native-tools.mjs";
+import { createCheckpointLivenessHook, readResearchLiveness } from "./pi-native-tools.mjs";
 import { markToolEnvelopeError, wrapToolForHarness } from "../../packages/agent-runtime/host-api/tool-envelope.mjs";
 import { createToolExecutionContext } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
 import { createPublicToolAlias } from "../../packages/agent-runtime/host-api/tools.mjs";
@@ -35,8 +35,7 @@ export {
   createReviewTool,
   createSeedTool,
   createStateTool,
-  createWorkflowTool,
-  createLifecycleActionLivenessHook,
+  createCheckpointLivenessHook,
 } from "./pi-native-tools.mjs";
 export { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
 
@@ -339,7 +338,7 @@ async function createTspiHarness(session, options, executionEnv) {
         "before_run_end",
         // `required` is an explicit next-turn plan, so only an unresolved
         // `decision_needed` checkpoint may inject a bounded same-turn repair.
-        createLifecycleActionLivenessHook({ cwd: session.metadata.cwd, maxFollowUps: 1, followUpRequired: false }),
+        createCheckpointLivenessHook({ cwd: session.metadata.cwd, maxFollowUps: 1, followUpRequired: false }),
         { id: "tspi.lifecycle_action-liveness" },
       );
     const lane = await created.harness.lane("main", TODO_CONTEXT);
