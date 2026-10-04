@@ -34,7 +34,7 @@ App Server 是 TSPi 应用组合根，负责 Host RPC、workspace/session 绑定
 Monitor 和客户端适配。它只连接安装目录中的 Pi SDK Runtime。
 
 Pi SDK 是唯一的 Agent Runtime。Pi import、experimental source、patch 校验、Pi
-SessionWorker、Pi AgentHarness 和 Pi 模型集成由 `agent-pi-adapter` 与 App Server 组合；
+SessionWorker、Pi durable Harness 和 Pi 模型集成由 `agent-pi-adapter` 与 App Server 组合；
 TSPi 不复制 Pi 的 Agent loop。框架不调用系统安装的 `pi` 命令，也不读取环境中的
 Pi 配置。
 
@@ -118,7 +118,7 @@ operational execution scope，并写入 canonical workspace Artifact。
 它不会创建 ResearchMap Claim、Finding、Evidence、Attempt 或 Monitor。
 
 `research` 配置除了通用目录，还创建 ResearchMap、Memory、Lifecycle、
-Checkpoint、Node、Evidence、Monitor 和 Environment 目录，并以
+Checkpoint、Node、Evidence、Operations 和 Environment 目录，并以
 `admission_pending` 生命周期状态和 genesis checkpoint 初始化一个空的合法
 Research State 状态。Host 通过独立的 `workspace_port_1` 准入操作推进状态；在仍处于
 orient/准入阶段时，模型不能通过普通 change 操作直接创建第一个 Phase 或 Claim。

@@ -55,6 +55,10 @@ function error_status(code) {
   return 500;
 }
 
+function is_session_workspace_error(error) {
+  return /workspace_id_mismatch|workspace_id must be a valid workspace identifier/u.test(String(error?.message || error));
+}
+
 function write_json(response, status, value, request_id_value) {
   const body = JSON.stringify(value);
   response.writeHead(status, {
@@ -173,14 +177,23 @@ export function create_http_server({ app_server, session_store = null, max_body_
         case "session_attach": {
           const session_id = body?.session_id;
           if (typeof session_id !== "string" || session_id.length === 0) throw new TypeError("session_id is required");
+          const session_request = {
+            session_id,
+            ...(body.workspace_id === undefined ? {} : { workspace_id: body.workspace_id }),
+          };
           let session;
           if (app_server.session_store_enabled || !session_store) {
-            session = await app_server.attach_session({ session_id });
+            session = await app_server.attach_session(session_request);
           } else {
             const entry = await session_store.attach_session(session_id);
             try {
-              session = await app_server.attach_session({ session_id });
+              session = await app_server.attach_session({
+                ...session_request,
+                ...(entry.workspace_id === undefined || body.workspace_id !== undefined ? {} : { workspace_id: entry.workspace_id }),
+              });
             } catch (error) {
+              if (is_session_workspace_error(error)
+                || (body.workspace_id !== undefined && entry.workspace_id !== undefined && body.workspace_id !== entry.workspace_id)) throw error;
               try {
                 session = await app_server.create_session({
                   session_id,
@@ -206,21 +219,25 @@ export function create_http_server({ app_server, session_store = null, max_body_
         case "session_close": {
           const session_id = body?.session_id;
           if (typeof session_id !== "string" || session_id.length === 0) throw new TypeError("session_id is required");
+          const session_request = {
+            session_id,
+            ...(body.workspace_id === undefined ? {} : { workspace_id: body.workspace_id }),
+          };
           if (app_server.session_store_enabled) {
-            result = await app_server.close_session({ session_id });
+            result = await app_server.close_session(session_request);
           } else if (session_store) {
             // The HTTP boundary may own the durable store while the App
             // Server owns only the process-local runtime.  Close both when
             // the runtime is present; after a restart, a missing runtime is
             // not a reason to leave a durable session open forever.
             try {
-              await app_server.close_session({ session_id });
+              await app_server.close_session(session_request);
             } catch (error) {
               if (!/session_not_found|session_runtime_unavailable/u.test(String(error?.message || error))) throw error;
             }
             result = await session_store.close_session(session_id);
           } else {
-            result = await app_server.close_session({ session_id });
+            result = await app_server.close_session(session_request);
           }
           break;
         }
@@ -231,8 +248,13 @@ export function create_http_server({ app_server, session_store = null, max_body_
           if (session_store && !app_server.session_store_enabled && body?.session_id) {
             const entry = await session_store.attach_session(body.session_id);
             try {
-              await app_server.attach_session({ session_id: body.session_id });
+              await app_server.attach_session({
+                session_id: body.session_id,
+                workspace_id: body.workspace_id ?? entry.workspace_id,
+              });
             } catch (error) {
+              if (is_session_workspace_error(error)
+                || (body.workspace_id !== undefined && entry.workspace_id !== undefined && body.workspace_id !== entry.workspace_id)) throw error;
               try {
                 const restored = await app_server.create_session({
                   session_id: body.session_id,
@@ -251,7 +273,10 @@ export function create_http_server({ app_server, session_store = null, max_body_
           result = await app_server.submit_turn(body);
           if (session_store && !app_server.session_store_enabled && body?.session_id && typeof session_store.update_session === "function") {
             try {
-              const session = await app_server.attach_session({ session_id: body.session_id });
+              const session = await app_server.attach_session({
+                session_id: body.session_id,
+                ...(body.workspace_id === undefined ? {} : { workspace_id: body.workspace_id }),
+              });
               const snapshot = typeof session.read_snapshot === "function" ? await session.read_snapshot() : {};
               await session_store.update_session(body.session_id, { runtime_snapshot: snapshot });
             } catch (error) {
@@ -331,6 +356,8 @@ async function run_default_server() {
   if (!install_root || !pi_source) throw new Error("installation_pi_runtime_not_configured");
   const pi_session_port = await create_runtime({
     pi_source,
+    package_root: package_root,
+    worker_entry: join(package_root, "apps/app-server/pi-session-worker.mjs"),
     cwd: process.env.RESEARCH_AGENT_CWD || process.env.TSPI_WORKSPACE_ROOT || package_root,
     workspace_root: process.env.TSPI_WORKSPACE_ROOT || package_root,
     session_root: process.env.RESEARCH_AGENT_SESSION_ROOT || join(install_root, ".pi/research-agent/sessions"),

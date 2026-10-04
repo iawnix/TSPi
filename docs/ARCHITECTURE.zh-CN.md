@@ -6,7 +6,7 @@
 
 TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装目录运行一个 Host，
 服务 workspace root 下的直接子工作区；每个活动 session 由固定版本 Pi App Server 中
-一个 `SessionWorker`/`AgentHarness` lane 拥有。终端、Phone、Monitor 都是客户端，不会
+一个 `SessionWorker`/`durable Harness` lane 拥有。终端、Phone、Monitor 都是客户端，不会
 启动第二个 agent loop。Host 是 control plane，不是第二个 TUI。
 
 ## 组件职责
@@ -225,7 +225,7 @@ TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、
 ## App Server 生命周期
 
 `ts-app-server-tspi.service` 调用 TSPi Host 入口，在 `.pi/app-server-host/` 创建安装级
-状态，包括稳定 server ID、Host socket、format-4 session repository、请求回执、
+状态，包括稳定 server ID、Host socket、SQLite durable session repository、请求回执、
 scheduler lease 和 Monitor 健康文件。`tspi.workspace-directory` 只暴露包含受支持
 `workspace_manifest.json` 及规范研究状态三元组的 workspace。
 
@@ -247,7 +247,7 @@ TS Phone -- 出站 WSS --> TSPi Link Relay <-- 出站 WSS -- TSPi Host
                                                     |
                                                 Unix socket
                                                     |
-                              Pi App Server -> SessionWorker + AgentHarness
+                              Pi App Server -> SessionWorker + durable Harness
                                   ^                    ^             ^
                                   |                    |             |
                            Pi 原生 TUI              Phone         Monitor

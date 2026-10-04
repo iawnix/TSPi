@@ -1,11 +1,15 @@
 import type { PiSessionPort } from "../agent-core/ports.mjs";
 
-export const PI_RUNTIME_MODULE_VERSION: "pi_runtime_module_1";
+export const PI_RUNTIME_MODULE_VERSION: "pi_runtime_module_2";
 
 export interface PiRuntimeModuleOptions {
   readonly cwd?: string;
   readonly workspace_root?: string;
   readonly session_root?: string;
+  readonly server_directory?: string;
+  readonly server_id?: string;
+  readonly package_root?: string;
+  readonly worker_entry?: string;
   readonly agent_dir?: string;
   readonly model?: unknown;
   readonly model_runtime?: unknown;

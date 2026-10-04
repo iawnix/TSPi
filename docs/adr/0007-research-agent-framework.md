@@ -39,7 +39,7 @@ workspace and session binding, permissions, receipts, recovery, Monitor, and
 client adapters. It connects only to the installation-owned Pi SDK Runtime.
 
 Pi SDK is the only production Agent Runtime. Pi imports, experimental source
-access, patch verification, Pi SessionWorker, Pi AgentHarness, and Pi model
+access, patch verification, Pi SessionWorker, Pi durable Harness, and Pi model
 integration are composed by `agent-pi-adapter` and the App Server. TSPi does
 not duplicate the Pi Agent loop or consume ambient Pi configuration.
 
@@ -151,7 +151,7 @@ workspace Artifacts. It never creates a ResearchMap Claim, Finding, Evidence,
 Attempt, or Monitor.
 
 The `research` profile creates the common directories plus ResearchMap,
-memory, lifecycle, checkpoints, nodes, evidence, monitor, and environment
+memory, lifecycle, checkpoints, nodes, evidence, operations, and environment
 directories. It seeds an empty, valid Research State state with lifecycle state
 `admission_pending` and a genesis checkpoint. Host admission is a separate
 `workspace_port_1` operation; the model must not create the first Phase or

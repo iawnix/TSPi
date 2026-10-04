@@ -17,7 +17,7 @@ loads ordinary research extensions plus one small bridge extension. This mode
 has an isolated writer and is never used as a Harness fallback.
 
 The default runtime is the installation Pi App Server described by the Harness
-architecture: one `SessionWorker`/`AgentHarness` lane is shared by the native
+architecture: one `SessionWorker`/`durable Harness` lane is shared by the native
 Pi remote TUI, Phone, and Monitor clients.
 
 The installation Host is a control plane, not a second Pi runtime. It exposes
@@ -30,7 +30,7 @@ events back. One live Pi process is allowed per workspace.
 The ordinary compatibility mode may use `tmux` as its persistence boundary,
 but this is an explicit migration/debug concern. The Harness path never starts
 tmux or scrapes a PTY. If the compatibility mode cannot use tmux it may run Pi
-in the foreground; that process must not write the Harness format-4 repository.
+in the foreground; that process must not write the Harness SQLite durable repository.
 
 TS Phone uses Host RPC through TSPi Link. The Relay forwards opaque framed
 NDJSON and owns neither sessions nor research state. The optional browser
@@ -48,7 +48,7 @@ does not translate a legacy identity alias.
 
 Compatibility history is never silently converted or opened writable. Host
 exposes workspace format-3 files read-only; an explicit import creates a new
-installation-owned format-4 session while preserving the source and writing a
+installation-owned SQLite durable session while preserving the source and writing a
 provenance report. Ambiguous, active, torn, or unsupported histories are
 rejected.
 

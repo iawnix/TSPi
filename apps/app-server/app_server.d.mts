@@ -23,12 +23,12 @@ export interface AppServer {
   attach_workspace(request: string | WorkspaceReferenceRequest): Promise<WorkspaceManifestLike>;
   admit_workspace(request: string | WorkspaceReferenceRequest): Promise<WorkspaceManifestLike>;
   admit_research_workspace(request: string | WorkspaceReferenceRequest): Promise<WorkspaceManifestLike>;
-  attach_session(request: string | { readonly session_id: string }): Promise<AgentSessionPort>;
+  attach_session(request: string | { readonly session_id: string; readonly workspace_id?: string }): Promise<AgentSessionPort>;
   list_sessions(): Promise<readonly Record<string, unknown>[]>;
-  close_session(request: string | { readonly session_id: string }): Promise<Record<string, unknown>>;
+  close_session(request: string | { readonly session_id: string; readonly workspace_id?: string }): Promise<Record<string, unknown>>;
   submit(request: { readonly session_id: string; readonly input: string }): Promise<Record<string, unknown>>;
-  subscribe(request: string | { readonly session_id: string }, listener: (event: Record<string, unknown>) => void): (() => void) | Promise<() => void>;
-  interrupt(request: string | { readonly session_id: string }): Promise<unknown>;
+  subscribe(request: string | { readonly session_id: string; readonly workspace_id?: string }, listener: (event: Record<string, unknown>) => void): (() => void) | Promise<() => void>;
+  interrupt(request: string | { readonly session_id: string; readonly workspace_id?: string }): Promise<unknown>;
   close(): Promise<void>;
   route_turn(request: Record<string, unknown>): Promise<Record<string, unknown>>;
   submit_turn(request: Record<string, unknown>): Promise<Record<string, unknown>>;

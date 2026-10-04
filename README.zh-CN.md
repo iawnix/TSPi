@@ -57,7 +57,7 @@ code，并自动完成 Host 注册。Relay 必须部署在另一台机器时，�
 ## Host 与终端
 
 整个安装目录运行一个 TSPi Host，负责认证路由、幂等回执、会话发现和 Monitor 管理。
-每个 workspace 由一个固定版本 Pi `SessionWorker`/`AgentHarness` lane 拥有。lane
+每个 workspace 由一个固定版本 Pi `SessionWorker`/`durable Harness` lane 拥有。lane
 拥有 agent loop、模型、工具、transcript 和 Root lock；终端、Phone、Monitor 都是同一
 lane 的客户端。直接打开工作区即可：
 

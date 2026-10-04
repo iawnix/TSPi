@@ -4,7 +4,7 @@
 
 `ResearchAgent --workspace <name>` 是用户侧统一入口，启动 Pi 官方的远程 `ExperimentalClientTui`，不会替换
 Pi 的 header、editor、命令目录、transcript、extension 或输入循环。选中的 workspace
-绑定到安装级 Pi Harness format-4 会话。
+绑定到安装级 Pi Harness SQLite durable 会话。
 
 新工作区可以在入口处显式绑定不可变模式：
 
@@ -21,12 +21,12 @@ Host admission。已有框架工作区省略 `--mode` 时使用 manifest 中记�
 
 ```text
 Pi App Server / SessionWorker  <->  TSPi Host  <->  TS Phone/Web
-       AgentHarness、历史、工具          Host RPC       Link/HTTP
+       durable Harness、历史、工具          Host RPC       Link/HTTP
                  ^                         ^
              Pi 原生 TUI                 Monitor
 ```
 
-Pi Harness worker 拥有 agent loop、模型、工具、transcript 和 durable format-4 lane。Host
+Pi Harness worker 拥有 agent loop、模型、工具、transcript 和 SQLite durable lane。Host
 负责路由、认证、幂等回执、scheduler lease、会话发现以及 Monitor supervisor。Pi 原生
 TUI、Phone、Monitor 都是同一个 lane 的客户端，不会启动第二个 agent loop。
 
@@ -39,7 +39,7 @@ TUI、Phone、Monitor 都是同一个 lane 的客户端，不会启动第二个 
 
 启动器先确保安装级 Host 在线，再请求 session descriptor，直接把 Pi 官方 native client
 连接到 Pi App Server socket。Native Pi Harness 是唯一支持的后端，不提供 tmux 或 PTY scraping
-路径。同一 workspace 的第二个终端会连接同一个 format-4 session；客户端关闭不会
+路径。同一 workspace 的第二个终端会连接同一个 SQLite durable session；客户端关闭不会
 停止 worker，也不会打断当前 turn。
 
 Host 是安装级服务，会扫描 workspace root 下的直接子工作区。通常使用：
@@ -54,10 +54,10 @@ system service 去掉 `--user`。Host 私有 socket 位于配置的 runtime 目�
 ## 会话和操作
 
 远程 `ExperimentalClientTui` 提供 `/resume`、`/model`、`/thinking`、`/compact`、
-`/reload` 以及 Native TSPi 命令。`/resume` 只能切换当前 workspace 中的 format-4
+`/reload` 以及 Native TSPi 命令。`/resume` 只能切换当前 workspace 中的 SQLite durable
 session，不会跨 workspace。独立 Pi 的会话命令在这个远程客户端中不可用。
 
-启动时，`-c` 选择当前 workspace 最近的可写 format-4 session，`--session-id <id>` 选择
+启动时，`-c` 选择当前 workspace 最近的可写 SQLite durable session，`--session-id <id>` 选择
 指定 session。顶层 `-r`/`--resume` 会被明确拒绝，因为 Host-mediated client 必须先取得
 确定的连接 descriptor 才能启动 TUI；请先进入终端，再执行 `/resume`。Phone/Web 的
 prompt 通过 Host `input/send` 进入同一个 lane，并使用持久回执和稳定的
@@ -88,7 +88,7 @@ Monitor 不会自动 finalize，也不会修改 ResearchMap。
 ## 会话存储
 
 安装级 `.pi/app-server-host/sessions/` 是 Native Pi Harness 使用的唯一 session 存储。
-workspace `.pi/sessions/*.jsonl` 历史不是受支持的输入，Native runtime 不会 resume 或导入它。
-研究状态应保存在 workspace Research Memory；format-4 session 使用 Host 的会话控制接口。
+workspace `.pi/sessions` 历史不是受支持的输入，Native runtime 不会 resume 或导入它；持久历史位于 `.pi/app-server-host/sessions/<workspace-id>/<session-id>/session.sqlite`，旁边的 `meta.json` 保存路由元数据。
+研究状态应保存在 workspace Research Memory；SQLite durable session 使用 Host 的会话控制接口。
 
 详见[架构](ARCHITECTURE.zh-CN.md)和[安装说明](INSTALLATION.zh-CN.md)。

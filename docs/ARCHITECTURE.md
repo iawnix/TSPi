@@ -6,7 +6,7 @@ The normative unified Research Harness lifecycle is defined in [ADR 0006](adr/00
 
 TSPi packages scientific skills and runtime adapters on top of Pi. One
 installation Host serves all direct-child workspaces, while each active
-workspace has one pinned Pi `SessionWorker`/`AgentHarness` lane. The terminal,
+workspace has one pinned Pi `SessionWorker`/`durable Harness` lane. The terminal,
 Phone, and Monitor are clients of that lane; none owns a second agent loop or
 replacement UI.
 
@@ -275,7 +275,7 @@ TS Phone -- outbound WSS --> TSPi Link Relay <-- outbound WSS -- TSPi Host
                                                         |
                                                   Unix socket / RPC
                                                         |
-                              Pi App Server -> SessionWorker + AgentHarness
+                              Pi App Server -> SessionWorker + durable Harness
                                   ^                    ^             ^
                                   |                    |             |
                          native Pi TUI              Phone         Monitor
@@ -303,9 +303,11 @@ broker or transport service.
 
 The `ts-app-server-tspi.service` unit invokes TSPi's Host entrypoint and creates
 installation state at `.pi/app-server-host/`, including one stable server ID,
-the Host socket, format-4 sessions, receipts, scheduler leases, and Monitor health.
-The Pi App Server is the runtime owner below that Host. Its format-4 sessions
-are stored in `.pi/app-server-host/sessions/<encoded-cwd>/`; workspace
+the Host socket, SQLite sessions, receipts, scheduler leases, and Monitor health.
+The Pi App Server is the runtime owner below that Host. Its SQLite durable sessions
+are stored in `.pi/app-server-host/sessions/<workspace-id>/<session-id>/`; `meta.json`
+keeps `workspace_id`, `session_id`, and `cwd` together so routing uses identity
+while the agent loop still executes in the workspace directory. Workspace
 `.pi/sessions` files are outside the supported Native runtime boundary.
 
 `ResearchAgent --workspace <name>` bootstraps the selected workspace, asks Host for

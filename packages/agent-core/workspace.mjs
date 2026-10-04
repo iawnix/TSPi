@@ -30,7 +30,7 @@ const RESEARCH_DIRECTORIES = Object.freeze([
   "checkpoints",
   "nodes",
   "evidence",
-  "monitor",
+  "operations",
   "environments",
 ]);
 

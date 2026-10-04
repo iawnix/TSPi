@@ -1,4 +1,4 @@
-import { lstat, readFile, realpath } from "node:fs/promises";
+import { lstat, realpath } from "node:fs/promises";
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
@@ -7,7 +7,6 @@ import { pathToFileURL } from "node:url";
 import { createSessionControl } from "./pi-session-control.mjs";
 import { readReceipt, receiptDigest, receiptKey, writeReceipt } from "./tspi-receipts.mjs";
 import { acquireSchedulerLease } from "./tspi-scheduler-lease.mjs";
-import { parseHarnessHistory } from "./pi-session-history.mjs";
 
 const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/u;
@@ -16,7 +15,7 @@ const EVENT_HISTORY_LIMIT = 256;
 /**
  * Start Pi's experimental server and expose a small Host-facing backend.
  *
- * The experimental server remains the owner of session files, AgentHarness,
+ * The experimental server remains the owner of session files, durable Harness,
  * lanes, and transcripts. This adapter only translates the existing TSPi Host
  * facade to Pi's SessionManagement/AgentController services, so a TUI and a
  * Phone request always reach the same durable lane.
@@ -116,7 +115,7 @@ export async function createTspiHarnessBackend(options = {}) {
   }
 
   function summaryFor(summary, root, snapshot, bound = true) {
-    const raw = snapshot?.snapshot || snapshot || {};
+    const raw = normalizeLane(snapshot);
     const operation = raw.operation;
     const createdValue = typeof summary.createdAt === "number"
       ? summary.createdAt
@@ -156,10 +155,10 @@ export async function createTspiHarnessBackend(options = {}) {
     return manifest.workspace_id;
   }
 
-  function findSummary(sessionId, root) {
+  function findSummary(workspaceId, sessionId) {
     if (!SESSION_ID.test(sessionId)) throw error("invalid_identifier", "session_id is invalid");
     const sessions = admin.directory.state.value?.sessions || [];
-    const matches = sessions.filter((item) => item.sessionId === sessionId && item.cwd === root);
+    const matches = sessions.filter((item) => item.sessionId === sessionId && item.workspaceId === workspaceId);
     if (matches.length === 0) throw error("session_not_found", "Session is not present in this workspace");
     return matches[0];
   }
@@ -173,7 +172,7 @@ export async function createTspiHarnessBackend(options = {}) {
     if (pending) return pending;
     const promise = (async () => {
       const root = await workspace(workspaceId);
-      const summary = findSummary(sessionId, root);
+      const summary = findSummary(workspaceId, sessionId);
       const clientRuntime = await openClientRuntime(connectCommand);
       let active;
       let binding;
@@ -205,10 +204,10 @@ export async function createTspiHarnessBackend(options = {}) {
           queuedEntryOperations: new Map(),
           queuedIds: new Set(),
           queueSnapshotInitialized: false,
+          activeOperationId: null,
+          transcriptLength: 0,
           driveTail: Promise.resolve(),
-          kickPending: false,
           lease: null,
-          recoveryStarted: false,
           closed: false,
         };
         if (closed) throw error("backend_closed", "Pi Harness backend is closed", true);
@@ -216,7 +215,7 @@ export async function createTspiHarnessBackend(options = {}) {
         control.subscribe({
           include_snapshot: true,
           listener: (event) => {
-            binding.snapshot = event.snapshot;
+            binding.snapshot = normalizeLane(event.snapshot);
             binding.sequence = event.sequence;
             if (event.kind === "event") {
               binding.history.push(Object.freeze({ ...event }));
@@ -226,16 +225,11 @@ export async function createTspiHarnessBackend(options = {}) {
                 binding.operationResults.set(runId, Object.freeze({ ...event.event }));
               }
             }
-            updateReceiptStates(binding, event.snapshot, event.event);
-            const session = summaryFor(summary, root, event.snapshot, true);
-            eventHandler({ workspace_id: workspaceId, session_id: sessionId, snapshot: hostSnapshot(event.snapshot), session, event: event.event });
-            if (hasQueuedMessages(event.snapshot) && (isIdleSnapshot(event.snapshot) || isSuspendedSnapshot(event.snapshot))) void kick(binding).catch(() => {});
+            updateReceiptStates(binding, binding.snapshot, event.event);
+            const session = summaryFor(summary, root, binding.snapshot, true);
+            eventHandler({ workspace_id: workspaceId, session_id: sessionId, snapshot: hostSnapshot(binding.snapshot), session, event: event.event });
           },
         });
-        // A worker is cold-resumable: attaching a client must also recover an
-        // admitted operation or consume a durable queue, even when no TUI or
-        // Phone is connected to drive it.
-        void recoverBinding(binding);
         return binding;
       } catch (cause) {
         if (binding) bindings.delete(key);
@@ -298,11 +292,6 @@ export async function createTspiHarnessBackend(options = {}) {
     }
   }
 
-  function isIdleSnapshot(snapshot) {
-    const raw = snapshot?.snapshot || snapshot || {};
-    return raw.operation === null || raw.operation === undefined;
-  }
-
   function isSuspendedSnapshot(snapshot) {
     const raw = snapshot?.snapshot || snapshot || {};
     const operation = raw.operation;
@@ -316,97 +305,68 @@ export async function createTspiHarnessBackend(options = {}) {
     return Array.isArray(raw.queues) && raw.queues.length > 0;
   }
 
-  async function kick(binding, { force = false } = {}) {
-    if (binding.closed || binding.kickPending || (!force && !hasQueuedMessages(binding.snapshot))) return null;
-    binding.kickPending = true;
-    try {
-      if (typeof binding.active.agent.startQueued === "function") {
-        const before = queuedEntryIds(binding.snapshot);
-        const response = await serializeBinding(binding, () => withSchedulerLease(binding, () => binding.active.agent.startQueued(BACKGROUND_CONTEXT)));
-        adoptQueuedOperations(binding, response, before);
-        if (isIdleSnapshot(binding.snapshot) && !hasQueuedMessages(binding.snapshot)) {
-          if (binding.lease) await binding.lease.release().catch(() => {});
-          binding.lease = null;
-        }
-        return response;
-      }
-      // Older prepared Pi trees do not expose non-blocking admission yet.  Do
-      // not call prompt() here: that would make a monitor request wait for an
-      // entire model turn and would make its acceptance ambiguous.
-      return { accepted: false, operationId: null, error: { code: "admission_unavailable", message: "Pinned Pi source lacks startQueued" } };
-    } finally {
-      binding.kickPending = false;
-    }
-  }
-
-  async function recoverBinding(binding) {
-    if (binding.closed || binding.recoveryStarted) return;
-    binding.recoveryStarted = true;
-    try {
-      const raw = binding.snapshot?.snapshot || binding.snapshot || {};
-      if (process.env.TSPI_DEBUG === "1") {
-        process.stderr.write(`TSPi recovery admission ${binding.key}: operation=${raw.operation?.operationId || raw.operation?.id || "none"} queued=${Array.isArray(raw.queues) ? raw.queues.length : 0}\n`);
-      }
-      if (raw.operation !== null && raw.operation !== undefined) {
-        // `startQueued()` deliberately detaches `lane.resume()` and therefore
-        // hides drive failures. A cold operation has already crossed the
-        // durable admission boundary, so recovery must use the synchronous
-        // controller method and observe its terminal response/error.
-        if (typeof binding.active.agent.resume === "function") {
-          const response = await serializeBinding(binding, () => withSchedulerLease(binding, () => binding.active.agent.resume(BACKGROUND_CONTEXT)));
-          if (process.env.TSPI_DEBUG === "1") process.stderr.write(`TSPi recovery response ${binding.key}: ${JSON.stringify(response)}\n`);
-        } else if (typeof binding.active.agent.startQueued === "function") {
-          const before = queuedEntryIds(binding.snapshot);
-          const response = await serializeBinding(binding, () => withSchedulerLease(binding, () => binding.active.agent.startQueued(BACKGROUND_CONTEXT)));
-          if (process.env.TSPI_DEBUG === "1") process.stderr.write(`TSPi recovery response ${binding.key}: ${JSON.stringify(response)}\n`);
-          adoptQueuedOperations(binding, response, before);
-        }
-      } else if (hasQueuedMessages(raw)) {
-        await kick(binding);
-      }
-    } catch (cause) {
-      if (process.env.TSPI_DEBUG === "1") {
-        const detail = cause instanceof Error ? (cause.stack || cause.message) : String(cause);
-        process.stderr.write(`TSPi recovery failed ${binding.key}: ${detail}\n`);
-      }
-      // The durable operation/queue remains authoritative. A later attach or
-      // monitor tick retries recovery; no synthetic prompt is submitted here.
-    }
-  }
-
-  function adoptQueuedOperations(binding, response, before = new Set()) {
-    const operationId = response?.operationId || null;
-    if (!operationId) return;
-    const raw = binding.snapshot?.snapshot || binding.snapshot || {};
-    const queuedIds = queuedEntryIds(raw);
-    for (const receipt of receipts.values()) {
-      if (receipt.workspace_id !== binding.workspaceId || receipt.session_id !== binding.summary.sessionId) continue;
-      if (receipt.entry_id && before.has(receipt.entry_id) && !queuedIds.has(receipt.entry_id) && receipt.state === "queued") {
-        binding.queuedEntryOperations.set(receipt.entry_id, operationId);
-        void persistReceipt({ ...receipt, state: "running", operation_id: operationId, accepted: true }).catch(() => {});
-      }
-    }
-  }
-
   function updateReceiptStates(binding, snapshot, event = null) {
     const raw = snapshot?.snapshot || snapshot || {};
     const operationId = raw.operation?.operationId || raw.operation?.id || null;
+    const transcriptLength = Array.isArray(raw.transcript) ? raw.transcript.length : 0;
+    const completedTurn = binding.activeOperationId !== null && operationId === null
+      && transcriptLength > binding.transcriptLength;
     const queuedIds = queuedEntryIds(raw);
+    const activeInputIds = new Set(Array.isArray(raw.operation?.inputs) ? raw.operation.inputs.map(String) : []);
     const lastResult = raw.lastResult && typeof raw.lastResult === "object" ? raw.lastResult : null;
     const previousQueuedIds = binding.queueSnapshotInitialized ? binding.queuedIds : queuedIds;
     const consumed = binding.queueSnapshotInitialized
       ? [...previousQueuedIds].filter((entryId) => !queuedIds.has(entryId))
       : [];
-    const eventOperationId = event?.runId || event?.operationId || operationId || lastResult?.operationId || null;
-    if (eventOperationId) for (const entryId of consumed) binding.queuedEntryOperations.set(entryId, eventOperationId);
+    // Pi v1's live run is keyed by the durable task, but its admission and
+    // event inputs are submission IDs. Prefer the current live submission ID
+    // when a queued entry is consumed so a successor run cannot inherit the
+    // preceding run's operation identity.
+    const eventOperationId = operationId || event?.runId || event?.operationId || lastResult?.operationId || null;
+    const eventInputIds = event?.type === "run_end" && Array.isArray(event.inputs)
+      ? new Set(event.inputs.map(String))
+      : null;
+    if (eventOperationId) {
+      for (const entryId of consumed) {
+        // A Pi run may own several submissions. A queued submission keeps its
+        // own public operation identity when it is placed into that run;
+        // falling back to the run's first input is only for older snapshots
+        // that do not expose the input list.
+        binding.queuedEntryOperations.set(
+          entryId,
+          activeInputIds.has(String(entryId)) || eventInputIds?.has(String(entryId)) ? String(entryId) : eventOperationId,
+        );
+      }
+    }
     binding.queuedIds = queuedIds;
     binding.queueSnapshotInitialized = true;
+    if (completedTurn) {
+      for (const receipt of receipts.values()) {
+        if (receipt.workspace_id !== binding.workspaceId || receipt.session_id !== binding.summary.sessionId) continue;
+        if (!["submitted", "running", "suspended"].includes(receipt.state)) continue;
+        const terminal = lastResult?.status === "failed" || lastResult?.status === "aborted"
+          ? { ...lastResult, operationId: lastResult.operationId || receipt.operation_id || binding.activeOperationId }
+          : { status: "completed", operationId: receipt.operation_id || binding.activeOperationId };
+        void persistReceipt(receiptFromOperationResult(receipt, terminal)).catch(() => {});
+      }
+    }
+    binding.activeOperationId = operationId;
+    binding.transcriptLength = transcriptLength;
     for (const receipt of receipts.values()) {
       if (receipt.workspace_id !== binding.workspaceId || receipt.session_id !== binding.summary.sessionId) continue;
+      const receiptOperationId = receipt.operation_id || receipt.operation_hint || null;
+      if (eventInputIds?.has(String(receiptOperationId)) && ["submitted", "running", "suspended"].includes(receipt.state)) {
+        void persistReceipt(receiptFromOperationResult(receipt, { ...event, operationId: String(receiptOperationId) })).catch(() => {});
+        continue;
+      }
       if (receipt.entry_id && !queuedIds.has(receipt.entry_id) && receipt.state === "queued") {
         const consumedOperationId = binding.queuedEntryOperations.get(receipt.entry_id) || operationId || (lastResult?.operationId ?? null);
-        if (consumedOperationId && consumedOperationId === lastResult?.operationId) {
-          void persistReceipt(receiptFromOperationResult(receipt, lastResult)).catch(() => {});
+        const eventResult = event?.type === "run_end" && typeof event.operationId === "string" ? event : null;
+        const inputResult = eventResult && eventInputIds?.has(String(receipt.entry_id))
+          ? { ...eventResult, operationId: String(receipt.entry_id) }
+          : null;
+        if (inputResult || consumedOperationId && (consumedOperationId === lastResult?.operationId || consumedOperationId === eventResult?.operationId)) {
+          void persistReceipt(receiptFromOperationResult(receipt, inputResult || eventResult || lastResult)).catch(() => {});
         } else if (consumedOperationId) {
           void persistReceipt({ ...receipt, state: isSuspendedSnapshot(raw) ? "suspended" : "running", operation_id: consumedOperationId, accepted: true, reconciled: true, retryable: false }).catch(() => {});
         } else if (!operationId && raw.faulted !== true) {
@@ -494,14 +454,17 @@ export async function createTspiHarnessBackend(options = {}) {
     }
     const raw = binding.snapshot?.snapshot || binding.snapshot || {};
     const operationId = raw.operation?.operationId || raw.operation?.id || null;
+    const activeInputIds = new Set(Array.isArray(raw.operation?.inputs) ? raw.operation.inputs.map(String) : []);
     const queuedIds = queuedEntryIds(raw);
     const queuedOperation = receipt.entry_id ? binding.queuedEntryOperations.get(receipt.entry_id) : null;
-    const operationHint = receipt.operation_id || receipt.operation_hint || queuedOperation || null;
+    const operationHint = receipt.operation_id || receipt.operation_hint
+      || (receipt.entry_id && activeInputIds.has(String(receipt.entry_id)) ? String(receipt.entry_id) : null)
+      || queuedOperation || null;
     const evidence = operationHint && operationHint === raw.lastResult?.operationId
       ? raw.lastResult
       : operationHint ? binding.operationResults.get(operationHint) : null;
     if (evidence) return persistReceipt(receiptFromOperationResult(receipt, evidence));
-    if (operationHint && operationId === operationHint) {
+    if (operationHint && (operationId === operationHint || activeInputIds.has(String(operationHint)))) {
       return await persistReceipt({ ...receipt, operation_id: operationHint, state: isSuspendedSnapshot(raw) ? "suspended" : "running", accepted: true, reconciled: true, retryable: false });
     }
     if (operationHint && operationId === null && raw.faulted === true) {
@@ -574,8 +537,8 @@ export async function createTspiHarnessBackend(options = {}) {
           : response.error || null,
       };
     }
-    if (typeof active.startPrompt === "function") {
-      const response = await active.startPrompt({ message: payload.text, images: null, operationId: payload.operation_hint }, BACKGROUND_CONTEXT);
+    if (typeof active.prompt === "function") {
+      const response = await active.prompt({ message: payload.text, images: null }, BACKGROUND_CONTEXT);
       return {
         accepted: response?.accepted === true && validAdmissionId(response?.operationId) !== null,
         operation_id: validAdmissionId(response?.operationId),
@@ -643,24 +606,11 @@ export async function createTspiHarnessBackend(options = {}) {
   async function recoverDurableSessions() {
     const sessions = admin.directory.state.value?.sessions || [];
     for (const summary of sessions) {
-      if (closed || typeof summary?.path !== "string" || typeof summary.cwd !== "string") continue;
-      // Keep one malformed/foreign session from preventing all other durable
-      // lanes from recovering after a Host restart. The session file remains
-      // authoritative and will be retried on a later attach if it is fixed.
-      try {
-        const content = await readFile(summary.path, "utf8");
-        const parsed = parseHarnessHistory(content, summary.cwd);
-        if (parsed.version !== 4) continue;
-        const lane = parsed.values.get("pi.lane.state\0main");
-        const inbox = Array.isArray(lane?.inbox) ? lane.inbox : [];
-        if (!lane || (!lane.currentOperationId && inbox.length === 0)) continue;
-        const workspaceId = workspaceIdFor(summary.cwd);
-        // Opening the binding is the cold-resume boundary. Its subscription
-        // starts recovery without requiring a TUI, Phone, or Monitor client.
-        void openBinding(workspaceId, summary.sessionId).catch(() => {});
-      } catch {
-        continue;
-      }
+      if (closed || typeof summary?.sessionId !== "string" || typeof summary?.workspaceId !== "string") continue;
+      // Opening a binding is the Pi v1 durable recovery boundary. The worker
+      // opens the SQLite session and calls Harness.resume() before it serves
+      // requests; no JSONL transcript parsing or synthetic prompt is needed.
+      void openBinding(summary.workspaceId, summary.sessionId).catch(() => {});
     }
   }
 
@@ -672,7 +622,7 @@ export async function createTspiHarnessBackend(options = {}) {
     async listSessions(workspaceId) {
       const root = await workspace(workspaceId);
       const harness = (admin.directory.state.value?.sessions || [])
-        .filter((item) => item.cwd === root)
+        .filter((item) => item.workspaceId === workspaceId)
         .map((item) => {
           const binding = bindings.get(`${workspaceId}/${item.sessionId}`);
           return summaryFor(item, root, binding?.snapshot, Boolean(binding));
@@ -685,7 +635,7 @@ export async function createTspiHarnessBackend(options = {}) {
     },
     async createSession({ workspace_id: workspaceId, session_id: sessionId, provider, model }) {
       const root = await workspace(workspaceId);
-      const created = await admin.management.create({ ...(sessionId ? { id: sessionId } : {}), cwd: root }, BACKGROUND_CONTEXT);
+      const created = await admin.management.create({ ...(sessionId ? { id: sessionId } : {}), cwd: root, workspaceId }, BACKGROUND_CONTEXT);
       await admin.plugins.prepareSession({ sessionId: created.sessionId, packagePaths: null }, BACKGROUND_CONTEXT);
       const binding = await openBinding(workspaceId, created.sessionId);
       await applyRequestedModel(binding, provider, model);
@@ -698,7 +648,7 @@ export async function createTspiHarnessBackend(options = {}) {
     },
     async resumeSession({ workspace_id: workspaceId, session_id: sessionId, provider, model }) {
       const root = await workspace(workspaceId);
-      const summary = findSummary(sessionId, root);
+      const summary = findSummary(workspaceId, sessionId);
       const binding = await openBinding(workspaceId, sessionId);
       await applyRequestedModel(binding, provider, model);
       return {
@@ -726,7 +676,7 @@ export async function createTspiHarnessBackend(options = {}) {
     },
     async removeSession(workspaceId, sessionId) {
       const root = await workspace(workspaceId);
-      const summary = findSummary(sessionId, root);
+      const summary = findSummary(workspaceId, sessionId);
       const binding = bindings.get(`${workspaceId}/${sessionId}`);
       if (binding) await closeBinding(binding);
       await admin.management.remove(summary.sessionId, BACKGROUND_CONTEXT);
@@ -830,8 +780,6 @@ export async function createTspiHarnessBackend(options = {}) {
           retryable: !response.accepted && isRetryableAdmissionFailure(response.error),
           error: response.error || null,
         });
-        const requested = payload.mode;
-        if (response.entry_id && requested === "next_run") void kick(binding, { force: true }).catch(() => {});
         return receipt;
       })();
       dispatchPromises.set(dispatchKey, { digest, promise });
@@ -848,7 +796,7 @@ export async function createTspiHarnessBackend(options = {}) {
     },
     async interrupt(params) {
       const binding = await openBinding(params.workspace_id, params.session_id);
-      await binding.active.agent.requestAbort(params.turn_id, BACKGROUND_CONTEXT);
+      await binding.active.agent.abort(BACKGROUND_CONTEXT);
       return { accepted: true, operation_id: params.turn_id };
     },
     async models(params) {
@@ -878,7 +826,7 @@ export async function createTspiHarnessBackend(options = {}) {
 }
 
 function hostSnapshot(value) {
-  const raw = value?.snapshot || value || {};
+  const raw = normalizeLane(value);
   const operation = raw.operation || null;
   const queues = Array.isArray(raw.queues) ? raw.queues : [];
   const transcript = Array.isArray(raw.transcript)
@@ -911,6 +859,60 @@ function hostSnapshot(value) {
     faulted: raw.faulted === true,
     model: normalizeModelIdentity(raw.configuration?.model),
     receipts: [],
+  };
+}
+
+/** Convert Pi v1's durable ConversationView into the legacy Host lane shape. */
+function normalizeLane(value) {
+  const source = value?.snapshot || value || {};
+  if (source.__tspiLane === true) return source;
+  const docs = source.docs && typeof source.docs === "object" ? source.docs : {};
+  const agent = docs["pi.agent"] && typeof docs["pi.agent"] === "object" ? docs["pi.agent"] : {};
+  const live = docs["pi.live"] && typeof docs["pi.live"] === "object" ? docs["pi.live"] : {};
+  const inbox = docs["pi.inbox"] && typeof docs["pi.inbox"] === "object" ? docs["pi.inbox"] : {};
+  const provider = docs["pi.provider"] && typeof docs["pi.provider"] === "object" ? docs["pi.provider"] : {};
+  const run = live.run && typeof live.run === "object" ? live.run : null;
+  const generation = live.generation && typeof live.generation === "object" ? live.generation : null;
+  const inputs = Array.isArray(run?.inputs) ? run.inputs : [];
+  const submissionId = inputs.length > 0 ? String(inputs[0]) : null;
+  const operation = run ? {
+    // `id` remains the Pi scheduler task identity for diagnostics. TSPi's
+    // public operation/turn identity is the admitted submission ID returned
+    // by AgentController.prompt().
+    id: String(run.taskId),
+    taskId: String(run.taskId),
+    operationId: submissionId || String(run.taskId),
+    inputs: inputs.map(String),
+    kind: "run",
+    status: generation?.retry || generation?.deferred ? "suspended" : "running",
+    retry: generation?.retry || null,
+    deferred: generation?.deferred || null,
+    streamingMessage: generation?.message || null,
+    runningTools: Array.isArray(live.tools) ? live.tools.filter((tool) => tool?.status === "running") : [],
+  } : null;
+  const queues = Array.isArray(inbox.items) ? inbox.items.map((item) => ({
+    entryId: String(item.id),
+    id: String(item.id),
+    mode: item.mode,
+    message: item.content ?? item.entry ?? null,
+  })) : [];
+  const transcript = Array.isArray(source.entries)
+    ? source.entries.flatMap((entry) => entry?.model?.[0] ? [{ ...entry.model[0], entry_id: entry.id }] : [])
+    : Array.isArray(source.transcript) ? source.transcript : Array.isArray(source.messages) ? source.messages : [];
+  const assistant = [...transcript].reverse().find((entry) => entry?.role === "assistant");
+  const lastResult = assistant?.stopReason === "error"
+    ? { status: "failed", operationId: null, error: { code: "provider_error", message: assistant.errorMessage || "Pi operation failed" } }
+    : assistant?.stopReason === "aborted"
+      ? { status: "aborted", operationId: null }
+      : null;
+  return {
+    __tspiLane: true,
+    operation,
+    queues,
+    transcript,
+    lastResult,
+    faulted: false,
+    configuration: { model: agent.model || provider.model || provider.configuration?.model || null },
   };
 }
 

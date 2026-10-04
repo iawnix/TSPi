@@ -152,7 +152,7 @@ Options:
   -h, --help          Show this help.
 
 The terminal runs Pi's native experimental client TUI against an installation-
-owned AgentHarness server. Session history is isolated under the installation
+owned durable Harness server. Session history is isolated under the installation
 Host state; Phone and monitor requests address the same Pi lane. The Native
 Pi Harness is the only supported runtime backend.
 The managed Host service is ts-app-server-tspi.service.
@@ -1344,6 +1344,7 @@ def launch_harness_client(installation: Installation, request: LaunchRequest, wo
     if request.session_id and not SESSION_ID.fullmatch(request.session_id):
         raise TSPiHostError("invalid session identity", exit_code=2)
     os.environ["TSPI_SESSION_CWD"] = str(workspace)
+    os.environ["TSPI_WORKSPACE_ID"] = request.workspace_name
     os.environ["TSPI_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
     os.environ["PI_SERVER_DIR"] = str(installation.root / ".pi/app-server-host/pi-server")
     os.environ["PI_EXPERIMENTAL"] = "1"

@@ -11,7 +11,7 @@ const COLLECTIONS = [
   "strategy_plans", "strategy_reviews", "attempt_interpretations",
 ];
 const COMMON_DIRECTORIES = ["inputs", "artifacts", "runs", "logs"];
-const RESEARCH_DIRECTORIES = ["research_map", "memory", "lifecycle", "checkpoints", "nodes", "evidence", "monitor", "environments"];
+const RESEARCH_DIRECTORIES = ["research_map", "memory", "lifecycle", "checkpoints", "nodes", "evidence", "operations", "environments"];
 
 // The Agent Runtime consumes the same canonical read model as the Research
 // Research State. It must never silently fall back to research_map.json, because that

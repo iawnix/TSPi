@@ -16,7 +16,7 @@ workspace Root lock。TSPi 只加载普通研究 extension 及一个很小的 br
 该模式有独立 writer，绝不能作为 Harness fallback。
 
 默认运行时是 Harness 架构中的安装级 Pi App Server：一个
-`SessionWorker`/`AgentHarness` lane 由 Pi 原生 remote TUI、Phone 和 Monitor 共同使用。
+`SessionWorker`/`durable Harness` lane 由 Pi 原生 remote TUI、Phone 和 Monitor 共同使用。
 
 安装级 Host 是 control plane，不是第二个 Pi runtime。它在私有 Unix socket 上提供
 认证的 `tspi-host/1` NDJSON，负责 workspace/session 发现、输入接收、幂等回执、事件
@@ -26,7 +26,7 @@ ExtensionAPI，再把 Pi 的 snapshot/event 发布回来。每个 workspace 只�
 
 普通兼容模式可以把 `tmux` 作为持久化边界，但这只属于显式迁移/调试流程。Harness
 路径绝不启动 tmux，也不抓取 PTY；兼容模式无法使用 tmux 时可以前台运行 Pi，但该进程
-不得写入 Harness format-4 repository。
+不得写入 Harness SQLite durable repository。
 
 TS Phone 通过 TSPi Link 使用 Host RPC。Relay 只转发不透明的 NDJSON 帧，不拥有
 session 或科学状态。可选 browser gateway 只是附着一个现有 Host session 的 loopback
@@ -40,7 +40,7 @@ Host 为 workspace root 启动一个 Monitor worker。Monitor 持久化 registra
 路由前验证该 manifest，不再转换旧 identity alias。
 
 兼容历史不会被静默转换，也不会以可写方式打开。Host 只读列出 workspace format-3
-文件；显式 import 会创建新的安装级 format-4 session，保留源文件并写入 provenance
+文件；显式 import 会创建新的安装级 SQLite durable session，保留源文件并写入 provenance
 报告。活动、残缺、有歧义或不支持的历史会拒绝。
 
 ## 后果

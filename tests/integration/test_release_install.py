@@ -94,14 +94,7 @@ def test_real_release_build_excludes_development_tree(tmp_path: Path) -> None:
     assert "apps/app-server/pi-app-server.mjs" in names
     assert "apps/app-server/pi-session-worker.mjs" in names
     assert "config/pi-source.json" in names
-    assert "config/pi-worker-entry.patch" in names
-    assert "config/pi-process-diagnostics.patch" in names
-    assert "config/pi-multi-workspace-create.patch" in names
-    assert "config/pi-workspace-session-list.patch" in names
-    assert "config/pi-research-workspace.patch" in names
-    assert "config/pi-system-prompt.patch" in names
-    assert "config/pi-transcript-json.patch" in names
-    assert "config/pi-session-navigation.patch" in names
+    assert "config/pi-tspi-runtime.patch" in names
     assert "scripts/prepare_pi_source.py" in names
     assert not any(name.startswith("packages/tspi-runtime/tspi_runtime/web/") for name in names)
     assert "packages/research-compute/research_compute/workspace/artifacts.py" in names

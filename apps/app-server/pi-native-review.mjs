@@ -3,13 +3,9 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import {
-  AgentHarness,
-  MemorySessionRepo,
-  TODO_CONTEXT,
-  withAbortSignal,
-} from "@earendil-works/pi-agent-core";
+import { TODO_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import Type from "./pi-runtime-deps.mjs";
 import {
   createPublicToolContracts,
@@ -186,149 +182,62 @@ async function runNativeReview(options) {
   const invalidOutputs = [];
   const resultCapture = createReviewResultCapture();
   const artifactCapture = createReviewArtifactReadCapture();
-  const artifactManifest = Array.isArray(options.reviewContext.artifact_manifest)
-    ? options.reviewContext.artifact_manifest
-    : [];
-  const resultTool = createReviewResultTool(
-    options.packet,
-    options.reviewContext,
-    resultCapture,
-    artifactCapture,
-  );
-  const artifactTool = artifactManifest.length
-    ? createReviewArtifactReadTool(options.root, artifactManifest, artifactCapture)
-    : undefined;
-  const tools = artifactTool ? [artifactTool, resultTool] : [resultTool];
-  const repo = new MemorySessionRepo();
-  const session = await repo.create({ id: `tspi-review-${options.packet.task_id}` }, TODO_CONTEXT);
-  let harness;
-  const attempts = new Map();
+  const artifactManifest = Array.isArray(options.reviewContext.artifact_manifest) ? options.reviewContext.artifact_manifest : [];
+  const resultTool = createReviewResultTool(options.packet, options.reviewContext, resultCapture, artifactCapture);
+  const artifactTool = artifactManifest.length ? createReviewArtifactReadTool(options.root, artifactManifest, artifactCapture) : undefined;
+  const sourceRoot = process.env.TSPI_PI_RUNTIME_ROOT;
+  const durable = await import(`${pathToFileURL(resolve(sourceRoot, "packages/durable/src/index.ts")).href}`);
+  const { Harness, MemoryStorage, createRegistry, defineExtension } = durable;
+  const tools = [artifactTool, resultTool].filter(Boolean).map((tool) => ({
+    ...tool,
+    async execute(params, api, context) {
+      if (tool.name === REVIEW_RESULT_TOOL_NAME) resultCapture.attemptCount += 1;
+      const onUpdate = (value) => typeof value === "string" ? api.output(value) : api.details(value);
+      try {
+        const result = await tool.execute(api.callId, params, onUpdate, {}, {}, context);
+        return result?.terminate ? { ...result, control: { terminate: true } } : result;
+      }
+      catch (error) { return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true }; }
+    },
+  }));
+  const registry = createRegistry();
+  registry.install(defineExtension({ name: "review-tools", tools }));
   const timeoutSignal = AbortSignal.timeout(options.timeoutMs);
   const parentSignal = options.context?.abortSignal;
   const signal = parentSignal ? AbortSignal.any([parentSignal, timeoutSignal]) : timeoutSignal;
-  const parentContext = typeof options.context?.value === "function" ? options.context : TODO_CONTEXT;
-  const childContext = withAbortSignal(signal, parentContext);
+  const childContext = withAbortSignal(signal, TODO_CONTEXT);
+  let harness;
   const startedAt = Date.now();
   try {
-    const created = await AgentHarness.create({
-      session,
-      models: options.runtime.models,
-      model: options.runtime.model,
-      thinkingLevel: options.runtime.thinkingLevel,
-      tools,
-      activeToolNames: tools.map((tool) => tool.name),
-      systemPrompt: reviewSystemPrompt(options.reviewContext),
-      retry: { enabled: false, maxRetries: 0, baseDelayMs: 0 },
-      compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 },
-      toolExecution: "sequential",
-    }, childContext);
-    harness = created.harness;
-    const lane = await harness.lane("review", childContext);
-    const activeTools = await lane.getActiveTools(childContext);
-    if (JSON.stringify(activeTools) !== JSON.stringify(tools.map((tool) => tool.name))) {
-      throw new Error(`native Review isolation failed; active tools: ${activeTools.join(", ")}`);
-    }
-    harness.events.on("tool_start", (event) => {
-      if (event.lane !== "review" || event.toolName !== REVIEW_RESULT_TOOL_NAME) return;
-      resultCapture.attemptCount += 1;
-      attempts.set(event.toolCallId, event.args);
-    });
-    harness.events.on("tool_end", (event) => {
-      if (event.lane !== "review" || event.toolName !== REVIEW_RESULT_TOOL_NAME || !event.isError) return;
-      recordInvalidOutput(invalidOutputs, {
-        validation_stage: classifyValidationStage(event.result),
-        reason: toolResultText(event.result),
-        source: "tool_arguments",
-        raw: attempts.get(event.toolCallId) || null,
-      });
-    });
+    harness = await Harness.open(new MemoryStorage(), { models: options.runtime.models, registry, settings: { compaction: { enabled: false }, retry: { enabled: false }, toolExecution: "sequential" } }, childContext);
+    const conversation = await harness.root(childContext, { agent: { model: { provider: options.runtime.model.provider, modelId: options.runtime.model.id }, thinkingLevel: options.runtime.thinkingLevel } });
     options.onState("running");
-    options.onState("waiting");
-    const promptPayload = buildReviewPromptPayload(
-      options.packet,
-      options.researchMap,
-      options.reviewContext,
-    );
-    const first = await lane.prompt(reviewTaskPrompt(promptPayload, Boolean(artifactTool)), undefined, childContext);
-    requireCompletedReviewRun(first);
+    const promptPayload = buildReviewPromptPayload(options.packet, options.researchMap, options.reviewContext);
+    let submission = await conversation.submit({ type: "input", content: reviewTaskPrompt(promptPayload, Boolean(artifactTool)) }, childContext);
+    let settled = await submission.wait(childContext);
+    if (settled.status !== "done") throw new Error(`native Review ended with ${settled.reason}`);
     if (!resultCapture.accepted && resultCapture.attemptCount === 0) {
-      recordInvalidOutput(invalidOutputs, {
-        validation_stage: "missing_tool_call",
-        reason: `Review must call ${REVIEW_RESULT_TOOL_NAME}; assistant text is not accepted`,
-        source: "assistant_text",
-        raw: await lastAssistantText(lane, childContext),
-      });
+      recordInvalidOutput(invalidOutputs, { validation_stage: "missing_tool_call", reason: `Review must call ${REVIEW_RESULT_TOOL_NAME}`, source: "assistant_text", raw: "" });
       options.onState("validating");
-      const repaired = await lane.prompt(
-        `Format repair only. Call ${REVIEW_RESULT_TOOL_NAME} exactly once with a schema-valid result. Do not return free text.`,
-        undefined,
-        childContext,
-      );
-      requireCompletedReviewRun(repaired);
-      if (!resultCapture.accepted && resultCapture.attemptCount === 0) {
-        recordInvalidOutput(invalidOutputs, {
-          validation_stage: "missing_tool_call",
-          reason: `Review used both attempts without calling ${REVIEW_RESULT_TOOL_NAME}`,
-          source: "assistant_text",
-          raw: await lastAssistantText(lane, childContext),
-        });
-      }
+      submission = await conversation.submit({ type: "input", content: "Format repair only. Call review_result exactly once with a schema-valid result. Do not return free text.", whenBusy: "followUp" }, childContext);
+      settled = await submission.wait(childContext);
     }
     if (!resultCapture.accepted) {
-      recordInvalidOutput(invalidOutputs, {
-        validation_stage: "missing_tool_call",
-        reason: `Review ended without a valid ${REVIEW_RESULT_TOOL_NAME} call`,
-        source: "assistant_text",
-        raw: await lastAssistantText(lane, childContext),
-      });
-      const error = new Error(`Review ended without a valid ${REVIEW_RESULT_TOOL_NAME} call`);
-      error.code = "REVIEW_RESULT_INVALID";
-      error.invalidReviewOutputs = invalidOutputs;
-      error.reviewActions = artifactCapture.actions;
-      throw error;
+      recordInvalidOutput(invalidOutputs, { validation_stage: "missing_tool_call", reason: `Review ended without a valid ${REVIEW_RESULT_TOOL_NAME} call`, source: "assistant_text", raw: "" });
+      const error = new Error(`Review ended without a valid ${REVIEW_RESULT_TOOL_NAME} call`); error.code = "REVIEW_RESULT_INVALID"; error.invalidReviewOutputs = invalidOutputs; error.reviewActions = artifactCapture.actions; throw error;
     }
     options.onState("validating");
-    const stats = await session.getStats(childContext);
     return {
       result: resultCapture.accepted,
       actions: artifactCapture.actions,
       invalidOutputs,
-      metadata: {
-        run_id: options.packet.task_id,
-        operation: "claim_review",
-        report_id: options.packet.scope.report_id || "",
-        node_refs: options.packet.scope.node_refs,
-        output_digest: createHash("sha256").update(JSON.stringify(resultCapture.accepted)).digest("hex"),
-        schema_valid: true,
-        executor: "native_harness",
-        model: `${options.runtime.model.provider}/${options.runtime.model.id}`,
-        thinking_level: options.runtime.thinkingLevel,
-        usage: {
-          input: stats.usage.input,
-          output: stats.usage.output,
-          cache_read: stats.usage.cacheRead,
-          cache_write: stats.usage.cacheWrite,
-          total: stats.usage.totalTokens,
-          cost: stats.usage.cost.total,
-        },
-        duration_ms: Date.now() - startedAt,
-        result_attempts: resultCapture.attemptCount
-          + invalidOutputs.filter((item) => item.validation_stage === "missing_tool_call").length,
-        artifact_read_count: artifactCapture.actions.length,
-        reviewer_role: options.reviewContext.reviewer_role.role_id,
-      },
+      metadata: { run_id: options.packet.task_id, operation: "claim_review", report_id: options.packet.scope.report_id || "", node_refs: options.packet.scope.node_refs, output_digest: createHash("sha256").update(JSON.stringify(resultCapture.accepted)).digest("hex"), schema_valid: true, executor: "native_harness", model: `${options.runtime.model.provider}/${options.runtime.model.id}`, thinking_level: options.runtime.thinkingLevel, usage: { input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0, cost: 0 }, duration_ms: Date.now() - startedAt, result_attempts: resultCapture.attemptCount, artifact_read_count: artifactCapture.actions.length, reviewer_role: options.reviewContext.reviewer_role.role_id },
     };
   } catch (error) {
-    if (invalidOutputs.length && error && typeof error === "object") {
-      error.invalidReviewOutputs = invalidOutputs;
-    }
+    if (invalidOutputs.length && error && typeof error === "object") error.invalidReviewOutputs = invalidOutputs;
     if (error && typeof error === "object") error.reviewActions = artifactCapture.actions;
     throw error;
-  } finally {
-    await harness?.close(TODO_CONTEXT).catch(() => {});
-    await session.close(TODO_CONTEXT).catch(() => {});
-    await repo.close(TODO_CONTEXT).catch(() => {});
-  }
+  } finally { await harness?.close(TODO_CONTEXT).catch(() => {}); }
 }
 
 function requireCompletedReviewRun(result) {

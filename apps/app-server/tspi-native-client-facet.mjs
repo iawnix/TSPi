@@ -25,19 +25,11 @@ export async function createTspiNativeClientFacet({ sourceRoot, packageRoot = pr
   const [
     { defineFacet },
     { SlashCommands },
-    { PresentationLayout },
     { PresentationUI },
-    { TspiSystemPrompt },
-    { RunHistoryBrowser, runRecords },
-    { WrappedDocumentViewer },
   ] = await Promise.all([
     fromSource("packages/chord/src/index.ts"),
     fromSource("packages/coding-agent/src/experimental/services/slash-commands.ts"),
-    fromSource("packages/coding-agent/src/experimental/services/presentation-layout.ts"),
     fromSource("packages/coding-agent/src/experimental/services/presentation-ui.ts"),
-    fromSource("packages/coding-agent/src/experimental/services/slash-commands-provider.ts"),
-    import("../../packages/agent-ui/tui-package/src/runs.ts"),
-    import("../../packages/agent-ui/tui-package/src/document-viewer.ts"),
   ]);
   const root = typeof packageRoot === "string" && packageRoot.length > 0 ? packageRoot : process.cwd();
   const python = process.env.TSPI_WORKSPACE_PYTHON || process.env.TSPI_PYTHON || "python3";
@@ -48,14 +40,12 @@ export async function createTspiNativeClientFacet({ sourceRoot, packageRoot = pr
     setup(env) {
       const commands = env.use(SlashCommands);
       const ui = env.use(PresentationUI);
-      const layout = env.use(PresentationLayout);
-      const systemPrompt = env.use(TspiSystemPrompt);
       env.onActivate(() => {
         for (const name of ["research", "compute", "debug"]) {
           env.own(commands.replace(commandFor(name, ui, python, apiScript)));
         }
-        env.own(commands.replace(runsCommand(layout, ui, runRecords, RunHistoryBrowser, python, apiScript)));
-        env.own(commands.replace(systemPromptCommand(layout, ui, systemPrompt, WrappedDocumentViewer)));
+        env.own(commands.replace(runsCommand(ui, python, apiScript)));
+        env.own(commands.replace(systemPromptCommand(ui)));
       });
     },
   });
@@ -103,7 +93,7 @@ function commandFor(name, ui, python, apiScript) {
   };
 }
 
-function runsCommand(layout, ui, runRecords, RunHistoryBrowser, python, apiScript) {
+function runsCommand(ui, python, apiScript) {
   return {
     name: "runs",
     description: "Browse active and recorded Compute and Review runs.",
@@ -114,25 +104,14 @@ function runsCommand(layout, ui, runRecords, RunHistoryBrowser, python, apiScrip
           { command: "compute.runs", params: Object.freeze({}) },
           python,
           apiScript,
-          layout.getContext().cwd,
+          process.cwd(),
           context,
         );
-        const records = runRecords(report);
-        if (records.length === 0) {
+        if (!report || !Array.isArray(report.runs) || report.runs.length === 0) {
           ui.showStatus("No TS subagent runs are available in this workspace", context);
           return undefined;
         }
-        ui.showStatus("", context);
-        const tuiContext = layout.getContext();
-        let handle;
-        const browser = new RunHistoryBrowser(
-          records,
-          tuiContext.tui,
-          tuiContext.theme,
-          tuiContext.keybindings,
-          () => handle?.hide(),
-        );
-        handle = tuiContext.tui.showOverlay(browser, { width: "94%", maxHeight: "88%", margin: 1 });
+        ui.showStatus(JSON.stringify(report, null, 2), context);
       } catch (error) {
         ui.showStatus(`Unable to read TS runs: ${error instanceof Error ? error.message : String(error)}`, context);
       }
@@ -141,26 +120,14 @@ function runsCommand(layout, ui, runRecords, RunHistoryBrowser, python, apiScrip
   };
 }
 
-function systemPromptCommand(layout, ui, systemPrompt, WrappedDocumentViewer) {
+function systemPromptCommand(ui) {
   return {
     name: "sys_prompt",
     description: "Show the effective system prompt and provenance",
     async run(args, context) {
       if (args.trim().length > 0) throw new Error("/sys_prompt takes no arguments");
       try {
-        const manifest = await systemPrompt.inspect(context);
-        const tuiContext = layout.getContext();
-        ui.showStatus("", context);
-        let handle;
-        const viewer = new WrappedDocumentViewer(
-          "Effective system prompt",
-          JSON.stringify(manifest, null, 2),
-          tuiContext.tui,
-          tuiContext.theme,
-          tuiContext.keybindings,
-          () => handle?.hide(),
-        );
-        handle = tuiContext.tui.showOverlay(viewer, { width: "94%", maxHeight: "88%", margin: 1 });
+        ui.showStatus("Use the system_prompt tool to inspect the effective prompt and provenance.", context);
       } catch (error) {
         ui.showStatus(`Unable to inspect system prompt: ${error instanceof Error ? error.message : String(error)}`, context);
       }

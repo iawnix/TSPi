@@ -1,4 +1,3 @@
-import { formatSkillsForSystemPrompt } from "@earendil-works/pi-agent-core";
 import Type from "./pi-runtime-deps.mjs";
 import { createPublicToolContracts } from "../../packages/agent-runtime/host-api/tools.mjs";
 import {
@@ -31,7 +30,11 @@ export function createSystemPromptManifest({ native, skills, extensions = [] }) 
 function modelVisibleSkillSection(skills) {
   if (!Array.isArray(skills.items)) throw new TypeError("invalid skill system prompt section");
   const visible = skills.items.filter((skill) => !skill.disableModelInvocation);
-  const text = formatSkillsForSystemPrompt(visible);
+  const text = visible.length === 0 ? "" : [
+    "<available_skills>",
+    ...visible.map((skill) => `  <skill><name>${escapeXml(skill.name)}</name><description>${escapeXml(skill.description)}</description><location>${escapeXml(skill.filePath)}</location></skill>`),
+    "</available_skills>",
+  ].join("\n");
   if (!text) return undefined;
   return promptContributor("skill", {
     source: skills.source,
@@ -50,6 +53,10 @@ function modelVisibleSkillSection(skills) {
       })),
     },
   });
+}
+
+function escapeXml(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
 function promptContributor(origin, section) {

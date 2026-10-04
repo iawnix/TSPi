@@ -66,7 +66,7 @@ Catalog](skills/README.md).
 
 One installation-wide TSPi Host provides authenticated routing, idempotency,
 session discovery, and Monitor supervision. Each workspace is owned by one
-pinned Pi `SessionWorker`/`AgentHarness` lane. The lane owns the agent loop,
+pinned Pi `SessionWorker`/`durable Harness` lane. The lane owns the agent loop,
 model, tools, transcript, and Root lock; the terminal, Phone, and Monitor are
 clients of that same lane. Open a workspace directly:
 

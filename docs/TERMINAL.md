@@ -5,7 +5,7 @@
 `ResearchAgent --workspace <name>` is the public launcher for Pi's official remote
 `ExperimentalClientTui`. It does not replace Pi's header, editor, command
 registry, transcript view, extensions, or input loop. The selected workspace is
-bound to one installation-level Pi Harness format-4 session.
+bound to one installation-level Pi Harness SQLite durable session.
 
 New workspaces may be explicitly bound to one immutable framework mode:
 
@@ -25,13 +25,13 @@ There is one runtime owner and several clients:
 
 ```text
 Pi App Server / SessionWorker  <->  TSPi Host  <->  TS Phone/Web
-       AgentHarness + transcript       Host RPC       Link/HTTP
+       durable Harness + transcript       Host RPC       Link/HTTP
                  ^                         ^
           Pi native TUI                Monitor
 ```
 
 The Pi Harness worker owns the agent loop, model, tools, transcript, and
-durable format-4 lane. The Host owns routing, authentication, idempotency receipts,
+durable SQLite lane. The Host owns routing, authentication, idempotency receipts,
 scheduler leases, session discovery, and the Monitor supervisor. The native Pi
 TUI, Phone, and Monitor all address that same lane; none starts another agent
 loop.
@@ -47,7 +47,7 @@ The launcher first ensures the installation Host is ready, then requests a
 session descriptor and execs Pi's native client directly against the Pi App
 Server socket. Native Pi Harness is the only supported backend: no tmux
 session or PTY scraping path is available. A second terminal
-attaches to the same format-4 session; closing a client does not stop the
+attaches to the same SQLite durable session; closing a client does not stop the
 worker or interrupt a turn.
 
 The Host service is installation-wide and scans direct child workspaces. It is
@@ -65,11 +65,11 @@ socket is under the configured runtime directory.
 
 The remote `ExperimentalClientTui` provides `/resume`, `/model`, `/thinking`,
 `/compact`, `/reload`, and the Native TSPi commands. `/resume`
-switches to another format-4 session in the current workspace; it does not
+switches to another SQLite durable session in the current workspace; it does not
 cross workspace boundaries. Standalone Pi session commands are not available
 in this remote client.
 
-At launch, `-c` selects the latest writable format-4 session and
+At launch, `-c` selects the latest writable SQLite durable session and
 `--session-id <id>` selects an exact session. Startup `-r`/`--resume` is
 rejected because the Host-mediated client must obtain an exact connection
 descriptor before starting the TUI; open the terminal and use `/resume`
@@ -111,10 +111,11 @@ alias translation.
 ## Session storage
 
 The installation-level `.pi/app-server-host/sessions/` tree is the only
-session store used by Native Pi Harness. Workspace `.pi/sessions/*.jsonl`
-history is not a supported input and is neither resumed nor imported by the
-Native runtime. Keep research state in the workspace Research Memory and use
-the Host session controls for format-4 sessions.
+session store used by Native Pi Harness. Workspace `.pi/sessions` history is not a
+supported input and is neither resumed nor imported by the Native runtime. Durable
+history lives in `.pi/app-server-host/sessions/<workspace-id>/<session-id>/session.sqlite`;
+metadata is in the adjacent `meta.json`. Keep research state in the workspace
+Research Memory and use the Host session controls for SQLite durable sessions.
 
 See [Architecture](ARCHITECTURE.md) and [Installation](INSTALLATION.md) for
 service, package, and recovery details.

@@ -83,9 +83,9 @@ scripts/prepare_pi_source.py --install <root>
 ```
 
 能力发现、Node 暂停/恢复和选择性远程或模型 smoke 命令见
-[科学能力运维](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。升级时同一步也会验证完整的
-多工作区补丁；已有项目列表功能的旧安装会在 Host 重启前获得兼容的项目创建和
-`workspaceId` session 绑定增量补丁。
+[科学能力运维](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。同一步会验证固定的 Pi v1
+运行时和唯一的 TSPi 集成补丁；运行时使用下文说明的按 workspace 隔离的 SQLite session
+布局。
 
 ## 配置计算后端
 
@@ -166,7 +166,7 @@ TSPi 通知只发送邮件，不需要 POP3 或 IMAP。
 ## 启动安装级 Host
 
 一个安装为 workspace root 下所有已验证工作区拥有唯一 TSPi Host。Host 是 control plane；
-安装级 Pi App Server 为每个活动 session 管理一个固定版本的 `SessionWorker`/`AgentHarness`
+安装级 Pi App Server 为每个活动 session 管理一个固定版本的 `SessionWorker`/`durable Harness`
 lane。安装器会在报告成功前启用并启动 Host；普通终端启动时直接附着到该服务：
 
 ```bash
@@ -224,8 +224,9 @@ Package release。
 `research_agent_server/1`。旧的 `runtime_module`、`kernel_module` 和模块注入环境变量
 会被直接拒绝。
 
-发行包内置 Pi SDK Runtime descriptor 和 adapter：
-`packages/agent-pi-adapter/pi_runtime_module.mjs`。安装器会把固定 checkout 安装到
+发行包内置 Pi SDK Runtime descriptor 和 durable adapter：
+`packages/agent-pi-adapter/pi_runtime_module.mjs`；默认路径委托给
+`apps/app-server/pi-app-server.mjs` 以及 Pi v1 experimental services。安装器会把固定 checkout 安装到
 `<install>/.pi/runtime-cache/pi/<commit>`，启动器只把解析后的内部路径传给子进程：
 
 ```bash
@@ -252,12 +253,12 @@ TSPi Host 路径，不再存在可替换的生产 Agent Runtime。
 ```
 
 Host 身份位于 `<install>/.pi/app-server-host/server-id`；请求回执、scheduler lease、
-Monitor 健康状态和规范 Pi format-4 session repository 也位于同一目录。format-4 文件按 cwd
-归档在 `.pi/app-server-host/sessions/`；Native Pi Harness 不接受 workspace `.pi/sessions`。
+Monitor 健康状态和规范 Pi SQLite durable session repository 也位于同一目录。每个会话存储在 `.pi/app-server-host/sessions/<workspace-id>/<session-id>/`，目录中有 `meta.json` 和 `session.sqlite`；元数据保存 `workspace_id`、`session_id` 和 `cwd`，因此 agent loop 继续在 workspace 目录执行。Native Pi
+Harness 不接受 workspace `.pi/sessions`。
 工作区必须是配置的 workspace root 下、经过验证的直接子目录。
 
 默认终端通过 Host 返回的本地 descriptor 使用 Pi 官方 native remote client，不需要 tmux 或
-PTY scraping。Host 重启会保留 format-4 transcript、operation/queue ID、回执和 Monitor outbox；
+PTY scraping。Host 重启会保留 SQLite durable transcript、operation/queue ID、回执和 Monitor outbox；
 重新连接的客户端从新的 Host epoch/cursor 恢复。
 
 TS Phone 通过 TSPi Link 连接该 Host。安装时启用 Phone access，并提供 HTTPS TSPi Link Relay
@@ -303,7 +304,7 @@ workspace 内写入 registration、event 和 delivery 回执。`monitor/list`、
 
 ## 会话历史
 
-Native Pi Harness 只接受安装级 `.pi/app-server-host/sessions/` 下的 format-4 session。
+Native Pi Harness 只接受安装级 `.pi/app-server-host/sessions/` 下的 SQLite durable session。
 旧 workspace 历史文件不会导入或恢复；研究连续性应保存在 Research Memory，而不是第二套
 session 格式。
 
@@ -359,7 +360,7 @@ Phone manifest 和受管 service unit。当前 CLI 没有单独的 rollback sele
 用目标 pinned revision 再执行一次正常且经过验证的升级。不要直接编辑 release 目录或手改 `current`
 指针。
 
-如果 Host 退出，重启唯一的 Host service。进程退出会释放 Root lock，Pi JSONL session 保持完整。
+如果 Host 退出，重启唯一的 Host service。进程退出会释放 Root lock，Pi SQLite session 保持完整。
 本地计算 worker 在可用时运行于独立的临时 user service，Host 重启通常不会中断；恢复后仍须检查
 Attempt 状态。终端或 Phone 重连时首先接收新的 session snapshot；传输失败且结果不确定时，prompt
 不会自动重发。

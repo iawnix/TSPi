@@ -381,6 +381,7 @@ def test_package_manifest_exposes_the_public_skill_family_and_allowlisted_runtim
         "@earendil-works/pi-agent-core": "*",
         "@earendil-works/pi-ai": "*",
         "@earendil-works/pi-coding-agent": "*",
+        "@earendil-works/pi-durable": "*",
         "@earendil-works/pi-tui": "*",
         "typebox": "*",
     }
@@ -389,10 +390,11 @@ def test_package_manifest_exposes_the_public_skill_family_and_allowlisted_runtim
         for name in manifest["peerDependencies"]
         if name.startswith("@earendil-works/pi-")
     } == {
-        "@earendil-works/pi-agent-core": "0.87.1",
-        "@earendil-works/pi-ai": "0.87.1",
-        "@earendil-works/pi-coding-agent": "0.87.1",
-        "@earendil-works/pi-tui": "0.87.1",
+        "@earendil-works/pi-agent-core": "1.0.2",
+        "@earendil-works/pi-ai": "1.0.2",
+        "@earendil-works/pi-coding-agent": "1.0.2",
+        "@earendil-works/pi-durable": "1.0.2",
+        "@earendil-works/pi-tui": "1.0.2",
     }
     assert "dependencies" not in manifest
     for name in ("ARCHITECTURE.md", "INSTALLATION.md", "MAINTAINER_GUIDE.md"):

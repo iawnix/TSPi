@@ -1,702 +1,85 @@
-"""Resolve and verify the pinned Pi source tree used by the native app server."""
-
+"""Resolve, patch, and verify the Pi v1 durable runtime used by TSPi."""
 from __future__ import annotations
-
-import argparse
-import json
-import os
-import shutil
-import subprocess
-import sys
-import tempfile
+import argparse, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parents[1]
 PIN_PATH = ROOT / "config" / "pi-source.json"
-PATCH_PATH = ROOT / "config" / "pi-worker-entry.patch"
-MULTI_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace.patch"
-MULTI_WORKSPACE_CREATE_PATCH_PATH = ROOT / "config" / "pi-multi-workspace-create.patch"
-WORKSPACE_SESSION_LIST_PATCH_PATH = ROOT / "config" / "pi-workspace-session-list.patch"
-RESEARCH_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-research-workspace.patch"
-WORKSPACE_MODE_PATCH_PATH = ROOT / "config" / "pi-workspace-mode.patch"
-RESEARCH_AGENT_WORKSPACE_PATCH_PATH = ROOT / "config" / "pi-research-agent-workspace.patch"
-SYSTEM_PROMPT_PATCH_PATH = ROOT / "config" / "pi-system-prompt.patch"
-SOURCE_RESOLVER_PATCH_PATH = ROOT / "config" / "pi-source-resolver.patch"
-MODEL_DATA_PATCH_PATH = ROOT / "config" / "pi-model-data.patch"
-PRESENTATION_LAYOUT_PATCH_PATH = ROOT / "config" / "pi-presentation-layout.patch"
-TOOL_RENDERERS_PATCH_PATH = ROOT / "config" / "pi-tool-renderers.patch"
-TUI_PERFORMANCE_PATCH_PATH = ROOT / "config" / "pi-tui-performance.patch"
-HARNESS_ADMISSION_PATCH_PATH = ROOT / "config" / "pi-harness-admission.patch"
-HARNESS_ADMISSION_QUEUE_PATCH_PATH = ROOT / "config" / "pi-harness-admission-queue.patch"
-HARNESS_OPERATION_REQUEST_PATCH_PATH = ROOT / "config" / "pi-harness-operation-request.patch"
-HARNESS_OPERATION_FORWARD_PATCH_PATH = ROOT / "config" / "pi-harness-operation-forward.patch"
-TOOL_ERROR_BOUNDARY_PATCH_PATH = ROOT / "config" / "pi-tool-error-boundary.patch"
-TOOL_ERROR_BOUNDARY_REPAIR_PATCH_PATH = ROOT / "config" / "pi-tool-error-boundary-repair.patch"
-BUILD_JSON_COMPAT_PATCH_PATH = ROOT / "config" / "pi-build-json-compat.patch"
-PROCESS_DIAGNOSTICS_PATCH_PATH = ROOT / "config" / "pi-process-diagnostics.patch"
-TRANSCRIPT_JSON_PATCH_PATH = ROOT / "config" / "pi-transcript-json.patch"
-SESSION_NAVIGATION_PATCH_PATH = ROOT / "config" / "pi-session-navigation.patch"
+PATCH_PATH = ROOT / "config" / "pi-tspi-runtime.patch"
+class PiSourceError(RuntimeError): pass
 
-
-class PiSourceError(RuntimeError):
-    pass
-
-
-def _pin() -> dict[str, object]:
-    value = json.loads(PIN_PATH.read_text(encoding="utf-8"))
-    if not isinstance(value, dict) or not isinstance(value.get("commit"), str):
-        raise PiSourceError(f"invalid Pi source pin: {PIN_PATH}")
+def pin():
+    value=json.loads(PIN_PATH.read_text())
+    if not isinstance(value,dict) or not isinstance(value.get("commit"),str): raise PiSourceError("invalid Pi source pin")
     return value
 
+def git(source,*args):
+    try: return subprocess.run(["git","-C",str(source),*args],check=True,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE).stdout.strip()
+    except (OSError,subprocess.CalledProcessError) as exc: raise PiSourceError(f"cannot inspect Pi source {source}: {exc}") from exc
 
-def _git(source: Path, *args: str) -> str:
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(source), *args], check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        detail = getattr(exc, "stderr", "") or str(exc)
-        raise PiSourceError(f"cannot inspect Pi source {source}: {detail.strip()}") from exc
-    return result.stdout.strip()
+def verify(source):
+    expected=pin()["commit"]
+    if git(source,"rev-parse","HEAD") != expected: raise PiSourceError(f"Pi source commit mismatch: expected {expected}")
+    required=[
+      source/"packages/coding-agent/src/experimental/process.ts",
+      source/"packages/coding-agent/src/experimental/session-catalog.ts",
+      source/"packages/coding-agent/src/experimental/session-worker.ts",
+      source/"packages/coding-agent/src/experimental/session-worker-manager.ts",
+      source/"packages/coding-agent/src/experimental/server.ts",
+      source/"packages/coding-agent/src/experimental/services/sessions.ts",
+    ]
+    if any(not p.is_file() for p in required): raise PiSourceError("Pi source is missing the durable experimental runtime")
+    process=(source/"packages/coding-agent/src/experimental/process.ts").read_text()
+    sessions=(source/"packages/coding-agent/src/experimental/session-catalog.ts").read_text()
+    worker=(source/"packages/coding-agent/src/experimental/session-worker.ts").read_text()
+    manager=(source/"packages/coding-agent/src/experimental/session-worker-manager.ts").read_text()
+    if "PI_SESSION_WORKER_ENTRY" not in process or "TSPI_PI_DIAGNOSTIC_FILE" not in process: raise PiSourceError("missing TSPi process integration")
+    if "workspaceId" not in sessions or "session.sqlite" not in sessions: raise PiSourceError("missing workspace scoped SQLite catalog")
+    if "workspaceId" not in worker: raise PiSourceError("missing workspace worker metadata")
+    if "workspaceId: metadata.workspaceId" not in manager: raise PiSourceError("missing workspace worker launch metadata")
+    return expected
 
+def apply_patch(source):
+    try: subprocess.run(["git","-C",str(source),"apply",str(PATCH_PATH)],check=True,text=True)
+    except (OSError,subprocess.CalledProcessError) as exc: raise PiSourceError(f"failed to apply {PATCH_PATH}: {exc}") from exc
 
-def verify(source: Path) -> str:
-    expected = str(_pin()["commit"])
-    if not source.is_dir() or not (source / ".git").exists():
-        raise PiSourceError(f"Pi source is not a Git checkout: {source}")
-    commit = _git(source, "rev-parse", "HEAD")
-    if commit != expected:
-        raise PiSourceError(f"Pi source commit mismatch: expected {expected}, found {commit}")
-    if not (source / "packages" / "coding-agent" / "src" / "experimental" / "cli.ts").is_file():
-        raise PiSourceError(f"Pi source does not contain the experimental CLI: {source}")
-    marker = "PI_SESSION_WORKER_ENTRY"
-    process_path = source / "packages" / "coding-agent" / "src" / "experimental" / "process.ts"
-    process_source = process_path.read_text(encoding="utf-8")
-    if marker not in process_source:
-        raise PiSourceError(f"Pi source is missing the TSPi Worker entrypoint patch: {source}")
-    if "TSPI_PI_DIAGNOSTIC_FILE" not in process_source or "openSync(diagnosticPath" not in process_source:
-        raise PiSourceError(f"Pi source is missing the TSPi detached-process diagnostics patch: {source}")
-    sessions_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "sessions.ts"
-    sessions = sessions_path.read_text(encoding="utf-8")
-    server_path = source / "packages" / "coding-agent" / "src" / "experimental" / "server.ts"
-    server = server_path.read_text(encoding="utf-8")
-    services_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "server.ts"
-    services = services_path.read_text(encoding="utf-8")
-    client_path = source / "packages" / "coding-agent" / "src" / "experimental" / "client.ts"
-    client = client_path.read_text(encoding="utf-8") if client_path.is_file() else ""
-    multi_workspace_markers = {
-        "workspace service": "tspi.workspace-directory" in sessions,
-        "workspaceId session binding": "workspaceId?: string" in sessions and "createOptions.workspaceId" in server,
-        "workspace creation": "createWorkspace: createWorkspaceRoot" in server,
-        "canonical workspace initializer": "TSPI_WORKSPACE_MODE_INITIALIZER" in server and "--workspace-id" in server and "--mode" in server,
-        "workspace create service": "createWorkspace(workspaceId: string" in services and "create: (workspaceId, context)" in services,
-        "ResearchMap workspace schema": (
-            "isSupportedWorkspaceIdentity" in server
-            or 'identity?.schema_version !== "research-workspace/1"' in server
-        ),
-        "Research Agent research workspace schema": "isSupportedResearchAgentWorkspace" in server and "RESEARCH_WORKSPACE_DIRECTORIES" in server,
-        "workspace validation diagnostic": 'new RoutedServerError("service_invalid_value", `Session cwd is not a supported TSPi workspace:' in server,
-        "workspace-scoped session listing": ".filter(sessionMatchesCwd)" in client,
-    }
-    missing = [label for label, present in multi_workspace_markers.items() if not present]
-    if missing:
-        raise PiSourceError(f"Pi source is missing the complete TSPi multi-workspace patch ({', '.join(missing)}): {source}")
-    slash_commands_path = (
-        source
-        / "packages"
-        / "coding-agent"
-        / "src"
-        / "experimental"
-        / "services"
-        / "slash-commands-provider.ts"
-    )
-    if "tspi.system-prompt" not in slash_commands_path.read_text(encoding="utf-8"):
-        raise PiSourceError(f"Pi source is missing the TSPi system prompt patch: {source}")
-    resolver_path = source / "packages" / "coding-agent" / "src" / "experimental" / "source-resolver.ts"
-    if 'pattern === "typebox"' not in resolver_path.read_text(encoding="utf-8"):
-        raise PiSourceError(f"Pi source is missing the TSPi source resolver patch: {source}")
-    model_generator = source / "packages" / "ai" / "scripts" / "generate-models.ts"
-    if 'data["kimi-code-plan-global"]' not in model_generator.read_text(encoding="utf-8"):
-        raise PiSourceError(f"Pi source is missing the Kimi model catalog compatibility patch: {source}")
-    layout_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "presentation-layout.ts"
-    if "pi.local.presentation-layout" not in layout_path.read_text(encoding="utf-8"):
-        raise PiSourceError(f"Pi source is missing the TSPi presentation layout patch: {source}")
-    renderer_layout = layout_path.read_text(encoding="utf-8")
-    renderer_client = (source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui.ts").read_text(encoding="utf-8")
-    renderer_chat = (source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui-chat.ts").read_text(encoding="utf-8")
-    if "setToolRenderers" not in renderer_layout or "PresentationToolRenderers" not in renderer_client or "#builtInRenderers" not in renderer_chat:
-        raise PiSourceError(f"Pi source is missing the TSPi native tool renderer patch: {source}")
-    transcript_provider_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "transcript-provider.ts"
-    if "function toStrictJson" not in transcript_provider_path.read_text(encoding="utf-8"):
-        raise PiSourceError(f"Pi source is missing the TSPi Transcript JSON patch: {source}")
-    performance_client = (source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui.ts").read_text(encoding="utf-8")
-    performance_chat = (source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui-chat.ts").read_text(encoding="utf-8")
-    performance_tools = (source / "packages" / "coding-agent" / "src" / "modes" / "interactive" / "components" / "tool-execution.ts").read_text(encoding="utf-8")
-    if (
-        "TRANSCRIPT_UPDATE_DELAY_MS" not in performance_client
-        or "transcript.length < renderedLength" not in performance_chat
-        or "Object.is(this.args, args)" not in performance_tools
-    ):
-        raise PiSourceError(f"Pi source is missing the TSPi TUI performance patch: {source}")
-    controller_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "agent-controller.ts"
-    provider_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "agent-controller-provider.ts"
-    provider = provider_path.read_text(encoding="utf-8")
-    if (
-        "startPrompt(request" not in controller_path.read_text(encoding="utf-8")
-        or "operationId?: string" not in controller_path.read_text(encoding="utf-8")
-        or "const admitAndDrive" not in provider
-        or "nothing_queued" not in provider
-        or "const watch = await lane.watch(context)" not in provider
-    ):
-        raise PiSourceError(f"Pi source is missing the non-blocking TSPi Harness admission patch: {source}")
-    agent_loop_path = source / "packages" / "agent" / "src" / "agent-loop.ts"
-    harness_tools_path = source / "packages" / "agent" / "src" / "harness" / "runtime" / "drive" / "tools.ts"
-    if (
-        "finalizeImmediateToolCall" not in agent_loop_path.read_text(encoding="utf-8")
-        or "finalizeImmediateToolOutcome" not in harness_tools_path.read_text(encoding="utf-8")
-        or "...(options.recovery === true ? { recovery: true as const } : {})" not in harness_tools_path.read_text(encoding="utf-8")
-        or "cancelled ? {} : { recovery: true, replay: call.replay }" not in harness_tools_path.read_text(encoding="utf-8")
-    ):
-        raise PiSourceError(f"Pi source is missing the TSPi immediate tool-error boundary patch: {source}")
-    native_client_path = (
-        source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui.ts"
-    )
-    slash_commands = slash_commands_path.read_text(encoding="utf-8")
-    native_client = native_client_path.read_text(encoding="utf-8")
-    tui_editor_path = source / "packages" / "tui" / "src" / "components" / "editor.ts"
-    if not _has_session_navigation_patch(
-        sessions=sessions,
-        slash_commands=slash_commands,
-        native_client=native_client,
-        editor=tui_editor_path.read_text(encoding="utf-8"),
-    ):
-        raise PiSourceError(f"Pi source is missing the TSPi session navigation patch: {source}")
-    return commit
+def clone(destination):
+    p=pin(); destination.parent.mkdir(parents=True,exist_ok=True)
+    subprocess.run(["git","clone","--no-checkout",p["repository"],str(destination)],check=True)
+    git(destination,"fetch","--depth","1","origin",p["commit"]); git(destination,"checkout","--detach",p["commit"])
+    apply_patch(destination); verify(destination); return destination
 
-
-def apply_worker_patch(source: Path) -> None:
-    process_path = source / "packages" / "coding-agent" / "src" / "experimental" / "process.ts"
-    if "PI_SESSION_WORKER_ENTRY" in process_path.read_text(encoding="utf-8"):
-        return
-    try:
-        subprocess.run(["git", "-C", str(source), "apply", str(PATCH_PATH)], check=True, text=True)
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply TSPi Worker entrypoint patch: {exc}") from exc
-
-
-def apply_process_diagnostics_patch(source: Path) -> None:
-    """Allow opt-in diagnostics for detached Pi workers without changing defaults."""
-    process_path = source / "packages" / "coding-agent" / "src" / "experimental" / "process.ts"
-    process_source = process_path.read_text(encoding="utf-8")
-    if "TSPI_PI_DIAGNOSTIC_FILE" in process_source and "openSync(diagnosticPath" in process_source:
-        return
-    try:
-        subprocess.run(
-            ["git", "-C", str(source), "apply", str(PROCESS_DIAGNOSTICS_PATCH_PATH)],
-            check=True,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply TSPi detached-process diagnostics patch: {exc}") from exc
-
-
-def apply_multi_workspace_patch(source: Path) -> None:
-    sessions_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "sessions.ts"
-    server_path = source / "packages" / "coding-agent" / "src" / "experimental" / "server.ts"
-    services_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "server.ts"
-    sessions = sessions_path.read_text(encoding="utf-8")
-    server = server_path.read_text(encoding="utf-8")
-    services = services_path.read_text(encoding="utf-8")
-    if (
-        "tspi.workspace-directory" in sessions
-        and "workspaceId?: string" in sessions
-        and "createWorkspace: createWorkspaceRoot" in server
-        and "createWorkspace(workspaceId: string" in services
-        and "create: (workspaceId, context)" in services
-    ):
-        return
-    patch_path = MULTI_WORKSPACE_CREATE_PATCH_PATH if "tspi.workspace-directory" in sessions else MULTI_WORKSPACE_PATCH_PATH
-    try:
-        subprocess.run(["git", "-C", str(source), "apply", "--recount", str(patch_path)], check=True, text=True)
-    except (OSError, subprocess.CalledProcessError) as exc:
-        # An older release may already carry the list-only workspace patch in
-        # its working tree. A three-way apply uses the pinned Pi commit as the
-        # merge base and upgrades that partial patch without requiring a clean
-        # checkout.
-        try:
-            subprocess.run(
-                ["git", "-C", str(source), "apply", "--3way", "--recount", str(patch_path)],
-                check=True,
-                text=True,
-            )
-        except (OSError, subprocess.CalledProcessError) as fallback:
-            raise PiSourceError(
-                f"failed to upgrade TSPi multi-workspace patch ({patch_path.name}): {fallback}"
-            ) from exc
-
-
-def apply_workspace_session_list_patch(source: Path) -> None:
-    """Keep non-interactive session discovery within the selected workspace."""
-    client_path = source / "packages" / "coding-agent" / "src" / "experimental" / "client.ts"
-    if ".filter(sessionMatchesCwd)" in client_path.read_text(encoding="utf-8"):
-        return
-    try:
-        subprocess.run(
-            ["git", "-C", str(source), "apply", str(WORKSPACE_SESSION_LIST_PATCH_PATH)],
-            check=True,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply workspace-scoped session list patch: {exc}") from exc
-
-
-def apply_research_workspace_patch(source: Path) -> None:
-    """Upgrade already-patched Pi trees to the canonical ResearchMap identity."""
-    server_path = source / "packages" / "coding-agent" / "src" / "experimental" / "server.ts"
-    server = server_path.read_text(encoding="utf-8")
-    if "isSupportedWorkspaceIdentity" in server or (
-        'identity?.schema_version !== "research-workspace/1"' in server
-        and 'new RoutedServerError("service_invalid_value", `Session cwd is not a supported TSPi workspace:' in server
-    ):
-        return
-    try:
-        subprocess.run(
-            ["git", "-C", str(source), "apply", str(RESEARCH_WORKSPACE_PATCH_PATH)],
-            check=True,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply TSPi ResearchMap workspace patch: {exc}") from exc
-
-
-def apply_workspace_mode_patch(source: Path) -> None:
-    """Apply the workspace manifest validation prerequisite."""
-    server_path = source / "packages" / "coding-agent" / "src" / "experimental" / "server.ts"
-    server = server_path.read_text(encoding="utf-8")
-    if "isSupportedLightWorkspace" in server:
-        return
-    try:
-        subprocess.run(["git", "-C", str(source), "apply", str(WORKSPACE_MODE_PATCH_PATH)], check=True, text=True)
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply TSPi workspace manifest validation patch: {exc}") from exc
-
-
-def apply_research_agent_workspace_patch(source: Path) -> None:
-    """Validate the canonical Research Agent research workspace protocol."""
-
-    server_path = source / "packages" / "coding-agent" / "src" / "experimental" / "server.ts"
-    server = server_path.read_text(encoding="utf-8")
-    if "isSupportedResearchAgentWorkspace" in server and "RESEARCH_WORKSPACE_DIRECTORIES" in server:
-        return
-    try:
-        subprocess.run(
-            ["git", "-C", str(source), "apply", "--recount", str(RESEARCH_AGENT_WORKSPACE_PATCH_PATH)],
-            check=True,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply TSPi Research Agent workspace patch: {exc}") from exc
-
-
-def apply_system_prompt_patch(source: Path) -> None:
-    slash_commands_path = (
-        source
-        / "packages"
-        / "coding-agent"
-        / "src"
-        / "experimental"
-        / "services"
-        / "slash-commands-provider.ts"
-    )
-    if "tspi.system-prompt" in slash_commands_path.read_text(encoding="utf-8"):
-        return
-    try:
-        subprocess.run(
-            ["git", "-C", str(source), "apply", "--ignore-whitespace", str(SYSTEM_PROMPT_PATCH_PATH)],
-            check=True,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply TSPi system prompt patch: {exc}") from exc
-
-
-def apply_source_resolver_patch(source: Path) -> None:
-    resolver_path = source / "packages" / "coding-agent" / "src" / "experimental" / "source-resolver.ts"
-    if 'pattern === "typebox"' in resolver_path.read_text(encoding="utf-8"):
-        return
-    try:
-        subprocess.run(["git", "-C", str(source), "apply", str(SOURCE_RESOLVER_PATCH_PATH)], check=True, text=True)
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply TSPi source resolver patch: {exc}") from exc
-
-
-def apply_model_data_patch(source: Path) -> None:
-    model_generator = source / "packages" / "ai" / "scripts" / "generate-models.ts"
-    if 'data["kimi-code-plan-global"]' in model_generator.read_text(encoding="utf-8"):
-        return
-    try:
-        subprocess.run(["git", "-C", str(source), "apply", str(MODEL_DATA_PATCH_PATH)], check=True, text=True)
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply Pi model catalog compatibility patch: {exc}") from exc
-
-
-def apply_presentation_layout_patch(source: Path) -> None:
-    marker = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "presentation-layout.ts"
-    if marker.is_file() and "pi.local.presentation-layout" in marker.read_text(encoding="utf-8"):
-        return
-    try:
-        subprocess.run(["git", "-C", str(source), "apply", str(PRESENTATION_LAYOUT_PATCH_PATH)], check=True, text=True)
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply Pi presentation layout patch: {exc}") from exc
-
-
-def apply_tool_renderers_patch(source: Path) -> None:
-    """Upgrade a prepared Pi tree with process-local native tool renderers."""
-    layout_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "presentation-layout.ts"
-    chat_path = source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui-chat.ts"
-    if layout_path.is_file() and chat_path.is_file():
-        layout = layout_path.read_text(encoding="utf-8")
-        chat = chat_path.read_text(encoding="utf-8")
-        if "setToolRenderers" in layout and "#builtInRenderers" in chat:
-            return
-    try:
-        subprocess.run(["git", "-C", str(source), "apply", str(TOOL_RENDERERS_PATCH_PATH)], check=True, text=True)
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply Pi native tool renderer patch: {exc}") from exc
-
-
-def apply_transcript_json_patch(source: Path) -> None:
-    """Keep replicated Transcript updates within Chord's strict JSON contract."""
-    provider_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "transcript-provider.ts"
-    if "function toStrictJson" in provider_path.read_text(encoding="utf-8"):
-        return
-    try:
-        subprocess.run(["git", "-C", str(source), "apply", str(TRANSCRIPT_JSON_PATCH_PATH)], check=True, text=True)
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply Pi Transcript JSON patch: {exc}") from exc
-
-
-def apply_tui_performance_patch(source: Path) -> None:
-    """Coalesce streaming frames and preserve stable transcript components."""
-    client_path = source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui.ts"
-    chat_path = source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui-chat.ts"
-    tools_path = source / "packages" / "coding-agent" / "src" / "modes" / "interactive" / "components" / "tool-execution.ts"
-    if (
-        "TRANSCRIPT_UPDATE_DELAY_MS" in client_path.read_text(encoding="utf-8")
-        and "transcript.length < renderedLength" in chat_path.read_text(encoding="utf-8")
-        and "Object.is(this.args, args)" in tools_path.read_text(encoding="utf-8")
-    ):
-        return
-    try:
-        subprocess.run(["git", "-C", str(source), "apply", str(TUI_PERFORMANCE_PATCH_PATH)], check=True, text=True)
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply TSPi TUI performance patch: {exc}") from exc
-
-
-def apply_session_navigation_patch(source: Path) -> None:
-    """Add native /resume switching and per-session prompt history."""
-    sessions_path = (
-        source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "sessions.ts"
-    )
-    editor_path = source / "packages" / "tui" / "src" / "components" / "editor.ts"
-    client_path = source / "packages" / "coding-agent" / "src" / "experimental" / "client-tui.ts"
-    slash_path = (
-        source
-        / "packages"
-        / "coding-agent"
-        / "src"
-        / "experimental"
-        / "services"
-        / "slash-commands-provider.ts"
-    )
-    sessions = sessions_path.read_text(encoding="utf-8")
-    client = client_path.read_text(encoding="utf-8")
-    slash_commands = slash_path.read_text(encoding="utf-8")
-    editor = editor_path.read_text(encoding="utf-8")
-    if _has_session_navigation_patch(
-        sessions=sessions,
-        slash_commands=slash_commands,
-        native_client=client,
-        editor=editor,
-    ):
-        return
-    try:
-        subprocess.run(
-            ["git", "-C", str(source), "apply", str(SESSION_NAVIGATION_PATCH_PATH)],
-            check=True,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply TSPi session navigation patch: {exc}") from exc
-
-
-def _has_session_navigation_patch(
-    *,
-    sessions: str,
-    slash_commands: str,
-    native_client: str,
-    editor: str,
-) -> bool:
-    """Recognize the complete TSPi patch without matching an upstream /resume."""
-    return all(
-        marker in source
-        for source, marker in (
-            (sessions, 'defineService<SessionNavigation>("pi.local.session-navigation", { local: true })'),
-            (slash_commands, "await sessionNavigation.resume(sessionId.length === 0 ? undefined : sessionId, context)"),
-            (native_client, "#sessionSwitchTail: Promise<void> = Promise.resolve()"),
-            (native_client, "resume: (sessionId, context) => this.#resumeSession(sessionId, context)"),
-            (native_client, "function sessionUserTexts(entries: readonly Entry[])"),
-            (editor, "resetHistory(texts: readonly string[]): void"),
-        )
-    )
-
-
-def apply_harness_admission_patch(source: Path) -> None:
-    """Expose durable accept-then-drive methods to Host clients.
-
-    The patch is deliberately kept in the TSPi repository and applied only to
-    the pinned checkout. This prevents an arbitrary local Pi tree from being
-    loaded as the Harness runtime.
-    """
-    controller_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "agent-controller.ts"
-    provider_path = source / "packages" / "coding-agent" / "src" / "experimental" / "services" / "agent-controller-provider.ts"
-    provider = provider_path.read_text(encoding="utf-8")
-    controller = controller_path.read_text(encoding="utf-8")
-    has_admission = "const admitAndDrive" in provider and "startQueued" in provider
-    has_queue_upgrade = "nothing_queued" in provider and "const watch = await lane.watch(context)" in provider
-    if not has_admission:
-        try:
-            subprocess.run(["git", "-C", str(source), "apply", str(HARNESS_ADMISSION_PATCH_PATH)], check=True, text=True)
-        except (OSError, subprocess.CalledProcessError) as exc:
-            raise PiSourceError(f"failed to apply TSPi Harness admission patch: {exc}") from exc
-        provider = provider_path.read_text(encoding="utf-8")
-        controller = controller_path.read_text(encoding="utf-8")
-        has_admission = True
-        has_queue_upgrade = "nothing_queued" in provider and "const watch = await lane.watch(context)" in provider
-    if has_admission and not has_queue_upgrade:
-        try:
-            subprocess.run(
-                ["git", "-C", str(source), "apply", str(HARNESS_ADMISSION_QUEUE_PATCH_PATH)],
-                check=True,
-                text=True,
-            )
-        except (OSError, subprocess.CalledProcessError) as exc:
-            raise PiSourceError(f"failed to upgrade TSPi Harness queue admission patch: {exc}") from exc
-
-    # The first Harness patch already carries the operation-id field. Keep the
-    # operation hint as two small upgrades so a checkout prepared by an older
-    # release (including one that already has the queue patch) can be repaired
-    # without reapplying the whole multi-file patch.
-    controller = controller_path.read_text(encoding="utf-8")
-    if "operationId?: string" not in controller:
-        try:
-            subprocess.run(
-                ["git", "-C", str(source), "apply", str(HARNESS_OPERATION_REQUEST_PATCH_PATH)],
-                check=True,
-                text=True,
-            )
-        except (OSError, subprocess.CalledProcessError) as exc:
-            raise PiSourceError(f"failed to apply TSPi Harness operation request patch: {exc}") from exc
-    provider = provider_path.read_text(encoding="utf-8")
-    if "request.operationId === undefined" not in provider:
-        try:
-            subprocess.run(
-                ["git", "-C", str(source), "apply", str(HARNESS_OPERATION_FORWARD_PATCH_PATH)],
-                check=True,
-                text=True,
-            )
-        except (OSError, subprocess.CalledProcessError) as exc:
-            raise PiSourceError(f"failed to apply TSPi Harness operation forwarding patch: {exc}") from exc
-    agent_loop_path = source / "packages" / "agent" / "src" / "agent-loop.ts"
-    harness_tools_path = source / "packages" / "agent" / "src" / "harness" / "runtime" / "drive" / "tools.ts"
-    agent_loop = agent_loop_path.read_text(encoding="utf-8")
-    harness_tools = harness_tools_path.read_text(encoding="utf-8")
-    # A checkout prepared by an earlier release may contain the immediate
-    # outcome hook but not the recovery metadata forwarding added later. Treat
-    # that partial state as unprepared so the patch cannot silently degrade
-    # cold-restart classification.
-    apply_tool_error_boundary_repair_patch(source)
-    harness_tools = harness_tools_path.read_text(encoding="utf-8")
-    tool_error_boundary_markers = (
-        (agent_loop, "finalizeImmediateToolCall"),
-        (agent_loop, "config.afterToolCall"),
-        (harness_tools, "finalizeImmediateToolOutcome"),
-        (harness_tools, "...(options.recovery === true ? { recovery: true as const } : {})"),
-        (harness_tools, "cancelled ? {} : { recovery: true, replay: call.replay }"),
-    )
-    if not all(marker in text for text, marker in tool_error_boundary_markers):
-        try:
-            subprocess.run(
-                ["git", "-C", str(source), "apply", str(TOOL_ERROR_BOUNDARY_PATCH_PATH)],
-                check=True,
-                text=True,
-            )
-        except (OSError, subprocess.CalledProcessError) as exc:
-            raise PiSourceError(f"failed to apply TSPi immediate tool-error boundary patch: {exc}") from exc
-
-
-def apply_tool_error_boundary_repair_patch(source: Path) -> None:
-    """Repair a partial checkout using the same auditable patch path as install."""
-    harness_tools_path = source / "packages" / "agent" / "src" / "harness" / "runtime" / "drive" / "tools.ts"
-    source_text = harness_tools_path.read_text(encoding="utf-8")
-    legacy = "...(cancelled ? {} : { recovery: true, replay: call.replay })"
-    if legacy not in source_text:
-        return
-    try:
-        subprocess.run(
-            ["git", "-C", str(source), "apply", str(TOOL_ERROR_BOUNDARY_REPAIR_PATCH_PATH)],
-            check=True,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to repair TSPi immediate tool-error boundary patch: {exc}") from exc
-
-
-def apply_build_json_compat_patch(source: Path) -> None:
-    """Bridge Pi AI's readonly JSON value to Chord's mutable JSON contract."""
-    tools_path = source / "packages" / "agent" / "src" / "harness" / "runtime" / "drive" / "tools.ts"
-    source_text = tools_path.read_text(encoding="utf-8")
-    if (
-        "args: outcome.toolCall.arguments as unknown as Record<string, JsonValue>" in source_text
-        and "details: result.details as unknown as JsonValue" in source_text
-    ):
-        return
-    try:
-        subprocess.run(["git", "-C", str(source), "apply", str(BUILD_JSON_COMPAT_PATCH_PATH)], check=True, text=True)
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to apply Pi build JSON compatibility patch: {exc}") from exc
-
-
-def clone(destination: Path) -> Path:
-    pin = _pin()
+def install(root):
+    commit=pin()["commit"]; destination=Path(root).resolve()/".pi"/"runtime-cache"/"pi"/commit
     if destination.exists():
-        raise PiSourceError(f"destination already exists: {destination}")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        subprocess.run(["git", "clone", "--no-checkout", str(pin["repository"]), str(destination)], check=True)
-        _git(destination, "fetch", "--depth", "1", "origin", str(pin["commit"]))
-        _git(destination, "checkout", "--detach", str(pin["commit"]))
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to clone pinned Pi source: {exc}") from exc
-    apply_worker_patch(destination)
-    apply_process_diagnostics_patch(destination)
-    apply_multi_workspace_patch(destination)
-    apply_workspace_session_list_patch(destination)
-    apply_research_workspace_patch(destination)
-    apply_workspace_mode_patch(destination)
-    apply_research_agent_workspace_patch(destination)
-    apply_system_prompt_patch(destination)
-    apply_source_resolver_patch(destination)
-    apply_model_data_patch(destination)
-    apply_presentation_layout_patch(destination)
-    apply_tool_renderers_patch(destination)
-    apply_transcript_json_patch(destination)
-    apply_harness_admission_patch(destination)
-    apply_build_json_compat_patch(destination)
-    apply_session_navigation_patch(destination)
-    apply_tui_performance_patch(destination)
-    verify(destination)
-    return destination
-
-
-def install(install_root: Path) -> Path:
-    """Install the pinned, patched Pi tree used by App Server processes."""
-    commit = str(_pin()["commit"])
-    destination = install_root.resolve() / ".pi" / "runtime-cache" / "pi" / commit
-    if destination.exists():
-        apply_worker_patch(destination)
-        apply_process_diagnostics_patch(destination)
-        apply_multi_workspace_patch(destination)
-        apply_workspace_session_list_patch(destination)
-        apply_research_workspace_patch(destination)
-        apply_workspace_mode_patch(destination)
-        apply_research_agent_workspace_patch(destination)
-        apply_system_prompt_patch(destination)
-        apply_source_resolver_patch(destination)
-        apply_model_data_patch(destination)
-        apply_presentation_layout_patch(destination)
-        apply_tool_renderers_patch(destination)
-        apply_transcript_json_patch(destination)
-        apply_harness_admission_patch(destination)
-        apply_build_json_compat_patch(destination)
-        apply_session_navigation_patch(destination)
-        apply_tui_performance_patch(destination)
+        if not (destination/"packages/coding-agent/src/experimental/process.ts").is_file(): raise PiSourceError(f"invalid managed Pi source: {destination}")
+        process = (destination/"packages/coding-agent/src/experimental/process.ts").read_text()
+        if "PI_SESSION_WORKER_ENTRY" not in process:
+            apply_patch(destination)
         verify(destination)
-        if not (destination / "node_modules").is_dir():
-            _install_dependencies(destination)
-        _prepare_runtime_build(destination)
-        return destination
-    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with tempfile.TemporaryDirectory(prefix=".pi-source-", dir=destination.parent) as temporary:
-        staged = Path(temporary) / commit
-        clone(staged)
-        _install_dependencies(staged)
-        _prepare_runtime_build(staged)
-        os.replace(staged, destination)
-    return destination
+    else:
+        destination.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+        with tempfile.TemporaryDirectory(prefix=".pi-source-",dir=destination.parent) as temp:
+            staged=Path(temp)/commit; clone(staged); install_deps(staged); prepare_build(staged); os.replace(staged,destination)
+    if not (destination/"node_modules").is_dir(): install_deps(destination)
+    prepare_build(destination); verify(destination); return destination
 
+def install_deps(source):
+    npm=shutil.which("npm")
+    if not npm: raise PiSourceError("npm is required")
+    subprocess.run([npm,"ci","--ignore-scripts"],cwd=source,check=True,stdout=sys.stderr)
 
-def _install_dependencies(source: Path) -> None:
-    npm = shutil.which("npm")
-    if npm is None:
-        raise PiSourceError("npm is required to install the managed Pi App Server runtime")
+def prepare_build(source):
+    npm=shutil.which("npm")
+    if not npm: raise PiSourceError("npm is required")
+    if not (source/"packages/chord/dist/index.js").exists() or not (source/"packages/coding-agent/dist/bundle").exists():
+        subprocess.run([npm,"run","build:offline"],cwd=source,check=True,stdout=sys.stderr)
+
+def main():
+    parser=argparse.ArgumentParser(); group=parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--verify",type=Path); group.add_argument("--clone",type=Path); group.add_argument("--install",type=Path)
+    args=parser.parse_args()
     try:
-        # Keep stdout reserved for the final source path printed by ``main``.
-        # The installer is commonly used in command substitution by CI; npm's
-        # summary must not become part of the value written to GITHUB_ENV.
-        subprocess.run([npm, "ci", "--ignore-scripts"], cwd=source, check=True, stdout=sys.stderr)
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to install pinned Pi dependencies: {exc}") from exc
-
-
-def _prepare_runtime_build(source: Path) -> None:
-    """The source entrypoint still imports generated model data and package dist files."""
-    npm = shutil.which("npm")
-    if npm is None:
-        raise PiSourceError("npm is required to prepare the pinned Pi runtime")
-    try:
-        if not (source / "packages/ai/src/providers/data/amazon-bedrock.json").is_file():
-            subprocess.run([npm, "run", "hydrate:model-data"], cwd=source, check=True, stdout=sys.stderr)
-        required = ("packages/chord/dist/index.js", "packages/coding-agent/dist/bundle")
-        if any(not (source / path).exists() for path in required):
-            subprocess.run([npm, "run", "build:offline"], cwd=source, check=True, stdout=sys.stderr)
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise PiSourceError(f"failed to build pinned Pi runtime: {exc}") from exc
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--verify", type=Path, metavar="SOURCE_ROOT")
-    group.add_argument("--clone", type=Path, metavar="DESTINATION")
-    group.add_argument("--install", type=Path, metavar="INSTALL_ROOT")
-    parser.add_argument("--apply-worker-patch", action="store_true", help="apply the native Worker entrypoint patch before verification")
-    parser.add_argument(
-        "--repair-tool-error-boundary",
-        action="store_true",
-        help="repair the known recovery-call syntax in an already prepared Pi checkout before verification",
-    )
-    args = parser.parse_args()
-    try:
-        if args.verify is not None:
-            if args.apply_worker_patch:
-                apply_worker_patch(args.verify)
-            if args.repair_tool_error_boundary:
-                apply_tool_error_boundary_repair_patch(args.verify)
-            source = verify(args.verify)
-        elif args.clone is not None:
-            if args.apply_worker_patch or args.repair_tool_error_boundary:
-                parser.error("patch repair options are only valid with --verify")
-            source = clone(args.clone)
-        else:
-            if args.apply_worker_patch or args.repair_tool_error_boundary:
-                parser.error("patch repair options are only valid with --verify")
-            source = install(args.install)
-    except PiSourceError as exc:
-        parser.error(str(exc))
-    print(source)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+        result=verify(args.verify) if args.verify else clone(args.clone) if args.clone else install(args.install)
+    except PiSourceError as exc: print(str(exc),file=sys.stderr); return 1
+    print(result); return 0
+if __name__=="__main__": raise SystemExit(main())

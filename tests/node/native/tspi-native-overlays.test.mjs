@@ -201,7 +201,7 @@ test("package root is hidden only during facet setup and restored on every path"
   }
 });
 
-test("native facet source is available for overlay integration tests", { skip: !sourceRoot }, async () => {
+test("native facet exposes status based commands without owning overlays", { skip: !sourceRoot }, async () => {
   const { createTspiNativeClientFacet } = await import("../../../apps/app-server/tspi-native-client-facet.mjs");
   const root = await mkdtemp(join(tmpdir(), "tspi-native-overlay-"));
   const previousPython = process.env.TSPI_WORKSPACE_PYTHON;
@@ -246,12 +246,13 @@ test("native facet source is available for overlay integration tests", { skip: !
     assert.equal(usedServices.includes("pi.local.transcript"), false);
 
     await commands.find(({ name }) => name === "runs").run("", { abortSignal: new AbortController().signal });
-    assert.equal(tui.overlay.constructor.name, "RunHistoryBrowser");
-    assert.deepEqual(statuses, [""]);
+    assert.equal(tui.overlay, undefined);
+    assert.equal(statuses.length, 1);
+    assert.match(statuses[0], /compute-runs\/1/);
 
     await commands.find(({ name }) => name === "sys_prompt").run("", { abortSignal: new AbortController().signal });
-    assert.equal(tui.overlay.constructor.name, "WrappedDocumentViewer");
-    assert.deepEqual(statuses, ["", ""]);
+    assert.equal(tui.overlay, undefined);
+    assert.deepEqual(statuses.slice(1), ["Use the system_prompt tool to inspect the effective prompt and provenance."]);
   } finally {
     if (previousPython === undefined) delete process.env.TSPI_WORKSPACE_PYTHON;
     else process.env.TSPI_WORKSPACE_PYTHON = previousPython;

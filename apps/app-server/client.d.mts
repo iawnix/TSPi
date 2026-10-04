@@ -15,8 +15,8 @@ export interface AppServerClient {
   research_admit(request: string | WorkspaceReferenceRequest): Promise<WorkspaceManifestLike>;
   session_create(request: CreateSessionRequest): Promise<{ readonly session_id: string; readonly snapshot: Record<string, unknown> }>;
   session_list(request?: Record<string, unknown>): Promise<{ readonly sessions: readonly Record<string, unknown>[] }>;
-  session_attach(request: { readonly session_id: string }): Promise<{ readonly session_id: string; readonly snapshot: Record<string, unknown> }>;
-  session_close(request: { readonly session_id: string }): Promise<Record<string, unknown>>;
+  session_attach(request: { readonly session_id: string; readonly workspace_id?: string }): Promise<{ readonly session_id: string; readonly snapshot: Record<string, unknown> }>;
+  session_close(request: { readonly session_id: string; readonly workspace_id?: string }): Promise<Record<string, unknown>>;
   turn_route(request: Record<string, unknown>): Promise<Record<string, unknown>>;
   turn_submit(request: Record<string, unknown>): Promise<Record<string, unknown>>;
   research_turn(request: Record<string, unknown>): Promise<Record<string, unknown>>;

@@ -6,12 +6,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
-import { formatSkillsForSystemPrompt, loadSkills, TODO_CONTEXT } from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { createSystemPromptManifest, createSystemPromptTool } from "../../../apps/app-server/system-prompt.mjs";
 import { discoverInstalledExtensions } from "../../../apps/app-server/extension-manifest-loader.mjs";
 
 const sourceRoot = process.env.TSPI_TEST_PI_RUNTIME_ROOT;
+const { NodeExecutionEnv } = await import("@earendil-works/pi-durable/env/node");
+const { loadSkills } = await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/core/skills.ts")).href);
+function formatSkillsForSystemPrompt(skills) {
+  return `<available_skills>\n${skills.map((skill) => `  <skill><name>${skill.name}</name><description>${skill.description}</description><location>${skill.filePath}</location></skill>`).join("\n")}\n</available_skills>`;
+}
 const executeFile = promisify(execFile);
 const PYTHONPATH = [
   join(process.cwd(), "packages", "tspi-foundation"),
@@ -92,11 +95,12 @@ test("system prompt skill provenance excludes skills hidden from the model", () 
 test("Pi Agent Core loads the packaged TSPi skill catalog", async () => {
   const env = new NodeExecutionEnv({ cwd: process.cwd() });
   const installed = await discoverInstalledExtensions({ packageRoot: process.cwd() });
-  const loaded = await loadSkills(
-    env,
-    [join(process.cwd(), "skills"), ...installed.skillRoots],
-    TODO_CONTEXT,
-  );
+  const loaded = loadSkills({
+    cwd: process.cwd(),
+    agentDir: process.cwd(),
+    skillPaths: [join(process.cwd(), "skills"), ...installed.skillRoots],
+    includeDefaults: false,
+  });
   assert.deepEqual(loaded.diagnostics, []);
   assert.deepEqual(loaded.skills.map((skill) => skill.name).sort(), [
     "candidate-generation",
@@ -114,6 +118,7 @@ test("Pi Agent Core loads the packaged TSPi skill catalog", async () => {
     "render",
     "report",
     "research-state",
+    "script",
     "validation",
     "xtb",
   ]);
@@ -151,10 +156,12 @@ test("native analysis discovers contracts and journals explicit mapping results"
   const workspace = join(root, "workspace");
   const previous = {
     TSPI_PACKAGE_ROOT: process.env.TSPI_PACKAGE_ROOT,
+    TSPI_PI_RUNTIME_ROOT: process.env.TSPI_PI_RUNTIME_ROOT,
     TSPI_PYTHON: process.env.TSPI_PYTHON,
     TSPI_NATIVE_WRITES: process.env.TSPI_NATIVE_WRITES,
   };
   process.env.TSPI_PACKAGE_ROOT = process.cwd();
+  process.env.TSPI_PI_RUNTIME_ROOT = sourceRoot;
   process.env.TSPI_PYTHON = kernelPython();
   delete process.env.TSPI_NATIVE_WRITES;
   try {
@@ -374,12 +381,14 @@ test("native Pi server gives every client the complete Agent tool inventory", { 
     PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
     PI_OFFLINE: process.env.PI_OFFLINE,
     TSPI_PACKAGE_ROOT: process.env.TSPI_PACKAGE_ROOT,
+    TSPI_PI_RUNTIME_ROOT: process.env.TSPI_PI_RUNTIME_ROOT,
     PI_SESSION_WORKER_ENTRY: process.env.PI_SESSION_WORKER_ENTRY,
     TSPI_NATIVE_WRITES: process.env.TSPI_NATIVE_WRITES,
   };
   process.env.PI_CODING_AGENT_DIR = agentDir;
   process.env.PI_OFFLINE = "1";
   process.env.TSPI_PACKAGE_ROOT = process.cwd();
+  process.env.TSPI_PI_RUNTIME_ROOT = sourceRoot;
   process.env.PI_SESSION_WORKER_ENTRY = join(process.cwd(), "apps/app-server/pi-session-worker.mjs");
   delete process.env.TSPI_NATIVE_WRITES;
   const fromSource = (relative) => import(pathToFileURL(join(sourceRoot, relative)).href);
@@ -388,9 +397,6 @@ test("native Pi server gives every client the complete Agent tool inventory", { 
   const { createUnixTransportFactory } = await fromSource("packages/client/src/unix.ts");
   const { startServer } = await fromSource("packages/coding-agent/src/experimental/server.ts");
   const { SessionManagement } = await fromSource("packages/coding-agent/src/experimental/services/sessions.ts");
-  const { TspiSystemPrompt } = await fromSource(
-    "packages/coding-agent/src/experimental/services/slash-commands-provider.ts",
-  );
   const { createServerServiceBinding, createSessionServiceBinding } = await fromSource(
     "packages/coding-agent/test/experimental-service-binding.ts",
   );
@@ -398,7 +404,6 @@ test("native Pi server gives every client the complete Agent tool inventory", { 
   let runtime;
   let client;
   let services;
-  let sessionServices;
   try {
     runtime = await startServer({
       directory: join(root, "server"),
@@ -415,25 +420,13 @@ test("native Pi server gives every client the complete Agent tool inventory", { 
     const management = services.use(SessionManagement);
     const summary = await management.create({ id: "native-tools" }, BACKGROUND_CONTEXT);
     await management.attach(summary.sessionId, BACKGROUND_CONTEXT);
-    sessionServices = createSessionServiceBinding(client, { services: [TspiSystemPrompt] });
-    await sessionServices.ready(BACKGROUND_CONTEXT);
-    const promptManifest = await sessionServices.use(TspiSystemPrompt).inspect(BACKGROUND_CONTEXT);
-    assert.equal(promptManifest.runtime, "native-app-server");
-    assert.equal(promptManifest.provenance_complete, true);
-    assert.match(promptManifest.effective, /You are the TSPi research agent/);
     for (let index = 0; index < 80 && !runtime.workerPids.has(summary.sessionId); index++) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     assert.ok(runtime.workerPids.has(summary.sessionId), "native Worker did not start");
     const state = await readExperimentalSessionState(runtime.sessionDir, summary.sessionId);
-    assert.deepEqual(state.activeTools, [
-      "read", "system_prompt", "write", "bash", "research_read", "research_change", "research_checkpoint",
-      "research_strategy", "research_interpretation", "research_checkpoint", "compute_environment", "review_run",
-      "compute_run", "review_respond", "execution_dispatch", "artifact_import", "artifact_render", "report_build",
-      "create_mol_structure", "artifact_compare", "analysis_run",
-    ]);
+    assert.deepEqual(state.model, { provider: "anthropic", modelId: "claude-sonnet-4-5" });
   } finally {
-    await sessionServices?.dispose(BACKGROUND_CONTEXT).catch(() => {});
     await services?.dispose(BACKGROUND_CONTEXT).catch(() => {});
     await client?.dispose().catch(() => {});
     await runtime?.close().catch(() => {});

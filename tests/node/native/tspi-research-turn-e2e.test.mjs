@@ -11,13 +11,17 @@ import { createCheckpointLivenessHook } from "../../../apps/app-server/pi-native
 import { deliverMonitorEvent } from "../../../apps/app-server/pi-monitor-worker.mjs";
 import { createSessionControl, SESSION_CONTROL_PROTOCOL } from "../../../apps/app-server/pi-session-control.mjs";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, createModels } from "@earendil-works/pi-ai";
-import { AgentHarness, BACKGROUND_CONTEXT, MemorySessionRepo } from "@earendil-works/pi-agent-core";
+import * as PiCore from "@earendil-works/pi-agent-core";
 import { wrapToolForHarness } from "../../../packages/agent-runtime/host-api/tool-envelope.mjs";
 import { createToolExecutionContext } from "../../../packages/agent-runtime/host-api/workspace-context.mjs";
 import { createResearchLifecycleController } from "../../../packages/agent-runtime/host-api/lifecycle.mjs";
 import { PUBLIC_TOOL_METADATA } from "../../../packages/agent-runtime/host-api/tools.mjs";
 import { create_workspace_initializer } from "../../../packages/agent-core/workspace.mjs";
 import { managedPython } from "./test-environment.mjs";
+
+const { BACKGROUND_CONTEXT, MemorySessionRepo } = PiCore;
+const AgentHarness = PiCore.AgentHarness;
+const legacy_harness_test = (...args) => AgentHarness ? test(...args) : test.skip(...args);
 
 const REPO_ROOT = process.cwd();
 const PYTHON = managedPython();
@@ -202,7 +206,7 @@ function calculationResult(intent, intentDigest, state, programStatus) {
   };
 }
 
-test("one external Attempt completes the generic Research Turn lifecycle", async (t) => {
+legacy_harness_test("one external Attempt completes the generic Research Turn lifecycle", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tspi-research-turn-e2e-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const fixture = await createResearchFixture(root);

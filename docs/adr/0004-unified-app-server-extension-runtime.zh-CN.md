@@ -8,7 +8,7 @@
 ## 决定
 
 安装级 Pi App Server 拥有 Root Agent runtime，客户端附着它的 session。Pi
-`SessionWorker`/`AgentHarness` 是 runtime owner；TSPi Host 是路由、回执、Monitor 和
+`SessionWorker`/`durable Harness` 是 runtime owner；TSPi Host 是路由、回执、Monitor 和
 Link control plane。终端使用 Pi 官方 native remote client，Phone 和 Monitor 通过
 Host adapter 访问同一个 worker lane。
 

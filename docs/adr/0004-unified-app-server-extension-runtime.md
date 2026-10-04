@@ -9,7 +9,7 @@
 ## Decision
 
 An installation-wide Pi App Server owns the Root Agent runtime, and clients
-attach to its sessions. The Pi `SessionWorker`/`AgentHarness` is the runtime
+attach to its sessions. The Pi `SessionWorker`/`durable Harness` is the runtime
 owner; TSPi Host is the routing, receipt, Monitor, and Link control plane. The
 terminal is Pi's official native remote client, while Phone and Monitor use
 Host adapters to address the same worker lane.

@@ -1,7 +1,7 @@
 {
   "component": "pi-sdk-runtime",
   "repository": "https://github.com/earendil-works/pi.git",
-  "tag": "v0.87.1",
-  "commit": "f07218c4d4bbc12bef056a7058c3dd49dfe41abe",
-  "protocolVersion": 8
+  "tag": "v1.0.2",
+  "commit": "cd32f7725fdbddbaecdff5b1e68491563394e0ca",
+  "protocolVersion": 9
 }

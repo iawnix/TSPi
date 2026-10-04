@@ -38,7 +38,7 @@ _RESEARCH_DIRECTORIES = (
         "checkpoints",
         "nodes",
         "evidence",
-        "monitor",
+        "operations",
         "environments",
 )
 RESEARCH_CONTEXT_COLLECTIONS = (

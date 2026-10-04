@@ -14,6 +14,23 @@ function require_session_id(value) {
   return session_id;
 }
 
+function require_session_request(value) {
+  const request = typeof value === "string" ? { session_id: value } : value;
+  const session_id = require_session_id(request);
+  if (request?.workspace_id !== undefined) require_workspace_id(request.workspace_id);
+  return {
+    session_id,
+    ...(request?.workspace_id === undefined ? {} : { workspace_id: request.workspace_id }),
+  };
+}
+
+function assert_session_workspace(entry, workspace_id) {
+  if (workspace_id !== undefined && entry?.workspace_id !== undefined && entry.workspace_id !== workspace_id) {
+    throw new Error("workspace_id_mismatch");
+  }
+  return entry;
+}
+
 function require_workspace_manifest(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new TypeError("workspace operation must return a manifest object");
@@ -113,19 +130,29 @@ export function create_app_server({ pi_session_port, workspace_port = null, work
     return typeof session?.read_snapshot === "function" ? await session.read_snapshot() : {};
   }
 
+  async function validate_runtime_session_workspace(session, workspace_id) {
+    if (workspace_id !== undefined && typeof session?.read_snapshot === "function") {
+      const snapshot = await read_session_snapshot(session);
+      if (snapshot.workspace_id !== undefined && snapshot.workspace_id !== workspace_id) throw new Error("workspace_id_mismatch");
+    }
+    return session;
+  }
+
   async function persist_snapshot(session_id, snapshot) {
     if (!session_store || typeof session_store.update_session !== "function") return;
     await session_store.update_session(session_id, { runtime_snapshot: snapshot });
   }
 
-  async function restore_runtime_session(entry) {
+  async function restore_runtime_session(entry, workspace_id) {
+    assert_session_workspace(entry, workspace_id);
     try {
-      return await runtime.attach_session(entry.session_id);
+      return await validate_runtime_session_workspace(await runtime.attach_session(entry.session_id), workspace_id);
     } catch (error) {
       // A process-local runtime normally loses its session table on restart;
       // adapters that cannot attach may also report an unsupported operation.
       // In both cases try an explicit restore, then expose one stable error if
       // the runtime cannot recreate the session with its durable identifier.
+      if (/workspace_id_mismatch/u.test(String(error?.message || error))) throw error;
     }
     try {
       const restored = await runtime.create_session({
@@ -139,21 +166,28 @@ export function create_app_server({ pi_session_port, workspace_port = null, work
       if (restored?.session_id !== entry.session_id) {
         throw new Error("runtime returned a different session identifier");
       }
-      return restored;
+      return await validate_runtime_session_workspace(restored, workspace_id);
     } catch (error) {
+      if (/workspace_id_mismatch/u.test(String(error?.message || error))) throw error;
       throw new Error("session_runtime_unavailable", { cause: error });
     }
   }
 
-  async function require_open_session(session_id) {
-    if (!session_store) return null;
-    return session_store.attach_session(session_id);
+  async function require_open_session(session_id, workspace_id) {
+    if (!session_store) {
+      if (workspace_id !== undefined) {
+        await validate_runtime_session_workspace(await runtime.attach_session(session_id), workspace_id);
+      }
+      return null;
+    }
+    const entry = await session_store.attach_session(session_id);
+    return assert_session_workspace(entry, workspace_id);
   }
 
-  async function ensure_runtime_session(session_id) {
-    if (!session_store) return runtime.attach_session(session_id);
-    const entry = await require_open_session(session_id);
-    return restore_runtime_session(entry);
+  async function ensure_runtime_session(session_id, workspace_id) {
+    if (!session_store) return validate_runtime_session_workspace(await runtime.attach_session(session_id), workspace_id);
+    const entry = await require_open_session(session_id, workspace_id);
+    return restore_runtime_session(entry, workspace_id);
   }
 
   async function resolve_workspace(request) {
@@ -306,7 +340,7 @@ export function create_app_server({ pi_session_port, workspace_port = null, work
       ensure_open();
       if (!turn_router || typeof turn_router.route_turn !== "function") throw new Error("turn_router_not_configured");
       if (request === null || typeof request !== "object") throw new TypeError("turn request must be an object");
-      if (request.session_id !== undefined) await require_open_session(require_session_id(request));
+      if (request.session_id !== undefined) await require_open_session(require_session_id(request), request.workspace_id);
       const manifest = await resolve_workspace(request);
       return turn_router.route_turn({
         ...request,
@@ -320,7 +354,7 @@ export function create_app_server({ pi_session_port, workspace_port = null, work
     async submit_turn(request) {
       ensure_open();
       if (request === null || typeof request !== "object") throw new TypeError("turn request must be an object");
-      if (request.session_id !== undefined) await require_open_session(require_session_id(request));
+      if (request.session_id !== undefined) await require_open_session(require_session_id(request), request.workspace_id);
       const routed = await app_server.route_turn(request);
       if (routed.protocol === "research_turn_request") {
         if (!kernel_port) throw new Error("kernel_port_not_configured");
@@ -477,10 +511,12 @@ export function create_app_server({ pi_session_port, workspace_port = null, work
 
     async attach_session(request) {
       ensure_open();
-      const session_id = require_session_id(request);
-      if (!session_store) return runtime.attach_session(session_id);
+      const { session_id, workspace_id } = require_session_request(request);
+      if (!session_store) {
+        return validate_runtime_session_workspace(await runtime.attach_session(session_id), workspace_id);
+      }
       const entry = await session_store.attach_session(session_id);
-      return restore_runtime_session(entry);
+      return restore_runtime_session(entry, workspace_id);
     },
 
     async list_sessions() {
@@ -491,7 +527,7 @@ export function create_app_server({ pi_session_port, workspace_port = null, work
 
     async close_session(request) {
       ensure_open();
-      const session_id = require_session_id(request);
+      const { session_id, workspace_id } = require_session_request(request);
       if (!session_store) {
         const session = await runtime.attach_session(session_id);
         if (typeof runtime.close_session === "function") return runtime.close_session(session_id);
@@ -502,8 +538,9 @@ export function create_app_server({ pi_session_port, workspace_port = null, work
       // implements close_session, notify it as well; metadata is never treated
       // as a substitute for a usable runtime session during attach.
       const entry = await session_store.attach_session(session_id);
+      assert_session_workspace(entry, workspace_id);
       try {
-        const session = await restore_runtime_session(entry);
+        const session = await restore_runtime_session(entry, workspace_id);
         if (typeof runtime.close_session === "function") await runtime.close_session(session_id);
         else if (typeof session.close === "function") await session.close();
       } catch (error) {
@@ -518,7 +555,7 @@ export function create_app_server({ pi_session_port, workspace_port = null, work
       const { session_id, input } = request;
       require_session_id(session_id);
       if (typeof input !== "string" || input.length === 0) throw new TypeError("input is required");
-      await ensure_runtime_session(session_id);
+      await ensure_runtime_session(session_id, request.workspace_id);
       const result = await runtime.submit(session_id, input);
       if (session_store) {
         const session = await runtime.attach_session(session_id);
@@ -530,14 +567,14 @@ export function create_app_server({ pi_session_port, workspace_port = null, work
     subscribe(request, listener) {
       ensure_open();
       const session_id = require_session_id(request);
-      if (session_store) return require_open_session(session_id).then(() => runtime.subscribe(session_id, listener));
+      if (session_store) return require_open_session(session_id, request?.workspace_id).then(() => runtime.subscribe(session_id, listener));
       return runtime.subscribe(session_id, listener);
     },
 
     async interrupt(request) {
       ensure_open();
       const session_id = require_session_id(request);
-      await require_open_session(session_id);
+      await require_open_session(session_id, request?.workspace_id);
       return runtime.interrupt(session_id);
     },
 

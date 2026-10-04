@@ -22,7 +22,7 @@ function workspace_manifest(workspace_root, workspace_mode = "research", workspa
     state: research ? "admission_pending" : "ready",
     created_at: "2026-09-27T00:00:00Z",
     directories: research
-      ? ["inputs", "artifacts", "runs", "logs", "research_map", "memory", "lifecycle", "checkpoints", "nodes", "evidence", "monitor", "environments"]
+      ? ["inputs", "artifacts", "runs", "logs", "research_map", "memory", "lifecycle", "checkpoints", "nodes", "evidence", "operations", "environments"]
       : ["inputs", "artifacts", "runs", "logs", "scratch", "sessions"],
     research_state: research
       ? { initialized: true, admission_required: true, revision: 0 }

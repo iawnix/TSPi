@@ -103,10 +103,8 @@ also needs hydrated model data and built workspace dependencies;
 [scientific operations](SCIENTIFIC_CAPABILITIES_OPERATIONS.md) for capability
 discovery, Node pause/resume, and opt-in remote/model smoke commands.
 
-During an upgrade, the same step verifies the complete multi-workspace patch. Older
-installations that already have the project-listing portion receive the compatible
-incremental patch for project creation and `workspaceId` session binding before the
-Host is restarted.
+The same step verifies the pinned Pi v1 runtime and its single TSPi integration patch.
+The runtime uses the new workspace-scoped SQLite session layout described below.
 
 ## Configure Remote Execution (Compute Backends)
 
@@ -212,7 +210,7 @@ only sends mail.
 
 The installation owns one TSPi Host for all validated workspaces below the
 installation workspace root. The Host is a control plane and the installation
-Pi App Server owns one pinned `SessionWorker`/`AgentHarness` lane per active
+Pi App Server owns one pinned `SessionWorker`/`durable Harness` lane per active
 session. The installer enables and starts the Host before reporting success;
 the normal terminal launch then attaches to that service:
 
@@ -273,8 +271,9 @@ This writes the owner-only configuration at
 `research_agent_server/1`. Old `runtime_module`, `kernel_module`, and module
 injection environment fields are rejected.
 
-The release includes the Pi SDK Runtime descriptor and adapter at
-`packages/agent-pi-adapter/pi_runtime_module.mjs`. The installer prepares the
+The release includes the Pi SDK Runtime descriptor and the durable adapter at
+`packages/agent-pi-adapter/pi_runtime_module.mjs`; its default path delegates to
+`apps/app-server/pi-app-server.mjs` and the Pi v1 experimental services. The installer prepares the
 pinned checkout under `<install>/.pi/runtime-cache/pi/<commit>` and passes its
 resolved location internally. Configure only the model selected by Pi:
 
@@ -303,15 +302,14 @@ Create a new conversation or continue the latest conversation in a project:
 ```
 
 The Host identity is `<install>/.pi/app-server-host/server-id`; request receipts,
-scheduler leases, Monitor health, and the canonical Pi format-4 session repository
-live below the same directory. format-4 files are grouped by cwd under
-`.pi/app-server-host/sessions/`. Workspace `.pi/sessions` files are not accepted by
+scheduler leases, Monitor health, and the canonical Pi SQLite durable session repository
+live below the same directory. Each session is stored under `.pi/app-server-host/sessions/<workspace-id>/<session-id>/` with `meta.json` and `session.sqlite`. Workspace `.pi/sessions` files are not accepted by
 Native Pi Harness. A workspace is restricted to a validated direct child of the
 configured workspace root.
 
 The default terminal path uses Pi's official native remote client over the
 local descriptor returned by Host. It does not require tmux or PTY scraping.
-Host restart preserves format-4 transcript, operation/queue IDs, receipts, and
+Host restart preserves SQLite durable transcript, operation/queue IDs, receipts, and
 Monitor outbox state; reconnecting clients resume from a Host epoch/cursor.
 
 TS Phone connects to this Host through TSPi Link. During installation, enable
@@ -372,7 +370,7 @@ Research State, local runs, and remote calculation intents; there is no separate
 
 ## Session history
 
-Native Pi Harness accepts only installation-level format-4 sessions under
+Native Pi Harness accepts only installation-level SQLite durable sessions under
 `.pi/app-server-host/sessions/`. Legacy workspace history files are not imported
 or resumed. Preserve scientific continuity in Research Memory rather than in a
 second session format.
@@ -450,7 +448,7 @@ validated upgrade; never edit a release directory in place or hand-edit the
 ## Operational Recovery
 
 If the Host exits, restart the single Host service. The Root lock is released by
-process exit and Pi JSONL sessions remain intact. Local calculation workers use
+process exit and Pi SQLite sessions remain intact. Local calculation workers use
 independent transient user services when available, so a Host restart does not
 normally interrupt them; check the calculation status after recovery. A
 terminal or phone reconnect first receives a fresh session snapshot; prompts

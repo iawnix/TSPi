@@ -26,7 +26,7 @@ const MAX_EVENT_HISTORY = 256;
  */
 export function createSessionControl({ sessionId, agent, transcript, context, historyLimit = MAX_EVENT_HISTORY }) {
   assertSessionId(sessionId);
-  if (!agent || typeof agent.prompt !== "function" || typeof agent.requestAbort !== "function") {
+  if (!agent || (typeof agent.prompt !== "function" && typeof agent.startPrompt !== "function") || (typeof agent.abort !== "function" && typeof agent.requestAbort !== "function")) {
     throw new TypeError("session control requires an AgentController service");
   }
   if (!transcript?.state || typeof transcript.state.subscribe !== "function") {
@@ -51,18 +51,24 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
   // can therefore resume from a known sequence without racing its own replica.
   const unsubscribeTranscript = transcript.state.subscribe((value, _deliveryContext, delivery) => {
     if (closed) return;
-    state = value;
-    sequence = delivery.sequence;
-    const event = value?.event ?? null;
+    const previous = state;
+    const wrapped = unwrapTranscriptValue(value);
+    state = wrapped.snapshot;
+    sequence = Number.isSafeInteger(delivery?.sequence) ? delivery.sequence : sequence + 1;
+    // Pi v1 exposes ConversationView directly. Older injected ports used a
+    // `{ snapshot, event }` wrapper. Keep accepting the latter while deriving
+    // the stable TSPi run events from Pi's live view for the former.
+    const event = wrapped.event ?? derivePiRunEvent(previous, wrapped.snapshot);
+    const snapshot = wrapped.snapshot;
     const item = Object.freeze({
       schema_version: SESSION_EVENT_PROTOCOL,
       session_id: sessionId,
       sequence,
       kind: event === null ? "snapshot" : "event",
-      snapshot: value?.snapshot ?? null,
+      snapshot,
       event,
     });
-    if (delivery.kind === "update") {
+    if (delivery?.kind === "update") {
       eventHistory.push(item);
       while (eventHistory.length > historyLimit) eventHistory.shift();
     }
@@ -83,7 +89,7 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
     /** Return the latest coherent transcript state and its resume cursor. */
     snapshot() {
       ensureOpen();
-      if (state?.snapshot === null || state?.snapshot === undefined) {
+      if (transcriptSnapshot(state) === null) {
         throw protocolError("session_not_ready", "Session transcript is not initialized", true);
       }
       return makeSnapshotEnvelope();
@@ -131,13 +137,15 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
         return cached.result;
       }
       consumeRetryableFailure(parsed.request_id, fingerprint);
-      const admit = typeof agent.startPrompt === "function" ? agent.startPrompt.bind(agent) : agent.prompt.bind(agent);
       const result = Promise.resolve()
-        .then(() => admit({
+        .then(() => (typeof agent.startPrompt === "function" ? agent.startPrompt({
           message: parsed.message,
           images: parsed.images,
           ...(parsed.operation_id === undefined ? {} : { operationId: parsed.operation_id }),
-        }, context))
+        }, context) : agent.prompt({
+          message: parsed.message,
+          images: parsed.images,
+        }, context)))
         .then((response) => operationResponse(parsed, response));
       rememberRequest(parsed.request_id, fingerprint, result);
       return result;
@@ -155,7 +163,7 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
         return cached.result;
       }
       const result = Promise.resolve()
-        .then(() => agent.requestAbort(parsed.operation_id, context))
+        .then(() => typeof agent.abort === "function" ? agent.abort(context) : agent.requestAbort(parsed.operation_id, context))
         .then(() => ({
           schema_version: SESSION_CONTROL_PROTOCOL,
           request_id: parsed.request_id,
@@ -172,7 +180,9 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
     async queue(request) {
       ensureOpen();
       const parsed = validateQueue(request, sessionId);
-      const method = parsed.mode === "follow_up" ? "followUp" : parsed.mode === "next_run" ? "nextRun" : "steer";
+      const method = parsed.mode === "next_run" && typeof agent.nextRun === "function"
+        ? "nextRun"
+        : parsed.mode === "follow_up" || parsed.mode === "next_run" ? "followUp" : "steer";
       if (typeof agent[method] !== "function") throw protocolError("unsupported_action", `AgentController does not provide ${method}`);
       const fingerprint = JSON.stringify({ mode: parsed.mode, message: parsed.message, images: parsed.images });
       const cached = requestCache.get(parsed.request_id);
@@ -203,7 +213,7 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
       }
       if (typeof listener !== "function") throw new TypeError("session event listener must be a function");
       if (includeSnapshot) {
-        if (state?.snapshot === null || state?.snapshot === undefined) {
+        if (transcriptSnapshot(state) === null) {
           throw protocolError("session_not_ready", "Session transcript is not initialized", true);
         }
         listener(makeSnapshotEvent());
@@ -230,7 +240,7 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
   return Object.freeze(control);
 
   function makeSnapshotEnvelope() {
-    return { cursor: sequence, snapshot: state.snapshot };
+    return { cursor: sequence, snapshot: transcriptSnapshot(state) };
   }
 
   function makeSnapshotEvent() {
@@ -239,13 +249,18 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
       session_id: sessionId,
       sequence,
       kind: "snapshot",
-      snapshot: state?.snapshot ?? null,
+      snapshot: transcriptSnapshot(state),
       event: null,
     });
   }
 
   function ensureOpen() {
     if (closed) throw protocolError("closed", "Session control is closed");
+  }
+
+  function transcriptSnapshot(value) {
+    if (value === null || value === undefined) return null;
+    return value?.snapshot ?? value;
   }
 
   function rememberRequest(requestId, fingerprint, result) {
@@ -279,6 +294,63 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
     }
     retryableFailures.delete(requestId);
   }
+}
+
+function unwrapTranscriptValue(value) {
+  if (value && typeof value === "object"
+    && (Object.prototype.hasOwnProperty.call(value, "snapshot") || Object.prototype.hasOwnProperty.call(value, "event"))) {
+    return { snapshot: value.snapshot ?? value, event: value.event ?? null };
+  }
+  return { snapshot: value, event: null };
+}
+
+/**
+ * Pi durable's public Transcript is a ConversationView, while the old
+ * injected session port delivered explicit run events. The TSPi event
+ * protocol is transport-owned, so synthesize only the stable run boundary
+ * needed by Host receipt reconciliation. The full ConversationView remains
+ * the snapshot source.
+ */
+function derivePiRunEvent(previous, current) {
+  const before = piLiveRun(previous);
+  const after = piLiveRun(current);
+  const beforeInput = before?.inputs?.[0];
+  const afterInput = after?.inputs?.[0];
+  if (before && (!after || beforeInput !== afterInput)) {
+    const operationId = beforeInput === undefined || beforeInput === null ? null : String(beforeInput);
+    return {
+      type: "run_end",
+      inputs: Array.isArray(before.inputs) ? before.inputs.map(String) : [],
+      ...(operationId ? { runId: operationId, operationId } : {}),
+      status: piRunStatus(current),
+    };
+  }
+  if (after && (!before || beforeInput !== afterInput)) {
+    const operationId = afterInput === undefined || afterInput === null ? null : String(afterInput);
+    return {
+      type: "run_start",
+      inputs: Array.isArray(after.inputs) ? after.inputs.map(String) : [],
+      ...(operationId ? { runId: operationId, operationId } : {}),
+    };
+  }
+  return null;
+}
+
+function piLiveRun(value) {
+  const source = value?.snapshot ?? value;
+  const live = source?.docs?.["pi.live"];
+  return live?.run && typeof live.run === "object" ? live.run : null;
+}
+
+function piRunStatus(value) {
+  const source = value?.snapshot ?? value;
+  const entries = Array.isArray(source?.entries) ? source.entries : [];
+  const assistant = [...entries].reverse()
+    .map((entry) => entry?.model?.[0])
+    .find((message) => message?.role === "assistant");
+  if (assistant?.stopReason === "aborted") return "aborted";
+  if (assistant?.stopReason === "error") return "failed";
+  return "completed";
 }
 
 function validateRequest(value, sessionId) {

@@ -1,0 +1,293 @@
+diff --git a/packages/coding-agent/src/experimental/process.ts b/packages/coding-agent/src/experimental/process.ts
+index cea91b0..6a3e45d 100644
+--- a/packages/coding-agent/src/experimental/process.ts
++++ b/packages/coding-agent/src/experimental/process.ts
+@@ -1,4 +1,5 @@
+ import { type ChildProcess, spawn } from "node:child_process";
++import { closeSync, openSync } from "node:fs";
+ import { join, resolve } from "node:path";
+ import { fileURLToPath, pathToFileURL } from "node:url";
+ import { getPackageDir, isBunBinary, isBundledNode } from "../config.ts";
+@@ -46,28 +47,34 @@ export function spawnInternalProcess(
+ 	if (isBunBinary && options.entryUrl) {
+ 		throw new Error("A compiled Bun executable cannot launch an external internal-process entrypoint");
+ 	}
+-	const entryUrl = defaultEntryUrl(role, options.entryUrl);
++	const configuredWorkerEntry = role === "session-worker" ? process.env.PI_SESSION_WORKER_ENTRY : undefined;
++	const entryUrl = configuredWorkerEntry ? pathToFileURL(resolve(configuredWorkerEntry)) : defaultEntryUrl(role, options.entryUrl);
+ 	// --import takes a module specifier; a raw path breaks on Windows drives and on `#`, `?`, or `%` in the path.
+ 	const sourceRuntimeArgs = import.meta.url.endsWith(".ts")
+ 		? ["--import", new URL("source-resolver.ts", import.meta.url).href]
+ 		: [];
+-	const child = spawn(
+-		process.execPath,
+-		isBunBinary ? [...args] : [...sourceRuntimeArgs, fileURLToPath(entryUrl), ...args],
+-		{
+-			cwd: process.cwd(),
+-			detached: true,
+-			env: {
+-				...process.env,
+-				...options.env,
+-				[INTERNAL_PROCESS_ENV]: role,
++	const diagnosticPath = process.env.TSPI_PI_DIAGNOSTIC_FILE?.trim();
++	let diagnosticFd: number | undefined;
++	if (diagnosticPath) {
++		try { diagnosticFd = openSync(diagnosticPath, "a", 0o600); } catch { /* diagnostics are best effort */ }
++	}
++	try {
++		const child = spawn(
++			process.execPath,
++			isBunBinary ? [...args] : [...sourceRuntimeArgs, fileURLToPath(entryUrl), ...args],
++			{
++				cwd: process.cwd(),
++				detached: true,
++				env: { ...process.env, ...options.env, [INTERNAL_PROCESS_ENV]: role },
++				stdio: diagnosticFd === undefined ? "ignore" : ["ignore", "ignore", diagnosticFd],
++				windowsHide: true,
+ 			},
+-			stdio: "ignore",
+-			windowsHide: true,
+-		},
+-	);
+-	child.unref();
+-	return child;
++		);
++		child.unref();
++		return child;
++	} finally {
++		if (diagnosticFd !== undefined) { try { closeSync(diagnosticFd); } catch { /* child owns the duplicated descriptor */ } }
++	}
+ }
+ 
+ /** Force a spawned internal process to exit and wait until it can no longer take ownership. */
+diff --git a/packages/coding-agent/src/experimental/server.ts b/packages/coding-agent/src/experimental/server.ts
+index 3872807..a74067a 100644
+--- a/packages/coding-agent/src/experimental/server.ts
++++ b/packages/coding-agent/src/experimental/server.ts
+@@ -386,17 +386,20 @@ async function startServerBackend(
+ 		return [...sessions.values()];
+ 	};
+ 	const resolveSession = async (sessionId: string, _context: Context): Promise<SessionCatalogMetadata> => {
+-		const metadata =
+-			workers.trackedSessions.find((candidate) => candidate.id === sessionId) ??
+-			(await readSession(sessionDir, sessionId));
++		const matches = workers.trackedSessions.filter((candidate) => candidate.id === sessionId);
++		if (matches.length > 1) throw new SessionNotFoundError(`Session ID is ambiguous across workspaces: ${sessionId}`);
++		const catalogMatches = (await listCatalogSessions(sessionDir)).filter((candidate) => candidate.id === sessionId);
++		if (catalogMatches.length > 1) throw new SessionNotFoundError(`Session ID is ambiguous across workspaces: ${sessionId}`);
++		const metadata = matches[0] ?? catalogMatches[0];
+ 		if (metadata === undefined) throw new SessionNotFoundError(`Unknown session: ${sessionId}`);
+ 		return metadata;
+ 	};
+ 	const createSession = (createOptions: SessionCreateOptions): Promise<SessionCatalogMetadata> =>
+-		createCatalogSession(sessionDir, { ...createOptions, cwd: process.cwd() });
++		createCatalogSession(sessionDir, { ...createOptions, cwd: createOptions.cwd ?? process.cwd() });
+ 	const summarize = (metadata: SessionCatalogMetadata): SessionSummary => ({
+ 		serverId,
+ 		sessionId: metadata.id,
++		workspaceId: metadata.workspaceId,
+ 		createdAt: metadata.createdAt,
+ 	});
+ 	const serverServices = await createExperimentalServerServices({
+diff --git a/packages/coding-agent/src/experimental/services/sessions.ts b/packages/coding-agent/src/experimental/services/sessions.ts
+index 79dbec2..e10aead 100644
+--- a/packages/coding-agent/src/experimental/services/sessions.ts
++++ b/packages/coding-agent/src/experimental/services/sessions.ts
+@@ -4,6 +4,7 @@ import type { ServerId } from "@earendil-works/pi-protocol";
+ export interface SessionAddress {
+ 	serverId: ServerId;
+ 	sessionId: string;
++	workspaceId: string;
+ }
+ 
+ export interface SessionSummary extends SessionAddress {
+@@ -12,6 +13,8 @@ export interface SessionSummary extends SessionAddress {
+ 
+ export interface SessionCreateOptions {
+ 	id?: string;
++	workspaceId?: string;
++	cwd?: string;
+ }
+ 
+ export interface SessionDirectoryState {
+diff --git a/packages/coding-agent/src/experimental/session-catalog.ts b/packages/coding-agent/src/experimental/session-catalog.ts
+index e48343d..0473658 100644
+--- a/packages/coding-agent/src/experimental/session-catalog.ts
++++ b/packages/coding-agent/src/experimental/session-catalog.ts
+@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
+ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+ import { join } from "node:path";
+ 
+-/** One server-hosted Session: a directory holding `meta.json` and the worker-owned `session.sqlite`. */
++/** One server-hosted Session: <workspace-id>/<session-id>/meta.json + session.sqlite. */
+ export interface SessionCatalogMetadata {
+ 	readonly id: string;
++	readonly workspaceId: string;
+ 	readonly createdAt: number;
+ 	/** The working directory the Session's agent runs in. */
+ 	readonly cwd: string;
+@@ -15,64 +16,100 @@ export interface SessionCatalogMetadata {
+ const METADATA_FILE = "meta.json";
+ const STORAGE_FILE = "session.sqlite";
+ const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
++const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+ 
+ export function isSessionId(id: string): boolean {
+ 	return SESSION_ID.test(id);
+ }
+ 
++export function isWorkspaceId(id: string): boolean {
++	return WORKSPACE_ID.test(id);
++}
++
+ /** The durable storage file of a Session. Only the Session's worker opens it. */
+ export function sessionStoragePath(metadata: SessionCatalogMetadata): string {
+ 	return join(metadata.path, STORAGE_FILE);
+ }
+ 
+-/** Every Session in the directory. Entries without valid metadata are skipped. */
++/** Every Session in every workspace directory. Entries without valid metadata are skipped. */
+ export async function listSessions(sessionDir: string): Promise<SessionCatalogMetadata[]> {
+-	let names: string[];
++	let workspaceNames: string[];
+ 	try {
+-		names = await readdir(sessionDir);
++		workspaceNames = await readdir(sessionDir);
+ 	} catch (error) {
+ 		if (isNotFound(error)) return [];
+ 		throw error;
+ 	}
+-	const sessions = await Promise.all(names.filter(isSessionId).map((name) => readSession(sessionDir, name)));
+-	return sessions.filter((metadata) => metadata !== undefined);
++	const sessions: SessionCatalogMetadata[] = [];
++	for (const workspaceId of workspaceNames.filter(isWorkspaceId)) {
++		let names: string[];
++		try {
++			names = await readdir(join(sessionDir, workspaceId));
++		} catch (error) {
++			if (isNotFound(error)) continue;
++			throw error;
++		}
++		const found = await Promise.all(names.filter(isSessionId).map((name) => readSession(sessionDir, name, workspaceId)));
++		sessions.push(...found.filter((metadata): metadata is SessionCatalogMetadata => metadata !== undefined));
++	}
++	return sessions;
+ }
+ 
+-/** One Session by ID, or undefined when it does not exist. */
+-export async function readSession(sessionDir: string, id: string): Promise<SessionCatalogMetadata | undefined> {
++/** One Session by ID, optionally constrained to a workspace. */
++export async function readSession(
++	sessionDir: string,
++	id: string,
++	workspaceId?: string,
++): Promise<SessionCatalogMetadata | undefined> {
+ 	if (!isSessionId(id)) return undefined;
+-	const path = join(sessionDir, id);
+-	let value: unknown;
+-	try {
+-		value = JSON.parse(await readFile(join(path, METADATA_FILE), "utf8"));
+-	} catch {
+-		return undefined;
++	const candidates = workspaceId === undefined
++		? (await listWorkspaceIds(sessionDir)).map((value) => value)
++		: [workspaceId];
++	for (const candidateWorkspaceId of candidates) {
++		if (!isWorkspaceId(candidateWorkspaceId)) continue;
++		const path = join(sessionDir, candidateWorkspaceId, id);
++		let value: unknown;
++		try {
++			value = JSON.parse(await readFile(join(path, METADATA_FILE), "utf8"));
++		} catch {
++			continue;
++		}
++		if (typeof value !== "object" || value === null) continue;
++		const metadata = value as { createdAt?: unknown; cwd?: unknown; workspaceId?: unknown };
++		if (typeof metadata.createdAt !== "number" || typeof metadata.cwd !== "string") continue;
++		if (metadata.workspaceId !== undefined && metadata.workspaceId !== candidateWorkspaceId) continue;
++		return {
++			id,
++			workspaceId: candidateWorkspaceId,
++			createdAt: metadata.createdAt,
++			cwd: metadata.cwd,
++			path,
++		};
+ 	}
+-	if (typeof value !== "object" || value === null) return undefined;
+-	const { createdAt, cwd } = value as { createdAt?: unknown; cwd?: unknown };
+-	if (typeof createdAt !== "number" || typeof cwd !== "string") return undefined;
+-	return { id, createdAt, cwd, path };
++	return undefined;
+ }
+ 
+-/** Create an empty Session. Its worker creates the storage on first open. */
++/** Create an empty Session. Its worker creates the SQLite storage on first open. */
+ export async function createSession(
+ 	sessionDir: string,
+-	options: { readonly id?: string; readonly cwd: string },
++	options: { readonly id?: string; readonly workspaceId?: string; readonly cwd: string },
+ ): Promise<SessionCatalogMetadata> {
+ 	const id = options.id ?? randomUUID();
++	const workspaceId = options.workspaceId ?? "default";
+ 	if (!isSessionId(id)) throw new Error(`Invalid session ID: ${id}`);
+-	const path = join(sessionDir, id);
+-	await mkdir(sessionDir, { recursive: true });
++	if (!isWorkspaceId(workspaceId)) throw new Error(`Invalid workspace ID: ${workspaceId}`);
++	const path = join(sessionDir, workspaceId, id);
++	await mkdir(join(sessionDir, workspaceId), { recursive: true });
+ 	try {
+ 		await mkdir(path);
+ 	} catch (error) {
+-		if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error(`Session ${id} already exists`);
++		if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error(`Session ${id} already exists in workspace ${workspaceId}`);
+ 		throw error;
+ 	}
+-	const metadata: SessionCatalogMetadata = { id, createdAt: Date.now(), cwd: options.cwd, path };
++	const metadata: SessionCatalogMetadata = { id, workspaceId, createdAt: Date.now(), cwd: options.cwd, path };
+ 	await writeFile(
+ 		join(path, METADATA_FILE),
+-		`${JSON.stringify({ createdAt: metadata.createdAt, cwd: metadata.cwd }, null, "\t")}\n`,
++		`${JSON.stringify({ createdAt: metadata.createdAt, cwd: metadata.cwd, workspaceId: metadata.workspaceId }, null, "\t")}\n`,
+ 	);
+ 	return metadata;
+ }
+@@ -82,6 +119,15 @@ export async function deleteSession(metadata: SessionCatalogMetadata): Promise<v
+ 	await rm(metadata.path, { recursive: true, force: true });
+ }
+ 
++async function listWorkspaceIds(sessionDir: string): Promise<string[]> {
++	try {
++		return (await readdir(sessionDir)).filter(isWorkspaceId);
++	} catch (error) {
++		if (isNotFound(error)) return [];
++		throw error;
++	}
++}
++
+ function isNotFound(error: unknown): boolean {
+ 	return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+ }
+diff --git a/packages/coding-agent/src/experimental/session-worker.ts b/packages/coding-agent/src/experimental/session-worker.ts
+index 498404a..c78d313 100644
+--- a/packages/coding-agent/src/experimental/session-worker.ts
++++ b/packages/coding-agent/src/experimental/session-worker.ts
+@@ -68,6 +68,7 @@ export const SESSION_WORKER_PEER_ID_ENV = "PI_SESSION_WORKER_PEER_ID";
+
+ export const SessionWorkerMetadataSchema = StrictObject({
+ 	id: Type.String({ minLength: 1 }),
++	workspaceId: Type.String({ minLength: 1 }),
+ 	createdAt: Type.Number(),
+ 	cwd: Type.String(),
+ 	path: Type.String(),
+diff --git a/packages/coding-agent/src/experimental/session-worker-manager.ts b/packages/coding-agent/src/experimental/session-worker-manager.ts
+index 3f77d9a..d1d7c11 100644
+--- a/packages/coding-agent/src/experimental/session-worker-manager.ts
++++ b/packages/coding-agent/src/experimental/session-worker-manager.ts
+@@ -462,6 +462,6 @@ export class SessionWorkerManager {
+ 			const options: SessionWorkerOptions = {
+ 				sessionDir: this.#sessionDir,
+-				metadata: { id: metadata.id, createdAt: metadata.createdAt, cwd: metadata.cwd, path: metadata.path },
++				metadata: { id: metadata.id, workspaceId: metadata.workspaceId, createdAt: metadata.createdAt, cwd: metadata.cwd, path: metadata.path },
+ 				pluginManifestPaths: [...pluginManifestPaths],
+ 				...(this.#model ?? {}),
+ 			};
