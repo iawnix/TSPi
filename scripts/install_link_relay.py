@@ -156,11 +156,16 @@ def install_release(args: argparse.Namespace) -> tuple[Path, str]:
                 shutil.rmtree(shared_release)
             shared_release.parent.mkdir(parents=True, exist_ok=True)
             shutil.copytree(shared_link, shared_release)
-            subprocess.run(
+            dependencies = subprocess.run(
                 ["npm", "ci", "--omit=dev", "--ignore-scripts"],
                 cwd=staging / "service",
-                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
             )
+            if dependencies.returncode != 0:
+                raise RuntimeError(dependencies.stderr.strip() or "Relay dependency installation failed")
             staging.chmod(0o755)
             os.replace(staging, release)
         finally:
