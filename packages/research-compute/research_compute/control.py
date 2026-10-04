@@ -3024,8 +3024,19 @@ def _write_result(workspace: Path, intent: dict[str, Any], result: dict[str, Any
     path = workspace / output_ref / "calculation_result.json"
     _require_physical_compute_path(workspace, path, "calculation result")
     path.parent.mkdir(parents=True, exist_ok=True)
-    write_json(path, result)
-    _register_parsed_evidence(workspace, intent, result)
+    previous = _read_object(path, "calculation result") if path.is_file() else None
+    try:
+        write_json(path, result)
+        _register_parsed_evidence(workspace, intent, result)
+    except Exception:
+        # Parsed evidence admission is a second durable boundary. Do not leave
+        # an operational result claiming ``parsed`` when canonical Artifact
+        # registration failed and the parser output was rolled back.
+        if previous is None:
+            path.unlink(missing_ok=True)
+        else:
+            write_json(path, previous)
+        raise
 
 
 def _register_parsed_evidence(
