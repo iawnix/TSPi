@@ -199,6 +199,7 @@ import importlib.metadata
 import json
 import sys
 import pyscf
+import chemical_runtime
 import geometric
 import pyscf.dispersion as pyscf_dispersion
 import numpy
@@ -220,8 +221,9 @@ def module_info(module):
     }
 report = {
     "python": {"version": sys.version.split()[0], "executable": sys.executable},
-    "modules": {
-        "pyscf": module_info(pyscf),
+        "modules": {
+            "chemical_runtime": module_info(chemical_runtime),
+            "pyscf": module_info(pyscf),
         "pyscf.dispersion": module_info(pyscf_dispersion),
         "geometric": module_info(geometric),
         "numpy": module_info(numpy),

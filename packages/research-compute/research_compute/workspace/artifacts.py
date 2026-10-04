@@ -104,8 +104,18 @@ def artifact_for_ref(
     normalized, path = safe_existing_artifact_path(workspace, ref, known_nodes=node_ids)
     owner_node, source_intent_id = artifact_ownership(normalized)
     digest = sha256_file(path)
+    registered_id = _registered_artifact_id(workspace, normalized, digest)
+    if registered_id is not None:
+        bound_id = registered_id
+    elif _is_attempt_output_ref(normalized):
+        # Calculation outputs are owned by one Attempt. Keep identical bytes
+        # from separate Attempts distinct so Research State can bind each
+        # output to its own physical location and producer.
+        bound_id = _attempt_artifact_id(normalized, digest)
+    else:
+        bound_id = artifact_id(normalized, digest)
     return {
-        "artifact_id": artifact_id(normalized, digest),
+        "artifact_id": bound_id,
         "path": normalized,
         "owner_node": owner_node,
         "source_intent_id": source_intent_id,
@@ -125,6 +135,47 @@ def artifact_id(path: str, digest: str) -> str:
     # Artifact identity is content-addressed across capability, kernel, and
     # review transports. The logical path remains provenance, never identity.
     return "art_" + digest_hex
+
+
+def _attempt_artifact_id(path: str, digest: str) -> str:
+    """Derive a stable identity for one Attempt-owned output binding."""
+
+    if not isinstance(path, str) or not path:
+        raise WorkspaceArtifactError("artifact path must be a non-empty string")
+    if not isinstance(digest, str) or not digest.startswith("sha256:"):
+        raise WorkspaceArtifactError("artifact digest must be a SHA-256 value")
+    return "art_" + hashlib.sha256(f"{path}\0{digest}".encode("utf-8")).hexdigest()
+
+
+def _is_attempt_output_ref(ref: str) -> bool:
+    parts = PurePosixPath(ref).parts
+    return (
+        len(parts) >= 6
+        and parts[0] == "nodes"
+        and parts[2] == "attempts"
+        and parts[4] == "outputs"
+    )
+
+
+def _registered_artifact_id(workspace: Path, path: str, digest: str) -> str | None:
+    """Preserve an existing ID when re-resolving a registered artifact."""
+
+    try:
+        context = read_json(workspace / "research_map" / "context.json")
+    except (OSError, ValueError):
+        return None
+    rows = context.get("artifacts", []) if isinstance(context, dict) else []
+    if not isinstance(rows, list):
+        return None
+    for row in rows:
+        if (
+            isinstance(row, dict)
+            and row.get("location") == path
+            and row.get("sha256") == digest
+            and isinstance(row.get("id"), str)
+        ):
+            return row["id"]
+    return None
 
 
 def artifact_ownership(ref: str) -> tuple[str | None, str | None]:
