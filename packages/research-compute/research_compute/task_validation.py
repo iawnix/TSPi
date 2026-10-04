@@ -33,7 +33,7 @@ def parsed_program_outcome(backend: str, facts: dict[str, Any]) -> tuple[str, st
 
     if backend == "gaussian":
         completed = facts.get("normal_termination") is True
-    elif backend in {"xtb", "crest", "ase_neb", "pyscf"}:
+    elif backend in {"xtb", "crest", "ase_neb", "pyscf", "script"}:
         completed = facts.get("execution_completed") is True
     else:
         raise ValueError(f"no program outcome rule is registered for backend: {backend}")
@@ -215,5 +215,10 @@ _TASK_VALIDATORS: dict[tuple[str, str], TaskValidator] = {
             ("stationary_point_valid", "transition_state_not_first_order"),
         ),
         _require_present(("electronic_energy_hartree", "electronic_energy_missing")),
+    ),
+    ("script", "bash"): _require_truthy(
+        ("execution_completed", "script_execution_incomplete"),
+        ("declared_outputs_present", "declared_outputs_missing"),
+        ("manifest_valid", "script_manifest_invalid"),
     ),
 }

@@ -41,6 +41,7 @@
   },
   "files": [
     "ResearchAgent",
+    "install.sh",
     "ResearchAgentServer",
     "install-link-relay.sh",
     "uninstall-link-relay.sh",
@@ -101,10 +102,14 @@
     "assets/fonts/*.ttf",
     "extensions/profile.ts",
     "extensions/chemical/manifest.json",
+    "extensions/script/manifest.json",
     "extensions/render/manifest.json",
     "extensions/report/manifest.json",
     "extensions/email/manifest.json",
     "extensions/chemical/providers/*.json",
+    "extensions/script/descriptors/*.json",
+    "extensions/script/providers/*.py",
+    "extensions/script/SKILL*",
     "extensions/chemical/skills/**",
     "packages/agent-contracts/package.json",
     "packages/agent-contracts/schemas/*.json",
@@ -132,6 +137,7 @@
     "scripts/uninstall_link_relay.py",
     "scripts/install_package.py",
     "scripts/install_from_github.py",
+    "scripts/install_configured.py",
     "scripts/_component_release.py",
     "scripts/model_icons.py",
     "scripts/_bootstrap.py",
@@ -265,7 +271,8 @@
       "./extensions/chemical/skills/mechanism-reasoning",
       "./extensions/render",
       "./extensions/report",
-      "./extensions/email"
+      "./extensions/email",
+      "./extensions/script"
     ],
     "themes": [
       "./packages/agent-ui/themes/ts-theme.json"

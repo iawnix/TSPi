@@ -17,18 +17,45 @@ def register_first_party_providers(package_root: str | Path) -> None:
     research-compute package itself never imports a domain extension.
     """
     root = Path(package_root).expanduser().resolve()
-    source = root / "extensions" / "chemical" / "providers" / "chemical_compute_provider.py"
-    if not source.is_file():
-        return
-    name = f"_tspi_chemical_compute_{hashlib.sha256(str(source).encode()).hexdigest()[:12]}"
-    module = sys.modules.get(name)
-    if module is None:
+    # Tests and lightweight probes may call registration directly before the
+    # full runtime bootstrap has inserted namespace roots.
+    for source_root in (
+        root / "packages" / "tspi-foundation",
+        root / "packages" / "tspi-provider-runtime",
+        root / "packages" / "research-state",
+        root / "packages" / "research-compute",
+        root / "packages" / "tspi-runtime",
+        root / "extensions" / "chemical" / "providers",
+        root / "extensions" / "script" / "providers",
+    ):
+        if source_root.is_dir() and str(source_root) not in sys.path:
+            sys.path.insert(0, str(source_root))
+    def load(source: Path, label: str) -> ModuleType:
+        name = f"_tspi_{label}_{hashlib.sha256(str(source).encode()).hexdigest()[:12]}"
+        module = sys.modules.get(name)
+        if module is not None:
+            return module
         spec = importlib.util.spec_from_file_location(name, source)
         if spec is None or spec.loader is None:
             raise RuntimeError(f"cannot load compute provider: {source}")
         module = importlib.util.module_from_spec(spec)
         sys.modules[name] = module
         spec.loader.exec_module(module)
+        return module
+
+    chemical_source = root / "extensions" / "chemical" / "providers" / "chemical_compute_provider.py"
+    script_source = root / "extensions" / "script" / "providers" / "script_compute_provider.py"
+    if not chemical_source.is_file() and not script_source.is_file():
+        return
+    if script_source.is_file():
+        script_module = load(script_source, "script_compute")
+        from research_compute.provider import register_compute_provider
+        register_compute_provider(script_module.script_compute_provider, replace=True)
+        from research_compute.capabilities import register_capability_provider
+        register_capability_provider(script_module.script_compute_provider, provider_id="script", replace=True)
+    if not chemical_source.is_file():
+        return
+    module = load(chemical_source, "chemical_compute")
     from research_compute.provider import register_compute_provider
     register_compute_provider(module.chemical_compute_provider, replace=True)
     from research_compute.capabilities import CAPABILITY_DESCRIPTORS, register_capability

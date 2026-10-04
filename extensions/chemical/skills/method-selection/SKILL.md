@@ -24,6 +24,24 @@ when a higher-level calculation, alternate method, or robustness check is
 needed. Preserve the selected method and rationale in the Node and immutable
 calculation intent.
 
+For a multi-method or multi-environment comparison, expand a complete
+`method × environment × {opt, sp}` matrix before launching work, then query
+the exact capability and readiness for every cell. The first-party routing
+rules are:
+
+| Method | Provider | Capability |
+| --- | --- | --- |
+| CF22D | PySCF | `pyscf.opt` / `pyscf.sp` |
+| GFN1-xTB, GFN2-xTB | xTB | `xtb.opt` / `xtb.sp` |
+| HF, M062X, and other Gaussian Route Section methods | Gaussian | `gaussian` |
+
+Gaussian methods and basis sets belong in the `.gjf` Route Section, for
+example `# M062X/6-31G Opt` or `# HF/6-31G** SP`. A missing functional in the
+PySCF descriptor does not make a Gaussian route unavailable. Every `sp` job
+depends on the `opt` output for the same method and environment. If one matrix
+cell is unavailable, block that cell explicitly; do not silently substitute a
+method or stop independent cells.
+
 ## References
 
 - [method_selection.md](references/method_selection.md): scientific criteria.

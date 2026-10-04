@@ -17,6 +17,9 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
 3. 复用或创建 ResearchNode。只有在分组有助于导航时才添加 Phase。根据问题选择科学
    Skill、Backend 与计算环境。对命名的执行目标，必须使用精确的 capability、environment
    和 execution kind 查询 readiness；默认 readiness 不验证其他环境。
+   对方法比较先生成完整的 `方法 × environment × {opt, sp}` 矩阵，并为每个单元保存
+   capability、environment、输入 Artifact 和依赖关系。`sp` 只能使用相同方法和环境的
+   `opt` 输出；一个单元不可用时只标记该单元，不得替换方法或停止独立单元。
 4. 在所属 Node 下启动或检查任务，并将 Attempt 与 Artifact 留在该 Node 下。
 5. 检查原始输出后，通过 Research State 记录粒度明确的 FactFinding 与 IssueFinding。Finding
    本身不会改变 Node 或 Claim 的状态。
@@ -48,6 +51,8 @@ launch 生命周期。每个计算都记录在 ResearchNode 的 Attempt 下。Re
 turn，让持久化 Monitor 投递 `next_run`；不要用 `bash sleep`、`wait` 或手动轮询等待
 调度器任务。收到 Monitor 唤醒或用户稍后明确请求后，重新读取状态并先执行
 `inspect`，再决定是否收集或修改 ResearchMap。运行成功不等于科学结论成立。
+邮件收件人缺失只阻止 `notify_send`，不能阻止已经满足 readiness 的计算；计算和通知必须
+分别记录状态。
 
 ## 参考资料
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+import json
 from typing import Any, Final
 
 from .registry import CapabilityRegistration, CapabilityRegistry
@@ -481,11 +482,17 @@ def validate_capability_parameters(
 
 
 def adapter_settings(parameters: dict[str, Any]) -> dict[str, str]:
-    """Convert validated JSON scalars to the backend adapter string boundary."""
+    """Convert validated JSON values to the backend adapter string boundary.
+
+    Arrays and objects use canonical JSON so extension providers can recover
+    structured parameters without depending on Python's representation.
+    """
 
     settings: dict[str, str] = {}
     for name, value in parameters.items():
-        if isinstance(value, bool):
+        if isinstance(value, (list, dict)):
+            settings[name] = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        elif isinstance(value, bool):
             settings[name] = "true" if value else "false"
         else:
             settings[name] = str(value)

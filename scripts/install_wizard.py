@@ -224,6 +224,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--compute-config", help="Unified compute.toml to install as .pi/compute.toml.")
     parser.add_argument(
+        "--agent-config-dir",
+        help="Directory containing installation-owned Pi models.json and auth.json.",
+    )
+    parser.add_argument(
         "--name-resolver-config",
         help="Deterministic chemical name resolver TOML to install as .pi/name-resolver.toml.",
     )
@@ -242,6 +246,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Existing local TSPi Link Relay installation root (auto-detected when omitted).",
     )
     parser.add_argument("--link-url", default=os.environ.get("TSPI_LINK_URL"), help="TSPi Link Relay HTTPS origin.")
+    parser.add_argument(
+        "--link-enrollment-url",
+        default=os.environ.get("TSPI_LINK_ENROLLMENT_URL"),
+        help="Optional local Relay origin used only while redeeming the Host enrollment code.",
+    )
     parser.add_argument("--link-enrollment-code", help="Single-use Host enrollment code issued by TSPi Link Relay.")
     parser.add_argument("--enable-services", action="store_true")
     parser.add_argument("--start-services", action="store_true")
@@ -871,12 +880,14 @@ def validate_options(args: argparse.Namespace) -> None:
         if not args.link_url:
             args.link_url = _discover_relay_url(args)
         args.link_url = _validate_link_url(args.link_url)
+        if args.link_enrollment_url:
+            args.link_enrollment_url = _validate_link_url(args.link_enrollment_url)
         token_file = Path(args.install_root) / ".pi/app-server-host/host.token"
         enrolled_for_url = token_file.is_file() and existing_link is not None and existing_link[0] == args.link_url
         if not enrolled_for_url and not args.link_enrollment_code and not getattr(args, "_defer_link_enrollment", False):
             raise ValueError("--link-enrollment-code is required when enrolling a new TSPi Host")
-    elif args.link_url or args.link_enrollment_code:
-        raise ValueError("--link-url and --link-enrollment-code require --phone-access link")
+    elif args.link_url or args.link_enrollment_code or args.link_enrollment_url:
+        raise ValueError("Link Relay options require --phone-access link")
     if args.service_scope != "none" and shutil.which("systemctl") is None:
         raise ValueError("the managed App Server Host requires systemctl; install on a systemd host or use an explicit staging scope")
     validate_email_options(args)
@@ -2189,7 +2200,13 @@ def provision_pi_agent_configuration(args: argparse.Namespace) -> dict[str, obje
         else pwd.getpwuid(os.getuid()).pw_name
     )
     account = pwd.getpwnam(service_user)
-    source_dir = Path(account.pw_dir) / ".pi" / "agent"
+    configured_source = getattr(args, "agent_config_dir", None)
+    source_dir = Path(configured_source).expanduser() if configured_source else Path(account.pw_dir) / ".pi" / "agent"
+    if source_dir.is_symlink() or not source_dir.is_dir():
+        raise RuntimeError(
+            f"Pi agent configuration directory must be a physical directory in physical directories: {source_dir}"
+        )
+    source_dir = source_dir.resolve()
     destination_dir = root / ".pi" / "agent"
     _ensure_private_directory(destination_dir)
     files: dict[str, str] = {}
@@ -2199,7 +2216,7 @@ def provision_pi_agent_configuration(args: argparse.Namespace) -> dict[str, obje
         if _preserve_pi_agent_configuration(destination):
             files[name] = "preserved"
             continue
-        raw = _read_pi_agent_configuration(Path(account.pw_dir), name)
+        raw = _read_pi_agent_configuration_directory(source_dir, name)
         if raw is None:
             files[name] = "not_configured"
             continue
@@ -2237,15 +2254,18 @@ def _pi_agent_open_flags(*, directory: bool = False) -> int:
 def _read_pi_agent_configuration(home: Path, name: str) -> bytes | None:
     """Read a bounded source file without following a swapped path component."""
 
-    source = home / ".pi" / "agent" / name
+    return _read_pi_agent_configuration_directory(home / ".pi" / "agent", name)
+
+
+def _read_pi_agent_configuration_directory(source_dir: Path, name: str) -> bytes | None:
+    """Read a bounded config file from an explicit physical agent directory."""
+
+    source = source_dir / name
     descriptors: list[int] = []
     try:
         try:
-            current = os.open(home, _pi_agent_open_flags(directory=True))
+            current = os.open(source_dir, _pi_agent_open_flags(directory=True))
             descriptors.append(current)
-            for component in (".pi", "agent"):
-                current = os.open(component, _pi_agent_open_flags(directory=True), dir_fd=current)
-                descriptors.append(current)
             descriptor = os.open(name, _pi_agent_open_flags(), dir_fd=current)
             descriptors.append(descriptor)
         except FileNotFoundError:
@@ -2372,7 +2392,8 @@ def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
     host_id = identity.read_text(encoding="ascii").strip()
     existing = _existing_link_configuration(root)
     if args.link_enrollment_code:
-        enrollment = _redeem_link_enrollment(args.link_url, args.link_enrollment_code, host_id)
+        enrollment_url = getattr(args, "link_enrollment_url", None) or args.link_url
+        enrollment = _redeem_link_enrollment(enrollment_url, args.link_enrollment_code, host_id)
         if enrollment.get("hostId") != host_id or enrollment.get("protocol") != "tspi-link.v1":
             raise RuntimeError("TSPi Link Relay returned a mismatched Host enrollment")
         host_token = enrollment.get("hostToken")

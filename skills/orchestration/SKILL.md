@@ -20,6 +20,11 @@ does not redefine that model.
    needed for the question.
    For a named target, verify readiness with the exact capability, environment,
    and execution kind; default readiness does not validate another environment.
+   For a method comparison, first create the complete
+   `method × environment × {opt, sp}` matrix with a capability, environment,
+   input Artifact, and dependency for every cell. An `sp` job may consume only
+   the `opt` output from the same method and environment. Block an unavailable
+   cell explicitly; do not substitute methods or stop independent cells.
 4. Launch or inspect work under the owning Node. Keep Attempts and Artifacts
    attached to that Node.
 5. Inspect primary outputs, then record narrow FactFindings and IssueFindings
@@ -64,6 +69,8 @@ including an uncertain result, finish the current turn and let the durable Monit
 `wait`, or a manual polling loop to wait for a scheduler job. On a Monitor wake
 or an explicit later request, reread state and use `inspect` before collecting
 or changing ResearchMap. Operational success is not scientific support.
+Missing notification recipients block only `notify_send`; they do not block
+ready calculations. Calculation and delivery state must remain separate.
 
 ## References
 

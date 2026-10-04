@@ -25,6 +25,11 @@ QST2/QST3 is expressed in the Gaussian Route Section and remains subject to
 the input and output validation rules. Skills do not register capabilities;
 the live Native catalog is authoritative for `gaussian@1`.
 
+Gaussian methods such as HF and M062X, including basis notation such as
+`6-31G**`, are expressed in the Route Section, for example
+`# HF/6-31G** Opt` or `# M062X/6-31G SP`; they do not require one capability per
+functional.
+
 Record parser output only after checking primary files. Normal termination is
 not task validation, and neither is a scientific verdict. Record SCF
 instability, spin contamination, state ambiguity, missing corrections, and

@@ -26,11 +26,14 @@ TS Phone 是独立的 Flutter 应用。Relay 仍然是独立服务和独立安�
 运行 `./install.sh`，确认安装目录、TSPi revision、workspace root、Conda root、
 可选 TS Web 组件和服务策略。Core Agent、科学运行时和分子渲染工具始终安装。
 
-如果希望在一次非交互安装中同时部署 Relay，使用 `install-configured.sh`，并设置
-`TSPI_WITH_LINK_RELAY=true`、`TSPI_PHONE_ACCESS=link` 以及 Relay 的 HTTPS 地址
-`TSPI_LINK_URL`。Relay 相关配置还包括 `TSPI_LINK_RELAY_ROOT`、
+`install-configured.sh` 默认在同一次非交互安装中部署本机 Relay、生成一次性 enrollment
+code 并完成 Host 注册。默认 Relay URL 是 `https://tsphone.iawnix.xyz`；如果 Relay 已经
+由其他安装提供，可以设置 `TSPI_WITH_LINK_RELAY=false` 并传入已有的
+`TSPI_LINK_ENROLLMENT_CODE`。Relay 相关配置还包括 `TSPI_LINK_RELAY_ROOT`、
 `TSPI_LINK_RELAY_STATE_DIR`、`TSPI_LINK_RELAY_LISTEN`、`TSPI_LINK_RELAY_PORT`、
 `TSPI_LINK_RELAY_SERVICE_SCOPE` 和 `TSPI_LINK_RELAY_SERVICE_USER`。
+本机 Relay 会通过 `127.0.0.1:8788` 兑换 enrollment code，Host manifest 仍保存公网 URL，
+因此安装时不要求公网反向代理已经完成；可以用 `TSPI_LINK_ENROLLMENT_URL` 覆盖本地兑换地址。
 非交互安装可使用 `--workspace-root /absolute/path`；默认值为
 `<install>/workspaces`。Host、终端、TS Web 和卸载器共享
 `.pi/tspi/workspace-root.json` 中记录的值。
@@ -264,9 +267,14 @@ origin 和 Relay 管理员创建的一次性 Host enrollment code。交互式安
 `.pi/app-server-host/link.json` 及仅所有者可读的 `.pi/app-server-host/host.token`；Host
 只向 Relay 建立出站 WSS，不会向 Relay 或互联网暴露 App Server 端口。
 
-如果本机已经单独安装了 Relay，安装器会优先读取已知目录（包括
+如果本机已经单独安装了 Relay，设置 `TSPI_WITH_LINK_RELAY=false`，安装器会优先读取已知目录（包括
 `/home/iaw/soft/tspi-link`）及其 `tspi-link-relay.service`，自动填充 Relay URL；也可以显式
-指定 `--link-relay-root /path/to/tspi-link`。Relay 仍然是独立服务，不会被 Host 安装器重复安装。
+指定 `--link-relay-root /path/to/tspi-link`。Relay 仍然是独立服务；统一安装器在明确启用
+Relay 时负责其生命周期，Host 安装器只负责兑换 enrollment code。
+
+统一安装器会在 `<install>/.pi/link-relay.json` 写入所有权标记。卸载时默认停止并移除该
+安装创建的 Relay 服务和代码，但保留 Relay 数据库；使用 `--purge-relay-state` 或
+`--purge-all` 才会删除 enrollment 和设备状态。没有该标记的共享 Relay 不会被主安装卸载。
 
 Host 上线后使用以下命令管理 Phone 授权：
 

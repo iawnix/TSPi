@@ -57,7 +57,12 @@
         "oneOf": [
           {"type": "string", "maxLength": 4096},
           {"type": "number"},
-          {"type": "boolean"}
+          {"type": "boolean"},
+          {
+            "type": "array",
+            "maxItems": 64,
+            "items": {"type": "string", "maxLength": 4096}
+          }
         ]
       }
     },

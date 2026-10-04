@@ -21,6 +21,9 @@ job section，并分别评估终止状态、SCF、优化收敛、频率证据、
 QST2/QST3 由 Gaussian 输入的 Route Section 表达，并继续接受输入和输出校验。Skill 不注册
 capability，实时 Native catalog 中的 `gaussian@1` 才是提交依据。
 
+HF、M062X 等 Gaussian 方法以及基组（包括 `6-31G**`）都通过 Route Section 表达，例如
+`# HF/6-31G** Opt`、`# M062X/6-31G SP`；不需要为每个泛函注册独立 capability。
+
 核对原始文件后再记录解析结果。正常终止不等于任务验证，两者也都不等于科学结论。明确
 记录 SCF 不稳定、自旋污染、态歧义、缺失校正与方法敏感性。详见
 [gaussian_validation.zh-CN.md](references/gaussian_validation.zh-CN.md)。优化后继续单点计算时，必须使用

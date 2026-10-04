@@ -376,6 +376,63 @@ install_embedded_relay() {
     --link-url "${RELAY_PUBLIC_URL}"
     --link-enrollment-code "${RELAY_ENROLLMENT_CODE}"
   )
+  case "${RELAY_LISTEN}" in
+    127.0.0.1|localhost)
+      FORWARD_ARGS+=(--link-enrollment-url "http://${RELAY_LISTEN}:${RELAY_PORT}")
+      ;;
+    ::1)
+      FORWARD_ARGS+=(--link-enrollment-url "http://[${RELAY_LISTEN}]:${RELAY_PORT}")
+      ;;
+  esac
+}
+
+relay_marker_for_host() {
+  local argument index
+  for ((index = 0; index < ${#FORWARD_ARGS[@]}; index++)); do
+    argument="${FORWARD_ARGS[index]}"
+    if [[ "${argument}" == "--install-root" && $((index + 1)) -lt ${#FORWARD_ARGS[@]} ]]; then
+      printf '%s' "${FORWARD_ARGS[index + 1]}"
+      return 0
+    fi
+    if [[ "${argument}" == --install-root=* ]]; then
+      printf '%s' "${argument#*=}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+write_relay_ownership_marker() {
+  local host_root
+  host_root="$(relay_marker_for_host)" || fail "--install-root is required when embedding a Link Relay."
+  python3 - "${host_root}" "${RELAY_INSTALL_ROOT}" "${RELAY_STATE_DIR}" "${RELAY_SERVICE_SCOPE}" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1]).expanduser().resolve()
+marker = root / ".pi" / "link-relay.json"
+marker.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+marker.parent.chmod(0o700)
+value = {
+    "schema": "tspi-install-link-relay/1",
+    "install_root": str(root),
+    "relay_install_root": str(Path(sys.argv[2]).expanduser().resolve()),
+    "state_dir": str(Path(sys.argv[3]).expanduser().resolve()),
+    "service_scope": sys.argv[4],
+    "owned": True,
+}
+temporary = marker.with_name(f".{marker.name}.{os.getpid()}.tmp")
+with temporary.open("w", encoding="utf-8") as handle:
+    os.chmod(temporary, 0o600)
+    json.dump(value, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+os.replace(temporary, marker)
+os.chmod(marker, 0o600)
+PY
 }
 
 run_bootstrap_step "repository access" git_clone_source "${TEMP_ROOT}/TSPi"
@@ -403,4 +460,7 @@ elif { true </dev/tty; } 2>/dev/null; then
   TSPI_INSTALL_BOOTSTRAPPED=1 "${wizard[@]}" </dev/tty
 else
   TSPI_INSTALL_BOOTSTRAPPED=1 "${wizard[@]}"
+fi
+if truthy "${WITH_LINK_RELAY}"; then
+  write_relay_ownership_marker
 fi

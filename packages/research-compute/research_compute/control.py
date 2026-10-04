@@ -1240,7 +1240,9 @@ def parse_calculation(
         raise ComputeContractError("ASE NEB parser requires the bound neb_summary.json artifact")
     if backend == "pyscf" and source.name != "pyscf_result.json":
         raise ComputeContractError("PySCF parser requires the bound pyscf_result.json artifact")
-    if backend not in {"gaussian", "xtb", "crest", "ase_neb", "pyscf"}:
+    if backend == "script" and source.name != "script_result.json":
+        raise ComputeContractError("script parser requires the bound script_result.json artifact")
+    if backend not in {"gaussian", "xtb", "crest", "ase_neb", "pyscf", "script"}:
         raise ComputeContractError(f"no deterministic parser is exposed for backend: {backend}")
 
     parse_inputs = _bound_parse_artifacts(workspace, intent, prepared_task, source_ref)
@@ -1666,10 +1668,18 @@ def _backend_binding(workspace: Path, intent: dict[str, Any], backend: str) -> B
         # remote runner fallback.
         binding_names = ("ase_neb",)
     broker = EnvironmentBroker(load_environment_config())
-    binding = broker.bind(
-        EnvironmentRequirement(providers=binding_names, kind=kind),
-        environment_name,
-    )
+    try:
+        binding = broker.bind(
+            EnvironmentRequirement(providers=binding_names, kind=kind),
+            environment_name,
+        )
+    except EnvironmentConfigurationError:
+        # The generic script extension uses the installation's /bin/bash and
+        # does not require a backend entry in compute.toml. Other providers
+        # retain the strict configured binding contract.
+        if backend != "script":
+            raise
+        return None
     return binding.to_backend_binding()
 
 
@@ -1986,6 +1996,7 @@ def _default_parse_ref(workspace: Path, intent: dict[str, Any], prepared: dict[s
             "crest": "crest.out",
             "ase_neb": "neb_summary.json",
             "pyscf": "pyscf_result.json",
+            "script": "script_result.json",
         }.get(backend)
         candidates = [name for name in names if name == primary]
     if len(candidates) != 1:

@@ -73,6 +73,15 @@ def handle(request: ProviderRequest) -> dict[str, Any]:
                                       charge=int(request.parameters.get("charge", 0)),
                                       multiplicity=int(request.parameters.get("multiplicity", 1)),
                                       optimization=str(request.parameters.get("optimization", "none")))
+    elif request.provider_id == "chemical.comparison.plan":
+        from comparison_plan import build_comparison_plan
+        raw_artifact = request.inputs.get("input_artifact", request.inputs.get("artifact_id"))
+        result = build_comparison_plan(
+            methods=request.parameters.get("methods"),
+            environments=request.parameters.get("environments"),
+            input_artifact=raw_artifact,
+            readiness=request.parameters.get("readiness"),
+        )
     else:
         raise ValueError(f"unsupported chemical provider: {request.provider_id}")
     return {"status": "succeeded", "result": result, "outputs": [],

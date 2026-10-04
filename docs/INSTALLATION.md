@@ -32,13 +32,19 @@ Run `./install.sh` and confirm the installation directory, TSPi revision,
 workspace root, Conda root, optional TS Web component, and service policy. Core
 Agent, scientific runtime, and molecular rendering are always installed.
 
-For a single non-interactive installation that also provisions a Relay, use
-`install-configured.sh` and set `TSPI_WITH_LINK_RELAY=true`,
-`TSPI_PHONE_ACCESS=link`, and `TSPI_LINK_URL` to the Relay HTTPS origin. The
+`install-configured.sh` provisions the local Relay by default during the same
+non-interactive installation, creates a one-time enrollment code, and enrolls
+the Host automatically. The default Relay origin is
+`https://tsphone.iawnix.xyz`. To reuse a Relay owned elsewhere, set
+`TSPI_WITH_LINK_RELAY=false` and provide `TSPI_LINK_ENROLLMENT_CODE`. The
 Relay-specific settings include `TSPI_LINK_RELAY_ROOT`,
 `TSPI_LINK_RELAY_STATE_DIR`, `TSPI_LINK_RELAY_LISTEN`,
 `TSPI_LINK_RELAY_PORT`, `TSPI_LINK_RELAY_SERVICE_SCOPE`, and
 `TSPI_LINK_RELAY_SERVICE_USER`.
+The local Relay is used through `127.0.0.1:8788` while redeeming the
+enrollment code; the Host manifest still stores the public origin, so the
+public reverse proxy need not be ready during installation. Override this with
+`TSPI_LINK_ENROLLMENT_URL` when needed.
 
 For non-interactive installation, `--workspace-root /absolute/path` selects the
 directory containing named projects. The default is `<install>/workspaces`.
@@ -318,11 +324,17 @@ installs still provide it with `--link-enrollment-code`. The installer writes
 `.pi/app-server-host/host.token`. The Host then maintains an outbound WSS
 connection; no App Server port is exposed to the Relay or Internet.
 
-When a Relay is already installed locally, leave `TSPI_WITH_LINK_RELAY=false`.
+When a Relay is already installed locally, set `TSPI_WITH_LINK_RELAY=false`.
 The installer discovers known roots (including `/home/iaw/soft/tspi-link`) and
 reads its `tspi-link-relay.service` to prefill the Relay origin. Use
 `--link-relay-root /path/to/tspi-link` to select another installation. The
-Relay remains a separate service even when provisioned by the unified installer.
+Relay remains a separate service; when provisioned by the unified installer its
+lifecycle is tracked by an ownership marker.
+
+The marker is stored at `<install>/.pi/link-relay.json`. Uninstall removes the
+owned Relay service and code while preserving its database by default. Use
+`--purge-relay-state` or `--purge-all` to remove enrollment and device state;
+an unmarked shared Relay is never removed by a Host uninstall.
 The embedded Relay path is non-interactive so its side effects occur only after
 all wrapper configuration has been explicitly supplied.
 

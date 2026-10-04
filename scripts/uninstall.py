@@ -25,6 +25,7 @@ SERVICE_NAMES = (
     "ts-app-server-tspi@.service",
     "ts-web-tspi.service",
 )
+LINK_RELAY_MARKER = ".pi/link-relay.json"
 ENTRYPOINTS = ("ResearchAgent", "ResearchAgentServer", "TSPi", "TSWeb")
 
 
@@ -35,6 +36,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--purge-workspaces", action="store_true", help="Delete research workspaces and Pi session files.")
     parser.add_argument("--purge-config", action="store_true", help="Delete installation configuration and Phone/Web credentials.")
     parser.add_argument("--purge-runtime", action="store_true", help="Delete managed Conda/venv runtime state.")
+    parser.add_argument("--purge-relay-state", action="store_true", help="Delete Relay state and enrolled credentials owned by this installation.")
+    parser.add_argument("--keep-link-relay", action="store_true", help="Keep an installation-owned Link Relay running and preserve its marker.")
     parser.add_argument("--remove-root", action="store_true", help="Remove the installation directory after cleanup.")
     parser.add_argument("--purge-all", action="store_true", help="Enable all purge and root removal options.")
     parser.add_argument("--non-interactive", action="store_true")
@@ -71,8 +74,13 @@ def validate_root(path: Path) -> Path:
 
 
 def choose_options(args: argparse.Namespace, root: Path) -> None:
-    if args.purge_all:
+    keep_relay = getattr(args, "keep_link_relay", False)
+    purge_relay_state = getattr(args, "purge_relay_state", False)
+    if keep_relay and (getattr(args, "purge_all", False) or purge_relay_state):
+        raise ValueError("--keep-link-relay cannot be combined with --purge-relay-state or --purge-all")
+    if getattr(args, "purge_all", False):
         args.purge_workspaces = args.purge_config = args.purge_runtime = args.remove_root = True
+        args.purge_relay_state = True
     if args.remove_root and not (args.purge_workspaces and args.purge_config and args.purge_runtime):
         raise ValueError("--remove-root requires --purge-workspaces, --purge-config, and --purge-runtime")
     if args.non_interactive:
@@ -109,6 +117,8 @@ def choose_options(args: argparse.Namespace, root: Path) -> None:
           tone="danger" if args.purge_config else "success")
     field("Python runtime", "Delete" if args.purge_runtime else "Keep",
           tone="danger" if args.purge_runtime else "success")
+    field("Link Relay", "Keep" if keep_relay else ("Delete state" if purge_relay_state else "Remove service and code"),
+          tone="success" if keep_relay else "warning")
     root_state = "Delete" if args.remove_root else "Keep"
     if not all_data_selected:
         root_state += " (requires all data cleanup options)"
@@ -172,6 +182,53 @@ def stop_services(args: argparse.Namespace, root: Path) -> list[str]:
         if scope_stopped:
             subprocess.run([*command, "daemon-reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     return stopped
+
+
+def _owned_relay(root: Path) -> dict[str, object] | None:
+    marker = root / LINK_RELAY_MARKER
+    try:
+        value = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(value, dict) or value.get("schema") != "tspi-install-link-relay/1" or value.get("owned") is not True:
+        return None
+    if value.get("install_root") != str(root):
+        return None
+    relay_root = value.get("relay_install_root")
+    state_dir = value.get("state_dir")
+    scope = value.get("service_scope")
+    if not all(isinstance(item, str) and item for item in (relay_root, state_dir, scope)):
+        return None
+    if scope not in {"none", "user", "system"}:
+        return None
+    return value
+
+
+def remove_owned_relay(args: argparse.Namespace, root: Path) -> dict[str, object] | None:
+    if getattr(args, "keep_link_relay", False):
+        return None
+    metadata = _owned_relay(root)
+    if metadata is None:
+        return None
+    command = [
+        sys.executable,
+        str(Path(__file__).with_name("uninstall_link_relay.py")),
+        "--install-root", str(metadata["relay_install_root"]),
+        "--state-dir", str(metadata["state_dir"]),
+        "--service-scope", str(metadata["service_scope"]),
+        "--non-interactive", "--yes", "--json",
+    ]
+    if getattr(args, "purge_relay_state", False):
+        command.append("--purge-state")
+    completed = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if completed.returncode != 0:
+        raise RuntimeError(completed.stderr.strip() or "owned Link Relay uninstall failed")
+    try:
+        result = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        result = {"ok": True, "output": completed.stdout[-4096:]}
+    (root / LINK_RELAY_MARKER).unlink(missing_ok=True)
+    return result
 
 
 def app_server_instances(command: list[str]) -> list[str]:
@@ -282,6 +339,7 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
     activity.start()
     try:
         stopped = stop_services(args, root)
+        relay_result = remove_owned_relay(args, root)
         activity.update("Removing service registrations")
         service_units = remove_service_units(args, root)
         activity.update("Removing installed application files")
@@ -327,7 +385,7 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
         activity.succeed("TSPi application files removed")
         return {"ok": True, "install_root": str(root), "workspace_root": str(workspace_root), "stopped_services": stopped, "removed": removed,
                 "preserved_workspaces": not args.purge_workspaces, "preserved_config": not args.purge_config,
-                "preserved_runtime": not args.purge_runtime}
+                "preserved_runtime": not args.purge_runtime, "link_relay": relay_result}
     except BaseException:
         activity.fail("TSPi uninstall failed")
         raise

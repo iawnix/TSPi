@@ -272,7 +272,8 @@ def test_public_skill_family_matches_the_owned_capabilities() -> None:
         "render",
         "email",
         "mechanism-reasoning",
-        "chemical-input",
+            "chemical-input",
+            "script",
     }
     actual = {path.name for path in (ROOT / "skills").iterdir() if path.is_dir()}
     actual |= {path.name for root in (ROOT / "extensions").glob("*/skills") for path in root.iterdir() if path.is_dir()}
