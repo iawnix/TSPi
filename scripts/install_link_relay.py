@@ -143,6 +143,14 @@ def install_release(args: argparse.Namespace) -> tuple[Path, str]:
         staging = Path(tempfile.mkdtemp(prefix=".install-", dir=releases))
         try:
             shutil.copytree(source, staging / "service")
+            # The relay service imports the shared protocol and backpressure
+            # modules using paths relative to ``service/``. Keep that shared
+            # package inside the immutable release so a standalone Relay
+            # installation does not depend on the source checkout.
+            shared_link = Path(args.source_root) / "packages" / "tspi-link"
+            if not shared_link.is_dir():
+                raise ValueError("source root does not contain packages/tspi-link")
+            shutil.copytree(shared_link, staging / "packages" / "tspi-link")
             subprocess.run(
                 ["npm", "ci", "--omit=dev", "--ignore-scripts"],
                 cwd=staging / "service",
