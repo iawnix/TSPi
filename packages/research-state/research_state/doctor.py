@@ -89,7 +89,15 @@ def _read_json_source(path: Path, name: str, findings: list[dict[str, Any]]) -> 
             if isinstance(value.get("research_state"), dict)
             else None
         ),
-        "map_id": value.get("map_id") or value.get("workspace_id"),
+        # Older manifests did not persist map_id. Their ResearchMap seed has
+        # always used the canonical ``map_<workspace_id>`` namespace; falling
+        # back to the bare workspace id made every such workspace appear
+        # corrupt to the doctor.
+        "map_id": value.get("map_id") or (
+            f"map_{value.get('workspace_id')}"
+            if name == "manifest" and value.get("workspace_id")
+            else value.get("workspace_id")
+        ),
         "workspace_id": value.get("workspace_id"),
         "workspace_mode": value.get("workspace_mode"),
         "schema_version": value.get("schema_version"),

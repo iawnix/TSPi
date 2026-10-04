@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, readdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import { resolve_mode_policy } from "./mode_policy.mjs";
@@ -51,6 +51,9 @@ export function validate_workspace_manifest(manifest, root, { allow_initializing
     throw new Error("workspace_root_mismatch");
   }
   require_workspace_id(manifest.workspace_id);
+  if (manifest.map_id !== undefined && manifest.map_id !== `map_${manifest.workspace_id}`) {
+    throw new Error("workspace_map_id_mismatch");
+  }
   assert_workspace_mode(manifest.workspace_mode);
   const policy = resolve_mode_policy("research");
   for (const [field, expected] of [
@@ -150,6 +153,7 @@ export async function validate_workspace_files(manifest, root, { allow_partial_a
   }
   if (context.schema_version !== "research_map_context_1"
     || context.workspace_id !== manifest.workspace_id
+    || (context.map_id !== undefined && context.map_id !== `map_${manifest.workspace_id}`)
     || context.workspace_mode !== "research"
     || typeof context.created_at !== "string" || context.created_at.length === 0
     || !Number.isSafeInteger(context.revision) || context.revision < 0
@@ -298,6 +302,8 @@ export function create_workspace_initializer() {
     const id = require_workspace_id(workspace_id || `workspace_${randomUUID()}`);
     assert_workspace_mode(workspace_mode);
     const manifest_path = join(root, "workspace_manifest.json");
+    await assert_physical_root(root);
+    await reject_nested_workspace(root, manifest_path);
     let existing;
     try {
       existing = await read_json(manifest_path);
@@ -332,14 +338,15 @@ export function create_workspace_initializer() {
 
     const policy = resolve_mode_policy("research");
     const created_at = now();
-  const manifest = {
+    const manifest = {
       schema_version: WORKSPACE_MANIFEST_SCHEMA,
       workspace_id: id,
+      map_id: `map_${id}`,
       workspace_mode,
       profile_id: `${workspace_mode}_workspace_1`,
-    memory_profile: policy.memory_profile,
-    memory_scope: policy.memory_scope,
-    research_state_scope: policy.research_state_scope,
+      memory_profile: policy.memory_profile,
+      memory_scope: policy.memory_scope,
+      research_state_scope: policy.research_state_scope,
       execution_profile: policy.execution_profile,
       state: policy.initial_state,
       workspace_root: root,
@@ -366,10 +373,82 @@ export function create_workspace_initializer() {
     }
   }
 
+  async function reject_nested_workspace(root, manifest_path) {
+    // Reopening the exact existing workspace is valid. A workspace may still
+    // not be placed below another workspace or contain another workspace.
+    let cursor = root;
+    while (true) {
+      cursor = resolve(cursor, "..");
+      const marker = join(cursor, "workspace_manifest.json");
+      try {
+        const info = await lstat(marker);
+        if (info.isFile() && !info.isSymbolicLink()) throw new Error("workspace_nested_in_workspace");
+      } catch (error) {
+        if (error?.message === "workspace_nested_in_workspace") throw error;
+        if (error?.code !== "ENOENT") throw error;
+      }
+      for (const markerPath of [join(cursor, "research_map", "context.json"), join(cursor, "lifecycle", "liveness.json")]) {
+        try {
+          const info = await lstat(markerPath);
+          if (info.isFile() && !info.isSymbolicLink()) throw new Error("workspace_nested_in_workspace");
+        } catch (error) {
+          if (error?.message === "workspace_nested_in_workspace") throw error;
+          if (error?.code !== "ENOENT") throw error;
+        }
+      }
+      if (cursor === resolve(cursor, "..")) break;
+    }
+    async function scan(path) {
+      let entries;
+      try { entries = await readdir(path, { withFileTypes: true }); } catch (error) {
+        if (error?.code === "ENOENT") return false;
+        throw error;
+      }
+      for (const entry of entries) {
+        if (entry.isSymbolicLink()) continue;
+        const child = join(path, entry.name);
+        if (entry.isFile() && entry.name === "workspace_manifest.json") {
+          if (child === manifest_path) continue;
+          return true;
+        }
+        if (entry.isDirectory() && await scan(child)) return true;
+      }
+      return false;
+    }
+    if (await scan(root)) throw new Error("workspace_root_contains_workspace");
+  }
+
+  async function assert_physical_root(root) {
+    try {
+      const info = await lstat(root);
+      if (!info.isDirectory() || info.isSymbolicLink() || await realpath(root) !== root) {
+        throw new Error("workspace_root_symlink");
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    // A missing root can still have a symbolic-link component in its parent.
+    // realpath(dirname(root)) proves the existing prefix is physical.
+    let parent = dirname(root);
+    while (true) {
+      try {
+        if (await realpath(parent) !== parent) throw new Error("workspace_root_symlink");
+        break;
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+        const next = dirname(parent);
+        if (next === parent) throw error;
+        parent = next;
+      }
+    }
+  }
+
   async function attach_workspace(workspace_root) {
     if (typeof workspace_root !== "string" || workspace_root.length === 0) throw new TypeError("workspace_root is required");
     const root = resolve(workspace_root);
     const manifest_path = join(root, "workspace_manifest.json");
+    await assert_physical_root(root);
+    await reject_nested_workspace(root, manifest_path);
     const manifest = validate_manifest(await read_json(manifest_path), root);
     await validate_workspace_files(manifest, root);
     return Object.freeze({ ...manifest, workspace_root: root, manifest_path });
@@ -378,6 +457,8 @@ export function create_workspace_initializer() {
   async function admit_workspace(workspace_root) {
     const root = resolve(workspace_root);
     const manifest_path = join(root, "workspace_manifest.json");
+    await assert_physical_root(root);
+    await reject_nested_workspace(root, manifest_path);
     const manifest = validate_manifest(await read_json(manifest_path), root);
     await validate_workspace_files(manifest, root, { allow_partial_admission: true });
     const attached = Object.freeze({ ...manifest, workspace_root: root, manifest_path });
@@ -391,6 +472,7 @@ export function create_workspace_initializer() {
     const liveness = await read_json(liveness_path);
     if (context.schema_version !== "research_map_context_1"
       || context.workspace_id !== attached.workspace_id
+      || (context.map_id !== undefined && context.map_id !== `map_${attached.workspace_id}`)
       || context.workspace_mode !== "research"
       || liveness.schema_version !== "research_liveness_1"
       || liveness.workspace_id !== attached.workspace_id) {

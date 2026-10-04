@@ -390,6 +390,10 @@ def prepare_calculation(
         "attempt_kind": intent["attempt_kind"],
         "prepared_at": now_iso(),
         "prepared_task": _prepared_task_dict(prepared),
+        # Preparation is an immutable execution snapshot. Persist its digest
+        # so later status/monitor calls do not regenerate backend metadata
+        # against a possibly upgraded runtime.
+        "prepared_task_digest": sha256_json(_prepared_task_dict(prepared)),
         "execution_policy": execution_policy,
     }
     if prepared_path.exists():
@@ -2161,37 +2165,28 @@ def _load_prepared(
         raise ComputeContractError("prepared calculation scope does not match its intent")
     if prepared.get("schema_version") != "ts-compute-prepared/1" or prepared.get("intent_id") != intent_id:
         raise ComputeContractError("prepared calculation metadata is invalid")
-    collected_recovery = allow_collected_recovery and _has_collected_result(workspace, intent)
-    try:
-        expected_task = _prepared_task_dict(
-            _prepared_task_for_intent(workspace, intent, verify_inputs=False)
-        )
-    except ComputeContractError:
-        if not collected_recovery:
-            raise
-        expected_task = prepared.get("prepared_task")
-        if not isinstance(expected_task, dict):
-            raise ComputeContractError("prepared calculation has no recoverable backend metadata")
-    if prepared.get("prepared_task") != expected_task:
-        if not collected_recovery:
-            raise ComputeContractError("prepared backend metadata does not match the calculation intent")
-        expected_task = prepared.get("prepared_task")
-        if not isinstance(expected_task, dict):
-            raise ComputeContractError("prepared calculation has no recoverable backend metadata")
-    try:
-        expected_policy = _expected_prepared_execution_policy(workspace, intent)
-    except ComputeContractError:
-        if not collected_recovery:
-            raise
-        expected_policy = prepared.get("execution_policy")
-        if not isinstance(expected_policy, dict):
-            raise ComputeContractError("prepared calculation has no recoverable execution policy")
-    if prepared.get("execution_policy") != expected_policy:
-        if not collected_recovery:
-            raise ComputeContractError("prepared execution policy does not match the calculation intent")
-        expected_policy = prepared.get("execution_policy")
-        if not isinstance(expected_policy, dict):
-            raise ComputeContractError("prepared calculation has no recoverable execution policy")
+    expected_task = prepared.get("prepared_task")
+    if not isinstance(expected_task, dict):
+        raise ComputeContractError("prepared calculation has no recoverable backend metadata")
+    if (
+        expected_task.get("backend") != intent.get("backend")
+        or expected_task.get("node_id") != intent.get("node_id")
+        or not isinstance(expected_task.get("command"), list)
+        or not isinstance(expected_task.get("input_paths"), list)
+        or not isinstance(expected_task.get("expected_artifacts"), list)
+    ):
+        raise ComputeContractError("prepared calculation backend metadata is invalid")
+    prepared_task_digest = prepared.get("prepared_task_digest")
+    if prepared_task_digest is not None:
+        if prepared_task_digest != sha256_json(expected_task):
+            raise ComputeContractError("prepared backend metadata digest mismatch")
+    # The prepared record is the execution authority after prepare. Older
+    # records do not contain a digest and are accepted for compatibility;
+    # regenerating them through the current provider would make an upgrade
+    # invalidate an already submitted calculation.
+    expected_policy = prepared.get("execution_policy")
+    if not isinstance(expected_policy, dict):
+        raise ComputeContractError("prepared calculation has no recoverable execution policy")
     if expected_policy["kind"] == "remote":
         _require_unique_remote_basenames(expected_task["expected_artifacts"])
         _remote_stdout_name(expected_task)

@@ -56,6 +56,20 @@ export async function startTspiHost(options) {
   // than only the path so a malformed file can be repaired and reprocessed.
   const monitorFiles = new Map();
   const workspaceInitializer = create_workspace_initializer();
+  for (const marker of [
+    join(physicalRoot, "workspace_manifest.json"),
+    join(physicalRoot, "research_map", "context.json"),
+    join(physicalRoot, "lifecycle", "liveness.json"),
+  ]) {
+    try {
+      const info = await lstat(marker);
+      if (info.isFile() && !info.isSymbolicLink()) {
+        throw protocolError("invalid_workspace_root", "Workspace container is already a workspace");
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
   let monitorSequence = 0;
   let closed = false;
   let polling = false;

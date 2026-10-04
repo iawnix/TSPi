@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from tspi_foundation.path_safety import lexical_path, path_has_symlink
+
 
 MANIFEST_SCHEMA = "research_state_workspace_1"
 WORKSPACE_MODE = "research"
@@ -103,6 +105,9 @@ def _validate(manifest: dict[str, Any], root: Path) -> dict[str, Any]:
     if manifest.get("schema_version") != MANIFEST_SCHEMA:
         raise WorkspaceModeError("unsupported_workspace_manifest")
     _identifier(manifest.get("workspace_id"), "workspace_id")
+    map_id = manifest.get("map_id")
+    if map_id is not None and map_id != f"map_{manifest['workspace_id']}":
+        raise WorkspaceModeError("workspace_map_id_mismatch")
     workspace_mode = _mode(manifest.get("workspace_mode"))
     expected_state_scope = "workspace"
     if Path(str(manifest.get("workspace_root", ""))).expanduser().resolve() != root.resolve():
@@ -186,6 +191,8 @@ def _validate_layout(
         raise WorkspaceModeError("unsupported_research_context_schema")
     if context.get("workspace_id") != manifest["workspace_id"]:
         raise WorkspaceModeError("research_workspace_id_mismatch")
+    if context.get("map_id") is not None and context["map_id"] != f"map_{manifest['workspace_id']}":
+        raise WorkspaceModeError("research_map_id_mismatch")
     if context.get("workspace_mode") != "research":
         raise WorkspaceModeError("research_workspace_mode_required")
     if not isinstance(context.get("created_at"), str) or not context["created_at"]:
@@ -326,13 +333,14 @@ def _research_seed(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
 def initialize_workspace(root: str | Path, workspace_id: str, workspace_mode: str) -> dict[str, Any]:
     """Create or attach a mode-bound workspace manifest."""
 
-    requested_path = Path(root).expanduser()
-    if requested_path.is_symlink():
+    requested_path = lexical_path(root)
+    if path_has_symlink(requested_path):
         raise WorkspaceModeError(f"workspace_root_symlink: {requested_path}")
-    path = requested_path.resolve()
+    path = requested_path
     identifier = _identifier(workspace_id, "workspace_id")
     selected_mode = _mode(workspace_mode)
     manifest_path = path / "workspace_manifest.json"
+    _reject_nested_workspace(path, manifest_path)
     # The manifest is the sole workspace identity authority.  Do this check
     # before both the create and attach paths so a previously valid workspace
     # cannot silently re-enter the runtime after an old ResearchMap store is
@@ -364,6 +372,7 @@ def initialize_workspace(root: str | Path, workspace_id: str, workspace_mode: st
     manifest = {
         "schema_version": MANIFEST_SCHEMA,
         "workspace_id": identifier,
+        "map_id": f"map_{identifier}",
         "workspace_mode": selected_mode,
         "profile_id": f"{selected_mode}_workspace_1",
         # The ResearchMap is durable workspace state; conversational memory
@@ -398,14 +407,32 @@ def initialize_workspace(root: str | Path, workspace_id: str, workspace_mode: st
         raise
 
 
+def _reject_nested_workspace(path: Path, manifest_path: Path) -> None:
+    """Reject creating a workspace below or above another workspace root."""
+
+    for parent in path.parents:
+        if (parent / "workspace_manifest.json").is_file():
+            raise WorkspaceModeError("workspace_nested_in_workspace")
+        if (parent / "research_map" / "context.json").is_file() or (
+            parent / "lifecycle" / "liveness.json"
+        ).is_file():
+            raise WorkspaceModeError("workspace_nested_in_workspace")
+    if not path.is_dir():
+        return
+    for marker in path.rglob("workspace_manifest.json"):
+        if marker != manifest_path and marker.is_file() and not marker.is_symlink():
+            raise WorkspaceModeError("workspace_root_contains_workspace")
+
+
 def admit_research_workspace(root: str | Path) -> dict[str, Any]:
     """Perform the Host-only admission transition for a research workspace."""
 
-    requested_path = Path(root).expanduser()
-    if requested_path.is_symlink():
+    requested_path = lexical_path(root)
+    if path_has_symlink(requested_path):
         raise WorkspaceModeError(f"workspace_root_symlink: {requested_path}")
-    path = requested_path.resolve()
+    path = requested_path
     manifest_path = path / "workspace_manifest.json"
+    _reject_nested_workspace(path, manifest_path)
     manifest = _validate(_read_json(manifest_path), path)
     _validate_layout(manifest, path, allow_partial_admission=True)
     if manifest["workspace_mode"] != "research":

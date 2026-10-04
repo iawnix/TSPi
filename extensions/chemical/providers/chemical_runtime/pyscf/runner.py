@@ -148,7 +148,7 @@ def run_pyscf(config: PyscfRunConfig) -> dict[str, Any]:
             geometry_kind = "opt"
             summary.update(optimization_evidence)
             summary["optimization_converged"] = optimization_evidence["optimization_convergence_satisfied"]
-            summary["stationary_point_found"] = True
+            summary["stationary_point_found"] = optimization_evidence["optimization_convergence_satisfied"]
         elif "ts" in sequence:
             mol, optimization_evidence = _run_optimization(
                 mol,
@@ -160,7 +160,7 @@ def run_pyscf(config: PyscfRunConfig) -> dict[str, Any]:
             geometry_kind = "ts"
             summary.update(optimization_evidence)
             summary["optimization_converged"] = optimization_evidence["optimization_convergence_satisfied"]
-            summary["stationary_point_found"] = True
+            summary["stationary_point_found"] = optimization_evidence["optimization_convergence_satisfied"]
 
         if geometry_kind is not None:
             geometry_path = config.output_dir / "pyscf_geometry.xyz"
@@ -349,7 +349,10 @@ def _load_runtime():
         import pyscf
         from pyscf import dft, gto
         from pyscf.hessian import thermo as hessian_thermo
-        from pyscf.geomopt.geometric_solver import optimize as geometric_optimize
+        # kernel preserves geomeTRIC's structured (converged, molecule)
+        # result. The optimize convenience wrapper discards that boolean and
+        # forces the parser to guess from human-readable text.
+        from pyscf.geomopt.geometric_solver import kernel as geometric_optimize
     except Exception as exc:
         raise RuntimeError(
             "PySCF runtime is unavailable; install PySCF, geomeTRIC, "
@@ -499,8 +502,14 @@ def _unwrap_optimization_result(value: Any) -> tuple[Any, dict[str, bool | None]
     candidates: list[Any] = [value]
     result = value
     if isinstance(value, tuple) and value:
-        result = value[0]
-        candidates.extend(value[1:])
+        # pyscf.geomopt.geometric_solver.kernel returns (converged, mol),
+        # while older wrappers returned (mol, converged). Select the molecule
+        # by shape and inspect every tuple member for structured evidence.
+        candidates.extend(value)
+        result = next(
+            (candidate for candidate in value if not isinstance(candidate, bool)),
+            value[0],
+        )
     for candidate in candidates:
         evidence = _candidate_convergence(candidate)
         if evidence["optimization_convergence_evidence_present"] is True:
