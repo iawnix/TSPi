@@ -139,7 +139,7 @@ def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> di
         created = _write_artifact_payload(path, payload)
         artifact = _artifact_for_path(workspace, path, _node_ids(workspace))
         try:
-            register_artifacts_in_state(workspace, normalized["node_id"], [{
+            workspace_revision = register_artifacts_in_state(workspace, normalized["node_id"], [{
                 "artifact": artifact,
                 "kind": "calculation_input",
                 "format": normalized["format"],
@@ -155,13 +155,14 @@ def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> di
         "node_id": normalized["node_id"],
         "format": normalized["format"],
         "created": created,
+        "workspace_revision": workspace_revision,
         "chemical_metadata": metadata,
         "artifact": artifact,
     }
 
 
-def register_artifacts_in_state(workspace: Path, node_id: str, records: list[dict[str, Any]]) -> None:
-    """Atomically register generated files in canonical Research State."""
+def register_artifacts_in_state(workspace: Path, node_id: str, records: list[dict[str, Any]]) -> int:
+    """Atomically register generated files and return the committed revision."""
     from research_state.agent_workspace import (
         AgentWorkspaceError,
         apply_change as apply_agent_workspace_change,
@@ -207,13 +208,13 @@ def register_artifacts_in_state(workspace: Path, node_id: str, records: list[dic
                     f"Research State artifact binding conflicts with generated file: {operation['id']}"
                 )
         if not pending:
-            return
+            return context["revision"]
         try:
-            apply_agent_workspace_change(workspace, {
+            result = apply_agent_workspace_change(workspace, {
                 "principal": "root_agent", "authority": "kernel_write",
                 "expected_revision": context["revision"], "operations": pending,
             })
-            return
+            return result["revision"]
         except AgentWorkspaceError as exc:
             if "research_revision_mismatch" not in str(exc) or attempt:
                 raise ComputeContractError(f"cannot register artifacts in canonical workspace: {exc}") from exc

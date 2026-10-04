@@ -177,7 +177,7 @@ def create_mol_structure_artifact(root: str | Path, request: dict[str, Any]) -> 
 
     try:
         with workspace_lock(workspace):
-            register_artifacts_in_state(
+            workspace_revision = register_artifacts_in_state(
                 workspace,
                 normalized["node_id"],
                 [
@@ -215,6 +215,7 @@ def create_mol_structure_artifact(root: str | Path, request: dict[str, Any]) -> 
         "operation": "generate",
         "node_id": normalized["node_id"],
         "created": bool(created_paths),
+        "workspace_revision": workspace_revision,
         "artifact": artifact,
         "provenance_artifact": provenance_artifact,
         "chemical_metadata": generated["chemical_metadata"],
