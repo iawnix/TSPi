@@ -424,12 +424,20 @@ def test_host_state_prepares_private_pi_workspace_before_root_lock(tmp_path: Pat
 
 def test_host_environment_publishes_owner_only_worker_diagnostics(tmp_path: Path) -> None:
     installation = _installation(tmp_path)
+    pin = json.loads((ROOT / "config/pi-source.json").read_text(encoding="utf-8"))
+    commit = pin["commit"]
+    (installation.package_root / "config").mkdir(parents=True)
+    (installation.package_root / "config/pi-source.json").write_text(json.dumps(pin) + "\n", encoding="utf-8")
+    (installation.root / ".pi/runtime-cache/pi" / commit).mkdir(parents=True)
     diagnostic = installation.root / ".pi/app-server-host/worker-diagnostics.log"
     diagnostic.parent.mkdir(parents=True, exist_ok=True)
     diagnostic.write_text("stale worker error\n", encoding="utf-8")
     original_environment = dict(os.environ)
     try:
         launcher.configure_host_process_environment(installation)
+        assert os.environ["TSPI_PI_RUNTIME_ROOT"] == str(
+            installation.root / ".pi/runtime-cache/pi" / commit
+        )
         assert os.environ["TSPI_PI_DIAGNOSTIC_FILE"] == str(diagnostic)
         assert diagnostic.is_file()
         assert diagnostic.read_text(encoding="utf-8") == ""

@@ -935,6 +935,11 @@ def configure_host_process_environment(installation: Installation) -> None:
     """Configure the installation-wide environment used by the Host process."""
     os.environ[PACKAGE_ROOT_OVERRIDE] = str(installation.package_root)
     os.environ["TSPI_INSTALL_ROOT"] = str(installation.root)
+    # The Host's Pi App Server and every SessionWorker must resolve the pinned
+    # Pi SDK from the installation-owned checkout.  Client launches set this
+    # in their terminal path; the systemd Host has no terminal bootstrap, so
+    # bind it explicitly before the server process is spawned.
+    os.environ["TSPI_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
     os.environ["TS_WORKSPACE_ROOT"] = str(installation.workspaces_root)
     os.environ["TSPI_WORKSPACE_ROOT"] = str(installation.workspaces_root)
     os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / ".pi" / "agent")
