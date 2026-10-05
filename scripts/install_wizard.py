@@ -2144,7 +2144,31 @@ def prepare_app_server_runtime(root: Path) -> Path:
         source = next((candidate for candidate in candidates if candidate.is_absolute() and candidate.is_dir()), None)
     if source is None or not source.is_absolute() or not source.is_dir():
         raise RuntimeError("Pi App Server runtime installer returned an invalid source path")
+    bind_pi_runtime_node_modules(root, source)
     return source
+
+
+def bind_pi_runtime_node_modules(root: Path, source: Path) -> None:
+    """Expose Pi's dependencies to TypeScript loaded from the TSPi release.
+
+    The published TSPi archive intentionally omits a second ``node_modules``
+    tree. Pi's source resolver loads TSPi Agent Runtime files from the selected
+    release, so Node's normal upward package lookup must have a release-local
+    link to the exact pinned Pi dependency tree.
+    """
+    package_root = active_suite_root(root) / "agent"
+    link = package_root / "node_modules"
+    runtime_modules = source / "node_modules"
+    if link.exists() or link.is_symlink():
+        if link.is_symlink() and link.resolve() == runtime_modules.resolve():
+            return
+        raise RuntimeError(f"TSPi release node_modules path is already occupied: {link}")
+    original_mode = stat.S_IMODE(package_root.stat().st_mode)
+    try:
+        package_root.chmod(original_mode | 0o700)
+        link.symlink_to(os.path.relpath(runtime_modules, package_root), target_is_directory=True)
+    finally:
+        package_root.chmod(original_mode)
 
 
 def active_suite_root(root: Path) -> Path:
