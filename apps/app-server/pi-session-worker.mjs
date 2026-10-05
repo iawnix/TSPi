@@ -35,13 +35,11 @@ export { createSystemPromptManifest, createSystemPromptTool } from "./system-pro
 const sourceRoot = process.env.TSPI_PI_RUNTIME_ROOT;
 if (!sourceRoot) throw new Error("TSPi worker requires TSPI_PI_RUNTIME_ROOT");
 const workerModule = await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/session-worker.ts")).href);
-const modelResolver = await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/core/model-resolver.ts")).href);
 const setupModule = await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/durable/harness-setup.ts")).href);
 const { runSessionWorkerWithHarness } = workerModule;
-const { findInitialAgentModel, resolveCliModel } = modelResolver;
 const skillsModule = await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/core/skills.ts")).href);
 const { loadSkills: loadLatestSkills } = skillsModule;
-const { createHarnessSettings, configureHarnessHttp, ExecutionEnvs, createPiPrompt } = setupModule;
+const { createHarnessSettings, configureHarnessHttp, ExecutionEnvs, createPiPrompt, findInitialAgentModel } = setupModule;
 const TspiSystemPrompt = defineService("tspi.system-prompt");
 
 async function loadTspiSkills(executionEnv) {
@@ -106,13 +104,11 @@ async function createTspiHarness(databasePath, options) {
   const settingsManager = SettingsManager.create(cwd);
   configureHarnessHttp(settingsManager);
   const executionEnvs = new ExecutionEnvs(cwd);
-  const resolved = options.model === undefined
-    ? await findInitialAgentModel(settingsManager, modelRuntime)
-    : (() => {
-      const value = resolveCliModel({ cliProvider: options.provider, cliModel: options.model, modelRuntime });
-      if (value.error || !value.model) throw new Error(value.error || "Session worker could not resolve a model");
-      return { model: { provider: value.model.provider, modelId: value.model.id }, thinkingLevel: value.thinkingLevel };
-    })();
+  const resolved = await findInitialAgentModel(
+    settingsManager,
+    modelRuntime,
+    options.model === undefined ? undefined : { provider: options.provider, model: options.model },
+  );
   const loadedSkills = await loadTspiSkills(executionEnvs.env({ cwd }));
   const researchKernel = create_research_state_port(create_python_kernel_bridge({ workspace_root: cwd, workspace_id: workspaceId }));
   const loadedExtensions = await loadServerExtensions({
