@@ -242,7 +242,7 @@ test("native facet exposes status based commands without owning overlays", { ski
       own() {},
     });
     activate();
-    assert.deepEqual(commands.map(({ name }) => name).sort(), ["compute", "debug", "research", "runs", "sys_prompt"]);
+    assert.deepEqual(commands.map(({ name }) => name).sort(), ["compute", "debug", "research", "runs", "sys-prompt"]);
     assert.equal(usedServices.includes("pi.local.transcript"), false);
 
     await commands.find(({ name }) => name === "runs").run("", { abortSignal: new AbortController().signal });
@@ -250,7 +250,7 @@ test("native facet exposes status based commands without owning overlays", { ski
     assert.equal(statuses.length, 1);
     assert.match(statuses[0], /compute-runs\/1/);
 
-    await commands.find(({ name }) => name === "sys_prompt").run("", { abortSignal: new AbortController().signal });
+    await commands.find(({ name }) => name === "sys-prompt").run("", { abortSignal: new AbortController().signal });
     assert.equal(tui.overlay, undefined);
     assert.deepEqual(statuses.slice(1), ["Use the system_prompt tool to inspect the effective prompt and provenance."]);
   } finally {

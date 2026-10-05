@@ -3,7 +3,7 @@ const PACKAGE_ROOT_ENV = "TSPI_PACKAGE_ROOT";
 /**
  * Keep the TSPi package root available to the facet factory, but hide it while
  * Pi's built-in client facets are activated. The managed Pi patch uses this
- * variable as the opt-in for its status-only /sys_prompt command.
+ * variable as the opt-in for its status-only /sys-prompt command.
  */
 export async function withTspiPackageRootHidden(callback) {
   if (typeof callback !== "function") throw new TypeError("callback must be a function");

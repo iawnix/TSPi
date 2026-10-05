@@ -66,7 +66,7 @@ function commandFor(name, ui, python, apiScript) {
           schema_version: "tspi-client-command-result/1",
           command: "/debug",
           state: "remote_unsupported",
-          message: "The debug modal is presentation-local; use /sys_prompt for the shared prompt manifest.",
+          message: "The debug modal is presentation-local; use /sys-prompt for the shared prompt manifest.",
         }, null, 2), context);
         return undefined;
       }
@@ -122,10 +122,14 @@ function runsCommand(ui, python, apiScript) {
 
 function systemPromptCommand(ui) {
   return {
-    name: "sys_prompt",
+    // Pi 1.0.2 accepts lower-case letters, digits, ':' and '-' in slash
+    // command names. The public system-prompt tool keeps its stable
+    // `sys_prompt` identity; this presentation-only command uses the valid
+    // slash spelling below.
+    name: "sys-prompt",
     description: "Show the effective system prompt and provenance",
     async run(args, context) {
-      if (args.trim().length > 0) throw new Error("/sys_prompt takes no arguments");
+      if (args.trim().length > 0) throw new Error("/sys-prompt takes no arguments");
       try {
         ui.showStatus("Use the system_prompt tool to inspect the effective prompt and provenance.", context);
       } catch (error) {
