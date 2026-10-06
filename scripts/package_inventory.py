@@ -242,6 +242,8 @@ PACKAGE_FILES = [
     "packages/research-state/research_state/*.py",
     "packages/research-compute/research_compute/*.py",
     "packages/research-compute/research_compute/contracts/*.json",
+    "packages/artifact-store/artifact_store/*.py",
+    "packages/job-runtime/job_runtime/*.py",
     "packages/tspi-bootstrap/tspi_bootstrap/*.py",
     "packages/research-compute/research_compute/workspace/*.py",
     "packages/research-state/research_state/contracts/*.json",
