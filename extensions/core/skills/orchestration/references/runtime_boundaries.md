@@ -50,7 +50,7 @@ the Research State validates and commits them.
 Public semantic tool names are the only Agent API:
 `research_read`, `research_change`, `research_strategy`,
 `research_interpretation`, `research_checkpoint`, `research_checkpoint`,
-`compute_environment`, `compute_catalog`, `compute_readiness`, `compute_run`,
+`Job Runtime platform configuration`, `Skill-provided method instructions`, `job_probe`, `job_start/job_status/job_collect`,
 `analysis_run`, and the artifact/review tools listed in
 [pi_agent_adapter.md](pi_agent_adapter.md). Private source factory names and
 slash commands are transport details and are not alternate protocols.
@@ -81,10 +81,10 @@ descriptors use `capability_id` and `capability_version`; the analysis catalog
 uses `capability` and `version`, and `analysis_run` requests use
 `capability` plus `capability_version`. These are two explicit catalog
 contracts, not interchangeable aliases. The live catalog is the only source
-of registered capabilities. `compute_run` is the calculation entry point for
+of registered capabilities. `job_start/job_status/job_collect` is the calculation entry point for
 both targets and uses `launch`, `inspect`, `finalize`, or `cancel`;
 `analysis_run` is deterministic local analysis and has no scheduler lifecycle.
-Remote execution must use Native `compute_run` with a configured
+Remote execution must use Native `job_start/job_status/job_collect` with a configured
 `execution.environment`. There is no
 generic capability invocation path: all descriptors come from the Python
 Native registry, and the lifecycle schema is the only public calculation

@@ -20,8 +20,6 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
     Object.freeze({ name: "gaussian", path: "./extensions/chemical/skills/gaussian" }),
     Object.freeze({ name: "chemical-input", path: "./extensions/chemical/skills/chemical-input" }),
     Object.freeze({ name: "mechanism-reasoning", path: "./extensions/chemical/skills/mechanism-reasoning" }),
-    Object.freeze({ name: "render", path: "./extensions/chemical/skills/render" }),
-    Object.freeze({ name: "report", path: "./extensions/chemical/skills/report" }),
     Object.freeze({ name: "email", path: "./extensions/email" }),
   ]),
   // Native Pi Harness owns the agent loop and server tools. Direct

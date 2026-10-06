@@ -62,16 +62,6 @@
       "name": "mechanism-reasoning",
       "path": "skills/mechanism-reasoning",
       "sha256": "sha256:002a83b213eaae168e7aab61001c881099544a2f78a9e75c8132f11171df0130"
-    },
-    {
-      "name": "render",
-      "path": "skills/render",
-      "sha256": "sha256:3dc4329f32f97b065992c46d768120d1a3e61aeadf3ad61c6c5bab69a1d6825d"
-    },
-    {
-      "name": "report",
-      "path": "skills/report",
-      "sha256": "sha256:45377a005d682697217a72f2995fd813e8566f20feaff5ed371e2229db65256c"
     }
   ],
   "providers": [
@@ -137,24 +127,6 @@
       "entry": "providers/chemical_provider.py",
       "sha256": "sha256:d0774ec483fc68b98b58ffc83501d84d35d6e73600e6fd597e281d1bdb3172fe",
       "descriptor_sha256": "sha256:934d3adf19cc4fa6efecefa275d0da14216201830a275d9157cf012500d7ee4c"
-    },
-    {
-      "id": "artifact_render",
-      "version": "1",
-      "kind": "render",
-      "descriptor": "providers/artifact_render.json",
-      "entry": "providers/render_provider.py",
-      "descriptor_sha256": "sha256:799f9594f3e0e619040fe8b4a89b1dfccea5b61e7bc591e90e862a54eaa2dd02",
-      "sha256": "sha256:e13a205464552e105424e0cf42cd9bb5fdc149d807d794524815f017bddcf3d4"
-    },
-    {
-      "id": "report_build",
-      "version": "1",
-      "kind": "report",
-      "descriptor": "providers/report_build.json",
-      "entry": "providers/report_provider.py",
-      "descriptor_sha256": "sha256:52391f3e457f47025611317866334cc1f514099d3ce2c4476b569514c68fe24f",
-      "sha256": "sha256:a510cf932b8832f95164eceaf2549461816b89aacab0a4960ef8940fd4b578a8"
     }
   ]
 }

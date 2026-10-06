@@ -13,12 +13,7 @@ export type CommandId =
   | "research.checkpoint"
   | "research.decisions"
   | "research.storage"
-  | "research.change"
-  | "compute.environments"
-  | "compute.environment"
-  | "compute.capabilities"
-  | "compute.artifacts"
-  | "compute.runs";
+  | "research.change";
 
 export interface CommandInvocation {
   readonly command: CommandId;

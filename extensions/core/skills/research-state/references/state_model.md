@@ -68,7 +68,7 @@ Agents call the public `research_read` tool with the corresponding bounded
 `mode` (`map`, `summary`, `detail`, `locate`, `validate`, `operations`,
 `context`, `liveness`, `decisions`, `evidence`, or `storage`). The tool also
 exposes compute modes
-(`artifacts`, `capabilities`, `runs`). Use `/research` for interactive reads.
+(`evidence`, `storage`). Use `/research` for interactive reads.
 Strategy, interpretation, checkpoint, Evidence Registry, and map mutations use
 their typed Research State commands; do not create a generic memory write.
 

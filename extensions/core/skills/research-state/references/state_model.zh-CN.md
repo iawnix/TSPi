@@ -58,7 +58,7 @@ research.storage      canonical Research State filesystem boundary 文档与 rev
 
 Agent 只能调用公共 `research_read`，并通过对应的有界 `mode`（`map`、`summary`、`detail`、
 `locate`、`validate`、`operations`、`context`、`liveness`、`decisions`、`evidence` 或
-`storage`）访问上述读取。该工具还暴露计算模式（`artifacts`、`capabilities`、`runs`）。交互式读取
+`storage`）访问上述读取。交互式读取
 使用 `/research`。Strategy、interpretation、checkpoint、Evidence Registry 与 map 变更都使用
 各自的类型化 Research State command；不要创建通用 memory write。
 

@@ -315,20 +315,13 @@ export function createPublicToolContracts(Type) {
     id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
     nodeRef: Type.Optional(nodeReference),
   };
-  const stateReadSchema = Type.Union([
-    Type.Object({
-      ...stateFields,
-      mode: Type.Literal("capabilities"),
-      capabilityKind: literalUnion(["compute", "analysis"]),
-    }, { additionalProperties: false }),
-    Type.Object({
-      ...stateFields,
-      mode: Type.Optional(literalUnion([
-        "map", "summary", "context", "liveness", "detail", "locate", "validate",
-        "operations", "decisions", "evidence", "storage", "artifacts", "runs",
-      ])),
-    }, { additionalProperties: false }),
-  ]);
+  const stateReadSchema = Type.Object({
+    ...stateFields,
+    mode: Type.Optional(literalUnion([
+      "map", "summary", "context", "liveness", "detail", "locate", "validate",
+      "operations", "decisions", "evidence", "storage",
+    ])),
+  }, { additionalProperties: false });
   const nodeId = Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 });
   const artifactId = Type.String({ pattern: "^art_[0-9a-f]{64}$" });
   const contracts = {

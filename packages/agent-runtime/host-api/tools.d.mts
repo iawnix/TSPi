@@ -9,9 +9,10 @@ import type {
 import type { Component } from "@earendil-works/pi-tui";
 
 export type PublicToolKey =
-  | "systemPrompt" | "state" | "change" | "workflow" | "environment" | "computeCatalog" | "computeReadiness" | "review"
-  | "compute" | "reply" | "moleculeStructure" | "compare" | "analyze" | "dispatch"
-  | "importArtifact" | "render" | "report" | "notify";
+  | "systemPrompt" | "state" | "change" | "lifecycle"
+  | "moleculeStructure" | "compare" | "analyze" | "notify"
+  | "jobStart" | "jobStatus" | "jobCollect" | "jobCancel" | "jobProbe" | "jobReconcile"
+  | "artifactRegister" | "artifactCreate" | "artifactRead" | "artifactDerive" | "artifactLink";
 
 export const PUBLIC_TOOL_CANONICAL_NAMES: Readonly<Record<string, string>>;
 export const PUBLIC_TOOL_ALIASES: Readonly<Record<string, {
@@ -70,21 +71,22 @@ export interface PublicToolContracts {
   readonly systemPrompt: ToolContract<Record<string, never>, "sys_prompt"> & { readonly promptSnippet: string };
   readonly state: ToolContract<StateToolParams>;
   readonly change: ToolContract<ChangeToolParams>;
-  readonly workflow: ToolContract<WorkflowToolParams>;
-  readonly environment: ToolContract<EnvironmentToolParams>;
-  readonly computeCatalog: ToolContract<ComputeCatalogToolParams>;
-  readonly computeReadiness: ToolContract<ComputeReadinessToolParams>;
-  readonly review: ToolContract<ReviewToolParams>;
-  readonly compute: ToolContract<ComputeToolParams>;
-  readonly reply: ToolContract<ReplyToolParams>;
+  readonly lifecycle: ToolContract<LifecycleToolParams>;
   readonly moleculeStructure: ToolContract<MoleculeStructureToolParams>;
   readonly compare: ToolContract<CompareToolParams>;
   readonly analyze: ToolContract<AnalyzeToolParams>;
-  readonly dispatch: ToolContract<DispatchToolParams>;
-  readonly importArtifact: ToolContract<ImportToolParams>;
-  readonly render: ToolContract<RenderToolParams>;
-  readonly report: ToolContract<ReportToolParams>;
   readonly notify: ToolContract<NotifyToolParams>;
+  readonly jobStart: ToolContract<JobStartToolParams>;
+  readonly jobStatus: ToolContract<JobStatusToolParams>;
+  readonly jobCollect: ToolContract<JobCollectToolParams>;
+  readonly jobCancel: ToolContract<JobCancelToolParams>;
+  readonly jobProbe: ToolContract<JobProbeToolParams>;
+  readonly jobReconcile: ToolContract<JobReconcileToolParams>;
+  readonly artifactRegister: ToolContract<ArtifactRegisterToolParams>;
+  readonly artifactCreate: ToolContract<ArtifactCreateToolParams>;
+  readonly artifactRead: ToolContract<ArtifactReadToolParams>;
+  readonly artifactDerive: ToolContract<ArtifactDeriveToolParams>;
+  readonly artifactLink: ToolContract<ArtifactLinkToolParams>;
 }
 
 export function createPublicToolContracts(Type: any): PublicToolContracts;
@@ -107,13 +109,9 @@ type StateReadFields = WorkspaceToolParams & {
   limit?: number;
   storageOperation?: "status";
 };
-export type StateToolParams = StateReadFields & ({
-  mode: "capabilities";
-  capabilityKind: "compute" | "analysis";
-} | {
-  mode?: "map" | "summary" | "context" | "liveness" | "detail" | "locate" | "validate" | "operations" | "decisions" | "evidence" | "storage" | "artifacts" | "runs";
-  capabilityKind?: never;
-});
+export type StateToolParams = StateReadFields & {
+  mode?: "map" | "summary" | "context" | "liveness" | "detail" | "locate" | "validate" | "operations" | "decisions" | "evidence" | "storage";
+};
 export type ResearchMapOperation =
   | { type: "create_phase"; id: string; title: string; objective?: string; created_at?: string; metadata?: Record<string, unknown> }
   | { type: "create_claim"; id: string; statement: string; status?: "proposed" | "supported" | "contradicted" | "inconclusive" | "withdrawn"; predictions?: string[]; falsifiers?: string[]; created_at?: string; metadata?: Record<string, unknown> }
@@ -146,51 +144,6 @@ export interface LifecycleToolParams extends WorkspaceToolParams {
   expectedRevision?: number;
   eventId?: string;
 }
-export interface EnvironmentToolParams extends WorkspaceToolParams { mode?: "list" | "show"; name?: string }
-export interface ComputeCatalogToolParams extends WorkspaceToolParams {}
-export interface ComputeReadinessToolParams extends WorkspaceToolParams {
-  manifest_provider_id?: string;
-  capability_id?: string;
-  environment_id?: string;
-  execution_kind?: "local" | "remote";
-}
-export interface ComputeToolParams extends WorkspaceToolParams {
-  operation: "launch" | "inspect" | "finalize" | "cancel";
-  nodeId: string;
-  intentId?: string;
-  purpose?: string;
-  capability?: string;
-  capabilityVersion?: string;
-  attemptKind?: "primary" | "retry" | "recalculation";
-  sourceAttempt?: { intentId: string; reason: string };
-  inputArtifacts?: Array<{ inputRole: string; artifactId: string }>;
-  parameters?: Record<string, string | number | boolean>;
-  execution?: { environment: string };
-  tailArtifact?: string;
-  tailLines?: number;
-  artifacts?: string[];
-  artifactRef?: string;
-  timeoutSeconds?: number;
-}
-export interface ReviewToolParams extends WorkspaceToolParams {
-  targetClaimId: string;
-  question: string;
-  reviewerRole?: string;
-  artifactIds?: string[];
-  timeoutSeconds?: number;
-}
-export interface ReplyToolParams extends WorkspaceToolParams {
-  taskId: string;
-  reviewRunRef: string;
-  disposition: "accepted" | "partially_accepted" | "rejected" | "deferred";
-  response: string;
-  nextSteps?: string[];
-}
-export interface DispatchToolParams extends WorkspaceToolParams {
-  operation: "pause" | "resume";
-  nodeId: string;
-  rationale: string;
-}
 export interface MoleculeStructureToolParams extends WorkspaceToolParams {
   operation: "generate";
   nodeId: string;
@@ -214,26 +167,26 @@ export interface AnalyzeToolParams extends WorkspaceToolParams {
   inputArtifacts: Record<string, string[]>;
   parameters: Record<string, unknown>;
 }
-export interface ImportToolParams extends WorkspaceToolParams {
-  operation: "import";
-  nodeId: string;
-  format: "gaussian_input" | "xyz_structure" | "xtb_control";
-  inputName: string;
-  content: string;
-  charge?: number;
-  multiplicity?: number;
+export interface JobStartToolParams extends WorkspaceToolParams {
+  nodeId?: string;
+  command: string[];
+  cwd?: string;
+  environment?: Record<string, string>;
+  inputs?: string[];
+  outputs?: Array<{ path: string; mediaType?: string }>;
+  timeoutSeconds?: number;
+  platform?: string;
 }
-export interface RenderToolParams extends WorkspaceToolParams {
-  operation: "render" | "compare" | "animate" | "mechanism" | "curve" | "energy" | "scan" | "convergence";
-  nodeId: string;
-  inputArtifactIds: string[];
-  outputName: string;
-}
-export interface ReportToolParams extends WorkspaceToolParams {
-  operation: "build";
-  packageName: string;
-  assetArtifactIds?: string[];
-}
+export interface JobStatusToolParams extends WorkspaceToolParams { jobId: string }
+export interface JobCollectToolParams extends WorkspaceToolParams { jobId: string; outputPaths?: string[] }
+export interface JobCancelToolParams extends WorkspaceToolParams { jobId: string }
+export interface JobProbeToolParams extends WorkspaceToolParams { platform?: string }
+export interface JobReconcileToolParams extends WorkspaceToolParams { jobId: string }
+export interface ArtifactRegisterToolParams extends WorkspaceToolParams { path: string; nodeId?: string; jobId?: string; mediaType?: string }
+export interface ArtifactCreateToolParams extends WorkspaceToolParams { content: string; name: string; nodeId?: string; mediaType?: string }
+export interface ArtifactReadToolParams extends WorkspaceToolParams { artifactId: string; offset?: number; limit?: number }
+export interface ArtifactDeriveToolParams extends WorkspaceToolParams { inputArtifactIds: string[]; operation: string; parameters?: Record<string, unknown> }
+export interface ArtifactLinkToolParams extends WorkspaceToolParams { artifactId: string; subjectId: string; relation?: string }
 export interface NotifyToolParams extends WorkspaceToolParams {
   operation: "send";
   event: "progress" | "node_completed" | "calculation_failed" | "calculation_ambiguous" | "study_completed";

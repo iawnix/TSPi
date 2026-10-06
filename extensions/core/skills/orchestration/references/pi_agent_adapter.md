@@ -1,60 +1,21 @@
 # Pi Runtime Adapter
 
-Pi is a transport and interaction host for TSPi. The Host routes the Native calculation lifecycle to the
-deterministic Research State and Compute services; Pi reads the canonical ResearchMap.
-
-## Public Surface
+Pi supplies the single model/tool loop. TSPi adds Research State context and
+ durable Job and Artifact tools; it does not create Compute or Review agents.
 
 The Root session uses:
 
 ```text
-research_read         bounded ResearchMap and compute reads
-research_change        one atomic ResearchMap ChangeSet
-research_strategy     record or review a Claim strategy
-research_interpretation interpret a completed Attempt
-research_checkpoint    close the current Research Turn with a disposition
-system_prompt          inspect effective prompt provenance
-compute_environment   local and remote compute environment catalog
-compute_run          one bounded calculation lifecycle
-execution_dispatch      pause or resume new work dispatch for one Node
-analysis_run       registered local analysis
-create_mol_structure         Node-owned structure artifacts
-artifact_import       Node-owned input artifacts
-artifact_compare       deterministic structure comparison
-artifact_render        registered visual artifact
-report_build        revision-bound report package
-review_run         advisory review
-review_respond     Root disposition for a completed review
-
-`notify_send` is a Host/Monitor-owned delivery capability and is not in the
-Root Agent's default tool inventory.
+research_read
+research_change
+research_strategy
+research_interpretation
+research_checkpoint
+job_start / job_status / job_collect / job_cancel / job_reconcile
+artifact_register / artifact_create / artifact_read / artifact_derive / artifact_link
 ```
 
-Slash commands call the same command service: `/research`, `/compute`, `/runs`,
-and `/debug prompt`. They are interaction syntax, not a second API.
-
-## Root Session
-
-The conversation is not scientific state. Before interpreting a previous turn,
-read the current `ResearchMap`; after a write, use the returned revision or
-`research_read mode=summary`. The research extension may include a bounded summary in
-the prompt, but it cannot write the map. The Root Agent remains responsible for
-method selection, interpretation, and stopping.
-
-`research_read` modes are `map`, `summary`, `context`, `liveness`, `detail`, `locate`,
-`validate`, `operations`, `decisions`, `evidence`, `storage`, `artifacts`,
-`capabilities`, and `runs`. `capabilityKind=compute` lists
-calculation capabilities; `capabilityKind=analysis` resolves analysis methods.
-Use `kind` and `id` for a focused map object. Do not invent a second context
-vocabulary for the ResearchMap.
-
-## Isolation
-
-Compute and Review child sessions receive bounded typed task packets and have no
-authority to edit the ResearchMap. Compute action receipts, scheduler state,
-and parser output are operational records. Review advice is advisory. Root
-checks artifacts and applies any scientific interpretation with `research_change`.
-
-The foreground UI and `/runs` browser are read-only presentations. TS Web reads
-the canonical serialized `ResearchMap` directly; it does not rebuild a graph or
-store a parallel snapshot.
+Domain Skills describe how to construct commands and interpret outputs. The
+Root combines those instructions with ordinary Pi tools and records evidence
+in Research State. A completed job is only an execution receipt until its raw
+outputs are registered as Artifacts and interpreted into Findings.

@@ -43,10 +43,10 @@ Harness 不应在同一 turn 强行执行它。Harness 不得替 Agent 发明方
 
 Review 只提供有边界的反方审查，不拥有规范状态。`analysis_run` 仅用于从分析目录中发现的
 精确 capability/version；它是已注册的确定性本地分析，没有计算生命周期。对需要审计的
-local/remote 计算，`compute_run` 是计算生命周期入口，负责 Attempt、Artifact、Monitor 以及
+local/remote 计算，`job_start/job_status/job_collect` 是计算生命周期入口，负责 Attempt、Artifact、Monitor 以及
 launch 生命周期。每个计算都记录在 ResearchNode 的 Attempt 下。Review 只能提供
 建议，不能写入 ResearchMap、改变 Claim/Node 状态、选择方法、启动或取消 Compute。
-`review_respond` 后由 Root 使用普通 `research_change` 记录接受、拒绝或附带条件的解释。本地与远端环境使用同一组
+`research_interpretation` 后由 Root 使用普通 `research_change` 记录接受、拒绝或附带条件的解释。本地与远端环境使用同一组
 `launch`、`inspect`、`finalize`、`cancel` 生命周期。`launch` 返回提交结果（包括结果不确定）后应结束当前
 turn，让持久化 Monitor 投递 `next_run`；不要用 `bash sleep`、`wait` 或手动轮询等待
 调度器任务。收到 Monitor 唤醒或用户稍后明确请求后，重新读取状态并先执行

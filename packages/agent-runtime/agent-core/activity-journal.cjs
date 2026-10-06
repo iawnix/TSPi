@@ -18,7 +18,7 @@ const { readResearchMap } = require("./research-map-reader.cjs");
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ACTIVITY_ID = /^op_[1-9][0-9]*$/;
-const KINDS = new Set(["structure_seed", "structure_compare", "scientific_analysis", "artifact_import", "render", "report"]);
+const KINDS = new Set(["structure_seed", "structure_compare", "scientific_analysis"]);
 
 function beginActivity(workspaceRoot, input) {
   const root = requireWorkspaceRoot(workspaceRoot);

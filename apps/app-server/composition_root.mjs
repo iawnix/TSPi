@@ -51,31 +51,7 @@ export function create_research_agent_composition({
   session_root,
   turn_router,
   kernel_port,
-  native_capability_host = null,
-  native_compute = null,
-  tool_gateway,
-  toolGateway,
-  capability_assembly,
-  capabilityAssembly,
-  compute_orchestrator,
-  computeOrchestrator,
-  environment_broker,
-  environmentBroker,
 } = {}) {
-  if ([
-    tool_gateway,
-    toolGateway,
-    capability_assembly,
-    capabilityAssembly,
-    compute_orchestrator,
-    computeOrchestrator,
-    environment_broker,
-    environmentBroker,
-  ].some((value) => value !== undefined)) {
-    const error = new Error("JavaScript capability providers, gateway, and orchestrator were removed; use Native compute_run");
-    error.code = "js_provider_path_removed";
-    throw error;
-  }
   const runtime = require_port(pi_session_port, "pi_session_port");
 
   if (workspace_port !== undefined && workspace_factory !== undefined) {
@@ -99,8 +75,6 @@ export function create_research_agent_composition({
     ?? (session_root === undefined ? null : create_session_store({ session_root }));
 
   if (kernel_port !== undefined && kernel_port !== null) require_port(kernel_port, "kernel_port");
-  if (native_capability_host !== null) require_port(native_capability_host, "native_capability_host");
-  if (native_compute !== null) require_port(native_compute, "native_compute");
   const router = turn_router ?? create_dynamic_turn_router();
   const app_server = create_app_server({
     pi_session_port: runtime,
@@ -109,8 +83,6 @@ export function create_research_agent_composition({
     session_store: sessions,
     turn_router: router,
     kernel_port: kernel_port ?? null,
-    native_capability_host,
-    native_compute,
   });
 
   return Object.freeze({
@@ -122,8 +94,6 @@ export function create_research_agent_composition({
     session_store: sessions,
     turn_router: router,
     kernel_port: kernel_port ?? null,
-    native_capability_host,
-    native_compute,
     async close() {
       await app_server.close();
     },

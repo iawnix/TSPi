@@ -41,10 +41,9 @@ export async function createTspiNativeClientFacet({ sourceRoot, packageRoot = pr
       const commands = env.use(SlashCommands);
       const ui = env.use(PresentationUI);
       env.onActivate(() => {
-        for (const name of ["research", "compute", "debug"]) {
+        for (const name of ["research", "debug"]) {
           env.own(commands.replace(commandFor(name, ui, python, apiScript)));
         }
-        env.own(commands.replace(runsCommand(ui, python, apiScript)));
         env.own(commands.replace(systemPromptCommand(ui)));
       });
     },
@@ -87,33 +86,6 @@ function commandFor(name, ui, python, apiScript) {
           state: "failed",
           error: { code: error?.name === "CommandUsageError" ? "usage" : "command_failed", message },
         }, null, 2), context);
-      }
-      return undefined;
-    },
-  };
-}
-
-function runsCommand(ui, python, apiScript) {
-  return {
-    name: "runs",
-    description: "Browse active and recorded Compute and Review runs.",
-    async run(args, context) {
-      if (args.trim().length > 0) throw new Error("/runs takes no arguments");
-      try {
-        const report = await executeCanonicalCommand(
-          { command: "compute.runs", params: Object.freeze({}) },
-          python,
-          apiScript,
-          process.cwd(),
-          context,
-        );
-        if (!report || !Array.isArray(report.runs) || report.runs.length === 0) {
-          ui.showStatus("No TS subagent runs are available in this workspace", context);
-          return undefined;
-        }
-        ui.showStatus(JSON.stringify(report, null, 2), context);
-      } catch (error) {
-        ui.showStatus(`Unable to read TS runs: ${error instanceof Error ? error.message : String(error)}`, context);
       }
       return undefined;
     },

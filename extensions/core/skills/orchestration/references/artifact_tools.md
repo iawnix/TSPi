@@ -110,8 +110,6 @@ not launch a program, select a local/remote environment, or update the
 ResearchMap by itself. Before calling it, query the live analysis catalog:
 
 ```text
-research_read mode=capabilities capabilityKind=analysis
-research_read mode=capabilities capabilityKind=analysis query=chemical.name.resolve@1
 ```
 
 The second form is preferred when the exact capability and version are known.
@@ -150,7 +148,7 @@ The Native analysis executor writes its result below
 Analysis does not create a Claim, Finding, Gate, or Node status transition.
 Root must inspect and verify the returned Artifact, then use `research_change`
 to record a narrow `FactFinding` or `IssueFinding` with `source_refs` pointing
-to the registered analysis Artifact. Use `compute_run` for calculation
+to the registered analysis Artifact. Use `job_start/job_status/job_collect` for calculation
 lifecycles, including local/remote execution; do not route a calculation
 through `analysis_run`.
 

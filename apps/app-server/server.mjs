@@ -4,8 +4,6 @@ import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { create_research_agent_composition } from "./composition_root.mjs";
-import { create_configured_capability_host } from "./capability-host-bootstrap.mjs";
-import { createNativeComputeLifecycle } from "../../apps/app-server/pi-native-compute.mjs";
 import { create_runtime } from "../../packages/agent-pi-adapter/pi_runtime_module.mjs";
 import { create_kernel } from "../../packages/research-state-bridge/kernel_factory.mjs";
 
@@ -303,33 +301,6 @@ export function create_http_server({ app_server, session_store = null, max_body_
         case "research_change":
           result = await app_server.apply_research_change(body);
           break;
-        case "tool_describe":
-          result = await app_server.describe_tools(body);
-          break;
-        case "tool_invoke":
-          result = await app_server.invoke_tool(body);
-          break;
-        case "compute_run":
-          result = await app_server.run_compute(body);
-          break;
-        case "compute_cancel":
-          result = await app_server.cancel_compute(body);
-          break;
-        case "capability_catalog":
-          result = await app_server.capability_catalog();
-          break;
-        case "capability_readiness":
-          result = await app_server.capability_readiness(body);
-          break;
-        case "capability_execute":
-          result = await app_server.capability_execute(body);
-          break;
-        case "compute_catalog":
-          result = await app_server.compute_catalog(body);
-          break;
-        case "compute_readiness":
-          result = await app_server.compute_readiness(body);
-          break;
         default:
           throw Object.assign(new Error(`unknown route: ${route}`), { statusCode: 404 });
       }
@@ -364,9 +335,8 @@ export async function start_http_server({ app_server, session_store = null, host
 }
 
 async function run_default_server() {
-  // The Native lifecycle invokes the package-owned compute.py worker in
-  // process. Establish the same package identity that the Pi Host workers use
-  // before any runtime or compute request is created.
+  // Establish the package identity that Pi Host workers use before creating
+  // the runtime and Research State kernel.
   const package_root = resolve(new URL("../..", import.meta.url).pathname);
   process.env.TSPI_PACKAGE_ROOT = package_root;
   const install_root = process.env.TSPI_INSTALL_ROOT;
@@ -384,18 +354,11 @@ async function run_default_server() {
     model_id: process.env.RESEARCH_AGENT_MODEL_ID || process.env.TSPI_MODEL,
   });
   const kernel_port = create_kernel({});
-  const capability_host = await create_configured_capability_host({
-    compute_config_path: process.env.TS_COMPUTE_CONFIG || undefined,
-    package_root,
-  });
-  const native_compute = createNativeComputeLifecycle({ researchKernel: kernel_port });
   const composition = create_research_agent_composition({
     pi_session_port,
     kernel_port,
     catalog_root: process.env.RESEARCH_AGENT_CATALOG_ROOT || undefined,
     session_root: process.env.RESEARCH_AGENT_SESSION_ROOT || undefined,
-    native_capability_host: capability_host,
-    native_compute,
   });
   const app_server = composition.app_server;
   const server = await start_http_server({

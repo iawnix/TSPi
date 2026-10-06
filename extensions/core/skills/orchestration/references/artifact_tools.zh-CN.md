@@ -102,8 +102,6 @@ Artifact；本身不会启动程序、选择 local/remote 环境，也不会自�
 读取实时分析目录：
 
 ```text
-research_read mode=capabilities capabilityKind=analysis
-research_read mode=capabilities capabilityKind=analysis query=chemical.name.resolve@1
 ```
 
 已知精确 capability 与版本时优先使用第二种查询。必须同时存在目录项和精确版本；不存在时
@@ -135,7 +133,7 @@ Native analysis executor 将结果写入 `nodes/<node_id>/outputs/analysis/`，�
 `ts-analysis-result/1`，其中包含分析 Artifact 与来源 Artifact ID。Analysis 不会创建 Claim、
 Finding、Gate，也不会改变 Node 状态。Root 必须检查并核验返回 Artifact，然后用
 `research_change` 记录粒度明确的 `FactFinding` 或 `IssueFinding`，并在 `source_refs` 中引用已登记
-的 analysis Artifact。计算生命周期（包括 local/remote）使用 `compute_run`；不要通过
+的 analysis Artifact。计算生命周期（包括 local/remote）使用 `job_start/job_status/job_collect`；不要通过
 `analysis_run` 执行计算。
 
 ## Activity 与来源

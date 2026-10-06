@@ -82,7 +82,7 @@ export function wakeMessage(event) {
     `node_id=${event.node_id}`, `intent_id=${event.intent_id}`, `state=${event.state}`,
     `program_status=${event.program_status || "unknown"}`, event.error_class ? `error_class=${event.error_class}` : undefined,
     "Read research_read and the execution Attempt before deciding what to do.",
-    "Use compute_run with operation=inspect to reconcile status. A completed scheduler job is not a parsed result; check evidence before finalizing or changing ResearchMap.",
+    "Use job_status, job_collect, or job_reconcile to reconcile status. A completed scheduler job is not a parsed result; register its raw outputs as Artifacts and check evidence before changing Research State.",
   ].filter(Boolean).join("\n");
 }
 

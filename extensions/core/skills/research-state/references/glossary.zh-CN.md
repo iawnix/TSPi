@@ -16,7 +16,7 @@
 | Gate | 绑定一个 Node 或 Claim 的 criteria 与 evaluations。`NodeGate` 与 `ClaimGate` 只是类型化作用域，不是两套协议。 |
 | Artifact | Node 所属输入、输出或分析文件的逻辑引用。 |
 | Attempt | Node 所属的一次有边界的计算或执行记录。重试仍是 Attempt；问题改变时才创建新 Node。 |
-| Compute environment | 绑定 Backend 的命名本地或远端执行环境，用 `compute_environment` 或 `/compute` 查询。 |
+| Compute environment | 绑定 Backend 的命名本地或远端执行环境，用 `Job Runtime platform configuration` 或 `/compute` 查询。 |
 | Claim relation | Claim 之间的有向关系，例如支持、冲突或依赖。 |
 | ChangeSet | 通过 `research_change` 提交的一组显式 map 操作，由 Research State 一次校验并提交一个 revision。 |
 | Review | 隔离的建议性评估，由 Root 把决定记录回 map。 |

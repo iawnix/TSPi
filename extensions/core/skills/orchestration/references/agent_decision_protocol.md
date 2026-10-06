@@ -8,7 +8,7 @@ storage. Keep those responsibilities separate.
 Read the smallest useful `research_read` result:
 
 ```text
-summary -> map -> detail/locate -> artifacts/capabilities/runs
+summary -> map -> detail/locate -> evidence
 ```
 
 State the question, the current uncertainty, the Node that owns the work, and
@@ -65,11 +65,11 @@ to execute in the same turn. Monitor `next_run` is only an operational wake-up.
 Review is an isolated advisory assessment and never writes the map. Give it
 only the Claim and registered Artifacts it needs. It cannot mutate Claims,
 Nodes, Findings, Gates, choose a method, launch/cancel Compute, or serve as
-evidence by itself. Answer it through `review_respond`, then record Root's
+evidence by itself. Answer it through `research_interpretation`, then record Root's
 accepted, rejected, or qualified interpretation with ordinary map operations.
 
 `analysis_run` is a separate registered deterministic analysis boundary. It
 requires an exact catalog capability/version, an existing open Node, and
 role-to-array lists of registered Artifact IDs. It does not select an
 execution environment, create a Claim/Finding, or run a scheduler lifecycle;
-use `compute_run` for auditable local/remote calculations. Light workspaces use the same Native lifecycle with an operational execution scope.
+use `job_start/job_status/job_collect` for auditable local/remote calculations. Light workspaces use the same Native lifecycle with an operational execution scope.

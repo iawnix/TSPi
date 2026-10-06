@@ -55,14 +55,5 @@ export function create_app_server_client({ base_url, fetch_impl = globalThis.fet
     turn_submit: (payload) => request("turn_submit", payload),
     research_turn: (payload) => request("research_turn", payload),
     research_change: (payload) => request("research_change", payload),
-    tool_describe: (payload) => request("tool_describe", payload),
-    tool_invoke: (payload) => request("tool_invoke", payload),
-    compute_run: (payload) => request("compute_run", payload),
-    compute_cancel: (payload) => request("compute_cancel", payload),
-    capability_catalog: (payload = {}) => request("capability_catalog", payload),
-    capability_readiness: (payload = {}) => request("capability_readiness", payload),
-    capability_execute: (payload = {}) => request("capability_execute", payload),
-    compute_catalog: (payload = {}) => request("compute_catalog", payload),
-    compute_readiness: (payload = {}) => request("compute_readiness", payload),
   });
 }

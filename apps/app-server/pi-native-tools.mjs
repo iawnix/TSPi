@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, rmdir, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -11,9 +11,8 @@ import { createPublicToolAliases, createPublicToolContracts } from "../../packag
 import { boundWorkspaceRoot } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
 import { wrapToolWithEnvelope } from "../../packages/agent-runtime/host-api/tool-envelope.mjs";
 import { checkpointFollowUp } from "../../packages/agent-runtime/host-api/lifecycle.mjs";
-import { execute_provider } from "../../packages/agent-runtime/providers/dispatcher.mjs";
 import { createNotifyTool } from "./pi-native-notify.mjs";
-import { readWorkspaceManifest, readWorkspaceMode } from "./workspace-mode-tools.mjs";
+import { readWorkspaceManifest } from "./workspace-mode-tools.mjs";
 import {
   executeFilesystemResearchCommand,
   isFilesystemResearchWorkspace,
@@ -27,64 +26,18 @@ import {
 export { createNotifyTool } from "./pi-native-notify.mjs";
 
 const require = createRequire(import.meta.url);
-const { beginActivity, completeActivity, failActivity, recoverRunningActivities, findActivityByIdentity } = require(
+const { beginActivity, completeActivity, failActivity, findActivityByIdentity } = require(
   "../../packages/agent-runtime/agent-core/activity-journal.cjs",
 );
 const { analysisRequest, analysisRequestSummary, validateAnalysisResult } = require(
   "../../packages/agent-runtime/artifacts/analysis-contract.cjs",
 );
-const {
-  validateCreatedRenderOutput,
-  validateCreatedReportPackage,
-  validateRenderRequest,
-  validateReportRequest,
-} = require("../../packages/agent-runtime/artifacts/request-contract.cjs");
 const executeFile = promisify(execFile);
-const { nodeControlArguments } = require("../../packages/agent-runtime/artifacts/node-control.cjs");
-
-async function runFirstPartyProvider(extension, providerId, input, parameters, context, signal, timeout_ms = 300_000) {
-  const extensionRoot = resolve(new URL(`../../extensions/${extension}/`, import.meta.url).pathname);
-  const descriptor = JSON.parse(await readFile(join(extensionRoot, "descriptors", `${providerId}.json`), "utf8"));
-  const result = await execute_provider({
-    descriptor,
-    provider_id: providerId,
-    entry: join(extensionRoot, "providers", `${extension}_provider.py`),
-    input,
-    parameters,
-    context,
-    python: nativePython(),
-    timeout_ms,
-    signal,
-  });
-  if (result.status !== "succeeded") throw new Error(result.diagnostics?.[0]?.message || `${providerId} provider failed`);
-  return result.result && typeof result.result === "object" ? { ...result.result, outputs: result.outputs, provenance: result.provenance } : result;
-}
-
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
 const NATIVE_COMMANDS = createCommandService({ execute: executeNativeCommand });
 
-async function readNativeCapabilityCatalog(options, root, signal) {
-  const host = options?.nativeCapabilityHost || options?.native_capability_host;
-  if (host && typeof host.catalog === "function") {
-    return { schema_version: "ts-capability-catalog/1", capabilities: host.catalog() };
-  }
-  return NATIVE_COMMANDS.execute("compute.capabilities", root, {}, signal);
-}
-
 export function readResearchLiveness(cwd, signal) {
   return NATIVE_COMMANDS.execute("research.liveness", cwd, {}, signal);
-}
-
-class RenderExecutionError extends Error {
-  constructor(failure) {
-    const detail = lastDiagnosticLine(failure.stderr_tail)
-      || failure.diagnostics[0]
-      || "no backend diagnostic was returned";
-    const status = failure.returncode === null ? "" : ` (exit ${failure.returncode})`;
-    super(`${failure.backend} failed${status}: ${detail}`);
-    this.name = failure.stage === "composition" ? "RenderCompositionError" : "RenderBackendError";
-    this.backendFailure = failure;
-  }
 }
 
 export function createStateTool(options = {}) {
@@ -93,50 +46,10 @@ export function createStateTool(options = {}) {
     async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
       const mode = params.mode || "map";
       const root = boundWorkspaceRoot(params, toolContext);
-      if (params.capabilityKind !== undefined && mode !== "capabilities") {
-        throw new Error(`research_read mode=${mode} does not accept capability selectors`);
-      }
-      if (mode === "artifacts") {
-        return toolResult(await NATIVE_COMMANDS.execute("compute.artifacts", root, { nodeId: params.nodeRef }, context?.abortSignal));
-      }
-      if (mode === "capabilities") {
-        if (!params.capabilityKind) throw new Error("research.read mode=capabilities requires capabilityKind=compute or analysis (tool research_read)");
-        if (params.capabilityKind === "compute") {
-          const mode = await readWorkspaceMode(root);
-          const native = await readNativeCapabilityCatalog(options, root, context?.abortSignal);
-          const capabilities = (native.capabilities || []).filter((item) => item?.kind === "compute");
-          return toolResult({
-            protocol_version: "compute_catalog_1",
-            workspace_mode: mode,
-            catalog: capabilities,
-            capabilities,
-          });
-        }
-        if (params.capabilityKind === "analysis") {
-          const selector = params.query?.split("@");
-          if (selector && (selector.length > 2 || !selector[0] || (selector.length === 2 && !selector[1]))) {
-            throw new Error("analysis query must be <capability> or <capability>@<version>");
-          }
-          const args = selector
-            ? ["resolve-analysis-capability", "--root", root, "--capability", selector[0], "--version", selector[1] || "1"]
-            : ["analysis-capabilities", "--root", root];
-          return toolResult(await runJsonCli(packageScript("compute.py"), args, root, context?.abortSignal));
-        }
-        throw new Error("research.read mode=capabilities requires capabilityKind=compute or analysis (tool research_read)");
-      }
-      if (mode === "runs") return toolResult(await NATIVE_COMMANDS.execute("compute.runs", root, {}, context?.abortSignal));
       if (mode === "decisions") {
         return toolResult(await NATIVE_COMMANDS.execute("research.decisions", root, {
           claimId: params.claimId,
           limit: params.limit,
-        }, context?.abortSignal));
-      }
-      if (mode === "storage") {
-        if (params.storageOperation !== undefined && params.storageOperation !== "status") {
-          throw new Error("research.storage supports only operation=status");
-        }
-        return toolResult(await NATIVE_COMMANDS.execute("research.storage", root, {
-          operation: params.storageOperation || "status",
         }, context?.abortSignal));
       }
       const command = `research.${mode}`;
@@ -633,123 +546,11 @@ async function executeNativeCommand({ command, root, params, signal }) {
   return runCanonicalApi(command, root, commandArguments(command, params), signal);
 }
 
-async function resolveArtifacts(root, artifactIds, signal) {
-  const raw = await runJsonCli(
-    packageScript("compute.py"),
-    ["resolve-artifacts", "--root", root, ...artifactIds.flatMap((artifactId) => ["--artifact-id", artifactId])],
-    root,
-    signal,
-    60_000,
-  );
-  if (raw.schema_version !== "ts-artifact-resolution/2" || !Array.isArray(raw.artifacts)) {
-    throw new Error("artifact resolver returned an invalid result");
-  }
-  return raw.artifacts;
-}
-
-async function resolveArtifactByRef(root, ref, signal) {
-  const raw = await runJsonCli(
-    packageScript("compute.py"),
-    ["list-artifacts", "--root", root],
-    root,
-    signal,
-    60_000,
-  );
-  if (raw.schema_version !== "ts-artifact-catalog/3" || !Array.isArray(raw.artifacts)) {
-    throw new Error("artifact catalog returned an invalid result");
-  }
-  const matches = raw.artifacts.filter((item) => item?.path === ref);
-  if (matches.length !== 1) throw new Error(`render output could not be bound to one artifact ID: ${ref}`);
-  return matches[0];
-}
-
 function toolResult(result) {
   return {
     content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     details: { result },
   };
-}
-
-function expectedReportRefs(packageRef) {
-  return {
-    package_ref: packageRef,
-    report_ref: `${packageRef}/final_report.md`,
-    context_ref: `${packageRef}/report_context.json`,
-    email_summary_ref: `${packageRef}/email_summary.md`,
-    assets_ref: `${packageRef}/assets`,
-    manifest_ref: `${packageRef}/package_manifest.json`,
-  };
-}
-
-function assertReportBuilderPaths(root, refs, raw) {
-  const keys = {
-    package_ref: "package_dir",
-    report_ref: "report",
-    context_ref: "context",
-    email_summary_ref: "email_summary",
-    assets_ref: "assets_dir",
-    manifest_ref: "manifest",
-  };
-  for (const [key, field] of Object.entries(keys)) {
-    if (typeof raw[field] !== "string" || resolve(raw[field]) !== resolve(root, refs[key])) {
-      throw new Error(`report builder returned an unexpected ${key}`);
-    }
-  }
-}
-
-function requireReportAssetRefs(value, packageRef, expectedCount) {
-  if (!Array.isArray(value) || value.length !== expectedCount) {
-    throw new Error("report builder returned an invalid asset_refs list");
-  }
-  return value.map((item) => {
-    if (typeof item !== "string" || !item.startsWith(`${packageRef}/assets/`)) {
-      throw new Error("report builder returned an unsafe asset ref");
-    }
-    return item;
-  });
-}
-
-function requireDigest(value, label) {
-  if (typeof value !== "string" || !/^sha256:[0-9a-f]{64}$/.test(value)) {
-    throw new Error(`${label} is missing or invalid`);
-  }
-  return value;
-}
-
-function renderBackendError(value) {
-  const raw = value && typeof value === "object" ? value : {};
-  const stage = ["environment", "request", "xyzrender", "composition"].includes(String(raw.failure_stage))
-    ? raw.failure_stage
-    : "unknown";
-  const returncode = typeof raw.returncode === "number" && Number.isInteger(raw.returncode)
-    ? raw.returncode
-    : null;
-  const stderr = typeof raw.stderr === "string" ? raw.stderr.slice(-8192) : "";
-  const diagnostics = Array.isArray(raw.diagnostics)
-    ? raw.diagnostics
-      .filter((item) => typeof item === "string")
-      .slice(0, 16)
-      .map((item) => item.slice(0, 512))
-    : [];
-  const command = Array.isArray(raw.command)
-    ? raw.command
-      .filter((item) => typeof item === "string")
-      .slice(0, 32)
-      .map((item) => item.slice(0, 512))
-    : [];
-  return new RenderExecutionError({
-    backend: stage === "composition" ? "panel_compositor" : "xyzrender",
-    stage,
-    returncode,
-    stderr_tail: stderr,
-    diagnostics,
-    command,
-  });
-}
-
-function lastDiagnosticLine(value) {
-  const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  return (lines.at(-1) || "").slice(0, 1000);
 }
 
 export function cliErrorMessage(stderr) {
@@ -788,10 +589,6 @@ function requireNativeWrites(toolName, toolContext) {
   }
 }
 
-function addStateArg(args, flag, value) {
-  if (typeof value === "string" && value) args.push(flag, value);
-}
-
 function sha256Text(value) {
   return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
 }
@@ -814,9 +611,7 @@ function serializeStructureComparisonParameters(value) {
 }
 
 function deterministicFailure(activityId, activityRef, kind, operation, nodeRefs, error) {
-  const backendFailure = error instanceof RenderExecutionError
-    ? { backend_failure: error.backendFailure }
-    : {};
+  const backendFailure = {};
   return {
     schema_version: "ts-deterministic-activity-failure/1",
     activity_id: activityId,

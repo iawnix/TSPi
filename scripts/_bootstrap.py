@@ -44,13 +44,6 @@ def register_first_party_providers(package_root: str | Path) -> None:
         return module
 
     chemical_source = root / "extensions" / "chemical" / "providers" / "chemical_compute_provider.py"
-    script_source = root / "extensions" / "script" / "providers" / "script_compute_provider.py"
-    if not chemical_source.is_file() and not script_source.is_file():
-        return
-    if script_source.is_file():
-        script_module = load(script_source, "script_compute")
-        from research_compute.extension_registry import register_extension_provider
-        register_extension_provider(script_module.script_compute_provider, provider_id="script", replace=True)
     if not chemical_source.is_file():
         return
     module = load(chemical_source, "chemical_compute")

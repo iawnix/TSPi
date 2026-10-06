@@ -94,7 +94,7 @@ function require_workspace_ready(manifest) {
  * Compose the App Server with the installation-owned Pi Session Port. Tests
  * may inject a deterministic session double at this boundary.
  */
-export function create_app_server({ pi_session_port, workspace_port = null, workspace_catalog = null, turn_router = null, kernel_port = null, native_capability_host = null, native_compute = null, session_store = null } = {}) {
+export function create_app_server({ pi_session_port, workspace_port = null, workspace_catalog = null, turn_router = null, kernel_port = null, session_store = null } = {}) {
   const runtime = create_pi_session_port(pi_session_port);
   const workspace = workspace_port === null ? null : create_workspace_port(workspace_port);
   if (session_store !== null) {
@@ -111,14 +111,6 @@ export function create_app_server({ pi_session_port, workspace_port = null, work
     for (const method of ["admit_workspace", "apply_change", "checkpoint", "turn"]) {
       if (typeof kernel_port?.[method] !== "function") throw new TypeError(`kernel_port is missing ${method}()`);
     }
-  }
-  if (native_capability_host !== null) {
-    for (const method of ["catalog", "readiness"]) {
-      if (typeof native_capability_host?.[method] !== "function") throw new TypeError(`native_capability_host is missing ${method}()`);
-    }
-  }
-  if (native_compute !== null && typeof native_compute?.run !== "function") {
-    throw new TypeError("native_compute is missing run()");
   }
   let closed = false;
 
@@ -391,124 +383,6 @@ export function create_app_server({ pi_session_port, workspace_port = null, work
       });
     },
 
-    async describe_tools(request = {}) {
-      ensure_open();
-      const manifest = require_workspace_ready(await resolve_workspace(request));
-      return {
-        workspace_id: manifest.workspace_id,
-        workspace_mode: manifest.workspace_mode,
-        capabilities: native_capability_host ? native_capability_host.catalog() : [],
-      };
-    },
-
-    async invoke_tool(request) {
-      ensure_open();
-      if (request === null || typeof request !== "object" || Array.isArray(request)) {
-        throw new TypeError("tool request must be an object");
-      }
-      throw Object.assign(new Error("generic capability invocation was removed; use Native compute_run"), {
-        code: "js_provider_path_removed",
-      });
-    },
-
-    async run_compute(request) {
-      ensure_open();
-      if (!native_compute) throw new Error("native_compute_not_configured");
-      if (request === null || typeof request !== "object" || Array.isArray(request)) {
-        throw new TypeError("compute request must be an object");
-      }
-      const manifest = require_workspace_ready(await resolve_workspace(request));
-      return native_compute.run({
-        ...request,
-        workspace_id: manifest.workspace_id,
-        workspace_root: manifest.workspace_root,
-        workspace_mode: manifest.workspace_mode,
-      });
-    },
-
-    async cancel_compute(request) {
-      ensure_open();
-      if (!native_compute || typeof native_compute.cancel !== "function") {
-        throw new Error("native_compute_not_configured");
-      }
-      if (request === null || typeof request !== "object" || Array.isArray(request)) {
-        throw new TypeError("compute cancel request must be an object");
-      }
-      const manifest = require_workspace_ready(await resolve_workspace(request));
-      return native_compute.cancel({
-        ...request,
-        workspace_id: manifest.workspace_id,
-        workspace_root: manifest.workspace_root,
-        workspace_mode: manifest.workspace_mode,
-      });
-    },
-
-    async capability_catalog() {
-      ensure_open();
-      if (!native_capability_host) throw new Error("native_capability_host_not_configured");
-      return {
-        protocol_version: native_capability_host.protocol_version,
-        catalog: native_capability_host.catalog(),
-      };
-    },
-
-    async capability_readiness(request = {}) {
-      ensure_open();
-      if (!native_capability_host) throw new Error("native_capability_host_not_configured");
-      if (request === null || typeof request !== "object" || Array.isArray(request)) {
-        throw new TypeError("capability readiness request must be an object");
-      }
-      for (const field of ["manifest_provider_id", "capability_id"]) {
-        if (request[field] !== undefined && (typeof request[field] !== "string" || request[field].length === 0)) {
-          throw new TypeError(`${field} must be a non-empty string`);
-        }
-      }
-      return {
-        protocol_version: native_capability_host.protocol_version,
-        readiness: await native_capability_host.readiness({
-          ...(request.manifest_provider_id === undefined ? {} : { manifest_provider_id: request.manifest_provider_id }),
-          ...(request.capability_id === undefined ? {} : { capability_id: request.capability_id }),
-        }),
-      };
-    },
-
-    async capability_execute(request = {}) {
-      ensure_open();
-      if (!native_capability_host || typeof native_capability_host.execute !== "function") throw new Error("provider_dispatcher_not_configured");
-      if (request === null || typeof request !== "object" || Array.isArray(request)) throw new TypeError("capability execute request must be an object");
-      return native_capability_host.execute(request);
-    },
-
-    // Mode-neutral compute catalog/readiness ports. These are the public
-    // calculation API backed by the Native Python registry.
-    async compute_catalog(request = {}) {
-      ensure_open();
-      if (!native_capability_host) throw new Error("native_capability_host_not_configured");
-      const catalog = native_capability_host.catalog().filter((item) => item?.kind === "compute");
-      return { protocol_version: "compute_catalog_1", catalog, capabilities: catalog };
-    },
-
-    async compute_readiness(request = {}) {
-      ensure_open();
-      if (!request || typeof request !== "object" || Array.isArray(request)) throw new TypeError("compute readiness request must be an object");
-      for (const field of ["manifest_provider_id", "capability_id", "environment_id"]) {
-        if (request[field] !== undefined && (typeof request[field] !== "string" || request[field].length === 0)) {
-          throw new TypeError(`${field} must be a non-empty string`);
-        }
-      }
-      if (request.execution_kind !== undefined && request.execution_kind !== "local" && request.execution_kind !== "remote") {
-        throw new TypeError("execution_kind must be local or remote");
-      }
-      if (!native_capability_host) throw new Error("native_capability_host_not_configured");
-      const readiness = await native_capability_host.readiness({
-        ...(request.manifest_provider_id === undefined ? {} : { manifest_provider_id: request.manifest_provider_id }),
-        ...(request.capability_id === undefined ? {} : { capability_id: request.capability_id }),
-        ...(request.environment_id === undefined ? {} : { environment_id: request.environment_id }),
-        ...(request.execution_kind === undefined ? {} : { execution_kind: request.execution_kind }),
-      });
-      return { protocol_version: "compute_readiness_1", readiness };
-    },
-
     async attach_session(request) {
       ensure_open();
       const { session_id, workspace_id } = require_session_request(request);
@@ -586,7 +460,7 @@ export function create_app_server({ pi_session_port, workspace_port = null, work
       // of the Pi runtime. Close them before tearing down the runtime, while
       // still attempting every resource so a single provider cannot leak the
       // remaining services.
-      for (const resource of [native_compute, native_capability_host, kernel_port]) {
+      for (const resource of [kernel_port]) {
         if (typeof resource?.close !== "function") continue;
         try {
           await resource.close();

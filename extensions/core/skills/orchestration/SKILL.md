@@ -56,11 +56,11 @@ scientific instruction.
 Use Review for a bounded counterargument, not as a source of canonical state.
 Use `analysis_run` only for an exact capability/version discovered from the
 analysis catalog; it is a registered deterministic local analysis and has no
-calculation lifecycle. Use `compute_run` as the calculation lifecycle entry
+calculation lifecycle. Use `job_start/job_status/job_collect` as the calculation lifecycle entry
 point for auditable local/remote work: it owns the Attempt, Artifact, Monitor,
 and launch lifecycle. Every calculation is recorded under a ResearchNode Attempt.
 Review is advisory: it cannot write the ResearchMap, mutate Claim/Node status,
-choose a method, or launch/cancel Compute. After `review_respond`, Root records
+choose a method, or launch/cancel Compute. After `research_interpretation`, Root records
 the accepted, rejected, or qualified interpretation through ordinary
 `research_change` operations.
 Use the same `launch`, `inspect`, `finalize`, and `cancel` compute lifecycle for

@@ -1,53 +1,20 @@
-# Pi 运行时适配器
+# Pi Runtime Adapter
 
-Pi 是 TSPi 的传输与交互 Host。Host 将 Native 计算生命周期路由到确定性的 Research State 与 Compute service；Pi 读取规范 ResearchMap。
+Pi 提供唯一的模型与工具循环。TSPi 在此基础上增加 Research State 上下文、Job
+Runtime 和 Artifact Runtime，不创建 Compute 或 Review 子 Agent。
 
-## 公共接口
-
-Root 会话使用：
+Root 使用：
 
 ```text
-research_read         有边界地读取 ResearchMap 与计算状态
-research_change        提交一个原子 ResearchMap ChangeSet
-research_strategy      记录或评审 Claim strategy
-research_interpretation 解释已完成 Attempt
-research_checkpoint    用 disposition 结束当前 Research Turn
-system_prompt          查看有效 prompt 来源
-compute_environment   本地与远端计算环境目录
-compute_run          一个有边界的计算生命周期
-execution_dispatch      暂停或恢复一个 Node 的新任务派发
-analysis_run       已注册的本地分析
-create_mol_structure           Node 所属的结构 Artifact
-artifact_import         Node 所属的输入 Artifact
-artifact_compare       确定性结构比较
-artifact_render        已注册的可视化 Artifact
-report_build        绑定 revision 的报告包
-review_run             建议性 Review
-review_respond         Root 对已完成 Review 的处置
-
-`notify_send` 是 Host/Monitor 拥有的投递 capability，不在 Root Agent 的默认工具清单中。
+research_read
+research_change
+research_strategy
+research_interpretation
+research_checkpoint
+job_start / job_status / job_collect / job_cancel / job_reconcile
+artifact_register / artifact_create / artifact_read / artifact_derive / artifact_link
 ```
 
-Slash command 调用同一个命令服务：`/research`、`/compute`、`/runs` 和
-`/debug prompt`。它们是交互语法，不是另一套 API。
-
-## Root 会话
-
-对话不是科学状态。解释之前的回合前先读取当前 `ResearchMap`；写入后使用返回的 revision
-或 `research_read mode=summary`。research extension 可以在 prompt 中加入有边界的摘要，但不能
-写入 map。方法选择、结果解释与停止决策仍由 Root Agent 负责。
-
-`research_read` 模式包括 `map`、`summary`、`context`、`liveness`、`detail`、`locate`、
-`validate`、`operations`、`decisions`、`evidence`、`storage`、`artifacts`、`capabilities`
-和 `runs`。`capabilityKind=compute`
-列出计算 capability；`capabilityKind=analysis` 解析分析方法。使用 `kind` 和 `id` 聚焦
-一个 map 对象，不要为 ResearchMap 发明额外的上下文词汇。
-
-## 隔离
-
-Compute 与 Review 子会话只接收有边界的类型化任务包，无权编辑 ResearchMap。Compute
-动作回执、调度器状态和解析器输出属于运行记录；Review 建议也只具有建议性。Root 检查
-Artifact 后，通过 `research_change` 应用科学解释。
-
-前台 UI 与 `/runs` 浏览器都是只读展示。TS Web 直接读取规范序列化 ResearchMap，不会
-重新构建一份图或保存平行快照。
+领域 Skill 描述命令构造和输出解释方式。Root 使用普通 Pi 工具组合这些步骤，并
+把证据写入 Research State。Job 完成只代表执行收据存在；必须先把原始输出注册为
+Artifact，再解释为 Finding。

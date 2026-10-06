@@ -32,13 +32,11 @@ Node 的状态与结果独立于 Claim 状态表达研究进展。
 
 ChangeSet 的 `type` 必须是
 `references/decision_contract.zh-CN.md` 中的 canonical 操作名，不要编造领域专用操作名。
-例如，机理假设使用 `create_claim`，有界机理研究使用 `create_node`。当
-`research_read` 使用 `mode=capabilities` 时，必须同时提供
-`capabilityKind=compute` 或 `capabilityKind=analysis`；这两个字段是条件必填项，不是可随意
-省略的标签。
+例如，机理假设使用 `create_claim`，有界机理研究使用 `create_node`。Research State
+不是 capability catalog；方法说明属于当前 Domain Skill。
 
 Turn 内优先使用 `context` 或 `liveness`；只有当前问题需要时才扩展到 `detail`、`decisions`、
-`evidence`、`storage` 或 `capabilities`。Attempt 与 Artifact 属于运行证据；在 Interpretation、
+`evidence` 或 `storage`。Attempt 与 Artifact 属于运行证据；在 Interpretation、
 Finding 或 Gate 引用前，先登记 manifest 和类型化 link。
 
 Research State 会在提交一个新 revision 前校验引用、反向索引、图的无环性、状态、Gate 规则

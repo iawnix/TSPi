@@ -1,244 +1,30 @@
-# Compute Subagent And Typed Actions
+# Job Runtime
 
-`compute_run` delegates one bounded operational lifecycle. Root chooses
-the chemistry, method, ResearchNode, inputs, parameters, and execution target. The
-host resolves the immutable intent and exposes only pre-bound zero-argument
-tools to the isolated child.
-
-The public lifecycle is closed:
+TSPi uses the generic Job Runtime for long-running work. A Domain Skill explains
+how to construct the command, inputs, expected outputs, and interpretation
+criteria. Root executes that workflow with the Job and Artifact tools.
 
 ```text
-launch   prepare -> submit
-inspect  status -> optional tail
-finalize collect -> parse
-cancel   cancel
+job_probe -> job_start -> job_status -> job_collect
+                         └-> job_cancel
+                         └-> job_reconcile
 ```
 
-There is no public `prepare`, `submit`, `status`, `tail`, `collect`, or `parse`
-operation. Those are private deterministic actions. The child cannot change
-their arguments, call another tool, or choose a scientific method.
+`job_start` accepts an arbitrary argv vector and a workspace-relative working
+directory. It creates a durable receipt and captures stdout and stderr. It does
+not select a scientific method, parse output, validate a Claim, or create a
+Finding automatically.
 
-## Contents
+Use `job_status` while a process is running. Use `job_reconcile` after a monitor
+wake or service restart when the receipt state is uncertain. Use `job_collect`
+only after the job reaches a terminal state. Register each meaningful output with
+`artifact_register`; create a Finding with `research_change` and cite the
+Artifact as a source reference.
 
-- [Discover Inputs](#discover-inputs)
-- [Launch](#launch)
-- [Inspect](#inspect)
-- [Finalize](#finalize)
-- [Cancel](#cancel)
-- [Retry And Recalculation](#retry-and-recalculation)
-- [Result Authority](#result-authority)
+A Skill may describe Gaussian, xTB, PySCF, or any other program. The Skill may
+also provide scripts and validation references. Those instructions are data for
+Root's normal Pi loop; they are not provider descriptors or capability gates.
 
-## Discover Inputs
-
-Read:
-
-```text
-research_read mode=artifacts
-research_read mode=capabilities capabilityKind=compute
-```
-
-The artifact catalog supplies logical `art_...` IDs, paths, SHA-256, owners,
-and compatible roles. The capability catalog supplies the capability ID/version,
-input/output schemas, and parameter shape. Native preflight binds the concrete
-input/output roles and parser contract. Catalog presence does not prove live
-software or environment health.
-
-Every compute catalog entry uses the cross-runtime identity fields
-`capability_id` and `capability_version`:
-
-```json
-{
-  "capability_id": "crest.conformer_search",
-  "capability_version": "1",
-  "kind": "compute",
-  "input_schema": {"type": "object"},
-  "output_schema": {"type": "object"},
-  "execution_routes": ["native_lifecycle"]
-}
-```
-
-`input_schema` and `output_schema` are the catalog wire fields. A native
-calculation descriptor may additionally expose `input_roles`, `output_roles`,
-`parameter_schema`, and `parsers` in the private preflight binding; those
-fields are not required on the public catalog descriptor. The launch
-`inputArtifacts[].inputRole` values must match the roles returned by the
-selected capability's preflight binding.
-
-The calculation intent request uses the semantic fields `capability` and
-`capabilityVersion` shown in the launch example below. They are resolved from
-the catalog identity; do not invent a second name or infer registration from
-an executable, Skill text, or directory listing. A descriptor with only the
-`native_lifecycle` route must use the `operation=launch` form, including for a
-local target.
-
-`compute_catalog` and the compute branch of `research_read` return
-`protocol_version="compute_catalog_1"` with `catalog` (and the equivalent
-`capabilities` array). `compute_readiness` returns
-`protocol_version="compute_readiness_1"` and a `readiness` array. Each entry is
-bound to the requested capability and, when selected, environment and execution
-kind; `state=unknown` or `deferred` is an explicit uncertainty, not a launch
-authorization.
-
-Before selecting an execution target, call `compute_readiness` with the exact
-`capability_id`, `environment_id`, and `execution_kind` (`local` or `remote`).
-An unqualified readiness query describes only the Host default and is not proof
-that a named remote environment is usable.
-
-If a fresh workspace has no suitable input, start a non-closed ResearchNode. Use
-`create_mol_structure` for one connected SMILES or `artifact_import` for
-bounded Gaussian, XYZ, or xTB control text. The host returns the logical ID;
-callers never create an `art_*` value or workspace path.
-
-## Launch
-
-Remote execution uses the lifecycle form below (`operation=launch`) for the
-same capability ID. There is no direct capability invocation path: local and
-remote targets both create and execute the same Native calculation intent.
-
-Launch accepts the complete semantic request and an installation-owned environment selector:
-
-```json
-{
-  "operation": "launch",
-  "nodeId": "node_1",
-  "purpose": "Optimize and characterize one TS candidate.",
-  "capability": "gaussian",
-  "capabilityVersion": "1",
-  "attemptKind": "primary",
-  "inputArtifacts": [
-    {"inputRole": "gjf", "artifactId": "art_..."}
-  ],
-  "parameters": {"method": "M062X", "basis": "6-31G(d)"},
-  "execution": {"environment": "cluster_1w"}
-}
-```
-
-The Host resolves execution kind, scheduler resources, paths, commands, and
-resource defaults from the selected environment before Python validation.
-
-Before the child starts, the host creates and validates a new
-`ts-calculation-intent/7`, binds the current Node contract, resolves paths and
-digests, allocates expected artifacts, and freezes the scientific and execution
-bindings. The child then calls prepare and, only after known prepare success,
-submit. Submit is single-use. An unknown effect ends the lifecycle with
-reconciliation required.
-
-Keep the owning ResearchNode open until the Attempt reaches `parsed`, `failed`,
-or `stopped` and Root has recorded any needed scientific interpretation.
-`completed` only says the scheduler/program ended; collection and parsing are
-still pending. `collected` still requires parsing. A created or prepared intent
-has made no external change and does not by itself prevent abandoning the Node.
-
-When `launch` returns after submission, including an uncertain result, end the turn. The App Server Monitor polls
-the bound Attempt and queues a `next_run` wake when its state changes. Do not call
-`bash sleep`, `wait`, or a manual status loop while waiting; use `inspect` after
-the Monitor wake or an explicit later request.
-
-The public `compute_run` launch request has no `dry_run` switch. A launch always
-creates and validates an immutable intent, prepares the selected Backend, and
-executes the bounded `prepare -> submit` lifecycle for the selected target.
-Preparation-only inspection belongs to the Host readiness/preflight surfaces;
-it must not be represented as a successful calculation Attempt. The host still
-rejects arbitrary shell and keeps every command bound to the validated
-capability and immutable calculation intent.
-
-
-## Inspect
-
-Inspect polls one bound intent and may read one declared artifact tail:
-
-```json
-{
-  "operation": "inspect",
-  "nodeId": "node_1",
-  "intentId": "calc_1",
-  "tailArtifact": "gaussian.out",
-  "tailLines": 80
-}
-```
-
-Status always runs first. The child may submit the result immediately or call
-tail once when diagnostics are useful. Tail is restricted to declared artifact
-basenames and at most 500 lines. Scheduler state, program state, and output
-availability remain separate fields.
-
-## Finalize
-
-Finalize collects an allowed output set and parses one collected artifact:
-
-```json
-{
-  "operation": "finalize",
-  "nodeId": "node_1",
-  "intentId": "calc_1",
-  "artifacts": ["gaussian.out", "program_status.json"],
-  "artifactRef": "nodes/node_1/attempts/calc_1/outputs/remote/gaussian.out"
-}
-```
-
-Parse runs only after collection completes. Collection verifies the immutable
-artifact manifest; a remote collection does not depend on scheduler history.
-Parser facts are operational output. `program_status` reports whether the executable reached its
-normal terminus; `task_validation` separately reports whether the requested
-capability produced its required outputs and convergence evidence. A normally
-terminated program can therefore have `task_validation.status=incomplete`.
-Root must verify the primary artifacts before recording individual semantic
-Findings through `research_change`.
-
-## Cancel
-
-Cancel targets one bound intent:
-
-```json
-{"operation":"cancel","nodeId":"node_1","intentId":"calc_1"}
-```
-
-The action is single-use. Known success is idempotent. An ambiguous cancel must
-be reconciled and is never replayed by the child.
-
-## Retry And Recalculation
-
-Every launch declares `attemptKind`. `primary` forbids a source. Use
-`attemptKind=retry` for a new Attempt only when capability, input artifact
-digests, and parameters are unchanged. Use `attemptKind=recalculation` when one of
-those scientific bindings changes but the calculation still answers the same
-Node question and principal deliverable. Both forms cite one source Attempt in
-the same Node:
-
-```json
-{
-  "operation": "launch",
-  "nodeId": "node_1",
-  "attemptKind": "recalculation",
-  "sourceAttempt": {
-    "intentId": "calc_1",
-    "reason": "Check whether the stationary-point conclusion survives the method change."
-  },
-  "parameters": {"method": "wB97XD", "basis": "def2SVP"}
-}
-```
-
-The Research State derives `changed_fields`; callers do not declare their own diff.
-Preserve the source Attempt. A method variation used to answer the same bounded
-question is a recalculation. An independent method branch, changed hypothesis,
-new endpoint question, or different principal deliverable starts a dependent
-ResearchNode and consumes prior outputs through artifact bindings, never through
-cross-Node Attempt lineage.
-
-Do not confuse a new retry Attempt with a control-action replay. A typed
-pre-effect `retry_same_submission` result permits repeating the same submit
-action on the existing intent and allocates no new `calc_*`. A new
-`attemptKind=retry` represents a separate execution of the unchanged scientific
-intent after that prior lifecycle has ended safely.
-
-## Result Authority
-
-The model fills only `summary` and `limitations` in `compute_result`. The
-host derives action outcome, program state, artifacts, facts, provenance, and
-reconciliation flags from the typed action journal. A structured tool return is
-not proof of execution success. Program failure is not Claim contradiction, and
-parser failure is not program failure.
-
-If a submit or cancel action loses its typed client result, it is recorded as
-`client_result_unknown` and requires reconciliation. This does not replace the
-more precise retryable pre-submit upload result returned by the compute runtime.
+A successful exit code is an execution fact only. It does not establish that a
+calculation converged, that a parser accepted the output, or that a Claim is
+supported.

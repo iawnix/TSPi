@@ -66,12 +66,6 @@ export function commandArguments(command, params = {}) {
     kind: "--kind",
     id: "--id",
     name: "--name",
-    capabilityId: "--capability-id",
-    capability_id: "--capability-id",
-    environmentId: "--environment-id",
-    environment_id: "--environment-id",
-    executionKind: "--execution-kind",
-    execution_kind: "--execution-kind",
     query: "--query",
     claimId: "--claim-id",
     recordType: "--record-type",
@@ -94,11 +88,6 @@ export function parseSlashCommand(name, input = "") {
   if (!definition) throw new Error(`unsupported slash command: /${name}`);
   const tokens = String(input).trim().split(/\s+/).filter(Boolean);
   if (name === "research") return parseResearchSlash(tokens, definition.usage);
-  if (name === "compute") return parseComputeSlash(tokens, definition.usage);
-  if (name === "runs") {
-    if (tokens.length) throw usageError(definition.usage);
-    return Object.freeze({ command: "compute.runs", params: Object.freeze({}) });
-  }
   if (tokens.length !== 1 || tokens[0] !== "prompt") throw usageError(definition.usage);
   return Object.freeze({ command: "client.debug.prompt", params: Object.freeze({}) });
 }
@@ -128,16 +117,6 @@ function parseResearchSlash(tokens, usage) {
   throw usageError(usage);
 }
 
-function parseComputeSlash(tokens, usage) {
-  const action = tokens[0] || "list";
-  if (action === "list" && tokens.length <= 1) {
-    return Object.freeze({ command: "compute.environments", params: Object.freeze({}) });
-  }
-  if (action === "show" && tokens.length === 2) {
-    return validateCommandInvocation("compute.environment", { name: tokens[1] });
-  }
-  throw usageError(usage);
-}
 
 function usageError(usage) {
   const error = new Error(`Usage: ${usage}`);

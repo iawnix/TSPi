@@ -10,7 +10,6 @@ import type { WorkspaceCatalog } from "../../packages/agent-core/workspace_catal
 import type { TurnRouter } from "../../packages/agent-core/turn_router.mjs";
 import type { ResearchStatePort } from "../../packages/research-state-bridge/ports.mjs";
 import type { SessionStore } from "../../packages/agent-core/session_store.mjs";
-import type { NativeCapabilityHost } from "./compute-config-capability-host.mjs";
 
 export const APP_SERVER_PROTOCOL_VERSION: "research_agent_app_server_1";
 
@@ -34,36 +33,8 @@ export interface AppServer {
   submit_turn(request: Record<string, unknown>): Promise<Record<string, unknown>>;
   submit_research_turn(request: Record<string, unknown>): Promise<Record<string, unknown>>;
   apply_research_change(request: Record<string, unknown>): Promise<Record<string, unknown>>;
-  describe_tools(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
-  invoke_tool(request: Record<string, unknown>): Promise<Record<string, unknown>>;
-  run_compute(request: Record<string, unknown>): Promise<Record<string, unknown>>;
-  cancel_compute(request: Record<string, unknown>): Promise<Record<string, unknown>>;
-  capability_catalog(): Promise<{
-    readonly protocol_version: string;
-    readonly catalog: readonly Record<string, unknown>[];
-  }>;
-  capability_readiness(request?: {
-    readonly manifest_provider_id?: string;
-    readonly capability_id?: string;
-  }): Promise<{
-    readonly protocol_version: string;
-    readonly readiness: readonly Record<string, unknown>[];
-  }>;
-  capability_execute(request: Record<string, unknown>): Promise<Record<string, unknown>>;
-  compute_catalog(request?: Record<string, unknown>): Promise<{
-    readonly protocol_version: string;
-    readonly catalog: readonly Record<string, unknown>[];
-    readonly capabilities: readonly Record<string, unknown>[];
-  }>;
-  compute_readiness(request?: {
-    readonly manifest_provider_id?: string;
-    readonly capability_id?: string;
-    readonly environment_id?: string;
-    readonly execution_kind?: "local" | "remote";
-  }): Promise<{
-    readonly protocol_version: string;
-    readonly readiness: readonly Record<string, unknown>[];
-  }>;
+
+
 }
 
 export interface CreateSessionRequest {
@@ -86,11 +57,5 @@ export function create_app_server(options: {
   workspace_catalog?: WorkspaceCatalog | null;
   turn_router?: TurnRouter | null;
   kernel_port?: Pick<ResearchStatePort, "admit_workspace" | "apply_change" | "checkpoint" | "turn"> | null;
-  native_capability_host?: NativeCapabilityHost | null;
-  native_compute?: {
-    readonly run(request: Record<string, unknown>): Promise<Record<string, unknown>>;
-    readonly cancel?(request: Record<string, unknown>): Promise<Record<string, unknown>>;
-    readonly close?(): Promise<void>;
-  } | null;
   session_store?: SessionStore | null;
 }): AppServer;

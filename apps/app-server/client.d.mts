@@ -21,35 +21,6 @@ export interface AppServerClient {
   turn_submit(request: Record<string, unknown>): Promise<Record<string, unknown>>;
   research_turn(request: Record<string, unknown>): Promise<Record<string, unknown>>;
   research_change(request: Record<string, unknown>): Promise<Record<string, unknown>>;
-  tool_describe(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
-  tool_invoke(request: Record<string, unknown>): Promise<Record<string, unknown>>;
-  compute_run(request: Record<string, unknown>): Promise<Record<string, unknown>>;
-  compute_cancel(request: Record<string, unknown>): Promise<Record<string, unknown>>;
-  capability_catalog(request?: Record<string, unknown>): Promise<{
-    readonly protocol_version: string;
-    readonly catalog: readonly Record<string, unknown>[];
-  }>;
-  capability_readiness(request?: {
-    readonly manifest_provider_id?: string;
-    readonly capability_id?: string;
-  }): Promise<{
-    readonly protocol_version: string;
-    readonly readiness: readonly Record<string, unknown>[];
-  }>;
-  compute_catalog(request?: Record<string, unknown>): Promise<{
-    readonly protocol_version: string;
-    readonly catalog: readonly Record<string, unknown>[];
-    readonly capabilities: readonly Record<string, unknown>[];
-  }>;
-  compute_readiness(request?: {
-    readonly manifest_provider_id?: string;
-    readonly capability_id?: string;
-    readonly environment_id?: string;
-    readonly execution_kind?: "local" | "remote";
-  }): Promise<{
-    readonly protocol_version: string;
-    readonly readiness: readonly Record<string, unknown>[];
-  }>;
 }
 
 export function create_app_server_client(options: {

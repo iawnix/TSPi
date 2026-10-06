@@ -7,7 +7,7 @@ Root 负责科学判断，Research State 负责结构有效性与原子存储；
 读取足够回答问题的最小 `research_read` 结果：
 
 ```text
-summary -> map -> detail/locate -> artifacts/capabilities/runs
+summary -> map -> detail/locate -> evidence
 ```
 
 明确问题、当前不确定性、负责该工作的 Node，以及支持拟议变更的来源记录。复用已有 ID。
@@ -52,8 +52,8 @@ Root Agent 可以在该 checkpoint 前执行已声明的计划，但 Host 仍要
 
 Review 是隔离的建议性评估，不能写入 map。只向 Review 提供所需的 Claim 和已登记 Artifact。
 它不能改变 Claim、Node、Finding、Gate，不能选择方法、启动/取消 Compute，也不能单独充当证据。
-通过 `review_respond` 回答后，再使用普通 map operation 记录 Root 接受、拒绝或附带条件的解释。
+通过 `research_interpretation` 回答后，再使用普通 map operation 记录 Root 接受、拒绝或附带条件的解释。
 
 `analysis_run` 是独立的已注册确定性分析边界。它要求目录中的精确 capability/version、已存在且
 未关闭的 Node，以及 role 到已登记 Artifact ID 数组的映射。它不会选择执行环境、创建 Claim/Finding，
-也不会运行调度器生命周期；需要审计的 local/remote 计算使用 `compute_run`。
+也不会运行调度器生命周期；需要审计的 local/remote 计算使用 `job_start/job_status/job_collect`。

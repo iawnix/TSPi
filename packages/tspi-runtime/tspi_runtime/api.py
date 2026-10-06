@@ -34,10 +34,7 @@ COMMAND_DEFINITIONS = {
 RESEARCH_COMMANDS = frozenset(
     command for command, definition in COMMAND_DEFINITIONS.items() if definition.get("domain") == "research"
 )
-COMPUTE_COMMANDS = frozenset(
-    command for command, definition in COMMAND_DEFINITIONS.items() if definition.get("domain") == "compute"
-)
-COMMANDS = RESEARCH_COMMANDS | COMPUTE_COMMANDS
+COMMANDS = RESEARCH_COMMANDS
 
 class CommandError(ValueError):
     """A canonical command request is invalid or cannot be served."""
@@ -177,8 +174,6 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
         raise CommandError(
             f"research.{action} is served by the Host Research State filesystem boundary; use the native command boundary"
         )
-    if command.startswith("compute."):
-        return _compute(command.removeprefix("compute."), root, value)
     raise CommandError(f"unsupported command family: {command}")
 
 
@@ -206,153 +201,3 @@ def _filesystem_decision(root: str | Path, action: str, request: dict[str, Any],
         "record": source,
         "commit": commit,
     }
-
-
-
-def _compute(action: str, root: str | Path, params: dict[str, Any]) -> dict[str, Any]:
-    if action == "environments":
-        return _environment_catalog(detail=False)
-    if action == "environment":
-        name = _string(params, "name")
-        catalog = _environment_catalog(detail=True)
-        item = next((environment for environment in catalog["environments"] if environment["name"] == name), None)
-        if item is None:
-            raise CommandError(f"unknown compute environment: {name}")
-        return {"schema_version": "compute-environment/1", "environment": item}
-    if action == "capabilities":
-        from research_compute.capabilities import calculation_capabilities
-
-        return calculation_capabilities()
-    if action == "readiness":
-        from research_compute.readiness import calculation_readiness
-
-        return calculation_readiness(
-            capability_id=params.get("capability_id"),
-            environment_id=params.get("environment_id"),
-            execution_kind=params.get("execution_kind"),
-        )
-    if action == "artifacts":
-        from research_compute.artifacts import list_calculation_artifacts
-
-        return list_calculation_artifacts(root, node_id=params.get("node_id"))
-    if action == "runs":
-        from research_compute.workspace.operational import runtime_status
-
-        status = runtime_status(root)
-        return {
-            "schema_version": "compute-runs/1",
-            "runs": status.get("agent_runs", []),
-            "attempts": status.get("calculation_attempts", []),
-            "summary": status.get("runtime_summary", {}),
-        }
-    raise CommandError(f"unsupported compute command: {action}")
-
-
-def _environment_catalog(*, detail: bool) -> dict[str, Any]:
-    from research_compute.platforms import EnvironmentBroker, EnvironmentConfigurationError, EnvironmentRequirement, load_config
-
-    try:
-        config = load_config()
-    except EnvironmentConfigurationError as exc:
-        return {
-            "schema_version": "compute-environment-catalog/1",
-            "configured": False,
-            "detail": detail,
-            "error": str(exc),
-            "source": None,
-            "source_digest": None,
-            "catalog_digest": None,
-            "default": None,
-            "environments": [],
-        }
-    source_digest = _file_digest(config.source)
-    environments = []
-    for environment in sorted(config.environments.values(), key=lambda item: item.name):
-        platform = environment.platform
-        item = {
-            "name": environment.name,
-            "kind": environment.kind,
-            "default": environment.name == config.default_environment,
-            # The list read model is intentionally bounded. Installation-owned
-            # command, activation, scratch and environment details never cross
-            # the Agent-facing API boundary.
-            "backends": sorted(environment.backends),
-            "readiness": {
-                "state": "configured",
-                "backend_count": len(environment.backends),
-            },
-            "platform": {
-                "kind": "ssh_torque",
-                "ssh_host": platform.ssh_host,
-                "scheduler": platform.scheduler,
-                "remote_root": platform.remote_root,
-                "allowed_queues": list(platform.allowed_queues),
-                "max_nodes": platform.max_nodes,
-            } if platform else {"kind": "local"},
-        }
-        if detail:
-            # The public environment API is an Agent-facing read model. Keep
-            # installation-owned commands, activation scripts, scratch paths,
-            # and environment values inside the trusted execution boundary;
-            # expose only the broker's opaque binding and bounded readiness.
-            broker = EnvironmentBroker(config)
-            item["backends"] = {
-                backend: broker.bind(
-                    EnvironmentRequirement((backend,), kind=environment.kind),
-                    environment.name,
-                ).public()
-                for backend in sorted(environment.backends)
-            }
-        else:
-            item["platform"] = {"kind": "ssh_torque" if platform else "local"}
-        item["identity_digest"] = sha256_json({
-            "name": item["name"],
-            "kind": item["kind"],
-            "default": item["default"],
-            "backends": sorted(environment.backends),
-            "platform": item["platform"].get("kind"),
-        })
-        environments.append(item)
-    return {
-        "schema_version": "compute-environment-catalog/1",
-        "configured": True,
-        "detail": detail,
-        "source": str(config.source),
-        "source_digest": source_digest,
-        "default": config.default_environment,
-        "catalog_digest": sha256_json({
-            "source_digest": source_digest,
-            "environments": environments,
-        }),
-        "environments": environments,
-    }
-
-
-def _file_digest(path: str | Path) -> str | None:
-    try:
-        digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
-    except (OSError, TypeError):
-        return None
-    return f"sha256:{digest}"
-
-
-def _string(params: dict[str, Any], key: str) -> str:
-    value = params.get(key)
-    if not isinstance(value, str) or not value.strip():
-        raise CommandError(f"{key} must be a non-empty string")
-    return value.strip()
-
-
-def _json_text(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True)
-
-
-__all__ = [
-    "COMMAND_CATALOG",
-    "COMMAND_DEFINITIONS",
-    "COMMANDS",
-    "COMPUTE_COMMANDS",
-    "CommandError",
-    "RESEARCH_COMMANDS",
-    "execute",
-]
