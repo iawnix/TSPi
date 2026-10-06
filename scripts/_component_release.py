@@ -252,6 +252,19 @@ def finalize_release_permissions(root: Path) -> None:
 
 def validate_release_permissions(root: Path) -> None:
     for path in [root, *root.rglob("*")]:
+        # The Pi SDK dependency tree is installed in the installation-owned
+        # runtime cache and exposed to the immutable release through this one
+        # deliberate link.  ``Path.stat`` follows the link and would see the
+        # cache directory's normal writable mode, making an otherwise valid
+        # release impossible to reinstall after the first runtime bind.
+        if path.is_symlink():
+            relative = path.relative_to(root)
+            if relative == Path("agent/node_modules"):
+                target = path.resolve(strict=True)
+                if target.name != "node_modules" or "runtime-cache" not in target.parts:
+                    raise ComponentArchiveError(f"release node_modules link escapes the runtime cache: {path}")
+                continue
+            raise ComponentArchiveError(f"existing release contains an unexpected symbolic link: {path}")
         if stat.S_IMODE(path.stat().st_mode) & 0o222:
             raise ComponentArchiveError(f"existing release contains a writable path: {path}")
 

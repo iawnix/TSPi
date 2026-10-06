@@ -169,7 +169,11 @@ startupPromise = (async () => {
 })();
 await startupPromise;
 
-if (process.env.TSPI_MONITOR_DISABLED !== "1") supervise("monitor", "apps/app-server/pi-monitor-worker.mjs", [
+// The monitor worker is optional at the package boundary.  Older releases
+// carried a Python monitor CLI; the generic Job Runtime release may omit it.
+// Do not put the Host into a restart loop when that optional component is not
+// present.  Host session traffic remains available either way.
+if (process.env.TSPI_MONITOR_DISABLED !== "1" && existsSync(join(packageRoot, "apps/agent-cli/monitor.py"))) supervise("monitor", "apps/app-server/pi-monitor-worker.mjs", [
   "--workspace-root", workspaceRoot, "--host-socket", socketPath, "--state-root", stateRoot,
 ]);
 if (process.env.TSPI_LINK_URL || process.env.TSPI_LINK_HOST_TOKEN_FILE) {

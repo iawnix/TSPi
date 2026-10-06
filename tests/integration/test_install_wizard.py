@@ -770,7 +770,7 @@ def test_app_server_service_is_one_installation_host(tmp_path: Path) -> None:
     assert f"WorkingDirectory={root}" in unit
     assert f'ExecStart="{root / "ResearchAgentServer"}"' in unit
     assert "Environment=TSPI_SYSTEMD_HOST=1" in unit
-    assert "Environment=TSPI_SERVER_EXTENSIONS=core-tools,chemical-tools" in unit
+    assert "TSPI_SERVER_EXTENSIONS" not in unit
     assert 'Environment="XDG_RUNTIME_DIR=' in unit
     assert f'PI_CODING_AGENT_DIR={root / ".pi/agent"}' in unit
     assert 'ReadWritePaths="/run/user/' in unit
