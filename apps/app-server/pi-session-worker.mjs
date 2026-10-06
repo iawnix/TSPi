@@ -24,6 +24,7 @@ import { createEvidenceRuntime } from "./evidence-runtime.mjs";
 import { filterExtensionToolNames, filterWorkspaceTools } from "./workspace-mode-tools.mjs";
 import { create_python_kernel_bridge } from "../../packages/research-state-bridge/python_kernel_bridge.mjs";
 import { create_research_state_port, RESEARCH_STATE_WRITE_PRINCIPAL } from "../../packages/research-state-bridge/ports.mjs";
+import { createTransactionCoordinator } from "../../packages/agent-runtime/transactions/coordinator.mjs";
 
 export {
   createChangeTool, createNotifyTool, createStateTool,
@@ -131,13 +132,14 @@ async function createTspiHarness(databasePath, options) {
   const loadedSkills = await loadTspiSkills(executionEnvs.env({ cwd }));
   const commandBridge = create_python_kernel_bridge({ workspace_root: cwd, workspace_id: workspaceId });
   const researchKernel = create_research_state_port(commandBridge);
+  const transactionCoordinator = createTransactionCoordinator({ bridge: commandBridge, workspaceRoot: cwd });
   const jobRuntime = createExecutionRuntime({ bridge: commandBridge });
   const artifactRuntime = createEvidenceRuntime({ bridge: commandBridge });
   const loadedExtensions = await loadServerExtensions({
     packageRoot: loadedSkills.packageRoot,
     reservedToolNames: ["read", "write", "bash", "edit", "system_prompt"],
     requiredToolNames: ["research_read"],
-    factoryOptions: { workspaceRoot: cwd, commandBridge, researchKernel, jobRuntime, artifactRuntime },
+    factoryOptions: { workspaceRoot: cwd, commandBridge, researchKernel, transactionCoordinator, jobRuntime, artifactRuntime },
   });
   const installed = await loadInstalledServerExtensions({
     extensions: loadedSkills.installedExtensions.extensions,

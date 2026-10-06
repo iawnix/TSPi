@@ -239,6 +239,9 @@ test("Native Host workspace/create writes the canonical manifest protocol", asyn
   assert.equal(researchManifest.state, "ready");
   assert.equal(context.lifecycle_state, "admitted");
   assert.equal(liveness.state, "admitted");
+  const attached = await client.request("workspace/attach", { workspace_id: "created-research" });
+  assert.equal(attached.workspace.workspace_id, "created-research");
+  assert.equal(attached.workspace.state, "ready");
   const repeated = await client.request("workspace/create", { workspace_id: "created-research", workspace_mode: "research", request_id: "create-workspace-3" });
   assert.equal(repeated.workspace.workspace_id, "created-research");
 });

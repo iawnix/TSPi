@@ -20,15 +20,16 @@ Host admission。已有框架工作区省略 `--mode` 时使用 manifest 中记�
 ## 运行边界
 
 ```text
-Pi App Server / SessionWorker  <->  TSPi Host  <->  TS Phone/Web
-       durable Harness、历史、工具          Host RPC       Link/HTTP
-                 ^                         ^
-             Pi 原生 TUI                 Monitor
+TS Phone/Web ── Link/HTTP ──┐
+Pi 原生 TUI ─ Unix/SSH ─────┼─> TSPi Agent Server / Host API
+Monitor ─ Host RPC ─────────┘       ├─ Root Agent Session
+                                    └─ Harness / Pi App Server / SessionWorker
 ```
 
-Pi Harness worker 拥有 agent loop、模型、工具、transcript 和 SQLite durable lane。Host
-负责路由、认证、幂等回执、scheduler lease、会话发现以及 Monitor supervisor。Pi 原生
-TUI、Phone、Monitor 都是同一个 lane 的客户端，不会启动第二个 agent loop。
+Host 是 Agent Server 的 API 和宿主层，负责路由、认证、幂等回执、scheduler lease、会话发现
+以及 Monitor supervisor；Harness worker 在同一个 Agent Server 内拥有 agent loop、模型、工具、
+transcript 和 SQLite durable lane。Pi 原生 TUI、Phone、Monitor 都是同一个 lane 的客户端，
+不会启动第二个 agent loop。
 
 Host client 的 RPC transport 可以是本机 Unix socket，也可以通过 SSH 启动远端
 `tspi-host-proxy`，把同一份 `tspi-host/1` NDJSON 通过 SSH stdin/stdout 转发到远端私有

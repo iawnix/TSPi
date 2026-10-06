@@ -21,20 +21,20 @@ a workspace cannot be converted between modes.
 
 ## Runtime shape
 
-There is one runtime owner and several clients:
+There is one Agent Server owner and several clients:
 
 ```text
-Pi App Server / SessionWorker  <->  TSPi Host  <->  TS Phone/Web
-       durable Harness + transcript       Host RPC       Link/HTTP
-                 ^                         ^
-          Pi native TUI                Monitor
+TS Phone/Web -- Link/HTTP --+      TSPi Agent Server / Host API
+Pi native TUI -- Unix/SSH ---+-->   Root Agent Session
+Monitor -- Host RPC ---------+      Harness / Pi App Server / SessionWorker
 ```
 
-The Pi Harness worker owns the agent loop, model, tools, transcript, and
-durable SQLite lane. The Host owns routing, authentication, idempotency receipts,
-scheduler leases, session discovery, and the Monitor supervisor. The native Pi
-TUI, Phone, and Monitor all address that same lane; none starts another agent
-loop.
+The Host is the Agent Server API and hosting layer. It owns routing, authentication,
+idempotency receipts, scheduler leases, session discovery, transactions, and
+the Monitor supervisor. The Pi Harness worker inside that same Agent Server
+owns the Root Agent loop, model, tools, transcript, and durable SQLite lane.
+The native Pi TUI, Phone, and Monitor all address that same lane; none starts
+another agent loop.
 
 The Host client's RPC transport can be a local Unix socket or an SSH-launched
 `tspi-host-proxy`, which forwards the same `tspi-host/1` NDJSON over SSH

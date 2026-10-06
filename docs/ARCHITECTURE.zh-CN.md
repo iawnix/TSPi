@@ -4,16 +4,18 @@
 
 [English](ARCHITECTURE.md) | [简体中文](ARCHITECTURE.zh-CN.md)
 
-TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装目录运行一个 Host，
-服务 workspace root 下的直接子工作区；每个活动 session 由固定版本 Pi App Server 中
-一个 `SessionWorker`/`durable Harness` lane 拥有。终端、Phone、Monitor 都是客户端，不会
-启动第二个 agent loop。Host 是 control plane，不是第二个 TUI。
+TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装目录运行一个 Agent Server；
+其中 Host 是 API、会话和事务宿主，Root Agent/Harness 负责真正的 prompt loop、工具和模型。
+每个活动 session 由固定版本 Pi App Server 中一个 `SessionWorker`/`durable Harness` lane
+拥有。终端、Phone、Monitor 都是客户端，不会启动第二个 agent loop。Host 是 Agent 的宿主层，
+不是另一个 Root Agent，也不是第二个 TUI。
 
 ## 组件职责
 
-- `apps/app-server/` 提供 `tspi-host/1` control plane、统一 Research Agent HTTP server、
-  安装级 Pi App Server owner、native remote client launcher、Monitor worker、browser adapter 和历史迁移工具。固定
-  源码的 Pi worker 加载 TSPi tools、skills、hooks、策略和 system prompt。
+- `apps/app-server/` 提供 Agent Server：`tspi-host/1` API、Root Agent session 宿主、统一
+  Research Agent HTTP server、安装级 Pi App Server/Harness owner、native remote client
+  launcher、Monitor worker、browser adapter 和历史迁移工具。固定源码的 Pi worker 加载
+  TSPi tools、skills、hooks、策略和 system prompt。
 - `services/tspi-link-relay/` 负责 TSPi Link 注册、配对、设备授权和不透明帧转发；它不拥有
   workspace/session/research，也不解析 Host RPC。
 - `packages/research-state/` 管理规范 `ResearchMap`、admission、引用完整性、验证、revision 和事务；`packages/research-memory/` 构建 bounded context 与 session projection；`packages/research-compute/` 管理计算 intent、readiness 和生命周期。共享 Link 协议与 backpressure codec 位于 `packages/tspi-link/`，`services/tspi-link-relay/` 只负责服务组合。
@@ -29,10 +31,10 @@ TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装�
   `apps/app-server/tspi-browser-gateway.mjs` 适配器附着到已有 Host session，不会创建第二个 Worker。
 - TS Phone 是独立 Flutter 客户端，通过 TSPi Link 连接 Host。
 
-Pi App Server 独占 session directory、对话历史、模型状态、prompt loop 和 worker lane。
-Host 负责路由、认证、幂等回执、scheduler lease 和客户端订阅。Pi 原生 TUI、Phone、
-Monitor 都连接同一个 lane，因此共享 `read`、`write`、`bash` 和包内工具；传输方式不是
-权限角色。
+Pi App Server/Harness 独占 session directory、对话历史、模型状态、prompt loop 和 worker
+lane；Host 是同一个 Agent Server 中对外的 API、路由、认证、幂等回执、scheduler lease、
+事务和客户端订阅层。Pi 原生 TUI、Phone、Monitor 都连接同一个 lane，因此共享 `read`、
+`write`、`bash` 和包内工具；传输方式不是权限角色。
 
 Host RPC 与底层传输解耦。安装内客户端使用私有 Unix socket；远程终端客户端可以通过
 SSH 启动 `tspi-host-proxy`，由 proxy 将 stdin/stdout 字节转发到远端 Host 与 Pi App

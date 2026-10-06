@@ -353,7 +353,9 @@ export async function start_host_http_adapter({ socketPath, host = "127.0.0.1", 
       } else throw Object.assign(new Error("Use GET /health_read or POST /rpc"), { statusCode: 404 });
       write_json(response, 200, { result }, id);
     } catch (error) {
-      write_json(response, error.statusCode || error_status(error_code(error)), { error: { code: error.code || error_code(error), message: error_detail(error) } }, id);
+      write_json(response, error.statusCode || error_status(error_code(error)), {
+        error: { schema: HTTP_ERROR_SCHEMA, code: error.code || error_code(error), message: error_detail(error) },
+      }, id);
     }
   });
   server.once("close", () => peer.close());

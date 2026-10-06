@@ -20,7 +20,7 @@ const MONITOR_ID = /^mon_[a-f0-9]{24}$/u;
 const MONITOR_EVENT_ID = /^evt_[a-f0-9]{32}$/u;
 const SESSION_EVENT_HISTORY_LIMIT = 256;
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const capabilities = ["workspace.list", "workspace.create", "session.list", "session.read", "session.create", "session.resume", "session.attach", "session.detach", "session.remove", "input.send", "input.status", "turn.interrupt", "models.list", "model.select", "monitor.list", "monitor.status", "monitor.enable", "monitor.disable"];
+const capabilities = ["workspace.list", "workspace.create", "workspace.attach", "session.list", "session.read", "session.create", "session.resume", "session.attach", "session.detach", "session.remove", "input.send", "input.status", "turn.interrupt", "models.list", "model.select", "monitor.list", "monitor.status", "monitor.enable", "monitor.disable"];
 
 /** Owns routing and durable acceptance records for the Native Pi Harness. */
 export async function startTspiHost(options) {
@@ -296,6 +296,12 @@ export async function startTspiHost(options) {
       throw protocolError("bridge_not_used", "Legacy Pi bridge is removed; connect through the Native Pi Harness protocol");
     }
     if (method === "workspace/list") return { workspaces: await listWorkspaces() };
+    if (method === "workspace/attach") {
+      const root = await workspace(params.workspace_id);
+      const manifest = await readWorkspaceManifestAt(root);
+      if (!manifest) throw protocolError("workspace_not_found", `Workspace does not exist: ${params.workspace_id}`);
+      return { workspace: { workspace_id: manifest.workspace_id, name: manifest.workspace_id, root, workspace_mode: manifest.workspace_mode, state: manifest.state } };
+    }
     if (method === "workspace/create") {
       const root = await workspace(params.workspace_id, { allowMissing: true });
       return deduplicate(method, params.request_id, cleanRequest(params), async () => {

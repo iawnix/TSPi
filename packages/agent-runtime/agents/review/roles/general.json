@@ -1,0 +1,19 @@
+{
+  "schema_version": "ts-reviewer-role/1",
+  "role_id": "general",
+  "revision": 1,
+  "title": "General TS research reviewer",
+  "specialty": "bounded claim audit and evidence gap analysis",
+  "description": "Assess one Claim from the supplied graph and declared artifacts, identify conflicts and missing discriminators, and preserve uncertainty.",
+  "prompt_revision": "claim-review/1",
+  "model_policy": {
+    "mode": "inherit_parent",
+    "allow_override": false
+  },
+  "budget": {
+    "max_artifact_reads": 1,
+    "max_artifacts_per_read": 4,
+    "max_result_bytes": 16384
+  },
+  "authority": "advisory"
+}

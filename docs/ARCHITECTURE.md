@@ -5,17 +5,18 @@ The normative unified Research Harness lifecycle is defined in [ADR 0006](adr/00
 [English](ARCHITECTURE.md) | [简体中文](ARCHITECTURE.zh-CN.md)
 
 TSPi packages scientific skills and runtime adapters on top of Pi. One
-installation Host serves all direct-child workspaces, while each active
-workspace has one pinned Pi `SessionWorker`/`durable Harness` lane. The terminal,
-Phone, and Monitor are clients of that lane; none owns a second agent loop or
-replacement UI.
+installation runs one Agent Server: its Host is the API, session, and
+transaction host, while the Root Agent/Harness owns the prompt loop, model,
+and tools. Each active workspace has one pinned Pi `SessionWorker`/`durable
+Harness` lane. The terminal, Phone, and Monitor are clients of that lane; none
+owns a second agent loop or replacement UI.
 
 ## Component Responsibilities
 
-- `apps/app-server/` contains the `tspi-host/1` control plane, the unified
-  Research Agent HTTP server, installation Pi App Server owner, native
-  remote-client launcher, Monitor worker, browser adapter, and history
-  migration tools. The pinned Pi worker loads TSPi's
+- `apps/app-server/` contains the Agent Server: the `tspi-host/1` API, Root
+  Agent session host, transaction boundary, installation Pi App Server/Harness
+  owner, native remote-client launcher, Monitor worker, browser adapter, and
+  history migration tools. The pinned Pi worker loads TSPi's
   worker facet (tools, skills, hooks, policy, and system prompt).
 - `services/tspi-link-relay/` owns TSPi Link enrollment, pairing, device
   authorization, and opaque frame forwarding. It has no workspace, session, or
@@ -49,10 +50,10 @@ replacement UI.
   that contract.
 - TS Phone is an independent Flutter client that connects through TSPi Link.
 
-Pi's App Server owns the session directory, transcript history, model state,
-prompt loop, and worker lane. The Host owns routing, authentication,
-idempotency receipts, scheduler leases, and client subscriptions. The native
-Pi TUI, Phone, and Monitor address the same lane and therefore see the same
+Pi's App Server/Harness owns the session directory, transcript history, model
+state, prompt loop, and worker lane. The Host is the same Agent Server's API,
+routing, authentication, idempotency, scheduler lease, transaction, and client
+subscription layer. The native Pi TUI, Phone, and Monitor address the same lane and therefore see the same
 `read`, `write`, `bash`, and package tool inventory; transport is not an
 authorization role.
 

@@ -18,6 +18,7 @@ export const RETIRED_WORKSPACE_FILES = Object.freeze([
 ]);
 export const RESEARCH_CONTEXT_COLLECTIONS = Object.freeze([
   "phases", "claims", "nodes", "findings", "gates", "claim_relations",
+  "claim_assessments", "claim_revisions",
   "attempts", "artifacts", "evidence_links", "lifecycle_actions",
   "strategy_plans", "strategy_reviews", "attempt_interpretations",
 ]);
