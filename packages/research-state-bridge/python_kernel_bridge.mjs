@@ -20,6 +20,9 @@ export const KERNEL_BRIDGE_METHODS = Object.freeze([
   "apply_change",
   "checkpoint",
   "turn",
+  "transaction_get",
+  "transaction_recover",
+  "transaction_commit_files",
 ]);
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -130,6 +133,9 @@ export function create_research_state_bridge({ workspace_root, workspace_id, tra
     apply_change: (request = {}) => invoke("apply_change", request),
     checkpoint: (request = {}) => invoke("checkpoint", request),
     turn: (request = {}) => invoke("turn", request),
+    transaction_get: (request = {}) => invoke("transaction_get", request),
+    transaction_recover: (request = {}) => invoke("transaction_recover", request),
+    transaction_commit_files: (request = {}) => invoke("transaction_commit_files", request),
     close: async () => {
       if (typeof channel.close === "function") await channel.close();
     },
@@ -142,16 +148,18 @@ import sys
 from pathlib import Path
 
 root_dir = Path.cwd().resolve()
-for _source_root in ("tspi-runtime", "tspi-foundation", "tspi-provider-runtime", "research-state", "research-memory", "research-compute"):
+for _source_root in ("tspi-runtime", "tspi-foundation", "tspi-provider-runtime", "research-state", "research-memory", "research-compute", "job-runtime", "artifact-store"):
     sys.path.insert(0, str(root_dir / "packages" / _source_root))
 
 try:
     from research_state.agent_workspace import dispatch as dispatch_agent_workspace, has_state_files
+    from research_state.transactions import TransactionCoordinator
     from research_memory.service import install_state_projection_writer
     install_state_projection_writer()
 except Exception as agent_workspace_import_error:
     dispatch_agent_workspace = None
     has_state_files = None
+    TransactionCoordinator = None
     _agent_workspace_import_error = agent_workspace_import_error
 
 
@@ -182,6 +190,22 @@ def dispatch(method, payload):
             raise ValueError("command params must be an object")
         from tspi_runtime.api import execute
         return execute(command, root, params)
+    if method == "transaction_get":
+        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
+        request_id = payload.get("request_id")
+        if not isinstance(request_id, str) or not request_id: raise ValueError("request_id is required")
+        return TransactionCoordinator(root).get(request_id) or {"state": "missing", "request_id": request_id}
+    if method == "transaction_recover":
+        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
+        return TransactionCoordinator(root).recover()
+    if method == "transaction_commit_files":
+        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
+        request_id = payload.get("request_id")
+        operation = payload.get("operation", "agent.operation")
+        writes = payload.get("writes", {})
+        if not isinstance(request_id, str) or not request_id: raise ValueError("request_id is required")
+        if not isinstance(writes, dict): raise ValueError("writes must be an object")
+        return TransactionCoordinator(root).commit_files(request_id, operation, payload.get("payload", {}), writes=writes, result=payload.get("result"))
     if dispatch_agent_workspace is None:
         raise RuntimeError("cannot import research_state.agent_workspace: " + str(_agent_workspace_import_error))
     return dispatch_agent_workspace(root, method, payload)
@@ -197,7 +221,7 @@ for line in sys.stdin:
         method = request.get("method")
         if not isinstance(request_id, str) or not request_id:
             raise ValueError("bridge request id is required")
-        if method not in {"execute_command", "read_context", "read_liveness", "admit_workspace", "apply_change", "checkpoint", "turn"}:
+        if method not in {"execute_command", "read_context", "read_liveness", "admit_workspace", "apply_change", "checkpoint", "turn", "transaction_get", "transaction_recover", "transaction_commit_files"}:
             raise ValueError("unsupported kernel bridge method: " + str(method))
         result = dispatch(method, _object(request.get("payload", {}), "bridge payload"))
         print(json.dumps({"id": request_id, "ok": True, "result": result}, ensure_ascii=False, separators=(",", ":")), flush=True)

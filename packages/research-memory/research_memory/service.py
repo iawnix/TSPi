@@ -79,6 +79,16 @@ class FileProjectionWriter:
         root = Path(root)
         payload = _projection_payload(context, liveness or {}, revision=revision, previous=_read_memory(root))
         path = root / "memory" / "index.json"
+        # Research State's TransactionCoordinator captures this projection in
+        # the same redo record as context/liveness/manifest.  Outside a state
+        # transaction, write_json retains the existing atomic writer behavior.
+        try:
+            from research_state.transactions import write_json
+        except ImportError:
+            write_json = None
+        if write_json is not None:
+            write_json(path, payload)
+            return payload
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, temporary = tempfile.mkstemp(prefix=".index.", suffix=".tmp", dir=path.parent)
         try:

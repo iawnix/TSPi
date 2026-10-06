@@ -361,7 +361,9 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
         if args.purge_config:
             managed.extend([
                 root / ".pi/tspi",
-                root / ".pi/research-agent/server.json",
+                # Remove the retired HTTP Agent Server state as a unit. It is
+                # installation-owned and must not survive a complete purge.
+                root / ".pi/research-agent",
                 root / ".pi/app-server-host/server-id",
                 root / ".pi/app-server-host/link.json",
                 root / ".pi/app-server-host/host.token",

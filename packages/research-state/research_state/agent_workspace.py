@@ -164,6 +164,13 @@ def _read_json(path: Path, label: str) -> dict[str, Any]:
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
+    # TransactionCoordinator captures canonical State writes until its durable
+    # commit decision.  Its own redo writer calls this function only after the
+    # decision is durable, so this delegation cannot recurse.
+    from .transactions import write_json
+    if _transaction_staging_active():
+        write_json(path, value)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
@@ -183,30 +190,20 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
 
 @contextmanager
 def _workspace_lock(root: Path) -> Iterator[None]:
-    root.mkdir(parents=True, exist_ok=True)
-    lock_path = root / ".research-agent.lock.d"
-    started = time.monotonic()
-    while True:
-        try:
-            lock_path.mkdir(mode=0o700)
-            owner = lock_path / "owner"
-            owner.write_text(f"{os.getpid()}\n{time.time()}\n", encoding="utf-8")
-            break
-        except FileExistsError:
-            if time.monotonic() - started > 300:
-                raise AgentWorkspaceError(f"research_workspace_lock_timeout: {root}")
-            time.sleep(0.01)
+    # Research State, compute and transaction writers share one advisory flock.
+    # This replaces the old mkdir lock, which could not coordinate with the
+    # execution writer and left stale directories after a crash.
+    from .transactions import TransactionCoordinator
     try:
-        yield
-    finally:
-        try:
-            owner.unlink()
-        except FileNotFoundError:
-            pass
-        try:
-            lock_path.rmdir()
-        except FileNotFoundError:
-            pass
+        with TransactionCoordinator(root).locked():
+            yield
+    except OSError as exc:
+        raise AgentWorkspaceError(f"research_workspace_lock_failed: {root}") from exc
+
+
+def _transaction_staging_active() -> bool:
+    from .transactions import _STAGING
+    return _STAGING.get() is not None
 
 
 def _state_paths(root: str | Path) -> tuple[Path, Path]:
@@ -1524,6 +1521,10 @@ def read_liveness(root: str | Path) -> dict[str, Any]:
         return _liveness_projection(context, liveness)
 
 
+from .transactions import state_transaction
+
+
+@state_transaction("research.admit_workspace")
 def admit_workspace(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, Any]:
     request = request or {}
     with _workspace_lock(Path(root).expanduser().resolve()):
@@ -1617,6 +1618,7 @@ def admit_workspace(root: str | Path, request: dict[str, Any] | None = None) -> 
     }
 
 
+@state_transaction("research.apply_change")
 def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, Any]:
     request = request or {}
     with _workspace_lock(Path(root).expanduser().resolve()):
@@ -1673,6 +1675,7 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
     }
 
 
+@state_transaction("research.checkpoint")
 def checkpoint(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, Any]:
     request = request or {}
     with _workspace_lock(Path(root).expanduser().resolve()):

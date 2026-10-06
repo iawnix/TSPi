@@ -7,6 +7,9 @@ export const KERNEL_BRIDGE_METHODS: readonly [
   "apply_change",
   "checkpoint",
   "turn",
+  "transaction_get",
+  "transaction_recover",
+  "transaction_commit_files",
 ];
 
 export class KernelBridgeError extends Error {
@@ -29,6 +32,9 @@ export interface ResearchStateBridge {
   apply_change(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   checkpoint(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   turn(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  transaction_get(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  transaction_recover(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  transaction_commit_files(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   close(): Promise<void>;
 }
 
