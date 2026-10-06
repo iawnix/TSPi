@@ -142,11 +142,6 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
     const isRead = PURE_READ_EFFECTS.has(effect);
     const isDecisionWrite = RESEARCH_DECISION_EFFECTS.has(effect);
     const isExecution = EXECUTION_EFFECTS.has(effect);
-    // `compute_run` is one public tool with two distinct lifecycle roles. A
-    // follow-up inspect/finalize/cancel acts on an existing Attempt and must be
-    // available while that Attempt is waiting for external reconciliation. The
-    // launch operation remains an execution side effect and is still blocked.
-    const existingAttemptOperation = isExistingAttemptOperation(toolName, args);
     if (lifecycle === "blocked" || disposition === "blocked") {
       // The Research State permits a checkpoint to replace a blocked disposition. A
       // checkpoint is represented by lifecycle_write plus the checkpoint
@@ -181,7 +176,7 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
       // turn. Waiting for a remote Attempt remains a hard stop.
       const executionReady = lifecycle === "decision_needed"
         && durableLiveness?.execution_ready === true;
-      if ((isExecution || (!isRead && !isDecisionWrite)) && !executionReady && !existingAttemptOperation) {
+      if ((isExecution || (!isRead && !isDecisionWrite)) && !executionReady) {
         return {
           accepted: false,
           code: lifecycle === "waiting_external" ? "research_waiting_external" : "research_decision_required",
@@ -248,9 +243,7 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
     // disposition repair is the exception: after checkpoint the Host may ask
     // for one read-only orientation before accepting a strategy or checkpoint.
     const phaseBeforeTool = state.phase_before_tool || state.lifecycle_phase;
-    const nextPhase = isExistingAttemptOperation(toolName, args) && args?.operation === "inspect"
-      ? "execute"
-      : phase === "orient"
+    const nextPhase = phase === "orient"
       ? (phaseBeforeTool === "orient" || phaseBeforeTool === "wake" || phaseBeforeTool === "checkpoint" ? "advance" : phaseBeforeTool)
       : phase === "advance" || phase === "prepare"
         ? "prepare"
@@ -360,10 +353,6 @@ export function checkpointFollowUp(status) {
   return lifecycleActionFollowUp(status);
 }
 
-function isExistingAttemptOperation(toolName, args) {
-  if (toolName !== "compute_run") return false;
-  return ["inspect", "finalize", "cancel"].includes(args?.operation);
-}
 
 export function lifecycleActionFollowUp(status) {
   if (!status || typeof status !== "object" || Array.isArray(status)) return undefined;

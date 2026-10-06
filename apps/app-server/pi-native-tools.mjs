@@ -295,69 +295,6 @@ export function createCheckpointLivenessHook({
   };
 }
 
-export function createEnvironmentTool() {
-  return {
-    ...TOOL_CONTRACTS.environment,
-    async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
-      const mode = params.mode || "list";
-      const root = boundWorkspaceRoot(params, toolContext);
-      if (mode === "show" && !params.name) throw new Error("environment show requires name");
-      const result = await NATIVE_COMMANDS.execute(
-        mode === "show" ? "compute.environment" : "compute.environments",
-        root,
-        mode === "show" ? { name: params.name } : {},
-        context?.abortSignal,
-      );
-      return toolResult(result);
-    },
-  };
-}
-
-export function createComputeCatalogTool(options = {}) {
-  return {
-    ...TOOL_CONTRACTS.computeCatalog,
-    async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
-      const root = boundWorkspaceRoot(params, toolContext);
-      const mode = await readWorkspaceMode(root);
-      const native = await readNativeCapabilityCatalog(options, root, context?.abortSignal);
-      const catalog = (native.capabilities || []).filter((item) => item?.kind === "compute");
-      return toolResult({ protocol_version: "compute_catalog_1", catalog, capabilities: catalog });
-    },
-  };
-}
-
-export function createComputeReadinessTool(options = {}) {
-  return {
-    ...TOOL_CONTRACTS.computeReadiness,
-    async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
-      const root = boundWorkspaceRoot(params, toolContext);
-      const mode = await readWorkspaceMode(root);
-      const nativeHost = options?.nativeCapabilityHost || options?.native_capability_host;
-      const native = await readNativeCapabilityCatalog(options, root, context?.abortSignal);
-      const catalog = (native.capabilities || []).filter((item) => item?.kind === "compute"
-        && (params.capability_id === undefined || item.capability_id === params.capability_id));
-      let readiness;
-      if (nativeHost && typeof nativeHost.readiness === "function") {
-        readiness = await nativeHost.readiness({
-          ...(params.capability_id === undefined ? {} : { capability_id: params.capability_id }),
-          ...(params.environment_id === undefined ? {} : { environment_id: params.environment_id }),
-          ...(params.execution_kind === undefined ? {} : { execution_kind: params.execution_kind }),
-        });
-      } else {
-        const result = await NATIVE_COMMANDS.execute("compute.readiness", root, {
-          ...(params.capability_id === undefined ? {} : { capability_id: params.capability_id }),
-          ...(params.environment_id === undefined ? {} : { environment_id: params.environment_id }),
-          ...(params.execution_kind === undefined ? {} : { execution_kind: params.execution_kind }),
-        }, context?.abortSignal);
-        readiness = result.readiness;
-      }
-      const allowed = new Set(catalog.map((item) => `${item.capability_id}@${item.capability_version}`));
-      readiness = readiness.filter((item) => allowed.has(`${item.capability_id}@${item.capability_version}`));
-      return toolResult({ protocol_version: "compute_readiness_1", readiness });
-    },
-  };
-}
-
 export function createMoleculeStructureTool() {
   return {
     ...TOOL_CONTRACTS.moleculeStructure,
@@ -460,246 +397,6 @@ export function createAnalyzeTool() {
   };
 }
 
-export function createDispatchTool() {
-  return {
-    ...TOOL_CONTRACTS.dispatch,
-    async execute(_toolCallId, params, _onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("execution_dispatch", toolContext);
-      const root = boundWorkspaceRoot(params, toolContext);
-      const result = await runJsonCli(packageScript("compute.py"), ["node-dispatch", "--root", root, ...nodeControlArguments(params)], root, context?.abortSignal);
-      return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
-    },
-  };
-}
-
-export function createImportTool() {
-  return {
-    ...TOOL_CONTRACTS.importArtifact,
-    async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("artifact_import", toolContext);
-      const root = boundWorkspaceRoot(params, toolContext);
-      return runDeterministicArtifact({
-        activityIdentity: buildActivityIdentity("artifact_import", _toolCallId, params),
-        root,
-        kind: "artifact_import",
-        operation: "import",
-        nodeId: params.nodeId,
-        requestSummary: {
-          format: params.format,
-          input_name: params.inputName,
-          submitted_sha256: sha256Text(params.content),
-          submitted_size_bytes: Buffer.byteLength(params.content, "utf8"),
-          charge: params.charge,
-          multiplicity: params.multiplicity,
-        },
-        progressLabel: `TS Artifact import: ${params.inputName}`,
-        temporaryPrefix: "tspi-native-artifact-import-",
-        command: "import-artifact",
-        request: {
-          schema_version: "ts-artifact-import-request/2",
-          node_id: params.nodeId,
-          format: params.format,
-          input_name: params.inputName,
-          content: params.content,
-          charge: params.charge,
-          multiplicity: params.multiplicity,
-        },
-        resultSchema: "ts-artifact-import-result/1",
-        invalidResultMessage: "artifact importer returned an invalid result",
-        onUpdate,
-        signal: context?.abortSignal,
-      });
-    },
-  };
-}
-
-export function createRenderTool() {
-  return {
-    ...TOOL_CONTRACTS.render,
-    async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("artifact_render", toolContext);
-      const root = boundWorkspaceRoot(params, toolContext);
-      const activityIdentity = buildActivityIdentity("render", _toolCallId, params);
-      const prior = reuseActivityResult(root, activityIdentity);
-      if (prior) return prior;
-      const resolved = await resolveArtifacts(root, params.inputArtifactIds, context?.abortSignal);
-      const request = validateRenderRequest(root, {
-        operation: params.operation,
-        nodeId: params.nodeId,
-        inputArtifactIds: params.inputArtifactIds,
-        outputName: params.outputName,
-      }, resolved);
-      const activityId = await allocateOperationalId(root, context?.abortSignal);
-      const journal = beginActivity(root, {
-        activity_id: activityId,
-        kind: "render",
-        operation: request.operation,
-        node_refs: [request.nodeId],
-        request: {
-          input_artifact_ids: request.artifacts.map((item) => item.artifactId),
-          output_name: request.outputName,
-          activity_identity: activityIdentity,
-        },
-      });
-      onUpdate?.({
-        content: [{ type: "text", text: `TS Render ${request.operation}: ${request.nodeId}` }],
-        details: { activity: { activity_id: activityId, state: "running" } },
-      });
-      const outputDirectory = dirname(request.outputPath);
-      try {
-        await mkdir(outputDirectory, { recursive: true, mode: 0o700 });
-        const raw = await runFirstPartyProvider(
-          "render", "artifact_render",
-          { workspace_root: root, operation: request.operation, artifact_paths: request.artifacts.map((item) => item.path), output_path: request.outputPath },
-          {}, { workspace_root: root }, context?.abortSignal,
-        );
-        const output = validateCreatedRenderOutput(root, request.outputRef);
-        const artifact = await resolveArtifactByRef(root, request.outputRef, context?.abortSignal);
-        const result = {
-          schema_version: "ts-render-result/2",
-          activity_id: activityId,
-          activity_ref: journal.activityRef,
-          operation: request.operation,
-          node_id: request.nodeId,
-          input_artifact_ids: request.artifacts.map((item) => item.artifactId),
-          output_artifact_id: artifact.artifact_id,
-          output_digest: output.sha256,
-          output_size_bytes: output.size_bytes,
-          diagnostics: Array.isArray(raw.diagnostics) ? raw.diagnostics : [],
-        };
-        completeActivity(journal, result);
-        return toolResult(result);
-      } catch (error) {
-        failActivity(journal, error, deterministicFailure(
-          activityId,
-          journal.activityRef,
-          "render",
-          request.operation,
-          [request.nodeId],
-          error,
-        ));
-        await rmdir(outputDirectory).catch(() => {});
-        throw error;
-      }
-    },
-  };
-}
-
-export function createReportTool() {
-  return {
-    ...TOOL_CONTRACTS.report,
-    async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("report_build", toolContext);
-      const root = boundWorkspaceRoot(params, toolContext);
-      const activityIdentity = buildActivityIdentity("report", _toolCallId, params);
-      const prior = reuseActivityResult(root, activityIdentity);
-      if (prior) return prior;
-      const assetArtifactIds = params.assetArtifactIds || [];
-      const resolvedAssets = assetArtifactIds.length
-        ? await resolveArtifacts(root, assetArtifactIds, context?.abortSignal)
-        : [];
-      const request = validateReportRequest(root, {
-        operation: params.operation,
-        packageName: params.packageName,
-        assetArtifactIds,
-      }, resolvedAssets);
-      const activityId = await allocateOperationalId(root, context?.abortSignal);
-      const nodeRefs = [...new Set(request.assets
-        .map((item) => item.owner_node)
-        .filter((item) => typeof item === "string"))];
-      const journal = beginActivity(root, {
-        activity_id: activityId,
-        kind: "report",
-        operation: "build",
-        node_refs: nodeRefs,
-        request: {
-          package_name: request.packageName,
-          asset_artifact_ids: request.assetArtifactIds,
-          activity_identity: activityIdentity,
-        },
-      });
-      onUpdate?.({
-        content: [{ type: "text", text: `TS Report build: ${request.packageName}` }],
-        details: { activity: { activity_id: activityId, state: "running" } },
-      });
-      try {
-        const raw = await runFirstPartyProvider(
-          "report", "report_build",
-          { workspace_root: root, output_path: request.packagePath, asset_artifact_ids: request.assetArtifactIds },
-          { package: true, package_name: request.packageName, exclude_activity_refs: [journal.activityRef] },
-          { workspace_root: root }, context?.abortSignal,
-        );
-        const refs = expectedReportRefs(request.packageRef);
-        assertReportBuilderPaths(root, refs, raw);
-        const manifestDigest = requireDigest(raw.manifest_digest, "report manifest digest");
-        const revision = requireDigest(raw.workspace_revision, "report workspace revision");
-        const runtimeRevision = requireDigest(raw.runtime_revision, "report runtime revision");
-        const verified = validateCreatedReportPackage(
-          root,
-          request.packageRef,
-          manifestDigest,
-          revision,
-          runtimeRevision,
-        );
-        const result = {
-          schema_version: "ts-report-result/2",
-          activity_id: activityId,
-          activity_ref: journal.activityRef,
-          operation: "build",
-          package_name: request.packageName,
-          package_ref: request.packageRef,
-          report_ref: refs.report_ref,
-          manifest_ref: refs.manifest_ref,
-          manifest_digest: verified.manifest_digest,
-          workspace_revision: revision,
-          runtime_revision: runtimeRevision,
-          file_count: verified.file_count,
-          asset_artifact_ids: request.assetArtifactIds,
-          asset_refs: requireReportAssetRefs(raw.asset_refs, request.packageRef, request.assetArtifactIds.length),
-        };
-        completeActivity(journal, result);
-        return toolResult(result);
-      } catch (error) {
-        failActivity(journal, error, deterministicFailure(
-          activityId,
-          journal.activityRef,
-          "report",
-          "build",
-          nodeRefs,
-          error,
-        ));
-        throw error;
-      }
-    },
-  };
-}
-
-export function createTspiTools(options = {}) {
-  return exposeTools([
-    ...createCoreToolFactories(options),
-    ...createChemicalToolFactories(options),
-  ]);
-}
-
-/**
- * Build only the domain-neutral server tools for the core extension.
- * Chemical artifact and analysis factories are intentionally kept out of
- * this list so an extension can select the smallest trusted tool surface.
- */
-export function createCoreTools(options = {}) {
-  return exposeTools(createCoreToolFactories(options));
-}
-
-/** Build only artifact/analysis tools owned by the chemical extension. */
-export function createChemicalTools(options = {}) {
-  return exposeTools(createChemicalToolFactories(options));
-}
-
-/**
- * Adapt the domain-neutral Job Runtime and Artifact Store into Pi tools.
- * Runtime implementations are injected by the Agent Server; this module does
- * not select providers or create child agents.
- */
 export function createJobArtifactTools(options = {}) {
   const jobRuntime = options.jobRuntime;
   const artifactRuntime = options.artifactRuntime;
@@ -740,6 +437,21 @@ function createCoreToolFactories(options = {}) {
 
 function createChemicalToolFactories(_options = {}) {
   return [createMoleculeStructureTool(), createCompareTool(), createAnalyzeTool()];
+}
+
+export function createTspiTools(options = {}) {
+  return exposeTools([
+    ...createCoreToolFactories(options),
+    ...createChemicalToolFactories(options),
+  ]);
+}
+
+export function createCoreTools(options = {}) {
+  return exposeTools(createCoreToolFactories(options));
+}
+
+export function createChemicalTools(options = {}) {
+  return exposeTools(createChemicalToolFactories(options));
 }
 
 function exposeTools(tools) {

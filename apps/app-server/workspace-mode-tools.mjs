@@ -14,9 +14,6 @@ export const RESEARCH_ONLY_TOOL_NAMES = Object.freeze(new Set([
   "research_strategy",
   "research_interpretation",
   "research_checkpoint",
-  "review_run",
-  "review_respond",
-  "execution_dispatch",
   "notify_send",
 ]));
 

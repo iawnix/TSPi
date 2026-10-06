@@ -2,27 +2,15 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { analysisProperties } = require("../artifacts/analysis-contract.cjs");
-const { nodeControlProperties } = require("../artifacts/node-control.cjs");
-const { RENDER_OPERATIONS } = require("../artifacts/request-contract.cjs");
 
 const TOOL_ROWS = [
   ["systemPrompt", "sys_prompt", "deterministic_runtime"],
   ["state", "research_read", "deterministic_workspace"],
   ["change", "research_change", "deterministic_workspace"],
   ["lifecycle", "research_lifecycle", "deterministic_workspace"],
-  ["environment", "compute_environment", "deterministic_infrastructure"],
-  ["computeCatalog", "compute_catalog", "deterministic_infrastructure"],
-  ["computeReadiness", "compute_readiness", "deterministic_infrastructure"],
-  ["review", "review_run", "child_agent"],
-  ["compute", "compute_run", "child_agent"],
-  ["reply", "review_respond", "deterministic_operational"],
   ["moleculeStructure", "create_mol_structure", "deterministic_artifact"],
   ["compare", "artifact_compare", "deterministic_artifact"],
   ["analyze", "analysis_run", "deterministic_artifact"],
-  ["dispatch", "execution_dispatch", "deterministic_operational"],
-  ["importArtifact", "artifact_import", "deterministic_artifact"],
-  ["render", "artifact_render", "deterministic_artifact"],
-  ["report", "report_build", "deterministic_artifact"],
   ["notify", "notify_send", "deterministic_external"],
   ["jobStart", "job_start", "execution_runtime"],
   ["jobStatus", "job_status", "execution_runtime"],
@@ -46,19 +34,9 @@ export const PUBLIC_TOOL_CANONICAL_NAMES = Object.freeze({
   strategy: "research_strategy",
   interpretation: "research_interpretation",
   checkpoint: "research_checkpoint",
-  environment: "compute_environment",
-  computeCatalog: "compute_catalog",
-  computeReadiness: "compute_readiness",
-  review: "review_run",
-  compute: "compute_run",
-  reply: "review_respond",
   moleculeStructure: "create_mol_structure",
   compare: "artifact_compare",
   analyze: "analysis_run",
-  dispatch: "execution_dispatch",
-  importArtifact: "artifact_import",
-  render: "artifact_render",
-  report: "report_build",
   notify: "notify_send",
   jobStart: "job_start",
   jobStatus: "job_status",
@@ -105,19 +83,9 @@ const SOURCE_TOOL_METADATA = Object.freeze({
   research_read: Object.freeze({ authority: "kernel_read", effect: "read", replay: "safe", phase: "orient" }),
   research_change: Object.freeze({ authority: "kernel_write", effect: "research_write", replay: "idempotent", phase: "advance" }),
   research_lifecycle: Object.freeze({ authority: "kernel_write", effect: "lifecycle_write", replay: "idempotent", phase: "checkpoint" }),
-  compute_environment: Object.freeze({ authority: "runtime_read", effect: "read", replay: "safe", phase: "prepare" }),
-  compute_catalog: Object.freeze({ authority: "runtime_read", effect: "read", replay: "safe", phase: "prepare" }),
-  compute_readiness: Object.freeze({ authority: "runtime_read", effect: "read", replay: "safe", phase: "prepare" }),
-  review_run: Object.freeze({ authority: "advisory_runtime", effect: "advisory", replay: "never", phase: "execute" }),
-  compute_run: Object.freeze({ authority: "execution_runtime", effect: "attempt_artifact", replay: "never", phase: "execute" }),
-  review_respond: Object.freeze({ authority: "research_write", effect: "advisory_disposition", replay: "never", phase: "interpret" }),
   create_mol_structure: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "prepare" }),
   artifact_compare: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "interpret" }),
   analysis_run: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "interpret" }),
-  execution_dispatch: Object.freeze({ authority: "execution_runtime", effect: "execution_control", replay: "idempotent", phase: "prepare" }),
-  artifact_import: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "prepare" }),
-  artifact_render: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "interpret" }),
-  report_build: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "checkpoint" }),
   notify_send: Object.freeze({ authority: "external_side_effect", effect: "external_write", replay: "never", phase: "checkpoint" }),
   job_start: Object.freeze({ authority: "execution_runtime", effect: "execution_control", replay: "never", phase: "execute" }),
   job_status: Object.freeze({ authority: "execution_runtime", effect: "read", replay: "safe", phase: "execute" }),
@@ -363,54 +331,6 @@ export function createPublicToolContracts(Type) {
   ]);
   const nodeId = Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 });
   const artifactId = Type.String({ pattern: "^art_[0-9a-f]{64}$" });
-  const intentId = Type.String({ pattern: "^calc_[1-9][0-9]*$", maxLength: 128 });
-  const calculationParameters = Type.Record(
-    Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$" }),
-    Type.Union([Type.String({ maxLength: 4096 }), Type.Number(), Type.Boolean()]),
-  );
-  // The Agent selects an installation-owned environment profile. Host derives
-  // local/remote kind, scheduler resources, paths, and commands from it.
-  const execution = Type.Object({
-    environment: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" }),
-  }, { additionalProperties: false });
-  const computeSourceAttempt = Type.Object({
-    intentId,
-    reason: Type.String({ minLength: 1, maxLength: 1000 }),
-  }, { additionalProperties: false });
-  const computeInputArtifacts = Type.Array(Type.Object({
-    inputRole: Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$", maxLength: 64 }),
-    artifactId,
-  }, { additionalProperties: false }), { minItems: 1, maxItems: 8 });
-  // Keep field definitions in one compact base object. The discriminated
-  // branches add operation-specific required fields; native execution still
-  // rejects cross-operation fields with the same rule set.
-  const computeOperationSchema = Type.Intersect([
-    Type.Object({
-      operation: literalUnion(["launch", "inspect", "finalize", "cancel"]),
-      nodeId,
-      root: optionalRoot,
-      intentId: Type.Optional(intentId),
-      purpose: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
-      capability: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9_]*(?:[.][a-z][a-z0-9_]*)*$", maxLength: 128 })),
-      capabilityVersion: Type.Optional(Type.String({ pattern: "^[1-9][0-9]*$", maxLength: 16 })),
-      attemptKind: Type.Optional(literalUnion(["primary", "retry", "recalculation"])),
-      sourceAttempt: Type.Optional(computeSourceAttempt),
-      inputArtifacts: Type.Optional(computeInputArtifacts),
-      parameters: Type.Optional(calculationParameters),
-      execution: Type.Optional(execution),
-      tailArtifact: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
-      tailLines: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
-      artifacts: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 255 }), { maxItems: 32 })),
-      artifactRef: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
-      timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 480 })),
-    }, { additionalProperties: false }),
-    Type.Union([
-      requiredOperationBranch("launch", ["purpose", "capability", "capabilityVersion", "attemptKind", "inputArtifacts", "execution"]),
-      requiredOperationBranch("inspect", ["intentId"]),
-      requiredOperationBranch("finalize", ["intentId"]),
-      requiredOperationBranch("cancel", ["intentId"]),
-    ]),
-  ]);
   const contracts = {
     systemPrompt: contract("systemPrompt", "System Prompt", "Read the effective system prompt and its provenance.", Type.Object({}, {
       additionalProperties: false,
@@ -446,50 +366,6 @@ export function createPublicToolContracts(Type) {
       executionMode: "sequential",
       replay: "never",
     }),
-    environment: contract("environment", "TS Environment", "Inspect configured local and remote compute environments.", Type.Object({
-      mode: Type.Optional(literalUnion(["list", "show"])),
-      name: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-      root: optionalRoot,
-    }, { additionalProperties: false }), { executionMode: "sequential" }),
-    computeCatalog: contract("computeCatalog", "Compute Catalog", "List the registered mode-neutral compute capabilities.", Type.Object({
-      root: optionalRoot,
-    }, { additionalProperties: false }), { executionMode: "sequential", promptSnippet: "List registered compute capabilities" }),
-    computeReadiness: contract("computeReadiness", "Compute Readiness", "Check readiness of registered compute capabilities.", Type.Object({
-      manifest_provider_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-      capability_id: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$", maxLength: 128 })),
-      environment_id: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" })),
-      execution_kind: Type.Optional(literalUnion(["local", "remote"])),
-      root: optionalRoot,
-    }, { additionalProperties: false }), { executionMode: "sequential", promptSnippet: "Check compute capability readiness" }),
-    compute: contract("compute", "TS Calculate", "Run one calculation through the Native compute lifecycle.", computeOperationSchema, {
-      executionMode: "sequential",
-      replay: "never",
-      promptSnippet: "Run one calculation operation",
-    }),
-    review: contract("review", "TS Review", "Run one isolated, bounded advisory Review of a target Claim.", Type.Object({
-      targetClaimId: Type.String({ pattern: "^claim_[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", maxLength: 128, description: "Scientific Claim that the Review must assess." }),
-      question: Type.String({ minLength: 1, maxLength: 4000 }),
-      reviewerRole: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9_-]{0,63}$" })),
-      artifactIds: Type.Optional(Type.Array(artifactId, { maxItems: 4, uniqueItems: true })),
-      timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 180 })),
-      root: optionalRoot,
-    }, { additionalProperties: false }), {
-      executionMode: "sequential",
-      replay: "never",
-      promptSnippet: "Review one TS Claim independently",
-    }),
-    reply: contract("reply", "TS Review Response", "Record Root's write-once response to a completed Review.", Type.Object({
-      taskId: Type.String({ pattern: "^sub_[1-9][0-9]*$", maxLength: 128 }),
-      reviewRunRef: Type.String({ minLength: 1, maxLength: 512 }),
-      disposition: literalUnion(["accepted", "partially_accepted", "rejected", "deferred"]),
-      response: Type.String({ minLength: 1, maxLength: 4000 }),
-      nextSteps: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 8 })),
-      root: optionalRoot,
-    }, { additionalProperties: false }), { executionMode: "sequential", replay: "never" }),
-    dispatch: contract("dispatch", "TS Node Dispatch", "Pause or resume new calculation and analysis dispatch for an open Node.", Type.Object({
-      ...nodeControlProperties(Type),
-      root: optionalRoot,
-    }, { additionalProperties: false }), { executionMode: "sequential" }),
     moleculeStructure: contract("moleculeStructure", "TS Molecular Structure", "Create a Node-owned RDKit molecular structure artifact.", Type.Object({
       operation: Type.Literal("generate"),
       nodeId,
@@ -509,29 +385,6 @@ export function createPublicToolContracts(Type) {
     }, { additionalProperties: false }), { executionMode: "sequential" }),
     analyze: contract("analyze", "TS Scientific Analysis", "Run registered analysis and save an artifact.", Type.Object({
       ...analysisProperties(Type),
-      root: optionalRoot,
-    }, { additionalProperties: false }), { executionMode: "sequential" }),
-    importArtifact: contract("importArtifact", "TS Artifact Import", "Import one validated Node-owned calculation input.", Type.Object({
-      operation: Type.Literal("import"),
-      nodeId,
-      format: literalUnion(["gaussian_input", "xyz_structure", "xtb_control"]),
-      inputName: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
-      content: Type.String({ minLength: 1, maxLength: 131_072 }),
-      charge: Type.Optional(Type.Integer({ minimum: -20, maximum: 20 })),
-      multiplicity: Type.Optional(Type.Integer({ minimum: 1, maximum: 21 })),
-      root: optionalRoot,
-    }, { additionalProperties: false }), { executionMode: "sequential" }),
-    render: contract("render", "TS Render", "Render registered molecular, reaction-path, or scientific-curve artifacts.", Type.Object({
-      operation: enumString(RENDER_OPERATIONS),
-      nodeId,
-      inputArtifactIds: Type.Array(artifactId, { minItems: 1, maxItems: 8, uniqueItems: true }),
-      outputName: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
-      root: optionalRoot,
-    }, { additionalProperties: false }), { executionMode: "sequential" }),
-    report: contract("report", "TS Report", "Build a revision-bound report package.", Type.Object({
-      operation: Type.Literal("build"),
-      packageName: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
-      assetArtifactIds: Type.Optional(Type.Array(artifactId, { maxItems: 8, uniqueItems: true })),
       root: optionalRoot,
     }, { additionalProperties: false }), { executionMode: "sequential" }),
     jobStart: contract("jobStart", "Start Job", "Start a durable arbitrary command job.", Type.Object({
@@ -689,19 +542,9 @@ const SEMANTIC_ALIAS_SOURCES = Object.freeze({
   "research_strategy": "research_lifecycle",
   "research_interpretation": "research_lifecycle",
   "research_checkpoint": "research_lifecycle",
-  "compute_environment": "compute_environment",
-  "compute_catalog": "compute_catalog",
-  "compute_readiness": "compute_readiness",
-  "review_run": "review_run",
-  "compute_run": "compute_run",
-  "review_respond": "review_respond",
   "create_mol_structure": "create_mol_structure",
   "artifact_compare": "artifact_compare",
   "analysis_run": "analysis_run",
-  "execution_dispatch": "execution_dispatch",
-  "artifact_import": "artifact_import",
-  "artifact_render": "artifact_render",
-  "report_build": "report_build",
   "notify_send": "notify_send",
   "job_start": "job_start",
   "job_status": "job_status",
