@@ -68,7 +68,7 @@ Nodes, Findings, Gates, choose a method, launch/cancel Compute, or serve as
 evidence by itself. Answer it through `research_interpretation`, then record Root's
 accepted, rejected, or qualified interpretation with ordinary map operations.
 
-`analysis_run` is a separate registered deterministic analysis boundary. It
+`artifact_derive` is a separate registered deterministic analysis boundary. It
 requires an exact catalog capability/version, an existing open Node, and
 role-to-array lists of registered Artifact IDs. It does not select an
 execution environment, create a Claim/Finding, or run a scheduler lifecycle;

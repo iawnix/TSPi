@@ -43,5 +43,5 @@ backend。Endpoint 必须是绝对 HTTP(S) URL；指定 cache directory 时也�
 被禁用、不可用、网络失败或返回多个候选时，结果仍保持 unresolved/ambiguous，并在 provenance
 和 diagnostics 中说明。仅有已安装的程序目录或任意 endpoint 并不会注册 workflow。
 
-名称查询和结构身份与 3D 生成是不同步骤。候选确认后再调用 `create_mol_structure`，并使用已有分析
+名称查询和结构身份与 3D 生成是不同步骤。候选确认后再调用 `artifact_create`，并使用已有分析
 能力验证反应守恒和 atom mapping。

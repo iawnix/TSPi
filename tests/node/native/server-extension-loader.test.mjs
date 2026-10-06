@@ -84,13 +84,13 @@ test("server extension loader rejects an integrity mismatch and unknown selectio
   }
 });
 
-test("default package server manifest keeps core and chemical tool inventory", async () => {
+test("default package server manifest keeps the core tool inventory", async () => {
   const loaded = await loadServerExtensions({
     packageRoot: process.cwd(),
     reservedToolNames: ["read", "write", "bash", "system_prompt"],
     requiredToolNames: ["research_read"],
   });
-  assert.deepEqual(loaded.inventory.map((item) => item.name), ["core-tools", "chemical-tools"]);
+  assert.deepEqual(loaded.inventory.map((item) => item.name), ["core-tools"]);
   const coreInventory = loaded.inventory.find((item) => item.name === "core-tools");
   assert.ok(coreInventory.permissions.includes("notify.send"));
   assert.ok(loaded.tools.some((tool) => tool.name === "notify_send"));
@@ -112,9 +112,6 @@ test("default package server manifest keeps core and chemical tool inventory", a
     "artifact_read",
     "artifact_derive",
     "artifact_link",
-    "create_mol_structure",
-    "artifact_compare",
-    "analysis_run",
   ]);
   const researchNames = filterWorkspaceTools(loaded.tools, "research").map((tool) => tool.name);
   assert.ok(!researchNames.includes("light_compute"));

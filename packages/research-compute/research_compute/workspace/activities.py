@@ -153,10 +153,8 @@ def _superseded_by_completed_activity(
 
     Activity IDs are allocated monotonically, but timestamps are the authority
     here because imported journals may be copied between workspaces.  The
-    intent key deliberately ignores content digests for artifact imports and
-    analyses: correcting malformed content or rerunning the same analysis is
-    the same operational intent, while a different input name/artifact remains
-    a separate intent.
+    The key represents the deterministic activity intent and its declared
+    inputs; retries with a changed payload are distinct activities.
     """
 
     key = failed.get("intent_key")

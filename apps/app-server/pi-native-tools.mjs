@@ -1,10 +1,4 @@
-import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { promisify } from "node:util";
+import { resolve } from "node:path";
 import Type from "./pi-runtime-deps.mjs";
 import { commandArguments, createCommandService } from "../../packages/agent-runtime/host-api/commands.mjs";
 import { createPublicToolAliases, createPublicToolContracts } from "../../packages/agent-runtime/host-api/tools.mjs";
@@ -25,14 +19,6 @@ import {
 
 export { createNotifyTool } from "./pi-native-notify.mjs";
 
-const require = createRequire(import.meta.url);
-const { beginActivity, completeActivity, failActivity, findActivityByIdentity } = require(
-  "../../packages/agent-runtime/agent-core/activity-journal.cjs",
-);
-const { analysisRequest, analysisRequestSummary, validateAnalysisResult } = require(
-  "../../packages/agent-runtime/artifacts/analysis-contract.cjs",
-);
-const executeFile = promisify(execFile);
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
 const NATIVE_COMMANDS = createCommandService({ execute: executeNativeCommand });
 
@@ -208,108 +194,6 @@ export function createCheckpointLivenessHook({
   };
 }
 
-export function createMoleculeStructureTool() {
-  return {
-    ...TOOL_CONTRACTS.moleculeStructure,
-    async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("create_mol_structure", toolContext);
-      return runDeterministicArtifact({
-        activityIdentity: buildActivityIdentity("create_mol_structure", _toolCallId, params),
-        root: boundWorkspaceRoot(params, toolContext),
-        kind: "structure_seed",
-        operation: "generate",
-        nodeId: params.nodeId,
-        requestSummary: {
-          source_format: "smiles",
-          submitted_sha256: sha256Text(params.smiles),
-          submitted_size_bytes: Buffer.byteLength(params.smiles, "utf8"),
-          charge: params.charge,
-          multiplicity: params.multiplicity,
-          optimization: params.optimization,
-          generator: "rdkit_etkdgv3",
-        },
-        progressLabel: `TS Molecular structure: ${params.nodeId}`,
-        temporaryPrefix: "tspi-native-create-mol-structure-",
-        command: "create-mol-structure",
-        request: {
-          schema_version: "ts-create-mol-structure-request/1",
-          node_id: params.nodeId,
-          smiles: params.smiles,
-          charge: params.charge,
-          multiplicity: params.multiplicity,
-          optimization: params.optimization,
-        },
-        resultSchema: "ts-create-mol-structure-result/1",
-        invalidResultMessage: "molecular structure generator returned an invalid result",
-        onUpdate,
-        signal: context?.abortSignal,
-      });
-    },
-  };
-}
-
-export function createCompareTool() {
-  return {
-    ...TOOL_CONTRACTS.compare,
-    async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("artifact_compare", toolContext);
-      const comparisonParameters = serializeStructureComparisonParameters(params.parameters);
-      return runDeterministicArtifact({
-        activityIdentity: buildActivityIdentity("artifact_compare", _toolCallId, params),
-        root: boundWorkspaceRoot(params, toolContext),
-        kind: "structure_compare",
-        operation: "compare",
-        nodeId: params.nodeId,
-        requestSummary: {
-          reference_artifact_id: params.referenceArtifactId,
-          target_artifact_id: params.targetArtifactId,
-          parameters: comparisonParameters,
-        },
-        progressLabel: `TS Structure compare: ${params.nodeId}`,
-        temporaryPrefix: "tspi-native-structure-compare-",
-        command: "structure-compare",
-        request: {
-          schema_version: "ts-structure-compare-request/1",
-          node_id: params.nodeId,
-          reference_artifact_id: params.referenceArtifactId,
-          target_artifact_id: params.targetArtifactId,
-          parameters: comparisonParameters,
-        },
-        resultSchema: "ts-structure-compare-result/1",
-        invalidResultMessage: "structure comparison returned an invalid result",
-        onUpdate,
-        signal: context?.abortSignal,
-      });
-    },
-  };
-}
-
-export function createAnalyzeTool() {
-  return {
-    ...TOOL_CONTRACTS.analyze,
-    async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
-      requireNativeWrites("analysis_run", toolContext);
-      return runDeterministicArtifact({
-        activityIdentity: buildActivityIdentity("analysis_run", _toolCallId, params),
-        root: boundWorkspaceRoot(params, toolContext),
-        kind: "scientific_analysis",
-        operation: "run",
-        nodeId: params.nodeId,
-        requestSummary: analysisRequestSummary(params),
-        progressLabel: `TS Analysis: ${params.capability} · ${params.nodeId}`,
-        temporaryPrefix: "tspi-native-analysis-",
-        command: "analyze",
-        request: analysisRequest(params),
-        resultSchema: "ts-analysis-result/1",
-        invalidResultMessage: "scientific analysis returned an invalid result",
-        validateResult: (raw) => validateAnalysisResult(raw, params),
-        onUpdate,
-        signal: context?.abortSignal,
-      });
-    },
-  };
-}
-
 export function createJobArtifactTools(options = {}) {
   const jobRuntime = options.jobRuntime;
   const artifactRuntime = options.artifactRuntime;
@@ -349,7 +233,7 @@ function createCoreToolFactories(options = {}) {
 }
 
 function createChemicalToolFactories(_options = {}) {
-  return [createMoleculeStructureTool(), createCompareTool(), createAnalyzeTool()];
+  return [];
 }
 
 export function createTspiTools(options = {}) {
@@ -372,107 +256,6 @@ function exposeTools(tools) {
   // private implementation details and are deliberately not duplicated
   // in the active inventory (which would inflate every prompt schema).
   return createPublicToolAliases(tools).map(wrapToolWithEnvelope);
-}
-
-async function runDeterministicArtifact(options) {
-  const activityIdentity = options.activityIdentity;
-  const prior = reuseActivityResult(options.root, activityIdentity);
-  if (prior) return prior;
-  const activityId = await allocateOperationalId(options.root, options.signal);
-  const journal = beginActivity(options.root, {
-    activity_id: activityId,
-    kind: options.kind,
-    operation: options.operation,
-    node_refs: [options.nodeId],
-    request: { ...options.requestSummary, activity_identity: activityIdentity },
-  });
-  options.onUpdate?.({
-    content: [{ type: "text", text: options.progressLabel }],
-    details: { activity: { activity_id: activityId, state: "running" } },
-  });
-  try {
-    const raw = await runPrivateRequest(
-      options.temporaryPrefix,
-      packageScript("compute.py"),
-      options.command,
-      options.root,
-      options.request,
-      options.signal,
-      60_000,
-    );
-    options.validateResult?.(raw);
-    if (raw.schema_version !== options.resultSchema || raw.operation !== options.operation) {
-      throw new Error(options.invalidResultMessage);
-    }
-    const result = { ...raw, activity_id: activityId, activity_ref: journal.activityRef };
-    completeActivity(journal, result);
-    return toolResult(result);
-  } catch (error) {
-    failActivity(journal, error, deterministicFailure(
-      activityId,
-      journal.activityRef,
-      options.kind,
-      options.operation,
-      [options.nodeId],
-      error,
-    ));
-    throw error;
-  }
-}
-
-function reuseActivityResult(root, identity) {
-  const prior = findActivityByIdentity(root, identity);
-  if (!prior) return null;
-  if (prior.status?.status === "completed" && prior.result && typeof prior.result === "object") return toolResult(prior.result);
-  if (prior.status?.status === "running") {
-    const error = new Error(`deterministic activity is already running: ${prior.activityRef}`);
-    error.code = "activity_in_flight";
-    throw error;
-  }
-  const error = new Error(`deterministic activity previously failed: ${prior.activityRef}`);
-  error.code = "activity_recovery_required";
-  throw error;
-}
-
-function buildActivityIdentity(kind, toolCallId, params) {
-  let payload;
-  try { payload = JSON.stringify(params); } catch { payload = String(params); }
-  return `${kind}:${toolCallId}:${sha256Text(payload)}`;
-}
-
-async function allocateOperationalId(root, signal) {
-  const result = await runJsonCli(
-    packageScript("workspace.py"),
-    ["allocate_operational_id", "--root", root, "--kind", "op"],
-    root,
-    signal,
-  );
-  if (
-    result.schema_version !== "ts-operational-id-allocation/1"
-    || result.kind !== "op"
-    || typeof result.identifier !== "string"
-    || !/^op_[1-9][0-9]*$/.test(result.identifier)
-  ) {
-    throw new Error("workspace allocator returned an invalid op ID");
-  }
-  return result.identifier;
-}
-
-async function runPrivateRequest(prefix, script, command, root, request, signal, timeout = 0) {
-  const requestDir = await mkdtemp(join(tmpdir(), prefix));
-  const requestFile = join(requestDir, "request.json");
-  try {
-    await writeFile(requestFile, `${JSON.stringify(request)}\n`, { encoding: "utf8", mode: 0o600 });
-    return await runJsonCli(
-      script,
-      [command, "--root", root, "--request-file", requestFile],
-      root,
-      signal,
-      timeout,
-    );
-  } finally {
-    await rm(requestDir, { recursive: true, force: true });
-  }
 }
 
 async function runJsonCli(script, args, cwd, signal, timeout = 0, acceptNonzeroJson = false) {
@@ -587,40 +370,4 @@ function requireNativeWrites(toolName, toolContext) {
   if (toolContext?.principal !== undefined && toolContext.principal !== RESEARCH_STATE_WRITE_PRINCIPAL) {
     throw new Error(`${toolName} requires the Root Agent principal`);
   }
-}
-
-function sha256Text(value) {
-  return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
-}
-
-function serializeStructureComparisonParameters(value) {
-  if (value !== undefined && (!value || typeof value !== "object" || Array.isArray(value))) {
-    throw new Error("structure comparison parameters must be an object");
-  }
-  const input = value || {};
-  let encoded;
-  try {
-    encoded = JSON.stringify(input);
-  } catch (_error) {
-    throw new Error("structure comparison parameters must be JSON serializable");
-  }
-  if (Buffer.byteLength(encoded, "utf8") > 32 * 1024) {
-    throw new Error("structure comparison parameters exceed 32768 bytes");
-  }
-  return JSON.parse(encoded);
-}
-
-function deterministicFailure(activityId, activityRef, kind, operation, nodeRefs, error) {
-  const backendFailure = {};
-  return {
-    schema_version: "ts-deterministic-activity-failure/1",
-    activity_id: activityId,
-    activity_ref: activityRef,
-    kind,
-    operation,
-    node_refs: nodeRefs,
-    error_class: error instanceof Error ? error.name : "Error",
-    message: (error instanceof Error ? error.message : String(error)).slice(0, 4000),
-    ...backendFailure,
-  };
 }

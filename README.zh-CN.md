@@ -68,10 +68,9 @@ lane 的客户端。直接打开工作区即可：
 ./ResearchAgent --workspace reaction-study --mode research
 ```
 
-Light 工作区只保留轻量的 memory 和生命周期状态，但与 Research 共用同一套计算入口：
-`compute_catalog`、`compute_readiness`、`compute_run` 和 `compute_cancel`。Native 结果写入
-`nodes/<execution_scope>/attempts/` 下的 operational execution scope 和 canonical workspace
-Artifact 路径。Light 不创建 ResearchMap Claim/Node、可审计 Attempt、Monitor 状态或科学解释。需要这些生命周期保证时才使用
+Light 工作区只保留轻量的 memory 和生命周期状态。长时间命令在所有工作区都使用 Job Runtime：
+`job_start`、`job_status`、`job_collect`、`job_cancel`、`job_probe` 和 `job_reconcile`。
+结果通过 `artifact_register` 显式登记并链接到 Research State。Light 不创建 ResearchMap Claim/Node、可审计 Attempt、Monitor 状态或科学解释。需要这些生命周期保证时才使用
 `--mode research`，例如过渡态/IRC 验证或比较机理结论。未注册的能力必须明确报告不可用，
 不能用其它方法替代。
 
@@ -92,24 +91,18 @@ TSPi Link Relay 建立出站 WSS；Relay 只负责设备授权与不透明字节
 
 ## 研究与远程计算
 
-安装时可以在统一的 `.pi/compute.toml` 中配置 Backend 与 Compute environment（使用
-`--compute-config` 导入已有文件）。本地与远端 environment 都位于这一个文件中。
-远端 environment 可用下面的命令验证：
+安装时可以在配置中设置执行平台（使用 `--compute-config` 导入已有文件）。远端平台可用下面的命令验证：
 
 ```bash
 ./ResearchAgent --check-remote
 ```
 
-`compute_run` 是 local 和 remote 共用的唯一计算生命周期入口。每个 Compute
-environment 都有 `kind = "local"` 或 `"remote"` 以及对应的 `backends` 表；只有
-remote environment 额外包含 SSH/Torque 字段。`/compute` 和 `compute_environment` 工具
-查询完整的 local/remote environment；远端就绪性检查属于已绑定计算的 preflight，
-不再单独形成一套 remote 命令。
+Job Runtime 是 local 和 remote 共用的生命周期。Skill 使用 bash/write 生成输入和命令，
+再调用 `job_start`、`job_collect` 获取原始输出；`job_probe` 只探测执行平台，不阻止 Agent
+行动。解析出的领域值通过 `artifact_register` 和 `research_interpretation` 写入状态。
 
-Skill 覆盖 Gaussian、xTB、CREST、ASE-NEB、结构验证、渲染、报告和邮件投递。执行前必须
-查询准确的版本化 capability 和计算环境；Skill 描述不能证明程序已经安装。详见
-[Capability 与计算模型](docs/CAPABILITY_COMPUTE_MODEL.zh-CN.md) 和
-[科学能力运维](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。
+Skill 覆盖 Gaussian、xTB、CREST、ASE-NEB 和结构验证。Skill 只描述命令与解析方式，不能证明
+程序已经安装。
 
 ## 浏览器查看
 

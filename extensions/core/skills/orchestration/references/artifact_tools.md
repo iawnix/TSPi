@@ -104,7 +104,7 @@ inputs and Link 0 filesystem paths are rejected. Resolve the result with
 
 ## Run Registered Analysis
 
-`analysis_run` is the deterministic, local analysis boundary. It consumes
+`artifact_derive` is the deterministic, local analysis boundary. It consumes
 registered Artifact IDs and writes an operational analysis Artifact; it does
 not launch a program, select a local/remote environment, or update the
 ResearchMap by itself. Before calling it, query the live analysis catalog:
@@ -150,7 +150,7 @@ Root must inspect and verify the returned Artifact, then use `research_change`
 to record a narrow `FactFinding` or `IssueFinding` with `source_refs` pointing
 to the registered analysis Artifact. Use `job_start/job_status/job_collect` for calculation
 lifecycles, including local/remote execution; do not route a calculation
-through `analysis_run`.
+through `artifact_derive`.
 
 ## Activity And Provenance
 

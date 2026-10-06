@@ -34,7 +34,7 @@ def dispatch_history(root: Path, node_id: str) -> list[dict]:
 def require_dispatch_allowed(root: Path, node_id: str) -> None:
     history = dispatch_history(root, node_id)
     if history and history[-1]["operation"] == "pause":
-        raise ContractError(f"node_dispatch_paused: {node_id}; resume explicitly before new calculation/analysis dispatch")
+        raise ContractError(f"node_dispatch_paused: {node_id}; resume explicitly before starting a new Job")
 
 
 def set_node_dispatch(root: str | Path, node_id: str, operation: str, rationale: str) -> dict:
@@ -58,7 +58,7 @@ def set_node_dispatch(root: str | Path, node_id: str, operation: str, rationale:
         # Guards claimed before this lock are already in flight, including
         # an unknown scheduler response. A pause never cancels those effects.
         guards = []
-        for path in sorted((workspace / "nodes" / node_id / "attempts").glob("*/submit*_guard.json")):
+        for path in sorted((workspace / "nodes" / node_id / "attempts").glob("*/*_guard.json")):
             if not has_symlink_component(workspace, path) and path.is_file():
                 guards.append(path.relative_to(workspace).as_posix())
         record = {"schema_version": "ts-node-dispatch/1", "node_id": node_id, "operation": operation,

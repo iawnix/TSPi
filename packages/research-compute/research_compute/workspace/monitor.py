@@ -22,11 +22,11 @@ from tspi_foundation.path_safety import lexical_path, path_has_symlink
 from research_state.workspace import WorkspaceModeError, validate_workspace_manifest
 
 
-REGISTRATION_SCHEMA = "ts-compute-monitor/1"
-EVENT_SCHEMA = "ts-compute-monitor-event/1"
+REGISTRATION_SCHEMA = "ts-job-monitor/1"
+EVENT_SCHEMA = "ts-job-monitor-event/1"
 DELIVERY_SCHEMA = "ts-monitor-delivery/1"
-STATE_SCHEMA = "ts-compute-monitor-state/1"
-TICK_SCHEMA = "ts-compute-monitor-tick/1"
+STATE_SCHEMA = "ts-job-monitor-state/1"
+TICK_SCHEMA = "ts-job-monitor-tick/1"
 MONITOR_ID = re.compile(r"^mon_[a-f0-9]{24}$")
 EVENT_ID = re.compile(r"^evt_[a-f0-9]{32}$")
 _WAKE_POLICIES = {"none", "next_run"}
@@ -54,8 +54,8 @@ def register_monitor(
     root: str | Path,
     *,
     node_id: str,
-    intent_id: str,
-    intent_digest: str,
+    job_id: str,
+    job_digest: str,
     session_id: str | None = None,
     wake_policy: str = "next_run",
     notify_policy: str = "none",
@@ -64,27 +64,27 @@ def register_monitor(
     """Create or verify one idempotent monitor registration."""
     workspace = _workspace_root(root)
     with _monitor_lock(workspace):
-        return _register_monitor(workspace, node_id=node_id, intent_id=intent_id, intent_digest=intent_digest,
+        return _register_monitor(workspace, node_id=node_id, job_id=job_id, job_digest=job_digest,
                                  session_id=session_id, wake_policy=wake_policy, notify_policy=notify_policy,
                                  monitor_id=monitor_id)
 
 
-def _register_monitor(workspace: Path, *, node_id: str, intent_id: str, intent_digest: str,
+def _register_monitor(workspace: Path, *, node_id: str, job_id: str, job_digest: str,
                       session_id: str | None = None, wake_policy: str = "next_run",
                       notify_policy: str = "none", monitor_id: str | None = None) -> dict[str, Any]:
-    if not _nonempty(node_id) or not _nonempty(intent_id):
-        raise ValueError("monitor registration requires node_id and intent_id")
-    if not re.fullmatch(r"calc_[1-9][0-9]*", intent_id):
-        raise ValueError("monitor intent_id is invalid")
-    if not re.fullmatch(r"sha256:[0-9a-f]{64}", intent_digest):
-        raise ValueError("monitor intent_digest is invalid")
+    if not _nonempty(node_id) or not _nonempty(job_id):
+        raise ValueError("monitor registration requires node_id and job_id")
+    if not re.fullmatch(r"calc_[1-9][0-9]*", job_id):
+        raise ValueError("monitor job_id is invalid")
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", job_digest):
+        raise ValueError("monitor job_digest is invalid")
     if wake_policy not in _WAKE_POLICIES:
         raise ValueError("monitor wake_policy must be none or next_run")
     if notify_policy not in _NOTIFY_POLICIES:
         raise ValueError("monitor notify_policy must be none or configured")
     if session_id is not None and not _nonempty(session_id):
         raise ValueError("monitor session_id must be a non-empty string")
-    resolved_id = monitor_id or _monitor_id(intent_id, intent_digest)
+    resolved_id = monitor_id or _monitor_id(job_id, job_digest)
     if not MONITOR_ID.fullmatch(resolved_id):
         raise ValueError("monitor_id is invalid")
     registration = {
@@ -92,8 +92,8 @@ def _register_monitor(workspace: Path, *, node_id: str, intent_id: str, intent_d
         "monitor_id": resolved_id,
         "workspace_id": _workspace_id(workspace),
         "node_id": node_id,
-        "intent_id": intent_id,
-        "intent_digest": intent_digest,
+        "job_id": job_id,
+        "job_digest": job_digest,
         "session_id": session_id,
         "wake_policy": wake_policy,
         "notify_policy": notify_policy,
@@ -127,7 +127,7 @@ def _register_monitor(workspace: Path, *, node_id: str, intent_id: str, intent_d
             "last_error": None,
         })
     return {
-        "schema_version": "ts-compute-monitor-registration/1",
+        "schema_version": "ts-job-monitor-registration/1",
         "monitor_id": resolved_id,
         "registration": registration,
         "state": _read_object(state_path, "monitor state"),
@@ -137,16 +137,16 @@ def _register_monitor(workspace: Path, *, node_id: str, intent_id: str, intent_d
 def stage_registration(root: str | Path, **binding: Any) -> dict[str, Any]:
     """Persist the wake binding BEFORE submission, so a later tick can finish registration."""
     workspace = _workspace_root(root)
-    node_id, intent_id, digest = binding.get("node_id"), binding.get("intent_id"), binding.get("intent_digest")
+    node_id, job_id, digest = binding.get("node_id"), binding.get("job_id"), binding.get("job_digest")
     if not isinstance(node_id, str) or not re.fullmatch(r"node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", node_id):
         raise ValueError("monitor node_id is invalid")
-    if not isinstance(intent_id, str) or not re.fullmatch(r"calc_[1-9][0-9]*", intent_id):
-        raise ValueError("monitor intent_id is invalid")
+    if not isinstance(job_id, str) or not re.fullmatch(r"calc_[1-9][0-9]*", job_id):
+        raise ValueError("monitor job_id is invalid")
     if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
-        raise ValueError("monitor intent_digest is invalid")
+        raise ValueError("monitor job_digest is invalid")
     if not _nonempty(binding.get("session_id")):
         raise ValueError("automatic monitor registration requires the owning session_id")
-    monitor_id = _monitor_id(intent_id, digest)
+    monitor_id = _monitor_id(job_id, digest)
     with _monitor_lock(workspace):
         directory = workspace / "operations" / "monitors" / "pending_registrations"
         _ensure_directory(directory)
@@ -184,7 +184,7 @@ def reconcile_registrations(root: str | Path, *, force: bool = False, at: str | 
             # infer scheduler acceptance from an unbound file or from the model.
             from research_compute.control import _load_prepared, _read_control_result, _read_control_guard
             binding = record["binding"]
-            _, intent, _ = _load_prepared(workspace, binding["intent_id"], binding["intent_digest"])
+            _, intent, _ = _load_prepared(workspace, binding["job_id"], binding["job_digest"])
             if intent["node_id"] != binding["node_id"]:
                 raise ValueError("staged monitor node does not match calculation intent")
             result = _read_control_result(workspace, intent, "submit")
@@ -265,10 +265,10 @@ def tick_monitors(root: str | Path, *, observed_at: str | None = None) -> dict[s
             rows.append(_tick_row(registration, previous, previous.get("last_state"), changed=False))
             continue
         try:
-            observed = calculation_status(
+            observed = job_status(
                 workspace,
-                registration["intent_id"],
-                registration["intent_digest"],
+                registration["job_id"],
+                registration["job_digest"],
             )
             current = _effective_state(workspace, registration, observed)
             error = None
@@ -301,8 +301,8 @@ def tick_monitors(root: str | Path, *, observed_at: str | None = None) -> dict[s
                     "monitor_id": monitor_id,
                     "workspace_id": registration["workspace_id"],
                     "node_id": registration["node_id"],
-                    "intent_id": registration["intent_id"],
-                    "intent_digest": registration["intent_digest"],
+                    "job_id": registration["job_id"],
+                    "job_digest": registration["job_digest"],
                     "session_id": registration.get("session_id"),
                     "wake_policy": registration["wake_policy"],
                     "notify_policy": registration["notify_policy"],
@@ -518,7 +518,7 @@ def monitor_status(root: str | Path, *, monitor_id: str | None = None) -> dict[s
     if monitor_id is not None and not rows:
         raise ValueError("monitor does not exist")
     health_path = workspace / "operations" / "monitors" / "worker_health.json"
-    return {"schema_version": "ts-compute-monitor-status/1", "workspace_id": _workspace_id(workspace), "monitors": rows,
+    return {"schema_version": "ts-job-monitor-status/1", "workspace_id": _workspace_id(workspace), "monitors": rows,
             "worker_health": _read_object(health_path, "monitor worker health") if health_path.exists() else None,
             "pending_registrations": [row for _, row in _pending_registrations(workspace) if row["status"] != "registered"]}
 
@@ -540,7 +540,7 @@ def _effective_state(workspace: Path, registration: dict[str, Any], observed: di
             attempt = next(
                 (
                     row for row in context.get("attempts", [])
-                    if isinstance(row, dict) and row.get("id") == registration["intent_id"]
+                    if isinstance(row, dict) and row.get("id") == registration["job_id"]
                 ),
                 None,
             )
@@ -551,8 +551,8 @@ def _effective_state(workspace: Path, registration: dict[str, Any], observed: di
                     if isinstance(row, dict)
                 }
                 if isinstance(output_ids, list) and output_ids and set(output_ids) <= artifact_ids:
-                    for row in _attempt_rows(workspace, registration["intent_id"]):
-                        if row.get("intent_id") == registration["intent_id"] and row.get("state") == "parsed":
+                    for row in _attempt_rows(workspace, registration["job_id"]):
+                        if row.get("job_id") == registration["job_id"] and row.get("state") == "parsed":
                             return "parsed"
         except Exception:
             # Monitor must fail closed when canonical state cannot be read.
@@ -561,16 +561,16 @@ def _effective_state(workspace: Path, registration: dict[str, Any], observed: di
     return state if state in _OBSERVABLE_STATES else "unknown"
 
 
-def _attempt_rows(workspace: Path, intent_id: str) -> list[dict[str, Any]]:
+def _attempt_rows(workspace: Path, job_id: str) -> list[dict[str, Any]]:
     from .operational import calculation_attempt_index
 
-    return [row for row in calculation_attempt_index(workspace) if row.get("intent_id") == intent_id]
+    return [row for row in calculation_attempt_index(workspace) if row.get("intent_id") == job_id]
 
 
 def _tick_row(registration: dict[str, Any], previous: dict[str, Any], current: Any, *, changed: bool, event_id: str | None = None, error: str | None = None) -> dict[str, Any]:
     return {
         "monitor_id": registration["monitor_id"],
-        "intent_id": registration["intent_id"],
+        "job_id": registration["job_id"],
         "previous_state": previous.get("last_state"),
         "state": current,
         "changed": changed,
@@ -606,8 +606,8 @@ def _workspace_id(workspace: Path) -> str:
     return workspace_id
 
 
-def _monitor_id(intent_id: str, intent_digest: str) -> str:
-    return "mon_" + hashlib.sha256(f"{intent_id}:{intent_digest}".encode()).hexdigest()[:24]
+def _monitor_id(job_id: str, job_digest: str) -> str:
+    return "mon_" + hashlib.sha256(f"{job_id}:{job_digest}".encode()).hexdigest()[:24]
 
 
 def _event_id(monitor_id: str, digest: str) -> str:

@@ -41,7 +41,7 @@ root 或 identity。Host 负责在写入请求中携带 `principal=root_agent` �
 `research_strategy`、`research_interpretation`、`research_checkpoint`、
 `research_checkpoint`、`Job Runtime platform configuration`、`Skill-provided method instructions`、`job_probe`、
 `job_start/job_status/job_collect`、
-`analysis_run` 以及 `pi_agent_adapter.md` 中列出的 artifact/review 工具。私有
+`artifact_derive` 以及 `pi_agent_adapter.md` 中列出的 artifact/review 工具。私有
 私有 source factory 名称和 slash command 都是 transport 细节，不是第二套协议。
 
 ## Research State 与 Memory Projection
@@ -62,9 +62,9 @@ Attempt，再通过正常公共工具选择 `inspect`、`finalize`、`cancel`、
 
 Capability identity 与 execution environment（`environment_id`、`local` 或 `remote`）相互独立。
 计算 descriptor 使用 `capability_id` 与 `capability_version`；analysis catalog 使用
-`capability` 与 `version`，`analysis_run` 请求使用 `capability` 加
+`capability` 与 `version`，`artifact_derive` 请求使用 `capability` 加
 `capability_version`。这是两个明确的 catalog 协议，不能把字段当作别名混用。实时 catalog
 是注册 capability 的唯一来源。两种目标都使用 `job_start/job_status/job_collect` 的 `launch`、`inspect`、
-`finalize` 或 `cancel` 生命周期；`analysis_run` 是没有调度器生命周期的确定性本地分析。
+`finalize` 或 `cancel` 生命周期；`artifact_derive` 是没有调度器生命周期的确定性本地分析。
 Remote 必须使用 Native `job_start/job_status/job_collect`，并提供已配置的 `execution.environment`；Host 根据环境配置解析执行平台。
 项目不再提供通用 capability invocation；所有 descriptor 均来自 Python Native registry，公开计算请求只能使用生命周期 schema。旧的 `capability_id` 加 `input` 形式会被拒绝。

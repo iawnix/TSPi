@@ -33,7 +33,7 @@ or transition-state validation.
    multiple candidates, and unspecified stereocenters as input issues. Ask a
    focused clarification question or request a SMILES/structure artifact.
 4. Only after a candidate is explicitly confirmed or deterministically resolved
-   may it be passed to `create_mol_structure`. The seed is an initial geometry, not a
+   may it be passed to `artifact_create`. The seed is an initial geometry, not a
    stationary point or a proof of connectivity.
 5. Use the confirmed species in `reaction.parse`, then inspect conservation,
    mapping candidates, and bond changes. Select an atom mapping explicitly;

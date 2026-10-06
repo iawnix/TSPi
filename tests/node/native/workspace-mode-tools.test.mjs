@@ -45,15 +45,13 @@ test("research mode exposes the complete registered tool inventory", () => {
     { name: "job_start" },
     { name: "job_status" },
     { name: "job_collect" },
-    { name: "create_mol_structure" },
-    { name: "artifact_compare" },
     { name: "artifact_register" },
     { name: "read" },
   ];
-  assert.deepEqual(filterWorkspaceTools(tools, "research").map((tool) => tool.name), ["research_read", "job_start", "job_status", "job_collect", "create_mol_structure", "artifact_compare", "artifact_register", "read"]);
+  assert.deepEqual(filterWorkspaceTools(tools, "research").map((tool) => tool.name), ["research_read", "job_start", "job_status", "job_collect", "artifact_register", "read"]);
   assert.ok(RESEARCH_ONLY_TOOL_NAMES.has("research_checkpoint"));
   assert.ok(!RESEARCH_ONLY_TOOL_NAMES.has("job_start"));
-  assert.deepEqual(filterExtensionToolNames(["research_read", "job_start", "create_mol_structure"], "research"), ["research_read", "job_start", "create_mol_structure"]);
+  assert.deepEqual(filterExtensionToolNames(["research_read", "job_start", "artifact_register"], "research"), ["research_read", "job_start", "artifact_register"]);
 });
 
 test("workspace mode reader rejects a manifest symlink", async () => {

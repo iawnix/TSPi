@@ -394,7 +394,7 @@ def _registered_import_formats() -> dict[str, frozenset[str]]:
     formats: dict[str, frozenset[str]] = {}
     for registration in CAPABILITY_REGISTRY.registrations():
         provider = registration.provider
-        getter = getattr(provider, "artifact_import_formats", None)
+        getter = getattr(provider, "artifact_formats", None)
         if not callable(getter):
             continue
         values = getter()
@@ -409,7 +409,7 @@ def _registered_import_formats() -> dict[str, frozenset[str]]:
 def _registered_import_provider(artifact_format: str) -> Any:
     for registration in CAPABILITY_REGISTRY.registrations():
         provider = registration.provider
-        getter = getattr(provider, "artifact_import_formats", None)
+        getter = getattr(provider, "artifact_formats", None)
         if callable(getter) and artifact_format in getter():
             return provider
     raise ComputeContractError(f"artifact import provider unavailable for format: {artifact_format}")
@@ -468,7 +468,7 @@ def _validate_import_content(
     multiplicity: int | None,
 ) -> dict[str, Any]:
     provider = _registered_import_provider(artifact_format)
-    validator = getattr(provider, "validate_artifact_import", None)
+    validator = getattr(provider, "validate_artifact_content", None)
     if not callable(validator):
         raise ComputeContractError(f"registered artifact provider cannot validate format: {artifact_format}")
     try:

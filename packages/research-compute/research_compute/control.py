@@ -1518,7 +1518,7 @@ def _materialize_execution_target(
             if not isinstance(environment_name, str) or not environment_name:
                 raise ComputeContractError("local execution environment must be a non-empty string")
             try:
-                _compute_environment(environment_name, kind="local")
+                _execution_platform(environment_name, kind="local")
             except EnvironmentConfigurationError as exc:
                 raise ComputeContractError(f"invalid local compute environment: {exc}") from exc
             return {"kind": "local", "environment": environment_name}
@@ -1644,7 +1644,7 @@ def _prepared_task_for_intent(
         require_inputs=verify_inputs,
     )
     _validate_required_backend_artifacts(intent, normalized)
-    return _apply_compute_environment(workspace, intent, normalized)
+    return _apply_execution_platform(workspace, intent, normalized)
 
 
 def _prepared_task_dict(prepared: PreparedTask) -> dict[str, Any]:
@@ -1668,7 +1668,7 @@ def _backend_binding_names(intent: dict[str, Any], backend: str, kind: str) -> t
     return (backend,)
 
 
-def _compute_environment(name: str | None = None, *, kind: str | None = None):
+def _execution_platform(name: str | None = None, *, kind: str | None = None):
     """Load one environment from the unified compute configuration."""
     return load_environment_config().environment(name, kind=kind)
 
@@ -1702,7 +1702,7 @@ def _backend_binding(workspace: Path, intent: dict[str, Any], backend: str) -> B
     return binding.to_backend_binding()
 
 
-def _apply_compute_environment(
+def _apply_execution_platform(
     workspace: Path,
     intent: dict[str, Any],
     prepared: PreparedTask,
@@ -1781,7 +1781,7 @@ def _validate_execution_target(target: dict[str, Any], *, backend: str | None = 
             if not isinstance(environment_name, str) or not environment_name:
                 raise ComputeContractError("local execution environment must be a non-empty string")
             try:
-                _compute_environment(environment_name, kind="local")
+                _execution_platform(environment_name, kind="local")
             except EnvironmentConfigurationError as exc:
                 raise ComputeContractError(f"invalid local compute environment: {exc}") from exc
             return {"kind": "local", "environment": environment_name}

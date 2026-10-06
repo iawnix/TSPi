@@ -97,7 +97,7 @@ Node 本地目录由 Host 管理：
 
 ## 运行已注册分析
 
-`analysis_run` 是确定性的本地分析边界。它消费已登记的 Artifact ID 并写入运行分析
+`artifact_derive` 是确定性的本地分析边界。它消费已登记的 Artifact ID 并写入运行分析
 Artifact；本身不会启动程序、选择 local/remote 环境，也不会自动更新 ResearchMap。调用前先
 读取实时分析目录：
 
@@ -134,7 +134,7 @@ Native analysis executor 将结果写入 `nodes/<node_id>/outputs/analysis/`，�
 Finding、Gate，也不会改变 Node 状态。Root 必须检查并核验返回 Artifact，然后用
 `research_change` 记录粒度明确的 `FactFinding` 或 `IssueFinding`，并在 `source_refs` 中引用已登记
 的 analysis Artifact。计算生命周期（包括 local/remote）使用 `job_start/job_status/job_collect`；不要通过
-`analysis_run` 执行计算。
+`artifact_derive` 执行计算。
 
 ## Activity 与来源
 

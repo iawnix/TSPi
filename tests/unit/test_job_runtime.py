@@ -7,6 +7,7 @@ import time
 import pytest
 
 from job_runtime import JobOutput, JobRuntime, JobSpec, JobState, LocalProcessPlatform
+from research_compute import ExecutionRequest, ExecutionService
 
 
 def _runtime() -> JobRuntime:
@@ -59,3 +60,30 @@ def test_job_probe_reports_missing_cwd_or_inputs_without_execution(tmp_path: Pat
 def test_output_paths_cannot_escape_job_cwd(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="stay below cwd"):
         JobSpec(command=(sys.executable,), cwd=tmp_path, outputs=(JobOutput("../outside"),))
+
+
+def test_execution_service_preserves_research_identity_without_domain_parsing(tmp_path: Path) -> None:
+    service = ExecutionService()
+    request = ExecutionRequest(
+        command=(sys.executable, "-c", "print('raw evidence')"),
+        cwd=tmp_path,
+        workspace_id="ws_demo",
+        node_id="node_demo",
+        attempt_id="attempt_demo",
+        job_id="job_demo",
+    )
+
+    receipt = service.start(request)
+    status = service.status(receipt)
+    for _ in range(100):
+        if status.state not in {JobState.RUNNING, JobState.SUBMITTED}:
+            break
+        time.sleep(0.01)
+        status = service.status(receipt)
+
+    assert status.state is JobState.SUCCEEDED
+    assert receipt.job_id == "job_demo"
+    assert receipt.workspace_id == "ws_demo"
+    assert receipt.node_id == "node_demo"
+    assert receipt.attempt_id == "attempt_demo"
+    assert service.collect(receipt)["job_id"] == "job_demo"

@@ -1,16 +1,12 @@
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { analysisProperties } = require("../artifacts/analysis-contract.cjs");
 
 const TOOL_ROWS = [
   ["systemPrompt", "sys_prompt", "deterministic_runtime"],
   ["state", "research_read", "deterministic_workspace"],
   ["change", "research_change", "deterministic_workspace"],
   ["lifecycle", "research_lifecycle", "deterministic_workspace"],
-  ["moleculeStructure", "create_mol_structure", "deterministic_artifact"],
-  ["compare", "artifact_compare", "deterministic_artifact"],
-  ["analyze", "analysis_run", "deterministic_artifact"],
   ["notify", "notify_send", "deterministic_external"],
   ["jobStart", "job_start", "execution_runtime"],
   ["jobStatus", "job_status", "execution_runtime"],
@@ -34,9 +30,6 @@ export const PUBLIC_TOOL_CANONICAL_NAMES = Object.freeze({
   strategy: "research_strategy",
   interpretation: "research_interpretation",
   checkpoint: "research_checkpoint",
-  moleculeStructure: "create_mol_structure",
-  compare: "artifact_compare",
-  analyze: "analysis_run",
   notify: "notify_send",
   jobStart: "job_start",
   jobStatus: "job_status",
@@ -83,9 +76,6 @@ const SOURCE_TOOL_METADATA = Object.freeze({
   research_read: Object.freeze({ authority: "kernel_read", effect: "read", replay: "safe", phase: "orient" }),
   research_change: Object.freeze({ authority: "kernel_write", effect: "research_write", replay: "idempotent", phase: "advance" }),
   research_lifecycle: Object.freeze({ authority: "kernel_write", effect: "lifecycle_write", replay: "idempotent", phase: "checkpoint" }),
-  create_mol_structure: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "prepare" }),
-  artifact_compare: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "interpret" }),
-  analysis_run: Object.freeze({ authority: "artifact_runtime", effect: "artifact_write", replay: "idempotent", phase: "interpret" }),
   notify_send: Object.freeze({ authority: "external_side_effect", effect: "external_write", replay: "never", phase: "checkpoint" }),
   job_start: Object.freeze({ authority: "execution_runtime", effect: "execution_control", replay: "never", phase: "execute" }),
   job_status: Object.freeze({ authority: "execution_runtime", effect: "read", replay: "safe", phase: "execute" }),
@@ -359,27 +349,6 @@ export function createPublicToolContracts(Type) {
       executionMode: "sequential",
       replay: "never",
     }),
-    moleculeStructure: contract("moleculeStructure", "TS Molecular Structure", "Create a Node-owned RDKit molecular structure artifact.", Type.Object({
-      operation: Type.Literal("generate"),
-      nodeId,
-      smiles: Type.String({ minLength: 1, maxLength: 4_096 }),
-      charge: Type.Integer({ minimum: -20, maximum: 20 }),
-      multiplicity: Type.Integer({ minimum: 1, maximum: 21 }),
-      optimization: literalUnion(["none", "uff"]),
-      root: optionalRoot,
-    }, { additionalProperties: false }), { executionMode: "sequential" }),
-    compare: contract("compare", "TS Structure Compare", "Compare two registered XYZ artifacts.", Type.Object({
-      operation: Type.Literal("compare"),
-      nodeId,
-      referenceArtifactId: artifactId,
-      targetArtifactId: artifactId,
-      parameters: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 8 })),
-      root: optionalRoot,
-    }, { additionalProperties: false }), { executionMode: "sequential" }),
-    analyze: contract("analyze", "TS Scientific Analysis", "Run registered analysis and save an artifact.", Type.Object({
-      ...analysisProperties(Type),
-      root: optionalRoot,
-    }, { additionalProperties: false }), { executionMode: "sequential" }),
     jobStart: contract("jobStart", "Start Job", "Start a durable arbitrary command job.", Type.Object({
       nodeId: Type.Optional(nodeReference),
       command: Type.Array(Type.String({ minLength: 1, maxLength: 16_384 }), { minItems: 1, maxItems: 256 }),
@@ -535,9 +504,6 @@ const SEMANTIC_ALIAS_SOURCES = Object.freeze({
   "research_strategy": "research_lifecycle",
   "research_interpretation": "research_lifecycle",
   "research_checkpoint": "research_lifecycle",
-  "create_mol_structure": "create_mol_structure",
-  "artifact_compare": "artifact_compare",
-  "analysis_run": "analysis_run",
   "notify_send": "notify_send",
   "job_start": "job_start",
   "job_status": "job_status",

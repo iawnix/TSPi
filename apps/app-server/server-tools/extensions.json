@@ -32,24 +32,6 @@
         "model.delegate",
         "notify.send"
       ]
-    },
-    {
-      "name": "chemical-tools",
-      "entry": "apps/app-server/server-tools/chemical-tools.mjs",
-      "scope": "server",
-      "sha256": "sha256:48b3e187cabf4107689707f6dcdbd8112090cb74bd0aa4008e1f5c20b6f49a26",
-      "tools": [
-        "create_mol_structure",
-        "artifact_compare",
-        "analysis_run"
-      ],
-      "permissions": [
-        "workspace.read",
-        "workspace.write",
-        "remote.submit",
-        "model.delegate",
-        "notify.send"
-      ]
     }
   ]
 }

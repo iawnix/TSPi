@@ -38,7 +38,7 @@ def calculation_readiness(
         raise ValueError("execution_kind must be local or remote")
     descriptors = [d for d in CAPABILITY_REGISTRY.descriptors() if capability_id is None or d.capability == capability_id]
     rows = []
-    result = {"protocol_version": "compute_readiness_1", "readiness": rows}
+    result = {"protocol_version": "job_probe_1", "readiness": rows}
     selectors = {k: v for k, v in {"environment_id": environment_id, "execution_kind": execution_kind}.items() if v is not None}
     if not descriptors:
         rows.append({"capability_id": capability_id, **selectors, "readiness": _failure("capability", "capability_not_found", "Capability is not registered")})

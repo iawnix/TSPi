@@ -11,6 +11,8 @@ from importlib import import_module
 from typing import Any
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "ExecutionRequest": (".execution", "ExecutionRequest"),
+    "ExecutionService": (".execution", "ExecutionService"),
     "ComputeContractError": (".errors", "ComputeContractError"),
     "cancel_calculation": (".control", "cancel_calculation"),
     "calculation_status": (".control", "calculation_status"),
@@ -70,6 +72,8 @@ def __getattr__(name: str) -> Any:
     return value
 
 __all__ = [
+    "ExecutionRequest",
+    "ExecutionService",
     "ComputeContractError",
     "cancel_calculation",
     "calculation_status",

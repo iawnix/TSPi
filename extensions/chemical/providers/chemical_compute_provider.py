@@ -61,7 +61,7 @@ class ChemicalComputeProvider:
             for name in self.structure_operations
         )
 
-    def artifact_import_formats(self) -> dict[str, frozenset[str]]:
+    def artifact_formats(self) -> dict[str, frozenset[str]]:
         from chemical_import import IMPORT_FORMAT_SUFFIXES
         return dict(IMPORT_FORMAT_SUFFIXES)
 
@@ -70,7 +70,7 @@ class ChemicalComputeProvider:
         suffix = Path(path).suffix.lower()
         return sorted(role for role, suffixes in ROLE_SUFFIXES.items() if suffix in suffixes)
 
-    def validate_artifact_import(self, artifact_format: str, content: str,
+    def validate_artifact_content(self, artifact_format: str, content: str,
                                  charge: int | None, multiplicity: int | None) -> dict[str, Any]:
         from chemical_import import validate_import_content
         return validate_import_content(artifact_format, content, charge, multiplicity)

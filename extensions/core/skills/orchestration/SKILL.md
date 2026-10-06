@@ -54,7 +54,7 @@ not invent a method in the Harness or treat Monitor's `next_run` as a
 scientific instruction.
 
 Use Review for a bounded counterargument, not as a source of canonical state.
-Use `analysis_run` only for an exact capability/version discovered from the
+Use `artifact_derive` only for an exact capability/version discovered from the
 analysis catalog; it is a registered deterministic local analysis and has no
 calculation lifecycle. Use `job_start/job_status/job_collect` as the calculation lifecycle entry
 point for auditable local/remote work: it owns the Attempt, Artifact, Monitor,
