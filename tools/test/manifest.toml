@@ -38,12 +38,12 @@ paths = []
 
 [suites.remote-smoke]
 kind = "scenario"
-environment = "managed Python + explicit TS_COMPUTE_CONFIG"
-description = "Opt-in remote transport smoke; never part of the default suite."
-paths = ["tools/test/scenarios/scientific_remote_smoke.py"]
+environment = "managed Python + configured Job Runtime platform"
+description = "Opt-in remote Job Runtime smoke; never part of the default suite."
+paths = []
 
 [suites.live-eval]
 kind = "scenario"
 environment = "managed Python + authorized model provider"
 description = "Opt-in model evaluation; never part of CI or the default suite."
-paths = ["tools/test/scenarios/mechanism_live_eval.mjs"]
+paths = []

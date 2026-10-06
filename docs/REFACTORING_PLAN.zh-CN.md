@@ -1432,3 +1432,8 @@ Root research_change(...)
 - 这个结果是否足以支持 Claim？
 
 这些问题属于 Skill、辅助脚本、可选 analyzer 和 Root Agent 的研究推理。这样系统才真正成为“带有 Research State、Research Map 和 durable Monitor 的 coding agent”，而不是“只能调用已注册科学 provider 的计算工作流引擎”。
+# 实施状态
+
+本文保留重构前后的决策记录。计划中的兼容 facade、旧 Compute/Review
+入口和 provider registry 已在最终实现中删除；当前运行时只提供 Job Runtime、
+Artifact Store、Research State 和 Skill 指令路径。文中的旧名称仅用于说明迁移背景。

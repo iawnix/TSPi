@@ -205,9 +205,9 @@ Claim。Gate 记录结果，但不会自动修改 Node 或 Claim；解释和状�
 
 ## 独立科学能力与节点管理
 
-`analysis_run` 通过按需能力目录派发 22 项版本化独立分析能力；对外目录由
+`artifact_derive` 通过按需能力目录派发 22 项版本化独立分析能力；对外目录由
 `packages/research-compute/research_compute/analysis.py` 只组装通用分析合同；化学领域描述和实现位于
-`extensions/chemical/providers/chemical_runtime/analysis/`。结果绑定 Node、输入 digest、生成文件
+`extensions/chemical/providers/Skill helper/analysis/`。结果绑定 Node、输入 digest、生成文件
 和候选事实；选定事实通过已有 `research_change`
 入口重算校验后登记。能力不选择下一科学步骤，不接受 Claim。化学网络使用带计量
 的超边并允许有环，独立于研究 Node DAG。
@@ -284,7 +284,7 @@ cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
 ## 其他契约
 
 ChangeSet 的操作定义位于文件系统 Research State 使用的 ResearchMap operation catalog；
-`compute_run` 对 local/remote 使用相同的四个公开操作：
+`job_start/job_status/job_collect` 对 local/remote 使用相同的四个公开操作：
 
 ```text
 launch   -> prepare, submit
@@ -331,7 +331,7 @@ Compute runtime 的 durable status：`completed` 只表示程序或 scheduler �
 事件 delivery 默认通过绑定 session 的 `next_run` 排队唤醒 Root，不打断当前推理。稳定
 request id 为 `monitor:<event_id>`；session 不存在、workspace 不匹配或 App Server
 重启时 delivery 保持 pending，可由后续 worker 恢复。Root 被唤醒后必须重新读取
-`research_read`，再显式执行 `compute_run inspect`，并自行决定是否 `finalize` 或通过 `research_change`
+`research_read`，再显式执行 `job_start/job_status/job_collect inspect`，并自行决定是否 `finalize` 或通过 `research_change`
 写入 Finding/Gate/Node 状态。Monitor 不自动 finalize、不修改 ResearchMap、不做科学判断。
 
 研究推进的 liveness 是独立于 Monitor 观察的诊断投影。turn boundary 通过
@@ -349,6 +349,6 @@ Host 的 `monitor/event` 通知只是实时投影，不是持久化重放日志�
 ```text
 Workspace records <-> App Server Monitor worker -> Session next_run -> Root Agent
        ^                     |                         |
-       |                     +-- user notification     +-- research_read / compute_run / research_change
+       |                     +-- user notification     +-- research_read / job_start/job_status/job_collect / research_change
        +-- Compute/remote durable status
 ```

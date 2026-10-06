@@ -66,6 +66,6 @@ The package-owned server inventory is split into two signed entries while
 keeping one default active tool set. `core-tools` owns research/lifecycle,
 environment, review, dispatch, generic calculation, artifact import/render,
 and report tools. `chemical-tools` owns chemical artifact seeding and
-analysis (`create_mol_structure`, `artifact_compare`, and `analysis_run`). Gaussian
+analysis (`Skill helper`, `artifact_derive`, and `artifact_derive`). Gaussian
 and xTB are descriptor-only metadata entries in the default `chemical`
 extension; the Python Native registry is the only execution boundary.

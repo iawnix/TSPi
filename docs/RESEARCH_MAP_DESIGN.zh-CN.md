@@ -60,7 +60,7 @@ Research State port、Pi tools、slash command 和 Root Agent 使用同一组命
 `research.decisions` 与 `research.evidence` 读取 Research State filesystem boundary 投影中的有界元数据，不加载原始文件。
 `/research` 只是命令服务的交互写法，不是另一套 API。
 TS Web 通过 ResearchMap provider 读取 map snapshot。`/compute` 通过 `compute.environments`
-和 `compute_environment` 查询统一的本地/远端环境目录。
+和 `execution platform` 查询统一的本地/远端环境目录。
 
 ## 执行与 Finding
 

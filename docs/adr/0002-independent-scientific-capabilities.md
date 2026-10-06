@@ -17,10 +17,10 @@ for every species or tool result would increase maintenance without evidence.
 
 ## Decision
 
-Use one versioned `analysis_run` envelope with an on-demand capability catalog.
+Use one versioned `artifact_derive` envelope with an on-demand capability catalog.
 New domain schemas stay outside the always-loaded tool definitions. Dispatch
 is an explicit ID/version lookup; descriptors never select a next capability.
-Existing `compute_run`, structure comparison and rendering implementations remain
+Existing `job_start/job_status/job_collect`, structure comparison and rendering implementations remain
 the execution authorities for their respective domains.
 
 Pure analysis handlers consume bounded artifact snapshots and explicit

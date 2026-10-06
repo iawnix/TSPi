@@ -75,7 +75,7 @@ App Server
 默认安装固定注入 Pi Adapter。Core、Research State 和 App Server 测试可以提供确定性的
 Fake Session Port，但它不属于产品 Runtime。
 
-Native Compute lifecycle 由 research-state runtime 唯一实现。组合根不再装配 JavaScript provider、Capability Gateway 或 Orchestrator；Native registry 负责 descriptor、intent、执行、解析和 canonical Artifact。`compute_run` 是唯一公开计算入口，取消和终态由 Research State 的持久记录控制。
+Native Compute lifecycle 由 research-state runtime 唯一实现。组合根不再装配 JavaScript provider、Capability Gateway 或 Orchestrator；Native registry 负责 descriptor、intent、执行、解析和 canonical Artifact。`job_start/job_status/job_collect` 是唯一公开计算入口，取消和终态由 Research State 的持久记录控制。
 ## 科研 Artifact 边界
 
 普通 `read`、`write`、`bash` 可以产生 scratch 文件，但不能自动产生被接受的科研
@@ -113,7 +113,7 @@ Registry。Manifest 显式记录两个 profile：
 | `research` | `session` | `audited` | Research State ResearchMap，加 Attempt、Evidence、Monitor |
 
 `light` 初始化时只创建通用的输入、Artifact、运行、日志、临时和 Session 目录，使用普通
-Agent Turn；Native `compute_run` 会在 `nodes/<execution_scope>/attempts/` 下物化
+Agent Turn；Native `job_start/job_status/job_collect` 会在 `nodes/<execution_scope>/attempts/` 下物化
 operational execution scope，并写入 canonical workspace Artifact。
 它不会创建 ResearchMap Claim、Finding、Evidence、Attempt 或 Monitor。
 
@@ -124,7 +124,7 @@ Research State 状态。Host 通过独立的 `workspace_port_1` 准入操作推�
 orient/准入阶段时，模型不能通过普通 change 操作直接创建第一个 Phase 或 Claim。
 
 改变任务范围需要新建工作区或由 Host 显式 fork。轻量工作区导入的 Artifact
-只能作为 candidate 或 input，不会自动变成 Research Evidence。两种 profile 使用同一套 Native `compute_run` 生命周期。Descriptor 可以声明只支持某一种
+只能作为 candidate 或 input，不会自动变成 Research Evidence。两种 profile 使用同一套 Native `job_start/job_status/job_collect` 生命周期。Descriptor 可以声明只支持某一种
 或同时支持两种模式；`light` 使用 operational execution scope，`research` 增加 Research State
 Attempt/Evidence 记录。Light 到 research 的提升必须经过显式 Host/Research State 操作，不能因为
 进程成功就隐式提升。

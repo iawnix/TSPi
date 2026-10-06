@@ -344,10 +344,10 @@ top-level Pi capabilities. TSPi does not provide a second Agent Runtime.
 
 ## Deterministic Tool Plane
 
-`analysis_run` dispatches 22 independent versioned analysis capabilities from an
+`artifact_derive` dispatches 22 independent versioned analysis capabilities from an
 on-demand catalog. Generic analysis contracts live in
 `packages/research-compute/research_compute/analysis.py`; chemistry domain code
-lives in `extensions/chemical/providers/chemical_runtime/analysis/`. Node-owned artifacts bind
+lives in `extensions/chemical/providers/Skill helper/analysis/`. Node-owned artifacts bind
 inputs, digests and generated files. Selected facts enter the existing
 `research_change` candidate path after replay validation. No capability schedules a
 scientific successor or accepts a Claim. Chemical networks use stoichiometric
@@ -366,7 +366,7 @@ next action from tool exit codes. See [ADR 0003](adr/0003-minimal-research-state
 
 Public tools validate input paths against the workspace root, normalize
 artifacts, and return machine-readable errors. Scientific backends are
-selected by capability and parse only their own output formats. `compute_run` uses
+selected by capability and parse only their own output formats. `job_start/job_status/job_collect` uses
 the same four public operations for local and remote environments:
 
 ```text
@@ -413,7 +413,7 @@ The worker normally delivers an event to the bound session with `next_run`,
 which does not interrupt an active Root turn. Its request id is
 `monitor:<event_id>`. A missing session or an App Server restart leaves the
 delivery pending and allows a later worker pass to retry it. Root must reread
-`research_read`, run `compute_run inspect`, and decide whether to collect, parse, or
+`research_read`, run `job_start/job_status/job_collect inspect`, and decide whether to collect, parse, or
 write `ResearchMap` state. The Monitor never calls `finalize`, writes
 `ResearchMap`, or makes a scientific decision.
 
@@ -455,7 +455,7 @@ are separate from the scientific operation journal.
   `packages/tspi-provider-runtime/`, `packages/tspi-bootstrap/`,
   `packages/research-state/`, `packages/research-memory/`,
   `packages/research-compute/`, and the chemistry implementation under
-  `extensions/chemical/providers/chemical_runtime/`.
+  `extensions/chemical/providers/Skill helper/`.
 - Skills and extension manifests: `skills/`, `package.json`, and
   `apps/app-server/server-tools/extensions.json`.
 - TS Web contracts: `contracts/ts-web/`.

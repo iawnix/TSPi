@@ -19,7 +19,7 @@
 核验后通过 `research_change` 创建 `FactFinding` 或 `IssueFinding`。
 
 `execution_dispatch` 的暂停/恢复是独立的操作回执链，不增加科学状态枚举；在途作业仍可查看、
-收集、解析和精确取消。`compute_run` 对 local 和 remote 使用同一套生命周期，未知提交或
+收集、解析和精确取消。`job_start/job_status/job_collect` 对 local 和 remote 使用同一套生命周期，未知提交或
 取消结果必须先检查再重试。
 
 ## 实现边界

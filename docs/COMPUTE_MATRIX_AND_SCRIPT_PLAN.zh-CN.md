@@ -2,7 +2,7 @@
 
 ## 目标
 
-方法比较必须先形成完整、可审计的任务矩阵，再进入 `compute_run` 生命周期。普通脚本也
+方法比较必须先形成完整、可审计的任务矩阵，再进入 `job_start/job_status/job_collect` 生命周期。普通脚本也
 通过同一生命周期执行，但脚本输出不能直接成为 ResearchMap 的科学结论。
 
 ## 方法矩阵
@@ -29,12 +29,12 @@ method/environment/opt -> method/environment/sp
 
 已实现 `chemical.comparison.plan@1` Provider，输出
 `chemical_computation_plan/1`。Agent 先调用该 Provider，再按依赖关系调用现有
-`compute_run launch/inspect/finalize`。Gaussian 的方法和基组写入 `.gjf` Route Section，
+`job_start/job_status/job_collect launch/inspect/finalize`。Gaussian 的方法和基组写入 `.gjf` Route Section，
 例如 `# M062X/6-31G Opt` 与 `# M062X/6-31G SP`。
 
 规划器位于 `extensions/chemical/providers/comparison_plan.py`，是无副作用的纯函数；它为
 单点任务建立同方法、同环境的优化依赖，并在 readiness 映射中标记不可用单元。执行仍由
-`compute_run` 负责，因此规划不会创建 Attempt 或写入 Research State。
+`job_start/job_status/job_collect` 负责，因此规划不会创建 Attempt 或写入 Research State。
 
 ## `script.bash@1`
 
@@ -42,7 +42,7 @@ method/environment/opt -> method/environment/sp
 额外风险标签或新的权限配置；执行仍使用安装级默认环境和现有 Host 的 workspace 绑定、
 超时、取消、崩溃处理及 JSONL Provider 协议。
 
-请求通过 `compute_run launch` 进入生命周期，输入为不可变脚本 Artifact，参数使用数组，
+请求通过 `job_start/job_status/job_collect launch` 进入生命周期，输入为不可变脚本 Artifact，参数使用数组，
 不接受拼接后的任意 shell command 字符串：
 
 ```json
@@ -90,7 +90,7 @@ Link 状态。
 - 矩阵能生成 12 个 Job，并验证优化到单点的 Artifact 角色依赖。
 - readiness 失败只阻塞对应矩阵单元及其无法满足输入依赖的下游单点单元，
   其它方法和环境继续执行。
-- `script.bash@1` 经过 `compute_run`，产生 Attempt、Artifact 和 provenance。
+- `script.bash@1` 经过 `job_start/job_status/job_collect`，产生 Attempt、Artifact 和 provenance。
 - 脚本不能写入 canonical Research State。
 - 无收件人时计算仍可完成，通知状态单独为 `user_input_required`。
 - 统一安装器通过扩展发现、配置校验和安装器合同测试。

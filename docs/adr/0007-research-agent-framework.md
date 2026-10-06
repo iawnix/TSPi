@@ -90,7 +90,7 @@ App Server
 
 The Host does not assemble JavaScript providers, gateways, or orchestrators. The Python Native registry owns descriptors, intent materialization, execution, and canonical Artifact records.
 
-The Host exposes the Native `compute_run` lifecycle as the only calculation
+The Host exposes the Native `job_start/job_status/job_collect` lifecycle as the only calculation
 entry point. Cancellation is scoped to the durable intent and controlled by
 the research-state runtime; the Research State remains the authority for terminal Attempt or
 execution-scope state. Capability inventory and environment readiness are
@@ -145,7 +145,7 @@ profiles:
 | `research` | `session` | `audited` | Research State ResearchMap plus Attempt, Evidence, and Monitor |
 
 The `light` profile starts with common inputs, artifacts, runs, logs, scratch,
-and session directories. Native `compute_run` materializes an operational
+and session directories. Native `job_start/job_status/job_collect` materializes an operational
 execution scope under `nodes/<execution_scope>/attempts/` and writes canonical
 workspace Artifacts. It never creates a ResearchMap Claim, Finding, Evidence,
 Attempt, or Monitor.
@@ -159,7 +159,7 @@ Claim by issuing a normal change while the workspace is still orienting.
 
 Changing scope requires a new workspace or an explicit Host-controlled fork.
 Imported light artifacts remain candidates or inputs and do not become
-Research Evidence automatically. The same Native `compute_run` lifecycle serves both profiles. A descriptor may
+Research Evidence automatically. The same Native `job_start/job_status/job_collect` lifecycle serves both profiles. A descriptor may
 restrict execution to one or both modes; `light` uses an operational execution
 scope while `research` adds Research State Attempt/Evidence recording. Promotion from
 light into research is an explicit Host/Research State operation, never an implicit

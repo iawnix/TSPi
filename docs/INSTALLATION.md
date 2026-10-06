@@ -120,7 +120,7 @@ install, enter its path when prompted; for a non-interactive install, pass
 available on the target machine, and pass the edited file to the installer. The
 installed copy is `<install>/.pi/compute.toml` and is written with mode `0600`.
 
-Local and remote calculations share one public lifecycle through `compute_run`; choose
+Local and remote calculations share one public lifecycle through `job_start/job_status/job_collect`; choose
 `execution_target.kind = "local"` or `"remote"` and, when using the unified file,
 its environment name in the calculation intent. SSH keys and other credentials stay in
 the SSH configuration and are never copied into this TOML. TSPi does not install
