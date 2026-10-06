@@ -59,13 +59,15 @@ class JobRuntime:
 
     def receipt_from_disk(self, path: str) -> JobReceipt:
         """Load a durable receipt and reconcile it through its platform."""
-        # Receipt loading is platform-specific because remote adapters may use
-        # a scheduler receipt format.  Local receipts are intentionally the
-        # only generic format in this package.
-        local = self._platform("local")
-        loader = getattr(local, "receipt_from_disk", None)
+        # Receipt loading is platform-specific because remote adapters carry
+        # scheduler metadata alongside the same durable receipt envelope.
+        import json
+        with open(path, encoding="utf-8") as handle:
+            platform_name = json.load(handle).get("platform", "local")
+        platform = self._platform(str(platform_name))
+        loader = getattr(platform, "receipt_from_disk", None)
         if not callable(loader):
-            raise TypeError("configured local platform cannot load durable receipts")
+            raise TypeError(f"configured platform cannot load durable receipts: {platform_name}")
         return loader(path)
 
     def job_probe(self, spec: JobSpec, *, platform: str | None = None) -> dict[str, Any]:

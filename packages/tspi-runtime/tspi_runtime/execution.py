@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import re
+import os
 from pathlib import Path
 from typing import Any
 
-from job_runtime import JobOutput, JobRuntime, JobSpec, LocalProcessPlatform
+from job_runtime import JobOutput, JobRuntime, JobSpec, platforms_from_config
 from research_state.transactions import TransactionCoordinator
 
 _JOB_ID = re.compile(r"^job_[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$")
@@ -16,7 +17,16 @@ _RUNTIMES: dict[str, JobRuntime] = {}
 def _runtime(root: Path) -> JobRuntime:
     key = str(root)
     if key not in _RUNTIMES:
-        _RUNTIMES[key] = JobRuntime({"local": LocalProcessPlatform()})
+        candidates = []
+        if os.environ.get("TS_JOB_CONFIG"):
+            candidates.append(Path(os.environ["TS_JOB_CONFIG"]).expanduser())
+        candidates.extend((root / ".pi" / "job.toml", root.parent / ".pi" / "job.toml", root.parent.parent / ".pi" / "job.toml"))
+        config = next((item for item in candidates if item.is_file()), candidates[0] if candidates else root / ".pi" / "job.toml")
+        try:
+            platforms, default = platforms_from_config(config if config.is_file() else None)
+        except (OSError, TypeError, ValueError) as exc:
+            raise ValueError(f"invalid job runtime configuration: {config}: {exc}") from exc
+        _RUNTIMES[key] = JobRuntime(platforms, default=default)
     return _RUNTIMES[key]
 
 
@@ -69,12 +79,21 @@ def _intent_path(root: Path, job_id: str) -> str:
     return f"operations/jobs/{job_id}.json"
 
 
+def _platform_name(params: dict[str, Any]) -> str | None:
+    value = params.get("platform") or params.get("environment")
+    target = params.get("execution_target")
+    if value is None and isinstance(target, dict):
+        value = target.get("environment")
+    return str(value) if value is not None else None
+
+
 def _receipt(root: Path, params: dict[str, Any]):
     job_id = _job_id(params)
     path = _receipt_path(root, job_id)
     if not path.is_file():
         raise FileNotFoundError(f"job receipt not found: {job_id}")
-    return LocalProcessPlatform.receipt_from_disk(path)
+    runtime = _runtime(root)
+    return runtime.receipt_from_disk(str(path))
 
 
 def dispatch(operation: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -94,7 +113,7 @@ def dispatch(operation: str, params: dict[str, Any]) -> dict[str, Any]:
         # than submitting the command a second time.
         coordinator.commit_files(f"{request_id}:intent", "job.dispatch", params, writes={_intent_path(root, spec.job_id): intent}, result=intent)
         try:
-            receipt = runtime.job_start(spec, platform=params.get("platform"))
+            receipt = runtime.job_start(spec, platform=_platform_name(params))
         except Exception as error:
             failed = {**intent, "state": "failed", "error": str(error)}
             coordinator.commit_files(f"{request_id}:failed", "job.dispatch_failed", params, writes={_intent_path(root, spec.job_id): failed}, result=failed)
@@ -107,11 +126,12 @@ def dispatch(operation: str, params: dict[str, Any]) -> dict[str, Any]:
         # Probe is a capability query and intentionally does not require a
         # command or a workspace job directory.
         if not params.get("command"):
-            platform = params.get("platform") or "local"
-            if platform != "local":
+            platform = _platform_name(params) or "local"
+            if platform not in runtime.platforms:
                 return {"platform": platform, "available": False, "reason": "platform adapter is not configured"}
-            return {"platform": "local", "available": True}
-        return runtime.job_probe(_spec(root, params), platform=params.get("platform"))
+            spec = JobSpec(command=("true",), cwd=root)
+            return runtime.job_probe(spec, platform=platform)
+        return runtime.job_probe(_spec(root, params), platform=_platform_name(params))
     try:
         receipt = _receipt(root, params)
     except FileNotFoundError:

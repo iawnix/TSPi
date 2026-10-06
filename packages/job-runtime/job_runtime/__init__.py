@@ -14,9 +14,12 @@ from .models import (
 )
 from .platform import ExecutionPlatform
 from .local import LocalProcessPlatform
+from .remote import RemoteExecutionPlatform, TorqueSSHPlatform
+from .config import load_job_config, platforms_from_config
 from .runtime import JobRuntime
 
 __all__ = [
     "ExecutionPlatform", "JobOutput", "JobReceipt", "JobRuntime", "JobSpec",
-    "JobState", "JobStatus", "LocalProcessPlatform",
+    "JobState", "JobStatus", "LocalProcessPlatform", "RemoteExecutionPlatform", "TorqueSSHPlatform",
+    "load_job_config", "platforms_from_config",
 ]

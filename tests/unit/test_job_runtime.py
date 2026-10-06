@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from job_runtime import JobOutput, JobRuntime, JobSpec, JobState, LocalProcessPlatform
+from job_runtime import JobOutput, JobRuntime, JobSpec, JobState, LocalProcessPlatform, TorqueSSHPlatform, platforms_from_config
 from research_compute import ExecutionRequest, ExecutionService
 
 
@@ -87,3 +87,26 @@ def test_execution_service_preserves_research_identity_without_domain_parsing(tm
     assert receipt.node_id == "node_demo"
     assert receipt.attempt_id == "attempt_demo"
     assert service.collect(receipt)["job_id"] == "job_demo"
+
+
+def test_job_config_wires_remote_environment_into_runtime(tmp_path: Path) -> None:
+    config = tmp_path / "job.toml"
+    config.write_text(
+        """default_environment = \"local\"\n
+[environments.local]
+kind = \"local\"
+
+[environments.cluster]
+kind = \"remote\"
+ssh_host = \"compute.example\"
+ssh_config = \"/tmp/ssh-config\"
+scheduler = \"torque\"
+remote_root = \"/scratch/tspi\"
+""",
+        encoding="utf-8",
+    )
+    platforms, default = platforms_from_config(config)
+    assert default == "local"
+    assert isinstance(platforms["local"], LocalProcessPlatform)
+    assert isinstance(platforms["cluster"], TorqueSSHPlatform)
+    assert platforms["cluster"].host == "compute.example"
