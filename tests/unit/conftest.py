@@ -4,7 +4,7 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def unified_compute_environment(tmp_path, monkeypatch):
+def execution_platform_fixture(tmp_path, monkeypatch):
     """Give unit tests an explicit local environment without production fallbacks."""
 
     config = tmp_path / "compute.toml"

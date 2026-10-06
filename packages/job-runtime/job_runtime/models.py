@@ -38,6 +38,9 @@ class JobSpec:
     stdin: Path | None = None
     timeout_seconds: float | None = None
     metadata: Mapping[str, object] = field(default_factory=dict)
+    workspace_id: str | None = None
+    node_id: str | None = None
+    attempt_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.command or not all(isinstance(item, str) and item for item in self.command):
@@ -59,6 +62,9 @@ class JobReceipt:
     cwd: str
     pid: int | None = None
     metadata: Mapping[str, object] = field(default_factory=dict)
+    workspace_id: str | None = None
+    node_id: str | None = None
+    attempt_id: str | None = None
 
 
 @dataclass(frozen=True)

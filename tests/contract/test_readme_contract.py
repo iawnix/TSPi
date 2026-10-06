@@ -277,25 +277,5 @@ def test_compute_reference_uses_the_registered_gaussian_input_role() -> None:
     assert '"inputRole": "structure"' not in compute
 
 
-def test_final_report_builder_renders_phase_node_and_scientific_objects() -> None:
-    text = (ROOT / "extensions" / "chemical" / "providers" / "report_lib" / "builder.py").read_text(encoding="utf-8")
-
-    for phrase in [
-        "Research Roadmap",
-        "ResearchNode Records",
-        "## Findings",
-        "## Gates",
-        "Operational Follow-up",
-        "phase[\"id\"]",
-        "claim['id']",
-        "node['id']",
-        "finding['id']",
-        "gate['id']",
-    ]:
-        assert phrase in text
-    for removed in ('"act_id"', "evidence_id", "gate_result_id", "required_gates"):
-        assert removed not in text
-
-
 def test_static_research_map_templates_are_removed() -> None:
     assert not list((ROOT / "extensions" / "core" / "skills").glob("*/assets/templates/research_map"))

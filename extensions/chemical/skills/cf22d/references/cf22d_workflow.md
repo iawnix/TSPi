@@ -1,7 +1,7 @@
 # CF22D Workflow
 
 This reference describes the source runner's contract. It does not create a
-TSPi capability or authorize a direct process launch.
+TSPi workflow or authorize a direct process launch.
 
 ## Contents
 
@@ -41,7 +41,7 @@ fields even when defaults are used:
 
 These are the standalone runner defaults. A TSPi adapter may deliberately
 choose different bounded defaults (for example, a lower grid level or fewer
-SCF cycles); treat its live capability descriptor and frozen calculation intent
+SCF cycles); treat its live Skill reference and frozen calculation intent
 as authoritative and record the effective values.
 
 The adapter follows the source default of enabling an initial Hessian for
@@ -54,11 +54,11 @@ intent and, when it answers the same Node question, an explicit recalculation.
 ## Task Graph
 
 The standalone runner supports `sp`, `opt`, `ts`, `freq`, and `thermo`. The
-current TSPi adapter maps those tasks to version-1 capability IDs
+current TSPi adapter maps those tasks to version-1 workflow IDs
 `pyscf.sp`, `pyscf.opt`, `pyscf.ts`, `pyscf.freq`, and `pyscf.thermo`, and also
 offers `pyscf.opt_freq` and `pyscf.ts_freq` composite descriptors. Use the
 live catalog's version and schema; do not pass a source YAML task list as a
-`compute_run` capability name.
+`job_start` workflow name.
 
 - `opt` and `ts` cannot be requested together.
 - `freq` requires an SCF on the current geometry; the SCF is implicit when
@@ -82,7 +82,7 @@ task JSON records, and any enabled checkpoint, optimized/TS geometry, Hessian,
 frequency, and thermochemistry files. A TSPi adapter may expose those results as
 declared artifacts such as `pyscf.out`, `pyscf_result.json`,
 `pyscf_geometry.xyz`, `pyscf_frequencies.json`, `pyscf_hessian.npy`, and
-`pyscf_thermo.json`; the live capability descriptor and artifact manifest are
+`pyscf_thermo.json`; the live Skill reference and artifact manifest are
 authoritative rather than a filename guessed from this reference. Resource
 records may include requested threads, effective PySCF threads, memory budget,
 wall/CPU time, and RSS snapshots. RSS is a process snapshot, not an exclusive
@@ -117,4 +117,4 @@ or strongly correlated problem.
 The workflow is single-structure. IRC, NEB, reaction scans, endpoint identity,
 crossing-point/DMECP searches, conformer ensembles, isotope corrections, and
 microkinetics are outside this runner. Use the relevant TSPi Skill and a live
-registered capability instead of extending a CF22D result implicitly.
+supported workflow instead of extending a CF22D result implicitly.

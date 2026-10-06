@@ -9,7 +9,7 @@
     }
   ],
   "implementation": "adapter",
-  "notes": "Pure method x environment x opt/sp planning; execution is delegated to compute_run.",
+  "notes": "Pure method x environment x opt/sp planning; execution is delegated to the Job Runtime.",
   "operation": "chemical.comparison.plan",
   "version": "1",
   "input_schema": {

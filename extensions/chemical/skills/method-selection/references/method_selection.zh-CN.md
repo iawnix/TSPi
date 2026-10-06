@@ -1,7 +1,7 @@
 # Backend 选择
 
 Root Agent 根据科学问题、不确定性、体系大小、电子结构、目标可观测量、可用 Artifact、
-成本与实时环境选择 Backend。使用 capability catalog 检查接受的任务与参数。
+成本与实时环境选择 Backend。使用 Skill instructions 检查接受的任务与参数。
 
 需要考虑：
 
@@ -13,7 +13,7 @@ Root Agent 根据科学问题、不确定性、体系大小、电子结构、目
 - 实时本地/远端软件与调度器是否就绪。
 
 Gaussian 可用于直接 TS 优化、松弛扫描、QST 与后续表征。xTB/CREST 可高效探索构象和
-粗略路径。已注册 `ase.neb` capability 默认使用 ASE 路径优化和 xTB 能量/力，也可以
+粗略路径。已注册 `ase.neb` workflow 默认使用 ASE 路径优化和 xTB 能量/力，也可以
 显式选择 Gaussian CLI calculator 为每个 image 计算能量/力。外部 DMECP 工作流可处理
 交叉点搜索。根据当前研究问题决定它们的使用顺序。
 

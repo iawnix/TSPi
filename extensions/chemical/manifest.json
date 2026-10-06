@@ -26,12 +26,12 @@
     {
       "name": "method-selection",
       "path": "skills/method-selection",
-      "sha256": "sha256:39bee66403c6889daa7783c074737d4bc57a8f744294011e4ae1b3c9a87ff282"
+      "sha256": "sha256:6ebaa71517f59aa8d93c147cfafc55d5c0fb774df3368e12c1c5af0f0c203bda"
     },
     {
       "name": "cf22d",
       "path": "skills/cf22d",
-      "sha256": "sha256:73e012bd711e9e2e3f38bf18b0c13c071bb4fffe87e746491598107593c79d5d"
+      "sha256": "sha256:428bd08bb3739fe8c878772c6ce10ceceea10de5ec146c7c35a4e624f0dace88"
     },
     {
       "name": "xtb",
@@ -41,22 +41,22 @@
     {
       "name": "crest",
       "path": "skills/crest",
-      "sha256": "sha256:ae33249838ea6a8960559e32a0311ed4aeb68c6fafe6a85eb487241064231ec1"
+      "sha256": "sha256:2120f88e6fcc1bca6441a2ec1d4dedfda6293c09af9e59163b58e5e8c111e04a"
     },
     {
       "name": "qbics",
       "path": "skills/qbics",
-      "sha256": "sha256:34ff6e8ce94c3e772c1808bd5c62cf6dd0f8922e40ec83e0396b9d92f619fdb3"
+      "sha256": "sha256:fa040b34dbf0b28f5f92d707568205c84fe274aad0881c55a4e48f81d55471b0"
     },
     {
       "name": "gaussian",
       "path": "skills/gaussian",
-      "sha256": "sha256:25100378fa9930feb8786e60b26591af8d7d4287afe465b237144032e3984a82"
+      "sha256": "sha256:9c585beb3f17513efeac3771361a0921a49d88bb70f694befc0340117ddce9f9"
     },
     {
       "name": "chemical-input",
       "path": "skills/chemical-input",
-      "sha256": "sha256:212b4ed03b2341f8fd4188dbce24fd455672af06e0171070ee79840eb074fb3c"
+      "sha256": "sha256:7c77ffe5c896bccd0ec82017a801ad0bbeaf5f8a31a2a53338ae6c49e650c3f2"
     },
     {
       "name": "mechanism-reasoning",
@@ -126,7 +126,7 @@
       "descriptor": "providers/chemical.comparison.plan.json",
       "entry": "providers/chemical_provider.py",
       "sha256": "sha256:d0774ec483fc68b98b58ffc83501d84d35d6e73600e6fd597e281d1bdb3172fe",
-      "descriptor_sha256": "sha256:934d3adf19cc4fa6efecefa275d0da14216201830a275d9157cf012500d7ee4c"
+      "descriptor_sha256": "sha256:885bd544199ee16e4325ec83fb2e07452b1106a40b368d9d99a8fbe45b77d700"
     }
   ]
 }

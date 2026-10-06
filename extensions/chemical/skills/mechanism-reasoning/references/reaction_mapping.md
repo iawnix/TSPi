@@ -6,14 +6,14 @@ mapping supplied by Root. It does not invent an atom map.
 ## Discovery And Call
 
 ```text
-research_read mode=capabilities capabilityKind=analysis
-research_read mode=capabilities capabilityKind=analysis query=reaction.mapping.validate@1
+read the relevant analysis Skill reference
+read the relevant analysis Skill reference query=reaction.mapping.validate@1
 ```
 
-Call `analysis_run` with an open `nodeId`, registered XYZ Artifact IDs, and an
+Call `bash plus the Skill helper` with an open `nodeId`, registered XYZ Artifact IDs, and an
 explicit zero-based mapping. Physical paths never belong in the request.
 Species indices address list positions; repeating an Artifact ID represents
-separate occurrences of the same species. Respect the capability's reported
+separate occurrences of the same species. Respect the workflow's reported
 limits.
 
 ## Result
@@ -32,7 +32,7 @@ parser diagnostics into the map as if they were facts.
 
 ## Limits
 
-This capability does not decide whether a bond change is chemically plausible,
+This workflow does not decide whether a bond change is chemically plausible,
 whether a proton is implicit, whether symmetry-equivalent maps are equivalent,
 or whether a transition state reaches endpoints. XYZ alone does not establish
 isotope, charge, spin, or bond identity; use structural comparison and the

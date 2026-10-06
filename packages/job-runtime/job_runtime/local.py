@@ -57,7 +57,7 @@ class LocalProcessPlatform(ExecutionPlatform):
             stdin=spec.stdin.open("rb") if spec.stdin else subprocess.DEVNULL,
             stdout=stdout, stderr=stderr, start_new_session=True,
         )
-        receipt = JobReceipt(job_id, self.name, _now(), spec.command, str(spec.cwd), proc.pid, dict(spec.metadata))
+        receipt = JobReceipt(job_id, self.name, _now(), spec.command, str(spec.cwd), proc.pid, dict(spec.metadata), spec.workspace_id, spec.node_id, spec.attempt_id)
         self._processes[job_id] = proc
         if spec.timeout_seconds is not None:
             self._deadlines[job_id] = time.monotonic() + spec.timeout_seconds
@@ -65,12 +65,31 @@ class LocalProcessPlatform(ExecutionPlatform):
         self._write(spec.cwd / "spec.json", {
             "command": list(spec.command), "cwd": str(spec.cwd), "outputs": [o.__dict__ for o in spec.outputs],
             "timeout_seconds": spec.timeout_seconds, "metadata": dict(spec.metadata),
+            "workspace_id": spec.workspace_id, "node_id": spec.node_id, "attempt_id": spec.attempt_id,
         })
         return receipt
 
     def status(self, receipt: JobReceipt) -> JobStatus:
         if receipt.job_id in self._terminal:
             return self._terminal[receipt.job_id]
+        # A previous server process may have observed the terminal state and
+        # persisted it before exiting.  Read that record before consulting a
+        # (possibly stale) PID from the receipt.
+        status_path = Path(receipt.cwd) / "status.json"
+        if status_path.is_file():
+            try:
+                value = self._read(status_path)
+                if value.get("job_id") == receipt.job_id and value.get("state") in {item.value for item in JobState}:
+                    restored = JobStatus(
+                        receipt.job_id, JobState(value["state"]), self.name,
+                        exit_code=value.get("exit_code"), started_at=value.get("started_at"),
+                        finished_at=value.get("finished_at"), error=value.get("error"),
+                    )
+                    if restored.state in {JobState.SUCCEEDED, JobState.FAILED, JobState.TIMED_OUT, JobState.CANCELLED, JobState.COLLECTED}:
+                        self._terminal[receipt.job_id] = restored
+                        return restored
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                pass
         proc = self._processes.get(receipt.job_id)
         if proc is None:
             # A worker restart drops the in-memory Popen handle.  The durable
@@ -81,10 +100,10 @@ class LocalProcessPlatform(ExecutionPlatform):
                     raise ProcessLookupError()
                 os.kill(int(receipt.pid), 0)
             except PermissionError:
-                return JobStatus(receipt.job_id, JobState.RUNNING, self.name, error="process is alive but not owned by this worker")
+                return self._persist(receipt, JobStatus(receipt.job_id, JobState.RUNNING, self.name, error="process is alive but not owned by this worker"))
             except (ProcessLookupError, OSError):
-                return JobStatus(receipt.job_id, JobState.UNKNOWN, self.name, error="process handle unavailable after worker restart")
-            return JobStatus(receipt.job_id, JobState.RUNNING, self.name, error="recovered from durable receipt")
+                return self._persist(receipt, JobStatus(receipt.job_id, JobState.UNKNOWN, self.name, error="process handle unavailable after worker restart"))
+            return self._persist(receipt, JobStatus(receipt.job_id, JobState.RUNNING, self.name, error="recovered from durable receipt"))
         if proc.poll() is None and receipt.job_id in self._deadlines and time.monotonic() >= self._deadlines[receipt.job_id]:
             os.killpg(proc.pid, signal.SIGTERM)
             try:
@@ -94,14 +113,13 @@ class LocalProcessPlatform(ExecutionPlatform):
                 proc.wait()
             terminal = JobStatus(receipt.job_id, JobState.TIMED_OUT, self.name, exit_code=proc.returncode, finished_at=_now(), error="job timeout exceeded")
             self._terminal[receipt.job_id] = terminal
-            return terminal
+            return self._persist(receipt, terminal)
         code = proc.poll()
         if code is None:
             return JobStatus(receipt.job_id, JobState.RUNNING, self.name)
         state = JobState.SUCCEEDED if code == 0 else JobState.FAILED
         terminal = JobStatus(receipt.job_id, state, self.name, exit_code=code, finished_at=_now())
-        self._terminal[receipt.job_id] = terminal
-        return terminal
+        return self._persist(receipt, terminal)
 
     def collect(self, receipt: JobReceipt) -> dict[str, Any]:
         status = self.status(receipt)
@@ -130,8 +148,24 @@ class LocalProcessPlatform(ExecutionPlatform):
                 proc.wait()
         current = self.status(receipt)
         terminal = JobStatus(receipt.job_id, JobState.CANCELLED, self.name, exit_code=current.exit_code, finished_at=_now())
-        self._terminal[receipt.job_id] = terminal
-        return terminal
+        return self._persist(receipt, terminal)
+
+    def _persist(self, receipt: JobReceipt, status: JobStatus) -> JobStatus:
+        """Persist the last observed status for restart/reconcile."""
+        payload = {
+            "job_id": status.job_id, "state": status.state.value,
+            "platform": status.platform, "exit_code": status.exit_code,
+            "started_at": status.started_at, "finished_at": status.finished_at,
+            "error": status.error,
+        }
+        try:
+            self._write(Path(receipt.cwd) / "status.json", payload)
+        except OSError:
+            # Status observation must remain useful on read-only remote mounts.
+            pass
+        if status.state in {JobState.SUCCEEDED, JobState.FAILED, JobState.TIMED_OUT, JobState.CANCELLED, JobState.COLLECTED}:
+            self._terminal[receipt.job_id] = status
+        return status
 
     @staticmethod
     def _write(path: Path, value: dict[str, Any]) -> None:
@@ -150,4 +184,5 @@ class LocalProcessPlatform(ExecutionPlatform):
             job_id=str(value["job_id"]), platform=str(value["platform"]),
             submitted_at=str(value["submitted_at"]), command=tuple(value["command"]),
             cwd=str(value["cwd"]), pid=value.get("pid"), metadata=value.get("metadata", {}),
+            workspace_id=value.get("workspace_id"), node_id=value.get("node_id"), attempt_id=value.get("attempt_id"),
         )

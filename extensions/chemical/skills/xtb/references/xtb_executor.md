@@ -7,8 +7,8 @@ input. Scan and MD require exactly one `xyz` and one `control` input.
 The adapter accepts `gfn0`, `gfn1`, `gfn2`, or `gfnff`; charge and `uhf` are
 explicit. Solvent and solvent model must be supplied together and the model is
 `alpb` or `gbsa`. Optimization tasks accept a bounded `opt_level` and
-`max_cycles`. The capability descriptor is the exact machine contract; ask
-`research_read mode=capabilities` before constructing an unfamiliar request.
+`max_cycles`. The Skill reference is the exact machine contract; ask
+`read the relevant Skill references` before constructing an unfamiliar request.
 
 For `xtb.scan`, the control artifact must contain a `$scan` section and end
 with `$end`. A `$end` after `$constrain` may also be used as a block separator.

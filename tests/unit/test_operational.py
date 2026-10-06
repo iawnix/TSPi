@@ -150,39 +150,6 @@ def test_runtime_status_ignores_unsupported_node_paths(tmp_path: Path) -> None:
     assert report["runtime_summary"]["tracked_file_count"] == 0
 
 
-def test_pending_compute_run_blocks_node_completion_without_duplicate_activity(tmp_path: Path) -> None:
-    root = tmp_path / "workspace"
-    _write(root / "research_nodes.json", {
-        "schema_version": "ts-research-node-registry/2",
-        "nodes": [{"node_id": "node_1"}],
-    })
-    run = root / "nodes" / "node_1" / "attempts" / "calc_1" / "runs" / "sub_1"
-    _write(run / "task.json", {
-        "task_id": "sub_1",
-        "role": "compute",
-        "authority": "operational",
-        "operation": "launch",
-        "scope": {"node_refs": ["node_1"], "claim_refs": []},
-        "inputs": {"intent_id": "calc_1", "backend": "gaussian"},
-    })
-
-    pending = runtime_status(root)
-    assert pending["deterministic_activities"] == []
-    assert node_completion_blockers(pending, node_id="node_1", outcome="completed") == [{
-        "code": "compute_run_not_terminal",
-        "ref": "nodes/node_1/attempts/calc_1/runs/sub_1",
-        "message": "Compute run is still pending: nodes/node_1/attempts/calc_1/runs/sub_1",
-    }]
-
-    _write(run / "run.json", {
-        "task_id": "sub_1",
-        "status": "failed",
-        "error": {"code": "provider_failed", "message": "Provider failed."},
-    })
-    terminal = runtime_status(root)
-    assert node_completion_blockers(terminal, node_id="node_1", outcome="inconclusive") == []
-
-
 def test_retryable_pre_submit_failure_is_not_an_unresolved_control(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     _write(root / "research_nodes.json", {

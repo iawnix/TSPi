@@ -34,7 +34,7 @@ E+ZPE 或 H。实际反应物浓度是独立速率输入。
 校正。负势垒会被标记为不适合简单 activated-TST 解释；极端速率常数仍以 ln k 提供。
 
 `kinetics.branching` 只对同一个已平衡前体、不可逆产物且产物不互相转化的情形计算归一化
-初始速率权重。这些假设必须显式满足。循环、耗尽与随时间变化的产率需要超出本 capability
+初始速率权重。这些假设必须显式满足。循环、耗尽与随时间变化的产率需要超出本 workflow
 的动力学模型。
 
 `mechanism.step.define` 记录平衡的 ReactionSpec、可逆性以及可选结构 audit/势垒/速率

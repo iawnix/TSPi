@@ -7,7 +7,7 @@ description: 运行和评估已注册的 xTB 单点、优化、频率、扫描�
 
 [English version](SKILL.md)
 
-使用本 Skill 处理已注册的 xTB capability。CREST 构象搜索由 `crest` 负责；是否
+使用本 Skill 处理已注册的 xTB workflow。CREST 构象搜索由 `crest` 负责；是否
 选择 xTB 而非其他方法由 `method-selection` 负责。
 
 将 XYZ 以及扫描或分子动力学所需的 control 输入绑定为逻辑 Artifact。在 calculation

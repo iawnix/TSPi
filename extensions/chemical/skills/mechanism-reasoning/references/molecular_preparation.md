@@ -9,7 +9,7 @@ per component, or explicit `species`, `reactants` and `products`. Example:
 ```json
 {
   "operation": "run", "nodeId": "node_1",
-  "capability": "reaction.parse", "capabilityVersion": "1",
+  "workflow": "reaction.parse", "workflowVersion": "1",
   "inputArtifacts": {},
   "parameters": {
     "reaction_smiles": "CCl.[OH-]>>CO.[Cl-]",

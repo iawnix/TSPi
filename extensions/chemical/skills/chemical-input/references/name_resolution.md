@@ -1,6 +1,6 @@
 # Name Resolution Contract
 
-`chemical.name.resolve@1` is a deterministic analysis capability. It accepts
+`chemical.name.resolve@1` is a deterministic analysis workflow. It accepts
 the original name, an optional Agent-provided translated `lookup_name`, and may
 validate explicitly supplied candidate SMILES. The
 resolver must report its implementation and version; a model-generated
@@ -12,7 +12,7 @@ It includes canonical and isomeric SMILES, formula, formal charge, optional
 InChI/InChIKey, unassigned stereocenters, and diagnostics. A missing resolver
 backend is reported as an unsupported unresolved result. A reachable backend
 that returns a deterministic not-found response is reported as an invalid
-unresolved input. An absent capability descriptor is a structured capability
+unresolved input. An absent Skill reference is a structured workflow
 gap. A translated `lookup_name` is only a query hint; the resolver must validate
 it and its provenance is retained alongside the original name. None of these
 permits inventing a structure.
@@ -31,11 +31,11 @@ ambiguous. No LLM-generated candidate is promoted by this configuration.
 
 If neither `TSPI_NAME_RESOLVER_CONFIG` nor
 `${TSPI_INSTALL_ROOT}/.pi/name-resolver.toml` exists, no deterministic lookup
-backend is available. When the capability itself is registered,
+backend is available. When the workflow itself is registered,
 `resolver=auto` still returns a normal `ts-analysis-result/1` with
 `verdict="unsupported"`, `data.status="unresolved"`, no candidates, and
-diagnostics explaining the missing backend. A `ts-capability-gap/1` response
-means the capability descriptor is absent from the live analysis catalog. The
+diagnostics explaining the missing backend. A `ts-workflow-gap/1` response
+means the Skill reference is absent from the live analysis catalog. The
 environment variable, when used, must name an absolute, readable regular
 non-symlink file. The supported TOML shape is:
 
@@ -56,7 +56,7 @@ Endpoints must be absolute HTTP(S) URLs; cache directories, when supplied,
 must be absolute. A disabled or unavailable backend, a network failure, or
 multiple candidates remains unresolved/ambiguous and must be surfaced in
 provenance and diagnostics. An installed program directory or arbitrary
-endpoint does not register a capability.
+endpoint does not register a workflow.
 
 Name lookup and structure identity are separate from 3D generation. After a
 candidate is confirmed, call `create_mol_structure`, then validate the reaction and mapping

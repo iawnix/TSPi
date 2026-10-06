@@ -9,19 +9,19 @@ description: Plan, diagnose, and run a registered PySCF CF22D single-structure w
 
 Use this Skill for a bounded PySCF workflow whose density-functional method is
 CF22D. The standalone `pyscf_runner` package is an input and execution helper;
-it is not a TSPi Backend unless TSPi exposes a deterministic capability, input
+it is not a TSPi Backend unless TSPi exposes a deterministic workflow, input
 roles, output roles, parser contract, and task-validation tests.
 
 Before execution, read the artifact catalog and the live compute catalog:
 
 ```text
 research_read mode=artifacts
-research_read mode=capabilities capabilityKind=compute
+read the relevant Skill references and use job_probe for environment checks
 ```
 
-Use only the exact capability and parameter schema returned by the catalog. If
-no PySCF/CF22D capability is registered, provide method guidance and a doctor
-plan only. Do not invent a capability name, construct a `compute_run` request for
+Use only the exact workflow and parameter schema returned by the catalog. If
+no PySCF/CF22D workflow is registered, provide method guidance and a doctor
+plan only. Do not invent a workflow name, construct a `job_start` request for
 an unavailable descriptor, invoke `pyscf-runner` through arbitrary shell, or
 present a local smoke test as a TSPi calculation.
 
@@ -77,6 +77,6 @@ declared primary outputs before recording separate FactFindings or IssueFindings
 through the Research State. The standalone runner normally writes `run.log`,
 `result.json`, task records, geometry, Hessian/frequency, and thermochemistry
 files; a TSPi adapter may instead declare names such as `pyscf.out`,
-`pyscf_result.json`, and `pyscf_*` JSON/XYZ artifacts. The live capability's
+`pyscf_result.json`, and `pyscf_*` JSON/XYZ artifacts. The live workflow's
 artifact manifest is authoritative. A failed or incomplete parser result is not
 a chemical verdict.

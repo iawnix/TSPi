@@ -2,7 +2,7 @@
 
 The Root Agent selects a backend from the scientific question, uncertainty,
 system size, electronic structure, desired observable, available artifacts,
-cost, and live environment. Use the capability catalog to check accepted tasks
+cost, and live environment. Use the Skill instructions to check accepted tasks
 and parameters.
 
 Consider:
@@ -18,7 +18,7 @@ Consider:
 
 Gaussian is a first-class candidate generator for direct TS optimization,
 relaxed scans, QST, and follow-up characterization. xTB/CREST can efficiently
-explore conformers and rough paths. The registered `ase.neb` capability uses
+explore conformers and rough paths. The registered `ase.neb` workflow uses
 ASE path optimization with xTB energies and forces by default, and can
 explicitly select the Gaussian CLI calculator for per-image energies and
 forces. External DMECP workflows

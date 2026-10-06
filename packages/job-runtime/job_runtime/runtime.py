@@ -57,5 +57,16 @@ class JobRuntime:
     def job_reconcile(self, receipt: JobReceipt) -> JobStatus:
         return self.reconcile(receipt)
 
+    def receipt_from_disk(self, path: str) -> JobReceipt:
+        """Load a durable receipt and reconcile it through its platform."""
+        # Receipt loading is platform-specific because remote adapters may use
+        # a scheduler receipt format.  Local receipts are intentionally the
+        # only generic format in this package.
+        local = self._platform("local")
+        loader = getattr(local, "receipt_from_disk", None)
+        if not callable(loader):
+            raise TypeError("configured local platform cannot load durable receipts")
+        return loader(path)
+
     def job_probe(self, spec: JobSpec, *, platform: str | None = None) -> dict[str, Any]:
         return self.probe(spec, platform=platform)

@@ -21,7 +21,9 @@ UNSUPPORTED_UUID_ACTIVITY_ID = re.compile(
     r"^op_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
-ACTIVITY_KINDS = frozenset({"structure_seed", "structure_compare", "scientific_analysis", "artifact_import", "render", "report"})
+# Analysis and artifact import are now Skill/Job Runtime operations. Rendering
+# and reporting remain deterministic presentation activities.
+ACTIVITY_KINDS = frozenset({"structure_seed", "structure_compare", "render", "report"})
 ACTIVITY_STATES = frozenset({"running", "completed", "failed"})
 MAX_DOCUMENT_BYTES = 1024 * 1024
 REQUEST_FIELDS = frozenset({
@@ -321,11 +323,6 @@ def _activity_intent_key(
     """Return a stable key for retries of the same operational intent."""
 
     payload = dict(request)
-    # These identify the submitted bytes, not the operation's target.  A
-    # corrected retry must still supersede a failed import/analysis.
-    if kind in {"artifact_import", "scientific_analysis"}:
-        payload.pop("submitted_sha256", None)
-        payload.pop("submitted_size_bytes", None)
     return sha256_json({
         "kind": kind,
         "operation": operation,

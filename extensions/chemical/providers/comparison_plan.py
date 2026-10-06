@@ -1,7 +1,7 @@
 """Deterministic method/environment/task planning for chemistry comparisons.
 
 The planner is deliberately side effect free.  It only describes work; the
-caller submits each ready job to ``compute_run`` and records the resulting
+caller submits each ready job to the Job Runtime and records the resulting
 Attempt and Artifact provenance there.
 """
 

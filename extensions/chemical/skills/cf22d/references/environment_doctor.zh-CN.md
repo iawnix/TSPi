@@ -13,10 +13,10 @@ Doctor 是只读就绪探针。它不得提交计算、修改 ResearchMap 状态
 ## 运行时机
 
 首次 CF22D 计算前、修改所选本地/远端环境或 `compute.toml` 后，以及修改受管 Python
-release 或原生库后，都应运行 doctor。之前的成功结果不能证明另一个环境或 capability
+release 或原生库后，都应运行 doctor。之前的成功结果不能证明另一个环境或 workflow
 已经就绪。
 
-远端目标使用安装级只读环境诊断（`TSPi --check-remote`）。使用 `compute_environment` 查看已
+远端目标使用安装级只读环境诊断（`TSPi --check-remote`）。使用 `job_probe` 查看已
 配置的环境及其 Backend 绑定；不要用临时 SSH 命令替代。现有远端合同会检查连接、调度器、
 可写远端根目录、队列/节点、激活脚本和每个已注册 Backend；计算 preflight 仍会再次检查
 远端就绪状态。`TSPi --check-remote` 仅面向远端。本地目标应使用安装级或 adapter 暴露的
@@ -53,11 +53,11 @@ runtime 执行 pip 安装，不要修改 `compute.toml` 来绕过限制，也不
 
 ## 能力边界
 
-Doctor 只证明 runtime 就绪，不注册 capability、不选择方法、不验证过渡态，也不建立反应
-机理。`research_read mode=capabilities capabilityKind=compute` 中出现 descriptor 同样不能证明
+Doctor 只证明 runtime 就绪，不注册 workflow、不选择方法、不验证过渡态，也不建立反应
+机理。`read the relevant Skill references and use job_probe for environment checks` 中出现 descriptor 同样不能证明
 所选本地/远端环境健康。
 
 当 TSPi adapter 尚未发布准确的输入/输出 role、解析和任务验证合同时，doctor 只能用于
 诊断。不要为源任务 `sp`、`opt`、`ts`、`freq` 或 `thermo` 虚构公共 ID；只使用实时 catalog
-返回的版本化名称。即使这些单结构 capability 已注册，源 Runner 仍没有公开的 IRC、NEB、
-交叉点、端点或多结构 capability。
+返回的版本化名称。即使这些单结构 workflow 已注册，源 Runner 仍没有公开的 IRC、NEB、
+交叉点、端点或多结构 workflow。

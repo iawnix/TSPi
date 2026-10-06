@@ -7,7 +7,7 @@ description: Run and assess CREST conformer searches and preserve ensemble membe
 
 [Chinese version](SKILL.zh-CN.md)
 
-Use this Skill for the registered `crest.conformer_search` capability. CREST
+Use this Skill for the registered `crest.conformer_search` workflow. CREST
 owns ensemble exploration; xTB calculations outside a CREST search belong to
 `xtb`.
 

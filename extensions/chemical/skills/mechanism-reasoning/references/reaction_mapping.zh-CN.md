@@ -6,13 +6,13 @@
 ## 发现与调用
 
 ```text
-research_read mode=capabilities capabilityKind=analysis
-research_read mode=capabilities capabilityKind=analysis query=reaction.mapping.validate@1
+read the relevant analysis Skill reference
+read the relevant analysis Skill reference query=reaction.mapping.validate@1
 ```
 
-调用 `analysis_run` 时提供未关闭的 `nodeId`、已注册 XYZ Artifact ID 和显式、从零开始的
+调用 `bash 与 Skill helper` 时提供未关闭的 `nodeId`、已注册 XYZ Artifact ID 和显式、从零开始的
 mapping。请求中不能出现物理路径。Species index 指向列表位置；重复 Artifact ID 表示同一
-species 的不同 occurrence。遵守 capability 返回的限制。
+species 的不同 occurrence。遵守 workflow 返回的限制。
 
 ## 结果
 
@@ -27,6 +27,6 @@ map 并当作事实。
 
 ## 局限
 
-该 capability 不判断成键变化是否化学合理、质子是否隐式、对称等价 map 是否等价，也不
+该 workflow 不判断成键变化是否化学合理、质子是否隐式、对称等价 map 是否等价，也不
 判断过渡态是否到达端点。XYZ 本身不能建立同位素、电荷、自旋或键 identity；结构比较、
 端点验证与过渡态验证应分别使用对应 Skill。

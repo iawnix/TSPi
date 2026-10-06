@@ -15,7 +15,7 @@ description: 在确定性 TSPi 分析或计算前，把自然语言化学名称�
 
 1. 保留用户原文，将每个反应物和产物标记为名称、SMILES、XYZ/artifact 或
    未解析描述。反应物和产物使用同一规则。
-2. 对名称通过 `analysis_run` 调用 `chemical.name.resolve@1`，保留解析器
+2. 对名称通过 `bash 与 Skill helper` 调用 `chemical.name.resolve@1`，保留解析器
    provenance、候选、诊断和状态。
    若安装目录的 `name-resolver.toml` 启用了确定性的 PubChem 或 OPSIN 后端，能力会自动
    使用它；返回 `unsupported` 表示后端不可用，返回带 404 诊断的 `invalid` 表示后端可达但

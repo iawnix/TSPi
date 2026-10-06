@@ -60,21 +60,10 @@ def test_default_chemical_extension_inventory_validates_provider_descriptors() -
     provider_ids = {item["id"] for item in manifest["providers"]}
     assert provider_ids == {
         "create_mol_structure", "chemical.analysis", "chemical.comparison.plan",
-        "crest", "gaussian", "pyscf", "xtb", "artifact_render", "report_build",
+        "crest", "gaussian", "pyscf", "xtb",
     }
     for item in manifest["providers"]:
         descriptor = json.loads((ROOT / "extensions" / "chemical" / item["descriptor"]).read_text(encoding="utf-8"))
         validator.validate(descriptor)
         assert descriptor["provider_id"] == item["id"]
         assert descriptor["kind"] == item["kind"]
-
-
-def test_script_extension_inventory_validates_provider_descriptor() -> None:
-    manifest = json.loads((ROOT / "extensions" / "script" / "manifest.json").read_text(encoding="utf-8"))
-    manifest_schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
-    Draft202012Validator(manifest_schema).validate(manifest)
-    provider_schema = json.loads(PROVIDER_SCHEMA.read_text(encoding="utf-8"))
-    descriptor = json.loads((ROOT / "extensions" / "script" / "descriptors" / "script.bash.json").read_text(encoding="utf-8"))
-    Draft202012Validator(provider_schema).validate(descriptor)
-    assert manifest["providers"][0]["id"] == "script.bash"
-    assert descriptor["provider_id"] == "script.bash"

@@ -19,15 +19,14 @@ function request_id(request) {
 function error_code(error) {
   const message = String(error?.message || error || "request failed");
   const capability_code = error?.code;
-  if (capability_code === "capability_not_found" || capability_code === "artifact_not_found") return "not_found";
-  if (capability_code === "capability_mode_not_supported" || capability_code === "workspace_mode_mismatch") return "conflict";
+  if (capability_code === "artifact_not_found" || capability_code === "job_not_found") return "not_found";
+  if (capability_code === "workspace_mode_mismatch") return "conflict";
   if (capability_code === "js_provider_path_removed") return "conflict";
-  if (capability_code === "compute_requires_research_workspace"
-    || capability_code === "workspace_admission_required"
+  if (capability_code === "workspace_admission_required"
     || capability_code === "cancelled"
     || capability_code === "timeout"
     || capability_code === "timed_out"
-    || /compute_requires_research_workspace|workspace_admission_required|compute execution was cancelled|compute execution exceeded timeout/u.test(message)) {
+    || /workspace_admission_required|job execution was cancelled|job execution exceeded timeout/u.test(message)) {
     return "conflict";
   }
   if (typeof capability_code === "string" && (/^invalid_/u.test(capability_code) || capability_code === "artifact_too_large")) {

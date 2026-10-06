@@ -7,7 +7,7 @@ description: 运行和评估 CREST 构象搜索，并保存构象集合、能量
 
 [English version](SKILL.md)
 
-使用本 Skill 处理已注册的 `crest.conformer_search` capability。CREST 负责构象集合探索；
+使用本 Skill 处理已注册的 `crest.conformer_search` workflow。CREST 负责构象集合探索；
 CREST 搜索之外的 xTB 计算由 `xtb` 负责。
 
 不要把进程正常退出或非空构象集合直接当作科学证据；必须先核对主要文件、成员数量和所选

@@ -1,6 +1,6 @@
 # CF22D 工作流
 
-本参考描述源 Runner 的合同，不创建 TSPi capability，也不授权直接启动进程。
+本参考描述源 Runner 的合同，不创建 TSPi workflow，也不授权直接启动进程。
 
 ## 内容
 
@@ -36,7 +36,7 @@ result = PySCFRunner(config).run(["sp", "freq"])
 - `output`：结果目录/前缀、覆盖策略、快照、checkpoint、Hessian、频率和热化学文件。
 
 以上是独立 Runner 的默认值。TSPi adapter 可以有意选择其他有边界默认值（例如更低的网格
-等级或更少的 SCF 循环）；应以实时 capability descriptor 和冻结的 calculation intent 为
+等级或更少的 SCF 循环）；应以实时 Skill reference 和冻结的 calculation intent 为
 权威，并记录实际生效值。
 
 当前 adapter 保持源项目的默认行为：`ts` 和 `ts_freq` 默认启用初始 Hessian；intent
@@ -48,9 +48,9 @@ calculation intent；若仍回答同一 Node 问题，还应显式标记为 reca
 ## 任务图
 
 独立 Runner 支持 `sp`、`opt`、`ts`、`freq` 和 `thermo`。当前 TSPi adapter 将这些任务
-映射到版本 1 的 capability ID `pyscf.sp`、`pyscf.opt`、`pyscf.ts`、`pyscf.freq` 和
+映射到版本 1 的 workflow ID `pyscf.sp`、`pyscf.opt`、`pyscf.ts`、`pyscf.freq` 和
 `pyscf.thermo`，并额外提供组合 descriptor `pyscf.opt_freq` 和 `pyscf.ts_freq`。应使用
-实时 catalog 的版本和 schema；不要把源 YAML 任务列表当成 `compute_run` capability 名称。
+实时 catalog 的版本和 schema；不要把源 YAML 任务列表当成 `job_start` workflow 名称。
 
 - `opt` 与 `ts` 不能同时请求；
 - `freq` 需要当前几何上的 SCF；未请求 `sp` 时，SCF 会隐式执行；
@@ -69,7 +69,7 @@ Runner 会分开记录显式任务和隐式任务。总结来源时要保持二�
 快照、顶层 JSON 结果、任务 JSON 记录，以及按配置启用的 checkpoint、优化/TS 几何、
 Hessian、频率和热化学文件。TSPi adapter 也可能把结果暴露为已声明的
 `pyscf.out`、`pyscf_result.json`、`pyscf_geometry.xyz`、`pyscf_frequencies.json`、
-`pyscf_hessian.npy` 和 `pyscf_thermo.json`；实时 capability descriptor 与 Artifact
+`pyscf_hessian.npy` 和 `pyscf_thermo.json`；实时 Skill reference 与 Artifact
 manifest 才是权威，不要从本 reference 猜文件名。资源记录可以包括请求线程数、实际 PySCF
 线程数、内存预算、墙钟/CPU 时间和 RSS 快照。RSS 是进程快照，不是任务独占峰值。
 
@@ -94,5 +94,5 @@ parser 值并把它绑定到 calculation intent。仅有 parser 名称不能证�
 自旋交叉、金属或强关联问题。
 
 工作流是单结构的。IRC、NEB、反应扫描、端点身份、交叉点/DMECP 搜索、构象集合、同位素
-校正和微观动力学不属于该 Runner。应使用相应 TSPi Skill 和实时注册 capability，不要
+校正和微观动力学不属于该 Runner。应使用相应 TSPi Skill 和实时注册 workflow，不要
 隐式扩展 CF22D 结果。

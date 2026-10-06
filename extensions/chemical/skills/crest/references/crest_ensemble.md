@@ -1,6 +1,6 @@
 # CREST Ensemble Contract
 
-The registered capability is `crest.conformer_search`. It accepts one `xyz`
+The supported workflow is `crest.conformer_search`. It accepts one `xyz`
 input and explicit charge, unpaired electrons, xTB method, search level,
 optimization level, thread, and solvent settings. Solvent and solvent model
 must be supplied together.

@@ -220,21 +220,6 @@ def node_completion_blockers(
             "message": str(finding.get("message") or f"unsafe operational path: {ref}"),
         })
 
-    for row in status.get("agent_runs", []):
-        if (
-            not isinstance(row, dict)
-            or row.get("role") != "compute"
-            or node_id not in _string_list(row.get("node_refs"))
-        ):
-            continue
-        state = str(row.get("status") or "pending")
-        if state not in {"completed", "failed"}:
-            ref = str(row.get("run_ref") or row.get("task_id") or node_id)
-            blockers.append({
-                "code": "compute_run_not_terminal",
-                "ref": ref,
-                "message": f"Compute run is still {state}: {ref}",
-            })
     for row in status.get("pending_controls", []):
         if isinstance(row, dict) and row.get("node_id") == node_id:
             ref = str(row.get("guard_ref") or row.get("intent_id") or node_id)
@@ -584,7 +569,10 @@ def _valid_review_disposition(disposition: dict[str, Any], run: dict[str, Any]) 
         and run.get("status") == "completed"
         and disposition.get("schema_version") == "ts-review-root-disposition/1"
         and disposition.get("task_id") == run.get("task_id")
-        and disposition.get("review_run_ref") == run.get("run_ref")
+        # A strategy review is a Research State record; the disposition no
+        # longer duplicates the physical subagent path.
+        and isinstance(disposition.get("strategy_review_id"), str)
+        and bool(disposition["strategy_review_id"].strip())
         and disposition.get("disposition") in {"accepted", "partially_accepted", "rejected", "deferred"}
         and isinstance(disposition.get("response"), str)
         and bool(disposition["response"].strip())

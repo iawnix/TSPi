@@ -9,17 +9,17 @@ or clean files outside a runner-owned scratch subdirectory.
 - [When To Run](#when-to-run)
 - [Checks](#checks)
 - [Readiness And Recovery](#readiness-and-recovery)
-- [Capability Boundary](#capability-boundary)
+- [Capability Boundary](#workflow-boundary)
 
 ## When To Run
 
 Run the doctor before the first CF22D calculation, after changing the selected
 local/remote environment or `compute.toml`, and after changing the managed
 Python release or native libraries. A successful previous run is not evidence
-that a different environment or capability is ready.
+that a different environment or workflow is ready.
 
 For a remote target, use the installation's read-only environment diagnostic
-(`TSPi --check-remote`). Use `compute_environment` to inspect the configured
+(`TSPi --check-remote`). Use `job_probe` to inspect the configured
 environment and its Backend bindings; do not substitute an ad-hoc SSH command.
 The existing remote contract checks connection, scheduler, writable remote root,
 queues/nodes, activation, and each registered backend; remote readiness is still
@@ -70,11 +70,11 @@ the research task, change `compute.toml` to bypass limits, or retry a calculatio
 whose intent has changed. Preserve the doctor record with the calculation plan
 when reporting why execution was withheld.
 
-## Capability Boundary
+## Workflow Boundary
 
-The doctor proves runtime readiness only. It does not register a capability,
+The doctor proves runtime readiness only. It does not register a workflow,
 choose a method, validate a transition state, or establish a reaction mechanism.
-Descriptor presence in `research_read mode=capabilities capabilityKind=compute` also
+Descriptor presence in `read the relevant Skill references and use job_probe for environment checks` also
 does not prove that the selected local/remote environment is healthy.
 
 When a TSPi adapter has not published exact input/output roles, parser, and
@@ -82,4 +82,4 @@ task-validation contracts, use the doctor for diagnosis only. Do not invent
 public IDs for the source tasks `sp`, `opt`, `ts`, `freq`, or `thermo`; use only
 the versioned names returned by the live catalog. Even after those single-
 structure capabilities are registered, the source runner has no public IRC,
-NEB, crossing-point, endpoint, or multi-structure capability.
+NEB, crossing-point, endpoint, or multi-structure workflow.

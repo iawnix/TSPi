@@ -4,7 +4,7 @@ Backends are deterministic adapters. They express supported program tasks,
 validate parameters, prepare immutable inputs/scripts, declare expected artifacts,
 and parse local outputs. Root selects the method and interprets verified results.
 
-Use `research_read mode=capabilities capabilityKind=compute` for the current machine-
+Use `read the relevant Skill references and use job_probe for environment checks` for the current machine-
 readable catalog and
 [compute_tools.md](../../../../core/skills/orchestration/references/compute_tools.md) for
 public calls.
@@ -16,32 +16,32 @@ public calls.
   QST, and other supported Gaussian modes.
 - xTB: `sp`, `opt`, `freq`, `opt_freq`, `scan`, `md`.
 - CREST: `conformer_search`.
-- ASE NEB: the registered `ase.neb@1` capability, using the xTB CLI calculator
+- ASE NEB: the registered `ase.neb@1` workflow, using the xTB CLI calculator
   by default or the explicit `calculator=gaussian_cli` mode when Gaussian
   per-image forces are required.
 
-QBICS DMECP is not a registered capability. A backend is not public until it
+QBICS DMECP is not a supported workflow. A backend is not public until it
 has a deterministic parser contract and task-validation tests; an input
 preparer alone is insufficient.
 
-Use the catalog to construct `compute_run` requests. Select
+Use the catalog to construct `job_start` requests. Select
 `execution.environment` with the corresponding installation-owned environment
 name; the lifecycle
-and result contract are the same. Native `compute_readiness` performs the same
+and result contract are the same. Native `job_probe` performs the same
 read-only environment checks used by calculation preflight; it does not create
 an intent or submit a job.
 
-The live catalog is authoritative for capability identity and version. Skill
+The live catalog is authoritative for workflow identity and version. Skill
 prose, a Backend descriptor, an installed executable, or a directory listing
-does not register a capability or prove that it is runnable. Query the exact
-`capability_id@version`, then query `compute_readiness` with that capability,
+does not register a workflow or prove that it is runnable. Query the exact
+`workflow_id@version`, then query `job_probe` with that workflow,
 the selected `environment_id`, and `execution_kind`. A readiness result of
 `unknown` or `deferred` is not executable health; use the environment doctor or
 `TSPi --check-remote doctor` before a real launch.
 
-Local/remote is an execution-environment property independent of capability
-identity. A remote request must use Native `compute_run` with
-`operation=launch` and an `execution.environment`; the generic capability invocation
+Local/remote is an execution-environment property independent of workflow
+identity. A remote request must use Native `job_start` with
+`operation=launch` and an `execution.environment`; the generic workflow invocation
 form must not receive a remote selector and cannot create a scheduler-bound
 intent. Both targets use the same lifecycle and immutable intent.
 
@@ -58,7 +58,7 @@ ambiguous, and failure states.
 
 Parser output is factual and backend-owned; it does not decide whether the
 requested task succeeded. The compute layer records program termination in
-`program_status` and evaluates capability-specific completion separately in
+`program_status` and evaluates workflow-specific completion separately in
 `task_validation`. Neither field is a scientific verdict, and Gaussian
 single-point, optimization, transition-state optimization, and frequency tasks
 never inherit scientific transition-state assessment rules merely because they
@@ -72,7 +72,7 @@ intent.
 The execution boundary is explicit and shared by local and remote targets. The
 public launch contract has no `dry_run` field: a launch validates the selected
 environment and Backend binding, then executes one bounded Attempt lifecycle.
-Use `compute_readiness` and Host preflight diagnostics when only preparation or
+Use `job_probe` and Host preflight diagnostics when only preparation or
 environment health needs to be checked; those checks do not create a
 calculation Attempt.
 

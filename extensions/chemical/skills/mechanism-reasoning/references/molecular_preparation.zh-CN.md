@@ -1,6 +1,6 @@
 # 分子反应与结构 Capability
 
-所有 capability 使用 version `1`。首次使用前查询其详细 schema；以下示例说明科学选择，
+所有 workflow 使用 version `1`。首次使用前查询其详细 schema；以下示例说明科学选择，
 不规定固定顺序。
 
 `reaction.parse` 接受 reaction SMILES 以及每个组分声明的一个多重度，或者显式的
@@ -9,7 +9,7 @@
 ```json
 {
   "operation": "run", "nodeId": "node_1",
-  "capability": "reaction.parse", "capabilityVersion": "1",
+  "workflow": "reaction.parse", "workflowVersion": "1",
   "inputArtifacts": {},
   "parameters": {
     "reaction_smiles": "CCl.[OH-]>>CO.[Cl-]",

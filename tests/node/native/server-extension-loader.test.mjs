@@ -118,5 +118,5 @@ test("default package server manifest keeps core and chemical tool inventory", a
   ]);
   const researchNames = filterWorkspaceTools(loaded.tools, "research").map((tool) => tool.name);
   assert.ok(!researchNames.includes("light_compute"));
-  assert.ok(!researchNames.includes("compute_run"));
+  assert.ok(researchNames.includes("job_start"));
 });

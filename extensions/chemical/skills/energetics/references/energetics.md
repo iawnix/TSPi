@@ -45,7 +45,7 @@ simple activated-TST interpretation; extreme constants remain available as ln k.
 `kinetics.branching` computes normalized initial rate weights only for the same
 equilibrated precursor with irreversible products and no product interconversion.
 It requires those assumptions explicitly. Cycles, depletion and time-dependent
-yields need a kinetics model beyond this capability.
+yields need a kinetics model beyond this workflow.
 
 `mechanism.step.define` records a balanced ReactionSpec, reversibility and
 optional structural audit/barrier/rate evidence. Missing evidence remains visible.

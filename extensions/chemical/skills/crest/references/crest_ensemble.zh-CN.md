@@ -1,6 +1,6 @@
 # CREST 构象集合合同
 
-已注册 capability 为 `crest.conformer_search`。它接受一个 `xyz` 输入，以及显式电荷、
+已注册 workflow 为 `crest.conformer_search`。它接受一个 `xyz` 输入，以及显式电荷、
 未成对电子数、xTB 方法、搜索级别、优化级别、线程和溶剂设置。溶剂与溶剂模型必须同时
 提供。
 

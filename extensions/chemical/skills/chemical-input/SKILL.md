@@ -18,9 +18,9 @@ or transition-state validation.
 1. Preserve the exact user text and classify every species input as a name,
    SMILES, XYZ/artifact, or unresolved description. Apply this uniformly to
    reactants and products.
-2. Discover and call `chemical.name.resolve@1` through `analysis_run` for names.
+2. Discover and call `chemical.name.resolve@1` through `bash plus the Skill helper` for names.
    Keep the returned resolver provenance, candidates, diagnostics, and status.
-   The capability uses the installation-owned `name-resolver.toml` when a
+   The workflow uses the installation-owned `name-resolver.toml` when a
    deterministic PubChem or OPSIN backend is enabled; `unsupported` means the
    backend is unavailable, while `invalid` with a 404 diagnostic means the
    backend was reached but does not recognize the submitted name. Neither

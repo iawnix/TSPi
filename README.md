@@ -77,11 +77,10 @@ clients of that same lane. Open a workspace directly:
 ./ResearchAgent --workspace reaction-study --mode research
 ```
 
-Light workspaces keep memory and lifecycle state small, while using the same
-mode-neutral compute plane as research workspaces: `compute_catalog`,
-`compute_readiness`, `compute_run`, and `compute_cancel`. Native results use an
-operational execution scope under `nodes/<execution_scope>/attempts/` and the
-canonical workspace Artifact paths. Light mode does not create ResearchMap
+Light workspaces keep memory and lifecycle state small. Long-running commands
+use the same Job Runtime in every workspace: `job_start`, `job_status`,
+`job_collect`, `job_cancel`, `job_probe`, and `job_reconcile`. Results are
+registered as Artifacts and linked to Research State explicitly. Light mode does not create ResearchMap
 Claims/Nodes, audited Attempts, scheduler Monitor state, or scientific
 interpretations. Use `--mode research` when those
 lifecycle guarantees are required, for example for transition-state/IRC
@@ -110,24 +109,22 @@ research state. See [TSPi Link](docs/TSPi_LINK.md),
 
 ## Research and remote execution
 
-Configure Backends and Compute environments in the unified
-`.pi/compute.toml` (or pass one to the installer with `--compute-config`).
-Local and remote environments live in that same file. Verify a remote environment with:
+Configure execution platforms in the installation configuration (or pass one to
+the installer with `--compute-config`). Verify a remote platform with:
 
 ```bash
 ./ResearchAgent --check-remote
 ```
 
-`compute_run` is the single calculation lifecycle for both local and remote
-targets. A compute environment contains a `kind` (`local` or `remote`) and its
-`backends` table; only remote environments add SSH/Torque fields. `/compute` and the
-`compute_environment` tool inspect the complete environment catalog; readiness checks
-run as part of the bound calculation preflight.
+The Job Runtime is the single lifecycle for local and remote targets. Skills
+construct input files and commands with ordinary shell and filesystem tools,
+then call `job_start` and collect raw output with `job_collect`. `job_probe`
+only inspects an execution platform; it never gates an Agent action. Parsed
+domain values are optional Skill results and are recorded through
+`artifact_register` and `research_interpretation`.
 
-The skills cover Gaussian, xTB, CREST, ASE-NEB, structure validation,
-rendering, reports, and email delivery. Discover the exact versioned capability
-and environment before execution; a Skill description never proves that a
-program is installed. See the [Capability and Compute Model](docs/CAPABILITY_COMPUTE_MODEL.md)
+Skills cover Gaussian, xTB, CREST, ASE-NEB, and structure validation. A Skill
+describes commands and parsers; it does not claim that a program is installed.
 and [Scientific Capabilities Operations](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS.md).
 
 ## Browser explorer

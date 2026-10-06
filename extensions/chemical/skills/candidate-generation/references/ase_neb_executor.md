@@ -1,6 +1,6 @@
 # ASE NEB Executor
 
-The registered capability is `ase.neb@1`. It accepts exactly one `reactant` and
+The supported workflow is `ase.neb@1`. It accepts exactly one `reactant` and
 one `product` XYZ artifact. Each endpoint must contain one frame, and both files
 must use the same atoms in the same order. The backend rejects identical or
 rigidly equivalent endpoint geometries before preparation.
@@ -13,8 +13,8 @@ per-image `Force` jobs instead. Gaussian mode requires `gaussian_route`,
 forced to include Gaussian's `Force` keyword so ASE receives Cartesian
 gradients. Supported electronic methods are `gfn1` and `gfn2` for xTB mode.
 The managed runner evaluates images serially and uses no ASE preconditioner;
-parallel image execution and `precon` are intentionally outside this capability.
-The capability catalog is authoritative for parameter types and bounds. Main
+parallel image execution and `precon` are intentionally outside this workflow.
+The Skill instructions is authoritative for parameter types and bounds. Main
 parameters are `calculator`, `images`, `fmax`, `max_steps`, `spring_constant`,
 `interpolation`, `neb_method`, `optimizer`, `climb`, `ci_neb`, `ci_fmax`,
 `remove_rotation_and_translation`, `method`, `charge`, `uhf`, `accuracy`,
@@ -29,8 +29,8 @@ version default.
 
 The endpoints are input structures bound by the calculation intent;
 `ase.neb@1` does not pre-optimize them automatically. To relax endpoints first,
-run a registered optimization capability and bind its resulting XYZ artifacts
-to a new NEB intent. This capability also does not accept a `transition_state`
+run a registered optimization workflow and bind its resulting XYZ artifacts
+to a new NEB intent. This workflow also does not accept a `transition_state`
 input or discover one implicitly. TS-guided interpolation therefore requires a
 pre-existing TS candidate and an explicit future input-role extension.
 
@@ -55,7 +55,7 @@ The required output set is:
 - `neb_path.xyz`: portable final path with one energy per image;
 - `neb_summary.json`: versioned run facts and convergence metrics.
 
-The capability exposes these logical output roles as `program_output`,
+The workflow exposes these logical output roles as `program_output`,
 `reaction_path`, `trajectory`, and `run_summary`; the bounded process history is
 part of `neb_summary.json` rather than a second uncontrolled log artifact.
 
