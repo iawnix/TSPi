@@ -48,7 +48,7 @@ def _installation(tmp_path: Path) -> launcher.Installation:
         root=root,
         package_root=package,
         workspaces_root=root / "workspaces",
-        compute_config_default=root / ".pi/compute.toml",
+        job_config_default=root / ".pi/job.toml",
         notification_config_default=root / ".pi/notifications.toml",
         runtime_home=root / ".agents/runtime/tspi",
         runtime_manifest=root / ".agents/runtime/tspi/env.json",
@@ -171,13 +171,13 @@ def test_tspi_launcher_preserves_validated_custom_compute_profile(
     installation = _installation(tmp_path)
     workspace = installation.workspaces_root / "reaction-a"
     workspace.mkdir(parents=True)
-    custom = tmp_path / "compute.toml"
+    custom = tmp_path / "job.toml"
     custom.write_text("default_environment = 'local'\n", encoding="utf-8")
-    monkeypatch.setenv("TS_COMPUTE_CONFIG", str(custom))
+    monkeypatch.setenv("TS_JOB_CONFIG", str(custom))
 
     launcher.configure_process_environment(installation, workspace, "reaction-a")
 
-    assert os.environ["TS_COMPUTE_CONFIG"] == str(custom)
+    assert os.environ["TS_JOB_CONFIG"] == str(custom)
 
 
 def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:

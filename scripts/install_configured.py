@@ -2,7 +2,7 @@
 """Install TSPi with one installation-owned configuration directory.
 
 This is a thin, non-interactive front end over ``install_wizard.py``.  It is
-intended for repeatable workstation installs: compute.toml, Pi model files,
+intended for repeatable workstation installs: job.toml, Pi model files,
 SMTP credentials, Web settings, and the installation-owned Link Relay are
 selected from one directory instead of being entered through several menus.
 The Relay is installed locally by default when Phone access is enabled; pass
@@ -66,7 +66,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--relay-start-services", action="store_true", default=True)
     parser.add_argument("--relay-no-start-services", action="store_false", dest="relay_start_services")
     parser.add_argument("--allow-dirty", action="store_true", help="Allow a dirty source checkout for local installation.")
-    parser.add_argument("--probe-remote", action="store_true")
     parser.add_argument("--no-start-services", action="store_true")
     parser.add_argument("--json", action="store_true")
     return parser.parse_args(argv)
@@ -235,7 +234,7 @@ def _rollback_relay(args: argparse.Namespace, relay_result: dict[str, object]) -
 
 
 def build_command(args: argparse.Namespace, config: Path, install_root: Path) -> list[str]:
-    compute = _regular_file(config / "compute.toml", "compute.toml")
+    job_config = _regular_file(config / "job.toml", "job.toml")
     # The installer writes both files with mode 0600 in the destination.  A
     # source inventory may be readable by the owner group while it is being
     # staged; the source directory itself is still required to be physical.
@@ -264,8 +263,8 @@ def build_command(args: argparse.Namespace, config: Path, install_root: Path) ->
         str(install_root),
         "--workspace-root",
         str(workspace),
-        "--compute-config",
-        str(compute),
+        "--job-config",
+        str(job_config),
         "--agent-config-dir",
         str(config),
         "--with-web" if args.with_web else "--without-web",
@@ -298,8 +297,6 @@ def build_command(args: argparse.Namespace, config: Path, install_root: Path) ->
         command.extend(["--link-enrollment-code", args.link_enrollment_code])
     if args.link_enrollment_url:
         command.extend(["--link-enrollment-url", args.link_enrollment_url])
-    if args.probe_remote:
-        command.append("--probe-remote")
     if not args.no_start_services:
         command.extend(["--enable-services", "--start-services"])
     if args.json:

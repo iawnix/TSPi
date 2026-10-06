@@ -110,7 +110,6 @@ class TSPiHostUnavailableError(TSPiHostError):
 class LaunchRequest:
     workspace_name: str | None
     workspace_mode: str | None
-    check_remote: bool
     session_id: str | None
     continue_latest: bool
     show_help: bool
@@ -131,7 +130,7 @@ class Installation:
     runtime_manifest: Path
     env_root: Path
     process_cache_root: Path
-    compute_config_default: Path | None = None
+    job_config_default: Path | None = None
     model_icons_config: Path | None = None
     service_scope: str = "user"
     host_runtime_dir: Path | None = None
@@ -139,7 +138,6 @@ class Installation:
 
 USAGE = """Usage:
   ResearchAgent --workspace <name> [--session-id <id> | -c] [Pi arguments...]
-  ResearchAgent --check-remote
   ResearchAgent phone pair
   ResearchAgent phone devices
   ResearchAgent phone revoke <device-id>
@@ -148,7 +146,6 @@ Options:
   --workspace <name>   Open a research workspace.
   --session-id <id>   Continue one exact conversation.
   -c, --continue      Continue the latest conversation.
-  --check-remote      Check the configured remote compute environment.
   -h, --help          Show this help.
 
 The terminal runs Pi's native experimental client TUI against an installation-
@@ -164,11 +161,10 @@ To select another Host session, open the terminal and run /resume. Startup
 def parse_launch_request(argv: list[str]) -> LaunchRequest:
     if argv[:1] == ["phone"]:
         if len(argv) == 2 and argv[1] in {"pair", "devices"}:
-            return LaunchRequest(None, "research", False, None, False, False, (), phone_action=argv[1])
+            return LaunchRequest(None, "research", None, False, False, (), phone_action=argv[1])
         if len(argv) == 3 and argv[1] == "revoke":
-            return LaunchRequest(None, "research", False, None, False, False, (), phone_action="revoke", phone_device_id=argv[2])
+            return LaunchRequest(None, "research", None, False, False, (), phone_action="revoke", phone_device_id=argv[2])
         raise TSPiHostError("usage: ResearchAgent phone pair|devices|revoke <device-id>", exit_code=2)
-    check_remote = False
     show_help = False
     workspace_name: str | None = None
     session_id: str | None = None
@@ -182,9 +178,7 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         if value == "--":
             pi_args.extend(argv[index + 1 :])
             break
-        if value == "--check-remote":
-            check_remote = True
-        elif value == "--standalone":
+        if value == "--standalone":
             raise TSPiHostError(
                 "--standalone was removed; use ResearchAgent --workspace <name> to connect to the installation Host",
                 exit_code=2,
@@ -252,7 +246,6 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
     return LaunchRequest(
         workspace_name=workspace_name,
         workspace_mode="research",
-        check_remote=check_remote,
         session_id=session_id,
         continue_latest=continue_latest,
         show_help=show_help,
@@ -323,7 +316,7 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
         runtime_manifest=runtime_home / "env.json",
         env_root=root / ".agents" / "envs" / "tspi",
         process_cache_root=root / ".pi" / "runtime-cache",
-        compute_config_default=root / ".pi" / "compute.toml",
+        job_config_default=root / ".pi" / "job.toml",
         model_icons_config=root / MODEL_ICON_CONFIG_RELATIVE,
         service_scope=service_scope,
         host_runtime_dir=host_runtime_dir,
@@ -633,16 +626,16 @@ def _atomic_write_json(path: Path, value: dict) -> None:
 
 
 def configure_remote(installation: Installation) -> None:
-    configured = os.environ.get("TS_COMPUTE_CONFIG")
+    configured = os.environ.get("TS_JOB_CONFIG")
     if not configured:
-        if installation.compute_config_default and installation.compute_config_default.is_file():
-            configured = str(installation.compute_config_default)
+        if installation.job_config_default and installation.job_config_default.is_file():
+            configured = str(installation.job_config_default)
     if not configured:
-        os.environ.pop("TS_COMPUTE_CONFIG", None)
+        os.environ.pop("TS_JOB_CONFIG", None)
         os.environ.pop(REMOTE_ENVIRONMENT_ENV, None)
         os.environ["TS_REMOTE_DISPLAY_TARGET"] = "not configured"
         return
-    path = _require_config_file(configured, "TS_COMPUTE_CONFIG")
+    path = _require_config_file(configured, "TS_JOB_CONFIG")
     try:
         with path.open("rb") as handle:
             config = tomllib.load(handle)
@@ -654,14 +647,14 @@ def configure_remote(installation: Installation) -> None:
             or not environments
             or environment_name not in environments
         ):
-            raise ValueError("compute config must define default_environment and at least one environment")
+            raise ValueError("job config must define default_environment and at least one environment")
         if any(
             not isinstance(name, str)
             or not isinstance(item, dict)
             or item.get("kind") not in {"local", "remote"}
             for name, item in environments.items()
         ):
-            raise ValueError("compute config environments must declare kind=local or kind=remote")
+            raise ValueError("job config environments must declare kind=local or kind=remote")
         environment = environments.get(environment_name, {}) if isinstance(environments, dict) else {}
         remote_name = environment_name if isinstance(environment, dict) and environment.get("kind") == "remote" else None
         if remote_name is None and isinstance(environments, dict):
@@ -682,7 +675,7 @@ def configure_remote(installation: Installation) -> None:
                 environment = None
         if remote_name is None:
             os.environ.pop(REMOTE_ENVIRONMENT_ENV, None)
-            os.environ["TS_COMPUTE_CONFIG"] = str(path)
+            os.environ["TS_JOB_CONFIG"] = str(path)
             os.environ["TS_REMOTE_DISPLAY_TARGET"] = "not configured"
             return
         if not isinstance(environment, dict) or environment.get("kind") != "remote":
@@ -696,7 +689,7 @@ def configure_remote(installation: Installation) -> None:
         scheduler = scheduler.title()
     except (OSError, TypeError, ValueError, tomllib.TOMLDecodeError) as exc:
         raise TSPiHostError(f"invalid remote configuration: {path}: {exc}") from exc
-    os.environ["TS_COMPUTE_CONFIG"] = str(path)
+    os.environ["TS_JOB_CONFIG"] = str(path)
     os.environ[REMOTE_ENVIRONMENT_ENV] = remote_name
     os.environ["TS_REMOTE_DISPLAY_TARGET"] = f"{host} · {scheduler}"
 
@@ -827,23 +820,6 @@ def _require_config_file(value: str, label: str) -> Path:
     return path.resolve()
 
 
-def check_remote(installation: Installation) -> int:
-    configured = os.environ.get("TS_COMPUTE_CONFIG")
-    if not configured:
-        expected = installation.compute_config_default or installation.root / ".pi" / "compute.toml"
-        print(f"ResearchAgent: remote configuration is missing: {expected}", file=sys.stderr)
-        return 1
-    environment_name = os.environ.get(REMOTE_ENVIRONMENT_ENV, "").strip()
-    if not environment_name:
-        print("ResearchAgent: no remote compute environment is configured", file=sys.stderr)
-        return 1
-    print(
-        "ResearchAgent: remote probing is provided by the configured Job Runtime platform; "
-        "use job_probe from a research workspace.",
-    )
-    return 0
-
-
 def configure_model_icon_environment(installation: Installation) -> bool:
     """Enable the optional model icon font when its installer marker is valid."""
     if "TSPI_ICON_STYLE" in os.environ:
@@ -887,13 +863,13 @@ def configure_process_environment(installation: Installation, workspace: Path, w
     os.environ.pop("TSPI_CUSTOM_UI", None)
     _restore_native_pi_settings(installation)
     # ``configure_remote`` runs before this function and may have validated a
-    # caller-selected compute profile. Preserve that path for the terminal and
+    # caller-selected job profile. Preserve that path for the terminal and
     # Host instead of silently switching back to the installation default.
-    if not os.environ.get("TS_COMPUTE_CONFIG"):
-        if installation.compute_config_default and installation.compute_config_default.is_file():
-            os.environ["TS_COMPUTE_CONFIG"] = str(installation.compute_config_default)
+    if not os.environ.get("TS_JOB_CONFIG"):
+        if installation.job_config_default and installation.job_config_default.is_file():
+            os.environ["TS_JOB_CONFIG"] = str(installation.job_config_default)
         else:
-            os.environ.pop("TS_COMPUTE_CONFIG", None)
+            os.environ.pop("TS_JOB_CONFIG", None)
     python_cache = installation.process_cache_root / "python" / workspace_name
     pytest_cache = installation.process_cache_root / "pytest" / workspace_name
     for path in (installation.process_cache_root, python_cache.parent, pytest_cache.parent, python_cache, pytest_cache):
@@ -1571,14 +1547,10 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
             exit_code=2,
         )
     normalize_proxy_environment()
-    if (request.host or request.gateway) and request.check_remote:
-        raise TSPiHostError("App Server modes cannot be combined with another launch mode", exit_code=2)
     if request.host and request.gateway:
         raise TSPiHostError("--host and --gateway cannot be combined", exit_code=2)
     if request.host and (request.workspace_name or request.session_id or request.continue_latest):
         raise TSPiHostError("--host does not accept workspace or session selection", exit_code=2)
-    if request.check_remote and (request.workspace_name or request.session_id or request.continue_latest):
-        raise TSPiHostError("--check-remote does not accept workspace or session selection", exit_code=2)
     if request.gateway and not request.workspace_name:
         raise TSPiHostError("--gateway requires --workspace", exit_code=2)
     if request.gateway and not request.session_id:
@@ -1614,7 +1586,7 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
             raise TSPiHostError(str(exc)) from exc
         return 0
 
-    default_client = not (request.host or request.gateway or request.check_remote)
+    default_client = not (request.host or request.gateway)
     if default_client:
         if not request.workspace_name:
             raise TSPiHostError(f"a research workspace is required\n{USAGE}", exit_code=2)
@@ -1658,8 +1630,6 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     except RuntimeEnvironmentError as exc:
         raise TSPiHostError(str(exc)) from exc
     configure_remote(installation)
-    if request.check_remote:
-        return check_remote(installation)
     if request.host:
         configure_notifications(installation)
         host_workspace, _state_root = _prepare_host_state(installation)

@@ -7,7 +7,7 @@ import pytest
 def execution_platform_fixture(tmp_path, monkeypatch):
     """Give unit tests an explicit local environment without production fallbacks."""
 
-    config = tmp_path / "compute.toml"
+    config = tmp_path / "job.toml"
     config.write_text(
         """default_environment = \"local\"
 
@@ -28,4 +28,4 @@ command = \"xtb\"
 """,
         encoding="utf-8",
     )
-    monkeypatch.setenv("TS_COMPUTE_CONFIG", str(config))
+    monkeypatch.setenv("TS_JOB_CONFIG", str(config))

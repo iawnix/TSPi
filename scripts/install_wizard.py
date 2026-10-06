@@ -222,7 +222,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--web-auth-token",
         help="Explicit TS Web token (8-100 URL-safe characters; prefer --web-auth-token-file for secrets).",
     )
-    parser.add_argument("--compute-config", help="Unified compute.toml to install as .pi/compute.toml.")
+    parser.add_argument("--job-config", help="Unified job.toml to install as .pi/job.toml.")
     parser.add_argument(
         "--agent-config-dir",
         help="Directory containing installation-owned Pi models.json and auth.json.",
@@ -231,7 +231,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--name-resolver-config",
         help="Deterministic chemical name resolver TOML to install as .pi/name-resolver.toml.",
     )
-    parser.add_argument("--probe-remote", action="store_true", help="Run the remote doctor and fail if the configured environment is not ready.")
     parser.add_argument("--conda-root")
     parser.add_argument(
         "--service-scope",
@@ -309,10 +308,10 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
             args.web_auth_token = _ask_web_auth_token()
     if args.with_model_icons is None:
         args.with_model_icons = ask_yes_no("Install TSPi model icon font", True)
-    section("Compute backends")
-    args.compute_config = ask(
-        "Compute backend TOML path (blank preserves existing configuration)",
-        args.compute_config or "",
+    section("Job platforms")
+    args.job_config = ask(
+        "Job platform TOML path (blank preserves existing configuration)",
+        args.job_config or "",
     ).strip() or None
     args.name_resolver_config = ask(
         "Chemical name resolver TOML path (blank uses the bundled PubChem default for a new install)",
@@ -437,12 +436,12 @@ def _menu_choice(args: argparse.Namespace) -> str:
     field("Phone", "Link Relay" if args.phone_access == "link" else "disabled")
     field("Services", args.service_scope or "none")
     field("Email", args.email_binding or ("configured" if (root / ".pi/notifications.toml").is_file() else "not configured"))
-    field("Compute", "configured" if (root / ".pi/compute.toml").is_file() else "not configured")
+    field("Job platform", "configured" if (root / ".pi/job.toml").is_file() else "not configured")
     field("Chemical name resolver", "configured" if (root / ".pi/name-resolver.toml").is_file() else "not configured")
     print()
     print("  1) Installation and workspace")
     print("  2) TS Web")
-    print("  3) Compute backends")
+    print("  3) Job platforms")
     print("  4) Phone connection")
     print("  5) Runtime and services")
     print("  6) Email notifications")
@@ -566,9 +565,9 @@ def interactive_menu_options(args: argparse.Namespace) -> argparse.Namespace:
         elif choice == "2":
             _configure_menu_web(args)
         elif choice == "3":
-            args.compute_config = ask(
-                "Compute backend TOML path (blank preserves existing configuration)",
-                args.compute_config or "",
+            args.job_config = ask(
+                "Job platform TOML path (blank preserves existing configuration)",
+                args.job_config or "",
             ).strip() or None
             args.name_resolver_config = ask(
                 "Chemical name resolver TOML path (blank uses the bundled PubChem default for a new install)",
@@ -694,13 +693,12 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Molecular rendering", "install and verify (xyzrender, Matplotlib)", tone="success")
     field("Pi App Server", "install pinned runtime and verify", tone="success")
     field("Local backend policy", "core Python/runtime only; native tools must be selected explicitly", tone="muted")
-    field("Compute backend config", args.compute_config or "preserve <install>/.pi/compute.toml if present", tone="muted")
+    field("Job platform config", args.job_config or "preserve <install>/.pi/job.toml if present", tone="muted")
     field(
         "Chemical name resolver config",
         args.name_resolver_config or "bundled PubChem default for a new install; preserve existing otherwise",
         tone="muted",
     )
-    field("Remote readiness", "probe during installation" if args.probe_remote else "not probed", tone="success" if args.probe_remote else "muted")
     field(
         "App Server service",
         _service_plan(args),
@@ -797,15 +795,15 @@ def validate_options(args: argparse.Namespace) -> None:
     if not args.install_root:
         raise ValueError("--install-root is required in non-interactive mode")
     args.install_root = str(validate_install_root(Path(args.install_root)))
-    if args.compute_config:
-        source = Path(args.compute_config).expanduser()
+    if args.job_config:
+        source = Path(args.job_config).expanduser()
         if not source.is_absolute() or source.is_symlink() or not source.is_file():
-            raise ValueError("--compute-config must be an existing absolute regular file")
+            raise ValueError("--job-config must be an existing absolute regular file")
         try:
-            parsed_compute = tomllib.loads(source.read_text(encoding="utf-8"))
+            parsed_job = tomllib.loads(source.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
-            raise ValueError(f"invalid compute TOML configuration: {source}: {error}") from error
-        _validate_compute_config(parsed_compute)
+            raise ValueError(f"invalid job TOML configuration: {source}: {error}") from error
+        _validate_job_config(parsed_job)
     if args.name_resolver_config:
         source = Path(args.name_resolver_config).expanduser()
         if not source.is_absolute() or source.is_symlink() or not source.is_file():
@@ -1263,8 +1261,8 @@ def _copy_private_config(source_value: str, destination: Path, *, kind: str) -> 
             parsed = tomllib.loads(raw.decode("utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise ValueError(f"invalid {kind} TOML configuration: {source}: {error}") from error
-    if kind == "compute":
-        _validate_compute_config(parsed)
+    if kind == "job":
+        _validate_job_config(parsed)
     elif kind == "name-resolver":
         _validate_name_resolver_config(parsed)
     elif kind == "remote":
@@ -1295,33 +1293,33 @@ def _copy_private_config(source_value: str, destination: Path, *, kind: str) -> 
     return {"status": "configured", "path": str(destination), "source": str(source)}
 
 
-def _validate_compute_config(parsed: dict[str, object]) -> None:
+def _validate_job_config(parsed: dict[str, object]) -> None:
     """Validate the shared environment shape before installing it."""
     environments = parsed.get("environments")
     default = parsed.get("default_environment")
     if not isinstance(environments, dict) or not environments or not isinstance(default, str) or default not in environments:
-        raise ValueError("compute config must define default_environment and at least one environment")
+        raise ValueError("job config must define default_environment and at least one environment")
     for name, environment in environments.items():
         if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", name):
-            raise ValueError(f"invalid compute environment name: {name!r}")
+            raise ValueError(f"invalid job environment name: {name!r}")
         if not isinstance(environment, dict) or environment.get("kind") not in {"local", "remote"}:
-            raise ValueError(f"compute environment {name!r} must declare kind=local or kind=remote")
+            raise ValueError(f"job environment {name!r} must declare kind=local or kind=remote")
         backends = environment.get("backends", {})
         if not isinstance(backends, dict):
-            raise ValueError(f"compute environment {name!r} backends must be a table")
+            raise ValueError(f"job environment {name!r} backends must be a table")
         for backend, item in backends.items():
             if not isinstance(backend, str) or not isinstance(item, dict):
-                raise ValueError(f"compute environment {name!r} has an invalid backend binding")
+                raise ValueError(f"job environment {name!r} has an invalid backend binding")
             command = item.get("command")
             valid_command = isinstance(command, str) and bool(command.strip()) if environment["kind"] == "local" else (
                 isinstance(command, list) and bool(command) and all(isinstance(value, str) and value for value in command)
             )
             if not valid_command:
                 expected = "string" if environment["kind"] == "local" else "string array"
-                raise ValueError(f"compute environment {name!r} backends.{backend}.command must be a {expected}")
+                raise ValueError(f"job environment {name!r} backends.{backend}.command must be a {expected}")
             activation = item.get("activation_script")
             if activation is not None and (not isinstance(activation, str) or not activation.startswith("/")):
-                raise ValueError(f"compute environment {name!r} backends.{backend}.activation_script must be absolute")
+                raise ValueError(f"job environment {name!r} backends.{backend}.activation_script must be absolute")
         if environment["kind"] == "remote":
             _validate_remote_config({"default_environment": name, "environments": {name: environment}}, Path("/"))
 
@@ -1491,16 +1489,16 @@ def _write_private_config_bytes(raw: bytes, destination: Path) -> None:
 def configure_backend_configs(args: argparse.Namespace) -> dict[str, dict[str, str]]:
     root = Path(args.install_root).expanduser().resolve()
     result: dict[str, dict[str, str]] = {}
-    compute_config = getattr(args, "compute_config", None)
-    if compute_config:
-        result["compute"] = _copy_private_config(
-            compute_config,
-            root / ".pi" / "compute.toml",
-            kind="compute",
+    job_config = getattr(args, "job_config", None)
+    if job_config:
+        result["job"] = _copy_private_config(
+            job_config,
+            root / ".pi" / "job.toml",
+            kind="job",
         )
     else:
-        destination = root / ".pi" / "compute.toml"
-        result["compute"] = {"status": "preserved" if destination.is_file() else "not_configured", "path": str(destination)}
+        destination = root / ".pi" / "job.toml"
+        result["job"] = {"status": "preserved" if destination.is_file() else "not_configured", "path": str(destination)}
 
     resolver_config = getattr(args, "name_resolver_config", None)
     resolver_destination = root / ".pi" / "name-resolver.toml"
@@ -1549,25 +1547,6 @@ def configure_backend_configs(args: argparse.Namespace) -> dict[str, dict[str, s
                 "automatic_lookup": "unavailable",
             }
     return result
-
-
-def probe_remote_backend(args: argparse.Namespace, configs: dict[str, dict[str, str]]) -> None:
-    if not args.probe_remote:
-        return
-    compute = configs.get("compute", {})
-    if compute.get("status") == "not_configured":
-        raise ValueError("--probe-remote requires an installed compute configuration with a remote environment")
-    command = [str(Path(args.install_root) / "ResearchAgent"), "--check-remote"]
-    completed = subprocess.run(
-        command,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout).strip()
-        raise RuntimeError(f"remote environment readiness check failed: {detail or 'unknown error'}")
 
 
 def run_logged_install(
@@ -1854,7 +1833,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
         ".pi/notifications.toml",
         ".pi/email/service.env",
         ".pi/email/smtp-password",
-        ".pi/compute.toml",
+        ".pi/job.toml",
         ".pi/name-resolver.toml",
     ]
     paths = {str(root / relative): _snapshot_file(root / relative) for relative in relative_paths}
@@ -2909,9 +2888,9 @@ def build_component_summary(
             if args.with_web
             else None
         ),
-        "compute": backend_configs.get("compute") if backend_configs else {
-            "status": "preserved" if (root / ".pi/compute.toml").is_file() else "not_configured",
-            "path": str(root / ".pi/compute.toml"),
+        "job": backend_configs.get("job") if backend_configs else {
+            "status": "preserved" if (root / ".pi/job.toml").is_file() else "not_configured",
+            "path": str(root / ".pi/job.toml"),
         },
         "name_resolver": backend_configs.get("name_resolver") if backend_configs else {
             "status": "preserved" if (root / ".pi/name-resolver.toml").is_file() else "not_configured",
@@ -3024,11 +3003,11 @@ def show_installed_summary(
     if isinstance(web, dict):
         note("Token values are not printed. Read the owner-only TS Web token file when pairing a browser.")
 
-    compute = components.get("compute")
-    if isinstance(compute, dict):
-        section("Compute backends")
-        field("Unified config", compute.get("path", "not configured"))
-        field("Status", compute.get("status", "not configured"), tone="success" if compute.get("status") in {"configured", "preserved"} else "warning")
+    job_config = components.get("job")
+    if isinstance(job_config, dict):
+        section("Job platforms")
+        field("Unified config", job_config.get("path", "not configured"))
+        field("Status", job_config.get("status", "not configured"), tone="success" if job_config.get("status") in {"configured", "preserved"} else "warning")
     resolver = components.get("name_resolver")
     if isinstance(resolver, dict):
         section("Chemical name resolution")
@@ -3161,8 +3140,6 @@ def main(argv: list[str] | None = None) -> int:
             notifications = configure_notification_config(args)
             activity.update("Installing backend configuration")
             backend_configs = configure_backend_configs(args)
-            activity.update("Checking the remote backend")
-            probe_remote_backend(args, backend_configs)
             activity.update("Configuring services")
             services = configure_services(args)
             activity.update("Verifying the installed release")
@@ -3219,7 +3196,7 @@ def main(argv: list[str] | None = None) -> int:
             f"commit={installed.get('commit') or ''}",
             f"with_web={bool(args.with_web)}",
             f"service_scope={args.service_scope}",
-            f"compute_config={backend_configs.get('compute', {}).get('status', 'not_configured')}",
+            f"job_config={backend_configs.get('job', {}).get('status', 'not_configured')}",
             f"name_resolver_config={backend_configs.get('name_resolver', {}).get('status', 'not_configured')}",
             f"phone_manifest={phone_connection.get('manifest', '') if isinstance(phone_connection, dict) else ''}",
             f"model_icons={model_icons.get('status', 'unknown') if isinstance(model_icons, dict) else 'unknown'}",

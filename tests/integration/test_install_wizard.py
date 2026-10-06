@@ -347,7 +347,7 @@ def test_interactive_menu_can_disable_existing_email_configuration(
     assert not config.exists()
 
 
-def test_interactive_compute_backends_accepts_one_file_path(
+def test_interactive_job_platform_accepts_one_file_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -366,9 +366,9 @@ def test_interactive_compute_backends_accepts_one_file_path(
 
     wizard.interactive_options(args)
 
-    assert prompts[0] == "Compute backend TOML path (blank preserves existing configuration)"
+    assert prompts[0] == "Job platform TOML path (blank preserves existing configuration)"
     assert not any("backend TOML" in prompt or "remote" in prompt.lower() for prompt in prompts[1:])
-    assert args.compute_config is None
+    assert args.job_config is None
 
 
 def test_interactive_smtp_uses_sender_as_from_without_a_redundant_prompt(
@@ -646,8 +646,8 @@ def test_install_configuration_rollback_restores_owned_files_and_removes_new_rel
     snapshot = wizard.snapshot_install_configuration(root, args)
 
     phone.write_text("new-phone\n", encoding="utf-8")
-    (root / ".pi/compute.toml").parent.mkdir(parents=True, exist_ok=True)
-    (root / ".pi/compute.toml").write_text("new\n", encoding="utf-8")
+    (root / ".pi/job.toml").parent.mkdir(parents=True, exist_ok=True)
+    (root / ".pi/job.toml").write_text("new\n", encoding="utf-8")
     (root / ".pi/agent").mkdir(parents=True)
     (root / ".pi/agent/auth.json").write_text("{}\n", encoding="utf-8")
     new_release = root / ".pi/packages/tspi/releases/new"
@@ -665,7 +665,7 @@ def test_install_configuration_rollback_restores_owned_files_and_removes_new_rel
     wizard.restore_install_configuration(root, snapshot)
 
     assert phone.read_text(encoding="utf-8") == "old-phone\n"
-    assert not (root / ".pi/compute.toml").exists()
+    assert not (root / ".pi/job.toml").exists()
     assert not (root / ".pi/agent/auth.json").exists()
     assert release.is_dir()
     assert not (root / ".pi/packages/tspi/releases/new").exists()
@@ -1155,26 +1155,6 @@ def test_custom_smtp_provider_writes_explicit_host(tmp_path: Path) -> None:
     assert 'host = "mail.example.test"' in content
 
 
-def test_remote_probe_records_readiness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    args = _options(tmp_path)
-    args.probe_remote = True
-    source = tmp_path / "compute.toml"
-    source.write_text(
-        """default_environment = \"local\"\n\n[environments.local]\nkind = \"local\"\n""",
-        encoding="utf-8",
-    )
-    args.compute_config = str(source)
-    configs = wizard.configure_backend_configs(args)
-    monkeypatch.setattr(
-        wizard.subprocess,
-        "run",
-        lambda command, **kwargs: subprocess.CompletedProcess(command, 1, stdout="", stderr="doctor unavailable\n"),
-    )
-
-    with pytest.raises(RuntimeError, match="remote environment readiness check failed"):
-        wizard.probe_remote_backend(args, configs)
-
-
 def test_install_log_is_date_named_and_appends_same_day_runs(tmp_path: Path) -> None:
     root = tmp_path / "install"
     path = wizard.append_install_log(root, "first-run", "status=success")
@@ -1203,7 +1183,7 @@ def test_logged_package_step_is_kept_in_date_named_log(tmp_path: Path) -> None:
     assert '"ok": true' in log.read_text(encoding="utf-8")
 
 
-def test_compute_toml_is_validated_and_written_private(tmp_path: Path) -> None:
+def test_job_toml_is_validated_and_written_private(tmp_path: Path) -> None:
     root = tmp_path / "install"
     ssh_config = tmp_path / "ssh-config"
     ssh_config.write_text("Host cluster\n", encoding="utf-8")
@@ -1211,7 +1191,7 @@ def test_compute_toml_is_validated_and_written_private(tmp_path: Path) -> None:
     args = wizard.parse_args([
         "--install-root", str(root), "--without-web", "--service-scope", "none", "--non-interactive",
     ])
-    source = tmp_path / "compute.toml"
+    source = tmp_path / "job.toml"
     source.write_text("\n".join([
         'default_environment = "local"',
         '[environments."local"]',
@@ -1226,12 +1206,12 @@ def test_compute_toml_is_validated_and_written_private(tmp_path: Path) -> None:
         'allowed_queues = ["batch"]',
         '',
     ]) + "\n", encoding="utf-8")
-    args.compute_config = str(source)
+    args.job_config = str(source)
     wizard.validate_options(args)
     configs = wizard.configure_backend_configs(args)
 
-    destination = root / ".pi" / "compute.toml"
-    assert configs["compute"]["status"] == "configured"
+    destination = root / ".pi" / "job.toml"
+    assert configs["job"]["status"] == "configured"
     assert destination.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
     assert stat.S_IMODE(destination.stat().st_mode) == 0o600
 
