@@ -818,6 +818,34 @@ def test_service_runtime_configuration_records_scope_and_socket_directory(
     assert document["runtime_dir"] == str(runtime_parent / "tspi")
 
 
+def test_remote_terminal_profile_is_written_private_and_reloaded(tmp_path: Path) -> None:
+    args = wizard.parse_args([
+        "--install-root", str(tmp_path / "install"),
+        "--remote-host", "pi.example",
+        "--remote-host-socket", "/run/tspi/host.sock",
+        "--remote-proxy-path", "/opt/tspi/apps/app-server/tspi-host-proxy.mjs",
+        "--ssh-option=-i",
+        "--ssh-option", "/home/test/.ssh/id_ed25519",
+        "--without-web", "--service-scope", "none", "--non-interactive", "--yes",
+    ])
+    wizard.validate_options(args)
+    configured = wizard.configure_remote_host(args)
+    path = Path(configured["path"])
+    assert configured["status"] == "configured"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    document = json.loads(path.read_text(encoding="utf-8"))
+    assert document["ssh_host"] == "pi.example"
+    assert document["ssh_options"] == ["-i", "/home/test/.ssh/id_ed25519"]
+
+    reloaded = wizard.parse_args([
+        "--install-root", str(tmp_path / "install"), "--without-web", "--service-scope", "none", "--non-interactive", "--yes",
+    ])
+    wizard.validate_options(reloaded)
+    assert reloaded.remote_host == "pi.example"
+    assert reloaded.remote_host_socket == "/run/tspi/host.sock"
+    assert wizard.configure_remote_host(reloaded)["status"] == "configured"
+
+
 def test_prepare_app_server_runtime_uses_installed_release_script(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

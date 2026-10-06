@@ -165,6 +165,7 @@
     "apps/app-server/pi-runtime-deps.mjs",
     "apps/app-server/system-prompt.mjs",
     "apps/app-server/tspi-link-host.mjs",
+    "apps/app-server/tspi-host-proxy.mjs",
     "services/tspi-link-relay/server.mjs",
     "services/tspi-link-relay/store.mjs",
     "services/tspi-link-relay/cli.mjs",

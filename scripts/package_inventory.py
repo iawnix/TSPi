@@ -77,6 +77,7 @@ APP_SERVER_FILES = [
     "apps/app-server/pi-runtime-deps.mjs",
     "apps/app-server/system-prompt.mjs",
     "apps/app-server/tspi-link-host.mjs",
+    "apps/app-server/tspi-host-proxy.mjs",
 ]
 
 # Keep the TSPi Host and Pi integration explicit in the release inventory so

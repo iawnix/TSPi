@@ -30,6 +30,23 @@ Pi Harness worker 拥有 agent loop、模型、工具、transcript 和 SQLite du
 负责路由、认证、幂等回执、scheduler lease、会话发现以及 Monitor supervisor。Pi 原生
 TUI、Phone、Monitor 都是同一个 lane 的客户端，不会启动第二个 agent loop。
 
+Host client 的 RPC transport 可以是本机 Unix socket，也可以通过 SSH 启动远端
+`tspi-host-proxy`，把同一份 `tspi-host/1` NDJSON 通过 SSH stdin/stdout 转发到远端私有
+socket。SSH transport 只改变连接路径，不改变 workspace、session 或 Agent lane 的拥有者。
+
+连接远端安装时，需要同时提供远端 Host socket 和 proxy 路径：
+
+```bash
+./ResearchAgent --workspace reaction-a \
+  --remote-host pi.example \
+  --remote-host-socket /run/user/1000/tspi/host.sock \
+  --remote-proxy-path /opt/tspi/apps/app-server/tspi-host-proxy.mjs \
+  --ssh-config ~/.ssh/config
+```
+
+启动器会对 Host 返回的 Pi App Server socket 再使用同一个 SSH proxy，并给 Pi 一个本地私有
+Unix endpoint。workspace 和 session 仍由远端 Host 持有；本地目录只用于 presentation cwd。
+
 ## 打开工作区
 
 ```bash

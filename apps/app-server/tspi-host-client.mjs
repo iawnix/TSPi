@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import { randomUUID } from "node:crypto";
 
@@ -25,12 +26,19 @@ export function createRpcPeer(socket, { requestTimeoutMs = 30_000, onRequest } =
     pending.clear();
     peer.emit("close", error);
   };
+  const readable = socket.readable && typeof socket.readable.on === "function" ? socket.readable : socket;
+  const writable = socket.writable && typeof socket.writable.write === "function" ? socket.writable : socket;
+  const closeTransport = () => {
+    if (typeof socket.close === "function") socket.close();
+    else if (typeof socket.destroy === "function") socket.destroy();
+    else writable.destroy?.();
+  };
   const send = (value) => {
-    if (closed || socket.destroyed) throw protocolError("connection_closed", "Host connection is closed", true);
+    if (closed || writable.destroyed === true) throw protocolError("connection_closed", "Host connection is closed", true);
     const frame = Buffer.from(`${JSON.stringify(value)}\n`);
     if (frame.length > MAX_FRAME_BYTES) throw protocolError("frame_too_large", "Host message exceeds the size limit");
-    if (socket.writableLength > MAX_FRAME_BYTES * 2) throw protocolError("slow_consumer", "Host connection cannot keep up", true);
-    socket.write(frame);
+    if ((writable.writableLength || 0) > MAX_FRAME_BYTES * 2) throw protocolError("slow_consumer", "Host connection cannot keep up", true);
+    writable.write(frame);
   };
   const receive = async (message) => {
     if (!message || typeof message !== "object" || Array.isArray(message)) throw protocolError("invalid_message", "Expected an RPC object");
@@ -61,7 +69,7 @@ export function createRpcPeer(socket, { requestTimeoutMs = 30_000, onRequest } =
     else if (Object.hasOwn(message, "result")) waiting.resolve(message.result);
     else waiting.reject(protocolError("invalid_response", "RPC response has no result or error"));
   };
-  socket.on("data", (chunk) => {
+  readable.on("data", (chunk) => {
     buffer = Buffer.concat([buffer, chunk]);
     let end;
     while ((end = buffer.indexOf(10)) !== -1) {
@@ -69,20 +77,22 @@ export function createRpcPeer(socket, { requestTimeoutMs = 30_000, onRequest } =
       buffer = buffer.subarray(end + 1);
       if (frame.length === 0) continue;
       if (frame.length > MAX_FRAME_BYTES) {
-        socket.destroy(protocolError("frame_too_large", "Host message exceeds the size limit"));
+        closeTransport();
         return;
       }
       try {
-        void receive(JSON.parse(frame.toString("utf8"))).catch((error) => socket.destroy(error));
+        void receive(JSON.parse(frame.toString("utf8"))).catch(() => closeTransport());
       } catch (error) {
-        socket.destroy(protocolError("invalid_json", "Host message is not valid JSON"));
+        closeTransport();
         return;
       }
     }
-    if (buffer.length > MAX_FRAME_BYTES) socket.destroy(protocolError("frame_too_large", "Host message exceeds the size limit"));
+    if (buffer.length > MAX_FRAME_BYTES) closeTransport();
   });
-  socket.on("error", fail);
-  socket.on("close", () => fail(protocolError("connection_closed", "Host connection was lost", true)));
+  readable.on("error", fail);
+  writable.on?.("error", fail);
+  readable.on("close", () => fail(protocolError("connection_closed", "Host connection was lost", true)));
+  readable.on("end", () => fail(protocolError("connection_closed", "Host connection was lost", true)));
   peer.request = (method, params = {}, { timeoutMs = requestTimeoutMs } = {}) => {
     const id = randomUUID();
     return new Promise((resolve, reject) => {
@@ -100,9 +110,86 @@ export function createRpcPeer(socket, { requestTimeoutMs = 30_000, onRequest } =
     });
   };
   peer.notify = (method, params = {}) => send({ method, params });
-  peer.close = () => socket.destroy();
+  peer.close = closeTransport;
   peer.isClosed = () => closed;
   return peer;
+}
+
+/** Connect to a Host over readable/writable streams. */
+export async function connectHostStream({ readable, writable, close, timeoutMs = 30_000, initialize = true, onRequest, expectedReleaseId } = {}) {
+  if (!readable || typeof readable.on !== "function") throw new TypeError("Host readable stream is required");
+  if (!writable || typeof writable.write !== "function") throw new TypeError("Host writable stream is required");
+  const transport = { readable, writable, close: close || (() => writable.destroy?.()) };
+  const peer = createRpcPeer(transport, { requestTimeoutMs: timeoutMs, onRequest });
+  try {
+    if (initialize) await initializeHostPeer(peer, { timeoutMs, expectedReleaseId });
+    return peer;
+  } catch (error) {
+    peer.close();
+    throw error;
+  }
+}
+
+/** Connect to a Host through an SSH-launched Unix-socket proxy. */
+export async function connectHostSsh({
+  sshHost,
+  remoteSocketPath,
+  remoteProxyPath,
+  sshConfig,
+  connectTimeoutSeconds = 15,
+  sshOptions = [],
+  timeoutMs = 30_000,
+  initialize = true,
+  onRequest,
+  expectedReleaseId,
+} = {}) {
+  const args = buildSshProxyArgs({ sshHost, remoteSocketPath, remoteProxyPath, sshConfig, connectTimeoutSeconds, sshOptions });
+  const child = spawn("ssh", args, { stdio: ["pipe", "pipe", "pipe"] });
+  child.stderr.resume();
+  const peerPromise = connectHostStream({
+    readable: child.stdout,
+    writable: child.stdin,
+    close: () => child.kill(),
+    timeoutMs,
+    initialize,
+    onRequest,
+    expectedReleaseId,
+  });
+  child.once("error", (error) => child.stdout.destroy(error));
+  child.once("exit", (code, signal) => {
+    if (code !== 0 || signal) child.stdout.destroy(protocolError("ssh_exit", `SSH Host proxy exited (${signal || code})`));
+  });
+  const peer = await peerPromise;
+  peer.process = child;
+  return peer;
+}
+
+/** Build the fixed SSH command used for both Host and Pi socket proxies. */
+export function buildSshProxyArgs({
+  sshHost,
+  remoteSocketPath,
+  remoteProxyPath,
+  sshConfig,
+  connectTimeoutSeconds = 15,
+  sshOptions = [],
+} = {}) {
+  validateNonEmpty(sshHost, "sshHost");
+  validateAbsolutePath(remoteSocketPath, "remoteSocketPath");
+  validateAbsolutePath(remoteProxyPath, "remoteProxyPath");
+  if (sshConfig !== undefined) validateAbsolutePath(sshConfig, "sshConfig");
+  if (!Number.isSafeInteger(connectTimeoutSeconds) || connectTimeoutSeconds <= 0 || connectTimeoutSeconds > 600) {
+    throw new TypeError("connectTimeoutSeconds must be an integer between 1 and 600");
+  }
+  if (!Array.isArray(sshOptions) || sshOptions.some((value) => typeof value !== "string" || value.length === 0 || /[\u0000\r\n]/u.test(value))) {
+    throw new TypeError("sshOptions must be a non-empty string array without control characters");
+  }
+  const args = ["-T", "-o", "BatchMode=yes", "-o", `ConnectTimeout=${connectTimeoutSeconds}`];
+  if (sshConfig) args.push("-F", sshConfig);
+  // The packaged .mjs proxy is intentionally a regular package file (0644),
+  // so invoke it through the remote Node executable instead of relying on a
+  // filesystem executable bit.
+  args.push(...sshOptions, sshHost, "node", quoteRemoteArg(remoteProxyPath), "--socket", quoteRemoteArg(remoteSocketPath));
+  return args;
 }
 
 export async function connectHost({ socketPath, timeoutMs = 30_000, initialize = true, onRequest, expectedReleaseId } = {}) {
@@ -117,24 +204,39 @@ export async function connectHost({ socketPath, timeoutMs = 30_000, initialize =
       socket.once("error", failed);
       socket.once("connect", () => { cleanup(); resolve(); });
     });
-    if (initialize) {
-      const hello = await peer.request("initialize", { protocol: HOST_PROTOCOL });
-      if (hello?.protocol !== HOST_PROTOCOL) throw protocolError("protocol_mismatch", "Unsupported TSPi Host protocol");
-      if (expectedReleaseId !== undefined && hello?.release_id !== expectedReleaseId) {
-        const actual = typeof hello?.release_id === "string" && hello.release_id.length > 0
-          ? hello.release_id
-          : "unknown";
-        throw protocolError(
-          "host_release_mismatch",
-          `TSPi Host release mismatch: expected ${expectedReleaseId}, running ${actual}; restart the TSPi Host and retry`,
-          true,
-        );
-      }
-      peer.hello = hello;
-    }
+    if (initialize) await initializeHostPeer(peer, { timeoutMs, expectedReleaseId });
     return peer;
   } catch (error) {
     peer.close();
     throw error;
   }
+}
+
+async function initializeHostPeer(peer, { timeoutMs, expectedReleaseId }) {
+  const hello = await peer.request("initialize", { protocol: HOST_PROTOCOL }, { timeoutMs });
+  if (hello?.protocol !== HOST_PROTOCOL) throw protocolError("protocol_mismatch", "Unsupported TSPi Host protocol");
+  if (expectedReleaseId !== undefined && hello?.release_id !== expectedReleaseId) {
+    const actual = typeof hello?.release_id === "string" && hello.release_id.length > 0 ? hello.release_id : "unknown";
+    throw protocolError(
+      "host_release_mismatch",
+      `TSPi Host release mismatch: expected ${expectedReleaseId}, running ${actual}; restart the TSPi Host and retry`,
+      true,
+    );
+  }
+  peer.hello = hello;
+  return hello;
+}
+
+function validateNonEmpty(value, label) {
+  if (typeof value !== "string" || value.length === 0 || value.startsWith("-") || /[\u0000\r\n]/u.test(value)) throw new TypeError(`${label} must be a non-empty string without control characters`);
+}
+
+function validateAbsolutePath(value, label) {
+  validateNonEmpty(value, label);
+  if (!value.startsWith("/")) throw new TypeError(`${label} must be absolute`);
+}
+
+function quoteRemoteArg(value) {
+  const escaped = value.replaceAll("'", "'\"'\"'");
+  return `'${escaped}'`;
 }

@@ -285,6 +285,25 @@ Host 上线后使用以下命令管理 Phone 授权：
 ./ResearchAgent phone revoke <device-id>
 ```
 
+内网客户端可以使用 SSH transport 连接远端 Host。远端安装必须包含
+`apps/app-server/tspi-host-proxy.mjs`，客户端通过 SSH 为 Host 和 Pi socket 启动该 proxy，
+不监听公网 TCP 端口。SSH host key 校验由 OpenSSH 完成，Host 仍执行 `tspi-host/1` protocol
+协商。可用重复的 `--ssh-option` 传入 `-i` 等 OpenSSH 选项。
+
+安装器可以持久化该配置，之后直接运行 `ResearchAgent --workspace`：
+
+```bash
+./scripts/install_wizard.py --non-interactive --yes \
+  --install-root /home/iaw/ResearchAgent \
+  --remote-host pi.example \
+  --remote-host-socket /run/user/1000/tspi/host.sock \
+  --remote-proxy-path /opt/tspi/apps/app-server/tspi-host-proxy.mjs \
+  --ssh-config /home/user/.ssh/config \
+  --ssh-option=-i --ssh-option=/home/user/.ssh/id_ed25519
+```
+
+配置会写入 owner-only 的 `.pi/tspi/remote-host.json`；命令行显式参数只覆盖当前一次启动。
+
 `phone pair` 输出已配置的 Relay URL 和八位配对码。配对码五分钟后失效且只能使用一次；TS
 Phone 将其兑换为平台安全存储中的可撤销设备凭据。Phone 凭据、Host token 和 TS Web HTTP
 token 相互独立。Phone 是普通的交互式 Pi 客户端，与终端共享同一 Harness lane 和工具；TS Web

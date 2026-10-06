@@ -10,9 +10,12 @@
  */
 import { spawn } from "node:child_process";
 import { lstatSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:net";
 import { basename, dirname, resolve } from "node:path";
+import { tmpdir } from "node:os";
 
-import { connectHost } from "./tspi-host-client.mjs";
+import { buildSshProxyArgs, connectHost, connectHostSsh } from "./tspi-host-client.mjs";
 import { formatTerminalFailure } from "./tspi-terminal-errors.mjs";
 
 const args = process.argv.slice(2);
@@ -38,10 +41,12 @@ for (let index = 0; index < args.length; index += 1) {
     options.resume = true;
     continue;
   }
-  if (["--socket-path", "--workspace-id", "--workspace-root", "--state-root", "--install-root", "--package-root", "--expected-release-id", "--session-id", "--provider", "--model"].includes(value)) {
+  if (["--socket-path", "--workspace-id", "--workspace-root", "--state-root", "--install-root", "--package-root", "--expected-release-id", "--session-id", "--provider", "--model", "--ssh-host", "--remote-host-socket", "--remote-proxy-path", "--ssh-config", "--ssh-option"].includes(value)) {
     const next = args[++index];
     if (!next) throw new Error(`${value} requires a value`);
-    options[value.slice(2).replaceAll("-", "_")] = next;
+    const key = value.slice(2).replaceAll("-", "_");
+    if (key === "ssh_option") options.ssh_option = [...(options.ssh_option || []), next];
+    else options[key] = next;
     continue;
   }
   if (value.startsWith("--provider=") || value.startsWith("--model=")) {
@@ -73,6 +78,43 @@ function descriptorConnect(descriptor) {
   }
   const encodedPath = descriptor.socket_path.split("/").map((part) => encodeURIComponent(part)).join("/");
   return `unix://${encodedPath}`;
+}
+
+async function createSshUnixProxy({ sshHost, remoteSocketPath, remoteProxyPath, sshConfig, sshOptions, label }) {
+  const directory = await mkdtemp(resolve(tmpdir(), "tspi-ssh-"));
+  const socketPath = resolve(directory, `${label || "socket"}.sock`);
+  const server = createServer((client) => {
+    const child = spawn("ssh", buildSshProxyArgs({
+      sshHost,
+      remoteSocketPath,
+      remoteProxyPath,
+      sshConfig,
+      sshOptions,
+    }), { stdio: ["pipe", "pipe", "pipe"] });
+    child.stderr.resume();
+    client.pipe(child.stdin);
+    child.stdout.pipe(client);
+    const close = () => {
+      client.destroy();
+      child.kill();
+    };
+    client.once("error", close);
+    client.once("close", () => child.kill());
+    child.once("error", close);
+    child.once("exit", () => client.end());
+  });
+  await new Promise((resolvePromise, reject) => {
+    server.once("error", reject);
+    server.listen(socketPath, resolvePromise);
+  });
+  return {
+    socketPath,
+    directory,
+    close: async () => {
+      await new Promise((resolvePromise) => server.close(() => resolvePromise()));
+      await rm(directory, { recursive: true, force: true });
+    },
+  };
 }
 
 function selectSession(sessions, sessionId, shouldContinue) {
@@ -122,7 +164,7 @@ async function main() {
       + "open the workspace and use /resume inside the terminal",
     );
   }
-  const socketPath = requireOption("socket_path");
+  const socketPath = options.socket_path;
   const workspaceId = requireOption("workspace_id");
   const workspaceRoot = validateWorkspaceRoot(requireOption("workspace_root"));
   const { kept, provider, model } = splitNativeProviderArgs(piArgs);
@@ -132,7 +174,19 @@ async function main() {
     || (basename(releaseRoot) === "releases"
       ? basename(packageRoot)
       : (basename(dirname(releaseRoot)) === "releases" ? basename(releaseRoot) : undefined));
-  const peer = await connectHost({ socketPath, expectedReleaseId });
+  const remote = options.ssh_host !== undefined;
+  if (remote && socketPath) throw new Error("--socket-path cannot be combined with --ssh-host");
+  if (!remote && !socketPath) throw new Error("Missing terminal option --socket-path or --ssh-host");
+  const remoteOptions = remote ? {
+    sshHost: requireOption("ssh_host"),
+    remoteSocketPath: requireOption("remote_host_socket"),
+    remoteProxyPath: requireOption("remote_proxy_path"),
+    sshConfig: options.ssh_config,
+    sshOptions: options.ssh_option ? (Array.isArray(options.ssh_option) ? options.ssh_option : [options.ssh_option]) : [],
+  } : null;
+  const peer = remote
+    ? await connectHostSsh({ ...remoteOptions })
+    : await connectHost({ socketPath, expectedReleaseId });
   let descriptor;
   try {
     const listed = await peer.request("session/list", { workspace_id: workspaceId });
@@ -172,7 +226,15 @@ async function main() {
     peer.close();
   }
 
-  const connect = descriptorConnect(descriptor);
+  let appProxy;
+  if (remote) {
+    appProxy = await createSshUnixProxy({
+      ...remoteOptions,
+      remoteSocketPath: descriptor.socket_path,
+      label: "pi",
+    });
+  }
+  const connect = appProxy ? descriptorConnect({ ...descriptor, socket_path: appProxy.socketPath }) : descriptorConnect(descriptor);
   const sourceRoot = process.env.TSPI_PI_RUNTIME_ROOT;
   if (!sourceRoot) throw new Error("TSPI_PI_RUNTIME_ROOT is required for the native Pi client");
   const resolver = resolve(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts");
@@ -180,7 +242,7 @@ async function main() {
   const childArgs = ["--import", resolver, client, "--connect", connect, "--session-id", descriptor.session_id, ...kept];
   process.env.TSPI_SESSION_CWD = workspaceRoot;
   process.env.PI_EXPERIMENTAL = "1";
-  process.env.PI_SERVER_DIR = descriptor.server_directory || dirname(descriptor.socket_path);
+  process.env.PI_SERVER_DIR = appProxy?.directory || descriptor.server_directory || dirname(descriptor.socket_path);
   process.env.TSPI_PACKAGE_ROOT = packageRoot;
   process.env.TSPI_NATIVE_WRITES = "1";
   const child = spawn(process.execPath, childArgs, {
@@ -202,6 +264,7 @@ async function main() {
     process.exitCode = 1;
   });
   child.once("exit", (code, signal) => {
+    void appProxy?.close();
     process.exitCode = code ?? (signal ? 1 : 0);
   });
 }

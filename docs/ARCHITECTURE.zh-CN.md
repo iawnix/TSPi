@@ -34,6 +34,15 @@ Host 负责路由、认证、幂等回执、scheduler lease 和客户端订阅�
 Monitor 都连接同一个 lane，因此共享 `read`、`write`、`bash` 和包内工具；传输方式不是
 权限角色。
 
+Host RPC 与底层传输解耦。安装内客户端使用私有 Unix socket；远程终端客户端可以通过
+SSH 启动 `tspi-host-proxy`，由 proxy 将 stdin/stdout 字节转发到远端 Host 与 Pi App
+Server socket；Phone 继续通过 TSPi Link 的 WSS Relay。三种方式都使用同一份
+`tspi-host/1` NDJSON，不会创建第二个 Agent lane。
+
+远程 Host 所在机器是 workspace、SQLite durable session、Research Memory 和 workspace
+lock 的唯一权威位置。TSPi 不使用实时双向 rsync 同步工作区；rsync 或其它批量复制工具只
+能用于显式 artifact manifest 的初始化、备份或导出。
+
 ## 科学状态模型
 
 每个 research workspace 只有一套文件系统 `ResearchMap` context 与持久生命周期投影：

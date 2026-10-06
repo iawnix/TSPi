@@ -56,6 +56,17 @@ Pi TUI, Phone, and Monitor address the same lane and therefore see the same
 `read`, `write`, `bash`, and package tool inventory; transport is not an
 authorization role.
 
+Host RPC is independent of its byte transport. Installed clients use a private
+Unix socket; the remote terminal client may start `tspi-host-proxy` over SSH and
+forward stdin/stdout to both the remote Host and Pi App Server sockets; Phone
+continues to use the TSPi Link WSS Relay. All three use the same `tspi-host/1`
+NDJSON protocol and never create a second Agent lane.
+
+The remote Host owns the canonical workspace, SQLite durable sessions, Research
+Memory, and workspace locks. TSPi does not use live bidirectional rsync for
+workspace operation. rsync or another bulk copier is reserved for an explicit
+artifact manifest used for bootstrap, backup, or export.
+
 ## Scientific State Model
 
 Each research workspace has one filesystem ResearchMap context and one durable lifecycle projection:

@@ -344,6 +344,29 @@ After the Host is online, create and manage Phone authorization with:
 ./ResearchAgent phone revoke <device-id>
 ```
 
+An internal client can use the SSH transport to reach a remote Host. The remote
+installation must include `apps/app-server/tspi-host-proxy.mjs`; the client
+starts that proxy over SSH for both Host and Pi sockets, without opening a
+public TCP listener. OpenSSH performs host-key verification while TSPi still
+performs `tspi-host/1` protocol negotiation. Use `--ssh-option` for repeatable
+OpenSSH options such as `-i`.
+
+The installer can persist this profile for later `ResearchAgent --workspace`
+invocations:
+
+```bash
+./scripts/install_wizard.py --non-interactive --yes \
+  --install-root /home/iaw/ResearchAgent \
+  --remote-host pi.example \
+  --remote-host-socket /run/user/1000/tspi/host.sock \
+  --remote-proxy-path /opt/tspi/apps/app-server/tspi-host-proxy.mjs \
+  --ssh-config /home/user/.ssh/config \
+  --ssh-option=-i --ssh-option=/home/user/.ssh/id_ed25519
+```
+
+It writes the owner-only `.pi/tspi/remote-host.json` profile. Command-line
+values supplied to `ResearchAgent` override that profile for one launch.
+
 `phone pair` prints the configured TSPi Link Relay URL and an eight-character code that
 expires after five minutes and can be used once. TS Phone redeems it for a
 revocable device credential held in platform secure storage. Phone credentials

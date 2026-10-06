@@ -364,6 +364,59 @@ def test_session_selection_is_workspace_scoped_and_explicit() -> None:
         ])
 
 
+def test_remote_terminal_options_are_parsed_and_forwarded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installation = _installation(tmp_path)
+    monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
+    request = launcher.parse_launch_request([
+        "--workspace", "reaction-a",
+        "--remote-host", "pi.example",
+        "--remote-host-socket", "/run/user/1000/tspi/host.sock",
+        "--remote-proxy-path", "/opt/tspi/apps/app-server/tspi-host-proxy.mjs",
+        "--ssh-config", "/home/test/.ssh/config",
+        "--ssh-option", "-i",
+        "--ssh-option", "/home/test/.ssh/id_ed25519",
+    ])
+    command = launcher.build_host_client_command(installation, request)
+    assert "--socket-path" not in command
+    assert command[command.index("--ssh-host") + 1] == "pi.example"
+    assert command[command.index("--remote-host-socket") + 1] == "/run/user/1000/tspi/host.sock"
+    assert command[command.index("--remote-proxy-path") + 1].endswith("tspi-host-proxy.mjs")
+    assert command.count("--ssh-option") == 2
+
+
+def test_remote_terminal_requires_proxy_paths() -> None:
+    request = launcher.parse_launch_request(["--workspace", "reaction-a", "--remote-host", "pi.example"])
+    with pytest.raises(launcher.TSPiHostError, match="--remote-host-socket"):
+        launcher._validate_remote_terminal_request(request)
+    with pytest.raises(launcher.TSPiHostError, match="--remote-host is required"):
+        launcher.parse_launch_request(["--workspace", "reaction-a", "--remote-host-socket", "/run/tspi/host.sock"])
+
+
+def test_remote_terminal_uses_owner_only_installation_profile(tmp_path: Path) -> None:
+    installation = _installation(tmp_path)
+    profile = installation.root / launcher.REMOTE_HOST_CONFIG_RELATIVE
+    profile.parent.mkdir(parents=True)
+    profile.write_text(json.dumps({
+        "schema_version": launcher.REMOTE_HOST_CONFIG_SCHEMA,
+        "ssh_host": "pi.example",
+        "host_socket": "/run/tspi/host.sock",
+        "proxy_path": "/opt/tspi/apps/app-server/tspi-host-proxy.mjs",
+        "ssh_config": None,
+        "ssh_options": ["-i", "/home/test/.ssh/id_ed25519"],
+    }) + "\n", encoding="utf-8")
+    profile.chmod(0o600)
+    configured = launcher.resolve_remote_terminal_request(
+        replace(installation, remote_host_config=profile),
+        launcher.parse_launch_request(["--workspace", "reaction-a"]),
+    )
+    assert configured.remote_host == "pi.example"
+    assert configured.remote_host_socket == "/run/tspi/host.sock"
+    assert configured.ssh_options == ("-i", "/home/test/.ssh/id_ed25519")
+
+
 @pytest.mark.parametrize("arguments", [
     ["--workspace", "reaction-a"],
 ])

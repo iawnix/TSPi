@@ -47,6 +47,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--web-host", default="127.0.0.1")
     parser.add_argument("--web-port", type=int, default=8766)
     parser.add_argument("--service-scope", choices=("none", "user", "system"), default="user")
+    parser.add_argument("--remote-host")
+    parser.add_argument("--remote-host-socket")
+    parser.add_argument("--remote-proxy-path")
+    parser.add_argument("--ssh-config")
+    parser.add_argument("--ssh-option", action="append", default=[])
     parser.add_argument("--link-relay-root")
     parser.add_argument("--relay-state-dir")
     parser.add_argument("--link-url", default=os.environ.get("TSPI_LINK_URL", DEFAULT_RELAY_URL))
@@ -234,6 +239,11 @@ def _rollback_relay(args: argparse.Namespace, relay_result: dict[str, object]) -
 
 
 def build_command(args: argparse.Namespace, config: Path, install_root: Path) -> list[str]:
+    remote_values = (args.remote_host_socket, args.remote_proxy_path, args.ssh_config, *args.ssh_option)
+    if args.remote_host is None and any(remote_values):
+        raise ValueError("--remote-host is required when SSH terminal options are supplied")
+    if args.remote_host is not None and (not args.remote_host_socket or not args.remote_proxy_path):
+        raise ValueError("--remote-host requires --remote-host-socket and --remote-proxy-path")
     job_config = _regular_file(config / "job.toml", "job.toml")
     # The installer writes both files with mode 0600 in the destination.  A
     # source inventory may be readable by the owner group while it is being
@@ -297,6 +307,16 @@ def build_command(args: argparse.Namespace, config: Path, install_root: Path) ->
         command.extend(["--link-enrollment-code", args.link_enrollment_code])
     if args.link_enrollment_url:
         command.extend(["--link-enrollment-url", args.link_enrollment_url])
+    if args.remote_host:
+        command.extend([
+            "--remote-host", args.remote_host,
+            "--remote-host-socket", args.remote_host_socket or "",
+            "--remote-proxy-path", args.remote_proxy_path or "",
+        ])
+        if args.ssh_config:
+            command.extend(["--ssh-config", args.ssh_config])
+        for option in args.ssh_option:
+            command.append(f"--ssh-option={option}")
     if not args.no_start_services:
         command.extend(["--enable-services", "--start-services"])
     if args.json:

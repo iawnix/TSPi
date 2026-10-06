@@ -16,7 +16,7 @@ import tempfile
 import time
 import tomllib
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import NoReturn
 from urllib.parse import urlsplit
@@ -72,6 +72,8 @@ MODEL_ICON_CONFIG_SCHEMA = "tspi-model-icons/1"
 MODEL_ICON_CONFIG_RELATIVE = Path(".pi/tspi/model-icons.json")
 SERVICE_CONFIG_SCHEMA = "tspi-service/1"
 SERVICE_CONFIG_RELATIVE = Path(".pi/tspi/service.json")
+REMOTE_HOST_CONFIG_SCHEMA = "tspi-remote-host/1"
+REMOTE_HOST_CONFIG_RELATIVE = Path(".pi/tspi/remote-host.json")
 REMOTE_ENVIRONMENT_ENV = "TS_REMOTE_ENVIRONMENT"
 PI_AGENT_SETTINGS_RELATIVE = Path(".pi/agent/settings.json")
 TSPI_THEME_RELATIVE = Path("packages/agent-ui/themes/ts-theme.json")
@@ -118,6 +120,11 @@ class LaunchRequest:
     host: bool = False
     phone_action: str | None = None
     phone_device_id: str | None = None
+    remote_host: str | None = None
+    remote_host_socket: str | None = None
+    remote_proxy_path: str | None = None
+    ssh_config: str | None = None
+    ssh_options: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -134,6 +141,7 @@ class Installation:
     model_icons_config: Path | None = None
     service_scope: str = "user"
     host_runtime_dir: Path | None = None
+    remote_host_config: Path | None = None
 
 
 USAGE = """Usage:
@@ -146,6 +154,11 @@ Options:
   --workspace <name>   Open a research workspace.
   --session-id <id>   Continue one exact conversation.
   -c, --continue      Continue the latest conversation.
+  --remote-host <host>  Connect the terminal to a Host through SSH.
+  --remote-host-socket <path>  Remote Host Unix socket path.
+  --remote-proxy-path <path>  Remote tspi-host-proxy.mjs path.
+  --ssh-config <path>  SSH config file.
+  --ssh-option <value>  Additional SSH option (repeatable).
   -h, --help          Show this help.
 
 The terminal runs Pi's native experimental client TUI against an installation-
@@ -172,6 +185,11 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
     pi_args: list[str] = []
     gateway = False
     host = False
+    remote_host: str | None = None
+    remote_host_socket: str | None = None
+    remote_proxy_path: str | None = None
+    ssh_config: str | None = None
+    ssh_options: list[str] = []
     index = 0
     while index < len(argv):
         value = argv[index]
@@ -221,6 +239,30 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
             workspace_name = argv[index]
         elif value.startswith("--workspace="):
             workspace_name = value.removeprefix("--workspace=")
+        elif value in {"--remote-host", "--remote-host-socket", "--remote-proxy-path", "--ssh-config", "--ssh-option"}:
+            index += 1
+            if index >= len(argv) or not argv[index]:
+                raise TSPiHostError(f"{value} requires a value", exit_code=2)
+            if value == "--remote-host":
+                remote_host = argv[index]
+            elif value == "--remote-host-socket":
+                remote_host_socket = argv[index]
+            elif value == "--remote-proxy-path":
+                remote_proxy_path = argv[index]
+            elif value == "--ssh-config":
+                ssh_config = argv[index]
+            else:
+                ssh_options.append(argv[index])
+        elif value.startswith("--remote-host="):
+            remote_host = value.removeprefix("--remote-host=")
+        elif value.startswith("--remote-host-socket="):
+            remote_host_socket = value.removeprefix("--remote-host-socket=")
+        elif value.startswith("--remote-proxy-path="):
+            remote_proxy_path = value.removeprefix("--remote-proxy-path=")
+        elif value.startswith("--ssh-config="):
+            ssh_config = value.removeprefix("--ssh-config=")
+        elif value.startswith("--ssh-option="):
+            ssh_options.append(value.removeprefix("--ssh-option="))
         elif value == "--session-id":
             index += 1
             if index >= len(argv) or not argv[index]:
@@ -243,6 +285,9 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         index += 1
     if session_id and continue_latest:
         raise TSPiHostError("--session-id and --continue cannot be combined", exit_code=2)
+    remote_values = (remote_host_socket, remote_proxy_path, ssh_config, *ssh_options)
+    if remote_host is None and any(value is not None and value != "" for value in remote_values):
+        raise TSPiHostError("--remote-host is required when SSH terminal options are supplied", exit_code=2)
     return LaunchRequest(
         workspace_name=workspace_name,
         workspace_mode="research",
@@ -252,6 +297,11 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         pi_args=tuple(pi_args),
         gateway=gateway,
         host=host,
+        remote_host=remote_host,
+        remote_host_socket=remote_host_socket,
+        remote_proxy_path=remote_proxy_path,
+        ssh_config=ssh_config,
+        ssh_options=tuple(ssh_options),
     )
 
 
@@ -320,6 +370,7 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
         model_icons_config=root / MODEL_ICON_CONFIG_RELATIVE,
         service_scope=service_scope,
         host_runtime_dir=host_runtime_dir,
+        remote_host_config=root / REMOTE_HOST_CONFIG_RELATIVE,
     )
 
 
@@ -351,6 +402,60 @@ def _configured_service(root: Path) -> tuple[str, Path | None]:
     if runtime_dir == Path("/") or runtime_dir.is_symlink():
         raise TSPiHostError(f"service runtime directory is invalid: {runtime_dir}")
     return scope, runtime_dir
+
+
+def _configured_remote_host(path: Path) -> dict[str, object] | None:
+    """Read the optional owner-only SSH terminal profile."""
+    if not path.exists() and not path.is_symlink():
+        return None
+    if path.is_symlink() or not path.is_file():
+        raise TSPiHostError(f"remote Host configuration is unsafe: {path}")
+    info = path.stat()
+    if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
+        raise TSPiHostError(f"remote Host configuration must be owner-only: {path}")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise TSPiHostError(f"remote Host configuration is invalid: {path}: {exc}") from exc
+    expected = {"schema_version", "ssh_host", "host_socket", "proxy_path", "ssh_config", "ssh_options"}
+    if not isinstance(value, dict) or set(value) != expected or value.get("schema_version") != REMOTE_HOST_CONFIG_SCHEMA:
+        raise TSPiHostError(f"remote Host configuration is invalid: {path}")
+    ssh_host = value.get("ssh_host")
+    host_socket = value.get("host_socket")
+    proxy_path = value.get("proxy_path")
+    ssh_config = value.get("ssh_config")
+    ssh_options = value.get("ssh_options")
+    if (
+        not isinstance(ssh_host, str) or not ssh_host or ssh_host.startswith("-")
+        or not isinstance(host_socket, str) or not host_socket.startswith("/")
+        or not isinstance(proxy_path, str) or not proxy_path.startswith("/")
+        or (ssh_config is not None and (not isinstance(ssh_config, str) or not ssh_config.startswith("/")))
+        or not isinstance(ssh_options, list)
+        or any(not isinstance(item, str) or not item or any(char in item for char in "\x00\r\n") for item in ssh_options)
+        or any(char in item for item in (ssh_host, host_socket, proxy_path, ssh_config or "") for char in "\x00\r\n")
+    ):
+        raise TSPiHostError(f"remote Host configuration is invalid: {path}")
+    return {
+        "remote_host": ssh_host,
+        "remote_host_socket": host_socket,
+        "remote_proxy_path": proxy_path,
+        "ssh_config": ssh_config,
+        "ssh_options": tuple(ssh_options),
+    }
+
+
+def resolve_remote_terminal_request(installation: Installation, request: LaunchRequest) -> LaunchRequest:
+    """Apply the installation profile, while letting explicit CLI values win."""
+    configured = _configured_remote_host(installation.remote_host_config) if installation.remote_host_config else None
+    if not configured:
+        return request
+    values = {}
+    for key, value in configured.items():
+        selected = getattr(request, key)
+        values[key] = selected if selected not in (None, "", ()) else value
+    if request.ssh_options:
+        values["ssh_options"] = request.ssh_options
+    return replace(request, **values)
 
 
 def _configured_workspace_root(root: Path) -> Path:
@@ -1229,19 +1334,32 @@ def build_host_client_command(
     request: LaunchRequest,
     *,
     socket_path: Path | None = None,
+    workspace_path: Path | None = None,
 ) -> list[str]:
     """Attach a real Pi terminal, without introducing another TUI renderer."""
-    endpoint = socket_path or resolve_host_socket(installation)
     command = [
         _node_binary(),
         str(installation.package_root / "apps/app-server/tspi-terminal-client.mjs"),
-        "--socket-path", str(endpoint),
         "--workspace-id", str(request.workspace_name),
-        "--workspace-root", str(installation.workspaces_root / str(request.workspace_name)),
+        "--workspace-root", str(workspace_path or (installation.workspaces_root / str(request.workspace_name))),
         "--state-root", str(installation.root / ".pi/app-server-host"),
         "--install-root", str(installation.root),
         "--package-root", str(installation.package_root),
     ]
+    if request.remote_host is None:
+        endpoint = socket_path or resolve_host_socket(installation)
+        command[2:2] = ["--socket-path", str(endpoint)]
+    if request.remote_host is not None:
+        _validate_remote_terminal_request(request)
+        command.extend([
+            "--ssh-host", request.remote_host,
+            "--remote-host-socket", request.remote_host_socket,
+            "--remote-proxy-path", request.remote_proxy_path,
+        ])
+        if request.ssh_config is not None:
+            command.extend(["--ssh-config", request.ssh_config])
+        for option in request.ssh_options:
+            command.extend(["--ssh-option", option])
     # Bind the terminal to the release selected by this launcher.  A stale
     # terminal/Host pair must fail with an actionable mismatch instead of
     # attaching to a process left behind by a package upgrade.
@@ -1260,6 +1378,28 @@ def build_host_client_command(
         command.append("--continue")
     command.extend(["--", *request.pi_args])
     return command
+
+
+def _validate_remote_terminal_request(request: LaunchRequest) -> None:
+    fields = {
+        "--remote-host-socket": request.remote_host_socket,
+        "--remote-proxy-path": request.remote_proxy_path,
+    }
+    missing = [name for name, value in fields.items() if not isinstance(value, str) or not value]
+    if missing:
+        raise TSPiHostError(
+            "SSH terminal requires " + ", ".join(missing) + " when --remote-host is used",
+            exit_code=2,
+        )
+    if any("\x00" in value or "\n" in value or "\r" in value for value in (
+        request.remote_host or "", request.remote_host_socket or "", request.remote_proxy_path or "",
+        request.ssh_config or "", *request.ssh_options,
+    )):
+        raise TSPiHostError("SSH terminal options must not contain control characters", exit_code=2)
+    if not request.remote_host_socket.startswith("/") or not request.remote_proxy_path.startswith("/"):
+        raise TSPiHostError("SSH terminal socket and proxy paths must be absolute", exit_code=2)
+    if request.ssh_config is not None and not request.ssh_config.startswith("/"):
+        raise TSPiHostError("--ssh-config must be an absolute path", exit_code=2)
 
 
 def resolve_pi_source(installation: Installation) -> Path:
@@ -1522,11 +1662,29 @@ def launch_terminal(installation: Installation, request: LaunchRequest, workspac
         )
     os.environ["TSPI_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
     os.environ["TSPI_SESSION_CWD"] = str(workspace)
-    try:
-        socket_path = ensure_host_running(installation)
-    except TSPiHostError as exc:
-        raise TSPiHostError(f"Pi harness Host is unavailable: {exc}") from exc
-    exec_pi(build_host_client_command(installation, request, socket_path=socket_path), workspace)
+    if request.remote_host is not None:
+        _validate_remote_terminal_request(request)
+        socket_path = None
+    else:
+        try:
+            socket_path = ensure_host_running(installation)
+        except TSPiHostError as exc:
+            raise TSPiHostError(f"Pi harness Host is unavailable: {exc}") from exc
+    exec_pi(build_host_client_command(installation, request, socket_path=socket_path, workspace_path=workspace), workspace)
+
+
+def prepare_remote_terminal_cwd(installation: Installation, workspace_name: str) -> Path:
+    """Create an isolated local cwd for an SSH terminal's presentation process."""
+    if not WORKSPACE_NAME.fullmatch(workspace_name):
+        raise TSPiHostError(f"invalid workspace name: {workspace_name}", exit_code=2)
+    root = installation.root / ".pi" / "remote-terminal" / workspace_name
+    if root.is_symlink():
+        raise TSPiHostError(f"remote terminal cwd cannot be a symbolic link: {root}")
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not root.is_dir():
+        raise TSPiHostError(f"remote terminal cwd is not a directory: {root}")
+    root.chmod(0o700)
+    return root
 
 
 def launch(argv: list[str], *, package_root: str | Path, install_root: str | Path) -> int:
@@ -1549,6 +1707,8 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     normalize_proxy_environment()
     if request.host and request.gateway:
         raise TSPiHostError("--host and --gateway cannot be combined", exit_code=2)
+    if request.remote_host is not None and (request.host or request.gateway):
+        raise TSPiHostError("SSH terminal options are only valid for the default workspace client", exit_code=2)
     if request.host and (request.workspace_name or request.session_id or request.continue_latest):
         raise TSPiHostError("--host does not accept workspace or session selection", exit_code=2)
     if request.gateway and not request.workspace_name:
@@ -1556,6 +1716,9 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     if request.gateway and not request.session_id:
         raise TSPiHostError("--gateway requires --session-id", exit_code=2)
     installation = resolve_installation(package_root, install_root)
+    request = resolve_remote_terminal_request(installation, request)
+    if request.remote_host is not None and (request.host or request.gateway):
+        raise TSPiHostError("SSH terminal options are only valid for the default workspace client", exit_code=2)
     os.environ["TSPI_INSTALL_ROOT"] = str(installation.root)
     configure_model_icon_environment(installation)
     try:
@@ -1603,21 +1766,28 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
             raise TSPiHostError(str(exc)) from exc
         configure_remote(installation)
         configure_notifications(installation)
-        workspace = prepare_workspace(installation, request.workspace_name)
-        manifest = bind_workspace_mode(workspace, request.workspace_name)
-        os.environ["RESEARCH_AGENT_WORKSPACE_MODE"] = str(manifest["workspace_mode"])
-        os.environ["RESEARCH_AGENT_WORKSPACE_ID"] = str(manifest["workspace_id"])
-        os.environ["TSPI_WORKSPACE_MODE"] = str(manifest["workspace_mode"])
-        if manifest["workspace_mode"] == "research":
-            # The Research State filesystem boundary owns the canonical state. A
-            # workspace that also contains the retired JSON/SQLite store has
-            # two competing write authorities and is rejected outright.
-            if has_legacy_research_storage(workspace):
-                raise TSPiHostError(
-                    "workspace contains retired ResearchMap storage; "
-                    "remove or explicitly migrate research_map.json, research.db, "
-                    "workspace.json, and transactions.jsonl before opening it"
-                )
+        if request.remote_host is not None:
+            _validate_remote_terminal_request(request)
+            workspace = prepare_remote_terminal_cwd(installation, request.workspace_name)
+            os.environ["RESEARCH_AGENT_WORKSPACE_MODE"] = "research"
+            os.environ["RESEARCH_AGENT_WORKSPACE_ID"] = request.workspace_name
+            os.environ["TSPI_WORKSPACE_MODE"] = "research"
+        else:
+            workspace = prepare_workspace(installation, request.workspace_name)
+            manifest = bind_workspace_mode(workspace, request.workspace_name)
+            os.environ["RESEARCH_AGENT_WORKSPACE_MODE"] = str(manifest["workspace_mode"])
+            os.environ["RESEARCH_AGENT_WORKSPACE_ID"] = str(manifest["workspace_id"])
+            os.environ["TSPI_WORKSPACE_MODE"] = str(manifest["workspace_mode"])
+            if manifest["workspace_mode"] == "research":
+                # The Research State filesystem boundary owns the canonical state. A
+                # workspace that also contains the retired JSON/SQLite store has
+                # two competing write authorities and is rejected outright.
+                if has_legacy_research_storage(workspace):
+                    raise TSPiHostError(
+                        "workspace contains retired ResearchMap storage; "
+                        "remove or explicitly migrate research_map.json, research.db, "
+                        "workspace.json, and transactions.jsonl before opening it"
+                    )
         configure_process_environment(installation, workspace, request.workspace_name)
         launch_terminal(installation, request, workspace)
 

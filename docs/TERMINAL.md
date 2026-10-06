@@ -36,6 +36,25 @@ scheduler leases, session discovery, and the Monitor supervisor. The native Pi
 TUI, Phone, and Monitor all address that same lane; none starts another agent
 loop.
 
+The Host client's RPC transport can be a local Unix socket or an SSH-launched
+`tspi-host-proxy`, which forwards the same `tspi-host/1` NDJSON over SSH
+stdin/stdout to a private remote socket. SSH changes the connection path, not
+the owner of the workspace, session, or Agent lane.
+
+For a remote installation, provide the remote Host socket and the proxy path:
+
+```bash
+./ResearchAgent --workspace reaction-a \
+  --remote-host pi.example \
+  --remote-host-socket /run/user/1000/tspi/host.sock \
+  --remote-proxy-path /opt/tspi/apps/app-server/tspi-host-proxy.mjs \
+  --ssh-config ~/.ssh/config
+```
+
+The launcher uses the same SSH proxy for the Pi App Server socket returned by
+Host, then gives Pi a private local Unix endpoint. The workspace and session
+remain on the remote Host; the local directory is only a presentation cwd.
+
 ## Open a workspace
 
 ```bash

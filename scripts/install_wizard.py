@@ -78,6 +78,8 @@ ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 WEB_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
 SERVICE_CONFIG_SCHEMA = "tspi-service/1"
 SERVICE_CONFIG_RELATIVE = Path(".pi/tspi/service.json")
+REMOTE_HOST_CONFIG_SCHEMA = "tspi-remote-host/1"
+REMOTE_HOST_CONFIG_RELATIVE = Path(".pi/tspi/remote-host.json")
 PI_AGENT_CONFIG_FILES = ("models.json", "auth.json")
 PI_AGENT_CONFIG_MAX_BYTES = 2 * 1024 * 1024
 DEFAULT_SERVICE_SCOPE = "user"
@@ -238,6 +240,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Host service scope (default: user; none is only for package staging/tests).",
     )
     parser.add_argument("--service-user", help="Unix account used by systemd services (required for system scope).")
+    remote = parser.add_argument_group("remote terminal SSH")
+    remote.add_argument("--remote-host", help="SSH host that owns the remote TSPi Host.")
+    remote.add_argument("--remote-host-socket", help="Absolute Unix socket path of the remote TSPi Host.")
+    remote.add_argument("--remote-proxy-path", help="Absolute path to tspi-host-proxy.mjs on the remote host.")
+    remote.add_argument("--ssh-config", help="Absolute OpenSSH config file for the remote terminal.")
+    remote.add_argument("--ssh-option", action="append", default=None, help="Additional OpenSSH option; repeatable.")
     parser.add_argument("--phone-access", choices=("disabled", "link"), help="TS Phone access mode.")
     parser.add_argument(
         "--link-relay-root",
@@ -398,7 +406,24 @@ def _load_existing_menu_defaults(args: argparse.Namespace) -> None:
         # unit without starting it leaves a freshly installed CLI unusable.
         args.enable_services = True
         args.start_services = True
+    _load_existing_remote_host_defaults(args, root)
     _load_existing_email_defaults(args, root)
+
+
+def _load_existing_remote_host_defaults(args: argparse.Namespace, root: Path) -> None:
+    if args.remote_host is not None or any((args.remote_host_socket, args.remote_proxy_path, args.ssh_config, *(args.ssh_option or []))):
+        return
+    remote_config = root / REMOTE_HOST_CONFIG_RELATIVE
+    try:
+        document = json.loads(remote_config.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return
+    if isinstance(document, dict) and document.get("schema_version") == REMOTE_HOST_CONFIG_SCHEMA:
+        args.remote_host = document.get("ssh_host")
+        args.remote_host_socket = document.get("host_socket")
+        args.remote_proxy_path = document.get("proxy_path")
+        args.ssh_config = document.get("ssh_config")
+        args.ssh_option = list(document.get("ssh_options", []))
 
 
 def _load_existing_email_defaults(args: argparse.Namespace, root: Path) -> None:
@@ -795,6 +820,7 @@ def validate_options(args: argparse.Namespace) -> None:
     if not args.install_root:
         raise ValueError("--install-root is required in non-interactive mode")
     args.install_root = str(validate_install_root(Path(args.install_root)))
+    _load_existing_remote_host_defaults(args, Path(args.install_root))
     if args.job_config:
         source = Path(args.job_config).expanduser()
         if not source.is_absolute() or source.is_symlink() or not source.is_file():
@@ -816,6 +842,23 @@ def validate_options(args: argparse.Namespace) -> None:
     if args.workspace_root is None:
         args.workspace_root = str(read_workspace_root(Path(args.install_root)))
     args.workspace_root = str(_validate_workspace_root(args.workspace_root, Path(args.install_root)))
+    remote_values = (args.remote_host_socket, args.remote_proxy_path, args.ssh_config, *(args.ssh_option or []))
+    if args.remote_host is None and any(value for value in remote_values):
+        raise ValueError("--remote-host is required when SSH terminal options are supplied")
+    if args.remote_host is not None:
+        if not isinstance(args.remote_host, str) or not args.remote_host or args.remote_host.startswith("-"):
+            raise ValueError("--remote-host must be a non-empty host name")
+        for option, value in (("--remote-host-socket", args.remote_host_socket), ("--remote-proxy-path", args.remote_proxy_path)):
+            if not isinstance(value, str) or not value.startswith("/"):
+                raise ValueError(f"{option} must be an absolute path when --remote-host is used")
+        if args.ssh_config is not None and (not isinstance(args.ssh_config, str) or not args.ssh_config.startswith("/")):
+            raise ValueError("--ssh-config must be an absolute path")
+        checked_values = (args.remote_host, args.remote_host_socket, args.remote_proxy_path, *(args.ssh_option or []))
+        if any(not isinstance(value, str) or not value or any(char in value for char in "\x00\r\n") for value in checked_values):
+            raise ValueError("remote terminal SSH options must not contain control characters")
+        if args.ssh_config is not None and any(char in args.ssh_config for char in "\x00\r\n"):
+            raise ValueError("remote terminal SSH options must not contain control characters")
+    args.ssh_option = list(args.ssh_option or [])
     existing_link = _existing_link_configuration(Path(args.install_root))
     if args.phone_access is None:
         args.phone_access = "link" if existing_link is not None else "disabled"
@@ -955,6 +998,28 @@ def configure_service_runtime(args: argparse.Namespace) -> dict[str, str | None]
         destination,
     )
     return {"status": "configured", "path": str(destination), "scope": scope, "runtime_dir": runtime_dir}
+
+
+def configure_remote_host(args: argparse.Namespace) -> dict[str, object]:
+    """Persist the optional SSH terminal profile without storing credentials."""
+    destination = Path(args.install_root).resolve() / REMOTE_HOST_CONFIG_RELATIVE
+    if args.remote_host is None:
+        if destination.exists() or destination.is_symlink():
+            destination.unlink()
+        return {"status": "disabled", "path": str(destination)}
+    document = {
+        "schema_version": REMOTE_HOST_CONFIG_SCHEMA,
+        "ssh_host": args.remote_host,
+        "host_socket": args.remote_host_socket,
+        "proxy_path": args.remote_proxy_path,
+        "ssh_config": args.ssh_config,
+        "ssh_options": list(args.ssh_option or []),
+    }
+    _write_private_config_bytes(
+        (json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+        destination,
+    )
+    return {"status": "configured", "path": str(destination), "ssh_host": args.remote_host}
 
 
 def _existing_link_configuration(root: Path) -> tuple[str, str] | None:
@@ -1823,6 +1888,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
         "uninstall.sh",
         ".pi/tspi/workspace-root.json",
         ".pi/tspi/service.json",
+        ".pi/tspi/remote-host.json",
         ".pi/app-server-host/server-id",
         ".pi/app-server-host/link.json",
         ".pi/app-server-host/host.token",
@@ -3124,6 +3190,8 @@ def main(argv: list[str] | None = None) -> int:
             workspace_config = configure_workspace_root(args)
             activity.update("Recording the App Server service scope")
             service_config = configure_service_runtime(args)
+            activity.update("Recording the remote terminal profile")
+            remote_host_config = configure_remote_host(args)
             activity.update("Installing the Pi App Server runtime")
             app_server_runtime = prepare_app_server_runtime(Path(args.install_root))
             ensure_host_identity(Path(args.install_root))
@@ -3179,6 +3247,7 @@ def main(argv: list[str] | None = None) -> int:
             "backend_configs": backend_configs,
             "workspace_config": workspace_config,
             "service_config": service_config,
+            "remote_host_config": remote_host_config,
             "phone_connection": phone_connection,
             "model_icons": model_icons,
             "model_configuration": model_configuration,
