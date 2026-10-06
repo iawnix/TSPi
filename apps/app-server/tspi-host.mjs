@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createServer, createConnection } from "node:net";
+import { existsSync } from "node:fs";
 import { chmod, lstat, mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
@@ -20,7 +21,8 @@ const MONITOR_ID = /^mon_[a-f0-9]{24}$/u;
 const MONITOR_EVENT_ID = /^evt_[a-f0-9]{32}$/u;
 const SESSION_EVENT_HISTORY_LIMIT = 256;
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const capabilities = ["workspace.list", "workspace.create", "workspace.attach", "session.list", "session.read", "session.create", "session.resume", "session.attach", "session.detach", "session.remove", "input.send", "input.status", "turn.interrupt", "models.list", "model.select", "monitor.list", "monitor.status", "monitor.enable", "monitor.disable"];
+const BASE_CAPABILITIES = ["workspace.list", "workspace.create", "workspace.attach", "session.list", "session.read", "session.create", "session.resume", "session.attach", "session.detach", "session.remove", "input.send", "input.status", "turn.interrupt", "models.list", "model.select"];
+const MONITOR_CAPABILITIES = ["monitor.list", "monitor.status", "monitor.enable", "monitor.disable"];
 
 /** Owns routing and durable acceptance records for the Native Pi Harness. */
 export async function startTspiHost(options) {
@@ -45,6 +47,8 @@ export async function startTspiHost(options) {
   if ((await lstat(workspaceRoot)).isSymbolicLink()) throw protocolError("invalid_workspace_root", "Workspace container must not be a symlink");
   const physicalRoot = await realpath(workspaceRoot);
   const epoch = randomUUID();
+  const monitorAvailable = existsSync(join(packageRoot, "apps", "agent-cli", "monitor.py"));
+  const capabilities = monitorAvailable ? [...BASE_CAPABILITIES, ...MONITOR_CAPABILITIES] : [...BASE_CAPABILITIES];
   const clients = new Set();
   const live = new Map();
   const inFlight = new Map();
@@ -252,6 +256,7 @@ export async function startTspiHost(options) {
   }
 
   async function runMonitor(method, params) {
+    if (!monitorAvailable) throw protocolError("method_not_found", "monitor support is not included in this release");
     const root = await workspace(params.workspace_id);
     const command = method.slice("monitor/".length);
     const args = [join(packageRoot, "apps", "agent-cli", "monitor.py"), command, "--root", root];
@@ -483,7 +488,7 @@ export async function startTspiHost(options) {
     // the cursor before accepting clients so restarting Host does not replay
     // historical monitor files; clients recover state through monitor/status.
     await scanMonitorFiles({ notify: false });
-    monitorTimer = monitorPollMs > 0 ? setInterval(() => void pollMonitors().catch(() => {}), monitorPollMs) : null;
+    monitorTimer = monitorAvailable && monitorPollMs > 0 ? setInterval(() => void pollMonitors().catch(() => {}), monitorPollMs) : null;
     monitorTimer?.unref();
   } catch (cause) {
     closed = true;
