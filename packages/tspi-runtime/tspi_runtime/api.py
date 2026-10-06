@@ -34,7 +34,7 @@ COMMAND_DEFINITIONS = {
 RESEARCH_COMMANDS = frozenset(
     command for command, definition in COMMAND_DEFINITIONS.items() if definition.get("domain") == "research"
 )
-COMMANDS = RESEARCH_COMMANDS
+COMMANDS = frozenset(COMMAND_DEFINITIONS)
 
 class CommandError(ValueError):
     """A canonical command request is invalid or cannot be served."""
@@ -174,6 +174,12 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
         raise CommandError(
             f"research.{action} is served by the Host Research State filesystem boundary; use the native command boundary"
         )
+    if command.startswith("job."):
+        from tspi_runtime.execution import dispatch
+        return dispatch(command.removeprefix("job."), {**value, "workspace_root": str(root)})
+    if command.startswith("artifact."):
+        from tspi_runtime.evidence import dispatch
+        return dispatch(command.removeprefix("artifact."), {**value, "workspace_root": str(root)})
     raise CommandError(f"unsupported command family: {command}")
 
 

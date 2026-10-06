@@ -111,6 +111,61 @@
       "required": [
         "request"
       ]
+    },
+    {
+      "id": "job.start",
+      "domain": "runtime",
+      "required": []
+    },
+    {
+      "id": "job.status",
+      "domain": "runtime",
+      "required": []
+    },
+    {
+      "id": "job.collect",
+      "domain": "runtime",
+      "required": []
+    },
+    {
+      "id": "job.cancel",
+      "domain": "runtime",
+      "required": []
+    },
+    {
+      "id": "job.probe",
+      "domain": "runtime",
+      "required": []
+    },
+    {
+      "id": "job.reconcile",
+      "domain": "runtime",
+      "required": []
+    },
+    {
+      "id": "artifact.register",
+      "domain": "runtime",
+      "required": []
+    },
+    {
+      "id": "artifact.create",
+      "domain": "runtime",
+      "required": []
+    },
+    {
+      "id": "artifact.read",
+      "domain": "runtime",
+      "required": []
+    },
+    {
+      "id": "artifact.derive",
+      "domain": "runtime",
+      "required": []
+    },
+    {
+      "id": "artifact.link",
+      "domain": "runtime",
+      "required": []
     }
   ],
   "slash_commands": {

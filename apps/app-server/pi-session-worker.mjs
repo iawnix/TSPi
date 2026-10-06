@@ -19,7 +19,8 @@ import { wrapToolForHarness, toolErrorResult } from "../../packages/agent-runtim
 import { createToolExecutionContext, validateToolInvocationContext } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
 import { createPublicToolAlias } from "../../packages/agent-runtime/host-api/tools.mjs";
 import { createResearchLifecycleController } from "../../packages/agent-runtime/host-api/lifecycle.mjs";
-import { createArtifactRuntime, createJobRuntime } from "./job-artifact-runtime.mjs";
+import { createExecutionRuntime } from "./execution-runtime.mjs";
+import { createEvidenceRuntime } from "./evidence-runtime.mjs";
 import { filterExtensionToolNames, filterWorkspaceTools } from "./workspace-mode-tools.mjs";
 import { create_python_kernel_bridge } from "../../packages/research-state-bridge/python_kernel_bridge.mjs";
 import { create_research_state_port, RESEARCH_STATE_WRITE_PRINCIPAL } from "../../packages/research-state-bridge/ports.mjs";
@@ -128,14 +129,15 @@ async function createTspiHarness(databasePath, options) {
     options.model === undefined ? undefined : { provider: options.provider, model: options.model },
   );
   const loadedSkills = await loadTspiSkills(executionEnvs.env({ cwd }));
-  const researchKernel = create_research_state_port(create_python_kernel_bridge({ workspace_root: cwd, workspace_id: workspaceId }));
-  const jobRuntime = createJobRuntime({ workspaceRoot: cwd });
-  const artifactRuntime = createArtifactRuntime({ workspaceRoot: cwd });
+  const commandBridge = create_python_kernel_bridge({ workspace_root: cwd, workspace_id: workspaceId });
+  const researchKernel = create_research_state_port(commandBridge);
+  const jobRuntime = createExecutionRuntime({ bridge: commandBridge });
+  const artifactRuntime = createEvidenceRuntime({ bridge: commandBridge });
   const loadedExtensions = await loadServerExtensions({
     packageRoot: loadedSkills.packageRoot,
     reservedToolNames: ["read", "write", "bash", "edit", "system_prompt"],
     requiredToolNames: ["research_read"],
-    factoryOptions: { researchKernel, jobRuntime, artifactRuntime },
+    factoryOptions: { workspaceRoot: cwd, commandBridge, researchKernel, jobRuntime, artifactRuntime },
   });
   const installed = await loadInstalledServerExtensions({
     extensions: loadedSkills.installedExtensions.extensions,
@@ -223,9 +225,10 @@ async function createTspiHarness(databasePath, options) {
     return {
       harness, conversation, modelRuntime, settingsManager,
       facetLoader: createStaticFacetLoader([defineFacet({ id: "@tspi/system-prompt", setup(env) { env.provide(TspiSystemPrompt, { async inspect() { return promptManifest; } }); } })]),
-      cleanup: (context) => executionEnvs.cleanup(context),
+      cleanup: async (context) => { try { await executionEnvs.cleanup(context); } finally { await commandBridge.close(); } },
     };
   } catch (error) {
+    await commandBridge.close().catch(() => {});
     await harness?.close(PI_TODO_CONTEXT).catch(() => {});
     await executionEnvs.cleanup(PI_TODO_CONTEXT).catch(() => {});
     throw error;

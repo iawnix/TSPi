@@ -202,7 +202,7 @@ export function createJobArtifactTools(options = {}) {
       throw new Error(`${name} runtime is not configured in TSPi Agent Server`);
     }
     const root = boundWorkspaceRoot(params, toolContext);
-    const result = await runtime[method]({ ...params, root });
+    const result = await runtime[method]({ ...params, root, request_id: `${toolContext?.operation_id || "turn"}:${_id}`, principal: toolContext?.principal });
     return toolResult(result);
   };
   const contracts = TOOL_CONTRACTS;
