@@ -837,34 +837,11 @@ def check_remote(installation: Installation) -> int:
     if not environment_name:
         print("ResearchAgent: no remote compute environment is configured", file=sys.stderr)
         return 1
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(installation.package_root / "apps" / "agent-cli" / "compute.py"),
-            "remote-diagnostic",
-            "--mode",
-            "doctor",
-            "--environment",
-            environment_name,
-        ],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+    print(
+        "ResearchAgent: remote probing is provided by the configured Job Runtime platform; "
+        "use job_probe from a research workspace.",
     )
-    try:
-        payload = json.loads(completed.stdout)
-    except json.JSONDecodeError:
-        payload = None
-    if completed.returncode == 0 and isinstance(payload, dict) and payload.get("ok") is True:
-        print(f"ResearchAgent: remote check passed ({os.environ['TS_REMOTE_DISPLAY_TARGET']})")
-        return 0
-    print(f"ResearchAgent: remote check failed ({os.environ['TS_REMOTE_DISPLAY_TARGET']})", file=sys.stderr)
-    if completed.stdout.strip():
-        print(completed.stdout.rstrip(), file=sys.stderr)
-    if completed.stderr.strip():
-        print(completed.stderr.rstrip(), file=sys.stderr)
-    return 1
+    return 0
 
 
 def configure_model_icon_environment(installation: Installation) -> bool:
