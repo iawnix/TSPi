@@ -206,44 +206,25 @@ Package release。
 
 ## ResearchAgent 与内部 App Server
 
-`ResearchAgent` 是普通用户的主入口。它负责选择或校验工作区模式、初始化工作区、完成
-研究模式的 Host admission，然后再打开终端。`ResearchAgentServer` 是供框架客户端和
-管理员使用的内部 HTTP 服务，普通终端流程不需要用户手动启动它。
-
-如果要单独部署 App Server，直接使用发行包安装的 Pi Runtime。Runtime 和 Research State
-模块由 TSPi 固定选择，不再允许用户注入模块：
+`ResearchAgent` 打开连接安装级 Agent Server 的终端。`ResearchAgentServer` 通过同一个
+canonical 启动器启动该服务：
 
 ```bash
-./ResearchAgentServer \
-  --port 8787 \
-  --write-config
 ./ResearchAgentServer
 ```
 
-配置会以 `0600` 写入 `<install>/.pi/research-agent/server.json`，schema 为
-`research_agent_server/1`。旧的 `runtime_module`、`kernel_module` 和模块注入环境变量
-会被直接拒绝。
+生成的 `ts-app-server-tspi.service` 也执行此命令；服务运行时不要启动第二份进程。
+Host API、Pi SDK Harness、Monitor 和 session worker 都属于同一个 Agent Server。
+Pi 负责 Agent loop、模型/工具调用和持久 transcript，TSPi 负责研究策略与工具。
 
-发行包内置 Pi SDK Runtime descriptor 和 durable adapter：
-`packages/agent-pi-adapter/pi_runtime_module.mjs`；默认路径委托给
-`apps/app-server/pi-app-server.mjs` 以及 Pi v1 experimental services。安装器会把固定 checkout 安装到
-`<install>/.pi/runtime-cache/pi/<commit>`，启动器只把解析后的内部路径传给子进程：
+固定的 Pi checkout 位于 `<install>/.pi/runtime-cache/pi/<commit>`。Session 存储由安装
+统一管理；独立 runtime 注入、HTTP session store 和 `.pi/research-agent/server.json`
+配置已删除。
 
-```bash
-export RESEARCH_AGENT_CWD="$PWD/workspaces/demo"
-export RESEARCH_AGENT_SESSION_ROOT="$PWD/.pi/research-agent/sessions"
-export PI_CODING_AGENT_DIR="$PWD/.pi/research-agent/agent"
-export RESEARCH_AGENT_MODEL_PROVIDER="anthropic"
-export RESEARCH_AGENT_MODEL_ID="claude-sonnet-4-5"
-./ResearchAgentServer --port 8787
-```
-
-Pi SDK 直接拥有 Agent loop、ModelProvider 调用、Tool 调用、Session、Transcript、Lane、
-Retry、Timeout、Cancel 和子 Agent。TSPi 只在其外围增加 workspace policy、ContextPack、
-权限、Provider 调度、Artifact 和 provenance。
-
-`ResearchAgentServer` 与 `ts-app-server-tspi.service` 使用同一份安装后的 Pi Runtime 和
-TSPi Host 路径，不再存在可替换的生产 Agent Runtime。
+`apps/app-server/server.mjs` 仅是连接已有 Host socket 的可选本机 HTTP 适配器。运行时
+使用 `TSPI_HOST_SOCKET` 指定 socket，支持 `GET /health_read` 和 `POST /rpc`，请求体为
+`{ "method": "workspace.list", "params": {} }`。它不会启动 Agent runtime。远程 Phone/Web
+仍通过 Link 连接。
 
 创建新会话或继续项目中的最新会话：
 

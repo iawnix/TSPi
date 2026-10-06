@@ -361,6 +361,7 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
         if args.purge_config:
             managed.extend([
                 root / ".pi/tspi",
+                root / ".pi/research-agent/server.json",
                 root / ".pi/app-server-host/server-id",
                 root / ".pi/app-server-host/link.json",
                 root / ".pi/app-server-host/host.token",
@@ -379,6 +380,7 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
             managed.extend([
                 workspace_root,
                 root / ".pi/app-server-host/sessions",
+                root / ".pi/research-agent/sessions",
             ])
         removed.extend(remove_paths(managed))
         prune_empty_parents(root)

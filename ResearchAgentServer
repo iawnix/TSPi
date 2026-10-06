@@ -12,10 +12,14 @@ elif [[ "$(basename -- "$LAUNCHER_DIR")" == "bin" && -d "$(dirname -- "$LAUNCHER
 else
   readonly INSTALL_ROOT="$LAUNCHER_DIR"
 fi
-readonly LAUNCHER="$PACKAGE_ROOT/apps/agent-cli/research_agent_launcher.py"
+readonly LAUNCHER="$PACKAGE_ROOT/apps/agent-cli/tspi_launcher.py"
 
 if [[ ! -f "$LAUNCHER" ]]; then
   printf 'ResearchAgentServer: launcher is missing from the active package: %s\n' "$LAUNCHER" >&2
   exit 1
 fi
-exec python3 "$LAUNCHER" --install-root "$INSTALL_ROOT" "$@"
+# ResearchAgentServer is the public name for the installation Agent Server.
+# Keep it on the exact same launcher path as ResearchAgent: the Host owns the
+# Pi SDK runtime, sessions, and transports.  The old research_agent_launcher
+# HTTP composition created a second runtime and is intentionally retired.
+exec python3 "$LAUNCHER" --install-root "$INSTALL_ROOT" -- --service-host "$@"

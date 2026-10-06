@@ -121,7 +121,6 @@
     "scripts/package_inventory.py",
     "tools/lint_architecture.py",
     "apps/agent-cli/tspi_launcher.py",
-    "apps/agent-cli/research_agent_launcher.py",
     "scripts/link_relay_discovery.py",
     "scripts/pi-loader.mjs",
     "scripts/prepare_pi_source.py",

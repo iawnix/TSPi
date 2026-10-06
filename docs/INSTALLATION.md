@@ -249,50 +249,26 @@ Flutter client and does not create a service on the installation host.
 
 ## ResearchAgent And The Internal App Server
 
-`ResearchAgent` is the normal user entrypoint. It selects or verifies the
-workspace mode and performs workspace initialization and research admission
-before opening the terminal. `ResearchAgentServer` is the internal HTTP
-service used by framework clients and administrators; it is not required for
-the ordinary terminal workflow.
-
-For an explicit App Server deployment, use the Pi Runtime installed with the
-release. Runtime and Research State modules are selected by TSPi itself; they
-are not user supplied plugin points:
+`ResearchAgent` opens a terminal connected to the installation Agent Server.
+`ResearchAgentServer` starts that same server through the canonical launcher:
 
 ```bash
-./ResearchAgentServer \
-  --port 8787 \
-  --write-config
 ./ResearchAgentServer
 ```
 
-This writes the owner-only configuration at
-`<install>/.pi/research-agent/server.json` with schema
-`research_agent_server/1`. Old `runtime_module`, `kernel_module`, and module
-injection environment fields are rejected.
+The generated `ts-app-server-tspi.service` invokes this command. Do not start
+another copy while that service is running. Host API, Pi SDK Harness, Monitor,
+and session workers belong to this one Agent Server. Pi owns the Agent loop,
+model/tool calls and durable transcripts; TSPi supplies research policy and tools.
 
-The release includes the Pi SDK Runtime descriptor and the durable adapter at
-`packages/agent-pi-adapter/pi_runtime_module.mjs`; its default path delegates to
-`apps/app-server/pi-app-server.mjs` and the Pi v1 experimental services. The installer prepares the
-pinned checkout under `<install>/.pi/runtime-cache/pi/<commit>` and passes its
-resolved location internally. Configure only the model selected by Pi:
+The fixed Pi checkout lives at `<install>/.pi/runtime-cache/pi/<commit>`.
+Session storage is installation-owned; separate runtime injection, HTTP session
+stores and `.pi/research-agent/server.json` configuration have been removed.
 
-```bash
-export RESEARCH_AGENT_CWD="$PWD/workspaces/demo"
-export RESEARCH_AGENT_SESSION_ROOT="$PWD/.pi/research-agent/sessions"
-export PI_CODING_AGENT_DIR="$PWD/.pi/research-agent/agent"
-export RESEARCH_AGENT_MODEL_PROVIDER="anthropic"
-export RESEARCH_AGENT_MODEL_ID="claude-sonnet-4-5"
-./ResearchAgentServer --port 8787
-```
-
-The adapter never discovers `~/.pi` implicitly. The Pi SDK owns the Agent loop,
-ModelProvider calls, tools, sessions, transcript, lanes, retry, cancellation,
-and sub-agent execution. TSPi supplies workspace policy, ContextPack, tools,
-permissions, Provider dispatch, artifacts, and provenance around that runtime.
-
-`ResearchAgentServer` and `ts-app-server-tspi.service` use the same installed
-Pi Runtime and TSPi Host path. There is no alternate production Agent Runtime.
+`apps/app-server/server.mjs` is an optional loopback HTTP adapter to an existing
+Host socket. Set `TSPI_HOST_SOCKET` to that socket when running it. It accepts
+`GET /health_read` and `POST /rpc` with `{ "method": "workspace.list", "params": {} }`.
+It does not start an Agent runtime. Remote Phone/Web connections use Link.
 
 Create a new conversation or continue the latest conversation in a project:
 

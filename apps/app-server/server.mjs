@@ -1,11 +1,9 @@
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import { create_research_agent_composition } from "./composition_root.mjs";
-import { create_runtime } from "../../packages/agent-pi-adapter/pi_runtime_module.mjs";
-import { create_kernel } from "../../packages/research-state-bridge/kernel_factory.mjs";
+import { connectHost, HOST_PROTOCOL } from "./tspi-host-client.mjs";
 
 export const HTTP_SERVER_PROTOCOL_VERSION = "research_agent_http_server_1";
 export const HTTP_ERROR_SCHEMA = "research_agent_http_error_1";
@@ -333,47 +331,49 @@ export async function start_http_server({ app_server, session_store = null, host
   return server;
 }
 
+/** HTTP transport for the existing installation Host; never owns an Agent. */
+export async function start_host_http_adapter({ socketPath, host = "127.0.0.1", port = 0, max_body_bytes = DEFAULT_MAX_BODY_BYTES } = {}) {
+  // This adapter has no separate authentication authority. It is local-only;
+  // remote browsers and phones enter through the authenticated Link transport.
+  if (!["127.0.0.1", "::1", "localhost"].includes(host)) throw new TypeError("Host HTTP adapter must listen on loopback");
+  if (!Number.isInteger(max_body_bytes) || max_body_bytes <= 0) throw new TypeError("max_body_bytes must be positive");
+  const peer = await connectHost({ socketPath });
+  const server = createServer(async (request, response) => {
+    const id = request_id(request);
+    try {
+      const route = route_name(request.url || "/");
+      let result;
+      if (route === "health_read" && request.method === "GET") {
+        if (peer.isClosed()) throw Object.assign(new Error("Agent Server connection closed"), { statusCode: 503 });
+        result = { status: "ok", protocol_version: HOST_PROTOCOL, host: peer.hello };
+      } else if (route === "rpc" && request.method === "POST") {
+        const body = await read_json_body(request, max_body_bytes);
+        if (typeof body.method !== "string" || !body.method || body.method === "initialize") throw new TypeError("RPC method is required; initialize belongs to the adapter");
+        result = await peer.request(body.method, body.params ?? {});
+      } else throw Object.assign(new Error("Use GET /health_read or POST /rpc"), { statusCode: 404 });
+      write_json(response, 200, { result }, id);
+    } catch (error) {
+      write_json(response, error.statusCode || error_status(error_code(error)), { error: { code: error.code || error_code(error), message: error_detail(error) } }, id);
+    }
+  });
+  server.once("close", () => peer.close());
+  try {
+    await new Promise((done, fail) => { server.once("error", fail); server.listen(port, host, done); });
+    return server;
+  } catch (error) { peer.close(); throw error; }
+}
+
 async function run_default_server() {
-  // Establish the package identity that Pi Host workers use before creating
-  // the runtime and Research State kernel.
-  const package_root = resolve(new URL("../..", import.meta.url).pathname);
-  process.env.TSPI_PACKAGE_ROOT = package_root;
-  const install_root = process.env.TSPI_INSTALL_ROOT;
-  const pi_source = process.env.TSPI_PI_RUNTIME_ROOT;
-  if (!install_root || !pi_source) throw new Error("installation_pi_runtime_not_configured");
-  const pi_session_port = await create_runtime({
-    pi_source,
-    package_root: package_root,
-    worker_entry: join(package_root, "apps/app-server/pi-session-worker.mjs"),
-    cwd: process.env.RESEARCH_AGENT_CWD || process.env.TSPI_WORKSPACE_ROOT || package_root,
-    workspace_root: process.env.TSPI_WORKSPACE_ROOT || package_root,
-    session_root: process.env.RESEARCH_AGENT_SESSION_ROOT || join(install_root, ".pi/research-agent/sessions"),
-    agent_dir: process.env.RESEARCH_AGENT_AGENT_DIR || join(install_root, ".pi/agent"),
-    model_provider: process.env.RESEARCH_AGENT_MODEL_PROVIDER || process.env.TSPI_PROVIDER,
-    model_id: process.env.RESEARCH_AGENT_MODEL_ID || process.env.TSPI_MODEL,
-  });
-  const kernel_port = create_kernel({});
-  const composition = create_research_agent_composition({
-    pi_session_port,
-    kernel_port,
-    catalog_root: process.env.RESEARCH_AGENT_CATALOG_ROOT || undefined,
-    session_root: process.env.RESEARCH_AGENT_SESSION_ROOT || undefined,
-  });
-  const app_server = composition.app_server;
-  const server = await start_http_server({
-    app_server,
+  const server = await start_host_http_adapter({
+    socketPath: process.env.TSPI_HOST_SOCKET,
     host: process.env.TSP_APP_SERVER_HOST || "127.0.0.1",
     port: Number(process.env.TSP_APP_SERVER_PORT || 8787),
   });
-  const shutdown = async () => {
-    await new Promise((resolve_promise) => server.close(() => resolve_promise()));
-    await composition.close();
-    await kernel_port.close?.();
-  };
+  const shutdown = () => server.close();
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
   const address = server.address();
-  process.stdout.write(`research-agent-app-server listening on ${typeof address === "string" ? address : `${address.address}:${address.port}`}\n`);
+  process.stdout.write(`research-agent-http-adapter listening on ${typeof address === "string" ? address : `${address.address}:${address.port}`}\n`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {

@@ -1880,6 +1880,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
 
     relative_paths = [
         "ResearchAgent",
+        "ResearchAgentServer",
         "current",
         "bin/ResearchAgent",
         "bin/ResearchAgentServer",
@@ -2533,11 +2534,11 @@ def app_server_unit(args: argparse.Namespace) -> str:
         raise ValueError("service XDG_RUNTIME_DIR must be an absolute path")
     # Host is an internal service entrypoint. Ordinary users manage this unit
     # through systemctl and never need to invoke the Host process directly.
-    command = " ".join((_systemd_quote(root / "ResearchAgent"), "--service-host"))
+    command = _systemd_quote(root / "ResearchAgentServer")
     wanted_by = "multi-user.target" if args.service_scope == "system" else "default.target"
     runtime_directory = "RuntimeDirectory=tspi\nRuntimeDirectoryMode=0700" if args.service_scope == "system" else ""
     return f"""[Unit]
-Description=TSPi installation Host (all workspaces)
+Description=TSPi Agent Server (Host API and Pi SDK Harness)
 After=network-online.target
 
 [Service]
