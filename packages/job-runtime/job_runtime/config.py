@@ -45,6 +45,15 @@ def platforms_from_config(path: str | Path | None = None) -> tuple[dict[str, Exe
         # A local target remains useful for doctor/probe even when the selected
         # installation only declares remote environments.
         platforms["local"] = LocalProcessPlatform()
+    if "remote" not in platforms:
+        remote_names = [
+            name for name, environment in value["environments"].items()
+            if isinstance(environment, dict) and environment.get("kind") == "remote"
+        ]
+        if remote_names:
+            # ``remote`` is the stable public target used by generic workflow
+            # requests; the configured environment name remains available for
+            # explicit queue/cluster selection.
+            platforms["remote"] = platforms[remote_names[0]]
     default = str(value["default_environment"])
     return platforms, default
-

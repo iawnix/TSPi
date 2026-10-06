@@ -109,4 +109,5 @@ remote_root = \"/scratch/tspi\"
     assert default == "local"
     assert isinstance(platforms["local"], LocalProcessPlatform)
     assert isinstance(platforms["cluster"], TorqueSSHPlatform)
+    assert platforms["remote"] is platforms["cluster"]
     assert platforms["cluster"].host == "compute.example"
