@@ -234,6 +234,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Deterministic chemical name resolver TOML to install as .pi/name-resolver.toml.",
     )
     parser.add_argument("--conda-root")
+    parser.add_argument("--allow-dirty", action="store_true", help="Allow a dirty local source checkout for validation installs.")
     parser.add_argument(
         "--service-scope",
         choices=("none", "user", "system"),
@@ -1783,6 +1784,8 @@ def run_install(args: argparse.Namespace) -> dict[str, object]:
         command.append("--without-web")
     if args.conda_root:
         command.extend(["--conda-root", args.conda_root])
+    if getattr(args, "allow_dirty", False):
+        command.append("--allow-dirty")
     return run_logged_install(command, Path(args.install_root), show_progress=not args.json)
 
 

@@ -278,10 +278,6 @@ def build_command(args: argparse.Namespace, config: Path, install_root: Path) ->
         "--agent-config-dir",
         str(config),
         "--with-web" if args.with_web else "--without-web",
-        "--web-host",
-        args.web_host,
-        "--web-port",
-        str(args.web_port),
         "--service-scope",
         args.service_scope,
         "--email-binding",
@@ -299,6 +295,11 @@ def build_command(args: argparse.Namespace, config: Path, install_root: Path) ->
         "--non-interactive",
         "--yes",
     ]
+    if args.with_web:
+        service_index = command.index("--service-scope")
+        command[service_index:service_index] = [
+            "--web-host", args.web_host, "--web-port", str(args.web_port),
+        ]
     if link_url:
         command.extend(["--link-url", link_url])
     if relay_root:
@@ -319,6 +320,8 @@ def build_command(args: argparse.Namespace, config: Path, install_root: Path) ->
             command.append(f"--ssh-option={option}")
     if not args.no_start_services:
         command.extend(["--enable-services", "--start-services"])
+    if args.allow_dirty:
+        command.append("--allow-dirty")
     if args.json:
         command.append("--json")
     # Validate the source files here so a failed wizard never writes a partial

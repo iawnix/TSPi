@@ -164,6 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--without-web", action="store_true", help="Omit the ts-web component")
     parser.add_argument("--conda")
     parser.add_argument("--conda-root")
+    parser.add_argument("--allow-dirty", action="store_true", help="Allow a dirty local source checkout for validation installs.")
     parser.add_argument("--progress", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -203,6 +204,8 @@ def main(argv: list[str] | None = None) -> int:
             build = [sys.executable, "scripts/build_package.py", "--output-dir", str(output), "--json"]
             if args.without_web:
                 build.append("--without-web")
+            if args.allow_dirty:
+                build.append("--allow-dirty")
             emit_progress(args.progress, "Building the validated TSPi package")
             built = json.loads(run(build, cwd=checkout))
             install = [sys.executable, "scripts/install_package.py", "--manifest", built["manifest"], "--archive", built["archive"], "--install-root", args.install_root, "--json"]
