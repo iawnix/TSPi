@@ -149,6 +149,8 @@ USAGE = """Usage:
   ResearchAgent phone pair
   ResearchAgent phone devices
   ResearchAgent phone revoke <device-id>
+  ResearchAgent artifact manifest --root <source> --path <relative-file> --output <manifest.json>
+  ResearchAgent artifact apply --source-root <source> --destination-root <destination> --manifest <manifest.json>
 
 Options:
   --workspace <name>   Open a research workspace.
@@ -1834,6 +1836,10 @@ def main(
 ) -> int:
     package = Path(package_root).resolve() if package_root else package_root_from_file(__file__)
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ["artifact"]:
+        from .artifact_cli import main as artifact_main
+
+        return artifact_main(arguments[1:])
     try:
         return launch(arguments, package_root=package, install_root=install_root)
     except TSPiHostError as exc:

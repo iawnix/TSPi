@@ -43,6 +43,13 @@ Server socket；Phone 继续通过 TSPi Link 的 WSS Relay。三种方式都使�
 lock 的唯一权威位置。TSPi 不使用实时双向 rsync 同步工作区；rsync 或其它批量复制工具只
 能用于显式 artifact manifest 的初始化、备份或导出。
 
+安装后的命令直接提供这个边界：
+`ResearchAgent artifact manifest --root <source> --path <relative-file> --output <manifest.json>`
+生成 owner-only 的 `tspi-artifact-transfer/1` manifest；
+`ResearchAgent artifact apply --source-root <source> --destination-root <destination> --manifest <manifest.json>`
+会校验并物化文件，支持断点续传和幂等重跑。manifest 必须逐个列出文件，永远不会包含
+Host session 或 `.pi/app-server-host` 状态。
+
 ## 科学状态模型
 
 每个 research workspace 只有一套文件系统 `ResearchMap` context 与持久生命周期投影：

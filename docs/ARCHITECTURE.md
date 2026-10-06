@@ -67,6 +67,14 @@ Memory, and workspace locks. TSPi does not use live bidirectional rsync for
 workspace operation. rsync or another bulk copier is reserved for an explicit
 artifact manifest used for bootstrap, backup, or export.
 
+The installed command exposes that boundary directly:
+`ResearchAgent artifact manifest --root <source> --path <relative-file> --output <manifest.json>`
+creates an owner-only `tspi-artifact-transfer/1` manifest, and
+`ResearchAgent artifact apply --source-root <source> --destination-root <destination> --manifest <manifest.json>`
+verifies and materializes it with resume and idempotent re-run support. The
+manifest names every file explicitly; it never includes Host sessions or
+`.pi/app-server-host` state.
+
 ## Scientific State Model
 
 Each research workspace has one filesystem ResearchMap context and one durable lifecycle projection:
