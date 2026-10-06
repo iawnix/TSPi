@@ -39,7 +39,8 @@ PYTHON_SOURCE_ROOTS = {
     "research_state": Path("packages") / "research-state" / "research_state",
     "research_memory": Path("packages") / "research-memory" / "research_memory",
     "research_compute": Path("packages") / "research-compute" / "research_compute",
-    "chemical_runtime": Path("extensions") / "chemical" / "providers" / "chemical_runtime",
+    "artifact_store": Path("packages") / "artifact-store" / "artifact_store",
+    "job_runtime": Path("packages") / "job-runtime" / "job_runtime",
 }
 PYTHON_PACKAGE_NAMES = frozenset(PYTHON_SOURCE_ROOTS)
 PYTHON_PAYLOAD_SUFFIXES = frozenset({".css", ".html", ".js", ".json", ".py", ".svg", ".toml"})

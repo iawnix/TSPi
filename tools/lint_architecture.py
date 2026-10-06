@@ -55,8 +55,6 @@ def check() -> list[str]:
         ROOT / "packages" / "tspi-foundation" / "tspi_foundation" / "io.py",
         ROOT / "packages" / "tspi-provider-runtime" / "tspi_provider_runtime" / "protocol.py",
         ROOT / "packages" / "tspi-bootstrap" / "tspi_bootstrap" / "launcher.py",
-        ROOT / "packages" / "research-compute" / "research_compute" / "remote" / "lifecycle.py",
-        ROOT / "extensions" / "chemical" / "providers" / "chemical_runtime" / "analysis" / "engine.py",
     )
     for path in required:
         if not path.is_file():

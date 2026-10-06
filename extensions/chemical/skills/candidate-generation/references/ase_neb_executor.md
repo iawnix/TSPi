@@ -71,8 +71,7 @@ normally.
 
 The remote environment's `ase_neb` Backend binding must select the Python interpreter from
 an operator-managed, versioned environment. That interpreter must import ASE,
-NumPy, and the `chemical_runtime.backends.ase_neb_runner` version matching the TSPi
-release that prepared the calculation. Set `TS_ASE_NEB_XTB` in the Backend
+NumPy, and the the ASE-NEB runner command described by this Skill. Set `TS_ASE_NEB_XTB` in the Backend
 binding's environment variables to the validated xTB executable for xTB mode,
 or `TS_ASE_NEB_GAUSSIAN` for Gaussian mode; do not depend on an interactive
 shell's `PATH`.

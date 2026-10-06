@@ -12,7 +12,8 @@ from _bootstrap import bootstrap_python_package
 
 bootstrap_python_package(ROOT)
 
-from chemical_runtime.backends.cli import main  # noqa: E402
+def main() -> int:
+    raise SystemExit("chemical provider CLI was removed; use a Skill with bash/job_start")
 
 
 if __name__ == "__main__":

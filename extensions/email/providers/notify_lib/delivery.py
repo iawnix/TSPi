@@ -24,8 +24,6 @@ from email.utils import formatdate
 from pathlib import Path
 from typing import Any
 
-from report_lib.context import collect_report_context
-
 from .artifacts import bounded_content, bounded_text, sha256_json, sha256_path, workspace_path, workspace_root
 from .errors import NotificationError
 
@@ -54,6 +52,20 @@ EVENTS = frozenset(
         "study_completed",
     }
 )
+
+
+def collect_research_context(workspace: Path) -> dict[str, Any]:
+    """Read the canonical workspace identity without a report provider."""
+    manifest = workspace / "workspace_manifest.json"
+    try:
+        value = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        value = {}
+    state = value.get("research_state", {}) if isinstance(value, dict) else {}
+    return {
+        "research_map": {"map_id": value.get("map_id")} if isinstance(value, dict) else {},
+        "workspace_revision": state.get("revision", 0) if isinstance(state, dict) else 0,
+    }
 
 
 @dataclass(frozen=True)
@@ -102,7 +114,7 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
         workspace,
         request.get("report_refs", []),
     )
-    workspace_report = collect_report_context(workspace)
+    workspace_report = collect_research_context(workspace)
     workspace_id = bounded_text(
         workspace_report.get("research_map", {}).get("map_id"),
         "workspace_id",
@@ -863,7 +875,7 @@ def _revalidate_notification_inputs(
     current_config = load_notification_config(config.source)
     if current_config.digest != config.digest:
         raise ValueError("notification configuration changed after preflight")
-    current_report = collect_report_context(workspace)
+    current_report = collect_research_context(workspace)
     if current_report.get("workspace_revision") != workspace_revision:
         raise ValueError("workspace revision changed after notification preflight")
     for record in attachment_records:

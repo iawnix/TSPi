@@ -10,23 +10,21 @@ redefining state.
 
 | Skill | Responsibility |
 | --- | --- |
-| [research-state](research-state/SKILL.md) | ResearchMap reads, validation, Findings, Gates, and atomic changes |
-| [orchestration](orchestration/SKILL.md) | Task planning, branches, recovery, review, and stopping |
-| [candidate-generation](../extensions/chemical/skills/candidate-generation/SKILL.md) | TS candidate construction, scans, QST, NEB, and sampling |
-| [validation](../extensions/chemical/skills/validation/SKILL.md) | Saddle, mode, structure, electronic-state, and stereochemical validation |
-| [irc](../extensions/chemical/skills/irc/SKILL.md) | Bidirectional paths and endpoint identity |
-| [energetics](../extensions/chemical/skills/energetics/SKILL.md) | Energies, thermal corrections, barriers, bounded kinetics, and profiles |
-| [method-selection](../extensions/chemical/skills/method-selection/SKILL.md) | Scientific method, Backend capability, and compute environment selection |
-| [cf22d](../extensions/chemical/skills/cf22d/SKILL.md) | Registered PySCF/CF22D workflows and runtime readiness |
-| [xtb](../extensions/chemical/skills/xtb/SKILL.md) | Registered xTB calculations |
-| [crest](../extensions/chemical/skills/crest/SKILL.md) | CREST conformer ensembles |
-| [qbics](../extensions/chemical/skills/qbics/SKILL.md) | QBICS method guidance and live capability discovery |
-| [gaussian](../extensions/chemical/skills/gaussian/SKILL.md) | Gaussian input, execution, parsing, and output checks |
-| [report](../extensions/chemical/skills/report/SKILL.md) | Revision-bound research reports |
-| [render](../extensions/chemical/skills/render/SKILL.md) | Molecular images, animations, comparisons, and scientific curves |
-| [email](../extensions/email/SKILL.md) | Configured notifications and report delivery |
-| [mechanism-reasoning](../extensions/chemical/skills/mechanism-reasoning/SKILL.md) | Mechanism hypotheses, mappings, elementary steps, and alternatives |
-| [chemical-input](../extensions/chemical/skills/chemical-input/SKILL.md) | Natural-language chemical names, structure candidates, and input confirmation |
+| [research-state](skills/research-state/SKILL.md) | ResearchMap reads, validation, Findings, Gates, and atomic changes |
+| [orchestration](skills/orchestration/SKILL.md) | Task planning, branches, recovery, review, and stopping |
+| [candidate-generation](../chemical/skills/candidate-generation/SKILL.md) | TS candidate construction, scans, QST, NEB, and sampling |
+| [validation](../chemical/skills/validation/SKILL.md) | Saddle, mode, structure, electronic-state, and stereochemical validation |
+| [irc](../chemical/skills/irc/SKILL.md) | Bidirectional paths and endpoint identity |
+| [energetics](../chemical/skills/energetics/SKILL.md) | Energies, thermal corrections, barriers, bounded kinetics, and profiles |
+| [method-selection](../chemical/skills/method-selection/SKILL.md) | Scientific method, Backend capability, and compute environment selection |
+| [cf22d](../chemical/skills/cf22d/SKILL.md) | Registered PySCF/CF22D workflows and runtime readiness |
+| [xtb](../chemical/skills/xtb/SKILL.md) | Registered xTB calculations |
+| [crest](../chemical/skills/crest/SKILL.md) | CREST conformer ensembles |
+| [qbics](../chemical/skills/qbics/SKILL.md) | QBICS method guidance and live capability discovery |
+| [gaussian](../chemical/skills/gaussian/SKILL.md) | Gaussian input, execution, parsing, and output checks |
+| [email](../email/SKILL.md) | Configured notifications and delivery |
+| [mechanism-reasoning](../chemical/skills/mechanism-reasoning/SKILL.md) | Mechanism hypotheses, mappings, elementary steps, and alternatives |
+| [chemical-input](../chemical/skills/chemical-input/SKILL.md) | Natural-language chemical names, structure candidates, and input confirmation |
 
 The Harness can host Skills for chemistry, data analysis, simulation, or other
 research domains. The bundled transition-state study Skills keep their own
@@ -38,4 +36,4 @@ Research State.
 Each Skill has matching English and Chinese entrypoints. Every detailed
 reference also has an English and Simplified Chinese version; each entrypoint
 links only to references in the same language. Shared terminology is in the
-[glossary](research-state/references/glossary.md).
+[glossary](skills/research-state/references/glossary.md).

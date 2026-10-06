@@ -36,7 +36,8 @@ def test_python_distribution_metadata_matches_pi_release() -> None:
         "research_state": "packages/research-state/research_state",
         "research_memory": "packages/research-memory/research_memory",
         "research_compute": "packages/research-compute/research_compute",
-        "chemical_runtime": "extensions/chemical/providers/chemical_runtime",
+        "artifact_store": "packages/artifact-store/artifact_store",
+        "job_runtime": "packages/job-runtime/job_runtime",
     }
     assert tspi_runtime.__version__ == package["version"] == PACKAGE_VERSION
 
@@ -45,14 +46,12 @@ def test_python_payload_digest_covers_code_and_runtime_data() -> None:
     original = python_payload_sha256(ROOT)
     expected_paths = {
         "packages/tspi-runtime/tspi_runtime/__init__.py",
-        "packages/research-compute/research_compute/contracts/calculation_request.schema.json",
+        "packages/research-compute/research_compute/execution.py",
         "packages/tspi-foundation/tspi_foundation/path_safety.py",
         "packages/tspi-runtime/tspi_runtime/command_catalog.json",
-        "extensions/chemical/providers/chemical_runtime/analysis/results.py",
         "packages/research-compute/research_compute/errors.py",
-        "packages/research-compute/research_compute/platforms/config.py",
-        "packages/research-compute/research_compute/workspace/artifacts.py",
-        "packages/research-compute/research_compute/workspace/candidates.py",
+        "packages/artifact-store/artifact_store/__init__.py",
+        "packages/job-runtime/job_runtime/runtime.py",
         "packages/research-state/research_state/contracts/finding_candidates.schema.json",
         "packages/research-state/research_state/contracts/workspace.schema.json",
         "packages/research-compute/research_compute/workspace/operational.py",
@@ -109,16 +108,12 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
             sys.executable,
             "-c",
             (
-                "import importlib.metadata,json; from pathlib import Path; import tspi_runtime,research_state,research_compute,chemical_runtime; "
-                "root=Path(tspi_runtime.__file__).resolve().parent; state=Path(research_state.__file__).resolve().parent; compute=Path(research_compute.__file__).resolve().parent; chemical=Path(chemical_runtime.__file__).resolve().parent; "
+                "import importlib.metadata,json; from pathlib import Path; import tspi_runtime,research_state,research_compute; "
+                "root=Path(tspi_runtime.__file__).resolve().parent; state=Path(research_state.__file__).resolve().parent; compute=Path(research_compute.__file__).resolve().parent; "
                 "print(json.dumps({'version': importlib.metadata.version('tspi-runtime'), "
                 "'schema': (compute/'contracts/calculation_request.schema.json').is_file(), "
                 "'candidate_schema': (state/'contracts/finding_candidates.schema.json').is_file(), "
-                "'candidate_module': (compute/'workspace/candidates.py').is_file(), "
-                "'analysis_candidates': (compute/'workspace/analysis_candidates.py').is_file(), "
-                "'reaction_mapping': (chemical/'reaction/mapping.py').is_file(), "
-                "'analysis_catalog': (chemical/'analysis/catalog.py').is_file(), "
-                "'research_state': (state/'agent_workspace.py').is_file(), "
+                    "'research_state': (state/'agent_workspace.py').is_file(), "
                 "'web': False}))"
             ),
         ],
@@ -134,10 +129,6 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
         "version": PACKAGE_VERSION,
         "schema": True,
         "candidate_schema": True,
-        "candidate_module": True,
-        "analysis_candidates": True,
-        "reaction_mapping": True,
-        "analysis_catalog": True,
         "research_state": True,
         "web": False,
     }

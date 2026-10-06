@@ -163,7 +163,8 @@ def validate_python_project() -> None:
         "research_state": "packages/research-state/research_state",
         "research_memory": "packages/research-memory/research_memory",
         "research_compute": "packages/research-compute/research_compute",
-        "chemical_runtime": "extensions/chemical/providers/chemical_runtime",
+        "artifact_store": "packages/artifact-store/artifact_store",
+        "job_runtime": "packages/job-runtime/job_runtime",
     }
     if setuptools.get("package-dir") != expected_package_dir:
         errors.append("pyproject package-dir must declare the canonical TSPi namespaces")

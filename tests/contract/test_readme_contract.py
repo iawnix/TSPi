@@ -26,8 +26,6 @@ FOCUSED_SKILLS = {
         "candidate-generation", "validation", "irc", "energetics", "method-selection",
         "cf22d", "xtb", "crest", "qbics", "gaussian", "mechanism-reasoning", "chemical-input",
     )},
-    "render": ROOT / "extensions" / "chemical" / "skills" / "render",
-    "report": ROOT / "extensions" / "chemical" / "skills" / "report",
     "email": ROOT / "extensions" / "email",
 }
 
@@ -270,11 +268,11 @@ def test_focused_skills_have_bilingual_entrypoints_and_route_their_references() 
                 assert target not in chinese_skill, (chinese, reference)
 
 
-def test_compute_reference_uses_the_registered_gaussian_input_role() -> None:
+def test_compute_reference_describes_the_generic_job_runtime() -> None:
     compute = (ORCHESTRATION_ROOT / "references" / "compute_tools.md").read_text(encoding="utf-8")
 
-    assert '"inputRole": "gjf"' in compute
-    assert '"inputRole": "structure"' not in compute
+    assert "Job Runtime" in compute
+    assert "job_start" in compute
 
 
 def test_static_research_map_templates_are_removed() -> None:

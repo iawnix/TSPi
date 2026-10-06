@@ -100,7 +100,6 @@ def test_real_release_build_excludes_development_tree(tmp_path: Path) -> None:
     assert "packages/research-compute/research_compute/workspace/artifacts.py" in names
     assert "packages/research-compute/research_compute/workspace/candidates.py" in names
     assert "packages/research-state/research_state/contracts/finding_candidates.schema.json" in names
-    assert "packages/research-compute/research_compute/registry.py" in names
     assert "packages/research-state/research_state/model.py" in names
     assert "packages/research-state/research_state/agent_workspace.py" in names
     assert distribution == build_result["python_distribution"]

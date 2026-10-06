@@ -26,7 +26,8 @@ PYTHON_PACKAGE_NAMES = (
     "research_state",
     "research_memory",
     "research_compute",
-    "chemical_runtime",
+    "artifact_store",
+    "job_runtime",
 )
 PYTHON_PAYLOAD_SUFFIXES = frozenset({".css", ".html", ".js", ".json", ".py", ".svg", ".toml"})
 RELEASE_MANIFEST = ".tspi-release.json"
@@ -67,12 +68,7 @@ def build_wheel(
         # stage it at a normal top-level package path so the wheel RECORD,
         # installed files, and runtime digest all describe the same payload.
         pyproject = source / "pyproject.toml"
-        pyproject.write_text(
-            pyproject.read_text(encoding="utf-8").replace(
-                "extensions/chemical/providers/chemical_runtime", "chemical_runtime"
-            ),
-            encoding="utf-8",
-        )
+        pyproject.write_text(pyproject.read_text(encoding="utf-8"), encoding="utf-8")
         source_roots = {
             "tspi_runtime": root / "packages" / "tspi-runtime" / "tspi_runtime",
             "tspi_foundation": root / "packages" / "tspi-foundation" / "tspi_foundation",
@@ -81,7 +77,8 @@ def build_wheel(
             "research_state": root / "packages" / "research-state" / "research_state",
             "research_memory": root / "packages" / "research-memory" / "research_memory",
             "research_compute": root / "packages" / "research-compute" / "research_compute",
-            "chemical_runtime": root / "extensions" / "chemical" / "providers" / "chemical_runtime",
+            "artifact_store": root / "packages" / "artifact-store" / "artifact_store",
+            "job_runtime": root / "packages" / "job-runtime" / "job_runtime",
         }
         destinations = {
             "tspi_runtime": source / "packages" / "tspi-runtime" / "tspi_runtime",
@@ -91,7 +88,8 @@ def build_wheel(
             "research_state": source / "packages" / "research-state" / "research_state",
             "research_memory": source / "packages" / "research-memory" / "research_memory",
             "research_compute": source / "packages" / "research-compute" / "research_compute",
-            "chemical_runtime": source / "chemical_runtime",
+            "artifact_store": source / "packages" / "artifact-store" / "artifact_store",
+            "job_runtime": source / "packages" / "job-runtime" / "job_runtime",
         }
         for package_name, package_source in source_roots.items():
             if not package_source.is_dir() or package_source.is_symlink():
@@ -286,7 +284,8 @@ def source_payload_sha256(
         "research_state": package_root / "packages" / "research-state" / "research_state",
         "research_memory": package_root / "packages" / "research-memory" / "research_memory",
         "research_compute": package_root / "packages" / "research-compute" / "research_compute",
-        "chemical_runtime": package_root / "extensions" / "chemical" / "providers" / "chemical_runtime",
+        "artifact_store": package_root / "packages" / "artifact-store" / "artifact_store",
+        "job_runtime": package_root / "packages" / "job-runtime" / "job_runtime",
     }
     records: list[tuple[str, bytes]] = []
     for name, root in roots.items():

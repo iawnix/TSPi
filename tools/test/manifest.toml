@@ -12,15 +12,6 @@ environment = "wheel-overlay"
 description = "All Python tests against a temporary wheel-backed runtime."
 paths = ["tests"]
 
-[suites.subagents]
-kind = "pytest-managed"
-environment = "wheel-overlay + Node.js"
-description = "Bounded Compute and Review subagent contract tests."
-paths = [
-  "tests/unit/test_agent_protocol.py",
-  "tests/integration/test_pi_subagent_contract.py",
-]
-
 [suites.native-pi]
 kind = "node-native"
 environment = "Node.js 22 + pinned Pi checkout (TSPI_TEST_PI_RUNTIME_ROOT)"
@@ -28,10 +19,7 @@ description = "Pi Harness server, native TUI client, recovery, Monitor, and Nati
 paths = [
   "tests/node/native/pi-app-server.test.mjs",
   "tests/node/native/pi-harness-policy.test.mjs",
-  "tests/node/native/pi-native-worker.test.mjs",
   "tests/node/native/pi-session-control.test.mjs",
-  "tests/node/native/tspi-research-turn-e2e.test.mjs",
-  "tests/node/native/tspi-lifecycle.test.mjs",
   "tests/node/native/tspi-host.test.mjs",
   "tests/node/fast/pi-monitor-worker.test.mjs",
   "tests/node/fast/tspi-terminal-errors.test.mjs",
