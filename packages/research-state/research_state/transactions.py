@@ -176,11 +176,16 @@ class TransactionCoordinator:
         with self.locked():
             return {"recovered": True, "workspace_root": str(self.root)}
 
-    def prepare(self, request_id: str, operation: str, payload: Any, *, writes: dict[str, Any], result: Any) -> dict[str, Any]:
+    def prepare(self, request_id: str, operation: str | None, payload: Any, *, writes: dict[str, Any], result: Any) -> dict[str, Any]:
         with self.locked():
             path = self._receipt_path(request_id)
-            request_digest = _digest({"operation": operation, "payload": payload})
             previous = self._read(path)
+            if previous and previous["state"] == "pending":
+                operation = previous.get("operation") if operation is None else operation
+                payload = previous.get("payload", {}) if payload is None else payload
+            operation = operation or "agent.operation"
+            payload = {} if payload is None else payload
+            request_digest = _digest({"operation": operation, "payload": payload})
             if previous:
                 if previous["request_digest"] != request_digest:
                     raise TransactionError("transaction_id_reused")

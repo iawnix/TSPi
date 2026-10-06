@@ -217,7 +217,7 @@ def dispatch(method, payload):
         if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
         request_id = payload.get("request_id")
         if not isinstance(request_id, str) or not request_id: raise ValueError("request_id is required")
-        return TransactionCoordinator(root).prepare(request_id, payload.get("operation", "agent.operation"), payload.get("payload", {}), writes=payload.get("writes", {}), result=payload.get("result"))
+        return TransactionCoordinator(root).prepare(request_id, payload.get("operation"), payload.get("payload"), writes=payload.get("writes", {}), result=payload.get("result"))
     if method == "transaction_commit":
         if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
         return TransactionCoordinator(root).commit(payload.get("request_id"))
