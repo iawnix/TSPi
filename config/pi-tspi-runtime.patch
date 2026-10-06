@@ -291,3 +291,17 @@ index 3f77d9a..d1d7c11 100644
  				pluginManifestPaths: [...pluginManifestPaths],
  				...(this.#model ?? {}),
  			};
+diff --git a/packages/coding-agent/src/experimental/client-tui.ts b/packages/coding-agent/src/experimental/client-tui.ts
+index dfb3f49..69621f8 100644
+--- a/packages/coding-agent/src/experimental/client-tui.ts
++++ b/packages/coding-agent/src/experimental/client-tui.ts
+@@ -300,7 +300,8 @@ export class ExperimentalClientTui implements Component {
+ 						if (this.#controller === controller) this.#controller = undefined;
+ 					});
+ 					env.own(commands.subscribe(() => this.#updateAutocomplete()));
+-					if (server.radius) {
++					// Local Unix transports must observe the same connection and attachment transitions as Radius.
++					{
+ 						env.own(
+ 							server.server.connection.subscribe((state) => this.#handleConnectionState(server.serverId, state)),
+ 						);

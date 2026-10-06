@@ -4,7 +4,7 @@ Backend 是确定性适配器。它描述支持的程序任务、校验参数、
 预期 Artifact，并解析本地输出。Root 选择方法并解释已核验结果。
 
 使用 `research_read mode=capabilities capabilityKind=compute` 获取当前机器可读目录；公共
-调用见 [compute_tools.zh-CN.md](../../../../../skills/orchestration/references/compute_tools.zh-CN.md)。
+调用见 [compute_tools.zh-CN.md](../../../../core/skills/orchestration/references/compute_tools.zh-CN.md)。
 
 ## 支持的任务
 

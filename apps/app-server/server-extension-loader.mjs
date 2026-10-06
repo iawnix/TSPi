@@ -159,7 +159,7 @@ export async function readServerExtensionManifest(packageRoot, manifestPath) {
 function resolveManifestPath(packageRoot, configured) {
   const candidate = configured
     ? resolve(packageRoot, configured)
-    : resolve(packageRoot, "extensions/server/extensions.json");
+    : resolve(packageRoot, "apps/app-server/server-tools/extensions.json");
   const relativePath = relative(packageRoot, candidate);
   if (relativePath.startsWith(`..${sep}`) || relativePath === ".." || relativePath.includes(`${sep}..${sep}`)) {
     throw new Error(`server extension manifest must stay inside package root: ${candidate}`);

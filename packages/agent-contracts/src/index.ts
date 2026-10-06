@@ -75,7 +75,7 @@ export interface CapabilityDescriptor extends JsonObject {
   version: 1;
   capability_id: string;
   capability_version: string;
-  kind: "compute" | "analysis" | "artifact" | "notification";
+  kind: "compute" | "analysis" | "artifact" | "notification" | "render" | "report";
   summary: string;
   input_schema: JsonSchema;
   output_schema: JsonSchema;

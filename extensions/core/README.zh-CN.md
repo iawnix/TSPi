@@ -20,8 +20,8 @@ Research State Skill 管理规范 ResearchMap 合同；编排 Skill 选择下一
 | [crest](../extensions/chemical/skills/crest/SKILL.zh-CN.md) | CREST 构象集合 |
 | [qbics](../extensions/chemical/skills/qbics/SKILL.zh-CN.md) | QBICS 方法建议与实时 capability 发现 |
 | [gaussian](../extensions/chemical/skills/gaussian/SKILL.zh-CN.md) | Gaussian 输入、执行、解析与输出检查 |
-| [report](../extensions/report/SKILL.zh-CN.md) | 绑定 ResearchMap revision 的研究报告 |
-| [render](../extensions/render/SKILL.zh-CN.md) | 分子图像、动画、对比图与科学曲线 |
+| [report](../extensions/chemical/skills/report/SKILL.zh-CN.md) | 绑定 ResearchMap revision 的研究报告 |
+| [render](../extensions/chemical/skills/render/SKILL.zh-CN.md) | 分子图像、动画、对比图与科学曲线 |
 | [email](../extensions/email/SKILL.zh-CN.md) | 按配置发送通知与报告 |
 | [mechanism-reasoning](../extensions/chemical/skills/mechanism-reasoning/SKILL.zh-CN.md) | 机理假设、映射、基元步骤与替代路径 |
 | [chemical-input](../extensions/chemical/skills/chemical-input/SKILL.zh-CN.md) | 自然语言化学名称、结构候选与输入确认 |

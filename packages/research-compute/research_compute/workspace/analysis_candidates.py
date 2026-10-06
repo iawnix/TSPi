@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from research_compute.provider import ProviderUnavailable, resolve_compute_provider
+from research_compute.analysis import ANALYSIS_CAPABILITY_REGISTRY
 from .candidates import FindingCandidateError
 
 
@@ -13,13 +13,14 @@ def load_analysis_candidate(
     root: str | Path, artifact: dict[str, Any], node_id: str, candidate_id: str,
 ) -> dict[str, Any]:
     try:
-        return resolve_compute_provider("chemical").validate_candidate(
-            Path(root), artifact, node_id, candidate_id,
-        )
+        for registration in ANALYSIS_CAPABILITY_REGISTRY.registrations():
+            provider = registration.provider
+            validator = getattr(provider, "validate_candidate", None)
+            if callable(validator):
+                return validator(Path(root), artifact, node_id, candidate_id)
+        raise FindingCandidateError("analysis candidate provider unavailable")
     except FindingCandidateError:
         raise
-    except ProviderUnavailable as exc:
-        raise FindingCandidateError(str(exc)) from exc
     except Exception as exc:
         raise FindingCandidateError(f"analysis provider rejected candidate: {exc}") from exc
 

@@ -1,6 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -11,14 +12,16 @@ import { acquireSchedulerLease } from "./tspi-scheduler-lease.mjs";
 const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/u;
 const EVENT_HISTORY_LIMIT = 256;
+const require = createRequire(import.meta.url);
+const { recoverRunningActivities } = require("../../packages/agent-runtime/agent-core/activity-journal.cjs");
 
 /**
- * Start Pi's experimental server and expose a small Host-facing backend.
+ * Start Pi's experimental server and expose the TSPi Agent Server backend.
  *
  * The experimental server remains the owner of session files, durable Harness,
- * lanes, and transcripts. This adapter only translates the existing TSPi Host
- * facade to Pi's SessionManagement/AgentController services, so a TUI and a
- * Phone request always reach the same durable lane.
+ * lanes, and transcripts. This adapter translates Agent Server requests to
+ * Pi's SessionManagement/AgentController services, so every client reaches
+ * the same durable lane.
  */
 export async function createTspiHarnessBackend(options = {}) {
   const sourceRoot = absolute(options.sourceRoot || process.env.TSPI_PI_RUNTIME_ROOT, "sourceRoot");
@@ -28,7 +31,7 @@ export async function createTspiHarnessBackend(options = {}) {
   const sessionDir = absolute(options.sessionDir, "sessionDir");
   const stateRoot = absolute(options.stateRoot || join(serverDirectory, ".."), "stateRoot");
   const workerEntry = join(packageRoot, "apps/app-server/pi-session-worker.mjs");
-  const schedulerOwner = `host:${process.pid}:${randomUUID()}`;
+  const schedulerOwner = `agent-server:${process.pid}:${randomUUID()}`;
   const schedulerLeaseTtlMs = Number.isInteger(options.schedulerLeaseTtlMs) ? options.schedulerLeaseTtlMs : 30_000;
 
   // Install Pi's source aliases before importing any TypeScript source module.
@@ -167,7 +170,8 @@ export async function createTspiHarnessBackend(options = {}) {
     const key = `${workspaceId}/${sessionId}`;
     if (closed) throw error("backend_closed", "Pi Harness backend is closed", true);
     const existing = bindings.get(key);
-    if (existing) return existing;
+    if (existing?.closed) bindings.delete(key);
+    else if (existing) return existing;
     const pending = bindingPromises.get(key);
     if (pending) return pending;
     const promise = (async () => {
@@ -256,6 +260,23 @@ export async function createTspiHarnessBackend(options = {}) {
     if (lease) await lease.release().catch(() => {});
     await binding.active.management.detach(BACKGROUND_CONTEXT).catch(() => {});
     await binding.clientRuntime.dispose().catch(() => {});
+  }
+
+  async function refreshBinding(workspaceId, sessionId, operation) {
+    let binding = await openBinding(workspaceId, sessionId);
+    try {
+      return await operation(binding);
+    } catch (cause) {
+      if (!isStaleBindingError(cause)) throw cause;
+      // A closed Chord service instance cannot be revived. Drop the adapter's
+      // cached binding and attach a new client runtime to the same durable
+      // session before retrying the control operation. Abort is idempotent at
+      // the Conversation boundary, so this retry is safe after a stale-instance
+      // rejection (which occurs before the remote method is invoked).
+      await closeBinding(binding);
+      binding = await openBinding(workspaceId, sessionId);
+      return operation(binding);
+    }
   }
 
   function serializeBinding(binding, operation) {
@@ -605,12 +626,27 @@ export async function createTspiHarnessBackend(options = {}) {
 
   async function recoverDurableSessions() {
     const sessions = admin.directory.state.value?.sessions || [];
+    const openings = [];
     for (const summary of sessions) {
       if (closed || typeof summary?.sessionId !== "string" || typeof summary?.workspaceId !== "string") continue;
       // Opening a binding is the Pi v1 durable recovery boundary. The worker
       // opens the SQLite session and calls Harness.resume() before it serves
       // requests; no JSONL transcript parsing or synthetic prompt is needed.
-      void openBinding(summary.workspaceId, summary.sessionId).catch(() => {});
+      openings.push(openBinding(summary.workspaceId, summary.sessionId).catch(() => null));
+    }
+    await Promise.all(openings);
+    const workspaces = new Set(sessions.map((summary) => summary?.workspaceId).filter((value) => typeof value === "string"));
+    for (const workspaceId of workspaces) {
+      const active = [...bindings.values()].some((binding) => binding.workspaceId === workspaceId
+        && (binding.snapshot?.operation?.runningTools?.length > 0 || binding.snapshot?.operation?.status === "running"));
+      if (active) continue;
+      try {
+        const root = await workspace(workspaceId);
+        recoverRunningActivities(root, "Host recovered a Worker after an interrupted activity");
+      } catch {
+        // Activity cleanup is best effort and must not prevent the Host from
+        // opening a session whose Research State can still be reconciled.
+      }
     }
   }
 
@@ -751,6 +787,7 @@ export async function createTspiHarnessBackend(options = {}) {
             () => withSchedulerLease(binding, () => dispatchInput(binding, payload)),
           );
         } catch (cause) {
+          if (isStaleBindingError(cause)) await closeBinding(binding);
           // A transport failure after the pre-admission journal write is
           // intentionally uncertain. Retrying must query this receipt rather
           // than submit another prompt.
@@ -795,18 +832,21 @@ export async function createTspiHarnessBackend(options = {}) {
       return publicReceipt(await reconcileReceipt(receipt));
     },
     async interrupt(params) {
-      const binding = await openBinding(params.workspace_id, params.session_id);
-      await binding.active.agent.abort(BACKGROUND_CONTEXT);
+      await refreshBinding(params.workspace_id, params.session_id, (binding) => (
+        binding.active.agent.abort(BACKGROUND_CONTEXT)
+      ));
       return { accepted: true, operation_id: params.turn_id };
     },
     async models(params) {
-      const binding = await openBinding(params.workspace_id, params.session_id);
-      return normalizeModels(binding.active.models.state.value);
+      return refreshBinding(params.workspace_id, params.session_id, (binding) => (
+        normalizeModels(binding.active.models.state.value)
+      ));
     },
     async selectModel(params) {
-      const binding = await openBinding(params.workspace_id, params.session_id);
       if (!params.provider || !params.model) throw error("invalid_model", "model/select requires provider and model");
-      await binding.active.models.select({ provider: params.provider, modelId: params.model }, BACKGROUND_CONTEXT);
+      await refreshBinding(params.workspace_id, params.session_id, (binding) => (
+        binding.active.models.select({ provider: params.provider, modelId: params.model }, BACKGROUND_CONTEXT)
+      ));
       return { accepted: true, model: { provider: params.provider, id: params.model } };
     },
     async close() {
@@ -1129,6 +1169,20 @@ export function isExplicitAdmissionFailure(value) {
 
 export function isRetryableAdmissionFailure(value) {
   return Boolean(value && typeof value.code === "string" && RETRYABLE_ADMISSION_FAILURES.has(value.code));
+}
+
+function isStaleBindingError(value, seen = new Set()) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "object" || typeof value === "function") {
+    if (seen.has(value)) return false;
+    seen.add(value);
+  }
+  if (value?.code === "service_stale_instance" || value?.code === "service_closed") return true;
+  const message = String(value?.message || value);
+  if (/Remote service .*binding is closed|Remote service binding is disposed|service instance .*closed/u.test(message)) return true;
+  if (value?.cause && isStaleBindingError(value.cause, seen)) return true;
+  if (value instanceof AggregateError && value.errors.some((item) => isStaleBindingError(item, seen))) return true;
+  return false;
 }
 
 export function operationHintFor(workspaceId, sessionId, clientMessageId) {

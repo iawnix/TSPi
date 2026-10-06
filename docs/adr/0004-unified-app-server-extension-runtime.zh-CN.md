@@ -12,7 +12,7 @@
 Link control plane。终端使用 Pi 官方 native remote client，Phone 和 Monitor 通过
 Host adapter 访问同一个 worker lane。
 
-服务工具由 `extensions/server/extensions.json` 选择，每个 descriptor 绑定 scope、
+服务工具由 `apps/app-server/server-tools/extensions.json` 选择，每个 descriptor 绑定 scope、
 工具清单、权限和 SHA-256 digest。loader 拒绝 package 外路径、符号链接、未知 allowlist
 名称、非法 factory 以及和内建工具或其他 extension 的名称冲突。客户端只能调用由
 Host context 创建的 protocol service。

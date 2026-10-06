@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { lstatSync } from "node:fs";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -30,11 +31,30 @@ export async function create_compute_config_capability_host({
   if (typeof config_path !== "string" || config_path.length === 0) {
     throw new ComputeConfigCapabilityHostError("compute_config_required", "compute.toml path is required");
   }
+  if (!config_path.trim().startsWith("/")) {
+    throw new ComputeConfigCapabilityHostError("compute_config_invalid", "TS_COMPUTE_CONFIG must be an absolute path");
+  }
+  const configPath = resolve(config_path);
+  let configInfo;
+  try { configInfo = lstatSync(configPath); } catch (cause) {
+    throw new ComputeConfigCapabilityHostError(
+      "compute_config_not_file",
+      `TS_COMPUTE_CONFIG is not a regular file: ${configPath}`,
+      { path: configPath, cause: String(cause?.message || cause) },
+    );
+  }
+  if (!configInfo.isFile() || configInfo.isSymbolicLink()) {
+    throw new ComputeConfigCapabilityHostError(
+      "compute_config_not_file",
+      `TS_COMPUTE_CONFIG is not a regular file: ${configPath}`,
+      { path: configPath },
+    );
+  }
   const packageRoot = resolve(package_root || process.cwd());
   const script = resolve(bridge_script || `${packageRoot}/apps/agent-cli/research_agent_capability_bridge.py`);
   let completed;
   try {
-    completed = await executeFile(python, [script, "--config", resolve(config_path)], {
+    completed = await executeFile(python, [script, "--config", configPath], {
       cwd: packageRoot,
       env: { ...process.env, TSPI_PACKAGE_ROOT: packageRoot, PYTHONNOUSERSITE: "1" },
       timeout: 30_000,
@@ -87,7 +107,7 @@ export async function create_compute_config_capability_host({
         cwd: packageRoot,
         env: {
           ...process.env,
-          TS_COMPUTE_CONFIG: resolve(config_path),
+          TS_COMPUTE_CONFIG: configPath,
           TSPI_PACKAGE_ROOT: packageRoot,
           PYTHONNOUSERSITE: "1",
         },

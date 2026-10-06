@@ -29,6 +29,7 @@ from .torque import (
     validate_job_id,
 )
 from .transfer import download_verified, ensure_directory, upload_verified
+from ..provider import ProviderUnavailable, resolve_compute_provider
 
 
 _RECEIPT_VALUE = re.compile(r"^[A-Za-z0-9_./:+ \[\]-]*$")
@@ -256,14 +257,26 @@ def collect(
     manifest: list[dict[str, Any]] = []
     output_dir.mkdir(parents=True, exist_ok=True)
     for name in artifacts:
-        # Historical CREST scripts captured stdout under the generic name.
-        # Retain the real remote path/digest in the transfer receipt while
-        # exposing the parser's stable local filename.
-        remote_name = config.stdout_name if config.backend == "crest" and name == "crest.out" else name
+        remote_name = _remote_artifact_name(config, name)
         transfer = download_verified(remote, config.remote_dir, remote_name, output_dir / Path(name).name)
         downloaded.append(name)
         manifest.append(asdict(transfer))
     return downloaded, manifest
+
+
+def _remote_artifact_name(config: RemoteJobConfig, name: str) -> str:
+    try:
+        provider = resolve_compute_provider(config.backend)
+    except ProviderUnavailable:
+        return name
+    resolver = getattr(provider, "remote_artifact_name", None)
+    if not callable(resolver):
+        return name
+    try:
+        value = resolver(config, name)
+    except (OSError, TypeError, ValueError):
+        return name
+    return value if isinstance(value, str) and value else name
 
 
 def cancel(

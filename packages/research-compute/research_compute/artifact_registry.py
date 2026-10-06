@@ -56,16 +56,43 @@ class ArtifactOperationDescriptor:
             raise ValueError("artifact provenance_schema must be a non-empty string or object schema")
 
     def public(self) -> dict[str, Any]:
+        # Artifact operations use the same public descriptor envelope as
+        # compute and analysis capabilities.  The operation/parameter names
+        # remain implementation aliases on the descriptor object so existing
+        # providers do not need to duplicate a second contract.
         return {
-            "operation": self.operation,
-            "version": self.version,
+            "protocol": "capability_descriptor",
+            "version": 1,
+            "capability_id": self.operation,
+            "capability_version": self.version,
+            "kind": "artifact",
+            "summary": f"Produce and register artifacts for {self.operation}.",
             "input_schema": deepcopy(self.input_schema),
-            "parameter_schema": deepcopy(self.parameter_schema),
-            "result_schema": deepcopy(self.result_schema),
-            "output_roles": list(self.output_roles),
-            "provenance_schema": deepcopy(self.provenance_schema),
+            "output_schema": deepcopy(self.result_schema),
+            "provider": {
+                # The registry intentionally omits the provider identity from
+                # catalog entries; it is attached by artifact_operation_catalog
+                # from the trusted registration below.
+                "provider_id": "unbound",
+                "provider_version": "1",
+                "descriptor_digest": "sha256:" + "0" * 64,
+            },
+            "limits": {"output_roles": list(self.output_roles)},
             "effects": list(self.effects),
+            "extensions": {
+                "parameter_schema": deepcopy(self.parameter_schema),
+                "provenance_schema": deepcopy(self.provenance_schema),
+                "operation": self.operation,
+            },
         }
+
+    @property
+    def capability_id(self) -> str:
+        return self.operation
+
+    @property
+    def capability_version(self) -> str:
+        return self.version
 
 
 class ArtifactProvider(Protocol):
@@ -171,18 +198,60 @@ def resolve_artifact_operation(
 
 def artifact_operation_catalog() -> dict[str, Any]:
     """Return schemas without exposing provider objects or command paths."""
-
+    capabilities = []
+    legacy_operations = []
+    for registration in ARTIFACT_OPERATION_REGISTRY.registrations():
+        descriptor = registration.descriptor
+        public = descriptor.public()
+        # Provider identity and digest are part of the canonical descriptor,
+        # but the catalog must never expose executable provider objects.
+        public["provider"] = {
+            "provider_id": registration.provider_id,
+            "provider_version": str(getattr(registration.provider, "provider_version", "1")),
+            "descriptor_digest": "",
+        }
+        public["provider"]["descriptor_digest"] = artifact_operation_digest(
+            descriptor,
+            provider_id=registration.provider_id,
+            provider_version=str(getattr(registration.provider, "provider_version", "1")),
+        )
+        capabilities.append(public)
+        legacy_operations.append({
+            **public,
+            "operation": public["capability_id"],
+            "operation_version": public["capability_version"],
+            "result_schema": deepcopy(descriptor.result_schema),
+            "parameter_schema": deepcopy(descriptor.parameter_schema),
+            "output_roles": list(descriptor.output_roles),
+        })
     return {
-        "schema_version": "ts-artifact-operation-catalog/1",
-        "operations": [item.public() for item in ARTIFACT_OPERATION_REGISTRY.descriptors()],
-        "detail_query": "compute.artifact-operation operation=<operation>@<version>",
+        "schema_version": "ts-capability-catalog/1",
+        "protocol": "capability_catalog",
+        "version": 1,
+        "kind": "artifact",
+        "capabilities": capabilities,
+        # Compatibility view for clients that only know the old word
+        # "operations".  Entries themselves are canonical descriptors.
+        "operations": legacy_operations,
+        "detail_query": "capability <capability_id>@<capability_version>",
     }
 
 
-def artifact_operation_digest(descriptor: ArtifactOperationDescriptor) -> str:
+def artifact_operation_digest(
+    descriptor: ArtifactOperationDescriptor,
+    *,
+    provider_id: str | None = None,
+    provider_version: str = "1",
+) -> str:
     """Return the stable digest providers must include in result provenance."""
 
-    return sha256_json(descriptor.public())
+    payload = descriptor.public()
+    payload["provider"] = {
+        "provider_id": provider_id or "unbound",
+        "provider_version": provider_version,
+        "descriptor_digest": "",
+    }
+    return sha256_json(payload)
 
 
 def validate_artifact_result(

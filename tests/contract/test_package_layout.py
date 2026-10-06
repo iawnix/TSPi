@@ -18,8 +18,8 @@ from tests.support.runtime_helpers import write_test_runtime_manifest, write_tes
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL_ROOT = ROOT / "skills" / "research-state"
-ORCHESTRATION_SKILL_ROOT = ROOT / "skills" / "orchestration"
+SKILL_ROOT = ROOT / "extensions" / "core" / "skills" / "research-state"
+ORCHESTRATION_SKILL_ROOT = ROOT / "extensions" / "core" / "skills" / "orchestration"
 RUNTIME_ROOT = ROOT / "packages" / "agent-runtime"
 AGENTS_ROOT = RUNTIME_ROOT / "agents"
 PYTHON_PACKAGE = ROOT / "packages" / "tspi-runtime" / "tspi_runtime"
@@ -275,12 +275,12 @@ def test_public_skill_family_matches_the_owned_capabilities() -> None:
             "chemical-input",
             "script",
     }
-    actual = {path.name for path in (ROOT / "skills").iterdir() if path.is_dir()}
+    actual = {path.name for path in (ROOT / "extensions" / "core" / "skills").iterdir() if path.is_dir()}
     actual |= {path.name for root in (ROOT / "extensions").glob("*/skills") for path in root.iterdir() if path.is_dir()}
     actual |= {path.name for path in (ROOT / "extensions").iterdir() if (path / "SKILL.md").is_file()}
     assert actual == expected
     for name in expected:
-        skill = next((candidate for candidate in [ROOT / "skills" / name, ROOT / "extensions" / name, ROOT / "extensions" / "chemical" / "skills" / name] if candidate.is_dir()), None)
+        skill = next((candidate for candidate in [ROOT / "extensions" / "core" / "skills" / name, ROOT / "extensions" / name, ROOT / "extensions" / "chemical" / "skills" / name] if candidate.is_dir()), None)
         assert skill is not None
         assert (skill / "SKILL.md").is_file()
         assert (skill / "SKILL.zh-CN.md").is_file()
@@ -292,7 +292,7 @@ def test_current_sources_do_not_use_generation_branded_language_or_paths() -> No
         ROOT / "docs",
         ROOT / "extensions",
         ROOT / "scripts",
-        ROOT / "skills",
+        ROOT / "extensions" / "core" / "skills",
         RUNTIME_ROOT,
         ROOT / "apps",
         ROOT / "tests",
@@ -323,7 +323,7 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert (RUNTIME_ROOT / "host-api" / "commands.mjs").is_file()
     assert (RUNTIME_ROOT / "host-api" / "tools.mjs").is_file()
     assert (RUNTIME_ROOT / "host-api" / "model-readiness.ts").is_file()
-    assert (ROOT / "extensions" / "server" / "tools.mjs").is_file()
+    assert (ROOT / "apps" / "app-server" / "server-tools" / "tools.mjs").is_file()
     assert not (ROOT / "packages" / "agent-ui" / "runtime.ts").exists()
     for name in ("research", "review", "compute", "artifacts"):
         assert not (ROOT / "packages" / "agent-ui" / name).exists()
@@ -344,7 +344,7 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
 def test_native_harness_is_the_only_public_pi_tool_entrypoint() -> None:
     manifest = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert manifest["pi"]["extensions"] == []
-    assert (ROOT / "extensions" / "server" / "extensions.json").is_file()
+    assert (ROOT / "apps" / "app-server" / "server-tools" / "extensions.json").is_file()
     assert not list((ROOT / "packages" / "agent-ui").glob("**/index.ts"))
     assert (ROOT / "packages" / "research-state" / "research_state" / "agent_workspace.py").is_file()
     assert (ROOT / "packages" / "research-state" / "research_state" / "model.py").is_file()

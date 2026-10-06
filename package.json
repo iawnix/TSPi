@@ -4,7 +4,7 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
-  "description": "Pi package for a domain-neutral ResearchMap scientific harness, deterministic validation, and bounded Compute and Review subagents.",
+  "description": "Pi package for a domain-neutral research agent with durable Research State, generic Job Runtime, and artifact evidence.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/iawnix/TSPi.git"
@@ -80,14 +80,8 @@
     "assets/fonts/*.ttf",
     "extensions/profile.ts",
     "extensions/chemical/manifest.json",
-    "extensions/script/manifest.json",
-    "extensions/render/manifest.json",
-    "extensions/report/manifest.json",
     "extensions/email/manifest.json",
     "extensions/chemical/providers/*.json",
-    "extensions/script/descriptors/*.json",
-    "extensions/script/providers/*.py",
-    "extensions/script/SKILL*",
     "extensions/chemical/skills/**",
     "packages/agent-contracts/package.json",
     "packages/agent-contracts/schemas/*.json",
@@ -108,8 +102,8 @@
     "packages/agent-ui/tui-package/src/runs.ts",
     "packages/agent-ui/tui-package/src/document-viewer.ts",
     "packages/agent-ui/tui-package/src/pi-experimental.d.ts",
-    "extensions/server/*.mjs",
-    "extensions/server/*.json",
+    "apps/app-server/server-tools/*.mjs",
+    "apps/app-server/server-tools/*.json",
     "scripts/install_env.py",
     "scripts/install_link_relay.py",
     "scripts/uninstall_link_relay.py",
@@ -142,7 +136,7 @@
     "apps/agent-cli/workspace.py",
     "apps/agent-cli/workspace_cli.py",
     "apps/agent-cli/workspace_mode.py",
-    "skills/",
+    "extensions/core/",
     "packages/agent-ui/themes/*.json",
     "packages/agent-runtime/agent-core/*.cjs",
     "packages/agent-runtime/agents/compute/*.ts",
@@ -207,8 +201,7 @@
     "packages/research-state/research_state/contracts/*.json",
     "python-dist/*.whl",
     "extensions/chemical/providers/*.py",
-    "extensions/render/**",
-    "extensions/report/**",
+    "extensions/chemical/**",
     "extensions/email/**",
     "packages/research-memory/research_memory/*.py"
   ],
@@ -234,8 +227,8 @@
   },
   "pi": {
     "skills": [
-      "./skills/research-state",
-      "./skills/orchestration",
+      "./extensions/core/skills/research-state",
+      "./extensions/core/skills/orchestration",
       "./extensions/chemical/skills/candidate-generation",
       "./extensions/chemical/skills/validation",
       "./extensions/chemical/skills/irc",
@@ -248,10 +241,9 @@
       "./extensions/chemical/skills/gaussian",
       "./extensions/chemical/skills/chemical-input",
       "./extensions/chemical/skills/mechanism-reasoning",
-      "./extensions/render",
-      "./extensions/report",
-      "./extensions/email",
-      "./extensions/script"
+      "./extensions/chemical/skills/render",
+      "./extensions/chemical/skills/report",
+      "./extensions/email"
     ],
     "themes": [
       "./packages/agent-ui/themes/ts-theme.json"

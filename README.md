@@ -60,7 +60,7 @@ documented in [Model Compatibility](docs/MODEL_COMPATIBILITY.md).
 
 For the full documentation map, see [Documentation](docs/README.md). Public
 Skill entrypoints and their on-demand references are listed in the [Skill
-Catalog](skills/README.md).
+Catalog](extensions/core/README.md).
 
 ## Host and terminal
 

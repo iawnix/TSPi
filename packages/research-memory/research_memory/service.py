@@ -44,6 +44,7 @@ class ResearchContextBuilder:
         memory.setdefault("schema_version", "research_memory_index_1")
         memory.setdefault("authority", "research_memory")
         memory.setdefault("scope", "workspace")
+        memory.setdefault("research_obligations", state.get("research_obligations", []))
         memory["projection_stale"] = memory.get("revision", 0) != int(state.get("revision", 0))
         return ContextPack(int(state.get("revision", 0)), state, liveness, memory)
 
@@ -65,7 +66,9 @@ def _projection_payload(context: dict[str, Any], liveness: dict[str, Any], revis
         "disposition": liveness.get("disposition", context.get("disposition")),
         "checkpoint_id": liveness.get("checkpoint_id", context.get("checkpoint_id")),
         "waiting_external": liveness.get("waiting_external", []), "decision_needed": liveness.get("decision_needed", []),
-        "focus": context.get("focus", {}), "entries": previous.get("entries", []) if isinstance(previous.get("entries", []), list) else [],
+        "focus": context.get("focus", {}),
+        "research_obligations": context.get("research_obligations", []),
+        "entries": previous.get("entries", []) if isinstance(previous.get("entries", []), list) else [],
     }
 
 

@@ -7,6 +7,7 @@ const {
   mkdirSync,
   openSync,
   readFileSync,
+  readdirSync,
   renameSync,
   unlinkSync,
   writeFileSync,
@@ -97,6 +98,87 @@ function failActivity(handle, error, result) {
   );
   handle.finalized = true;
   return handle.activityRef;
+}
+
+/**
+ * Close activity entries left in `running` state by a crashed Worker. The
+ * journal is intentionally conservative: the external operation outcome is
+ * unknown, so recovery records a typed failure and leaves the Research State
+ * Attempt available for reconciliation instead of pretending scientific
+ * success.
+ */
+function recoverRunningActivities(workspaceRoot, reason = "Worker stopped before activity completion") {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  const scopes = [];
+  for (const scope of [resolve(root, "operations", "activities"), resolve(root, "nodes")]) {
+    if (!existsSync(scope) || lstatSync(scope).isSymbolicLink()) continue;
+    if (scope.endsWith(`${sep}nodes`)) {
+      for (const entry of readdirSync(scope, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+        scopes.push(resolve(scope, entry.name, "activities"));
+      }
+    } else scopes.push(scope);
+  }
+  const recovered = [];
+  for (const scope of scopes) {
+    if (!existsSync(scope) || lstatSync(scope).isSymbolicLink()) continue;
+    for (const entry of readdirSync(scope, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.isSymbolicLink() || !ACTIVITY_ID.test(entry.name)) continue;
+      const directory = resolve(scope, entry.name);
+      const statusPath = resolve(directory, "status.json");
+      let status;
+      try { status = JSON.parse(readFileSync(statusPath, "utf8")); } catch { continue; }
+      if (status?.status !== "running") continue;
+      const completedAt = new Date().toISOString();
+      try {
+        replaceJson(statusPath, statusDocument(
+          status.activity_id || entry.name,
+          status.kind,
+          status.operation,
+          status.node_refs || [],
+          "failed",
+          status.started_at,
+          completedAt,
+          { name: "ActivityRecoveryError", message: boundedString(reason, "recovery reason", 4000) },
+        ));
+        recovered.push(entry.name);
+      } catch {
+        // Another recovering Worker may have finalized this entry. The next
+        // read will observe its terminal status, so recovery remains idempotent.
+      }
+    }
+  }
+  return recovered;
+}
+
+/** Find a prior activity for a durable tool-call identity. */
+function findActivityByIdentity(workspaceRoot, identity) {
+  if (typeof identity !== "string" || identity.length === 0) return null;
+  const root = requireWorkspaceRoot(workspaceRoot);
+  const scopes = [resolve(root, "operations", "activities")];
+  const nodesRoot = resolve(root, "nodes");
+  if (existsSync(nodesRoot) && !lstatSync(nodesRoot).isSymbolicLink()) {
+    for (const entry of readdirSync(nodesRoot, { withFileTypes: true })) {
+      if (entry.isDirectory() && !entry.isSymbolicLink()) scopes.push(resolve(nodesRoot, entry.name, "activities"));
+    }
+  }
+  for (const scope of scopes) {
+    if (!existsSync(scope) || lstatSync(scope).isSymbolicLink()) continue;
+    for (const entry of readdirSync(scope, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.isSymbolicLink() || !ACTIVITY_ID.test(entry.name)) continue;
+      try {
+        const request = JSON.parse(readFileSync(resolve(scope, entry.name, "request.json"), "utf8"));
+        if (request?.request?.activity_identity !== identity) continue;
+        const status = JSON.parse(readFileSync(resolve(scope, entry.name, "status.json"), "utf8"));
+        let result = null;
+        try { result = JSON.parse(readFileSync(resolve(scope, entry.name, "result.json"), "utf8")); } catch {}
+        return { activityId: entry.name, activityRef: resolve(scope, entry.name).slice(root.length + 1), status, result };
+      } catch {
+        // Ignore malformed entries; the normal activity index will report them.
+      }
+    }
+  }
+  return null;
 }
 
 function statusDocument(activityId, kind, operation, nodeRefs, status, startedAt, completedAt, error) {
@@ -208,4 +290,4 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-module.exports = { beginActivity, completeActivity, failActivity };
+module.exports = { beginActivity, completeActivity, failActivity, recoverRunningActivities, findActivityByIdentity };

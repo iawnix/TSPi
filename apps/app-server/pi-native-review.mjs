@@ -192,7 +192,9 @@ async function runNativeReview(options) {
     ...tool,
     async execute(params, api, context) {
       if (tool.name === REVIEW_RESULT_TOOL_NAME) resultCapture.attemptCount += 1;
-      const onUpdate = (value) => typeof value === "string" ? api.output(value) : api.details(value);
+      // Keep the Durable execution context attached to progress details. Pi
+      // 1.0.2 reads abortSignal from this second argument.
+      const onUpdate = (value) => typeof value === "string" ? api.output(value) : api.details(value, context);
       try {
         const result = await tool.execute(api.callId, params, onUpdate, {}, {}, context);
         return result?.terminate ? { ...result, control: { terminate: true } } : result;

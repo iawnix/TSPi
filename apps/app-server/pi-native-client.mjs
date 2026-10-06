@@ -3,7 +3,7 @@ import { lstatSync } from "node:fs";
 import { basename, dirname, resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { formatError } from "./tspi-terminal-errors.mjs";
+import { formatTerminalFailure } from "./tspi-terminal-errors.mjs";
 import { createTspiPackageRootRestoreFacet, withTspiPackageRootHidden } from "./native-client-env.mjs";
 import { connectHost } from "./tspi-host-client.mjs";
 
@@ -132,7 +132,14 @@ if (!parsed.ok) {
       }));
     }
   } catch (error) {
-    console.error(`Error: ${formatError(error)}`);
+    const diagnosticFile = process.env.TSPI_DIAGNOSTIC_FILE
+      || (process.env.TSPI_STATE_ROOT
+        ? `${process.env.TSPI_STATE_ROOT.replace(/\/$/u, "")}/worker-diagnostics.log`
+        : undefined);
+    console.error(`Error: ${formatTerminalFailure(error, {
+      installRoot: process.env.TSPI_INSTALL_ROOT,
+      diagnosticFile,
+    })}`);
     process.exitCode = 1;
   }
 }

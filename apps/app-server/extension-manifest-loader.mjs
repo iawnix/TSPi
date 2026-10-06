@@ -173,11 +173,67 @@ async function validateProvider(value, root, extensionName) {
     kind: value.kind,
     ...(descriptor ? { descriptor } : {}),
     ...(descriptorData ? { descriptor_data: Object.freeze(descriptorData) } : {}),
+    ...(descriptorData ? { capability_descriptors: Object.freeze(toCanonicalDescriptors(descriptorData, id, version, value.kind)) } : {}),
     ...(descriptorDigest ? { descriptor_digest: descriptorDigest } : {}),
     ...(entry ? { entry } : {}),
     ...(value.sha256 === undefined ? {} : { sha256: value.sha256 }),
     ...(value.descriptor_sha256 === undefined ? {} : { descriptor_sha256: value.descriptor_sha256 }),
   });
+}
+
+/** Project legacy inventory descriptors into the shared capability envelope.
+ *
+ * The JSON files are installation inventory and may aggregate aliases. The
+ * runtime exposes one canonical descriptor per declared capability; execution
+ * still receives the original provider entry and schemas through extensions.
+ */
+function toCanonicalDescriptors(data, providerId, providerVersion, kind) {
+  const declarations = Array.isArray(data.capabilities) && data.capabilities.length
+    ? data.capabilities.flatMap((item) => [
+      item,
+      ...(Array.isArray(item.aliases) ? item.aliases.map((id) => ({ id, version: item.version })) : []),
+    ])
+    : [{ id: data.operation || providerId, version: data.version || providerVersion }];
+  return declarations.map((item) => {
+    const capabilityId = item.id;
+    const capabilityVersion = String(item.version || providerVersion);
+    const base = {
+      protocol: "capability_descriptor",
+      version: 1,
+      capability_id: capabilityId,
+      capability_version: capabilityVersion,
+      kind: kind === "harness" ? "artifact" : kind,
+      summary: data.notes || `Provider capability ${capabilityId}.`,
+      input_schema: data.input_schema || { type: "object" },
+      output_schema: data.result_schema || { type: "object" },
+      provider: {
+        provider_id: providerId,
+        provider_version: String(providerVersion),
+        descriptor_digest: "sha256:" + "0".repeat(64),
+      },
+      limits: data.limits || {},
+      effects: Array.isArray(data.effects) ? data.effects : [],
+      extensions: {
+        parameter_schema: data.parameter_schema || { type: "object" },
+        output_roles: Array.isArray(data.output_roles) ? data.output_roles : [],
+        operation: data.operation || capabilityId,
+        aliases: Array.isArray(item.aliases) ? item.aliases : [],
+      },
+    };
+    const digestInput = stableJson({ ...base, provider: { ...base.provider, descriptor_digest: "" } });
+    // Keep this digest deterministic without introducing another descriptor
+    // shape. The dispatcher recomputes the transport digest at execution.
+    base.provider.descriptor_digest = `sha256:${createHash("sha256").update(digestInput).digest("hex")}`;
+    return Object.freeze(base);
+  });
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 async function validateServer(value, root, extensionName) {

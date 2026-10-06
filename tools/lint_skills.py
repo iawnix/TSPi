@@ -77,7 +77,7 @@ def _check_links(path: Path, text: str) -> list[str]:
 
 def validate_skills(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
-    skill_roots = [path for path in (root / "skills").iterdir() if path.is_dir()]
+    skill_roots: list[Path] = []
     for extension_root in (root / "extensions").iterdir():
         if not extension_root.is_dir() or extension_root.name == "server":
             continue
@@ -158,7 +158,7 @@ def main() -> int:
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    count = len([path for path in (ROOT / "skills").iterdir() if path.is_dir()])
+    count = len([path for path in (ROOT / "extensions/core/skills").iterdir() if path.is_dir()])
     count += sum(1 for extension_root in (ROOT / "extensions").iterdir() if extension_root.is_dir() for path in extension_root.rglob("SKILL.md"))
     print(f"skill contract check passed: {count} skills")
     return 0

@@ -26,16 +26,18 @@ replacement UI.
   owns compute intents, readiness, and lifecycle control. The shared Link
   protocol and backpressure codec live in `packages/tspi-link/`; the relay
   service is only its deployment composition.
-- `extensions/` contains first-party Provider implementations and the Skills
-  that describe their scientific use. Render, report, email, chemical compute,
-  and analysis execute through the generic Provider dispatcher.
+- `extensions/` contains optional or installable capability extensions: first-party
+  Provider implementations and the Skills that describe their scientific use.
+  Render, report, email, chemical compute, and analysis execute through the
+  generic Provider dispatcher. Package-owned server tool assembly is not an
+  external extension; it lives under `apps/app-server/server-tools/`.
 - `packages/agent-ui/` contains only the small Native TUI presentation helpers
   required by the client facet. Direct ExtensionAPI adapters and their public
   entrypoints have been removed; they are not selected by the launcher or
   loaded by the Native Pi Worker.
-  `extensions/server/` is the sole package-owned tool entry. The App Server
+  `apps/app-server/server-tools/` is the sole package-owned tool entry. The App Server
   loads only the allowlisted, digest-verified entries in
-  `extensions/server/extensions.json`; the worker also loads package skills,
+  `apps/app-server/server-tools/extensions.json`; the worker also loads package skills,
   hooks, policy, and system prompt once for every transport. It never evaluates
   code supplied by a client.
 - `components/ts-web/` is an optional read-only browser client that renders the
@@ -455,7 +457,7 @@ are separate from the scientific operation journal.
   `packages/research-compute/`, and the chemistry implementation under
   `extensions/chemical/providers/chemical_runtime/`.
 - Skills and extension manifests: `skills/`, `package.json`, and
-  `extensions/server/extensions.json`.
+  `apps/app-server/server-tools/extensions.json`.
 - TS Web contracts: `contracts/ts-web/`.
 - Monitor contracts: `contracts/tspi-monitor/1/`.
 - Host lifecycle and Native Harness integration tests: `tests/integration/test_pi_app_server_launcher.py`,

@@ -117,6 +117,7 @@ def submit(config: LocalJobConfig) -> LocalReceipt:
 
     package_root = Path(__file__).resolve().parents[3]
     inherited_pythonpath = os.environ.get("PYTHONPATH", "")
+    provider_pythonpath = config.environment.get("PYTHONPATH", "")
     pythonpath = os.pathsep.join(
         item for item in (
             str(package_root / "packages" / "tspi-foundation"),
@@ -125,7 +126,7 @@ def submit(config: LocalJobConfig) -> LocalReceipt:
             str(package_root / "packages" / "research-memory"),
             str(package_root / "packages" / "research-compute"),
             str(package_root / "packages" / "tspi-runtime"),
-            str(package_root / "extensions" / "chemical" / "providers"),
+            provider_pythonpath,
             inherited_pythonpath,
         ) if item
     )
@@ -174,7 +175,7 @@ def _await_durable_status(
 
 def _start_worker(config: LocalJobConfig, worker_config: Path, pythonpath: str) -> _WorkerHandle:
     command = [sys.executable, str(Path(__file__).with_name("local_worker.py")), "--config", str(worker_config)]
-    environment = {**os.environ, "PYTHONPATH": pythonpath, **config.environment}
+    environment = {**os.environ, **config.environment, "PYTHONPATH": pythonpath}
     systemd_run = shutil.which("systemd-run")
     if (
         systemd_run

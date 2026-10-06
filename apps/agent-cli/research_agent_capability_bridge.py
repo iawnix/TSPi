@@ -22,7 +22,7 @@ from _bootstrap import bootstrap_python_package
 bootstrap_python_package(ROOT)
 
 from research_compute.platforms import EnvironmentBroker, EnvironmentRequirement, load_config  # noqa: E402
-from research_compute.capabilities import calculation_capabilities  # noqa: E402
+from research_compute.capabilities import CAPABILITY_REGISTRY, calculation_capabilities  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -46,64 +46,64 @@ def bridge(path: Path) -> dict[str, object]:
     config = load_config(path)
     broker = EnvironmentBroker(config)
     bindings: dict[str, dict[str, object]] = {}
-    for provider, backend in (
-        ("xtb_local", "xtb"),
-        ("gaussian_local", "gaussian"),
-        ("pyscf_local", "pyscf"),
-        ("crest_local", "crest"),
-    ):
+    # Build transport entries from registered capability owners.  Extensions
+    # can add a backend without editing this Host bridge.
+    descriptors = CAPABILITY_REGISTRY.descriptors()
+    owners: dict[str, tuple[str, object]] = {}
+    for descriptor in descriptors:
+        registration = CAPABILITY_REGISTRY.resolve(descriptor.capability, descriptor.version)
+        if registration is not None and registration.provider is not None:
+            owners.setdefault(descriptor.backend, (registration.provider_id, registration.provider))
+    for backend, (provider_id, owner) in sorted(owners.items()):
+        binding_key = f"{backend}_local"
+        descriptor = next(item for item in descriptors if item.backend == backend)
+        selector = getattr(owner, "environment_providers", None)
+
+        def provider_names(kind: str) -> tuple[str, ...]:
+            selected = selector(descriptor, kind) if callable(selector) else (backend,)
+            return tuple(selected)
+
         environment_bindings: dict[str, dict[str, object]] = {}
         for environment_name, environment_config in config.environments.items():
-            if backend not in environment_config.backends:
+            names = provider_names(environment_config.kind)
+            if not any(name in environment_config.backends for name in names):
                 continue
             try:
                 binding = broker.bind(
-                    EnvironmentRequirement((backend,), kind=environment_config.kind),
+                    EnvironmentRequirement(names, kind=environment_config.kind),
                     environment=environment_name,
-                    # Remote probes are deliberately non-destructive: the
-                    # broker records transport readiness as deferred while
-                    # keeping the environment selectable by the Host.
                     probe=True,
                 )
                 private = binding.to_backend_binding()
                 activated_environment = (
                     _activation_environment(private.activation_script)
-                    if environment_config.kind == "local"
-                    else {}
+                    if environment_config.kind == "local" else {}
                 )
-                if backend == "pyscf" and environment_config.kind == "local":
-                    activated_environment = _pyscf_environment(activated_environment)
+                bridge_environment = getattr(owner, "bridge_environment", None)
+                if callable(bridge_environment):
+                    activated_environment = bridge_environment(
+                        backend, environment_config.kind, activated_environment,
+                    )
                 environment_bindings[environment_name] = _binding_document(
-                    binding,
-                    private,
-                    activated_environment,
-                    backend,
+                    binding, private, activated_environment, backend,
                     aliases=(
                         (environment_name, environment_config.platform.ssh_host)
-                        if environment_config.platform is not None
-                        else (environment_name,)
+                        if environment_config.platform is not None else (environment_name,)
                     ),
                 )
             except Exception as exc:
-                # Keep the environment visible to Host readiness even when a
-                # local executable is unavailable or a remote transport is
-                # deferred. The provider must inspect readiness before launch.
                 environment_bindings[environment_name] = {
-                    "available": False,
-                    "backend": backend,
+                    "available": False, "backend": backend,
                     "environment_id": environment_name,
                     "environment_kind": environment_config.kind,
                     "error": str(exc),
                 }
         try:
-            # Capability registration is independent of transport kind. The
-            # default environment may be local or remote; the selected
-            # provider/transport adapter decides whether execution is ready.
             try:
-                binding = broker.bind(EnvironmentRequirement((backend,), kind=None), probe=True)
+                binding = broker.bind(
+                    EnvironmentRequirement(provider_names("remote"), kind=None), probe=True,
+                )
             except Exception:
-                # A default environment without this backend must not hide a
-                # capability that is configured in another environment.
                 fallback_name = next(
                     (name for name, item in environment_bindings.items() if item.get("available")),
                     None,
@@ -111,56 +111,48 @@ def bridge(path: Path) -> dict[str, object]:
                 if fallback_name is None:
                     raise
                 binding = broker.bind(
-                    EnvironmentRequirement((backend,), kind=None),
+                    EnvironmentRequirement(provider_names("remote"), kind=None),
                     environment=fallback_name,
                     probe=environment_bindings[fallback_name].get("environment_kind") == "local",
                 )
             default_document = environment_bindings.get(binding.environment)
             if default_document is None or not default_document.get("available"):
-                raise RuntimeError(default_document.get("error") if default_document else "default environment binding unavailable")
+                raise RuntimeError(
+                    default_document.get("error") if default_document
+                    else "default environment binding unavailable"
+                )
             readiness = binding.readiness.public()
-            if backend == "pyscf" and binding.kind == "local":
-                # Executable presence is not enough for the CF22D runner. It
-                # imports geomeTRIC, pyscf-dispersion, and the installed
-                # tspi_runtime runner at process start. Keep the provider in the
-                # catalog while reporting those checks explicitly.
-                readiness = _pyscf_runtime_readiness(
-                    list(default_document["command"]),
-                    {**default_document.get("environment", {}), **dict(binding.to_backend_binding().environment)},
+            bridge_readiness = getattr(owner, "bridge_readiness", None)
+            if callable(bridge_readiness):
+                readiness = bridge_readiness(
+                    backend, list(default_document["command"]),
+                    {**default_document.get("environment", {}),
+                     **dict(binding.to_backend_binding().environment)},
                     readiness,
                 )
         except Exception as exc:
-            # Missing optional backends and broken activation profiles are
-            # represented as unavailable rather than making a configured
-            # xTB-only installation fail Gaussian use.
-            bindings[provider] = {
-                "available": False,
-                "backend": backend,
-                "error": str(exc),
+            bindings[binding_key] = {
+                "available": False, "backend": backend, "error": str(exc),
                 "environments": environment_bindings,
+                "provider_id": provider_id,
             }
             continue
         selected = dict(default_document)
         selected.update({
-            "available": True,
-            "backend": backend,
+            "available": True, "backend": backend,
             "environment_id": binding.environment,
             "environment_kind": binding.kind,
             "binding_digest": binding.binding_digest,
             "readiness": readiness,
             "environments": environment_bindings,
+            "provider_id": provider_id,
         })
-        bindings[provider] = selected
+        bindings[binding_key] = selected
     local = [item for item in config.environments.values() if item.kind == "local"]
     return {
-        "schema_version": "research_agent_compute_bridge/1",
-        "ok": True,
-        "config_path": str(config.source),
-        "default_environment": config.default_environment,
+        "schema_version": "research_agent_compute_bridge/1", "ok": True,
+        "config_path": str(config.source), "default_environment": config.default_environment,
         "local_environment_count": len(local),
-        # This is the Host-private Native lifecycle catalog.  It is emitted
-        # independently of executable readiness so a configured-but-unhealthy
-        # backend remains discoverable and can report a typed readiness gap.
         "capabilities": calculation_capabilities()["capabilities"],
         "bindings": bindings,
     }

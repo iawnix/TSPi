@@ -3,26 +3,27 @@
   "extensions": [
     {
       "name": "core-tools",
-      "entry": "extensions/server/core-tools.mjs",
+      "entry": "apps/app-server/server-tools/core-tools.mjs",
       "scope": "server",
-      "sha256": "sha256:da7918c7763f7804f162a435ea056a070d8b36d3bda9a4de5a47e8d2118d427e",
+      "sha256": "sha256:1a3f4592f9c4ab5c17823e6d758963f4c8e931a97564aca2bfe29e67a4799f0c",
       "tools": [
         "research_read",
         "research_change",
         "research_strategy",
         "research_interpretation",
         "research_checkpoint",
-        "compute_environment",
-        "compute_catalog",
-        "compute_readiness",
-        "review_run",
-        "compute_run",
-        "review_respond",
-        "execution_dispatch",
-        "artifact_import",
-        "artifact_render",
-        "report_build",
-        "notify_send"
+        "notify_send",
+        "job_start",
+        "job_status",
+        "job_collect",
+        "job_cancel",
+        "job_probe",
+        "job_reconcile",
+        "artifact_register",
+        "artifact_create",
+        "artifact_read",
+        "artifact_derive",
+        "artifact_link"
       ],
       "permissions": [
         "workspace.read",
@@ -34,9 +35,9 @@
     },
     {
       "name": "chemical-tools",
-      "entry": "extensions/server/chemical-tools.mjs",
+      "entry": "apps/app-server/server-tools/chemical-tools.mjs",
       "scope": "server",
-      "sha256": "sha256:73798b2df14034275522240b967e922ffd46512c1eb4fa851fb2ee6a584b7cdc",
+      "sha256": "sha256:48b3e187cabf4107689707f6dcdbd8112090cb74bd0aa4008e1f5c20b6f49a26",
       "tools": [
         "create_mol_structure",
         "artifact_compare",

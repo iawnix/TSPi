@@ -17,11 +17,11 @@ TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装�
 - `services/tspi-link-relay/` 负责 TSPi Link 注册、配对、设备授权和不透明帧转发；它不拥有
   workspace/session/research，也不解析 Host RPC。
 - `packages/research-state/` 管理规范 `ResearchMap`、admission、引用完整性、验证、revision 和事务；`packages/research-memory/` 构建 bounded context 与 session projection；`packages/research-compute/` 管理计算 intent、readiness 和生命周期。共享 Link 协议与 backpressure codec 位于 `packages/tspi-link/`，`services/tspi-link-relay/` 只负责服务组合。
-- `extensions/` 包含第一方 Provider 实现及其科学使用规则 Skill。Render、Report、Email、化学计算和分析都通过通用 Provider dispatcher 执行。
+- `extensions/` 只包含可选或可安装的能力扩展：第一方 Provider 实现及其科学使用规则 Skill。Render、Report、Email、化学计算和分析都通过通用 Provider dispatcher 执行。包内核心 server tool 装配不属于外置扩展，位于 `apps/app-server/server-tools/`。
 - `packages/agent-ui/` 仅包含 Native client facet 所需的少量 presentation helper。
   直接 ExtensionAPI 适配器及其公共入口已经移除；启动器和 Native Pi Worker 不会加载
   旧的 ExtensionAPI 路径。
-  `extensions/server/` 是唯一的包内 server 工具入口。App Server 只加载经过 allowlist 和
+  `apps/app-server/server-tools/` 是唯一的包内 server 工具入口。App Server 只加载经过 allowlist 和
   SHA-256 校验的条目，不执行客户端提交的代码；worker 还统一加载 package skills、hooks、
   策略和 system prompt，所有 transport 使用同一份工具 runtime。
 - `components/ts-web/` 是可选的只读浏览器客户端，直接渲染 Research State 序列化的

@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
+import { lstatSync } from "node:fs";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import Type from "./pi-runtime-deps.mjs";
@@ -58,6 +59,7 @@ export function createComputeTool(options = {}) {
         error.code = "js_provider_path_removed";
         throw error;
       }
+      assertComputeConfigReady();
       validatePublicComputeParameters(params);
       const request = validateComputeRequest({
         ...params,
@@ -641,6 +643,34 @@ async function runComputeJson(root, command, args, signal, timeout) {
     signal,
     timeout,
   );
+}
+
+function assertComputeConfigReady() {
+  const configured = process.env.TS_COMPUTE_CONFIG?.trim()
+    || (process.env.TSPI_INSTALL_ROOT?.trim()
+      ? resolve(process.env.TSPI_INSTALL_ROOT, ".pi", "compute.toml")
+      : "");
+  if (!configured) {
+    const error = new Error("TS_COMPUTE_CONFIG is not configured");
+    error.code = "compute_config_required";
+    throw error;
+  }
+  if (!configured.startsWith("/")) {
+    const error = new Error("TS_COMPUTE_CONFIG must be an absolute path");
+    error.code = "compute_config_invalid";
+    throw error;
+  }
+  let info;
+  try { info = lstatSync(resolve(configured)); } catch (cause) {
+    const error = new Error(`TS_COMPUTE_CONFIG is not a regular file: ${resolve(configured)}`, { cause });
+    error.code = "compute_config_not_file";
+    throw error;
+  }
+  if (!info.isFile() || info.isSymbolicLink()) {
+    const error = new Error(`TS_COMPUTE_CONFIG is not a regular file: ${resolve(configured)}`);
+    error.code = "compute_config_not_file";
+    throw error;
+  }
 }
 
 async function allocateOperationalId(root, kind, signal) {

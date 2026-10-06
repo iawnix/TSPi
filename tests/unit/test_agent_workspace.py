@@ -241,7 +241,7 @@ def test_scientific_records_and_traceability_are_indexed_atomically(tmp_path: Pa
         {"type": "create_node", "id": "node_1", "title": "Execution", "objective": "Run", "claim_ids": ["claim_1"]},
         {"type": "create_artifact", "id": "artifact_1", "node_id": "node_1", "location": "runs/input.xyz", "sha256": "abc", "size_bytes": 4},
         {"type": "create_attempt", "id": "attempt_1", "node_id": "node_1", "capability": "xtb", "capability_version": "1", "state": "completed", "output_artifact_ids": ["artifact_1"]},
-        {"type": "create_finding", "id": "finding_1", "node_id": "node_1", "claim_ids": ["claim_1"], "statement": "Energy was finite", "kind": "fact", "value": True, "source_refs": ["artifact_1"]},
+        {"type": "create_finding", "id": "finding_1", "node_id": "node_1", "claim_ids": ["claim_1"], "statement": "Energy was finite", "kind": "fact", "value": True, "source_refs": ["artifact_1"], "provenance": {"interpretation_mode": "root_agent_reading", "validation": "unavailable"}},
         {"type": "create_gate", "id": "gate_1", "scope": "node", "target_id": "node_1", "criteria": [{"kind": "validated"}]},
         {"type": "create_evidence", "id": "evidence_1", "artifact_id": "artifact_1", "subject_type": "finding", "subject_id": "finding_1", "relation": "supports"},
         {"type": "evaluate_gate", "gate_id": "gate_1", "verdict": "pass", "evidence_refs": ["artifact_1"]},
@@ -288,11 +288,11 @@ def test_attempt_lifecycle_transitions_and_evidence_links_are_bounded(tmp_path: 
         {"type": "create_claim", "id": "claim_1", "statement": "Hypothesis"},
         {"type": "create_node", "id": "node_1", "title": "Execution", "objective": "Run", "claim_ids": ["claim_1"]},
         {"type": "create_attempt", "id": "attempt_1", "node_id": "node_1", "capability": "xtb", "capability_version": "1", "state": "started"},
-        {"type": "create_finding", "id": "finding_1", "node_id": "node_1", "claim_ids": ["claim_1"], "statement": "Observed", "kind": "fact"},
+        {"type": "create_artifact", "id": "artifact_1", "node_id": "node_1", "location": "runs/out.xyz", "producer_attempt_id": "attempt_1"},
+        {"type": "create_finding", "id": "finding_1", "node_id": "node_1", "claim_ids": ["claim_1"], "statement": "Observed", "kind": "fact", "source_refs": ["artifact_1"], "provenance": {"interpretation_mode": "root_agent_reading", "validation": "unavailable"}},
     ]})
     apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 1, "operations": [
         {"type": "transition_attempt", "attempt_id": "attempt_1", "state": "running", "started_at": "2026-09-26T01:00:00Z"},
-        {"type": "create_artifact", "id": "artifact_1", "node_id": "node_1", "location": "runs/out.xyz", "producer_attempt_id": "attempt_1"},
         {"type": "create_evidence", "id": "evidence_1", "artifact_id": "artifact_1", "attempt_ref": "attempt_1", "subject_type": "finding", "subject_id": "finding_1", "relation": "supports"},
     ]})
     apply_change(tmp_path, {"principal": "root_agent", "authority": "kernel_write", "expected_revision": 2, "operations": [

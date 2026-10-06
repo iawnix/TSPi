@@ -64,3 +64,36 @@ test("HTTP App Server exposes workspace/session routes and the Native compute bo
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("HTTP internal failures preserve a request id and actionable cause", async () => {
+  const server = create_http_server({
+    app_server: {
+      protocol_version: "fixture",
+      async invoke_tool() {
+        throw new Error("worker failed", { cause: new Error("details context missing") });
+      },
+    },
+  });
+  try {
+    const baseUrl = await listen(server);
+    const response = await fetch(`${baseUrl}/tool_invoke`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-request-id": "request_diagnostic" },
+      body: "{}",
+    });
+    const body = await response.json();
+    assert.equal(response.status, 500);
+    assert.equal(response.headers.get("x-request-id"), "request_diagnostic");
+    assert.deepEqual(body, {
+      schema_version: "research_agent_http_error_1",
+      request_id: "request_diagnostic",
+      error: {
+        code: "internal_error",
+        message: "internal server error",
+        detail: "worker failed: details context missing",
+      },
+    });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

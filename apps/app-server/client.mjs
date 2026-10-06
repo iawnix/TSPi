@@ -26,11 +26,16 @@ export function create_app_server_client({ base_url, fetch_impl = globalThis.fet
       throw new AppServerClientError("server returned invalid JSON", { status: response.status, body: undefined });
     }
     if (!response.ok) {
-      throw new AppServerClientError(body?.error?.message || `HTTP ${response.status}`, {
-        status: response.status,
-        code: body?.error?.code,
-        body,
-      });
+      const message = body?.error?.message || `HTTP ${response.status}`;
+      const detail = body?.error?.detail;
+      throw new AppServerClientError(
+        detail && detail !== message ? `${message}: ${detail}` : message,
+        {
+          status: response.status,
+          code: body?.error?.code,
+          body,
+        },
+      );
     }
     return body;
   }

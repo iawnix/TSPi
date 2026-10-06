@@ -28,6 +28,14 @@ INPUT_OPERATION_CONTRACTS: dict[str, OperationContract] = {
         required=frozenset({"type", "id", "statement"}),
         optional=frozenset({"status", "predictions", "falsifiers", "created_at", "metadata"}),
     ),
+    "assess_claim": OperationContract(
+        required=frozenset({"type", "id", "claim_id", "verdict", "reason"}),
+        optional=frozenset({"evidence_refs", "actor", "metadata", "created_at"}),
+    ),
+    "revise_claim": OperationContract(
+        required=frozenset({"type", "source_claim_id", "target_claim_id", "statement", "reason"}),
+        optional=frozenset({"revision_id", "relation", "predictions", "falsifiers", "actor", "metadata", "created_at"}),
+    ),
     "create_node": OperationContract(
         required=frozenset({"type", "id", "title", "objective"}),
         optional=frozenset({"phase_id", "claim_ids", "dependency_ids", "created_at", "metadata"}),

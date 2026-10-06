@@ -43,6 +43,7 @@ _RESEARCH_DIRECTORIES = (
 )
 RESEARCH_CONTEXT_COLLECTIONS = (
     "phases", "claims", "nodes", "findings", "gates", "claim_relations",
+    "claim_assessments", "claim_revisions",
     "attempts", "artifacts", "evidence_links", "lifecycle_actions",
     "strategy_plans", "strategy_reviews", "attempt_interpretations",
 )
@@ -290,6 +291,7 @@ def _research_seed(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "lifecycle": "admission_pending",
             "disposition": None,
             "checkpoint_id": "checkpoint_0",
+            "research_obligations": [],
             **collections,
             "focus": {"claim_ids": [], "node_ids": []},
         },

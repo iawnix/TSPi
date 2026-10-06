@@ -466,6 +466,8 @@ systemctl status ts-app-server-tspi.service         # system scope
 
 Run `./uninstall.sh`. The default preserves the configured workspace root, Pi session history,
 credentials, and configuration. Removing the installation root is explicit;
-the uninstaller also stops and removes matching App Server and TS Web services
-in the configured scope. The standalone Link Relay has its own installation and
-service lifecycle; it is not removed by the local TSPi uninstaller.
+the uninstaller also stops and removes matching App Server, TS Web, and
+installation-owned Link Relay services in the configured scope. A shared or
+unmarked Relay is preserved. If a Relay directory was removed manually, run
+the standalone Relay uninstaller with its former `--install-root` so the unit
+is removed even when its code path no longer exists.

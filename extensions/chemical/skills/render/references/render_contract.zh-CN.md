@@ -37,7 +37,7 @@ Artifact 包含 1 到 16 个 series，每个 series 的有限 `x` 与 `y` 数组
 `convergence` 接受相同数据格式。
 
 分子 operation 使用 `xyzrender`，曲线 operation 使用 Matplotlib。Schema 见
-[curve-data.schema.json](../../../contracts/ts-render/curve-data.schema.json)。
+[curve-data.schema.json](../../../../../contracts/ts-render/curve-data.schema.json)。
 
 渲染用于检查几何、比较结构、制作模式动画或表达机理。成键变化、端点 identity 与模式
 归属应根据对应结构和计算数据建立。将已核验值记录为引用主要来源 Artifact 的 Finding。

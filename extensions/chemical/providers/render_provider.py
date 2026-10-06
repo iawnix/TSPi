@@ -4,7 +4,12 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 ROOT = Path(__file__).resolve().parents[3]
-sys.path[:0] = [str(ROOT / "packages" / "tspi-runtime"), str(Path(__file__).resolve().parent)]
+sys.path[:0] = [
+    str(ROOT / "packages" / "tspi-runtime"),
+    str(ROOT / "packages" / "tspi-foundation"),
+    str(ROOT / "packages" / "tspi-provider-runtime"),
+    str(Path(__file__).resolve().parent),
+]
 from tspi_provider_runtime.runner import run_jsonl_provider
 from render_lib import MolVisualizer
 from render_lib.config import parse_resolution

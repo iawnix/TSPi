@@ -7,7 +7,7 @@ from report_lib import build_final_report
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL_ROOT = ROOT / "extensions" / "report"
+SKILL_ROOT = ROOT / "extensions" / "chemical" / "skills" / "report"
 CONTRACT = SKILL_ROOT / "references" / "report_template.md"
 
 

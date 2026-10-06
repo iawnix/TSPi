@@ -91,7 +91,7 @@ def test_render_cli_diagnostic_json(tmp_path: Path, monkeypatch) -> None:
         "context": {},
     }
     completed = subprocess.run(
-        [sys.executable, str(ROOT / "extensions" / "render" / "providers" / "render_provider.py")],
+        [sys.executable, str(ROOT / "extensions" / "chemical" / "providers" / "render_provider.py")],
         cwd=ROOT,
         env=env,
         input=json.dumps(request) + "\n",

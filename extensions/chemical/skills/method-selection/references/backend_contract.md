@@ -6,7 +6,7 @@ and parse local outputs. Root selects the method and interprets verified results
 
 Use `research_read mode=capabilities capabilityKind=compute` for the current machine-
 readable catalog and
-[compute_tools.md](../../../../../skills/orchestration/references/compute_tools.md) for
+[compute_tools.md](../../../../core/skills/orchestration/references/compute_tools.md) for
 public calls.
 
 ## Supported Tasks

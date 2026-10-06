@@ -12,17 +12,19 @@ import subprocess
 import sys
 import time
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from research_compute.platforms import EnvironmentBroker, EnvironmentRequirement, load_config
 from research_compute.remote.client import SSHClient
-from research_compute.remote.diagnostics import ase_neb_check_script, backend_check_script, pyscf_check_script
+from research_compute.remote.diagnostics import backend_check_script
 from research_compute.remote.errors import RemoteError
 from research_compute.remote.torque import parse_records
 from tspi_foundation.env import configured_python
 
 from .capabilities import CAPABILITY_REGISTRY
+from .provider import ProviderUnavailable, resolve_compute_provider
 
 
 def calculation_readiness(
@@ -55,8 +57,10 @@ def calculation_readiness(
     for descriptor in descriptors:
         row = {"capability_id": descriptor.capability, "capability_version": descriptor.version,
                "environment_id": selected.name, "execution_kind": selected.kind}
-        # Match Native control's local ASE alias; remote ASE requires Python.
-        providers = ("ase_neb_xtb", "ase_neb") if descriptor.backend == "ase_neb" and selected.kind == "local" else (descriptor.backend,)
+        registration = CAPABILITY_REGISTRY.resolve(descriptor.capability, descriptor.version)
+        owner = registration.provider if registration is not None else None
+        provider_selector = getattr(owner, "environment_providers", None)
+        providers = tuple(provider_selector(descriptor, selected.kind)) if callable(provider_selector) else (descriptor.backend,)
         try:
             binding = broker.bind(EnvironmentRequirement(providers, kind=selected.kind), selected.name)
             row["binding_digest"] = binding.binding_digest
@@ -176,20 +180,27 @@ class _Probe:
         if binding.scratch_root:
             self._check(checks, "scratch", "scratch_unavailable", "Configured scratch root is absent or not writable",
                         lambda: self._script('test -d "$1" -a -w "$1"', [binding.scratch_root]))
-        if provider == "pyscf":
-            self._check(checks, "runtime_dependencies", "backend_dependencies_unavailable", "PySCF/CF22D runtime dependencies are unavailable",
-                        lambda: self._script(prefix + pyscf_check_script(), [activation, binding.command[0]]))
-        elif provider in {"ase_neb", "ase_neb_xtb"}:
-            python_executable = binding.command[0] if provider == "ase_neb" else self._local_runtime_python()
-            calculator_binding = self.environment.backends.get("ase_neb_xtb")
-            xtb_executable = binding.environment.get("TS_ASE_NEB_XTB")
-            if not xtb_executable and calculator_binding is not None:
-                xtb_executable = calculator_binding.command[0]
-            if not xtb_executable and provider == "ase_neb_xtb":
-                xtb_executable = binding.command[0]
-            self._check(checks, "runtime_dependencies", "backend_dependencies_unavailable", "ASE NEB runner or calculator dependencies are unavailable",
-                        lambda: self._script(prefix + ase_neb_check_script(), [activation, python_executable, xtb_executable, binding.environment.get("TS_ASE_NEB_GAUSSIAN", "")]))
+        probe_binding = replace(
+            binding,
+            environment={
+                **binding.environment,
+                "TSPI_RUNTIME_PYTHON": self._local_runtime_python(),
+            },
+        )
+        probe = self._readiness_probe(provider, probe_binding)
+        if probe:
+            self._check(checks, "runtime_dependencies", "backend_dependencies_unavailable", "Backend runtime dependencies are unavailable",
+                        lambda: self._script(prefix + probe["script"], probe["args"]))
         return self._result(checks)
+
+    @staticmethod
+    def _readiness_probe(provider, binding):
+        try:
+            extension = resolve_compute_provider(provider)
+        except ProviderUnavailable:
+            return None
+        factory = getattr(extension, "readiness_probe", None)
+        return factory(provider, binding) if callable(factory) else None
 
     @staticmethod
     def _local_runtime_python() -> str:

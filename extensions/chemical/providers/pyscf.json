@@ -4,10 +4,9 @@
   "kind": "compute",
   "capabilities": [
     {
-      "id": "pyscf",
+      "id": "pyscf.sp",
       "version": "1",
       "aliases": [
-        "pyscf.sp",
         "pyscf.opt",
         "pyscf.ts",
         "pyscf.freq",

@@ -16,18 +16,18 @@ TERMINAL_ZH = ROOT / "docs" / "TERMINAL.zh-CN.md"
 INSTALLATION = ROOT / "docs" / "INSTALLATION.md"
 MAINTAINER = ROOT / "docs" / "MAINTAINER_GUIDE.md"
 ADR = ROOT / "docs" / "adr" / "0001-phase-node-research-state.md"
-SKILL_ROOT = ROOT / "skills" / "research-state"
+SKILL_ROOT = ROOT / "extensions" / "core" / "skills" / "research-state"
 SKILL = SKILL_ROOT / "SKILL.md"
 REFERENCES = SKILL_ROOT / "references"
-ORCHESTRATION_ROOT = ROOT / "skills" / "orchestration"
+ORCHESTRATION_ROOT = ROOT / "extensions" / "core" / "skills" / "orchestration"
 FOCUSED_SKILLS = {
     "orchestration": ORCHESTRATION_ROOT,
     **{name: ROOT / "extensions" / "chemical" / "skills" / name for name in (
         "candidate-generation", "validation", "irc", "energetics", "method-selection",
         "cf22d", "xtb", "crest", "qbics", "gaussian", "mechanism-reasoning", "chemical-input",
     )},
-    "render": ROOT / "extensions" / "render",
-    "report": ROOT / "extensions" / "report",
+    "render": ROOT / "extensions" / "chemical" / "skills" / "render",
+    "report": ROOT / "extensions" / "chemical" / "skills" / "report",
     "email": ROOT / "extensions" / "email",
 }
 
@@ -35,7 +35,7 @@ FOCUSED_SKILLS = {
 PUBLIC_DOCS = (
     README, README_ZH, ARCHITECTURE, ARCHITECTURE_ZH, TERMINAL, TERMINAL_ZH,
     INSTALLATION, MAINTAINER, ADR,
-    ROOT / "skills" / "README.md", ROOT / "skills" / "README.zh-CN.md",
+    ROOT / "extensions" / "core" / "README.md", ROOT / "extensions" / "core" / "README.zh-CN.md",
 )
 
 
@@ -278,7 +278,7 @@ def test_compute_reference_uses_the_registered_gaussian_input_role() -> None:
 
 
 def test_final_report_builder_renders_phase_node_and_scientific_objects() -> None:
-    text = (ROOT / "extensions" / "report" / "providers" / "report_lib" / "builder.py").read_text(encoding="utf-8")
+    text = (ROOT / "extensions" / "chemical" / "providers" / "report_lib" / "builder.py").read_text(encoding="utf-8")
 
     for phrase in [
         "Research Roadmap",
@@ -298,4 +298,4 @@ def test_final_report_builder_renders_phase_node_and_scientific_objects() -> Non
 
 
 def test_static_research_map_templates_are_removed() -> None:
-    assert not list((ROOT / "skills").glob("*/assets/templates/research_map"))
+    assert not list((ROOT / "extensions" / "core" / "skills").glob("*/assets/templates/research_map"))

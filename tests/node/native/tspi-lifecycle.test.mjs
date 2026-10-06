@@ -9,12 +9,15 @@ import { createResearchLifecycleController, requiredLifecycleActions, toolEventI
 import Type from "../../../apps/app-server/pi-runtime-deps.mjs";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import * as PiCore from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
+// NodeExecutionEnv is owned by the Durable runtime. The Pi Agent Core package
+// intentionally exposes only its root entrypoint, so importing its removed
+// `/node` subpath breaks the native test lane before any test can run.
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { Check } from "typebox/value";
 import { createPublicToolAliases, createPublicToolContracts, PUBLIC_TOOL_EXECUTION, PUBLIC_TOOL_METADATA, PUBLIC_TOOL_NAMES } from "../../../packages/agent-runtime/host-api/tools.mjs";
 import { cliErrorMessage, normalizeCheckpointPayload } from "../../../apps/app-server/pi-native-tools.mjs";
 import { boundWorkspaceRoot } from "../../../packages/agent-runtime/host-api/workspace-context.mjs";
-import { bindToolExecutionContext, createToolExecutionContext } from "../../../packages/agent-runtime/host-api/workspace-context.mjs";
+import { bindToolExecutionContext, createToolExecutionContext, validateToolInvocationContext } from "../../../packages/agent-runtime/host-api/workspace-context.mjs";
 import {
   markToolEnvelopeError,
   toolErrorResult,
@@ -400,6 +403,46 @@ test("durable liveness admits only the operations each Research State dispositio
   controller.setDurableLiveness({ lifecycle: "decision_needed", disposition: "user_input_required" });
   assert.equal(controller.admitTool({ runId: "run-user-input-admission", toolName: "research_change" }).code, "research_user_input_required");
   assert.equal(controller.admitTool({ runId: "run-user-input-admission", toolName: "research_read" }).accepted, true);
+});
+
+test("lifecycle recovery keeps the phase and permits checkpoint through the context gate", () => {
+  const controller = createResearchLifecycleController({ metadata: PUBLIC_TOOL_METADATA });
+  controller.beginRun({ runId: "run-checkpoint-recovery" });
+  controller.setDurableLiveness({ lifecycle: "decision_needed", disposition: null });
+
+  // GenerationTask.beforeRequest may be called again for the same durable run;
+  // this must not strand the lane in a newly reset orientation phase.
+  controller.admitTool({ runId: "run-checkpoint-recovery", toolName: "research_read" });
+  controller.completeTool({ runId: "run-checkpoint-recovery", toolName: "research_read" });
+  assert.equal(controller.snapshot().lifecycle_phase, "advance");
+  controller.beginRun({ runId: "run-checkpoint-recovery" });
+  assert.equal(controller.snapshot().lifecycle_phase, "advance");
+
+  // Simulate a Worker retry that re-enters orientation while durable state
+  // still requires a disposition checkpoint.
+  controller.beginRun({ runId: "run-checkpoint-recovery-2" });
+  controller.setDurableLiveness({ lifecycle: "decision_needed", disposition: null });
+  const admission = controller.admitTool({ runId: "run-checkpoint-recovery-2", toolName: "research_checkpoint" });
+  assert.equal(admission.accepted, true);
+  assert.ok(controller.contextPatch().allowed_phases.includes("checkpoint"));
+
+  const context = createToolExecutionContext({
+    workspace_root: "/tmp/tspi-checkpoint-recovery",
+    session_id: "session-checkpoint-recovery",
+    operation_id: "run-checkpoint-recovery-2",
+    lifecycle_phase: "turn",
+    replay_mode: "normal",
+    allowed_authorities: [PUBLIC_TOOL_METADATA.research_checkpoint.authority],
+    allowed_effects: [PUBLIC_TOOL_METADATA.research_checkpoint.effect],
+    allowed_phases: ["checkpoint"],
+    lifecycle_provider: () => controller.contextPatch(),
+  });
+  assert.doesNotThrow(() => validateToolInvocationContext(
+    { name: "research_checkpoint", metadata: PUBLIC_TOOL_METADATA.research_checkpoint },
+    context,
+    { operationId: "run-checkpoint-recovery-2" },
+    "checkpoint-call",
+  ));
 });
 
 test("waiting external admits Attempt reconciliation but blocks a second launch", () => {

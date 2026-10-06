@@ -1,5 +1,8 @@
 # 已安装扩展合同
 
+这里的 `extensions/` 指可安装的能力扩展。包内核心 server tool 装配位于
+`apps/app-server/server-tools/`，不属于外置扩展发现流程。
+
 TSPi 将 Agent、Research State 与具体计算软件解耦。已安装扩展是带有
 `manifest.json` 的目录；App Server 从 `TSPI_EXTENSION_MANIFESTS`（按系统路径
 分隔符分割）、Host 显式配置，或包内所有 `extensions/*/manifest.json` 中发现
@@ -33,7 +36,7 @@ manifest 格式为 `tspi-extension/1`，机器可验证的 JSON Schema 位于
 
 Skill 路径必须包含普通文件 `SKILL.md`。扩展中的 provider entry 只保存元数据；计算 descriptor 由 Python Native registry 解析。App Server loader 只建立清单，不会导入 JavaScript 计算 provider。Native preflight 负责输入校验、命令绑定、intent 物化、执行和解析；缺失的 Native capability 会报告为不可用，不会退回到 shell 命令或后端默认分支。
 
-现有 `extensions/server/extensions.json` 合同保持不变：server 工具仍要求包内
+现有 `apps/app-server/server-tools/extensions.json` 合同保持不变：server 工具仍要求包内
 manifest、allowlist 选择和逐 entry 摘要。已安装 manifest 增加 Skill、provider
 元数据和显式 allowlist 的 server 工具，但不改变 Agent 核心、Harness 生命周期或
 内置 server 工具。

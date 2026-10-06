@@ -26,16 +26,19 @@ def verify(source):
       source/"packages/coding-agent/src/experimental/session-worker-manager.ts",
       source/"packages/coding-agent/src/experimental/server.ts",
       source/"packages/coding-agent/src/experimental/services/sessions.ts",
+      source/"packages/coding-agent/src/experimental/client-tui.ts",
     ]
     if any(not p.is_file() for p in required): raise PiSourceError("Pi source is missing the durable experimental runtime")
     process=(source/"packages/coding-agent/src/experimental/process.ts").read_text()
     sessions=(source/"packages/coding-agent/src/experimental/session-catalog.ts").read_text()
     worker=(source/"packages/coding-agent/src/experimental/session-worker.ts").read_text()
     manager=(source/"packages/coding-agent/src/experimental/session-worker-manager.ts").read_text()
+    client_tui=(source/"packages/coding-agent/src/experimental/client-tui.ts").read_text()
     if "PI_SESSION_WORKER_ENTRY" not in process or "TSPI_PI_DIAGNOSTIC_FILE" not in process: raise PiSourceError("missing TSPi process integration")
     if "workspaceId" not in sessions or "session.sqlite" not in sessions: raise PiSourceError("missing workspace scoped SQLite catalog")
     if "workspaceId" not in worker: raise PiSourceError("missing workspace worker metadata")
     if "workspaceId: metadata.workspaceId" not in manager: raise PiSourceError("missing workspace worker launch metadata")
+    if "Local Unix transports must observe" not in client_tui: raise PiSourceError("missing local TUI reconnect integration")
     return expected
 
 def apply_patch(source):
@@ -53,20 +56,46 @@ def install(root):
     if destination.exists():
         if not (destination/"packages/coding-agent/src/experimental/process.ts").is_file(): raise PiSourceError(f"invalid managed Pi source: {destination}")
         process = (destination/"packages/coding-agent/src/experimental/process.ts").read_text()
+        client_tui_path = destination/"packages/coding-agent/src/experimental/client-tui.ts"
+        client_tui = client_tui_path.read_text()
         if "PI_SESSION_WORKER_ENTRY" not in process:
             apply_patch(destination)
+        elif "Local Unix transports must observe" not in client_tui:
+            anchor = "\t\t\t\t\tif (server.radius) {"
+            if anchor not in client_tui:
+                raise PiSourceError("missing local TUI reconnect patch anchor")
+            client_tui_path.write_text(client_tui.replace(
+                anchor,
+                "\t\t\t\t\t// Local Unix transports must observe the same connection and attachment transitions as Radius.\n\t\t\t\t\t{",
+                1,
+            ))
         verify(destination)
     else:
         destination.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
         with tempfile.TemporaryDirectory(prefix=".pi-source-",dir=destination.parent) as temp:
-            staged=Path(temp)/commit; clone(staged); install_deps(staged); prepare_build(staged); os.replace(staged,destination)
+            staged=Path(temp)/commit; clone(staged); install_deps(staged); hydrate_model_data(staged); prepare_build(staged); os.replace(staged,destination)
     if not (destination/"node_modules").is_dir(): install_deps(destination)
+    hydrate_model_data(destination)
     prepare_build(destination); verify(destination); return destination
 
 def install_deps(source):
     npm=shutil.which("npm")
     if not npm: raise PiSourceError("npm is required")
     subprocess.run([npm,"ci","--ignore-scripts"],cwd=source,check=True,stdout=sys.stderr)
+
+def hydrate_model_data(source):
+    """Generate Pi provider model metadata before the offline build.
+
+    The pinned Pi checkout does not commit generated provider data. Its
+    offline build validates files such as ``amazon-bedrock.json`` and fails
+    without this preparation step.
+    """
+    data = source / "packages/ai/src/providers/data"
+    if (data / "amazon-bedrock.json").is_file():
+        return
+    npm=shutil.which("npm")
+    if not npm: raise PiSourceError("npm is required")
+    subprocess.run([npm,"run","hydrate:model-data"],cwd=source,check=True,stdout=sys.stderr)
 
 def prepare_build(source):
     npm=shutil.which("npm")

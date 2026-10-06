@@ -189,6 +189,11 @@ async function main() {
       ...process.env,
       TSPI_HOST_SOCKET: socketPath,
       TSPI_WORKSPACE_ID: workspaceId,
+      ...(options.install_root ? { TSPI_INSTALL_ROOT: options.install_root } : {}),
+      ...(options.state_root ? {
+        TSPI_STATE_ROOT: options.state_root,
+        TSPI_DIAGNOSTIC_FILE: `${options.state_root.replace(/\/$/u, "")}/worker-diagnostics.log`,
+      } : {}),
     },
     stdio: "inherit",
   });

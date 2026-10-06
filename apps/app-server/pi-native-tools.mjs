@@ -11,10 +11,8 @@ import { createPublicToolAliases, createPublicToolContracts } from "../../packag
 import { boundWorkspaceRoot } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
 import { wrapToolWithEnvelope } from "../../packages/agent-runtime/host-api/tool-envelope.mjs";
 import { checkpointFollowUp } from "../../packages/agent-runtime/host-api/lifecycle.mjs";
-import { createComputeTool } from "./pi-native-compute.mjs";
 import { execute_provider } from "../../packages/agent-runtime/providers/dispatcher.mjs";
 import { createNotifyTool } from "./pi-native-notify.mjs";
-import { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
 import { readWorkspaceManifest, readWorkspaceMode } from "./workspace-mode-tools.mjs";
 import {
   executeFilesystemResearchCommand,
@@ -26,12 +24,10 @@ import {
   RESEARCH_STATE_WRITE_AUTHORITY,
 } from "../../packages/research-state-bridge/ports.mjs";
 
-export { createComputeTool, createNativeComputeLifecycle } from "./pi-native-compute.mjs";
 export { createNotifyTool } from "./pi-native-notify.mjs";
-export { createReplyTool, createReviewTool } from "./pi-native-review.mjs";
 
 const require = createRequire(import.meta.url);
-const { beginActivity, completeActivity, failActivity } = require(
+const { beginActivity, completeActivity, failActivity, recoverRunningActivities, findActivityByIdentity } = require(
   "../../packages/agent-runtime/agent-core/activity-journal.cjs",
 );
 const { analysisRequest, analysisRequestSummary, validateAnalysisResult } = require(
@@ -368,6 +364,7 @@ export function createMoleculeStructureTool() {
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("create_mol_structure", toolContext);
       return runDeterministicArtifact({
+        activityIdentity: buildActivityIdentity("create_mol_structure", _toolCallId, params),
         root: boundWorkspaceRoot(params, toolContext),
         kind: "structure_seed",
         operation: "generate",
@@ -408,6 +405,7 @@ export function createCompareTool() {
       requireNativeWrites("artifact_compare", toolContext);
       const comparisonParameters = serializeStructureComparisonParameters(params.parameters);
       return runDeterministicArtifact({
+        activityIdentity: buildActivityIdentity("artifact_compare", _toolCallId, params),
         root: boundWorkspaceRoot(params, toolContext),
         kind: "structure_compare",
         operation: "compare",
@@ -442,6 +440,7 @@ export function createAnalyzeTool() {
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("analysis_run", toolContext);
       return runDeterministicArtifact({
+        activityIdentity: buildActivityIdentity("analysis_run", _toolCallId, params),
         root: boundWorkspaceRoot(params, toolContext),
         kind: "scientific_analysis",
         operation: "run",
@@ -480,6 +479,7 @@ export function createImportTool() {
       requireNativeWrites("artifact_import", toolContext);
       const root = boundWorkspaceRoot(params, toolContext);
       return runDeterministicArtifact({
+        activityIdentity: buildActivityIdentity("artifact_import", _toolCallId, params),
         root,
         kind: "artifact_import",
         operation: "import",
@@ -519,6 +519,9 @@ export function createRenderTool() {
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("artifact_render", toolContext);
       const root = boundWorkspaceRoot(params, toolContext);
+      const activityIdentity = buildActivityIdentity("render", _toolCallId, params);
+      const prior = reuseActivityResult(root, activityIdentity);
+      if (prior) return prior;
       const resolved = await resolveArtifacts(root, params.inputArtifactIds, context?.abortSignal);
       const request = validateRenderRequest(root, {
         operation: params.operation,
@@ -535,6 +538,7 @@ export function createRenderTool() {
         request: {
           input_artifact_ids: request.artifacts.map((item) => item.artifactId),
           output_name: request.outputName,
+          activity_identity: activityIdentity,
         },
       });
       onUpdate?.({
@@ -587,6 +591,9 @@ export function createReportTool() {
     async execute(_toolCallId, params, onUpdate, toolContext, _invocation, context) {
       requireNativeWrites("report_build", toolContext);
       const root = boundWorkspaceRoot(params, toolContext);
+      const activityIdentity = buildActivityIdentity("report", _toolCallId, params);
+      const prior = reuseActivityResult(root, activityIdentity);
+      if (prior) return prior;
       const assetArtifactIds = params.assetArtifactIds || [];
       const resolvedAssets = assetArtifactIds.length
         ? await resolveArtifacts(root, assetArtifactIds, context?.abortSignal)
@@ -608,6 +615,7 @@ export function createReportTool() {
         request: {
           package_name: request.packageName,
           asset_artifact_ids: request.assetArtifactIds,
+          activity_identity: activityIdentity,
         },
       });
       onUpdate?.({
@@ -687,23 +695,46 @@ export function createChemicalTools(options = {}) {
   return exposeTools(createChemicalToolFactories(options));
 }
 
+/**
+ * Adapt the domain-neutral Job Runtime and Artifact Store into Pi tools.
+ * Runtime implementations are injected by the Agent Server; this module does
+ * not select providers or create child agents.
+ */
+export function createJobArtifactTools(options = {}) {
+  const jobRuntime = options.jobRuntime;
+  const artifactRuntime = options.artifactRuntime;
+  const invoke = (runtime, method, name) => async (_id, params, _update, toolContext) => {
+    if (!runtime || typeof runtime[method] !== "function") {
+      throw new Error(`${name} runtime is not configured in TSPi Agent Server`);
+    }
+    const root = boundWorkspaceRoot(params, toolContext);
+    const result = await runtime[method]({ ...params, root });
+    return toolResult(result);
+  };
+  const contracts = TOOL_CONTRACTS;
+  return [
+    ["jobStart", "job_start", "job_start"], ["jobStatus", "job_status", "job_status"],
+    ["jobCollect", "job_collect", "job_collect"], ["jobCancel", "job_cancel", "job_cancel"],
+    ["jobProbe", "job_probe", "job_probe"], ["jobReconcile", "job_reconcile", "job_reconcile"],
+  ].map(([key, name, method]) => ({ ...contracts[key], execute: invoke(jobRuntime, method, name) })).concat([
+    ["artifactRegister", "artifact_register"], ["artifactCreate", "artifact_create"],
+    ["artifactRead", "artifact_read"], ["artifactDerive", "artifact_derive"], ["artifactLink", "artifact_link"],
+  ].map(([key, method]) => ({ ...contracts[key], execute: invoke(artifactRuntime, method, method) })));
+}
+
 function createCoreToolFactories(options = {}) {
   const tools = [
     createStateTool(options),
     createChangeTool(),
     createResearchLifecycleTool(),
-    createEnvironmentTool(),
-    createComputeCatalogTool(options),
-    createComputeReadinessTool(options),
-    createComputeTool(options),
-    createReviewTool(options.review),
-    createReplyTool(),
-    createDispatchTool(),
-    createImportTool(),
-    createRenderTool(),
-    createReportTool(),
     createNotifyTool(),
   ];
+  // Execution and artifact operations are supplied by Job Runtime and
+  // extension bundles.  The core extension deliberately has no Compute or
+  // Review child-agent factories.  `additionalTools` is an explicit seam for
+  // those runtime-owned tools and is never populated implicitly here.
+  if (Array.isArray(options.additionalTools)) tools.push(...options.additionalTools);
+  if (options.jobRuntime || options.artifactRuntime) tools.push(...createJobArtifactTools(options));
   return tools;
 }
 
@@ -719,13 +750,16 @@ function exposeTools(tools) {
 }
 
 async function runDeterministicArtifact(options) {
+  const activityIdentity = options.activityIdentity;
+  const prior = reuseActivityResult(options.root, activityIdentity);
+  if (prior) return prior;
   const activityId = await allocateOperationalId(options.root, options.signal);
   const journal = beginActivity(options.root, {
     activity_id: activityId,
     kind: options.kind,
     operation: options.operation,
     node_refs: [options.nodeId],
-    request: options.requestSummary,
+    request: { ...options.requestSummary, activity_identity: activityIdentity },
   });
   options.onUpdate?.({
     content: [{ type: "text", text: options.progressLabel }],
@@ -759,6 +793,26 @@ async function runDeterministicArtifact(options) {
     ));
     throw error;
   }
+}
+
+function reuseActivityResult(root, identity) {
+  const prior = findActivityByIdentity(root, identity);
+  if (!prior) return null;
+  if (prior.status?.status === "completed" && prior.result && typeof prior.result === "object") return toolResult(prior.result);
+  if (prior.status?.status === "running") {
+    const error = new Error(`deterministic activity is already running: ${prior.activityRef}`);
+    error.code = "activity_in_flight";
+    throw error;
+  }
+  const error = new Error(`deterministic activity previously failed: ${prior.activityRef}`);
+  error.code = "activity_recovery_required";
+  throw error;
+}
+
+function buildActivityIdentity(kind, toolCallId, params) {
+  let payload;
+  try { payload = JSON.stringify(params); } catch { payload = String(params); }
+  return `${kind}:${toolCallId}:${sha256Text(payload)}`;
 }
 
 async function allocateOperationalId(root, signal) {

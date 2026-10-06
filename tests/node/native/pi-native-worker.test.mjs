@@ -98,7 +98,7 @@ test("Pi Agent Core loads the packaged TSPi skill catalog", async () => {
   const loaded = loadSkills({
     cwd: process.cwd(),
     agentDir: process.cwd(),
-    skillPaths: [join(process.cwd(), "skills"), ...installed.skillRoots],
+    skillPaths: [join(process.cwd(), "extensions", "core", "skills"), ...installed.skillRoots],
     includeDefaults: false,
   });
   assert.deepEqual(loaded.diagnostics, []);

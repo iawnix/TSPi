@@ -6,6 +6,27 @@ export const PROVIDER_PROTOCOL_VERSION = "tspi-provider/1";
 export class ProviderDispatcherError extends Error { constructor(code, message, details = {}) { super(message); this.name = "ProviderDispatcherError"; this.code = code; this.details = details; } }
 export function validate_provider_descriptor(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ProviderDispatcherError("invalid_descriptor", "provider descriptor must be an object");
+  if (value.protocol === "capability_descriptor" && value.version === 1) {
+    const providerId = value.provider?.provider_id;
+    const extensions = value.extensions && typeof value.extensions === "object" ? value.extensions : {};
+    if (typeof value.capability_id !== "string" || !value.capability_id) throw new ProviderDispatcherError("invalid_descriptor", "canonical descriptor capability_id is required");
+    if (typeof value.capability_version !== "string" || !value.capability_version) throw new ProviderDispatcherError("invalid_descriptor", "canonical descriptor capability_version is required");
+    if (typeof providerId !== "string" || !providerId) throw new ProviderDispatcherError("invalid_descriptor", "canonical descriptor provider.provider_id is required");
+    return Object.freeze({
+      ...value,
+      schema_version: "tspi-provider-descriptor/1",
+      provider_id: typeof extensions.operation === "string" && extensions.operation ? extensions.operation : value.capability_id,
+      operation: typeof extensions.operation === "string" && extensions.operation ? extensions.operation : value.capability_id,
+      version: value.capability_version,
+      input_schema: value.input_schema,
+      parameter_schema: extensions.parameter_schema || { type: "object" },
+      result_schema: value.output_schema,
+      output_roles: Array.isArray(extensions.output_roles) ? extensions.output_roles : [],
+      effects: Array.isArray(value.effects) ? value.effects : [],
+      limits: value.limits && typeof value.limits === "object" ? value.limits : {},
+      canonical_provider_id: providerId,
+    });
+  }
   if (value.schema_version !== "tspi-provider-descriptor/1") throw new ProviderDispatcherError("invalid_descriptor", "unsupported descriptor schema");
   if (typeof value.provider_id !== "string" || !value.provider_id) throw new ProviderDispatcherError("invalid_descriptor", "descriptor provider_id is required");
   if (typeof value.kind !== "string" || !value.kind) throw new ProviderDispatcherError("invalid_descriptor", "descriptor kind is required");

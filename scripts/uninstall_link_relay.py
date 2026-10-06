@@ -115,6 +115,10 @@ def remove_service(args: argparse.Namespace, root: Path) -> list[str]:
         if not unit.is_file() or unit.is_symlink() or not unit_belongs_to_root(unit, root):
             continue
         command = systemctl_args(scope)
+        # ``--now`` is required here: the unit may still be active even when
+        # its WorkingDirectory and ExecStart paths have already been removed.
+        # Always unlink the unit after the stop request so systemd cannot
+        # retain a stale registration on the next daemon reload.
         subprocess.run([*command, "disable", "--now", SERVICE_NAME], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
         unit.unlink()
         subprocess.run([*command, "daemon-reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)

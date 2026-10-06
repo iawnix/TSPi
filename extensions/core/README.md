@@ -22,8 +22,8 @@ redefining state.
 | [crest](../extensions/chemical/skills/crest/SKILL.md) | CREST conformer ensembles |
 | [qbics](../extensions/chemical/skills/qbics/SKILL.md) | QBICS method guidance and live capability discovery |
 | [gaussian](../extensions/chemical/skills/gaussian/SKILL.md) | Gaussian input, execution, parsing, and output checks |
-| [report](../extensions/report/SKILL.md) | Revision-bound research reports |
-| [render](../extensions/render/SKILL.md) | Molecular images, animations, comparisons, and scientific curves |
+| [report](../extensions/chemical/skills/report/SKILL.md) | Revision-bound research reports |
+| [render](../extensions/chemical/skills/render/SKILL.md) | Molecular images, animations, comparisons, and scientific curves |
 | [email](../extensions/email/SKILL.md) | Configured notifications and report delivery |
 | [mechanism-reasoning](../extensions/chemical/skills/mechanism-reasoning/SKILL.md) | Mechanism hypotheses, mappings, elementary steps, and alternatives |
 | [chemical-input](../extensions/chemical/skills/chemical-input/SKILL.md) | Natural-language chemical names, structure candidates, and input confirmation |

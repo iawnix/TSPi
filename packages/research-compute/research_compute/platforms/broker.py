@@ -32,7 +32,7 @@ class EnvironmentRequirement:
 
     ``providers`` are provider/backend identifiers supplied by a capability
     adapter.  They are intentionally not shell commands.  A provider may
-    list aliases to support legacy bindings such as ``ase_neb_xtb``.
+    list aliases to support installation-defined legacy bindings.
     """
 
     providers: tuple[str, ...]

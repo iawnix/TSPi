@@ -52,7 +52,7 @@ code，并自动完成 Host 注册。Relay 必须部署在另一台机器时，�
 模型与 provider 边界见[模型兼容性](docs/MODEL_COMPATIBILITY.zh-CN.md)。
 
 完整文档导航见[文档索引](docs/README.zh-CN.md)。公开 Skill 入口和按需 references 见
-[Skill 目录](skills/README.zh-CN.md)。
+[Skill 目录](extensions/core/README.zh-CN.md)。
 
 ## Host 与终端
 

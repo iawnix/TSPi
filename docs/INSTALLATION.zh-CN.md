@@ -375,5 +375,7 @@ systemctl status ts-app-server-tspi.service         # system scope
 ## 卸载
 
 运行 `./uninstall.sh`。默认保留配置的 workspace root、Pi session history、凭据和配置；删除安装
-根目录必须显式确认。卸载器还会在配置的 scope 中停止并删除匹配的 App Server 和 TS Web service。
-独立的 Link Relay 具有自己的安装和 service 生命周期，不会被本地 TSPi 卸载器删除。
+根目录必须显式确认。卸载器还会在配置的 scope 中停止并删除匹配的 App Server、TS Web 和
+本安装创建的 Link Relay service。共享或没有所有权标记的 Relay 会保留。如果 Relay 目录曾被
+手动删除，请使用它原来的 `--install-root` 调用独立 Relay 卸载器；即使代码路径不存在，也会
+清理残留 unit。

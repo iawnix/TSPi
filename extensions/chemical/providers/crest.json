@@ -4,11 +4,8 @@
   "kind": "compute",
   "capabilities": [
     {
-      "id": "crest",
-      "version": "1",
-      "aliases": [
-        "crest.conformer_search"
-      ]
+      "id": "crest.conformer_search",
+      "version": "1"
     }
   ],
   "implementation": "builtin",

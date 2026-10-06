@@ -6,8 +6,8 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
   title: "TSPi research workspace",
   description: "Domain-neutral ResearchMap scientific workflows with deterministic execution.",
   skills: Object.freeze([
-    Object.freeze({ name: "research-state", path: "./skills/research-state" }),
-    Object.freeze({ name: "orchestration", path: "./skills/orchestration" }),
+    Object.freeze({ name: "research-state", path: "./extensions/core/skills/research-state" }),
+    Object.freeze({ name: "orchestration", path: "./extensions/core/skills/orchestration" }),
     Object.freeze({ name: "candidate-generation", path: "./extensions/chemical/skills/candidate-generation" }),
     Object.freeze({ name: "validation", path: "./extensions/chemical/skills/validation" }),
     Object.freeze({ name: "irc", path: "./extensions/chemical/skills/irc" }),
@@ -20,8 +20,8 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
     Object.freeze({ name: "gaussian", path: "./extensions/chemical/skills/gaussian" }),
     Object.freeze({ name: "chemical-input", path: "./extensions/chemical/skills/chemical-input" }),
     Object.freeze({ name: "mechanism-reasoning", path: "./extensions/chemical/skills/mechanism-reasoning" }),
-    Object.freeze({ name: "render", path: "./extensions/render" }),
-    Object.freeze({ name: "report", path: "./extensions/report" }),
+    Object.freeze({ name: "render", path: "./extensions/chemical/skills/render" }),
+    Object.freeze({ name: "report", path: "./extensions/chemical/skills/report" }),
     Object.freeze({ name: "email", path: "./extensions/email" }),
   ]),
   // Native Pi Harness owns the agent loop and server tools. Direct

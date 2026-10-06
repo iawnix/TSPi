@@ -14,18 +14,39 @@ export function formatTerminalFailure(error, {
   }
   const diagnostic = readDiagnosticTail(diagnosticFile, readFile);
   if (diagnostic) {
-    return `${message}\nPi Worker diagnostics (${diagnosticFile}):\n${diagnostic}`;
+    return `${message}\n${diagnoseWorkerFailure(diagnostic)}\nPi Worker diagnostics (${diagnosticFile}):\n${diagnostic}`;
   }
   const agentDir = resolve(installRoot, ".pi", "agent");
   const modelsPath = resolve(agentDir, "models.json");
   const authPath = resolve(agentDir, "auth.json");
   const missing = [modelsPath, authPath].filter((path) => !fileExists(path));
-  if (missing.length === 0) return message;
+  if (missing.length === 0) {
+    const location = diagnosticFile || `${installRoot}/.pi/app-server-host/worker-diagnostics.log`;
+    return `${message}\nDiagnosis: the Pi Worker failed without returning details; inspect ${location} and restart the TSPi Host.`;
+  }
   return (
     `${message}\nPossible cause: Missing Pi configuration: ${missing.join(", ")}. `
     + `Add custom providers to ${modelsPath} and credentials to ${authPath}, or configure provider `
     + "environment credentials, then restart the TSPi Host and retry."
   );
+}
+
+function diagnoseWorkerFailure(diagnostic) {
+  if (diagnostic.includes("detailsContext.abortSignal")
+    || (diagnostic.includes("reading 'abortSignal'") && diagnostic.includes("TypeError"))) {
+    return (
+      "Diagnosis: the installed TSPi Worker is incompatible with the pinned Pi Durable API "
+      + "(details() was called without its execution context). Reinstall the repaired package "
+      + "and restart the TSPi Host."
+    );
+  }
+  if (diagnostic.includes("ECOMPROMISED") || diagnostic.includes("Unable to update lock within the stale threshold")) {
+    return (
+      "Diagnosis: a durable session lock is stale or was left by a crashed Worker. Restart the "
+      + "TSPi Host after installing the Worker fix; do not delete session databases."
+    );
+  }
+  return "Diagnosis: the Pi Worker terminated while serving this request; the diagnostic tail is shown below.";
 }
 
 function readDiagnosticTail(path, readFile) {

@@ -231,6 +231,8 @@ class ResearchClaim(ResearchObject):
     node_ids: list[str] = field(default_factory=list)
     finding_ids: list[str] = field(default_factory=list)
     gate_ids: list[str] = field(default_factory=list)
+    assessment_ids: list[str] = field(default_factory=list)
+    revision_ids: list[str] = field(default_factory=list)
     type_name: ClassVar[str] = "research_claim"
 
     def validate(self, research_map: "ResearchMap") -> None:
@@ -244,6 +246,8 @@ class ResearchClaim(ResearchObject):
         _validate_string_list(self.node_ids, f"claim {self.id} node_ids")
         _validate_string_list(self.finding_ids, f"claim {self.id} finding_ids")
         _validate_string_list(self.gate_ids, f"claim {self.id} gate_ids")
+        _validate_string_list(self.assessment_ids, f"claim {self.id} assessment_ids")
+        _validate_string_list(self.revision_ids, f"claim {self.id} revision_ids")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -255,7 +259,71 @@ class ResearchClaim(ResearchObject):
             "node_ids": list(self.node_ids),
             "finding_ids": list(self.finding_ids),
             "gate_ids": list(self.gate_ids),
+            "assessment_ids": list(self.assessment_ids),
+            "revision_ids": list(self.revision_ids),
         }
+
+
+@dataclass(kw_only=True)
+class ClaimAssessment(ResearchObject):
+    """An immutable, evidence-backed assessment of a Claim."""
+
+    claim_id: str
+    verdict: ClaimStatus
+    evidence_refs: list[str] = field(default_factory=list)
+    reason: str = ""
+    actor: dict[str, Any] = field(default_factory=dict)
+    input_revision: int | None = None
+    type_name: ClassVar[str] = "claim_assessment"
+
+    def validate(self, research_map: "ResearchMap") -> None:
+        super().validate(research_map)
+        if self.claim_id not in research_map.claims:
+            raise ResearchModelError(f"assessment {self.id} references unknown claim {self.claim_id}")
+        if not isinstance(self.verdict, ClaimStatus):
+            raise ResearchModelError(f"assessment {self.id} has an invalid verdict")
+        _validate_string_list(self.evidence_refs, f"assessment {self.id} evidence_refs")
+        if not isinstance(self.reason, str) or not self.reason.strip():
+            raise ResearchModelError(f"assessment {self.id} reason must be non-empty")
+        if not isinstance(self.actor, dict):
+            raise ResearchModelError(f"assessment {self.id} actor must be an object")
+        if self.input_revision is not None and (not isinstance(self.input_revision, int) or isinstance(self.input_revision, bool) or self.input_revision < 0):
+            raise ResearchModelError(f"assessment {self.id} input_revision must be a non-negative integer or null")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**super().to_dict(), "claim_id": self.claim_id, "verdict": self.verdict.value,
+                "evidence_refs": list(self.evidence_refs), "reason": self.reason,
+                "actor": _copy(self.actor), "input_revision": self.input_revision}
+
+
+@dataclass(kw_only=True)
+class ClaimRevision(ResearchObject):
+    """Immutable link recording a Claim statement revision."""
+
+    source_claim_id: str
+    target_claim_id: str
+    relation: str = "revises"
+    reason: str = ""
+    actor: dict[str, Any] = field(default_factory=dict)
+    type_name: ClassVar[str] = "claim_revision"
+
+    def validate(self, research_map: "ResearchMap") -> None:
+        super().validate(research_map)
+        if self.source_claim_id not in research_map.claims or self.target_claim_id not in research_map.claims:
+            raise ResearchModelError(f"claim revision {self.id} references unknown claim")
+        if self.source_claim_id == self.target_claim_id:
+            raise ResearchModelError(f"claim revision {self.id} cannot point to itself")
+        if self.relation not in {"revises", "refines", "supersedes"}:
+            raise ResearchModelError(f"claim revision {self.id} has an invalid relation")
+        if not isinstance(self.reason, str) or not self.reason.strip():
+            raise ResearchModelError(f"claim revision {self.id} reason must be non-empty")
+        if not isinstance(self.actor, dict):
+            raise ResearchModelError(f"claim revision {self.id} actor must be an object")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**super().to_dict(), "source_claim_id": self.source_claim_id,
+                "target_claim_id": self.target_claim_id, "relation": self.relation,
+                "reason": self.reason, "actor": _copy(self.actor)}
 
 
 @dataclass(kw_only=True)
@@ -365,6 +433,10 @@ class FactFinding(Finding):
         super().validate(research_map)
         if self.kind is not FindingKind.FACT:
             raise ResearchModelError(f"FactFinding {self.id} must have kind=fact")
+        if not self.source_refs:
+            raise ResearchModelError(f"FactFinding {self.id} requires source_refs")
+        if not isinstance(self.provenance, dict) or not self.provenance:
+            raise ResearchModelError(f"FactFinding {self.id} requires provenance")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -508,6 +580,8 @@ class ResearchMap:
     revision: int = 0
     phases: dict[str, ResearchPhase] = field(default_factory=dict)
     claims: dict[str, ResearchClaim] = field(default_factory=dict)
+    claim_assessments: dict[str, ClaimAssessment] = field(default_factory=dict)
+    claim_revisions: dict[str, ClaimRevision] = field(default_factory=dict)
     nodes: dict[str, ResearchNode] = field(default_factory=dict)
     findings: dict[str, Finding] = field(default_factory=dict)
     gates: dict[str, Gate] = field(default_factory=dict)
@@ -537,6 +611,15 @@ class ResearchMap:
             if claim is None:
                 raise ResearchModelError(f"node {node.id} references unknown claim {claim_id}")
             _append_unique(claim.node_ids, node.id)
+
+    def add_claim_assessment(self, assessment: ClaimAssessment) -> None:
+        self._add(self.claim_assessments, assessment)
+        _append_unique(self.claims[assessment.claim_id].assessment_ids, assessment.id)
+        self.claims[assessment.claim_id].status = assessment.verdict
+
+    def add_claim_revision(self, revision: ClaimRevision) -> None:
+        self._add(self.claim_revisions, revision)
+        _append_unique(self.claims[revision.source_claim_id].revision_ids, revision.id)
 
     def add_finding(self, finding: Finding) -> None:
         if finding.node_id not in self.nodes:
@@ -693,6 +776,8 @@ class ResearchMap:
         all_objects: list[ResearchObject] = [
             *self.phases.values(),
             *self.claims.values(),
+            *self.claim_assessments.values(),
+            *self.claim_revisions.values(),
             *self.nodes.values(),
             *self.findings.values(),
             *self.gates.values(),
@@ -737,6 +822,16 @@ class ResearchMap:
                 gate = self.gates[gate_id]
                 if gate.scope is not GateScope.CLAIM or gate.target_id != claim.id:
                     raise ResearchModelError(f"gate {gate_id} is not attached to claim {claim.id}")
+            _require_refs(claim.assessment_ids, self.claim_assessments, f"claim {claim.id} assessment_ids")
+            _require_refs(claim.revision_ids, self.claim_revisions, f"claim {claim.id} revision_ids")
+        for assessment in self.claim_assessments.values():
+            assessment.validate(self)
+            if assessment.id not in self.claims[assessment.claim_id].assessment_ids:
+                raise ResearchModelError(f"assessment {assessment.id} is not indexed by claim {assessment.claim_id}")
+        for revision in self.claim_revisions.values():
+            revision.validate(self)
+            if revision.id not in self.claims[revision.source_claim_id].revision_ids:
+                raise ResearchModelError(f"revision {revision.id} is not indexed by source claim {revision.source_claim_id}")
         for finding in self.findings.values():
             _require_refs([finding.node_id], self.nodes, f"finding {finding.id} node_id")
             _require_refs(finding.claim_ids, self.claims, f"finding {finding.id} claim_ids")
@@ -781,6 +876,8 @@ class ResearchMap:
             "revision": self.revision,
             "phases": [item.to_dict() for item in self.phases.values()],
             "claims": [item.to_dict() for item in self.claims.values()],
+            "claim_assessments": [item.to_dict() for item in self.claim_assessments.values()],
+            "claim_revisions": [item.to_dict() for item in self.claim_revisions.values()],
             "nodes": [item.to_dict() for item in self.nodes.values()],
             "findings": [item.to_dict() for item in self.findings.values()],
             "gates": [item.to_dict() for item in self.gates.values()],
@@ -828,8 +925,27 @@ class ResearchMap:
                 node_ids=list(row.get("node_ids", [])),
                 finding_ids=list(row.get("finding_ids", [])),
                 gate_ids=list(row.get("gate_ids", [])),
+                assessment_ids=list(row.get("assessment_ids", [])),
+                revision_ids=list(row.get("revision_ids", [])),
             )
             result.claims[claim.id] = claim
+        for row in _rows(value, "claim_assessments"):
+            assessment = ClaimAssessment(
+                id=_required_string(row, "id"), created_at=_required_string(row, "created_at"),
+                metadata=dict(row.get("metadata", {})), claim_id=_required_string(row, "claim_id"),
+                verdict=ClaimStatus(row.get("verdict")), evidence_refs=list(row.get("evidence_refs", [])),
+                reason=_required_string(row, "reason"), actor=dict(row.get("actor", {})),
+                input_revision=row.get("input_revision"),
+            )
+            result.claim_assessments[assessment.id] = assessment
+        for row in _rows(value, "claim_revisions"):
+            revision = ClaimRevision(
+                id=_required_string(row, "id"), created_at=_required_string(row, "created_at"),
+                metadata=dict(row.get("metadata", {})), source_claim_id=_required_string(row, "source_claim_id"),
+                target_claim_id=_required_string(row, "target_claim_id"), relation=str(row.get("relation", "revises")),
+                reason=_required_string(row, "reason"), actor=dict(row.get("actor", {})),
+            )
+            result.claim_revisions[revision.id] = revision
         for row in _rows(value, "nodes"):
             node = ResearchNode(
                 id=_required_string(row, "id"),
@@ -923,6 +1039,8 @@ class ResearchMap:
         return {
             *self.phases,
             *self.claims,
+            *self.claim_assessments,
+            *self.claim_revisions,
             *self.nodes,
             *self.findings,
             *self.gates,

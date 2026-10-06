@@ -16,11 +16,13 @@ test("missing installation model configuration explains Pi's opaque startup fail
   assert.match(message, /restart the TSPi Host/);
 });
 
-test("terminal failures are not rewritten when both config files exist or the error is unrelated", () => {
-  assert.equal(formatTerminalFailure(new Error("Internal server error"), {
+test("terminal failures include a diagnostic location when Pi configuration exists", () => {
+  const message = formatTerminalFailure(new Error("Internal server error"), {
     installRoot: "/home/test/tspi",
     fileExists: () => true,
-  }), "Internal server error");
+  });
+  assert.match(message, /^Internal server error\nDiagnosis:/);
+  assert.match(message, /worker-diagnostics\.log/);
   assert.match(formatTerminalFailure(new Error("Internal server error"), {
     installRoot: "/home/test/tspi",
     fileExists: (path) => path.endsWith("models.json"),
@@ -29,6 +31,30 @@ test("terminal failures are not rewritten when both config files exist or the er
     installRoot: "/home/test/tspi",
     fileExists: () => false,
   }), "connection failed");
+});
+
+test("worker diagnostics identify the Pi Durable details context mismatch", () => {
+  const message = formatTerminalFailure(new Error("Internal server error"), {
+    installRoot: "/home/test/tspi",
+    diagnosticFile: "/home/test/tspi/.pi/app-server-host/worker-diagnostics.log",
+    fileExists: () => true,
+    readFile: () => "TypeError: Cannot read properties of undefined (reading 'abortSignal')\n",
+  });
+
+  assert.match(message, /incompatible with the pinned Pi Durable API/);
+  assert.match(message, /details\(\) was called without its execution context/);
+});
+
+test("worker diagnostics identify stale durable session locks", () => {
+  const message = formatTerminalFailure(new Error("Internal server error"), {
+    installRoot: "/home/test/tspi",
+    diagnosticFile: "/home/test/tspi/.pi/app-server-host/worker-diagnostics.log",
+    fileExists: () => true,
+    readFile: () => "Error: Unable to update lock within the stale threshold\n",
+  });
+
+  assert.match(message, /durable session lock is stale/);
+  assert.match(message, /do not delete session databases/);
 });
 
 test("worker diagnostics are surfaced for opaque Pi startup failures", () => {

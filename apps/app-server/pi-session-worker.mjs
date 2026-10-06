@@ -19,15 +19,15 @@ import { wrapToolForHarness, toolErrorResult } from "../../packages/agent-runtim
 import { createToolExecutionContext, validateToolInvocationContext } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
 import { createPublicToolAlias } from "../../packages/agent-runtime/host-api/tools.mjs";
 import { createResearchLifecycleController } from "../../packages/agent-runtime/host-api/lifecycle.mjs";
+import { createArtifactRuntime, createJobRuntime } from "./job-artifact-runtime.mjs";
 import { filterExtensionToolNames, filterWorkspaceTools } from "./workspace-mode-tools.mjs";
 import { create_python_kernel_bridge } from "../../packages/research-state-bridge/python_kernel_bridge.mjs";
 import { create_research_state_port, RESEARCH_STATE_WRITE_PRINCIPAL } from "../../packages/research-state-bridge/ports.mjs";
 
 export {
-  createAnalyzeTool, createChangeTool, createCompareTool, createComputeTool,
-  createComputeCatalogTool, createComputeReadinessTool, createImportTool,
-  createNotifyTool, createReplyTool, createRenderTool, createEnvironmentTool,
-  createReportTool, createReviewTool, createMoleculeStructureTool, createStateTool,
+  createAnalyzeTool, createChangeTool, createCompareTool, createImportTool,
+  createNotifyTool, createRenderTool, createEnvironmentTool,
+  createReportTool, createMoleculeStructureTool, createStateTool,
   createCheckpointLivenessHook,
 } from "./pi-native-tools.mjs";
 export { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
@@ -45,7 +45,7 @@ const TspiSystemPrompt = defineService("tspi.system-prompt");
 async function loadTspiSkills(executionEnv) {
   const packageRoot = process.env.TSPI_PACKAGE_ROOT;
   if (!packageRoot) throw new Error("TSPi native worker requires TSPI_PACKAGE_ROOT");
-  const skillsRoot = join(packageRoot, "skills");
+  const skillsRoot = join(packageRoot, "extensions", "core", "skills");
   const installedExtensions = await discoverInstalledExtensions({ packageRoot });
   const loaded = loadLatestSkills({ cwd: packageRoot, agentDir: packageRoot, skillPaths: [skillsRoot, ...installedExtensions.skillRoots], includeDefaults: false });
   if (loaded.diagnostics.length > 0) {
@@ -79,15 +79,35 @@ function toDurableTool(tool, { toolContext, lifecycle, cwd, packageRoot }) {
         operationId: lifecycle.snapshot().run_id || String(api.taskId),
       };
       const bound = metadata ? validateToolInvocationContext(tool, toolContext, invocation, api.callId) : toolContext;
+      const pendingUpdates = new Set();
+      let updateError;
       const onUpdate = (value) => {
-        if (typeof value === "string") api.output(value);
-        else if (value !== undefined) api.details(value);
+        // Durable progress APIs are asynchronous. First-party tools expose a
+        // synchronous update callback, so retain every promise and flush it
+        // before settling the ToolTask. This prevents an update rejection from
+        // becoming an unhandled Worker exception or racing the terminal write.
+        const update = Promise.resolve().then(() => {
+          if (typeof value === "string") return api.output(value);
+          // Pi Durable 1.0.2 requires the execution context for details()
+          // updates so it can observe cancellation while committing progress.
+          return value === undefined ? undefined : api.details(value, context);
+        }).catch((error) => {
+          updateError ||= error;
+        });
+        pendingUpdates.add(update);
+        void update.finally(() => pendingUpdates.delete(update));
+        return update;
+      };
+      const flushUpdates = async () => {
+        while (pendingUpdates.size > 0) await Promise.all([...pendingUpdates]);
+        if (updateError !== undefined) throw updateError;
       };
       try {
         // Keep the non-enumerable trust brand on the Host context. Durable
         // tools receive their own api.env; TSPi tools use the immutable
         // workspace/session policy context.
         const result = await wrapped.execute(api.callId, params, onUpdate, bound, invocation, context);
+        await flushUpdates();
         if (!result || typeof result !== "object") return { ...toolErrorResult(new Error(`${tool.name} returned an invalid tool result`), tool.name, api.callId), isError: true };
         return result.details?.envelope?.ok === false ? { ...result, isError: true } : result;
       } catch (error) {
@@ -111,16 +131,18 @@ async function createTspiHarness(databasePath, options) {
   );
   const loadedSkills = await loadTspiSkills(executionEnvs.env({ cwd }));
   const researchKernel = create_research_state_port(create_python_kernel_bridge({ workspace_root: cwd, workspace_id: workspaceId }));
+  const jobRuntime = createJobRuntime({ workspaceRoot: cwd });
+  const artifactRuntime = createArtifactRuntime({ workspaceRoot: cwd });
   const loadedExtensions = await loadServerExtensions({
     packageRoot: loadedSkills.packageRoot,
     reservedToolNames: ["read", "write", "bash", "edit", "system_prompt"],
-    requiredToolNames: ["research_read", "compute_environment"],
-    factoryOptions: { researchKernel, review: { models: modelRuntime, model: resolved.model, thinkingLevel: resolved.thinkingLevel } },
+    requiredToolNames: ["research_read"],
+    factoryOptions: { researchKernel, jobRuntime, artifactRuntime },
   });
   const installed = await loadInstalledServerExtensions({
     extensions: loadedSkills.installedExtensions.extensions,
     reservedToolNames: ["read", "write", "bash", "edit", "system_prompt", ...loadedExtensions.tools.map((tool) => tool.name)],
-    factoryOptions: { review: { models: modelRuntime, model: resolved.model, thinkingLevel: resolved.thinkingLevel } },
+    factoryOptions: {},
   });
   const promptManifest = createSystemPromptManifest({
     native: { source: join(loadedSkills.packageRoot, "apps/app-server/pi-session-worker.mjs"), text: tspiSystemPrompt(cwd) },
@@ -166,7 +188,7 @@ async function createTspiHarness(databasePath, options) {
         },
         onYield: async (_answer, api, context) => {
           const checkpointHook = createCheckpointLivenessHook({ cwd, maxFollowUps: 1, followUpRequired: false });
-          const follow = await checkpointHook({ runId: lifecycle.snapshot().run_id || String(api.taskId) }, context).catch(() => undefined);
+          const follow = await checkpointHook({ runId: lifecycle.snapshot().run_id || String(api.taskId) }, context);
           return follow?.followUp ? { continue: follow.followUp } : undefined;
         },
       }),
@@ -213,7 +235,7 @@ async function createTspiHarness(databasePath, options) {
 }
 
 function tspiSystemPrompt(cwd) {
-  return `You are the TSPi research agent for ${cwd}. The ResearchMap in Research State is the scientific authority. Follow the registered Research Turn lifecycle: orient with research_read, plan with research_strategy, execute registered capabilities, reconcile Monitor evidence, interpret Attempts, and close with research_checkpoint. Preserve uncertainty, use only registered schemas and identifiers, and let Monitor enqueue the next durable turn after external execution.`;
+  return `You are the TSPi research agent for ${cwd}. Research State is the scientific authority. Start each turn by reading research_read, then use research_strategy and research_change to express hypotheses, Nodes, Findings, evidence, and revisions. Use the registered Job and Artifact tools supplied by the active runtime for long-running work; do not delegate to a Compute or Review child agent. Preserve uncertainty, interpret collected evidence explicitly, and close with research_checkpoint. Monitor only wakes this same session after external work.`;
 }
 
 if (workerModule.isDirectInternalProcessEntry?.(import.meta.url) || process.env.PI_SESSION_WORKER_ENTRY === new URL(import.meta.url).pathname) {

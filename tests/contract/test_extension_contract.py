@@ -60,7 +60,7 @@ def test_default_chemical_extension_inventory_validates_provider_descriptors() -
     provider_ids = {item["id"] for item in manifest["providers"]}
     assert provider_ids == {
         "create_mol_structure", "chemical.analysis", "chemical.comparison.plan",
-        "crest", "gaussian", "pyscf", "xtb",
+        "crest", "gaussian", "pyscf", "xtb", "artifact_render", "report_build",
     }
     for item in manifest["providers"]:
         descriptor = json.loads((ROOT / "extensions" / "chemical" / item["descriptor"]).read_text(encoding="utf-8"))

@@ -40,6 +40,7 @@ _NODE_ID = re.compile(r"^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _CLAIM_ID = re.compile(r"^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 RESEARCH_CONTEXT_COLLECTIONS = (
     "phases", "claims", "nodes", "findings", "gates", "claim_relations",
+    "claim_assessments", "claim_revisions",
     "attempts", "artifacts", "evidence_links", "lifecycle_actions",
     "strategy_plans", "strategy_reviews", "attempt_interpretations",
 )
@@ -430,6 +431,7 @@ def _liveness_projection(
     """
 
     result = dict(liveness)
+    result["research_obligations"] = _research_obligations(context)
     if context.get("lifecycle_state") != ADMITTED or liveness.get("state") != ADMITTED:
         result["lifecycle"] = ADMISSION_PENDING
         result["disposition"] = None
@@ -582,6 +584,32 @@ def _liveness_projection(
     if not (open_node_ids or open_claim_ids):
         result["execution_ready"] = False
     return result
+
+
+def _research_obligations(context: dict[str, Any]) -> list[dict[str, Any]]:
+    """Derive bounded next-step obligations from canonical Research State."""
+    obligations: list[dict[str, Any]] = []
+    claims = {row.get("id"): row for row in _items(context, "claims") if isinstance(row, dict)}
+    findings = {row.get("id"): row for row in _items(context, "findings") if isinstance(row, dict)}
+    for claim in claims.values():
+        if claim.get("status", "proposed") in {"proposed", "inconclusive"}:
+            for kind, values in (("prediction", claim.get("predictions", [])), ("falsifier", claim.get("falsifiers", []))):
+                for index, statement in enumerate(values if isinstance(values, list) else []):
+                    refs = set(claim.get("finding_ids", []))
+                    if not any(ref in findings for ref in refs):
+                        obligations.append({"kind": f"test_{kind}", "claim_id": claim.get("id"), "index": index, "statement": statement})
+            if not claim.get("predictions") and not claim.get("falsifiers"):
+                obligations.append({"kind": "specify_prediction", "claim_id": claim.get("id")})
+    for node in _items(context, "nodes"):
+        if isinstance(node, dict) and node.get("state") in {"planned", "active"} and not node.get("attempt_refs"):
+            obligations.append({"kind": "execute_node", "node_id": node.get("id"), "objective": node.get("objective")})
+    for gate in _items(context, "gates"):
+        if isinstance(gate, dict) and not gate.get("evaluations"):
+            obligations.append({"kind": "evaluate_gate", "gate_id": gate.get("id"), "target_id": gate.get("target_id")})
+    for action in _items(context, "lifecycle_actions"):
+        if isinstance(action, dict) and action.get("status") in {"required", "blocked"}:
+            obligations.append({"kind": action.get("action", "review"), "scope": action.get("scope"), "target_id": action.get("target_id"), "reason": action.get("reason")})
+    return obligations
 
 
 def _validate_checkpoint_lifecycle(context: dict[str, Any], checkpoint: dict[str, Any]) -> None:
@@ -855,6 +883,76 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             "node_ids": [], "finding_ids": [], "gate_ids": [],
         })
         return item_id
+    if kind == "assess_claim":
+        assessment_id = _identifier(operation.get("id"), "operation.id")
+        assessments = _items(context, "claim_assessments")
+        _unique(assessments, assessment_id, "claim assessment")
+        claim_id = _claim_identifier(operation.get("claim_id"), "operation.claim_id")
+        claim = _lookup(context, "claims", claim_id, "claim")
+        verdict = operation.get("verdict")
+        if verdict not in {"proposed", "supported", "contradicted", "inconclusive", "withdrawn"}:
+            raise AgentWorkspaceError("operation.verdict is invalid")
+        reason = operation.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            raise AgentWorkspaceError("assess_claim requires a non-empty reason")
+        evidence_refs = _string_list(operation, "evidence_refs")
+        if verdict in {"supported", "contradicted", "inconclusive"} and not evidence_refs:
+            raise AgentWorkspaceError("assess_claim requires evidence_refs for an evidentiary verdict")
+        if evidence_refs:
+            _refs_exist(context, evidence_refs, label="operation.evidence_refs")
+        assessments.append({
+            "type": "claim_assessment", "id": assessment_id, "created_at": created_at,
+            "metadata": _object_field(operation, "metadata"), "claim_id": claim_id,
+            "verdict": verdict, "evidence_refs": evidence_refs, "reason": reason.strip(),
+            "actor": _object_field(operation, "actor"), "input_revision": context.get("revision", 0),
+        })
+        _attach_unique(claim, "assessment_ids", assessment_id)
+        claim["status"] = verdict
+        return assessment_id
+    if kind == "revise_claim":
+        source_id = _claim_identifier(operation.get("source_claim_id", operation.get("claim_id")), "operation.source_claim_id")
+        source = _lookup(context, "claims", source_id, "claim")
+        target_id = _claim_identifier(operation.get("target_claim_id"), "operation.target_claim_id")
+        claims = _items(context, "claims")
+        _unique(claims, target_id, "claim")
+        reason = operation.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            raise AgentWorkspaceError("revise_claim requires a non-empty reason")
+        relation = operation.get("relation", "revises")
+        if relation not in {"revises", "refines", "supersedes"}:
+            raise AgentWorkspaceError("operation.relation is invalid")
+        statement = operation.get("statement")
+        if not isinstance(statement, str) or not statement.strip():
+            raise AgentWorkspaceError("revise_claim requires a non-empty statement")
+        target = {
+            "type": "research_claim", "id": target_id, "created_at": created_at,
+            "metadata": _object_field(operation, "metadata"), "statement": statement.strip(),
+            "status": "proposed",
+            "predictions": list(operation.get("predictions", [])) if isinstance(operation.get("predictions"), list) else [],
+            "falsifiers": list(operation.get("falsifiers", [])) if isinstance(operation.get("falsifiers"), list) else [],
+            "node_ids": [], "finding_ids": [], "gate_ids": [], "assessment_ids": [], "revision_ids": [],
+        }
+        claims.append(target)
+        revision_id = _identifier(operation.get("revision_id", operation.get("id")), "operation.revision_id")
+        revisions = _items(context, "claim_revisions")
+        _unique(revisions, revision_id, "claim revision")
+        revisions.append({
+            "type": "claim_revision", "id": revision_id, "created_at": created_at,
+            "metadata": _object_field(operation, "metadata"), "source_claim_id": source_id,
+            "target_claim_id": target_id, "relation": relation, "reason": reason.strip(),
+            "actor": _object_field(operation, "actor"),
+        })
+        _attach_unique(source, "revision_ids", revision_id)
+        relations = _array(context, "claim_relations")
+        edge = {"source_id": source_id, "target_id": target_id, "relation": relation}
+        if edge not in relations:
+            relations.append(edge)
+            if _claim_relation_would_cycle(context, source_id, target_id):
+                relations.pop()
+                revisions.pop()
+                claims.pop()
+                raise AgentWorkspaceError("claim relation graph must be acyclic")
+        return target_id
     if kind == "create_node":
         item_id = _node_identifier(operation.get("id"), "operation.id")
         nodes = _array(context, "nodes")
@@ -1038,6 +1136,8 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
         finding_kind = operation.get("kind")
         if finding_kind not in {"fact", "issue"}:
             raise AgentWorkspaceError("operation.kind must be fact or issue")
+        if finding_kind == "fact" and not source_refs:
+            raise AgentWorkspaceError("fact finding requires source_refs")
         status_default = "confirmed" if finding_kind == "fact" else "open"
         finding = {
             "type": "fact_finding" if finding_kind == "fact" else "issue_finding",
@@ -1052,11 +1152,14 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
             "source_refs": source_refs,
         }
         if finding_kind == "fact":
+            provenance = _object_field(operation, "provenance")
+            if not provenance:
+                raise AgentWorkspaceError("fact finding requires provenance")
             finding.update({
                 "value": operation.get("value"),
                 "datatype": operation.get("datatype", "json"),
                 "unit": operation.get("unit"),
-                "provenance": _object_field(operation, "provenance"),
+                "provenance": provenance,
             })
         else:
             finding.update({
@@ -1535,6 +1638,7 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
             created = _apply_operation(updated, operation)
             if created is not None:
                 created_ids.append(created)
+        updated["research_obligations"] = _research_obligations(updated)
         updated["revision"] = current_revision + 1
         projected_liveness = _liveness_projection(updated, {**liveness, "revision": updated["revision"]}, {})
         updated["lifecycle"] = projected_liveness.get("lifecycle", "idle")

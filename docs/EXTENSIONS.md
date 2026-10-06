@@ -1,5 +1,9 @@
 # Installed Extension Contract
 
+Here `extensions/` means installable capability extensions. Package-owned core
+server tool assembly lives under `apps/app-server/server-tools/` and is outside
+the installed-extension discovery flow.
+
 TSPi keeps the Agent and Research State independent from installed scientific
 software. An installed extension is a directory with a `manifest.json`; the
 App Server discovers manifests listed in `TSPI_EXTENSION_MANIFESTS` (an OS
@@ -40,7 +44,7 @@ bindings, intent materialization, execution, and parsing. A missing Native
 capability is reported as unavailable rather than falling through to a shell
 command or backend default.
 
-The existing `extensions/server/extensions.json` contract remains unchanged:
+The existing `apps/app-server/server-tools/extensions.json` contract remains unchanged:
 server tools still require a package-owned manifest, allowlist selection, and
 per-entry digest. Installed manifests add Skills, provider metadata, and
 explicitly allowlisted server tools without changing Agent core, Harness

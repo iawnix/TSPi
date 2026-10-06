@@ -95,6 +95,12 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
     if (!["normal", "recovery", "reconcile"].includes(effectiveReplayMode)) {
       throw new TypeError(`unsupported lifecycle replay mode: ${effectiveReplayMode}`);
     }
+    // Pi may call GenerationTask.beforeRequest more than once for the same
+    // durable run (tool continuations, retries, and recovery all do this).
+    // Reinitialising the phase here strands a valid checkpoint in `orient` and
+    // makes every subsequent checkpoint admission fail. A run identity is the
+    // lifecycle identity, so repeated initialisation must be idempotent.
+    if (state.run_id === runId) return snapshot();
     state = {
       run_id: runId,
       trigger: inferredTrigger,
@@ -187,7 +193,14 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
       }
     }
     const allowed = allowedToolPhases(state.lifecycle_phase);
-    if (!allowed.includes(targetPhase)) {
+    // A checkpoint is the recovery boundary for a durable scope. It must stay
+    // writable after a Worker retry has re-entered the orientation phase; the
+    // canonical Research State still validates the disposition, revision, and
+    // references, so this exception does not bypass scientific authority.
+    const checkpointRecovery = targetPhase === "checkpoint"
+      && isDecisionWrite
+      && checkpointIsRequired(durableLiveness);
+    if (!allowed.includes(targetPhase) && !checkpointRecovery) {
       return {
         accepted: false,
         code: "tool_phase_transition_denied",
@@ -256,13 +269,21 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
   }
 
   function contextPatch() {
+    const allowedPhases = allowedToolPhases(state.lifecycle_phase);
+    // A Worker recovery can re-enter the lifecycle at `orient` while the
+    // durable Research State still requires a checkpoint. Keep the policy
+    // aligned with admitTool's recovery exception so the execution gate does
+    // not reject the same checkpoint after admission succeeds.
+    if (checkpointIsRequired(durableLiveness) && !allowedPhases.includes("checkpoint")) {
+      allowedPhases.push("checkpoint");
+    }
     return {
       operation_id: state.run_id,
       lifecycle_phase: state.lifecycle_phase,
       replay_mode: state.replay_mode,
       allowed_authorities: authorities.length ? authorities : ["host_read"],
       allowed_effects: effects.length ? effects : ["read"],
-      allowed_phases: allowedToolPhases(state.lifecycle_phase),
+      allowed_phases: allowedPhases,
     };
   }
 
@@ -313,6 +334,12 @@ function isMonitorWake(messages) {
   return text.includes("A compute monitor event requires attention.") || text.includes("source=monitor");
 }
 
+function checkpointIsRequired(liveness) {
+  if (!liveness || typeof liveness !== "object" || Array.isArray(liveness)) return false;
+  if (["decision_needed", "blocked", "waiting_external", "deferred", "continue_required", "user_input_required"].includes(liveness.lifecycle)) return true;
+  return Array.isArray(liveness.decision_needed) && liveness.decision_needed.length > 0;
+}
+
 function messageText(message) {
   if (typeof message === "string") return message;
   if (!message || typeof message !== "object") return "";
@@ -334,7 +361,7 @@ export function checkpointFollowUp(status) {
 }
 
 function isExistingAttemptOperation(toolName, args) {
-  if (toolName !== "compute_run" && toolName !== "compute_run") return false;
+  if (toolName !== "compute_run") return false;
   return ["inspect", "finalize", "cancel"].includes(args?.operation);
 }
 

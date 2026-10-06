@@ -19,6 +19,22 @@ class CapabilityDescriptor:
         return asdict(self)
 def validate_descriptor(value:dict[str,Any])->dict[str,Any]:
     if not isinstance(value,dict): raise ProviderError("descriptor must be an object")
+    if value.get("protocol") == "capability_descriptor" and value.get("version") == 1:
+        provider = value.get("provider")
+        extensions = value.get("extensions") if isinstance(value.get("extensions"), dict) else {}
+        if not isinstance(value.get("capability_id"), str) or not value["capability_id"]: raise ProviderError("canonical descriptor capability_id invalid")
+        if not isinstance(value.get("capability_version"), str) or not value["capability_version"]: raise ProviderError("canonical descriptor capability_version invalid")
+        if not isinstance(provider, dict) or not isinstance(provider.get("provider_id"), str) or not provider["provider_id"]: raise ProviderError("canonical descriptor provider invalid")
+        value = {
+            **value,
+            "operation": extensions.get("operation", value["capability_id"]), "version": value["capability_version"],
+            "input_schema": value.get("input_schema", {"type": "object"}),
+            "parameter_schema": extensions.get("parameter_schema", {"type": "object"}),
+            "result_schema": value.get("output_schema", {"type": "object"}),
+            "output_roles": list(extensions.get("output_roles", [])),
+            "effects": list(value.get("effects", [])),
+            "limits": dict(value.get("limits", {})),
+        }
     missing=[k for k in _REQUIRED if k not in value]
     if missing: raise ProviderError("descriptor missing fields: "+", ".join(missing))
     if not isinstance(value["operation"],str) or not value["operation"]: raise ProviderError("descriptor operation invalid")

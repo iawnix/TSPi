@@ -14,7 +14,7 @@ owner; TSPi Host is the routing, receipt, Monitor, and Link control plane. The
 terminal is Pi's official native remote client, while Phone and Monitor use
 Host adapters to address the same worker lane.
 
-Server tools are selected by `extensions/server/extensions.json` and loaded by
+Server tools are selected by `apps/app-server/server-tools/extensions.json` and loaded by
 `apps/app-server/server-extension-loader.mjs`. Each descriptor binds a scope,
 tool inventory, permissions, and a SHA-256 digest. The loader rejects paths
 outside the selected Package, symbolic-link entries, unknown allowlist names,

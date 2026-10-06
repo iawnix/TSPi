@@ -89,7 +89,7 @@ OPERATIONS = {"prepare", "submit", "inspect", "collect", "cancel", "parse"}
 _CANONICAL_WORKSPACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$")
 
 
-def _gaussian_task_type(workspace: Path, intent: dict[str, Any]) -> str:
+def _classified_task_type(workspace: Path, intent: dict[str, Any]) -> str:
     try:
         return resolve_compute_provider(str(intent["backend"])).classify_task(workspace, intent)
     except ProviderUnavailable as exc:
@@ -803,22 +803,28 @@ def _local_job_config(
     expected = tuple(Path(str(ref)).name for ref in prepared_task.get("expected_artifacts", []))
     local_command = [rewrites.get(part, part) for part in command]
     stdin_name: str | None = None
-    if prepared_task.get("backend") == "gaussian":
-        if len(local_command) != 2 or local_command[1] not in {Path(ref).name for ref in input_refs}:
-            raise ComputeContractError("Gaussian local calculation must bind exactly one staged input")
-        stdin_name = local_command[1]
-        local_command = [local_command[0]]
     run_dir = _local_execution_dir(workspace, intent)
     _require_physical_compute_directory(workspace, run_dir, "local calculation run")
-    scratch_dir = run_dir / "scratch" if prepared_task.get("backend") == "gaussian" else None
     environment = {str(key): str(value) for key, value in (prepared_task.get("environment") or {}).items()}
-    if scratch_dir is not None:
-        # Gaussian writes Gau-*.inp and other transient files through
-        # GAUSS_SCRDIR/TMPDIR.  Bind both variables to this Attempt's
-        # persistent execution scope; local_worker reapplies the binding
-        # after activation profiles are sourced.
-        environment["GAUSS_SCRDIR"] = str(scratch_dir)
-        environment["TMPDIR"] = str(scratch_dir)
+    scratch_dir = None
+    try:
+        provider = resolve_compute_provider(str(prepared_task.get("backend") or ""))
+        options_factory = getattr(provider, "local_job_options", None)
+        if callable(options_factory):
+            options = options_factory(
+                prepared_task, local_command, {Path(ref).name for ref in input_refs}, run_dir,
+            )
+            if not isinstance(options, dict):
+                raise TypeError("provider returned invalid local job options")
+            local_command = [str(item) for item in options.get("command", local_command)]
+            stdin_name = options.get("stdin_name")
+            scratch_value = options.get("scratch_dir")
+            scratch_dir = Path(scratch_value) if scratch_value is not None else None
+            environment.update({str(key): str(value) for key, value in (options.get("environment") or {}).items()})
+    except ProviderUnavailable as exc:
+        raise ComputeContractError(str(exc)) from exc
+    except (OSError, TypeError, ValueError) as exc:
+        raise ComputeContractError(f"provider rejected local execution options: {exc}") from exc
     return local_lifecycle.LocalJobConfig(
         intent_id=str(intent["intent_id"]),
         run_dir=run_dir,
@@ -1234,39 +1240,47 @@ def parse_calculation(
         raise ComputeContractError("parse artifact basename is outside the prepared expected artifacts")
     source = workspace / source_ref
     backend = str(intent["backend"])
-    if backend == "gaussian" and source.suffix.lower() not in {".log", ".out"}:
-        raise ComputeContractError("Gaussian parser accepts only .log or .out artifacts")
-    if backend == "xtb" and source.name != "xtb.out":
-        raise ComputeContractError("xTB parser requires the bound xtb.out artifact")
-    if backend == "crest" and source.name != "crest.out":
-        raise ComputeContractError("CREST parser requires the bound crest.out artifact")
-    if backend == "ase_neb" and source.name != "neb_summary.json":
-        raise ComputeContractError("ASE NEB parser requires the bound neb_summary.json artifact")
-    if backend == "pyscf" and source.name != "pyscf_result.json":
-        raise ComputeContractError("PySCF parser requires the bound pyscf_result.json artifact")
-    if backend == "script" and source.name != "script_result.json":
-        raise ComputeContractError("script parser requires the bound script_result.json artifact")
-    if backend not in {"gaussian", "xtb", "crest", "ase_neb", "pyscf", "script"}:
-        raise ComputeContractError(f"no deterministic parser is exposed for backend: {backend}")
+    try:
+        parser_provider = resolve_compute_provider(backend)
+        source_validator = getattr(parser_provider, "validate_parse_source", None)
+        if callable(source_validator):
+            source_validator(backend, source)
+    except ProviderUnavailable as exc:
+        raise ComputeContractError(str(exc)) from exc
+    except (OSError, ValueError, TypeError) as exc:
+        raise ComputeContractError(str(exc)) from exc
 
     parse_inputs = _bound_parse_artifacts(workspace, intent, prepared_task, source_ref)
     parser_inputs = [
         {"ref": ref, "sha256": _sha256_file(path)}
         for _, (ref, path) in sorted(parse_inputs.items())
     ]
-    gaussian_task = _gaussian_task_type(workspace, intent) if backend == "gaussian" else None
-    xtb_control: Path | None = None
-    if backend == "xtb" and intent.get("task_type") == "scan":
-        control_ref = _workspace_ref(workspace, str(intent["input_refs"]["control"]), read=True)
-        xtb_control = workspace / control_ref
-        parser_inputs.append({"ref": control_ref, "sha256": _sha256_file(xtb_control)})
-    ase_neb_endpoints: dict[str, Path] = {}
-    if backend == "ase_neb":
-        for role in ("reactant", "product"):
-            endpoint_ref = _workspace_ref(workspace, str(intent["input_refs"][role]), read=True)
-            endpoint = workspace / endpoint_ref
-            ase_neb_endpoints[role] = endpoint
-            parser_inputs.append({"ref": endpoint_ref, "sha256": _sha256_file(endpoint)})
+    try:
+        parse_provider = resolve_compute_provider(backend)
+        context_builder = getattr(parse_provider, "build_parse_context", None)
+        parse_context, extra_parser_inputs = (
+            context_builder(workspace, intent, parse_inputs)
+            if callable(context_builder) else ({"task_type": str(intent["task_type"])}, [])
+        )
+        if not isinstance(parse_context, dict) or not isinstance(extra_parser_inputs, list):
+            raise TypeError("provider returned an invalid parse context")
+        parser_inputs.extend(extra_parser_inputs)
+    except ProviderUnavailable as exc:
+        raise ComputeContractError(str(exc)) from exc
+    except (OSError, KeyError, ValueError, TypeError) as exc:
+        raise ComputeContractError(f"{backend} provider could not build parse context: {exc}") from exc
+
+    try:
+        parse_input_validator = getattr(resolve_compute_provider(backend), "validate_parse_inputs", None)
+        if callable(parse_input_validator):
+            parse_input_validator(
+                backend, intent,
+                parse_context,
+            )
+    except ProviderUnavailable as exc:
+        raise ComputeContractError(str(exc)) from exc
+    except (OSError, KeyError, ValueError, TypeError) as exc:
+        raise ComputeContractError(str(exc)) from exc
 
     _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
     result_path = workspace / output_ref / "calculation_result.json"
@@ -1291,14 +1305,10 @@ def parse_calculation(
                 "parse refuses to overwrite a result from different source content; use a new intent_id"
             )
 
-    is_irc = backend == "gaussian" and gaussian_task == "irc"
-    is_scan = backend == "gaussian" and gaussian_task == "scan"
     try:
         parsed = resolve_compute_provider(backend).parse(
             workspace, intent, source, parse_inputs,
-            gaussian_task=gaussian_task,
-            xtb_control=xtb_control,
-            ase_neb_endpoints=ase_neb_endpoints,
+            parse_context=parse_context,
         )
     except ProviderUnavailable as exc:
         raise ComputeContractError(str(exc)) from exc
@@ -1314,20 +1324,23 @@ def parse_calculation(
         raise ComputeContractError("parse output path is not a directory")
     if parse_dir.exists() and any(parse_dir.iterdir()):
         raise ComputeContractError("parse output directory is non-empty without a matching calculation result")
-    parser_name = resolve_compute_provider(backend).parser_name(backend, is_irc=is_irc, is_scan=is_scan)
+    parser_name = resolve_compute_provider(backend).parser_name(
+        backend, parse_context=parse_context,
+    )
     descriptor = resolve_capability(str(intent["capability"]), str(intent["capability_version"]))
     if len(descriptor.parsers) != 1:
         raise ComputeContractError(f"capability must bind exactly one parser: {intent['capability']}")
     parser_contract = descriptor.parsers[0]
     task_validation = validate_parsed_task(
         backend,
-        gaussian_task if backend == "gaussian" else str(intent["task_type"]),
+        str(parse_context.get("task_type", intent["task_type"])),
         summary,
     )
     parsed_at = now_iso()
     try:
         resolve_compute_provider(backend).write_parse_artifacts(
-            parsed, parse_dir, source, backend=backend, gaussian_task=gaussian_task,
+            parsed, parse_dir, source, backend=backend,
+            parse_context=parse_context,
         )
         parser_output_refs = sorted(
             path.relative_to(workspace).as_posix()
@@ -1576,7 +1589,7 @@ def _raw_prepared_task(
             provider = resolve_compute_provider(backend)
         except ProviderUnavailable as exc:
             raise ComputeContractError(str(exc)) from exc
-    task_type = _gaussian_task_type(workspace, intent) if backend == "gaussian" else str(intent["task_type"])
+    task_type = _classified_task_type(workspace, intent)
     task = BackendTask(
         node_id=str(intent["node_id"]),
         task_type=task_type,
@@ -1596,6 +1609,10 @@ def _raw_prepared_task(
     if not isinstance(prepared, PreparedTask):
         raise ComputeContractError(
             f"{intent['capability']} provider returned an invalid PreparedTask"
+        )
+    if prepared.backend != backend:
+        raise ComputeContractError(
+            f"{intent['capability']} provider returned backend {prepared.backend!r}; expected {backend!r}"
         )
     return prepared
 
@@ -1638,13 +1655,16 @@ def _prepared_task_dict(prepared: PreparedTask) -> dict[str, Any]:
     return value
 
 
-def _backend_binding_name(backend: str) -> str:
-    return "ase_neb_xtb" if backend == "ase_neb" else backend
-
-
-def _backend_binding_names(backend: str) -> tuple[str, ...]:
-    if backend == "ase_neb":
-        return ("ase_neb_xtb", "ase_neb")
+def _backend_binding_names(intent: dict[str, Any], backend: str, kind: str) -> tuple[str, ...]:
+    try:
+        registration = resolve_capability_registration(
+            str(intent["capability"]), str(intent["capability_version"])
+        )
+        selector = getattr(registration.provider, "environment_providers", None)
+        if callable(selector):
+            return tuple(selector(registration.descriptor, kind))
+    except (CapabilityGapError, KeyError, TypeError, ValueError):
+        pass
     return (backend,)
 
 
@@ -1665,12 +1685,7 @@ def _backend_binding(workspace: Path, intent: dict[str, Any], backend: str) -> B
     target = intent.get("execution_target") or {}
     kind = str(target.get("kind"))
     environment_name = target.get("environment") if isinstance(target.get("environment"), str) else None
-    binding_names = _backend_binding_names(backend)
-    if backend == "ase_neb" and kind == "remote":
-        # Remote execution needs the ASE/Python runner binding.  The legacy
-        # ase_neb_xtb name denotes a local xTB executable and is not a valid
-        # remote runner fallback.
-        binding_names = ("ase_neb",)
+    binding_names = _backend_binding_names(intent, backend, kind)
     broker = EnvironmentBroker(load_environment_config())
     try:
         binding = broker.bind(
@@ -1698,53 +1713,19 @@ def _apply_compute_environment(
         raise ComputeContractError(f"invalid compute backend binding: {exc}") from exc
     if binding is None or not binding.command:
         return prepared
-    command = list(prepared.command)
-    if prepared.backend == "ase_neb":
-        # The ASE runner launches the selected calculator itself; bind that
-        # executable through the prepared environment. A remote environment
-        # also selects the Python runtime that owns ASE and the runner module.
-        environment = {
-            **prepared.environment,
-            **binding.environment,
-        }
-        calculator = str(intent.get("parameters", {}).get("calculator", "xtb_cli"))
-        gaussian_binding = None
-        if calculator == "gaussian_cli":
-            try:
-                gaussian_binding = _backend_binding(workspace, intent, "gaussian")
-            except (EnvironmentConfigurationError, RemoteConfigurationError) as exc:
-                raise ComputeContractError(f"invalid Gaussian backend binding: {exc}") from exc
-            if gaussian_binding is not None:
-                environment.update(gaussian_binding.environment)
-        if intent.get("execution_target", {}).get("kind") == "remote":
-            required_variable = (
-                "TS_ASE_NEB_GAUSSIAN" if calculator == "gaussian_cli" else "TS_ASE_NEB_XTB"
+    try:
+        provider = resolve_compute_provider(prepared.backend)
+        apply_environment = getattr(provider, "apply_environment", None)
+        if callable(apply_environment):
+            return apply_environment(
+                intent, prepared, binding,
+                lambda backend: _backend_binding(workspace, intent, backend),
             )
-            if not environment.get(required_variable, "").strip():
-                raise ComputeContractError(
-                    f"remote ASE NEB binding requires environment.{required_variable}"
-                )
-            # On a remote platform the backend binding names the remote
-            # Python runtime that owns ASE and the runner module.
-            command = list(binding.command) + command[1:]
-        else:
-            if calculator == "xtb_cli":
-                environment.setdefault("TS_ASE_NEB_XTB", binding.command[0])
-    else:
-        command = list(binding.command) + command[1:]
-        environment = {**prepared.environment, **binding.environment}
-    activation = (
-        (
-            gaussian_binding.activation_script
-            if prepared.backend == "ase_neb"
-            and str(intent.get("parameters", {}).get("calculator", "xtb_cli")) == "gaussian_cli"
-            and gaussian_binding is not None
-            and gaussian_binding.activation_script
-            else binding.activation_script
-        )
-        if intent.get("execution_target", {}).get("kind") == "local"
-        else prepared.activation_script
-    )
+    except (EnvironmentConfigurationError, RemoteConfigurationError, ValueError) as exc:
+        raise ComputeContractError(f"invalid compute backend binding: {exc}") from exc
+    command = list(binding.command) + list(prepared.command)[1:]
+    environment = {**prepared.environment, **binding.environment}
+    activation = binding.activation_script if intent.get("execution_target", {}).get("kind") == "local" else prepared.activation_script
     return replace(prepared, command=command, environment=environment, activation_script=activation)
 
 
@@ -1774,6 +1755,12 @@ def _normalize_prepared_task(
 ) -> PreparedTask:
     if prepared.node_id != node_id:
         raise ComputeContractError("backend returned a task for a different ResearchNode")
+    if not prepared.command or any(not isinstance(part, str) or not part for part in prepared.command):
+        raise ComputeContractError("backend returned an invalid command")
+    if any(not isinstance(key, str) or not key or not isinstance(value, str) for key, value in prepared.environment.items()):
+        raise ComputeContractError("backend returned an invalid environment")
+    if prepared.activation_script is not None and not isinstance(prepared.activation_script, str):
+        raise ComputeContractError("backend returned an invalid activation script")
     input_paths = [
         _workspace_ref(workspace, ref, read=require_inputs)
         for ref in prepared.input_paths
@@ -1956,21 +1943,18 @@ def _remote_stdout_name(prepared: dict[str, Any]) -> str:
     prepared_task = prepared.get("prepared_task") if "prepared_task" in prepared else prepared
     if not isinstance(prepared_task, dict):
         raise ComputeContractError("prepared calculation is missing prepared_task")
-    backend = prepared_task.get("backend")
+    backend = str(prepared_task.get("backend") or "")
     expected = [Path(str(ref)).name for ref in prepared_task.get("expected_artifacts", [])]
-    if backend == "gaussian":
-        captures = [name for name in expected if Path(name).suffix.lower() in {".log", ".out"}]
-        if len(captures) != 1:
-            raise ComputeContractError("Gaussian remote execution requires exactly one .log or .out artifact")
-        return captures[0]
-    if backend == "xtb" and "xtb.out" in expected:
-        return "xtb.out"
-    if backend == "crest" and "crest.out" in expected:
-        return "crest.out"
-    if backend == "ase_neb" and "ase_neb.out" in expected:
-        return "ase_neb.out"
-    if backend == "pyscf" and "pyscf.out" in expected:
-        return "pyscf.out"
+    try:
+        provider = resolve_compute_provider(backend)
+    except ProviderUnavailable as exc:
+        raise ComputeContractError(str(exc)) from exc
+    resolver = getattr(provider, "remote_stdout_name", None)
+    if callable(resolver):
+        try:
+            return str(resolver(prepared_task))
+        except (ValueError, TypeError) as exc:
+            raise ComputeContractError(str(exc)) from exc
     return "remote_job.stdout"
 
 
@@ -1991,18 +1975,14 @@ def _remote_output_dir(workspace: Path, intent: dict[str, Any]) -> Path:
 
 def _default_parse_ref(workspace: Path, intent: dict[str, Any], prepared: dict[str, Any]) -> str:
     names = _expected_remote_names(prepared)
-    backend = intent["backend"]
-    if backend == "gaussian":
-        candidates = [name for name in names if Path(name).suffix.lower() in {".log", ".out"}]
-    else:
-        primary = {
-            "xtb": "xtb.out",
-            "crest": "crest.out",
-            "ase_neb": "neb_summary.json",
-            "pyscf": "pyscf_result.json",
-            "script": "script_result.json",
-        }.get(backend)
-        candidates = [name for name in names if name == primary]
+    backend = str(intent["backend"])
+    try:
+        provider = resolve_compute_provider(backend)
+    except ProviderUnavailable as exc:
+        raise ComputeContractError(str(exc)) from exc
+    resolver = getattr(provider, "parse_artifact_name", None)
+    candidate = resolver(backend, names) if callable(resolver) else (names[0] if len(names) == 1 else None)
+    candidates = [candidate] if candidate else []
     if len(candidates) != 1:
         raise ComputeContractError(f"parse primary artifact is ambiguous: {candidates}; supply an exact artifact_ref")
     if _prepared_execution_policy(prepared)["kind"] == "remote":
@@ -2043,8 +2023,6 @@ def _validate_platform_resources(
         )
     if backend:
         binding = platform.backends.get(backend)
-        if binding is None and backend == "ase_neb":
-            binding = platform.backends.get("ase_neb_xtb")
         if binding is not None:
             if binding.allowed_queues and resources.queue not in binding.allowed_queues:
                 raise ComputeContractError(

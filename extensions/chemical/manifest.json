@@ -62,6 +62,16 @@
       "name": "mechanism-reasoning",
       "path": "skills/mechanism-reasoning",
       "sha256": "sha256:002a83b213eaae168e7aab61001c881099544a2f78a9e75c8132f11171df0130"
+    },
+    {
+      "name": "render",
+      "path": "skills/render",
+      "sha256": "sha256:3dc4329f32f97b065992c46d768120d1a3e61aeadf3ad61c6c5bab69a1d6825d"
+    },
+    {
+      "name": "report",
+      "path": "skills/report",
+      "sha256": "sha256:45377a005d682697217a72f2995fd813e8566f20feaff5ed371e2229db65256c"
     }
   ],
   "providers": [
@@ -81,7 +91,7 @@
       "descriptor": "providers/chemical.analysis.json",
       "entry": "providers/chemical_provider.py",
       "sha256": "sha256:d0774ec483fc68b98b58ffc83501d84d35d6e73600e6fd597e281d1bdb3172fe",
-      "descriptor_sha256": "sha256:92d5bc7bcd9d74d0fdbfdafa206ee1d4d670736e4e8f62e796bffce0f5b1bbda"
+      "descriptor_sha256": "sha256:942ee0d292d2f92cec5ff22f59ccf0f903393d9be923aca902890d6180db3eea"
     },
     {
       "id": "crest",
@@ -90,7 +100,7 @@
       "descriptor": "providers/crest.json",
       "entry": "providers/chemical_provider.py",
       "sha256": "sha256:d0774ec483fc68b98b58ffc83501d84d35d6e73600e6fd597e281d1bdb3172fe",
-      "descriptor_sha256": "sha256:a36adec4de8e2bfb5a9ffbc69b245c559ab4d123765fff7b35736413420250fe"
+      "descriptor_sha256": "sha256:55f5a3f0d8c20224e2f84ff292cb8ffbf921d1c156f24cfe97b9dd5caf286130"
     },
     {
       "id": "gaussian",
@@ -108,7 +118,7 @@
       "descriptor": "providers/pyscf.json",
       "entry": "providers/chemical_provider.py",
       "sha256": "sha256:d0774ec483fc68b98b58ffc83501d84d35d6e73600e6fd597e281d1bdb3172fe",
-      "descriptor_sha256": "sha256:e44423ffaf4c8a0fa63f2dda505e2dc5519895321cebcca7036465b7c36bda89"
+      "descriptor_sha256": "sha256:0802579d20f7163c64202cc6b5f3b3e254bca576ceb323d39bc74d0d5d988f82"
     },
     {
       "id": "xtb",
@@ -117,7 +127,7 @@
       "descriptor": "providers/xtb.json",
       "entry": "providers/chemical_provider.py",
       "sha256": "sha256:d0774ec483fc68b98b58ffc83501d84d35d6e73600e6fd597e281d1bdb3172fe",
-      "descriptor_sha256": "sha256:93588ec1d36b92b6901b7a432d53d82c6a69b1bcee24c4b60bdbed061ea6131b"
+      "descriptor_sha256": "sha256:b0a4574dbd58739c23e6072651aa6ffa9713ca4ac53b8f097f7d68a6d3e270c4"
     },
     {
       "id": "chemical.comparison.plan",
@@ -127,6 +137,24 @@
       "entry": "providers/chemical_provider.py",
       "sha256": "sha256:d0774ec483fc68b98b58ffc83501d84d35d6e73600e6fd597e281d1bdb3172fe",
       "descriptor_sha256": "sha256:934d3adf19cc4fa6efecefa275d0da14216201830a275d9157cf012500d7ee4c"
+    },
+    {
+      "id": "artifact_render",
+      "version": "1",
+      "kind": "render",
+      "descriptor": "providers/artifact_render.json",
+      "entry": "providers/render_provider.py",
+      "descriptor_sha256": "sha256:799f9594f3e0e619040fe8b4a89b1dfccea5b61e7bc591e90e862a54eaa2dd02",
+      "sha256": "sha256:e13a205464552e105424e0cf42cd9bb5fdc149d807d794524815f017bddcf3d4"
+    },
+    {
+      "id": "report_build",
+      "version": "1",
+      "kind": "report",
+      "descriptor": "providers/report_build.json",
+      "entry": "providers/report_provider.py",
+      "descriptor_sha256": "sha256:52391f3e457f47025611317866334cc1f514099d3ce2c4476b569514c68fe24f",
+      "sha256": "sha256:a510cf932b8832f95164eceaf2549461816b89aacab0a4960ef8940fd4b578a8"
     }
   ]
 }

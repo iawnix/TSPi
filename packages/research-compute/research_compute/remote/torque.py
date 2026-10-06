@@ -16,6 +16,7 @@ from .models import (
     validate_artifact_name,
     validate_remote_path,
 )
+from ..provider import ProviderUnavailable, resolve_compute_provider
 
 
 _JOB_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\[\]-]{0,255}$")
@@ -126,21 +127,31 @@ def render_job_script(config: RemoteJobConfig) -> str:
         environment["OMP_NUM_THREADS"] = str(config.resources.ompthreads)
     for key, value in sorted(environment.items()):
         lines.append(f"export {key}={shlex.quote(value)}")
-    manages_scratch = config.backend == "gaussian" or backend.scratch_root is not None
+    options = _remote_job_options(config)
+    manages_scratch = bool(options.get("scratch", backend.scratch_root is not None))
     if manages_scratch:
         lines.extend(_scratch_setup(config, backend))
     activation_scripts = [backend.activation_script] if backend.activation_script else []
-    if config.backend == "ase_neb" and environment.get("TS_ASE_NEB_GAUSSIAN"):
-        gaussian_binding = config.platform.backends.get("gaussian")
-        if gaussian_binding and gaussian_binding.activation_script:
-            activation_scripts.append(gaussian_binding.activation_script)
+    activation_scripts.extend(str(item) for item in options.get("activation_scripts", ()) if item)
     for activation_script in dict.fromkeys(activation_scripts):
         lines.extend(_activation_wrapper(config, activation_script))
     if manages_scratch:
-        lines.extend(_restore_scratch_environment(config.backend))
+        lines.extend(_restore_scratch_environment(options))
     lines.append("set -u")
     lines.extend(["", *_program_wrapper(config, command), ""])
     return "\n".join(lines)
+
+
+def _remote_job_options(config: RemoteJobConfig) -> dict[str, Any]:
+    try:
+        provider = resolve_compute_provider(config.backend)
+    except ProviderUnavailable:
+        return {}
+    factory = getattr(provider, "remote_job_options", None)
+    if not callable(factory):
+        return {}
+    options = factory(config)
+    return options if isinstance(options, dict) else {}
 
 
 def parse_records(text: str, header: str) -> dict[str, dict[str, str]]:
@@ -248,11 +259,11 @@ def _scratch_setup(config: RemoteJobConfig, backend: RemoteBackendBinding) -> li
     stderr = shlex.quote(config.stderr_name)
     prefix = f"ts-{config.backend}."
     configured_base = shlex.quote(backend.scratch_root) if backend.scratch_root else "${TMPDIR:-/tmp}"
-    backend_exports = (
-        ['export GAUSS_SCRDIR="$ts_remote_scratch_dir"']
-        if config.backend == "gaussian"
-        else []
-    )
+    options = _remote_job_options(config)
+    backend_exports = [
+        f'export {name}="$ts_remote_scratch_dir"'
+        for name in options.get("scratch_exports", ())
+    ]
     return [
         f"ts_remote_scratch_base={configured_base}",
         'ts_remote_scratch_base=${ts_remote_scratch_base%/}',
@@ -283,10 +294,9 @@ def _scratch_setup(config: RemoteJobConfig, backend: RemoteBackendBinding) -> li
     ]
 
 
-def _restore_scratch_environment(backend: str) -> list[str]:
+def _restore_scratch_environment(options: dict[str, Any]) -> list[str]:
     lines = ['export TMPDIR="$ts_remote_scratch_dir"']
-    if backend == "gaussian":
-        lines.append('export GAUSS_SCRDIR="$ts_remote_scratch_dir"')
+    lines.extend(f'export {name}="$ts_remote_scratch_dir"' for name in options.get("scratch_exports", ()))
     return lines
 
 
@@ -330,7 +340,7 @@ def _program_wrapper(config: RemoteJobConfig, command: list[str]) -> list[str]:
         f"mv -- \"$status_tmp\" {status}",
         "set +e",
     ]
-    if config.backend == "gaussian":
+    if _remote_job_options(config).get("stdin"):
         if len(command) != 2:
             raise RemoteConfigurationError("Gaussian remote execution requires one input file")
         run = [

@@ -42,7 +42,7 @@ Select the registered JSON artifact ID as the input for `scan`; `curve`,
 `energy`, and `convergence` accept the same data format.
 
 Molecular operations use `xyzrender`, and curve operations use Matplotlib.
-The schema is [curve-data.schema.json](../../../contracts/ts-render/curve-data.schema.json).
+The schema is [curve-data.schema.json](../../../../../contracts/ts-render/curve-data.schema.json).
 
 Use rendering to inspect geometry, compare structures, animate modes, or
 communicate a mechanism. Establish bond changes, endpoint identity, and mode

@@ -53,7 +53,7 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args()
     root = args.root.expanduser().resolve()
-    if not (root / "README.md").is_file() or not (root / "skills/orchestration/SKILL.md").is_file():
+    if not (root / "README.md").is_file() or not (root / "extensions/core/skills/orchestration/SKILL.md").is_file():
         parser.error("root must contain README.md and the orchestration Skill")
     findings = check_public_surface(root)
     if findings:

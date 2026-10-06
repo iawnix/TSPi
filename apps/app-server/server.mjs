@@ -55,6 +55,17 @@ function error_status(code) {
   return 500;
 }
 
+function error_detail(error, seen = new Set()) {
+  if (error === null || error === undefined) return "request failed";
+  if ((typeof error === "object" || typeof error === "function")) {
+    if (seen.has(error)) return "";
+    seen.add(error);
+  }
+  const own = String(error?.message || error).trim();
+  const cause = error?.cause === undefined ? "" : error_detail(error.cause, seen);
+  return [...new Set([own, cause].filter(Boolean))].join(": ");
+}
+
 function is_session_workspace_error(error) {
   return /workspace_id_mismatch|workspace_id must be a valid workspace identifier/u.test(String(error?.message || error));
 }
@@ -326,9 +337,16 @@ export function create_http_server({ app_server, session_store = null, max_body_
     } catch (error) {
       const code = error_code(error);
       const status = Number.isInteger(error?.statusCode) ? error.statusCode : error_status(code);
+      const detail = error_detail(error);
+      const error_value = {
+        code,
+        message: code === "internal_error" ? "internal server error" : detail,
+        ...(code === "internal_error" ? { detail } : {}),
+      };
       write_json(response, status, {
         schema_version: HTTP_ERROR_SCHEMA,
-        error: { code, message: code === "internal_error" ? "internal server error" : String(error?.message || error) },
+        request_id: id,
+        error: error_value,
       }, id);
     }
   });

@@ -36,7 +36,7 @@ const tools = [
   parameters: Type.Object({ path: Type.String() }, { additionalProperties: false }),
   async execute(id, params, update, ctx) {
     const path = resolve(params.path.startsWith("skills/") ? repository : ctx.cwd, params.path);
-    const allowed = [ctx.cwd, join(repository, "skills")].some(root => { const rel = relative(root, path); return rel && !rel.startsWith("..") && !rel.startsWith("/"); });
+    const allowed = [ctx.cwd, join(repository, "extensions", "core", "skills")].some(root => { const rel = relative(root, path); return rel && !rel.startsWith("..") && !rel.startsWith("/"); });
     if (!allowed) throw new Error("read path is outside evaluation inputs");
     const content = await readFile(path, "utf8");
     if (Buffer.byteLength(content) > 65536) throw new Error("read exceeds 64 KiB; use bounded state");
@@ -68,7 +68,7 @@ while (pending.length) {
   for (let turn = 0; turn < maxTurns; turn++) {
     let response;
     try {
-      response = await runtime.complete(model, { systemPrompt: `You are evaluating TSPi scientific capabilities in an isolated test workspace. Choose only capabilities needed for the stated task. Do not accept a Claim from synthetic evidence. Packaged skills root: ${join(repository, "skills")}\n${skills}`, messages, tools: tools.map(({name, description, parameters}) => ({name, description, parameters})) }, { maxTokens: 2048, signal: AbortSignal.timeout(90000) });
+      response = await runtime.complete(model, { systemPrompt: `You are evaluating TSPi scientific capabilities in an isolated test workspace. Choose only capabilities needed for the stated task. Do not accept a Claim from synthetic evidence. Packaged skills root: ${join(repository, "extensions", "core", "skills")}\n${skills}`, messages, tools: tools.map(({name, description, parameters}) => ({name, description, parameters})) }, { maxTokens: 2048, signal: AbortSignal.timeout(90000) });
     } catch (error) { row.transport_error = error.name; break; }
     messages.push(response);
     for (const key of Object.keys(row.usage)) row.usage[key] += response.usage?.[key] || 0;

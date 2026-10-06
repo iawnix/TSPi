@@ -24,6 +24,7 @@ SERVICE_NAMES = (
     "ts-app-server-tspi.service",
     "ts-app-server-tspi@.service",
     "ts-web-tspi.service",
+    "tspi-link-relay.service",
 )
 LINK_RELAY_MARKER = ".pi/link-relay.json"
 ENTRYPOINTS = ("ResearchAgent", "ResearchAgentServer", "TSPi", "TSWeb")
@@ -142,10 +143,11 @@ def service_belongs_to_root(name: str, root: Path, scope: str) -> bool:
     except OSError:
         return False
     root_value = str(root).replace("%", "%%")
+    relay_root_value = str(root / ".pi" / "link-relay" / "current" / "service").replace("%", "%%")
     for line in content.splitlines():
         key, _, value = line.partition("=")
         value = value.strip().strip('"')
-        if key == "WorkingDirectory" and value == root_value:
+        if key == "WorkingDirectory" and value in {root_value, relay_root_value}:
             return True
     return False
 
@@ -159,6 +161,8 @@ def stop_services(args: argparse.Namespace, root: Path) -> list[str]:
         scope_stopped = False
         command = systemctl_args(scope)
         for name in SERVICE_NAMES:
+            if name == "tspi-link-relay.service" and getattr(args, "keep_link_relay", False):
+                continue
             if not service_belongs_to_root(name, root, scope):
                 continue
             if name == "ts-app-server-tspi@.service":

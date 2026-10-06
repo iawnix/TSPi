@@ -4,14 +4,31 @@
   "kind": "analysis",
   "capabilities": [
     {
-      "id": "chemical.analysis",
+      "id": "chemical.name.resolve",
       "version": "1",
       "aliases": [
-        "chemical.name.resolve",
         "reaction.parse",
         "reaction.validate",
         "reaction.mapping.validate",
-        "reaction.mapping.generate"
+        "reaction.mapping.generate",
+        "reaction.bond_changes",
+        "structure.reindex",
+        "structure.assemble_fragments",
+        "species.identity",
+        "gaussian.output.analyze",
+        "gaussian.input.build",
+        "path.extract_candidate",
+        "vibration.analyze_mode",
+        "path.endpoint_summary",
+        "mechanism.step.audit",
+        "thermochemistry.evaluate",
+        "barrier.evaluate",
+        "kinetics.tst",
+        "kinetics.branching",
+        "mechanism.step.define",
+        "mechanism.network.assemble",
+        "mechanism.network.audit",
+        "mechanism.energy_profile"
       ]
     }
   ],

@@ -24,10 +24,10 @@ dependencies = [
 test = ["pytest>=8,<10"]
 
 [tool.setuptools]
-package-dir = {tspi_runtime = "packages/tspi-runtime/tspi_runtime", tspi_foundation = "packages/tspi-foundation/tspi_foundation", tspi_provider_runtime = "packages/tspi-provider-runtime/tspi_provider_runtime", tspi_bootstrap = "packages/tspi-bootstrap/tspi_bootstrap", research_state = "packages/research-state/research_state", research_memory = "packages/research-memory/research_memory", research_compute = "packages/research-compute/research_compute", chemical_runtime = "extensions/chemical/providers/chemical_runtime"}
+package-dir = {tspi_runtime = "packages/tspi-runtime/tspi_runtime", tspi_foundation = "packages/tspi-foundation/tspi_foundation", tspi_provider_runtime = "packages/tspi-provider-runtime/tspi_provider_runtime", tspi_bootstrap = "packages/tspi-bootstrap/tspi_bootstrap", research_state = "packages/research-state/research_state", research_memory = "packages/research-memory/research_memory", research_compute = "packages/research-compute/research_compute", artifact_store = "packages/artifact-store/artifact_store", job_runtime = "packages/job-runtime/job_runtime", chemical_runtime = "extensions/chemical/providers/chemical_runtime"}
 packages = [
   "tspi_runtime",
-  "tspi_foundation", "tspi_provider_runtime", "tspi_bootstrap", "research_state", "research_memory", "research_compute",
+  "tspi_foundation", "tspi_provider_runtime", "tspi_bootstrap", "research_state", "research_memory", "research_compute", "artifact_store", "job_runtime",
   "research_state.contracts", "research_compute.remote", "research_compute.platforms", "research_compute.workspace",
   "chemical_runtime", "chemical_runtime.backends",
   "chemical_runtime.analysis", "chemical_runtime.structures", "chemical_runtime.reaction", "chemical_runtime.pyscf",
@@ -43,5 +43,5 @@ version = {attr = "tspi_runtime._version.__version__"}
 "research_state" = ["contracts/*.json"]
 
 [tool.pytest.ini_options]
-pythonpath = ["packages/tspi-runtime", "packages/tspi-foundation", "packages/tspi-provider-runtime", "packages/research-state", "packages/research-memory", "packages/research-compute", "extensions/chemical/providers", "extensions/render/providers", "extensions/report/providers", "extensions/email/providers", "."]
+pythonpath = ["packages/tspi-runtime", "packages/tspi-foundation", "packages/tspi-provider-runtime", "packages/tspi-bootstrap", "packages/research-state", "packages/research-memory", "packages/research-compute", "packages/artifact-store", "packages/job-runtime", "extensions/chemical/providers", "extensions/email/providers", "."]
 testpaths = ["tests/unit", "tests/contract", "tests/integration"]

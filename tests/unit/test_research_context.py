@@ -20,6 +20,7 @@ def test_memory_context_builder_reads_state_and_projection(tmp_path: Path) -> No
     assert pack.context["workspace_id"] == "workspace_memory"
     assert pack.liveness["workspace_id"] == "workspace_memory"
     assert pack.memory["schema_version"] == "research_memory_index_1"
+    assert pack.memory["research_obligations"] == []
 
 
 def test_memory_projection_writer_is_rebuildable_and_state_is_read_only(tmp_path: Path) -> None:
