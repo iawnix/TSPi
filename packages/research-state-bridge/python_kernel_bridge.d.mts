@@ -9,6 +9,10 @@ export const KERNEL_BRIDGE_METHODS: readonly [
   "turn",
   "transaction_get",
   "transaction_recover",
+  "transaction_begin",
+  "transaction_prepare",
+  "transaction_commit",
+  "transaction_abort",
   "transaction_commit_files",
 ];
 
@@ -34,6 +38,10 @@ export interface ResearchStateBridge {
   turn(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   transaction_get(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   transaction_recover(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  transaction_begin(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  transaction_prepare(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  transaction_commit(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  transaction_abort(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   transaction_commit_files(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
   close(): Promise<void>;
 }

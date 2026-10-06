@@ -15,17 +15,15 @@ export interface TransactionCoordinator {
   readonly workspace_root: string;
   readonly journal_root: string;
   begin(request?: Record<string, unknown>): Promise<TransactionRecord>;
-  get(transaction_id: string): Promise<TransactionRecord | null>;
+  get(request?: string | Record<string, unknown>): Promise<TransactionRecord | null>;
   prepare(request: Record<string, unknown>): Promise<TransactionRecord>;
   commit(request: Record<string, unknown>): Promise<TransactionRecord>;
   abort(request: Record<string, unknown>): Promise<TransactionRecord>;
-  execute(request: Record<string, unknown>, operation: (context: Record<string, unknown>) => Promise<unknown>): Promise<TransactionRecord>;
-  recover(options?: { reconcile?: (record: TransactionRecord) => Promise<Record<string, unknown> | null> }): Promise<TransactionRecord[]>;
+  commit_files(request?: Record<string, unknown>): Promise<TransactionRecord>;
+  recover(request?: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
 export function createTransactionCoordinator(options: {
-  readonly workspaceRoot: string;
-  readonly journalRoot?: string;
-  readonly lockTimeoutMs?: number;
+  readonly bridge: Record<string, unknown>;
+  readonly workspaceRoot?: string;
 }): TransactionCoordinator;
-export function transactionDigest(value: unknown): string;

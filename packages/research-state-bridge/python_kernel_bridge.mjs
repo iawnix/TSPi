@@ -22,6 +22,10 @@ export const KERNEL_BRIDGE_METHODS = Object.freeze([
   "turn",
   "transaction_get",
   "transaction_recover",
+  "transaction_begin",
+  "transaction_prepare",
+  "transaction_commit",
+  "transaction_abort",
   "transaction_commit_files",
 ]);
 
@@ -135,6 +139,10 @@ export function create_research_state_bridge({ workspace_root, workspace_id, tra
     turn: (request = {}) => invoke("turn", request),
     transaction_get: (request = {}) => invoke("transaction_get", request),
     transaction_recover: (request = {}) => invoke("transaction_recover", request),
+    transaction_begin: (request = {}) => invoke("transaction_begin", request),
+    transaction_prepare: (request = {}) => invoke("transaction_prepare", request),
+    transaction_commit: (request = {}) => invoke("transaction_commit", request),
+    transaction_abort: (request = {}) => invoke("transaction_abort", request),
     transaction_commit_files: (request = {}) => invoke("transaction_commit_files", request),
     close: async () => {
       if (typeof channel.close === "function") await channel.close();
@@ -198,6 +206,22 @@ def dispatch(method, payload):
     if method == "transaction_recover":
         if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
         return TransactionCoordinator(root).recover()
+    if method == "transaction_begin":
+        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
+        request_id = payload.get("request_id")
+        if not isinstance(request_id, str) or not request_id: raise ValueError("request_id is required")
+        return TransactionCoordinator(root).begin(request_id, payload.get("operation", "agent.operation"), payload.get("payload", {}))
+    if method == "transaction_prepare":
+        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
+        request_id = payload.get("request_id")
+        if not isinstance(request_id, str) or not request_id: raise ValueError("request_id is required")
+        return TransactionCoordinator(root).prepare(request_id, payload.get("operation", "agent.operation"), payload.get("payload", {}), writes=payload.get("writes", {}), result=payload.get("result"))
+    if method == "transaction_commit":
+        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
+        return TransactionCoordinator(root).commit(payload.get("request_id"))
+    if method == "transaction_abort":
+        if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
+        return TransactionCoordinator(root).abort(payload.get("request_id"))
     if method == "transaction_commit_files":
         if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
         request_id = payload.get("request_id")
@@ -221,7 +245,7 @@ for line in sys.stdin:
         method = request.get("method")
         if not isinstance(request_id, str) or not request_id:
             raise ValueError("bridge request id is required")
-        if method not in {"execute_command", "read_context", "read_liveness", "admit_workspace", "apply_change", "checkpoint", "turn", "transaction_get", "transaction_recover", "transaction_commit_files"}:
+        if method not in {"execute_command", "read_context", "read_liveness", "admit_workspace", "apply_change", "checkpoint", "turn", "transaction_get", "transaction_recover", "transaction_begin", "transaction_prepare", "transaction_commit", "transaction_abort", "transaction_commit_files"}:
             raise ValueError("unsupported kernel bridge method: " + str(method))
         result = dispatch(method, _object(request.get("payload", {}), "bridge payload"))
         print(json.dumps({"id": request_id, "ok": True, "result": result}, ensure_ascii=False, separators=(",", ":")), flush=True)

@@ -184,7 +184,8 @@ class TransactionCoordinator:
             if previous:
                 if previous["request_digest"] != request_digest:
                     raise TransactionError("transaction_id_reused")
-                return previous
+                if previous["state"] != "pending":
+                    return previous
             if not isinstance(writes, dict):
                 raise TransactionError("transaction_writes_invalid")
             for relative in writes:
@@ -196,6 +197,23 @@ class TransactionCoordinator:
                 "request_id": request_id, "operation": operation, "request_digest": request_digest,
                 "state": "prepared", "prepared_at": _now(), "writes": writes,
                 "writes_digest": _digest(writes), "result": result,
+            }
+            _atomic_json(path, record)
+            return record
+
+    def begin(self, request_id: str, operation: str, payload: Any) -> dict[str, Any]:
+        with self.locked():
+            path = self._receipt_path(request_id)
+            request_digest = _digest({"operation": operation, "payload": payload})
+            previous = self._read(path)
+            if previous:
+                if previous["request_digest"] != request_digest:
+                    raise TransactionError("transaction_id_reused")
+                return previous
+            record = {
+                "schema_version": "agent_transaction/1", "transaction_id": f"txn_{_digest(request_id)}",
+                "request_id": request_id, "operation": operation, "request_digest": request_digest,
+                "state": "pending", "created_at": _now(), "payload": payload,
             }
             _atomic_json(path, record)
             return record
