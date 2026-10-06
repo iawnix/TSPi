@@ -197,7 +197,9 @@ def dispatch(method, payload):
         if not isinstance(params, dict):
             raise ValueError("command params must be an object")
         from tspi_runtime.api import execute
-        return execute(command, root, params)
+        # Preserve the immutable bridge identity in execution/evidence
+        # requests; JobSpec and artifact provenance use the same workspace id.
+        return execute(command, root, {**params, "workspace_id": payload.get("workspace_id")})
     if method == "transaction_get":
         if TransactionCoordinator is None: raise RuntimeError("transaction coordinator unavailable")
         request_id = payload.get("request_id")
