@@ -41,14 +41,7 @@ Server socket；Phone 继续通过 TSPi Link 的 WSS Relay。三种方式都使�
 
 远程 Host 所在机器是 workspace、SQLite durable session、Research Memory 和 workspace
 lock 的唯一权威位置。TSPi 不使用实时双向 rsync 同步工作区；rsync 或其它批量复制工具只
-能用于显式 artifact manifest 的初始化、备份或导出。
-
-安装后的命令直接提供这个边界：
-`ResearchAgent artifact manifest --root <source> --path <relative-file> --output <manifest.json>`
-生成 owner-only 的 `tspi-artifact-transfer/1` manifest；
-`ResearchAgent artifact apply --source-root <source> --destination-root <destination> --manifest <manifest.json>`
-会校验并物化文件，支持断点续传和幂等重跑。manifest 必须逐个列出文件，永远不会包含
-Host session 或 `.pi/app-server-host` 状态。
+能用于显式的远程作业文件操作；artifact 注册仍然独立于传输方式。
 
 ## 科学状态模型
 

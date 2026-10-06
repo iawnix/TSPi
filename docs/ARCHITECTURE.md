@@ -64,16 +64,8 @@ NDJSON protocol and never create a second Agent lane.
 
 The remote Host owns the canonical workspace, SQLite durable sessions, Research
 Memory, and workspace locks. TSPi does not use live bidirectional rsync for
-workspace operation. rsync or another bulk copier is reserved for an explicit
-artifact manifest used for bootstrap, backup, or export.
-
-The installed command exposes that boundary directly:
-`ResearchAgent artifact manifest --root <source> --path <relative-file> --output <manifest.json>`
-creates an owner-only `tspi-artifact-transfer/1` manifest, and
-`ResearchAgent artifact apply --source-root <source> --destination-root <destination> --manifest <manifest.json>`
-verifies and materializes it with resume and idempotent re-run support. The
-manifest names every file explicitly; it never includes Host sessions or
-`.pi/app-server-host` state.
+workspace operation. Explicit file movement for a remote job remains an
+operational shell concern; artifact registration stays separate from transport.
 
 ## Scientific State Model
 
