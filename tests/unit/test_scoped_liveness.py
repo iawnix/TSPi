@@ -24,6 +24,39 @@ def test_email_bash_preflight_has_no_calculation_dependency_but_needs_lifecycle_
     assert state.read_context(tmp_path)["attempts"] == []
 
 
+def test_change_supersedes_recovery_checkpoint_and_requires_a_new_checkpoint(tmp_path):
+    workspace(tmp_path)
+    state.checkpoint(tmp_path, {**AUTH, "id": "checkpoint_recovery", "disposition": "continue_required"})
+    assert state.read_liveness(tmp_path)["disposition"] == "continue_required"
+    change(tmp_path, [{"type": "set_node_state", "node_id": "node_1", "state": "active"}])
+    live = state.read_liveness(tmp_path)
+    assert live.get("disposition") is None
+    assert live["lifecycle"] == "decision_needed"
+    assert live["needs_checkpoint"] is True
+    assert live["execution_ready"] is True
+    assert live["continuation"] is None
+
+
+def test_issue_resolution_preserves_original_evidence_and_validates_references(tmp_path):
+    workspace(tmp_path)
+    change(tmp_path, [{"type": "create_finding", "id": "issue_binding", "node_id": "node_1",
+                       "kind": "issue", "statement": "Python binding missing", "severity": "blocking"}])
+    revision = state.read_context(tmp_path)["revision"]
+    with pytest.raises(state.AgentWorkspaceError, match="evidence_reference_unknown"):
+        change(tmp_path, [{"type": "resolve_issue", "id": "issue_binding", "resolution": "Fixed", "source_refs": ["missing"]}])
+    assert state.read_context(tmp_path)["revision"] == revision
+    operation = {"type": "resolve_issue", "id": "issue_binding", "resolution": "Binding repaired and probe passed"}
+    change(tmp_path, [operation])
+    finding = state.read_context(tmp_path)["findings"][0]
+    assert finding["status"] == "resolved"
+    assert finding["statement"] == "Python binding missing"
+    assert finding["source_refs"] == []
+    change(tmp_path, [operation])
+    assert state.read_context(tmp_path)["findings"][0] == finding
+    with pytest.raises(state.AgentWorkspaceError, match="different resolution"):
+        change(tmp_path, [{**operation, "resolution": "Changed history"}])
+
+
 def change(root, operations):
     return state.apply_change(root, {**AUTH, "operations": operations})
 

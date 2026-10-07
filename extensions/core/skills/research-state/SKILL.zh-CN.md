@@ -55,3 +55,5 @@ Research State 会在提交一个新 revision 前校验引用、反向索引、�
 普通工具观测不要求写 Finding。需要事实记录时，先用 artifact_create 或 artifact_register 保存原始观测，引用返回的 artifact_id。evidence_reference_unknown 时用 research_read mode=evidence 查证，不能用工具名或自然语言代替 ID。可选诊断失败不阻止独立任务。使用全局 user_input_required 前，先明确原因并阻塞对应 Node；存在独立可执行节点或运行中 Attempt 时 State 会拒绝该 checkpoint。
 
 科学 FactFinding 必须同时提供 source_refs（已登记 Artifact ID）和非空 provenance（如 {"source":"collected result.json"}）。Interpretation 必须包含真实 attempt_ref。terminal checkpoint 前先把完成节点设为 state=closed、outcome=completed，并填写 summary。
+
+问题修复后通过 research_change 使用 {"type":"resolve_issue","id":"<既有issue ID>","resolution":"<修复内容与验证方式>","source_refs":["<已登记证据ID>"]}。source_refs 可省略，提供时必须存在。该操作保留原 issue 和证据，标记 resolved 并记录修复说明；相关 Node 另行恢复。不要发明 update_finding 或直接改状态文件。ResearchMap 变更会取代旧 checkpoint，恢复后的工作结束前需写新 checkpoint。

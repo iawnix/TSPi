@@ -362,7 +362,7 @@ def _require_decision_ready(
     execution_types = {
         "create_attempt", "register_attempt", "transition_attempt", "update_attempt", "reconcile_attempt",
         "create_artifact", "register_artifact", "create_evidence", "link_evidence",
-        "register_evidence", "create_finding", "create_gate", "evaluate_gate",
+        "register_evidence", "create_finding", "resolve_issue", "create_gate", "evaluate_gate",
     }
     if any(
         isinstance(item, dict)
@@ -517,7 +517,7 @@ def _base_liveness_projection(
 
     # A persisted checkpoint already carries the durable projection. Preserve
     # it on reads/restarts until the next ResearchMap mutation supersedes it.
-    if isinstance(liveness.get("disposition"), str):
+    if checkpoint is None and isinstance(liveness.get("disposition"), str):
         return result
 
     focus = context.get("focus") if isinstance(context.get("focus"), dict) else {}
@@ -1225,6 +1225,22 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
         for claim_id in claim_ids:
             _attach_unique(claims[claim_id], "finding_ids", item_id)
         return item_id
+    if kind == "resolve_issue":
+        item_id = _identifier(operation.get("id"), "operation.id")
+        finding = _lookup(context, "findings", item_id, "finding")
+        if finding.get("kind") != "issue":
+            raise AgentWorkspaceError("resolve_issue requires an issue finding")
+        resolution = _string(operation, "resolution")
+        refs = _string_list(operation, "source_refs")
+        if refs:
+            _refs_exist(context, refs, label="operation.source_refs")
+        if finding.get("status") == "resolved":
+            if finding.get("resolution") != resolution or finding.get("metadata", {}).get("resolution_refs", []) != refs:
+                raise AgentWorkspaceError("resolved issue already has a different resolution")
+            return None
+        finding.update(status="resolved", resolution=resolution)
+        finding["metadata"] = {**finding.get("metadata", {}), "resolved_at": created_at, "resolution_refs": refs}
+        return None
     if kind == "create_gate":
         item_id = _identifier(operation.get("id"), "operation.id")
         gates = _items(context, "gates")

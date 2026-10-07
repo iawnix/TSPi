@@ -254,6 +254,9 @@ export function createPublicToolContracts(Type) {
       severity: Type.Optional(identifier(64)), resolution: Type.Optional(text()),
       created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
     }),
+    operation("resolve_issue", {
+      id: identifier(), resolution: text(), source_refs: Type.Optional(stringArray(256)),
+    }),
     operation("create_gate", {
       id: identifier(), scope: literalUnion(["node", "claim"]), target_id: identifier(),
       criteria: Type.Optional(Type.Array(Type.Any(), { maxItems: 128 })),
