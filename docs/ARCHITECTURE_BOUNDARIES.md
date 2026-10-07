@@ -5,6 +5,8 @@ input templates, parsers and validation. The installed chemical Skills provide
 CF22D, GFN2-xTB and Gaussian opt/SP runners. Skills can use ordinary shared libraries;
 there is no scientific capability registry or Provider dispatch in their execution path.
 
+Agent-facing job_* tools manage scientific computation. Report formatting and email
+use native bash and preserve files/receipts as Artifacts, without calculation Attempts.
 Job Runtime executes arbitrary argv locally or through SSH/PBS. It owns durable
 process/scheduler identity, logs, timeout/cancellation, status and file collection.
 The local supervisor writes terminal receipts even when the Host is not polling.
@@ -18,8 +20,8 @@ The Agent interprets scientific evidence and registers Findings. A plan is not a
 Attempt; a Job ID is not an Attempt ID; storing a payload is not a scientific claim.
 
 Monitor maintains a durable wake outbox for the owning session. It does not send
-email. The email Skill uses local Jobs, installation credentials and stable delivery
-identities; unknown delivery outcomes require reconciliation rather than blind retry.
+email. The email Skill runs check/prepare/send/status through native bash with
+installation credentials and stable delivery identities; unknown delivery outcomes require reconciliation rather than blind retry.
 
 Extension manifests discover Skills. providers remains readable for legacy/third-party
 metadata but is optional and absent from the chemical and email manifests. Executable

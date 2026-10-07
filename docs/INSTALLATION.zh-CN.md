@@ -379,3 +379,11 @@ systemctl status ts-app-server-tspi.service         # system scope
 本安装创建的 Link Relay service。共享或没有所有权标记的 Relay 会保留。如果 Relay 目录曾被
 手动删除，请使用它原来的 `--install-root` 调用独立 Relay 卸载器；即使代码路径不存在，也会
 清理残留 unit。
+
+## 科学计算绑定就绪检查
+
+安装配置位于 `<install>/etc/job.toml`。维护绑定后同步重装配置源，避免重装导入旧格式。安装前检查声明的本地科学后端：结构化 Conda 绑定、环境回执、explicit 锁文件及固定依赖、CF22D 运行库、激活后的可执行路径。环境级 Python 可被后端覆盖；移除旧 pyscf.command。
+
+摘要区分配置导入与 local_ready、static_valid、remote_not_probed、invalid、not_probed。非默认远程配置缺口明确报告，不自动访问远程；默认目标或声明的本地科学后端不就绪则安装失败。`var/state/installation/job-readiness.json` 保存就绪结果、配置摘要和之前的摘要。探针不提交计算，实际执行仍需有界科学 Job 验证。
+
+报告整理和邮件 check/prepare/send/status 通过原生 bash 执行；job_* 用于科学计算。邮件继续使用安装凭据和持久化投递回执。

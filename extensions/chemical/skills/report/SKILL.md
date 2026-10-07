@@ -7,14 +7,12 @@ description: Build a reproducible calculation report from validated scientific S
 
 Use this Skill for report tasks described above.
 
-Prepare the request with [scripts/prepare_job.py](scripts/prepare_job.py):
+Use native bash to invoke the installed [scripts/build.py](scripts/build.py) with bounded execution time:
 
 ```bash
-"$TSPI_PYTHON" scripts/prepare_job.py --result local=path/to/result.json --output prepared/report-job.json
+"$TSPI_PYTHON" <installed-report-skill>/scripts/build.py --result local=<workspace>/path/to/result.json --output-dir <workspace>/reports/comparison-v1
 ```
 
-Use the installed Skill script path when invoking the helper. Repeat `--result environment=path` for each result. The helper uses the installed local `TSPI_PYTHON`, stages the report builder and every input, and prints `requestFile` plus `requestSha256`. Pass those fields and the report `nodeId` to `job_start`. The report Node must have a strategy and satisfied dependencies before submission.
+Resolve the script from this Skill's listed location. Repeat `--result environment=path` for each collected scientific result. Use a new missing or empty output directory; the builder refuses to overwrite existing files. Report formatting uses existing results and creates no Job or calculation Attempt. Additional scientific computation still uses job_*.
 
-Job cwd is an isolated `runs/jobs/<job_id>` directory. Commands and declared outputs use paths relative to that directory; an optional cwd must be a relative subdirectory. Source inputs may be absolute or workspace-relative. Do not use an absolute workspace directory as cwd or output path. The helper declares `results/report.md` and `results/report.json`; the builder accepts a missing or empty output directory and refuses a nonempty directory. Use a new `--work-id` for an intentional rerun.
-
-Collect the Job outputs and register their Artifacts, then check every requested matrix cell is represented before calling the study complete. Failed or missing cells must be explained. Cross-method absolute energies are not accuracy rankings. Use the email Skill only for notifications the user requested.
+Read report.md and report.json, verify source digests and every requested matrix cell, then register both files as Artifacts associated with the report Node. Explain failed or missing cells; do not invent results. Cross-method absolute energies are not accuracy rankings. Use the email Skill through bash for user-requested delivery, then close the delivery Node and record the final checkpoint. Global blocked/terminal requires an explicit recovery checkpoint before further writes.

@@ -77,6 +77,11 @@ def test_example_and_python_binding_share_public_schema():
     example = tomllib.loads((root / 'config/compute.example.toml').read_text())
     validator.validate(example)
     validate_job_config(example)
+    inherited = copy.deepcopy(example)
+    inherited['environments']['remote']['backends']['pyscf'] = {}
+    validator.validate(inherited)
+    validate_job_config(inherited)
+    assert resolve_python(inherited, 'remote', 'pyscf') == inherited['environments']['remote']['python']
     for invalid in ['/usr/bin/python3', {**binding('/opt/env'), 'manager': 'venv'},
                     {**binding('/opt/env'), 'prefix': 'relative'}, {**binding('/opt/env'), 'extra': True}]:
         c = copy.deepcopy(example)

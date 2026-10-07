@@ -5,6 +5,25 @@ from tests.unit.test_job_recovery import workspace
 AUTH = {"principal": "root_agent", "authority": "kernel_write"}
 
 
+def test_email_bash_preflight_has_no_calculation_dependency_but_needs_lifecycle_recovery(tmp_path):
+    workspace(tmp_path)
+    change(tmp_path, [{"type": "create_node", "id": "node_delivery", "title": "Email",
+                       "objective": "Deliver results", "claim_ids": ["claim_1"], "dependency_ids": ["node_1"]}])
+    tool = {"name": "bash", "effect": "execution_control", "phase": "prepare",
+            "args": {"command": '"$TSPI_PYTHON" email_cli.py check'}}
+    def admit():
+        return state.read_liveness(tmp_path, {"tool": tool})["tool_admission"]
+    assert admit()["accepted"]
+    job = {"name": "job_start", "effect": "execution_control", "args": {"nodeId": "node_delivery"}}
+    assert state.read_liveness(tmp_path, {"tool": job})["tool_admission"]["code"] == "research_node_not_ready"
+    change(tmp_path, [{"type": "set_node_state", "node_id": "node_1", "state": "blocked", "summary": "Missing binding"}])
+    state.checkpoint(tmp_path, {**AUTH, "id": "checkpoint_blocked", "disposition": "blocked", "reason": "Missing binding"})
+    assert admit()["code"] == "research_lifecycle_blocked"
+    state.checkpoint(tmp_path, {**AUTH, "id": "checkpoint_recover", "disposition": "continue_required", "reason": "Binding repaired"})
+    assert admit()["accepted"]
+    assert state.read_context(tmp_path)["attempts"] == []
+
+
 def change(root, operations):
     return state.apply_change(root, {**AUTH, "operations": operations})
 

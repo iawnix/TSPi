@@ -1,4 +1,4 @@
-"""Exercise installed email CLI through Jobs against an isolated TLS SMTP sink."""
+"""Exercise scientific Job collection then report/email through bash against an isolated TLS SMTP sink."""
 import json
 import os
 from pathlib import Path
@@ -13,7 +13,7 @@ from tspi_runtime.execution import dispatch
 from tests.unit.test_job_recovery import workspace
 
 
-def test_email_prepare_send_receipt_and_retry_through_jobs(tmp_path, monkeypatch):
+def test_computation_then_report_and_email_through_bash(tmp_path, monkeypatch):
     workspace(tmp_path)
     cert = tmp_path / "cert.pem"; key = tmp_path / "key.pem"
     subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
@@ -69,35 +69,47 @@ password_env = "TSPI_FIXTURE_PASSWORD"
         monkeypatch.setenv("SSL_CERT_FILE", str(cert))
         monkeypatch.setenv("TSPI_FIXTURE_PASSWORD", "fixture-only")
         script = Path(__file__).resolve().parents[2] / "extensions/email/scripts/email_cli.py"
-        report = tmp_path / "reports/result.md"; report.parent.mkdir(exist_ok=True)
-        report.write_text("Isolated scientific fixture, no real recipient.")
+        calculation = dispatch("start", {"root": str(tmp_path), "nodeId": "node_1", "requestId": "calculation",
+            "command": [sys.executable, "-c", "import json;from pathlib import Path;Path('result.json').write_text(json.dumps({'method':'fixture','validated':True,'steps':[{'task':'sp','energy_hartree':-1}]}))"],
+            "outputs": [{"path": "result.json", "required": True}]})
+        try:
+            for _ in range(200):
+                status = dispatch("status", {"root": str(tmp_path), "jobId": calculation["job_id"]})
+                if status["state"] in {"succeeded", "failed", "timed_out"}: break
+                time.sleep(.02)
+            assert status["state"] == "succeeded"
+            collected = dispatch("collect", {"root": str(tmp_path), "jobId": calculation["job_id"]})
+            assert collected["status"]["state"] in {"succeeded", "collected"}
+        finally:
+            dispatch("cancel", {"root": str(tmp_path), "jobId": calculation["job_id"]})
+        builder = script.parents[2] / "chemical/skills/report/scripts/build.py"
+        output = tmp_path / "reports/comparison"
+        subprocess.run(["bash", "-c", 'exec "$@"', "report", sys.executable, str(builder),
+                        "--result", f"local={calculation['cwd']}/result.json", "--output-dir", str(output)], check=True, timeout=30)
+        report = output / "report.md"
+        jobs_before = sorted(str(p) for p in (tmp_path / "operations").rglob("*"))
         draft = tmp_path / "draft.json"
         draft.write_text(json.dumps({"notification_id": "fixture-final-v1", "event": "study_completed",
-                                    "subject": "Fixture result", "summary": "Fixture complete", "report_refs": ["reports/result.md"]}))
+                                    "subject": "Fixture result", "summary": "Fixture complete", "report_refs": ["reports/comparison/report.md"]}))
 
-        def job(name, operation, *extra):
-            receipt = dispatch("start", {"root": str(tmp_path), "nodeId": "node_1", "requestId": name,
-                "command": [sys.executable, str(script), operation, "--root", str(tmp_path), "--output", "output.json", *extra],
-                "outputs": [{"path": "output.json", "required": True}]})
-            try:
-                for _ in range(200):
-                    status = dispatch("status", {"root": str(tmp_path), "jobId": receipt["job_id"]})
-                    if status["state"] in {"succeeded", "failed", "timed_out"}: break
-                    time.sleep(.02)
-                assert status["state"] == "succeeded", (status, (Path(receipt["cwd"])/"output.json").read_text())
-                dispatch("collect", {"root": str(tmp_path), "jobId": receipt["job_id"]})
-                path = Path(receipt["cwd"])/"output.json"
-                return path, json.loads(path.read_text())
-            finally:
-                dispatch("cancel", {"root": str(tmp_path), "jobId": receipt["job_id"]})
+        def cli(name, operation, *extra):
+            path = tmp_path / "reports/email" / (name + ".json")
+            run = subprocess.run(["bash", "-c", 'exec "$@"', "email", sys.executable, str(script),
+                                  operation, "--root", str(tmp_path), "--output", str(path), *extra],
+                                 capture_output=True, text=True, timeout=30)
+            assert run.returncode == 0, (run.stderr, run.stdout)
+            return path, json.loads(path.read_text())
 
-        _, check = job("email_check", "check")
+        _, check = cli("email_check", "check")
         assert check["recipient"] == "reader@example.test"
-        prepared, _ = job("email_prepare", "prepare", "--request-file", str(draft))
-        _, sent = job("email_send", "send", "--request-file", str(prepared))
+        prepared, _ = cli("email_prepare", "prepare", "--request-file", str(draft))
+        _, sent = cli("email_send", "send", "--request-file", str(prepared))
         assert sent["state"] == "sent"
-        _, retry = job("email_retry", "send", "--request-file", str(prepared))
+        _, retry = cli("email_retry", "send", "--request-file", str(prepared))
         assert retry["state"] == "already_sent"
+        _, status = cli("email_status", "status", "--receipt-ref", "reports/email/email_send.json")
+        assert status["state"] == "sent"
+        assert sorted(str(p) for p in (tmp_path / "operations").rglob("*")) == jobs_before
         assert len(messages) == 1
         assert b"Fixture result" in messages[0]
     finally:

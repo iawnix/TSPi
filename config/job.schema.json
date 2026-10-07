@@ -59,25 +59,44 @@
                 "submission": {
                   "$ref": "#/$defs/submission"
                 }
-              },
-              "anyOf": [
-                {
-                  "required": [
-                    "command"
-                  ]
-                },
-                {
-                  "required": [
-                    "python"
-                  ]
-                }
-              ]
+              }
             }
           },
           "submission": {
             "$ref": "#/$defs/submission"
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "not": {
+                "required": [
+                  "python"
+                ]
+              }
+            },
+            "then": {
+              "properties": {
+                "backends": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "command"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "python"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
       },
       "propertyNames": {
         "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"

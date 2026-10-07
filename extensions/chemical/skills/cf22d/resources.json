@@ -7,6 +7,7 @@
     "skills/cf22d/scripts/runner.py": "sha256:8db9e50f6ea702bfde9cfdb5c9d5a9981ce6570199eb971b32e9b90ef16c334f",
     "skills/cf22d/scripts/settings.py": "sha256:af32ea856c532449d9d3e6b916b85ef9b3fc502665717c8bae3459d48e95a09d",
     "skills/cf22d/scripts/xyz.py": "sha256:19377522138a2501fcb2441f55ec4f80a0a36cfe4f5d3c9a259eca9bc8830ab9",
-    "skills/_shared/science.py": "sha256:dfd52085de07e1a7a75315cb50225021fd397f438c1544c67266c79809affc5b"
+    "skills/_shared/science.py": "sha256:dfd52085de07e1a7a75315cb50225021fd397f438c1544c67266c79809affc5b",
+    "skills/_shared/execution_bindings.py": "sha256:4e77463dd31654b872bf5167050ac9844977d7a744c863cf303dc343204b04d1"
   }
 }

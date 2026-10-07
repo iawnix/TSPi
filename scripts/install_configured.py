@@ -20,6 +20,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 try:
@@ -340,6 +341,12 @@ def main(argv: list[str] | None = None) -> int:
         install_root = Path(args.install_root).expanduser().resolve()
         if config.is_symlink() or not config.is_dir():
             raise ValueError(f"configuration directory must be a physical directory: {config}")
+        try:
+            from .install_wizard import _validate_job_config
+        except ImportError:
+            from install_wizard import _validate_job_config
+        job_source = _regular_file(config / "job.toml", "job.toml")
+        _validate_job_config(tomllib.loads(job_source.read_text()), probe_local=True)
         if _relay_requested(args):
             if args.phone_access == "disabled":
                 raise ValueError("--with-link-relay requires --phone-access link or auto")

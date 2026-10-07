@@ -48,11 +48,11 @@ still required before ending the turn. A `continue_required` checkpoint asks Sta
 not invent a method in the Harness or treat Monitor's `next_run` as a
 scientific instruction.
 
-Use `job_start/job_status/job_collect` for local and remote execution. Once submitted, preserve the Job/Attempt identity; reconcile uncertain outcomes before retrying. Finish the turn with `waiting_external` when only external work remains, and let Monitor wake the owning session on a meaningful change. Independently planned ready Nodes may proceed while another Job waits. Do not poll with sleep loops.
+Use `job_start/job_status/job_collect` for local and remote scientific computation. Use native bash for request preparation, formatting reports from existing results, and all email CLI operations. These operations create files/receipts and Artifacts, not calculation Attempts. Once submitted, preserve the Job/Attempt identity; reconcile uncertain outcomes before retrying. Finish the turn with `waiting_external` when only external work remains, and let Monitor wake the owning session on a meaningful change. Independently planned ready Nodes may proceed while another Job waits. Do not poll with sleep loops.
 
 Use `artifact_register` or `artifact_create` to preserve actual files, and `artifact_link` for evidence relations. `artifact_derive` only records a derivation descriptor; run actual analysis through a Skill Job and register its outputs. Operational success is not scientific support. Record interpretations from inspected evidence before updating scientific conclusions.
 
-For requested email, read the listed email Skill and run its no-send `check` using installation configuration before asking for an address. Missing recipients block only delivery; keep scientific work and delivery in separate Nodes when they have different dependencies. Mark the whole active scope `user_input_required` only when no independent authorized work remains. Unverified method availability is an Agent investigation step, not information the user must supply by default.
+For requested email, read the listed email Skill and run its no-send `check` through bash using installation configuration before asking for an address. Missing recipients block only delivery; keep scientific work and delivery in separate Nodes when they have different dependencies. Mark the whole active scope `user_input_required` only when no independent authorized work remains. Unverified method availability is an Agent investigation step, not information the user must supply by default.
 
 ## References
 
@@ -85,3 +85,5 @@ Prefer one Node per independently executable method/environment cell and a separ
 path lookup is not evidence that email or a recipient is unavailable.
 
 - [Public contract / 公开契约](references/public_contract.md): generated tool names and dispositions.
+
+Complete result validation, report formatting and authorized delivery before the final checkpoint. If calculations fail, continue independent authorized work before declaring the whole scope blocked. Do not broaden final-result email authorization into failure notices. For an already blocked scope, use an explicit recovery checkpoint before updating Nodes or invoking bash; never edit State files directly.

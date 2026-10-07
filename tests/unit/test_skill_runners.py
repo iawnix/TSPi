@@ -40,31 +40,20 @@ def test_cf22d_rejects_method_substitution_before_calculation(tmp_path):
     assert 'only permits xc=CF22D' in run.stderr
 
 
-def test_report_prepared_job_stages_inputs_and_collects_outputs(tmp_path):
-    from tspi_runtime.execution import _spec
-    from job_runtime import LocalProcessPlatform, JobState
-    from tests.unit.test_job_recovery import wait_reaped
+def test_report_bash_preserves_source_digests_and_accepts_empty_output(tmp_path):
+    import hashlib
     source = tmp_path/'result.json'
     source.write_text(json.dumps({'method':'fixture','validated':True,'steps':[{'task':'sp','energy_hartree':-1}]}))
-    request_file = tmp_path/'request.json'
-    run = subprocess.run([sys.executable, str(SKILLS/'report/scripts/prepare_job.py'), '--result', f'local={source}',
-                          '--python', sys.executable, '--output', str(request_file)], capture_output=True, text=True)
+    out = tmp_path/'results'; out.mkdir()
+    run = subprocess.run(['bash', '-c', 'exec "$@"', 'report', sys.executable,
+                          str(SKILLS/'report/scripts/build.py'), '--result', f'local={source}',
+                          '--output-dir', str(out)], capture_output=True, text=True, timeout=30)
     assert run.returncode == 0, run.stderr
-    reference = json.loads(run.stdout)
-    import hashlib
-    assert reference['requestSha256'] == hashlib.sha256(request_file.read_bytes()).hexdigest()
-    spec = _spec(tmp_path, json.loads(request_file.read_text()))
-    source.unlink()  # Execution must use staged data, not its workspace source.
-    (spec.cwd/'results').mkdir()  # Mirrors t001's pre-created output directory.
-    platform = LocalProcessPlatform()
-    receipt = platform.start(spec)
-    wait_reaped(receipt)
-    result = platform.collect(receipt)
-    assert result['status']['state'] == JobState.SUCCEEDED
-    assert result['output_validation']['complete']
-    report = json.loads((spec.cwd/'results/report.json').read_text())
+    report = json.loads((out/'report.json').read_text())
     assert report['results'][0]['energy_hartree'] == -1
-    assert report['sources'][0]['path'] == 'inputs/result_0.json'
+    assert report['sources'][0]['path'] == str(source)
+    assert report['sources'][0]['sha256'] == hashlib.sha256(source.read_bytes()).hexdigest()
+    assert (out/'report.md').is_file()
 
 
 def test_report_refuses_to_overwrite_existing_output(tmp_path):

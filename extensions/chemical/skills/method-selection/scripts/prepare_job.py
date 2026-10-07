@@ -4,19 +4,18 @@ import hashlib
 import json
 from pathlib import Path
 import shlex
-from job_runtime.config_contract import load_job_config, resolve_python, python_command, binding_digest, resolve_submission
+import sys
+from job_runtime import config_contract
+from job_runtime.config_contract import load_job_config, python_command, binding_digest
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '_shared'))
+from execution_bindings import resolve_backend
 
 
 def prepare(config, environment, backend, skill, xyz, arguments, python=None, work_id=None):
     settings = load_job_config(config)
     target = settings['environments'][environment]
     binding = target['backends'][backend]
-    command = binding.get('command', [])
-    command = [command] if isinstance(command, str) else command
-    if backend != 'pyscf' and (not command or any(not isinstance(x,str) or not x for x in command)):
-        raise ValueError('backend command must be a non-empty argv')
-    if backend != 'pyscf' and len(command) != 1:
-        raise ValueError('xTB/Gaussian executable binding must contain one executable')
+    python_binding, command, submission = resolve_backend(settings, environment, backend, contract=config_contract)
     root=Path(__file__).resolve().parents[2]
     script=root/skill/'scripts'/'run.py'
     if not script.is_file(): raise ValueError('Skill has no installed scripts/run.py')
@@ -26,9 +25,6 @@ def prepare(config, environment, backend, skill, xyz, arguments, python=None, wo
             {'source':str(Path(xyz).resolve()),'destination':'input.xyz'}]
     if python is not None:
         raise ValueError('Configure a Conda python binding in job.toml; --python overrides are retired')
-    python_binding = resolve_python(settings, environment, backend)
-    if backend == 'pyscf' and command:
-        raise ValueError('Remove the legacy pyscf.command interpreter; backends.pyscf.python is the sole Python binding')
     python_argv = python_command(python_binding)
     argv=[*python_argv,f'skills/{skill}/scripts/run.py','--xyz','input.xyz','--output-dir','results',*arguments]
     if backend != 'pyscf': argv.extend(['--executable',command[0]])
@@ -40,7 +36,6 @@ def prepare(config, environment, backend, skill, xyz, arguments, python=None, wo
     identity = binding_digest({'environment':environment, 'backend':backend, 'arguments':arguments,
         'input_sha256':hashlib.sha256(Path(xyz).read_bytes()).hexdigest(), 'configuration':binding_digest(settings)})[7:]
     work_id = work_id or 'work_' + identity[:48]
-    submission = resolve_submission(settings, environment, backend)
     return {'requestId':'skill_'+hashlib.sha256(work_id.encode()).hexdigest()[:48], 'workId':work_id,'command':argv,'platform':environment,'inputs':inputs,
             'environment':binding.get('environment',{}),
             'outputs':[{'path':'results/result.json','required':True,'minBytes':2,'mediaType':'application/json'},

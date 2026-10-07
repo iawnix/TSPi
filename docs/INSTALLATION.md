@@ -118,7 +118,7 @@ install, enter its path when prompted; for a non-interactive install, pass
 `--compute-config /absolute/path/compute.toml`. The project template is
 `config/compute.example.toml`. Copy it, edit the local and/or remote backend bindings
 available on the target machine, and pass the edited file to the installer. The
-installed copy is `<install>/.pi/compute.toml` and is written with mode `0600`.
+installed copy is `<install>/etc/job.toml` and is written with mode `0600`.
 
 Local and remote calculations share one public lifecycle through `job_start/job_status/job_collect`; choose
 `execution_target.kind = "local"` or `"remote"` and, when using the unified file,
@@ -470,3 +470,11 @@ installation-owned Link Relay services in the configured scope. A shared or
 unmarked Relay is preserved. If a Relay directory was removed manually, run
 the standalone Relay uninstaller with its former `--install-root` so the unit
 is removed even when its code path no longer exists.
+
+## Scientific binding readiness
+
+The installation uses `<install>/etc/job.toml`. Keep the reinstall source synchronized after intentional binding maintenance; reinstalling from an older source can otherwise restore obsolete bindings. The installer checks declared local scientific backends before installing: structured Conda binding, environment receipt, explicit lock and pinned dependencies, CF22D runtime imports, and executable availability after activation. An environment-level Python binding may be overridden per backend. Remove legacy pyscf.command.
+
+The summary separates configuration import from local_ready, static_valid, remote_not_probed, invalid, and not_probed backend states. Nondefault remote gaps are reported without contacting remote hosts; an invalid default target or declared local scientific backend fails installation. A readiness record with configuration digest and prior digest is saved at `var/state/installation/job-readiness.json`. These checks do not submit calculations; validate actual execution with a bounded scientific Job.
+
+Reports and email check/prepare/send/status run through native bash; job_* manages scientific computation. Email retains installation credentials and durable delivery receipts.

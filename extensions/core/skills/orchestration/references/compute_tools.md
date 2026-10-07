@@ -1,6 +1,6 @@
 # Job Runtime
 
-TSPi uses the generic Job Runtime for long-running work. A Domain Skill explains
+TSPi uses the generic Job Runtime for scientific computation. Request preparation, report formatting and email use native bash with the installed Skill scripts. A Domain Skill explains
 how to construct the command, inputs, expected outputs, and interpretation
 criteria. Root executes that workflow with the Job and Artifact tools.
 

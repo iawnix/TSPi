@@ -38,11 +38,11 @@ prepare/execute，但结束 turn 前仍必须写入 checkpoint。`continue_requi
 Harness 不应在同一 turn 强行执行它。Harness 不得替 Agent 发明方法，Monitor 的 `next_run` 也不是
 新的科学指令。
 
-本地与远端都通过 `job_start/job_status/job_collect` 执行。提交后保存 Job/Attempt 身份，结果不确定时先 reconcile 再考虑重试。只剩外部工作时记录 `waiting_external` 并结束，由 Monitor 在有意义的变化后唤醒；其他已规划且独立的 Node 可以继续。不要用 sleep 循环轮询。
+本地与远端科学计算都通过 `job_start/job_status/job_collect` 执行。提交后保存 Job/Attempt 身份，结果不确定时先 reconcile 再考虑重试。只剩外部工作时记录 `waiting_external` 并结束，由 Monitor 在有意义的变化后唤醒；其他已规划且独立的 Node 可以继续。不要用 sleep 循环轮询。请求准备、已有结果的报告整理和邮件 CLI 全部通过原生 bash 执行；这些操作产生文件、回执与 Artifact，不创建计算 Attempt。
 
 用 `artifact_register` 或 `artifact_create` 保存真实产物，以 `artifact_link` 关联证据。`artifact_derive` 只记录派生描述；实际分析通过 Skill Job 执行，再登记结果。运行成功不等于科学结论成立，需解释证据后再更新结论。
 
-用户要求邮件时，先读取列出的 email Skill，使用安装配置运行无发送副作用的 `check`，再判断是否缺地址。收件人问题只阻塞交付，计算和交付存在不同依赖时应分设 Node。只有没有独立的已授权工作可继续时，才把整个活动范围设为 `user_input_required`。方法可用性尚未验证应由 Agent 调查，不能默认要求用户提供证明。
+用户要求邮件时，先读取列出的 email Skill，通过 bash 使用安装配置运行无发送副作用的 `check`，再判断是否缺地址。收件人问题只阻塞交付，计算和交付存在不同依赖时应分设 Node。只有没有独立的已授权工作可继续时，才把整个活动范围设为 `user_input_required`。方法可用性尚未验证应由 Agent 调查，不能默认要求用户提供证明。
 
 ## 参考资料
 
@@ -73,3 +73,5 @@ Skill，路径读取失败不代表邮件能力或收件人不存在。
 - [Public contract / 公开契约](references/public_contract.zh-CN.md): generated tool names and dispositions.
 
 `continue_required` 会由 State 持久化接续请求，Host 在当前轮结束后通过 Pi 提交。检查返回的 continuation 决定：同一研究 revision 只接续一次，连续推进最多自动接续八次。被拒绝时说明原因，不承诺自动续跑。Node 是研究范围；同 Node 的独立任务必须保留 helper 生成的不同 workId，已提交工作先 collect/reconcile。
+
+完成结果核验、报告整理与已授权交付后再写最终 checkpoint。计算失败时先继续独立的已授权工作，再判断是否全局 blocked。“完成后发结果”不自动授权失败通知。已 blocked 的范围须先通过显式恢复 checkpoint 再更新 Node 或调用 bash，不能直接编辑状态文件。

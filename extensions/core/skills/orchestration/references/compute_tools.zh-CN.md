@@ -1,6 +1,6 @@
 # Job Runtime
 
-TSPi 使用通用 Job Runtime 执行长时间任务。领域 Skill 描述命令、输入、预期输出
+TSPi 使用通用 Job Runtime 执行科学计算。请求准备、已有结果的报告整理和邮件通过原生 bash 调用已安装 Skill 脚本。领域 Skill 描述命令、输入、预期输出
 和解释标准，Root 使用 Job 与 Artifact 工具组合完成流程。
 
 ```text

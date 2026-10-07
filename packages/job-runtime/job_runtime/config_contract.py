@@ -45,7 +45,7 @@ def validate_job_config(value):
                 argv = [command] if isinstance(command, str) else command
                 if not isinstance(argv, list) or not argv or any(not isinstance(x, str) or not x.strip() for x in argv):
                     raise ValueError(f"backend {backend}.command must be a nonempty string or argv")
-            elif "python" not in binding:
+            elif "python" not in binding and "python" not in target:
                 raise ValueError(f"backend {backend} requires command or an explicit python binding")
             activation = binding.get("activation_script")
             if activation is not None and (not isinstance(activation, str) or not activation.startswith("/")):

@@ -1241,6 +1241,30 @@ def test_job_toml_is_validated_and_written_private(tmp_path: Path) -> None:
     assert stat.S_IMODE(destination.stat().st_mode) == 0o600
 
 
+def test_legacy_scientific_config_is_rejected_before_install_copy(tmp_path):
+    root = tmp_path / "install"
+    source = tmp_path / "job.toml"
+    source.write_text('default_environment="local"\n[environments.local]\nkind="local"\n[environments.local.backends.pyscf]\ncommand="/old/python"\n')
+    args = wizard.parse_args(["--install-root", str(root), "--job-config", str(source),
+                              "--service-scope", "none", "--non-interactive"])
+    with pytest.raises(ValueError, match="python_binding_missing"):
+        wizard.validate_options(args)
+    with pytest.raises(ValueError, match="python_binding_missing"):
+        wizard.configure_backend_configs(args)
+    assert not (root / "etc/job.toml").exists()
+
+
+def test_configured_install_checks_science_before_relay_or_secret_copy(tmp_path, monkeypatch):
+    from scripts import install_configured
+    source = tmp_path / "config"; source.mkdir()
+    (source / "job.toml").write_text('default_environment="local"\n[environments.local]\nkind="local"\n[environments.local.backends.xtb]\ncommand="xtb"\n')
+    def unexpected(*args):
+        pytest.fail("invalid scientific config must fail before installation side effects")
+    monkeypatch.setattr(install_configured, "_relay_install", unexpected)
+    monkeypatch.setattr(install_configured, "build_command", unexpected)
+    assert install_configured.main(["--config-dir", str(source), "--install-root", str(tmp_path / "install")]) == 1
+
+
 def test_name_resolver_toml_is_validated_and_written_private(tmp_path: Path) -> None:
     root = tmp_path / "install"
     args = wizard.parse_args([

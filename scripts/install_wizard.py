@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import getpass
 import json
 import os
@@ -830,7 +831,9 @@ def validate_options(args: argparse.Namespace) -> None:
             parsed_job = tomllib.loads(source.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
             raise ValueError(f"invalid job TOML configuration: {source}: {error}") from error
-        _validate_job_config(parsed_job)
+        _validate_job_config(parsed_job, probe_local=True)
+    elif (Path(args.install_root) / "etc/job.toml").is_file():
+        _validate_job_config(tomllib.loads((Path(args.install_root) / "etc/job.toml").read_text()), probe_local=True)
     if args.name_resolver_config:
         source = Path(args.name_resolver_config).expanduser()
         if not source.is_absolute() or source.is_symlink() or not source.is_file():
@@ -1324,8 +1327,9 @@ def _copy_private_config(source_value: str, destination: Path, *, kind: str) -> 
             parsed = tomllib.loads(raw.decode("utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise ValueError(f"invalid {kind} TOML configuration: {source}: {error}") from error
+    readiness = None
     if kind == "job":
-        _validate_job_config(parsed)
+        readiness = _validate_job_config(parsed, probe_local=True)
     elif kind == "name-resolver":
         _validate_name_resolver_config(parsed)
     elif kind == "remote":
@@ -1352,11 +1356,18 @@ def _copy_private_config(source_value: str, destination: Path, *, kind: str) -> 
                     or not os.access(activation_path, os.R_OK)
                 ):
                     raise ValueError(f"local backend {name!r} activation_script must be an absolute readable regular file")
+    previous_sha256 = hashlib.sha256(destination.read_bytes()).hexdigest() if destination.is_file() else None
     _write_private_config_bytes(raw, destination)
-    return {"status": "configured", "path": str(destination), "source": str(source)}
+    result = {"status": "configured", "path": str(destination), "source": str(source)}
+    if readiness is not None:
+        result.update(sha256=hashlib.sha256(raw).hexdigest(), previous_sha256=previous_sha256,
+                      configuration_changed=previous_sha256 is not None and previous_sha256 != hashlib.sha256(raw).hexdigest(),
+                      readiness=readiness)
+        _write_job_readiness(destination, result)
+    return result
 
 
-def _validate_job_config(parsed: dict[str, object]) -> None:
+def _validate_job_config(parsed: dict[str, object], *, probe_local: bool = False) -> dict:
     """Validate the shared environment shape before installing it."""
     # Import the same public contract as Job Runtime and the Skill helper.
     import importlib.util
@@ -1367,6 +1378,15 @@ def _validate_job_config(parsed: dict[str, object]) -> None:
     for name, environment in parsed["environments"].items():
         if environment["kind"] == "remote":
             _validate_remote_config({"default_environment": name, "environments": {name: environment}}, Path("/"))
+    spec = importlib.util.spec_from_file_location("tspi_science_bindings", ROOT / "extensions/chemical/skills/_shared/execution_bindings.py")
+    science = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(science)
+    return science.check_environments(parsed, contract=contract, probe_local=probe_local)
+
+
+def _write_job_readiness(destination: Path, result: dict) -> None:
+    record = destination.parent.parent / "var/state/installation/job-readiness.json"
+    _write_private_config_bytes((json.dumps(result, indent=2) + "\n").encode(), record)
 
 
 def _validate_name_resolver_config(parsed: object) -> None:
@@ -1544,6 +1564,11 @@ def configure_backend_configs(args: argparse.Namespace) -> dict[str, dict[str, s
     else:
         destination = root / "etc/job.toml"
         result["job"] = {"status": "preserved" if destination.is_file() else "not_configured", "path": str(destination)}
+        if destination.is_file():
+            raw = destination.read_bytes()
+            readiness = _validate_job_config(tomllib.loads(raw.decode()), probe_local=True)
+            result["job"].update(sha256=hashlib.sha256(raw).hexdigest(), readiness=readiness)
+            _write_job_readiness(destination, result["job"])
 
     resolver_config = getattr(args, "name_resolver_config", None)
     resolver_destination = root / "etc/name-resolver.toml"
@@ -3027,6 +3052,13 @@ def show_installed_summary(
         section("Job platforms")
         field("Unified config", job_config.get("path", "not configured"))
         field("Status", job_config.get("status", "not configured"), tone="success" if job_config.get("status") in {"configured", "preserved"} else "warning")
+        for environment, backends in job_config.get("readiness", {}).items():
+            for backend, readiness in backends.items():
+                field(f"{environment}/{backend}", readiness["status"], tone="success" if readiness["status"] == "local_ready" else "warning")
+                if readiness.get("error"):
+                    note(readiness["error"], tone="warning")
+        if job_config.get("configuration_changed"):
+            note("Job configuration changed from the previous installation; source and previous digests are recorded.", tone="warning")
     resolver = components.get("name_resolver")
     if isinstance(resolver, dict):
         section("Chemical name resolution")

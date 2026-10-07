@@ -347,7 +347,7 @@ export function createPublicToolContracts(Type) {
       executionMode: "sequential",
       replay: "never",
     }),
-    jobStart: contract("jobStart", "Start Job", "Start a durable command Job. Prefer requestFile + requestSha256 from a Skill helper to preserve its complete request.", Type.Object({
+    jobStart: contract("jobStart", "Start Job", "Start a durable scientific computation Job. Prefer requestFile + requestSha256 from a scientific Skill helper. Use native bash for email, report formatting and request preparation; these do not create calculation Attempts.", Type.Object({
       nodeId: Type.Optional(nodeReference),
       attemptId: Type.Optional(identifier(128)),
       requestId: Type.Optional(identifier(128)),
