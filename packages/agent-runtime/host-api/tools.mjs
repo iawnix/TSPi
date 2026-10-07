@@ -484,6 +484,12 @@ function normalizeInterpretationParams(params = {}) {
     if (interpretation.node_id === undefined) interpretation.node_id = params.node_id ?? params.nodeId;
     if (interpretation.attempt_ref === undefined) interpretation.attempt_ref = params.attempt_ref ?? params.attemptRef;
   }
+  const missing = ["id", "claim_id", "attempt_ref", "summary", "outcome"].filter(
+    (field) => typeof interpretation?.[field] !== "string" || !interpretation[field].trim(),
+  );
+  if (missing.length) {
+    throw new Error(`research_interpretation requires non-empty interpretation fields: ${missing.join(", ")}. Supply claimId and attemptRef in interpretation or at the top level; eventId does not replace interpretation.id.`);
+  }
   return { ...params, interpretation };
 }
 
@@ -597,19 +603,22 @@ function strategyReviewSchema() {
 }
 
 function interpretationSchema() {
-  return decisionRecordSchema({
-    id: identifierSchema(),
-    claimId: claimIdentifierSchema(),
-    claim_id: claimIdentifierSchema(),
-    nodeId: nodeIdentifierSchema(),
-    node_id: nodeIdentifierSchema(),
-    attemptRef: identifierSchema(),
-    attempt_ref: identifierSchema(),
-    summary: textSchema(),
-    outcome: { enum: ["supports", "contradicts", "inconclusive", "invalid"] },
-    createdAt: identifierSchema(),
-    created_at: identifierSchema(),
-  });
+  return {
+    ...decisionRecordSchema({
+      id: { ...identifierSchema(), description: "Required interpretation record ID; distinct from the request eventId." },
+      claimId: claimIdentifierSchema(),
+      claim_id: claimIdentifierSchema(),
+      nodeId: nodeIdentifierSchema(),
+      node_id: nodeIdentifierSchema(),
+      attemptRef: identifierSchema(),
+      attempt_ref: identifierSchema(),
+      summary: textSchema(),
+      outcome: { enum: ["supports", "contradicts", "inconclusive", "invalid"] },
+      createdAt: identifierSchema(),
+      created_at: identifierSchema(),
+    }),
+    required: ["id", "summary", "outcome"],
+  };
 }
 
 function checkpointSchema() {
@@ -685,10 +694,17 @@ const DECISION_ALIAS_SCHEMAS = Object.freeze({
       eventId: { type: "string", minLength: 1, maxLength: 256 },
       root: { type: "string" },
     },
-    anyOf: [
-      { required: ["attemptRef"] },
-      { required: ["attempt_ref"] },
-      { properties: { interpretation: { anyOf: [{ required: ["attemptRef"] }, { required: ["attempt_ref"] }] } } },
+    allOf: [
+      { anyOf: [
+        { required: ["claimId"] },
+        { required: ["claim_id"] },
+        { properties: { interpretation: { anyOf: [{ required: ["claimId"] }, { required: ["claim_id"] }] } } },
+      ] },
+      { anyOf: [
+        { required: ["attemptRef"] },
+        { required: ["attempt_ref"] },
+        { properties: { interpretation: { anyOf: [{ required: ["attemptRef"] }, { required: ["attempt_ref"] }] } } },
+      ] },
     ],
     required: ["interpretation"],
     additionalProperties: false,

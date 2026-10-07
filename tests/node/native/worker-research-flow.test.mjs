@@ -64,6 +64,11 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
       "Waiting for the fixture Job.",
       call("job_status", { jobId: "job_fixture_run" }),
       call("job_collect", { jobId: "job_fixture_run" }),
+      call("research_interpretation", { interpretation: {
+        id: "interpretation_flow", claimId: "claim_flow",
+        attemptRef: "attempt_" + createHash("sha256").update("job_fixture_run").digest("hex").slice(0, 32),
+        summary: "The fixture produced and collected its required evidence file.", outcome: "supports",
+      } }),
       // First end without a disposition: exactly one repair is expected.
       "Fixture evidence collected.",
       call("research_read", { mode: "context" }),
@@ -152,6 +157,10 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     assert.equal(context.attempts[0].metadata.job_metadata.work_id, "fixture_work");
     assert.equal(context.attempts[0].metadata.job_metadata.configuration_sha256, "fixture");
     assert.ok(context.artifacts.length > 0);
+    assert.equal(context.attempt_interpretations.length, 1);
+    assert.equal(context.attempt_interpretations[0].id, "interpretation_flow");
+    assert.equal(context.attempt_interpretations[0].claim_id, "claim_flow");
+    assert.equal(context.attempt_interpretations[0].attempt_ref, context.attempts[0].id);
     const email = JSON.parse(await readFile(join(workspace, "reports/email-check.json")));
     assert.equal(email.recipient, "reader@example.test");
     assert.equal(email.enabled, true);

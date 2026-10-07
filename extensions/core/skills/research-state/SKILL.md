@@ -65,6 +65,30 @@ Create or confirm Claim/Node objects before research_strategy references them. A
 
 Routine tool observations do not require Findings. If a fact is needed, first preserve the actual observation with artifact_create or artifact_register; cite the returned artifact_id. On evidence_reference_unknown, inspect research_read mode=evidence. Never replace a missing ID with a tool name or prose. Optional diagnostic failure need not block independent work. For global user_input_required, block the affected Nodes with an explicit reason first; State rejects the checkpoint while independent ready Nodes or running Attempts remain.
 
-For a scientific FactFinding, supply both source_refs (registered Artifact IDs) and nonempty provenance (for example {"source":"collected result.json"}). Interpretations must include the actual attempt_ref. Close completed Nodes with state=closed, outcome=completed and summary before a terminal checkpoint.
+For a scientific FactFinding, supply both source_refs (registered Artifact IDs) and nonempty provenance (for example {"source":"collected result.json"}). Close completed Nodes with state=closed, outcome=completed and summary before a terminal checkpoint.
+
+Record inspected results with `research_interpretation`. Required fields are
+`interpretation.id`, `summary`, `outcome`, an existing Claim ID, and the actual
+Attempt ID. Use `outcome` = `supports`, `contradicts`, `inconclusive`, or `invalid`
+according to the evidence. Prefer this complete nested form, replacing the example
+IDs and summary with the current workspace's records and your assessment:
+
+```json
+{
+  "interpretation": {
+    "id": "interpretation_result_1",
+    "claimId": "claim_1",
+    "attemptRef": "attempt_1",
+    "summary": "The inspected result supports the claim within the tested conditions.",
+    "outcome": "supports"
+  }
+}
+```
+
+`claimId`/`attemptRef` also accept `claim_id`/`attempt_ref` and may be supplied at
+the top level. `nodeId` is optional; when supplied, it must identify an existing
+Node linked to the Claim. The optional request `eventId` does not replace the
+required interpretation record `id`. Include registered `artifact_refs` when
+citing result files; execution success alone does not establish scientific support.
 
 After a demonstrated issue is repaired, use research_change with {"type":"resolve_issue","id":"<existing issue ID>","resolution":"<what changed and how verified>","source_refs":["<registered evidence ID>"]}. source_refs is optional; supplied IDs must exist. This preserves the original issue and evidence, marks it resolved, and records the resolution. Restore affected Nodes separately. Do not invent an update_finding operation or edit State files. A ResearchMap mutation supersedes the prior checkpoint; finish the resumed work with a new checkpoint.
