@@ -60,3 +60,22 @@ def test_long_queue_emits_one_diagnostic_event_without_poll_wakes(tmp_path, monk
     event=command(tmp_path,'event',{'event_id':rows[0]['event_id']})
     assert event['status']['reason']=='queue_wait_exceeded'
     assert event['status']['diagnostics']['queue_diagnosis']=='feasible procs: 0'
+
+
+def test_batches_are_stable_across_retry_and_new_events(tmp_path):
+    workspace(tmp_path)
+    folder=tmp_path/'operations/monitors/monitor_fixture/deliveries';folder.mkdir(parents=True)
+    def add(name, **extra):
+        (folder/f'{name}.json').write_text(json.dumps({'event_id':name,'session_id':'s',
+            'request_id':'job-wake:'+name,'delivered':False,**extra}))
+    add('event_1');add('event_2')
+    rows=command(tmp_path,'pending',{})['deliveries']
+    assert rows[0]['request_id']==rows[1]['request_id']
+    assert rows[0]['batch_event_ids']==['event_1','event_2']
+    add('event_3')
+    again=command(tmp_path,'pending',{})['deliveries']
+    assert again[:2]==rows
+    assert again[2]['request_id']!=rows[0]['request_id']
+    add('event_old',claim_token='old-uncertain-rpc')
+    old=command(tmp_path,'pending',{})['deliveries'][-1]
+    assert old['request_id']=='job-wake:event_old'

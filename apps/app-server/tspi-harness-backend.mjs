@@ -1,3 +1,4 @@
+import { MONITOR_ADMISSION_SERVICE_ID } from "./monitor-admission.mjs";
 import { createStateContinuationDriver, readStateContinuation } from "./state-continuation.mjs";
 import { lstat, realpath } from "node:fs/promises";
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
@@ -52,6 +53,8 @@ export async function createTspiHarnessBackend(options = {}) {
     import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/server.ts")).href),
     import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/client-runtime.ts")).href),
   ]);
+  const { defineService } = await import(pathToFileURL(join(sourceRoot, "packages/chord/src/index.ts")).href);
+  const MonitorAdmission = defineService(MONITOR_ADMISSION_SERVICE_ID);
   const { startForegroundServer } = serverModule;
   const { openClientRuntime, activateBuiltinClientServices } = runtimeModule;
 
@@ -538,14 +541,21 @@ export async function createTspiHarnessBackend(options = {}) {
     const active = binding.active.agent;
     const raw = binding.snapshot?.snapshot || binding.snapshot || {};
     const busy = raw.operation !== null && raw.operation !== undefined;
-    // Monitor wakes arrive as the canonical durable queue mode. Ordinary
-    // phone input may still use `auto` for prompt-versus-queue admission.
+    // Monitor uses its own atomic idle admission; ordinary phone input may
+    // still use `auto` for prompt-versus-queue admission.
     if (payload.source === "state_continuation") {
       const state = await readStateContinuation(binding.root);
       const next = state?.continuation;
       if (next?.admitted !== true || next.request_id !== payload.client_message_id || next.session_id !== payload.session_id || busy || hasQueuedMessages(raw)) {
         throw error("continuation_superseded", "State continuation was superseded before admission");
       }
+    }
+    if (payload.source === "monitor") {
+      const services = binding.active.session.open({ services: [MonitorAdmission], assertAccess() {}, onError() {} });
+      try {
+        await services.ready(BACKGROUND_CONTEXT);
+        return await services.use(MonitorAdmission).admit({ requestId: payload.client_message_id, text: payload.text }, BACKGROUND_CONTEXT);
+      } finally { await services.dispose(BACKGROUND_CONTEXT); }
     }
     const requested = payload.mode;
     if (requested === "steer" || requested === "follow_up" || requested === "next_run" || (requested === "auto" && busy)) {
@@ -761,7 +771,11 @@ export async function createTspiHarnessBackend(options = {}) {
         if (existing.payload_digest !== digest) throw error("request_id_reused", "client_message_id was already used for a different request");
         const pending = dispatchPromises.get(dispatchKey);
         if (pending && ["dispatching"].includes(existing.state)) return publicReceipt(await pending.promise);
-        if (existing.state === "failed" && existing.retryable === true) {
+        if (existing.state === "failed" && existing.retryable === true
+          || payload.source === "monitor" && existing.admission_protocol === "tspi-monitor-idempotent/1"
+            && ["uncertain", "dispatching"].includes(existing.state)) {
+          // Monitor admission also deduplicates by request ID inside Pi, so an
+          // uncertain transport can safely retry that exact transaction.
           // Explicit pre-admission failures (for example a scheduler lease
           // race) are safe to retry with the same business id. Unknown
           // outcomes remain immutable until reconciliation finds evidence.
@@ -779,6 +793,7 @@ export async function createTspiHarnessBackend(options = {}) {
         const dispatching = await persistReceipt({
           ...payload,
           payload_digest: digest,
+          ...(payload.source === "monitor" ? { admission_protocol: "tspi-monitor-idempotent/1" } : {}),
           state: "dispatching",
           accepted: false,
           operation_id: null,
@@ -813,7 +828,7 @@ export async function createTspiHarnessBackend(options = {}) {
           activeDispatches.delete(dispatchKey);
         }
         const state = response.accepted
-          ? (response.entry_id ? "queued" : "submitted")
+          ? (response.skipped ? "completed" : response.entry_id ? "queued" : "submitted")
           : response.error?.code === "admission_uncertain" || response.state === "uncertain"
             ? "uncertain"
             : "failed";
@@ -821,7 +836,7 @@ export async function createTspiHarnessBackend(options = {}) {
           ...dispatching,
           state,
           accepted: response.accepted === true,
-          reconciled: response.accepted === true,
+          reconciled: response.accepted === true || payload.source === "monitor",
           operation_id: response.operation_id || null,
           entry_id: response.entry_id || null,
           operation_hint: payload.operation_hint,
@@ -1164,6 +1179,8 @@ function readWorkspaceManifestSync(root) {
 }
 
 const EXPLICIT_ADMISSION_FAILURES = new Set([
+  "busy",
+  "monitor_deferred",
   "continuation_superseded",
   "service_member_not_found",
   "unsupported_action",
@@ -1180,6 +1197,8 @@ const EXPLICIT_ADMISSION_FAILURES = new Set([
 ]);
 
 const RETRYABLE_ADMISSION_FAILURES = new Set([
+  "busy",
+  "monitor_deferred",
   "scheduler_busy",
   "scheduler_lock_busy",
   "admission_unavailable",

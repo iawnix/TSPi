@@ -22,7 +22,7 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
   await mkdir(TEST_ROOT, { recursive: true });
   const root = await mkdtemp(join(TEST_ROOT, "flow-"));
   const saved = { ...process.env };
-  let backend, server;
+  let backend, server, monitorRequest;
   const requests = [];
   try {
     const agentDir = join(root, "agent");
@@ -128,11 +128,11 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
           const pending=await runJson("pending",workspace);
           if (pending.deliveries.length) {
             const delivery=pending.deliveries[0];
-            const errors=await deliverMonitorEvent({workspace,delivery,runJson,recordTurn:recordMonitorTurn,sendWake:params=>backend.sendInput(params)});
+            const errors=await deliverMonitorEvent({workspace,delivery,runJson,recordTurn:recordMonitorTurn,sendWake:params=>{monitorRequest=params;return backend.sendInput(params);}});
             assert.deepEqual(errors,[]);
             // Replaying the same outbox cannot enqueue a second turn.
-            assert.deepEqual(await deliverMonitorEvent({workspace,delivery,runJson,recordTurn:recordMonitorTurn,sendWake:params=>backend.sendInput(params)}),[]);
-            monitorDelivered=true;
+            assert.deepEqual(await deliverMonitorEvent({workspace,delivery,runJson,recordTurn:recordMonitorTurn,sendWake:params=>{monitorRequest=params;return backend.sendInput(params);}}),[]);
+            monitorDelivered=(await runJson("pending",workspace)).deliveries.length === 0;
           }
         }
       }
@@ -166,6 +166,28 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     const records = await Promise.all(receipts.filter(file=>file.endsWith(".json")).map(file=>readFile(join(root,"state","requests",file),"utf8").then(JSON.parse)));
     const continuation = records.find(row=>row.source === "state_continuation");
     assert.ok(continuation.entry_id, "real Pi must durably admit the continuation");
+    // Simulate losing the Monitor admission response before the Host persisted
+    // its ID. Reopening the Host must recover the same Pi submission.
+    const monitorRecord = records.find(row => row.source === "monitor");
+    assert.ok(monitorRecord.operation_id);
+    assert.equal(monitorRecord.admission_protocol, "tspi-monitor-idempotent/1");
+    const requestCount = requests.length;
+    await backend.close();
+    for (const file of receipts.filter(file => file.endsWith(".json"))) {
+      const path = join(root, "state", "requests", file);
+      const row = JSON.parse(await readFile(path, "utf8"));
+      if (row.source === "monitor") await writeFile(path, JSON.stringify({ ...row,
+        state: "uncertain", accepted: false, operation_id: null, reconciled: false,
+        error: { code: "dispatch_unknown", message: "fixture lost response" },
+      }));
+    }
+    backend = await createTspiHarnessBackend(backendOptions);
+    const recovered = await backend.sendInput(monitorRequest);
+    assert.equal(recovered.accepted, true);
+    assert.equal(recovered.operation_id, monitorRecord.operation_id);
+    await new Promise(done => setTimeout(done, 100));
+    assert.equal(requests.length, requestCount);
+
   } catch (error) {
     for (const file of await readdir(root, { recursive: true })) {
       if (file.endsWith(".log")) console.error(file, await readFile(join(root, file), "utf8"));

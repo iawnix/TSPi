@@ -70,8 +70,8 @@
     {
       "name": "report",
       "path": "skills/report",
-      "sha256": "sha256:d7c35720c71c7feff09cfda307182e3d6faab8441ec310153a893c84c532beb1",
-      "resources_sha256": "sha256:7d438aaa3894c92d67ea526c6487b18b8252e797dc83063b6f20140ef2563564"
+      "sha256": "sha256:b3fb2eddd4c7a1ba1987da00654b666d83b8c8cb859713d8849aff34c931b0df",
+      "resources_sha256": "sha256:fe96651d577b4d15b6a4fb8bb8005cda3963b462a214877bfef10a1510db743a"
     }
   ]
 }

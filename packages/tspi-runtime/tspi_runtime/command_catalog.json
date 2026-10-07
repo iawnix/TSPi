@@ -186,13 +186,23 @@
         "operations"
       ]
     },
-    "debug": {
-      "name": "debug",
-      "description": "Inspect TSPi runtime diagnostics.",
-      "usage": "/debug prompt",
-      "completions": [
-        "prompt"
-      ]
+    "sys-prompt": {
+      "name": "sys-prompt",
+      "description": "Inspect the current worker system prompt and provenance.",
+      "usage": "/sys-prompt",
+      "completions": []
+    },
+    "resume": {
+      "name": "resume",
+      "description": "Switch to a session in the current workspace.",
+      "usage": "/resume [session-id]",
+      "completions": []
+    },
+    "quit": {
+      "name": "quit",
+      "description": "Disconnect this terminal; leave background work running.",
+      "usage": "/quit",
+      "completions": []
     }
   }
 }

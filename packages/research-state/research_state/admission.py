@@ -25,11 +25,20 @@ def tool_admission(context, liveness, tool):
             if work_id and metadata.get("job_metadata", {}).get("work_id") == work_id:
                 return deny("research_work_already_submitted", "This work identity already has an Attempt; collect/reconcile it. Intentional new work needs a new workId.")
         if node_id and node_id not in liveness.get("eligible_node_ids", liveness.get("ready_node_ids", [])):
-            return deny("research_node_not_ready", "Node must have a strategy, satisfied dependencies and no blocking state")
+            node = next((n for n in context.get("nodes", []) if n.get("id") == node_id), None)
+            plans = [p for p in context.get("strategy_plans", []) if p.get("status", "proposed") in {"proposed", "active"}
+                     and (p.get("node_id") == node_id or p.get("claim_id") in (node or {}).get("claim_ids", []))]
+            nodes = {n.get("id"): n for n in context.get("nodes", [])}
+            unmet = [dependency for dependency in (node or {}).get("dependency_ids", [])
+                     if nodes.get(dependency, {}).get("state") != "closed" or nodes.get(dependency, {}).get("outcome") != "completed"]
+            return deny("research_node_not_ready", f"Node {node_id} is not eligible: state={(node or {}).get('state', 'missing')}; "
+                        f"active_strategy={'present' if plans else 'missing'}; unmet_dependencies={unmet}. Read research_read for blocker details; "
+                        "satisfy dependencies and record research_strategy before job_start.")
         if any(a.get("state") in {"started", "running"} for a in attempts) and not work_id:
             return deny("research_work_identity_required", "Another Attempt is active in this research scope. Use a distinct workId for independent work, or reconcile the existing Job.")
+    preparation = name in {"bash", "write", "edit"} and tool.get("phase") == "prepare"
     decision_write = effect in {"research_write", "lifecycle_write", "advisory"}
-    if lifecycle == "decision_needed" and not liveness.get("execution_ready") and not read and not decision_write:
+    if lifecycle == "decision_needed" and not liveness.get("execution_ready") and not read and not decision_write and not preparation:
         return deny("research_decision_required", "Create the Claim/Node and record its research_strategy before execution")
     # Waiting on one Job does not freeze other scoped work or its evidence.
     return {"accepted": True}

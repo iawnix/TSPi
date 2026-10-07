@@ -1,0 +1,116 @@
+diff --git a/packages/coding-agent/src/experimental/client-tui.ts b/packages/coding-agent/src/experimental/client-tui.ts
+index dfb3f4965..0a4196e86 100644
+--- a/packages/coding-agent/src/experimental/client-tui.ts
++++ b/packages/coding-agent/src/experimental/client-tui.ts
+@@ -52,6 +52,10 @@ import { Transcript, type Transcript as TranscriptService } from "./services/tra
+ 
+ export interface RunClientTuiOptions extends OpenClientRuntimeOptions {
+ 	readonly facetLoader?: FacetLoader;
++	/** Close only this presentation and await its connection cleanup. */
++	readonly signal?: AbortSignal;
++	/** Attach a Host-selected Session without creating a replacement if it disappeared. */
++	readonly requireExistingSession?: boolean;
+ }
+ 
+ export interface ClientTuiServer {
+@@ -158,10 +163,11 @@ export class ExperimentalClientTui implements Component {
+ 		readonly ui: TUI;
+ 		readonly servers: readonly ClientTuiServer[];
+ 		readonly facetLoader?: FacetLoader;
++		readonly requireExistingSession?: boolean;
+ 		requestRender(): void;
+ 		finish(): void;
+ 	}): Promise<ExperimentalClientTui> {
+-		const prepared = await prepareClientSession(options.command, options.servers);
++		const prepared = await prepareClientSession(options.command, options.servers, options.requireExistingSession);
+ 		const loadedFacets = await combineFacetLoaders(
+ 			options.facetLoader === undefined ? [] : [options.facetLoader],
+ 		).load();
+@@ -633,6 +651,7 @@ export class ExperimentalClientTui implements Component {
+ async function prepareClientSession(
+ 	command: ClientCommand,
+ 	servers: readonly ClientTuiServer[],
++	requireExistingSession = false,
+ ): Promise<PreparedClientSession> {
+ 	const opened = servers.map((server) => ({
+ 		server,
+@@ -672,7 +691,7 @@ async function prepareClientSession(
+ 			if (matches.length > 1) throw new Error(`Session ${command.sessionId} is available from more than one server`);
+ 			selected = matches[0];
+ 			if (selected === undefined) {
+-				if (command.connect?.transport === "radius") {
++				if (requireExistingSession || command.connect?.transport === "radius") {
+ 					throw new Error(`Remote server does not contain Session ${command.sessionId}`);
+ 				}
+ 				const feature = requireSingleServer(features);
+@@ -701,6 +720,7 @@ async function prepareClientSession(
+ 				)[0];
+ 		}
+ 		if (selected === undefined) {
++			if (requireExistingSession) throw new Error("No existing Session was selected");
+ 			const feature = requireSingleServer(features);
+ 			selected = {
+ 				server: feature.server,
+@@ -729,6 +749,7 @@ async function prepareClientSession(
+ }
+ 
+ export async function runClientTui(command: ClientCommand, options: RunClientTuiOptions = {}): Promise<void> {
++	if (options.signal?.aborted) return;
+ 	const cwd = process.cwd();
+ 	const agentDir = getAgentDir();
+ 	const settingsManager = SettingsManager.create(cwd, agentDir);
+@@ -753,13 +774,13 @@ export async function runClientTui(command: ClientCommand, options: RunClientTui
+ 	tui.setClearOnShrink(settingsManager.getClearOnShrink());
+ 	let component: ExperimentalClientTui | undefined;
+ 	let tuiStarted = false;
++	let finish: (() => void) | undefined;
+ 	const themeController = new InteractiveThemeController(tui, {
+ 		getSettingsManager: () => settingsManager,
+ 		showError: (error) => component?.showError(error),
+ 		onChanged: () => component?.refreshTheme(),
+ 	});
+ 	try {
+-		let finish!: () => void;
+ 		const finished = new Promise<void>((resolve) => {
+ 			finish = () => {
+ 				themeController.disableAutoSync();
+@@ -770,6 +791,8 @@ export async function runClientTui(command: ClientCommand, options: RunClientTui
+ 				resolve();
+ 			};
+ 		});
++		options.signal?.addEventListener("abort", finish!, { once: true });
++		if (options.signal?.aborted) return;
+ 		component = await ExperimentalClientTui.create({
+ 			command,
+ 			ui: tui,
+@@ -780,9 +803,11 @@ export async function runClientTui(command: ClientCommand, options: RunClientTui
+ 				session: server.session,
+ 			})),
+ 			facetLoader: options.facetLoader,
++			requireExistingSession: options.requireExistingSession,
+ 			requestRender: () => tui.requestRender(),
+-			finish,
++			finish: finish!,
+ 		});
++		if (options.signal?.aborted) return;
+ 		tui.addChild(component);
+ 		tui.setLayoutRoot(component.layoutRoot);
+ 		tui.setFocus(component);
+@@ -791,11 +816,15 @@ export async function runClientTui(command: ClientCommand, options: RunClientTui
+ 		themeController.applyFromSettings();
+ 		await finished;
+ 	} finally {
++		if (finish !== undefined) options.signal?.removeEventListener("abort", finish);
+ 		themeController.dispose();
+ 		stopThemeWatcher();
+ 		if (tuiStarted) tui.stop();
+-		await component?.close();
+-		await runtime.dispose();
++		try {
++			await component?.close();
++		} finally {
++			await runtime.dispose();
++		}
+ 	}
+ }
+ 

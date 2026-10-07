@@ -18,13 +18,17 @@ environment = "Node.js 22 + pinned Pi checkout (TSPI_TEST_PI_RUNTIME_ROOT)"
 description = "Pi Harness server, native TUI client, recovery, Monitor, and Native session checks."
 paths = [
   "tests/node/native/pi-app-server.test.mjs",
+  "tests/node/native/pi-session-worker-startup.test.mjs",
+  "tests/node/native/worker-research-flow.test.mjs",
+  "tests/node/native/monitor-admission.test.mjs",
   "tests/node/native/pi-harness-policy.test.mjs",
   "tests/node/native/pi-session-control.test.mjs",
   "tests/node/native/tspi-host.test.mjs",
+  "tests/node/native/tspi-host-transport.test.mjs",
   "tests/node/fast/pi-monitor-worker.test.mjs",
   "tests/node/fast/tspi-terminal-errors.test.mjs",
   "tests/node/fast/tspi-terminal-client.test.mjs",
-  "tests/node/native/tspi-native-overlays.test.mjs",
+  "tests/node/native/tspi-native-commands.test.mjs",
   "tests/node/native/tspi-link-relay.test.mjs",
   "tests/node/native/server-extension-loader.test.mjs",
   "tests/node/native/provider-turn.test.mjs",

@@ -92,7 +92,7 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
   function admitTool({ runId, toolName, toolCallId, args } = {}) {
     ensureRun(runId);
     const metadataForTool = toolMetadata[toolName];
-    if (!metadataForTool) return { accepted: true, ignored: true, ...snapshot() };
+    if (!metadataForTool) return { ...snapshot(), accepted: false, code: "tool_metadata_missing", reason: `No lifecycle metadata for ${toolName}` };
     // The Harness may execute a batch in parallel in other integrations. A
     // lifecycle phase is a single ordered lane, so never let a second
     // state-changing admission overwrite the first tool's rollback marker.

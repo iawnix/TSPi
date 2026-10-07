@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { PassThrough } from "node:stream";
-import { createServer } from "node:net";
-import { mkdtemp, rm } from "node:fs/promises";
+import { createConnection, createServer } from "node:net";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { buildSshProxyArgs, createRpcPeer, connectHostSsh, connectHostStream, HOST_PROTOCOL } from "../../../apps/app-server/tspi-host-client.mjs";
+import { buildSshProxyArgs, createRpcPeer, createSshUnixProxy, connectHost, connectHostSsh, connectHostStream, HOST_PROTOCOL } from "../../../apps/app-server/tspi-host-client.mjs";
 
 test("Host stream transport preserves the protocol and initializes once", async () => {
   const clientToServer = new PassThrough();
@@ -73,4 +74,66 @@ test("Host stdio proxy forwards bytes to a private Unix socket", async (t) => {
   });
   child.stdin.write('{"id":"proxy-test"}\n');
   assert.equal(await output, '{"id":"proxy-test"}\n');
+});
+
+test("terminal SSH proxies carry Host and Pi traffic and await child cleanup", { timeout: 10_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "ssh-"));
+  const savedPath = process.env.PATH;
+  const sockets = new Set();
+  const servers = [];
+  const proxies = [];
+  let peer;
+  let client;
+  try {
+    const fakeSsh = join(root, "ssh");
+    const pids = join(root, "pids");
+    await writeFile(fakeSsh, `#!${process.execPath}
+const { createConnection } = require("node:net");
+const { appendFileSync } = require("node:fs");
+appendFileSync(${JSON.stringify(pids)}, process.pid + "\\n");
+process.on("SIGTERM", () => {});
+const socket = createConnection(process.argv.at(-1).slice(1, -1));
+process.stdin.pipe(socket); socket.pipe(process.stdout);
+setInterval(() => {}, 1000);
+`);
+    await chmod(fakeSsh, 0o755);
+    process.env.PATH = `${root}:${savedPath}`;
+    for (const label of ["host", "pi"]) {
+      const remoteSocketPath = join(root, `${label}.sock`);
+      const server = createServer((socket) => {
+        sockets.add(socket);
+        socket.once("close", () => sockets.delete(socket));
+        if (label === "host") createRpcPeer(socket, { onRequest: async (method) => {
+          assert.equal(method, "initialize");
+          return { protocol: HOST_PROTOCOL, release_id: "remote-release" };
+        } });
+        else socket.on("data", (chunk) => socket.write(chunk));
+      });
+      servers.push(server);
+      await new Promise((resolve) => server.listen(remoteSocketPath, resolve));
+      proxies.push(await createSshUnixProxy({ sshHost: "fixture", remoteSocketPath, remoteProxyPath: "/fixture/proxy", label }));
+    }
+    peer = await connectHost({ socketPath: proxies[0].socketPath });
+    assert.equal(peer.hello.release_id, "remote-release");
+    client = createConnection(proxies[1].socketPath);
+    const echoed = new Promise((resolve, reject) => {
+      client.once("data", resolve);
+      client.once("error", reject);
+    });
+    client.write("pi-traffic");
+    assert.equal((await echoed).toString(), "pi-traffic");
+    await Promise.all(proxies.map((proxy) => proxy.close()));
+    for (const proxy of proxies) assert.equal(existsSync(proxy.directory), false);
+    const children = (await readFile(pids, "utf8")).trim().split("\n");
+    assert.equal(children.length, 2);
+    for (const pid of children) assert.throws(() => process.kill(Number(pid), 0), { code: "ESRCH" });
+  } finally {
+    process.env.PATH = savedPath;
+    peer?.close();
+    client?.destroy();
+    await Promise.all(proxies.map((proxy) => proxy.close()));
+    for (const socket of sockets) socket.destroy();
+    await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
+    await rm(root, { recursive: true, force: true });
+  }
 });

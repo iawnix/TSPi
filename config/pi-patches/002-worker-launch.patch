@@ -1,0 +1,74 @@
+diff --git a/packages/coding-agent/src/experimental/process.ts b/packages/coding-agent/src/experimental/process.ts
+index cea91b0e7..a8f3f9d7a 100644
+--- a/packages/coding-agent/src/experimental/process.ts
++++ b/packages/coding-agent/src/experimental/process.ts
+@@ -1,4 +1,5 @@
+ import { type ChildProcess, spawn } from "node:child_process";
++import { closeSync, openSync } from "node:fs";
+ import { join, resolve } from "node:path";
+ import { fileURLToPath, pathToFileURL } from "node:url";
+ import { getPackageDir, isBunBinary, isBundledNode } from "../config.ts";
+@@ -46,28 +47,46 @@ export function spawnInternalProcess(
+ 	if (isBunBinary && options.entryUrl) {
+ 		throw new Error("A compiled Bun executable cannot launch an external internal-process entrypoint");
+ 	}
+-	const entryUrl = defaultEntryUrl(role, options.entryUrl);
++	const configuredWorkerEntry = role === "session-worker" ? process.env.PI_SESSION_WORKER_ENTRY : undefined;
++	const entryUrl = configuredWorkerEntry
++		? pathToFileURL(resolve(configuredWorkerEntry))
++		: defaultEntryUrl(role, options.entryUrl);
+ 	// --import takes a module specifier; a raw path breaks on Windows drives and on `#`, `?`, or `%` in the path.
+ 	const sourceRuntimeArgs = import.meta.url.endsWith(".ts")
+ 		? ["--import", new URL("source-resolver.ts", import.meta.url).href]
+ 		: [];
+-	const child = spawn(
+-		process.execPath,
+-		isBunBinary ? [...args] : [...sourceRuntimeArgs, fileURLToPath(entryUrl), ...args],
+-		{
+-			cwd: process.cwd(),
+-			detached: true,
+-			env: {
+-				...process.env,
+-				...options.env,
+-				[INTERNAL_PROCESS_ENV]: role,
++	const diagnosticPath = process.env.TSPI_PI_DIAGNOSTIC_FILE?.trim();
++	let diagnosticFd: number | undefined;
++	if (diagnosticPath) {
++		try {
++			diagnosticFd = openSync(diagnosticPath, "a", 0o600);
++		} catch {
++			/* diagnostics are best effort */
++		}
++	}
++	try {
++		const child = spawn(
++			process.execPath,
++			isBunBinary ? [...args] : [...sourceRuntimeArgs, fileURLToPath(entryUrl), ...args],
++			{
++				cwd: process.cwd(),
++				detached: true,
++				env: { ...process.env, ...options.env, [INTERNAL_PROCESS_ENV]: role },
++				stdio: diagnosticFd === undefined ? "ignore" : ["ignore", "ignore", diagnosticFd],
++				windowsHide: true,
+ 			},
+-			stdio: "ignore",
+-			windowsHide: true,
+-		},
+-	);
+-	child.unref();
+-	return child;
++		);
++		child.unref();
++		return child;
++	} finally {
++		if (diagnosticFd !== undefined) {
++			try {
++				closeSync(diagnosticFd);
++			} catch {
++				/* child owns the duplicated descriptor */
++			}
++		}
++	}
+ }
+ 
+ /** Force a spawned internal process to exit and wait until it can no longer take ownership. */

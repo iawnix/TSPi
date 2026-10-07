@@ -2,7 +2,8 @@
   "schema_version": "skill-resources/1",
   "base": "extension",
   "files": {
-    "skills/report/scripts/build.py": "sha256:c8571998411baf0210facda36e0a55f3464455d1db3285eeb50839d20ddb3557",
+    "skills/report/scripts/build.py": "sha256:eb443b9c7bd294ff877ac993ba11fc7e440a36a12159828e351d773f0b9db636",
+    "skills/report/scripts/prepare_job.py": "sha256:270f92652d3eb1c96371675b35fc5056f78913683e3bf73cf424b7c1cb7886bf",
     "skills/_shared/science.py": "sha256:dfd52085de07e1a7a75315cb50225021fd397f438c1544c67266c79809affc5b"
   }
 }

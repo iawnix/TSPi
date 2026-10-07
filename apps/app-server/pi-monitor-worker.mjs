@@ -13,48 +13,56 @@ const packageRoot = resolve(process.env.TSPI_PACKAGE_ROOT || fileURLToPath(new U
 const python = process.env.TSPI_PYTHON || process.env.TSPI_WORKSPACE_PYTHON || "python3";
 
 // Monitor only wakes the owning Agent; notification decisions belong to email Skill.
-export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWake, recordTurn }) {
+export async function deliverMonitorEvent({ workspace, delivery, deliveries = [delivery], runJson, sendWake, recordTurn }) {
   const errors = [];
-  for (const channel of ["wake"]) {
-    const claimed = await runJson("claim", workspace, ["--event-id", delivery.event_id, "--channel", channel]);
-    if (!claimed.claimed) continue;
-    const completion = ["--event-id", delivery.event_id, "--channel", channel, "--claim-token", claimed.claim_token];
-    try {
-      const event = await runJson("event", workspace, ["--event-id", delivery.event_id]);
-      const hostWorkspaceId = await monitorHostWorkspaceId(workspace, event);
-      if (channel === "wake") {
-        if (!claimed.session_id) throw new Error("monitor has no owning session; wake remains pending");
-        if (typeof recordTurn === "function") {
-          const turn = await recordTurn({ workspace, workspace_id: hostWorkspaceId, event, delivery: claimed });
-          if (!turn || turn.protocol !== "research_turn_result" || turn.version !== 1
-            || turn.request_id !== claimed.request_id || turn.status !== "completed"
-            || turn.output?.operation !== "wake" || !turn.provenance
-            || typeof turn.provenance !== "object" || Array.isArray(turn.provenance)) {
-            throw new Error("Research Turn wake boundary returned an invalid result");
-          }
-          if (turn.output.admitted === false) {
-            if (!turn.output.state_token) throw new Error("deferred wake has no State token");
-            await runJson("complete", workspace, [...completion, "--deferred-state", turn.output.state_token]);
-            continue;
-          }
+  const claims = [];
+  try {
+    for (const row of deliveries) {
+      const claimed = await runJson("claim", workspace, ["--event-id", row.event_id, "--channel", "wake"]);
+      if (claimed.claimed) claims.push({ claimed, completion: ["--event-id", row.event_id, "--channel", "wake", "--claim-token", claimed.claim_token] });
+    }
+    if (!claims.length) return errors;
+    let hostWorkspaceId;
+    let deferred = false;
+    for (const claim of claims) {
+      const { claimed } = claim;
+      const event = await runJson("event", workspace, ["--event-id", claimed.event_id]);
+      hostWorkspaceId = await monitorHostWorkspaceId(workspace, event);
+      if (!claimed.session_id) throw new Error("monitor has no owning session; wake remains pending");
+      if (typeof recordTurn === "function") {
+        const turn = await recordTurn({ workspace, workspace_id: hostWorkspaceId, event, delivery: claimed });
+        if (turn?.protocol !== "research_turn_result" || turn.version !== 1 || turn.request_id !== claimed.request_id
+          || turn.status !== "completed" || turn.output?.operation !== "wake" || !turn.provenance) {
+          throw new Error("Research Turn wake boundary returned an invalid result");
         }
-        // Monitor wakes are operational queue entries. Send the canonical
-        // session-control mode explicitly so Host and Monitor share one wire
-        // contract and no source-specific alias is required.
-        const response = await sendWake({ workspace_id: hostWorkspaceId, session_id: claimed.session_id,
-          request_id: claimed.request_id, client_message_id: claimed.request_id, source: "monitor", mode: "next_run", text: wakeMessage(event) });
-        // An accepted RPC is not enough when Pi could not confirm prompt
-        // admission.  Preserve the outbox row for retry on an uncertain
-        // result; otherwise a late bridge rejection could be lost forever.
-        if (response?.accepted !== true || response?.state === "uncertain") {
-          throw new Error(response?.error?.message || "Host returned an uncertain monitor wake");
+        if (turn.output.obsolete) claim.result = ["--delivered"];
+        else if (turn.output.admitted === false) {
+          if (!turn.output.state_token) throw new Error("deferred wake has no State token");
+          claim.result = ["--deferred-state", turn.output.state_token];
+          deferred = true;
         }
       }
-      await runJson("complete", workspace, [...completion, "--delivered"]);
-    } catch (error) {
-      errors.push(`${channel}: ${errorMessage(error)}`);
-      await runJson("complete", workspace, [...completion, "--error", errorMessage(error)]);
     }
+    if (!deferred && claims.some(claim => !claim.result)) {
+      const first = claims[0].claimed;
+      const ids = first.batch_event_ids || claims.map(claim => claim.claimed.event_id);
+      // Send immutable identities; the worker reads events from disk and
+      // assesses them again inside the idle admission transaction.
+      const response = await sendWake({ workspace_id: hostWorkspaceId, session_id: first.session_id,
+        request_id: first.request_id, client_message_id: first.request_id, source: "monitor", mode: "next_run",
+        text: first.legacy_payload ? wakeMessage(await runJson("event", workspace, ["--event-id", first.event_id]))
+          : ["A compute monitor event requires attention.", ...ids.map(id => `event_id=${id}`)].join("\n") });
+      if (["busy", "monitor_deferred"].includes(response?.error?.code)) return errors;
+      if (response?.accepted !== true || response?.state === "uncertain") {
+        throw new Error(response?.error?.message || "Host returned an uncertain monitor wake");
+      }
+      for (const claim of claims) claim.result = ["--delivered"];
+    }
+  } catch (error) {
+    errors.push(`wake: ${errorMessage(error)}`);
+    for (const claim of claims) if (!claim.result) claim.result = ["--error", errorMessage(error)];
+  } finally {
+    for (const claim of claims) await runJson("complete", workspace, [...claim.completion, ...(claim.result || [])]);
   }
   return errors;
 }
@@ -112,9 +120,15 @@ export async function runMonitorWorker(options, signal) {
           const pollErrors = [...(tick.registration_errors || []), ...(tick.monitors || []).map((row) => row.error).filter(Boolean)];
           if (pollErrors.length) pollFailed = true;
           const deliveryErrors = [...pollErrors];
+          const batches = new Map();
           for (const delivery of pending.deliveries || []) {
+            const key = `${delivery.session_id}:${delivery.request_id}`;
+            if (!batches.has(key)) batches.set(key, []);
+            batches.get(key).push(delivery);
+          }
+          for (const deliveries of batches.values()) {
             if (signal.aborted) break;
-            deliveryErrors.push(...await deliverMonitorEvent({ workspace, delivery, runJson, sendWake,
+            deliveryErrors.push(...await deliverMonitorEvent({ workspace, deliveries, runJson, sendWake,
               recordTurn: recordMonitorTurn }));
           }
           await runJson("health", workspace, deliveryErrors.length ? ["--error", deliveryErrors.join("; ")] : []);
@@ -136,7 +150,7 @@ export async function runMonitorWorker(options, signal) {
 
 /**
  * Record the Monitor -> Agent wake at the canonical Harness boundary before
- * queuing the user-visible next_run entry. A failed boundary keeps the
+ * submitting an idle-only wake to the owning worker. A failed boundary keeps the
  * durable delivery pending so the wake cannot be acknowledged without an
  * auditable lifecycle event.
  */

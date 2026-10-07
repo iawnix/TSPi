@@ -3,7 +3,8 @@
 [English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
 
 `ResearchAgent --workspace <name>` 是用户侧统一入口，启动 Pi 官方的远程 `ExperimentalClientTui`，不会替换
-Pi 的 header、editor、命令目录、transcript、extension 或输入循环。选中的 workspace
+Pi 的 editor、transcript 渲染或输入循环。它与普通 Pi 的 InteractiveMode 是两套界面，
+命令和扩展能力以实验性远程客户端为准。选中的 workspace
 绑定到安装级 Pi Harness SQLite durable 会话。
 
 新工作区可以在入口处显式绑定不可变模式：
@@ -73,7 +74,17 @@ system service 去掉 `--user`。Host 私有 socket 位于配置的 runtime 目�
 
 远程 `ExperimentalClientTui` 提供 `/resume`、`/model`、`/thinking`、`/compact`、
 `/reload` 以及 Native TSPi 命令。`/resume` 只能切换当前 workspace 中的 SQLite durable
-session，不会跨 workspace。独立 Pi 的会话命令在这个远程客户端中不可用。
+session，不会跨 workspace。切换会释放当前 TUI 连接，再附着选中的会话；后台任务继续运行。
+独立 Pi 的其它会话命令在这个远程客户端中不可用。
+
+TSPi 提供以下客户端命令，名称、参数和补全由同一命令目录定义：
+
+- `/research [summary|context|liveness|map|decisions|storage|detail <kind> <id>|locate <query>|validate|operations]`：由当前 worker 执行只读查询，包括 SSH 连接的远端工作区。长结果通过 Pi 原生选择器分页查看。
+- `/sys-prompt`：直接读取当前 worker 的 TSPi system prompt manifest 和来源，不调用模型。
+- `/resume [session-id]`：在当前工作区选择或指定会话；取消选择保持当前会话。
+- `/quit`：断开当前终端，保留后台 worker 和任务。
+
+无实际诊断功能的 `/debug` 已移除。
 
 启动时，`-c` 选择当前 workspace 最近的可写 SQLite durable session，`--session-id <id>` 选择
 指定 session。顶层 `-r`/`--resume` 会被明确拒绝，因为 Host-mediated client 必须先取得
@@ -81,11 +92,11 @@ session，不会跨 workspace。独立 Pi 的会话命令在这个远程客户�
 prompt 通过 Host `input/send` 进入同一个 lane，并使用持久回执和稳定的
 `client_message_id`。
 
-输入历史会从当前选中的 session 恢复，并且按 session 隔离；切换会话后可用编辑框的上下
-方向键查找该会话已经接受的 prompt。
+输入历史从当前 session 的活动 transcript 恢复，并按 session 隔离；切换会话后可用编辑框的上下
+方向键查找已接受的 prompt。重新打开时，压缩之前已不在活动 transcript 中的输入暂不恢复。
 
 分离、打断和退出不是同一件事：终端 detach 只是客户端断开；`Esc` 或 Host 的
-`turn/interrupt` 请求打断当前 turn；`/quit` 才结束 Pi。连接在提交后丢失时 Host 会
+`turn/interrupt` 请求打断当前 turn；`/quit` 仅关闭当前终端连接。连接在提交后丢失时 Host 会
 报告 `uncertain`，不会悄悄重放 prompt；磁盘上的 `dispatching` 回执在 Pi 到达
 `submitted/observed` 边界前也不会报告为 accepted。应先检查会话，再用同一个业务 ID 重试。
 

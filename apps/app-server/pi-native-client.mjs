@@ -1,10 +1,9 @@
-import { randomUUID } from "node:crypto";
 import { lstatSync } from "node:fs";
-import { basename, dirname, resolve, join } from "node:path";
+import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { formatTerminalFailure } from "./tspi-terminal-errors.mjs";
-import { createTspiPackageRootRestoreFacet, withTspiPackageRootHidden } from "./native-client-env.mjs";
+import { runTerminalSessions } from "./tspi-terminal-session.mjs";
 import { connectHost } from "./tspi-host-client.mjs";
 
 if (!process.env.TSPI_PI_RUNTIME_ROOT) throw new Error("remote Pi client requires TSPI_PI_RUNTIME_ROOT");
@@ -20,33 +19,14 @@ const { clientCommand } = commandModule;
 const { runClient } = clientModule;
 const { runClientTui } = tuiModule;
 
-function createHostResumeSession() {
+function createHostRequest() {
   const socketPath = process.env.TSPI_HOST_SOCKET?.trim();
-  const workspaceId = process.env.TSPI_WORKSPACE_ID?.trim();
-  if (!socketPath || !workspaceId) return undefined;
-  const packageRoot = process.env.TSPI_PACKAGE_ROOT?.trim();
-  const releaseRoot = packageRoot ? dirname(resolve(packageRoot)) : undefined;
-  const expectedReleaseId = releaseRoot && basename(dirname(releaseRoot)) === "releases"
-    ? basename(releaseRoot)
-    : undefined;
-  return async (sessionId) => {
-    if (typeof sessionId !== "string" || sessionId.length === 0) throw new TypeError("sessionId is required");
+  if (!socketPath) throw new Error("Terminal commands require the Host connection");
+  const expectedReleaseId = process.env.TSPI_HOST_RELEASE_ID?.trim() || undefined;
+  return async (method, params) => {
     const peer = await connectHost({ socketPath, expectedReleaseId });
-    try {
-      const result = await peer.request("session/resume", {
-        request_id: `terminal-resume-${process.pid}-${randomUUID()}`,
-        workspace_id: workspaceId,
-        session_id: sessionId,
-        presentation: "terminal",
-      });
-      const returnedSessionId = result?.client?.session_id ?? result?.session?.session_id;
-      if (returnedSessionId !== sessionId) {
-        throw new Error(`Host resumed an unexpected session: expected ${sessionId}, got ${returnedSessionId || "none"}`);
-      }
-      return result;
-    } finally {
-      peer.close();
-    }
+    try { return await peer.request(method, params); }
+    finally { peer.close(); }
   };
 }
 
@@ -100,36 +80,22 @@ if (!parsed.ok) {
     const command = parsed.command.pluginPackages === undefined && parsed.command.connect?.transport !== "radius"
       ? { ...parsed.command, pluginPackages: [] }
       : parsed.command;
-    const resumeSession = createHostResumeSession();
     if (command.prompt !== undefined || process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
       await runPrintClient(command);
     } else {
-      // Pi owns the complete interactive surface: slash-command registry,
-      // argument completions, selectors, transcript rendering, and busy-state
-      // input handling. TSPi only supplies a client facet for its shared
-      // command contract; it does not provide another editor or agent loop.
-      const [{ createStaticFacetLoader }, { SlashCommands }, { PresentationUI }, { createTspiNativeClientFacet }] = await Promise.all([
+      const [{ createStaticFacetLoader }, { createTspiNativeClientFacet }] = await Promise.all([
         fromSource("packages/chord/src/index.ts"),
-        fromSource("packages/coding-agent/src/experimental/services/slash-commands.ts"),
-        fromSource("packages/coding-agent/src/experimental/services/presentation-ui.ts"),
         import("./tspi-native-client-facet.mjs"),
       ]);
-      const commandFacet = await createTspiNativeClientFacet({
-        sourceRoot,
-        packageRoot: process.env.TSPI_PACKAGE_ROOT,
-      });
-      // The restore facet depends on PresentationUI, which the built-in
-      // presentation bridge also provides. Its position after the shared
-      // command facet lets Pi inspect the opt-in env before restoration; the
-      // finally path still covers startup failures.
-      await withTspiPackageRootHidden(async (restore) => runClientTui(command, {
-        directory: process.env.PI_SERVER_DIR,
-        resumeSession,
-        facetLoader: createStaticFacetLoader([
-          commandFacet,
-          createTspiPackageRootRestoreFacet(restore, PresentationUI),
+      await runTerminalSessions({
+        command,
+        workspaceId: process.env.TSPI_WORKSPACE_ID,
+        request: createHostRequest(),
+        run: (selected, options) => runClientTui(selected, { directory: process.env.PI_SERVER_DIR, ...options }),
+        createFacet: async (session) => createStaticFacetLoader([
+          await createTspiNativeClientFacet({ sourceRoot, session }),
         ]),
-      }));
+      });
     }
   } catch (error) {
     const diagnosticFile = process.env.TSPI_DIAGNOSTIC_FILE

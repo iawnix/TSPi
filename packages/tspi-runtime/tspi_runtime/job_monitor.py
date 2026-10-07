@@ -90,8 +90,25 @@ def _command(root,base,action,args):
         from research_state.agent_workspace import read_liveness
         state=read_liveness(root)
         token=f"{state['revision']}:{state.get('checkpoint_id')}"
-        return {'deliveries':[row for p in deliveries if not (row:=read(p)).get('delivered')
-                              and row.get('deferred_state') != token]}
+        pending = [(p, row) for p in deliveries if not (row := read(p)).get('delivered')
+                   and row.get('deferred_state') != token]
+        # Persist immutable batch membership before Host admission. Retries and
+        # uncertain RPC outcomes must reuse both identity and message payload.
+        sessions = {}
+        for path, row in pending:
+            if not row.get('batch_event_ids') and any(row.get(key) for key in ('claim_token', 'error', 'deferred_state')):
+                row['batch_event_ids'] = [row['event_id']]
+                row['legacy_payload'] = True
+                write(path, row)
+            if not row.get('batch_event_ids'):
+                sessions.setdefault(row.get('session_id'), []).append((path, row))
+        for rows in sessions.values():
+            ids = sorted(row['event_id'] for _, row in rows)
+            request_id = 'job-wake-batch:' + hashlib.sha256(':'.join(ids).encode()).hexdigest()
+            for path, row in rows:
+                row.update(request_id=request_id, batch_event_ids=ids)
+                write(path, row)
+        return {'deliveries': [row for _, row in pending]}
     eid=args.get('event_id')
     path=next((p for p in deliveries if p.stem==eid),None)
     if path is None:raise ValueError('unknown monitor event')

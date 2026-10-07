@@ -24,9 +24,12 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--result',action='append',required=True,help='environment=path to result.json')
     p.add_argument('--output-dir',required=True)
-    a=p.parse_args();out=Path(a.output_dir);out.mkdir(parents=True,exist_ok=False)
+    a=p.parse_args();out=Path(a.output_dir);out.mkdir(parents=True,exist_ok=True)
+    if any(out.iterdir()):
+        raise ValueError('report output directory must be empty; refusing to overwrite existing files')
     report=build(a.result)
-    (out/'report.json').write_text(json.dumps(report,indent=2,ensure_ascii=False,allow_nan=False)+'\n')
+    with (out/'report.json').open('x') as stream:
+        stream.write(json.dumps(report,indent=2,ensure_ascii=False,allow_nan=False)+'\n')
     text=['# Calculation report','','This report lists supplied evidence. Missing matrix cells remain unverified.','',
           '| Environment | Method | Basis | Step | Energy (hartree) | Validated |','| --- | --- | --- | --- | --- | --- |']
     for row in report['results']:
@@ -35,7 +38,8 @@ def main():
         if row.get('error'):text.extend(['',str(row['error']),''])
     text.extend(['','Absolute energies from different methods are not an accuracy ranking.','',
                  'Source file digests and input bindings are in report.json.'])
-    (out/'report.md').write_text('\n'.join(text)+'\n')
+    with (out/'report.md').open('x') as stream:
+        stream.write('\n'.join(text)+'\n')
 
 
 if __name__=='__main__':main()

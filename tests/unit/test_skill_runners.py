@@ -38,3 +38,42 @@ def test_cf22d_rejects_method_substitution_before_calculation(tmp_path):
     run=subprocess.run([sys.executable,str(SKILLS/'cf22d/scripts/run.py'),'--xyz',str(xyz),'--xc','RHF','--task','sp','--output-dir',str(tmp_path/'out')],capture_output=True,text=True)
     assert run.returncode==1
     assert 'only permits xc=CF22D' in run.stderr
+
+
+def test_report_prepared_job_stages_inputs_and_collects_outputs(tmp_path):
+    from tspi_runtime.execution import _spec
+    from job_runtime import LocalProcessPlatform, JobState
+    from tests.unit.test_job_recovery import wait_reaped
+    source = tmp_path/'result.json'
+    source.write_text(json.dumps({'method':'fixture','validated':True,'steps':[{'task':'sp','energy_hartree':-1}]}))
+    request_file = tmp_path/'request.json'
+    run = subprocess.run([sys.executable, str(SKILLS/'report/scripts/prepare_job.py'), '--result', f'local={source}',
+                          '--python', sys.executable, '--output', str(request_file)], capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    reference = json.loads(run.stdout)
+    import hashlib
+    assert reference['requestSha256'] == hashlib.sha256(request_file.read_bytes()).hexdigest()
+    spec = _spec(tmp_path, json.loads(request_file.read_text()))
+    source.unlink()  # Execution must use staged data, not its workspace source.
+    (spec.cwd/'results').mkdir()  # Mirrors t001's pre-created output directory.
+    platform = LocalProcessPlatform()
+    receipt = platform.start(spec)
+    wait_reaped(receipt)
+    result = platform.collect(receipt)
+    assert result['status']['state'] == JobState.SUCCEEDED
+    assert result['output_validation']['complete']
+    report = json.loads((spec.cwd/'results/report.json').read_text())
+    assert report['results'][0]['energy_hartree'] == -1
+    assert report['sources'][0]['path'] == 'inputs/result_0.json'
+
+
+def test_report_refuses_to_overwrite_existing_output(tmp_path):
+    source = tmp_path/'input.json'; source.write_text('{"validated":false}')
+    out = tmp_path/'out'; out.mkdir()
+    previous = out/'report.md'; previous.write_text('keep me')
+    run = subprocess.run([sys.executable, str(SKILLS/'report/scripts/build.py'), '--result', f'local={source}',
+                          '--output-dir', str(out)], capture_output=True, text=True)
+    assert run.returncode != 0
+    assert 'refusing to overwrite' in run.stderr
+    assert previous.read_text() == 'keep me'
+    assert not (out/'report.json').exists()

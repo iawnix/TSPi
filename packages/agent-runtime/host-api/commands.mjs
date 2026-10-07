@@ -88,8 +88,8 @@ export function parseSlashCommand(name, input = "") {
   if (!definition) throw new Error(`unsupported slash command: /${name}`);
   const tokens = String(input).trim().split(/\s+/).filter(Boolean);
   if (name === "research") return parseResearchSlash(tokens, definition.usage);
-  if (tokens.length !== 1 || tokens[0] !== "prompt") throw usageError(definition.usage);
-  return Object.freeze({ command: "client.debug.prompt", params: Object.freeze({}) });
+  if (tokens.length > (name === "resume" ? 1 : 0)) throw usageError(definition.usage);
+  return Object.freeze({ command: `client.${name}`, params: Object.freeze(tokens.length ? { sessionId: tokens[0] } : {}) });
 }
 
 export function slashCompletions(name, prefix = "") {

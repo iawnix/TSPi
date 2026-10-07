@@ -116,3 +116,15 @@ test("State admission permits work after interpretation without a competing Host
   lifecycle.setDurableLiveness({ tool_admission: { accepted: false, code: "research_node_not_ready" } });
   assert.equal(lifecycle.admitTool({ runId, toolName: "job_start" }).code, "research_node_not_ready");
 });
+
+test('native tool metadata never grants the missing-metadata read bypass', async () => {
+  const { NATIVE_TOOL_METADATA } = await import('../../../apps/app-server/native-tool-metadata.mjs');
+  const lifecycle = createResearchLifecycleController({ metadata: NATIVE_TOOL_METADATA });
+  lifecycle.beginRun({ runId: 'native' });
+  lifecycle.setDurableLiveness({ tool_admission: { accepted: false, code: 'research_lifecycle_blocked' } });
+  for (const toolName of ['bash', 'write', 'edit']) {
+    assert.notEqual(NATIVE_TOOL_METADATA[toolName].effect, 'read');
+    assert.equal(lifecycle.admitTool({ runId: 'native', toolName }).accepted, false);
+  }
+  assert.equal(lifecycle.admitTool({ runId: 'native', toolName: 'unregistered' }).code, 'tool_metadata_missing');
+});

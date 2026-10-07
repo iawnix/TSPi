@@ -1,0 +1,25 @@
+diff --git a/packages/coding-agent/src/experimental/client-tui.ts b/packages/coding-agent/src/experimental/client-tui.ts
+index dfb3f4965..0a4196e86 100644
+--- a/packages/coding-agent/src/experimental/client-tui.ts
++++ b/packages/coding-agent/src/experimental/client-tui.ts
+@@ -300,14 +306,12 @@ export class ExperimentalClientTui implements Component {
+ 						if (this.#controller === controller) this.#controller = undefined;
+ 					});
+ 					env.own(commands.subscribe(() => this.#updateAutocomplete()));
+-					if (server.radius) {
+-						env.own(
+-							server.server.connection.subscribe((state) => this.#handleConnectionState(server.serverId, state)),
+-						);
+-						env.own(
+-							server.session.attachment.subscribe((state) => this.#handleAttachmentState(sessionFeature, state)),
+-						);
+-					}
++					env.own(
++						server.server.connection.subscribe((state) => this.#handleConnectionState(server.serverId, state)),
++					);
++					env.own(
++						server.session.attachment.subscribe((state) => this.#handleAttachmentState(sessionFeature, state)),
++					);
+ 				});
+ 			},
+ 		});

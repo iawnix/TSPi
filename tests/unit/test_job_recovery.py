@@ -9,33 +9,40 @@ from research_state.agent_workspace import admit_workspace, apply_change, read_c
 from research_state.workspace import initialize_workspace
 
 
-def test_exit_receipt_survives_without_status_polling(tmp_path):
+def wait_reaped(receipt):
+    # Check the OS, without poll()/wait()/status() helping the owner reap.
+    deadline = time.monotonic() + 5
+    while Path(f"/proc/{receipt.pid}").exists() and time.monotonic() < deadline:
+        time.sleep(.02)
+    assert not Path(f"/proc/{receipt.pid}").exists(), "supervisor was not reaped"
+
+
+@pytest.mark.parametrize('code', [0, 23])
+def test_exit_receipt_survives_without_status_polling(tmp_path, code):
     first=LocalProcessPlatform()
-    receipt=first.start(JobSpec(command=(sys.executable,'-c','raise SystemExit(23)'),cwd=tmp_path))
-    time.sleep(.2)
+    receipt=first.start(JobSpec(command=(sys.executable,'-c',f'raise SystemExit({code})'),cwd=tmp_path))
+    wait_reaped(receipt)
     recovered=LocalProcessPlatform().status(receipt)
-    assert recovered.state==JobState.FAILED
-    assert recovered.exit_code==23
-    first._processes[receipt.job_id].wait(timeout=2)
+    assert recovered.state==(JobState.FAILED if code else JobState.SUCCEEDED)
+    assert recovered.exit_code==code
 
 
 def test_timeout_enforced_without_polling_and_restart_cancel(tmp_path):
     first=LocalProcessPlatform()
     receipt=first.start(JobSpec(command=(sys.executable,'-c','import time;time.sleep(30)'),cwd=tmp_path,timeout_seconds=.15))
-    time.sleep(.5)
+    wait_reaped(receipt)
     assert LocalProcessPlatform().status(receipt).state==JobState.TIMED_OUT
-    first._processes[receipt.job_id].wait(timeout=2)
     second=tmp_path/'cancel';second.mkdir()
     receipt=first.start(JobSpec(command=(sys.executable,'-c','import time;time.sleep(30)'),cwd=second))
     try:assert LocalProcessPlatform().cancel(receipt).state==JobState.CANCELLED
-    finally:first._processes[receipt.job_id].wait(timeout=3)
+    finally:wait_reaped(receipt)
 
 
 def test_missing_or_empty_outputs_do_not_rewrite_exit_code(tmp_path):
     runtime=LocalProcessPlatform()
     receipt=runtime.start(JobSpec(command=(sys.executable,'-c',"open('empty','w').close()"),cwd=tmp_path,
         outputs=(JobOutput('empty',required=True,min_bytes=1),JobOutput('missing',required=True))))
-    runtime._processes[receipt.job_id].wait(timeout=3)
+    wait_reaped(receipt)
     result=runtime.collect(receipt)
     assert result['status']['exit_code']==0
     assert result['output_validation']=={'complete':False,'errors':[{'path':'empty','error':'too_small'},{'path':'missing','error':'missing'}]}
@@ -100,3 +107,15 @@ def test_caller_request_id_replays_without_submitting_again(tmp_path):
     assert second['attempt_id'] == first['attempt_id']
     assert (Path(first['cwd']) / 'count').read_text() == '1'
     assert len(read_context(tmp_path)['attempts']) == 1
+
+
+def test_terminal_receipt_arrives_during_supervisor_liveness_check(tmp_path, monkeypatch):
+    from job_runtime import JobReceipt
+    from job_runtime import local
+    receipt=JobReceipt('job_race','local','now',('true',),str(tmp_path),123,
+                       {'supervised':True,'supervisor_start':'original'})
+    def process_disappeared(pid):
+        (tmp_path/'status.json').write_text(json.dumps({'job_id':'job_race','state':'succeeded','exit_code':0}))
+        return None
+    monkeypatch.setattr(local,'identity',process_disappeared)
+    assert LocalProcessPlatform().status(receipt).state == JobState.SUCCEEDED

@@ -10,12 +10,9 @@
  */
 import { spawn } from "node:child_process";
 import { lstatSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { createServer } from "node:net";
 import { basename, dirname, resolve } from "node:path";
-import { tmpdir } from "node:os";
 
-import { buildSshProxyArgs, connectHost, connectHostSsh } from "./tspi-host-client.mjs";
+import { createSshUnixProxy, connectHost, connectHostSsh } from "./tspi-host-client.mjs";
 import { formatTerminalFailure } from "./tspi-terminal-errors.mjs";
 
 const args = process.argv.slice(2);
@@ -78,43 +75,6 @@ function descriptorConnect(descriptor) {
   }
   const encodedPath = descriptor.socket_path.split("/").map((part) => encodeURIComponent(part)).join("/");
   return `unix://${encodedPath}`;
-}
-
-async function createSshUnixProxy({ sshHost, remoteSocketPath, remoteProxyPath, sshConfig, sshOptions, label }) {
-  const directory = await mkdtemp(resolve(tmpdir(), "tspi-ssh-"));
-  const socketPath = resolve(directory, `${label || "socket"}.sock`);
-  const server = createServer((client) => {
-    const child = spawn("ssh", buildSshProxyArgs({
-      sshHost,
-      remoteSocketPath,
-      remoteProxyPath,
-      sshConfig,
-      sshOptions,
-    }), { stdio: ["pipe", "pipe", "pipe"] });
-    child.stderr.resume();
-    client.pipe(child.stdin);
-    child.stdout.pipe(client);
-    const close = () => {
-      client.destroy();
-      child.kill();
-    };
-    client.once("error", close);
-    client.once("close", () => child.kill());
-    child.once("error", close);
-    child.once("exit", () => client.end());
-  });
-  await new Promise((resolvePromise, reject) => {
-    server.once("error", reject);
-    server.listen(socketPath, resolvePromise);
-  });
-  return {
-    socketPath,
-    directory,
-    close: async () => {
-      await new Promise((resolvePromise) => server.close(() => resolvePromise()));
-      await rm(directory, { recursive: true, force: true });
-    },
-  };
 }
 
 function selectSession(sessions, sessionId, shouldContinue) {
@@ -227,46 +187,51 @@ async function main() {
   }
 
   let appProxy;
-  if (remote) {
-    appProxy = await createSshUnixProxy({
-      ...remoteOptions,
-      remoteSocketPath: descriptor.socket_path,
-      label: "pi",
+  let hostProxy;
+  try {
+    if (remote) {
+      hostProxy = await createSshUnixProxy({ ...remoteOptions, label: "host" });
+      appProxy = await createSshUnixProxy({
+        ...remoteOptions,
+        remoteSocketPath: descriptor.socket_path,
+        label: "pi",
+      });
+    }
+    const connect = appProxy ? descriptorConnect({ ...descriptor, socket_path: appProxy.socketPath }) : descriptorConnect(descriptor);
+    const sourceRoot = process.env.TSPI_PI_RUNTIME_ROOT;
+    if (!sourceRoot) throw new Error("TSPI_PI_RUNTIME_ROOT is required for the native Pi client");
+    const resolver = resolve(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts");
+    const client = resolve(packageRoot, "apps/app-server/pi-native-client.mjs");
+    const childArgs = ["--import", resolver, client, "--connect", connect, "--session-id", descriptor.session_id, ...kept];
+    process.env.TSPI_SESSION_CWD = workspaceRoot;
+    process.env.PI_EXPERIMENTAL = "1";
+    process.env.PI_SERVER_DIR = appProxy?.directory || descriptor.server_directory || dirname(descriptor.socket_path);
+    process.env.TSPI_PACKAGE_ROOT = packageRoot;
+    process.env.TSPI_NATIVE_WRITES = "1";
+    const child = spawn(process.execPath, childArgs, {
+      cwd: workspaceRoot,
+      env: {
+        ...process.env,
+        TSPI_HOST_SOCKET: hostProxy?.socketPath || socketPath,
+        TSPI_HOST_RELEASE_ID: remote ? "" : expectedReleaseId,
+        TSPI_WORKSPACE_ID: workspaceId,
+        ...(options.install_root ? { TSPI_INSTALL_ROOT: options.install_root } : {}),
+        ...(options.state_root ? {
+          TSPI_STATE_ROOT: options.state_root,
+          TSPI_DIAGNOSTIC_FILE: `${options.state_root.replace(/\/$/u, "")}/worker-diagnostics.log`,
+        } : {}),
+      },
+      stdio: "inherit",
     });
+    const result = await new Promise((resolvePromise, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code, signal) => resolvePromise({ code, signal }));
+    });
+    process.exitCode = result.code ?? (result.signal ? 1 : 0);
+  } finally {
+    await appProxy?.close();
+    await hostProxy?.close();
   }
-  const connect = appProxy ? descriptorConnect({ ...descriptor, socket_path: appProxy.socketPath }) : descriptorConnect(descriptor);
-  const sourceRoot = process.env.TSPI_PI_RUNTIME_ROOT;
-  if (!sourceRoot) throw new Error("TSPI_PI_RUNTIME_ROOT is required for the native Pi client");
-  const resolver = resolve(sourceRoot, "packages/coding-agent/src/experimental/source-resolver.ts");
-  const client = resolve(packageRoot, "apps/app-server/pi-native-client.mjs");
-  const childArgs = ["--import", resolver, client, "--connect", connect, "--session-id", descriptor.session_id, ...kept];
-  process.env.TSPI_SESSION_CWD = workspaceRoot;
-  process.env.PI_EXPERIMENTAL = "1";
-  process.env.PI_SERVER_DIR = appProxy?.directory || descriptor.server_directory || dirname(descriptor.socket_path);
-  process.env.TSPI_PACKAGE_ROOT = packageRoot;
-  process.env.TSPI_NATIVE_WRITES = "1";
-  const child = spawn(process.execPath, childArgs, {
-    cwd: workspaceRoot,
-    env: {
-      ...process.env,
-      TSPI_HOST_SOCKET: socketPath,
-      TSPI_WORKSPACE_ID: workspaceId,
-      ...(options.install_root ? { TSPI_INSTALL_ROOT: options.install_root } : {}),
-      ...(options.state_root ? {
-        TSPI_STATE_ROOT: options.state_root,
-        TSPI_DIAGNOSTIC_FILE: `${options.state_root.replace(/\/$/u, "")}/worker-diagnostics.log`,
-      } : {}),
-    },
-    stdio: "inherit",
-  });
-  child.once("error", (error) => {
-    process.stderr.write(`TSPi: ${error.message}\n`);
-    process.exitCode = 1;
-  });
-  child.once("exit", (code, signal) => {
-    void appProxy?.close();
-    process.exitCode = code ?? (signal ? 1 : 0);
-  });
 }
 
 main().catch((error) => {

@@ -1,7 +1,10 @@
 import { EventEmitter } from "node:events";
 import { spawn } from "node:child_process";
-import { createConnection } from "node:net";
+import { createConnection, createServer } from "node:net";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 export const HOST_PROTOCOL = "tspi-host/1";
 export const MAX_FRAME_BYTES = 16 * 1024 * 1024;
@@ -190,6 +193,63 @@ export function buildSshProxyArgs({
   // filesystem executable bit.
   args.push(...sshOptions, sshHost, "node", quoteRemoteArg(remoteProxyPath), "--socket", quoteRemoteArg(remoteSocketPath));
   return args;
+}
+
+/** Local socket forwarding to a remote private socket, owned by one terminal. */
+export async function createSshUnixProxy({ label = "socket", ...options }) {
+  const args = buildSshProxyArgs(options);
+  const directory = await mkdtemp(join(tmpdir(), "tspi-ssh-"));
+  const socketPath = join(directory, `${label}.sock`);
+  const clients = new Set();
+  const children = new Map();
+  const server = createServer((client) => {
+    clients.add(client);
+    client.once("close", () => clients.delete(client));
+    const child = spawn("ssh", args, { stdio: ["pipe", "pipe", "pipe"] });
+    const done = new Promise((resolve) => child.once("close", resolve));
+    children.set(child, done);
+    void done.then(() => children.delete(child));
+    child.stderr.resume();
+    client.pipe(child.stdin);
+    child.stdout.pipe(client);
+    const close = () => { client.destroy(); child.kill(); };
+    client.once("error", close);
+    client.once("close", () => child.kill());
+    child.stdin.once("error", close);
+    child.stdout.once("error", close);
+    child.once("error", close);
+    child.once("exit", () => client.end());
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(socketPath, resolve);
+    });
+  } catch (error) {
+    server.close();
+    await rm(directory, { recursive: true, force: true });
+    throw error;
+  }
+  let closing;
+  return {
+    socketPath,
+    directory,
+    close() {
+      closing ??= (async () => {
+        const stopped = new Promise((resolve) => server.close(resolve));
+        for (const client of clients) client.destroy();
+        await Promise.all([...children].map(async ([child, done]) => {
+          child.kill();
+          const timer = setTimeout(() => child.kill("SIGKILL"), 1_000);
+          try { await done; }
+          finally { clearTimeout(timer); }
+        }));
+        await stopped;
+        await rm(directory, { recursive: true, force: true });
+      })();
+      return closing;
+    },
+  };
 }
 
 export async function connectHost({ socketPath, timeoutMs = 30_000, initialize = true, onRequest, expectedReleaseId } = {}) {

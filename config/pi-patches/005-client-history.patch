@@ -1,0 +1,60 @@
+diff --git a/packages/coding-agent/src/experimental/client-tui.ts b/packages/coding-agent/src/experimental/client-tui.ts
+index dfb3f4965..0a4196e86 100644
+--- a/packages/coding-agent/src/experimental/client-tui.ts
++++ b/packages/coding-agent/src/experimental/client-tui.ts
+@@ -121,6 +125,7 @@ export class ExperimentalClientTui implements Component {
+ 	#recoveryTransition: Promise<void> = Promise.resolve();
+ 	#laneUnsubscribe: (() => void) | undefined;
+ 	#chatView: ExperimentalChatView | undefined;
++	#lastHistoryEntryId = 0;
+ 
+ 	private constructor(ui: TUI, requestRender: () => void, finish: () => void, loadedFacets: LoadedFacets) {
+ 		this.#ui = ui;
+@@ -500,6 +504,20 @@ export class ExperimentalClientTui implements Component {
+ 		this.#documentContainer.addChild(view.transcript);
+ 		this.#pendingMessagesContainer.addChild(view.pendingMessages);
+ 		this.#laneUnsubscribe = feature.transcript.state.subscribe((value) => {
++			for (const entry of value.entries) {
++				if (entry.id <= this.#lastHistoryEntryId) continue;
++				this.#lastHistoryEntryId = entry.id;
++				const message = entry.model?.[0];
++				if (entry.kind !== "pi.user" || message?.role !== "user") continue;
++				const text =
++					typeof message.content === "string"
++						? message.content
++						: message.content
++								.filter((block) => block.type === "text")
++								.map((block) => block.text)
++								.join("");
++				this.#chatInput.addToHistory(text);
++			}
+ 			view.apply(value);
+ 			this.#rebuild();
+ 		});
+diff --git a/packages/coding-agent/test/experimental-client-tui.test.ts b/packages/coding-agent/test/experimental-client-tui.test.ts
+index c4328af8d..5cbfa6de9 100644
+--- a/packages/coding-agent/test/experimental-client-tui.test.ts
++++ b/packages/coding-agent/test/experimental-client-tui.test.ts
+@@ -1,5 +1,6 @@
+ import { createHash } from "node:crypto";
+ import { resolve } from "node:path";
++import { stripVTControlCharacters } from "node:util";
+ import {
+ 	createRemoteServiceBinding,
+ 	type MutableReplicatedState,
+@@ -276,6 +277,15 @@ describe("experimental client TUI", () => {
+ 				await vi.waitFor(() => expect(component.render(80).join("\n")).toContain("remote answer"));
+ 				expect(component.render(80).join("\n")).toContain("hello");
+ 				expect(component.render(80).join("\n")).not.toContain("Working...");
++				// Accepted user entries must also be available in the input history.
++				component.handleInput("\u001b[A");
++				expect(
++					component.render(80).filter((line) => stripVTControlCharacters(line).includes("hello")),
++				).toHaveLength(2);
++				component.handleInput("\u001b[B");
++				expect(
++					component.render(80).filter((line) => stripVTControlCharacters(line).includes("hello")),
++				).toHaveLength(1);
+ 
+ 				component.handleInput("/reload");
+ 				component.handleInput("\u001b");

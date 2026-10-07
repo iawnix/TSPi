@@ -4,7 +4,8 @@ import argparse, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PIN_PATH = ROOT / "config" / "pi-source.json"
-PATCH_PATH = ROOT / "config" / "pi-tspi-runtime.patch"
+PATCH_ROOT = ROOT / "config" / "pi-patches"
+PATCH_NAMES = ("001-workspaces.patch", "002-worker-launch.patch", "003-client-connection.patch", "004-client-lifecycle.patch", "005-client-history.patch")
 class PiSourceError(RuntimeError): pass
 
 def pin():
@@ -29,21 +30,41 @@ def verify(source):
       source/"packages/coding-agent/src/experimental/client-tui.ts",
     ]
     if any(not p.is_file() for p in required): raise PiSourceError("Pi source is missing the durable experimental runtime")
-    process=(source/"packages/coding-agent/src/experimental/process.ts").read_text()
-    sessions=(source/"packages/coding-agent/src/experimental/session-catalog.ts").read_text()
-    worker=(source/"packages/coding-agent/src/experimental/session-worker.ts").read_text()
-    manager=(source/"packages/coding-agent/src/experimental/session-worker-manager.ts").read_text()
-    client_tui=(source/"packages/coding-agent/src/experimental/client-tui.ts").read_text()
-    if "PI_SESSION_WORKER_ENTRY" not in process or "TSPI_PI_DIAGNOSTIC_FILE" not in process: raise PiSourceError("missing TSPi process integration")
-    if "workspaceId" not in sessions or "session.sqlite" not in sessions: raise PiSourceError("missing workspace scoped SQLite catalog")
-    if "workspaceId" not in worker: raise PiSourceError("missing workspace worker metadata")
-    if "workspaceId: metadata.workspaceId" not in manager: raise PiSourceError("missing workspace worker launch metadata")
-    if "Local Unix transports must observe" not in client_tui: raise PiSourceError("missing local TUI reconnect integration")
+    for patch in patches():
+        if not patch_check(source, patch, reverse=True):
+            raise PiSourceError(f"Pi patch is missing or incompatible: {patch.name}")
     return expected
 
+def patches():
+    result = [PATCH_ROOT / name for name in PATCH_NAMES]
+    if any(not path.is_file() for path in result):
+        raise PiSourceError("missing managed Pi patch files")
+    return result
+
+def patch_check(source, patch, *, reverse=False):
+    result = subprocess.run(
+        ["git", "-C", str(source), "apply", "--check", *(["--reverse"] if reverse else []), str(patch)],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    return result.returncode == 0
+
 def apply_patch(source):
-    try: subprocess.run(["git","-C",str(source),"apply",str(PATCH_PATH)],check=True,text=True)
-    except (OSError,subprocess.CalledProcessError) as exc: raise PiSourceError(f"failed to apply {PATCH_PATH}: {exc}") from exc
+    if git(source, "rev-parse", "HEAD") != pin()["commit"]:
+        raise PiSourceError("refusing to patch a different Pi source commit")
+    pending = []
+    # Preflight every independent patch before changing any source file. A
+    # complete old patch group is accepted; a partially applied group is not.
+    for patch in patches():
+        if patch_check(source, patch, reverse=True):
+            continue
+        if not patch_check(source, patch):
+            raise PiSourceError(f"Pi patch is partially applied or incompatible: {patch.name}")
+        pending.append(patch)
+    for patch in pending:
+        try:
+            subprocess.run(["git", "-C", str(source), "apply", str(patch)], check=True, text=True)
+        except subprocess.CalledProcessError as exc:
+            raise PiSourceError(f"failed to apply {patch.name}: {exc}") from exc
 
 def clone(destination):
     p=pin(); destination.parent.mkdir(parents=True,exist_ok=True)
@@ -60,20 +81,7 @@ def install(root):
     destination=paths(Path(root).resolve()).pi_runtime/commit
     if destination.exists():
         if not (destination/"packages/coding-agent/src/experimental/process.ts").is_file(): raise PiSourceError(f"invalid managed Pi source: {destination}")
-        process = (destination/"packages/coding-agent/src/experimental/process.ts").read_text()
-        client_tui_path = destination/"packages/coding-agent/src/experimental/client-tui.ts"
-        client_tui = client_tui_path.read_text()
-        if "PI_SESSION_WORKER_ENTRY" not in process:
-            apply_patch(destination)
-        elif "Local Unix transports must observe" not in client_tui:
-            anchor = "\t\t\t\t\tif (server.radius) {"
-            if anchor not in client_tui:
-                raise PiSourceError("missing local TUI reconnect patch anchor")
-            client_tui_path.write_text(client_tui.replace(
-                anchor,
-                "\t\t\t\t\t// Local Unix transports must observe the same connection and attachment transitions as Radius.\n\t\t\t\t\t{",
-                1,
-            ))
+        apply_patch(destination)
         verify(destination)
     else:
         destination.parent.mkdir(parents=True,exist_ok=True,mode=0o700)

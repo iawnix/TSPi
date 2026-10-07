@@ -8,6 +8,7 @@ import subprocess
 import time
 import uuid
 import sys
+import threading
 from .worker import identity
 from .outputs import collect_outputs
 from datetime import datetime, timezone
@@ -31,6 +32,32 @@ class LocalProcessPlatform(ExecutionPlatform):
         self._processes: dict[str, subprocess.Popen[bytes]] = {}
         self._deadlines: dict[str, float] = {}
         self._terminal: dict[str, JobStatus] = {}
+        self._process_lock = threading.Lock()
+        self._reaper: threading.Thread | None = None
+
+    def _reap_finished(self) -> None:
+        # Only wait on Popen handles owned by this process, never persisted PIDs.
+        with self._process_lock:
+            for job_id, proc in list(self._processes.items()):
+                if proc.poll() is not None:
+                    self._processes.pop(job_id, None)
+                    self._deadlines.pop(job_id, None)
+
+    def _reap_loop(self) -> None:
+        while True:
+            self._reap_finished()
+            with self._process_lock:
+                if not self._processes:
+                    self._reaper = None
+                    return
+            time.sleep(0.1)
+
+    def _track_process(self, job_id: str, proc: subprocess.Popen[bytes]) -> None:
+        with self._process_lock:
+            self._processes[job_id] = proc
+            if self._reaper is None:
+                self._reaper = threading.Thread(target=self._reap_loop, name="tspi-job-reaper", daemon=True)
+                self._reaper.start()
 
     def probe(self, spec: JobSpec) -> dict[str, Any]:
         missing = [str(path) for path in spec.inputs if not path.exists()]
@@ -63,8 +90,11 @@ class LocalProcessPlatform(ExecutionPlatform):
                    "env":dict(spec.env), "timeout":spec.timeout_seconds, "stdin":str(spec.stdin) if spec.stdin else None}
         proc = subprocess.Popen([sys.executable, str(Path(__file__).with_name("worker.py"))],
             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        proc.stdin.write(json.dumps(payload).encode()); proc.stdin.close()
-        self._processes[job_id] = proc
+        self._track_process(job_id, proc)
+        try:
+            proc.stdin.write(json.dumps(payload).encode())
+        finally:
+            proc.stdin.close()
         deadline = time.monotonic() + 10
         while not (spec.cwd / "receipt.json").exists():
             if proc.poll() is not None or time.monotonic() >= deadline:
@@ -73,33 +103,19 @@ class LocalProcessPlatform(ExecutionPlatform):
         return self.receipt_from_disk(spec.cwd / "receipt.json")
 
     def status(self, receipt: JobReceipt) -> JobStatus:
+        self._reap_finished()
         if receipt.job_id in self._terminal:
             return self._terminal[receipt.job_id]
-        # A previous server process may have observed the terminal state and
-        # persisted it before exiting.  Read that record before consulting a
-        # (possibly stale) PID from the receipt.
-        status_path = Path(receipt.cwd) / "status.json"
-        if status_path.is_file():
-            try:
-                value = self._read(status_path)
-                if value.get("job_id") == receipt.job_id and value.get("state") in {item.value for item in JobState}:
-                    restored = JobStatus(
-                        receipt.job_id, JobState(value["state"]), self.name,
-                        exit_code=value.get("exit_code"), started_at=value.get("started_at"),
-                        finished_at=value.get("finished_at"), error=value.get("error"),
-                    )
-                    if restored.state in {JobState.SUCCEEDED, JobState.FAILED, JobState.TIMED_OUT, JobState.CANCELLED, JobState.COLLECTED}:
-                        self._terminal[receipt.job_id] = restored
-                        return restored
-            except (OSError, ValueError, TypeError, json.JSONDecodeError):
-                pass
+        restored = self._read_terminal_status(receipt)
+        if restored is not None:
+            return restored
         if receipt.metadata.get("supervised"):
             proc = self._processes.get(receipt.job_id)
             if proc is not None: proc.poll()  # reap a completed supervisor
             if receipt.pid and identity(receipt.pid) == receipt.metadata.get("supervisor_start") and _process_state(receipt.pid) != "Z":
                 return JobStatus(receipt.job_id, JobState.RUNNING, self.name)
             # A terminal receipt may have arrived between the first read and liveness check.
-            return JobStatus(receipt.job_id, JobState.UNKNOWN, self.name, error="supervisor unavailable without terminal receipt")
+            return self._read_terminal_status(receipt) or JobStatus(receipt.job_id, JobState.UNKNOWN, self.name, error="supervisor unavailable without terminal receipt")
         proc = self._processes.get(receipt.job_id)
         if proc is None:
             # A worker restart drops the in-memory Popen handle.  The durable
@@ -140,6 +156,25 @@ class LocalProcessPlatform(ExecutionPlatform):
         state = JobState.SUCCEEDED if code == 0 else JobState.FAILED
         terminal = JobStatus(receipt.job_id, state, self.name, exit_code=code, finished_at=_now())
         return self._persist(receipt, terminal)
+
+    def _read_terminal_status(self, receipt: JobReceipt) -> JobStatus | None:
+        # Receipts survive process exit, reaping, and runtime restarts.
+        status_path = Path(receipt.cwd) / "status.json"
+        if status_path.is_file():
+            try:
+                value = self._read(status_path)
+                if value.get("job_id") == receipt.job_id and value.get("state") in {item.value for item in JobState}:
+                    restored = JobStatus(
+                        receipt.job_id, JobState(value["state"]), self.name,
+                        exit_code=value.get("exit_code"), started_at=value.get("started_at"),
+                        finished_at=value.get("finished_at"), error=value.get("error"),
+                    )
+                    if restored.state in {JobState.SUCCEEDED, JobState.FAILED, JobState.TIMED_OUT, JobState.CANCELLED, JobState.COLLECTED}:
+                        self._terminal[receipt.job_id] = restored
+                        return restored
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                pass
+        return None
 
     def collect(self, receipt: JobReceipt) -> dict[str, Any]:
         status = self.status(receipt)

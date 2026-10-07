@@ -1867,6 +1867,13 @@ def turn(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, A
             }
         if operation in {"end", "wake"}:
             _require_admitted(context, liveness, allow_checkpoint=operation == "wake")
+            if operation == "wake" and request["input"].get("trigger") == "monitor.wake":
+                from .monitor_wake import assess
+                assessment = assess(root, context, liveness, request["input"].get("event_id"),
+                                    request.get("context", {}).get("session_id"))
+                return {"protocol": "research_turn_result", "version": 1, "request_id": request_id,
+                        "status": "completed", "output": {"operation": "wake", **assessment},
+                        "provenance": {"producer": "research_state", "request_digest": _turn_request_digest(request)}}
             waiting_user = liveness.get("disposition") == "user_input_required"
             if operation == "wake" and (waiting_user or liveness.get("disposition") in {"blocked", "deferred", "terminal"}):
                 return {"protocol": "research_turn_result", "version": 1, "request_id": request_id,

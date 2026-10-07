@@ -1,128 +1,111 @@
-import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
+import { parseSlashCommand, slashCompletions, SLASH_COMMAND_DEFINITIONS } from "../../packages/agent-runtime/host-api/commands.mjs";
+import { CLIENT_QUERIES_SERVICE_ID } from "./tspi-client-queries.mjs";
 
-import {
-  parseSlashCommand,
-  slashCompletions,
-  SLASH_COMMAND_DEFINITIONS,
-} from "../../packages/agent-runtime/host-api/commands.mjs";
-
-const executeFile = promisify(execFile);
-
-/**
- * Client-only TSPi command facet for Pi's native ExperimentalClientTui.
- *
- * The worker owns tools and the AgentController; this facet only restores the
- * familiar command names and renders their structured command result. It is
- * intentionally independent of the retired ExtensionAPI/UI runtime so loading
- * it cannot create a second agent process.
- */
-export async function createTspiNativeClientFacet({ sourceRoot, packageRoot = process.env.TSPI_PACKAGE_ROOT } = {}) {
-  if (typeof sourceRoot !== "string" || sourceRoot.length === 0) throw new TypeError("sourceRoot is required");
+/** Presentation-only commands; all scientific reads execute in the worker. */
+export async function createTspiNativeClientFacet({ sourceRoot, session } = {}) {
+  if (typeof sourceRoot !== "string" || !sourceRoot) throw new TypeError("sourceRoot is required");
   const fromSource = (relative) => import(pathToFileURL(join(sourceRoot, relative)).href);
-  const [
-    { defineFacet },
-    { SlashCommands },
-    { PresentationUI },
-  ] = await Promise.all([
+  const [{ defineFacet, defineService }, { SlashCommands }, { PresentationUI }, { wrapTextWithAnsi }] = await Promise.all([
     fromSource("packages/chord/src/index.ts"),
     fromSource("packages/coding-agent/src/experimental/services/slash-commands.ts"),
     fromSource("packages/coding-agent/src/experimental/services/presentation-ui.ts"),
+    fromSource("packages/tui/src/index.ts"),
   ]);
-  const root = typeof packageRoot === "string" && packageRoot.length > 0 ? packageRoot : process.cwd();
-  const python = process.env.TSPI_WORKSPACE_PYTHON || process.env.TSPI_PYTHON || "python3";
-  const apiScript = join(root, "apps/agent-cli/research_api.py");
-
+  const queriesService = defineService(CLIENT_QUERIES_SERVICE_ID);
   return defineFacet({
     id: "@tspi/native-client-commands",
     setup(env) {
       const commands = env.use(SlashCommands);
       const ui = env.use(PresentationUI);
+      const queries = env.use(queriesService);
       env.onActivate(() => {
-        for (const name of ["research", "debug"]) {
-          env.own(commands.replace(commandFor(name, ui, python, apiScript)));
+        for (const command of createTerminalCommands({ ui, queries, session, wrapText: wrapTextWithAnsi })) {
+          env.own(commands.replace(command));
         }
-        env.own(commands.replace(systemPromptCommand(ui)));
       });
     },
   });
 }
 
-function commandFor(name, ui, python, apiScript) {
-  const definition = SLASH_COMMAND_DEFINITIONS[name];
-  return {
-    name,
-    description: `${definition?.description || `TSPi ${name}`} (native client)`,
-    ...(definition?.usage ? { argumentHint: definition.usage } : {}),
-    getArgumentCompletions(prefix) {
-      return slashCompletions(name, prefix) || [];
-    },
+export function createTerminalCommands({ ui, queries, session, wrapText = (text) => text.split("\n") }) {
+  let pending = false;
+  return Object.values(SLASH_COMMAND_DEFINITIONS).map((definition) => ({
+    name: definition.name,
+    description: definition.description,
+    argumentHint: definition.usage.replace(`/${definition.name}`, "").trim(),
+    getArgumentCompletions(prefix) { return slashCompletions(definition.name, prefix) || []; },
     async run(args, context) {
-      if (name === "debug") {
-        ui.showStatus(JSON.stringify({
-          schema_version: "tspi-client-command-result/1",
-          command: "/debug",
-          state: "remote_unsupported",
-          message: "The debug modal is presentation-local; use /sys-prompt for the shared prompt manifest.",
-        }, null, 2), context);
-        return undefined;
-      }
       try {
-        const invocation = parseSlashCommand(name, args);
-        const result = await executeCanonicalCommand(invocation, python, apiScript, process.cwd(), context);
-        ui.showStatus(JSON.stringify({
-          schema_version: "tspi-client-command-result/1",
-          command: `/${name}`,
-          invocation,
-          result,
-        }, null, 2), context);
+        const invocation = parseSlashCommand(definition.name, args);
+        if (definition.name === "quit") { session.quit(); return; }
+        if (pending) { ui.showStatus("Another terminal command is still open. Close it before continuing.", context); return; }
+        pending = true;
+        try {
+          if (definition.name === "resume") {
+            let id = invocation.params.sessionId;
+            if (!id) {
+              const sessions = await session.list();
+              if (!sessions.length) { ui.showStatus("No writable sessions in this workspace.", context); return; }
+              id = await ui.select("Resume session", sessions.map((item) => ({
+                value: item.session_id,
+                label: `${item.session_id}${item.session_id === session.sessionId ? " (current)" : ""}`,
+                description: `${item.updated_at || item.created_at || ""}${item.is_streaming ? " · running" : ""}`,
+              })), session.sessionId, context);
+            }
+            if (id) await session.resume(id);
+            return;
+          }
+          const response = definition.name === "research"
+            ? await queries.research(args, context)
+            : await queries.systemPrompt(context);
+          if (session.signal?.aborted) return;
+          if (response.session_id !== session.sessionId) throw new Error("Query returned a different session");
+          if (session.workspaceId && response.workspace_id !== session.workspaceId) throw new Error("Query returned a different workspace");
+          if (response.error) throw new Error(response.error.message);
+          const title = `${definition.name} · ${response.workspace_id} · ${response.session_id}`;
+          const body = definition.name === "sys-prompt" ? formatPrompt(response.result) : formatValue(response.result);
+          await showDocument(ui, title, body, context, wrapText, session.signal);
+        } finally { pending = false; }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        ui.showStatus(JSON.stringify({
-          schema_version: "tspi-client-command-result/1",
-          command: `/${name}`,
-          state: "failed",
-          error: { code: error?.name === "CommandUsageError" ? "usage" : "command_failed", message },
-        }, null, 2), context);
+        if (!session.signal?.aborted) ui.showStatus(`/${definition.name}: ${error instanceof Error ? error.message : String(error)}`, context);
       }
-      return undefined;
     },
-  };
+  }));
 }
 
-function systemPromptCommand(ui) {
-  return {
-    // Pi 1.0.2 accepts lower-case letters, digits, ':' and '-' in slash
-    // command names. The public system-prompt tool keeps its stable
-    // `sys_prompt` identity; this presentation-only command uses the valid
-    // slash spelling below.
-    name: "sys-prompt",
-    description: "Show the effective system prompt and provenance",
-    async run(args, context) {
-      if (args.trim().length > 0) throw new Error("/sys-prompt takes no arguments");
-      try {
-        ui.showStatus("Use the system_prompt tool to inspect the effective prompt and provenance.", context);
-      } catch (error) {
-        ui.showStatus(`Unable to inspect system prompt: ${error instanceof Error ? error.message : String(error)}`, context);
-      }
-      return undefined;
-    },
-  };
+function formatPrompt(manifest) {
+  const sources = (manifest.contributors || []).map((item) => `${item.origin}: ${item.source}`).join("\n");
+  return `${manifest.effective}\n\nSources\n${sources}\n\nSHA256: ${manifest.sha256}${manifest.limitations?.length ? `\n\nLimitations\n${manifest.limitations.join("\n")}` : ""}`;
 }
 
-async function executeCanonicalCommand(invocation, python, apiScript, cwd, context) {
-  const args = [invocation.command, "--root", cwd];
-  for (const [key, flag] of [["kind", "--kind"], ["id", "--id"], ["name", "--name"], ["query", "--query"]]) {
-    if (invocation.params?.[key] !== undefined) args.push(flag, String(invocation.params[key]));
+function formatValue(value, indent = "") {
+  if (value === null || typeof value !== "object") return String(value ?? "—");
+  if (Array.isArray(value)) return value.length ? value.map((item) => `${indent}• ${formatValue(item, `${indent}  `)}`).join("\n") : "(none)";
+  return Object.entries(value).filter(([key]) => key !== "schema_version").map(([key, item]) =>
+    `${indent}${key.replaceAll("_", " ")}: ${item !== null && typeof item === "object" ? `\n${formatValue(item, `${indent}  `)}` : String(item ?? "—")}`,
+  ).join("\n");
+}
+
+// Use Pi's own selector, including its wrapping and focus handling. No second
+// overlay renderer. Reserve space for the title and page navigation on small TTYs.
+async function showDocument(ui, title, body, context, wrapText, signal) {
+  const width = Math.max(10, (process.stdout.columns || 80) - 4);
+  const lines = body.split("\n").flatMap((line) => wrapText(line, width));
+  const pageSize = Math.max(1, Math.min(16, (process.stdout.rows || 24) - 12));
+  const pages = Math.max(1, Math.ceil(lines.length / pageSize));
+  let page = 0;
+  while (!signal?.aborted) {
+    const items = [
+      ...(page + 1 < pages ? [{ value: "next", label: "Next page" }] : []),
+      ...(page > 0 ? [{ value: "previous", label: "Previous page" }] : []),
+      { value: "close", label: "Close" },
+    ];
+    const selected = await ui.select(`${title} (${page + 1}/${pages})\n\n${lines.slice(page * pageSize, (page + 1) * pageSize).join("\n")}`, items, undefined, context);
+    if (selected === "next") page++;
+    else if (selected === "previous") page--;
+    else break;
   }
-  const completed = await executeFile(python, [apiScript, ...args], {
-    cwd,
-    env: { ...process.env, PYTHONNOUSERSITE: "1" },
-    timeout: 60_000,
-    maxBuffer: 4 * 1024 * 1024,
-    signal: context?.abortSignal,
-  });
-  return JSON.parse(completed.stdout.trim() || "{}");
+  if (!signal?.aborted) ui.showStatus(`Viewed ${title}.`, context);
 }

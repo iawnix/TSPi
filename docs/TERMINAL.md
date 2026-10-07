@@ -3,8 +3,9 @@
 [English](TERMINAL.md) | [简体中文](TERMINAL.zh-CN.md)
 
 `ResearchAgent --workspace <name>` is the public launcher for Pi's official remote
-`ExperimentalClientTui`. It does not replace Pi's header, editor, command
-registry, transcript view, extensions, or input loop. The selected workspace is
+`ExperimentalClientTui`. It uses Pi's editor, transcript rendering, and input loop.
+This is a separate presentation from ordinary Pi `InteractiveMode`, with its own
+command and plugin capabilities. The selected workspace is
 bound to one installation-level Pi Harness SQLite durable session.
 
 New workspaces may be explicitly bound to one immutable framework mode:
@@ -85,8 +86,18 @@ socket is under the configured runtime directory.
 The remote `ExperimentalClientTui` provides `/resume`, `/model`, `/thinking`,
 `/compact`, `/reload`, and the Native TSPi commands. `/resume`
 switches to another SQLite durable session in the current workspace; it does not
-cross workspace boundaries. Standalone Pi session commands are not available
-in this remote client.
+cross workspace boundaries. Switching disposes the old terminal connection before
+attaching the selected session; background tasks continue. Other standalone Pi
+session commands are not available in this remote client.
+
+TSPi command names, arguments, and completions share one catalogue:
+
+- `/research [summary|context|liveness|map|decisions|storage|detail <kind> <id>|locate <query>|validate|operations]`: read-only queries in the attached worker, including a remote workspace over SSH. Long results use the native Pi selector for paging.
+- `/sys-prompt`: inspect the current worker's TSPi system prompt manifest and sources without a model request.
+- `/resume [session-id]`: select or specify a session in the current workspace. Cancelling keeps the current session.
+- `/quit`: disconnect this terminal while leaving the worker and its tasks running.
+
+The nonfunctional `/debug` placeholder has been removed.
 
 At launch, `-c` selects the latest writable SQLite durable session and
 `--session-id <id>` selects an exact session. Startup `-r`/`--resume` is
@@ -95,12 +106,14 @@ descriptor before starting the TUI; open the terminal and use `/resume`
 instead. Phone and Web prompts are submitted through Host `input/send` with a
 durable request receipt and a stable `client_message_id`.
 
-Prompt history is restored from the selected session and remains session-scoped;
-use the editor's Up/Down keys to revisit accepted prompts after switching.
+Prompt history is restored from the selected session's active transcript and remains
+session-scoped; use the editor's Up/Down keys to revisit accepted prompts after
+switching. On reopening, inputs outside the active transcript after compaction are
+not restored.
 
 Disconnect, interrupt, and quit are different states. A detached terminal is
 only a disconnected client. `Esc` or Host `turn/interrupt` requests an active
-turn interruption. `/quit` ends Pi. If a request loses the connection after
+turn interruption. `/quit` closes only this terminal connection. If a request loses the connection after
 dispatch, Host reports `uncertain` and does not silently replay it; an on-disk
 `dispatching` receipt is also not reported as accepted until Pi has reached the
 submitted/observed boundary. Inspect the session before retrying with the same

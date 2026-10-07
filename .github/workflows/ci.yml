@@ -12,6 +12,9 @@ jobs:
   typescript-and-package:
     name: TypeScript and package contracts
     runs-on: ubuntu-latest
+    env:
+      TSPI_TEST_ENV_ROOT: ${{ runner.temp }}/tspi-test-env
+      TSPI_TEST_ROOT: ${{ runner.temp }}/tn
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           source_root="$(python3 scripts/prepare_pi_source.py --install "$RUNNER_TEMP/tspi")"
-          echo "TSPI_PI_RUNTIME_ROOT=$source_root" >> "$GITHUB_ENV"
+          echo "TSPI_TEST_PI_RUNTIME_ROOT=$source_root" >> "$GITHUB_ENV"
       - run: npm run test:native-pi
 
   python-fast:

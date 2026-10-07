@@ -1,3 +1,7 @@
+import { createMonitorAdmission, MONITOR_ADMISSION_SERVICE_ID } from "./monitor-admission.mjs";
+import { wakeMessage } from "./pi-monitor-worker.mjs";
+import { NATIVE_TOOL_METADATA } from "./native-tool-metadata.mjs";
+import { CLIENT_QUERIES_SERVICE_ID, createClientQueries } from "./tspi-client-queries.mjs";
 import { resolvePreparedJob } from "./prepared-job.mjs";
 import { dirname, join } from "node:path";
 import { readFile } from "node:fs/promises";
@@ -6,9 +10,9 @@ import { createHash } from "node:crypto";
 import { createStaticFacetLoader, defineFacet, defineService } from "@earendil-works/chord";
 import {
   Harness, createRegistry, defineExtension, hook, section,
-  GenerationTask, ToolTask, LiveDoc,
+  GenerationTask, ToolTask, LiveDoc, InboxDoc,
 } from "@earendil-works/pi-durable";
-import { CodingTools } from "@earendil-works/pi-durable/tools";
+import { createReadTool, createWriteTool, createEditTool, createBashTool } from "@earendil-works/pi-durable/tools";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { TODO_CONTEXT as PI_TODO_CONTEXT } from "@earendil-works/chord/context";
 import { loadInstalledServerExtensions, loadServerExtensions } from "./server-extension-loader.mjs";
@@ -41,7 +45,10 @@ const { runSessionWorkerWithHarness } = workerModule;
 const skillsModule = await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/core/skills.ts")).href);
 const { loadSkills: loadLatestSkills } = skillsModule;
 const { createHarnessSettings, configureHarnessHttp, ExecutionEnvs, createPiPrompt, findInitialAgentModel } = setupModule;
-const TspiSystemPrompt = defineService("tspi.system-prompt");
+// Pinned Pi transaction primitive keeps Monitor admission atomic with native input.
+const { admitSubmission } = await import(pathToFileURL(join(sourceRoot, "packages/durable/src/harness/submissions.ts")).href);
+const TspiMonitorAdmission = defineService(MONITOR_ADMISSION_SERVICE_ID);
+const TspiClientQueries = defineService(CLIENT_QUERIES_SERVICE_ID);
 
 async function loadTspiSkills(executionEnv) {
   const packageRoot = process.env.TSPI_PACKAGE_ROOT;
@@ -156,7 +163,8 @@ async function createTspiHarness(databasePath, options) {
     ],
   });
   const systemPromptTool = createSystemPromptTool(promptManifest);
-  const lifecycle = createResearchLifecycleController({ metadata: Object.fromEntries([...loadedExtensions.tools, ...installed.tools].filter((tool) => tool.metadata).map((tool) => [tool.name, tool.metadata])) });
+  const toolMetadata = { ...NATIVE_TOOL_METADATA, ...Object.fromEntries([...loadedExtensions.tools, ...installed.tools].filter((tool) => tool.metadata).map((tool) => [tool.name, tool.metadata])) };
+  const lifecycle = createResearchLifecycleController({ metadata: toolMetadata });
   const packageReadGuard = createPackageSourceReadGuard({ packageRoot: loadedSkills.packageRoot, cwd,
     publicKnowledgeRoots: loadedSkills.skills.map(skill => dirname(skill.filePath)),
     publicResourceFiles: loadedSkills.installedExtensions.extensions.flatMap(extension => extension.skills.flatMap(skill => skill.resourceFiles)),
@@ -177,8 +185,11 @@ async function createTspiHarness(databasePath, options) {
     ...filterWorkspaceTools(installed.tools),
     createPublicToolAlias(systemPromptTool, "system_prompt"),
   ].map((tool) => toDurableTool(tool, { toolContext, lifecycle, cwd, packageRoot: loadedSkills.packageRoot }));
+  let monitorAdmission;
   const registry = createRegistry();
-  registry.install(CodingTools);
+  registry.install(defineExtension({ name: "coding-tools", tools:
+    [createReadTool(), createWriteTool(), createEditTool(), createBashTool()].map(tool => ({ ...tool, executionMode: "sequential" })),
+  }));
   registry.install(defineExtension({ name: "tspi-tools", tools: legacyTools }));
   registry.install(defineExtension({
     name: "tspi-prompt",
@@ -197,6 +208,7 @@ async function createTspiHarness(databasePath, options) {
         },
         onYield: async (_answer, api, context) => {
           const follow = await checkpointHook({ runId: lifecycle.snapshot().run_id || String(api.taskId) }, context);
+          await monitorAdmission?.prune(context);
           return follow?.followUp ? { continue: follow.followUp } : undefined;
         },
       }),
@@ -205,8 +217,9 @@ async function createTspiHarness(databasePath, options) {
           const packagePolicy = packageReadGuard({ toolName: call.name, args: call.arguments });
           if (packagePolicy?.block) return { block: packagePolicy.block.reason || String(packagePolicy.block) };
           try {
-            const metadata = [...loadedExtensions.tools, ...installed.tools].find(tool => tool.name === call.name)?.metadata;
-            const liveness = await researchKernel.read_liveness({ tool: { name: call.name, args: call.name === "job_start" ? resolvePreparedJob(call.arguments, cwd) : call.arguments, effect: metadata?.effect || "read", phase: metadata?.phase || "orient" } });
+            const metadata = toolMetadata[call.name];
+            if (!metadata) throw new Error(`No lifecycle metadata for ${call.name}`);
+            const liveness = await researchKernel.read_liveness({ tool: { name: call.name, args: call.name === "job_start" ? resolvePreparedJob(call.arguments, cwd) : call.arguments, effect: metadata.effect, phase: metadata.phase } });
             if (typeof liveness?.tool_admission?.accepted !== "boolean") throw new Error("Research State returned no authoritative tool admission");
             lifecycle.setDurableLiveness(liveness);
           } catch (error) {
@@ -216,9 +229,10 @@ async function createTspiHarness(databasePath, options) {
           const admission = lifecycle.admitTool({ runId, toolName: call.name, toolCallId: call.id, args: call.arguments });
           return admission.accepted ? undefined : { block: JSON.stringify({ schema_version: "tspi-lifecycle-admission-error/1", code: admission.code || "tool_phase_transition_denied", reason: admission.reason, tool_name: call.name }) };
         },
-        afterTool: (call, result, api) => {
+        afterTool: async (call, result, api, context) => {
           const runId = lifecycle.snapshot().run_id || String(api.taskId);
           lifecycle.completeTool({ runId, toolName: call.name, toolCallId: call.id, args: call.arguments, isError: result?.isError === true });
+          await monitorAdmission?.prune(context);
           return undefined;
         },
       }),
@@ -235,9 +249,15 @@ async function createTspiHarness(databasePath, options) {
     }, PI_TODO_CONTEXT);
     const created = (await harness.conversation("root", PI_TODO_CONTEXT)) === undefined;
     const conversation = await harness.root(PI_TODO_CONTEXT, { agent: { cwd, ...(created && resolved.model ? { model: resolved.model } : {}), ...(created && resolved.thinkingLevel ? { thinkingLevel: resolved.thinkingLevel } : {}) } });
+    monitorAdmission = createMonitorAdmission({ harness, conversation, kernel: researchKernel, workspaceId, sessionId,
+      LiveDoc, InboxDoc, admitSubmission, wakeMessage });
+    await monitorAdmission.prune(PI_TODO_CONTEXT);
     return {
       harness, conversation, modelRuntime, settingsManager,
-      facetLoader: createStaticFacetLoader([defineFacet({ id: "@tspi/system-prompt", setup(env) { env.provide(TspiSystemPrompt, { async inspect() { return promptManifest; } }); } })]),
+      facetLoader: createStaticFacetLoader([defineFacet({ id: "@tspi/client-queries", setup(env) {
+        env.provide(TspiMonitorAdmission, monitorAdmission);
+        env.provide(TspiClientQueries, createClientQueries({ workspaceId, sessionId, commandBridge, promptManifest }));
+      } })]),
       cleanup: async (context) => { try { await executionEnvs.cleanup(context); } finally { await commandBridge.close(); } },
     };
   } catch (error) {
