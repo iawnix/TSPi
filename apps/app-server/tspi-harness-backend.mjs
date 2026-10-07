@@ -10,6 +10,7 @@ import { pathToFileURL } from "node:url";
 import { createSessionControl } from "./pi-session-control.mjs";
 import { readReceipt, receiptDigest, receiptKey, writeReceipt } from "./tspi-receipts.mjs";
 import { acquireSchedulerLease } from "./tspi-scheduler-lease.mjs";
+import { sessionActivityAt } from "./session-selection.mjs";
 
 const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/u;
@@ -145,7 +146,7 @@ export async function createTspiHarnessBackend(options = {}) {
       turn_id: operation?.operationId || operation?.id || null,
       name: null,
       created_at: created,
-      updated_at: new Date().toISOString(),
+      updated_at: sessionActivityAt(createdValue, raw),
       model: normalizeModelIdentity(raw.configuration?.model),
       client: bound ? {
         transport: "unix",
@@ -675,6 +676,7 @@ export async function createTspiHarnessBackend(options = {}) {
     socketPath: piRuntime.socketPath,
     setEventHandler(handler) { eventHandler = typeof handler === "function" ? handler : () => {}; },
     async listSessions(workspaceId) {
+      await recovery;
       const root = await workspace(workspaceId);
       const harness = (admin.directory.state.value?.sessions || [])
         .filter((item) => item.workspaceId === workspaceId)
@@ -898,7 +900,7 @@ export async function createTspiHarnessBackend(options = {}) {
   continuationTimer.unref();
   // Recover durable active/queued lanes after a Host or Pi coordinator restart
   // even when no presentation client reconnects.
-  void recoverDurableSessions();
+  const recovery = recoverDurableSessions();
   return backend;
 }
 

@@ -4,6 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createPackageSourceReadGuard } from "../../../apps/app-server/pi-harness-policy.mjs";
+import { createSkillPathResolver } from "../../../apps/app-server/skill-paths.mjs";
+
+test("registered Skill names resolve without assuming a common directory", () => {
+  const resolve = createSkillPathResolver([{ name: "email", filePath: "/package/extensions/email/SKILL.md" }]);
+  assert.equal(resolve({ path: "skill:email" }).path, "/package/extensions/email/SKILL.md");
+  assert.equal(resolve({ path: "skill:email/references/email_delivery.md" }).path, "/package/extensions/email/references/email_delivery.md");
+  assert.throws(() => resolve({ path: "skill:unknown" }), /Unknown registered/);
+  assert.throws(() => resolve({ path: "skill:email/../private.py" }), /remain inside/);
+});
 
 test("Harness package-source guard blocks private package reads but allows public skills", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-harness-policy-"));

@@ -13,6 +13,7 @@ import {
   GenerationTask, ToolTask, LiveDoc, InboxDoc,
 } from "@earendil-works/pi-durable";
 import { createReadTool, createWriteTool, createEditTool, createBashTool } from "@earendil-works/pi-durable/tools";
+import { createSkillPathResolver } from "./skill-paths.mjs";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { TODO_CONTEXT as PI_TODO_CONTEXT } from "@earendil-works/chord/context";
 import { loadInstalledServerExtensions, loadServerExtensions } from "./server-extension-loader.mjs";
@@ -169,6 +170,7 @@ async function createTspiHarness(databasePath, options) {
     publicKnowledgeRoots: loadedSkills.skills.map(skill => dirname(skill.filePath)),
     publicResourceFiles: loadedSkills.installedExtensions.extensions.flatMap(extension => extension.skills.flatMap(skill => skill.resourceFiles)),
   });
+  const resolveSkillPath = createSkillPathResolver(loadedSkills.skills);
   const checkpointHook = createCheckpointLivenessHook({ cwd, maxFollowUps: 1, sessionId,
     transactionCoordinator, statusReader: () => researchKernel.read_liveness({}),
   });
@@ -214,6 +216,8 @@ async function createTspiHarness(databasePath, options) {
       }),
       hook(ToolTask, {
         beforeTool: async (call, api, context) => {
+          const args = call.name === "read" ? resolveSkillPath(call.arguments) : call.arguments;
+          call = { ...call, arguments: args };
           const packagePolicy = packageReadGuard({ toolName: call.name, args: call.arguments });
           if (packagePolicy?.block) return { block: packagePolicy.block.reason || String(packagePolicy.block) };
           try {
@@ -227,7 +231,7 @@ async function createTspiHarness(databasePath, options) {
           }
           const runId = lifecycle.snapshot().run_id || String(api.taskId);
           const admission = lifecycle.admitTool({ runId, toolName: call.name, toolCallId: call.id, args: call.arguments });
-          return admission.accepted ? undefined : { block: JSON.stringify({ schema_version: "tspi-lifecycle-admission-error/1", code: admission.code || "tool_phase_transition_denied", reason: admission.reason, tool_name: call.name }) };
+          return admission.accepted ? { arguments: args } : { block: JSON.stringify({ schema_version: "tspi-lifecycle-admission-error/1", code: admission.code || "tool_phase_transition_denied", reason: admission.reason, tool_name: call.name }) };
         },
         afterTool: async (call, result, api, context) => {
           const runId = lifecycle.snapshot().run_id || String(api.taskId);

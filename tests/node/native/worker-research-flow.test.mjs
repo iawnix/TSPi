@@ -45,7 +45,8 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
       ...["extensions/core/skills/research-state/SKILL.md", "extensions/core/skills/orchestration/SKILL.md",
         "extensions/chemical/skills/method-selection/SKILL.md", "extensions/chemical/skills/cf22d/SKILL.md",
         "extensions/chemical/skills/cf22d/references/cf22d_workflow.md", "extensions/chemical/skills/_shared/science.py",
-        "extensions/email/SKILL.md", "extensions/email/scripts/email_cli.py"].map(path => call("read", { path: join(packageRoot, path) })),
+        "extensions/email/scripts/email_cli.py"].map(path => call("read", { path: join(packageRoot, path) })),
+      call("read", { path: "skill:email" }),
       call("bash", { command: [python, join(packageRoot, "extensions/email/scripts/email_cli.py"), "check", "--root", workspace, "--output", join(workspace, "reports/email-check.json")].map(quote).join(" ") }),
       call("research_read", { mode: "context" }),
       call("research_change", { rationale: "Initialize a bounded fixture", operations: [
@@ -181,6 +182,8 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     assert.ok(monitorRecord.operation_id);
     assert.equal(monitorRecord.admission_protocol, "tspi-monitor-idempotent/1");
     const requestCount = requests.length;
+    const activityBeforeRestart = (await backend.listSessions("flow"))[0].updated_at;
+    assert.equal(Date.parse(activityBeforeRestart), Math.max(...read.snapshot.messages.map(message => message.timestamp)));
     await backend.close();
     for (const file of receipts.filter(file => file.endsWith(".json"))) {
       const path = join(root, "state", "requests", file);
@@ -191,6 +194,7 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
       }));
     }
     backend = await createTspiHarnessBackend(backendOptions);
+    assert.equal((await backend.listSessions("flow"))[0].updated_at, activityBeforeRestart);
     const recovered = await backend.sendInput(monitorRequest);
     assert.equal(recovered.accepted, true);
     assert.equal(recovered.operation_id, monitorRecord.operation_id);

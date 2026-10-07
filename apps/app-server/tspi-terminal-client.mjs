@@ -14,6 +14,7 @@ import { basename, dirname, resolve } from "node:path";
 
 import { createSshUnixProxy, connectHost, connectHostSsh } from "./tspi-host-client.mjs";
 import { formatTerminalFailure } from "./tspi-terminal-errors.mjs";
+import { selectSession } from "./session-selection.mjs";
 
 const args = process.argv.slice(2);
 const options = {};
@@ -75,21 +76,6 @@ function descriptorConnect(descriptor) {
   }
   const encodedPath = descriptor.socket_path.split("/").map((part) => encodeURIComponent(part)).join("/");
   return `unix://${encodedPath}`;
-}
-
-function selectSession(sessions, sessionId, shouldContinue) {
-  if (sessionId) {
-    const exact = sessions.find((item) => item.session_id === sessionId);
-    if (!exact) throw new Error(`Session is not present in workspace: ${sessionId}`);
-    return exact;
-  }
-  const live = sessions.find((item) => item.online === true);
-  if (live) return live;
-  if (shouldContinue) {
-    const writable = sessions.filter((item) => item.read_only !== true && item.format === "pi-harness");
-    return writable[0] || null;
-  }
-  return null;
 }
 
 function splitNativeProviderArgs(values) {

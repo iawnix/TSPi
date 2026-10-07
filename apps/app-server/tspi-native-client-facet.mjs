@@ -54,7 +54,8 @@ export function createTerminalCommands({ ui, queries, session, wrapText = (text)
                 description: `${item.updated_at || item.created_at || ""}${item.is_streaming ? " · running" : ""}`,
               })), session.sessionId, context);
             }
-            if (id) await session.resume(id);
+            if (id === session.sessionId) ui.showStatus("Already in this session. Research State is shared by sessions in this workspace.", context);
+            else if (id) await session.resume(id);
             return;
           }
           const response = definition.name === "research"
