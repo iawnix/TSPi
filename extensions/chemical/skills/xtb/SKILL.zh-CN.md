@@ -10,7 +10,7 @@ description: 运行和评估 xTB 单点、优化、频率、扫描、分子动�
 通过 [准备脚本](../method-selection/scripts/prepare_job.py) 生成通用 `job_start` 请求：
 
 ```text
-python3 <method-selection>/scripts/prepare_job.py --config <job.toml> --environment <环境名> --backend xtb --skill xtb --xyz <结构.xyz> -- --task opt-sp
+"$TSPI_PYTHON" <method-selection>/scripts/prepare_job.py --config <job.toml> --environment <环境名> --backend xtb --skill xtb --xyz <结构.xyz> -- --task opt-sp
 ```
 
 确认方法、基组、电荷、自旋和资源，补充 nodeId 与 timeoutSeconds 后提交返回的请求。脚本不会替 Agent 提交任务。它会暂存该 Skill 的 scripts 和 `_shared` 依赖，保留相对目录；不要只复制 run.py。激活发生在目标 Job 中，不需要 Provider 注册。
@@ -24,3 +24,5 @@ python3 <method-selection>/scripts/prepare_job.py --config <job.toml> --environm
 本执行入口支持 GFN2-xTB 的 opt、sp、opt-sp。其他扫描/MD/频率任务不在此 CLI 的已验收范围；先检查相应脚本是否存在，不按 Skill 名称假定支持。
 
 详细检查见 [xtb_executor.zh-CN](references/xtb_executor.zh-CN.md)。
+
+Python 依赖由安装阶段创建的 Conda 环境隔离，并通过 job.toml 的结构化 python 绑定选择：backend.python 优先，否则继承 environment.python。用 "$TSPI_PYTHON" 执行本地准备 helper；远程 runner 使用配置的 Conda prefix，不猜 python3、不用 --python 覆盖。CF22D 使用 backends.pyscf.python，不再同时指定 Python command。缺失环境交由安装维护处理，不在研究回合临时 pip install。

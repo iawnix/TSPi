@@ -252,7 +252,7 @@ for line in sys.stdin:
         result = dispatch(method, _object(request.get("payload", {}), "bridge payload"))
         print(json.dumps({"id": request_id, "ok": True, "result": result}, ensure_ascii=False, separators=(",", ":")), flush=True)
     except Exception as error:
-        print(json.dumps({"id": request_id, "ok": False, "error": {"code": type(error).__name__, "message": str(error)}}, ensure_ascii=False, separators=(",", ":")), flush=True)
+        print(json.dumps({"id": request_id, "ok": False, "error": {"code": getattr(error, "code", type(error).__name__), "message": str(error)}}, ensure_ascii=False, separators=(",", ":")), flush=True)
 `;
 
 /**

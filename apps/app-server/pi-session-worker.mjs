@@ -203,7 +203,12 @@ async function createTspiHarness(databasePath, options) {
         beforeTool: async (call, api, context) => {
           const packagePolicy = packageReadGuard({ toolName: call.name, args: call.arguments });
           if (packagePolicy?.block) return { block: packagePolicy.block.reason || String(packagePolicy.block) };
-          try { lifecycle.setDurableLiveness(await readResearchLiveness(cwd, context?.abortSignal)); } catch (error) {
+          try {
+            const metadata = [...loadedExtensions.tools, ...installed.tools].find(tool => tool.name === call.name)?.metadata;
+            const liveness = await researchKernel.read_liveness({ tool: { name: call.name, args: call.arguments, effect: metadata?.effect || "read", phase: metadata?.phase || "orient" } });
+            if (typeof liveness?.tool_admission?.accepted !== "boolean") throw new Error("Research State returned no authoritative tool admission");
+            lifecycle.setDurableLiveness(liveness);
+          } catch (error) {
             return { block: JSON.stringify({ schema_version: "tspi-lifecycle-admission-error/1", code: "research_liveness_unavailable", reason: String(error?.message || error), tool_name: call.name }) };
           }
           const runId = lifecycle.snapshot().run_id || String(api.taskId);
@@ -243,7 +248,7 @@ async function createTspiHarness(databasePath, options) {
 }
 
 function tspiSystemPrompt(cwd) {
-  return `You are the TSPi research agent for ${cwd}. Research State is the scientific authority. Start each turn by reading research_read, then use research_strategy and research_change to express hypotheses, Nodes, Findings, evidence, and revisions. Use the registered Job and Artifact tools supplied by the active runtime for long-running work; do not delegate to a Compute or Review child agent. Preserve uncertainty, interpret collected evidence explicitly, and close with research_checkpoint. Monitor only wakes this same session after external work.`;
+  return `You are the TSPi research agent for ${cwd}. Research State is the scientific authority. Start each turn by reading research_read. Read the core orchestration and research-state Skills, create missing objects with research_change, then record research_strategy for the work. Use the registered Job and Artifact tools for execution. Continue independent authorized work until completion or a demonstrated blocker. Routine tool observations need not become Findings. Only cite registered evidence IDs in Findings. Close with research_checkpoint using Research State's disposition and scope. Monitor observes Jobs and wakes this session; it does not plan research. Installation bindings are available via TS_JOB_CONFIG, TS_NOTIFICATION_CONFIG and TSPI_PYTHON. Use the listed email Skill's configuration check before deciding a recipient is missing.`;
 }
 
 if (workerModule.isDirectInternalProcessEntry?.(import.meta.url) || process.env.PI_SESSION_WORKER_ENTRY === new URL(import.meta.url).pathname) {

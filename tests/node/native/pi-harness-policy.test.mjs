@@ -19,6 +19,14 @@ test("Harness package-source guard blocks private package reads but allows publi
   try {
     assert.equal(guard({ toolName: "read", args: { path: join(packageRoot, "src", "private.mjs") } }).block !== undefined, true);
     assert.equal(guard({ toolName: "read", args: { path: join(skillRoot, "SKILL.md") } }), undefined);
+    const missing = guard({ toolName: "read", args: { path: join(packageRoot, "extensions/other/skills/demo/SKILL.md") } });
+    const recovery = JSON.parse(missing.block.reason);
+    assert.equal(recovery.code, "skill_resource_not_found");
+    assert.deepEqual(recovery.skill_locations, [join(skillRoot, "SKILL.md")]);
+    const rejectedJob = guard({ toolName: "job_start", args: { command: ["python", join(packageRoot, "extensions/other/skills/demo/run.py")] } });
+    assert.equal(JSON.parse(rejectedJob.block.reason).code, "skill_resource_not_found");
+    assert.equal(guard({ toolName: "job_start", args: { command: ["python", "skills/demo/run.py"] } }), undefined);
+    assert.equal(guard({ toolName: "job_start", args: { command: ["python", "/remote/python/script.py"] } }), undefined);
     await symlink(join(packageRoot, "src", "private.mjs"), join(skillRoot, "escape.mjs"));
     assert.ok(guard({ toolName: "read", args: { path: join(skillRoot, "escape.mjs") } }).block);
     assert.equal(guard({ toolName: "grep", args: { path: workspace } }), undefined);

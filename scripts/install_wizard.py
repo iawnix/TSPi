@@ -1361,31 +1361,13 @@ def _copy_private_config(source_value: str, destination: Path, *, kind: str) -> 
 
 def _validate_job_config(parsed: dict[str, object]) -> None:
     """Validate the shared environment shape before installing it."""
-    environments = parsed.get("environments")
-    default = parsed.get("default_environment")
-    if not isinstance(environments, dict) or not environments or not isinstance(default, str) or default not in environments:
-        raise ValueError("job config must define default_environment and at least one environment")
-    for name, environment in environments.items():
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", name):
-            raise ValueError(f"invalid job environment name: {name!r}")
-        if not isinstance(environment, dict) or environment.get("kind") not in {"local", "remote"}:
-            raise ValueError(f"job environment {name!r} must declare kind=local or kind=remote")
-        backends = environment.get("backends", {})
-        if not isinstance(backends, dict):
-            raise ValueError(f"job environment {name!r} backends must be a table")
-        for backend, item in backends.items():
-            if not isinstance(backend, str) or not isinstance(item, dict):
-                raise ValueError(f"job environment {name!r} has an invalid backend binding")
-            command = item.get("command")
-            valid_command = isinstance(command, str) and bool(command.strip()) if environment["kind"] == "local" else (
-                isinstance(command, list) and bool(command) and all(isinstance(value, str) and value for value in command)
-            )
-            if not valid_command:
-                expected = "string" if environment["kind"] == "local" else "string array"
-                raise ValueError(f"job environment {name!r} backends.{backend}.command must be a {expected}")
-            activation = item.get("activation_script")
-            if activation is not None and (not isinstance(activation, str) or not activation.startswith("/")):
-                raise ValueError(f"job environment {name!r} backends.{backend}.activation_script must be absolute")
+    # Import the same public contract as Job Runtime and the Skill helper.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("tspi_job_config", ROOT / "packages/job-runtime/job_runtime/config_contract.py")
+    contract = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(contract)
+    contract.validate_job_config(parsed)
+    for name, environment in parsed["environments"].items():
         if environment["kind"] == "remote":
             _validate_remote_config({"default_environment": name, "environments": {name: environment}}, Path("/"))
 
@@ -1504,8 +1486,8 @@ def _validate_remote_config(parsed: dict[str, object], base: Path) -> None:
             if not isinstance(backend, str) or not isinstance(item, dict):
                 raise ValueError(f"remote environment {name!r} has an invalid backend binding")
             command = item.get("command")
-            if not isinstance(command, list) or not command or any(not isinstance(value, str) or not value for value in command):
-                raise ValueError(f"remote environment {name!r} backends.{backend} must define command")
+            if "python" not in item and (not isinstance(command, list) or not command or any(not isinstance(value, str) or not value for value in command)):
+                raise ValueError(f"remote environment {name!r} backends.{backend} must define command or python")
             backend_queues = item.get("allowed_queues", queues)
             if not isinstance(backend_queues, list) or not backend_queues or any(
                 not isinstance(queue, str) or queue not in queues for queue in backend_queues

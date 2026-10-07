@@ -41,8 +41,10 @@ Gaussian 方法和基组写入 `.gjf` 的 Route Section，例如
 
 ## 可执行请求准备
 
-使用 [scripts/prepare_job.py](scripts/prepare_job.py) 从 job.toml 生成通用 Job 请求。传入 --config "$TS_JOB_CONFIG"、--environment、--backend、--skill、--xyz，-- 后是 runner 参数。远程 xTB/Gaussian 还需 --python 指定目标 Python >=3.10，或在 job.toml 的环境中配置 python；不能假定远程登录 PATH 有 python3。核对参数，补充 nodeId/timeoutSeconds 后 job_start。辅助脚本会暂存完整 scripts 目录和 `_shared` 依赖。
+使用 [scripts/prepare_job.py](scripts/prepare_job.py) 从 job.toml 生成通用 Job 请求。传入 --config "$TS_JOB_CONFIG"、--environment、--backend、--skill、--xyz，-- 后是 runner 参数。用安装版 TSPI_PYTHON 执行 helper；解释器来自 job.toml 的 Conda 绑定。核对参数，补充 nodeId/timeoutSeconds 后 job_start。辅助脚本会暂存完整 scripts 目录和 `_shared` 依赖。
 
 保留准备请求中的 requestId；同一次提交恢复时复用它，不因工具响应丢失而生成新 ID。明确重算时生成新请求。
 
 选择方法或准备已指定方法的执行时都使用本 Skill。从列出的路径读取具体方法 Skill。读取安装配置、检查方法可用性属于 Agent 的工作，尚未验证不应自动变成用户输入门槛。
+
+Python 依赖由安装阶段创建的 Conda 环境隔离，并通过 job.toml 的结构化 python 绑定选择：backend.python 优先，否则继承 environment.python。用 "$TSPI_PYTHON" 执行本地准备 helper；远程 runner 使用配置的 Conda prefix，不猜 python3、不用 --python 覆盖。CF22D 使用 backends.pyscf.python，不再同时指定 Python command。缺失环境交由安装维护处理，不在研究回合临时 pip install。

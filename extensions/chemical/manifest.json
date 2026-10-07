@@ -26,20 +26,20 @@
     {
       "name": "method-selection",
       "path": "skills/method-selection",
-      "sha256": "sha256:e6859d74bbe4b302025cf86a5c07c46eb79e01c2e59dff1c54fba6b6c6258132",
-      "resources_sha256": "sha256:57e7f33782398948b5da11275df032a577db473bdd2751b8d3bc778b30a55f51"
+      "sha256": "sha256:db0d41a9f3dc338955153076b48f21b443a93b3d9738faed8a7f6b2ac9068685",
+      "resources_sha256": "sha256:3d6db0be6c22616ca287ecc445bbee41c1123e1e5efeab03fd51f887d4017c72"
     },
     {
       "name": "cf22d",
       "path": "skills/cf22d",
-      "sha256": "sha256:2bf8665d594ad91ec6240ce83109b364881b4533e389616939c22e3621214733",
-      "resources_sha256": "sha256:c29931a5604b4a25df053871b2928d724f061c917d4cad95c712a2a0e85bc3a2"
+      "sha256": "sha256:84f69b1fa3cc33e22cb38e0c4410a585c8f61bbbcafd7e810640e2c25899bc98",
+      "resources_sha256": "sha256:ca42c3d902403acd4679217fdb0bb9a495e7b47c732b210b2bc370ef660c5270"
     },
     {
       "name": "xtb",
       "path": "skills/xtb",
-      "sha256": "sha256:898e45f2a48c663a06bbb54328e62cd0662509f9aae51d589b0511d0a206ac2f",
-      "resources_sha256": "sha256:87c1c39cd5b61a1171b4ed7124b1ac47e60352c1596aa5f8989f8e72bc96e392"
+      "sha256": "sha256:e5dfcc2e07e2e7b02b145560071fc8232be05e3f99415b0454505cd39c28ea50",
+      "resources_sha256": "sha256:52036303d84e4f701ea7cc4e7eed7e76f0a2a01ee1ddfd758a8318103136dc39"
     },
     {
       "name": "crest",
@@ -54,8 +54,8 @@
     {
       "name": "gaussian",
       "path": "skills/gaussian",
-      "sha256": "sha256:5c02143132522b78050d62cc1e3e0d7b368938fa6391f4ecee0bc430ade36e98",
-      "resources_sha256": "sha256:3538c725f80879ae3eadba062cd41922c1ee6f74326bd149a91833fd67b3e44e"
+      "sha256": "sha256:777df3c7edcbdbd3d280119e537783cd220776910c5f15989b2ceb2c6a025521",
+      "resources_sha256": "sha256:ff1f53b71de92d6941abd90b38688bfc33fcdeeb2c133f7c23c2e69881b8e801"
     },
     {
       "name": "chemical-input",
@@ -71,7 +71,7 @@
       "name": "report",
       "path": "skills/report",
       "sha256": "sha256:d7c35720c71c7feff09cfda307182e3d6faab8441ec310153a893c84c532beb1",
-      "resources_sha256": "sha256:6c127ae6e194cd48a596b14547002567ea27ffe1ff7491a5ef60a9c60be0185d"
+      "resources_sha256": "sha256:7d438aaa3894c92d67ea526c6487b18b8252e797dc83063b6f20140ef2563564"
     }
   ]
 }

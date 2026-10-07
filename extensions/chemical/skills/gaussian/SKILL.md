@@ -12,7 +12,7 @@ Use the installed [scripts/run.py](scripts/run.py) for input generation, executi
 Generate a generic `job_start` request with the [preparation helper](../method-selection/scripts/prepare_job.py):
 
 ```text
-python3 <method-selection>/scripts/prepare_job.py --config <job.toml> --environment <name> --backend gaussian --skill gaussian --xyz <input.xyz> -- --task opt-sp
+"$TSPI_PYTHON" <method-selection>/scripts/prepare_job.py --config <job.toml> --environment <name> --backend gaussian --skill gaussian --xyz <input.xyz> -- --task opt-sp
 ```
 
 Check method, basis, charge, spin and resources; add nodeId and timeoutSeconds before submitting. This helper only prepares a request. Stage both the Skill scripts and `_shared` directory with their relative layout intact. Activation runs in the target Job; no Provider registration is involved.
@@ -26,3 +26,5 @@ Track via `job_status/job_collect/job_reconcile`; wait on the actual returned at
 Defaults: M062X/6-31G**, Opt=Tight or SP, SCF=Tight, Int=UltraFine. Validate route readback, normal termination and optimization convergence. No frequency evidence means no verified minimum claim. This CLI does not yet orchestrate TS/IRC; historical parsing support is not end-to-end verification.
 
 For detailed checks, read [gaussian_validation](references/gaussian_validation.md).
+
+Python dependencies are installation-owned Conda environments configured in job.toml. Run preparation helpers with "$TSPI_PYTHON"; target runners use the resolved Conda binding. Missing environments require installation maintenance, not ad-hoc pip installs during a research turn.

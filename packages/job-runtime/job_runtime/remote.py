@@ -260,6 +260,17 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
             )
             if result.returncode != 0:
                 scheduler_state = self._scheduler_status(scheduler_id)
+                if scheduler_state in {"C", "F"}:
+                    detail = self._run_ssh(f"{shlex.quote(self.commands['qstat'])} -f {shlex.quote(scheduler_id)}", check=False)
+                    exit_match = re.search(r"(?m)^\s*exit_status\s*=\s*(-?\d+)\s*$", detail.stdout)
+                    if detail.returncode == 0 and exit_match:
+                        code = int(exit_match.group(1))
+                        terminal = JobStatus(receipt.job_id, JobState.SUCCEEDED if code == 0 else JobState.FAILED,
+                            self.name, exit_code=code, finished_at=_now(),
+                            error="Job exit receipt absent; exit status recovered from scheduler (check working directory and scheduler logs)")
+                        self._terminal[receipt.job_id] = terminal
+                        self._persist(receipt, terminal)
+                        return terminal
                 mapped = {"Q":JobState.QUEUED, "W":JobState.QUEUED, "H":JobState.HELD,
                           "R":JobState.RUNNING, "E":JobState.RUNNING, "T":JobState.SUBMITTED}.get(scheduler_state, JobState.UNKNOWN)
                 return JobStatus(receipt.job_id, mapped, self.name,

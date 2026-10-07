@@ -1,0 +1,10 @@
+{
+  "dispositions": [
+    "continue_required",
+    "waiting_external",
+    "deferred",
+    "blocked",
+    "terminal",
+    "user_input_required"
+  ]
+}

@@ -10,7 +10,7 @@ description: 准备、运行并检查 Gaussian 单点、优化、频率、扫描
 通过 [准备脚本](../method-selection/scripts/prepare_job.py) 生成通用 `job_start` 请求：
 
 ```text
-python3 <method-selection>/scripts/prepare_job.py --config <job.toml> --environment <环境名> --backend gaussian --skill gaussian --xyz <结构.xyz> -- --task opt-sp
+"$TSPI_PYTHON" <method-selection>/scripts/prepare_job.py --config <job.toml> --environment <环境名> --backend gaussian --skill gaussian --xyz <结构.xyz> -- --task opt-sp
 ```
 
 确认方法、基组、电荷、自旋和资源，补充 nodeId 与 timeoutSeconds 后提交返回的请求。脚本不会替 Agent 提交任务。它会暂存该 Skill 的 scripts 和 `_shared` 依赖，保留相对目录；不要只复制 run.py。激活发生在目标 Job 中，不需要 Provider 注册。
@@ -24,3 +24,5 @@ python3 <method-selection>/scripts/prepare_job.py --config <job.toml> --environm
 默认方法 M062X、基组 6-31G**。输入采用 Opt=Tight 或 SP、SCF=Tight、Int=UltraFine；每步独立日志，检查方法/基组回显、正常终止和优化收敛。没有频率证据不能声称极小值已验证。此 CLI 暂不编排 TS/IRC；历史解析模块不等于端到端任务已经验收。
 
 详细检查见 [gaussian_validation.zh-CN](references/gaussian_validation.zh-CN.md)。
+
+Python 依赖由安装阶段创建的 Conda 环境隔离，并通过 job.toml 的结构化 python 绑定选择：backend.python 优先，否则继承 environment.python。用 "$TSPI_PYTHON" 执行本地准备 helper；远程 runner 使用配置的 Conda prefix，不猜 python3、不用 --python 覆盖。CF22D 使用 backends.pyscf.python，不再同时指定 Python command。缺失环境交由安装维护处理，不在研究回合临时 pip install。

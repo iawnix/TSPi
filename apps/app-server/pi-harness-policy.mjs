@@ -1,6 +1,6 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, relative, resolve } from "node:path";
+import { basename, isAbsolute, relative, resolve } from "node:path";
 
 // The retired ExtensionAPI path enforced this policy in its tool_call hook.
 // The Harness has no ExtensionAPI, so keep the security boundary as a small,
@@ -17,11 +17,33 @@ export function createPackageSourceReadGuard({
   const root = canonicalPath(packageRoot);
   const publicRoots = publicKnowledgeRoots.map(canonicalPath);
   const publicFiles = new Set(publicResourceFiles.map(canonicalPath));
+  function missingResource(target) {
+    if (!isWithin(root, target) || existsSync(target)) return undefined;
+    const segments = target.split(/[\\/]/);
+    const matches = publicRoots.filter(path => segments.includes(basename(path)));
+    return { block: { reason: JSON.stringify({ code: "skill_resource_not_found", path: target,
+      message: "This path does not exist. Copy the exact Skill location; resolve its scripts and references relative to that directory.",
+      skill_locations: (matches.length ? matches : publicRoots).map(path => resolve(path, "SKILL.md")),
+    }) } };
+  }
   return (event) => {
-    if (!event || !PACKAGE_READ_TOOLS.includes(event.toolName)) return undefined;
+    if (!event) return undefined;
     const args = event.args && typeof event.args === "object" && !Array.isArray(event.args) ? event.args : {};
+    // Reject a provably missing installed resource before allocating a Job.
+    // Relative argv paths belong to staged Job inputs and are not package reads.
+    if (event.toolName === "job_start" && Array.isArray(args.command)) {
+      for (const argument of args.command) {
+        if (typeof argument !== "string" || !isAbsolute(argument)) continue;
+        const blocked = missingResource(canonicalPath(argument));
+        if (blocked) return blocked;
+      }
+      return undefined;
+    }
+    if (!PACKAGE_READ_TOOLS.includes(event.toolName)) return undefined;
     const rawPath = typeof args.path === "string" && args.path.trim() ? args.path.trim() : "";
     const target = resolveToolPath(rawPath || cwd, cwd);
+    const missing = missingResource(target);
+    if (missing) return missing;
     if (!isWithin(root, target) || publicRoots.some(path => isWithin(path, target)) || publicFiles.has(target)) return undefined;
     return {
       block: {

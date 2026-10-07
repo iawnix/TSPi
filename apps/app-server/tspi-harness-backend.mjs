@@ -25,7 +25,8 @@ const { recoverRunningActivities } = require("../../packages/agent-runtime/agent
  */
 export async function createTspiHarnessBackend(options = {}) {
   const sourceRoot = absolute(options.sourceRoot || process.env.TSPI_PI_RUNTIME_ROOT, "sourceRoot");
-  const packageRoot = absolute(options.packageRoot || process.env.TSPI_PACKAGE_ROOT, "packageRoot");
+  // Node resolves module symlinks; Worker entry identity must use that same path.
+  const packageRoot = await realpath(absolute(options.packageRoot || process.env.TSPI_PACKAGE_ROOT, "packageRoot"));
   const workspaceRoot = absolute(options.workspaceRoot, "workspaceRoot");
   const serverDirectory = absolute(options.serverDirectory, "serverDirectory");
   const sessionDir = absolute(options.sessionDir, "sessionDir");

@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import shutil
+import sys
 
 
 def digest(path):
@@ -65,6 +66,9 @@ def provenance(script):
 def finish(out, result, script, error=None):
     result['validated'] = error is None
     result['scripts'] = provenance(script)
+    receipt = Path(sys.prefix) / 'tspi-environment.json'
+    result['runtime'] = {'python': sys.executable, 'prefix': sys.prefix, 'version': sys.version,
+                         'environment_receipt': json.loads(receipt.read_text()) if receipt.is_file() else None}
     if error is not None:
         result['error'] = {'type': type(error).__name__, 'message': str(error)}
     write_json(out / 'result.json', result)

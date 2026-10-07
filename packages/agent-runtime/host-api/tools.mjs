@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const { dispositions } = require("../../research-state/research_state/contracts/lifecycle.json");
 
 const TOOL_ROWS = [
   ["systemPrompt", "sys_prompt", "deterministic_runtime"],
@@ -610,7 +611,7 @@ function checkpointSchema() {
     id: identifierSchema(),
     turnId: identifierSchema(),
     turn_id: identifierSchema(),
-    disposition: { enum: ["waiting_external", "continue_required", "deferred", "blocked", "terminal", "user_input_required"] },
+    disposition: { enum: dispositions },
     reason: textSchema(),
     claimIds: { type: "array", maxItems: 128, items: claimIdentifierSchema() },
     claim_ids: { type: "array", maxItems: 128, items: claimIdentifierSchema() },
@@ -678,6 +679,11 @@ const DECISION_ALIAS_SCHEMAS = Object.freeze({
       eventId: { type: "string", minLength: 1, maxLength: 256 },
       root: { type: "string" },
     },
+    anyOf: [
+      { required: ["attemptRef"] },
+      { required: ["attempt_ref"] },
+      { properties: { interpretation: { anyOf: [{ required: ["attemptRef"] }, { required: ["attempt_ref"] }] } } },
+    ],
     required: ["interpretation"],
     additionalProperties: false,
   }),

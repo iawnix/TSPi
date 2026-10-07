@@ -111,6 +111,19 @@ test("an offline session leaves wake retryable", async (t) => {
   assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }]);
 });
 
+test("State-deferred wake remains undelivered without prompting or reporting a failure", async (t) => {
+  const state = await fixture(t);
+  let sent = 0;
+  const errors = await deliverMonitorEvent({ ...state,
+    recordTurn: async () => ({ protocol: "research_turn_result", version: 1, request_id: state.delivery.request_id,
+      status: "completed", output: { operation: "wake", admitted: false, state_token: "3:checkpoint_user" }, provenance: {} }),
+    sendWake: async () => { sent++; },
+  });
+  assert.equal(sent, 0);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }]);
+});
+
 test("an uncertain Host wake remains retryable", async (t) => {
   const state = await fixture(t);
   const errors = await deliverMonitorEvent({ ...state,

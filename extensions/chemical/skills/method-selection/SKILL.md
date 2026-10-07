@@ -50,6 +50,8 @@ method or stop independent cells.
 
 ## Executable request preparation
 
-Use [scripts/prepare_job.py](scripts/prepare_job.py) to generate the generic Job request from job.toml. Pass --config "$TS_JOB_CONFIG", --environment, --backend, --skill, --xyz, then -- followed by runner arguments. For remote xTB/Gaussian also provide --python with a configured target Python >=3.10, or set environment.python in job.toml. Do not assume python3 exists on the remote login PATH. Add nodeId/timeoutSeconds and verify the request before job_start. The helper stages complete script directories and `_shared` imports.
+Use [scripts/prepare_job.py](scripts/prepare_job.py) to generate the generic Job request from job.toml. Pass --config "$TS_JOB_CONFIG", --environment, --backend, --skill, --xyz, then -- followed by runner arguments. Use the installation TSPI_PYTHON to run this preparation helper. The public job_runtime.config_contract resolves structured Conda bindings from job.toml: backend.python overrides environment.python. Remote scripts run with the configured conda_executable and prefix; do not guess Python or pass --python. CF22D uses backends.pyscf.python without a second Python command binding. Add nodeId/timeoutSeconds and verify the request before job_start. The helper stages complete script directories and `_shared` imports.
 
 Preserve the prepared requestId when recovering the same submission. A lost tool response does not authorize a new ID; intentional recalculation uses a new request.
+
+Python dependencies are installation-owned Conda environments configured in job.toml. Run preparation helpers with "$TSPI_PYTHON"; target runners use the resolved Conda binding. Missing environments require installation maintenance, not ad-hoc pip installs during a research turn.

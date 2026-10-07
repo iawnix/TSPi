@@ -1,11 +1,17 @@
 # Unified compute configuration.
-# Copy to the installation-owned .pi/compute.toml and edit the backend bindings
+# Copy to the installation-owned .pi/job.toml and edit the backend bindings
 # available in each compute environment. The kind selects the execution platform.
 
 default_environment = "local"
 
 [environments.local]
 kind = "local"
+
+[environments.local.python]
+manager = "conda"
+conda_executable = "/home/iaw/soft/miniconda/26.7.1-1/bin/conda"
+prefix = "/home/iaw/soft/tspi/envs/runner-20261007"
+lock_ref = "/home/iaw/soft/tspi/locks/runner.lock"
 
 [environments.local.backends.gaussian]
 command = "/home/iaw/soft/gaussian/16-A.03/g16/g16"
@@ -19,68 +25,80 @@ activation_script = "/home/iaw/soft/xtb/6.7.1/activate_xtb.sh"
 command = "/home/iaw/soft/xtb/6.7.1/bin/xtb"
 activation_script = "/home/iaw/soft/xtb/6.7.1/activate_xtb.sh"
 
-# PySCF/CF22D is intentionally isolated from the TSPi kernel runtime. The
-# bound Python must contain PySCF, geomeTRIC, pyscf-dispersion, and the TSPi
-# package (or a PYTHONPATH pointing at this checkout).
+# Scientific dependencies are isolated from both Host and wrapper scripts.
 [environments.local.backends.pyscf]
-command = "/home/iaw/soft/pyscf/2.14.0/bin/python3.11"
-activation_script = "/home/iaw/soft/pyscf/2.14.0/activate_pyscf.sh"
+activation_script = "/home/iaw/soft/tspi/envs/cf22d-20261007/activate_science.sh"
+
+[environments.local.backends.pyscf.python]
+manager = "conda"
+conda_executable = "/home/iaw/soft/miniconda/26.7.1-1/bin/conda"
+prefix = "/home/iaw/soft/tspi/envs/cf22d-20261007"
+lock_ref = "/home/iaw/soft/tspi/locks/cf22d.lock"
 
 [environments.local.backends.crest]
 command = "/home/iaw/soft/crest/3.0.2/bin/crest"
 activation_script = "/home/iaw/soft/crest/activate_crest.sh"
 
 # Local remains the default. Select the remote explicitly with
-# execution_target.kind = "remote" and environment = "cluster_1w".
+# execution_target.kind = "remote" and environment = "remote".
 # Remote paths below must exist on the remote host.
 # Commands are arrays because the remote scheduler script may need fixed arguments.
 
-[environments.cluster_1w]
+[environments.remote]
 kind = "remote"
 ssh_host = "agent.1w"
 ssh_config = "/home/iaw/.ssh/config"
 scheduler = "torque"
-remote_root = "/home/agent/1w-data2/ts-remote-workspaces"
+remote_root = "/home/agent/ts-remote-workspaces"
 allowed_queues = ["batch", "fat", "fata"]
 max_nodes = 1
 connect_timeout_seconds = 15
 command_timeout_seconds = 60
 
-[environments.cluster_1w.commands]
+[environments.remote.python]
+manager = "conda"
+conda_executable = "/home/agent/soft/tspi/conda/bin/conda"
+prefix = "/home/agent/soft/tspi/envs/runner-20261007"
+lock_ref = "/home/agent/soft/tspi/locks/runner.lock"
+
+[environments.remote.commands]
 qsub = "qsub"
 qstat = "qstat"
 qdel = "qdel"
 pbsnodes = "pbsnodes"
 
-[environments.cluster_1w.backends.gaussian]
+[environments.remote.backends.gaussian]
 command = ["g16"]
 activation_script = "/home/agent/soft/gaussian/activate_gaussian16.sh"
 allowed_queues = ["batch", "fat", "fata"]
 requires_gpu = false
 
-[environments.cluster_1w.backends.xtb]
+[environments.remote.backends.xtb]
 command = ["/home/agent/soft/xtb/current/bin/xtb"]
 allowed_queues = ["batch", "fat", "fata"]
 requires_gpu = false
 
-[environments.cluster_1w.backends.crest]
+[environments.remote.backends.crest]
 command = ["/home/agent/soft/crest/current/bin/crest"]
 activation_script = "/home/agent/soft/crest/activate_crest.sh"
 allowed_queues = ["batch", "fat", "fata"]
 requires_gpu = false
 
-[environments.cluster_1w.backends.ase_neb]
+[environments.remote.backends.ase_neb]
 command = ["/home/agent/soft/ase-neb/current/.pixi/envs/default/bin/python"]
 allowed_queues = ["batch", "fat", "fata"]
 requires_gpu = false
 
-[environments.cluster_1w.backends.ase_neb.environment]
+[environments.remote.backends.ase_neb.environment]
 TS_ASE_NEB_XTB = "/home/agent/soft/xtb/current/bin/xtb"
 # Required when an ase.neb intent selects calculator = "gaussian_cli".
 TS_ASE_NEB_GAUSSIAN = "/home/agent/soft/gaussian/current/g16/g16"
 
-[environments.cluster_1w.backends.pyscf]
-command = ["/home/agent/soft/pyscf/current/bin/python"]
-activation_script = "/home/agent/soft/pyscf/current/activate_pyscf.sh"
-allowed_queues = ["batch", "fat", "fata"]
-requires_gpu = false
+[environments.remote.backends.pyscf]
+activation_script = "/home/agent/soft/tspi/envs/cf22d-20261007/activate_science.sh"
+
+[environments.remote.backends.pyscf.python]
+manager = "conda"
+conda_executable = "/home/agent/soft/tspi/conda/bin/conda"
+prefix = "/home/agent/soft/tspi/envs/cf22d-20261007"
+lock_ref = "/home/agent/soft/tspi/locks/cf22d.lock"

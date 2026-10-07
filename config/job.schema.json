@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Job installation configuration",
+  "type": "object",
+  "required": [
+    "default_environment",
+    "environments"
+  ],
+  "properties": {
+    "default_environment": {
+      "type": "string"
+    },
+    "environments": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "local",
+              "remote"
+            ]
+          },
+          "python": {
+            "$ref": "#/$defs/python"
+          },
+          "backends": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "python": {
+                  "$ref": "#/$defs/python"
+                },
+                "command": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  ]
+                },
+                "activation_script": {
+                  "type": "string",
+                  "pattern": "^/"
+                }
+              },
+              "anyOf": [
+                {
+                  "required": [
+                    "command"
+                  ]
+                },
+                {
+                  "required": [
+                    "python"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+      }
+    }
+  },
+  "$defs": {
+    "python": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manager",
+        "conda_executable",
+        "prefix",
+        "lock_ref"
+      ],
+      "properties": {
+        "manager": {
+          "const": "conda"
+        },
+        "conda_executable": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "prefix": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "lock_ref": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^/"
+        }
+      }
+    }
+  }
+}

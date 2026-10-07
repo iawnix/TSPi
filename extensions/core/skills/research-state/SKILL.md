@@ -62,3 +62,7 @@ NodeGate must have a latest `pass` evaluation before a Node closes with the
 - [glossary.md](references/glossary.md): public terminology.
 
 Create or confirm Claim/Node objects before research_strategy references them. A focused scope needs a proposed/active StrategyPlan before execution or evidence writes. If research_decision_required is returned, inspect mode=context, record the missing strategy, and retry only after the prerequisite changes. A successful user_input_required checkpoint is a valid end of this turn; wait for relevant user input rather than issuing the same writes or checkpoint repeatedly.
+
+Routine tool observations do not require Findings. If a fact is needed, first preserve the actual observation with artifact_create or artifact_register; cite the returned artifact_id. On evidence_reference_unknown, inspect research_read mode=evidence. Never replace a missing ID with a tool name or prose. Optional diagnostic failure need not block independent work. For global user_input_required, block the affected Nodes with an explicit reason first; State rejects the checkpoint while independent ready Nodes or running Attempts remain.
+
+For a scientific FactFinding, supply both source_refs (registered Artifact IDs) and nonempty provenance (for example {"source":"collected result.json"}). Interpretations must include the actual attempt_ref. Close completed Nodes with state=closed, outcome=completed and summary before a terminal checkpoint.

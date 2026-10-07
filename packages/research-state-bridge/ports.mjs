@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+const lifecycleContract = createRequire(import.meta.url)("../research-state/research_state/contracts/lifecycle.json");
 /**
  * Research State boundary. The implementation may be Python, TypeScript,
  * or a remote process; the App Server only depends on this port.
@@ -27,14 +29,7 @@ export const RESEARCH_TURN_OPERATIONS = Object.freeze([
   "end",
   "wake",
 ]);
-export const RESEARCH_DISPOSITIONS = Object.freeze([
-  "continue_required",
-  "waiting_external",
-  "deferred",
-  "blocked",
-  "terminal",
-  "user_input_required",
-]);
+export const RESEARCH_DISPOSITIONS = Object.freeze(lifecycleContract.dispositions);
 
 const KERNEL_METHODS = Object.freeze([
   "read_context",

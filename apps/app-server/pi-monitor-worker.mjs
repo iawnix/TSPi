@@ -32,6 +32,11 @@ export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWa
             || typeof turn.provenance !== "object" || Array.isArray(turn.provenance)) {
             throw new Error("Research Turn wake boundary returned an invalid result");
           }
+          if (turn.output.admitted === false) {
+            if (!turn.output.state_token) throw new Error("deferred wake has no State token");
+            await runJson("complete", workspace, [...completion, "--deferred-state", turn.output.state_token]);
+            continue;
+          }
         }
         // Monitor wakes are operational queue entries. Send the canonical
         // session-control mode explicitly so Host and Monitor share one wire

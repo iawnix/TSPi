@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile, rm, readdir, symlink } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -58,6 +58,9 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
       // First end without a disposition: exactly one repair is expected.
       "Fixture evidence collected.",
       call("research_read", { mode: "context" }),
+      call("research_change", { rationale: "The fixture needs an actual user choice", operations: [
+        { type: "set_node_state", node_id: "node_flow", state: "blocked", summary: "Choose the next fixture experiment" },
+      ] }),
       call("research_checkpoint", { checkpoint: { id: "checkpoint_wait", disposition: "user_input_required",
         claim_ids: ["claim_flow"], node_ids: ["node_flow"], reason: "A genuine fixture user choice is needed" } }),
       "Waiting for the fixture user's choice.",
@@ -66,6 +69,11 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
       let body = ""; for await (const part of req) body += part;
       const request = JSON.parse(body); requests.push(request);
       const step = steps[requests.length - 1] || "Unexpected continuation.";
+      if (step?.name === "job_status") {
+        const statusFile = join(workspace, "runs/jobs/job_fixture_run/status.json");
+        for (let i = 0; i < 100 && !existsSync(statusFile); i++) await new Promise(done => setTimeout(done, 20));
+        assert.ok(existsSync(statusFile), "fixture process must finish before collection");
+      }
       const delta = typeof step === "string" ? { role: "assistant", content: step } : {
         role: "assistant", tool_calls: [{ index: 0, id: `call_${requests.length}`, type: "function",
           function: { name: step.name, arguments: JSON.stringify(step.arguments) } }],
@@ -84,7 +92,9 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200000, maxTokens: 4096 }],
     } } }));
     const { createTspiHarnessBackend } = await import(pathToFileURL(join(packageRoot, "apps/app-server/tspi-harness-backend.mjs")));
-    backend = await createTspiHarnessBackend({ sourceRoot, packageRoot, workspaceRoot,
+    const packageAlias = join(root, "current-package");
+    await symlink(packageRoot, packageAlias, "dir");
+    backend = await createTspiHarnessBackend({ sourceRoot, packageRoot: packageAlias, workspaceRoot,
       serverDirectory: join(root, "pi"), sessionDir: join(root, "sessions"), stateRoot: join(root, "state"),
       provider: "fixture", model: "fixture" });
     const created = await backend.createSession({ workspace_id: "flow", provider: "fixture", model: "fixture" });
@@ -114,6 +124,11 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     assert.equal(liveness.disposition, "user_input_required");
     const continuations = requests.at(-1).messages.filter(message => message.role === "user" && JSON.stringify(message.content).includes("Research turn ended"));
     assert.equal(continuations.length, 1);
+  } catch (error) {
+    for (const file of await readdir(root, { recursive: true })) {
+      if (file.endsWith(".log")) console.error(file, await readFile(join(root, file), "utf8"));
+    }
+    throw error;
   } finally {
     try { await backend?.close(); }
     finally {

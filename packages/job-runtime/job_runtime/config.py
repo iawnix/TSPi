@@ -11,22 +11,7 @@ from .remote import TorqueSSHPlatform
 from .platform import ExecutionPlatform
 
 
-def load_job_config(path: str | Path) -> dict[str, Any]:
-    source = Path(path).expanduser()
-    with source.open("rb") as handle:
-        value = tomllib.load(handle)
-    if not isinstance(value, dict):
-        raise ValueError("job config must be a TOML table")
-    environments = value.get("environments")
-    default = value.get("default_environment")
-    if not isinstance(environments, dict) or not environments:
-        raise ValueError("job config must define environments")
-    if not isinstance(default, str) or default not in environments:
-        raise ValueError("job config default_environment is invalid")
-    for name, item in environments.items():
-        if not isinstance(name, str) or not isinstance(item, dict) or item.get("kind") not in {"local", "remote"}:
-            raise ValueError("job config environments must declare kind=local or kind=remote")
-    return value
+from .config_contract import load_job_config
 
 
 def platforms_from_config(path: str | Path | None = None) -> tuple[dict[str, ExecutionPlatform], str]:

@@ -91,9 +91,28 @@ test("waiting allows scoped evidence and an independently planned node", () => {
   lifecycle.admitTool({ runId, toolName: "job_start" });
   lifecycle.completeTool({ runId, toolName: "job_start" });
   lifecycle.setDurableLiveness({ lifecycle: "waiting_external", ready_node_ids: ["node_2"] });
+  lifecycle.setDurableLiveness({ lifecycle: "waiting_external", tool_admission: { accepted: false, code: "research_node_not_ready" } });
   assert.equal(lifecycle.admitTool({ runId, toolName: "job_start", args: { nodeId: "node_1" } }).accepted, false);
+  lifecycle.setDurableLiveness({ lifecycle: "waiting_external", tool_admission: { accepted: true } });
   assert.equal(lifecycle.admitTool({ runId, toolName: "job_start", args: { nodeId: "node_2" } }).accepted, true);
   lifecycle.completeTool({ runId, toolName: "job_start" });
-  assert.equal(lifecycle.admitTool({ runId, toolName: "research_change", args: { operations: [{ type: "create_claim" }] } }).accepted, false);
+  assert.equal(lifecycle.admitTool({ runId, toolName: "research_change", args: { operations: [{ type: "create_claim" }] } }).accepted, true);
+  lifecycle.completeTool({ runId, toolName: "research_change" });
   assert.equal(lifecycle.admitTool({ runId, toolName: "research_change", args: { operations: [{ type: "create_finding", node_id: "node_1" }] } }).accepted, true);
+});
+
+test("State admission permits work after interpretation without a competing Host phase gate", () => {
+  const lifecycle = createResearchLifecycleController({ metadata: { ...executionMetadata,
+    research_change: { authority: "research_write", effect: "lifecycle_write", phase: "advance" },
+  } });
+  const runId = "state-authority";
+  lifecycle.beginRun({ runId });
+  lifecycle.setDurableLiveness({ tool_admission: { accepted: true } });
+  for (const toolName of ["job_collect", "research_interpretation", "research_change", "job_start"]) {
+    assert.equal(lifecycle.admitTool({ runId, toolName }).accepted, true);
+    assert.ok(lifecycle.contextPatch().allowed_phases.includes(executionMetadata[toolName]?.phase || "advance"));
+    lifecycle.completeTool({ runId, toolName });
+  }
+  lifecycle.setDurableLiveness({ tool_admission: { accepted: false, code: "research_node_not_ready" } });
+  assert.equal(lifecycle.admitTool({ runId, toolName: "job_start" }).code, "research_node_not_ready");
 });

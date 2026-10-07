@@ -5,11 +5,13 @@ description: Prepare and send user-requested research email through configured S
 
 # Research email
 
+The listed SKILL.md is in `extensions/email`; its CLI is `extensions/email/scripts/email_cli.py` relative to the package root. Resolve the linked script against this SKILL.md directory.
+
 Use this Skill for email tasks described above.
 
 Use [scripts/email_cli.py](scripts/email_cli.py) through a **local** job_start. The installation owns notification configuration, credentials and recipient; inherit TS_NOTIFICATION_CONFIG or its configured installation path. Read [delivery rules](references/email_delivery.md) for request format and recovery.
 
-Before asking for a recipient, run `python <listed-skill-directory>/scripts/email_cli.py check --root <workspace> --output <workspace>/reports/email-check.json` locally with the inherited TS_NOTIFICATION_CONFIG. This reads configuration and never sends. Reuse the configured recipient when enabled; ask only if configuration is missing, invalid, or the user requests another destination. A recipient need not be repeated in the latest message. Delivery problems must not block independent calculations.
+Before asking for a recipient, run `"$TSPI_PYTHON" <listed-skill-directory>/scripts/email_cli.py check --root <workspace> --output <workspace>/reports/email-check.json` locally with the inherited TS_NOTIFICATION_CONFIG. This reads configuration and never sends. Reuse the configured recipient when enabled; ask only if configuration is missing, invalid, or the user requests another destination. A recipient need not be repeated in the latest message. Delivery problems must not block independent calculations.
 
 1. Confirm the user's existing notification scope and completion condition. Reuse existing authorization; a plan or a Job completing alone does not authorize email.
 2. Build the report and register its Artifact. Prepare a request with stable notification_id, event, subject, summary and report_refs. Run `email_cli.py prepare --root <workspace> --request-file <draft> --output <prepared.json>`; this never sends.

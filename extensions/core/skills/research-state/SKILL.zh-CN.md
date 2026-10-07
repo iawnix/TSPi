@@ -51,3 +51,7 @@ Research State 会在提交一个新 revision 前校验引用、反向索引、�
 - [glossary.zh-CN.md](references/glossary.zh-CN.md)：公共术语。
 
 先创建或确认 Claim/Node，再让 research_strategy 引用它们。执行和证据写入前，focus 需要 proposed/active StrategyPlan。遇到 research_decision_required，先读取 mode=context 并补齐策略；前提没有变化时不要重复调用。成功记录 user_input_required 是合法收尾，应等待相关用户输入，不要反复写相同 checkpoint。
+
+普通工具观测不要求写 Finding。需要事实记录时，先用 artifact_create 或 artifact_register 保存原始观测，引用返回的 artifact_id。evidence_reference_unknown 时用 research_read mode=evidence 查证，不能用工具名或自然语言代替 ID。可选诊断失败不阻止独立任务。使用全局 user_input_required 前，先明确原因并阻塞对应 Node；存在独立可执行节点或运行中 Attempt 时 State 会拒绝该 checkpoint。
+
+科学 FactFinding 必须同时提供 source_refs（已登记 Artifact ID）和非空 provenance（如 {"source":"collected result.json"}）。Interpretation 必须包含真实 attempt_ref。terminal checkpoint 前先把完成节点设为 state=closed、outcome=completed，并填写 summary。

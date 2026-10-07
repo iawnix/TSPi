@@ -5,12 +5,12 @@ description: 规划、诊断并执行 PySCF CF22D 单结构的 SCF、优化、�
 
 # CF22D 计算
 
-使用随 Skill 安装的 [scripts/run.py](scripts/run.py) 生成输入、执行程序并验证结果。先读取安装级 `job.toml` 中目标环境的 `pyscf` command、activation_script 和 environment；本地 `/home/iaw/soft` 与远程安装路径分别解析。
+使用随 Skill 安装的 [scripts/run.py](scripts/run.py) 生成输入、执行程序并验证结果。先读取安装级 `job.toml` 中目标环境的 `pyscf.python` Conda 绑定、activation_script 和 environment；本地 `/home/iaw/soft` 与远程安装路径分别解析。
 
 通过 [准备脚本](../method-selection/scripts/prepare_job.py) 生成通用 `job_start` 请求：
 
 ```text
-python3 <method-selection>/scripts/prepare_job.py --config <job.toml> --environment <环境名> --backend pyscf --skill cf22d --xyz <结构.xyz> -- --task opt-sp
+"$TSPI_PYTHON" <method-selection>/scripts/prepare_job.py --config <job.toml> --environment <环境名> --backend pyscf --skill cf22d --xyz <结构.xyz> -- --task opt-sp
 ```
 
 确认方法、基组、电荷、自旋和资源，补充 nodeId 与 timeoutSeconds 后提交返回的请求。脚本不会替 Agent 提交任务。它会暂存该 Skill 的 scripts 和 `_shared` 依赖，保留相对目录；不要只复制 run.py。激活发生在目标 Job 中，不需要 Provider 注册。
@@ -24,3 +24,5 @@ python3 <method-selection>/scripts/prepare_job.py --config <job.toml> --environm
 本入口还支持 sp、opt、ts、freq、thermo、opt_freq、ts_freq；保留 CF22D/D3 可用性与优化收敛检查，缺失则失败。方法只允许 CF22D，不能用 RHF 替代。t006 使用 `--basis 6-31G**`。详细科学边界见 [工作流](references/cf22d_workflow.zh-CN.md)。
 
 详细检查见 [environment_doctor.zh-CN](references/environment_doctor.zh-CN.md)。
+
+Python 依赖由安装阶段创建的 Conda 环境隔离，并通过 job.toml 的结构化 python 绑定选择：backend.python 优先，否则继承 environment.python。用 "$TSPI_PYTHON" 执行本地准备 helper；远程 runner 使用配置的 Conda prefix，不猜 python3、不用 --python 覆盖。CF22D 使用 backends.pyscf.python，不再同时指定 Python command。缺失环境交由安装维护处理，不在研究回合临时 pip install。

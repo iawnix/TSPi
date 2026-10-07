@@ -80,7 +80,12 @@ def _command(root,base,action,args):
             except Exception as exc:errors.append(str(exc))
         return {'monitors':observed,'registration_errors':errors}
     deliveries=sorted(base.glob('*/deliveries/*.json'))
-    if action=='pending':return {'deliveries':[read(p) for p in deliveries if not read(p).get('delivered')]}
+    if action=='pending':
+        from research_state.agent_workspace import read_liveness
+        state=read_liveness(root)
+        token=f"{state['revision']}:{state.get('checkpoint_id')}"
+        return {'deliveries':[row for p in deliveries if not (row:=read(p)).get('delivered')
+                              and row.get('deferred_state') != token]}
     eid=args.get('event_id')
     path=next((p for p in deliveries if p.stem==eid),None)
     if path is None:raise ValueError('unknown monitor event')
@@ -93,6 +98,7 @@ def _command(root,base,action,args):
         write(path,row);return {**row,'claimed':True}
     if action=='complete':
         if row.get('claim_token')!=args.get('claim_token'):raise ValueError('stale wake claim')
-        row.update(delivered=bool(args.get('delivered')),error=args.get('error'),lease_until=0)
+        row.update(delivered=bool(args.get('delivered')),error=args.get('error'),lease_until=0,
+                   deferred_state=args.get('deferred_state'))
         write(path,row);return {'ok':True}
     raise ValueError('unknown monitor command')

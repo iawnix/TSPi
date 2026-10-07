@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Protocol
 
+from .admission import tool_admission
 from .workspace import WorkspaceModeError, _validate_layout, validate_workspace_manifest
 
 CONTEXT_SCHEMA = "research_map_context_1"
@@ -29,9 +30,8 @@ CHECKPOINT_SCHEMA = "research_checkpoint_1"
 ADMISSION_RESULT_SCHEMA = "research_admission_result/1"
 ADMISSION_PENDING = "admission_pending"
 ADMITTED = "admitted"
-CHECKPOINT_DISPOSITIONS = frozenset({
-    "continue_required", "waiting_external", "deferred", "blocked", "terminal", "user_input_required",
-})
+CHECKPOINT_DISPOSITIONS = frozenset(json.loads((Path(__file__).parent / "contracts/lifecycle.json").read_text())["dispositions"])
+
 # IDs are opaque protocol references.  The namespace is part of the contract
 # while the suffix may carry a stable semantic token rather than an ordinal.
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -65,6 +65,11 @@ ATTEMPT_TRANSITIONS = {
 
 class AgentWorkspaceError(RuntimeError):
     """Raised when a new Research Agent workspace request is invalid."""
+
+    def __init__(self, message):
+        super().__init__(message)
+        prefix = str(message).split(":", 1)[0]
+        self.code = prefix if re.fullmatch(r"[a-z][a-z_]+", prefix) else "research_state_invalid"
 
 
 def has_state_files(root: str | Path) -> bool:
@@ -339,10 +344,10 @@ def _require_decision_ready(
     operations: list[dict[str, Any]],
 ) -> None:
     """Prevent execution/evidence writes while focus still needs a decision."""
-    if liveness.get("lifecycle") != "decision_needed":
-        return
     if liveness.get("disposition") == "user_input_required":
         raise AgentWorkspaceError("research_user_input_required")
+    if liveness.get("lifecycle") != "decision_needed":
+        return
     focus = context.get("focus") if isinstance(context.get("focus"), dict) else {}
     claim_ids = set(focus.get("claim_ids", []))
     node_ids = set(focus.get("node_ids", []))
@@ -420,7 +425,32 @@ def _restore_json(path: Path, existed: bool, value: dict[str, Any] | None) -> No
         pass
 
 
-def _liveness_projection(
+def _liveness_projection(context, liveness, checkpoint=None):
+    result = _base_liveness_projection(context, liveness, checkpoint)
+    # Normalize historical projections at the sole State boundary.
+    if result.get("disposition") == "user_input_required":
+        result["lifecycle"] = "user_input_required"
+    nodes = {n["id"]: n for n in _items(context, "nodes")}
+    running = [a for a in _items(context, "attempts") if a.get("state") in {"started", "running"}]
+    running_nodes = {a.get("node_id") for a in running}
+    plans = [p for p in _items(context, "strategy_plans") if p.get("status", "proposed") in {"proposed", "active"}]
+    ready = [n["id"] for n in nodes.values()
+        if n.get("state") in {"planned", "active"} and n["id"] not in running_nodes
+        and all(nodes.get(d, {}).get("state") == "closed" and nodes[d].get("outcome") == "completed" for d in n.get("dependency_ids", []))
+        and any(p.get("node_id") == n["id"] or p.get("claim_id") in n.get("claim_ids", []) for p in plans)]
+    result["ready_node_ids"] = ready
+    result["blocked_node_ids"] = [n["id"] for n in nodes.values() if n.get("state") == "blocked"]
+    result["running_attempt_ids"] = [a["id"] for a in running]
+    if result.get("lifecycle") in {"user_input_required", "blocked", "terminal", ADMISSION_PENDING}:
+        result["ready_node_ids"] = []
+        result["execution_ready"] = False
+    elif nodes:
+        result["execution_ready"] = bool(ready)
+    result["needs_checkpoint"] = result.get("lifecycle") == "decision_needed" and not result.get("disposition")
+    return result
+
+
+def _base_liveness_projection(
     context: dict[str, Any],
     liveness: dict[str, Any],
     checkpoint: dict[str, Any] | None = None,
@@ -647,6 +677,16 @@ def _validate_checkpoint_lifecycle(context: dict[str, Any], checkpoint: dict[str
         raise AgentWorkspaceError("checkpoint references unknown Node")
     if not isinstance(unresolved_refs, list) or any(not isinstance(item, str) or not item.strip() for item in unresolved_refs):
         raise AgentWorkspaceError("checkpoint.unresolved_refs must be an array of non-empty strings")
+    if disposition == "user_input_required":
+        if not isinstance(checkpoint.get("reason"), str) or not checkpoint["reason"].strip():
+            raise AgentWorkspaceError("user_input_required needs a concrete user question in reason")
+        scope = set(node_ids)
+        for cid in claim_ids:
+            scope.update(claim_by_id[cid].get("node_ids", []))
+        unblocked = sorted(nid for nid in scope if node_by_id[nid].get("state") not in {"blocked", "closed"})
+        projected = _liveness_projection(context, {**context, "state": ADMITTED, "disposition": None}, {})
+        if unblocked or projected["ready_node_ids"] or projected["running_attempt_ids"]:
+            raise AgentWorkspaceError("user_wait_scope_invalid: block only the Node that requires user input with research_change; continue independent ready Nodes or use waiting_external for running Attempts. A global user wait cannot freeze planned/active work.")
     if disposition == "waiting_external":
         if not unresolved_refs:
             raise AgentWorkspaceError("waiting_external checkpoint requires unresolved_refs")
@@ -825,7 +865,7 @@ def _refs_exist(context: dict[str, Any], refs: list[str], *, label: str, allow_e
     allowed = artifacts | (evidence if allow_evidence else set())
     missing = sorted(set(refs) - allowed)
     if missing:
-        raise AgentWorkspaceError(f"{label} references unknown evidence: {', '.join(missing)}")
+        raise AgentWorkspaceError(f"evidence_reference_unknown: {label} references unknown evidence: {', '.join(missing)}. Use research_read mode=evidence to find registered Artifact/evidence IDs, or artifact_create/artifact_register to preserve the actual observation; cite the returned artifact_id. Routine probes need not become Findings; continue independent work if this record is optional.")
 
 
 def _attach_unique(item: dict[str, Any], field: str, value: str) -> None:
@@ -1146,7 +1186,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
         if finding_kind not in {"fact", "issue"}:
             raise AgentWorkspaceError("operation.kind must be fact or issue")
         if finding_kind == "fact" and not source_refs:
-            raise AgentWorkspaceError("fact finding requires source_refs")
+            raise AgentWorkspaceError("evidence_reference_required: fact finding requires source_refs. Register actual evidence with artifact_create/artifact_register and cite its returned artifact_id; provenance text and tool names are not evidence IDs. Omit optional probe Findings rather than inventing sources.")
         status_default = "confirmed" if finding_kind == "fact" else "open"
         finding = {
             "type": "fact_finding" if finding_kind == "fact" else "issue_finding",
@@ -1163,7 +1203,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
         if finding_kind == "fact":
             provenance = _object_field(operation, "provenance")
             if not provenance:
-                raise AgentWorkspaceError("fact finding requires provenance")
+                raise AgentWorkspaceError("evidence_provenance_required: fact finding requires nonempty provenance, e.g. {source: 'collected result.json'}, plus source_refs with registered Artifact IDs; ordinary probes need no Finding")
             finding.update({
                 "value": operation.get("value"),
                 "datatype": operation.get("datatype", "json"),
@@ -1527,10 +1567,13 @@ def read_context(root: str | Path) -> dict[str, Any]:
         return _load_state(root)[2]
 
 
-def read_liveness(root: str | Path) -> dict[str, Any]:
+def read_liveness(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, Any]:
     with _workspace_lock(Path(root).expanduser().resolve()):
         context_path, liveness_path, context, liveness = _load_state(root)
-        return _liveness_projection(context, liveness)
+        result = _liveness_projection(context, liveness)
+        if request and isinstance(request.get("tool"), dict):
+            result["tool_admission"] = tool_admission(context, result, request["tool"])
+        return result
 
 
 from .transactions import state_transaction
@@ -1797,10 +1840,13 @@ def turn(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, A
                 "provenance": {"producer": "research_state", "request_digest": _turn_request_digest(request)},
             }
         if operation in {"end", "wake"}:
-            _require_admitted(context, liveness)
+            _require_admitted(context, liveness, allow_checkpoint=operation == "wake")
             waiting_user = liveness.get("disposition") == "user_input_required"
-            if waiting_user and operation == "wake":
-                raise AgentWorkspaceError("research_user_input_required")
+            if operation == "wake" and (waiting_user or liveness.get("disposition") in {"blocked", "deferred", "terminal"}):
+                return {"protocol": "research_turn_result", "version": 1, "request_id": request_id,
+                        "status": "completed", "output": {"operation": "wake", "admitted": False,
+                        "reason": "research_" + str(liveness.get("disposition")), "state_token": f"{context['revision']}:{liveness.get('checkpoint_id')}"},
+                        "provenance": {"producer": "research_state", "request_digest": _turn_request_digest(request)}}
             if liveness.get("lifecycle") == "decision_needed" and not waiting_user:
                 raise AgentWorkspaceError("research_decision_required")
             return {
@@ -1835,7 +1881,7 @@ def dispatch(root: str | Path, method: str, request: dict[str, Any] | None = Non
         _check_workspace(request, context.get("workspace_id"))
         return context
     if method == "read_liveness":
-        liveness = read_liveness(root)
+        liveness = read_liveness(root, request)
         _check_workspace(request, liveness.get("workspace_id"))
         return liveness
     if method == "admit_workspace":

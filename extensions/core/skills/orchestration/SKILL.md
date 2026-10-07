@@ -41,7 +41,7 @@ interpretation first when applicable, then use one explicit disposition:
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
 `user_input_required`. `research_checkpoint` is the canonical turn checkpoint.
 A completed Attempt or lifecycle action alone is not a research conclusion.
-If liveness returns `decision_needed` with no explicit disposition, record the missing strategy or checkpoint. A successful `user_input_required` checkpoint ends the turn even when legacy liveness also says `decision_needed`; do not repeat the checkpoint or attempt blocked writes. When liveness also reports `execution_ready=true`, an
+If liveness returns `decision_needed` with no explicit disposition, record the missing strategy or checkpoint. A successful `user_input_required` checkpoint ends the turn; do not repeat it or attempt blocked writes. When liveness also reports `execution_ready=true`, an
 active StrategyPlan already covers the focused scope and the planned
 prepare/execute work may proceed before that checkpoint; the checkpoint is
 still required before ending the turn. A `continue_required` plan is a valid
@@ -70,3 +70,20 @@ For requested email, read the listed email Skill and run its no-send `check` usi
   Runtime, Host/App Server, memory, Research State, Monitor, and compute ownership.
 - Read [package_sources.md](references/package_sources.md) only when inspecting
   installed package sources.
+
+## Operational observations and recovery
+
+Routine probes stay in tool history; they need not become FactFindings. Continue
+input preparation and execution after successful probes. Register an observation
+as an Artifact only when it supports a decision or must be cited across turns;
+then use its returned artifact_id in source_refs. Tool names and invented IDs are
+not evidence. An optional Finding failure must not stop independent preparation.
+Keep optional diagnostics separate from required Node updates in ChangeSets.
+Required strategy/input evidence failures must still be repaired before execution.
+
+Read [runtime boundaries](references/runtime_boundaries.md) for scoped user waits.
+Use one Node per independently executable method/environment cell and a separate
+dependent delivery Node. Read the exact listed email Skill location; a failed
+path lookup is not evidence that email or a recipient is unavailable.
+
+- [Public contract / 公开契约](references/public_contract.md): generated tool names and dispositions.

@@ -109,6 +109,7 @@
     "apps/app-server/server-tools/*.mjs",
     "apps/app-server/server-tools/*.json",
     "scripts/install_env.py",
+    "scripts/install_job_environment.py",
     "scripts/install_link_relay.py",
     "scripts/uninstall_link_relay.py",
     "scripts/install_package.py",

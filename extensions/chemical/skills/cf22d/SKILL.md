@@ -7,12 +7,12 @@ description: Plan, diagnose, and run PySCF CF22D single-structure calculations f
 
 Use this Skill for cf22d tasks described above.
 
-Use the installed [scripts/run.py](scripts/run.py) for input generation, execution and scientific validation. Read the target environment's `pyscf` command, activation_script and environment from installation `job.toml`. Local and remote bindings are distinct.
+Use the installed [scripts/run.py](scripts/run.py) for input generation, execution and scientific validation. Read the target environment's `pyscf.python` Conda binding, activation_script and environment from installation `job.toml`. Local and remote bindings are distinct.
 
 Generate a generic `job_start` request with the [preparation helper](../method-selection/scripts/prepare_job.py):
 
 ```text
-python3 <method-selection>/scripts/prepare_job.py --config <job.toml> --environment <name> --backend pyscf --skill cf22d --xyz <input.xyz> -- --task opt-sp
+"$TSPI_PYTHON" <method-selection>/scripts/prepare_job.py --config <job.toml> --environment <name> --backend pyscf --skill cf22d --xyz <input.xyz> -- --task opt-sp
 ```
 
 Check method, basis, charge, spin and resources; add nodeId and timeoutSeconds before submitting. This helper only prepares a request. Stage both the Skill scripts and `_shared` directory with their relative layout intact. Activation runs in the target Job; no Provider registration is involved.
@@ -26,3 +26,5 @@ Track via `job_status/job_collect/job_reconcile`; wait on the actual returned at
 Also supports sp, opt, ts, freq, thermo, opt_freq and ts_freq. CF22D/D3 availability and optimization convergence are checked. RHF is not a substitute. For t006 pass `--basis 6-31G**`. See [scientific boundaries](references/cf22d_workflow.md).
 
 For detailed checks, read [environment_doctor](references/environment_doctor.md).
+
+Python dependencies are installation-owned Conda environments configured in job.toml. Run preparation helpers with "$TSPI_PYTHON"; target runners use the resolved Conda binding. Missing environments require installation maintenance, not ad-hoc pip installs during a research turn.

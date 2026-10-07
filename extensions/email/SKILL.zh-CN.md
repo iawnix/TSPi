@@ -5,6 +5,8 @@ description: 通过配置的 SMTP 或 ClawEmail 发送用户要求的研究邮�
 
 # 研究邮件
 
+所列 SKILL.md 位于 `extensions/email`；CLI 相对于包根的路径是 `extensions/email/scripts/email_cli.py`。以当前 SKILL.md 所在目录解析脚本链接。
+
 通过**本地** job_start 运行 [scripts/email_cli.py](scripts/email_cli.py)。通知配置、凭据和收件人由安装级配置管理，继承 TS_NOTIFICATION_CONFIG 或配置的安装路径。请求和异常恢复见 [投递规则](references/email_delivery.zh-CN.md)。
 
 询问收件人前，使用继承的 TS_NOTIFICATION_CONFIG 在本地执行 `python <列出的Skill目录>/scripts/email_cli.py check --root <工作区> --output <工作区>/reports/email-check.json`。该检查只读配置，不发邮件；已启用且有效时沿用配置收件人，仅在配置缺失、无效或用户要求改地址时询问。用户无需在每条消息重写邮箱，交付问题不应阻止独立计算。

@@ -208,6 +208,11 @@ def _start(root, runtime, params):
         path = _receipt_path(root, job_id)
         if path.is_file(): return _receipt(root, params).__dict__
         return {"job_id":job_id,"state":"unknown","attempt_id":old.get("attempt_id"),"error":"dispatch already attempted; reconcile before resubmitting"}
+    from research_state.agent_workspace import has_state_files, read_liveness
+    if has_state_files(root) and (params.get("nodeId") or params.get("node_id")):
+        decision = read_liveness(root, {"tool": {"name": "job_start", "effect": "execution_control", "args": params}})["tool_admission"]
+        if not decision["accepted"]:
+            raise ValueError(decision["code"] + ": " + decision["reason"])
     spec = _spec(root, params)
     request_id = params.get("request_id") or f"job.start:{spec.job_id}"
     coordinator = TransactionCoordinator(root)

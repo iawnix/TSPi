@@ -31,6 +31,7 @@ function modelVisibleSkillSection(skills) {
   if (!Array.isArray(skills.items)) throw new TypeError("invalid skill system prompt section");
   const visible = skills.items.filter((skill) => !skill.disableModelInvocation);
   const text = visible.length === 0 ? "" : [
+    "Read the relevant Skill at its exact listed location before using it. Resolve relative scripts/references from that Skill directory; never guess a common extension path. For research planning and writes, read orchestration and research-state. Skills guide decisions; registered tools and Research State own the protocol.",
     "<available_skills>",
     ...visible.map((skill) => `  <skill><name>${escapeXml(skill.name)}</name><description>${escapeXml(skill.description)}</description><location>${escapeXml(skill.filePath)}</location></skill>`),
     "</available_skills>",

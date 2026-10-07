@@ -49,3 +49,20 @@ def test_reconcile_recovers_submission_without_calling_qsub(tmp_path,monkeypatch
     recovered=remote.recover_receipt('job_remote',tmp_path)
     assert recovered.metadata['scheduler_id']=='123.cluster'
     assert recovered.attempt_id=='attempt_1'
+
+
+@pytest.mark.parametrize('code,expected', [(125, JobState.FAILED), (0, JobState.SUCCEEDED)])
+def test_scheduler_exit_recovers_job_that_could_not_write_receipt(tmp_path, monkeypatch, code, expected):
+    remote = platform()
+    def run(command, **kwargs):
+        if 'status.exit' in command:
+            return subprocess.CompletedProcess([], 1, '', '')
+        return subprocess.CompletedProcess([], 0, f'Job Id: 123.cluster\n job_state = C\n exit_status = {code}\n', '')
+    monkeypatch.setattr(remote, '_run_ssh', run)
+    status = remote.status(receipt(tmp_path))
+    assert status.state == expected and status.exit_code == code
+    assert 'scheduler' in status.error
+    # Durable terminal state survives a new platform instance without SSH.
+    recovered = platform()
+    monkeypatch.setattr(recovered, '_run_ssh', lambda *a, **k: pytest.fail('must reuse receipt'))
+    assert recovered.status(receipt(tmp_path)).exit_code == code

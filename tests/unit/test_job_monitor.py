@@ -27,3 +27,17 @@ def test_terminal_job_wakes_once_and_reclaims_failed_delivery(tmp_path):
     command(tmp_path,'complete',{'event_id':event_id,'channel':'wake','claim_token':second['claim_token'],'delivered':True})
     command(tmp_path,'tick',{})
     assert command(tmp_path,'pending',{})['deliveries']==[]
+
+
+def test_deferred_delivery_retries_only_after_canonical_state_changes(tmp_path):
+    from research_state.agent_workspace import read_liveness, checkpoint
+    workspace(tmp_path)
+    folder=tmp_path/'operations/monitors/monitor_fixture/deliveries'
+    folder.mkdir(parents=True)
+    state=read_liveness(tmp_path)
+    token=f"{state['revision']}:{state.get('checkpoint_id')}"
+    (folder/'event_fixture.json').write_text(json.dumps({'event_id':'event_fixture','delivered':False,'deferred_state':token}))
+    assert command(tmp_path,'pending',{})['deliveries']==[]
+    checkpoint(tmp_path,{'principal':'root_agent','authority':'kernel_write','id':'checkpoint_continue',
+                        'disposition':'continue_required','claim_ids':['claim_1']})
+    assert len(command(tmp_path,'pending',{})['deliveries'])==1

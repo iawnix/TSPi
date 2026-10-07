@@ -1,70 +1,25 @@
-# Runtime、Host、Research State、Memory 与 Monitor 边界
+# Runtime、Research State 与 Monitor 边界
 
-本参考定义 TSPi 公共工具背后的所有权边界。它属于 Agent 可见协议；实现模块名称和进程
-名称不会产生额外的 Agent API。
+Research State 是 Claim、Node、依赖、策略、checkpoint 和研究 liveness 的唯一权威。
+通过公开研究工具读写，不另建工作流状态文件。会话 memory 保存对话；memory/index.json
+只是可重建的 State 投影。
 
-## Agent Runtime
+Host 绑定工作区与会话身份，管理输入队列和 Pi 回合。State 返回持久状态的工具准入结果，
+Harness 只串行化工具调用并记录阶段标记，不另设研究工作流准入图。根据 State 返回的 ready_node_ids、blocked_node_ids 决策，
+不从聊天记录或历史别名重新构造生命周期规则。
 
-Agent Runtime 负责一次会话/turn 以及进程内的 lifecycle lane。它把请求路由到绑定 workspace
-的 Host，并按 `orient`、`advance`、`prepare`、`execute`、`interpret`、`checkpoint` 阶段
-准入工具。Monitor 唤醒从 `wake` 开始，只允许先执行一个 orientation read，然后才能继续
-正常工作。Runtime 不选择科学方法，不写 Claim 或 Node，也不推断科学结果。
+Job Runtime 管理进程/调度器、日志、查询、取消与收集，State 桥接层关联 Attempt。
+Skill 脚本负责科学输入、解析与验证。artifact_derive 只保存派生描述；真实分析必须执行
+脚本并登记文件。
 
-Runtime 的 memory port 始终是 session scope：
+Monitor 观察 Job 变化并向所属会话投递去重的 next_run 事件，不收集科学产物、不解释结果、
+不改研究节点、不选择计算、不发送邮件。State 决定是否准入；暂缓事件保留至 State 改变，
+不重复提示。唤醒后先读 State，再按需调用 job_status/job_collect/job_reconcile。
 
-```json
-{
-  "schema_version": "agent_memory_read_1",
-  "memory_scope": "session",
-  "memory_authority": "agent_core_session",
-  "entries": []
-}
-```
+需要用户输入时，通过 research_change 将对应 Node 设为 blocked 并说明原因，独立节点继续。
+存在运行中的 Attempt 时用 waiting_external 引用真实 Attempt ID。只有作用范围内节点均已
+blocked/closed 且没有独立可执行或运行中的工作，才能用全局 user_input_required checkpoint。
+邮箱地址不是计算的依赖。用户实际回复后，通过恢复 checkpoint 和节点更新继续工作。
 
-Conversation memory 不是 ResearchMap 状态。在 research workspace 中，Agent Core memory port
-收到 `scope=workspace` 会以 `research_memory_authority_required` 失败；workspace 科学状态必须
-通过 `research_read`/`research_change` 和类型化 lifecycle 命令跨越 Research State 边界。
-
-## Host 与 App Server
-
-App Server 是 transport 与组合边界。打开绑定 workspace 的 session 或 tool call 前，必须先
-解析已经 admission 的 `workspace_manifest.json`；进程级 Runtime 可以提前构造，但在 manifest
-校验完成前不能让 session 使用它。缺失、符号链接、字段不一致、旧协议或只完成一半 admission
-的 workspace 必须 fail closed；Host 不得从目录名或旧存储推导 identity。
-
-Host 将 `workspace_id`、`workspace_root` 和 `workspace_mode` 绑定到 request context。Agent
-参数可以选择 ResearchMap 对象、capability、Node、Artifact 或已配置环境，但不能替换绑定的
-root 或 identity。Host 负责在写入请求中携带 `principal=root_agent` 和
-`authority=kernel_write`；Agent 只提供 rationale 和 operations，Research State 负责校验和提交。
-
-公共 semantic tool 名称是唯一 Agent API：`research_read`、`research_change`、
-`research_strategy`、`research_interpretation`、`research_checkpoint`、
-`research_checkpoint`、`Job Runtime platform configuration`、`Skill-provided method instructions`、`job_probe`、
-`job_start/job_status/job_collect`、
-`artifact_derive` 以及 `pi_agent_adapter.md` 中列出的 artifact/review 工具。私有
-私有 source factory 名称和 slash command 都是 transport 细节，不是第二套协议。
-
-## Research State 与 Memory Projection
-
-Research State 拥有规范研究文档和原子 revision。成功的 `research_change` 会把 context、
-liveness、`memory/index.json` 和 manifest revision 作为一次 workspace transaction 提交。
-Memory index 只是有界 metadata/lifecycle projection，不是 conversation memory，也不能成为第二
-个科学权威。Root 必须检查返回 revision 后才能依赖这次变更。
-
-## Monitor
-
-Monitor 负责绑定 Calculation Attempt 的运行态轮询和唤醒投递。它可以读取 scheduler/program
-状态、收集已声明输出，并在状态变化时排队 `next_run` 唤醒。唤醒只是运行触发器，不是科学
-指令：它不得选择方法、修改 Claim/Node 或启动另一项计算。Root session 重新读取 liveness 和
-Attempt，再通过正常公共工具选择 `inspect`、`finalize`、`cancel`、解释或 checkpoint。
-
-## Compute Plane
-
-Capability identity 与 execution environment（`environment_id`、`local` 或 `remote`）相互独立。
-计算 descriptor 使用 `capability_id` 与 `capability_version`；analysis catalog 使用
-`capability` 与 `version`，`artifact_derive` 请求使用 `capability` 加
-`capability_version`。这是两个明确的 catalog 协议，不能把字段当作别名混用。实时 catalog
-是注册 capability 的唯一来源。两种目标都使用 `job_start/job_status/job_collect` 的 `launch`、`inspect`、
-`finalize` 或 `cancel` 生命周期；`artifact_derive` 是没有调度器生命周期的确定性本地分析。
-Remote 必须使用 Native `job_start/job_status/job_collect`，并提供已配置的 `execution.environment`；Host 根据环境配置解析执行平台。
-项目不再提供通用 capability invocation；所有 descriptor 均来自 Python Native registry，公开计算请求只能使用生命周期 schema。旧的 `capability_id` 加 `input` 形式会被拒绝。
+公开工具 schema 是接口协议。[public_contract.md](public_contract.zh-CN.md) 从公共契约生成工具名和
+disposition；Skill 解释用法，不定义第二套调度器或 capability 注册表。
