@@ -25,7 +25,7 @@ export function createTspiToolRenderers({ Text, wrapTextWithAnsi }, names) {
       if (!data) { try { data = JSON.parse(raw); } catch {} }
       data = data?.result || data;
       const state = data?.state || data?.status || data?.disposition || data?.lifecycle;
-      const label = context.isError ? "失败" : options.isPartial ? "执行中" : state || (name === "job_start" ? "已提交" : "完成");
+      const label = context.isError ? "Failed" : options.isPartial ? "Running" : state || (name === "job_start" ? "Submitted" : "Done");
       const pending = /running|queued|submitted|pending|waiting|deferred|started|执行中|已提交/i.test(label);
       const failed = context.isError || /failed|blocked|error|cancelled/i.test(label);
       const color = failed ? "error" : pending ? "warning" : "success";
@@ -33,7 +33,7 @@ export function createTspiToolRenderers({ Text, wrapTextWithAnsi }, names) {
         ? [data.job_id, data.attempt_id, data.artifact_id, data.node_id, data.summary, data.reason,
           data.revision !== undefined ? `revision ${data.revision}` : undefined].filter(value => typeof value === "string").join(" · ")
         : raw;
-      return bounded(`${theme.fg(color, label)}${details ? ` · ${shorten(details)}` : ""}\n${theme.fg("muted", "Ctrl+O: 参数与完整结果")}`, theme, false);
+      return bounded(`${theme.fg(color, label)}${details ? ` · ${shorten(details)}` : ""}\n${theme.fg("muted", "Ctrl+O: arguments and full result")}`, theme, false);
     },
   }]));
 }

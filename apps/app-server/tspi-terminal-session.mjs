@@ -7,6 +7,13 @@ export function createTerminalSession({ request, workspaceId, sessionId, switchS
     workspaceId,
     signal,
     quit,
+    subscribeMonitor(onChange, onError) {
+      return request.subscribeMonitor?.(workspaceId, onChange, onError) || (() => {});
+    },
+    async monitorStatus() {
+      signal?.throwIfAborted();
+      return request("monitor/status", { workspace_id: workspaceId });
+    },
     async list() {
       signal?.throwIfAborted();
       const result = await request("session/list", { workspace_id: workspaceId });

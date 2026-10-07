@@ -42,7 +42,14 @@ def _command(root,base,action,args):
     bindings=sorted(base.glob('*/binding.json'))
     if args.get('monitor_id'):bindings=[p for p in bindings if p.parent.name==args['monitor_id']]
     if action in {'list','status'}:
-        return {'workspace_id':workspace_id,'monitors':[read(p) for p in bindings]}
+        result = {'workspace_id':workspace_id,'monitors':[read(p) for p in bindings]}
+        if action == 'status':
+            # Observation must not claim, batch or retry the delivery outbox.
+            result['pending_deliveries'] = [
+                {key: row.get(key) for key in ('session_id', 'request_id', 'event_id', 'error', 'deferred_state')}
+                for binding in bindings for path in sorted((binding.parent/'deliveries').glob('*.json'))
+                if not (row := read(path)).get('delivered')]
+        return result
     if action in {'enable','disable'}:
         for p in bindings:
             row=read(p);row['enabled']=action=='enable';write(p,row)

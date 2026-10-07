@@ -260,7 +260,17 @@ async function createTspiHarness(databasePath, options) {
       harness, conversation, modelRuntime, settingsManager,
       facetLoader: createStaticFacetLoader([defineFacet({ id: "@tspi/client-queries", setup(env) {
         env.provide(TspiMonitorAdmission, monitorAdmission);
-        env.provide(TspiClientQueries, createClientQueries({ workspaceId, sessionId, commandBridge, promptManifest }));
+        env.provide(TspiClientQueries, createClientQueries({ workspaceId, sessionId, commandBridge, promptManifest,
+          readTelemetry: async (context) => {
+            const { estimateContext } = await import(pathToFileURL(join(sourceRoot, "packages/durable/src/harness/compaction.ts")).href);
+            const [view, agent, liveness] = await Promise.all([conversation.context(context), conversation.agent(context), researchKernel.read_liveness({})]);
+            const model = agent.model && modelRuntime.getModel(agent.model.provider, agent.model.modelId);
+            // Reuse Pi's compaction-aware request estimate. It is not an exact tokenizer count.
+            return { model: agent.model || null, contextWindow: model?.contextWindow || null,
+              contextTokens: estimateContext(view, []), estimated: true,
+              entryId: view.entries.at(-1)?.id ?? null, firstEntryId: view.entries[0]?.id ?? null, headId: view.head?.id ?? null, liveness };
+          },
+        }));
       } })]),
       cleanup: async (context) => { try { await executionEnvs.cleanup(context); } finally { await commandBridge.close(); } },
     };

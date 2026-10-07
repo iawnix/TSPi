@@ -4,9 +4,13 @@ import { parseSlashCommand, COMMAND_DEFINITIONS } from "../../packages/agent-run
 // over SSH. The worker supplies the identity and the already-bound kernel bridge.
 export const CLIENT_QUERIES_SERVICE_ID = "tspi.client-queries";
 
-export function createClientQueries({ workspaceId, sessionId, commandBridge, promptManifest }) {
+export function createClientQueries({ workspaceId, sessionId, commandBridge, promptManifest, readTelemetry }) {
   const envelope = (result) => ({ workspace_id: workspaceId, session_id: sessionId, result });
   return {
+    async telemetry(context) {
+      context?.abortSignal?.throwIfAborted();
+      return envelope(await readTelemetry(context));
+    },
     async research(input, context) {
       context?.abortSignal?.throwIfAborted();
       try {

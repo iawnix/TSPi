@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 
 import { formatTerminalFailure } from "./tspi-terminal-errors.mjs";
 import { runTerminalSessions } from "./tspi-terminal-session.mjs";
+import { subscribeMonitor } from "./tspi-monitor-subscription.mjs";
 import { connectHost } from "./tspi-host-client.mjs";
 import { createTspiToolRenderers } from "./tspi-tool-renderers.mjs";
 import { PUBLIC_TOOL_CANONICAL_NAMES } from "../../packages/agent-runtime/host-api/tools.mjs";
@@ -30,11 +31,15 @@ function createHostRequest() {
   const socketPath = process.env.TSPI_HOST_SOCKET?.trim();
   if (!socketPath) throw new Error("Terminal commands require the Host connection");
   const expectedReleaseId = process.env.TSPI_HOST_RELEASE_ID?.trim() || undefined;
-  return async (method, params) => {
+  const request = async (method, params) => {
     const peer = await connectHost({ socketPath, expectedReleaseId });
     try { return await peer.request(method, params); }
     finally { peer.close(); }
   };
+  request.subscribeMonitor = (workspaceId, onChange, onError) => subscribeMonitor({
+    connect: () => connectHost({ socketPath, expectedReleaseId }), workspaceId, onChange, onError,
+  });
+  return request;
 }
 
 function bindWorkspaceCwd() {

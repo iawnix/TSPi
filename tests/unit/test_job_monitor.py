@@ -79,3 +79,18 @@ def test_batches_are_stable_across_retry_and_new_events(tmp_path):
     add('event_old',claim_token='old-uncertain-rpc')
     old=command(tmp_path,'pending',{})['deliveries'][-1]
     assert old['request_id']=='job-wake:event_old'
+
+
+def test_monitor_status_observes_outbox_without_claiming_or_batching(tmp_path):
+    workspace(tmp_path)
+    folder = tmp_path/'operations/monitors/monitor_fixture'
+    (folder/'deliveries').mkdir(parents=True)
+    (folder/'binding.json').write_text(json.dumps({'monitor_id':'monitor_fixture','session_id':'s'}))
+    pending = folder/'deliveries/event_pending.json'
+    pending.write_text(json.dumps({'event_id':'event_pending','session_id':'s','request_id':'wake_pending','delivered':False}))
+    (folder/'deliveries/event_done.json').write_text(json.dumps({'event_id':'event_done','session_id':'s','delivered':True}))
+    before = pending.read_bytes()
+    result = command(tmp_path,'status',{})
+    assert [row['event_id'] for row in result['pending_deliveries']] == ['event_pending']
+    assert result['pending_deliveries'][0]['session_id'] == 's'
+    assert pending.read_bytes() == before

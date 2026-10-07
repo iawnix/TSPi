@@ -1,0 +1,92 @@
+--- a/packages/coding-agent/src/experimental/client-tui.ts
++++ b/packages/coding-agent/src/experimental/client-tui.ts
+@@ -13,4 +13,5 @@
+ import {
+ 	CombinedAutocompleteProvider,
++	matchesKey,
+ 	type Component,
+ 	Container,
+@@ -103,5 +104,13 @@
+ 	readonly #statusContainer = new Container();
+ 	readonly #editorContainer = new Container();
+-	readonly #footerComponent = new Text("", 1, 0);
++	readonly #defaultFooter = new Text("", 1, 0);
++	#customFooter: Component | undefined;
++	#customActivity: Component | undefined;
++	#customDocument: Component | undefined;
++	#resolveDocument: (() => void) | undefined;
++	readonly #footerComponent: Component = {
++		render: (width) => (this.#customFooter ?? this.#defaultFooter).render(width),
++		invalidate: () => (this.#customFooter ?? this.#defaultFooter).invalidate(),
++	};
+ 	readonly #layoutRoot: Component;
+ 	readonly #sharedFacets: LoadedFacets;
+@@ -203,4 +212,9 @@
+ 
+ 	handleInput(data: string): void {
++		if (this.#customDocument) {
++			this.#customDocument.handleInput?.(data);
++			this.#requestRender();
++			return;
++		}
+ 		if (this.#busy) {
+ 			if (
+@@ -282,4 +296,17 @@
+ 							selectedValue,
+ 						),
++					setFooter: (component) => { this.#customFooter = component; this.#rebuild(); },
++					setActivity: (component) => { this.#customActivity = component; this.#rebuild(); },
++					showDocument: (component, context) => {
++						context.abortSignal?.throwIfAborted();
++						if (this.#customDocument || this.#selection) throw new Error("A document or selector is already open");
++						return new Promise<void>((resolve) => {
++							const close = () => { this.#customDocument = undefined; this.#resolveDocument = undefined; context.abortSignal?.removeEventListener("abort", close); resolve(); if (!this.#closed) this.#rebuild(); };
++							this.#resolveDocument = close;
++							this.#customDocument = { render: (width) => component.render(width), invalidate: () => component.invalidate(), handleInput: (data) => { if (matchesKey(data, "escape") || data === "q") close(); else component.handleInput?.(data); } };
++							context.abortSignal?.addEventListener("abort", close, { once: true });
++							this.#rebuild();
++						});
++					},
+ 					showStatus: (status) => {
+ 						this.#status = status;
+@@ -374,5 +401,5 @@
+ 	#rebuild(): void {
+ 		this.#sessionHeading.setText(
+-			this.#sessionId === undefined || this.#selectedServerId === undefined
++			this.#customFooter !== undefined || this.#sessionId === undefined || this.#selectedServerId === undefined
+ 				? ""
+ 				: theme.fg("dim", `Server: ${this.#selectedServerId}\nSession: ${this.#sessionId}`),
+@@ -383,7 +410,11 @@
+ 		}
+ 		if (this.#chatView !== undefined) this.#statusContainer.addChild(this.#chatView.status);
+-		this.#footerComponent.setText(theme.fg("dim", this.#footer()));
++		this.#defaultFooter.setText(theme.fg("dim", this.#footer()));
++		if (this.#customActivity) this.#statusContainer.addChild(this.#customActivity);
+ 		this.#editorContainer.clear();
+-		if (this.#screen === "select" && this.#selection !== undefined) {
++		if (this.#customDocument) {
++			this.#chatInput.focused = false;
++			this.#editorContainer.addChild(this.#customDocument);
++		} else if (this.#screen === "select" && this.#selection !== undefined) {
+ 			this.#chatInput.focused = false;
+ 			const selector = new Container();
+@@ -530,4 +561,5 @@
+ 
+ 	async #closeLane(): Promise<void> {
++		this.#resolveDocument?.();
+ 		this.#laneUnsubscribe?.();
+ 		this.#laneUnsubscribe = undefined;
+--- a/packages/coding-agent/src/experimental/services/presentation-ui.ts
++++ b/packages/coding-agent/src/experimental/services/presentation-ui.ts
+@@ -1,2 +1,3 @@
++import type { Component } from "@earendil-works/pi-tui";
+ import { type Context, defineService } from "@earendil-works/chord";
+ 
+@@ -15,4 +16,7 @@
+ 		context: Context,
+ 	): Promise<string | undefined>;
++	setFooter(component: Component | undefined): void;
++	setActivity(component: Component | undefined): void;
++	showDocument(component: Component, context: Context): Promise<void>;
+ 	showStatus(message: string, context: Context): void;
+ }

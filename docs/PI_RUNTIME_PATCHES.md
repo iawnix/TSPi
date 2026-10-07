@@ -19,6 +19,8 @@ all pending patches can be checked before changing files.
 | 003-client-connection | Observe connection and attachment state for Unix as well as Radius | Pi client tests and native connection tests |
 | 004-client-lifecycle | AbortSignal closes only the presentation; Host-selected sessions must already exist | Session switching, quit, missing-session rejection, connection disposal |
 | 005-client-history | Populate input history from accepted user entries in the active transcript | Pi presentation/history tests; each session gets a new editor |
+| 006-tool-presentation | Register compact tool renderers and connect Ctrl+O expansion | Native tool card rendering and retained full results |
+| 007-client-status | Local footer/activity components and a dismissible document surface | Native status, document, resize, session-switch and disposal tests |
 
 Application integration lives outside these patches. The worker publishes the
 `tspi.client-queries` service, bound to its workspace, session, kernel bridge, and
@@ -53,3 +55,22 @@ Pi source patch. `monitor-admission.mjs` uses the pinned
 input must share one Pi commit. Native tests cover busy rejection, batch
 idempotency, concurrent native input and obsolete legacy queue removal. Recheck
 this internal API on every Pi pin update.
+
+The TSPi footer shows model, thinking level, workspace/session, estimated context
+and cumulative model tokens. `/usage` opens provider-reported input/output/cache
+counters; reasoning is not added again to output. `pi.usage` preserves totals
+across compaction. The worker telemetry query uses Pi's internal
+`harness/compaction.ts:estimateContext` with the conversation's canonical context
+and the selected model's configured capacity. Recheck that estimate API when
+updating Pi; it is not a tokenizer or a billing measurement. Changed context or
+model identity invalidates an old estimate until refreshed. Set `TSPI_TUI_RING=0`
+for a numeric-only context display on fonts without suitable circle glyphs.
+
+The presentation subscribes to Host Monitor events and refreshes read-only
+snapshots on reconnect and every five seconds. Monitor status includes an
+observational pending-delivery summary; reading it never claims or batches an
+outbox entry. Counts are scoped to the attached session, while worker health is
+shared. Host `next_run` is not a Pi inbox enum: accepted queued messages use
+`followUp`. Only recognizable Monitor follow-ups are labelled as queued wakes;
+ordinary user follow-ups retain Pi's own queue display. Monitor currently waits
+for idle admission, so busy-session wakes normally remain pending delivery.

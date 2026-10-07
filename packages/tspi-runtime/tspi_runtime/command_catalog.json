@@ -203,6 +203,12 @@
       "description": "Disconnect this terminal; leave background work running.",
       "usage": "/quit",
       "completions": []
+    },
+    "usage": {
+      "name": "usage",
+      "description": "Inspect session token usage and monitor health.",
+      "usage": "/usage",
+      "completions": []
     }
   }
 }

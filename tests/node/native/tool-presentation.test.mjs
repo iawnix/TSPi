@@ -32,7 +32,7 @@ test("job submission and running are distinct from completed and failed states",
     assert.ok(colors.includes(color));
   }
   const result = renderer.renderResult({ content: [] }, {}, theme, {});
-  assert.match(result.render(60).join("\n"), /已提交/);
+  assert.match(result.render(60).join("\n"), /Submitted/);
 });
 
 test("native chat applies registered renderers and expands cards without losing their transcript", async () => {

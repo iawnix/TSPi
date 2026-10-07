@@ -60,6 +60,7 @@
     "config/pi-patches/004-client-lifecycle.patch",
     "config/pi-patches/005-client-history.patch",
     "config/pi-patches/006-tool-presentation.patch",
+    "config/pi-patches/007-client-status.patch",
     "contracts/tspi-extension/1/extension-manifest.schema.json",
     "contracts/tspi-extension/1/provider-descriptor.schema.json",
     "contracts/ts-render/curve-data.schema.json",

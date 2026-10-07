@@ -34,7 +34,7 @@ test("command registry, parsing, native selection, and worker reads agree", asyn
   });
   let choice;
   const ui = { showStatus(text) { shown.push(text); }, async select(title) { shown.push(title); return choice; } };
-  const commands = createTerminalCommands({ ui, queries, session: {
+  const commands = createTerminalCommands({ ui, queries, show: async (title, body) => shown.push(`${title}\n${body}`), session: {
     sessionId: "one", quit() { quit++; }, async list() { return [row("one"), row("two")]; }, async resume(id) { resumed.push(id); },
   } });
   assert.deepEqual(commands.map((c) => `/${c.name}`), SLASH_COMMAND_NAMES);
@@ -103,19 +103,18 @@ test("session loop waits for disposal before switching and quit does not call th
   assert.deepEqual(events, ["open one", "disposed one", "open two", "disposed two"]);
 });
 
-test("long results remain accessible through native page selection", async () => {
-  const titles = [];
-  let call = 0;
+test("document commands pass complete text to the document surface", async () => {
+  const shown = [];
   const commands = createTerminalCommands({
-    ui: { showStatus() {}, async select(title, items) { titles.push(title); return call++ === 0 ? "next" : "close"; } },
-    queries: { async systemPrompt() { return { workspace_id: "remote", session_id: "one", result: { effective: Array.from({ length: 40 }, (_, i) => `line ${i}`).join("\n") } }; } },
+    ui: { showStatus() {} },
+    show: async (title,body) => shown.push({title,body}),
+    queries: { async systemPrompt() { return { workspace_id: "remote", session_id: "one", result: { effective: Array.from({length:40},(_,i)=>`line ${i}`).join("\n") } }; } },
     session: { sessionId: "one" },
   });
-  await commands.find((c) => c.name === "sys-prompt").run("", {});
-  assert.equal(titles.length, 2);
-  assert.match(titles[0], /line 0\n/);
-  assert.match(titles[1], /\(2\//);
-  assert.doesNotMatch(titles[1], /line 0\n/);
+  await commands.find(c=>c.name === "sys-prompt").run("",{});
+  assert.equal(shown[0].title,"System prompt");
+  assert.match(shown[0].body,/line 0\n/);
+  assert.match(shown[0].body,/line 39/);
 });
 
 test("closing a presentation prevents a delayed Host response from reopening it", async () => {

@@ -2,16 +2,21 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseSlashCommand, slashCompletions, SLASH_COMMAND_DEFINITIONS } from "../../packages/agent-runtime/host-api/commands.mjs";
 import { CLIENT_QUERIES_SERVICE_ID } from "./tspi-client-queries.mjs";
+import { createStatusPresentation } from "./tspi-status-presentation.mjs";
+import { createDocumentView } from "./tspi-document-view.mjs";
 
 /** Presentation-only commands; all scientific reads execute in the worker. */
 export async function createTspiNativeClientFacet({ sourceRoot, session } = {}) {
   if (typeof sourceRoot !== "string" || !sourceRoot) throw new TypeError("sourceRoot is required");
   const fromSource = (relative) => import(pathToFileURL(join(sourceRoot, relative)).href);
-  const [{ defineFacet, defineService }, { SlashCommands }, { PresentationUI }, { wrapTextWithAnsi }] = await Promise.all([
+  const [{ defineFacet, defineService }, { SlashCommands }, { PresentationUI }, components, { Transcript }, { theme }, { BACKGROUND_CONTEXT, withAbortSignal }] = await Promise.all([
     fromSource("packages/chord/src/index.ts"),
     fromSource("packages/coding-agent/src/experimental/services/slash-commands.ts"),
     fromSource("packages/coding-agent/src/experimental/services/presentation-ui.ts"),
     fromSource("packages/tui/src/index.ts"),
+    fromSource("packages/coding-agent/src/experimental/services/transcript.ts"),
+    fromSource("packages/coding-agent/src/modes/interactive/theme/theme.ts"),
+    fromSource("packages/chord/src/context/index.ts"),
   ]);
   const queriesService = defineService(CLIENT_QUERIES_SERVICE_ID);
   return defineFacet({
@@ -20,8 +25,42 @@ export async function createTspiNativeClientFacet({ sourceRoot, session } = {}) 
       const commands = env.use(SlashCommands);
       const ui = env.use(PresentationUI);
       const queries = env.use(queriesService);
+      const transcript = env.use(Transcript);
       env.onActivate(() => {
-        for (const command of createTerminalCommands({ ui, queries, session, wrapText: wrapTextWithAnsi })) {
+        const status = createStatusPresentation({ session, theme, ...components, ring: process.env.TERM !== "dumb" && process.env.TSPI_TUI_RING !== "0" });
+        const lifetime = new AbortController();
+        const queryContext = withAbortSignal(lifetime.signal, BACKGROUND_CONTEXT);
+        let stopped = false, refreshing = false, dirty = false, timer;
+        const redraw = () => { if (!stopped) { ui.setFooter(status.footer); ui.setActivity(status.activity); } };
+        const refresh = async () => {
+          if (stopped) return;
+          if (refreshing) { dirty = true; return; }
+          refreshing = true; dirty = false;
+          const results = await Promise.allSettled([queries.telemetry(queryContext), session.monitorStatus?.()]);
+          if (!stopped) {
+            const [usage, monitor] = results;
+            if (usage.status === "fulfilled" && usage.value.session_id === session.sessionId && usage.value.workspace_id === session.workspaceId) status.update({telemetry:usage.value.result});
+            else status.update({telemetry:null});
+            if (monitor.status === "fulfilled") status.update({monitor:monitor.value, monitorError:null});
+            else status.update({monitorError:"Monitor unavailable"});
+            redraw();
+          }
+          refreshing = false;
+          if (!stopped) { clearTimeout(timer); timer = setTimeout(refresh, dirty ? 250 : 5000); timer.unref?.(); }
+        };
+        let signature;
+        env.own(transcript.state.subscribe(view => {
+          status.update({view});
+          const next = JSON.stringify([view.entries.at(-1)?.id, view.docs["pi.agent"], view.entries[0]?.id]);
+          if (next !== signature) { signature = next; clearTimeout(timer); timer = setTimeout(refresh,250); }
+          // Pi already repaints transcript changes; the components read current state at render time.
+        }));
+        redraw(); void refresh();
+        if (session.subscribeMonitor) env.own(session.subscribeMonitor(() => { void refresh(); }, () => { status.update({monitorError:"Monitor unavailable"}); redraw(); }));
+        env.own(() => { stopped = true; lifetime.abort(); clearTimeout(timer); ui.setFooter(undefined); ui.setActivity(undefined); });
+        const show = (title, body, context) => ui.showDocument(createDocumentView({ title, body,
+          wrapText: components.wrapTextWithAnsi, truncateToWidth: components.truncateToWidth, matchesKey: components.matchesKey, theme }), context);
+        for (const command of createTerminalCommands({ ui, queries, session, show, usage: () => status.details() })) {
           env.own(commands.replace(command));
         }
       });
@@ -29,7 +68,7 @@ export async function createTspiNativeClientFacet({ sourceRoot, session } = {}) 
   });
 }
 
-export function createTerminalCommands({ ui, queries, session, wrapText = (text) => text.split("\n") }) {
+export function createTerminalCommands({ ui, queries, session, show, usage }) {
   let pending = false;
   return Object.values(SLASH_COMMAND_DEFINITIONS).map((definition) => ({
     name: definition.name,
@@ -43,6 +82,10 @@ export function createTerminalCommands({ ui, queries, session, wrapText = (text)
         if (pending) { ui.showStatus("Another terminal command is still open. Close it before continuing.", context); return; }
         pending = true;
         try {
+          if (definition.name === "usage") {
+            await show("Usage", usage(), context);
+            return;
+          }
           if (definition.name === "resume") {
             let id = invocation.params.sessionId;
             if (!id) {
@@ -65,9 +108,9 @@ export function createTerminalCommands({ ui, queries, session, wrapText = (text)
           if (response.session_id !== session.sessionId) throw new Error("Query returned a different session");
           if (session.workspaceId && response.workspace_id !== session.workspaceId) throw new Error("Query returned a different workspace");
           if (response.error) throw new Error(response.error.message);
-          const title = `${definition.name} · ${response.workspace_id} · ${response.session_id}`;
+          const title = definition.name === "sys-prompt" ? "System prompt" : "Research state";
           const body = definition.name === "sys-prompt" ? formatPrompt(response.result) : formatValue(response.result);
-          await showDocument(ui, title, body, context, wrapText, session.signal);
+          await show(title, body, context);
         } finally { pending = false; }
       } catch (error) {
         if (!session.signal?.aborted) ui.showStatus(`/${definition.name}: ${error instanceof Error ? error.message : String(error)}`, context);
@@ -87,26 +130,4 @@ function formatValue(value, indent = "") {
   return Object.entries(value).filter(([key]) => key !== "schema_version").map(([key, item]) =>
     `${indent}${key.replaceAll("_", " ")}: ${item !== null && typeof item === "object" ? `\n${formatValue(item, `${indent}  `)}` : String(item ?? "—")}`,
   ).join("\n");
-}
-
-// Use Pi's own selector, including its wrapping and focus handling. No second
-// overlay renderer. Reserve space for the title and page navigation on small TTYs.
-async function showDocument(ui, title, body, context, wrapText, signal) {
-  const width = Math.max(10, (process.stdout.columns || 80) - 4);
-  const lines = body.split("\n").flatMap((line) => wrapText(line, width));
-  const pageSize = Math.max(1, Math.min(16, (process.stdout.rows || 24) - 12));
-  const pages = Math.max(1, Math.ceil(lines.length / pageSize));
-  let page = 0;
-  while (!signal?.aborted) {
-    const items = [
-      ...(page + 1 < pages ? [{ value: "next", label: "Next page" }] : []),
-      ...(page > 0 ? [{ value: "previous", label: "Previous page" }] : []),
-      { value: "close", label: "Close" },
-    ];
-    const selected = await ui.select(`${title} (${page + 1}/${pages})\n\n${lines.slice(page * pageSize, (page + 1) * pageSize).join("\n")}`, items, undefined, context);
-    if (selected === "next") page++;
-    else if (selected === "previous") page--;
-    else break;
-  }
-  if (!signal?.aborted) ui.showStatus(`Viewed ${title}.`, context);
 }

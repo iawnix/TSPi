@@ -140,7 +140,7 @@ export async function runMonitorWorker(options, signal) {
         }
       }
       if (!pollFailed && !signal.aborted) lastSuccessfulPoll = new Date().toISOString();
-      await writeHealth(options.stateRoot, { pid: process.pid, updated_at: new Date().toISOString(),
+      await writeHealth(options.stateRoot, { pid: process.pid, poll_interval_ms: options.intervalMs, updated_at: new Date().toISOString(),
         last_successful_poll: lastSuccessfulPoll, last_error: errors.length ? errors.join("; ") : null });
       if (options.once || signal.aborted) break;
       await delay(options.intervalMs, signal);

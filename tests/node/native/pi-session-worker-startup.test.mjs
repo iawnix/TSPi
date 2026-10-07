@@ -72,6 +72,11 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
       assert.equal(prompt.session_id, created.session.session_id);
       assert.match(prompt.result.effective, /TSPi research agent/);
       assert.ok(prompt.result.contributors.length > 0);
+      const telemetry = await queries.telemetry(BACKGROUND_CONTEXT);
+      assert.equal(telemetry.session_id, created.session.session_id);
+      assert.ok(telemetry.result.contextWindow > 0);
+      assert.ok(telemetry.result.contextTokens >= 0);
+      assert.equal(telemetry.result.estimated, true);
       const summary = await queries.research("summary", BACKGROUND_CONTEXT);
       assert.equal(summary.workspace_id, "startup");
       assert.equal(summary.result.schema_version, "research-summary/1");
@@ -91,7 +96,7 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
       const ui = new TuiMainScreen(new ProcessTerminal());
       let quit = false;
       const facet = await createTspiNativeClientFacet({ sourceRoot, session: {
-        sessionId: created.session.session_id, quit() { quit = true; },
+        workspaceId: "startup", sessionId: created.session.session_id, quit() { quit = true; },
         async list() { return backend.listSessions("startup"); },
         async resume() { throw new Error("Selecting the current session should be a no-op"); },
       } });
@@ -109,8 +114,14 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
       };
       const submit = (text) => { component.handleInput(text); component.handleInput("\u001b"); component.handleInput("\r"); };
       try {
+        await waitFor(() => !component.render(100).join("\n").includes("Context Unknown"));
+        assert.doesNotMatch(component.render(100).join("\n"), /Server:| entries|\/model ·/);
+        submit("/usage");
+        await waitFor(() => component.render(100).join("\n").includes("Session usage"));
+        component.handleInput("\u001b");
+        await new Promise(resolve => setImmediate(resolve));
         submit("/research summary");
-        await waitFor(() => component.render(100).join("\n").includes("research · startup"));
+        await waitFor(() => component.render(100).join("\n").includes("Research state"));
         component.handleInput("\u001b");
         await new Promise((resolve) => setImmediate(resolve));
         submit("/sys-prompt");
