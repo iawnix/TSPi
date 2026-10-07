@@ -17,7 +17,7 @@ description: 选择科学方法并准备命名计算环境；用户已经指定�
 只有低成本探索能回答已声明问题时才使用它。明确何时需要更高层级计算、替代方法或稳健性
 检查，并把选择与理由保存在 Node 和不可变 calculation intent 中。
 
-对于需要比较多个方法和执行环境的请求，先展开完整的
+对于明确要求优化/单点并比较多个方法和执行环境的请求，先展开完整的
 `方法 × environment × {opt, sp}` 矩阵，再逐项探测环境并分别记录单元失败。当前第一方
 方法路由遵循以下规则：
 
@@ -28,7 +28,8 @@ description: 选择科学方法并准备命名计算环境；用户已经指定�
 | HF、M062X 及其他 Gaussian Route Section 方法 | Gaussian | 带 `.gjf` Route Section 的 `g16` |
 
 Gaussian 方法和基组写入 `.gjf` 的 Route Section，例如
-`# M062X/6-31G** Opt` 或 `# HF/6-31G** SP`。每个 `sp` 必须依赖同一方法、同一环境的 `opt` 输出。
+`# M062X/6-31G** Opt` 或 `# HF/6-31G** SP`。在上述比较中，每个 `sp` 依赖同一方法、同一环境的 `opt` 输出。
+其它研究可选择明确的固定几何或 TS/Freq/IRC/scan 输入，由 Agent 定义计算依赖。
 某个矩阵单元不可用时只阻塞该单元，不能静默替换方法或停止其他独立单元。
 
 ## 参考资料
@@ -44,6 +45,13 @@ Gaussian 方法和基组写入 `.gjf` 的 Route Section，例如
 使用 [scripts/prepare_job.py](scripts/prepare_job.py) 从 job.toml 生成通用 Job 请求。传入 --config "$TS_JOB_CONFIG"、--environment、--backend、--skill、--xyz，-- 后是 runner 参数。用安装版 TSPI_PYTHON 执行 helper；解释器来自 job.toml 的 Conda 绑定。核对参数，补充 nodeId/timeoutSeconds 后 job_start。辅助脚本会暂存完整 scripts 目录和 `_shared` 依赖。
 
 保留准备请求中的 requestId；同一次提交恢复时复用它，不因工具响应丢失而生成新 ID。明确重算时生成新请求。
+
+执行显式 Gaussian 输入时，用 `--input-gjf <file>` 替代 `--xyz`。
+通过 `--dependency /absolute/source.chk=previous.chk` 暂存检查点或包含文件，
+目标名称须匹配 `.gjf` 内的相对引用。用 `--collect ts.chk` 要求收集可供后续复用的检查点。
+这些参数放在 `--` 前；`--validation saddle` 或 `--validation irc` 等 runner 参数
+放在其后，不传 `--task`。输入格式、依赖文件内容、收集要求及脚本资源均参与请求身份计算。
+helper 只封装当前计算，计算顺序由 Agent 决定，数值检查须结合 Gaussian Skill 作科学解释。
 
 选择方法或准备已指定方法的执行时都使用本 Skill。从列出的路径读取具体方法 Skill。读取安装配置、检查方法可用性属于 Agent 的工作，尚未验证不应自动变成用户输入门槛。
 

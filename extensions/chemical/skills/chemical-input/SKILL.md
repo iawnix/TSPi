@@ -1,61 +1,48 @@
 ---
 name: chemical-input
-description: Compile natural-language chemical names and reaction inputs into verified structure candidates before deterministic TSPi analysis or computation.
+description: Resolve chemical names, inspect molecular graphs, generate reproducible initial geometries, and validate explicit reaction mappings with executable helpers.
 ---
 
-# TSPi Chemical Input
+# Chemical input
 
 [Chinese version](SKILL.zh-CN.md)
 
-Use this Skill when a user supplies a chemical name, a mixed name/SMILES
-reaction, or a structure description instead of already registered structure
-artifacts. This Skill is an input-compilation protocol; it does not replace
-the deterministic name resolver, structure seed generator, reaction mapping,
-or transition-state validation.
+Use this Skill for names, SMILES, structure descriptions, or reaction inputs.
+Use [scripts/prepare.py](scripts/prepare.py) through bash with "$TSPI_PYTHON".
+It requires the installation-owned RDKit environment. Preserve original names,
+structure sources, charge, multiplicity, and the helper JSON as evidence.
 
-## Workflow
+For a single molecule, resolve its identity and inspect its graph before seed
+preparation. No reaction mapping is required for a molecular optimization or SP.
+The helper has an explicit neutral-water rule (water/H2O/水/水分子 → O).
+Other names use configured PubChem/OPSIN; --lookup-name preserves the original
+name while supplying a translated or normalized lookup. Do not infer name
+identity merely because an LLM-proposed SMILES passes graph validation.
+User-supplied structures can be inspected directly without name lookup.
 
-1. Preserve the exact user text and classify every species input as a name,
-   SMILES, XYZ/artifact, or unresolved description. Apply this uniformly to
-   reactants and products.
-2. Discover and call `chemical.name.resolve@1` through `bash plus the Skill helper` for names.
-   Keep the returned resolver provenance, candidates, diagnostics, and status.
-   The workflow uses the installation-owned `name-resolver.toml` when a
-   deterministic PubChem or OPSIN backend is enabled; `unsupported` means the
-   backend is unavailable, while `invalid` with a 404 diagnostic means the
-   backend was reached but does not recognize the submitted name. Neither
-   result may be bypassed with an unconfirmed LLM candidate.
-   Preserve the user's exact text in `name`. If needed, translate or normalize
-   it into `lookup_name`; the resolver must validate that lookup name before it
-   can establish identity. Do not add `input_text` or a reactant/product
-   `role` there. Put species roles in the later `reaction.parse` request.
-3. Treat `draft` candidates (including LLM-proposed SMILES), unresolved names,
-   multiple candidates, and unspecified stereocenters as input issues. Ask a
-   focused clarification question or request a SMILES/structure artifact.
-4. Only after a candidate is explicitly confirmed or deterministically resolved
-   may it be passed to `artifact_create`. The seed is an initial geometry, not a
-   stationary point or a proof of connectivity.
-5. Use the confirmed species in `reaction.parse`, then inspect conservation,
-   mapping candidates, and bond changes. Select an atom mapping explicitly;
-   never infer that a unique graph edit is a mechanism.
-6. Keep the original name, selected candidate, resolver provenance, and any
-   user confirmation together so the structure can be replayed and audited.
+```text
+"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output identity.json resolve --name water
+"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output graph.json inspect --smiles O
+"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output seed.json seed --smiles O --charge 0 --multiplicity 1 --output-dir seeds
+```
 
-## Trust States
+For reactions, resolve/inspect each species, then check composition, charge,
+explicit atom mapping and bond changes with the reaction subcommand. The Agent
+selects the atom correspondence; the helper validates it rather than inventing
+mechanistic evidence. Map explicit hydrogens for proton-transfer studies.
 
-- `draft`: candidate proposed by the model or supplied without identity proof.
-- `resolved`: one deterministic resolver candidate passed structural checks.
-- `ambiguous`: multiple candidates or incomplete stereochemical identity.
-- `confirmed`: a user or explicit scientific rule selected a candidate.
-- `unresolved`: no registered resolver or valid candidate is available.
+```text
+"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output reaction.json reaction --smiles '<mapped-reactants>><mapped-products>'
+```
 
-Do not submit `draft`, `ambiguous`, or `unresolved` structures to Gaussian,
-TS, or IRC calculations. A resolved name still requires reaction-level balance,
-mapping, charge, multiplicity, and 3D validation before mechanism claims.
+An unresolved name or genuinely different identities needs a bounded lookup or
+clarification. Unspecified stereochemistry may instead define the authorized
+research scope: seed --enumerate-stereo enumerates up to 16 alternatives and
+records each one. Keep alternatives explicit; do not silently select one.
+A generated seed is not an optimized geometry, TS, or proof of connectivity.
+Use separate calculations to explore conformers and intermolecular approaches.
 
 ## References
 
-- [name_resolution.md](references/name_resolution.md): resolver contract,
-  candidate states, and failure handling.
-- [structure_input.md](references/structure_input.md): transition from a
-  confirmed graph to a seed and reaction analysis.
+- [name_resolution.md](references/name_resolution.md): lookup, configuration and provenance.
+- [structure_input.md](references/structure_input.md): graph, seed and reaction checks.

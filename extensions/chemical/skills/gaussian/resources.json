@@ -3,8 +3,9 @@
   "base": "extension",
   "files": {
     "skills/gaussian/scripts/gaussian_io.py": "sha256:d7aaa659b6f57f3a21b16e0b8fc5dd7963c69925ab691144bd04ce13457ca127",
-    "skills/gaussian/scripts/run.py": "sha256:c3ed6d88d8fee73ccf6389624862e896a5a8df2ec50b8c47725e67c185bfed0b",
+    "skills/gaussian/scripts/run.py": "sha256:8bc8212bf79145bf64c4047593d01f6044a721d25584eeb79fd160b93e76101f",
     "skills/_shared/science.py": "sha256:dfd52085de07e1a7a75315cb50225021fd397f438c1544c67266c79809affc5b",
-    "skills/_shared/execution_bindings.py": "sha256:4e77463dd31654b872bf5167050ac9844977d7a744c863cf303dc343204b04d1"
+    "skills/_shared/execution_bindings.py": "sha256:4e77463dd31654b872bf5167050ac9844977d7a744c863cf303dc343204b04d1",
+    "skills/gaussian/scripts/input_job.py": "sha256:d2d2f2f8eaf0d90d428f38aabe44c9c4c538348a6071e32e21c0a199946c4b72"
   }
 }

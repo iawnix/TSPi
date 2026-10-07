@@ -1,0 +1,109 @@
+"""Run an explicit Gaussian input without prescribing a research sequence."""
+import hashlib
+import re
+import shutil
+import subprocess
+from pathlib import Path, PurePosixPath
+
+from gaussian_io import parse_log, parse_irc_log, write_irc_parse_artifacts, write_xyz
+from science import digest, write_json, provenance, finite_energy
+
+
+def local_reference(value):
+    path = PurePosixPath(value.strip())
+    if path.is_absolute() or '..' in path.parts or not path.parts or '\\' in value:
+        raise ValueError('Gaussian file references must be relative staged paths')
+    return str(path)
+
+
+def inspect_input(path, method, basis, charge, spin, threads, memory_mb):
+    text = Path(path).read_text()
+    sections = re.split(r'(?im)^\s*--Link1--\s*$', text)
+    references, checkpoints, routes = set(), set(), []
+    for section in sections:
+        preceding_checkpoints = set(checkpoints)
+        route_match = re.search(r'(?ms)^\s*(#[^\n]*(?:\n[^\n]+)*?)\n\s*\n', section)
+        if not route_match:
+            raise ValueError('Gaussian input needs a route section followed by a blank line')
+        route = route_match.group(1).strip(); routes.append(route)
+        if f'{method}/{basis}'.lower() not in re.sub(r'\s+', '', route).lower():
+            raise ValueError('every Gaussian link must explicitly match the requested method/basis')
+        cpus = re.findall(r'(?im)^\s*%nproc(?:shared)?\s*=\s*(\d+)\s*$', section)
+        if len(cpus) != 1 or int(cpus[0]) != threads:
+            raise ValueError('every Gaussian link must declare the requested %nprocshared')
+        memory = re.findall(r'(?im)^\s*%mem\s*=\s*(\d+)\s*(MB|GB)\s*$', section)
+        if len(memory) != 1 or int(memory[0][0]) * (1024 if memory[0][1].upper() == 'GB' else 1) != memory_mb:
+            raise ValueError('every Gaussian link must declare the requested memory in MB or GB')
+        headers = re.findall(r'(?m)^\s*(-?\d+)\s+(\d+)\s*$', section[route_match.end():])
+        if not headers and not re.search(r'geom\s*=\s*\(?allcheck', route, re.I):
+            raise ValueError('missing charge/multiplicity header')
+        if any((int(c), int(m)) != (charge, spin + 1) for c, m in headers):
+            raise ValueError('input charge/multiplicity differs from request')
+        for key, value in re.findall(r'(?im)^\s*%(\w+)\s*=\s*(.*?)\s*$', section):
+            key = key.lower()
+            if key in {'chk', 'oldchk'}:
+                ref = local_reference(value)
+                if key == 'oldchk' and ref not in checkpoints: references.add(ref)
+                if key == 'chk': checkpoints.add(ref)
+                if key == 'chk' and re.search(r'(?:geom|guess)\s*=\s*\(?(?:allcheck|check|read)', route, re.I) and ref not in preceding_checkpoints and not re.search(r'(?im)^\s*%oldchk\s*=', section):
+                    references.add(ref)
+            elif key not in {'mem', 'nproc', 'nprocshared', 'nosave'}:
+                raise ValueError(f'unsupported Link 0 directive %{key}; use staged chk/oldchk, mem and nprocshared')
+        for ref in re.findall(r'(?m)^\s*@([^\s]+)\s*$', section): references.add(local_reference(ref))
+        if re.search(r'\b(external|include)\s*=', route, re.I):
+            raise ValueError('external executable and route include directives are unsupported')
+    return {'routes': routes, 'references': sorted(references), 'checkpoints': sorted(checkpoints)}
+
+
+def run_input(args):
+    source = Path(args.input_gjf).resolve()
+    checked = inspect_input(source, args.method, args.basis, args.charge, args.spin, args.threads, args.memory_mb)
+    out = Path(args.output_dir).resolve(); out.mkdir(parents=True, exist_ok=True)
+    if any(out.iterdir()): raise ValueError('output directory must be empty')
+    shutil.copyfile(source, out/'input.gjf')
+    for name in checked['references']:
+        file = source.parent/name
+        if not file.is_file(): raise ValueError(f'missing staged Gaussian dependency: {name}')
+        target = out/name; target.parent.mkdir(parents=True, exist_ok=True); shutil.copyfile(file, target)
+    result = {'schema_version': 'science-result/1', 'method': args.method, 'basis': args.basis,
+              'charge': args.charge, 'spin': args.spin, 'input_sha256': digest(source),
+              'energy_unit': 'hartree', 'geometry_unit': 'angstrom', 'steps': [], 'validated': False,
+              'execution_succeeded': False, 'normal_termination': False, 'checks_passed': False,
+              'scientific_validation': 'not_assessed', 'validation_requested': args.validation,
+              'input': checked, 'scripts': provenance(__file__)}
+    try:
+        executable = shutil.which(args.executable)
+        if not executable: raise ValueError('configured Gaussian executable unavailable after activation')
+        with (out/'input.gjf').open('rb') as inp, (out/'gaussian.out').open('wb') as log:
+            process = subprocess.run([executable], cwd=out, stdin=inp, stdout=log, stderr=subprocess.STDOUT)
+        result['execution_succeeded'] = process.returncode == 0
+        parsed = parse_log(out/'gaussian.out', expected_route=checked['routes'][-1])
+        write_json(out/'parsed.json', parsed)
+        summary = parsed['summary']; result['normal_termination'] = summary['normal_termination'] and not summary['error_termination']
+        if process.returncode or not result['normal_termination']: raise ValueError('Gaussian execution did not finish normally')
+        if not summary['route_expectation'].get('matched'):
+            raise ValueError('Gaussian route readback differs from the supplied input')
+        energy = finite_energy(summary['electronic_energy_hartree'])
+        result['steps'].append({'task': args.validation, 'energy_hartree': energy, 'summary': summary})
+        if parsed['atoms']: write_xyz(out/'geometry.xyz', parsed['atoms'], 'Gaussian final geometry')
+        if args.validation in {'opt', 'saddle'} and not (summary['stationary_point_found'] and summary['final_convergence_satisfied']):
+            raise ValueError('missing converged stationary point evidence')
+        if args.validation in {'frequency', 'minimum', 'saddle'}:
+            if not summary['frequency_count']: raise ValueError('missing final frequency evidence')
+            expected = {'minimum': 0, 'saddle': 1}.get(args.validation)
+            if expected is not None and summary['imaginary_frequency_count'] != expected:
+                raise ValueError(f'expected {expected} imaginary frequencies')
+        if args.validation == 'irc':
+            irc = parse_irc_log(out/'gaussian.out'); write_irc_parse_artifacts(irc, out, 'gaussian', 'gaussian.out')
+            result['irc'] = irc['summary']
+            if not irc['points'] or not irc['atoms']: raise ValueError('IRC path/endpoint evidence missing')
+        result['checks_passed'] = True
+        # Numeric checks do not establish mode direction, basin identity or a mechanism.
+        result['scientific_validation'] = 'requires_interpretation'
+        result['limitations'] = ['Inspect mode vectors, route readback and endpoint identities before scientific claims. Normal termination alone is not validation.']
+        return_code = 0
+    except Exception as exc:
+        result['error'] = {'type': type(exc).__name__, 'message': str(exc)}
+        return_code = 1
+    write_json(out/'result.json', result)
+    return return_code

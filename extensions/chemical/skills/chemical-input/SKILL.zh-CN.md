@@ -1,48 +1,41 @@
 ---
 name: chemical-input
-description: 在确定性 TSPi 分析或计算前，把自然语言化学名称和反应输入编译为经过核验的结构候选。
+description: 通过可执行 helper 解析化学名称、检查分子图、生成可重放的初始几何，并核验显式反应原子映射。
 ---
 
-# TSPi 化学输入
+# 化学输入
 
 [English version](SKILL.md)
 
-当用户提供化学名称、名称与 SMILES 混合的反应式，或结构描述而不是已注册
-的结构 artifact 时使用本 Skill。本 Skill 规定输入编译流程，不替代确定性
-名称解析器、结构种子生成器、反应映射或过渡态验证。
+名称、SMILES、结构描述或反应输入使用本 Skill。通过 bash 和 "$TSPI_PYTHON"
+执行 [scripts/prepare.py](scripts/prepare.py)，依赖安装环境中的 RDKit。
+保留原始名称、结构来源、电荷、多重度和 helper JSON 作为证据。
 
-## 流程
+单分子计算先确认身份、检查分子图，再准备 seed；优化和单点能不需要反应映射。
+helper 内置明确的中性水规则（water/H2O/水/水分子 → O）。其他名称通过配置的
+PubChem/OPSIN 查询；--lookup-name 可提供翻译或规范化名称，同时保留原文。
+用户提供的结构可以直接检查。模型给出的 SMILES 通过图校验，不等于名称身份已确认。
 
-1. 保留用户原文，将每个反应物和产物标记为名称、SMILES、XYZ/artifact 或
-   未解析描述。反应物和产物使用同一规则。
-2. 对名称通过 `bash 与 Skill helper` 调用 `chemical.name.resolve@1`，保留解析器
-   provenance、候选、诊断和状态。
-   若安装目录的 `name-resolver.toml` 启用了确定性的 PubChem 或 OPSIN 后端，能力会自动
-   使用它；返回 `unsupported` 表示后端不可用，返回带 404 诊断的 `invalid` 表示后端可达但
-   不认识该名称。两种结果都不能用未经确认的 LLM 候选绕过。
-   在 `name` 中保留用户原文；必要时由 Agent 翻译或规范化后填入
-   `lookup_name`，再由 resolver 对该名称做确定性核验。不要把 `input_text` 或反应物/产物
-   `role` 放进去。物种角色应在后续的 `reaction.parse` 请求中表达。
-3. 把 `draft` 候选（包括 LLM 提出的 SMILES）、未解析名称、多个候选和未指定
-   立体中心记录为输入问题，提出聚焦的澄清问题或请求 SMILES/结构 artifact。
-4. 只有候选被明确确认或由确定性解析器唯一解析后，才能传给 `artifact_create`。
-   seed 只是初始几何，不是驻点，也不能证明连接关系。
-5. 用确认后的物种执行 `reaction.parse`，检查守恒、映射候选和键变化；必须显式
-   选择 atom mapping，不能把唯一图编辑当作机理证明。
-6. 将原始名称、选定候选、解析器 provenance 和用户确认一起保存，保证可重放和审计。
+```text
+"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output identity.json resolve --name water
+"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output graph.json inspect --smiles O
+"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output seed.json seed --smiles O --charge 0 --multiplicity 1 --output-dir seeds
+```
 
-## 信任状态
+反应研究逐一解析/检查物种，再用 reaction 子命令核验组成、电荷、显式映射和键变化。
+Agent 选择原子对应关系，helper 检查其有效性；映射本身不能证明机理。
+研究质子转移时应显式映射氢原子。
 
-- `draft`：模型提出或未经身份核实的候选。
-- `resolved`：确定性解析器得到且通过结构检查的唯一候选。
-- `ambiguous`：多个候选或立体化学身份不完整。
-- `confirmed`：用户或明确科学规则选定的候选。
-- `unresolved`：没有注册解析器或没有有效候选。
+```text
+"$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output reaction.json reaction --smiles '<mapped-reactants>><mapped-products>'
+```
 
-不要把 `draft`、`ambiguous` 或 `unresolved` 结构提交给 Gaussian、TS 或 IRC。
-名称解析成功后仍需进行反应守恒、mapping、电荷、自旋和 3D 验证，才能形成机理结论。
+名称无法解析或存在实质不同的身份时，进行有界查询或澄清。
+若研究范围本就包含未指定立体化学的候选，可用 seed --enumerate-stereo 枚举至多
+16 个异构体，并分别保留；不要默默选定其中一个。
+seed 不是优化结构、过渡态或连接关系证明；构象和分子间接近方式另行计算探索。
 
 ## 参考
 
-- [name_resolution.zh-CN.md](references/name_resolution.zh-CN.md)：解析器合同、候选状态和失败处理。
-- [structure_input.zh-CN.md](references/structure_input.zh-CN.md)：从确认分子图到 seed 和反应分析。
+- [name_resolution.zh-CN.md](references/name_resolution.zh-CN.md)：查询、配置和来源。
+- [structure_input.zh-CN.md](references/structure_input.zh-CN.md)：分子图、seed 和反应检查。

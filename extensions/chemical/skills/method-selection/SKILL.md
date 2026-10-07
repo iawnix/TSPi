@@ -21,7 +21,7 @@ when a higher-level calculation, alternate method, or robustness check is
 needed. Preserve the selected method and rationale in the Node and immutable
 calculation intent.
 
-For a multi-method or multi-environment comparison, expand a complete
+For a requested optimization/single-point multi-method or multi-environment comparison, expand a complete
 `method × environment × {opt, sp}` matrix before launching work, then probe
 each environment and record independent failures for individual cells. The
 first-party routing rules are:
@@ -33,8 +33,8 @@ first-party routing rules are:
 | HF, M062X, and other Gaussian Route Section methods | Gaussian | `g16` with the `.gjf` Route Section |
 
 Gaussian methods and basis sets belong in the `.gjf` Route Section, for
-example `# M062X/6-31G** Opt` or `# HF/6-31G** SP`. Every `sp` job
-depends on the `opt` output for the same method and environment. If one matrix
+example `# M062X/6-31G** Opt` or `# HF/6-31G** SP`. In that comparison, each `sp` job
+depends on the `opt` output for the same method and environment. Other studies may use explicitly chosen fixed geometries and TS/Freq/IRC/scan inputs; the Agent defines their dependencies. If one matrix
 cell is unavailable, block that cell explicitly; do not silently substitute a
 method or stop independent cells.
 
@@ -53,6 +53,16 @@ method or stop independent cells.
 Use [scripts/prepare_job.py](scripts/prepare_job.py) to generate the generic Job request from job.toml. Pass --config "$TS_JOB_CONFIG", --environment, --backend, --skill, --xyz, then -- followed by runner arguments. Use the installation TSPI_PYTHON to run this preparation helper. The public job_runtime.config_contract resolves structured Conda bindings from job.toml: backend.python overrides environment.python. Remote scripts run with the configured conda_executable and prefix; do not guess Python or pass --python. CF22D uses backends.pyscf.python without a second Python command binding. Add nodeId/timeoutSeconds and verify the request before job_start. The helper stages complete script directories and `_shared` imports.
 
 Preserve the prepared requestId when recovering the same submission. A lost tool response does not authorize a new ID; intentional recalculation uses a new request.
+
+For an explicit Gaussian calculation, replace `--xyz` with `--input-gjf <file>`.
+Use `--dependency /absolute/source.chk=previous.chk` for each input checkpoint or
+included file; the destination must match the relative reference in the `.gjf`.
+Use `--collect ts.chk` to require a reusable checkpoint in the collected results.
+These options precede `--`; runner options such as `--validation saddle` or
+`--validation irc` follow it, without `--task`. Input format, dependency contents,
+collected outputs and runner resources participate in the generated request identity.
+This helper only packages the requested calculation; the Agent selects the sequence
+and interprets numerical checks using the Gaussian Skill.
 
 Python dependencies are installation-owned Conda environments configured in job.toml. Run preparation helpers with "$TSPI_PYTHON"; target runners use the resolved Conda binding. Missing environments require installation maintenance, not ad-hoc pip installs during a research turn.
 

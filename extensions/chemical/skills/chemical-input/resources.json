@@ -1,0 +1,8 @@
+{
+  "schema_version": "skill-resources/1",
+  "base": "extension",
+  "files": {
+    "skills/chemical-input/scripts/name_resolution.py": "sha256:8ed726a7993b3b490eb8fa681e08d0bc7a64fb26fc92d5e6b6dca969785bc18a",
+    "skills/chemical-input/scripts/prepare.py": "sha256:04dc78fac488997ed1f688b6bdbaa31c38aa0d6ea06e0ed9a19437a5cf8cae29"
+  }
+}

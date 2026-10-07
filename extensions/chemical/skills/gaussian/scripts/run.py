@@ -23,8 +23,11 @@ def validate(summary, task, method, basis):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--xyz', required=True)
-    p.add_argument('--task', choices=['opt','sp','opt-sp'], required=True)
+    source = p.add_mutually_exclusive_group(required=True)
+    source.add_argument('--xyz')
+    source.add_argument('--input-gjf', help='Run an explicit Gaussian input, including TS/Freq/IRC/QST/scan routes')
+    p.add_argument('--task', choices=['opt','sp','opt-sp'])
+    p.add_argument('--validation', choices=['none','opt','sp','frequency','minimum','saddle','irc'], default='none')
     p.add_argument('--executable', required=True)
     p.add_argument('--output-dir', required=True)
     p.add_argument('--method', default='M062X')
@@ -34,10 +37,16 @@ def main():
     p.add_argument('--threads', type=int, default=1)
     p.add_argument('--memory-mb', type=int, default=2000)
     a=p.parse_args(); out=None
+    if a.input_gjf and a.task: p.error('--task is only for the XYZ shortcut')
+    if a.xyz and not a.task: p.error('--xyz requires --task')
+    if a.xyz and a.validation != 'none': p.error('--validation requires --input-gjf; XYZ uses --task validation')
     try:
         if a.spin < 0 or a.threads < 1 or a.memory_mb < 1: raise ValueError('invalid spin/resources')
         if not all(re.fullmatch(r'[A-Za-z0-9+*(),._-]+', v) for v in [a.method,a.basis]):
             raise ValueError('method/basis must be single Gaussian route tokens')
+        if a.input_gjf:
+            from input_job import run_input
+            return run_input(a)
         out, atoms, result=prepare(a,a.method,a.basis)
         executable=shutil.which(a.executable)
         if not executable: raise ValueError('configured Gaussian executable unavailable after activation')

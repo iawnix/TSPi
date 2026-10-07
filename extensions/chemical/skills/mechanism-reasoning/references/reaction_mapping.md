@@ -1,39 +1,12 @@
-# Reaction Mapping Capability
+# Explicit reaction mapping / 显式反应映射
 
-The registered mechanism analysis `reaction.mapping.validate@1` validates a
-mapping supplied by Root. It does not invent an atom map.
+Use chemical-input scripts/prepare.py --output mapping.json reaction --smiles
+'<mapped-reactants>><mapped-products>'. Each explicit atom must have a unique
+positive map label on each side. The helper checks element/charge conservation,
+map coverage and element correspondence, and reports formed/broken/order-changed bonds.
+For isotope or proton-transfer studies use explicit isotopes and H atoms, and
+inspect that correspondence rather than treating implicit H as mapped evidence.
 
-## Discovery And Call
-
-```text
-read the relevant analysis Skill reference
-read the relevant analysis Skill reference query=reaction.mapping.validate@1
-```
-
-Call `bash plus the Skill helper` with an open `nodeId`, registered XYZ Artifact IDs, and an
-explicit zero-based mapping. Physical paths never belong in the request.
-Species indices address list positions; repeating an Artifact ID represents
-separate occurrences of the same species. Respect the workflow's reported
-limits.
-
-## Result
-
-The result contains an analysis Artifact and a summary of validity, coverage,
-counts, diagnostics, source IDs, and digests. A valid map covers every atom on
-both sides exactly once, matches elements, and preserves whole-reaction element
-counts. A partial map without contradictions is inconclusive; duplicate
-references, wrong elements, unequal counts, or an empty map are invalid.
-
-When the result supports a scientific statement, create a `FactFinding` through
-`research_change` with the producing `node_id`, a concise statement, `kind=fact`, the
-relevant value and datatype, and the analysis Artifact in `source_refs`. Record
-an incomplete or chemically ambiguous map as an `IssueFinding`. Do not copy
-parser diagnostics into the map as if they were facts.
-
-## Limits
-
-This workflow does not decide whether a bond change is chemically plausible,
-whether a proton is implicit, whether symmetry-equivalent maps are equivalent,
-or whether a transition state reaches endpoints. XYZ alone does not establish
-isotope, charge, spin, or bond identity; use structural comparison and the
-endpoint and transition-state Skills separately.
+映射由 Agent 选择并保留，helper 核验对应关系与键变化，不证明机理或路径连通性。
+用 artifact_register 保存 JSON 后，引用返回的 Artifact ID 记录有依据的 Finding。
+将映射、XYZ 原子顺序、构象/立体化学和 IRC 端点身份分别核对。

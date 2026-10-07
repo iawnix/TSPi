@@ -16,7 +16,10 @@ def build(entries):
                          'task':step['task'],'energy_hartree':step.get('energy_hartree'),
                          'validated':result.get('validated') is True,'input_sha256':step.get('input_sha256')})
         if not result.get('validated'):
-            rows.append({'environment':environment,'method':result.get('method'),'task':'failure','error':result.get('error'),'validated':False})
+            rows.append({'environment':environment,'method':result.get('method'),
+                         'task':'failure' if result.get('error') else 'unverified',
+                         'scientific_validation':result.get('scientific_validation'),
+                         'checks_passed':result.get('checks_passed'), 'error':result.get('error'),'validated':False})
     return {'schema_version':'science-report/1','results':rows,'sources':sources}
 
 

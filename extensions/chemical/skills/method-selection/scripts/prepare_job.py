@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '_shared'))
 from execution_bindings import resolve_backend
 
 
-def prepare(config, environment, backend, skill, xyz, arguments, python=None, work_id=None):
+def prepare(config, environment, backend, skill, xyz, arguments, python=None, work_id=None, input_gjf=None, dependencies=(), collect=()):
     settings = load_job_config(config)
     target = settings['environments'][environment]
     binding = target['backends'][backend]
@@ -20,26 +20,45 @@ def prepare(config, environment, backend, skill, xyz, arguments, python=None, wo
     script=root/skill/'scripts'/'run.py'
     if not script.is_file(): raise ValueError('Skill has no installed scripts/run.py')
     # Stage only the selected Skill and its plain helper library, with intact imports.
+    if input_gjf and (backend != 'gaussian' or xyz): raise ValueError('--input-gjf is Gaussian-only and replaces --xyz')
+    source = Path(input_gjf or xyz).resolve()
+    input_name = 'input.gjf' if input_gjf else 'input.xyz'
     inputs=[{'source':str(root/skill/'scripts'),'destination':f'skills/{skill}/scripts'},
             {'source':str(root/'_shared'),'destination':'skills/_shared'},
-            {'source':str(Path(xyz).resolve()),'destination':'input.xyz'}]
+            {'source':str(source),'destination':input_name}]
+    dependency_hashes = {}
+    extra_outputs = []
+    for name in collect:
+        if not name or Path(name).is_absolute() or '..' in Path(name).parts:
+            raise ValueError('collected file must be relative to results')
+        extra_outputs.append({'path':f'results/{name}', 'required':True, 'minBytes':1})
+    for dependency in dependencies:
+        src, sep, dest = dependency.partition('=')
+        if not sep or not dest or Path(dest).is_absolute() or '..' in Path(dest).parts or dest in {input_name, 'results', 'skills'} or dest.startswith(('results/', 'skills/')):
+            raise ValueError('dependency must be source=relative-destination outside results/skills')
+        if dest in dependency_hashes: raise ValueError('duplicate dependency destination')
+        file = Path(src).resolve(); dependency_hashes[dest] = hashlib.sha256(file.read_bytes()).hexdigest()
+        inputs.append({'source':str(file), 'destination':dest})
     if python is not None:
         raise ValueError('Configure a Conda python binding in job.toml; --python overrides are retired')
     python_argv = python_command(python_binding)
-    argv=[*python_argv,f'skills/{skill}/scripts/run.py','--xyz','input.xyz','--output-dir','results',*arguments]
+    argv=[*python_argv,f'skills/{skill}/scripts/run.py','--input-gjf' if input_gjf else '--xyz',input_name,'--output-dir','results',*arguments]
     if backend != 'pyscf': argv.extend(['--executable',command[0]])
     activation=binding.get('activation_script')
     if activation:
         argv=['bash','-c','set -e\nsource '+shlex.quote(activation)+'\nexec "$@"','skill',*argv]
     resources={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest()
                for folder in [script.parent,root/'_shared'] for p in sorted(folder.rglob('*.py'))}
-    identity = binding_digest({'environment':environment, 'backend':backend, 'arguments':arguments,
-        'input_sha256':hashlib.sha256(Path(xyz).read_bytes()).hexdigest(), 'configuration':binding_digest(settings)})[7:]
+    identity = binding_digest({'environment':environment, 'backend':backend, 'skill':skill, 'arguments':arguments,
+        'input_format':input_name, 'collect':sorted(set(collect)), 'resources':resources,
+        'input_sha256':hashlib.sha256(source.read_bytes()).hexdigest(), 'dependencies':dependency_hashes, 'configuration':binding_digest(settings)})[7:]
     work_id = work_id or 'work_' + identity[:48]
     return {'requestId':'skill_'+hashlib.sha256(work_id.encode()).hexdigest()[:48], 'workId':work_id,'command':argv,'platform':environment,'inputs':inputs,
             'environment':binding.get('environment',{}),
             'outputs':[{'path':'results/result.json','required':True,'minBytes':2,'mediaType':'application/json'},
-                       {'path':'results/geometry.xyz','required':True,'minBytes':1,'mediaType':'chemical/x-xyz'}],
+                       {'path':'results/geometry.xyz','required':not bool(input_gjf),'minBytes':1,'mediaType':'chemical/x-xyz'},
+                       *([{'path':'results/gaussian.out','required':True,'minBytes':1,'mediaType':'text/plain'},
+                          {'path':'results/parsed.json','required':True,'minBytes':2,'mediaType':'application/json'}] if input_gjf else []), *extra_outputs],
             'metadata':{**submission, 'skill':skill,'resources_sha256':resources, 'python_binding':python_binding, 'configuration_sha256':binding_digest(settings)}}
 
 
@@ -51,12 +70,15 @@ def main():
     p.add_argument('--python',help=argparse.SUPPRESS)
     p.add_argument('--output',help="Save the complete request; print its job_start file reference")
     p.add_argument('--work-id',help="Explicit identity for an intentional recalculation")
-    p.add_argument('--xyz',required=True);p.add_argument('arguments',nargs=argparse.REMAINDER)
+    source=p.add_mutually_exclusive_group(required=True);source.add_argument('--xyz');source.add_argument('--input-gjf')
+    p.add_argument('--dependency',action='append',default=[],help='Stage source=relative-destination (e.g. checkpoint)')
+    p.add_argument('--collect',action='append',default=[],help='Required file relative to results, e.g. ts.chk')
+    p.add_argument('arguments',nargs=argparse.REMAINDER)
     a=p.parse_args()
     if {'pyscf':'cf22d','xtb':'xtb','gaussian':'gaussian'}[a.backend] != a.skill:
         p.error('backend and Skill disagree')
     args=a.arguments[1:] if a.arguments[:1]==['--'] else a.arguments
-    request = prepare(a.config,a.environment,a.backend,a.skill,a.xyz,args,a.python,a.work_id)
+    request = prepare(a.config,a.environment,a.backend,a.skill,a.xyz,args,a.python,a.work_id,a.input_gjf,a.dependency,a.collect)
     encoded = (json.dumps(request,indent=2)+'\n').encode()
     if a.output:
         path = Path(a.output).resolve(); path.parent.mkdir(parents=True,exist_ok=True)

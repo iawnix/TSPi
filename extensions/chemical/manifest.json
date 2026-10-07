@@ -26,8 +26,8 @@
     {
       "name": "method-selection",
       "path": "skills/method-selection",
-      "sha256": "sha256:abc616eec746acada481224268453737e582799098daeaf499aba14404daf223",
-      "resources_sha256": "sha256:01b883f3251259490fe2f28af06e5e243b5d36a52bc1a2e114e988e6cd33f2a1"
+      "sha256": "sha256:fba8cfbc5d23821839450ff29b18518a176efd3467cdfe5543db53653b3e3d89",
+      "resources_sha256": "sha256:e914bab5d6c0590b6e6eb6eb7e8bad6c760fd8820bd6e482adde63a931712789"
     },
     {
       "name": "cf22d",
@@ -54,13 +54,14 @@
     {
       "name": "gaussian",
       "path": "skills/gaussian",
-      "sha256": "sha256:777df3c7edcbdbd3d280119e537783cd220776910c5f15989b2ceb2c6a025521",
-      "resources_sha256": "sha256:fc684750d24c00e50c115a3e31bbb2ee913cbe9f0768b53f90d280ef5de68d4f"
+      "sha256": "sha256:44641d14cbd2541c3cd5a1e898d62ae8e44c1274922026e6a16db079c477af78",
+      "resources_sha256": "sha256:65e31971825e4f5d686b21f706f70429afa4674547f906ca5af989a314ec3481"
     },
     {
       "name": "chemical-input",
       "path": "skills/chemical-input",
-      "sha256": "sha256:b0c7b27f1c9e4bcd339dcde9c3329ca41f1436e00b9acfadf409a708f077def4"
+      "sha256": "sha256:f54ade10e9eedec34d26216ccc509835b5430006efcfe403f551979efccc79a0",
+      "resources_sha256": "sha256:e30ba4e656882f4aa0fda582c279cbfe6f93ce7674a600adaffd791479ed2045"
     },
     {
       "name": "mechanism-reasoning",
@@ -71,7 +72,7 @@
       "name": "report",
       "path": "skills/report",
       "sha256": "sha256:9de015b4c1222b6a45e4942e6e6c8e93a5bf5e674f50b6dddfc6c5b1a1661720",
-      "resources_sha256": "sha256:f151b8b2dcff232e3f3274dde47c0b4559f3a951460c304baca316bff68f0cf3"
+      "resources_sha256": "sha256:fdf01101de83600b2e19c5342de2058ddce9e3902a422ea7e89b09cc1a43dfb9"
     }
   ]
 }
