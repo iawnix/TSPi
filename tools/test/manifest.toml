@@ -32,6 +32,7 @@ paths = [
   "tests/node/native/tspi-link-relay.test.mjs",
   "tests/node/native/server-extension-loader.test.mjs",
   "tests/node/native/research-interpretation-contract.test.mjs",
+  "tests/node/native/tool-presentation.test.mjs",
   "tests/node/native/provider-turn.test.mjs",
 ]
 

@@ -1,0 +1,60 @@
+--- a/packages/coding-agent/src/experimental/client-tui-chat.ts
++++ b/packages/coding-agent/src/experimental/client-tui-chat.ts
+@@ -7,6 +7,12 @@
+ import { ToolExecutionComponent, type ToolRenderers } from "../modes/interactive/components/tool-execution.ts";
+ import { UserMessageComponent } from "../modes/interactive/components/user-message.ts";
+ import { theme } from "../modes/interactive/theme/theme.ts";
++
++// Presentations may register renderers without importing execution tools.
++let presentationToolRenderers: Record<string, ToolRenderers> = {};
++export function configureToolRenderers(renderers: Record<string, ToolRenderers>): void {
++    presentationToolRenderers = { ...renderers };
++}
+ 
+ /** The `pi.live` document of a view: the active run, the streaming answer, and running tools. */
+ export function liveOf(view: ConversationView): LiveState {
+@@ -40,6 +46,7 @@
+ 	#streaming: AssistantMessageComponent | undefined;
+ 	#indicator: StatusIndicator | undefined;
+ 	#statusText = "";
++	#toolsExpanded = false;
+ 
+ 	constructor(ui: TUI, cwd: string) {
+ 		this.#ui = ui;
+@@ -81,6 +88,13 @@
+ 		this.#rebuild(view.entries);
+ 		this.apply(view);
+ 	}
++
++	toggleTools(): void {
++        this.#toolsExpanded = !this.#toolsExpanded;
++        for (const card of this.#cards) card.setExpanded(this.#toolsExpanded);
++        this.transcript.invalidate();
++        this.#ui.requestRender();
++    }
+ 
+ 	dispose(): void {
+ 		this.#discardTools();
+@@ -211,10 +225,11 @@
+ 			toolCallId,
+ 			args ?? {},
+ 			{},
+-			ExperimentalChatView.#renderers[toolName],
++			presentationToolRenderers[toolName] ?? ExperimentalChatView.#renderers[toolName] ?? {},
+ 			this.#ui,
+ 			this.#cwd,
+ 		);
++		component.setExpanded(this.#toolsExpanded);
+ 		this.transcript.addChild(component);
+ 		this.#cards.push(component);
+ 		this.#tools.set(toolCallId, component);
+--- a/packages/coding-agent/src/experimental/client-tui.ts
++++ b/packages/coding-agent/src/experimental/client-tui.ts
+@@ -138,6 +138,7 @@
+ 		this.#chatInput.onEscape = () => this.#interrupt();
+ 		this.#chatInput.onCtrlD = finish;
+ 		this.#chatInput.onAction("app.clear", finish);
++		this.#chatInput.onAction("app.tools.expand", () => this.#chatView?.toggleTools());
+ 		this.#chatInput.onAction("app.model.select", () => void this.#executeSlashCommand("model", ""));
+ 		this.#chatInput.onAction("app.message.followUp", () => {
+ 			const text = this.#chatInput.getText().trim();
