@@ -59,6 +59,46 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     assert not (root / ".pi/packages/tspi").exists()
 
 
+@pytest.mark.parametrize("dangling", [False, True])
+def test_uninstall_removes_owned_stable_links(tmp_path: Path, dangling: bool) -> None:
+    root = tmp_path / "install"
+    package = root / ".pi/packages/tspi"
+    package.mkdir(parents=True)
+    if not dangling:
+        (package / "releases/old/agent").mkdir(parents=True)
+        (package / "current").symlink_to("releases/old")
+    (root / "current").symlink_to(".pi/packages/tspi/current")
+    (root / "bin").mkdir()
+    for name in ("ResearchAgent", "ResearchAgentServer"):
+        (root / "bin" / name).symlink_to(f"../current/agent/{name}")
+    external = tmp_path / "external"
+    external.write_text("keep")
+    (root / "bin/TSWeb").symlink_to(external)
+    (root / "bin/custom").write_text("keep")
+
+    uninstall(_args(root))
+
+    for name in ("current", "bin/ResearchAgent", "bin/ResearchAgentServer"):
+        assert not (root / name).is_symlink()
+    assert (root / "bin/TSWeb").is_symlink()
+    assert external.read_text() == "keep"
+    assert (root / "bin/custom").read_text() == "keep"
+
+
+def test_uninstall_does_not_follow_external_bin_directory(tmp_path: Path) -> None:
+    root = tmp_path / "install"
+    root.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    launcher = external / "ResearchAgent"
+    launcher.symlink_to(root / ".pi/packages/tspi/current/agent/ResearchAgent")
+    (root / "bin").symlink_to(external)
+
+    uninstall(_args(root))
+
+    assert launcher.is_symlink()
+
+
 def test_uninstall_uses_configured_external_workspace_root(tmp_path: Path) -> None:
     root = tmp_path / "install"
     (root / ".pi/packages/tspi").mkdir(parents=True)

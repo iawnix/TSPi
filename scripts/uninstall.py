@@ -277,6 +277,18 @@ def remove_service_units(args: argparse.Namespace, root: Path) -> list[str]:
 
 def remove_entrypoints(root: Path) -> list[str]:
     removed: list[str] = []
+    # Inspect stable links before removing current, including a dangling
+    # package-store pointer left by an interrupted or older uninstall.
+    stable_bin = root / "bin"
+    stable_links = []
+    if stable_bin.is_dir() and not stable_bin.is_symlink():
+        stable_links.extend(stable_bin / name for name in ENTRYPOINTS)
+    stable_links.append(root / "current")
+    package_home = (root / ".pi/packages/tspi").resolve()
+    for path in stable_links:
+        if path.is_symlink() and path.resolve(strict=False).is_relative_to(package_home):
+            path.unlink()
+            removed.append(str(path))
     for name in ENTRYPOINTS:
         path = root / name
         if path.is_symlink() or (path.is_file() and name in ENTRYPOINTS):
