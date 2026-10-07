@@ -16,12 +16,12 @@ export function formatTerminalFailure(error, {
   if (diagnostic) {
     return `${message}\n${diagnoseWorkerFailure(diagnostic)}\nPi Worker diagnostics (${diagnosticFile}):\n${diagnostic}`;
   }
-  const agentDir = resolve(installRoot, ".pi", "agent");
+  const agentDir = resolve(installRoot, "etc/pi");
   const modelsPath = resolve(agentDir, "models.json");
   const authPath = resolve(agentDir, "auth.json");
   const missing = [modelsPath, authPath].filter((path) => !fileExists(path));
   if (missing.length === 0) {
-    const location = diagnosticFile || `${installRoot}/.pi/app-server-host/worker-diagnostics.log`;
+    const location = diagnosticFile || `${installRoot}/var/log/worker-diagnostics.log`;
     return `${message}\nDiagnosis: the Pi Worker failed without returning details; inspect ${location} and restart the TSPi Host.`;
   }
   return (

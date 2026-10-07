@@ -314,10 +314,10 @@ broker or transport service.
 ## TSPi Lifecycle
 
 The `ts-app-server-tspi.service` unit invokes TSPi's Host entrypoint and creates
-installation state at `.pi/app-server-host/`, including one stable server ID,
+installation state at `var/state/host/`, including one stable server ID,
 the Host socket, SQLite sessions, receipts, scheduler leases, and Monitor health.
 The Pi App Server is the runtime owner below that Host. Its SQLite durable sessions
-are stored in `.pi/app-server-host/sessions/<workspace-id>/<session-id>/`; `meta.json`
+are stored in `var/state/pi/sessions/<workspace-id>/<session-id>/`; `meta.json`
 keeps `workspace_id`, `session_id`, and `cwd` together so routing uses identity
 while the agent loop still executes in the workspace directory. Workspace
 `.pi/sessions` files are outside the supported Native runtime boundary.

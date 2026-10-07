@@ -36,7 +36,7 @@ code 并完成 Host 注册。默认 Relay URL 是 `https://tsphone.iawnix.xyz`�
 因此安装时不要求公网反向代理已经完成；可以用 `TSPI_LINK_ENROLLMENT_URL` 覆盖本地兑换地址。
 非交互安装可使用 `--workspace-root /absolute/path`；默认值为
 `<install>/workspaces`。Host、终端、TS Web 和卸载器共享
-`.pi/tspi/workspace-root.json` 中记录的值。
+`etc/installation.json` 中记录的值。
 
 交互安装器中的 `Review and install` 会显示完整安装计划。按 Enter 或输入 `Y` 开始安装；
 输入 `N` 会返回配置菜单继续修改，尚未写入安装文件或启动服务。选择 `9) Quit` 才会退出
@@ -45,7 +45,7 @@ code 并完成 Host 注册。默认 Relay URL 是 `https://tsphone.iawnix.xyz`�
 发布通过以下选择器原子切换：
 
 ```text
-<install>/.pi/packages/tspi/current -> releases/<release-id>
+<install>/current -> releases/<release-id>
 ```
 
 只有选中的 release 会暴露给 `TSPi` 启动器；安装器记录校验和，不执行该 release
@@ -67,14 +67,14 @@ code 并完成 Host 注册。默认 Relay URL 是 `https://tsphone.iawnix.xyz`�
 
 字体安装在用户数据目录（`$XDG_DATA_HOME/fonts/tspi` 或
 `$HOME/.local/share/fonts/tspi`），所选 release 在
-`<install>/.pi/tspi/model-icons.json` 保存私有标记。无需另装 Nerd Font；其他图标沿用
+`<install>/etc/model-icons.json` 保存私有标记。无需另装 Nerd Font；其他图标沿用
 已有 Nerd Font，设置 `TSPI_ICON_STYLE=unicode` 时回退到普通 Unicode。安装器在可用时刷新
 fontconfig 缓存；已打开的终端可能需要重启才能加载回退字体。
 
 ## 受管 Python 运行时
 
-运行时位于 `<install>/.agents/envs/tspi`，元数据位于
-`<install>/.agents/runtime/tspi`；缓存位于 `<install>/.pi/runtime-cache`，可删除后
+Host Python 环境默认位于 `~/soft/tspi/host-envs/<installation-id>`，元数据位于
+`<install>/var/state/installation/python`；缓存位于 `<install>/var/cache`，可删除后
 重建而不会影响工作区。运行时探针会检查反应解析、ASE 热模型、几何和渲染。
 固定版本的 Pi 源码还需要模型数据和 workspace build 产物，缺失时运行：
 
@@ -118,14 +118,14 @@ TSPi 不会下载 Gaussian 或其他站点管理的本地化学软件，SSH 凭�
 
 ## 安装日志
 
-每次安装或更新都会在 `<install>/.pi/logs/install.YYYY.MM.DD.log` 保存仅所有者可读的诊断
+每次安装或更新都会在 `<install>/var/log/install.YYYY.MM.DD.log` 保存仅所有者可读的诊断
 日志。同一天重复运行会用 UTC 分隔线追加。日志记录安装器输出、所选路径、release 和服务
 状态、后端配置状态及失败详情，但不会记录 TS Web token、SMTP 授权码或 SSH 密钥。失败的
 package 步骤还会在同一目录保留独立的 `install-failure-<timestamp>.log`。
 
 ## 配置通知
 
-可选邮件通知配置在 `<install>/.pi/notifications.toml`，权限为 `0600`。启动 App Server
+可选邮件通知配置在 `<install>/etc/email.toml`，权限为 `0600`。启动 App Server
 前，启动器会验证收件人和传输方式；不创建该文件即可禁用通知。
 
 已有 ClawEmail 安装仍受支持。直接 SMTP 投递时必须使用 163 或 QQ 邮箱的 SMTP 授权码，
@@ -160,7 +160,7 @@ SMTP 预设默认使用 `smtp.163.com` 或 `smtp.qq.com`、465 端口和隐式 T
 `--email-preset custom --email-host mail.example.org`，并配合 `--email-port` 和
 `--email-security`。使用 `--email-password-env NAME` 时，若安装环境中存在该变量，安装器
 会创建私有 systemd `EnvironmentFile`；否则请在启动 Host 前创建
-`<install>/.pi/email/service.env`。使用私有的 `0600` `password_file` 可免去服务环境配置。
+`<install>/etc/secrets/service.env`。使用私有的 `0600` `password_file` 可免去服务环境配置。
 TSPi 通知只发送邮件，不需要 POP3 或 IMAP。
 
 ## 启动安装级 Host
@@ -206,18 +206,18 @@ Package release。
 
 ## ResearchAgent 与内部 App Server
 
-`ResearchAgent` 打开连接安装级 Agent Server 的终端。`ResearchAgentServer` 通过同一个
-canonical 启动器启动该服务：
+`ResearchAgent` 打开连接安装级 Agent Server 的终端。服务由 systemd 管理：
 
 ```bash
-./ResearchAgentServer
+systemctl --user start ts-app-server-tspi.service
 ```
 
-生成的 `ts-app-server-tspi.service` 也执行此命令；服务运行时不要启动第二份进程。
+生成的 unit 调用 `current/agent/libexec/research-agent-host` 内部入口，并明确设置安装根目录。
+不再提供公开的 `ResearchAgentServer` 命令。
 Host API、Pi SDK Harness、Monitor 和 session worker 都属于同一个 Agent Server。
 Pi 负责 Agent loop、模型/工具调用和持久 transcript，TSPi 负责研究策略与工具。
 
-固定的 Pi checkout 位于 `<install>/.pi/runtime-cache/pi/<commit>`。Session 存储由安装
+固定的 Pi checkout 位于 `<install>/runtimes/pi/<commit>`。Session 存储由安装
 统一管理；独立 runtime 注入、HTTP session store 和 `.pi/research-agent/server.json`
 配置已删除。
 
@@ -233,8 +233,8 @@ Pi 负责 Agent loop、模型/工具调用和持久 transcript，TSPi 负责研�
 ./ResearchAgent --workspace reaction-a -c
 ```
 
-Host 身份位于 `<install>/.pi/app-server-host/server-id`；请求回执、scheduler lease、
-Monitor 健康状态和规范 Pi SQLite durable session repository 也位于同一目录。每个会话存储在 `.pi/app-server-host/sessions/<workspace-id>/<session-id>/`，目录中有 `meta.json` 和 `session.sqlite`；元数据保存 `workspace_id`、`session_id` 和 `cwd`，因此 agent loop 继续在 workspace 目录执行。Native Pi
+Host 身份位于 `<install>/var/state/host/server-id`；请求回执、scheduler lease、
+Monitor 健康状态和规范 Pi SQLite durable session repository 也位于同一目录。每个会话存储在 `var/state/pi/sessions/<workspace-id>/<session-id>/`，目录中有 `meta.json` 和 `session.sqlite`；元数据保存 `workspace_id`、`session_id` 和 `cwd`，因此 agent loop 继续在 workspace 目录执行。Native Pi
 Harness 不接受 workspace `.pi/sessions`。
 工作区必须是配置的 workspace root 下、经过验证的直接子目录。
 
@@ -246,7 +246,7 @@ TS Phone 通过 TSPi Link 连接该 Host。安装时启用 Phone access，并提
 origin 和 Relay 管理员创建的一次性 Host enrollment code。交互式安装会在耗时的运行时安装
 完成后、写入 Phone manifest 前才询问这个短期 code，避免安装超过 code 有效期；非交互式安装
 仍通过 `--link-enrollment-code` 直接提供。安装器写入
-`.pi/app-server-host/link.json` 及仅所有者可读的 `.pi/app-server-host/host.token`；Host
+`var/state/host/link.json` 及仅所有者可读的 `var/state/host/host.token`；Host
 只向 Relay 建立出站 WSS，不会向 Relay 或互联网暴露 App Server 端口。
 
 如果本机已经单独安装了 Relay，设置 `TSPI_WITH_LINK_RELAY=false`，安装器会优先读取已知目录（包括
@@ -283,7 +283,7 @@ Host 上线后使用以下命令管理 Phone 授权：
   --ssh-option=-i --ssh-option=/home/user/.ssh/id_ed25519
 ```
 
-配置会写入 owner-only 的 `.pi/tspi/remote-host.json`；命令行显式参数只覆盖当前一次启动。
+配置会写入 owner-only 的 `etc/remote-host.json`；命令行显式参数只覆盖当前一次启动。
 
 `phone pair` 输出已配置的 Relay URL 和八位配对码。配对码五分钟后失效且只能使用一次；TS
 Phone 将其兑换为平台安全存储中的可撤销设备凭据。Phone 凭据、Host token 和 TS Web HTTP
@@ -304,7 +304,7 @@ workspace 内写入 registration、event 和 delivery 回执。`monitor/list`、
 
 ## 会话历史
 
-Native Pi Harness 只接受安装级 `.pi/app-server-host/sessions/` 下的 SQLite durable session。
+Native Pi Harness 只接受安装级 `var/state/pi/sessions/` 下的 SQLite durable session。
 旧 workspace 历史文件不会导入或恢复；研究连续性应保存在 Research Memory，而不是第二套
 session 格式。
 
@@ -321,8 +321,8 @@ session 格式。
 
 ```bash
 ./TSWeb serve \
-  --state-dir .pi/ts-web-state \
-  --auth-token-file "$HOME/.local/share/tspi/.pi/ts-web/auth.token" \
+  --state-dir var/state/web \
+  --auth-token-file "$HOME/.local/share/tspi/etc/web/auth.token" \
   --source-root /configured/workspace-root/reaction-a \
   --label "Reaction A" --host 127.0.0.1 --port 8766
 ```
@@ -340,7 +340,7 @@ token 文件不存在时，安装器会生成随机 TS Web token。也可以传�
 
 模型目录和 API adapter 由固定 Pi release 提供。安装时，安装器会把 Host 服务账户
 `~/.pi/agent/` 中已有且安装目录缺失的 `models.json` 与 `auth.json` 复制到私有安装状态
-`<install>/.pi/agent/`；升级不会覆盖安装目录中已有的文件。如果没有可导入的配置，必须先
+`<install>/etc/pi/`；升级不会覆盖安装目录中已有的文件。如果没有可导入的配置，必须先
 通过 Pi 或 provider 环境变量配置凭据，再创建 TSPi 会话。终端、TS Phone 和其他客户端连接
 同一 session，因此共享模型和工具集合；模型兼容性见
 [模型兼容性](MODEL_COMPATIBILITY.zh-CN.md)。
@@ -348,12 +348,12 @@ token 文件不存在时，安装器会生成随机 TS Web token。也可以传�
 ## 升级、回滚和恢复
 
 再次运行 `./install.sh` 并选择相同安装根目录。安装器下载或构建新的 content-addressed release，
-验证 package inventory，再原子切换 `.pi/packages/tspi/current`。已有 workspace、App Server
+验证 package inventory，再原子切换 `current`。已有 workspace、App Server
 identity 和 TS Web credential 会保留。
 启动器会把固定 Pi checkout 作为 Native client 使用的内部变量 `TSPI_PI_RUNTIME_ROOT` 导出，用户不应
 手工设置它。如果旧 release 报告 `TSPI_PI_RUNTIME_ROOT is required for the native Pi client`，请升级
 该安装；修复后的启动器会根据 `config/pi-source.json` 自动选择
-`<install>/.pi/runtime-cache/pi` 中的固定 checkout。
+`<install>/runtimes/pi` 中的固定 checkout。
 
 升级失败时，安装器会事务性恢复旧 release、launcher、runtime manifest、凭据、backend 文件、
 Phone manifest 和受管 service unit。当前 CLI 没有单独的 rollback selector；要切换到旧版本，
@@ -365,7 +365,7 @@ Phone manifest 和受管 service unit。当前 CLI 没有单独的 rollback sele
 Attempt 状态。终端或 Phone 重连时首先接收新的 session snapshot；传输失败且结果不确定时，prompt
 不会自动重发。
 
-查看 `<install>/.pi/logs/` 中最新的安装日志，并按安装时的 scope 检查服务：
+查看 `<install>/var/log/` 中最新的安装日志，并按安装时的 scope 检查服务：
 
 ```bash
 systemctl --user status ts-app-server-tspi.service  # user scope

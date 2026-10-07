@@ -129,10 +129,10 @@ alias translation.
 
 ## Session storage
 
-The installation-level `.pi/app-server-host/sessions/` tree is the only
+The installation-level `var/state/pi/sessions/` tree is the only
 session store used by Native Pi Harness. Workspace `.pi/sessions` history is not a
 supported input and is neither resumed nor imported by the Native runtime. Durable
-history lives in `.pi/app-server-host/sessions/<workspace-id>/<session-id>/session.sqlite`;
+history lives in `var/state/pi/sessions/<workspace-id>/<session-id>/session.sqlite`;
 metadata is in the adjacent `meta.json`. Keep research state in the workspace
 Research Memory and use the Host session controls for SQLite durable sessions.
 

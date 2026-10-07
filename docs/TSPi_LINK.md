@@ -60,7 +60,7 @@ node /opt/tspi-link-relay/current/service/cli.mjs enrollment create \
 
 Run the TSPi installer on the Host, select `TSPi Link Relay` Phone access, and enter
 the Relay URL and enrollment code. The installer stores the Host credential in
-`.pi/app-server-host/host.token` with owner-only permissions. The Host service
+`var/state/host/host.token` with owner-only permissions. The Host service
 then maintains the outbound Link connection automatically.
 
 ## Pair And Revoke Phones

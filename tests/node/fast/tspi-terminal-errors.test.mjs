@@ -11,8 +11,8 @@ test("missing installation model configuration explains Pi's opaque startup fail
 
   assert.match(message, /^Internal server error\n/);
   assert.match(message, /Missing Pi configuration/);
-  assert.match(message, /\/home\/test\/tspi\/\.pi\/agent\/models\.json/);
-  assert.match(message, /\/home\/test\/tspi\/\.pi\/agent\/auth\.json/);
+  assert.match(message, /\/home\/test\/tspi\/etc\/pi\/models\.json/);
+  assert.match(message, /\/home\/test\/tspi\/etc\/pi\/auth\.json/);
   assert.match(message, /restart the TSPi Host/);
 });
 
@@ -26,7 +26,7 @@ test("terminal failures include a diagnostic location when Pi configuration exis
   assert.match(formatTerminalFailure(new Error("Internal server error"), {
     installRoot: "/home/test/tspi",
     fileExists: (path) => path.endsWith("models.json"),
-  }), /Missing Pi configuration: \/home\/test\/tspi\/\.pi\/agent\/auth\.json/);
+  }), /Missing Pi configuration: \/home\/test\/tspi\/etc\/pi\/auth\.json/);
   assert.equal(formatTerminalFailure(new Error("connection failed"), {
     installRoot: "/home/test/tspi",
     fileExists: () => false,
@@ -36,7 +36,7 @@ test("terminal failures include a diagnostic location when Pi configuration exis
 test("worker diagnostics identify the Pi Durable details context mismatch", () => {
   const message = formatTerminalFailure(new Error("Internal server error"), {
     installRoot: "/home/test/tspi",
-    diagnosticFile: "/home/test/tspi/.pi/app-server-host/worker-diagnostics.log",
+    diagnosticFile: "/home/test/tspi/var/log/worker-diagnostics.log",
     fileExists: () => true,
     readFile: () => "TypeError: Cannot read properties of undefined (reading 'abortSignal')\n",
   });
@@ -48,7 +48,7 @@ test("worker diagnostics identify the Pi Durable details context mismatch", () =
 test("worker diagnostics identify stale durable session locks", () => {
   const message = formatTerminalFailure(new Error("Internal server error"), {
     installRoot: "/home/test/tspi",
-    diagnosticFile: "/home/test/tspi/.pi/app-server-host/worker-diagnostics.log",
+    diagnosticFile: "/home/test/tspi/var/log/worker-diagnostics.log",
     fileExists: () => true,
     readFile: () => "Error: Unable to update lock within the stale threshold\n",
   });
@@ -60,7 +60,7 @@ test("worker diagnostics identify stale durable session locks", () => {
 test("worker diagnostics are surfaced for opaque Pi startup failures", () => {
   const message = formatTerminalFailure(new Error("Internal server error"), {
     installRoot: "/home/test/tspi",
-    diagnosticFile: "/home/test/tspi/.pi/app-server-host/worker-diagnostics.log",
+    diagnosticFile: "/home/test/tspi/var/log/worker-diagnostics.log",
     fileExists: () => true,
     readFile: () => "Error: provider auth failed\n    at worker (worker.ts:42)\n",
   });

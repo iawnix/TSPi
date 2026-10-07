@@ -48,7 +48,7 @@ public reverse proxy need not be ready during installation. Override this with
 
 For non-interactive installation, `--workspace-root /absolute/path` selects the
 directory containing named projects. The default is `<install>/workspaces`.
-The installer records it in `.pi/tspi/workspace-root.json`; the Host, terminal,
+The installer records it in `etc/installation.json`; the Host, terminal,
 TS Web service, and uninstaller consume that same value.
 
 In the interactive installer, `Review and install` displays the complete installation plan.
@@ -59,7 +59,7 @@ Choose `9) Quit` to leave the installer without installing.
 The package is selected atomically through:
 
 ```text
-<install>/.pi/packages/tspi/current -> releases/<release-id>
+<install>/current -> releases/<release-id>
 ```
 
 Only the selected release is exposed by the `TSPi` launcher. The installer
@@ -80,7 +80,7 @@ requested:
 Use `--without-model-icons` to leave the optional component disabled. The font
 is installed under the user data directory (`$XDG_DATA_HOME/fonts/tspi`, or
 `$HOME/.local/share/fonts/tspi`) and the selected release records a private
-marker at `<install>/.pi/tspi/model-icons.json`. It is not necessary to install
+marker at `<install>/etc/model-icons.json`. It is not necessary to install
 Nerd Font: TSPi falls back to the existing Nerd Font glyphs for other icons and
 to ordinary Unicode when `TSPI_ICON_STYLE=unicode` is set. An explicit
 `TSPI_ICON_STYLE=nerd` or `unicode` always overrides the installer choice.
@@ -91,9 +91,9 @@ already-open terminals may need to be restarted to reload their fallback fonts.
 
 ## Managed Python Runtime
 
-The scientific runtime is created below `<install>/.agents/envs/tspi` and its
-metadata below `<install>/.agents/runtime/tspi`. Runtime caches are private
-under `<install>/.pi/runtime-cache`; they can be removed and recreated without
+Host Python environments default to `~/soft/tspi/host-envs/<installation-id>` and its
+metadata below `<install>/var/state/installation/python`. Runtime caches are private
+under `<install>/var/cache`; they can be removed and recreated without
 touching workspace data.
 
 The scientific runtime probe executes reaction parsing and an ASE thermal-model
@@ -150,7 +150,7 @@ the mobile client.
 ## Installation Logs
 
 Every install or update keeps an owner-only diagnostic log at
-`<install>/.pi/logs/install.YYYY.MM.DD.log`. Repeated runs on the same day are
+`<install>/var/log/install.YYYY.MM.DD.log`. Repeated runs on the same day are
 appended with a UTC run separator. The log records installer output, selected
 paths, release and service status, backend configuration status, and failure
 details, but never prints TS Web tokens, SMTP authorization codes, or SSH keys.
@@ -159,7 +159,7 @@ Failed package steps also retain a separate
 
 ## Configure Notifications
 
-Optional email notifications are configured in `<install>/.pi/notifications.toml`
+Optional email notifications are configured in `<install>/etc/email.toml`
 with mode 0600. The launcher validates the recipient and selected transport
 before the App Server starts. Disable notifications by omitting the file.
 
@@ -201,7 +201,7 @@ TLS by default. A different SMTP server can be configured with
 `--email-preset custom --email-host mail.example.org`, plus `--email-port` and
 `--email-security`. With `--email-password-env NAME`, the installer
 creates a private systemd `EnvironmentFile` when NAME is present in the install
-environment; otherwise create `<install>/.pi/email/service.env` before starting
+environment; otherwise create `<install>/etc/secrets/service.env` before starting
 the Host. A private 0600 `password_file` avoids service-environment setup.
 POP3 and IMAP are not required for TSPi notifications because this capability
 only sends mail.
@@ -250,18 +250,18 @@ Flutter client and does not create a service on the installation host.
 ## ResearchAgent And The Internal App Server
 
 `ResearchAgent` opens a terminal connected to the installation Agent Server.
-`ResearchAgentServer` starts that same server through the canonical launcher:
+Manage that server through systemd:
 
 ```bash
-./ResearchAgentServer
+systemctl --user start ts-app-server-tspi.service
 ```
 
-The generated `ts-app-server-tspi.service` invokes this command. Do not start
-another copy while that service is running. Host API, Pi SDK Harness, Monitor,
+The generated unit invokes the private `current/agent/libexec/research-agent-host`
+entrypoint with an explicit installation root. There is no public `ResearchAgentServer` command. Host API, Pi SDK Harness, Monitor,
 and session workers belong to this one Agent Server. Pi owns the Agent loop,
 model/tool calls and durable transcripts; TSPi supplies research policy and tools.
 
-The fixed Pi checkout lives at `<install>/.pi/runtime-cache/pi/<commit>`.
+The fixed Pi checkout lives at `<install>/runtimes/pi/<commit>`.
 Session storage is installation-owned; separate runtime injection, HTTP session
 stores and `.pi/research-agent/server.json` configuration have been removed.
 
@@ -277,9 +277,9 @@ Create a new conversation or continue the latest conversation in a project:
 ./ResearchAgent --workspace reaction-a -c
 ```
 
-The Host identity is `<install>/.pi/app-server-host/server-id`; request receipts,
+The Host identity is `<install>/var/state/host/server-id`; request receipts,
 scheduler leases, Monitor health, and the canonical Pi SQLite durable session repository
-live below the same directory. Each session is stored under `.pi/app-server-host/sessions/<workspace-id>/<session-id>/` with `meta.json` and `session.sqlite`. Workspace `.pi/sessions` files are not accepted by
+live below the same directory. Each session is stored under `var/state/pi/sessions/<workspace-id>/<session-id>/` with `meta.json` and `session.sqlite`. Workspace `.pi/sessions` files are not accepted by
 Native Pi Harness. A workspace is restricted to a validated direct child of the
 configured workspace root.
 
@@ -294,8 +294,8 @@ enrollment code created by the Link Relay administrator. Interactive installs
 ask for this short-lived code after the long runtime installation, immediately
 before writing the Phone manifest, so it cannot expire mid-install. Non-interactive
 installs still provide it with `--link-enrollment-code`. The installer writes
-`.pi/app-server-host/link.json` and the owner-only
-`.pi/app-server-host/host.token`. The Host then maintains an outbound WSS
+`var/state/host/link.json` and the owner-only
+`var/state/host/host.token`. The Host then maintains an outbound WSS
 connection; no App Server port is exposed to the Relay or Internet.
 
 When a Relay is already installed locally, set `TSPI_WITH_LINK_RELAY=false`.
@@ -340,7 +340,7 @@ invocations:
   --ssh-option=-i --ssh-option=/home/user/.ssh/id_ed25519
 ```
 
-It writes the owner-only `.pi/tspi/remote-host.json` profile. Command-line
+It writes the owner-only `etc/remote-host.json` profile. Command-line
 values supplied to `ResearchAgent` override that profile for one launch.
 
 `phone pair` prints the configured TSPi Link Relay URL and an eight-character code that
@@ -370,7 +370,7 @@ Research State, local runs, and remote calculation intents; there is no separate
 ## Session history
 
 Native Pi Harness accepts only installation-level SQLite durable sessions under
-`.pi/app-server-host/sessions/`. Legacy workspace history files are not imported
+`var/state/pi/sessions/`. Legacy workspace history files are not imported
 or resumed. Preserve scientific continuity in Research Memory rather than in a
 second session format.
 
@@ -390,8 +390,8 @@ If TS Web was selected, start it with:
 
 ```bash
 ./TSWeb serve \
-  --state-dir .pi/ts-web-state \
-  --auth-token-file "$HOME/.local/share/tspi/.pi/ts-web/auth.token" \
+  --state-dir var/state/web \
+  --auth-token-file "$HOME/.local/share/tspi/etc/web/auth.token" \
   --source-root /configured/workspace-root/reaction-a \
   --label "Reaction A" --host 127.0.0.1 --port 8766
 ```
@@ -417,7 +417,7 @@ non-support boundary for SeedDance/Seedream are listed in
 
 During installation, the installer copies any missing `models.json` and
 `auth.json` from the Host service account's `~/.pi/agent/` into the private
-installation state at `<install>/.pi/agent/`. Existing installation-local files
+installation state at `<install>/etc/pi/`. Existing installation-local files
 are preserved on upgrades. If no files are available, configure provider
 credentials through Pi or provider environment variables before creating a
 TSPi session.
@@ -426,12 +426,12 @@ TSPi session.
 
 Run `./install.sh` again and choose the same installation root. The installer
 downloads or builds a new content-addressed release, validates its package
-inventory, and switches `.pi/packages/tspi/current` atomically. Existing
+inventory, and switches `current` atomically. Existing
 workspaces, App Server identities, and TS Web credentials are retained.
 The launcher exports the pinned Pi checkout as the internal `TSPI_PI_RUNTIME_ROOT`
 variable for the Native client; users should not set it manually. If an older
 release reports `TSPI_PI_RUNTIME_ROOT is required for the native Pi client`, upgrade
-the installation so the launcher can select `<install>/.pi/runtime-cache/pi`
+the installation so the launcher can select `<install>/runtimes/pi`
 from `config/pi-source.json`.
 
 ## Rollback
@@ -453,7 +453,7 @@ normally interrupt them; check the calculation status after recovery. A
 terminal or phone reconnect first receives a fresh session snapshot; prompts
 are never resent automatically after an uncertain transport failure.
 
-Inspect the latest installer log under `<install>/.pi/logs/` and verify with the
+Inspect the latest installer log under `<install>/var/log/` and verify with the
 scope selected during installation:
 
 ```bash

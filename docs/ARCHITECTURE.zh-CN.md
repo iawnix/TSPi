@@ -236,7 +236,7 @@ TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、
 
 ## App Server 生命周期
 
-`ts-app-server-tspi.service` 调用 TSPi Host 入口，在 `.pi/app-server-host/` 创建安装级
+`ts-app-server-tspi.service` 调用 TSPi Host 入口，在 `var/state/host/` 创建安装级
 状态，包括稳定 server ID、Host socket、SQLite durable session repository、请求回执、
 scheduler lease 和 Monitor 健康文件。`tspi.workspace-directory` 只暴露包含受支持
 `workspace_manifest.json` 及规范研究状态三元组的 workspace。

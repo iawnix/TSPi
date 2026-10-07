@@ -29,7 +29,7 @@ def provision_service_credentials(
     root = expanded_root.resolve()
     specifications: list[tuple[str, Path]] = []
     if with_web:
-        token = web_token_path.expanduser() if web_token_path is not None else root / ".pi" / "ts-web" / "auth.token"
+        token = web_token_path.expanduser() if web_token_path is not None else root / "etc/web" / "auth.token"
         if not token.is_absolute():
             raise ValueError("TS Web token path must be an absolute path inside the installation root")
         if token.is_symlink():
@@ -45,7 +45,7 @@ def provision_service_credentials(
 
     directories: list[Path] = []
     for _, path in specifications:
-        for directory in (root / ".pi", path.parent):
+        for directory in (root / "etc", path.parent):
             if directory not in directories:
                 directories.append(directory)
     for directory in directories:

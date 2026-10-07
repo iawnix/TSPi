@@ -77,9 +77,9 @@ SMTP_PRESETS = {
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 WEB_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
 SERVICE_CONFIG_SCHEMA = "tspi-service/1"
-SERVICE_CONFIG_RELATIVE = Path(".pi/tspi/service.json")
+SERVICE_CONFIG_RELATIVE = Path("etc/installation.json")
 REMOTE_HOST_CONFIG_SCHEMA = "tspi-remote-host/1"
-REMOTE_HOST_CONFIG_RELATIVE = Path(".pi/tspi/remote-host.json")
+REMOTE_HOST_CONFIG_RELATIVE = Path("etc/remote-host.json")
 PI_AGENT_CONFIG_FILES = ("models.json", "auth.json")
 PI_AGENT_CONFIG_MAX_BYTES = 2 * 1024 * 1024
 DEFAULT_SERVICE_SCOPE = "user"
@@ -158,8 +158,8 @@ def require_preflight(checks: list[dict[str, object]], *, require_conda: bool = 
 
 
 def inspect_installation(root: Path) -> dict[str, str | None]:
-    package_home = root / ".pi/packages/tspi"
-    state_path = package_home / "install-state.json"
+    package_home = root
+    state_path = root / "var/state/installation/install-state.json"
     try:
         metadata = read_installation_metadata(root)
     except ValueError as error:
@@ -167,7 +167,7 @@ def inspect_installation(root: Path) -> dict[str, str | None]:
     if not metadata["state_present"]:
         if metadata["owned"]:
             return {"operation": "restore", "release_id": None}
-        tspi_like = [root / "ResearchAgent", root / "current", root / "bin", package_home]
+        tspi_like = [root / "ResearchAgent", root / "current", root / "bin", root / "releases"]
         if any(path.exists() or path.is_symlink() for path in tspi_like):
             raise RuntimeError(
                 f"installation-like files exist without trusted package state in {root}; "
@@ -224,14 +224,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--web-auth-token",
         help="Explicit TS Web token (8-100 URL-safe characters; prefer --web-auth-token-file for secrets).",
     )
-    parser.add_argument("--job-config", help="Unified job.toml to install as .pi/job.toml.")
+    parser.add_argument("--job-config", help="Unified job.toml to install as etc/job.toml.")
     parser.add_argument(
         "--agent-config-dir",
         help="Directory containing installation-owned Pi models.json and auth.json.",
     )
     parser.add_argument(
         "--name-resolver-config",
-        help="Deterministic chemical name resolver TOML to install as .pi/name-resolver.toml.",
+        help="Deterministic chemical name resolver TOML to install as etc/name-resolver.toml.",
     )
     parser.add_argument("--conda-root")
     parser.add_argument("--allow-dirty", action="store_true", help="Allow a dirty local source checkout for validation installs.")
@@ -335,7 +335,7 @@ def interactive_options(args: argparse.Namespace) -> argparse.Namespace:
             "TSPi Link Relay URL",
             args.link_url or (existing_link[0] if existing_link else ""),
         ).strip()
-        token_exists = (Path(args.install_root) / ".pi/app-server-host/host.token").is_file()
+        token_exists = (Path(args.install_root) / "var/state/host/host.token").is_file()
         enrolled_for_url = token_exists and existing_link is not None and args.link_url.rstrip("/") == existing_link[0]
         if not enrolled_for_url and args.link_enrollment_code is None:
             # The package/runtime installation can take longer than the
@@ -362,26 +362,26 @@ def _load_existing_menu_defaults(args: argparse.Namespace) -> None:
     if args.workspace_root is None:
         args.workspace_root = str(read_workspace_root(root))
     if args.with_web is None:
-        args.with_web = (root / "TSWeb").exists() or not (root / ".pi/packages/tspi/install-state.json").is_file()
+        args.with_web = (root / "TSWeb").exists() or not (root / "var/state/installation/install-state.json").is_file()
     if args.web_port is None:
         args.web_port = 8766
     if args.with_model_icons is None:
-        marker = root / ".pi/tspi/model-icons.json"
+        marker = root / "etc/model-icons.json"
         try:
             document = json.loads(marker.read_text(encoding="utf-8"))
             args.with_model_icons = bool(document.get("enabled")) if isinstance(document, dict) else False
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            args.with_model_icons = not (root / ".pi/packages/tspi/install-state.json").is_file()
+            args.with_model_icons = not (root / "var/state/installation/install-state.json").is_file()
     if args.phone_access is None:
         args.phone_access = "link" if _existing_link_configuration(root) or _discover_relay(args) else "disabled"
     if args.link_url is None:
         existing_link = _existing_link_configuration(root)
         args.link_url = existing_link[0] if existing_link else _discover_relay_url(args)
-    service_config = root / ".pi/tspi/service.json"
+    service_config = root / "etc/installation.json"
     if args.service_scope is None:
         try:
             document = json.loads(service_config.read_text(encoding="utf-8"))
-            scope = document.get("scope") if isinstance(document, dict) else None
+            scope = document.get("service", {}).get("scope") if isinstance(document, dict) else None
             # An older installation may have recorded ``none``.  Since the
             # terminal is Host-mediated now, migrate that state to the
             # default user service on the next normal installer run.
@@ -428,7 +428,7 @@ def _load_existing_remote_host_defaults(args: argparse.Namespace, root: Path) ->
 
 
 def _load_existing_email_defaults(args: argparse.Namespace, root: Path) -> None:
-    config = root / ".pi/notifications.toml"
+    config = root / "etc/email.toml"
     try:
         document = tomllib.loads(config.read_text(encoding="utf-8"))
         email = document.get("notifications", {}).get("email", {})
@@ -461,9 +461,9 @@ def _menu_choice(args: argparse.Namespace) -> str:
     field("TS Web", "enabled" if args.with_web else "disabled")
     field("Phone", "Link Relay" if args.phone_access == "link" else "disabled")
     field("Services", args.service_scope or "none")
-    field("Email", args.email_binding or ("configured" if (root / ".pi/notifications.toml").is_file() else "not configured"))
-    field("Job platform", "configured" if (root / ".pi/job.toml").is_file() else "not configured")
-    field("Chemical name resolver", "configured" if (root / ".pi/name-resolver.toml").is_file() else "not configured")
+    field("Email", args.email_binding or ("configured" if (root / "etc/email.toml").is_file() else "not configured"))
+    field("Job platform", "configured" if (root / "etc/job.toml").is_file() else "not configured")
+    field("Chemical name resolver", "configured" if (root / "etc/name-resolver.toml").is_file() else "not configured")
     print()
     print("  1) Installation and workspace")
     print("  2) TS Web")
@@ -530,7 +530,7 @@ def _configure_menu_phone(args: argparse.Namespace) -> None:
     args.phone_access = "link"
     existing_link = _existing_link_configuration(Path(args.install_root))
     args.link_url = ask("TSPi Link Relay URL", args.link_url or (existing_link[0] if existing_link else "")).strip()
-    token_file = Path(args.install_root) / ".pi/app-server-host/host.token"
+    token_file = Path(args.install_root) / "var/state/host/host.token"
     enrolled_for_url = token_file.is_file() and existing_link is not None and args.link_url.rstrip("/") == existing_link[0]
     if not enrolled_for_url:
         args.link_enrollment_code = None
@@ -617,7 +617,7 @@ def configure_email_interactively(args: argparse.Namespace, *, force: bool = Fal
     args.__dict__.pop("_email_password", None)
     args.__dict__.pop("_clear_email", None)
     root = Path(args.install_root)
-    existing = root / ".pi" / "notifications.toml"
+    existing = root / "etc/email.toml"
     prompt = "Reconfigure email notifications" if existing.is_file() else "Configure email notifications"
     if not ask_yes_no(prompt, False):
         if force and existing.is_file() and ask_yes_no("Disable email notifications", False):
@@ -649,7 +649,7 @@ def configure_email_interactively(args: argparse.Namespace, *, force: bool = Fal
         args.email_password_env = ask("Password environment variable", "TSPI_EMAIL_PASSWORD")
         args.email_password_file = None
         return
-    default_password_file = root / ".pi" / "email" / "smtp-password"
+    default_password_file = root / "etc/secrets" / "smtp-password"
     args.email_password_env = None
     args.email_password_file = ask("SMTP authorization-code file", getattr(args, "email_password_file", None) or str(default_password_file))
     password_path = Path(args.email_password_file).expanduser()
@@ -719,7 +719,7 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
     field("Molecular rendering", "install and verify (xyzrender, Matplotlib)", tone="success")
     field("Pi App Server", "install pinned runtime and verify", tone="success")
     field("Local backend policy", "core Python/runtime only; native tools must be selected explicitly", tone="muted")
-    field("Job platform config", args.job_config or "preserve <install>/.pi/job.toml if present", tone="muted")
+    field("Job platform config", args.job_config or "preserve <install>/etc/job.toml if present", tone="muted")
     field(
         "Chemical name resolver config",
         args.name_resolver_config or "bundled PubChem default for a new install; preserve existing otherwise",
@@ -738,7 +738,7 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
         else:
             configuration = (
                 "preserve existing"
-                if (Path(args.install_root) / ".pi/notifications.toml").is_file()
+                if (Path(args.install_root) / "etc/email.toml").is_file()
                 else "not configured"
             )
         field("Configuration", configuration, tone="muted")
@@ -763,8 +763,8 @@ def show_install_plan(args: argparse.Namespace, installation: dict[str, str | No
         field("Launcher", root / "TSWeb")
         field("Listen", f"http://{args.web_host}:{args.web_port}")
         field("Workspace root", args.workspace_root)
-        field("State directory", root / ".pi/ts-web-state")
-        token_path = Path(args.web_auth_token_file).expanduser() if args.web_auth_token_file else root / ".pi/ts-web/auth.token"
+        field("State directory", root / "var/state/web")
+        token_path = Path(args.web_auth_token_file).expanduser() if args.web_auth_token_file else root / "etc/web/auth.token"
         field("HTTP token", _planned_credential(token_path))
         field(
             "Service",
@@ -924,7 +924,7 @@ def validate_options(args: argparse.Namespace) -> None:
         args.link_url = _validate_link_url(args.link_url)
         if args.link_enrollment_url:
             args.link_enrollment_url = _validate_link_url(args.link_enrollment_url)
-        token_file = Path(args.install_root) / ".pi/app-server-host/host.token"
+        token_file = Path(args.install_root) / "var/state/host/host.token"
         enrolled_for_url = token_file.is_file() and existing_link is not None and existing_link[0] == args.link_url
         if not enrolled_for_url and not args.link_enrollment_code and not getattr(args, "_defer_link_enrollment", False):
             raise ValueError("--link-enrollment-code is required when enrolling a new TSPi Host")
@@ -952,7 +952,7 @@ def _validate_workspace_root(value: object, install_root: Path) -> Path:
         or resolved in install.parents
     ):
         raise ValueError("--workspace-root must be a dedicated directory")
-    for protected in (install / ".pi", install / ".agents"):
+    for protected in (install / "etc", install / "var", install / "runtimes", install / "releases"):
         if resolved == protected or protected in resolved.parents:
             raise ValueError("--workspace-root cannot be inside installation control or runtime state")
     if resolved.exists() and not resolved.is_dir():
@@ -993,11 +993,8 @@ def configure_service_runtime(args: argparse.Namespace) -> dict[str, str | None]
         "scope": scope,
         "runtime_dir": runtime_dir,
     }
-    destination = root / SERVICE_CONFIG_RELATIVE
-    _write_private_config_bytes(
-        (json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8"),
-        destination,
-    )
+    from tspi_foundation.layout import paths
+    destination = paths(root).update_config(service=document)
     return {"status": "configured", "path": str(destination), "scope": scope, "runtime_dir": runtime_dir}
 
 
@@ -1024,7 +1021,7 @@ def configure_remote_host(args: argparse.Namespace) -> dict[str, object]:
 
 
 def _existing_link_configuration(root: Path) -> tuple[str, str] | None:
-    manifest = root / ".pi/app-server-host/link.json"
+    manifest = root / "var/state/host/link.json"
     if not manifest.is_file() or manifest.is_symlink():
         return None
     try:
@@ -1063,7 +1060,7 @@ def _link_host_enrolled_for_url(args: argparse.Namespace) -> bool:
         return False
     root = Path(args.install_root)
     existing = _existing_link_configuration(root)
-    token_file = root / ".pi/app-server-host/host.token"
+    token_file = root / "var/state/host/host.token"
     return token_file.is_file() and existing is not None and existing[0] == args.link_url.rstrip("/")
 
 
@@ -1199,7 +1196,7 @@ def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
     """Write installation-owned notification configuration without exposing secrets."""
 
     root = Path(args.install_root).expanduser().resolve()
-    config_path = root / ".pi" / "notifications.toml"
+    config_path = root / "etc/email.toml"
     if getattr(args, "_clear_email", False):
         if config_path.is_symlink():
             raise ValueError(f"notification file cannot be a symbolic link: {config_path}")
@@ -1246,7 +1243,7 @@ def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
     if args.email_password_env is not None:
         lines.append(f"password_env = {_toml_string(args.email_password_env)}")
         credential = args.email_password_env
-        env_path = root / ".pi" / "email" / "service.env"
+        env_path = root / "etc/secrets" / "service.env"
         value = os.environ.get(args.email_password_env)
         if value:
             escaped = value.replace("\\", "\\\\").replace('"', '\\"')
@@ -1262,7 +1259,7 @@ def configure_notification_config(args: argparse.Namespace) -> dict[str, str]:
         "binding": "smtp",
         "preset": args.email_preset,
         "credential": credential,
-        "environment_file": str(root / ".pi" / "email" / "service.env") if args.email_password_env else None,
+        "environment_file": str(root / "etc/secrets" / "service.env") if args.email_password_env else None,
         "path": str(config_path),
     }
 
@@ -1541,15 +1538,15 @@ def configure_backend_configs(args: argparse.Namespace) -> dict[str, dict[str, s
     if job_config:
         result["job"] = _copy_private_config(
             job_config,
-            root / ".pi" / "job.toml",
+            root / "etc/job.toml",
             kind="job",
         )
     else:
-        destination = root / ".pi" / "job.toml"
+        destination = root / "etc/job.toml"
         result["job"] = {"status": "preserved" if destination.is_file() else "not_configured", "path": str(destination)}
 
     resolver_config = getattr(args, "name_resolver_config", None)
-    resolver_destination = root / ".pi" / "name-resolver.toml"
+    resolver_destination = root / "etc/name-resolver.toml"
     if resolver_config:
         result["name_resolver"] = _copy_private_config(
             resolver_config,
@@ -1604,8 +1601,8 @@ def run_logged_install(
     show_progress: bool = True,
 ) -> dict[str, object]:
     install_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    pi_root = install_root / ".pi"
-    log_root = pi_root / "logs"
+    pi_root = install_root / "var"
+    log_root = pi_root / "log"
     for directory in (pi_root, log_root):
         if directory.exists() or directory.is_symlink():
             if directory.is_symlink() or not directory.is_dir():
@@ -1698,8 +1695,8 @@ def _install_log_path(install_root: Path, *, now: datetime | None = None) -> Pat
     """Return the owner-only, date-addressable installer log path."""
 
     root = install_root.expanduser().resolve()
-    log_root = root / ".pi" / "logs"
-    _ensure_private_directory(root / ".pi")
+    log_root = root / "var/log"
+    _ensure_private_directory(root / "etc")
     _ensure_private_directory(log_root)
     current = now or datetime.now()
     return log_root / f"install.{current.strftime('%Y.%m.%d')}.log"
@@ -1812,17 +1809,16 @@ def configure_model_icons(args: argparse.Namespace, installed: dict[str, object]
 
 
 def snapshot_active_release(root: Path) -> dict[str, object] | None:
-    package_home = root / ".pi" / "packages" / "tspi"
+    package_home = root
     current = package_home / "current"
-    state = package_home / "install-state.json"
+    state = root / "var/state/installation/install-state.json"
     if not current.is_symlink() or not state.is_file():
         return None
     launchers = {
         name: os.readlink(root / name)
-        for name in ("ResearchAgent", "ResearchAgentServer", "TSWeb", "bin/ResearchAgent", "bin/ResearchAgentServer", "bin/TSWeb")
+        for name in ("ResearchAgent", "TSWeb")
         if (root / name).is_symlink()
     }
-    stable_current = os.readlink(root / "current") if (root / "current").is_symlink() else None
     state_bytes = state.read_bytes()
     runtime_manifest: tuple[str, bytes] | None = None
     try:
@@ -1832,13 +1828,12 @@ def snapshot_active_release(root: Path) -> dict[str, object] | None:
             runtime_manifest = (manifest_path, Path(manifest_path).read_bytes())
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         pass
-    model_icon_marker = root / ".pi/tspi/model-icons.json"
+    model_icon_marker = root / "etc/model-icons.json"
     marker_snapshot: bytes | None = None
     if model_icon_marker.is_file() and not model_icon_marker.is_symlink():
         marker_snapshot = model_icon_marker.read_bytes()
     return {
         "current": os.readlink(current),
-        "stable_current": stable_current,
         "state": state_bytes,
         "launchers": launchers,
         "runtime_manifest": runtime_manifest,
@@ -1865,34 +1860,29 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
 
     relative_paths = [
         "ResearchAgent",
-        "ResearchAgentServer",
         "current",
-        "bin/ResearchAgent",
-        "bin/ResearchAgentServer",
-        "bin/TSWeb",
         "TSWeb",
         "uninstall.sh",
-        ".pi/tspi/workspace-root.json",
-        ".pi/tspi/service.json",
-        ".pi/tspi/remote-host.json",
-        ".pi/app-server-host/server-id",
-        ".pi/app-server-host/link.json",
-        ".pi/app-server-host/host.token",
-        ".pi/ts-web/auth.token",
-        ".pi/tspi/model-icons.json",
-        ".pi/agent/models.json",
-        ".pi/agent/auth.json",
-        ".pi/notifications.toml",
-        ".pi/email/service.env",
-        ".pi/email/smtp-password",
-        ".pi/job.toml",
-        ".pi/name-resolver.toml",
+        "etc/installation.json",
+        "etc/remote-host.json",
+        "var/state/host/server-id",
+        "var/state/host/link.json",
+        "var/state/host/host.token",
+        "etc/web/auth.token",
+        "etc/model-icons.json",
+        "etc/pi/models.json",
+        "etc/pi/auth.json",
+        "etc/email.toml",
+        "etc/secrets/service.env",
+        "etc/secrets/smtp-password",
+        "etc/job.toml",
+        "etc/name-resolver.toml",
     ]
     paths = {str(root / relative): _snapshot_file(root / relative) for relative in relative_paths}
     external_password = getattr(args, "email_password_file", None)
     if isinstance(external_password, str):
         password_path = Path(external_password).expanduser()
-        if password_path.is_absolute() and password_path != root / ".pi/email/smtp-password":
+        if password_path.is_absolute() and password_path != root / "etc/secrets/smtp-password":
             paths[str(password_path)] = _snapshot_file(password_path)
 
     services: dict[str, object] = {}
@@ -1909,13 +1899,13 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
                     name,
                 ),
             }
-    releases_root = root / ".pi/packages/tspi/releases"
+    releases_root = root / "releases"
     release_ids = sorted(
         path.name
         for path in releases_root.iterdir()
         if path.is_dir() and not path.is_symlink()
     ) if releases_root.is_dir() and not releases_root.is_symlink() else []
-    package_home = root / ".pi/packages/tspi"
+    package_home = root
     workspace_root = Path(args.workspace_root).expanduser().resolve()
     return {
         "files": paths,
@@ -1923,7 +1913,7 @@ def snapshot_install_configuration(root: Path, args: argparse.Namespace) -> dict
         "service_scope": getattr(args, "service_scope", "none"),
         "package_selection": {
             "current": _snapshot_file(package_home / "current"),
-            "state": _snapshot_file(package_home / "install-state.json"),
+            "state": _snapshot_file(root / "var/state/installation/install-state.json"),
         },
         "release_ids": release_ids,
         "workspace_root": {
@@ -2029,7 +2019,7 @@ def restore_install_configuration(root: Path, snapshot: dict[str, object]) -> No
             pass
 
     release_ids = snapshot.get("release_ids")
-    releases_root = root / ".pi/packages/tspi/releases"
+    releases_root = root / "releases"
     if isinstance(release_ids, list) and releases_root.is_dir() and not releases_root.is_symlink():
         original = {item for item in release_ids if isinstance(item, str)}
         for path in releases_root.iterdir():
@@ -2040,11 +2030,11 @@ def restore_install_configuration(root: Path, snapshot: dict[str, object]) -> No
 
     package_selection = snapshot.get("package_selection")
     if isinstance(package_selection, dict):
-        package_home = root / ".pi/packages/tspi"
+        package_home = root
         for name in ("current", "state"):
             selection = package_selection.get(name)
             if isinstance(selection, dict):
-                _restore_file(package_home / ("install-state.json" if name == "state" else name), selection)
+                _restore_file((root / "var/state/installation/install-state.json" if name == "state" else package_home / name), selection)
 
     workspace = snapshot.get("workspace_root")
     if isinstance(workspace, dict) and workspace.get("existed") is False:
@@ -2058,7 +2048,7 @@ def restore_install_configuration(root: Path, snapshot: dict[str, object]) -> No
 def restore_active_release(root: Path, snapshot: dict[str, object] | None) -> None:
     if not snapshot:
         return
-    package_home = root / ".pi" / "packages" / "tspi"
+    package_home = root
     current = package_home / "current"
     target = snapshot.get("current")
     if isinstance(target, str):
@@ -2066,16 +2056,6 @@ def restore_active_release(root: Path, snapshot: dict[str, object] | None) -> No
         temporary.unlink(missing_ok=True)
         temporary.symlink_to(target)
         os.replace(temporary, current)
-    stable_target = snapshot.get("stable_current")
-    stable_current = root / "current"
-    if isinstance(stable_target, str):
-        stable_current.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        temporary = root / f".current.rollback.{os.getpid()}"
-        temporary.unlink(missing_ok=True)
-        temporary.symlink_to(stable_target)
-        os.replace(temporary, stable_current)
-    elif stable_current.is_symlink():
-        stable_current.unlink()
     state = snapshot.get("state")
     if isinstance(state, bytes):
         descriptor, temporary_name = tempfile.mkstemp(prefix=".install-state.rollback.", dir=package_home)
@@ -2087,7 +2067,7 @@ def restore_active_release(root: Path, snapshot: dict[str, object] | None) -> No
                 handle.write(state)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(temporary, package_home / "install-state.json")
+            os.replace(temporary, root / "var/state/installation/install-state.json")
         finally:
             if descriptor != -1:
                 os.close(descriptor)
@@ -2121,7 +2101,7 @@ def restore_active_release(root: Path, snapshot: dict[str, object] | None) -> No
                 if descriptor != -1:
                     os.close(descriptor)
                 temporary.unlink(missing_ok=True)
-    marker_path = root / ".pi/tspi/model-icons.json"
+    marker_path = root / "etc/model-icons.json"
     marker_snapshot = snapshot.get("model_icon_marker")
     if isinstance(marker_snapshot, bytes):
         marker_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -2166,7 +2146,7 @@ def prepare_app_server_runtime(root: Path) -> Path:
         pin = json.loads(pin_path.read_text(encoding="utf-8"))
         commit = pin.get("commit") if isinstance(pin, dict) else None
         if isinstance(commit, str) and commit:
-            source = root / ".pi/runtime-cache/pi" / commit
+            source = root / "runtimes/pi" / commit
     except (OSError, json.JSONDecodeError):
         pass
     if source is None or not source.is_dir():
@@ -2203,39 +2183,26 @@ def bind_pi_runtime_node_modules(root: Path, source: Path) -> None:
 
 
 def active_suite_root(root: Path) -> Path:
-    """Resolve the selected application release through the stable shim.
-
-    During migration the stable root ``current`` may be absent; fall back to
-    the package-store pointer used by older installations.  Callers still
-    receive one immutable suite root and never compose files from two roots.
-    """
-
-    stable = root / "current"
-    if stable.is_symlink():
-        resolved = stable.resolve(strict=True)
-        if (resolved / "agent").is_dir():
-            return resolved
-    package_current = root / ".pi/packages/tspi/current"
-    if not package_current.is_symlink() and not package_current.is_dir():
-        raise RuntimeError(f"selected Research Agent release is unavailable: {stable}")
-    resolved = package_current.resolve(strict=True)
-    if not (resolved / "agent").is_dir():
-        raise RuntimeError(f"selected Research Agent release has no Agent component: {resolved}")
-    return resolved
+    """Resolve the sole selected immutable application release."""
+    current = root / "current"
+    if not current.is_symlink(): raise RuntimeError("no selected application release")
+    selected = current.resolve(strict=True)
+    if selected.parent != root / "releases" or not (selected / "agent").is_dir():
+        raise RuntimeError("selected release escapes the application store")
+    return selected
 
 
 def prepare_runtime_dirs(root: Path) -> None:
     for relative in (
-        ".pi/runtime-cache",
-        ".agents/runtime",
-        ".agents/envs",
-        ".pi/agent",
-        ".pi/ts-web-state",
-        ".pi/ts-web",
-        ".pi/app-server-runtime",
-        ".pi/app-server-host",
-        ".pi/session-guards",
-        ".pi/email",
+        "var/cache",
+        "var/state/installation/python",
+        "runtimes",
+        "etc/pi",
+        "var/state/web",
+        "etc/web",
+        "var/cache/app-server-runtime",
+        "var/state/host",
+        "etc/secrets",
     ):
         directory = root / relative
         if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
@@ -2256,13 +2223,13 @@ def provision_pi_agent_configuration(args: argparse.Namespace) -> dict[str, obje
     )
     account = pwd.getpwnam(service_user)
     configured_source = getattr(args, "agent_config_dir", None)
-    source_dir = Path(configured_source).expanduser() if configured_source else Path(account.pw_dir) / ".pi" / "agent"
+    source_dir = Path(configured_source).expanduser() if configured_source else Path(account.pw_dir) / ".pi/agent"
     if source_dir.is_symlink() or not source_dir.is_dir():
         raise RuntimeError(
             f"Pi agent configuration directory must be a physical directory in physical directories: {source_dir}"
         )
     source_dir = source_dir.resolve()
-    destination_dir = root / ".pi" / "agent"
+    destination_dir = root / "etc/pi"
     _ensure_private_directory(destination_dir)
     files: dict[str, str] = {}
 
@@ -2309,7 +2276,7 @@ def _pi_agent_open_flags(*, directory: bool = False) -> int:
 def _read_pi_agent_configuration(home: Path, name: str) -> bytes | None:
     """Read a bounded source file without following a swapped path component."""
 
-    return _read_pi_agent_configuration_directory(home / ".pi" / "agent", name)
+    return _read_pi_agent_configuration_directory(home / ".pi/agent", name)
 
 
 def _read_pi_agent_configuration_directory(source_dir: Path, name: str) -> bytes | None:
@@ -2393,7 +2360,7 @@ def _install_new_private_config_bytes(raw: bytes, destination: Path) -> bool:
 
 
 def ensure_host_identity(root: Path) -> Path:
-    state = root / ".pi" / "app-server-host"
+    state = root / "var/state/host"
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
     state.chmod(0o700)
     identity = state / "server-id"
@@ -2427,7 +2394,7 @@ def configure_phone_connection(args: argparse.Namespace) -> dict[str, object]:
     """Enroll the installation Host and write its private TSPi Link files."""
 
     root = Path(args.install_root).resolve()
-    state = root / ".pi/app-server-host"
+    state = root / "var/state/host"
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
     state.chmod(0o700)
     manifest = state / "link.json"
@@ -2519,7 +2486,7 @@ def app_server_unit(args: argparse.Namespace) -> str:
         raise ValueError("service XDG_RUNTIME_DIR must be an absolute path")
     # Host is an internal service entrypoint. Ordinary users manage this unit
     # through systemctl and never need to invoke the Host process directly.
-    command = _systemd_quote(root / "ResearchAgentServer")
+    command = _systemd_quote(root / "current/agent/libexec/research-agent-host")
     wanted_by = "multi-user.target" if args.service_scope == "system" else "default.target"
     runtime_directory = "RuntimeDirectory=tspi\nRuntimeDirectoryMode=0700" if args.service_scope == "system" else ""
     return f"""[Unit]
@@ -2533,8 +2500,9 @@ ExecStart={command}
 Environment={_systemd_quote('PATH=' + search_path)}
 Environment={_systemd_quote('HOME=' + str(service_home))}
 Environment={_systemd_quote('XDG_RUNTIME_DIR=' + runtime_dir)}
-Environment={_systemd_quote('PI_CODING_AGENT_DIR=' + str(root / '.pi/agent'))}
+Environment={_systemd_quote('PI_CODING_AGENT_DIR=' + str(root / 'etc/pi'))}
 Environment=TSPI_SYSTEMD_HOST=1
+Environment={_systemd_quote("TSPI_INSTALL_ROOT=" + str(root))}
 Environment={_systemd_quote('TSPI_WORKSPACE_ROOT=' + str(workspace_root))}
 Environment={_systemd_quote('TSPI_APP_SERVER_RUNTIME_DIR=' + ('/run/tspi' if args.service_scope == 'system' else str(Path(runtime_dir) / 'tspi')))}
 {f'User={_systemd_value(service_user)}' if args.service_scope == 'system' else ''}
@@ -2549,11 +2517,11 @@ PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths={_systemd_quote(root / '.pi/runtime-cache')}
-ReadWritePaths={_systemd_quote(root / '.pi/app-server-host')}
+ReadWritePaths={_systemd_quote(root / 'var/cache')}
+ReadWritePaths={_systemd_quote(root / 'var/state')}
+ReadWritePaths={_systemd_quote(root / 'var/log')}
 ReadWritePaths={_systemd_quote(Path('/run/tspi') if args.service_scope == 'system' else Path(runtime_dir) / 'tspi')}
-ReadWritePaths={_systemd_quote(root / '.pi/session-guards')}
-ReadWritePaths={_systemd_quote(root / '.pi/agent')}
+ReadWritePaths={_systemd_quote(root / 'etc/pi')}
 ReadWritePaths={_systemd_quote(Path(runtime_dir) / 'tspi')}
 ReadWritePaths={_systemd_quote(workspace_root)}
 
@@ -2570,12 +2538,12 @@ def web_unit(args: argparse.Namespace) -> str:
     command_values: list[object] = [
         root / "TSWeb",
         "--provider",
-        root / ".pi/packages/tspi/current/agent/apps/agent-cli/provider_runner.py",
+        root / "current/agent/apps/agent-cli/provider_runner.py",
         "serve",
         "--state-dir",
-        root / ".pi/ts-web-state",
+        root / "var/state/web",
         "--auth-token-file",
-            Path(args.web_auth_token_file).expanduser() if args.web_auth_token_file else root / ".pi/ts-web/auth.token",
+            Path(args.web_auth_token_file).expanduser() if args.web_auth_token_file else root / "etc/web/auth.token",
         "--host",
         args.web_host,
     ]
@@ -2602,8 +2570,8 @@ PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths={_systemd_quote(root / '.pi/ts-web-state')}
-ReadWritePaths={_systemd_quote(root / '.pi/ts-web')}
+ReadWritePaths={_systemd_quote(root / 'var/state/web')}
+ReadWritePaths={_systemd_quote(root / 'etc/web')}
 ReadOnlyPaths={_systemd_quote(workspace_root)}
 
 [Install]
@@ -2613,7 +2581,7 @@ WantedBy={wanted_by}
 
 def _notification_environment_directive(args: argparse.Namespace) -> str:
     root = Path(args.install_root)
-    config = root / ".pi" / "notifications.toml"
+    config = root / "etc/email.toml"
     if not config.is_file():
         return ""
     try:
@@ -2622,7 +2590,7 @@ def _notification_environment_directive(args: argparse.Namespace) -> str:
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError, AttributeError):
         return ""
     if isinstance(email, dict) and isinstance(email.get("password_env"), str):
-        return f"EnvironmentFile=-{_systemd_value(root / '.pi/email/service.env')}"
+        return f"EnvironmentFile=-{_systemd_value(root / 'etc/secrets/service.env')}"
     return ""
 
 
@@ -2875,7 +2843,7 @@ def build_component_summary(
     modules = probe.get("modules") if isinstance(probe.get("modules"), dict) else {}
     commands = probe.get("commands") if isinstance(probe.get("commands"), dict) else {}
     service_by_name = {item["name"]: item for item in services}
-    server_id_path = root / ".pi/app-server-host/server-id"
+    server_id_path = root / "var/state/host/server-id"
     try:
         server_id = server_id_path.read_text(encoding="ascii").strip() if server_id_path.is_file() else None
     except (OSError, UnicodeDecodeError):
@@ -2911,7 +2879,7 @@ def build_component_summary(
         },
         "phone": phone_connection or {
             "status": "disabled",
-            "manifest": str(root / ".pi/app-server-host/link.json"),
+            "manifest": str(root / "var/state/host/link.json"),
             "relay_url": args.link_url,
             "protocol": "tspi-link.v1",
             "tool_access": "same_as_terminal",
@@ -2919,11 +2887,11 @@ def build_component_summary(
         "model_icons": model_icons or {
             "status": "disabled",
             "enabled": False,
-            "config_path": str(root / ".pi/tspi/model-icons.json"),
+            "config_path": str(root / "etc/model-icons.json"),
         },
         "models": model_configuration or {
             "status": "not_configured",
-            "directory": str(root / ".pi/agent"),
+            "directory": str(root / "etc/pi"),
             "files": {},
         },
         "web": (
@@ -2931,7 +2899,7 @@ def build_component_summary(
                 "status": "configured" if args.service_scope == "none" else _service_readiness(service_by_name.get("ts-web-tspi.service"), probed=args.start_services),
                 "launcher": str(root / "TSWeb"),
                 "url": f"http://{args.web_host}:{args.web_port}",
-                "state_directory": str(root / ".pi/ts-web-state"),
+                "state_directory": str(root / "var/state/web"),
                 "workspace_root": str(workspace_root),
                 "credential": credentials.get("web_http"),
                 "service": service_by_name.get("ts-web-tspi.service"),
@@ -2940,12 +2908,12 @@ def build_component_summary(
             else None
         ),
         "job": backend_configs.get("job") if backend_configs else {
-            "status": "preserved" if (root / ".pi/job.toml").is_file() else "not_configured",
-            "path": str(root / ".pi/job.toml"),
+            "status": "preserved" if (root / "etc/job.toml").is_file() else "not_configured",
+            "path": str(root / "etc/job.toml"),
         },
         "name_resolver": backend_configs.get("name_resolver") if backend_configs else {
-            "status": "preserved" if (root / ".pi/name-resolver.toml").is_file() else "not_configured",
-            "path": str(root / ".pi/name-resolver.toml"),
+            "status": "preserved" if (root / "etc/name-resolver.toml").is_file() else "not_configured",
+            "path": str(root / "etc/name-resolver.toml"),
             "enabled_backends": "",
             "automatic_lookup": "unavailable",
         },
@@ -3015,7 +2983,7 @@ def show_installed_summary(
         model_status = str(models.get("status", "not_configured"))
         field(
             "Pi model configuration",
-            f"{model_status} - {models.get('directory', root / '.pi/agent')}",
+            f"{model_status} - {models.get('directory', root / 'etc/pi')}",
             tone="success" if model_status in {"imported", "preserved"} else "warning",
         )
 

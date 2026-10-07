@@ -18,7 +18,7 @@ for (let index = 0; index < args.length; index++) {
 }
 const installRoot = process.env.TSPI_INSTALL_ROOT;
 if (!installRoot || !options.directory || !options["server-id"]) throw new Error("Host requires an installation, directory and server identity.");
-const stateRoot = resolve(options["state-root"] || join(installRoot, ".pi/app-server-host"));
+const stateRoot = resolve(options["state-root"] || process.env.TSPI_HOST_STATE_ROOT);
 const workspaceRoot = resolve(process.env.TSPI_WORKSPACE_ROOT || options.workspace || join(installRoot, "workspaces"));
 const socketPath = join(resolve(options.directory), `${options["server-id"]}.sock`);
 // The TSPi Host owns <directory>/<server-id>.sock. Pi's experimental server
@@ -130,7 +130,8 @@ startupPromise = (async () => {
     mkdirSync(piServerDirectory, { recursive: true, mode: 0o700 });
     mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
     const pin = JSON.parse(readFileSync(join(packageRoot, "config/pi-source.json"), "utf8"));
-    const sourceRoot = resolve(join(installRoot, ".pi/runtime-cache/pi", pin.commit));
+    const sourceRoot = resolve(process.env.TSPI_PI_RUNTIME_ROOT);
+    if (sourceRoot.split("/").at(-1) !== pin.commit) throw new Error("Pi runtime pin mismatch");
     if (process.env.TSPI_PI_RUNTIME_ROOT && resolve(process.env.TSPI_PI_RUNTIME_ROOT) !== sourceRoot) {
       throw new Error("TSPI_PI_RUNTIME_ROOT is installation-managed and cannot be overridden");
     }
@@ -147,7 +148,7 @@ startupPromise = (async () => {
       // launcher-provided hashed runtime directory is deliberately short so
       // the resulting paths stay below the POSIX AF_UNIX limit.
       serverDirectory: piServerDirectory,
-      sessionDir: resolve(options["session-dir"] || join(stateRoot, "sessions")),
+      sessionDir: resolve(options["session-dir"] || process.env.TSPI_SESSION_ROOT),
       stateRoot,
       serverId: options["server-id"],
       provider,

@@ -18,7 +18,7 @@ from typing import Any
 
 
 MODEL_ICON_FONT_RELATIVE = Path("assets/fonts/tspi-model-icons.ttf")
-MODEL_ICON_CONFIG_RELATIVE = Path(".pi/tspi/model-icons.json")
+MODEL_ICON_CONFIG_RELATIVE = Path("etc/model-icons.json")
 MODEL_ICON_CONFIG_SCHEMA = "tspi-model-icons/1"
 MODEL_ICON_FONT_NAME = "TSPi-Model-Icons.ttf"
 

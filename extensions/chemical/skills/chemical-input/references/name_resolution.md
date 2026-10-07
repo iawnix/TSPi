@@ -20,7 +20,7 @@ permits inventing a structure.
 ## Configuration
 
 Automatic lookup uses the installation-owned configuration. Fresh package
-installs copy `config/name-resolver.example.toml` into `.pi/name-resolver.toml`;
+installs copy `config/name-resolver.example.toml` into `etc/name-resolver.toml`;
 operators may replace it or set
 `TSPI_NAME_RESOLVER_CONFIG` to an absolute configuration path. The bundled
 PubChem backend uses PUG REST, caches response evidence, and records the
@@ -30,7 +30,7 @@ HTTP backend. Network errors and multiple candidates remain unresolved or
 ambiguous. No LLM-generated candidate is promoted by this configuration.
 
 If neither `TSPI_NAME_RESOLVER_CONFIG` nor
-`${TSPI_INSTALL_ROOT}/.pi/name-resolver.toml` exists, no deterministic lookup
+`${TSPI_INSTALL_ROOT}/etc/name-resolver.toml` exists, no deterministic lookup
 backend is available. When the workflow itself is registered,
 `resolver=auto` still returns a normal `ts-analysis-result/1` with
 `verdict="unsupported"`, `data.status="unresolved"`, no candidates, and

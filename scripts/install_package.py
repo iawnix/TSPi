@@ -38,7 +38,6 @@ try:
     from ._component_release import (
         REQUIRED_RUNTIME_FILES,
         ComponentArchiveError,
-        archive_retired_notification_state,
         ensure_private_directory,
         extract_archive,
         finalize_release_permissions,
@@ -87,7 +86,6 @@ except ImportError:
     from _component_release import (
         REQUIRED_RUNTIME_FILES,
         ComponentArchiveError,
-        archive_retired_notification_state,
         ensure_private_directory,
         extract_archive,
         finalize_release_permissions,
@@ -118,10 +116,9 @@ except ImportError:
 INSTALLED_MANIFEST = ".tspi-package-release.json"
 LAUNCHER_PATHS = {
     "ResearchAgent": ("agent", "ResearchAgent"),
-    "ResearchAgentServer": ("agent", "ResearchAgentServer"),
     "TSWeb": ("web", "bin", "ts-web"),
 }
-STABLE_APP_LAUNCHERS = ("ResearchAgent", "ResearchAgentServer", "TSWeb")
+
 
 # Installer control code is standard-library-only and must precede runtime activation.
 try:
@@ -130,6 +127,7 @@ except ImportError:
     from _bootstrap import activate_source_package
 activate_source_package(Path(__file__).resolve().parents[1])
 from tspi_bootstrap.session_guard import CONTRACT, SessionGuardError, guard_installation_upgrade
+from tspi_foundation.layout import paths
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -261,54 +259,61 @@ def _install_captured_package(
         raise SuiteReleaseError("TSPi Package archive does not contain the exact declared component set")
 
     install_root = prepare_install_root(install_root)
-    package_home = ensure_private_directory(install_root / ".pi" / "packages" / "tspi")
-    validate_launcher_slots(install_root, package_home, manifest["components"])
-    releases_root = ensure_private_directory(package_home / "releases")
-    target = releases_root / manifest["release_id"]
-    created = False
-    if target.exists() or target.is_symlink():
-        validate_existing_suite(target, manifest)
-    else:
-        staging = Path(tempfile.mkdtemp(prefix=".install-", dir=releases_root))
-        try:
-            extract_rooted_archive(captured_archive, suite_members, staging)
-            validate_extracted_suite(staging, manifest)
-            atomic_write_json(staging / INSTALLED_MANIFEST, manifest)
-            finalize_release_permissions(staging)
-            os.replace(staging, target)
-            created = True
-        finally:
-            if staging.exists():
-                remove_staging_tree(staging)
-
-    ensure_name_resolver_config(install_root, target)
-
-    prepare = runtime_preparer or prepare_runtime
-    publish = runtime_publisher or publish_runtime
-    prepared_runtime = prepare(
-        target / "agent",
-        runtime_home=install_root / ".agents" / "runtime" / "tspi",
-        env_root=install_root / ".agents" / "envs" / "tspi",
-        conda=conda,
-        conda_root=conda_root,
-        force=force_runtime,
-    )
-    archived_notification_state = archive_retired_notification_state(install_root)
-    ensure_private_directory(install_root / ".pi" / "session-guards")
-    ensure_private_directory(install_root / "workspaces")
-    installed_manifest = read_json_object(target / INSTALLED_MANIFEST, "installed TSPi Package manifest")
-    state = {
-        "schema_version": SUITE_INSTALL_SCHEMA_VERSION,
-        "current_release_id": manifest["release_id"],
-        "package_root": str(target),
-        "manifest_sha256": hashlib.sha256(canonical_json(installed_manifest)).hexdigest(),
-        "runtime_manifest": str(prepared_runtime.manifest_path),
-        "python_payload_sha256": prepared_runtime.result["python_payload_sha256"],
-        "installed_at_utc": datetime.now(timezone.utc).isoformat(),
-        "services_activated": False,
-        "session_guard_contract": CONTRACT,
-    }
+    layout = paths(install_root).initialize()
     with guard_installation_upgrade(install_root):
+        package_home = install_root
+        if layout.current.is_symlink() and layout.current.resolve().parent != layout.releases:
+            raise SuiteReleaseError("application current pointer escapes the release store")
+        validate_launcher_slots(install_root, package_home, manifest["components"])
+        releases_root = ensure_private_directory(package_home / "releases")
+        target = releases_root / manifest["release_id"]
+        created = False
+        if target.exists() or target.is_symlink():
+            validate_existing_suite(target, manifest)
+        else:
+            staging = Path(tempfile.mkdtemp(prefix=".install-", dir=releases_root))
+            try:
+                extract_rooted_archive(captured_archive, suite_members, staging)
+                validate_extracted_suite(staging, manifest)
+                atomic_write_json(staging / INSTALLED_MANIFEST, manifest)
+                finalize_release_permissions(staging)
+                os.replace(staging, target)
+                created = True
+            finally:
+                if staging.exists():
+                    remove_staging_tree(staging)
+
+        ensure_name_resolver_config(install_root, target)
+
+        prepare = runtime_preparer or prepare_runtime
+        publish = runtime_publisher or publish_runtime
+        ensure_private_directory(layout.env_root)
+        owner = layout.env_root / "installation-owner.json"
+        if owner.exists() and read_json_object(owner, "environment owner").get("install_root") != str(install_root):
+            raise SuiteReleaseError("Host environment store belongs to a different installation")
+        atomic_write_json(owner, {"install_root": str(install_root), "installation_id": layout.identity})
+        prepared_runtime = prepare(
+            target / "agent",
+            runtime_home=layout.runtime_home,
+            env_root=layout.env_root,
+            conda=conda,
+            conda_root=conda_root,
+            force=force_runtime,
+        )
+        archived_notification_state = []
+        ensure_private_directory(install_root / "workspaces")
+        installed_manifest = read_json_object(target / INSTALLED_MANIFEST, "installed TSPi Package manifest")
+        state = {
+            "schema_version": SUITE_INSTALL_SCHEMA_VERSION,
+            "current_release_id": manifest["release_id"],
+            "package_root": str(target),
+            "manifest_sha256": hashlib.sha256(canonical_json(installed_manifest)).hexdigest(),
+            "runtime_manifest": str(prepared_runtime.manifest_path),
+            "python_payload_sha256": prepared_runtime.result["python_payload_sha256"],
+            "installed_at_utc": datetime.now(timezone.utc).isoformat(),
+            "services_activated": False,
+            "session_guard_contract": CONTRACT,
+        }
         launchers = _activate_release(
             install_root,
             package_home,
@@ -319,19 +324,18 @@ def _install_captured_package(
             manifest["components"],
             manifest["schema_version"],
         )
-    return {
-        "ok": True,
-        "created": created,
-        "release_id": manifest["release_id"],
-        "package_root": str(target),
-        "current": str(package_home / "current"),
-        "stable_current": str(install_root / "current"),
-        "launcher": launchers["ResearchAgent"],
-        "launchers": launchers,
-        "runtime": dict(prepared_runtime.result),
-        "services_activated": False,
-        "archived_retired_notification_state": archived_notification_state,
-    }
+        return {
+            "ok": True,
+            "created": created,
+            "release_id": manifest["release_id"],
+            "package_root": str(target),
+            "current": str(package_home / "current"),
+            "launcher": launchers["ResearchAgent"],
+            "launchers": launchers,
+            "runtime": dict(prepared_runtime.result),
+            "services_activated": False,
+            "archived_retired_notification_state": archived_notification_state,
+        }
 
 
 def ensure_name_resolver_config(install_root: Path, release_root: Path) -> None:
@@ -342,7 +346,7 @@ def ensure_name_resolver_config(install_root: Path, release_root: Path) -> None:
     same deterministic resolver default here. Existing operator configuration
     is preserved and remains subject to the runtime configuration boundary.
     """
-    destination = install_root / ".pi" / "name-resolver.toml"
+    destination = install_root / "etc/name-resolver.toml"
     if destination.is_symlink():
         raise SuiteReleaseError(f"existing name-resolver configuration must be a regular file: {destination}")
     if destination.exists():
@@ -381,29 +385,14 @@ def _activate_release(
     """Publish runtime and content selection as one recoverable activation step."""
 
     current = package_home / "current"
-    state_path = package_home / "install-state.json"
+    state_path = paths(install_root).install_state
     launcher_paths = [install_root / name for name in LAUNCHER_PATHS]
-    stable_current = install_root / "current"
-    stable_bin = install_root / "bin"
-    stable_launcher_paths = [stable_bin / name for name in STABLE_APP_LAUNCHERS]
     current_before = _snapshot_symlink(current, "current package pointer")
-    stable_current_before = _snapshot_symlink(stable_current, "stable application current pointer")
-    launchers_before = {
-        path: _snapshot_symlink(path, "package entrypoint") for path in launcher_paths
-    }
-    stable_launchers_before = {
-        path: _snapshot_symlink(path, "stable application entrypoint") for path in stable_launcher_paths
-    }
+    launchers_before = {path: _snapshot_symlink(path, "package entrypoint") for path in launcher_paths}
     manifest_before = _snapshot_json(prepared_runtime.manifest_path, "runtime manifest")
     state_before = _snapshot_json(state_path, "package install state")
     try:
         launchers = install_launchers(
-            install_root,
-            package_home,
-            components,
-            release_root=target,
-        )
-        stable_launchers = install_stable_app_shims(
             install_root,
             package_home,
             components,
@@ -414,16 +403,13 @@ def _activate_release(
             raise SuiteReleaseError("runtime publisher returned an unexpected manifest path")
         switch_current(package_home, target)
         atomic_write_json(state_path, state)
-        return {**launchers, **stable_launchers}
+        return launchers
     except Exception as error:
         try:
             _restore_json(state_path, state_before)
             _restore_symlink(current, current_before)
-            _restore_symlink(stable_current, stable_current_before)
             _restore_json(prepared_runtime.manifest_path, manifest_before)
             for path, snapshot in launchers_before.items():
-                _restore_symlink(path, snapshot)
-            for path, snapshot in stable_launchers_before.items():
                 _restore_symlink(path, snapshot)
         except Exception as rollback_error:
             raise SuiteReleaseError(
@@ -661,12 +647,6 @@ def install_launchers(
         for name, relative in paths.items()
     }
     enabled = {"ResearchAgent"}
-    # ResearchAgentServer is part of current releases. Synthetic component
-    # fixtures may carry it only as a non-executable placeholder; a real npm
-    # release carries it executable.
-    research_agent_target = targets["ResearchAgentServer"]
-    if research_agent_target.is_file() and os.access(research_agent_target, os.X_OK):
-        enabled.add("ResearchAgentServer")
     if "web" in components:
         enabled.add("TSWeb")
     for name, target in targets.items():
@@ -678,64 +658,8 @@ def install_launchers(
                     raise SuiteReleaseError(f"stale optional component entrypoint escapes the package store: {link}")
                 link.unlink()
             continue
-        install_symlink(link, target)
+        install_symlink(link, package_home / "current" / Path(*paths[name]))
     return {name: str(install_root / name) for name in enabled}
-
-
-def install_stable_app_shims(
-    install_root: Path,
-    package_home: Path,
-    components: dict[str, Any],
-    *,
-    release_root: Path | None = None,
-) -> dict[str, str]:
-    """Install reversible application shims alongside the package store.
-
-    The package store remains authoritative during this migration.  A root
-    ``current`` pointer follows ``.pi/packages/tspi/current`` and stable
-    ``bin/`` links resolve through it, so an atomic package activation updates
-    every public entrypoint without copying or mixing release files.
-    """
-
-    stable_current = install_root / "current"
-    if stable_current.exists() and not stable_current.is_symlink():
-        raise SuiteReleaseError(f"stable application current pointer must be a symbolic link: {stable_current}")
-    if stable_current.is_symlink():
-        package_store = (package_home / "releases").resolve()
-        try:
-            resolved_current = stable_current.resolve(strict=False)
-        except (OSError, RuntimeError) as error:
-            raise SuiteReleaseError(f"cannot inspect stable application current pointer: {stable_current}") from error
-        if not resolved_current.is_relative_to(package_store):
-            raise SuiteReleaseError(f"stable application current pointer escapes the package store: {stable_current}")
-    install_symlink(stable_current, package_home / "current")
-
-    stable_bin = ensure_private_directory(install_root / "bin")
-    selected_root = release_root or stable_current
-    targets = {
-        "ResearchAgent": stable_current / "agent" / "ResearchAgent",
-        "ResearchAgentServer": stable_current / "agent" / "ResearchAgentServer",
-        "TSWeb": stable_current / "web" / "bin" / "ts-web",
-    }
-    enabled = {"ResearchAgent"}
-    selected_server = selected_root / "agent" / "ResearchAgentServer"
-    if selected_server.is_file() and os.access(selected_server, os.X_OK):
-        enabled.add("ResearchAgentServer")
-    if "web" in components:
-        enabled.add("TSWeb")
-    releases_root = (package_home / "releases").resolve()
-    for name, target in targets.items():
-        link = stable_bin / name
-        if name not in enabled:
-            if link.is_symlink():
-                if not _launcher_points_into_package_store(link, releases_root):
-                    raise SuiteReleaseError(f"stale stable entrypoint escapes the package store: {link}")
-                link.unlink()
-            elif link.exists():
-                raise SuiteReleaseError(f"stable application entrypoint must be a symbolic link: {link}")
-            continue
-        install_symlink(link, target)
-    return {name: str(stable_bin / name) for name in enabled}
 
 
 def validate_launcher_slots(

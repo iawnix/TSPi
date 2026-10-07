@@ -26,8 +26,8 @@ TS Phone 与 Monitor 连接同一个 Pi Harness lane，因此共享同一套模�
 
 ## 配置和验证
 
-安装后的 Pi 状态位于 `<install>/.pi/agent/`。自定义模型写入
-`<install>/.pi/agent/models.json`，认证沿用 Pi 的 login、`auth.json` 或环境变量机制。
+安装后的 Pi 状态位于 `<install>/etc/pi/`。自定义模型写入
+`<install>/etc/pi/models.json`，认证沿用 Pi 的 login、`auth.json` 或环境变量机制。
 可通过 Pi 设置选择默认模型，然后重启 Host：
 
 ```bash

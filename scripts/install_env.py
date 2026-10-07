@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Install the TSPi scientific base and release-specific Python kernel."
     )
     parser.add_argument("--package-root", default=str(ROOT))
-    parser.add_argument("--workspace-root", help="Workspace root that owns .agents/runtime and .agents/envs.")
+    parser.add_argument("--workspace-root", help="Explicit owner root for runtime metadata; environment storage is separately configured.")
     parser.add_argument("--runtime-home", help="Directory that stores the runtime manifest.")
     parser.add_argument("--manifest-path", help="Explicit runtime manifest path.")
     parser.add_argument("--env-root", help="Directory that stores shared bases and release overlays.")

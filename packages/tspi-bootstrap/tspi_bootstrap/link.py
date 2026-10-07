@@ -32,7 +32,7 @@ class LinkConfig:
 
 
 def load_link_config(install_root: Path, *, required: bool) -> LinkConfig | None:
-    state = install_root / ".pi" / "app-server-host"
+    state = install_root / "var/state/host"
     manifest = state / "link.json"
     token_file = state / "host.token"
     manifest_present = manifest.exists() or manifest.is_symlink()

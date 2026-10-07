@@ -52,7 +52,12 @@ def clone(destination):
     apply_patch(destination); verify(destination); return destination
 
 def install(root):
-    commit=pin()["commit"]; destination=Path(root).resolve()/".pi"/"runtime-cache"/"pi"/commit
+    commit=pin()["commit"]
+    try:
+        from .app_layout import paths
+    except ImportError:
+        from app_layout import paths
+    destination=paths(Path(root).resolve()).pi_runtime/commit
     if destination.exists():
         if not (destination/"packages/coding-agent/src/experimental/process.ts").is_file(): raise PiSourceError(f"invalid managed Pi source: {destination}")
         process = (destination/"packages/coding-agent/src/experimental/process.ts").read_text()

@@ -2,7 +2,7 @@ import { SLASH_COMMAND_NAMES } from "../packages/agent-runtime/host-api/commands
 
 export const TS_PACKAGE_PROFILE = Object.freeze({
   displayName: "TSPi",
-  version: "0.17.0",
+  version: "0.18.0",
   title: "TSPi research workspace",
   description: "Domain-neutral ResearchMap scientific workflows with deterministic execution.",
   skills: Object.freeze([

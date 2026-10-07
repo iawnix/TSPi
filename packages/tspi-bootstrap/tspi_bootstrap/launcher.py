@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tspi_foundation.layout import paths
+
 import fcntl
 import hashlib
 import json
@@ -69,13 +71,13 @@ SMTP_PRESETS = {
 SMTP_SECURITY = {"ssl", "starttls"}
 WORKSPACE_ROOT_SCHEMA = "tspi-workspace-root/1"
 MODEL_ICON_CONFIG_SCHEMA = "tspi-model-icons/1"
-MODEL_ICON_CONFIG_RELATIVE = Path(".pi/tspi/model-icons.json")
+MODEL_ICON_CONFIG_RELATIVE = Path("etc/model-icons.json")
 SERVICE_CONFIG_SCHEMA = "tspi-service/1"
-SERVICE_CONFIG_RELATIVE = Path(".pi/tspi/service.json")
+SERVICE_CONFIG_RELATIVE = Path("etc/installation.json")
 REMOTE_HOST_CONFIG_SCHEMA = "tspi-remote-host/1"
-REMOTE_HOST_CONFIG_RELATIVE = Path(".pi/tspi/remote-host.json")
+REMOTE_HOST_CONFIG_RELATIVE = Path("etc/remote-host.json")
 REMOTE_ENVIRONMENT_ENV = "TS_REMOTE_ENVIRONMENT"
-PI_AGENT_SETTINGS_RELATIVE = Path(".pi/agent/settings.json")
+PI_AGENT_SETTINGS_RELATIVE = Path("etc/pi/settings.json")
 TSPI_THEME_RELATIVE = Path("packages/agent-ui/themes/ts-theme.json")
 TSPI_THEME_NAME = "ts-theme"
 EMAIL_ADDRESS = re.compile(r"^[^@\s]+@[^@\s]+$")
@@ -168,6 +170,14 @@ Pi Harness is the only supported runtime backend.
 The managed Host service is ts-app-server-tspi.service.
 To select another Host session, open the terminal and run /resume. Startup
 -r/--resume is not supported by the Host-mediated client.
+"""
+
+
+SERVER_USAGE = """Internal Research Agent Host entrypoint.
+Usage: host [--help]
+Managed service: ts-app-server-tspi.service
+Use systemctl --user start|stop|restart|status ts-app-server-tspi.service.
+This process owns the Host, Pi Workers and Monitor; it accepts no workspace selection.
 """
 
 
@@ -313,18 +323,11 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
         raise TSPiHostError(f"installation root is not a directory: {requested_install}")
     root = requested_install.resolve()
     expected_agent = Path(package_root).expanduser().resolve()
-    # A direct ResearchAgent release is stored under the new app-owned
-    # ``.pi/packages/tspi`` store and the launcher points at the release
-    # root itself.  The historical suite keeps the Agent one level below a
-    # ``.pi/packages/tspi`` release.  Select the store from the launcher
-    # shape, then validate that its current pointer selects exactly that
-    # release; never combine metadata from the two stores.
-    direct_store = expected_agent.parent.parent if expected_agent.parent.name == "releases" else None
-    direct_release = (
-        direct_store is not None
-        and (direct_store.name == "tspi" or (expected_agent / ".tspi-release.json").is_file())
-    )
-    package_home = direct_store if direct_release else root / ".pi" / "packages" / "tspi"
+    layout = paths(root)
+    layout.read_config()
+    if (root / ".pi").exists() or (root / ".agents").exists():
+        raise TSPiHostError("old installation layout is unsupported; install a fresh release")
+    package_home = root
     releases_root = package_home / "releases"
     current = package_home / "current"
     if not current.is_symlink():
@@ -339,7 +342,7 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
         raise TSPiHostError(f"selected TSPi Package is unavailable: {current}: {exc}") from exc
     if suite_root.parent != releases:
         raise TSPiHostError(f"selected TSPi Package escaped the release store: {suite_root}")
-    selected_agent = suite_root if direct_release else suite_root / "agent"
+    selected_agent = suite_root / "agent"
     if selected_agent.is_symlink() or not selected_agent.is_dir():
         raise TSPiHostError(f"selected ResearchAgent Package has no regular Agent component: {selected_agent}")
     selected_agent_resolved = selected_agent.resolve()
@@ -351,22 +354,19 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
             "close old sessions, reinstall the selected ResearchAgent Package, "
             "then restart ts-app-server-tspi.service."
         )
-    if direct_release:
-        _validate_agent_identity(suite_root)
-    else:
-        _validate_suite_identity(suite_root, expected_agent)
-    runtime_home = root / ".agents" / "runtime" / "tspi"
+    _validate_suite_identity(suite_root, expected_agent)
+    runtime_home = layout.runtime_home
     service_scope, host_runtime_dir = _configured_service(root)
     return Installation(
         root=root,
         package_root=expected_agent,
         workspaces_root=_configured_workspace_root(root),
-        notification_config_default=root / ".pi" / "notifications.toml",
+        notification_config_default=root / "etc/email.toml",
         runtime_home=runtime_home,
         runtime_manifest=runtime_home / "env.json",
-        env_root=root / ".agents" / "envs" / "tspi",
-        process_cache_root=root / ".pi" / "runtime-cache",
-        job_config_default=root / ".pi" / "job.toml",
+        env_root=layout.env_root,
+        process_cache_root=root / "var/cache",
+        job_config_default=root / "etc/job.toml",
         model_icons_config=root / MODEL_ICON_CONFIG_RELATIVE,
         service_scope=service_scope,
         host_runtime_dir=host_runtime_dir,
@@ -375,15 +375,9 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
 
 
 def _configured_service(root: Path) -> tuple[str, Path | None]:
-    path = root / SERVICE_CONFIG_RELATIVE
-    if not path.exists() and not path.is_symlink():
-        return "user", None
-    if path.is_symlink() or not path.is_file():
-        raise TSPiHostError(f"service configuration is unsafe: {path}")
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise TSPiHostError(f"service configuration is invalid: {path}: {exc}") from exc
+    path = paths(root).marker
+    value = paths(root).read_config().get("service")
+    if value is None: return "user", None
     if not isinstance(value, dict) or set(value) != {"schema_version", "scope", "runtime_dir"}:
         raise TSPiHostError(f"service configuration is invalid: {path}")
     if value.get("schema_version") != SERVICE_CONFIG_SCHEMA:
@@ -459,23 +453,8 @@ def resolve_remote_terminal_request(installation: Installation, request: LaunchR
 
 
 def _configured_workspace_root(root: Path) -> Path:
-    config_path = root / ".pi/tspi/workspace-root.json"
-    if not config_path.exists() and not config_path.is_symlink():
-        return root / "workspaces"
-    if config_path.is_symlink() or not config_path.is_file():
-        raise TSPiHostError(f"workspace root configuration is unsafe: {config_path}")
-    try:
-        value = json.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise TSPiHostError(f"workspace root configuration is invalid: {config_path}: {exc}") from exc
-    if (
-        not isinstance(value, dict)
-        or set(value) != {"schema_version", "workspace_root"}
-        or value.get("schema_version") != WORKSPACE_ROOT_SCHEMA
-        or not isinstance(value.get("workspace_root"), str)
-    ):
-        raise TSPiHostError(f"workspace root configuration is invalid: {config_path}")
-    requested = Path(value["workspace_root"]).expanduser()
+    value = paths(root).read_config().get("workspace_root", str(root / "workspaces"))
+    requested = Path(value).expanduser()
     if not requested.is_absolute() or requested.is_symlink():
         raise TSPiHostError(f"configured workspace root must be an absolute physical path: {requested}")
     resolved = requested.resolve()
@@ -488,7 +467,7 @@ def _configured_workspace_root(root: Path) -> Path:
         or resolved in root.parents
     ):
         raise TSPiHostError(f"configured workspace root must be a dedicated directory: {resolved}")
-    for protected in (root / ".pi", root / ".agents"):
+    for protected in (root / "etc", root / "var", root / "runtimes", root / "releases"):
         if resolved == protected or protected in resolved.parents:
             raise TSPiHostError(f"configured workspace root overlaps installation state: {resolved}")
     return resolved
@@ -689,7 +668,7 @@ def _restore_native_pi_settings(installation: Installation) -> None:
         if not isinstance(themes, list) or any(not isinstance(theme, str) for theme in themes):
             raise TSPiHostError(f"Pi agent settings themes must be an array of strings: {path}")
         current_theme_path = str(installation.package_root / TSPI_THEME_RELATIVE)
-        package_home = (installation.root / ".pi/packages/tspi").resolve()
+        package_home = (installation.root).resolve()
 
         def is_managed_theme(theme: str) -> bool:
             if theme == current_theme_path:
@@ -963,7 +942,7 @@ def configure_process_environment(installation: Installation, workspace: Path, w
     os.environ[PACKAGE_ROOT_OVERRIDE] = str(installation.package_root)
     os.environ["TSPI_INSTALL_ROOT"] = str(installation.root)
     os.environ["TS_WORKSPACE_ROOT"] = str(workspace)
-    os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / ".pi" / "agent")
+    os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / "etc/pi")
     # Keep the Native Pi client on the package's standard presentation path.
     os.environ.pop("TSPI_CUSTOM_UI", None)
     _restore_native_pi_settings(installation)
@@ -998,10 +977,12 @@ def configure_host_process_environment(installation: Installation) -> None:
     # in their terminal path; the systemd Host has no terminal bootstrap, so
     # bind it explicitly before the server process is spawned.
     os.environ["TSPI_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
+    os.environ["TSPI_HOST_STATE_ROOT"] = str(paths(installation.root).host_state)
+    os.environ["TSPI_SESSION_ROOT"] = str(paths(installation.root).sessions)
     os.environ["TS_WORKSPACE_ROOT"] = str(installation.workspaces_root)
     os.environ["TSPI_WORKSPACE_ROOT"] = str(installation.workspaces_root)
-    os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / ".pi" / "agent")
-    diagnostic_path = installation.root / ".pi" / "app-server-host" / "worker-diagnostics.log"
+    os.environ["PI_CODING_AGENT_DIR"] = str(installation.root / "etc/pi")
+    diagnostic_path = installation.root / "var/log/worker-diagnostics.log"
     if diagnostic_path.is_symlink() or (diagnostic_path.exists() and not diagnostic_path.is_file()):
         raise TSPiHostError(f"Pi Worker diagnostics path is not a regular file: {diagnostic_path}")
     diagnostic_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -1342,7 +1323,7 @@ def build_host_client_command(
         str(installation.package_root / "apps/app-server/tspi-terminal-client.mjs"),
         "--workspace-id", str(request.workspace_name),
         "--workspace-root", str(workspace_path or (installation.workspaces_root / str(request.workspace_name))),
-        "--state-root", str(installation.root / ".pi/app-server-host"),
+        "--state-root", str(installation.root / "var/state/host"),
         "--install-root", str(installation.root),
         "--package-root", str(installation.package_root),
     ]
@@ -1366,11 +1347,11 @@ def build_host_client_command(
     release_root = installation.package_root.parent
     if release_root.name == "releases":
         # Standalone ResearchAgent layout:
-        #   .pi/packages/tspi/releases/<release-id>
+        #   ./releases/<release-id>
         command.extend(["--expected-release-id", installation.package_root.name])
     elif release_root.parent.name == "releases":
         # Historical suite layout:
-        #   .pi/packages/tspi/releases/<release-id>/agent
+        #   ./releases/<release-id>/agent
         command.extend(["--expected-release-id", release_root.name])
     if request.session_id:
         command.extend(["--session-id", request.session_id])
@@ -1412,7 +1393,7 @@ def resolve_pi_source(installation: Installation) -> Path:
     commit = pin.get("commit") if isinstance(pin, dict) else None
     if not isinstance(commit, str) or not commit:
         raise TSPiHostError(f"pinned Pi source descriptor has no commit: {pin_path}")
-    source = (installation.root / ".pi/runtime-cache/pi" / commit).resolve()
+    source = (installation.root / "runtimes/pi" / commit).resolve()
     configured = os.environ.get("TSPI_PI_RUNTIME_ROOT")
     if configured and Path(configured).expanduser().resolve() != source:
         raise TSPiHostError("TSPI_PI_RUNTIME_ROOT is installation-managed and cannot be overridden")
@@ -1444,7 +1425,9 @@ def launch_harness_client(installation: Installation, request: LaunchRequest, wo
     os.environ["TSPI_SESSION_CWD"] = str(workspace)
     os.environ["TSPI_WORKSPACE_ID"] = request.workspace_name
     os.environ["TSPI_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
-    os.environ["PI_SERVER_DIR"] = str(installation.root / ".pi/app-server-host/pi-server")
+    os.environ["TSPI_HOST_STATE_ROOT"] = str(paths(installation.root).host_state)
+    os.environ["TSPI_SESSION_ROOT"] = str(paths(installation.root).sessions)
+    os.environ["PI_SERVER_DIR"] = str(installation.root / "var/state/host/pi-server")
     os.environ["PI_EXPERIMENTAL"] = "1"
     os.environ["TSPI_PACKAGE_ROOT"] = str(installation.package_root)
     os.environ["PI_SESSION_WORKER_ENTRY"] = str(installation.package_root / "apps/app-server/pi-session-worker.mjs")
@@ -1493,12 +1476,12 @@ def _app_server_entry(installation: Installation) -> Path:
 
 
 def _prepare_host_state(installation: Installation) -> tuple[Path, Path]:
-    state_root = installation.root / ".pi" / "app-server-host"
+    state_root = installation.root / "var/state/host"
     host_workspace = state_root / "workspace"
     # The native Host uses its private workspace as a real Pi workspace.  Keep
     # its local `.pi` directory present before acquiring the Root Agent lock;
     # otherwise a fresh installation fails before the App Server can start.
-    installation_pi = installation.root / ".pi"
+    installation_pi = installation.root / "var/state"
     # The installation's .pi directory is part of the immutable package
     # surface under the systemd Host sandbox.  Installation already creates
     # it with owner-only permissions, so only validate it here; attempting
@@ -1519,7 +1502,7 @@ def _prepare_host_state(installation: Installation) -> tuple[Path, Path]:
         state_root,
         host_workspace,
         host_workspace / ".pi",
-        state_root / "sessions",
+        paths(installation.root).sessions,
     ):
         if path.is_symlink():
             raise TSPiHostError(f"Host state path cannot be a symbolic link: {path}")
@@ -1594,7 +1577,7 @@ def _private_socket_directory(
         if candidate.is_dir():
             bases.append(candidate / "tspi")
         bases.append(Path(tempfile.gettempdir()) / f"tspi-{os.getuid()}")
-    key = hashlib.sha256(os.fsencode(identity_root.resolve())).hexdigest()[:16]
+    key = hashlib.sha256(os.fsencode(identity_root.resolve())).hexdigest()[:12]
     last_error: OSError | None = None
     for base in bases:
         directory = base / key
@@ -1661,6 +1644,8 @@ def launch_terminal(installation: Installation, request: LaunchRequest, workspac
             exit_code=2,
         )
     os.environ["TSPI_PI_RUNTIME_ROOT"] = str(resolve_pi_source(installation))
+    os.environ["TSPI_HOST_STATE_ROOT"] = str(paths(installation.root).host_state)
+    os.environ["TSPI_SESSION_ROOT"] = str(paths(installation.root).sessions)
     os.environ["TSPI_SESSION_CWD"] = str(workspace)
     if request.remote_host is not None:
         _validate_remote_terminal_request(request)
@@ -1677,7 +1662,7 @@ def prepare_remote_terminal_cwd(installation: Installation, workspace_name: str)
     """Create an isolated local cwd for an SSH terminal's presentation process."""
     if not WORKSPACE_NAME.fullmatch(workspace_name):
         raise TSPiHostError(f"invalid workspace name: {workspace_name}", exit_code=2)
-    root = installation.root / ".pi" / "remote-terminal" / workspace_name
+    root = installation.root / "var/cache/remote-terminal" / workspace_name
     if root.is_symlink():
         raise TSPiHostError(f"remote terminal cwd cannot be a symbolic link: {root}")
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -1690,7 +1675,7 @@ def prepare_remote_terminal_cwd(installation: Installation, workspace_name: str)
 def launch(argv: list[str], *, package_root: str | Path, install_root: str | Path) -> int:
     request = parse_launch_request(argv)
     if request.show_help:
-        print(USAGE, end="")
+        print(SERVER_USAGE if request.host else USAGE, end="")
         return 0
     if request.host and "--service-host" not in argv and os.environ.get("TSPI_SYSTEMD_HOST") != "1":
         try:
@@ -1806,8 +1791,11 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         configure_host_process_environment(installation)
         descriptors: list[int] = []
         try:
-            descriptors.append(acquire_directory_guard(installation.root, host_workspace))
-            descriptors.append(acquire_root_agent_lock(host_workspace))
+            descriptors.append(acquire_directory_guard(installation.root, installation.root))
+            try:
+                descriptors.append(acquire_directory_guard(installation.root, host_workspace, exclusive=True))
+            except SessionGuardError as exc:
+                raise TSPiHostError("Host is already running; manage ts-app-server-tspi.service with systemctl --user") from exc
             exec_pi(build_host_server_command(installation, request), host_workspace)
         except SessionGuardError as exc:
             raise TSPiHostError(str(exc), code=exc.code) from exc

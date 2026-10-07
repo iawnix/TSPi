@@ -105,8 +105,8 @@ Monitor 不会自动 finalize，也不会修改 ResearchMap。
 
 ## 会话存储
 
-安装级 `.pi/app-server-host/sessions/` 是 Native Pi Harness 使用的唯一 session 存储。
-workspace `.pi/sessions` 历史不是受支持的输入，Native runtime 不会 resume 或导入它；持久历史位于 `.pi/app-server-host/sessions/<workspace-id>/<session-id>/session.sqlite`，旁边的 `meta.json` 保存路由元数据。
+安装级 `var/state/pi/sessions/` 是 Native Pi Harness 使用的唯一 session 存储。
+workspace `.pi/sessions` 历史不是受支持的输入，Native runtime 不会 resume 或导入它；持久历史位于 `var/state/pi/sessions/<workspace-id>/<session-id>/session.sqlite`，旁边的 `meta.json` 保存路由元数据。
 研究状态应保存在 workspace Research Memory；SQLite durable session 使用 Host 的会话控制接口。
 
 详见[架构](ARCHITECTURE.zh-CN.md)和[安装说明](INSTALLATION.zh-CN.md)。

@@ -81,7 +81,7 @@ APP_SERVER_FILES = [
 # Keep the TSPi Host and Pi integration explicit in the release inventory so
 # installation cannot silently omit the Host/Core/Research State stack.
 TSPI_HOST_FILES = [
-    "ResearchAgentServer",
+    "libexec/research-agent-host",
     "apps/app-server/app_server.d.mts",
     "apps/app-server/app_server.mjs",
     "apps/app-server/composition_root.d.mts",
@@ -146,7 +146,7 @@ LINK_RELAY_FILES = [
 PACKAGE_FILES = [
     "ResearchAgent",
     "install.sh",
-    "ResearchAgentServer",
+    "libexec/research-agent-host",
     "install-link-relay.sh",
     "uninstall-link-relay.sh",
     "LICENSE",
@@ -318,7 +318,7 @@ REQUIRED_TARBALL_FILES = frozenset(
         "README.zh-CN.md",
         "pyproject.toml",
         "ResearchAgent",
-        "ResearchAgentServer",
+        "libexec/research-agent-host",
         "install.sh",
         "install-link-relay.sh",
         "uninstall-link-relay.sh",

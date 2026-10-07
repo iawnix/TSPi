@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tspi_foundation.layout import paths as layout_paths
 
 import hashlib
 import json
@@ -48,13 +49,13 @@ def _installation(tmp_path: Path) -> launcher.Installation:
         root=root,
         package_root=package,
         workspaces_root=root / "workspaces",
-        job_config_default=root / ".pi/job.toml",
-        notification_config_default=root / ".pi/notifications.toml",
-        runtime_home=root / ".agents/runtime/tspi",
-        runtime_manifest=root / ".agents/runtime/tspi/env.json",
+        job_config_default=root / "etc/job.toml",
+        notification_config_default=root / "etc/email.toml",
+        runtime_home=root / "var/state/installation/python",
+        runtime_manifest=root / "var/state/installation/python/env.json",
         env_root=root / ".agents/envs/tspi",
-        process_cache_root=root / ".pi/runtime-cache",
-        model_icons_config=root / ".pi/tspi/model-icons.json",
+        process_cache_root=root / "var/cache",
+        model_icons_config=root / "etc/model-icons.json",
     )
 
 
@@ -105,7 +106,7 @@ def test_native_pi_settings_preserve_custom_theme_and_remove_old_release_theme(
     installation = _installation(tmp_path)
     settings = installation.root / launcher.PI_AGENT_SETTINGS_RELATIVE
     settings.parent.mkdir(parents=True)
-    theme_path = installation.root / ".pi/packages/tspi/releases/old/agent/packages/agent-ui/themes/ts-theme.json"
+    theme_path = installation.root / "./releases/old/agent/packages/agent-ui/themes/ts-theme.json"
     settings.write_text(
         json.dumps({"theme": "lab-dark", "themes": [str(theme_path), "./custom-theme.json"]}) + "\n",
         encoding="utf-8",
@@ -182,7 +183,7 @@ def test_tspi_launcher_preserves_validated_custom_compute_profile(
 
 def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     install_root = tmp_path / "tspi-install"
-    package_home = install_root / ".pi/packages/tspi"
+    package_home = install_root / "."
     suite_root = package_home / "releases/test-suite"
     package_root = suite_root / "agent"
     package_root.mkdir(parents=True)
@@ -209,20 +210,15 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     write_test_runtime_manifest(package_root, install_root)
     (package_home / "current").symlink_to("releases/test-suite")
     installed_launcher = install_root / "ResearchAgent"
-    installed_launcher.symlink_to(".pi/packages/tspi/current/agent/ResearchAgent")
+    installed_launcher.symlink_to("./current/agent/ResearchAgent")
     return install_root, installed_launcher
 
 
 def test_resolve_installation_uses_configured_workspace_root(tmp_path: Path) -> None:
     install_root, _launcher = _copy_launcher(tmp_path)
     workspace_root = tmp_path / "research-projects"
-    config = install_root / ".pi/tspi/workspace-root.json"
-    config.parent.mkdir(parents=True)
-    config.write_text(json.dumps({
-        "schema_version": "tspi-workspace-root/1",
-        "workspace_root": str(workspace_root),
-    }) + "\n", encoding="utf-8")
-    package_root = install_root / ".pi/packages/tspi/current/agent"
+    layout_paths(install_root).update_config(workspace_root=str(workspace_root))
+    package_root = install_root / "./current/agent"
 
     installation = launcher.resolve_installation(package_root, install_root)
 
@@ -311,7 +307,7 @@ def test_host_command_owns_installation_state_and_workspace_root(
 
     command = launcher.build_host_server_command(installation, request)
 
-    state_root = installation.root / ".pi/app-server-host"
+    state_root = installation.root / "var/state/host"
     assert command == [
         "/usr/bin/node",
         str(installation.package_root / "apps/app-server/pi-app-server.mjs"),
@@ -481,15 +477,15 @@ def test_host_environment_publishes_owner_only_worker_diagnostics(tmp_path: Path
     commit = pin["commit"]
     (installation.package_root / "config").mkdir(parents=True)
     (installation.package_root / "config/pi-source.json").write_text(json.dumps(pin) + "\n", encoding="utf-8")
-    (installation.root / ".pi/runtime-cache/pi" / commit).mkdir(parents=True)
-    diagnostic = installation.root / ".pi/app-server-host/worker-diagnostics.log"
+    (installation.root / "runtimes/pi" / commit).mkdir(parents=True)
+    diagnostic = installation.root / "var/log/worker-diagnostics.log"
     diagnostic.parent.mkdir(parents=True, exist_ok=True)
     diagnostic.write_text("stale worker error\n", encoding="utf-8")
     original_environment = dict(os.environ)
     try:
         launcher.configure_host_process_environment(installation)
         assert os.environ["TSPI_PI_RUNTIME_ROOT"] == str(
-            installation.root / ".pi/runtime-cache/pi" / commit
+            installation.root / "runtimes/pi" / commit
         )
         assert os.environ["TSPI_PI_DIAGNOSTIC_FILE"] == str(diagnostic)
         assert diagnostic.is_file()
@@ -510,8 +506,8 @@ def test_cli_workspace_storage_rejects_retired_sqlite_bootstrap(tmp_path: Path) 
 
 def test_host_state_rejects_an_insecure_installation_pi_directory(tmp_path: Path) -> None:
     installation = _installation(tmp_path)
-    installation.root.joinpath(".pi").mkdir(mode=0o700)
-    installation.root.joinpath(".pi").chmod(0o755)
+    installation.root.joinpath("var/state").mkdir(mode=0o700, parents=True)
+    installation.root.joinpath("var/state").chmod(0o755)
 
     with pytest.raises(launcher.TSPiHostError, match="must be owner-only"):
         launcher._prepare_host_state(installation)
@@ -535,8 +531,8 @@ def test_host_endpoint_removes_stale_unix_socket(
 ) -> None:
     installation = _installation(tmp_path)
     monkeypatch.setattr(launcher, "_host_server_id", lambda *_args, **_kwargs: "stale")
-    socket_directory = tmp_path / "stale-socket"
-    socket_directory.mkdir()
+    socket_directory = tmp_path
+    socket_directory.mkdir(exist_ok=True)
     monkeypatch.setattr(launcher, "_host_socket_directory", lambda *_args, **_kwargs: socket_directory)
     endpoint = socket_directory / "stale.sock"
     listener = socket.socket(socket.AF_UNIX)
@@ -705,7 +701,7 @@ def test_default_terminal_connects_to_host_and_continues_latest_workspace_sessio
         "--socket-path", str(endpoint),
         "--workspace-id", "reaction-a",
         "--workspace-root", str(installation.workspaces_root / "reaction-a"),
-        "--state-root", str(installation.root / ".pi/app-server-host"),
+        "--state-root", str(installation.root / "var/state/host"),
         "--install-root", str(installation.root),
         "--package-root", str(installation.package_root),
         "--continue",
@@ -719,7 +715,7 @@ def test_default_terminal_binds_standalone_release_identity(
 ) -> None:
     installation = replace(
         _installation(tmp_path),
-        package_root=tmp_path / ".pi/packages/tspi/releases/release-direct",
+        package_root=tmp_path / "./releases/release-direct",
     )
     monkeypatch.setattr(launcher.shutil, "which", lambda name: "/usr/bin/node" if name == "node" else None)
 
@@ -738,7 +734,7 @@ def test_default_terminal_exports_installation_pinned_pi_source(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     installation = _installation(tmp_path)
-    source = installation.root / ".pi/runtime-cache/pi/pinned"
+    source = installation.root / "runtimes/pi/pinned"
     source.mkdir(parents=True)
     (installation.package_root / "config").mkdir(parents=True)
     (installation.package_root / "config/pi-source.json").write_text(

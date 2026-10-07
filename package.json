@@ -1,6 +1,6 @@
 {
   "name": "@iawnix/tspi",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -42,7 +42,7 @@
   "files": [
     "ResearchAgent",
     "install.sh",
-    "ResearchAgentServer",
+    "libexec/research-agent-host",
     "install-link-relay.sh",
     "uninstall-link-relay.sh",
     "LICENSE",

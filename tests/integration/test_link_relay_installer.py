@@ -154,7 +154,7 @@ def test_package_uninstaller_recognizes_installation_owned_relay_unit(tmp_path: 
     unit_dir.mkdir(parents=True)
     unit = unit_dir / "tspi-link-relay.service"
     unit.write_text(
-        """[Service]\nDescription=TSPi Link Relay\nWorkingDirectory=%s\n""" % (root / ".pi/link-relay/current/service"),
+        """[Service]\nDescription=TSPi Link Relay\nWorkingDirectory=%s\n""" % (root / "runtimes/link-relay/current/service"),
         encoding="utf-8",
     )
     monkeypatch.setattr(package_uninstaller.Path, "home", classmethod(lambda _cls: home))

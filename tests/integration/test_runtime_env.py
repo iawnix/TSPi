@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tspi_foundation.layout import paths as layout_paths
 
 import json
 import os
@@ -128,14 +129,13 @@ def test_default_env_store_is_package_relative_without_override(tmp_path: Path, 
     package = tmp_path / "skill"
     package.mkdir()
 
-    store = default_env_store(package)
-
-    assert store == tmp_path / ".envs" / "tspi"
+    assert default_env_store(package) == Path(os.environ["TSPI_HOST_ENV_ROOT"])
 
 
 def test_installed_current_entrypoint_seeds_installation_owned_runtime_paths(tmp_path: Path) -> None:
     installation = tmp_path / "tspi"
-    package_home = installation / ".pi" / "packages" / "tspi"
+    layout_paths(installation).initialize()
+    package_home = installation / "."
     release = package_home / "releases" / "release-a"
     script = release / "web" / "bin" / "ts-web"
     script.parent.mkdir(parents=True)
@@ -149,13 +149,13 @@ def test_installed_current_entrypoint_seeds_installation_owned_runtime_paths(tmp
         environ=environment,
     )
 
-    runtime_home = installation / ".agents" / "runtime" / "tspi"
+    runtime_home = installation / "var/state/installation/python"
     assert resolved == installation
     assert environment == {
         "TSPI_RUNTIME_HOME": str(runtime_home),
         "TSPI_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
         "TSPI_ENV_ROOT": str(
-            installation / ".agents" / "envs" / "tspi"
+            layout_paths(installation).env_root
         ),
     }
 
@@ -166,7 +166,8 @@ def test_unified_suite_entrypoint_seeds_installation_owned_runtime_paths(
     entrypoint_kind: str,
 ) -> None:
     installation = tmp_path / "tspi"
-    package_home = installation / ".pi" / "packages" / "tspi"
+    layout_paths(installation).initialize()
+    package_home = installation / "."
     release = package_home / "releases" / "release-a"
     script = release / "web" / "bin" / "ts-web"
     script.parent.mkdir(parents=True)
@@ -174,7 +175,7 @@ def test_unified_suite_entrypoint_seeds_installation_owned_runtime_paths(
     current = package_home / "current"
     current.symlink_to("releases/release-a", target_is_directory=True)
     launcher = installation / "TSWeb"
-    launcher.symlink_to(".pi/packages/tspi/current/web/bin/ts-web")
+    launcher.symlink_to("./current/web/bin/ts-web")
     entrypoint = (
         launcher
         if entrypoint_kind == "launcher"
@@ -187,13 +188,13 @@ def test_unified_suite_entrypoint_seeds_installation_owned_runtime_paths(
         environ=environment,
     )
 
-    runtime_home = installation / ".agents" / "runtime" / "tspi"
+    runtime_home = installation / "var/state/installation/python"
     assert resolved == installation
     assert environment == {
         "TSPI_RUNTIME_HOME": str(runtime_home),
         "TSPI_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
         "TSPI_ENV_ROOT": str(
-            installation / ".agents" / "envs" / "tspi"
+            layout_paths(installation).env_root
         ),
     }
 
@@ -202,6 +203,7 @@ def test_unified_suite_entrypoint_rejects_target_outside_managed_releases(
     tmp_path: Path,
 ) -> None:
     installation = tmp_path / "tspi"
+    layout_paths(installation).initialize()
     authored = installation / "checkout" / "bin" / "ts-web"
     authored.parent.mkdir(parents=True)
     authored.write_text("# authored\n", encoding="utf-8")
@@ -220,7 +222,8 @@ def test_suite_web_launcher_seeds_installation_owned_runtime_paths(
     tmp_path: Path,
 ) -> None:
     installation = tmp_path / "tspi"
-    package_home = installation / ".pi" / "packages" / "tspi"
+    layout_paths(installation).initialize()
+    package_home = installation / "."
     release = package_home / "releases" / "release-a"
     script = release / "web" / "bin" / "ts-web"
     script.parent.mkdir(parents=True)
@@ -228,7 +231,7 @@ def test_suite_web_launcher_seeds_installation_owned_runtime_paths(
     current = package_home / "current"
     current.symlink_to("releases/release-a", target_is_directory=True)
     launcher = installation / "TSWeb"
-    launcher.symlink_to(".pi/packages/tspi/current/web/bin/ts-web")
+    launcher.symlink_to("./current/web/bin/ts-web")
     environment: dict[str, str] = {}
 
     resolved = seed_installation_runtime_from_entrypoint(
@@ -236,12 +239,12 @@ def test_suite_web_launcher_seeds_installation_owned_runtime_paths(
         environ=environment,
     )
 
-    runtime_home = installation / ".agents" / "runtime" / "tspi"
+    runtime_home = installation / "var/state/installation/python"
     assert resolved == installation
     assert environment == {
         "TSPI_RUNTIME_HOME": str(runtime_home),
         "TSPI_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "TSPI_ENV_ROOT": str(installation / ".agents" / "envs" / "tspi"),
+        "TSPI_ENV_ROOT": str(layout_paths(installation).env_root),
     }
 
 
@@ -253,13 +256,14 @@ def test_runtime_path_seed_preserves_explicit_configuration_and_ignores_authored
         "TSPI_RUNTIME_MANIFEST": "/configured/env.json",
         "TSPI_ENV_ROOT": "/configured/envs",
     }
-    stable = tmp_path / ".pi" / "packages" / "tspi" / "current" / "web" / "bin" / "ts-web"
-    release = tmp_path / ".pi" / "packages" / "tspi" / "releases" / "release-a" / "web" / "bin"
+    stable = tmp_path / "." / "current" / "web" / "bin" / "ts-web"
+    release = tmp_path / "." / "releases" / "release-a" / "web" / "bin"
     release.mkdir(parents=True)
     (release / "ts-web").write_text("#!/bin/sh\n", encoding="utf-8")
-    current = tmp_path / ".pi" / "packages" / "tspi" / "current"
+    current = tmp_path / "." / "current"
     current.symlink_to("releases/release-a", target_is_directory=True)
 
+    layout_paths(tmp_path).initialize()
     assert seed_installation_runtime_from_entrypoint(stable, environ=explicit) == tmp_path
     assert explicit == {
         "TSPI_RUNTIME_HOME": "/configured/runtime",
@@ -285,11 +289,11 @@ def test_authoritative_installation_seed_replaces_stale_runtime_paths(tmp_path: 
 
     seed_installation_runtime(tmp_path, environ=environment, authoritative=True)
 
-    runtime_home = tmp_path / ".agents" / "runtime" / "tspi"
+    runtime_home = tmp_path / "var/state/installation/python"
     assert environment == {
         "TSPI_RUNTIME_HOME": str(runtime_home),
         "TSPI_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "TSPI_ENV_ROOT": str(tmp_path / ".agents" / "envs" / "tspi"),
+        "TSPI_ENV_ROOT": str(layout_paths(tmp_path).env_root),
     }
 
 
@@ -302,9 +306,9 @@ def test_workspace_root_owns_runtime_home_and_env_store(tmp_path: Path, monkeypa
     package.mkdir(parents=True)
     _write_runtime_specs(package)
 
-    assert default_runtime_home(package, workspace) == workspace / ".agents" / "runtime" / "tspi"
-    assert default_env_store(package, workspace) == workspace / ".agents" / "envs" / "tspi"
-    assert runtime_manifest_path(package, workspace_root=workspace) == workspace / ".agents" / "runtime" / "tspi" / "env.json"
+    assert default_runtime_home(package, workspace) == workspace / "var/state/installation/python"
+    assert default_env_store(package, workspace) == layout_paths(workspace).env_root
+    assert runtime_manifest_path(package, workspace_root=workspace) == workspace / "var/state/installation/python" / "env.json"
 
 
 def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
@@ -729,7 +733,7 @@ def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path, monkeypatch: 
     assert payload["dry_run"] is True
     assert payload["env_prefix"].startswith(str(tmp_path / "envs" / "base"))
     assert payload["kernel_env_prefix"].startswith(str(tmp_path / "envs" / "kernels"))
-    assert payload["manifest_path"].endswith("/.runtime/tspi/env.json")
+    assert payload["manifest_path"].endswith("/var/state/installation/python/env.json")
     assert payload["runtime_requirements"] == str(ROOT / "requirements-runtime.txt")
     assert payload["python_executable"].endswith("/bin/python")
     assert payload["python_distribution"] == "tspi-runtime"
@@ -758,10 +762,10 @@ def test_install_env_dry_run_accepworkspace_runtime_home(tmp_path: Path) -> None
     )
     payload = json.loads(completed.stdout)
 
-    assert payload["runtime_home"] == str(workspace / ".agents" / "runtime" / "tspi")
-    assert payload["manifest_path"] == str(workspace / ".agents" / "runtime" / "tspi" / "env.json")
-    assert payload["env_prefix"].startswith(str(workspace / ".agents" / "envs" / "tspi" / "base"))
-    assert payload["kernel_env_prefix"].startswith(str(workspace / ".agents" / "envs" / "tspi" / "kernels"))
+    assert payload["runtime_home"] == str(workspace / "var/state/installation/python")
+    assert payload["manifest_path"] == str(workspace / "var/state/installation/python" / "env.json")
+    assert payload["env_prefix"].startswith(str(layout_paths(workspace).env_root / "base"))
+    assert payload["kernel_env_prefix"].startswith(str(layout_paths(workspace).env_root / "kernels"))
 
 
 def test_install_env_accepts_user_conda_root(tmp_path: Path) -> None:
@@ -1000,9 +1004,9 @@ def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> No
     payload = json.loads(completed.stdout)
 
     assert payload["configured"] is False
-    assert payload["manifest_path"] == str(workspace / ".agents" / "runtime" / "tspi" / "env.json")
-    assert payload["env_prefix"].startswith(str(workspace / ".agents" / "envs" / "tspi" / "base"))
-    assert payload["kernel_env_prefix"].startswith(str(workspace / ".agents" / "envs" / "tspi" / "kernels"))
+    assert payload["manifest_path"] == str(workspace / "var/state/installation/python" / "env.json")
+    assert payload["env_prefix"].startswith(str(layout_paths(workspace).env_root / "base"))
+    assert payload["kernel_env_prefix"].startswith(str(layout_paths(workspace).env_root / "kernels"))
 
 
 def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:

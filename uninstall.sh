@@ -26,8 +26,8 @@ python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' || fail "P
 if [[ -f "${SCRIPT_DIR}/scripts/uninstall.py" && -f "${SCRIPT_DIR}/package.json" ]]; then
   exec python3 "${SCRIPT_DIR}/scripts/uninstall.py" "$@"
 fi
-if [[ -f "${SCRIPT_DIR}/.pi/tspi/uninstall.py" ]]; then
-  exec python3 "${SCRIPT_DIR}/.pi/tspi/uninstall.py" "$@"
+if [[ -f "${SCRIPT_DIR}/runtimes/maintenance/uninstall.py" ]]; then
+  exec python3 "${SCRIPT_DIR}/runtimes/maintenance/uninstall.py" "$@"
 fi
 command -v git >/dev/null 2>&1 || fail "Git is required for recovery mode." 127
 

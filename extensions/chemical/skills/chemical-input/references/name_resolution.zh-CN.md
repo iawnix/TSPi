@@ -15,12 +15,12 @@ unresolved 输入；只有 Skill reference 缺失时才返回结构化 workflow 
 ## 配置
 
 自动查询使用安装目录所有的配置。新安装会把包内的 `config/name-resolver.example.toml` 复制为
-`.pi/name-resolver.toml`；管理员可以替换该文件，或者用 `TSPI_NAME_RESOLVER_CONFIG` 指定绝对路径。内置的
+`etc/name-resolver.toml`；管理员可以替换该文件，或者用 `TSPI_NAME_RESOLVER_CONFIG` 指定绝对路径。内置的
 PubChem 后端使用 PUG REST，并缓存响应证据；结果中的 `resolver_provenance` 会记录端点、
 请求 URL、响应摘要、实现版本和查询时间。也可以启用 OPSIN 作为第二个确定性 HTTP 后端。
 网络错误和多个候选仍分别保持未解析或歧义状态；此配置不会把 LLM 生成的候选提升为确定结构。
 
-若 `TSPI_NAME_RESOLVER_CONFIG` 与 `${TSPI_INSTALL_ROOT}/.pi/name-resolver.toml` 都不存在，
+若 `TSPI_NAME_RESOLVER_CONFIG` 与 `${TSPI_INSTALL_ROOT}/etc/name-resolver.toml` 都不存在，
 则没有确定性 resolver backend 可用。当 workflow 本身已注册时，`resolver=auto` 仍返回正常的
 `ts-analysis-result/1`，其 `verdict="unsupported"`、`data.status="unresolved"`、候选为空，并在
 diagnostics 中说明缺失 backend。只有实时 analysis catalog 没有该 Skill reference 时，才

@@ -1,6 +1,8 @@
 from __future__ import annotations
+from tspi_foundation.layout import paths as layout_paths
 
 import json
+import os
 import io
 import stat
 import subprocess
@@ -60,7 +62,7 @@ def test_non_interactive_defaults_to_a_started_user_host(tmp_path: Path) -> None
 
 def test_existing_unmanaged_host_is_migrated_to_user_service(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    service_config = root / ".pi/tspi/service.json"
+    service_config = root / "etc/service.json"
     service_config.parent.mkdir(parents=True)
     service_config.write_text(
         json.dumps({"schema_version": "tspi-service/1", "scope": "none", "runtime_dir": None}),
@@ -264,7 +266,7 @@ def test_review_does_not_reload_email_defaults_after_disable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = tmp_path / "install"
-    config = root / ".pi/notifications.toml"
+    config = root / "etc/email.toml"
     config.parent.mkdir(parents=True)
     config.write_text("[notifications.email]\nenabled = true\n", encoding="utf-8")
     args = wizard.parse_args(["--install-root", str(root)])
@@ -304,13 +306,10 @@ def test_interactive_integer_prompt_retries_invalid_values(monkeypatch: pytest.M
 def test_menu_defaults_read_existing_configuration(tmp_path: Path) -> None:
     root = tmp_path / "install"
     workspace = tmp_path / "research"
-    marker = root / ".pi/tspi/model-icons.json"
+    marker = root / "etc/model-icons.json"
     marker.parent.mkdir(parents=True)
     marker.write_text(json.dumps({"enabled": True}), encoding="utf-8")
-    (root / ".pi/tspi/workspace-root.json").write_text(
-        json.dumps({"schema_version": "tspi-workspace-root/1", "workspace_root": str(workspace)}),
-        encoding="utf-8",
-    )
+    layout_paths(root).initialize().update_config(workspace_root=str(workspace))
     (root / "TSWeb").write_text("launcher", encoding="utf-8")
     args = wizard.parse_args(["--install-root", str(root)])
 
@@ -326,7 +325,7 @@ def test_interactive_menu_can_disable_existing_email_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = tmp_path / "install"
-    config = root / ".pi/notifications.toml"
+    config = root / "etc/email.toml"
     config.parent.mkdir(parents=True)
     config.write_text("[notifications.email]\nenabled = true\n", encoding="utf-8")
     args = wizard.parse_args(["--install-root", str(root)])
@@ -448,7 +447,7 @@ def test_model_icon_font_install_writes_private_marker_and_handles_missing_fc_ca
     result = wizard.install_model_icon_font(package, install_root, enabled=True)
 
     target = data_home / "fonts/tspi/TSPi-Model-Icons.ttf"
-    marker = install_root / ".pi/tspi/model-icons.json"
+    marker = install_root / "etc/model-icons.json"
     assert result["status"] == "installed_cache_unavailable"
     assert result["enabled"] is True
     assert target.read_bytes() == source.read_bytes()
@@ -475,20 +474,15 @@ def test_model_icon_font_can_be_disabled_without_removing_shared_font(tmp_path: 
 
     assert result["status"] == "disabled"
     assert (tmp_path / "xdg-data/fonts/tspi/TSPi-Model-Icons.ttf").is_file()
-    assert json.loads((install_root / ".pi/tspi/model-icons.json").read_text(encoding="utf-8"))["enabled"] is False
+    assert json.loads((install_root / "etc/model-icons.json").read_text(encoding="utf-8"))["enabled"] is False
 
 
 def test_update_preserves_workspace_root_and_link_defaults(tmp_path: Path) -> None:
     root = tmp_path / "install"
     workspace_root = tmp_path / "research"
-    workspace_config = root / ".pi/tspi/workspace-root.json"
-    workspace_config.parent.mkdir(parents=True)
-    workspace_config.write_text(json.dumps({
-        "schema_version": "tspi-workspace-root/1",
-        "workspace_root": str(workspace_root),
-    }), encoding="utf-8")
-    phone = root / ".pi/app-server-host/link.json"
-    phone.parent.mkdir(parents=True)
+    layout_paths(root).initialize().update_config(workspace_root=str(workspace_root))
+    phone = root / "var/state/host/link.json"
+    phone.parent.mkdir(parents=True, exist_ok=True)
     phone.write_text(json.dumps({
         "schema_version": "tspi-link/1",
         "protocol": "tspi-link.v1",
@@ -562,7 +556,7 @@ def test_pi_agent_configuration_is_imported_once_and_kept_private(
 
     imported = wizard.provision_pi_agent_configuration(args)
 
-    destination = Path(args.install_root) / ".pi/agent"
+    destination = Path(args.install_root) / "etc/pi"
     assert imported["status"] == "imported"
     assert imported["files"] == {"models.json": "imported", "auth.json": "imported"}
     assert destination.joinpath("models.json").read_bytes() == source.joinpath("models.json").read_bytes()
@@ -638,19 +632,19 @@ def test_install_configuration_rollback_restores_owned_files_and_removes_new_rel
         "--without-web", "--service-scope", "none", "--non-interactive",
     ])
     wizard.validate_options(args)
-    phone = root / ".pi/app-server-host/link.json"
-    phone.parent.mkdir(parents=True)
+    phone = root / "var/state/host/link.json"
+    phone.parent.mkdir(parents=True, exist_ok=True)
     phone.write_text("old-phone\n", encoding="utf-8")
-    release = root / ".pi/packages/tspi/releases/old"
+    release = root / "./releases/old"
     release.mkdir(parents=True)
     snapshot = wizard.snapshot_install_configuration(root, args)
 
     phone.write_text("new-phone\n", encoding="utf-8")
-    (root / ".pi/job.toml").parent.mkdir(parents=True, exist_ok=True)
-    (root / ".pi/job.toml").write_text("new\n", encoding="utf-8")
-    (root / ".pi/agent").mkdir(parents=True)
-    (root / ".pi/agent/auth.json").write_text("{}\n", encoding="utf-8")
-    new_release = root / ".pi/packages/tspi/releases/new"
+    (root / "etc/job.toml").parent.mkdir(parents=True, exist_ok=True)
+    (root / "etc/job.toml").write_text("new\n", encoding="utf-8")
+    (root / "etc/pi").mkdir(parents=True)
+    (root / "etc/pi/auth.json").write_text("{}\n", encoding="utf-8")
+    new_release = root / "./releases/new"
     nested = new_release / "nested"
     nested.mkdir(parents=True)
     payload = nested / "payload"
@@ -658,19 +652,21 @@ def test_install_configuration_rollback_restores_owned_files_and_removes_new_rel
     payload.chmod(0o400)
     nested.chmod(0o300)
     new_release.chmod(0o300)
-    package_home = root / ".pi/packages/tspi"
+    package_home = root / "."
     (package_home / "current").symlink_to("releases/new")
-    (package_home / "install-state.json").write_text("new-state\n", encoding="utf-8")
+    state = root / "var/state/installation/install-state.json"
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text("new-state\n")
 
     wizard.restore_install_configuration(root, snapshot)
 
     assert phone.read_text(encoding="utf-8") == "old-phone\n"
-    assert not (root / ".pi/job.toml").exists()
-    assert not (root / ".pi/agent/auth.json").exists()
+    assert not (root / "etc/job.toml").exists()
+    assert not (root / "etc/pi/auth.json").exists()
     assert release.is_dir()
-    assert not (root / ".pi/packages/tspi/releases/new").exists()
+    assert not (root / "./releases/new").exists()
     assert not (package_home / "current").is_symlink()
-    assert not (package_home / "install-state.json").exists()
+    assert not (root / "var/state/installation/install-state.json").exists()
 
 
 def test_non_interactive_smtp_options_write_only_a_secure_credential_reference(tmp_path: Path) -> None:
@@ -693,7 +689,7 @@ def test_non_interactive_smtp_options_write_only_a_secure_credential_reference(t
 
     result = wizard.configure_notification_config(args)
 
-    config = root / ".pi/notifications.toml"
+    config = root / "etc/email.toml"
     assert result["binding"] == "smtp"
     assert stat.S_IMODE(config.stat().st_mode) == 0o600
     assert stat.S_IMODE(password_file.stat().st_mode) == 0o600
@@ -708,7 +704,7 @@ def test_non_interactive_smtp_options_write_only_a_secure_credential_reference(t
 
 def test_interactive_smtp_password_is_written_to_the_default_private_file(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    password_file = root / ".pi/email/smtp-password"
+    password_file = root / "etc/secrets/smtp-password"
     args = wizard.parse_args([
         "--install-root", str(root),
         "--without-web",
@@ -727,7 +723,7 @@ def test_interactive_smtp_password_is_written_to_the_default_private_file(tmp_pa
 
     assert password_file.read_text(encoding="utf-8") == "163-authorization-code\n"
     assert stat.S_IMODE(password_file.stat().st_mode) == 0o600
-    assert "163-authorization-code" not in (root / ".pi/notifications.toml").read_text(encoding="utf-8")
+    assert "163-authorization-code" not in (root / "etc/email.toml").read_text(encoding="utf-8")
 
 
 def test_clawemail_options_write_compatible_configuration(tmp_path: Path) -> None:
@@ -756,7 +752,7 @@ def test_clawemail_options_write_compatible_configuration(tmp_path: Path) -> Non
 
     wizard.configure_notification_config(args)
 
-    content = (root / ".pi/notifications.toml").read_text(encoding="utf-8")
+    content = (root / "etc/email.toml").read_text(encoding="utf-8")
     assert 'recipient = "receiver@example.org"' in content
     assert f'clawemail_root = "{clawemail}"' in content
     assert "provider =" not in content
@@ -768,14 +764,13 @@ def test_app_server_service_is_one_installation_host(tmp_path: Path) -> None:
     unit = wizard.app_server_unit(args)
 
     assert f"WorkingDirectory={root}" in unit
-    assert f'ExecStart="{root / "ResearchAgentServer"}"' in unit
+    assert f'ExecStart="{root / "current/agent/libexec/research-agent-host"}"' in unit
     assert "Environment=TSPI_SYSTEMD_HOST=1" in unit
     assert "TSPI_SERVER_EXTENSIONS" not in unit
     assert 'Environment="XDG_RUNTIME_DIR=' in unit
-    assert f'PI_CODING_AGENT_DIR={root / ".pi/agent"}' in unit
-    assert 'ReadWritePaths="/run/user/' in unit
-    assert f'ReadWritePaths="{root / ".pi/app-server-host"}"' in unit
-    assert f'ReadWritePaths="{root / ".pi/session-guards"}"' in unit
+    assert f'PI_CODING_AGENT_DIR={root / "etc/pi"}' in unit
+    assert str(Path(os.environ["XDG_RUNTIME_DIR"]) / "tspi") in unit
+    assert f'ReadWritePaths="{root / "var/state"}"' in unit
     assert f'ReadWritePaths="{root / "workspaces"}"' in unit
     assert "WantedBy=default.target" in unit
     assert "TSPhone" not in unit
@@ -792,7 +787,7 @@ def test_web_service_uses_installed_launcher_and_workspace_root(tmp_path: Path) 
     assert '"--provider"' in unit
     assert '"--binding"' not in unit
     assert str(root / "workspaces") in unit
-    assert str(root / ".pi/ts-web/auth.token") in unit
+    assert str(root / "etc/web/auth.token") in unit
     assert f'ReadOnlyPaths="{root / "workspaces"}"' in unit
     assert f'ReadWritePaths="{root / "workspaces"}"' not in unit
 
@@ -812,7 +807,7 @@ def test_service_runtime_configuration_records_scope_and_socket_directory(
     configured = wizard.configure_service_runtime(args)
 
     assert configured["scope"] == "user"
-    document = json.loads((Path(args.install_root) / ".pi/tspi/service.json").read_text(encoding="utf-8"))
+    document = layout_paths(args.install_root).read_config()["service"]
     assert document["schema_version"] == "tspi-service/1"
     assert document["scope"] == "user"
     assert document["runtime_dir"] == str(runtime_parent / "tspi")
@@ -851,10 +846,11 @@ def test_prepare_app_server_runtime_uses_installed_release_script(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = tmp_path / "install"
-    installer = root / ".pi/packages/tspi/current/agent/scripts/prepare_pi_source.py"
+    installer = root / "releases/test/agent/scripts/prepare_pi_source.py"
     installer.parent.mkdir(parents=True)
     installer.write_text("# fixture\n", encoding="utf-8")
-    runtime = root / ".pi/runtime-cache/pi/test"
+    (root / "current").symlink_to("releases/test")
+    runtime = root / "runtimes/pi/test"
     runtime.mkdir(parents=True)
     commands: list[list[str]] = []
 
@@ -877,9 +873,10 @@ def test_prepare_app_server_runtime_reports_installer_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = tmp_path / "install"
-    installer = root / ".pi/packages/tspi/current/agent/scripts/prepare_pi_source.py"
+    installer = root / "releases/test/agent/scripts/prepare_pi_source.py"
     installer.parent.mkdir(parents=True)
     installer.write_text("# fixture\n", encoding="utf-8")
+    (root / "current").symlink_to("releases/test")
     monkeypatch.setattr(
         wizard.subprocess,
         "run",
@@ -900,7 +897,7 @@ def test_prepare_app_server_runtime_prefers_stable_current_release(
     installer.write_text("# fixture\n", encoding="utf-8")
     (suite / "agent/config").mkdir(parents=True)
     (root / "current").symlink_to(suite, target_is_directory=True)
-    runtime = root / ".pi/runtime-cache/pi/test"
+    runtime = root / "runtimes/pi/test"
     runtime.mkdir(parents=True)
     commands: list[list[str]] = []
 
@@ -1029,7 +1026,7 @@ def test_service_ownership_rejects_a_different_installation(
 
 def test_component_summary_exposes_app_server_and_phone_connection(tmp_path: Path) -> None:
     args = _options(tmp_path)
-    runtime = tmp_path / "install/.pi/runtime-cache/pi/commit"
+    runtime = tmp_path / "install/runtimes/pi/commit"
     components = wizard.build_component_summary(
         args,
         {"runtime": {"env_prefix": "/runtime", "runtime_probe": {"modules": {}, "commands": {}}}},
@@ -1038,7 +1035,7 @@ def test_component_summary_exposes_app_server_and_phone_connection(tmp_path: Pat
         {"web_http": {"path": "/token", "status": "created", "mode": "0600"}},
     )
     assert components["app_server"]["runtime"] == str(runtime)
-    assert components["app_server"]["server_id"].endswith("/.pi/app-server-host/server-id")
+    assert components["app_server"]["server_id"].endswith("/var/state/host/server-id")
     assert components["app_server"]["start"] == "systemctl --user start ts-app-server-tspi.service"
     assert components["phone"]["tool_access"] == "same_as_terminal"
     assert components["phone"]["protocol"] == "tspi-link.v1"
@@ -1077,7 +1074,7 @@ def test_workspace_root_rejects_an_installation_ancestor(tmp_path: Path) -> None
 def test_link_manifest_is_secret_free_and_host_token_is_private(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     args = _options(tmp_path)
     root = Path(args.install_root)
-    (root / ".pi/tspi").mkdir(parents=True)
+    (root / "etc").mkdir(parents=True)
     wizard.configure_workspace_root(args)
     args.phone_access = "link"
     args.link_url = "https://relay.example.test"
@@ -1097,7 +1094,7 @@ def test_link_manifest_is_secret_free_and_host_token_is_private(tmp_path: Path, 
     assert result["tool_access"] == "same_as_terminal"
     assert "token" not in manifest
     assert "secret" not in manifest
-    token_file = root / ".pi/app-server-host/host.token"
+    token_file = root / "var/state/host/host.token"
     assert token_file.read_text(encoding="utf-8").strip().startswith("tsph_")
     assert stat.S_IMODE(token_file.stat().st_mode) == 0o600
 
@@ -1105,7 +1102,7 @@ def test_link_manifest_is_secret_free_and_host_token_is_private(tmp_path: Path, 
 def test_changing_relay_requires_a_new_host_enrollment(tmp_path: Path) -> None:
     args = _options(tmp_path)
     root = Path(args.install_root)
-    state = root / ".pi/app-server-host"
+    state = root / "var/state/host"
     state.mkdir(parents=True)
     (state / "link.json").write_text(json.dumps({
         "schema_version": "tspi-link/1",
@@ -1178,7 +1175,7 @@ def test_custom_smtp_provider_writes_explicit_host(tmp_path: Path) -> None:
 
     wizard.configure_notification_config(args)
 
-    content = (Path(args.install_root) / ".pi/notifications.toml").read_text(encoding="utf-8")
+    content = (Path(args.install_root) / "etc/email.toml").read_text(encoding="utf-8")
     assert 'preset = "custom"' in content
     assert 'host = "mail.example.test"' in content
 
@@ -1206,7 +1203,7 @@ def test_logged_package_step_is_kept_in_date_named_log(tmp_path: Path) -> None:
     )
 
     assert result == {"ok": True}
-    log = root / ".pi" / "logs" / f"install.{wizard.datetime.now().strftime('%Y.%m.%d')}.log"
+    log = root / "var/log" / f"install.{wizard.datetime.now().strftime('%Y.%m.%d')}.log"
     assert log.is_file()
     assert '"ok": true' in log.read_text(encoding="utf-8")
 
@@ -1238,7 +1235,7 @@ def test_job_toml_is_validated_and_written_private(tmp_path: Path) -> None:
     wizard.validate_options(args)
     configs = wizard.configure_backend_configs(args)
 
-    destination = root / ".pi" / "job.toml"
+    destination = root / "etc/job.toml"
     assert configs["job"]["status"] == "configured"
     assert destination.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
     assert stat.S_IMODE(destination.stat().st_mode) == 0o600
@@ -1258,7 +1255,7 @@ def test_name_resolver_toml_is_validated_and_written_private(tmp_path: Path) -> 
     wizard.validate_options(args)
     configs = wizard.configure_backend_configs(args)
 
-    destination = root / ".pi/name-resolver.toml"
+    destination = root / "etc/name-resolver.toml"
     assert configs["name_resolver"]["status"] == "configured"
     assert configs["name_resolver"]["enabled_backends"] == "pubchem"
     assert configs["name_resolver"]["automatic_lookup"] == "ready"
@@ -1276,13 +1273,13 @@ def test_name_resolver_config_uses_bundled_pubchem_default(tmp_path: Path) -> No
     assert configs["name_resolver"]["status"] == "configured"
     assert configs["name_resolver"]["enabled_backends"] == "opsin,pubchem"
     assert configs["name_resolver"]["automatic_lookup"] == "ready"
-    assert configs["name_resolver"]["path"].endswith("/.pi/name-resolver.toml")
-    assert stat.S_IMODE((tmp_path / "install/.pi/name-resolver.toml").stat().st_mode) == 0o600
+    assert configs["name_resolver"]["path"].endswith("/etc/name-resolver.toml")
+    assert stat.S_IMODE((tmp_path / "install/etc/name-resolver.toml").stat().st_mode) == 0o600
 
 
 def test_invalid_preserved_name_resolver_config_fails_install_configuration(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    destination = root / ".pi/name-resolver.toml"
+    destination = root / "etc/name-resolver.toml"
     destination.parent.mkdir(parents=True)
     destination.write_text("default_resolver = \"invalid\"\n", encoding="utf-8")
     args = wizard.parse_args([
@@ -1299,6 +1296,6 @@ def test_install_uninstaller_copies_recovery_files_and_marks_ownership(tmp_path:
     uninstaller = install_uninstaller(root, ROOT)
     assert uninstaller == root / "uninstall.sh"
     assert uninstaller.is_file()
-    assert (root / ".pi/tspi/uninstall.py").is_file()
-    marker = json.loads((root / ".pi/tspi/installation.json").read_text(encoding="utf-8"))
-    assert marker["schema_version"] == "tspi-installation-root/1"
+    assert (root / "runtimes/maintenance/uninstall.py").is_file()
+    marker = json.loads((root / "etc/installation.json").read_text(encoding="utf-8"))
+    assert marker["schema_version"] == "research-agent-installation/2"

@@ -131,7 +131,7 @@ and [Scientific Capabilities Operations](docs/SCIENTIFIC_CAPABILITIES_OPERATIONS
 
 TS Web is an optional read-only workspace explorer. When selected during
 installation it is available as `TSWeb`; its token and state remain under the
-installation's `.pi/ts-web*` directories.
+installation's `etc/web*` directories.
 
 ## Uninstall
 

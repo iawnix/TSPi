@@ -53,6 +53,7 @@ def register_first_party_providers(package_root: str | Path) -> None:
 
 def load_runtime_environment(package_root: str | Path) -> ModuleType:
     root = Path(package_root).expanduser().resolve()
+    sys.path.insert(0, str(root / "packages/tspi-foundation"))
     source = root / "packages" / "tspi-foundation" / "tspi_foundation" / "env.py"
     if not source.is_file():
         raise RuntimeError(f"TS Agent runtime bootstrap module is missing: {source}")

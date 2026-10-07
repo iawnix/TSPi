@@ -25,7 +25,7 @@ class SessionGuardError(RuntimeError):
 
 
 def installation_is_guarded(installation: Path) -> bool:
-    path = installation / ".pi" / "packages" / "tspi" / "install-state.json"
+    path = installation / "var/state/installation/install-state.json"
     if not path.exists() and not path.is_symlink():
         return False
     try:
@@ -46,7 +46,7 @@ def installation_is_guarded(installation: Path) -> bool:
         package_root = value.get("package_root")
         if (value.get("schema_version") != "tspi-package-install/1"
                 or not isinstance(package_root, str)
-                or Path(package_root).parent != installation.resolve() / ".pi/packages/tspi/releases"
+                or Path(package_root).parent != installation.resolve() / "./releases"
                 or Path(package_root).name != value.get("current_release_id")):
             raise SessionGuardError("installation guard state does not match this installation")
         return True
@@ -65,41 +65,12 @@ def require_guarded_installation(installation: Path) -> None:
 
 @contextmanager
 def guard_installation_upgrade(installation: Path) -> Iterator[None]:
-    """Inspect unguarded writers once, while holding the affected directories closed."""
-    if installation_is_guarded(installation):
-        yield
-        return
-    from .launcher import (
-        WORKSPACE_NAME,
-        TSPiHostError,
-        _configured_workspace_root,
-        acquire_root_agent_lock,
-    )
-
+    """Serialize activation against the running installation Host."""
+    descriptor = acquire_directory_guard(installation, installation, exclusive=True)
     try:
-        container = _configured_workspace_root(installation)
-    except TSPiHostError as exc:
-        raise SessionGuardError(f"cannot resolve workspace root during guard upgrade: {exc}") from exc
-    if container.is_symlink():
-        raise SessionGuardError("workspace container cannot be a symbolic link")
-    with ExitStack() as guards:
-        for workspace in sorted(container.iterdir()) if container.exists() else []:
-            if not WORKSPACE_NAME.fullmatch(workspace.name):
-                continue
-            if workspace.is_symlink():
-                raise SessionGuardError("workspace cannot be a symbolic link during guard upgrade")
-            if not workspace.is_dir():
-                continue
-            directory = acquire_directory_guard(installation, workspace, exclusive=True)
-            guards.callback(os.close, directory)
-            try:
-                _ensure_workspace_pi_root(workspace)
-                root = acquire_root_agent_lock(workspace)
-            except TSPiHostError as exc:
-                raise SessionGuardError(f"cannot verify Root lock in {workspace.name} during guard upgrade") from exc
-            guards.callback(os.close, root)
-            assert_no_unguarded_writers(workspace)
         yield
+    finally:
+        os.close(descriptor)
 
 
 def _ensure_workspace_pi_root(workspace: Path) -> Path:
@@ -129,7 +100,8 @@ def _ensure_workspace_pi_root(workspace: Path) -> Path:
 
 def guard_directory(installation: Path, workspace: Path) -> Path:
     key = hashlib.sha256(os.fsencode(workspace)).hexdigest()
-    return installation / ".pi" / "session-guards" / key
+    from tspi_foundation.layout import paths
+    return paths(installation).guards / key
 
 
 def session_lock_path(installation: Path, workspace: Path, session_id: str) -> Path:
@@ -140,8 +112,8 @@ def session_lock_path(installation: Path, workspace: Path, session_id: str) -> P
 
 def acquire_directory_guard(installation: Path, workspace: Path, *, exclusive: bool = False) -> int:
     directory = guard_directory(installation, workspace)
-    current = installation
-    for part in directory.relative_to(installation).parts:
+    current = Path(directory.anchor)
+    for part in directory.parts[1:]:
         current = current / part
         if current.is_symlink():
             raise SessionGuardError("session guard directory cannot be a symbolic link")

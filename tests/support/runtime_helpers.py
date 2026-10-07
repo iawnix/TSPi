@@ -30,7 +30,9 @@ def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> P
         + "\n",
         encoding="utf-8",
     )
-    state_path = suite_root.parent.parent / "install-state.json"
+    from tspi_foundation.layout import paths
+    layout = paths(suite_root.parent.parent).initialize()
+    state_path = layout.install_state
     state_path.write_text(json.dumps({
         "schema_version": "tspi-package-install/1", "current_release_id": release_id,
         "package_root": str(suite_root), "session_guard_contract": "tspi-session-guard/1",
@@ -69,7 +71,7 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
     environment_spec = package_root / "environment.yml"
     package = json.loads((package_root / "package.json").read_text(encoding="utf-8"))
     payload_sha256 = python_payload_sha256(package_root)
-    runtime_home = install_root / ".agents" / "runtime" / "tspi"
+    runtime_home = install_root / "var/state/installation/python"
     runtime_home.mkdir(parents=True, exist_ok=True)
     manifest_path = runtime_home / "env.json"
     payload = {

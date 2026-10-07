@@ -125,6 +125,6 @@ it has been content-addressed.
 ## Rollback Discipline
 
 Stop the Host service, select a prior validated release under
-`.pi/packages/tspi/releases`, and restart the single Host. Workspace JSONL and
+`releases`, and restart the single Host. Workspace JSONL and
 scientific records are independent of the package release and must not be
 deleted during rollback.

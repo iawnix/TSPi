@@ -26,8 +26,8 @@ SERVICE_NAMES = (
     "ts-web-tspi.service",
     "tspi-link-relay.service",
 )
-LINK_RELAY_MARKER = ".pi/link-relay.json"
-ENTRYPOINTS = ("ResearchAgent", "ResearchAgentServer", "TSPi", "TSWeb")
+LINK_RELAY_MARKER = "etc/link-relay.json"
+ENTRYPOINTS = ("ResearchAgent", "TSWeb")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -67,7 +67,7 @@ def validate_root(path: Path) -> Path:
     resolved = path.expanduser().resolve()
     if resolved == Path("/") or resolved == Path.home() or resolved == Path.home().parent:
         raise ValueError(f"refusing to remove broad path: {resolved}")
-    for relative in (".pi", ".pi/tspi", ".pi/packages", ".agents", ".agents/runtime", ".agents/envs"):
+    for relative in ("etc", "var", "var/state", "releases", "runtimes"):
         if (resolved / relative).is_symlink():
             raise ValueError(f"installation state directory cannot be a symbolic link: {resolved / relative}")
     installation_identity(resolved)
@@ -143,7 +143,7 @@ def service_belongs_to_root(name: str, root: Path, scope: str) -> bool:
     except OSError:
         return False
     root_value = str(root).replace("%", "%%")
-    relay_root_value = str(root / ".pi" / "link-relay" / "current" / "service").replace("%", "%%")
+    relay_root_value = str(root / "runtimes/link-relay" / "current" / "service").replace("%", "%%")
     for line in content.splitlines():
         key, _, value = line.partition("=")
         value = value.strip().strip('"')
@@ -277,18 +277,10 @@ def remove_service_units(args: argparse.Namespace, root: Path) -> list[str]:
 
 def remove_entrypoints(root: Path) -> list[str]:
     removed: list[str] = []
-    # Inspect stable links before removing current, including a dangling
-    # package-store pointer left by an interrupted or older uninstall.
-    stable_bin = root / "bin"
-    stable_links = []
-    if stable_bin.is_dir() and not stable_bin.is_symlink():
-        stable_links.extend(stable_bin / name for name in ENTRYPOINTS)
-    stable_links.append(root / "current")
-    package_home = (root / ".pi/packages/tspi").resolve()
-    for path in stable_links:
-        if path.is_symlink() and path.resolve(strict=False).is_relative_to(package_home):
-            path.unlink()
-            removed.append(str(path))
+    current = root / "current"
+    if current.is_symlink():
+        current.unlink()
+        removed.append(str(current))
     for name in ENTRYPOINTS:
         path = root / name
         if path.is_symlink() or (path.is_file() and name in ENTRYPOINTS):
@@ -321,15 +313,7 @@ def remove_paths(paths: list[Path]) -> list[str]:
 
 def prune_empty_parents(root: Path) -> None:
     for relative in (
-        ".pi/app-server-host/workspace/.pi",
-        ".pi/app-server-host/workspace",
-        ".pi/app-server-host/sessions",
-        ".pi/app-server-host",
-        ".pi/packages",
-        ".pi",
-        ".agents/runtime",
-        ".agents/envs",
-        ".agents",
+        "runtimes", "var/cache", "var/log", "var/state", "var",
     ):
         directory = root / relative
         if not directory.is_dir():
@@ -360,41 +344,24 @@ def uninstall(args: argparse.Namespace, *, show_progress: bool = False) -> dict[
         service_units = remove_service_units(args, root)
         activity.update("Removing installed application files")
         removed = remove_entrypoints(root)
-        managed = [
-            root / ".pi/packages/tspi",
-            root / ".pi/runtime-cache",
-            root / ".pi/app-server-runtime",
-            root / ".pi/logs",
-            root / ".pi/session-guards",
-            # Remove state left by the retired shared session process.
-            root / ".pi/session-host",
-            root / ".pi/ts-web-state",
-        ]
-        if args.purge_config:
-            managed.extend([
-                root / ".pi/tspi",
-                # Remove the retired HTTP Agent Server state as a unit. It is
-                # installation-owned and must not survive a complete purge.
-                root / ".pi/research-agent",
-                root / ".pi/app-server-host/server-id",
-                root / ".pi/app-server-host/link.json",
-                root / ".pi/app-server-host/host.token",
-                root / ".pi/app-server-host/workspace",
-                root / ".pi/agent",
-                root / ".pi/email",
-                root / ".pi/ts-web",
-                root / ".pi/job.toml",
-                root / ".pi/name-resolver.toml",
-                root / ".pi/notifications.toml",
-                root / "uninstall.sh",
-            ])
+        managed = [root / "releases", root / "runtimes/pi", root / "var/cache",
+                   root / "var/state/installation/install-state.json",
+                   root / "var/state/installation/source-provenance.json"]
         if args.purge_runtime:
-            managed.extend([root / ".agents/runtime/tspi", root / ".agents/envs/tspi"])
+            # External environments require a matching installation ownership receipt.
+            config = json.loads((root / "etc/installation.json").read_text())
+            env_root = Path(config["env_root"])
+            receipt = env_root / "installation-owner.json"
+            if receipt.is_file() and json.loads(receipt.read_text()).get("install_root") == str(root):
+                managed.append(env_root)
+            managed.append(root / "var/state/installation/python")
+        if args.purge_config:
+            managed.extend([root / "etc", root / "runtimes/maintenance", root / "uninstall.sh", root / "var/state/host/link.json", root / "var/state/host/host.token"])
         if args.purge_workspaces:
             managed.extend([
                 workspace_root,
-                root / ".pi/app-server-host/sessions",
-                root / ".pi/research-agent/sessions",
+                root / "var/state/pi/sessions",
+                root / "var/state/host",
             ])
         removed.extend(remove_paths(managed))
         prune_empty_parents(root)
@@ -424,7 +391,7 @@ def _validated_workspace_purge_target(root: Path, configured: Path) -> Path:
         or resolved in root.parents
     ):
         raise ValueError(f"refusing to purge broad workspace root: {resolved}")
-    for protected in (root / ".pi", root / ".agents"):
+    for protected in (root / "etc", root / "var", root / "runtimes", root / "releases"):
         if resolved == protected or protected in resolved.parents:
             raise ValueError(f"refusing to purge workspace root inside installation state: {resolved}")
     return resolved
@@ -439,7 +406,7 @@ def main(argv: list[str] | None = None) -> int:
             title("TSPi Uninstaller", "Remove TSPi while keeping research data by default.", tone="warning")
         if not args.install_root and not args.non_interactive:
             bundled = Path(__file__).resolve()
-            default = str(bundled.parents[2]) if bundled.parent.name == "tspi" and bundled.parent.parent.name == ".pi" else str(Path.home() / ".local/share/tspi")
+            default = str(bundled.parents[2]) if bundled.parent.name == "maintenance" and bundled.parent.parent.name == "runtimes" else str(Path.home() / ".local/share/tspi")
             args.install_root = ask("TSPi installation directory", default)
         if not args.install_root:
             raise ValueError("--install-root is required")

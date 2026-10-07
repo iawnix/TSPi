@@ -121,8 +121,8 @@ def install_uninstaller(install_root: Path, source_root: Path) -> Path:
             raise ValueError(f"installation root must be a physical directory: {destination}")
     else:
         destination.mkdir(mode=0o700, parents=True)
-    private = destination / ".pi" / "tspi"
-    for directory in (destination / ".pi", private):
+    private = destination / "runtimes/maintenance"
+    for directory in (destination / "runtimes", private):
         if directory.exists() or directory.is_symlink():
             if directory.is_symlink() or not directory.is_dir():
                 raise ValueError(f"installer control path must be a physical directory: {directory}")
@@ -135,6 +135,7 @@ def install_uninstaller(install_root: Path, source_root: Path) -> Path:
         (source_root / "scripts" / "uninstall.py", private / "uninstall.py", 0o700),
         (source_root / "scripts" / "_terminal_ui.py", private / "_terminal_ui.py", 0o600),
         (source_root / "scripts" / "_installation_metadata.py", private / "_installation_metadata.py", 0o600),
+        (source_root / "packages/tspi-foundation/tspi_foundation/layout.py", private / "app_layout.py", 0o600),
     ):
         descriptor, temporary_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
         os.close(descriptor)
@@ -217,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:
             uninstaller = install_uninstaller(Path(args.install_root), checkout)
             emit_progress(args.progress, "Preparing the managed runtime and activating the release")
             installed = json.loads(run(install, cwd=checkout))
-            provenance = Path(args.install_root).expanduser().resolve() / ".pi" / "packages" / "tspi" / "source-provenance.json"
+            provenance = Path(args.install_root).expanduser().resolve() / "var/state/installation/source-provenance.json"
             provenance.parent.mkdir(parents=True, exist_ok=True)
             provenance.write_text(json.dumps({"schema_version": "tspi-source-provenance/1", "repo": args.repo, "ref": args.ref, "commit": commit, "tree_digest": digest, "installed_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             result = {

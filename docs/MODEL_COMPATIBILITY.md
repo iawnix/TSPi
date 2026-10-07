@@ -29,8 +29,8 @@ Provider branding alone is not a compatibility guarantee.
 
 ## Configuration And Verification
 
-For an installation, Pi state is under `<install>/.pi/agent/`. Put custom model
-definitions in `<install>/.pi/agent/models.json` and authenticate using Pi's
+For an installation, Pi state is under `<install>/etc/pi/`. Put custom model
+definitions in `<install>/etc/pi/models.json` and authenticate using Pi's
 normal login or `auth.json`/environment mechanisms. Select a model with Pi
 settings before restarting the Host:
 

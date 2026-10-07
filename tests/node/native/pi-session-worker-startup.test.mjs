@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFile } from "node:child_process";
@@ -17,11 +17,17 @@ test("real Pi Worker creates and reads a research session without a model reques
   timeout: 60_000,
 }, async () => {
   await mkdir(TEST_ROOT, { recursive: true });
-  const root = await mkdtemp(join(TEST_ROOT, "worker-"));
+  const root = await mkdtemp(join(TEST_ROOT, "w-"));
   const savedEnvironment = { ...process.env };
   let backend;
   try {
     process.env.PI_CODING_AGENT_DIR = join(root, "agent");
+    await mkdir(process.env.PI_CODING_AGENT_DIR);
+    await writeFile(join(process.env.PI_CODING_AGENT_DIR, "models.json"), JSON.stringify({ providers: { fixture: {
+      baseUrl: "http://127.0.0.1:9/v1", apiKey: "fixture-only", api: "openai-completions",
+      models: [{id:"fixture", name:"Fixture", reasoning:false, input:["text"],
+        cost:{input:0, output:0, cacheRead:0, cacheWrite:0}, contextWindow:200000, maxTokens:4096}],
+    } } }));
     process.env.TSPI_PYTHON = managedPython();
     process.env.PYTHONDONTWRITEBYTECODE = "1";
     const workspaceRoot = join(root, "workspaces");
@@ -34,9 +40,9 @@ test("real Pi Worker creates and reads a research session without a model reques
     backend = await createTspiHarnessBackend({
       sourceRoot, packageRoot, workspaceRoot,
       serverDirectory: join(root, "pi"), sessionDir: join(root, "sessions"),
-      stateRoot: join(root, "state"),
+      stateRoot: join(root, "state"), provider:"fixture", model:"fixture",
     });
-    const created = await backend.createSession({ workspace_id: "startup" });
+    const created = await backend.createSession({ workspace_id: "startup", provider:"fixture", model:"fixture" });
     assert.equal(created.session.runtime_kind, "pi-harness");
     assert.equal(created.session.online, true);
     assert.equal(created.session.is_streaming, false);

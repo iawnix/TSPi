@@ -21,13 +21,12 @@ _RUNTIMES: dict[str, JobRuntime] = {}
 def _runtime(root: Path) -> JobRuntime:
     key = str(root)
     if key not in _RUNTIMES:
-        candidates = []
-        if os.environ.get("TS_JOB_CONFIG"):
-            candidates.append(Path(os.environ["TS_JOB_CONFIG"]).expanduser())
-        candidates.extend((root / ".pi" / "job.toml", root.parent / ".pi" / "job.toml", root.parent.parent / ".pi" / "job.toml"))
-        config = next((item for item in candidates if item.is_file()), candidates[0] if candidates else root / ".pi" / "job.toml")
+        configured = os.environ.get("TS_JOB_CONFIG")
+        config = Path(configured).expanduser() if configured else None
+        if config is not None and not config.is_file():
+            raise ValueError(f"explicit job configuration is missing: {config}")
         try:
-            platforms, default = platforms_from_config(config if config.is_file() else None)
+            platforms, default = platforms_from_config(config)
         except (OSError, TypeError, ValueError) as exc:
             raise ValueError(f"invalid job runtime configuration: {config}: {exc}") from exc
         _RUNTIMES[key] = JobRuntime(platforms, default=default)

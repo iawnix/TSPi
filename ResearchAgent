@@ -6,8 +6,6 @@ readonly PACKAGE_ROOT="$(dirname -- "$LAUNCHER_PATH")"
 readonly LAUNCHER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 if [[ -n "${TSPI_INSTALL_ROOT:-}" ]]; then
   readonly INSTALL_ROOT="$TSPI_INSTALL_ROOT"
-elif [[ "$(basename -- "$LAUNCHER_DIR")" == "bin" && -d "$(dirname -- "$LAUNCHER_DIR")/.pi/packages/tspi" ]]; then
-  readonly INSTALL_ROOT="$(dirname -- "$LAUNCHER_DIR")"
 else
   readonly INSTALL_ROOT="$LAUNCHER_DIR"
 fi

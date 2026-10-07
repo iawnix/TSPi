@@ -29,7 +29,7 @@ def test_web_component_archive_is_complete_and_validated(tmp_path: Path) -> None
     manifest_path = Path(result["manifest"])
     manifest = load_web_manifest(manifest_path)
 
-    assert manifest["component"] == {"name": "ts-web", "version": "0.17.0"}
+    assert manifest["component"] == {"name": "ts-web", "version": "0.18.0"}
     assert manifest["entrypoint"] == {"path": "bin/ts-web"}
     with tarfile.open(Path(result["archive"]), "r:gz") as archive:
         files = {
@@ -73,7 +73,7 @@ def test_web_component_protocol_schemas_validate_envelopes() -> None:
         {
             "schema_version": "ts-web-component-release/1",
             "release_id": "0.17.0-sha256-0123456789abcdef",
-            "component": {"name": "ts-web", "version": "0.17.0"},
+            "component": {"name": "ts-web", "version": "0.18.0"},
             "protocols": {
                 "provider": "research-map-provider/1",
                 "map": "research-map/1",

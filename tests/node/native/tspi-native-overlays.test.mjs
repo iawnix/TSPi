@@ -242,13 +242,13 @@ test("native facet exposes status based commands without owning overlays", { ski
       own() {},
     });
     activate();
-    assert.deepEqual(commands.map(({ name }) => name).sort(), ["compute", "debug", "research", "runs", "sys-prompt"]);
+    assert.deepEqual(commands.map(({ name }) => name).sort(), ["debug", "research", "sys-prompt"]);
     assert.equal(usedServices.includes("pi.local.transcript"), false);
 
-    await commands.find(({ name }) => name === "runs").run("", { abortSignal: new AbortController().signal });
+    await commands.find(({ name }) => name === "debug").run("", { abortSignal: new AbortController().signal });
     assert.equal(tui.overlay, undefined);
     assert.equal(statuses.length, 1);
-    assert.match(statuses[0], /compute-runs\/1/);
+    assert.match(statuses[0], /remote_unsupported/);
 
     await commands.find(({ name }) => name === "sys-prompt").run("", { abortSignal: new AbortController().signal });
     assert.equal(tui.overlay, undefined);

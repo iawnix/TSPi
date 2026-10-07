@@ -98,12 +98,14 @@ def seed_installation_runtime(
     """Bind runtime paths owned by one TSPi installation root."""
 
     root = Path(installation_root).expanduser().resolve()
-    runtime_home = root / ".agents" / "runtime" / PACKAGE_NAMESPACE
+    from tspi_foundation.layout import paths
+    layout = paths(root)
+    runtime_home = layout.runtime_home
     values = os.environ if environ is None else environ
     bindings = {
         RUNTIME_HOME_OVERRIDE: str(runtime_home),
         RUNTIME_MANIFEST_OVERRIDE: str(runtime_home / "env.json"),
-        ENV_ROOT_OVERRIDE: str(root / ".agents" / "envs" / PACKAGE_NAMESPACE),
+        ENV_ROOT_OVERRIDE: str(layout.env_root),
     }
     for name, value in bindings.items():
         if authoritative:
@@ -130,58 +132,15 @@ def seed_installation_runtime_from_entrypoint(
 def _suite_installation_root(stable: Path) -> Path | None:
     """Recognize a validated unified-suite Web or provider entrypoint."""
 
-    if stable.name == "TSWeb":
-        installation_root = stable.parent
-        selected_root = installation_root / ".pi" / "packages" / "tspi" / "current"
-        selected_paths = (
-            selected_root / "web" / "bin" / "ts-web",
-        )
-        try:
-            resolved_stable = stable.resolve(strict=True)
-        except OSError:
-            return None
-        for selected in selected_paths:
-            try:
-                if resolved_stable == selected.resolve(strict=True):
-                    break
-            except OSError:
-                continue
-        else:
-            return None
-    else:
-        scripts = stable.parent
-        owner = scripts.parent
-        selected_release = owner.parent
-        package_home = selected_release.parent
-        packages_root = package_home.parent
-        pi_root = packages_root.parent
-        if (
-            stable.name not in {"provider_runner.py", "ts-web"}
-            or scripts.name not in {"scripts", "bin"}
-            or owner.name not in {"agent", "web"}
-            or selected_release.name != "current"
-            or package_home.name != "tspi"
-            or packages_root.name != "packages"
-            or pi_root.name != ".pi"
-        ):
-            return None
-        installation_root = pi_root.parent
-
     try:
         resolved = stable.resolve(strict=True)
     except OSError:
         return None
-    releases_root = installation_root / ".pi" / "packages" / "tspi" / "releases"
-    try:
-        relative = resolved.relative_to(releases_root)
-    except ValueError:
-        return None
-    if len(relative.parts) != 4 or tuple(relative.parts[1:]) not in {
-        ("agent", "scripts", "provider_runner.py"),
-        ("web", "bin", "ts-web"),
-    }:
-        return None
-    return installation_root
+    for root in resolved.parents:
+        if not (root / "etc/installation.json").is_file(): continue
+        selected = (root / "current").resolve()
+        if resolved.is_relative_to(selected): return root
+    return None
 
 
 def environment_spec_path(package_root: str | Path | None = None) -> Path:
@@ -290,18 +249,13 @@ def default_runtime_home(
     if override:
         return Path(override).expanduser().resolve()
 
-    workspace = _workspace_root(workspace_root)
-    if workspace is not None:
-        return workspace / ".agents" / "runtime" / PACKAGE_NAMESPACE
-
-    root = resolve_package_root(package_root)
-    parts = root.parts
-    if ".agents" in parts:
-        index = parts.index(".agents")
-        agents_root = Path(*parts[: index + 1])
-        return agents_root / "runtime" / PACKAGE_NAMESPACE
-
-    return root.parent / ".runtime" / PACKAGE_NAMESPACE
+    if workspace_root is not None:
+        from tspi_foundation.layout import paths
+        return paths(workspace_root).runtime_home
+    if os.environ.get("TSPI_INSTALL_ROOT"):
+        from tspi_foundation.layout import paths
+        return paths(os.environ["TSPI_INSTALL_ROOT"]).runtime_home
+    return resolve_package_root(package_root).parent / "var/state/installation/python"
 
 
 def runtime_manifest_path(
@@ -325,20 +279,13 @@ def default_env_store(
     if override:
         return Path(override).expanduser().resolve()
 
-    workspace = _workspace_root(workspace_root)
-    if workspace is not None:
-        return workspace / ".agents" / "envs" / PACKAGE_NAMESPACE
-
-    root = resolve_package_root(package_root)
-    parts = root.parts
-    if ".agents" in parts:
-        index = parts.index(".agents")
-        agents_root = Path(*parts[: index + 1])
-        if os.access(agents_root, os.W_OK):
-            return agents_root / "envs" / PACKAGE_NAMESPACE
-        return agents_root.parent / ".envs" / PACKAGE_NAMESPACE
-
-    return root.parent / ".envs" / PACKAGE_NAMESPACE
+    if workspace_root is not None:
+        from tspi_foundation.layout import paths
+        return paths(workspace_root).env_root
+    if os.environ.get("TSPI_INSTALL_ROOT"):
+        from tspi_foundation.layout import paths
+        return paths(os.environ["TSPI_INSTALL_ROOT"]).env_root
+    return Path(os.environ["TSPI_HOST_ENV_ROOT"]) if os.environ.get("TSPI_HOST_ENV_ROOT") else resolve_package_root(package_root).parent / "host-envs"
 
 
 def default_env_prefix(
@@ -593,7 +540,12 @@ def ensure_runtime_python(
 ) -> Path | None:
     """Re-exec with the configured runtime Python, optionally failing closed."""
 
-    python = require_runtime_python(package_root) if required else configured_python(package_root)
+    try:
+        python = require_runtime_python(package_root) if required else configured_python(package_root)
+    except RuntimeEnvironmentError:
+        if required or os.environ.get("TSPI_INSTALL_ROOT") or os.environ.get(RUNTIME_MANIFEST_OVERRIDE):
+            raise
+        return None
     if python is None:
         return None
 

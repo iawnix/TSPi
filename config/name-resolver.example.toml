@@ -1,5 +1,5 @@
 # The installer copies this example to a fresh installation as
-# <installation>/.pi/name-resolver.toml. Replace it with
+# <installation>/etc/name-resolver.toml. Replace it with
 # --name-resolver-config when a different deterministic backend is required;
 # the installed file is owner-readable (mode 0600).
 default_resolver = "auto"

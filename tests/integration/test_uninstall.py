@@ -12,12 +12,8 @@ from scripts.uninstall import uninstall
 
 
 def _args(root: Path, **overrides: object):
-    marker = root / ".pi/tspi/installation.json"
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(json.dumps({
-        "schema_version": "tspi-installation-root/1",
-        "install_root": str(root.resolve()),
-    }))
+    from tspi_foundation.layout import paths
+    paths(root).initialize()
     values = {
         "install_root": str(root),
         "service_scope": "none",
@@ -36,18 +32,19 @@ def _args(root: Path, **overrides: object):
 
 def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    (root / ".pi/packages/tspi").mkdir(parents=True)
+    from tspi_foundation.layout import paths
+    paths(root).initialize()
     (root / "workspaces/ts_001").mkdir(parents=True)
-    web_token = root / ".pi/ts-web/auth.token"
-    web_token.parent.mkdir(parents=True)
+    web_token = root / "etc/web/auth.token"
+    web_token.parent.mkdir(parents=True, exist_ok=True)
     web_token.write_text("w" * 43)
-    phone_connection = root / ".pi/app-server-host/link.json"
-    phone_connection.parent.mkdir(parents=True)
+    phone_connection = root / "var/state/host/link.json"
+    phone_connection.parent.mkdir(parents=True, exist_ok=True)
     phone_connection.write_text('{"schema_version":"tspi-link/1"}\n', encoding="utf-8")
     download = root / "downloads/client.apk"
     download.parent.mkdir()
     download.write_bytes(b"apk")
-    (root / "ResearchAgent").symlink_to(".pi/packages/tspi/current")
+    (root / "ResearchAgent").symlink_to("./current")
 
     result = uninstall(_args(root))
 
@@ -56,33 +53,20 @@ def test_uninstall_preserves_workspace_and_config_by_default(tmp_path: Path) -> 
     assert web_token.read_text() == "w" * 43
     assert phone_connection.is_file()
     assert download.read_bytes() == b"apk"
-    assert not (root / ".pi/packages/tspi").exists()
+    assert not (root / "releases").exists()
 
 
 @pytest.mark.parametrize("dangling", [False, True])
 def test_uninstall_removes_owned_stable_links(tmp_path: Path, dangling: bool) -> None:
     root = tmp_path / "install"
-    package = root / ".pi/packages/tspi"
-    package.mkdir(parents=True)
-    if not dangling:
-        (package / "releases/old/agent").mkdir(parents=True)
-        (package / "current").symlink_to("releases/old")
-    (root / "current").symlink_to(".pi/packages/tspi/current")
-    (root / "bin").mkdir()
-    for name in ("ResearchAgent", "ResearchAgentServer"):
-        (root / "bin" / name).symlink_to(f"../current/agent/{name}")
-    external = tmp_path / "external"
-    external.write_text("keep")
-    (root / "bin/TSWeb").symlink_to(external)
-    (root / "bin/custom").write_text("keep")
-
-    uninstall(_args(root))
-
-    for name in ("current", "bin/ResearchAgent", "bin/ResearchAgentServer"):
-        assert not (root / name).is_symlink()
-    assert (root / "bin/TSWeb").is_symlink()
-    assert external.read_text() == "keep"
-    assert (root / "bin/custom").read_text() == "keep"
+    args = _args(root)
+    if not dangling: (root / "releases/old/agent").mkdir(parents=True)
+    (root / "current").symlink_to("releases/old")
+    (root / "ResearchAgent").symlink_to("current/agent/ResearchAgent")
+    uninstall(args)
+    assert not (root / "current").is_symlink()
+    assert not (root / "ResearchAgent").is_symlink()
+    assert root.is_dir()
 
 
 def test_uninstall_does_not_follow_external_bin_directory(tmp_path: Path) -> None:
@@ -91,7 +75,7 @@ def test_uninstall_does_not_follow_external_bin_directory(tmp_path: Path) -> Non
     external = tmp_path / "external"
     external.mkdir()
     launcher = external / "ResearchAgent"
-    launcher.symlink_to(root / ".pi/packages/tspi/current/agent/ResearchAgent")
+    launcher.symlink_to(root / "./current/agent/ResearchAgent")
     (root / "bin").symlink_to(external)
 
     uninstall(_args(root))
@@ -101,15 +85,11 @@ def test_uninstall_does_not_follow_external_bin_directory(tmp_path: Path) -> Non
 
 def test_uninstall_uses_configured_external_workspace_root(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    (root / ".pi/packages/tspi").mkdir(parents=True)
+    from tspi_foundation.layout import paths
+    paths(root).initialize()
     workspace_root = tmp_path / "research"
     (workspace_root / "reaction-a").mkdir(parents=True)
-    config = root / ".pi/tspi/workspace-root.json"
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(json.dumps({
-        "schema_version": "tspi-workspace-root/1",
-        "workspace_root": str(workspace_root),
-    }) + "\n", encoding="utf-8")
+    paths(root).update_config(workspace_root=str(workspace_root))
 
     result = uninstall(_args(root, purge_workspaces=True))
 
@@ -119,13 +99,9 @@ def test_uninstall_uses_configured_external_workspace_root(tmp_path: Path) -> No
 
 def test_uninstall_refuses_to_purge_an_installation_ancestor(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    (root / ".pi/packages/tspi").mkdir(parents=True)
-    config = root / ".pi/tspi/workspace-root.json"
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(json.dumps({
-        "schema_version": "tspi-workspace-root/1",
-        "workspace_root": str(tmp_path),
-    }) + "\n", encoding="utf-8")
+    from tspi_foundation.layout import paths
+    paths(root).initialize()
+    paths(root).update_config(workspace_root=str(tmp_path))
 
     with pytest.raises(ValueError, match="broad workspace root"):
         uninstall(_args(root, purge_workspaces=True))
@@ -135,14 +111,15 @@ def test_uninstall_refuses_to_purge_an_installation_ancestor(tmp_path: Path) -> 
 
 def test_interactive_defaults_run_safe_uninstall_and_preserve_data(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path / "install"
-    (root / ".pi/packages/tspi").mkdir(parents=True)
+    from tspi_foundation.layout import paths
+    paths(root).initialize()
     workspace = root / "workspaces/ts_001"
     workspace.mkdir(parents=True)
-    config = root / ".pi/job.toml"
+    config = root / "etc/job.toml"
     config.write_text("[remote]\n", encoding="utf-8")
-    runtime = root / ".agents/envs/tspi/base/test"
+    runtime = paths(root).env_root / "base/test"
     runtime.mkdir(parents=True)
-    (root / "ResearchAgent").symlink_to(".pi/packages/tspi/current")
+    (root / "ResearchAgent").symlink_to("./current")
     monkeypatch.setattr(uninstaller.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(uninstaller.sys.stdout, "isatty", lambda: True)
     replies = iter(["", "", "", ""])
@@ -155,12 +132,12 @@ def test_interactive_defaults_run_safe_uninstall_and_preserve_data(tmp_path: Pat
     assert config.is_file()
     assert runtime.is_dir()
     assert root.is_dir()
-    assert not (root / ".pi/packages/tspi").exists()
+    assert not (root / "releases").exists()
 
 
 def test_uninstall_removes_immutable_release_without_following_links(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    release = root / ".pi/packages/tspi/releases/release-id"
+    release = root / "./releases/release-id"
     nested = release / "agent/packages"
     nested.mkdir(parents=True)
     artifact = nested / "package.json"
@@ -177,15 +154,16 @@ def test_uninstall_removes_immutable_release_without_following_links(tmp_path: P
     result = uninstall(_args(root))
 
     assert result["ok"] is True
-    assert not (root / ".pi/packages/tspi").exists()
+    assert not (root / "releases").exists()
     assert preserved.read_text(encoding="utf-8") == "keep\n"
 
 
 def test_uninstall_purge_removes_the_dedicated_installation_root(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    (root / ".pi/packages/tspi").mkdir(parents=True)
+    from tspi_foundation.layout import paths
+    paths(root).initialize()
     (root / "workspaces/ts_001").mkdir(parents=True)
-    (root / "ResearchAgent").symlink_to(".pi/packages/tspi/current")
+    (root / "ResearchAgent").symlink_to("./current")
     install_uninstaller(root, Path(__file__).resolve().parents[2])
     download = root / "downloads/client.apk"
     download.parent.mkdir()
@@ -199,7 +177,8 @@ def test_uninstall_purge_removes_the_dedicated_installation_root(tmp_path: Path)
 
 def test_installed_uninstaller_runs_with_its_private_ui_module(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    (root / ".pi/packages/tspi").mkdir(parents=True)
+    from tspi_foundation.layout import paths
+    paths(root).initialize()
     install_uninstaller(root, Path(__file__).resolve().parents[2])
 
     completed = subprocess.run(
@@ -220,13 +199,13 @@ def test_installed_uninstaller_runs_with_its_private_ui_module(tmp_path: Path) -
 
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout)["ok"] is True
-    assert (root / ".pi/tspi/_terminal_ui.py").is_file()
+    assert (root / "runtimes/maintenance/_terminal_ui.py").is_file()
 
 
 def test_installed_uninstaller_removes_an_immutable_partial_release(tmp_path: Path) -> None:
     root = tmp_path / "install"
     install_uninstaller(root, Path(__file__).resolve().parents[2])
-    release = root / ".pi/packages/tspi/releases/partial-release/agent"
+    release = root / "./releases/partial-release/agent"
     release.mkdir(parents=True)
     artifact = release / "package.json"
     artifact.write_text("{}\n", encoding="utf-8")
@@ -267,7 +246,7 @@ def test_uninstall_rejects_a_source_checkout_without_installation_metadata(tmp_p
 
 def test_uninstall_rejects_non_object_package_state(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    state = root / ".pi/packages/tspi/install-state.json"
+    state = root / "var/state/installation/install-state.json"
     state.parent.mkdir(parents=True)
     state.write_text("[]\n")
 
@@ -277,7 +256,7 @@ def test_uninstall_rejects_non_object_package_state(tmp_path: Path) -> None:
 
 def test_valid_ownership_marker_allows_cleanup_of_damaged_package_state(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    state = root / ".pi/packages/tspi/install-state.json"
+    state = root / "var/state/installation/install-state.json"
     state.parent.mkdir(parents=True)
     state.write_text("[]\n")
     args = _args(root)
@@ -285,51 +264,53 @@ def test_valid_ownership_marker_allows_cleanup_of_damaged_package_state(tmp_path
     result = uninstall(args)
 
     assert result["ok"] is True
-    assert not (root / ".pi/packages/tspi").exists()
-    assert (root / ".pi/tspi/installation.json").is_file()
+    assert not (root / "releases").exists()
+    assert (root / "etc/installation.json").is_file()
 
 
 def test_purge_config_removes_local_uninstaller_and_ownership_marker(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    (root / ".pi/packages/tspi").mkdir(parents=True)
+    from tspi_foundation.layout import paths
+    paths(root).initialize()
     install_uninstaller(root, Path(__file__).resolve().parents[2])
-    web_token = root / ".pi/ts-web/auth.token"
-    web_token.parent.mkdir(parents=True)
+    web_token = root / "etc/web/auth.token"
+    web_token.parent.mkdir(parents=True, exist_ok=True)
     web_token.write_text("w" * 43)
-    resolver_config = root / ".pi/name-resolver.toml"
+    resolver_config = root / "etc/name-resolver.toml"
     resolver_config.write_text("default_resolver = 'pubchem'\n", encoding="utf-8")
 
     result = uninstall(_args(root, purge_config=True))
 
     assert result["ok"] is True
     assert not (root / "uninstall.sh").exists()
-    assert not (root / ".pi/tspi").exists()
+    assert not (root / "etc").exists()
     assert not web_token.exists()
     assert not resolver_config.exists()
 
 
 def test_purge_removes_unified_host_sessions_and_credentials(tmp_path: Path) -> None:
     root = tmp_path / "install"
-    (root / ".pi/packages/tspi").mkdir(parents=True)
-    host_session = root / ".pi/app-server-host/sessions/workspace/session/session.sqlite"
+    from tspi_foundation.layout import paths
+    paths(root).initialize()
+    host_session = root / "var/state/pi/sessions/workspace/session/session.sqlite"
     host_session.parent.mkdir(parents=True)
     host_session.write_text("session\n", encoding="utf-8")
-    (root / ".pi/app-server-host/server-id").write_text("server\n", encoding="utf-8")
-    phone_connection = root / ".pi/app-server-host/link.json"
+    (root / "var/state/host/server-id").write_text("server\n", encoding="utf-8")
+    phone_connection = root / "var/state/host/link.json"
     phone_connection.write_text("{}\n", encoding="utf-8")
-    host_token = root / ".pi/app-server-host/host.token"
+    host_token = root / "var/state/host/host.token"
     host_token.write_text("secret\n", encoding="utf-8")
-    (root / ".pi/agent/auth.json").parent.mkdir(parents=True)
-    (root / ".pi/agent/auth.json").write_text("{}\n", encoding="utf-8")
-    (root / ".pi/email/smtp-password").parent.mkdir(parents=True)
-    (root / ".pi/email/smtp-password").write_text("secret\n", encoding="utf-8")
+    (root / "etc/pi/auth.json").parent.mkdir(parents=True, exist_ok=True)
+    (root / "etc/pi/auth.json").write_text("{}\n", encoding="utf-8")
+    (root / "etc/secrets/smtp-password").parent.mkdir(parents=True, exist_ok=True)
+    (root / "etc/secrets/smtp-password").write_text("secret\n", encoding="utf-8")
 
     result = uninstall(_args(root, purge_workspaces=True, purge_config=True))
 
     assert result["ok"] is True
     assert not host_session.exists()
-    assert not (root / ".pi/app-server-host/server-id").exists()
+    assert not (root / "var/state/host/server-id").exists()
     assert not phone_connection.exists()
     assert not host_token.exists()
-    assert not (root / ".pi/agent").exists()
-    assert not (root / ".pi/email").exists()
+    assert not (root / "etc/pi").exists()
+    assert not (root / "etc/secrets").exists()

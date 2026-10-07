@@ -85,25 +85,26 @@ def test_core_package_build_is_deterministic_and_installs_app_server_payload(tmp
     assert (install_root / "ResearchAgent").is_symlink()
     assert (install_root / "current").is_symlink()
     assert (install_root / "current").resolve() == Path(installed["package_root"])
-    assert (install_root / "bin" / "ResearchAgent").is_symlink()
+    assert (install_root / "ResearchAgent").is_symlink()
     package_root = Path(installed["package_root"])
-    assert (install_root / "bin" / "ResearchAgent").resolve() == package_root / "agent" / "ResearchAgent"
-    assert (install_root / "bin" / "ResearchAgent").resolve().is_file()
+    assert (install_root / "ResearchAgent").resolve() == package_root / "agent" / "ResearchAgent"
+    assert (install_root / "ResearchAgent").resolve().is_file()
     assert not (install_root / "TSWeb").exists()
     assert not (install_root / "bin" / "TSWeb").exists()
-    guards = install_root / ".pi/session-guards"
+    from tspi_foundation.layout import paths
+    guards = paths(install_root).guards
     assert guards.is_dir()
     assert stat.S_IMODE(guards.stat().st_mode) == 0o700
     assert not (install_root / ".pi/session-host").exists()
     assert (package_root / "agent/apps/app-server/pi-app-server.mjs").is_file()
     assert not (package_root / "phone").exists()
-    resolver_config = install_root / ".pi" / "name-resolver.toml"
+    resolver_config = install_root / "etc/name-resolver.toml"
     assert resolver_config.is_file()
     assert stat.S_IMODE(resolver_config.stat().st_mode) == 0o600
     assert "default_resolver = \"auto\"" in resolver_config.read_text(encoding="utf-8")
 
 
-def test_package_install_migrates_research_workspace_without_pi_state(tmp_path: Path) -> None:
+def test_package_install_does_not_mutate_existing_research_workspace(tmp_path: Path) -> None:
     agent_manifest, _agent_release = _synthetic_release(tmp_path / "agent", marker="bare-workspace")
     built = build_package(
         output_dir=tmp_path / "package",
@@ -121,8 +122,7 @@ def test_package_install_migrates_research_workspace_without_pi_state(tmp_path: 
     installed = install_package(Path(built["manifest"]), None, install_root, allow_dirty=True)
 
     assert installed["ok"] is True
-    assert (workspace / ".pi" / "root-agent.lock").is_file()
-    assert stat.S_IMODE((workspace / ".pi").stat().st_mode) == 0o700
+    assert not (workspace / ".pi").exists()
 
 
 def test_optional_web_launcher_is_removed_when_rolling_back_to_core_only(
@@ -149,8 +149,8 @@ def test_optional_web_launcher_is_removed_when_rolling_back_to_core_only(
 
     assert not (install_root / "TSWeb").exists()
     assert not (install_root / "bin" / "TSWeb").exists()
-    assert (install_root / "bin" / "ResearchAgent").resolve() == Path(
-        install_root / ".pi" / "packages" / "tspi" / "current" / "agent" / "ResearchAgent"
+    assert (install_root / "ResearchAgent").resolve() == Path(
+        install_root / "." / "current" / "agent" / "ResearchAgent"
     ).resolve()
 
 
@@ -169,7 +169,7 @@ def test_stable_app_shims_follow_atomic_current_and_reject_external_links(tmp_pa
     external.mkdir()
     (install_root / "current").unlink()
     (install_root / "current").symlink_to(external, target_is_directory=True)
-    with pytest.raises(SuiteReleaseError, match="stable application current pointer escapes"):
+    with pytest.raises(SuiteReleaseError, match="application current pointer escapes"):
         install_package(Path(built["manifest"]), None, install_root, allow_dirty=True)
 
 
@@ -213,3 +213,37 @@ def test_install_rejects_non_symlink_launcher_conflict(tmp_path: Path) -> None:
     (install_root / "ResearchAgent").write_text("operator file\n", encoding="utf-8")
     with pytest.raises(SuiteReleaseError, match="non-symlink package entrypoints"):
         install_package(Path(built["manifest"]), None, install_root, allow_dirty=True)
+
+
+def test_activation_failure_restores_one_pointer_and_runtime_manifest(tmp_path):
+    from tspi_foundation.layout import paths
+    root=tmp_path/'install'
+    packages=[]
+    for marker in ('before','after'):
+        manifest,_=_synthetic_release(tmp_path/marker,marker=marker)
+        built=build_package(output_dir=tmp_path/(marker+'-package'),agent_manifest_path=manifest,allow_dirty=True,include_web=False)
+        packages.append(Path(built['manifest']))
+    install_package(packages[0],None,root,allow_dirty=True)
+    layout=paths(root)
+    previous=(layout.current.readlink(), layout.install_state.read_bytes(), json.loads((layout.runtime_home/'env.json').read_text()))
+    def fail(prepared):
+        prepared.manifest_path.write_text('{}')
+        raise RuntimeError('injected publication failure')
+    with pytest.raises(RuntimeError,match='injected publication failure'):
+        install_package(packages[1],None,root,allow_dirty=True,runtime_publisher=fail)
+    assert (layout.current.readlink(), layout.install_state.read_bytes(), json.loads((layout.runtime_home/'env.json').read_text()))==previous
+    assert (root/'ResearchAgent').resolve().is_relative_to(layout.current.resolve())
+
+
+def test_running_host_blocks_install_before_runtime_preparation(tmp_path, monkeypatch):
+    import os
+    from tspi_bootstrap.session_guard import acquire_directory_guard, SessionGuardError
+    from tspi_foundation.layout import paths
+    root=tmp_path/'install';paths(root).initialize()
+    manifest,_=_synthetic_release(tmp_path/'agent',marker='locked')
+    built=build_package(output_dir=tmp_path/'package',agent_manifest_path=manifest,allow_dirty=True,include_web=False)
+    descriptor=acquire_directory_guard(root,root)
+    monkeypatch.setattr(install_package_module,'prepare_runtime',lambda *a,**k:pytest.fail('runtime preparation must wait for Host stop'))
+    try:
+        with pytest.raises(SessionGuardError):install_package(Path(built['manifest']),None,root,allow_dirty=True)
+    finally:os.close(descriptor)

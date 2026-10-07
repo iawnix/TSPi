@@ -1,94 +1,49 @@
-from __future__ import annotations
-
 import json
 from pathlib import Path
-
 import pytest
-
-from scripts.app_layout import inspect_installation, write_standalone_marker
-
-
-def _legacy_install(root: Path, release: str = "r1") -> None:
-    package = root / ".pi/packages/tspi"
-    (package / "releases" / release).mkdir(parents=True)
-    (package / "current").symlink_to(f"releases/{release}")
-    (package / "install-state.json").write_text(
-        json.dumps({
-            "schema_version": "tspi-package-install/1",
-            "current_release_id": release,
-            "package_root": str(package / "releases" / release),
-        }),
-        encoding="utf-8",
-    )
+from tspi_foundation.layout import paths, inspect_installation
 
 
-def _standalone_install(root: Path, release: str = "r1") -> None:
-    (root / "releases" / release).mkdir(parents=True)
-    (root / "etc").mkdir()
-    (root / "var").mkdir()
-    (root / "bin").mkdir()
-    (root / "current").symlink_to(f"releases/{release}")
-    write_standalone_marker(root)
+def test_layout_initialization_and_configuration_are_shared(tmp_path):
+    layout = paths(tmp_path / 'install').initialize()
+    layout.update_config(workspace_root=str(tmp_path / 'research'))
+    assert paths(layout.root).read_config()['workspace_root'] == str(tmp_path / 'research')
+    assert layout.marker.stat().st_mode & 0o077 == 0
+    assert not (layout.root / '.pi').exists()
+    assert not (layout.root / '.agents').exists()
+    assert not (layout.root / 'bin').exists()
+    assert layout.pi_runtime != layout.cache
 
 
-def test_legacy_layout_is_explicitly_reported_as_migration_required(tmp_path: Path) -> None:
-    _legacy_install(tmp_path)
-    report = inspect_installation(tmp_path)
-    assert report["layout"] == "legacy"
-    assert report["ok"] is True
-    assert report["migration_required"] is True
-    assert report["release_id"] == "r1"
+@pytest.mark.parametrize('old', ['.pi', '.agents'])
+def test_old_installation_requires_fresh_install(tmp_path, old):
+    (tmp_path / old).mkdir()
+    with pytest.raises(ValueError, match='old installation'):
+        paths(tmp_path).initialize()
+    assert not (tmp_path / 'etc').exists()
 
 
-def test_standalone_layout_is_healthy_without_legacy_store(tmp_path: Path) -> None:
-    _standalone_install(tmp_path)
-    report = inspect_installation(tmp_path)
-    assert report["layout"] == "standalone"
-    assert report["ok"] is True
-    assert report["migration_required"] is False
-    assert report["release_id"] == "r1"
+def test_layout_rejects_symlinked_state_parent(tmp_path):
+    (tmp_path / 'outside').mkdir()
+    root = tmp_path / 'install'; root.mkdir()
+    (root / 'var').symlink_to(tmp_path / 'outside')
+    with pytest.raises(ValueError, match='symlink'):
+        paths(root).initialize()
+    assert not list((tmp_path / 'outside').iterdir())
 
 
-def test_mixed_layout_is_never_considered_healthy(tmp_path: Path) -> None:
-    _standalone_install(tmp_path)
-    _legacy_install(tmp_path, release="old")
-    report = inspect_installation(tmp_path)
-    assert report["layout"] == "mixed"
-    assert report["ok"] is False
-    assert any(item["code"] == "mixed_layout" for item in report["findings"])
+def test_doctor_requires_matching_release_receipt(tmp_path):
+    layout=paths(tmp_path).initialize()
+    release=layout.releases/'release-a';release.mkdir(parents=True)
+    layout.current.symlink_to('releases/release-a')
+    layout.install_state.write_text(json.dumps({'current_release_id':'release-a','package_root':str(release)}))
+    assert inspect_installation(tmp_path)['ok']
+    layout.install_state.write_text(json.dumps({'current_release_id':'release-b','package_root':str(release)}))
+    assert not inspect_installation(tmp_path)['ok']
 
 
-def test_current_pointer_must_remain_inside_release_store(tmp_path: Path) -> None:
-    _legacy_install(tmp_path)
-    package = tmp_path / ".pi/packages/tspi"
-    package.joinpath("current").unlink()
-    package.joinpath("current").symlink_to("/tmp")
-    report = inspect_installation(tmp_path)
-    assert report["ok"] is False
-    assert any(item["code"] == "current_escapes_releases" for item in report["findings"])
-
-
-def test_legacy_state_and_current_pointer_must_agree(tmp_path: Path) -> None:
-    _legacy_install(tmp_path, release="new")
-    package = tmp_path / ".pi/packages/tspi"
-    (package / "releases/old").mkdir()
-    package.joinpath("current").unlink()
-    package.joinpath("current").symlink_to("releases/old")
-    report = inspect_installation(tmp_path)
-    assert report["ok"] is False
-    assert any(item["code"] == "legacy_current_state_mismatch" for item in report["findings"])
-
-
-def test_unmarked_standalone_candidate_is_not_accepted(tmp_path: Path) -> None:
-    (tmp_path / "releases/r1").mkdir(parents=True)
-    (tmp_path / "current").symlink_to("releases/r1")
-    report = inspect_installation(tmp_path)
-    assert report["layout"] == "standalone_unmarked"
-    assert report["ok"] is False
-    assert any(item["code"] == "standalone_unmarked" for item in report["findings"])
-
-
-def test_marker_requires_prepared_standalone_directories(tmp_path: Path) -> None:
-    (tmp_path / "etc").mkdir()
-    with pytest.raises(ValueError, match="standalone directory"):
-        write_standalone_marker(tmp_path)
+@pytest.mark.parametrize('store', ['/', 'relative'])
+def test_environment_store_cannot_be_a_broad_or_relative_path(tmp_path, monkeypatch, store):
+    monkeypatch.setenv('TSPI_HOST_ENV_ROOT', store)
+    with pytest.raises(ValueError, match='Host environment store'):
+        paths(tmp_path/'install').initialize()

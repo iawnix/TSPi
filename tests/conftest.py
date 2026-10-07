@@ -50,3 +50,14 @@ def restore_tmp_path_permissions(tmp_path: Path):
         # retention is useful for debugging, but these tests create large
         # release archives and no longer need them after each case passes.
         shutil.rmtree(tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def isolate_installation_environment_paths(tmp_path, monkeypatch):
+    monkeypatch.setenv("TSPI_HOST_ENV_ROOT", str(tmp_path / "host-envs"))
+    # Launcher tests may mutate the process environment directly.
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "xdg"))
+    previous = dict(os.environ)
+    yield
+    os.environ.clear()
+    os.environ.update(previous)

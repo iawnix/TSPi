@@ -107,7 +107,7 @@ Skill 覆盖 Gaussian、xTB、CREST、ASE-NEB 和结构验证。Skill 只描述�
 ## 浏览器查看
 
 TS Web 是可选的只读工作区浏览器。安装时选择后可使用 `TSWeb`；其 token 和状态保留
-在安装目录的 `.pi/ts-web*` 中。
+在安装目录的 `etc/web*` 中。
 
 ## 卸载
 

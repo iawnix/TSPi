@@ -110,8 +110,8 @@ def _phone_options(args: argparse.Namespace) -> tuple[str, str | None, str | Non
         raise ValueError("--phone-access link requires --link-url or a discoverable Link Relay")
     if not url:
         return "disabled", None, None
-    existing_manifest = Path(args.install_root).expanduser() / ".pi/app-server-host/link.json"
-    existing_token = Path(args.install_root).expanduser() / ".pi/app-server-host/host.token"
+    existing_manifest = Path(args.install_root).expanduser() / "var/state/host/link.json"
+    existing_token = Path(args.install_root).expanduser() / "var/state/host/host.token"
     if not args.link_enrollment_code and not (existing_manifest.is_file() and existing_token.is_file()):
         raise ValueError(
             "Link Relay is enabled but no Host enrollment code was supplied; "
@@ -144,8 +144,8 @@ def _write_json_private(path: Path, value: dict[str, object]) -> None:
 
 
 def _relay_paths(args: argparse.Namespace, install_root: Path) -> tuple[Path, Path]:
-    relay_root = Path(args.link_relay_root).expanduser().resolve() if args.link_relay_root else install_root / ".pi/link-relay"
-    state_root = Path(args.relay_state_dir).expanduser().resolve() if args.relay_state_dir else install_root / ".pi/link-relay-state"
+    relay_root = Path(args.link_relay_root).expanduser().resolve() if args.link_relay_root else install_root / "runtimes/link-relay"
+    state_root = Path(args.relay_state_dir).expanduser().resolve() if args.relay_state_dir else install_root / "var/state/link-relay"
     return relay_root, state_root
 
 
@@ -206,7 +206,7 @@ def _relay_install(args: argparse.Namespace, install_root: Path) -> tuple[dict[s
         raise RuntimeError("Link Relay installer returned invalid JSON") from exc
     if not isinstance(result, dict) or not isinstance(result.get("enrollment"), dict):
         raise RuntimeError("Link Relay installer did not return enrollment metadata")
-    _write_json_private(install_root / ".pi" / RELAY_MARKER_NAME, {
+    _write_json_private(install_root / "etc" / RELAY_MARKER_NAME, {
         "schema": "tspi-install-link-relay/1",
         "install_root": str(install_root),
         "relay_install_root": str(relay_root),
@@ -257,7 +257,7 @@ def build_command(args: argparse.Namespace, config: Path, install_root: Path) ->
         workspace = install_root / "workspaces"
 
     phone, link_url, relay_root = _phone_options(args)
-    target_password = install_root / ".pi" / "email" / "smtp-password"
+    target_password = install_root / "etc/secrets" / "smtp-password"
     _copy_private(password, target_password)
 
     command = [
@@ -357,7 +357,7 @@ def main(argv: list[str] | None = None) -> int:
         result = subprocess.run(command, check=False)
         if result.returncode != 0 and relay_owned:
             _rollback_relay(args, relay_result or {})
-            marker = install_root / ".pi" / RELAY_MARKER_NAME
+            marker = install_root / "etc" / RELAY_MARKER_NAME
             marker.unlink(missing_ok=True)
         return result.returncode
     except (OSError, ValueError) as exc:

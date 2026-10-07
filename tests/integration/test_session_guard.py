@@ -22,8 +22,9 @@ from research_state.workspace import admit_research_workspace, initialize_worksp
 
 
 def _install_state(root: Path) -> Path:
-    state = root / ".pi/packages/tspi/install-state.json"
-    release = state.parent / "releases/release-1"
+    state = root / "var/state/installation/install-state.json"
+    release = root / "releases/release-1"
+    state.parent.mkdir(parents=True)
     release.mkdir(parents=True)
     state.write_text(
         json.dumps({
@@ -64,7 +65,7 @@ def test_guards_live_outside_retired_shared_host_state(tmp_path: Path) -> None:
     session = acquire_session_guard(tmp_path, workspace, "session-1", "controller")
     try:
         guard_root = session_guard.guard_directory(tmp_path, workspace)
-        assert guard_root.is_relative_to(tmp_path / ".pi/session-guards")
+        assert guard_root.is_relative_to(Path(os.environ["XDG_RUNTIME_DIR"]))
         assert not (tmp_path / ".pi/session-host").exists()
         with pytest.raises(SessionGuardError):
             acquire_session_guard(tmp_path, workspace, "session-1", "controller")
@@ -83,9 +84,9 @@ def test_upgrade_holds_workspace_directory_and_root_locks(
     monkeypatch.setattr(session_guard, "assert_no_unguarded_writers", inspected.append)
     with guard_installation_upgrade(tmp_path):
         with pytest.raises(SessionGuardError) as error:
-            acquire_directory_guard(tmp_path, workspace)
+            acquire_directory_guard(tmp_path, tmp_path)
         assert error.value.code == "session_writer_active"
-    assert inspected == [workspace]
+    assert inspected == []
 
 
 def test_upgrade_prepares_pi_state_for_research_workspace_without_pi_directory(
@@ -100,9 +101,7 @@ def test_upgrade_prepares_pi_state_for_research_workspace_without_pi_directory(
     assert not pi_root.exists()
 
     with guard_installation_upgrade(tmp_path):
-        assert pi_root.is_dir()
-        assert stat.S_IMODE(pi_root.stat().st_mode) == 0o700
-        assert (pi_root / "root-agent.lock").is_file()
+        assert not pi_root.exists()
 
 
 def test_upgrade_uses_persisted_external_workspace_root(tmp_path: Path) -> None:
@@ -110,7 +109,7 @@ def test_upgrade_uses_persisted_external_workspace_root(tmp_path: Path) -> None:
     workspace = external_root / "ts_001"
     initialize_workspace(workspace, "workspace_external", "research")
     admit_research_workspace(workspace)
-    control = tmp_path / ".pi" / "tspi"
+    control = tmp_path / "etc"
     control.mkdir(parents=True)
     (control / "workspace-root.json").write_text(
         json.dumps({
@@ -121,7 +120,7 @@ def test_upgrade_uses_persisted_external_workspace_root(tmp_path: Path) -> None:
     )
 
     with guard_installation_upgrade(tmp_path):
-        assert (workspace / ".pi" / "root-agent.lock").is_file()
+        assert not (workspace / ".pi").exists()
 
     assert not (tmp_path / "workspaces").exists()
 

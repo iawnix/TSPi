@@ -61,38 +61,6 @@ class ComponentArchiveError(RuntimeError):
     pass
 
 
-def archive_retired_notification_state(install_root: Path) -> list[str]:
-    """Disable obsolete recipient authorization without deleting its audit history."""
-
-    pi_root = ensure_private_directory(install_root / ".pi")
-    sources = [pi_root / name for name in RETIRED_NOTIFICATION_STATE if (pi_root / name).exists() or (pi_root / name).is_symlink()]
-    if not sources:
-        return []
-    for source in sources:
-        if source.is_symlink() or not source.is_file():
-            raise ComponentArchiveError(f"retired notification state must be a regular file: {source}")
-    archive_root = ensure_private_directory(pi_root / "archive" / "retired-notification-state")
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-    archive_dir = archive_root / stamp
-    archive_dir.mkdir(mode=0o700)
-    archived: list[str] = []
-    for source in sources:
-        target = archive_dir / source.name
-        os.replace(source, target)
-        os.chmod(target, 0o600)
-        archived.append(target.relative_to(install_root).as_posix())
-    _atomic_write_json(
-        archive_dir / "archive.json",
-        {
-            "schema_version": "ts-legacy-notification-state-archive/1",
-            "archived_at_utc": datetime.now(timezone.utc).isoformat(),
-            "reason": "notifications.toml is the sole notification recipient authority",
-            "files": archived,
-        },
-        mode=0o600,
-    )
-    return archived
-
 
 def load_manifest(path: Path) -> dict[str, Any]:
     if not path.is_file() or path.is_symlink():
@@ -217,10 +185,10 @@ def validate_extracted_package(
     launcher = root / "ResearchAgent"
     if not launcher.is_file() or not os.access(launcher, os.X_OK):
         raise ComponentArchiveError("extracted ResearchAgent launcher is not executable")
-    research_launcher = root / "ResearchAgentServer"
+    research_launcher = root / "libexec/research-agent-host"
     if research_launcher.exists():
         if not research_launcher.is_file():
-            raise ComponentArchiveError("extracted ResearchAgentServer launcher is not a regular file")
+            raise ComponentArchiveError("extracted libexec/research-agent-host launcher is not a regular file")
         # Source fixtures used by older release tests may carry a placeholder
         # entrypoint without executable mode. A real launcher has a shebang,
         # and that production artifact must remain executable.
@@ -228,9 +196,9 @@ def validate_extracted_package(
             with research_launcher.open("rb") as handle:
                 has_shebang = handle.read(2) == b"#!"
         except OSError as error:
-            raise ComponentArchiveError("could not inspect extracted ResearchAgentServer launcher") from error
+            raise ComponentArchiveError("could not inspect extracted libexec/research-agent-host launcher") from error
         if has_shebang and not os.access(research_launcher, os.X_OK):
-            raise ComponentArchiveError("extracted ResearchAgentServer launcher is not executable")
+            raise ComponentArchiveError("extracted libexec/research-agent-host launcher is not executable")
     expected_distribution = manifest["python_distribution"]
     wheel = root.joinpath(*PurePosixPath(expected_distribution["path"]).parts)
     actual_distribution = inspect_wheel(wheel)
@@ -253,7 +221,7 @@ def finalize_release_permissions(root: Path) -> None:
 def validate_release_permissions(root: Path) -> None:
     for path in [root, *root.rglob("*")]:
         # The Pi SDK dependency tree is installed in the installation-owned
-        # runtime cache and exposed to the immutable release through this one
+        # managed runtime store and exposed to the immutable release through this one
         # deliberate link.  ``Path.stat`` follows the link and would see the
         # cache directory's normal writable mode, making an otherwise valid
         # release impossible to reinstall after the first runtime bind.
@@ -261,8 +229,8 @@ def validate_release_permissions(root: Path) -> None:
             relative = path.relative_to(root)
             if relative == Path("agent/node_modules"):
                 target = path.resolve(strict=True)
-                if target.name != "node_modules" or "runtime-cache" not in target.parts:
-                    raise ComponentArchiveError(f"release node_modules link escapes the runtime cache: {path}")
+                if target.name != "node_modules" or "runtimes" not in target.parts:
+                    raise ComponentArchiveError(f"release node_modules link escapes the managed runtime store: {path}")
                 continue
             raise ComponentArchiveError(f"existing release contains an unexpected symbolic link: {path}")
         if stat.S_IMODE(path.stat().st_mode) & 0o222:
