@@ -675,11 +675,11 @@ async function monitorWorkspaceIdentity(project) {
 
 function validMonitorBinding(binding, monitorId, identity) {
   return Boolean(binding && typeof binding === "object" && !Array.isArray(binding)
-    && binding.schema_version === "ts-compute-monitor/1"
+    && ["ts-compute-monitor/1", "ts-job-monitor/1"].includes(binding.schema_version)
     && binding.monitor_id === monitorId
     && binding.workspace_id === identity.canonical
     && typeof binding.node_id === "string" && /^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u.test(binding.node_id)
-    && typeof binding.intent_id === "string" && /^calc_[1-9][0-9]*$/u.test(binding.intent_id)
+    && typeof binding.intent_id === "string" && /^(?:calc_[1-9][0-9]*|job_[A-Za-z0-9_.:-]+)$/u.test(binding.intent_id)
     && typeof binding.intent_digest === "string" && /^sha256:[0-9a-f]{64}$/u.test(binding.intent_digest)
     && (binding.session_id === null || (typeof binding.session_id === "string" && binding.session_id.length > 0))
     && ["none", "next_run"].includes(binding.wake_policy)
@@ -690,7 +690,7 @@ function validMonitorBinding(binding, monitorId, identity) {
 
 function validMonitorEvent(event, eventId, monitorId, identity, binding) {
   return Boolean(event && typeof event === "object" && !Array.isArray(event)
-    && event.schema_version === "ts-compute-monitor-event/1"
+    && ["ts-compute-monitor-event/1", "ts-job-monitor-event/1"].includes(event.schema_version)
     && event.event_id === eventId
     && event.monitor_id === monitorId
     && event.workspace_id === identity.canonical
@@ -703,7 +703,7 @@ function validMonitorEvent(event, eventId, monitorId, identity, binding) {
     && Number.isSafeInteger(event.sequence) && event.sequence > 0
     && typeof event.status_digest === "string" && /^sha256:[0-9a-f]{64}$/u.test(event.status_digest)
     && (typeof event.previous_state === "string" || event.previous_state === null)
-    && ["prepared", "submitted", "queued", "running", "completed", "parsed", "failed", "stopped", "unknown"].includes(event.state)
+    && ["prepared", "submitted", "queued", "held", "running", "completed", "succeeded", "parsed", "failed", "timed_out", "cancelled", "stopped", "unknown"].includes(event.state)
     && (typeof event.program_status === "string" || event.program_status === null)
     && (typeof event.job_id === "string" || event.job_id === null)
     && (Number.isSafeInteger(event.exit_status) || event.exit_status === null)

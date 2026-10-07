@@ -1,27 +1,28 @@
 ---
 name: xtb
-description: Run and assess registered xTB single-point, optimization, frequency, scan, molecular-dynamics, and prescreening calculations.
+description: Run and assess xTB single-point, optimization, frequency, scan, molecular-dynamics, and prescreening calculations.
 ---
 
-# TSPi xTB
+# GFN2-xTB calculations
 
-[Chinese version](SKILL.zh-CN.md)
+Use this Skill for xtb tasks described above.
 
-Use this Skill for registered xTB capabilities. CREST conformer searches belong
-to `crest`; selecting xTB instead of another method belongs to
-`method-selection`.
+Use the installed [scripts/run.py](scripts/run.py) for input generation, execution and scientific validation. Read the target environment's `xtb` command, activation_script and environment from installation `job.toml`. Local and remote bindings are distinct.
 
-Bind XYZ and, for scans or molecular dynamics, control inputs as logical
-Artifacts. Keep method, charge, unpaired electrons, solvent model, accuracy,
-optimization settings, and constraints explicit in the calculation intent.
-Check SCC convergence, optimization status, frequency data, scan completeness,
-and trajectory completeness as appropriate.
+Generate a generic `job_start` request with the [preparation helper](../method-selection/scripts/prepare_job.py):
 
-Treat an optimized geometry, energy, frequency set, scan series, and trajectory
-as separate results. Inspect primary outputs before recording Findings. A scan
-maximum or xTB imaginary mode is a candidate for further validation, not proof
-of a transition state. When chaining an optimization into a single point, use
-the returned `calculation.optimized_geometry_artifact_id` (also listed under
-the `optimized_geometry` artifact role) and verify the Artifact type
-is `chemical/xyz`; never choose a stdout/stderr ID by position. Read
-[xtb_executor.md](references/xtb_executor.md).
+```text
+python3 <method-selection>/scripts/prepare_job.py --config <job.toml> --environment <name> --backend xtb --skill xtb --xyz <input.xyz> -- --task opt-sp
+```
+
+Check method, basis, charge, spin and resources; add nodeId and timeoutSeconds before submitting. This helper only prepares a request. Stage both the Skill scripts and `_shared` directory with their relative layout intact. Activation runs in the target Job; no Provider registration is involved.
+
+Run `run.py --help` for exact arguments. `--task opt-sp` explicitly optimizes then computes a single point on that geometry. Failure stops dependent steps and returns nonzero. `--spin` is 2S (Gaussian multiplicity=spin+1). XYZ coordinates are angstrom. Use a new empty output directory for every attempt.
+
+Declare `results/result.json` and `results/geometry.xyz` as required outputs and collect raw step logs. Results preserve actual settings, input/geometry hashes, energy units, convergence evidence and script hashes. In addition to Job exit 0, verify `validated=true`, required steps and the optimization-to-SP geometry binding. Failed runs retain their result and logs; the last printed energy alone is insufficient.
+
+Track via `job_status/job_collect/job_reconcile`; wait on the actual returned attempt_id. The Agent registers scientific Findings from evidence. Never silently change the method, basis or interpreter.
+
+This executable supports GFN2-xTB opt, sp and opt-sp. Scan, MD and frequency workflows are outside this CLI’s verified scope; inspect available scripts before claiming support.
+
+For detailed checks, read [xtb_executor](references/xtb_executor.md).

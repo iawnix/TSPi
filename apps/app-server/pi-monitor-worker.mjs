@@ -5,19 +5,17 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createNotificationDispatcher, sendNotification } from "./notification-dispatcher.mjs";
 import { validate_workspace_files } from "../../packages/agent-core/workspace.mjs";
 
-export { createNotificationDispatcher, sendNotification } from "./notification-dispatcher.mjs";
 
 const executeFile = promisify(execFile);
 const packageRoot = resolve(process.env.TSPI_PACKAGE_ROOT || fileURLToPath(new URL("../..", import.meta.url)));
 const python = process.env.TSPI_PYTHON || process.env.TSPI_WORKSPACE_PYTHON || "python3";
 
-// A wake and a notification have independent durable acknowledgements.
-export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWake, sendNotification, recordTurn }) {
+// Monitor only wakes the owning Agent; notification decisions belong to email Skill.
+export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWake, recordTurn }) {
   const errors = [];
-  for (const channel of ["wake", "notify"]) {
+  for (const channel of ["wake"]) {
     const claimed = await runJson("claim", workspace, ["--event-id", delivery.event_id, "--channel", channel]);
     if (!claimed.claimed) continue;
     const completion = ["--event-id", delivery.event_id, "--channel", channel, "--claim-token", claimed.claim_token];
@@ -46,7 +44,7 @@ export async function deliverMonitorEvent({ workspace, delivery, runJson, sendWa
         if (response?.accepted !== true || response?.state === "uncertain") {
           throw new Error(response?.error?.message || "Host returned an uncertain monitor wake");
         }
-      } else await sendNotification(workspace, event, claimed);
+      }
       await runJson("complete", workspace, [...completion, "--delivered"]);
     } catch (error) {
       errors.push(`${channel}: ${errorMessage(error)}`);
@@ -88,12 +86,6 @@ export function wakeMessage(event) {
 
 export async function runMonitorWorker(options, signal) {
   const { connectHost } = await import("./tspi-host-client.mjs");
-  const notificationDispatcher = options.notificationDispatcher
-    ?? options.notification_dispatcher
-    ?? createNotificationDispatcher();
-  if (!notificationDispatcher || typeof notificationDispatcher.dispatch !== "function") {
-    throw new TypeError("monitor notificationDispatcher must expose dispatch(request)");
-  }
   let client;
   let lastSuccessfulPoll = null;
   const sendWake = async (params) => {
@@ -118,10 +110,7 @@ export async function runMonitorWorker(options, signal) {
           for (const delivery of pending.deliveries || []) {
             if (signal.aborted) break;
             deliveryErrors.push(...await deliverMonitorEvent({ workspace, delivery, runJson, sendWake,
-              recordTurn: recordMonitorTurn,
-              sendNotification: (root, event, deliveryBinding) => notificationDispatcher.dispatch({
-                workspace: root, event, delivery: deliveryBinding, signal,
-              }) }));
+              recordTurn: recordMonitorTurn }));
           }
           await runJson("health", workspace, deliveryErrors.length ? ["--error", deliveryErrors.join("; ")] : []);
           errors.push(...deliveryErrors);

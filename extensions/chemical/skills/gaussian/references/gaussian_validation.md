@@ -1,3 +1,5 @@
+> Current scripts/run.py executes opt, sp and opt-sp only. The advanced parsing/validation guidance below is reference material, not a registered executable workflow.
+
 # Gaussian Validation
 
 Verify the collected primary Gaussian output before adding map Findings.
@@ -21,7 +23,7 @@ changes before treating it as a reaction-coordinate fact.
 
 ## Relaxed Scan
 
-For the `gaussian@1` executor, verify that the route contains a supported `Scan` or
+For a separately implemented Gaussian scan, verify that the route contains a supported `Scan` or
 `ModRedundant` scan directive, the requested coordinate and point count are
 present in the immutable intent, and the parsed profile has the expected
 number of points with energies and coordinates. A complete scan is an energy

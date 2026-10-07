@@ -1,0 +1,11 @@
+{
+  "schema_version": "skill-resources/1",
+  "base": "extension",
+  "files": {
+    "skills/xtb/scripts/parser.py": "sha256:58aa901014a4dc68224e4ee66652e3e76a105c10a0d8c5ac0a2848441621d404",
+    "skills/xtb/scripts/run.py": "sha256:a0830bffa033be65202d6900eb025f4a818bd6cec2b99d7a768d68c595b8ef35",
+    "skills/xtb/scripts/xtb_scan.py": "sha256:676f29c2343872f70a433ce07e2f4236bb0306e2b3d7a16327b89d8eace4c6c2",
+    "skills/xtb/scripts/xyz.py": "sha256:19377522138a2501fcb2441f55ec4f80a0a36cfe4f5d3c9a259eca9bc8830ab9",
+    "skills/_shared/science.py": "sha256:24645f9fdbccbde4273beb90a5a3aca5e9725cadc9096c4c0e39f102cca1ca87"
+  }
+}

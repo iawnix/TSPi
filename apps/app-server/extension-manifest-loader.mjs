@@ -69,12 +69,12 @@ export async function readExtensionManifest(manifestPath) {
   const name = validateName(parsed.name, "extension");
   const version = validateVersion(parsed.version, `extension ${name}`);
   if (!Array.isArray(parsed.skills)) throw new Error(`extension ${name} skills must be an array`);
-  if (!Array.isArray(parsed.providers)) throw new Error(`extension ${name} providers must be an array`);
+  if (parsed.providers !== undefined && !Array.isArray(parsed.providers)) throw new Error(`extension ${name} providers must be an array`);
   const root = resolve(path, "..");
   const skills = [];
   for (const value of parsed.skills) skills.push(await validateSkill(value, root, name));
   const providers = [];
-  for (const value of parsed.providers) providers.push(await validateProvider(value, root, name));
+  for (const value of parsed.providers || []) providers.push(await validateProvider(value, root, name));
   const server = parsed.server === undefined ? undefined : await validateServer(parsed.server, root, name);
   return Object.freeze({
     schema_version: MANIFEST_SCHEMA,
@@ -126,14 +126,30 @@ async function resolveManifestPaths(options) {
 
 async function validateSkill(value, root, extensionName) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`extension ${extensionName} has an invalid Skill descriptor`);
-  assertKnownKeys(value, new Set(["name", "path", "sha256"]), `extension ${extensionName} Skill`);
+  assertKnownKeys(value, new Set(["name", "path", "sha256", "resources_sha256"]), `extension ${extensionName} Skill`);
   const path = resolveOwnedPath(root, value.path, `extension ${extensionName} Skill`);
   await assertRegularDirectory(path, `extension ${extensionName} Skill`);
   const skillFile = resolve(path, "SKILL.md");
   await assertRegularFile(skillFile, `extension ${extensionName} Skill`);
   const name = value.name === undefined ? undefined : validateName(value.name, `extension ${extensionName} Skill`);
   if (value.sha256 !== undefined) await verifyDigest(skillFile, value.sha256, `extension ${extensionName} Skill`);
-  return Object.freeze({ name, path, file: skillFile, ...(value.sha256 === undefined ? {} : { sha256: value.sha256 }) });
+  const resourceFiles = [];
+  if (value.resources_sha256 !== undefined) {
+    const indexPath = join(path, "resources.json");
+    await assertRegularFile(indexPath, `Skill ${name} resource index`);
+    await verifyDigest(indexPath, value.resources_sha256, `Skill ${name} resource index`);
+    const index = JSON.parse(await readFile(indexPath, "utf8"));
+    if (index.schema_version !== "skill-resources/1" || index.base !== "extension"
+      || !index.files || typeof index.files !== "object" || Array.isArray(index.files)) throw new Error("invalid Skill resource index");
+    for (const [file, hash] of Object.entries(index.files)) {
+      const resource = resolveOwnedPath(root, file, `Skill ${name} resource`);
+      await assertOwnedParents(resource);
+      await assertRegularFile(resource, `Skill ${name} resource`);
+      await verifyDigest(resource, hash, `Skill ${name} resource`);
+      resourceFiles.push(resource);
+    }
+  }
+  return Object.freeze({ name, path, file: skillFile, resourceFiles: Object.freeze(resourceFiles), ...(value.sha256 === undefined ? {} : { sha256: value.sha256 }) });
 }
 
 async function validateProvider(value, root, extensionName) {

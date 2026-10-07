@@ -10,6 +10,8 @@ class JobState(StrEnum):
     CREATED = "created"
     SUBMITTED = "submitted"
     RUNNING = "running"
+    QUEUED = "queued"
+    HELD = "held"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     TIMED_OUT = "timed_out"
@@ -25,6 +27,7 @@ class JobOutput:
     path: str
     required: bool = False
     media_type: str | None = None
+    min_bytes: int = 0
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,8 @@ class JobSpec:
         if self.timeout_seconds is not None and self.timeout_seconds <= 0:
             raise ValueError("job timeout_seconds must be positive")
         for output in self.outputs:
+            if output.min_bytes < 0:
+                raise ValueError("min_bytes must be nonnegative")
             path = Path(output.path)
             if path.is_absolute() or ".." in path.parts:
                 raise ValueError(f"job output path must stay below cwd: {output.path!r}")

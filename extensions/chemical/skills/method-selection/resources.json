@@ -1,0 +1,8 @@
+{
+  "schema_version": "skill-resources/1",
+  "base": "extension",
+  "files": {
+    "skills/method-selection/scripts/prepare_job.py": "sha256:397f136fa7586d410d6f1fec59e41ed29ad26c21ba56247d8ab3119df037bc69",
+    "skills/_shared/science.py": "sha256:24645f9fdbccbde4273beb90a5a3aca5e9725cadc9096c4c0e39f102cca1ca87"
+  }
+}

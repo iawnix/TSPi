@@ -1,63 +1,26 @@
 ---
 name: cf22d
-description: 为已注册的 PySCF CF22D 单结构工作流规划、诊断并执行 SCF、优化、过渡态、频率和 RRHO 热化学任务。
+description: 规划、诊断并执行 PySCF CF22D 单结构的 SCF、优化、过渡态、频率和 RRHO 热化学计算。
 ---
 
-# TSPi CF22D
+# CF22D 计算
 
-[English version](SKILL.md)
+使用随 Skill 安装的 [scripts/run.py](scripts/run.py) 生成输入、执行程序并验证结果。先读取安装级 `job.toml` 中目标环境的 `pyscf` command、activation_script 和 environment；本地 `/home/iaw/soft` 与远程安装路径分别解析。
 
-使用本 Skill 处理密度泛函方法为 CF22D 的、有边界的 PySCF 工作流。独立的
-`pyscf_runner` 只是输入与执行辅助包；只有 TSPi 暴露了确定性的 workflow、输入
-role、输出 role、解析合同和任务验证测试后，它才是 TSPi Backend。
-
-执行前读取 Artifact catalog 和实时 compute catalog：
+通过 [准备脚本](../method-selection/scripts/prepare_job.py) 生成通用 `job_start` 请求：
 
 ```text
-research_read mode=artifacts
-read the relevant Skill references and use job_probe for environment checks
+python3 <method-selection>/scripts/prepare_job.py --config <job.toml> --environment <环境名> --backend pyscf --skill cf22d --xyz <结构.xyz> -- --task opt-sp
 ```
 
-只使用 catalog 返回的准确 workflow 和参数 schema。若没有注册 PySCF/CF22D workflow，
-只能给出方法建议和 doctor 计划。不得虚构 workflow 名称、为不可用 descriptor 构造
-`job_start` 请求、通过任意 shell 调用 `pyscf-runner`，或把本地 smoke test 说成 TSPi 计算。
+确认方法、基组、电荷、自旋和资源，补充 nodeId 与 timeoutSeconds 后提交返回的请求。脚本不会替 Agent 提交任务。它会暂存该 Skill 的 scripts 和 `_shared` 依赖，保留相对目录；不要只复制 run.py。激活发生在目标 Job 中，不需要 Provider 注册。
 
-当前 adapter 在实时 catalog 中出现时使用版本 1 的 ID：`pyscf.sp`、`pyscf.opt`、
-`pyscf.ts`、`pyscf.freq`、`pyscf.thermo`、`pyscf.opt_freq` 和 `pyscf.ts_freq`。这只是
-路由提示，不能代替 catalog 发现或就绪检查。
+`run.py --help` 给出准确参数；`--task opt-sp` 明确执行优化，再以优化结构执行单点，任何步骤失败都会非零退出。`--spin` 是 2S（Gaussian 多重度为 spin+1）；XYZ 单位为 angstrom。选择新的空输出目录，不覆盖之前尝试。
 
-在不可变 calculation intent 中绑定源 XYZ Artifact、任务列表、电荷、PySCF spin
-（`2S`，不是多重度）、基组、CF22D 方法设置、优化/TS 设置、频率阈值、热化学条件、
-运行资源和输出策略。首次运行以及依赖、配置或环境变化后，运行只读环境 doctor。任务
-远端目标使用 `TSPi --check-remote`；本地目标使用安装级或 adapter 暴露的 runtime probe。
-任务顺序、输入/输出记录和科学检查见
-[cf22d_workflow.zh-CN.md](references/cf22d_workflow.zh-CN.md)；本地与远端就绪检查见
-[environment_doctor.zh-CN.md](references/environment_doctor.zh-CN.md)。
+声明 `results/result.json` 和 `results/geometry.xyz` 为 required 输出，并收集步骤目录的原始日志。结果记录实际方法、基组、输入与几何摘要、能量单位、收敛证据和脚本摘要。Job 退出 0 之外，还要检查 `validated=true` 及所需 steps；确认 opt 与 SP 的结构绑定。失败保留 result.json 和已有日志，不能用最后一个能量字符串替代完整验证。
 
-PySCF Backend 必须在 `compute.toml` 中绑定由运维管理的专用解释器，该环境应包含
-PySCF、geomeTRIC、`pyscf-dispersion` 和 TSPi runner 模块。本地 worker 会先加载配置的
-activation script；远程 Torque 作业在只暂存输入 basename 后加载远程 activation script。
-绑定缺失或过期时应在 preflight 阶段失败；不得在计算任务内安装依赖，也不得回退到宿主
-Python。
+通过 `job_status/job_collect/job_reconcile` 跟踪任务；使用返回的真实 attempt_id 保存等待点。科学 Finding 由 Agent 根据证据登记。Runtime 不判断化学方法，不允许静默换方法、基组或系统解释器。
 
-不得静默替换其他 `xc` 泛函。若 descriptor 允许覆盖 `xc`，只有冻结 intent 明确记录
-`CF22D` 时才使用本 Skill；其他泛函应交给方法选择和适用的执行 Skill。
+本入口还支持 sp、opt、ts、freq、thermo、opt_freq、ts_freq；保留 CF22D/D3 可用性与优化收敛检查，缺失则失败。方法只允许 CF22D，不能用 RHF 替代。t006 使用 `--basis 6-31G**`。详细科学边界见 [工作流](references/cf22d_workflow.zh-CN.md)。
 
-源 Runner 负责单结构的 `sp`、`opt`、`ts`、`freq` 和 `thermo`。TSPi adapter 还可能暴露
-组合的 `opt_freq` 和 `ts_freq` workflow；实际请求以 descriptor 和 Artifact manifest
-为准。`opt` 与 `ts` 互斥；`freq` 会隐式增加 SCF，`thermo` 会隐式增加 SCF 和频率。TS 加热化学的顺序是
-`ts -> sp -> freq -> 驻点频率计数 -> thermo`。它不会执行 IRC、NEB、反应扫描、端点优化
-或交叉点搜索。
-
-正常终止、SCF 收敛和一个虚频是不同事实。Runner 的驻点检查只统计显著虚频（默认阈值
-`-20 cm^-1`），不会检查振动模式向量，也不能建立端点身份。这些问题交给
-`validation`、`irc` 和 `mechanism-reasoning`；能量与 RRHO 解释交给
-`energetics`。
-
-将 adapter 的 `memory_mb`（源 Runner 称为 `max_memory_mb`）视为 PySCF 预算，而不是操作系统硬限制。配置的 scratch 基目录只能
-包含 Runner 自己创建的运行子目录；清理时不得删除基目录或无关文件。核对 workflow
-声明的主要输出后，再通过 Research State 分别记录 FactFinding 或 IssueFinding。独立
-Runner 通常写出 `run.log`、`result.json`、任务记录、几何、Hessian/频率和热化学文件；
-TSPi adapter 也可能声明 `pyscf.out`、`pyscf_result.json` 和 `pyscf_*` JSON/XYZ
-Artifact。实时 workflow 的 Artifact manifest 才是权威，不要根据本文件猜文件名。解析
-失败或结果不完整不是化学结论。
+详细检查见 [environment_doctor.zh-CN](references/environment_doctor.zh-CN.md)。

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from abc import abstractmethod
 import hashlib
+import math
+from .outputs import collect_outputs
 import json
 import re
 import shlex
@@ -102,7 +104,7 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         return f"{self.remote_root}/{job_id}"
 
     def probe(self, spec: JobSpec) -> dict[str, Any]:
-        missing = [str(path) for path in spec.inputs if not path.is_file()]
+        missing = [str(path) for path in spec.inputs if not path.exists()]
         checks = " && ".join(f"command -v {shlex.quote(value)} >/dev/null" for value in self.commands.values())
         script = f"test -d {shlex.quote(self.remote_root)} && test -w {shlex.quote(self.remote_root)} && {checks}"
         try:
@@ -123,7 +125,8 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         self._run_ssh(f"mkdir -p {shlex.quote(remote_dir)}/logs")
         self._rsync(spec.cwd, remote_dir)
         for path in spec.inputs:
-            self._rsync(path, f"{remote_dir}/{path.name}")
+            if not path.resolve().is_relative_to(spec.cwd.resolve()):
+                self._rsync(path, f"{remote_dir}/{path.name}")
         return {"remote_dir": remote_dir}
 
     def start(self, spec: JobSpec) -> JobReceipt:
@@ -149,7 +152,7 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         wrapper = (
             "#!/bin/sh\nset +e\n"
             f"{exports}\n"
-            f"cd {shlex.quote(remote_dir)}\n"
+            f"cd {shlex.quote(remote_dir)} || exit 125\n"
             f"{' '.join(shlex.quote(item) for item in spec.command)} > logs/stdout.log 2> logs/stderr.log\n"
             "code=$?\nprintf '%s\\n' \"$code\" > status.exit\nexit \"$code\"\n"
         )
@@ -168,14 +171,25 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
             qsub_args.extend(["-q", str(queue)])
         resources = spec.metadata.get("resources", {}) if isinstance(spec.metadata, dict) else {}
         if isinstance(resources, dict):
+            if resources.get("cpus"):
+                cpus = int(resources["cpus"])
+                if cpus < 1: raise ValueError("cpus must be positive")
+                qsub_args.extend(["-l", f"nodes=1:ppn={cpus}"])
+            if resources.get("memory_mb"):
+                memory = int(resources["memory_mb"])
+                if memory < 1: raise ValueError("memory_mb must be positive")
+                qsub_args.extend(["-l", f"mem={memory}mb"])
             select = resources.get("select")
             walltime = resources.get("walltime")
             if select:
                 qsub_args.extend(["-l", f"select={select}"])
             if walltime:
                 qsub_args.extend(["-l", f"walltime={walltime}"])
+        if spec.timeout_seconds and not resources.get("walltime"):
+            seconds = math.ceil(spec.timeout_seconds)
+            qsub_args.extend(["-l", f"walltime={seconds//3600:02}:{seconds//60%60:02}:{seconds%60:02}"])
         qsub = " ".join(shlex.quote(item) for item in qsub_args)
-        result = self._run_ssh(f"cd {shlex.quote(remote_dir)} && chmod 700 run.sh && {qsub} run.sh")
+        result = self._run_ssh(f"cd {shlex.quote(remote_dir)} && chmod 700 run.sh && {qsub} run.sh > scheduler.id && cat scheduler.id")
         scheduler_id = result.stdout.strip().splitlines()[-1].strip()
         if not scheduler_id:
             raise RuntimeError("qsub returned no scheduler id")
@@ -189,21 +203,37 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         self._write(Path(spec.cwd) / "remote.json", {"scheduler_id": scheduler_id, "remote_dir": remote_dir})
         return receipt
 
-    def _scheduler_status(self, scheduler_id: str) -> bool:
+    def recover_receipt(self, job_id: str, cwd: Path) -> JobReceipt | None:
+        """Recover a qsub response lost after remote acceptance, without resubmitting."""
+        spec = json.loads((cwd / "spec.json").read_text())
+        remote_dir = f"{self.remote_root}/{job_id}"
+        result = self._run_ssh(f"cat {shlex.quote(remote_dir + '/scheduler.id')}", check=False)
+        if result.returncode or not result.stdout.strip(): return None
+        scheduler_id = result.stdout.strip().splitlines()[-1]
+        if not re.fullmatch(r"[A-Za-z0-9_.\[\]-]+", scheduler_id):
+            raise ValueError("invalid recovered scheduler identity")
+        receipt = JobReceipt(job_id, self.name, _now(), tuple(spec["command"]), str(cwd), None,
+            {**spec.get("metadata", {}), "scheduler_id":scheduler_id, "remote_dir":remote_dir,
+             "recovered":True, "submitted_at_unknown":True},
+            spec.get("workspace_id"), spec.get("node_id"), spec.get("attempt_id"))
+        self._write(cwd / "receipt.json", receipt.__dict__)
+        return receipt
+
+    def _scheduler_status(self, scheduler_id: str) -> str | None:
         result = self._run_ssh(f"{shlex.quote(self.commands['qstat'])} {shlex.quote(scheduler_id)}", check=False)
         if result.returncode != 0:
-            return False
+            return None
         text = result.stdout.upper()
         detailed = re.search(r"JOB_STATE\s*=\s*([A-Z])", text)
         if detailed:
-            return detailed.group(1) not in {"C", "F"}
+            return detailed.group(1)
         for line in text.splitlines():
             if scheduler_id.upper() in line:
                 fields = line.split()
                 states = [item for item in fields if item in {"Q", "R", "E", "H", "W", "T", "C", "F"}]
                 if states:
-                    return states[-1] not in {"C", "F"}
-        return True
+                    return states[-1]
+        return None
 
     def status(self, receipt: JobReceipt) -> JobStatus:
         if receipt.job_id in self._terminal:
@@ -224,14 +254,16 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         if not scheduler_id or not remote_dir:
             return JobStatus(receipt.job_id, JobState.UNKNOWN, self.name, error="remote receipt is incomplete")
         try:
-            if self._scheduler_status(scheduler_id):
-                return JobStatus(receipt.job_id, JobState.RUNNING, self.name)
             result = self._run_ssh(
                 f"test -f {shlex.quote(remote_dir + '/status.exit')} && cat {shlex.quote(remote_dir + '/status.exit')}",
                 check=False,
             )
             if result.returncode != 0:
-                return JobStatus(receipt.job_id, JobState.UNKNOWN, self.name, error="scheduler no longer reports job and exit receipt is absent")
+                scheduler_state = self._scheduler_status(scheduler_id)
+                mapped = {"Q":JobState.QUEUED, "W":JobState.QUEUED, "H":JobState.HELD,
+                          "R":JobState.RUNNING, "E":JobState.RUNNING, "T":JobState.SUBMITTED}.get(scheduler_state, JobState.UNKNOWN)
+                return JobStatus(receipt.job_id, mapped, self.name,
+                    error="exit receipt absent; scheduler state=" + str(scheduler_state))
             code = int(result.stdout.strip().splitlines()[-1])
             state = JobState.SUCCEEDED if code == 0 else JobState.FAILED
             terminal = JobStatus(receipt.job_id, state, self.name, exit_code=code, finished_at=_now())
@@ -243,22 +275,16 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
 
     def collect(self, receipt: JobReceipt) -> dict[str, Any]:
         status = self.status(receipt)
-        if status.state in {JobState.RUNNING, JobState.UNKNOWN}:
+        if status.state in {JobState.RUNNING, JobState.UNKNOWN, JobState.QUEUED, JobState.HELD, JobState.SUBMITTED}:
             raise RuntimeError(f"job {receipt.job_id} is not complete: {status.state}")
         root = Path(receipt.cwd)
         remote_dir = str(receipt.metadata["remote_dir"])
         self._rsync(root, remote_dir, pull=True)
-        outputs = []
         spec_path = root / "spec.json"
         declared = json.loads(spec_path.read_text(encoding="utf-8")).get("outputs", []) if spec_path.is_file() else []
-        for item in declared:
-            path = root / item["path"]
-            row = {"path": item["path"], "required": item.get("required", False), "exists": path.is_file()}
-            if path.is_file():
-                row.update({"size": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
-            outputs.append(row)
+        outputs, validation = collect_outputs(root, declared)
         return {
-            "job_id": receipt.job_id, "status": status.__dict__, "outputs": outputs,
+            "job_id": receipt.job_id, "status": status.__dict__, "outputs": outputs, "output_validation": validation,
             "stdout": str(root / "logs" / "stdout.log"), "stderr": str(root / "logs" / "stderr.log"),
         }
 
@@ -266,9 +292,14 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         return self.collect(receipt)
 
     def cancel(self, receipt: JobReceipt) -> JobStatus:
+        current = self.status(receipt)
+        if current.state in {JobState.SUCCEEDED,JobState.FAILED,JobState.CANCELLED,JobState.TIMED_OUT}: return current
         scheduler_id = str(receipt.metadata.get("scheduler_id", ""))
         if scheduler_id:
-            self._run_ssh(f"{shlex.quote(self.commands['qdel'])} {shlex.quote(scheduler_id)}", check=False)
+            result = self._run_ssh(f"{shlex.quote(self.commands['qdel'])} {shlex.quote(scheduler_id)}", check=False)
+            if result.returncode: return JobStatus(receipt.job_id, JobState.UNKNOWN, self.name, error="scheduler did not confirm cancellation")
+        else:
+            return JobStatus(receipt.job_id, JobState.UNKNOWN, self.name, error="scheduler identity missing")
         terminal = JobStatus(receipt.job_id, JobState.CANCELLED, self.name, finished_at=_now())
         self._terminal[receipt.job_id] = terminal
         self._persist(receipt, terminal)

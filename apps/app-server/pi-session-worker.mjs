@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
@@ -27,7 +27,7 @@ import { create_research_state_port, RESEARCH_STATE_WRITE_PRINCIPAL } from "../.
 import { createTransactionCoordinator } from "../../packages/agent-runtime/transactions/coordinator.mjs";
 
 export {
-  createChangeTool, createNotifyTool, createStateTool,
+  createChangeTool, createStateTool,
   createCheckpointLivenessHook,
 } from "./pi-native-tools.mjs";
 export { createSystemPromptManifest, createSystemPromptTool } from "./system-prompt.mjs";
@@ -156,7 +156,13 @@ async function createTspiHarness(databasePath, options) {
   });
   const systemPromptTool = createSystemPromptTool(promptManifest);
   const lifecycle = createResearchLifecycleController({ metadata: Object.fromEntries([...loadedExtensions.tools, ...installed.tools].filter((tool) => tool.metadata).map((tool) => [tool.name, tool.metadata])) });
-  const packageReadGuard = createPackageSourceReadGuard({ packageRoot: loadedSkills.packageRoot, cwd });
+  const packageReadGuard = createPackageSourceReadGuard({ packageRoot: loadedSkills.packageRoot, cwd,
+    publicKnowledgeRoots: loadedSkills.skills.map(skill => dirname(skill.filePath)),
+    publicResourceFiles: loadedSkills.installedExtensions.extensions.flatMap(extension => extension.skills.flatMap(skill => skill.resourceFiles)),
+  });
+  const checkpointHook = createCheckpointLivenessHook({ cwd, maxFollowUps: 1, sessionId,
+    transactionCoordinator, statusReader: () => researchKernel.read_liveness({}),
+  });
   const toolContext = createToolExecutionContext({
     workspace_root: cwd, workspace_id: workspaceId, session_id: sessionId, operation_id: null,
     lifecycle_phase: "turn", replay_mode: "normal", principal: RESEARCH_STATE_WRITE_PRINCIPAL,
@@ -189,7 +195,6 @@ async function createTspiHarness(databasePath, options) {
           })();
         },
         onYield: async (_answer, api, context) => {
-          const checkpointHook = createCheckpointLivenessHook({ cwd, maxFollowUps: 1, followUpRequired: false });
           const follow = await checkpointHook({ runId: lifecycle.snapshot().run_id || String(api.taskId) }, context);
           return follow?.followUp ? { continue: follow.followUp } : undefined;
         },

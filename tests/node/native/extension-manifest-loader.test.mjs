@@ -183,3 +183,22 @@ test("extension manifests reject fields outside the versioned contract", async (
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Skill-only extension rejects a changed executable resource", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tspi-skill-resources-"));
+  try {
+    const script = join(root, "run.py");
+    await writeFile(script, "print('verified')\n");
+    await writeFile(join(root, "SKILL.md"), "---\nname: sample\ndescription: Run a sample task\n---\n");
+    const hash = (text) => "sha256:" + createHash("sha256").update(text).digest("hex");
+    const index = JSON.stringify({ schema_version: "skill-resources/1", base: "extension", files: { "run.py": hash(await readFile(script)) } });
+    await writeFile(join(root, "resources.json"), index);
+    const manifest = join(root, "manifest.json");
+    await writeFile(manifest, JSON.stringify({ schema_version: "tspi-extension/1", name: "sample", version: "1.0.0",
+      skills: [{ name: "sample", path: ".", resources_sha256: hash(index) }] }));
+    const loaded = await discoverInstalledExtensions({ manifestPaths: [manifest] });
+    assert.equal(loaded.skills?.length || loaded.skillRoots.length, 1);
+    await writeFile(script, "print('changed')\n");
+    await assert.rejects(discoverInstalledExtensions({ manifestPaths: [manifest] }), /integrity/i);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

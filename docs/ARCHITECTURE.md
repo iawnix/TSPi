@@ -160,18 +160,16 @@ metadata and large reference lists are reduced to keys and bounded IDs. Full
 records remain available through focused map/detail queries. Skill catalogs are
 loaded when a worker is created and Skill bodies are cached for explicit
 invocation; names, descriptions, locations, and the `system` scope marker for
-the two Core System Skills are placed in the model's default prompt. Capabilities and Compute
+the two Core System Skills are placed in the model's default prompt. Compute
 Environments are queried when selecting or launching a method.
 
-Capability discovery is owned by the Python Native registry. The public
-catalog contains only versioned descriptor contracts; executable bindings,
-input validation, intent materialization, local execution, remote scheduler
-control, and parsing stay inside the Native Compute lifecycle. There is no
-JavaScript provider, gateway, or provider adapter behind this boundary.
-
-Native preflight resolves a named local or remote environment and records its
-binding digest in the immutable calculation intent. The same control path
-writes canonical workspace Artifacts in both light execution scopes and
+The generic Job Runtime is the execution boundary. A Skill constructs the
+program argv, input files, expected outputs, parser instructions, and method
+metadata; `job_start` accepts that bounded argv for either local or remote
+execution. There is no scientific provider registry or capability descriptor
+gate between a Skill and Job Runtime. Preflight checks the selected named
+environment and records its configuration in Job metadata. The same control
+path writes canonical workspace Artifacts in both light execution scopes and
 research Attempts, so no second ArtifactStore can diverge from the workspace.
 
 The runtime boundary is explicit:
@@ -359,7 +357,7 @@ top-level Pi capabilities. TSPi does not provide a second Agent Runtime.
 `artifact_derive` dispatches 22 independent versioned analysis capabilities from an
 on-demand catalog. Generic analysis contracts live in
 `packages/research-compute/research_compute/analysis.py`; chemistry domain code
-lives in `extensions/chemical/providers/Skill helper/analysis/`. Node-owned artifacts bind
+lives in `extensions/chemical/skills/`. Node-owned artifacts bind
 inputs, digests and generated files. Selected facts enter the existing
 `research_change` candidate path after replay validation. No capability schedules a
 scientific successor or accepts a Claim. Chemical networks use stoichiometric
@@ -467,7 +465,7 @@ are separate from the scientific operation journal.
   `packages/tspi-provider-runtime/`, `packages/tspi-bootstrap/`,
   `packages/research-state/`, `packages/research-memory/`,
   `packages/research-compute/`, and the chemistry implementation under
-  `extensions/chemical/providers/Skill helper/`.
+  `extensions/chemical/skills/`.
 - Skills and extension manifests: `skills/`, `package.json`, and
   `apps/app-server/server-tools/extensions.json`.
 - TS Web contracts: `contracts/ts-web/`.

@@ -24,7 +24,7 @@ def workspace_path(
 ) -> tuple[str, Path]:
     ref = bounded_text(value, "workspace ref", 4096).replace("\\", "/")
     parts = ref.split("/")
-    if not ref.startswith("reports/") or any(part in {"", ".", ".."} for part in parts):
+    if not ref.startswith(("reports/", "artifacts/")) or any(part in {"", ".", ".."} for part in parts):
         raise ValueError("notification artifacts must use a safe reports/ workspace-relative path")
     path = workspace.joinpath(*parts)
     current = workspace

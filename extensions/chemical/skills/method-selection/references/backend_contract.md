@@ -1,84 +1,19 @@
-# Backend Contract
+# Scientific Job contract
 
-Backends are deterministic adapters. They express supported program tasks,
-validate parameters, prepare immutable inputs/scripts, declare expected artifacts,
-and parse local outputs. Root selects the method and interprets verified results.
+A Skill owns scientific inputs, argv, parsing and validation. Use its installed scripts; no scientific registry or workflow catalog is required.
 
-Use `read the relevant Skill references and use job_probe for environment checks` for the current machine-
-readable catalog and
-[compute_tools.md](../../../../core/skills/orchestration/references/compute_tools.md) for
-public calls.
+## Submission
 
-## Supported Tasks
+Use method-selection/scripts/prepare_job.py to read job.toml bindings. It returns command (argv), platform (configured execution target), environment (process variables), inputs (source/destination file or directory mappings), outputs (path, required, minBytes, mediaType) and opaque metadata. Add nodeId, timeoutSeconds and any supported metadata.resources (cpus, memory_mb, walltime) before job_start. cwd is a relative subdirectory of the isolated Job root, not an arbitrary workspace directory.
 
-- Gaussian: the registered `gaussian@1` executor. Route Section directives in
-  the `.gjf` input select `sp`, `opt`, `ts`, `freq`, `opt_freq`, `irc`, scan,
-  QST, and other supported Gaussian modes.
-- xTB: `sp`, `opt`, `freq`, `opt_freq`, `scan`, `md`.
-- CREST: `conformer_search`.
-- ASE NEB: the registered `ase.neb@1` workflow, using the xTB CLI calculator
-  by default or the explicit `calculator=gaussian_cli` mode when Gaussian
-  per-image forces are required.
+Inputs are snapshotted with paths and digests. Keep script module layout intact. Runtime owns local/remote process control; Skill scripts may synchronously launch the scientific executable inside the Job but must not detach or submit their own scheduler jobs.
 
-QBICS DMECP is not a supported workflow. A backend is not public until it
-has a deterministic parser contract and task-validation tests; an input
-preparer alone is insufficient.
+## Environment
 
-Use the catalog to construct `job_start` requests. Select
-`execution.environment` with the corresponding installation-owned environment
-name; the lifecycle
-and result contract are the same. Native `job_probe` performs the same
-read-only environment checks used by calculation preflight; it does not create
-an intent or submit a job.
+job_probe checks the selected platform, not scientific readiness. The configured command and activation_script determine the actual executable. Use cf22d/scripts/doctor.py for CF22D dependency/method checks; run it in each selected environment. Remote wrapper Python must be explicitly bound. Do not substitute system Python or change the scientific method when dependencies are missing.
 
-The live catalog is authoritative for workflow identity and version. Skill
-prose, a Backend descriptor, an installed executable, or a directory listing
-does not register a workflow or prove that it is runnable. Query the exact
-`workflow_id@version`, then query `job_probe` with that workflow,
-the selected `environment_id`, and `execution_kind`. A readiness result of
-`unknown` or `deferred` is not executable health; use the environment doctor or
-`TSPi --check-remote doctor` before a real launch.
+## Evidence
 
-Local/remote is an execution-environment property independent of workflow
-identity. A remote request must use Native `job_start` with
-`operation=launch` and an `execution.environment`; the generic workflow invocation
-form must not receive a remote selector and cannot create a scheduler-bound
-intent. Both targets use the same lifecycle and immutable intent.
+job_start returns distinct job_id and attempt_id. Use the real Attempt for waiting checkpoints. job_collect returns exit facts, output_validation and registered Artifacts for research Jobs. Exit 0, complete files and scientific validation are separate facts. Read the Skill result.json and logs before registering Findings.
 
-For example, a request can bind `{"environment":"local"}` or
-`{"environment":"cluster_1w"}`. Host resolves the local/remote kind and all
-resource details from that installation-owned environment.
-
-## Adapter Output
-
-Preparation must declare exact generated files, commands, expected artifacts,
-Backend binding, Compute environment, and parser contract without accepting arbitrary shell. Parse
-must report structured program facts and provenance while retaining missing,
-ambiguous, and failure states.
-
-Parser output is factual and backend-owned; it does not decide whether the
-requested task succeeded. The compute layer records program termination in
-`program_status` and evaluates workflow-specific completion separately in
-`task_validation`. Neither field is a scientific verdict, and Gaussian
-single-point, optimization, transition-state optimization, and frequency tasks
-never inherit scientific transition-state assessment rules merely because they
-use the Gaussian parser.
-
-The host freezes every launch in `ts-calculation-intent/7`, including Node and
-scientific-intent digests plus same-Node Attempt lineage. Any changed method,
-input, command-relevant parameter, or expected output needs a new recalculation
-intent.
-
-The execution boundary is explicit and shared by local and remote targets. The
-public launch contract has no `dry_run` field: a launch validates the selected
-environment and Backend binding, then executes one bounded Attempt lifecycle.
-Use `job_probe` and Host preflight diagnostics when only preparation or
-environment health needs to be checked; those checks do not create a
-calculation Attempt.
-
-## Record Scientific Results
-
-The Root verifies parser output against primary artifacts, chooses separate
-Finding statements, and applies `research_change`. Evaluate mechanism, endpoint
-identity, mode assignment, and Claim status with the relevant method Skill and
-Gate criteria when a visible verdict is useful.
+artifact_derive records a derivation descriptor; it does not execute analysis. Run a Skill script then register its actual output. artifact_link persists evidence relations. Changed scientific inputs/settings create a new Attempt; recovery of an uncertain submission uses job_reconcile, not automatic resubmission.

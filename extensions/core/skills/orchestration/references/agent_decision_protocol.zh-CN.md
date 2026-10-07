@@ -54,6 +54,4 @@ Review 是隔离的建议性评估，不能写入 map。只向 Review 提供所�
 它不能改变 Claim、Node、Finding、Gate，不能选择方法、启动/取消 Compute，也不能单独充当证据。
 通过 `research_interpretation` 回答后，再使用普通 map operation 记录 Root 接受、拒绝或附带条件的解释。
 
-`artifact_derive` 是独立的已注册确定性分析边界。它要求目录中的精确 capability/version、已存在且
-未关闭的 Node，以及 role 到已登记 Artifact ID 数组的映射。它不会选择执行环境、创建 Claim/Finding，
-也不会运行调度器生命周期；需要审计的 local/remote 计算使用 `job_start/job_status/job_collect`。
+`artifact_derive` 只记录派生描述。实际分析通过 Skill 脚本和 Job Runtime 执行，再登记其产物。

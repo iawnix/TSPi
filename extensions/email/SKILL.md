@@ -1,42 +1,19 @@
 ---
 name: email
-description: Send configured email notifications for TSPi research events and reports, and track delivery receipts.
+description: Prepare and send user-requested research email through configured SMTP or ClawEmail, with durable delivery receipts.
 ---
 
-# TSPi Email Notifications
+# Research email
 
-[Chinese version](SKILL.zh-CN.md)
+Use this Skill for email tasks described above.
 
-This Skill documents the Host/Monitor-owned `notify_send` delivery capability;
-it is not a Root Agent tool. Use
-`research-state` for research state and `orchestration` for
-operational, report, and Artifact context.
+Use [scripts/email_cli.py](scripts/email_cli.py) through a **local** job_start. The installation owns notification configuration, credentials and recipient; inherit TS_NOTIFICATION_CONFIG or its configured installation path. Read [delivery rules](references/email_delivery.md) for request format and recovery.
 
-Use this Skill when a recorded event or report needs a configured notification.
-Notifications communicate recorded research outcomes and link to their reports.
-The installation may use the existing ClawEmail transport or the built-in SMTP
-transport. SMTP presets currently cover 163 and QQ mailboxes.
+Before asking for a recipient, run `python <listed-skill-directory>/scripts/email_cli.py check --root <workspace> --output <workspace>/reports/email-check.json` locally with the inherited TS_NOTIFICATION_CONFIG. This reads configuration and never sends. Reuse the configured recipient when enabled; ask only if configuration is missing, invalid, or the user requests another destination. A recipient need not be repeated in the latest message. Delivery problems must not block independent calculations.
 
-`notify_send` is a Host/Monitor boundary, not a Root Agent tool in the active
-tool inventory. The Monitor creates notification deliveries only for a compute
-monitor registered with `notify_policy = "configured"`; `"none"` leaves the
-notification channel disabled. The Host service must be running for Monitor
-delivery, and the installation-level notification configuration must pass its
-startup validation first.
+1. Confirm the user's existing notification scope and completion condition. Reuse existing authorization; a plan or a Job completing alone does not authorize email.
+2. Build the report and register its Artifact. Prepare a request with stable notification_id, event, subject, summary and report_refs. Run `email_cli.py prepare --root <workspace> --request-file <draft> --output <prepared.json>`; this never sends.
+3. Run `email_cli.py send --root <workspace> --request-file <prepared.json> --output <receipt.json>` via job_start, with a bounded timeout. Declare the receipt output and collect it even on failure. Preserve the installation and workspace paths; never stage credentials remotely.
+4. Read the delivery receipt. `sent` means transport acceptance, not inbox delivery or reading. `already_sent` reuses a prior receipt. `unknown` requires reconciliation, never blind retries. Use `status --receipt-ref <workspace-relative receipt> --output <status.json>` to inspect it.
 
-## Operating Rules
-
-- Use the recipient from the installation's notification configuration.
-- Keep the provider, sender, and credentials in the installation configuration;
-  notification requests must not select a provider or recipient.
-- Select the event type and report attachments from the delivery contract.
-- Record delivery receipts with the notification's operational history.
-- Reuse the receipt for a known successful delivery. Inspect provider status
-  before retrying an unknown delivery.
-- SMTP uses TLS (implicit SSL or STARTTLS) and a provider-issued authorization
-  code. Never place mailbox passwords or authorization codes in a workspace,
-  request, report, or log.
-- POP3 and IMAP are not used by this Skill; it sends notifications only.
-
-Read [email_delivery.md](references/email_delivery.md) for the request shape, attachment rules,
-receipt identity, and failure semantics.
+Host/Monitor only wakes the Agent. This Skill owns notification preparation and delivery; no native notification tool or Provider registration is required. Failed email does not undo completed science. Notification IDs must not contain a Job ID, retry time or unrelated research revision.

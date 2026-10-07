@@ -29,6 +29,17 @@ def _workspace(root: Path) -> None:
     initialize_workspace(root, "workspace_python_unit", "research")
 
 
+def test_user_wait_closes_turn_but_rejects_automatic_wake(tmp_path: Path) -> None:
+    _workspace(tmp_path)
+    admit_workspace(tmp_path, {"authority": "host"})
+    checkpoint(tmp_path, {"principal": "root_agent", "authority": "kernel_write",
+        "id": "checkpoint_user", "disposition": "user_input_required", "reason": "Need a user decision"})
+    request = {"protocol": "research_turn_request", "version": 1, "request_id": "end_wait", "operation": "end", "input": {}}
+    assert turn(tmp_path, request)["status"] == "completed"
+    with pytest.raises(AgentWorkspaceError, match="research_user_input_required"):
+        turn(tmp_path, {**request, "request_id": "wake_wait", "operation": "wake"})
+
+
 def test_new_workspace_change_checkpoint_and_turn_are_durable(tmp_path: Path) -> None:
     _workspace(tmp_path)
     admitted = admit_workspace(tmp_path, {"workspace_id": "workspace_python_unit", "authority": "host"})

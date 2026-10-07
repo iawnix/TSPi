@@ -16,10 +16,10 @@ request selects a named environment and resources within its configured limits.
 
 This file is the single local/remote environment authority. Do not add a
 second `.pi/remote.toml` registry or infer a remote environment from a host
-directory. The configured environment name must be passed as
-`execution.environment` in Native `job_start` `operation=launch`.
-Capability identity remains the live Skill instructions's concern; an
-environment's backend list only describes its binding and readiness.
+directory. Pass the configured environment name as the `environment` (or
+`platform`) field in `job_start`. An environment's optional software metadata
+describes readiness; it is not a workflow registry or a launch gate beyond the
+probe and transport checks.
 
 Use the installation-level `TSPi --check-remote` command for read-only diagnostics:
 

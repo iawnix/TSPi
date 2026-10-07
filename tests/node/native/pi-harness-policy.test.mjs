@@ -9,15 +9,18 @@ test("Harness package-source guard blocks private package reads but allows publi
   const root = await mkdtemp(join(tmpdir(), "tspi-harness-policy-"));
   const packageRoot = join(root, "package");
   const workspace = join(root, "workspace");
-  await mkdir(join(packageRoot, "skills", "demo"), { recursive: true });
+  const skillRoot = join(packageRoot, "extensions", "chemical", "skills", "demo");
+  await mkdir(skillRoot, { recursive: true });
   await mkdir(join(packageRoot, "src"), { recursive: true });
   await mkdir(workspace, { recursive: true });
-  await writeFile(join(packageRoot, "skills", "demo", "SKILL.md"), "public\n");
+  await writeFile(join(skillRoot, "SKILL.md"), "public\n");
   await writeFile(join(packageRoot, "src", "private.mjs"), "private\n");
-  const guard = createPackageSourceReadGuard({ packageRoot, cwd: workspace });
+  const guard = createPackageSourceReadGuard({ packageRoot, cwd: workspace, publicKnowledgeRoots: [skillRoot] });
   try {
     assert.equal(guard({ toolName: "read", args: { path: join(packageRoot, "src", "private.mjs") } }).block !== undefined, true);
-    assert.equal(guard({ toolName: "read", args: { path: join(packageRoot, "skills", "demo", "SKILL.md") } }), undefined);
+    assert.equal(guard({ toolName: "read", args: { path: join(skillRoot, "SKILL.md") } }), undefined);
+    await symlink(join(packageRoot, "src", "private.mjs"), join(skillRoot, "escape.mjs"));
+    assert.ok(guard({ toolName: "read", args: { path: join(skillRoot, "escape.mjs") } }).block);
     assert.equal(guard({ toolName: "grep", args: { path: workspace } }), undefined);
     assert.equal(guard({ toolName: "bash", args: { path: join(packageRoot, "src", "private.mjs") } }), undefined);
   } finally {

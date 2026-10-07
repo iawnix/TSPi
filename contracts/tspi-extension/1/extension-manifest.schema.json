@@ -4,78 +4,176 @@
   "title": "TSPi installed extension manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "name", "version", "skills", "providers"],
+  "required": [
+    "schema_version",
+    "name",
+    "version",
+    "skills"
+  ],
   "properties": {
-    "schema_version": { "const": "tspi-extension/1" },
-    "name": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$" },
-    "version": { "type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+){0,2}(?:[-+][0-9A-Za-z.-]+)?$" },
+    "schema_version": {
+      "const": "tspi-extension/1"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+(?:\\.[0-9]+){0,2}(?:[-+][0-9A-Za-z.-]+)?$"
+    },
     "skills": {
       "type": "array",
-      "items": { "$ref": "#/$defs/skill" }
+      "items": {
+        "$ref": "#/$defs/skill"
+      }
     },
     "providers": {
       "type": "array",
-      "items": { "$ref": "#/$defs/provider" }
+      "items": {
+        "$ref": "#/$defs/provider"
+      }
     },
-    "server": { "$ref": "#/$defs/server" }
+    "server": {
+      "$ref": "#/$defs/server"
+    }
   },
   "$defs": {
     "relative_path": {
       "type": "string",
       "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
     },
-    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
     "skill": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path"],
+      "required": [
+        "path"
+      ],
       "properties": {
-        "name": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$" },
-        "path": { "$ref": "#/$defs/relative_path" },
-        "sha256": { "$ref": "#/$defs/sha256" }
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$"
+        },
+        "path": {
+          "$ref": "#/$defs/relative_path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "resources_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
       }
     },
     "provider": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "version", "kind"],
+      "required": [
+        "id",
+        "version",
+        "kind"
+      ],
       "properties": {
-        "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[-._][a-z0-9]+)*$" },
-        "version": { "type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+){0,2}(?:[-+][0-9A-Za-z.-]+)?$" },
-        "kind": { "enum": ["compute", "analysis", "harness", "notification", "render", "report"] },
-        "descriptor": { "$ref": "#/$defs/relative_path" },
-        "descriptor_sha256": { "$ref": "#/$defs/sha256" },
-        "entry": { "$ref": "#/$defs/relative_path" },
-        "sha256": { "$ref": "#/$defs/sha256" }
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:[-._][a-z0-9]+)*$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+(?:\\.[0-9]+){0,2}(?:[-+][0-9A-Za-z.-]+)?$"
+        },
+        "kind": {
+          "enum": [
+            "compute",
+            "analysis",
+            "harness",
+            "notification",
+            "render",
+            "report"
+          ]
+        },
+        "descriptor": {
+          "$ref": "#/$defs/relative_path"
+        },
+        "descriptor_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "entry": {
+          "$ref": "#/$defs/relative_path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
       },
       "anyOf": [
-        { "required": ["descriptor"] },
-        { "required": ["entry", "sha256"] }
+        {
+          "required": [
+            "descriptor"
+          ]
+        },
+        {
+          "required": [
+            "entry",
+            "sha256"
+          ]
+        }
       ],
       "allOf": [
         {
-          "if": { "required": ["entry"] },
-          "then": { "required": ["sha256"] }
+          "if": {
+            "required": [
+              "entry"
+            ]
+          },
+          "then": {
+            "required": [
+              "sha256"
+            ]
+          }
         }
       ]
     },
     "server": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["entry", "sha256", "tools", "permissions"],
+      "required": [
+        "entry",
+        "sha256",
+        "tools",
+        "permissions"
+      ],
       "properties": {
-        "entry": { "$ref": "#/$defs/relative_path" },
-        "sha256": { "$ref": "#/$defs/sha256" },
+        "entry": {
+          "$ref": "#/$defs/relative_path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
         "tools": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          }
         },
         "permissions": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "enum": ["workspace.read", "workspace.write", "remote.submit", "model.delegate", "notify.send"] }
+          "items": {
+            "enum": [
+              "workspace.read",
+              "workspace.write",
+              "remote.submit",
+              "model.delegate",
+              "notify.send"
+            ]
+          }
         }
       }
     }

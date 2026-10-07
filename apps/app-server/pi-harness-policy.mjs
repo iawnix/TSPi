@@ -11,22 +11,24 @@ export const PACKAGE_READ_TOOLS = Object.freeze(["read", "grep", "find", "ls"]);
 export function createPackageSourceReadGuard({
   packageRoot,
   cwd = process.cwd(),
-  publicKnowledgeRoot = resolve(packageRoot, "skills"),
+  publicKnowledgeRoots = [],
+  publicResourceFiles = [],
 }) {
   const root = canonicalPath(packageRoot);
-  const publicRoot = canonicalPath(publicKnowledgeRoot);
+  const publicRoots = publicKnowledgeRoots.map(canonicalPath);
+  const publicFiles = new Set(publicResourceFiles.map(canonicalPath));
   return (event) => {
     if (!event || !PACKAGE_READ_TOOLS.includes(event.toolName)) return undefined;
     const args = event.args && typeof event.args === "object" && !Array.isArray(event.args) ? event.args : {};
     const rawPath = typeof args.path === "string" && args.path.trim() ? args.path.trim() : "";
     const target = resolveToolPath(rawPath || cwd, cwd);
-    if (!isWithin(root, target) || isWithin(publicRoot, target)) return undefined;
+    if (!isWithin(root, target) || publicRoots.some(path => isWithin(path, target)) || publicFiles.has(target)) return undefined;
     return {
       block: {
         reason: [
           "TS package implementation and tests are not usage documentation in the installed research runtime.",
           "Use the registered tool schema and research_read mode=evidence,",
-          "or the public skills/ references. Diagnose or change package implementation",
+          "or the listed Skill locations and their references/scripts. Diagnose or change package implementation",
           "from the separate authored checkout, then build and install a validated release.",
         ].join(" "),
       },

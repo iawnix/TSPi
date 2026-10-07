@@ -26,17 +26,20 @@
     {
       "name": "method-selection",
       "path": "skills/method-selection",
-      "sha256": "sha256:6ebaa71517f59aa8d93c147cfafc55d5c0fb774df3368e12c1c5af0f0c203bda"
+      "sha256": "sha256:e6859d74bbe4b302025cf86a5c07c46eb79e01c2e59dff1c54fba6b6c6258132",
+      "resources_sha256": "sha256:57e7f33782398948b5da11275df032a577db473bdd2751b8d3bc778b30a55f51"
     },
     {
       "name": "cf22d",
       "path": "skills/cf22d",
-      "sha256": "sha256:428bd08bb3739fe8c878772c6ce10ceceea10de5ec146c7c35a4e624f0dace88"
+      "sha256": "sha256:2bf8665d594ad91ec6240ce83109b364881b4533e389616939c22e3621214733",
+      "resources_sha256": "sha256:c29931a5604b4a25df053871b2928d724f061c917d4cad95c712a2a0e85bc3a2"
     },
     {
       "name": "xtb",
       "path": "skills/xtb",
-      "sha256": "sha256:7b2b51a63613831f316fc7439361f21475914c49806d3219485f0116ea59757a"
+      "sha256": "sha256:898e45f2a48c663a06bbb54328e62cd0662509f9aae51d589b0511d0a206ac2f",
+      "resources_sha256": "sha256:87c1c39cd5b61a1171b4ed7124b1ac47e60352c1596aa5f8989f8e72bc96e392"
     },
     {
       "name": "crest",
@@ -51,7 +54,8 @@
     {
       "name": "gaussian",
       "path": "skills/gaussian",
-      "sha256": "sha256:9c585beb3f17513efeac3771361a0921a49d88bb70f694befc0340117ddce9f9"
+      "sha256": "sha256:5c02143132522b78050d62cc1e3e0d7b368938fa6391f4ecee0bc430ade36e98",
+      "resources_sha256": "sha256:3538c725f80879ae3eadba062cd41922c1ee6f74326bd149a91833fd67b3e44e"
     },
     {
       "name": "chemical-input",
@@ -62,7 +66,12 @@
       "name": "mechanism-reasoning",
       "path": "skills/mechanism-reasoning",
       "sha256": "sha256:002a83b213eaae168e7aab61001c881099544a2f78a9e75c8132f11171df0130"
+    },
+    {
+      "name": "report",
+      "path": "skills/report",
+      "sha256": "sha256:d7c35720c71c7feff09cfda307182e3d6faab8441ec310153a893c84c532beb1",
+      "resources_sha256": "sha256:6c127ae6e194cd48a596b14547002567ea27ffe1ff7491a5ef60a9c60be0185d"
     }
-  ],
-  "providers": []
+  ]
 }

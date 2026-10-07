@@ -15,13 +15,10 @@ does not redefine that model.
 
 1. Read the current map and focused objects before planning.
 2. State the uncertainty, the Claim it bears on, and one bounded deliverable.
-3. Reuse or create a ResearchNode. Add a Phase only when grouping helps
-   navigation. Select the scientific Skill, Backend, and compute environment
-   needed for the question.
-   For a named target, verify readiness with the exact capability, environment,
-   and execution kind; default readiness does not validate another environment.
+3. Create or confirm the Claim and ResearchNode with `research_change` before referencing them. Record a `research_strategy` plan covering the focused Claim/Node before execution or evidence writes. An unknown Claim error requires creating the object, then retrying the strategy. Reuse or create a ResearchNode. Add a Phase only when grouping helps
+   navigation. Read the exact scientific Skill locations listed in the system prompt. Use method-selection even when the user fixed the method: its request helper reads installation job.toml and binds the configured interpreter, executable and environment. Generic job_probe does not verify a scientific method; run the Skill’s method checks when needed.
    For a method comparison, first create the complete
-   `method × environment × {opt, sp}` matrix with a capability, environment,
+   `method × environment × {opt, sp}` matrix with a method, environment,
    input Artifact, and dependency for every cell. An `sp` job may consume only
    the `opt` output from the same method and environment. Block an unavailable
    cell explicitly; do not substitute methods or stop independent cells.
@@ -44,8 +41,7 @@ interpretation first when applicable, then use one explicit disposition:
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
 `user_input_required`. `research_checkpoint` is the canonical turn checkpoint.
 A completed Attempt or lifecycle action alone is not a research conclusion.
-If liveness returns `decision_needed`, continue the turn and record the
-checkpoint disposition. When liveness also reports `execution_ready=true`, an
+If liveness returns `decision_needed` with no explicit disposition, record the missing strategy or checkpoint. A successful `user_input_required` checkpoint ends the turn even when legacy liveness also says `decision_needed`; do not repeat the checkpoint or attempt blocked writes. When liveness also reports `execution_ready=true`, an
 active StrategyPlan already covers the focused scope and the planned
 prepare/execute work may proceed before that checkpoint; the checkpoint is
 still required before ending the turn. A `continue_required` plan is a valid
@@ -53,24 +49,11 @@ next-turn plan; the Harness must not force it to execute in the same turn. Do
 not invent a method in the Harness or treat Monitor's `next_run` as a
 scientific instruction.
 
-Use Review for a bounded counterargument, not as a source of canonical state.
-Use `artifact_derive` only for an exact capability/version discovered from the
-analysis catalog; it is a registered deterministic local analysis and has no
-calculation lifecycle. Use `job_start/job_status/job_collect` as the calculation lifecycle entry
-point for auditable local/remote work: it owns the Attempt, Artifact, Monitor,
-and launch lifecycle. Every calculation is recorded under a ResearchNode Attempt.
-Review is advisory: it cannot write the ResearchMap, mutate Claim/Node status,
-choose a method, or launch/cancel Compute. After `research_interpretation`, Root records
-the accepted, rejected, or qualified interpretation through ordinary
-`research_change` operations.
-Use the same `launch`, `inspect`, `finalize`, and `cancel` compute lifecycle for
-local and remote environments. After `launch` returns after submission,
-including an uncertain result, finish the current turn and let the durable Monitor enqueue a `next_run`; do not use `bash sleep`,
-`wait`, or a manual polling loop to wait for a scheduler job. On a Monitor wake
-or an explicit later request, reread state and use `inspect` before collecting
-or changing ResearchMap. Operational success is not scientific support.
-Missing notification recipients block only `notify_send`; they do not block
-ready calculations. Calculation and delivery state must remain separate.
+Use `job_start/job_status/job_collect` for local and remote execution. Once submitted, preserve the Job/Attempt identity; reconcile uncertain outcomes before retrying. Finish the turn with `waiting_external` when only external work remains, and let Monitor wake the owning session on a meaningful change. Independently planned ready Nodes may proceed while another Job waits. Do not poll with sleep loops.
+
+Use `artifact_register` or `artifact_create` to preserve actual files, and `artifact_link` for evidence relations. `artifact_derive` only records a derivation descriptor; run actual analysis through a Skill Job and register its outputs. Operational success is not scientific support. Record interpretations from inspected evidence before updating scientific conclusions.
+
+For requested email, read the listed email Skill and run its no-send `check` using installation configuration before asking for an address. Missing recipients block only delivery; keep scientific work and delivery in separate Nodes when they have different dependencies. Mark the whole active scope `user_input_required` only when no independent authorized work remains. Unverified method availability is an Agent investigation step, not information the user must supply by default.
 
 ## References
 

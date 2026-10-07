@@ -6,18 +6,8 @@
     {
       "name": "email",
       "path": ".",
-      "sha256": "sha256:8c1d05f4ab407a6777955983a3fb748f959d1802acacde7934f61f6a23807724"
-    }
-  ],
-  "providers": [
-    {
-      "id": "notify_send",
-      "version": "1",
-      "kind": "notification",
-      "descriptor": "descriptors/notify_send.json",
-      "descriptor_sha256": "sha256:faefb99d86bc3c9126fb7c463b5eab5adf9a686269c3d9235f3d4d3e714eae49",
-      "entry": "providers/notify_provider.py",
-      "sha256": "sha256:c38066abf8a4e02fdecfac8e23ac2f60edbd841f2d393df711fc2bcbcc3fb021"
+      "sha256": "sha256:28232dd8e59025c62a84df0f62e5a77a78f3e077048413b521344b4f67c32c9b",
+      "resources_sha256": "sha256:ed524dd5c2e684b7b2c99a597914776064ecacd940e997b273a1eb50f7bcc9e4"
     }
   ]
 }

@@ -128,12 +128,13 @@ ChangeSet、Attempt、Artifact、事件和审计记录；每个 turn 由 Harness
 任意 LifecycleAction metadata 会缩减为 key，完整内容通过 State 查询获取。Context
 不是第二份科学状态，也不把完整历史或全部 Skill 正文复制进模型上下文。Skill 在
 SessionWorker 创建时加载并缓存正文，但默认 prompt 放 name、description、location，以及两个核心系统 Skill 的 `system` scope 标记；
-只有显式调用 Skill 时才把正文注入当前 turn。Capability 和
-Compute Environment 在方法选择或 launch 前按需查询。
+只有显式调用 Skill 时才把正文注入当前 turn。Compute Environment 在方法选择或 launch 前按需查询。
 
-Capability discovery 由 Python Native registry 负责。公开 catalog 只包含带版本的 descriptor 合同；可执行绑定、输入校验、intent 物化、本地执行、远程调度控制和解析全部属于 Native Compute lifecycle。该边界不存在 JavaScript provider、gateway 或 adapter。
-
-Native preflight 解析具名 local/remote 环境，并把 binding digest 写入不可变 calculation intent。light execution scope 和 research Attempt 都通过同一控制路径写入 canonical workspace Artifact，不再存在第二套 ArtifactStore。
+通用 Job Runtime 是执行边界。Skill 构造程序 argv、输入文件、预期输出、解析说明和方法
+metadata；`job_start` 接受该有边界 argv，并统一支持本地与远端执行。Skill 与 Job Runtime
+之间没有科学 provider registry 或 capability descriptor 门禁。Preflight 检查选定的命名环境，
+并把配置记录在 Job metadata 中。light execution scope 和 research Attempt 都通过同一控制路径
+写入 canonical workspace Artifact，不再存在第二套 ArtifactStore。
 
 运行时边界固定为：
 
@@ -218,7 +219,7 @@ Claim。Gate 记录结果，但不会自动修改 Node 或 Claim；解释和状�
 
 `artifact_derive` 通过按需能力目录派发 22 项版本化独立分析能力；对外目录由
 `packages/research-compute/research_compute/analysis.py` 只组装通用分析合同；化学领域描述和实现位于
-`extensions/chemical/providers/Skill helper/analysis/`。结果绑定 Node、输入 digest、生成文件
+`extensions/chemical/skills/`。结果绑定 Node、输入 digest、生成文件
 和候选事实；选定事实通过已有 `research_change`
 入口重算校验后登记。能力不选择下一科学步骤，不接受 Claim。化学网络使用带计量
 的超边并允许有环，独立于研究 Node DAG。

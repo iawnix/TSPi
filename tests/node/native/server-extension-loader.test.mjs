@@ -92,15 +92,14 @@ test("default package server manifest keeps the core tool inventory", async () =
   });
   assert.deepEqual(loaded.inventory.map((item) => item.name), ["core-tools"]);
   const coreInventory = loaded.inventory.find((item) => item.name === "core-tools");
-  assert.ok(coreInventory.permissions.includes("notify.send"));
-  assert.ok(loaded.tools.some((tool) => tool.name === "notify_send"));
+  assert.ok(!coreInventory.permissions.includes("notify.send"));
+  assert.ok(!loaded.tools.some((tool) => tool.name === "notify_send"));
   assert.deepEqual(loaded.tools.map((tool) => tool.name), [
     "research_read",
     "research_change",
     "research_strategy",
     "research_interpretation",
     "research_checkpoint",
-    "notify_send",
     "job_start",
     "job_status",
     "job_collect",

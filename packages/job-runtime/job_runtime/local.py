@@ -7,6 +7,9 @@ import signal
 import subprocess
 import time
 import uuid
+import sys
+from .worker import identity
+from .outputs import collect_outputs
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -30,7 +33,7 @@ class LocalProcessPlatform(ExecutionPlatform):
         self._terminal: dict[str, JobStatus] = {}
 
     def probe(self, spec: JobSpec) -> dict[str, Any]:
-        missing = [str(path) for path in spec.inputs if not path.is_file()]
+        missing = [str(path) for path in spec.inputs if not path.exists()]
         return {
             "platform": self.name,
             "cwd_exists": spec.cwd.is_dir(),
@@ -48,26 +51,26 @@ class LocalProcessPlatform(ExecutionPlatform):
         spec.cwd.mkdir(parents=True, exist_ok=True)
         job_id = spec.job_id or f"job_{uuid.uuid4().hex}"
         (spec.cwd / "logs").mkdir(exist_ok=True)
-        stdout = (spec.cwd / "logs" / "stdout.log").open("wb")
-        stderr = (spec.cwd / "logs" / "stderr.log").open("wb")
-        env = os.environ.copy()
-        env.update({str(k): str(v) for k, v in spec.env.items()})
-        proc = subprocess.Popen(
-            list(spec.command), cwd=spec.cwd, env=env,
-            stdin=spec.stdin.open("rb") if spec.stdin else subprocess.DEVNULL,
-            stdout=stdout, stderr=stderr, start_new_session=True,
-        )
-        receipt = JobReceipt(job_id, self.name, _now(), spec.command, str(spec.cwd), proc.pid, dict(spec.metadata), spec.workspace_id, spec.node_id, spec.attempt_id)
-        self._processes[job_id] = proc
-        if spec.timeout_seconds is not None:
-            self._deadlines[job_id] = time.monotonic() + spec.timeout_seconds
-        self._write(spec.cwd / "receipt.json", receipt.__dict__)
+        if (spec.cwd / "receipt.json").exists() or (spec.cwd / "spec.json").exists():
+            raise ValueError("job directory already contains an execution; reconcile instead of resubmitting")
+        receipt = JobReceipt(job_id, self.name, _now(), spec.command, str(spec.cwd), None, dict(spec.metadata), spec.workspace_id, spec.node_id, spec.attempt_id)
         self._write(spec.cwd / "spec.json", {
             "command": list(spec.command), "cwd": str(spec.cwd), "outputs": [o.__dict__ for o in spec.outputs],
             "timeout_seconds": spec.timeout_seconds, "metadata": dict(spec.metadata),
             "workspace_id": spec.workspace_id, "node_id": spec.node_id, "attempt_id": spec.attempt_id,
         })
-        return receipt
+        payload = {"cwd":str(spec.cwd), "receipt":receipt.__dict__, "command":list(spec.command),
+                   "env":dict(spec.env), "timeout":spec.timeout_seconds, "stdin":str(spec.stdin) if spec.stdin else None}
+        proc = subprocess.Popen([sys.executable, str(Path(__file__).with_name("worker.py"))],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        proc.stdin.write(json.dumps(payload).encode()); proc.stdin.close()
+        self._processes[job_id] = proc
+        deadline = time.monotonic() + 10
+        while not (spec.cwd / "receipt.json").exists():
+            if proc.poll() is not None or time.monotonic() >= deadline:
+                raise RuntimeError("supervisor receipt unavailable; reconcile before retrying")
+            time.sleep(.01)
+        return self.receipt_from_disk(spec.cwd / "receipt.json")
 
     def status(self, receipt: JobReceipt) -> JobStatus:
         if receipt.job_id in self._terminal:
@@ -90,12 +93,29 @@ class LocalProcessPlatform(ExecutionPlatform):
                         return restored
             except (OSError, ValueError, TypeError, json.JSONDecodeError):
                 pass
+        if receipt.metadata.get("supervised"):
+            proc = self._processes.get(receipt.job_id)
+            if proc is not None: proc.poll()  # reap a completed supervisor
+            if receipt.pid and identity(receipt.pid) == receipt.metadata.get("supervisor_start") and _process_state(receipt.pid) != "Z":
+                return JobStatus(receipt.job_id, JobState.RUNNING, self.name)
+            # A terminal receipt may have arrived between the first read and liveness check.
+            return JobStatus(receipt.job_id, JobState.UNKNOWN, self.name, error="supervisor unavailable without terminal receipt")
         proc = self._processes.get(receipt.job_id)
         if proc is None:
             # A worker restart drops the in-memory Popen handle.  The durable
             # receipt still lets us distinguish a live process from an
             # execution whose terminal status can no longer be observed.
             try:
+                if receipt.pid and _process_state(int(receipt.pid)) == "Z":
+                    return self._persist(
+                        receipt,
+                        JobStatus(
+                            receipt.job_id,
+                            JobState.UNKNOWN,
+                            self.name,
+                            error="process is a zombie after worker restart; terminal exit status is unavailable",
+                        ),
+                    )
                 if not receipt.pid:
                     raise ProcessLookupError()
                 os.kill(int(receipt.pid), 0)
@@ -127,28 +147,24 @@ class LocalProcessPlatform(ExecutionPlatform):
             raise RuntimeError(f"job {receipt.job_id} is not complete: {status.state}")
         root = Path(receipt.cwd)
         spec = self._read(root / "spec.json")
-        outputs = []
-        for item in spec.get("outputs", []):
-            path = root / item["path"]
-            row = {"path": item["path"], "required": item.get("required", False), "exists": path.is_file()}
-            if path.is_file():
-                row.update({"size": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
-            outputs.append(row)
+        outputs, validation = collect_outputs(root, spec.get("outputs", []))
         return {"job_id": receipt.job_id, "status": status.__dict__, "outputs": outputs,
+                "output_validation": validation,
                 "stdout": str(root / "logs" / "stdout.log"), "stderr": str(root / "logs" / "stderr.log")}
 
     def cancel(self, receipt: JobReceipt) -> JobStatus:
-        proc = self._processes.get(receipt.job_id)
-        if proc is not None and proc.poll() is None:
-            os.killpg(proc.pid, signal.SIGTERM)
-            try:
-                proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                os.killpg(proc.pid, signal.SIGKILL)
-                proc.wait()
         current = self.status(receipt)
-        terminal = JobStatus(receipt.job_id, JobState.CANCELLED, self.name, exit_code=current.exit_code, finished_at=_now())
-        return self._persist(receipt, terminal)
+        if current.state not in {JobState.RUNNING, JobState.SUBMITTED}:
+            return current
+        if not receipt.metadata.get("supervised"):
+            return JobStatus(receipt.job_id, JobState.UNKNOWN, self.name, error="legacy process identity unavailable; refusing unsafe cancellation")
+        (Path(receipt.cwd) / "cancel.request").touch()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            current = self.status(receipt)
+            if current.state != JobState.RUNNING: return current
+            time.sleep(.05)
+        return current
 
     def _persist(self, receipt: JobReceipt, status: JobStatus) -> JobStatus:
         """Persist the last observed status for restart/reconcile."""
@@ -170,7 +186,9 @@ class LocalProcessPlatform(ExecutionPlatform):
     @staticmethod
     def _write(path: Path, value: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(value, indent=2, default=str), encoding="utf-8")
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(value, indent=2, default=str), encoding="utf-8")
+        temporary.replace(path)
 
     @staticmethod
     def _read(path: Path) -> dict[str, Any]:
@@ -186,3 +204,12 @@ class LocalProcessPlatform(ExecutionPlatform):
             cwd=str(value["cwd"]), pid=value.get("pid"), metadata=value.get("metadata", {}),
             workspace_id=value.get("workspace_id"), node_id=value.get("node_id"), attempt_id=value.get("attempt_id"),
         )
+
+
+def _process_state(pid: int) -> str | None:
+    """Return Linux process state when available, without following a PID blindly."""
+    try:
+        fields = Path(f"/proc/{pid}/stat").read_text(encoding="ascii").split()
+    except (OSError, UnicodeError, ValueError):
+        return None
+    return fields[2] if len(fields) > 2 else None

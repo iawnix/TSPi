@@ -371,7 +371,12 @@ def _require_decision_ready(
         )
         for item in operations
     ):
-        raise AgentWorkspaceError("research_decision_required")
+        raise AgentWorkspaceError(
+            "research_decision_required: no proposed/active StrategyPlan covers the focused "
+            f"claims {sorted(claim_ids)} or nodes {sorted(node_ids)}. Read research_read mode=context; "
+            "create missing Claim/Node objects with research_change, then record research_strategy "
+            "before evidence writes or job_start. Use research_checkpoint only for an explicit disposition."
+        )
 
 
 class ProjectionWriter(Protocol):
@@ -428,6 +433,7 @@ def _liveness_projection(
     """
 
     result = dict(liveness)
+    if checkpoint is not None: result.pop("ready_node_ids", None)
     result["research_obligations"] = _research_obligations(context)
     if context.get("lifecycle_state") != ADMITTED or liveness.get("state") != ADMITTED:
         result["lifecycle"] = ADMISSION_PENDING
@@ -510,7 +516,12 @@ def _liveness_projection(
         result["lifecycle"] = "waiting_external"
         result["waiting_external"] = waiting_external
         result["decision_needed"] = []
-        result["execution_ready"] = False
+        running_nodes = {row["node_id"] for row in waiting_external}
+        plans = [p for p in _items(context, "strategy_plans") if p.get("status", "proposed") in {"proposed", "active"}]
+        result["ready_node_ids"] = [node["id"] for node in _items(context, "nodes")
+            if node["id"] in node_ids and node["id"] not in running_nodes and node.get("state") in {"planned","active"}
+            and any(p.get("node_id")==node["id"] or p.get("claim_id") in node.get("claim_ids",[]) for p in plans)]
+        result["execution_ready"] = bool(result["ready_node_ids"])
         return result
 
     nodes_by_id = {
@@ -802,7 +813,8 @@ def _transition_attempt(
 def _lookup(context: dict[str, Any], field: str, item_id: str, label: str) -> dict[str, Any]:
     item = next((row for row in _items(context, field) if row.get("id") == item_id), None)
     if item is None:
-        raise AgentWorkspaceError(f"operation references unknown {label}: {item_id}")
+        hint = f"; create the {label} with research_change before referencing it in research_strategy" if label in {"claim", "node"} else ""
+        raise AgentWorkspaceError(f"operation references unknown {label}: {item_id}{hint}")
     return item
 
 
@@ -1278,8 +1290,8 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any]) -> str 
         attempt = {
             "type": "attempt_record", "id": item_id, "created_at": created_at,
             "updated_at": updated_at, "node_id": node_id,
-            "capability": _string(operation, "capability"),
-            "capability_version": _string(operation, "capability_version"),
+            "execution_kind": operation.get("execution_kind", "legacy_capability"),
+            **({"capability": _string(operation, "capability"), "capability_version": _string(operation, "capability_version")} if "capability" in operation else {}),
             "state": state, "environment": operation.get("environment"), "started_at": started_at,
             "input_artifact_ids": input_artifact_ids, "output_artifact_ids": output_artifact_ids,
             "evidence_link_ids": [], "metadata": _object_field(operation, "metadata"),
@@ -1626,13 +1638,22 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
         workspace_id = context["workspace_id"]
         _check_workspace(request, workspace_id)
         _require_kernel_write_principal(request)
-        _require_admitted(context, liveness)
         current_revision = context["revision"]
         body = _request_body(request)
         _expected_revision(body, current_revision)
         operations = body.get("operations")
         if not isinstance(operations, list) or not operations:
             raise AgentWorkspaceError("ChangeSet.operations must be a non-empty list")
+        known_attempts = {row["id"] for row in context["attempts"]}
+        operational = all(
+            isinstance(op, dict) and (
+                op.get("type") in {"transition_attempt", "update_attempt"}
+                and op.get("attempt_id", op.get("id")) in known_attempts
+                or op.get("type") == "register_artifact"
+                and op.get("producer_attempt_id") in known_attempts
+            ) for op in operations
+        )
+        _require_admitted(context, liveness, allow_checkpoint=operational)
         _require_decision_ready(context, liveness, operations)
         updated = copy.deepcopy(context)
         created_ids: list[str] = []
@@ -1642,7 +1663,8 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
                 created_ids.append(created)
         updated["research_obligations"] = _research_obligations(updated)
         updated["revision"] = current_revision + 1
-        projected_liveness = _liveness_projection(updated, {**liveness, "revision": updated["revision"]}, {})
+        projected_liveness = _liveness_projection(updated, {**liveness, "revision": updated["revision"]},
+            None if operational and liveness.get("disposition") == "blocked" else {})
         updated["lifecycle"] = projected_liveness.get("lifecycle", "idle")
         updated["disposition"] = projected_liveness.get("disposition")
         updated["checkpoint_id"] = projected_liveness.get("checkpoint_id")
@@ -1776,7 +1798,10 @@ def turn(root: str | Path, request: dict[str, Any] | None = None) -> dict[str, A
             }
         if operation in {"end", "wake"}:
             _require_admitted(context, liveness)
-            if liveness.get("lifecycle") == "decision_needed":
+            waiting_user = liveness.get("disposition") == "user_input_required"
+            if waiting_user and operation == "wake":
+                raise AgentWorkspaceError("research_user_input_required")
+            if liveness.get("lifecycle") == "decision_needed" and not waiting_user:
                 raise AgentWorkspaceError("research_decision_required")
             return {
                 "protocol": "research_turn_result", "version": 1,

@@ -5,13 +5,12 @@
 Use sources in this order:
 
 1. registered public tool schemas for stable envelopes;
-2. `research_read` for the live ResearchMap, artifacts, capabilities, and operation
+2. `research_read` for the live ResearchMap, artifacts and operation
    catalog;
 3. `SKILL.md` for the research workflow;
 4. one focused `references/*.md` file when its topic is active.
 
-For a tool's accepted fields, query its live contract. The package-source reader
-routes implementation lookups to the relevant public reference during research.
+For a tool's accepted fields, query its live contract. Read the exact Skill locations listed in the system prompt, including their references and executable resources. Private package implementation is not a usage reference.
 
 ## Scientific Sources
 

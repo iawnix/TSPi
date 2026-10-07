@@ -1,32 +1,19 @@
 ---
 name: email
-description: 按配置发送 TSPi 研究事件和报告的邮件通知，并跟踪投递回执。
+description: 通过配置的 SMTP 或 ClawEmail 发送用户要求的研究邮件，保存可恢复、可去重的发送回执。
 ---
 
-# TSPi 邮件通知
+# 研究邮件
 
-[English version](SKILL.md)
+通过**本地** job_start 运行 [scripts/email_cli.py](scripts/email_cli.py)。通知配置、凭据和收件人由安装级配置管理，继承 TS_NOTIFICATION_CONFIG 或配置的安装路径。请求和异常恢复见 [投递规则](references/email_delivery.zh-CN.md)。
 
-本 Skill 说明由 Host/Monitor 拥有的 `notify_send` 投递 capability；它不是 Root Agent
-工具。研究状态使用
-`research-state`，运行、报告与 Artifact 上下文使用 `orchestration`。通知传达
-已记录的研究结果，并关联相应报告。安装级配置可以选择
-兼容的 ClawEmail 传输，或内置 SMTP 传输；SMTP 当前支持 163 和 QQ 邮箱预设。
+询问收件人前，使用继承的 TS_NOTIFICATION_CONFIG 在本地执行 `python <列出的Skill目录>/scripts/email_cli.py check --root <工作区> --output <工作区>/reports/email-check.json`。该检查只读配置，不发邮件；已启用且有效时沿用配置收件人，仅在配置缺失、无效或用户要求改地址时询问。用户无需在每条消息重写邮箱，交付问题不应阻止独立计算。
 
-`notify_send` 是 Host/Monitor 边界能力，不会出现在当前 Root Agent 工具目录中。只有将计算
-Monitor 注册为 `notify_policy = "configured"` 时，Monitor 才会创建通知投递；`"none"` 会禁用
-通知通道。Host 服务必须运行，且安装级通知配置必须先通过启动校验，Monitor 才能投递。
+1. 核对用户已有通知授权和触发条件；同一授权无需重复询问，制定计划或单个 Job 完成本身不授权发送。
+2. 生成报告并登记 Artifact。请求包含稳定 notification_id、event、subject、summary、report_refs。执行 `email_cli.py prepare --root <工作区> --request-file <草稿> --output <prepared.json>` 冻结内容及附件摘要，此操作不发邮件。
+3. 通过 job_start 执行 `email_cli.py send --root <工作区> --request-file <prepared.json> --output <receipt.json>`，设置合理超时并声明回执输出；失败也收集回执。工作区与安装配置路径明确传入，不向远程暂存凭据。
+4. 阅读回执：sent 表示传输接受，不等于已进入收件箱或已读；already_sent 复用既有回执；unknown 必须核查，不能盲目重试。用 `status --receipt-ref <工作区内回执路径> --output <status.json>` 查看状态。
 
-## 操作规则
+Host/Monitor 只唤醒 Agent，邮件准备和投递由此 Skill 完成，不依赖原生通知工具或 Provider 注册。邮件失败不回滚计算。notification_id 不应包含 Job ID、重试时间或无关研究 revision。
 
-- 使用安装级通知配置中的收件人。
-- 将传输方式、发件人和凭据保存在安装级配置中；通知请求不能自行指定传输方式或收件人。
-- 按投递接口选择事件类型和报告附件。
-- 将投递回执保存在通知的运行历史中。
-- 已知成功时复用回执；投递结果未知时，先查询供应商状态再决定是否重试。
-- SMTP 必须使用 TLS（隐式 SSL 或 STARTTLS）和邮箱服务商提供的授权码。不得将邮箱密码或
-  授权码写入工作区、请求、报告或日志。
-- 本 Skill 只负责发送通知，不使用 POP3 或 IMAP。
-
-请求格式、附件规则、回执身份和失败语义见
-[email_delivery.zh-CN.md](references/email_delivery.zh-CN.md)。
+使用本 Skill 处理上述请求。

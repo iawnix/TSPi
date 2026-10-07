@@ -1,13 +1,15 @@
+> 当前 scripts/run.py 只执行 opt、sp、opt-sp。下文高级解析/验证规则是参考材料，不代表已有对应可执行工作流。
+
 # xTB 执行合同
 
-已注册 xTB workflow 为 `xtb.sp`、`xtb.opt`、`xtb.freq`、`xtb.opt_freq`、
+Skill 支持的 xTB 任务包括 `sp`、`opt`、`freq`、`opt_freq`、
 `xtb.scan` 和 `xtb.md`。前四项要求一个 `xyz` 输入；scan 与 MD 准确要求一个 `xyz`
 和一个 `control` 输入。
 
 Adapter 接受 `gfn0`、`gfn1`、`gfn2` 或 `gfnff`；电荷与 `uhf` 显式提供。溶剂与
 溶剂模型必须同时提供，模型为 `alpb` 或 `gbsa`。优化任务接受有界 `opt_level` 与
-`max_cycles`。Capability descriptor 是准确机器合同；构造不熟悉请求前查询
-`read the relevant Skill references`。
+`max_cycles`。本 reference 是参数和输入合同；构造不熟悉请求前读取
+`read the relevant Skill references`，再通过 `job_start` 提交命令。
 
 对于 `xtb.scan`，control Artifact 必须包含 `$scan` 段并以 `$end` 结束。`$constrain`
 后也可以使用 `$end` 作为 block 分隔符。推荐的编号形式在 `$constrain` 中定义原子序号；每个 `$scan` 指令只引用约束的 1-based 序号，

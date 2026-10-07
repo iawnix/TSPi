@@ -135,7 +135,10 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
       }
       return { accepted: true, duplicate: true, ...snapshot() };
     }
-    const targetPhase = metadataForTool.phase;
+    const operations = args?.operations || args?.changeSet?.operations || args?.change?.operations;
+    const evidenceUpdate = toolName === "research_change" && Array.isArray(operations) && operations.length > 0
+      && operations.every((operation) => ["create_finding", "register_artifact", "link_evidence", "register_evidence_link", "transition_attempt", "update_attempt"].includes(operation?.type));
+    const targetPhase = evidenceUpdate ? "interpret" : metadataForTool.phase;
     const lifecycle = durableLiveness?.lifecycle;
     const disposition = durableLiveness?.disposition;
     const effect = metadataForTool.effect;
@@ -174,9 +177,12 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
       // by the filesystem adapter; a checkpoint is still required before the
       // turn ends, but execution must be able to follow strategy in the same
       // turn. Waiting for a remote Attempt remains a hard stop.
-      const executionReady = lifecycle === "decision_needed"
-        && durableLiveness?.execution_ready === true;
-      if ((isExecution || (!isRead && !isDecisionWrite)) && !executionReady) {
+      const executionReady = (lifecycle === "decision_needed" && durableLiveness?.execution_ready === true)
+        || (lifecycle === "waiting_external" && toolName === "job_start"
+          && durableLiveness?.ready_node_ids?.includes(args?.nodeId || args?.node_id));
+      const waitingRecovery = lifecycle === "waiting_external"
+        && (["job_status", "job_collect", "job_reconcile", "job_cancel", "artifact_register", "artifact_link"].includes(toolName) || evidenceUpdate);
+      if ((isExecution || (!isRead && !isDecisionWrite)) && !executionReady && !waitingRecovery) {
         return {
           accepted: false,
           code: lifecycle === "waiting_external" ? "research_waiting_external" : "research_decision_required",
@@ -248,14 +254,21 @@ export function createResearchLifecycleController({ metadata = {}, replayMode = 
       : phase === "advance" || phase === "prepare"
         ? "prepare"
         : phase === "execute"
-          ? "interpret"
+          // Execution is a repeatable lane: one Research Turn may submit,
+          // poll, reconcile, or cancel several independent Jobs. Keep the
+          // lane open until the Agent explicitly enters interpretation.
+          ? (metadataForTool.effect === "execution_control" || metadataForTool.effect === "read"
+            ? "execute"
+            : "interpret")
           : phase === "interpret"
             // Artifact interpretation (analysis/compare/render) produces
             // evidence that the Agent still needs to record in ResearchMap.
             // Reopen the planning lane for that write, while canonical
             // ResearchMap interpretation/advisory tools still close at a
             // checkpoint.
-            ? metadataForTool.effect === "artifact_write" ? "advance" : "checkpoint"
+            ? metadataForTool.effect === "artifact_write" || metadataForTool.effect === "attempt_artifact"
+              ? "interpret"
+              : "checkpoint"
             : "checkpoint";
     state = { ...state, lifecycle_phase: nextPhase, phase_before_tool: null, active_tool_call_id: null };
     return snapshot();
@@ -307,7 +320,9 @@ function allowedToolPhases(phase) {
     // that this valid planning path is not stranded in prepare.
     case "prepare": return ["orient", "advance", "prepare", "execute", "interpret", "checkpoint"];
     case "execute": return ["orient", "execute", "interpret", "checkpoint"];
-    case "interpret": return ["orient", "advance", "prepare", "interpret", "checkpoint"];
+    // Interpretation can continue collecting/deriving evidence, or return to
+    // the repeatable execution lane for another independent Job.
+    case "interpret": return ["orient", "advance", "prepare", "execute", "interpret", "checkpoint"];
     // A checkpoint is normally terminal for this run. The liveness repair
     // hook may, however, continue the same Harness run and must first inspect
     // the active scope with the read-only orientation tool.
@@ -349,7 +364,6 @@ function messageText(message) {
  */
 export function checkpointFollowUp(status) {
   if (!status || typeof status !== "object" || Array.isArray(status)) return undefined;
-  if (status.lifecycle !== "decision_needed") return undefined;
   return lifecycleActionFollowUp(status);
 }
 
@@ -358,6 +372,9 @@ export function lifecycleActionFollowUp(status) {
   if (!status || typeof status !== "object" || Array.isArray(status)) return undefined;
   const lifecycle = typeof status.lifecycle === "string" ? status.lifecycle : null;
   if (lifecycle !== "decision_needed") return undefined;
+  // Historical State projections encode waiting for a user as decision_needed.
+  // An explicit disposition already closes this turn; it is not missing work.
+  if (["user_input_required", "waiting_external", "blocked", "deferred", "terminal", "continue_required"].includes(status.disposition)) return undefined;
   const targets = Array.isArray(status.decision_needed) ? status.decision_needed : [];
   const refs = targets
     .slice(0, 8)

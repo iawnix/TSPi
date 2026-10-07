@@ -60,3 +60,5 @@ NodeGate must have a latest `pass` evaluation before a Node closes with the
 - [workspace_contract.md](references/workspace_contract.md): persistence and
   workspace ownership.
 - [glossary.md](references/glossary.md): public terminology.
+
+Create or confirm Claim/Node objects before research_strategy references them. A focused scope needs a proposed/active StrategyPlan before execution or evidence writes. If research_decision_required is returned, inspect mode=context, record the missing strategy, and retry only after the prerequisite changes. A successful user_input_required checkpoint is a valid end of this turn; wait for relevant user input rather than issuing the same writes or checkpoint repeatedly.

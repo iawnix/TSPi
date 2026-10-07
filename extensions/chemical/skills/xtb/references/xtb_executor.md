@@ -1,10 +1,13 @@
+> Current scripts/run.py executes opt, sp and opt-sp only. The advanced parsing/validation guidance below is reference material, not a registered executable workflow.
+
 # xTB Executor Contract
 
-The registered xTB capabilities are `xtb.sp`, `xtb.opt`, `xtb.freq`,
-`xtb.opt_freq`, `xtb.scan`, and `xtb.md`. The first four require one `xyz`
+The restored parser recognizes xTB tasks `sp`, `opt`, `freq`, `opt_freq`, `scan`, and `md`.
+Construct the xTB argv and submit it through `job_start`; no provider
+registration is required. The first four require one `xyz`
 input. Scan and MD require exactly one `xyz` and one `control` input.
 
-The adapter accepts `gfn0`, `gfn1`, `gfn2`, or `gfnff`; charge and `uhf` are
+The historical parameter model accepted `gfn0`, `gfn1`, `gfn2`, or `gfnff`; charge and `uhf` are
 explicit. Solvent and solvent model must be supplied together and the model is
 `alpb` or `gbsa`. Optimization tasks accept a bounded `opt_level` and
 `max_cycles`. The Skill reference is the exact machine contract; ask

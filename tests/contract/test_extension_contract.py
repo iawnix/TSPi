@@ -51,16 +51,10 @@ def test_installed_extension_manifest_schema_rejects_unpinned_entry() -> None:
     assert errors
 
 
-def test_default_chemical_extension_inventory_validates_provider_descriptors() -> None:
-    manifest = json.loads((ROOT / "extensions" / "chemical" / "manifest.json").read_text(encoding="utf-8"))
-    manifest_schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
-    Draft202012Validator(manifest_schema).validate(manifest)
-    provider_schema = json.loads(PROVIDER_SCHEMA.read_text(encoding="utf-8"))
-    validator = Draft202012Validator(provider_schema)
-    provider_ids = {item["id"] for item in manifest["providers"]}
-    assert provider_ids == set()
-    for item in manifest["providers"]:
-        descriptor = json.loads((ROOT / "extensions" / "chemical" / item["descriptor"]).read_text(encoding="utf-8"))
-        validator.validate(descriptor)
-        assert descriptor["provider_id"] == item["id"]
-        assert descriptor["kind"] == item["kind"]
+def test_scientific_and_email_extensions_ship_skills_without_providers() -> None:
+    schema = json.loads(SCHEMA.read_text())
+    for name in ("chemical", "email"):
+        manifest = json.loads((ROOT / "extensions" / name / "manifest.json").read_text())
+        Draft202012Validator(schema).validate(manifest)
+        assert "providers" not in manifest
+        assert manifest["skills"]

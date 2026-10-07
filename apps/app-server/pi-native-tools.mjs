@@ -1,11 +1,11 @@
 import { resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import Type from "./pi-runtime-deps.mjs";
 import { commandArguments, createCommandService } from "../../packages/agent-runtime/host-api/commands.mjs";
 import { createPublicToolAliases, createPublicToolContracts } from "../../packages/agent-runtime/host-api/tools.mjs";
 import { boundWorkspaceRoot } from "../../packages/agent-runtime/host-api/workspace-context.mjs";
 import { wrapToolWithEnvelope } from "../../packages/agent-runtime/host-api/tool-envelope.mjs";
 import { checkpointFollowUp } from "../../packages/agent-runtime/host-api/lifecycle.mjs";
-import { createNotifyTool } from "./pi-native-notify.mjs";
 import { readWorkspaceManifest } from "./workspace-mode-tools.mjs";
 import {
   executeFilesystemResearchCommand,
@@ -17,7 +17,6 @@ import {
   RESEARCH_STATE_WRITE_AUTHORITY,
 } from "../../packages/research-state-bridge/ports.mjs";
 
-export { createNotifyTool } from "./pi-native-notify.mjs";
 
 const TOOL_CONTRACTS = createPublicToolContracts(Type);
 const NATIVE_COMMANDS = createCommandService({ execute: executeNativeCommand });
@@ -158,7 +157,8 @@ export function createCheckpointLivenessHook({
   maxFollowUps = 3,
   statusReader,
   checkpointReader,
-  followUpRequired = true,
+  sessionId = "local",
+  transactionCoordinator,
 } = {}) {
   if (typeof cwd !== "string" || !cwd) throw new TypeError("checkpoint liveness hook requires cwd");
   const readStatus = typeof statusReader === "function"
@@ -167,30 +167,46 @@ export function createCheckpointLivenessHook({
       ? checkpointReader
       : (signal) => NATIVE_COMMANDS.execute("research.liveness", cwd, {}, signal);
   const followUpsByRun = new Map();
-  return async (event, context) => {
+  let pending = Promise.resolve();
+  const check = async (event, context) => {
     const runId = event?.runId;
     if (typeof runId !== "string" || !runId) return undefined;
-    const attempts = followUpsByRun.get(runId) || 0;
-    if (attempts >= maxFollowUps) {
-      followUpsByRun.delete(runId);
-      return undefined;
+    const status = await readStatus(context?.abortSignal, runId);
+    const followUp = checkpointFollowUp(status);
+    if (!followUp) return undefined;
+    const signature = createHash("sha256").update(JSON.stringify({
+      revision: status.revision, lifecycle: status.lifecycle,
+      targets: (status.decision_needed || []).map(row => `${row.scope}:${row.target_id || row.target_ref}:${row.reason}`).sort(),
+    })).digest("hex");
+    const history = followUpsByRun.get(runId) || [];
+    const key = createHash("sha256").update(JSON.stringify([sessionId, runId])).digest("hex");
+    for (let slot = 0; slot < maxFollowUps; slot++) {
+      const request_id = `checkpoint.followup:${key}:${slot}`;
+      const previous = transactionCoordinator
+        ? await transactionCoordinator.get(request_id)
+        : history[slot];
+      if (previous && previous.state !== "missing") {
+        if (previous.result?.signature === signature) return undefined;
+        continue;
+      }
+      const owner = randomUUID();
+      const result = { signature, owner };
+      // Reserve before returning the continuation. Replays and concurrent
+      // workers share the same slot; only its original owner may continue.
+      const receipt = transactionCoordinator
+        ? await transactionCoordinator.commit_files({ request_id, operation: "checkpoint.followup",
+          payload: { session_id: sessionId, run_id: runId, slot }, writes: {}, result })
+        : { state: "committed", result };
+      history[slot] = receipt;
+      followUpsByRun.set(runId, history);
+      return receipt.result?.owner === owner ? followUp : undefined;
     }
-    let status;
-    try {
-      status = await readStatus(context?.abortSignal, runId);
-    } catch (error) {
-      followUpsByRun.delete(runId);
-      throw error;
-    }
-    const followUp = followUpRequired
-      ? checkpointFollowUp(status)
-      : checkpointFollowUp(status);
-    if (!followUp) {
-      followUpsByRun.delete(runId);
-      return undefined;
-    }
-    followUpsByRun.set(runId, attempts + 1);
-    return followUp;
+    return undefined;
+  };
+  return (event, context) => {
+    const result = pending.then(() => check(event, context));
+    pending = result.catch(() => {});
+    return result;
   };
 }
 
@@ -202,7 +218,7 @@ export function createJobArtifactTools(options = {}) {
       throw new Error(`${name} runtime is not configured in TSPi Agent Server`);
     }
     const root = boundWorkspaceRoot(params, toolContext);
-    const result = await runtime[method]({ ...params, root, request_id: `${toolContext?.operation_id || "turn"}:${_id}`, principal: toolContext?.principal });
+    const result = await runtime[method]({ ...params, root, request_id: params.requestId || `${toolContext?.operation_id || "turn"}:${_id}`, principal: toolContext?.principal, session_id: toolContext?.session_id || toolContext?.sessionId });
     return toolResult(result);
   };
   const contracts = TOOL_CONTRACTS;
@@ -221,7 +237,6 @@ function createCoreToolFactories(options = {}) {
     createStateTool(options),
     createChangeTool(),
     createResearchLifecycleTool(),
-    createNotifyTool(),
   ];
   // Execution and artifact operations are supplied by Job Runtime and
   // extension bundles.  The core extension deliberately has no Compute or
@@ -232,23 +247,14 @@ function createCoreToolFactories(options = {}) {
   return tools;
 }
 
-function createChemicalToolFactories(_options = {}) {
-  return [];
-}
-
 export function createTspiTools(options = {}) {
   return exposeTools([
     ...createCoreToolFactories(options),
-    ...createChemicalToolFactories(options),
   ]);
 }
 
 export function createCoreTools(options = {}) {
   return exposeTools(createCoreToolFactories(options));
-}
-
-export function createChemicalTools(options = {}) {
-  return exposeTools(createChemicalToolFactories(options));
 }
 
 function exposeTools(tools) {

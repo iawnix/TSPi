@@ -19,14 +19,6 @@ The manifest format is `tspi-extension/1`; its JSON Schema is
   "name": "amber-tools",
   "version": "1.2.0",
   "skills": [{"name": "amber", "path": "skills/amber"}],
-  "providers": [{
-    "id": "amber.md",
-    "version": "1",
-    "kind": "compute",
-    "descriptor": "providers/amber.json",
-    "entry": "providers/amber.mjs",
-    "sha256": "sha256:<64 hex characters>"
-  }],
   "server": {
     "entry": "server/index.mjs",
     "sha256": "sha256:<64 hex characters>",
@@ -37,12 +29,12 @@ The manifest format is `tspi-extension/1`; its JSON Schema is
 ```
 
 Skill paths must contain a regular `SKILL.md`. Extension provider entries are
-metadata only; compute descriptors are resolved by the Python Native registry.
-The App Server loader inventories extension metadata but never imports a
-JavaScript compute provider. Native preflight owns input checks, command
-bindings, intent materialization, execution, and parsing. A missing Native
-capability is reported as unavailable rather than falling through to a shell
-command or backend default.
+legacy metadata for optional server integrations; scientific Skills do not need
+provider descriptors. The App Server loader inventories extension metadata.
+Scientific preflight checks the selected Job Runtime environment, while the
+Skill owns input construction, command argv, parsing, and validation. A
+scientific command is submitted through `job_start`, which is the shared local
+and remote execution boundary.
 
 The existing `apps/app-server/server-tools/extensions.json` contract remains unchanged:
 server tools still require a package-owned manifest, allowlist selection, and
@@ -62,10 +54,5 @@ declared names, parameter schemas, and lifecycle metadata. The entry digest is
 checked during discovery and immediately before import; the Agent cannot
 choose an import path or bypass the allowlist.
 
-The package-owned server inventory is split into two signed entries while
-keeping one default active tool set. `core-tools` owns research/lifecycle,
-environment, review, dispatch, generic calculation, artifact import/render,
-and report tools. `chemical-tools` owns chemical artifact seeding and
-analysis (`Skill helper`, `artifact_derive`, and `artifact_derive`). Gaussian
-and xTB are descriptor-only metadata entries in the default `chemical`
-extension; the Python Native registry is the only execution boundary.
+
+The active bundled server entry is core-tools: Research State, generic Job Runtime and Artifact tools. Chemical and email extensions supply Skills with scripts; no chemical-tools or native notification entry is loaded. providers is optional legacy metadata. An executable Skill declares resources_sha256 for its resources.json index, whose paths are relative to the extension root. The loader validates the index and every listed script/helper digest. Regenerate hashes with scripts/update_skill_resources.py after changing Skill resources.

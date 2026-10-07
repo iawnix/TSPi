@@ -1,0 +1,8 @@
+{
+  "schema_version": "skill-resources/1",
+  "base": "extension",
+  "files": {
+    "skills/report/scripts/build.py": "sha256:c8571998411baf0210facda36e0a55f3464455d1db3285eeb50839d20ddb3557",
+    "skills/_shared/science.py": "sha256:24645f9fdbccbde4273beb90a5a3aca5e9725cadc9096c4c0e39f102cca1ca87"
+  }
+}

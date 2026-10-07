@@ -7,7 +7,9 @@ import time
 import pytest
 
 from job_runtime import JobOutput, JobRuntime, JobSpec, JobState, LocalProcessPlatform, TorqueSSHPlatform, platforms_from_config
+from job_runtime.local import _process_state
 from research_compute import ExecutionRequest, ExecutionService
+from tspi_runtime.execution import _spec
 
 
 def _runtime() -> JobRuntime:
@@ -111,3 +113,17 @@ remote_root = \"/scratch/tspi\"
     assert isinstance(platforms["cluster"], TorqueSSHPlatform)
     assert platforms["remote"] is platforms["cluster"]
     assert platforms["cluster"].host == "compute.example"
+
+
+def test_job_spec_separates_execution_target_from_process_environment(tmp_path: Path) -> None:
+    spec = _spec(tmp_path, {
+        "job_id": "job_target",
+        "command": [sys.executable, "-c", "pass"],
+        "environment": "cluster_1w",
+        "env": {"SCIENTIFIC_RUNTIME": "configured"},
+    })
+    assert spec.env == {"SCIENTIFIC_RUNTIME": "configured"}
+
+
+def test_process_state_reports_missing_pid_without_treating_it_as_alive() -> None:
+    assert _process_state(2**31 - 1) is None

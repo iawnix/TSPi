@@ -17,14 +17,6 @@ manifest 格式为 `tspi-extension/1`，机器可验证的 JSON Schema 位于
   "name": "amber-tools",
   "version": "1.2.0",
   "skills": [{"name": "amber", "path": "skills/amber"}],
-  "providers": [{
-    "id": "amber.md",
-    "version": "1",
-    "kind": "compute",
-    "descriptor": "providers/amber.json",
-    "entry": "providers/amber.mjs",
-    "sha256": "sha256:<64 位十六进制字符>"
-  }],
   "server": {
     "entry": "server/index.mjs",
     "sha256": "sha256:<64 位十六进制字符>",
@@ -34,7 +26,7 @@ manifest 格式为 `tspi-extension/1`，机器可验证的 JSON Schema 位于
 }
 ```
 
-Skill 路径必须包含普通文件 `SKILL.md`。扩展中的 provider entry 只保存元数据；计算 descriptor 由 Python Native registry 解析。App Server loader 只建立清单，不会导入 JavaScript 计算 provider。Native preflight 负责输入校验、命令绑定、intent 物化、执行和解析；缺失的 Native capability 会报告为不可用，不会退回到 shell 命令或后端默认分支。
+Skill 路径必须包含普通文件 `SKILL.md`。扩展中的 provider entry 只是可选 server 集成的旧元数据；科学 Skill 不需要 provider descriptor。App Server loader 只建立扩展清单。科学 preflight 检查选定的 Job Runtime 环境；Skill 负责输入构造、命令 argv、解析和验证。科学命令通过 `job_start` 提交，它是本地与远端共用的执行边界。
 
 现有 `apps/app-server/server-tools/extensions.json` 合同保持不变：server 工具仍要求包内
 manifest、allowlist 选择和逐 entry 摘要。已安装 manifest 增加 Skill、provider
@@ -51,8 +43,5 @@ manifest、allowlist 选择和逐 entry 摘要。已安装 manifest 增加 Skill
 和生命周期 metadata 完全一致。entry 摘要会在发现阶段以及导入前再次校验；
 Agent 不能选择 import 路径或绕过 allowlist。
 
-包内 server 清单现在拆为两个带摘要的 entry，但默认 active tool 集合保持完整。
-`core-tools` 负责研究/生命周期、环境、审查、dispatch、通用计算、artifact
-导入/渲染和报告；`chemical-tools` 负责化学 artifact 与分析工具
-（`Skill helper`、`artifact_derive`、`artifact_derive`）。默认
-`chemical` 扩展中的 Gaussian 和 xTB 是 descriptor-only 元数据项；Python Native registry 是唯一执行边界。
+
+包内当前只有 core-tools，提供 Research State、通用 Job Runtime 和 Artifact 工具。chemical 与 email 通过包含脚本的 Skill 提供能力，不加载 chemical-tools 或原生通知入口。providers 是可选的历史元数据。可执行 Skill 的 resources_sha256 绑定 resources.json；其中路径相对扩展根，loader 校验索引及脚本/辅助模块摘要。修改后运行 scripts/update_skill_resources.py 更新摘要。

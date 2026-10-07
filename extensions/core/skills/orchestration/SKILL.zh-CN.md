@@ -14,12 +14,9 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
 
 1. 规划前读取当前 ResearchMap 和聚焦对象。
 2. 说明不确定性、相关 Claim，以及一个边界明确的交付物。
-3. 复用或创建 ResearchNode。只有在分组有助于导航时才添加 Phase。根据问题选择科学
-   Skill、Backend 与计算环境。对命名的执行目标，必须使用精确的 capability、environment
-   和 execution kind 查询 readiness；默认 readiness 不验证其他环境。
-   对方法比较先生成完整的 `方法 × environment × {opt, sp}` 矩阵，并为每个单元保存
-   capability、environment、输入 Artifact 和依赖关系。`sp` 只能使用相同方法和环境的
-   `opt` 输出；一个单元不可用时只标记该单元，不得替换方法或停止独立单元。
+3. 先通过 `research_change` 创建或确认 Claim 和 Node，再用 `research_strategy` 建立覆盖 focus 的计划。未知 Claim 错误应先创建对象，再重试策略；没有策略时不要跳到证据写入或计算。
+   从系统提示列出的真实路径读取科学 Skill。用户已指定方法时仍使用 method-selection 的执行准备：读取安装 job.toml，绑定配置的解释器、软件和环境。job_probe 只验证通用平台，方法可用性由 Skill 检查。
+   对方法比较建立 `方法 × environment × {opt, sp}` 矩阵，保存方法、环境、输入和依赖。单点使用相同方法与环境的优化坐标；只阻塞失败单元，不停止独立任务。
 4. 在所属 Node 下启动或检查任务，并将 Attempt 与 Artifact 留在该 Node 下。
 5. 检查原始输出后，通过 Research State 记录粒度明确的 FactFinding 与 IssueFinding。Finding
    本身不会改变 Node 或 Claim 的状态。
@@ -35,24 +32,17 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
 明确 disposition：`continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
 `user_input_required`。`research_checkpoint` 是规范的 turn checkpoint。
 Attempt 或 lifecycle action 完成本身都不是研究结论。若 liveness 返回
-`decision_needed`，必须继续当前 turn 并记录 checkpoint。如果 liveness 同时返回
+`decision_needed` 且没有明确 disposition，才需要补充策略或 checkpoint。成功记录 `user_input_required` 后应结束当前 turn，即使旧投影同时返回 `decision_needed`；不要重复 checkpoint 或反复尝试被拒的写入。如果 liveness 同时返回
 `execution_ready=true`，说明 focus 已有 active StrategyPlan，可以先执行该计划对应的
 prepare/execute，但结束 turn 前仍必须写入 checkpoint。`continue_required` 是合法的下一轮计划，
 Harness 不应在同一 turn 强行执行它。Harness 不得替 Agent 发明方法，Monitor 的 `next_run` 也不是
 新的科学指令。
 
-Review 只提供有边界的反方审查，不拥有规范状态。`artifact_derive` 仅用于从分析目录中发现的
-精确 capability/version；它是已注册的确定性本地分析，没有计算生命周期。对需要审计的
-local/remote 计算，`job_start/job_status/job_collect` 是计算生命周期入口，负责 Attempt、Artifact、Monitor 以及
-launch 生命周期。每个计算都记录在 ResearchNode 的 Attempt 下。Review 只能提供
-建议，不能写入 ResearchMap、改变 Claim/Node 状态、选择方法、启动或取消 Compute。
-`research_interpretation` 后由 Root 使用普通 `research_change` 记录接受、拒绝或附带条件的解释。本地与远端环境使用同一组
-`launch`、`inspect`、`finalize`、`cancel` 生命周期。`launch` 返回提交结果（包括结果不确定）后应结束当前
-turn，让持久化 Monitor 投递 `next_run`；不要用 `bash sleep`、`wait` 或手动轮询等待
-调度器任务。收到 Monitor 唤醒或用户稍后明确请求后，重新读取状态并先执行
-`inspect`，再决定是否收集或修改 ResearchMap。运行成功不等于科学结论成立。
-邮件收件人缺失只阻止 `notify_send`，不能阻止已经满足 readiness 的计算；计算和通知必须
-分别记录状态。
+本地与远端都通过 `job_start/job_status/job_collect` 执行。提交后保存 Job/Attempt 身份，结果不确定时先 reconcile 再考虑重试。只剩外部工作时记录 `waiting_external` 并结束，由 Monitor 在有意义的变化后唤醒；其他已规划且独立的 Node 可以继续。不要用 sleep 循环轮询。
+
+用 `artifact_register` 或 `artifact_create` 保存真实产物，以 `artifact_link` 关联证据。`artifact_derive` 只记录派生描述；实际分析通过 Skill Job 执行，再登记结果。运行成功不等于科学结论成立，需解释证据后再更新结论。
+
+用户要求邮件时，先读取列出的 email Skill，使用安装配置运行无发送副作用的 `check`，再判断是否缺地址。收件人问题只阻塞交付，计算和交付存在不同依赖时应分设 Node。只有没有独立的已授权工作可继续时，才把整个活动范围设为 `user_input_required`。方法可用性尚未验证应由 Agent 调查，不能默认要求用户提供证明。
 
 ## 参考资料
 

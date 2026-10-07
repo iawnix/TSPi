@@ -1,31 +1,26 @@
 ---
 name: gaussian
-description: 根据已注册输入执行器准备、运行并检查 Gaussian 单点、优化、频率、扫描、过渡态、IRC 与 QST 计算。
+description: 准备、运行并检查 Gaussian 单点、优化、频率、扫描、过渡态、IRC 与 QST 计算。
 ---
 
-# TSPi Gaussian
+# Gaussian 计算
 
-[English version](SKILL.md)
+使用随 Skill 安装的 [scripts/run.py](scripts/run.py) 生成输入、执行程序并验证结果。先读取安装级 `job.toml` 中目标环境的 `gaussian` command、activation_script 和 environment；本地 `/home/iaw/soft` 与远程安装路径分别解析。
 
-使用本 Skill 处理 Gaussian 特有的输入构造、执行、解析与输出检查。方法选择由
-`method-selection` 负责，TS 的科学验证由 `validation` 负责，路径的化学
-意义由 `irc` 负责。
+通过 [准备脚本](../method-selection/scripts/prepare_job.py) 生成通用 `job_start` 请求：
 
-把每个 `.gjf` 输入绑定为 ResearchNode Artifact。在不可变 intent 中保留 route、方法、基组、
-电荷、多重度、溶剂、资源、任务与相关关键词。检查输出是否与 intent 一致，选择正确的
-job section，并分别评估终止状态、SCF、优化收敛、频率证据、几何、电子态、IRC 数据与
-热化学和扫描曲线，不要把它们混成一个结论。Gaussian 输入的 Route Section 决定计算模式，
-所有支持的模式统一提交给已注册的 `gaussian@1` 执行器，不再注册 `sp`、`freq`、`opt`、
-`irc` 或 `scan` 变体。
+```text
+python3 <method-selection>/scripts/prepare_job.py --config <job.toml> --environment <环境名> --backend gaussian --skill gaussian --xyz <结构.xyz> -- --task opt-sp
+```
 
-QST2/QST3 由 Gaussian 输入的 Route Section 表达，并继续接受输入和输出校验。Skill 不注册
-workflow，实时 Native catalog 中的 `gaussian@1` 才是提交依据。
+确认方法、基组、电荷、自旋和资源，补充 nodeId 与 timeoutSeconds 后提交返回的请求。脚本不会替 Agent 提交任务。它会暂存该 Skill 的 scripts 和 `_shared` 依赖，保留相对目录；不要只复制 run.py。激活发生在目标 Job 中，不需要 Provider 注册。
 
-HF、M062X 等 Gaussian 方法以及基组（包括 `6-31G**`）都通过 Route Section 表达，例如
-`# HF/6-31G** Opt`、`# M062X/6-31G SP`；不需要为每个泛函注册独立 workflow。
+`run.py --help` 给出准确参数；`--task opt-sp` 明确执行优化，再以优化结构执行单点，任何步骤失败都会非零退出。`--spin` 是 2S（Gaussian 多重度为 spin+1）；XYZ 单位为 angstrom。选择新的空输出目录，不覆盖之前尝试。
 
-核对原始文件后再记录解析结果。正常终止不等于任务验证，两者也都不等于科学结论。明确
-记录 SCF 不稳定、自旋污染、态歧义、缺失校正与方法敏感性。详见
-[gaussian_validation.zh-CN.md](references/gaussian_validation.zh-CN.md)。优化后继续单点计算时，必须使用
-结果中的 `optimized_input_artifact_id`，并确认 Artifact 类型为 `chemical/gaussian-input`；最终
-几何位于 `optimized_geometry_artifact_id`。不能把 stdout/stderr 或 `artifact_ids` 中的任意位置项作为输入。
+声明 `results/result.json` 和 `results/geometry.xyz` 为 required 输出，并收集步骤目录的原始日志。结果记录实际方法、基组、输入与几何摘要、能量单位、收敛证据和脚本摘要。Job 退出 0 之外，还要检查 `validated=true` 及所需 steps；确认 opt 与 SP 的结构绑定。失败保留 result.json 和已有日志，不能用最后一个能量字符串替代完整验证。
+
+通过 `job_status/job_collect/job_reconcile` 跟踪任务；使用返回的真实 attempt_id 保存等待点。科学 Finding 由 Agent 根据证据登记。Runtime 不判断化学方法，不允许静默换方法、基组或系统解释器。
+
+默认方法 M062X、基组 6-31G**。输入采用 Opt=Tight 或 SP、SCF=Tight、Int=UltraFine；每步独立日志，检查方法/基组回显、正常终止和优化收敛。没有频率证据不能声称极小值已验证。此 CLI 暂不编排 TS/IRC；历史解析模块不等于端到端任务已经验收。
+
+详细检查见 [gaussian_validation.zh-CN](references/gaussian_validation.zh-CN.md)。

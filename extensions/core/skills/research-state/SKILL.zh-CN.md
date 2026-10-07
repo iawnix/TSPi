@@ -49,3 +49,5 @@ Research State 会在提交一个新 revision 前校验引用、反向索引、�
 - [decision_contract.zh-CN.md](references/decision_contract.zh-CN.md)：ChangeSet 操作。
 - [workspace_contract.zh-CN.md](references/workspace_contract.zh-CN.md)：持久化与 workspace 所有权。
 - [glossary.zh-CN.md](references/glossary.zh-CN.md)：公共术语。
+
+先创建或确认 Claim/Node，再让 research_strategy 引用它们。执行和证据写入前，focus 需要 proposed/active StrategyPlan。遇到 research_decision_required，先读取 mode=context 并补齐策略；前提没有变化时不要重复调用。成功记录 user_input_required 是合法收尾，应等待相关用户输入，不要反复写相同 checkpoint。

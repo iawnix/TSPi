@@ -41,5 +41,5 @@ version = {attr = "tspi_runtime._version.__version__"}
 "research_state" = ["contracts/*.json"]
 
 [tool.pytest.ini_options]
-pythonpath = ["packages/tspi-runtime", "packages/tspi-foundation", "packages/tspi-provider-runtime", "packages/tspi-bootstrap", "packages/research-state", "packages/research-memory", "packages/research-compute", "packages/artifact-store", "packages/job-runtime", "extensions/email/providers", "."]
+pythonpath = ["packages/tspi-runtime", "packages/tspi-foundation", "packages/tspi-provider-runtime", "packages/tspi-bootstrap", "packages/research-state", "packages/research-memory", "packages/research-compute", "packages/artifact-store", "packages/job-runtime", "extensions/email/scripts", "."]
 testpaths = ["tests/unit", "tests/contract", "tests/integration"]

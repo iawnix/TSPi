@@ -63,8 +63,8 @@ def collect_research_context(workspace: Path) -> dict[str, Any]:
         value = {}
     state = value.get("research_state", {}) if isinstance(value, dict) else {}
     return {
-        "research_map": {"map_id": value.get("map_id")} if isinstance(value, dict) else {},
-        "workspace_revision": state.get("revision", 0) if isinstance(state, dict) else 0,
+        "research_map": {"map_id": value.get("workspace_id", value.get("map_id"))} if isinstance(value, dict) else {},
+        "workspace_revision": str(state.get("revision", 0)) if isinstance(state, dict) else "0",
     }
 
 
@@ -112,7 +112,7 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
     summary = bounded_content(request.get("summary"), "notification summary", 20_000)
     attachment_refs, attachment_paths, attachment_records = _resolve_report_refs(
         workspace,
-        request.get("report_refs", []),
+        request.get("report_refs", []), request.get("attachments"),
     )
     workspace_report = collect_research_context(workspace)
     workspace_id = bounded_text(
@@ -135,6 +135,20 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
         "report_artifacts": attachment_records,
         "notification_config_digest": config.digest,
     }
+    if request.get("schema_version") == "ts-user-notification/2":
+        if request.get("recipient") != config.recipient:
+            raise ValueError("configured recipient changed since preparation")
+        notification["notification_id"] = bounded_text(request.get("notification_id"), "notification_id", 256)
+        notification["recipient"] = config.recipient
+        notification.pop("workspace_revision")
+        notification.pop("notification_config_digest")
+        # Older receipts did not preserve enough data to prove v2 identity.
+        # Preserve them and require reconciliation instead of silently resending.
+        for old_path in (workspace / DELIVERY_DIR_REF).glob("*.json"):
+            if not old_path.stat().st_size: continue
+            old = json.loads(old_path.read_text())
+            if not old.get("notification_id") and old.get("event") == event and old.get("subject") == subject and old.get("state") in {"sent","sending","unknown"}:
+                raise ValueError(f"legacy delivery requires reconciliation before new send: {old_path.name}")
     notification_digest = sha256_json(notification)
     receipt_ref = f"{DELIVERY_DIR_REF}/{notification_digest.removeprefix('sha256:')}.json"
     _, receipt_path = workspace_path(workspace, receipt_ref, must_exist=False, allow_existing=True)
@@ -148,6 +162,7 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
         guard = {
             "schema_version": RECEIPT_SCHEMA,
             "state": "sending",
+            "notification_id": request.get("notification_id"),
             "created_at": _now(),
             "event": event,
             "subject": subject,
@@ -167,7 +182,7 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
                 workspace_revision,
                 attachment_records,
             )
-            provider_output = _run_provider(
+            provider_output = _run_transport(
                 config,
                 manager=manager,
                 notification_digest=notification_digest,
@@ -480,11 +495,11 @@ def _load_request(request_file: Path) -> dict[str, Any]:
     value = json.loads(request_file.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError("notification request must be an object")
-    allowed = {"schema_version", "event", "subject", "summary", "report_refs"}
+    allowed = {"schema_version", "event", "subject", "summary", "report_refs", "attachments", "notification_id", "recipient"}
     unknown = sorted(set(value) - allowed)
     if unknown:
         raise ValueError(f"notification request contains unknown fields: {', '.join(unknown)}")
-    if value.get("schema_version") != REQUEST_SCHEMA:
+    if value.get("schema_version") not in {REQUEST_SCHEMA, "ts-user-notification/2"}:
         raise ValueError(f"notification request schema_version must be {REQUEST_SCHEMA}")
     return value
 
@@ -492,6 +507,7 @@ def _load_request(request_file: Path) -> dict[str, Any]:
 def _resolve_report_refs(
     workspace: Path,
     value: Any,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> tuple[list[str], list[Path], list[dict[str, Any]]]:
     if not isinstance(value, list) or len(value) > 8:
         raise ValueError("report_refs must be an array with at most 8 entries")
@@ -504,7 +520,13 @@ def _resolve_report_refs(
             raise ValueError("report_refs contains duplicates")
         if not path.is_file() or path.is_symlink():
             raise ValueError(f"report_refs[{index}] must select a regular file")
-        manifest_binding = _report_manifest_binding(workspace, ref, path)
+        if attachments is None:
+            manifest_binding = _report_manifest_binding(workspace, ref, path)
+        else:
+            matches = [row for row in attachments if row.get("ref") == ref]
+            if len(matches) != 1 or matches[0].get("sha256") != sha256_path(path) or matches[0].get("size_bytes") != path.stat().st_size:
+                raise ValueError("attachment no longer matches prepared request")
+            manifest_binding = {}
         refs.append(ref)
         paths.append(path)
         records.append({
@@ -548,7 +570,7 @@ def _report_manifest_binding(workspace: Path, ref: str, path: Path) -> dict[str,
     }
 
 
-def _run_provider(
+def _run_transport(
     config: EmailNotificationConfig,
     *,
     manager: Path | None,
@@ -875,13 +897,11 @@ def _revalidate_notification_inputs(
     current_config = load_notification_config(config.source)
     if current_config.digest != config.digest:
         raise ValueError("notification configuration changed after preflight")
-    current_report = collect_research_context(workspace)
-    if current_report.get("workspace_revision") != workspace_revision:
-        raise ValueError("workspace revision changed after notification preflight")
     for record in attachment_records:
         ref, path = workspace_path(workspace, record.get("ref"), must_exist=True)
         if sha256_path(path) != record.get("sha256") or path.stat().st_size != record.get("size_bytes"):
             raise ValueError(f"notification report artifact changed after preflight: {ref}")
+        if "manifest_ref" not in record: continue
         manifest_ref, manifest_path = workspace_path(workspace, record.get("manifest_ref"), must_exist=True)
         if sha256_path(manifest_path) != record.get("manifest_sha256"):
             raise ValueError(f"notification report manifest changed after preflight: {manifest_ref}")
@@ -1034,12 +1054,13 @@ def _delivery_lock(path: Path):
     flags = os.O_RDWR | os.O_CREAT
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
-    descriptor = os.open(path, flags, 0o600)
+    descriptor = os.open(path.with_suffix(".lock"), flags, 0o600)
     try:
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):
             raise ValueError("email notification receipt must be a regular file")
         os.fchmod(descriptor, 0o600)
         fcntl.flock(descriptor, fcntl.LOCK_EX)
+        path.touch(exist_ok=True, mode=0o600)
         yield
     finally:
         fcntl.flock(descriptor, fcntl.LOCK_UN)
@@ -1047,17 +1068,18 @@ def _delivery_lock(path: Path):
 
 
 def _write_private_json(path: Path, value: dict[str, Any], *, exclusive: bool) -> None:
+    if exclusive and path.exists(): raise FileExistsError(path)
     payload = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
-    flags = os.O_WRONLY | os.O_CREAT | (os.O_EXCL if exclusive else os.O_TRUNC)
-    descriptor = os.open(path, flags, 0o600)
+    descriptor, temporary = tempfile.mkstemp(prefix=".receipt-", dir=path.parent)
     try:
-        view = memoryview(payload)
-        while view:
-            view = view[os.write(descriptor, view):]
-        os.fsync(descriptor)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload); stream.flush(); os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try: os.fsync(directory)
+        finally: os.close(directory)
     finally:
-        os.close(descriptor)
-    os.chmod(path, 0o600)
+        Path(temporary).unlink(missing_ok=True)
 
 
 def _safe_error(exc: BaseException) -> str:

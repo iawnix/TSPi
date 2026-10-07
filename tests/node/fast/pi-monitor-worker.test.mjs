@@ -4,11 +4,9 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
-  createNotificationDispatcher,
   deliverMonitorEvent,
   parseMonitorArguments,
   recordMonitorTurn,
-  sendNotification,
 } from "../../../apps/app-server/pi-monitor-worker.mjs";
 import { create_workspace_initializer } from "../../../packages/agent-core/workspace.mjs";
 
@@ -39,24 +37,20 @@ async function fixture(t) {
   };
 }
 
-test("notification retries preserve the wake acknowledgement and original session binding", async (t) => {
+test("monitor only wakes the owning session and never sends mail", async (t) => {
   const state = await fixture(t);
   const wakes = [];
   let notifications = 0;
   const dependencies = { ...state,
     async sendWake(params) { wakes.push(params); return { accepted: true }; },
-    async sendNotification() { if (++notifications === 1) throw new Error("mail unavailable"); },
+    async sendNotification() { notifications++; },
   };
-  assert.deepEqual(await deliverMonitorEvent(dependencies), ["notify: mail unavailable"]);
-  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: true }, { channel: "notify", delivered: false }]);
+  assert.deepEqual(await deliverMonitorEvent(dependencies), []);
   assert.deepEqual(await deliverMonitorEvent(dependencies), []);
   assert.equal(wakes.length, 1);
-  assert.equal(notifications, 2);
-  assert.equal(wakes[0].workspace_id, state.canonicalId);
+  assert.equal(notifications, 0);
   assert.equal(wakes[0].session_id, "existing-session");
-  assert.equal(wakes[0].client_message_id, "monitor:evt_1");
   assert.equal(wakes[0].mode, "next_run");
-  assert.equal(wakes[0].source, "monitor");
 });
 
 test("monitor wake records the canonical Research Turn before queue delivery", async (t) => {
@@ -103,89 +97,18 @@ test("a failed Research Turn wake keeps the durable wake retryable", async (t) =
     async sendNotification() {},
   });
   assert.deepEqual(errors, ["wake: turn boundary unavailable"]);
-  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }, { channel: "notify", delivered: true }]);
+  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }]);
 });
 
-test("monitor notifications preserve structured SMTP/provider failures", async (t) => {
-  const state = await fixture(t);
-  const providerFailure = {
-    schema_version: "ts-user-notification-error/1",
-    ok: false,
-    state: "failed",
-    retry_disposition: "retry_after_fix",
-    receipt_ref: "reports/email/deliveries/notification.json",
-    error: {
-      code: "NOTIFICATION_DELIVERY_NOT_STARTED",
-      class: "delivery_not_started",
-      message: "email notification was not started: SMTP server returned 535: authentication failed; receipt=reports/email/deliveries/notification.json",
-    },
-  };
-  const execute = async () => {
-    const error = new Error("Command failed: notify.py notify");
-    error.stdout = JSON.stringify(providerFailure);
-    error.stderr = "";
-    throw error;
-  };
-
-  await assert.rejects(
-    sendNotification(state.workspace, state.event, undefined, execute),
-    (error) => {
-      assert.equal(error.name, "NotificationError");
-      assert.equal(error.code, "NOTIFICATION_DELIVERY_NOT_STARTED");
-      assert.equal(error.retry_disposition, "retry_after_fix");
-      assert.equal(error.receipt_ref, providerFailure.receipt_ref);
-      assert.match(error.message, /SMTP server returned 535: authentication failed/);
-      return true;
-    },
-  );
-});
-
-test("monitor notification dispatcher accepts a transport-neutral provider", async (t) => {
-  const state = await fixture(t);
-  const calls = [];
-  const dispatcher = createNotificationDispatcher({
-    dispatch: async (request) => {
-      calls.push(request);
-      return { accepted: true, transport: "fixture" };
-    },
-  });
-  const result = await dispatcher.dispatch({ workspace: state.workspace, event: state.event, delivery: state.delivery });
-  assert.deepEqual(result, { accepted: true, transport: "fixture" });
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].workspace, state.workspace);
-  assert.equal(calls[0].event.event_id, state.event.event_id);
-  assert.equal(calls[0].delivery.request_id, state.delivery.request_id);
-});
-
-test("monitor notification timeouts remain ambiguous and retryable", async (t) => {
-  const state = await fixture(t);
-  const execute = async () => {
-    throw Object.assign(new Error("child process timed out"), { code: "ETIMEDOUT", timedOut: true });
-  };
-
-  await assert.rejects(
-    sendNotification(state.workspace, state.event, undefined, execute),
-    (error) => {
-      assert.equal(error.name, "NotificationError");
-      assert.equal(error.code, "NOTIFICATION_DELIVERY_TIMEOUT");
-      assert.equal(error.error_class, "delivery_ambiguous");
-      assert.equal(error.state, "unknown");
-      assert.equal(error.retry_disposition, "reconcile_only");
-      assert.match(error.message, /delivery status is unknown/);
-      return true;
-    },
-  );
-});
-
-test("an offline session leaves wake retryable while notification can complete", async (t) => {
+test("an offline session leaves wake retryable", async (t) => {
   const state = await fixture(t);
   const errors = await deliverMonitorEvent({ ...state,
     async sendWake() { throw Object.assign(new Error("session offline"), { code: "session_offline", retryable: true }); },
     async sendNotification() {},
   });
   assert.deepEqual(errors, ["wake: session offline"]);
-  assert.deepEqual([...state.completed], ["notify"]);
-  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }, { channel: "notify", delivered: true }]);
+  assert.deepEqual([...state.completed], []);
+  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }]);
 });
 
 test("an uncertain Host wake remains retryable", async (t) => {
@@ -195,7 +118,7 @@ test("an uncertain Host wake remains retryable", async (t) => {
     async sendNotification() {},
   });
   assert.deepEqual(errors, ["wake: Host returned an uncertain monitor wake"]);
-  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }, { channel: "notify", delivered: true }]);
+  assert.deepEqual(state.receipts, [{ channel: "wake", delivered: false }]);
 });
 
 test("managed monitor options require a Host endpoint", () => {
