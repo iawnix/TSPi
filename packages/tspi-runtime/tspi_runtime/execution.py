@@ -103,7 +103,7 @@ def _spec(root: Path, params: dict[str, Any]) -> JobSpec:
         command=tuple(command), cwd=cwd, job_id=job_id,
         env=process_env, inputs=tuple(inputs), outputs=outputs,
         timeout_seconds=params.get("timeoutSeconds") or params.get("timeout_seconds"),
-        metadata=params.get("metadata") or {}, workspace_id=params.get("workspace_id") or params.get("workspaceId"),
+        metadata={**(params.get("metadata") or {}), **({"work_id": params["workId"]} if params.get("workId") else {})}, workspace_id=params.get("workspace_id") or params.get("workspaceId"),
         node_id=params.get("node_id") or params.get("nodeId"), attempt_id=params.get("attempt_id") or params.get("attemptId"),
     )
 

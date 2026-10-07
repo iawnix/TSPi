@@ -31,3 +31,13 @@ Use a recovery checkpoint after the actual user decision, then update Nodes.
 The public tool schema is the interface contract. Read [public_contract.md](public_contract.md)
 for generated tool names and dispositions; Skills describe how to use that contract,
 not a separate scheduler or capability registry.
+
+
+State persists `continuation` in its liveness projection only for an explicit
+continue_required checkpoint with an owning session. Host consumes that outbox
+through its existing durable input receipts. Unchanged revisions cannot create
+new wakes; continuation budget is State-owned. Monitor remains responsible only
+for Job changes and configured queue-wait threshold events. `eligible_node_ids`
+means dependency/strategy admission; `ready_node_ids` excludes running scopes.
+An independent workId can admit another Job in an eligible running scope without
+making it an automatically ready plan. Neither Skill nor Host reconstructs this rule.

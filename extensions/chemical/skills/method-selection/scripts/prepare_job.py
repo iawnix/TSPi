@@ -4,11 +4,10 @@ import hashlib
 import json
 from pathlib import Path
 import shlex
-from job_runtime.config_contract import load_job_config, resolve_python, python_command, binding_digest
-import uuid
+from job_runtime.config_contract import load_job_config, resolve_python, python_command, binding_digest, resolve_submission
 
 
-def prepare(config, environment, backend, skill, xyz, arguments, python=None):
+def prepare(config, environment, backend, skill, xyz, arguments, python=None, work_id=None):
     settings = load_job_config(config)
     target = settings['environments'][environment]
     binding = target['backends'][backend]
@@ -38,11 +37,15 @@ def prepare(config, environment, backend, skill, xyz, arguments, python=None):
         argv=['bash','-c','set -e\nsource '+shlex.quote(activation)+'\nexec "$@"','skill',*argv]
     resources={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest()
                for folder in [script.parent,root/'_shared'] for p in sorted(folder.rglob('*.py'))}
-    return {'requestId':'skill_'+uuid.uuid4().hex,'command':argv,'platform':environment,'inputs':inputs,
+    identity = binding_digest({'environment':environment, 'backend':backend, 'arguments':arguments,
+        'input_sha256':hashlib.sha256(Path(xyz).read_bytes()).hexdigest(), 'configuration':binding_digest(settings)})[7:]
+    work_id = work_id or 'work_' + identity[:48]
+    submission = resolve_submission(settings, environment, backend)
+    return {'requestId':'skill_'+hashlib.sha256(work_id.encode()).hexdigest()[:48], 'workId':work_id,'command':argv,'platform':environment,'inputs':inputs,
             'environment':binding.get('environment',{}),
             'outputs':[{'path':'results/result.json','required':True,'minBytes':2,'mediaType':'application/json'},
                        {'path':'results/geometry.xyz','required':True,'minBytes':1,'mediaType':'chemical/x-xyz'}],
-            'metadata':{'skill':skill,'resources_sha256':resources, 'python_binding':python_binding, 'configuration_sha256':binding_digest(settings)}}
+            'metadata':{**submission, 'skill':skill,'resources_sha256':resources, 'python_binding':python_binding, 'configuration_sha256':binding_digest(settings)}}
 
 
 def main():
@@ -51,12 +54,21 @@ def main():
     p.add_argument('--backend',choices=['pyscf','xtb','gaussian'],required=True)
     p.add_argument('--skill',choices=['cf22d','xtb','gaussian'],required=True)
     p.add_argument('--python',help=argparse.SUPPRESS)
+    p.add_argument('--output',help="Save the complete request; print its job_start file reference")
+    p.add_argument('--work-id',help="Explicit identity for an intentional recalculation")
     p.add_argument('--xyz',required=True);p.add_argument('arguments',nargs=argparse.REMAINDER)
     a=p.parse_args()
     if {'pyscf':'cf22d','xtb':'xtb','gaussian':'gaussian'}[a.backend] != a.skill:
         p.error('backend and Skill disagree')
     args=a.arguments[1:] if a.arguments[:1]==['--'] else a.arguments
-    print(json.dumps(prepare(a.config,a.environment,a.backend,a.skill,a.xyz,args,a.python),indent=2))
+    request = prepare(a.config,a.environment,a.backend,a.skill,a.xyz,args,a.python,a.work_id)
+    encoded = (json.dumps(request,indent=2)+'\n').encode()
+    if a.output:
+        path = Path(a.output).resolve(); path.parent.mkdir(parents=True,exist_ok=True)
+        path.write_bytes(encoded)
+        print(json.dumps({'requestFile':str(path),'requestSha256':hashlib.sha256(encoded).hexdigest()}))
+    else:
+        print(encoded.decode(),end='')
 
 
 if __name__=='__main__':main()

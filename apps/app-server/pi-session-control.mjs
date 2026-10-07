@@ -26,7 +26,7 @@ const MAX_EVENT_HISTORY = 256;
  */
 export function createSessionControl({ sessionId, agent, transcript, context, historyLimit = MAX_EVENT_HISTORY }) {
   assertSessionId(sessionId);
-  if (!agent || (typeof agent.prompt !== "function" && typeof agent.startPrompt !== "function") || (typeof agent.abort !== "function" && typeof agent.requestAbort !== "function")) {
+  if (!agent || typeof agent.prompt !== "function" || typeof agent.abort !== "function") {
     throw new TypeError("session control requires an AgentController service");
   }
   if (!transcript?.state || typeof transcript.state.subscribe !== "function") {
@@ -138,14 +138,7 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
       }
       consumeRetryableFailure(parsed.request_id, fingerprint);
       const result = Promise.resolve()
-        .then(() => (typeof agent.startPrompt === "function" ? agent.startPrompt({
-          message: parsed.message,
-          images: parsed.images,
-          ...(parsed.operation_id === undefined ? {} : { operationId: parsed.operation_id }),
-        }, context) : agent.prompt({
-          message: parsed.message,
-          images: parsed.images,
-        }, context)))
+        .then(() => agent.prompt({ message: parsed.message, images: parsed.images }, context))
         .then((response) => operationResponse(parsed, response));
       rememberRequest(parsed.request_id, fingerprint, result);
       return result;
@@ -163,7 +156,7 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
         return cached.result;
       }
       const result = Promise.resolve()
-        .then(() => typeof agent.abort === "function" ? agent.abort(context) : agent.requestAbort(parsed.operation_id, context))
+        .then(() => agent.abort(context))
         .then(() => ({
           schema_version: SESSION_CONTROL_PROTOCOL,
           request_id: parsed.request_id,
@@ -180,9 +173,9 @@ export function createSessionControl({ sessionId, agent, transcript, context, hi
     async queue(request) {
       ensureOpen();
       const parsed = validateQueue(request, sessionId);
-      const method = parsed.mode === "next_run" && typeof agent.nextRun === "function"
-        ? "nextRun"
-        : parsed.mode === "follow_up" || parsed.mode === "next_run" ? "followUp" : "steer";
+      // Pi's pinned AgentController exposes followUp, not nextRun. A remote
+      // proxy returns a callable even for absent members; typeof is not discovery.
+      const method = parsed.mode === "steer" ? "steer" : "followUp";
       if (typeof agent[method] !== "function") throw protocolError("unsupported_action", `AgentController does not provide ${method}`);
       const fingerprint = JSON.stringify({ mode: parsed.mode, message: parsed.message, images: parsed.images });
       const cached = requestCache.get(parsed.request_id);

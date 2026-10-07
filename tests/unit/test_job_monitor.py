@@ -41,3 +41,22 @@ def test_deferred_delivery_retries_only_after_canonical_state_changes(tmp_path):
     checkpoint(tmp_path,{'principal':'root_agent','authority':'kernel_write','id':'checkpoint_continue',
                         'disposition':'continue_required','claim_ids':['claim_1']})
     assert len(command(tmp_path,'pending',{})['deliveries'])==1
+
+
+def test_long_queue_emits_one_diagnostic_event_without_poll_wakes(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from job_runtime import JobState
+    from tspi_runtime import job_monitor
+    workspace(tmp_path)
+    dispatch('start',{'root':str(tmp_path),'jobId':'job_queue','nodeId':'node_1','session_id':'s',
+        'metadata':{'queue_wait_seconds':60},'command':[sys.executable,'-c','pass']})
+    status = SimpleNamespace(state=JobState.QUEUED,exit_code=None,error=None,diagnostics={'wait_seconds':10})
+    monkeypatch.setattr(job_monitor,'_runtime',lambda root:SimpleNamespace(job_status=lambda receipt:status))
+    command(tmp_path,'tick',{})
+    assert command(tmp_path,'pending',{})['deliveries']==[]
+    status.diagnostics={'wait_seconds':61,'queue_diagnosis':'feasible procs: 0'}
+    for _ in range(3):command(tmp_path,'tick',{})
+    rows=command(tmp_path,'pending',{})['deliveries'];assert len(rows)==1
+    event=command(tmp_path,'event',{'event_id':rows[0]['event_id']})
+    assert event['status']['reason']=='queue_wait_exceeded'
+    assert event['status']['diagnostics']['queue_diagnosis']=='feasible procs: 0'

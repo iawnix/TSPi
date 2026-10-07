@@ -39,3 +39,45 @@ def test_dependencies_and_optional_bad_finding_preserve_independent_readiness(tm
     assert "node_child" not in live["ready_node_ids"]
     denied = state.read_liveness(tmp_path, {"tool": {"name": "job_start", "effect": "execution_control", "args": {"nodeId": "node_child"}}})
     assert denied["tool_admission"]["code"] == "research_node_not_ready"
+
+
+def test_independent_work_in_shared_research_scope_and_duplicate_guard(tmp_path):
+    workspace(tmp_path)
+    change(tmp_path, [{"type":"register_attempt", "id":"attempt_remote", "node_id":"node_1", "state":"running",
+                       "metadata":{"job_id":"job_remote", "job_metadata":{"work_id":"remote_cf22d"}}}])
+    def admit(**args):
+        return state.read_liveness(tmp_path, {"tool":{"name":"job_start","effect":"execution_control","args":{"nodeId":"node_1",**args}}})["tool_admission"]
+    assert admit(workId="local_xtb")["accepted"]
+    assert admit(workId="remote_cf22d")["code"] == "research_work_already_submitted"
+    assert admit()["code"] == "research_work_identity_required"
+    assert admit(requestId="remote")["accepted"]
+    change(tmp_path, [{"type":"set_node_state","node_id":"node_1","state":"blocked","summary":"Actual missing input"}])
+    assert not admit(workId="local_xtb")["accepted"]
+
+
+def test_continuation_is_durable_bounded_and_checkpoint_renaming_is_not_progress(tmp_path):
+    workspace(tmp_path)
+    def checkpoint(i):
+        state.checkpoint(tmp_path,{**AUTH,"id":f"checkpoint_{i}","session_id":"session-a","disposition":"continue_required"})
+        return state.read_liveness(tmp_path)
+    first = checkpoint(1)["continuation"]
+    assert first["admitted"]
+    assert checkpoint(2)["continuation"] == first
+    assert state.read_liveness(tmp_path)["continuation"] == first
+    for i in range(2,10):
+        change(tmp_path,[{"type":"set_focus","node_ids":["node_1"],"claim_ids":["claim_1"]}])
+        live = checkpoint(i+1)
+    assert live["continuation"]["admitted"] is False
+    assert live["continuation"]["reason"] == "continuation_budget_exhausted"
+    change(tmp_path,[{"type":"register_attempt","id":"attempt_wait","node_id":"node_1","state":"running"}])
+    state.checkpoint(tmp_path,{**AUTH,"id":"checkpoint_external","disposition":"waiting_external","unresolved_refs":["attempt_wait"]})
+    assert state.read_liveness(tmp_path)["continuation"] is None
+
+
+def test_continuation_stops_when_next_turn_has_no_research_progress(tmp_path):
+    workspace(tmp_path)
+    for index in range(2):
+        state.checkpoint(tmp_path,{**AUTH,'id':f'checkpoint_turn_{index}','turn_id':str(index),
+            'session_id':'session-a','disposition':'continue_required'})
+    result=state.read_liveness(tmp_path)['continuation']
+    assert result['admitted'] is False and result['reason']=='no_research_progress'

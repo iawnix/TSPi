@@ -11,7 +11,7 @@ def binding(prefix):
 def config():
     return {"default_environment": "local", "environments": {
         "local": {"kind": "local"},
-        "remote": {"kind": "remote", "python": binding("/opt/runner"), "backends": {
+        "remote": {"kind": "remote", "submission": {"queue":"test"}, "python": binding("/opt/runner"), "backends": {
             "xtb": {"command": ["/opt/xtb"]}, "pyscf": {"python": binding("/opt/cf22d")}}}}}
 
 
@@ -40,6 +40,8 @@ def test_skill_preparation_uses_bound_conda_and_rejects_dual_pyscf_binding(tmp_p
     text = '''default_environment = "remote"
 [environments.remote]
 kind = "remote"
+[environments.remote.submission]
+queue = "test"
 [environments.remote.python]
 manager = "conda"
 conda_executable = "/opt/conda/bin/conda"
@@ -98,3 +100,13 @@ def test_installer_refuses_unverified_prefix_and_does_not_publish_bad_receipt(tm
     with pytest.raises(ValueError, match='does not match'):
         installer(b, adopt=True)
     assert not (prefix / 'tspi-environment.json').exists()
+
+
+def test_remote_queue_selection_is_explicit_and_allowlisted():
+    from job_runtime.config_contract import resolve_submission
+    c=config();remote=c['environments']['remote'];remote['allowed_queues']=['test']
+    assert resolve_submission(c,'remote','xtb')['queue']=='test'
+    remote['submission']['queue']='forbidden'
+    with pytest.raises(ValueError,match='not allowed'):resolve_submission(c,'remote','xtb')
+    del remote['submission']
+    with pytest.raises(ValueError,match='queue_binding_missing'):resolve_submission(c,'remote','xtb')

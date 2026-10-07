@@ -17,6 +17,7 @@ import subprocess
 import tempfile
 import uuid
 from datetime import datetime, timezone
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +65,7 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
             "qstat": str(commands.get("qstat", "qstat")),
             "qdel": str(commands.get("qdel", "qdel")),
         }
+        self.diagnostic_command = commands.get("checkjob")
         self.allowed_queues = tuple(str(item) for item in self.config.get("allowed_queues", ()))
         self._terminal: dict[str, JobStatus] = {}
 
@@ -130,6 +132,11 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         return {"remote_dir": remote_dir}
 
     def start(self, spec: JobSpec) -> JobReceipt:
+        defaults = self.config.get("submission", {})
+        metadata = {**defaults, **dict(spec.metadata), "resources": {**defaults.get("resources", {}), **spec.metadata.get("resources", {})}}
+        if metadata.get("queue") and self.allowed_queues and metadata["queue"] not in self.allowed_queues:
+            raise ValueError("remote queue is not allowed")
+        spec = replace(spec, metadata=metadata)
         probe = self.probe(spec)
         if not probe["available"]:
             raise RuntimeError(f"remote platform unavailable: {probe.get('error') or 'probe failed'}")
@@ -219,21 +226,30 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
         self._write(cwd / "receipt.json", receipt.__dict__)
         return receipt
 
-    def _scheduler_status(self, scheduler_id: str) -> str | None:
-        result = self._run_ssh(f"{shlex.quote(self.commands['qstat'])} {shlex.quote(scheduler_id)}", check=False)
-        if result.returncode != 0:
-            return None
-        text = result.stdout.upper()
-        detailed = re.search(r"JOB_STATE\s*=\s*([A-Z])", text)
-        if detailed:
-            return detailed.group(1)
-        for line in text.splitlines():
-            if scheduler_id.upper() in line:
-                fields = line.split()
-                states = [item for item in fields if item in {"Q", "R", "E", "H", "W", "T", "C", "F"}]
-                if states:
-                    return states[-1]
-        return None
+    def _scheduler_details(self, receipt):
+        scheduler_id = str(receipt.metadata["scheduler_id"])
+        result = self._run_ssh(f"{shlex.quote(self.commands['qstat'])} -f {shlex.quote(scheduler_id)}", check=False)
+        details = {"scheduler_id":scheduler_id, "observed_at":_now(), "source":"qstat -f"}
+        if result.returncode:
+            details["query_error"] = result.stderr.strip()[:2000] or "scheduler record unavailable"
+            return None, details
+        fields = dict(re.findall(r"(?m)^\s*([A-Za-z_.]+)\s*=\s*(.*?)\s*$", result.stdout))
+        state = fields.get("job_state")
+        details.update(scheduler_state=state, queue=fields.get("queue"), scheduler_comment=fields.get("comment"))
+        try:
+            details["wait_seconds"] = max(0, int((datetime.now(timezone.utc) - datetime.fromisoformat(receipt.submitted_at)).total_seconds())) if state in {"Q", "W", "H"} else None
+        except (ValueError, TypeError):
+            details["wait_seconds"] = None
+        if fields.get("exit_status") is not None: details["exit_status"] = int(fields["exit_status"])
+        if state in {"Q", "W", "H"} and self.diagnostic_command:
+            try:
+                diagnosis = self._run_ssh(f"{shlex.quote(self.diagnostic_command)} {shlex.quote(scheduler_id.split('.')[0])}", check=False)
+                details["queue_diagnosis"] = (diagnosis.stdout if diagnosis.returncode == 0 else diagnosis.stderr).strip()[:8000]
+                details["diagnosis_source"] = "checkjob"
+            except (OSError, subprocess.SubprocessError) as error:
+                # Optional diagnosis must not erase authoritative scheduler state.
+                details["diagnosis_error"] = str(error)[:2000]
+        return state, details
 
     def status(self, receipt: JobReceipt) -> JobStatus:
         if receipt.job_id in self._terminal:
@@ -243,7 +259,7 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
             try:
                 saved = json.loads(local_status.read_text(encoding="utf-8"))
                 if saved.get("job_id") == receipt.job_id and saved.get("state") in {item.value for item in JobState}:
-                    restored = JobStatus(receipt.job_id, JobState(saved["state"]), self.name, exit_code=saved.get("exit_code"), finished_at=saved.get("finished_at"), error=saved.get("error"))
+                    restored = JobStatus(receipt.job_id, JobState(saved["state"]), self.name, exit_code=saved.get("exit_code"), finished_at=saved.get("finished_at"), error=saved.get("error"), diagnostics=saved.get("diagnostics", {}))
                     if restored.state in {JobState.SUCCEEDED, JobState.FAILED, JobState.TIMED_OUT, JobState.CANCELLED, JobState.COLLECTED}:
                         self._terminal[receipt.job_id] = restored
                         return restored
@@ -259,22 +275,19 @@ class TorqueSSHPlatform(RemoteExecutionPlatform):
                 check=False,
             )
             if result.returncode != 0:
-                scheduler_state = self._scheduler_status(scheduler_id)
-                if scheduler_state in {"C", "F"}:
-                    detail = self._run_ssh(f"{shlex.quote(self.commands['qstat'])} -f {shlex.quote(scheduler_id)}", check=False)
-                    exit_match = re.search(r"(?m)^\s*exit_status\s*=\s*(-?\d+)\s*$", detail.stdout)
-                    if detail.returncode == 0 and exit_match:
-                        code = int(exit_match.group(1))
-                        terminal = JobStatus(receipt.job_id, JobState.SUCCEEDED if code == 0 else JobState.FAILED,
-                            self.name, exit_code=code, finished_at=_now(),
-                            error="Job exit receipt absent; exit status recovered from scheduler (check working directory and scheduler logs)")
-                        self._terminal[receipt.job_id] = terminal
-                        self._persist(receipt, terminal)
-                        return terminal
+                scheduler_state, diagnostics = self._scheduler_details(receipt)
+                if scheduler_state in {"C", "F"} and diagnostics.get("exit_status") is not None:
+                    code = diagnostics["exit_status"]
+                    terminal = JobStatus(receipt.job_id, JobState.SUCCEEDED if code == 0 else JobState.FAILED,
+                        self.name, exit_code=code, finished_at=_now(), diagnostics=diagnostics,
+                        error="Job exit receipt absent; exit status recovered from scheduler (check working directory and scheduler logs)")
+                    self._terminal[receipt.job_id] = terminal
+                    self._persist(receipt, terminal)
+                    return terminal
                 mapped = {"Q":JobState.QUEUED, "W":JobState.QUEUED, "H":JobState.HELD,
                           "R":JobState.RUNNING, "E":JobState.RUNNING, "T":JobState.SUBMITTED}.get(scheduler_state, JobState.UNKNOWN)
-                return JobStatus(receipt.job_id, mapped, self.name,
-                    error="exit receipt absent; scheduler state=" + str(scheduler_state))
+                return JobStatus(receipt.job_id, mapped, self.name, diagnostics=diagnostics,
+                    error=(diagnostics.get("query_error") or "scheduler outcome unknown; exit receipt absent") if mapped == JobState.UNKNOWN else None)
             code = int(result.stdout.strip().splitlines()[-1])
             state = JobState.SUCCEEDED if code == 0 else JobState.FAILED
             terminal = JobStatus(receipt.job_id, state, self.name, exit_code=code, finished_at=_now())

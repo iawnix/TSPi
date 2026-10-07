@@ -44,3 +44,9 @@ Record durable summaries through the calculation record and Node. Create an
 IssueFinding only when the operational error has a documented scientific
 consequence; do not add a placeholder Finding merely to make a runtime error
 visible.
+
+
+For queued Jobs, inspect `job_status.diagnostics` (queue, wait_seconds, scheduler
+comment and configured checkjob output). A queue-wait threshold event warrants
+one diagnostic decision; unchanged Q status alone does not warrant repeated
+Agent wakes. Continue other independent work while preserving the queued Job ID.

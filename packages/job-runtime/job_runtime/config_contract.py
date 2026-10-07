@@ -50,6 +50,11 @@ def validate_job_config(value):
             activation = binding.get("activation_script")
             if activation is not None and (not isinstance(activation, str) or not activation.startswith("/")):
                 raise ValueError(f"backend {backend}.activation_script must be absolute")
+        if "submission" in target:
+            resolve_submission(value, name, require_queue=False)
+        for backend, binding in backends.items():
+            if "submission" in binding:
+                resolve_submission(value, name, backend, require_queue=False)
     return value
 
 
@@ -76,3 +81,36 @@ def python_command(binding):
 
 def binding_digest(value):
     return "sha256:" + hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def resolve_submission(config, environment, backend=None, *, require_queue=True):
+    """Merge installation resource defaults; queue allowlists are permissions, not defaults."""
+    target = config["environments"][environment]
+    binding = target.get("backends", {}).get(backend, {})
+    base = target.get("submission", {})
+    override = binding.get("submission", {})
+    if not isinstance(base, dict) or not isinstance(override, dict):
+        raise ValueError("submission must be a table")
+    for settings in (base, override):
+        if set(settings) - {"queue", "resources", "queue_wait_seconds"}:
+            raise ValueError("unknown submission field")
+        if not isinstance(settings.get("resources", {}), dict):
+            raise ValueError("submission.resources must be a table")
+        if "queue_wait_seconds" in settings and (type(settings["queue_wait_seconds"]) is not int or settings["queue_wait_seconds"] < 1):
+            raise ValueError("queue_wait_seconds must be positive")
+    result = {**base, **override, "resources": {**base.get("resources", {}), **override.get("resources", {})}}
+    queue = result.get("queue")
+    if require_queue and target["kind"] == "remote" and not queue:
+        raise ValueError("queue_binding_missing: configure environments." + environment + ".submission.queue; allowed_queues does not select a queue")
+    if queue and (not isinstance(queue, str) or not re.fullmatch(r"[A-Za-z0-9_.@-]+", queue)):
+        raise ValueError("submission.queue is invalid")
+    for allowed in (target.get("allowed_queues", []), binding.get("allowed_queues", [])):
+        if queue and allowed and queue not in allowed:
+            raise ValueError("submission queue is not allowed")
+    resources = result["resources"]
+    for field in ("cpus", "memory_mb"):
+        if field in resources and (type(resources[field]) is not int or resources[field] < 1):
+            raise ValueError("submission.resources." + field + " must be positive")
+    if "walltime" in resources and not re.fullmatch(r"[0-9]+:[0-5][0-9]:[0-5][0-9]", str(resources["walltime"])):
+        raise ValueError("submission.resources.walltime must be HH:MM:SS")
+    return result

@@ -55,6 +55,15 @@ max_nodes = 1
 connect_timeout_seconds = 15
 command_timeout_seconds = 60
 
+# Choose an installation-approved queue explicitly; allowed_queues is not a default.
+[environments.remote.submission]
+queue = "fata"
+queue_wait_seconds = 900
+[environments.remote.submission.resources]
+cpus = 1
+memory_mb = 4096
+walltime = "01:00:00"
+
 [environments.remote.python]
 manager = "conda"
 conda_executable = "/home/agent/soft/tspi/conda/bin/conda"
@@ -66,6 +75,7 @@ qsub = "qsub"
 qstat = "qstat"
 qdel = "qdel"
 pbsnodes = "pbsnodes"
+checkjob = "checkjob"
 
 [environments.remote.backends.gaussian]
 command = ["g16"]

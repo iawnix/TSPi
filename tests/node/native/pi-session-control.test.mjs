@@ -37,7 +37,7 @@ function fakeTranscript() {
 }
 
 function fakeAgent() {
-  const calls = { prompt: [], abort: [], steer: [], followUp: [], nextRun: [] };
+  const calls = { prompt: [], abort: [], steer: [], followUp: [] };
   let operation = 0;
   const agent = {
     calls,
@@ -46,7 +46,7 @@ function fakeAgent() {
       operation += 1;
       return { accepted: true, operationId: `op-${operation}`, error: null };
     },
-    async requestAbort(operationId) {
+    async abort(operationId) {
       calls.abort.push(operationId);
     },
     async steer(request) {
@@ -57,10 +57,7 @@ function fakeAgent() {
       calls.followUp.push(request);
       return { accepted: true, entryId: "follow-1", error: null };
     },
-    async nextRun(request) {
-      calls.nextRun.push(request);
-      return { accepted: true, entryId: "next-1", error: null };
-    },
+
   };
   return agent;
 }
@@ -98,8 +95,8 @@ test("session control deduplicates retries and exposes the Pi operation response
 test("session control never treats an identifier-less positive admission as accepted", async () => {
   const transcript = fakeTranscript();
   const agent = fakeAgent();
-  agent.startPrompt = async () => ({ accepted: true, operationId: null, error: null });
-  agent.nextRun = async () => ({ accepted: true, entryId: "", error: null });
+  agent.prompt = async () => ({ accepted: true, operationId: null, error: null });
+  agent.followUp = async () => ({ accepted: true, entryId: "", error: null });
   const control = createSessionControl({ sessionId: "session-a", agent, transcript });
 
   const prompt = await control.dispatch({
@@ -143,7 +140,7 @@ test("session control retries a known pre-admission lane rejection with the same
   const transcript = fakeTranscript();
   const agent = fakeAgent();
   let attempts = 0;
-  agent.nextRun = async () => {
+  agent.followUp = async () => {
     attempts += 1;
     if (attempts === 1) return { accepted: false, entryId: null, error: { code: "lane_busy", message: "try again" } };
     return { accepted: true, entryId: "next-accepted", error: null };
@@ -171,26 +168,17 @@ test("session control retries a known pre-admission lane rejection with the same
   control.close();
 });
 
-test("session control forwards a caller-owned operation hint to non-blocking admission", async () => {
+test("session control uses the pinned prompt API and its actual durable id", async () => {
   const transcript = fakeTranscript();
-  const agent = fakeAgent();
-  const seen = [];
-  agent.startPrompt = async (request) => {
-    seen.push(request);
-    return { accepted: true, operationId: request.operationId, error: null };
-  };
-  const control = createSessionControl({ sessionId: "session-a", agent, transcript });
-  const response = await control.dispatch({
-    schema_version: SESSION_CONTROL_PROTOCOL,
-    request_id: "hinted-prompt",
-    session_id: "session-a",
-    action: "prompt",
-    operation_id: "tspi-operation-hint",
-    message: "admit me once",
-  });
-  assert.equal(response.accepted, true);
-  assert.equal(response.operation_id, "tspi-operation-hint");
-  assert.equal(seen[0].operationId, "tspi-operation-hint");
+  const native = fakeAgent();
+  const agent = new Proxy(native, { get(target, key) {
+    return key in target ? target[key] : () => { throw new Error(`unknown remote member ${String(key)}`); };
+  } });
+  const control = createSessionControl({sessionId:"session-a", agent, transcript});
+  const response = await control.prompt({schema_version:SESSION_CONTROL_PROTOCOL, request_id:"native-prompt",session_id:"session-a",action:"prompt",operation_id:"synthetic-hint",message:"test"});
+  assert.equal(response.operation_id,"op-1");
+  const queued = await control.queue({schema_version:SESSION_CONTROL_PROTOCOL,request_id:"native-queue",session_id:"session-a",action:"queue",mode:"next_run",message:"test"});
+  assert.equal(queued.entry_id,"follow-1");
   control.close();
 });
 
@@ -210,12 +198,12 @@ test("session control forwards abort and queue operations to one AgentController
       error: null,
     },
   );
-  for (const [mode, key] of [["steer", "steer"], ["follow_up", "followUp"], ["next_run", "nextRun"]]) {
+  for (const [mode, key] of [["steer", "steer"], ["follow_up", "followUp"], ["next_run", "followUp"]]) {
     const result = await control.dispatch({ ...base, request_id: `queue-${mode}`, action: "queue", mode, message: mode });
     assert.equal(result.accepted, true);
-    assert.equal(agent.calls[key].length, 1);
+    assert.equal(agent.calls[key].length, mode === "next_run" ? 2 : 1);
   }
-  assert.deepEqual(agent.calls.abort, ["op-1"]);
+  assert.deepEqual(agent.calls.abort, [undefined]);
   control.close();
 });
 

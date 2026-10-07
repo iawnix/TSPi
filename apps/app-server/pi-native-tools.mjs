@@ -1,3 +1,4 @@
+import { resolvePreparedJob } from "./prepared-job.mjs";
 import { resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import Type from "./pi-runtime-deps.mjs";
@@ -140,6 +141,7 @@ export function normalizeCheckpointPayload(value, toolContext, eventId) {
   if (!checkpoint.disposition) throw new Error("research_checkpoint requires disposition");
   const turnId = checkpoint.turn_id || toolContext?.operation_id || eventId || `turn_${Date.now()}`;
   checkpoint.turn_id = turnId;
+  checkpoint.session_id = toolContext?.session_id || toolContext?.sessionId;
   checkpoint.id ||= eventId || `checkpoint_${turnId}`;
   return checkpoint;
 }
@@ -218,6 +220,7 @@ export function createJobArtifactTools(options = {}) {
       throw new Error(`${name} runtime is not configured in TSPi Agent Server`);
     }
     const root = boundWorkspaceRoot(params, toolContext);
+    if (name === "job_start") params = resolvePreparedJob(params, root);
     const result = await runtime[method]({ ...params, root, request_id: params.requestId || `${toolContext?.operation_id || "turn"}:${_id}`, principal: toolContext?.principal, session_id: toolContext?.session_id || toolContext?.sessionId });
     return toolResult(result);
   };

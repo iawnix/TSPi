@@ -67,7 +67,9 @@ Harness 不应在同一 turn 强行执行它。Harness 不得替 Agent 发明方
 分开提交。策略或输入证据等真实前置条件失败仍需修复。
 
 按 [运行边界](references/runtime_boundaries.zh-CN.md) 处理局部用户等待。可独立执行的方法/
-环境组合使用独立 Node，邮件使用依赖结果的交付 Node。按系统列出的精确路径读取 email
+环境组合优先使用独立 Node，邮件使用依赖结果的交付 Node。按系统列出的精确路径读取 email
 Skill，路径读取失败不代表邮件能力或收件人不存在。
 
 - [Public contract / 公开契约](references/public_contract.zh-CN.md): generated tool names and dispositions.
+
+`continue_required` 会由 State 持久化接续请求，Host 在当前轮结束后通过 Pi 提交。检查返回的 continuation 决定：同一研究 revision 只接续一次，连续推进最多自动接续八次。被拒绝时说明原因，不承诺自动续跑。Node 是研究范围；同 Node 的独立任务必须保留 helper 生成的不同 workId，已提交工作先 collect/reconcile。

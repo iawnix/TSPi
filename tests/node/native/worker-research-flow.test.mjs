@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile, rm, readdir, symlink } from "node:fs/promises";
@@ -35,6 +36,10 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
       PYTHONDONTWRITEBYTECODE: "1", TS_NOTIFICATION_CONFIG: config });
     delete process.env.TS_JOB_CONFIG;
     await execute(python, [join(packageRoot, "apps/agent-cli/workspace_mode.py"), "--root", workspace, "--workspace-id", "flow"]);
+    const preparedPath = join(workspace, "prepared.json");
+    const prepared = JSON.stringify({requestId:"fixture_run", workId:"fixture_work", metadata:{skill:"fixture", configuration_sha256:"fixture"},
+      command:[python,"-c","from pathlib import Path;Path('result.txt').write_text('fixture evidence')"],outputs:[{path:"result.txt",required:true,minBytes:1}]});
+    await writeFile(preparedPath, prepared);
     const call = (name, args) => ({ name, arguments: args });
     const steps = [
       ...["extensions/core/skills/research-state/SKILL.md", "extensions/core/skills/orchestration/SKILL.md",
@@ -52,7 +57,11 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
         id: "strategy_flow", claim_id: "claim_flow", node_id: "node_flow", objective: "Produce a file",
         rationale: "Exercise the real execution chain", status: "active",
       } }),
-      call("job_start", { nodeId: "node_flow", requestId: "fixture_run", command: [python, "-c", "from pathlib import Path;Path('result.txt').write_text('fixture evidence')"], outputs: [{ path: "result.txt", required: true, minBytes: 1 }] }),
+      call("research_checkpoint", {checkpoint:{id:"checkpoint_continue",disposition:"continue_required",node_ids:["node_flow"],claim_ids:["claim_flow"]}}),
+      "Preparation complete; continue the authorized plan.",
+      call("job_start", {nodeId:"node_flow",requestFile:preparedPath,requestSha256:createHash("sha256").update(prepared).digest("hex")}),
+      call("research_checkpoint", {checkpoint:{id:"checkpoint_job_wait",disposition:"waiting_external",node_ids:["node_flow"],unresolved_refs:["attempt_"+createHash("sha256").update("job_fixture_run").digest("hex").slice(0,32)]}}),
+      "Waiting for the fixture Job.",
       call("job_status", { jobId: "job_fixture_run" }),
       call("job_collect", { jobId: "job_fixture_run" }),
       // First end without a disposition: exactly one repair is expected.
@@ -94,20 +103,45 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     const { createTspiHarnessBackend } = await import(pathToFileURL(join(packageRoot, "apps/app-server/tspi-harness-backend.mjs")));
     const packageAlias = join(root, "current-package");
     await symlink(packageRoot, packageAlias, "dir");
-    backend = await createTspiHarnessBackend({ sourceRoot, packageRoot: packageAlias, workspaceRoot,
+    const backendOptions = { sourceRoot, packageRoot: packageAlias, workspaceRoot,
       serverDirectory: join(root, "pi"), sessionDir: join(root, "sessions"), stateRoot: join(root, "state"),
-      provider: "fixture", model: "fixture" });
+      provider: "fixture", model: "fixture" };
+    backend = await createTspiHarnessBackend(backendOptions);
     const created = await backend.createSession({ workspace_id: "flow", provider: "fixture", model: "fixture" });
     const session_id = created.session.session_id;
     await backend.sendInput({ workspace_id: "flow", session_id, request_id: "fixture_request", client_message_id: "fixture_message",
       text: "Exercise the local fixture without sending mail.", mode: "auto" });
-    let read;
+    const {deliverMonitorEvent, recordMonitorTurn} = await import(pathToFileURL(join(packageRoot,"apps/app-server/pi-monitor-worker.mjs")));
+    const runJson = async (command, root, extra=[]) => JSON.parse((await execute(python,[join(packageRoot,"apps/agent-cli/monitor.py"),command,"--root",root,...extra])).stdout);
+    let read, restarted=false, monitorDelivered=false;
     for (let i = 0; i < 250; i++) {
       read = await backend.readSession("flow", session_id);
-      if (requests.length && !read.session.is_streaming) break;
+      if (!read.session.is_streaming && existsSync(join(workspace,"lifecycle/liveness.json"))) {
+        const live=JSON.parse(await readFile(join(workspace,"lifecycle/liveness.json")));
+        if (live.checkpoint_id === "checkpoint_continue" && !restarted) {
+          await backend.close();
+          backend = await createTspiHarnessBackend(backendOptions);
+          restarted=true;
+        }
+        if (live.checkpoint_id === "checkpoint_job_wait" && !monitorDelivered) {
+          await runJson("tick",workspace);
+          const pending=await runJson("pending",workspace);
+          if (pending.deliveries.length) {
+            const delivery=pending.deliveries[0];
+            const errors=await deliverMonitorEvent({workspace,delivery,runJson,recordTurn:recordMonitorTurn,sendWake:params=>backend.sendInput(params)});
+            assert.deepEqual(errors,[]);
+            // Replaying the same outbox cannot enqueue a second turn.
+            assert.deepEqual(await deliverMonitorEvent({workspace,delivery,runJson,recordTurn:recordMonitorTurn,sendWake:params=>backend.sendInput(params)}),[]);
+            monitorDelivered=true;
+          }
+        }
+      }
+      if (requests.length >= steps.length && !read.session.is_streaming) break;
       await new Promise(done => setTimeout(done, 100));
     }
     assert.equal(read.session.is_streaming, false);
+    assert.ok(restarted);
+    assert.ok(monitorDelivered);
     assert.equal(requests.length, steps.length, JSON.stringify(read.snapshot.failure));
     const toolResults = requests.at(-1).messages.filter(message => message.role === "tool");
     assert.equal(toolResults.length, steps.filter(step => typeof step !== "string").length);
@@ -115,6 +149,8 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     const context = JSON.parse(await readFile(join(workspace, "research_map/context.json")));
     assert.equal(context.attempts.length, 1);
     assert.equal(context.attempts[0].state, "succeeded");
+    assert.equal(context.attempts[0].metadata.job_metadata.work_id, "fixture_work");
+    assert.equal(context.attempts[0].metadata.job_metadata.configuration_sha256, "fixture");
     assert.ok(context.artifacts.length > 0);
     const email = JSON.parse(await readFile(join(workspace, "reports/email-check.json")));
     assert.equal(email.recipient, "reader@example.test");
@@ -124,6 +160,12 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     assert.equal(liveness.disposition, "user_input_required");
     const continuations = requests.at(-1).messages.filter(message => message.role === "user" && JSON.stringify(message.content).includes("Research turn ended"));
     assert.equal(continuations.length, 1);
+    const autonomous = requests.at(-1).messages.filter(message => message.role === "user" && JSON.stringify(message.content).includes("Research State requests continuation"));
+    assert.equal(autonomous.length, 1);
+    const receipts = await readdir(join(root,"state","requests"));
+    const records = await Promise.all(receipts.filter(file=>file.endsWith(".json")).map(file=>readFile(join(root,"state","requests",file),"utf8").then(JSON.parse)));
+    const continuation = records.find(row=>row.source === "state_continuation");
+    assert.ok(continuation.entry_id, "real Pi must durably admit the continuation");
   } catch (error) {
     for (const file of await readdir(root, { recursive: true })) {
       if (file.endsWith(".log")) console.error(file, await readFile(join(root, file), "utf8"));

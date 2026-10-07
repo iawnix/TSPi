@@ -1,3 +1,4 @@
+import { resolvePreparedJob } from "./prepared-job.mjs";
 import { dirname, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
@@ -205,7 +206,7 @@ async function createTspiHarness(databasePath, options) {
           if (packagePolicy?.block) return { block: packagePolicy.block.reason || String(packagePolicy.block) };
           try {
             const metadata = [...loadedExtensions.tools, ...installed.tools].find(tool => tool.name === call.name)?.metadata;
-            const liveness = await researchKernel.read_liveness({ tool: { name: call.name, args: call.arguments, effect: metadata?.effect || "read", phase: metadata?.phase || "orient" } });
+            const liveness = await researchKernel.read_liveness({ tool: { name: call.name, args: call.name === "job_start" ? resolvePreparedJob(call.arguments, cwd) : call.arguments, effect: metadata?.effect || "read", phase: metadata?.phase || "orient" } });
             if (typeof liveness?.tool_admission?.accepted !== "boolean") throw new Error("Research State returned no authoritative tool admission");
             lifecycle.setDurableLiveness(liveness);
           } catch (error) {

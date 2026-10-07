@@ -55,3 +55,20 @@ Use [scripts/prepare_job.py](scripts/prepare_job.py) to generate the generic Job
 Preserve the prepared requestId when recovering the same submission. A lost tool response does not authorize a new ID; intentional recalculation uses a new request.
 
 Python dependencies are installation-owned Conda environments configured in job.toml. Run preparation helpers with "$TSPI_PYTHON"; target runners use the resolved Conda binding. Missing environments require installation maintenance, not ad-hoc pip installs during a research turn.
+
+
+Save helper output with `--output <workspace>/prepared/<cell>.json` (before `--`).
+The helper prints `requestFile` and `requestSha256`; pass these unchanged to
+`job_start`, adding only `nodeId` and optional `timeoutSeconds`. Do not copy
+individual command/input fields. Inspect the file if needed; changing it requires
+recomputing its digest. Repeated preparation of identical inputs/configuration
+preserves workId/requestId. Use `--work-id` only for intentional new work.
+
+Remote preparation requires an explicit `submission.queue` in the environment
+or backend's job.toml table. `submission.resources` supplies CPU/memory/walltime;
+backend fields override environment defaults. An allowlist does not choose a
+queue. Missing queue configuration needs installation maintenance. Inspect
+job_status diagnostics when a queue-wait event arrives; no exit receipt while
+queued/running is normal. Do not resubmit or change queues without reconciling
+the original Job. An optional `submission.queue_wait_seconds` causes one Monitor
+notification when that waiting threshold is exceeded.

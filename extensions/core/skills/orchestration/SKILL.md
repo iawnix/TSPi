@@ -44,8 +44,7 @@ A completed Attempt or lifecycle action alone is not a research conclusion.
 If liveness returns `decision_needed` with no explicit disposition, record the missing strategy or checkpoint. A successful `user_input_required` checkpoint ends the turn; do not repeat it or attempt blocked writes. When liveness also reports `execution_ready=true`, an
 active StrategyPlan already covers the focused scope and the planned
 prepare/execute work may proceed before that checkpoint; the checkpoint is
-still required before ending the turn. A `continue_required` plan is a valid
-next-turn plan; the Harness must not force it to execute in the same turn. Do
+still required before ending the turn. A `continue_required` checkpoint asks State to persist a continuation for the owning session; Host submits it through Pi after the current turn. Inspect the returned continuation decision: unchanged research revisions reuse one wake identity, and eight successive advancing checkpoints exhaust the automatic budget. Report a denied continuation rather than promise another automatic turn. Do
 not invent a method in the Harness or treat Monitor's `next_run` as a
 scientific instruction.
 
@@ -82,8 +81,7 @@ Keep optional diagnostics separate from required Node updates in ChangeSets.
 Required strategy/input evidence failures must still be repaired before execution.
 
 Read [runtime boundaries](references/runtime_boundaries.md) for scoped user waits.
-Use one Node per independently executable method/environment cell and a separate
-dependent delivery Node. Read the exact listed email Skill location; a failed
+Prefer one Node per independently executable method/environment cell and a separate dependent delivery Node. A Node is research scope, not a process lock. If independent Jobs share a Node, preserve distinct helper-generated workId values; a running Attempt without a new work identity requires reconciliation, not another submission. Read the exact listed email Skill location; a failed
 path lookup is not evidence that email or a recipient is unavailable.
 
 - [Public contract / 公开契约](references/public_contract.md): generated tool names and dispositions.

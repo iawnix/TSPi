@@ -82,3 +82,4 @@ class JobStatus:
     finished_at: str | None = None
     error: str | None = None
     outputs: tuple[JobOutput, ...] = ()
+    diagnostics: Mapping[str, object] = field(default_factory=dict)

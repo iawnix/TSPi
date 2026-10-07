@@ -35,4 +35,4 @@ terminal
 user_input_required
 ```
 
-Research State 计算 ready_node_ids、blocked_node_ids、running_attempt_ids 与 needs_checkpoint。Host 使用 State 的 tool_admission，Monitor 使用 State 的 wake 准入；Skill 不另行维护这些规则。
+Research State 计算 eligible_node_ids、ready_node_ids、blocked_node_ids、running_attempt_ids、needs_checkpoint 与持久接续准入。Host 使用 State 的 tool_admission，Monitor 使用 State 的 wake 准入；Skill 不另行维护这些规则。

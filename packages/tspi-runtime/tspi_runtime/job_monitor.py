@@ -55,6 +55,7 @@ def _command(root,base,action,args):
             row=read(p)
             if row.get('schema_version')!='ts-job-monitor/1' or not row.get('enabled'):continue
             try:
+                receipt = None
                 try:
                     receipt=_receipt(root,{'jobId':row['job_id']})
                     status=_runtime(root).job_status(receipt)
@@ -62,17 +63,22 @@ def _command(root,base,action,args):
                     status=SimpleNamespace(state=JobState.UNKNOWN,exit_code=None,error='dispatch intent has no receipt; reconcile required')
                 state=status.state.value
                 observed.append({'monitor_id':row['monitor_id'],'state':state})
-                if state==row.get('last_state'):continue
+                diagnostics = getattr(status, 'diagnostics', {})
+                threshold = receipt.metadata.get('queue_wait_seconds') if receipt is not None else None
+                queue_wait = (state in {'queued','held'} and threshold and
+                              (diagnostics.get('wait_seconds') or 0) >= threshold and not row.get('queue_wait_reported'))
+                if state==row.get('last_state') and not queue_wait:continue
+                if queue_wait: row['queue_wait_reported'] = True
                 previous=row.get('last_state');row['last_state']=state
                 # Queue/running transitions are retained without waking the Agent.
-                if state not in {'succeeded','failed','timed_out','cancelled','unknown'}:
+                if state not in {'succeeded','failed','timed_out','cancelled','unknown'} and not queue_wait:
                     write(p,row);continue
                 row['sequence']+=1
                 eid='event_'+hashlib.sha256(f"{row['monitor_id']}:{row['sequence']}:{state}".encode()).hexdigest()[:32]
                 event={**row,'schema_version':'ts-job-monitor-event/1','event_id':eid,'state':state,
                     'previous_state':previous,'status_digest':digest({'state':state,'exit_code':status.exit_code}),
                     'program_status':None,'exit_status':status.exit_code,'error_class':None,
-                    'error':status.error,'observed_at':now(),'status':{'state':state,'exit_code':status.exit_code}}
+                    'error':status.error,'observed_at':now(),'status':{'state':state,'exit_code':status.exit_code,'diagnostics':diagnostics, 'reason':'queue_wait_exceeded' if queue_wait else 'state_changed'}}
                 write(p.parent/'events'/f'{eid}.json',event)
                 write(p.parent/'deliveries'/f'{eid}.json',{'event_id':eid,'session_id':row['session_id'],
                     'request_id':'job-wake:'+eid,'delivered':False})

@@ -435,17 +435,22 @@ def _liveness_projection(context, liveness, checkpoint=None):
     running_nodes = {a.get("node_id") for a in running}
     plans = [p for p in _items(context, "strategy_plans") if p.get("status", "proposed") in {"proposed", "active"}]
     ready = [n["id"] for n in nodes.values()
-        if n.get("state") in {"planned", "active"} and n["id"] not in running_nodes
+        if n.get("state") in {"planned", "active"}
         and all(nodes.get(d, {}).get("state") == "closed" and nodes[d].get("outcome") == "completed" for d in n.get("dependency_ids", []))
         and any(p.get("node_id") == n["id"] or p.get("claim_id") in n.get("claim_ids", []) for p in plans)]
+    result["eligible_node_ids"] = ready
+    ready = [node for node in ready if node not in running_nodes]
     result["ready_node_ids"] = ready
     result["blocked_node_ids"] = [n["id"] for n in nodes.values() if n.get("state") == "blocked"]
     result["running_attempt_ids"] = [a["id"] for a in running]
     if result.get("lifecycle") in {"user_input_required", "blocked", "terminal", ADMISSION_PENDING}:
         result["ready_node_ids"] = []
+        result["eligible_node_ids"] = []
         result["execution_ready"] = False
     elif nodes:
         result["execution_ready"] = bool(ready)
+    if result.get("disposition") != "continue_required":
+        result["continuation"] = None
     result["needs_checkpoint"] = result.get("lifecycle") == "decision_needed" and not result.get("disposition")
     return result
 
@@ -1761,6 +1766,27 @@ def checkpoint(root: str | Path, request: dict[str, Any] | None = None) -> dict[
         })
         _validate_checkpoint_lifecycle(context, value)
         projected_liveness = _liveness_projection(context, {**liveness, "checkpoint_id": checkpoint_id}, value)
+        # State owns the continuation decision; Host consumes the durable outbox
+        # record. Checkpoint IDs alone are not progress and cannot create new wakes.
+        session_id = source.get("session_id")
+        budget = liveness.get("continuation_budget", {"count": 0, "revision": None})
+        if budget.get("session_id") not in {None, session_id}:
+            budget = {"count": 0, "revision": None}
+        if value.get("disposition") == "continue_required" and session_id:
+            count = budget.get("count", 0) + (budget.get("revision") != context["revision"])
+            no_progress = (budget.get("revision") == context["revision"] and source.get("turn_id")
+                           and budget.get("turn_id") and source["turn_id"] != budget["turn_id"])
+            projected_liveness["continuation_budget"] = {"count": count, "revision": context["revision"], "turn_id": source.get("turn_id"), "session_id": session_id}
+            token = hashlib.sha256(f"{workspace_id}:{session_id}:{context['revision']}".encode()).hexdigest()
+            projected_liveness["continuation"] = {
+                "request_id": "state-continue:" + token,
+                "session_id": session_id, "revision": context["revision"],
+                "admitted": count <= 8 and not bool(no_progress),
+                "reason": "no_research_progress" if no_progress else "ready_to_continue" if count <= 8 else "continuation_budget_exhausted",
+            }
+        else:
+            projected_liveness["continuation"] = None
+            projected_liveness["continuation_budget"] = {"count": 0, "revision": None}
         path = Path(root).expanduser().resolve() / "checkpoints" / f"{checkpoint_id}.json"
         checkpoint_existed, checkpoint_before = _optional_json(path)
         if path.exists():

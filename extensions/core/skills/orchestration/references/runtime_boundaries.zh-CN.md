@@ -23,3 +23,10 @@ blocked/closed 且没有独立可执行或运行中的工作，才能用全局 u
 
 公开工具 schema 是接口协议。[public_contract.md](public_contract.zh-CN.md) 从公共契约生成工具名和
 disposition；Skill 解释用法，不定义第二套调度器或 capability 注册表。
+
+
+只有带所属 session 的 continue_required checkpoint 才会由 State 在 liveness 中持久化
+continuation 请求。Host 使用已有输入回执消费它，不推导科学流程。相同 revision 不产生
+新唤醒，连续接续预算由 State 管理。Monitor 只负责 Job 变化和配置的排队阈值事件。
+eligible_node_ids 表示依赖与策略允许执行；ready_node_ids 排除已有运行 Attempt 的范围。
+同一合格范围下的新独立 workId 可以提交，但不能据此猜测还有未规划的工作。

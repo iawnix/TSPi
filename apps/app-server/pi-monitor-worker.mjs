@@ -82,7 +82,7 @@ export async function monitorHostWorkspaceId(workspace, event) {
 
 export function wakeMessage(event) {
   return ["A compute monitor event requires attention.", `event_id=${event.event_id}`, `monitor_id=${event.monitor_id}`,
-    `node_id=${event.node_id}`, `intent_id=${event.intent_id}`, `state=${event.state}`,
+    `node_id=${event.node_id}`, `intent_id=${event.intent_id}`, `state=${event.state}`, event.status?.reason ? `reason=${event.status.reason}` : undefined,
     `program_status=${event.program_status || "unknown"}`, event.error_class ? `error_class=${event.error_class}` : undefined,
     "Read research_read and the execution Attempt before deciding what to do.",
     "Use job_status, job_collect, or job_reconcile to reconcile status. A completed scheduler job is not a parsed result; register its raw outputs as Artifacts and check evidence before changing Research State.",

@@ -35,4 +35,4 @@ terminal
 user_input_required
 ```
 
-Research State computes ready_node_ids, blocked_node_ids, running_attempt_ids and needs_checkpoint. Host consumes State tool_admission; Monitor consumes State wake admission. Skills do not maintain copies of those rules.
+Research State computes eligible_node_ids, ready_node_ids, blocked_node_ids, running_attempt_ids, needs_checkpoint and durable continuation admission. Host consumes State tool_admission; Monitor consumes State wake admission. Skills do not maintain copies of those rules.

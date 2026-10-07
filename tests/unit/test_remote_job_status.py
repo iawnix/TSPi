@@ -66,3 +66,28 @@ def test_scheduler_exit_recovers_job_that_could_not_write_receipt(tmp_path, monk
     recovered = platform()
     monkeypatch.setattr(recovered, '_run_ssh', lambda *a, **k: pytest.fail('must reuse receipt'))
     assert recovered.status(receipt(tmp_path)).exit_code == code
+
+
+def test_queue_diagnosis_preserves_normal_wait_and_explains_resources(tmp_path, monkeypatch):
+    remote = TorqueSSHPlatform({'ssh_host':'fixture','remote_root':'/scratch','commands':{'checkjob':'checkjob'}})
+    def run(command, **kwargs):
+        if 'status.exit' in command: return subprocess.CompletedProcess([],1,'','')
+        if command.startswith('checkjob'): return subprocess.CompletedProcess([],0,'idle procs: 224 feasible procs: 0\nRejection Reasons: Features','')
+        return subprocess.CompletedProcess([],0,'Job Id: 123.cluster\n job_state = Q\n queue = batch\n','')
+    monkeypatch.setattr(remote,'_run_ssh',run)
+    status = remote.status(receipt(tmp_path))
+    assert status.state == JobState.QUEUED and status.error is None
+    assert status.diagnostics['queue'] == 'batch'
+    assert 'feasible procs: 0' in status.diagnostics['queue_diagnosis']
+
+
+def test_optional_diagnostic_timeout_does_not_erase_queue_state(tmp_path, monkeypatch):
+    remote = TorqueSSHPlatform({'ssh_host':'fixture','remote_root':'/scratch','commands':{'checkjob':'checkjob'}})
+    def run(command, **kwargs):
+        if 'status.exit' in command:return subprocess.CompletedProcess([],1,'','')
+        if command.startswith('checkjob'):raise subprocess.TimeoutExpired(command,1)
+        return subprocess.CompletedProcess([],0,'job_state = Q\nqueue = test\n','')
+    monkeypatch.setattr(remote,'_run_ssh',run)
+    status=remote.status(receipt(tmp_path))
+    assert status.state==JobState.QUEUED and status.error is None
+    assert 'diagnosis_error' in status.diagnostics

@@ -49,3 +49,11 @@ test("preserves provider failure fields when the result is already terminal", ()
     operationId: "run-2",
   });
 });
+
+test("only known pre-admission errors are classified as definitely not submitted", async () => {
+  const {isExplicitAdmissionFailure} = await import('../../../apps/app-server/tspi-harness-backend.mjs');
+  assert.equal(isExplicitAdmissionFailure({code:'service_member_not_found'}),true);
+  assert.equal(isExplicitAdmissionFailure({code:'unsupported_action'}),true);
+  assert.equal(isExplicitAdmissionFailure({code:'connection_closed'}),false);
+  assert.equal(isExplicitAdmissionFailure({code:'service_invalid_value'}),false);
+});

@@ -55,6 +55,9 @@
                 "activation_script": {
                   "type": "string",
                   "pattern": "^/"
+                },
+                "submission": {
+                  "$ref": "#/$defs/submission"
                 }
               },
               "anyOf": [
@@ -70,6 +73,9 @@
                 }
               ]
             }
+          },
+          "submission": {
+            "$ref": "#/$defs/submission"
           }
         }
       },
@@ -104,6 +110,40 @@
           "type": "string",
           "minLength": 1,
           "pattern": "^/"
+        }
+      }
+    },
+    "submission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "queue": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.@-]+$"
+        },
+        "queue_wait_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "cpus": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "memory_mb": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "walltime": {
+              "type": "string",
+              "pattern": "^[0-9]+:[0-5][0-9]:[0-5][0-9]$"
+            },
+            "select": {
+              "type": "string"
+            }
+          }
         }
       }
     }

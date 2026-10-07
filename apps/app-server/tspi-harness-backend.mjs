@@ -1,3 +1,4 @@
+import { createStateContinuationDriver, readStateContinuation } from "./state-continuation.mjs";
 import { lstat, realpath } from "node:fs/promises";
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -416,7 +417,7 @@ export async function createTspiHarnessBackend(options = {}) {
         } else {
           // An idle lane without a durable result is an unknown commit/outcome,
           // never proof of completion.
-          void persistReceipt({ ...receipt, state: "uncertain", accepted: false, error: { code: "operation_result_missing", message: "Pi became idle without a durable operation result" } }).catch(() => {});
+          void persistReceipt({ ...receipt, state: "uncertain", accepted: false, error: receipt.error || { code: "operation_result_missing", message: "Pi became idle without a durable operation result" } }).catch(() => {});
         }
       }
     }
@@ -539,6 +540,13 @@ export async function createTspiHarnessBackend(options = {}) {
     const busy = raw.operation !== null && raw.operation !== undefined;
     // Monitor wakes arrive as the canonical durable queue mode. Ordinary
     // phone input may still use `auto` for prompt-versus-queue admission.
+    if (payload.source === "state_continuation") {
+      const state = await readStateContinuation(binding.root);
+      const next = state?.continuation;
+      if (next?.admitted !== true || next.request_id !== payload.client_message_id || next.session_id !== payload.session_id || busy || hasQueuedMessages(raw)) {
+        throw error("continuation_superseded", "State continuation was superseded before admission");
+      }
+    }
     const requested = payload.mode;
     if (requested === "steer" || requested === "follow_up" || requested === "next_run" || (requested === "auto" && busy)) {
       const mode = requested === "steer" ? "steer" : requested === "next_run" ? "next_run" : "follow_up";
@@ -799,6 +807,7 @@ export async function createTspiHarnessBackend(options = {}) {
             accepted: false,
             retryable: explicitFailure && isRetryableAdmissionFailure(cause),
             error: { code: cause?.code || "dispatch_unknown", message: cause?.message || String(cause) },
+            dispatch_error: { code: cause?.code || "dispatch_unknown", message: cause?.message || String(cause) },
           });
         } finally {
           activeDispatches.delete(dispatchKey);
@@ -812,6 +821,7 @@ export async function createTspiHarnessBackend(options = {}) {
           ...dispatching,
           state,
           accepted: response.accepted === true,
+          reconciled: response.accepted === true,
           operation_id: response.operation_id || null,
           entry_id: response.entry_id || null,
           operation_hint: payload.operation_hint,
@@ -853,6 +863,7 @@ export async function createTspiHarnessBackend(options = {}) {
     async close() {
       if (closed) return;
       closed = true;
+      clearInterval(continuationTimer);
       await Promise.allSettled([...bindingPromises.values()]);
       const current = [...bindings.values()];
       for (const binding of current) await closeBinding(binding);
@@ -860,6 +871,16 @@ export async function createTspiHarnessBackend(options = {}) {
       await piRuntime.close().catch(() => {});
     },
   };
+  const driveContinuation = createStateContinuationDriver({ readState: readStateContinuation,
+    sendInput: params => backend.sendInput(params) });
+  const continuationTimer = setInterval(() => {
+    for (const binding of bindings.values()) {
+      void driveContinuation(binding).catch(cause => {
+        binding.continuationError = cause?.message || String(cause);
+      });
+    }
+  }, 2000);
+  continuationTimer.unref();
   // Recover durable active/queued lanes after a Host or Pi coordinator restart
   // even when no presentation client reconnects.
   void recoverDurableSessions();
@@ -1143,6 +1164,9 @@ function readWorkspaceManifestSync(root) {
 }
 
 const EXPLICIT_ADMISSION_FAILURES = new Set([
+  "continuation_superseded",
+  "service_member_not_found",
+  "unsupported_action",
   "scheduler_busy",
   "scheduler_lock_busy",
   "admission_unavailable",

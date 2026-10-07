@@ -48,3 +48,15 @@ Gaussian 方法和基组写入 `.gjf` 的 Route Section，例如
 选择方法或准备已指定方法的执行时都使用本 Skill。从列出的路径读取具体方法 Skill。读取安装配置、检查方法可用性属于 Agent 的工作，尚未验证不应自动变成用户输入门槛。
 
 Python 依赖由安装阶段创建的 Conda 环境隔离，并通过 job.toml 的结构化 python 绑定选择：backend.python 优先，否则继承 environment.python。用 "$TSPI_PYTHON" 执行本地准备 helper；远程 runner 使用配置的 Conda prefix，不猜 python3、不用 --python 覆盖。CF22D 使用 backends.pyscf.python，不再同时指定 Python command。缺失环境交由安装维护处理，不在研究回合临时 pip install。
+
+
+在 `--` 前传 `--output <workspace>/prepared/<cell>.json` 保存完整请求。脚本输出
+requestFile/requestSha256，直接交给 job_start，只补 nodeId 和可选 timeoutSeconds；
+不要手抄 command/inputs。相同输入与配置保留 workId/requestId，主动重新计算才用
+--work-id 指定新身份。修改请求文件后必须重新核对并计算摘要。
+
+远程 job.toml 的 environment 或 backend 必须明确配置 submission.queue；
+submission.resources 保存 CPU、内存、walltime，backend 覆盖环境默认值。
+allowed_queues 不负责选择队列。缺配置交由安装维护，不猜队列。可用
+submission.queue_wait_seconds 设置一次性排队超时诊断事件；收到后查看
+job_status.diagnostics。Q/R 尚无退出回执是正常现象；重投或改队列前先对账原 Job。
