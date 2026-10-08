@@ -304,13 +304,8 @@ export function createPublicToolContracts(Type) {
     event_ids: Type.Optional(stringArray(8)),
     subject_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
     limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2048 })),
-    // Canonical Research State filesystem boundary storage is a read-only projection. The
-    // retired SQLite bootstrap operation is intentionally not part of the
-    // Agent-facing contract.
-    storage_operation: Type.Optional(Type.Literal("status")),
     kind: Type.Optional(enumString(["phase", "claim", "node", "finding", "gate", "attempt", "artifact", "lifecycle_action", "interpretation", "strategy"])),
     id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-    node_ref: Type.Optional(nodeReference),
   };
   const stateReadSchema = Type.Object({
     ...stateFields,
@@ -508,7 +503,8 @@ const DECISION_ALIAS_SCHEMAS = Object.freeze({
     attempt_ref: identifierSchema(), summary: textSchema(),
     outcome: { enum: ["supports", "contradicts", "inconclusive", "invalid"] },
     kind: { enum: ["result", "observation", "execution_issue"] },
-    direct_evidence_refs: refs, comparison_evidence_refs: refs, background_evidence_refs: refs,
+    direct_evidence_refs: { ...refs, description: "Registered Artifact IDs produced by this Attempt, returned by job_collect or research_read mode=evidence. Attempt IDs and Job IDs are not Artifact IDs." },
+    comparison_evidence_refs: refs, background_evidence_refs: refs,
     result_receipt_ref: identifierSchema(), execution_observation_ref: identifierSchema(),
     supersedes_id: identifierSchema(), finding_ids: refs, gate_ids: refs,
   }, ["id", "claim_id", "attempt_ref", "summary", "outcome", "kind"]) }, ["interpretation"]),

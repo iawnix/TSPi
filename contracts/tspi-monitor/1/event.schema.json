@@ -1,34 +1,152 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tspi.iawnix.xyz/contracts/tspi-monitor/1/event.schema.json",
-  "title": "TSPi Compute Monitor Event",
+  "title": "TSPi Job Monitor Event",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "event_id", "sequence", "status_digest", "monitor_id", "workspace_id", "node_id", "intent_id", "intent_digest", "session_id", "wake_policy", "notify_policy", "previous_state", "state", "program_status", "job_id", "exit_status", "error_class", "error", "observed_at", "status"],
-  "allOf": [
-    {"if": {"properties": {"wake_policy": {"const": "next_run"}}}, "then": {"properties": {"session_id": {"type": "string", "minLength": 1}}}}
+  "required": [
+    "schema_version",
+    "monitor_id",
+    "workspace_id",
+    "node_id",
+    "job_id",
+    "attempt_id",
+    "job_digest",
+    "session_id",
+    "wake_policy",
+    "notify_policy",
+    "enabled",
+    "created_at",
+    "sequence",
+    "last_state",
+    "event_id",
+    "state",
+    "previous_state",
+    "status_digest",
+    "program_status",
+    "exit_status",
+    "error_class",
+    "error",
+    "observed_at",
+    "status"
   ],
   "properties": {
-    "schema_version": {"const": "ts-compute-monitor-event/1"},
-    "event_id": {"type": "string", "pattern": "^evt_[a-f0-9]{32}$"},
-    "sequence": {"type": "integer", "minimum": 1},
-    "status_digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
-    "monitor_id": {"type": "string", "pattern": "^mon_[a-f0-9]{24}$"},
-    "workspace_id": {"type": "string", "minLength": 1},
-    "node_id": {"type": "string", "minLength": 1},
-    "intent_id": {"type": "string", "pattern": "^calc_[1-9][0-9]*$"},
-    "intent_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "session_id": {"type": ["string", "null"], "minLength": 1},
-    "wake_policy": {"enum": ["none", "next_run"]},
-    "notify_policy": {"enum": ["none", "configured"]},
-    "previous_state": {"type": ["string", "null"]},
-    "state": {"enum": ["prepared", "submitted", "queued", "running", "completed", "parsed", "failed", "stopped", "unknown"]},
-    "program_status": {"type": ["string", "null"]},
-    "job_id": {"type": ["string", "null"]},
-    "exit_status": {"type": ["integer", "null"]},
-    "error_class": {"type": ["string", "null"]},
-    "error": {"type": ["string", "null"]},
-    "observed_at": {"type": "string", "minLength": 1},
-    "status": {"type": "object"}
+    "schema_version": {
+      "const": "ts-job-monitor-event/1"
+    },
+    "monitor_id": {
+      "type": "string",
+      "pattern": "^monitor_[a-f0-9]{24}$"
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "node_id": {
+      "type": "string",
+      "pattern": "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+    },
+    "job_id": {
+      "type": "string",
+      "pattern": "^job_[A-Za-z0-9_.:-]+$"
+    },
+    "attempt_id": {
+      "type": "string",
+      "pattern": "^attempt_[A-Za-z0-9_.:-]+$"
+    },
+    "job_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "wake_policy": {
+      "enum": [
+        "none",
+        "next_run"
+      ]
+    },
+    "notify_policy": {
+      "const": "none"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "last_state": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "queue_wait_reported": {
+      "type": "boolean"
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^event_[a-f0-9]{32}$"
+    },
+    "state": {
+      "enum": [
+        "queued",
+        "held",
+        "running",
+        "succeeded",
+        "failed",
+        "timed_out",
+        "cancelled",
+        "unknown"
+      ]
+    },
+    "previous_state": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "program_status": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "exit_status": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "error_class": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "observed_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "object"
+    }
   }
 }

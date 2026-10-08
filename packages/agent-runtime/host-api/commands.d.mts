@@ -13,7 +13,9 @@ export type CommandId =
   | "research.checkpoint"
   | "research.decisions"
   | "research.storage"
-  | "research.change";
+  | "research.change" | "research.evidence"
+  | "job.start" | "job.status" | "job.collect" | "job.cancel" | "job.probe" | "job.reconcile"
+  | "artifact.register" | "artifact.create" | "artifact.read" | "artifact.derive" | "artifact.link";
 
 export interface CommandInvocation {
   readonly command: CommandId;
@@ -27,9 +29,10 @@ export interface CommandTransportInvocation extends CommandInvocation {
 
 export const COMMAND_DEFINITIONS: Readonly<Record<CommandId, {
   readonly id: CommandId;
-  readonly domain: "research" | "compute";
-  readonly effect: "read" | "write";
+  readonly domain: "research" | "runtime";
+  readonly effect?: "read" | "write";
   readonly required: readonly string[];
+  readonly allowed: readonly string[];
 }>>;
 export const COMMAND_IDS: readonly CommandId[];
 export const SLASH_COMMAND_DEFINITIONS: Readonly<Record<string, {

@@ -11,8 +11,8 @@ if (catalog.schema_version !== "tspi-command-catalog/1" || !Array.isArray(catalo
 }
 
 export const COMMAND_DEFINITIONS = Object.freeze(Object.fromEntries(catalog.commands.map(
-  ({ id, domain, effect, required }) => [id, Object.freeze({
-    id, domain, effect, required: Object.freeze([...required]),
+  ({ id, domain, effect, required, allowed }) => [id, Object.freeze({
+    id, domain, effect, required: Object.freeze([...required]), allowed: Object.freeze([...allowed]),
   })],
 )));
 
@@ -48,6 +48,11 @@ export function validateCommandInvocation(command, params = {}) {
     throw new Error(`${command} parameters must be an object`);
   }
   const normalized = { ...params };
+  if (Object.keys(normalized).some((key) => /[A-Z]/.test(key))) {
+    throw new Error("schema_field_invalid: command fields use snake_case");
+  }
+  const unsupported = Object.keys(normalized).filter((key) => !definition.allowed.includes(key));
+  if (unsupported.length) throw new Error(`schema_field_invalid: ${command} unsupported fields: ${unsupported.sort().join(", ")}`);
   for (const key of definition.required) {
     if (normalized[key] === undefined || normalized[key] === null || normalized[key] === "") {
       throw new Error(`${command} requires ${key}`);
@@ -74,10 +79,12 @@ export function commandArguments(command, params = {}) {
     offset: "--offset", max_bytes: "--max-bytes",
     artifact_id: "--artifact-id",
     subject_id: "--subject-id",
-    scope: "--scope",
-    target_id: "--target-id",
     operation: "--operation",
   };
+  const unsupported = Object.keys(invocation.params).filter((key) => !(key in flags) && key !== "event_ids");
+  if (unsupported.length) {
+    throw new Error(`unsupported_command_arguments: ${unsupported.sort().join(", ")}`);
+  }
   for (const [key, flag] of Object.entries(flags)) {
     if (invocation.params[key] !== undefined) args.push(flag, String(invocation.params[key]));
   }

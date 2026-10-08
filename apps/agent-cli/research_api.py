@@ -28,9 +28,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--kind")
     parser.add_argument("--id")
     parser.add_argument("--name")
-    parser.add_argument("--capability-id")
-    parser.add_argument("--environment-id")
-    parser.add_argument("--execution-kind")
     parser.add_argument("--query")
     parser.add_argument("--claim-id")
     parser.add_argument("--record-type")
@@ -43,8 +40,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--node-id")
     parser.add_argument("--artifact-id")
     parser.add_argument("--subject-id")
-    parser.add_argument("--scope")
-    parser.add_argument("--target-id")
     parser.add_argument("--operation")
     parser.add_argument("--request-file")
     args = parser.parse_args(argv)
@@ -55,9 +50,6 @@ def main(argv: list[str] | None = None) -> int:
                 "kind": args.kind,
                 "id": args.id,
                 "name": args.name,
-                "capability_id": args.capability_id,
-                "environment_id": args.environment_id,
-                "execution_kind": args.execution_kind,
                 "query": args.query,
                 "claim_id": args.claim_id,
                 "record_type": args.record_type,
@@ -68,8 +60,6 @@ def main(argv: list[str] | None = None) -> int:
                 "node_id": args.node_id,
                 "artifact_id": args.artifact_id,
                 "subject_id": args.subject_id,
-                "scope": args.scope,
-                "target_id": args.target_id,
                 "operation": args.operation,
             }.items()
             if value is not None

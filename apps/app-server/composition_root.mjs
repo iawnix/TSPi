@@ -37,7 +37,7 @@ function create_dynamic_turn_router() {
 
 /**
  * Build the transport-neutral TSPi application around the Pi session port and
- * Native compute lifecycle. Pi is the only production Agent Runtime; tests may
+ * Research State kernel. Pi is the only production Agent Runtime; tests may
  * inject a deterministic session port without creating another runtime.
  */
 export function create_research_agent_composition({
@@ -51,7 +51,12 @@ export function create_research_agent_composition({
   session_root,
   turn_router,
   kernel_port,
+  ...unsupported
 } = {}) {
+  if (Object.keys(unsupported).length) {
+    throw Object.assign(new TypeError(`unsupported_composition_options: ${Object.keys(unsupported).sort().join(", ")}`),
+      { code: "unsupported_composition_options" });
+  }
   const runtime = require_port(pi_session_port, "pi_session_port");
 
   if (workspace_port !== undefined && workspace_factory !== undefined) {

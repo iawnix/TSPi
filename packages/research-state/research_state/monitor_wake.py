@@ -4,18 +4,28 @@ import re
 from pathlib import Path
 
 
+def validate_event(event):
+    if (event.get('schema_version') != 'ts-job-monitor-event/1'
+            or {'intent_id', 'intent_digest'} & set(event)
+            or any(not isinstance(event.get(key), str) or not event[key]
+                   for key in ('event_id', 'monitor_id', 'job_id', 'attempt_id'))):
+        raise ValueError('monitor_event_schema_invalid: current Job/Attempt event required')
+    return event
+
+
 def assess(root, context, liveness, event_id, session_id):
     if not isinstance(event_id, str) or not re.fullmatch(r'event_[A-Za-z0-9_-]+', event_id):
         raise ValueError('invalid monitor event identity')
     paths = list((Path(root) / 'operations/monitors').glob(f'*/events/{event_id}.json'))
     if len(paths) != 1:
         raise ValueError('unknown monitor event')
-    event = json.loads(paths[0].read_text())
+    event = validate_event(json.loads(paths[0].read_text()))
     if event.get('workspace_id') != context['workspace_id'] or event.get('session_id') != session_id:
         raise ValueError('monitor event belongs to another workspace or session')
     attempt = next((a for a in context.get('attempts', []) if a['id'] == event.get('attempt_id')), {})
     node = next((n for n in context.get('nodes', []) if n['id'] == event.get('node_id')), {})
-    interpreted = any(i.get('attempt_id') == attempt.get('id') for i in context.get('attempt_interpretations', []) if attempt)
+    interpreted = any(i.get('attempt_ref') == attempt.get('id') and i.get('review_state') == 'current'
+                      for i in context.get('attempt_interpretations', []) if attempt)
     observed = (attempt.get('metadata', {}).get('job_id') == event.get('job_id')
                 and attempt.get('state') == event.get('state')
                 and attempt.get('exit_code') == event.get('exit_status'))

@@ -10,7 +10,6 @@ import type { Component } from "@earendil-works/pi-tui";
 
 export type PublicToolKey =
   | "systemPrompt" | "state" | "change" | "lifecycle"
-  | "moleculeStructure" | "compare" | "analyze" | "notify"
   | "jobStart" | "jobStatus" | "jobCollect" | "jobCancel" | "jobProbe" | "jobReconcile"
   | "artifactRegister" | "artifactCreate" | "artifactRead" | "artifactDerive" | "artifactLink";
 
@@ -72,10 +71,6 @@ export interface PublicToolContracts {
   readonly state: ToolContract<StateToolParams>;
   readonly change: ToolContract<ChangeToolParams>;
   readonly lifecycle: ToolContract<LifecycleToolParams>;
-  readonly moleculeStructure: ToolContract<MoleculeStructureToolParams>;
-  readonly compare: ToolContract<CompareToolParams>;
-  readonly analyze: ToolContract<AnalyzeToolParams>;
-  readonly notify: ToolContract<NotifyToolParams>;
   readonly jobStart: ToolContract<JobStartToolParams>;
   readonly jobStatus: ToolContract<JobStatusToolParams>;
   readonly jobCollect: ToolContract<JobCollectToolParams>;
@@ -100,7 +95,6 @@ type StateReadFields = WorkspaceToolParams & {
   query?: string;
   kind?: "phase" | "claim" | "node" | "finding" | "gate" | "attempt" | "artifact" | "lifecycle_action" | "interpretation" | "strategy";
   id?: string;
-  node_ref?: string;
   claim_id?: string;
   record_type?: "attempt" | "artifact" | "link";
   node_id?: string;
@@ -112,7 +106,6 @@ type StateReadFields = WorkspaceToolParams & {
   artifact_id?: string;
   subject_id?: string;
   limit?: number;
-  storage_operation?: "status";
 };
 export type StateToolParams = StateReadFields & {
   mode?: "map" | "summary" | "context" | "liveness" | "detail" | "locate" | "validate" | "operations" | "decisions" | "evidence" | "storage";
@@ -150,29 +143,6 @@ export interface LifecycleToolParams extends WorkspaceToolParams {
   expected_revision?: number;
   event_id?: string;
 }
-export interface MoleculeStructureToolParams extends WorkspaceToolParams {
-  operation: "generate";
-  node_id: string;
-  smiles: string;
-  charge: number;
-  multiplicity: number;
-  optimization: "none" | "uff";
-}
-export interface CompareToolParams extends WorkspaceToolParams {
-  operation: "compare";
-  node_id: string;
-  referenceArtifactId: string;
-  targetArtifactId: string;
-  parameters?: Record<string, unknown>;
-}
-export interface AnalyzeToolParams extends WorkspaceToolParams {
-  operation: "run";
-  node_id: string;
-  capability: string;
-  capabilityVersion: string;
-  inputArtifacts: Record<string, string[]>;
-  parameters: Record<string, unknown>;
-}
 export interface JobStartToolParams extends WorkspaceToolParams {
   node_id?: string;
   command?: string[];
@@ -200,10 +170,3 @@ export interface ArtifactCreateToolParams extends WorkspaceToolParams { content:
 export interface ArtifactReadToolParams extends WorkspaceToolParams { artifact_id: string; offset?: number; limit?: number }
 export interface ArtifactDeriveToolParams extends WorkspaceToolParams { input_artifact_ids: string[]; operation: string; parameters?: Record<string, unknown> }
 export interface ArtifactLinkToolParams extends WorkspaceToolParams { artifact_id: string; subject_id: string; relation?: string }
-export interface NotifyToolParams extends WorkspaceToolParams {
-  operation: "send";
-  event: "progress" | "node_completed" | "calculation_failed" | "calculation_ambiguous" | "study_completed";
-  subject: string;
-  summary: string;
-  reportRefs?: string[];
-}

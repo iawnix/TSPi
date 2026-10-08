@@ -42,7 +42,7 @@ def test_interpretation_rejects_wrong_producer_but_accepts_comparison(tmp_path):
     with pytest.raises(AgentWorkspaceError, match="evidence_producer_mismatch"):
         change(tmp_path, [op])
     # The live context evaluation confused an Attempt identity with an Artifact.
-    with pytest.raises(AgentWorkspaceError, match="evidence_producer_mismatch|unknown"):
+    with pytest.raises(AgentWorkspaceError, match="evidence_reference_type_mismatch.*attempt_id=attempt_second"):
         change(tmp_path, [{**op, "direct_evidence_refs": ["attempt_second"]}])
     assert read_context(tmp_path) == before
     change(tmp_path, [{**op, "direct_evidence_refs": ["art_second"], "comparison_evidence_refs": ["art_first"]}])
@@ -65,6 +65,15 @@ def test_monitor_updates_attempt_without_agent_status_call(tmp_path):
     assert attempt["finished_at"]
     pending = command(tmp_path, "pending", {})["deliveries"]
     assert len(pending) == 1
+    from pathlib import Path
+    from jsonschema import Draft202012Validator
+    schemas = Path(__file__).resolve().parents[2] / 'contracts/tspi-monitor/1'
+    event = command(tmp_path, 'event', {'event_id': pending[0]['event_id']})
+    binding = command(tmp_path, 'list', {})['monitors'][0]
+    for name, value in [('monitor', binding), ('event', event), ('delivery', pending[0])]:
+        validator = Draft202012Validator(json.loads((schemas / (name + '.schema.json')).read_text()))
+        validator.validate(value)
+        assert not validator.is_valid({**value, 'intent_id': 'calc_1'})
     result = dispatch("collect", {"root": str(tmp_path), "job_id": job["job_id"]})
     receipt = result["result_receipt"]
     assert receipt["execution_state"] == "failed"
@@ -286,6 +295,7 @@ def test_collect_crash_recovers_receipt_evidence_and_attempt_together(tmp_path, 
         with pytest.raises(OSError, match='collection commit interrupted'):
             dispatch('collect', {'root': str(tmp_path), 'job_id': job['job_id']})
     state = read_context(tmp_path)
+    assert state['attempts'][0]['state'] == 'succeeded'
     result_id = state['attempts'][0]['metadata']['latest_result_receipt_ref']
     receipt = json.loads((tmp_path / 'operations/results' / (result_id + '.json')).read_text())
     assert set(receipt['artifact_refs']) <= {a['id'] for a in state['artifacts']}
@@ -304,3 +314,30 @@ def test_missing_submission_receipt_updates_attempt_on_explicit_status(tmp_path,
     assert read_context(tmp_path)['attempts'][0]['state'] == 'unknown'
     row = build_decision_context(tmp_path)['attempts'][0]
     assert row['required_action']['tool'] == 'job_reconcile'
+
+
+def test_retired_command_fields_fail_before_workspace_or_runtime_access(tmp_path):
+    from tspi_runtime.evidence import dispatch as artifact
+    before = {path: path.read_bytes() for path in tmp_path.iterdir()}
+    for key in ('jobId', 'intent_id', 'unexpected_option'):
+        with pytest.raises(ValueError, match='schema_field_invalid'):
+            execute('job.collect', tmp_path, {key: 'old'})
+        with pytest.raises(ValueError, match='schema_field_invalid'):
+            dispatch('collect', {'root': str(tmp_path), key: 'old'})
+    for key in ('source_intent_id', 'owner_node', 'artifactId'):
+        with pytest.raises(ValueError, match='schema_field_invalid'):
+            artifact('register', {'root': str(tmp_path), 'path': 'missing', key: 'old'})
+    for key in ('node_ref', 'storage_operation'):
+        with pytest.raises(ValueError, match='schema_field_invalid'):
+            execute('research.evidence', tmp_path, {key: 'old'})
+    assert {path: path.read_bytes() for path in tmp_path.iterdir()} == before
+
+
+def test_artifact_record_decoder_does_not_translate_retired_manifests():
+    from research_state.evidence import ArtifactManifest, EvidenceModelError
+    current = {'id': 'art_fixture', 'node_id': 'node_1', 'location': 'runs/result.json',
+               'producer_attempt_id': 'attempt_1'}
+    assert ArtifactManifest.from_dict(current).producer_attempt_id == 'attempt_1'
+    for field in ('path', 'artifact_id', 'owner_node', 'source_intent_id', 'role'):
+        with pytest.raises(EvidenceModelError, match='artifact_schema_invalid'):
+            ArtifactManifest.from_dict({**current, field: None})

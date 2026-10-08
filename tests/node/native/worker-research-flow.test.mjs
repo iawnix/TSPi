@@ -156,7 +156,8 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     }
     assert.equal(read.session.is_streaming, false);
     assert.ok(restarted);
-    assert.ok(monitorDelivered);
+    assert.ok(monitorDelivered, JSON.stringify({ requests: requests.length, failure: read.snapshot.failure,
+      messages: requests.at(-1)?.messages.slice(-4) }));
     assert.equal(requests.length, steps.length, JSON.stringify(read.snapshot.failure));
     const toolResults = requests.at(-1).messages.filter(message => message.role === "tool");
     assert.equal(toolResults.length, steps.filter(step => typeof step !== "string").length);

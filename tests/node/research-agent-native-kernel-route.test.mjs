@@ -23,7 +23,7 @@ test("native research commands expose the Research State runtime operation and l
     assert.ok(catalog.operations.some((item) => item.type === "create_node"));
     await assert.rejects(
       executeFilesystemResearchCommand("research.storage", root, { operation: "bootstrap" }),
-      /only operation=status/,
+      /schema_field_invalid: research.storage unsupported fields: operation/,
     );
     await executeFilesystemResearchCommand("research.change", root, {
       request: {

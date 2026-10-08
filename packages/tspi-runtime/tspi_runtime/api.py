@@ -51,20 +51,27 @@ def _json_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
-def execute(command: str, root: str | Path, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Execute one read/query command or one explicit ResearchMap change."""
-
+def validate_command_params(command: str, value: dict[str, Any], *, transport_fields: tuple[str, ...] = ()) -> None:
+    """Reject retired/unknown fields using the catalog shared with JS transports."""
     if command not in COMMANDS:
         raise CommandError(f"unsupported command: {command}")
-    value = params if params is not None else {}
     if not isinstance(value, dict):
         raise CommandError("command params must be an object")
     if any(any(c.isupper() for c in key) for key in value):
         raise CommandError("schema_field_invalid: command fields use snake_case")
+    unsupported = sorted(set(value) - set(COMMAND_DEFINITIONS[command]["allowed"]) - set(transport_fields))
+    if unsupported:
+        raise CommandError(f"schema_field_invalid: {command} unsupported fields: {', '.join(unsupported)}")
     required = COMMAND_DEFINITIONS[command].get("required", [])
     missing = [key for key in required if value.get(key) is None or value.get(key) == ""]
     if missing:
         raise CommandError(f"{command} requires {', '.join(missing)}")
+
+
+def execute(command: str, root: str | Path, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Execute one read/query command or one explicit ResearchMap change."""
+    value = params if params is not None else {}
+    validate_command_params(command, value)
     if command.startswith("research."):
         # The filesystem Research Agent protocol is the only public research
         # workspace path. The retired JSON/SQLite implementation is not a
@@ -119,9 +126,6 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
             if action == "operations":
                 return operation_catalog()
             if action == "storage":
-                operation = value.get("operation", "status")
-                if operation != "status":
-                    raise CommandError("research.storage supports only operation=status")
                 return {
                     "schema_version": "research-storage/1",
                     "backend": "filesystem",

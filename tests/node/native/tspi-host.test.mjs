@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -85,7 +85,7 @@ function createBackend(workspaceRoot) {
   };
 }
 
-async function fixture(t) {
+async function fixture(t, monitorPollMs = 0) {
   const root = await mkdtemp(join(tmpdir(), "tspi-native-host-"));
   const workspaceRoot = join(root, "workspaces");
   const workspace = join(workspaceRoot, "project-a");
@@ -93,7 +93,7 @@ async function fixture(t) {
   await initializer.initialize_workspace({ workspace_root: workspace, workspace_id: "project-a", workspace_mode: "research" });
   await initializer.admit_workspace(workspace);
   const backend = createBackend(workspaceRoot);
-  const host = await startTspiHost({ socketPath: join(root, "host.sock"), workspaceRoot, stateRoot: join(root, "state"), sessionBackend: backend, monitorPollMs: 0 });
+  const host = await startTspiHost({ socketPath: join(root, "host.sock"), workspaceRoot, stateRoot: join(root, "state"), sessionBackend: backend, monitorPollMs });
   t.after(async () => { await host.close(); await rm(root, { recursive: true, force: true }); });
   const client = await connectHost({ socketPath: host.socketPath });
   return { host, client, backend, workspaceRoot };
@@ -244,4 +244,55 @@ test("Native Host workspace/create writes the canonical manifest protocol", asyn
   assert.equal(attached.workspace.state, "ready");
   const repeated = await client.request("workspace/create", { workspace_id: "created-research", workspace_mode: "research", request_id: "create-workspace-3" });
   assert.equal(repeated.workspace.workspace_id, "created-research");
+});
+
+test("Host relays real Job Monitor events and rejects old or mismatched identities", async (t) => {
+  const env = await fixture(t, 20);
+  const root = join(env.workspaceRoot, "project-a");
+  const { create_python_kernel_bridge } = await import("../../../packages/research-state-bridge/python_kernel_bridge.mjs");
+  const bridge = create_python_kernel_bridge({ workspace_root: root });
+  t.after(() => bridge.close());
+  await bridge.apply_change({ principal: "root_agent", authority: "kernel_write", operations: [
+    { type: "create_claim", id: "claim_monitor", statement: "Observe exit" },
+    { type: "create_node", id: "node_monitor", title: "Monitor", objective: "Observe exit", claim_ids: ["claim_monitor"], completion_exemption: "Synthetic monitor transport fixture" },
+    { type: "create_strategy_plan", id: "strategy_monitor", claim_id: "claim_monitor", node_id: "node_monitor", objective: "Run synthetic process", rationale: "Test observation" },
+  ] });
+  const notifications = [];
+  env.client.on("notification", event => { if (event.method === "monitor/event") notifications.push(event.params.event); });
+  await env.client.request("monitor/list", { workspace_id: "project-a" });
+  const job = await bridge.execute_command("job.start", { job_id: "job_monitor_fixture", node_id: "node_monitor", session_id: "session-a",
+    command: [process.env.TSPI_PYTHON, "-c", "print('monitor fixture')"], timeout_seconds: 5 });
+  t.after(() => bridge.execute_command("job.cancel", { job_id: job.job_id }).catch(() => {}));
+  for (let poll = 0; poll < 100; poll++) {
+    const status = await bridge.execute_command("job.status", { job_id: job.job_id });
+    if (status.state === "succeeded") break;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  await promisify(execFile)(process.env.TSPI_PYTHON, [new URL("../../../apps/agent-cli/monitor.py", import.meta.url).pathname, "tick", "--root", root]);
+  for (let poll = 0; poll < 100 && notifications.length === 0; poll++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(notifications.length, 1, "current binding.json and event_* must be scanned");
+  const event = notifications[0];
+  assert.equal(event.job_id, job.job_id);
+  assert.equal(event.attempt_id, job.attempt_id);
+  assert.equal(Object.hasOwn(event, "intent_id"), false);
+  const monitorRoot = join(root, "operations", "monitors", event.monitor_id);
+  for (const [index, patch] of [
+    { schema_version: "ts-compute-monitor-event/1" },
+    { intent_id: "calc_1" },
+    { attempt_id: "attempt_wrong" },
+    { job_id: "job_wrong" },
+    { state: "completed" },
+  ].entries()) {
+    const event_id = `event_${String(index + 1).repeat(32)}`;
+    await writeFile(join(monitorRoot, "events", event_id + ".json"), JSON.stringify({ ...event, ...patch, event_id }));
+  }
+  const oldRoot = join(root, "operations", "monitors", "mon_" + "a".repeat(24));
+  await mkdir(join(oldRoot, "events"), { recursive: true });
+  const binding = JSON.parse(await readFile(join(monitorRoot, "binding.json"), "utf8"));
+  await writeFile(join(oldRoot, "registration.json"), JSON.stringify({ ...binding, schema_version: "ts-compute-monitor/1", intent_id: "calc_1" }));
+  await writeFile(join(oldRoot, "events", "evt_" + "a".repeat(32) + ".json"), JSON.stringify(event));
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(notifications.length, 1);
 });

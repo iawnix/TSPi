@@ -74,8 +74,9 @@ def _resolve_selector(root, params):
             raise JobSelectionError("job_not_found", "attempt has no Job; query research_read evidence")
         selected.append(match["metadata"]["job_id"])
     if params.get("event_id"):
+        from research_state.monitor_wake import validate_event
         matches = [json.loads(path.read_text()) for path in (root / "operations/monitors").glob("*/events/*.json")]
-        event = next((e for e in matches if e["event_id"] == params["event_id"]), None)
+        event = next((validate_event(e) for e in matches if e["event_id"] == params["event_id"]), None)
         if not event:
             raise JobSelectionError("job_not_found", "unknown event; query monitor pending or research_read context")
         selected.append(event["job_id"])
@@ -186,8 +187,8 @@ def _receipt(root: Path, params: dict[str, Any]):
 
 
 def dispatch(operation: str, params: dict[str, Any]) -> dict[str, Any]:
-    if any(any(c.isupper() for c in key) for key in params):
-        raise ValueError("schema_field_invalid: public fields use snake_case")
+    from .api import validate_command_params
+    validate_command_params("job." + operation, params, transport_fields=("root", "workspace_root"))
     root = _root(params)
     runtime = _runtime(root)
     if operation == "start":

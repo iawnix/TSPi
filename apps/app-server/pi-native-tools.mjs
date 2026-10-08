@@ -224,7 +224,14 @@ export function createJobArtifactTools(options = {}) {
     }
     const root = boundWorkspaceRoot(params, toolContext);
     if (name === "job_start") params = resolvePreparedJob(params, root);
-    const invoke = () => runtime[method]({ ...params, root, request_id: params.request_id || `${toolContext?.operation_id || "turn"}:${_id}`, principal: toolContext?.principal, session_id: toolContext?.session_id });
+    // The runtime bridge already owns the immutable workspace binding. Only
+    // job.start consumes request/session identity; query and evidence commands
+    // must not receive unrelated Host context fields.
+    const { root: _root, ...request } = params;
+    const invoke = () => runtime[method](name === "job_start" ? { ...request,
+      request_id: params.request_id || `${toolContext?.operation_id || "turn"}:${_id}`,
+      ...(toolContext?.session_id ? { session_id: toolContext.session_id } : {}),
+    } : request);
     const result = await (["job_status", "job_collect", "job_reconcile"].includes(name)
       ? withJobQueryRecovery(root, method, params, invoke) : invoke());
     return toolResult(result);
@@ -378,10 +385,8 @@ function requireNativeWrites(toolName, toolContext) {
     const publicCommand = toolName.replace(/_([^_]*)$/, ".$1");
     throw new Error(`${publicCommand} requires the guarded TSPi App Server Root Agent (tool ${toolName})`);
   }
-  // Actual Harness invocations carry a Host-bound principal. Keep the
-  // environment check for older direct integrations and unit fixtures, but
-  // never accept a non-root principal from a trusted execution context.
-  if (toolContext?.principal !== undefined && toolContext.principal !== RESEARCH_STATE_WRITE_PRINCIPAL) {
+  // Every write requires the Host-bound Root Agent principal.
+  if (toolContext?.principal !== RESEARCH_STATE_WRITE_PRINCIPAL) {
     throw new Error(`${toolName} requires the Root Agent principal`);
   }
 }

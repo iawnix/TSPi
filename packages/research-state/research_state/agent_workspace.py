@@ -532,17 +532,16 @@ def _base_liveness_projection(
     for attempt in _items(context, "attempts"):
         if not isinstance(attempt, dict):
             continue
-        state = attempt.get("state") or attempt.get("status")
+        state = attempt.get("state")
         if state not in {"started", "running", "unknown"}:
             continue
-        attempt_node = attempt.get("node_id") or attempt.get("node_ref")
-        attempt_id = attempt.get("id") or attempt.get("attempt_id") or attempt.get("intent_id")
+        attempt_node = attempt.get("node_id")
+        attempt_id = attempt.get("id")
         if not isinstance(attempt_id, str) or not attempt_id:
             continue
         waiting_external.append({
             "id": attempt_id,
-            "attempt_id": attempt.get("attempt_id") or attempt_id,
-            "intent_id": attempt.get("intent_id"),
+            "attempt_id": attempt_id,
             "node_id": attempt_node,
             "state": state,
             "status": "waiting",
@@ -669,10 +668,9 @@ def _validate_checkpoint_lifecycle(context: dict[str, Any], checkpoint: dict[str
     nodes = _items(context, "nodes")
     attempts = _items(context, "attempts")
     plans = _items(context, "strategy_plans")
-    interpretations = _items(context, "attempt_interpretations")
     claim_by_id = {row.get("id"): row for row in claims}
     node_by_id = {row.get("id"): row for row in nodes}
-    attempt_by_id = {row.get("id") or row.get("attempt_id") or row.get("intent_id"): row for row in attempts}
+    attempt_by_id = {row.get("id"): row for row in attempts}
     claim_ids = checkpoint.get("claim_ids", [])
     node_ids = checkpoint.get("node_ids", [])
     unresolved_refs = checkpoint.get("unresolved_refs", [])
@@ -698,8 +696,7 @@ def _validate_checkpoint_lifecycle(context: dict[str, Any], checkpoint: dict[str
         missing = sorted(set(unresolved_refs) - set(attempt_by_id))
         if missing:
             raise AgentWorkspaceError("waiting_external checkpoint references unknown Attempts: " + ", ".join(missing))
-        terminal = set(ATTEMPT_TERMINAL_STATES) | {"failed", "stopped", "collected", "parsed"}
-        finished = sorted(ref for ref in set(unresolved_refs) if (attempt_by_id[ref].get("state") or attempt_by_id[ref].get("status")) in terminal)
+        finished = sorted(ref for ref in set(unresolved_refs) if attempt_by_id[ref].get("state") in ATTEMPT_TERMINAL_STATES)
         if finished:
             raise AgentWorkspaceError("waiting_external checkpoint references terminal Attempts: " + ", ".join(finished))
     if disposition == "continue_required":
@@ -722,25 +719,10 @@ def _validate_checkpoint_lifecycle(context: dict[str, Any], checkpoint: dict[str
         problems = validate_context(context)["issues"]
         if problems:
             raise AgentWorkspaceError("terminal_state_inconsistent: " + ", ".join(i["code"] for i in problems))
-        scoped_nodes = set(node_ids)
-        for claim_id in claim_ids:
-            scoped_nodes.update(claim_by_id[claim_id].get("node_ids", []))
         open_nodes = sorted(node_id for node_id, node in node_by_id.items() if node.get("state") != "closed")
         if open_nodes:
             raise AgentWorkspaceError("terminal checkpoint requires closed Nodes: " + ", ".join(open_nodes))
-    scoped_nodes = set(node_ids)
-    for claim_id in claim_ids:
-        scoped_nodes.update(claim_by_id[claim_id].get("node_ids", []))
-    interpreted = {row.get("attempt_ref") for row in interpretations}
-    missing_interpretations = sorted(
-        row.get("id") or row.get("attempt_id") or row.get("intent_id")
-        for row in attempts
-        if (row.get("state") or row.get("status")) == "parsed"
-        and (not scoped_nodes or row.get("node_id") in scoped_nodes)
-        and (row.get("id") or row.get("attempt_id") or row.get("intent_id")) not in interpreted
-    )
-    if missing_interpretations:
-        raise AgentWorkspaceError("parsed Attempts require AttemptInterpretation before checkpoint: " + ", ".join(missing_interpretations))
+
 
 
 def _expected_revision(request: dict[str, Any], current: int) -> None:
@@ -877,6 +859,17 @@ def _refs_exist(context: dict[str, Any], refs: list[str], *, label: str, allow_e
     allowed = artifacts | (evidence if allow_evidence else set())
     missing = sorted(set(refs) - allowed)
     if missing:
+        attempts = {row.get("id"): row for row in _items(context, "attempts")}
+        jobs = {row.get("metadata", {}).get("job_id"): row for row in attempts.values()}
+        wrong_types = [ref for ref in missing if ref in attempts or ref in jobs or ref in evidence]
+        if wrong_types:
+            selectors = [f"attempt_id={attempts.get(ref, jobs.get(ref))['id']}"
+                         for ref in wrong_types if ref in attempts or ref in jobs]
+            raise AgentWorkspaceError(
+                f"evidence_reference_type_mismatch: {label} requires registered Artifact IDs; "
+                f"these IDs identify Attempts, Jobs or evidence links: {', '.join(wrong_types)}. "
+                f"Use research_read mode=evidence record_type=artifact {' '.join(dict.fromkeys(selectors))} "
+                "and cite the returned Artifact id; do not rename or infer IDs.")
         raise AgentWorkspaceError(f"evidence_reference_unknown: {label} references unknown evidence: {', '.join(missing)}. Use research_read mode=evidence to find registered Artifact/evidence IDs, or artifact_create/artifact_register to preserve the actual observation; cite the returned artifact_id. Routine probes need not become Findings; continue independent work if this record is optional.")
 
 

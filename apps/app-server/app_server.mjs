@@ -94,7 +94,11 @@ function require_workspace_ready(manifest) {
  * Compose the App Server with the installation-owned Pi Session Port. Tests
  * may inject a deterministic session double at this boundary.
  */
-export function create_app_server({ pi_session_port, workspace_port = null, workspace_catalog = null, turn_router = null, kernel_port = null, session_store = null } = {}) {
+export function create_app_server({ pi_session_port, workspace_port = null, workspace_catalog = null, turn_router = null, kernel_port = null, session_store = null, ...unsupported } = {}) {
+  if (Object.keys(unsupported).length) {
+    throw Object.assign(new TypeError(`unsupported_app_server_options: ${Object.keys(unsupported).sort().join(", ")}`),
+      { code: "unsupported_app_server_options" });
+  }
   const runtime = create_pi_session_port(pi_session_port);
   const workspace = workspace_port === null ? null : create_workspace_port(workspace_port);
   if (session_store !== null) {

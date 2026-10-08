@@ -23,3 +23,8 @@ def test_test_root_contains_only_configuration_files() -> None:
     allowed = {"__init__.py", "conftest.py"}
     files = {path.name for path in (ROOT / "tests").iterdir() if path.is_file()}
     assert files <= allowed
+
+
+def test_native_lane_covers_every_node_test():
+    declared = {Path(path).resolve() for path in suite_paths("native-pi")}
+    assert set((ROOT / "tests/node").rglob("*.test.mjs")) <= declared

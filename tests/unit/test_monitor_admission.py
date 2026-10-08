@@ -5,7 +5,8 @@ from research_state.admission import tool_admission
 
 
 def event_fixture(root, state='succeeded'):
-    event = {'event_id':'event_fixture','workspace_id':'ws_test','session_id':'session_test',
+    event = {'schema_version':'ts-job-monitor-event/1','monitor_id':'monitor_test',
+             'event_id':'event_fixture','workspace_id':'ws_test','session_id':'session_test',
              'node_id':'node_test','attempt_id':'attempt_test','job_id':'job_test','state':state,'exit_status':0 if state=='succeeded' else 1}
     path=root/'operations/monitors/monitor_test/events/event_fixture.json'
     path.parent.mkdir(parents=True);path.write_text(json.dumps(event))
@@ -44,3 +45,24 @@ def test_native_preparation_is_allowed_before_strategy_but_blocked_after_termina
     assert tool_admission({}, {'lifecycle':'decision_needed'},tool)['accepted']
     assert not tool_admission({}, {'lifecycle':'terminal'},tool)['accepted']
     assert tool_admission({}, {'lifecycle':'terminal'},{'name':'read','effect':'read'})['accepted']
+
+
+def test_current_interpretation_suppresses_wake_but_old_field_and_stale_review_do_not(tmp_path):
+    context = event_fixture(tmp_path)
+    context['nodes'][0]['state'] = 'active'
+    context['attempt_interpretations'] = [{'attempt_ref': 'attempt_test', 'review_state': 'current'}]
+    assert assess(tmp_path, context, {}, 'event_fixture', 'session_test')['obsolete']
+    context['attempt_interpretations'][0]['review_state'] = 'needs_review'
+    assert not assess(tmp_path, context, {}, 'event_fixture', 'session_test')['obsolete']
+    context['attempt_interpretations'] = [{'attempt_id': 'attempt_test', 'review_state': 'current'}]
+    assert not assess(tmp_path, context, {}, 'event_fixture', 'session_test')['obsolete']
+
+
+def test_old_monitor_event_is_not_admitted(tmp_path):
+    context = event_fixture(tmp_path)
+    path = tmp_path / 'operations/monitors/monitor_test/events/event_fixture.json'
+    event = json.loads(path.read_text())
+    for patch in [{'schema_version': 'ts-compute-monitor-event/1'}, {'intent_id': 'calc_1'}, {'intent_digest': 'old'}]:
+        path.write_text(json.dumps({**event, **patch}))
+        with pytest.raises(ValueError, match='monitor_event_schema_invalid'):
+            assess(tmp_path, context, {}, 'event_fixture', 'session_test')

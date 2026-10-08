@@ -5,7 +5,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createChangeTool, createResearchLifecycleTool } from "../../apps/app-server/pi-native-tools.mjs";
-import { __test as computeTest } from "../../apps/app-server/pi-native-compute.mjs";
 import { close_test_research_states, create_test_research_state } from "../support/research_state_helpers.mjs";
 import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 import {
@@ -175,35 +174,9 @@ test("Native strategy and checkpoint writes reach the canonical Python State bou
   }
 });
 
-test("compute action failures preserve active Attempts for ambiguous or follow-up operations", () => {
-  assert.equal(computeTest.attemptStateAfterComputeError(
-    { operation: "launch" },
-    [{ tool: "workspace_compute_submit", result: { action_status: "unknown" } }],
-  ), "running");
-  assert.equal(computeTest.attemptStateAfterComputeError(
-    { operation: "launch" },
-    [{ tool: "workspace_compute_submit", result: { action_status: "completed" } }],
-  ), "running");
-  assert.equal(computeTest.attemptStateAfterComputeError(
-    { operation: "launch" },
-    [{ tool: "workspace_compute_submit", result: { action_status: "failed" } }],
-  ), "failed");
-  assert.equal(computeTest.attemptStateAfterComputeError(
-    { operation: "finalize" },
-    [{ tool: "workspace_compute_parse", result: { action_status: "failed" } }],
-  ), "running");
-});
-
-test("finalize admission failures remain retryable after parsing succeeds", () => {
-  assert.equal(computeTest.attemptStateForRequest(
-    "finalize",
-    [
-      { tool: "workspace_compute_collect", result: { action_status: "completed", result: { state: "collected" } } },
-      { tool: "workspace_compute_parse", result: { action_status: "completed", result: { state: "parsed" } } },
-      { tool: "research_state_write", result: { action_status: "failed" } },
-    ],
-  ), "running");
-});
+// Execution ambiguity and collection retry now belong to the Job Runtime.
+// Real runtime coverage: tests/unit/test_reliability_contract.py (submission receipt
+// loss and collection commit recovery), not the removed compute adapter.
 
 test("Python Research State requires the Root Agent kernel-write boundary", async () => {
   const root = await mkdtemp(join(tmpdir(), "tspi-kernel-authority-"));
@@ -232,7 +205,7 @@ test("Python Research State requires the Root Agent kernel-write boundary", asyn
     const turned = await kernel.turn({
       protocol: "research_turn_request", version: 1, request_id: "turn_checkpoint_input",
       principal: "root_agent", authority: "kernel_write", operation: "checkpoint",
-      input: { id: "checkpoint_input", disposition: "user_input_required" },
+      input: { id: "checkpoint_input", disposition: "user_input_required", reason: "Which hypothesis should the new research scope investigate?" },
     });
     assert.equal(turned.output.checkpoint_id, "checkpoint_input");
   } finally {

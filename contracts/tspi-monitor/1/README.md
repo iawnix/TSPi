@@ -11,7 +11,7 @@ before delivery. A retry reuses the same membership and message. Previously
 attempted deliveries retain their original request ID. Claims have a 60-second
 lease; an offline worker or uncertain response leaves the delivery pending.
 
-`next_run` remains the transport mode for compatibility. Monitor input is
+`next_run` is the current transport mode. Monitor input is
 admitted through the worker's `tspi.monitor-admission` service, which checks
 Pi's run and inbox in the same transaction that submits the input. A busy
 session leaves events in the outbox, without adding follow-up prompts. The
@@ -31,6 +31,8 @@ Successful scheduler exit is not scientific validation. The Agent still needs
 to collect outputs, inspect evidence and record the appropriate Research State
 decision. Status, binding and outbox files remain available for diagnosis.
 
-The `ts-compute-monitor/1`, `ts-monitor-event/1` and `ts-monitor-delivery/1` JSON
-schemas in this directory describe the older compute-monitor envelopes, not the
-current Job outbox. Do not validate current Job records against those schemas.
+The JSON schemas in this directory describe the current Job binding, event and
+`ts-job-monitor-delivery/1` outbox. Host scans `binding.json` under
+`monitor_<digest>/`, with `event_<digest>` identities and exact `job_id`,
+`attempt_id`, and `job_digest` agreement. Old compute envelopes, `registration.json`,
+`calc_*`, `intent_id`, and `intent_digest` are not accepted or converted.

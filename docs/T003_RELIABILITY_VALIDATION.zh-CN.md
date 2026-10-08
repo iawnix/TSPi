@@ -33,7 +33,7 @@
 
 所有环境、缓存、安装包与日志均在 `/home/iaw/debug/tspi-test-env`。固定 Pi 源码为 v1.0.4、commit `7c10bd4337495ee613f2224843ecdf349b80d1df`；Native 使用实际 Harness/Worker、数据库、Host 重启及 Monitor 唤醒，模型响应由确定性 provider 提供。
 
-最新执行记录位于 `/home/iaw/debug/tspi-test-env/t003-reliability/logs`：
+首轮改造执行记录位于 `/home/iaw/debug/tspi-test-env/t003-reliability/logs`；后续清理结果见下节：
 
 | 检查 | 证据 |
 | --- | --- |
@@ -44,7 +44,7 @@
 
 安装验证还修复了一个原有测试盲点：conftest 的 bootstrap 会插入 checkout 路径，导致旧 wheel 测试实际混入源码。收紧导入来源后，发现 calculation contract loader 依赖源码目录层级；现已改为从模块旁的 contracts 目录读取，源码与 wheel 使用同一资源位置。
 
-额外执行未纳入维护 manifest 的历史 Node 测试：当前 91 通过、9 失败；同环境基线为 89 通过、10 失败。剩余失败均属于基线已有的已删除模块引用、旧 composition/Host 方法或缺少真实 Finding 证据的 fixture。记录分别为 `node-broad-final.log`、`node-baseline.log`。这批测试没有全绿，也没有为迁就旧测试恢复兼容接口。
+额外执行未纳入维护 manifest 的历史 Node 测试：当前 91 通过、9 失败；同环境基线为 89 通过、10 失败。失败涉及基线已有的已删除模块引用、旧 composition/Host 方法和缺少真实 Finding 证据的 fixture；其中“旧构造参数被静默忽略”也暴露了真实入口缺陷，不能全部归为测试过期。记录分别为 `node-broad-final.log`、`node-baseline.log`。这是首轮历史结果；后续已按当前契约修复并纳入维护清单，没有恢复兼容接口。
 
 ## 真实模型对照
 
@@ -56,7 +56,7 @@
 - 为 UNKNOWN/冲突的受管 Attempt 增加由代码生成的 `job_reconcile` 精确恢复入口后，第二批 `live-eval-recovery.json` 的关键动作 3/3 正确；无投影对照为 1/3。两批总用量分别为 1,527 和 1,455 tokens。
 - **第二批仍有一次将 Attempt ID 当作 Artifact 的错误**。动作正确不等于整个决策合法；严格重评分保存在 `live-eval-recovery-scored.json`，整体评估未通过。评估脚本同样单独计入无效证据身份。State 的类型/存在性/生产者规则负责拒绝这类写入，不能依赖提示词保证。
 
-这只是当前契约的上下文消融与恢复提示试验，尚未完成旧/新运行时端到端比较、多轮工具恢复率、随机重复或长程科学研究评估。因此不能宣称模型已能稳定自主把控研究方向，也不把 Native fake provider 测试称为真实模型成功率。
+这只是当前契约的上下文消融与恢复提示试验，尚未完成旧/新运行时端到端比较、具有统计意义的恢复率估计或长程科学研究评估。下面的多轮恢复验证只补上一个限定错误类别。因此不能宣称模型已能稳定自主把控研究方向，也不把 Native fake provider 测试称为真实模型成功率。
 
 复现入口（提供测试根下输出路径）：
 
@@ -66,6 +66,37 @@ TSPI_TEST_PI_RUNTIME_ROOT=/home/iaw/debug/tspi-test-env/tui-repair-pi104 \
   --agent-dir /path/to/authorized/pi-config \
   --output /home/iaw/debug/tspi-test-env/t003-reliability/logs/live-eval-new.json
 ```
+
+## 后续：彻底废除旧接口并验证错误恢复
+
+本轮基线为 `0b7f997d`，日志统一保存在 `/home/iaw/debug/tspi-test-env/t003-contract-cleanup/logs`。
+
+- App Server/composition 构造参数采用封闭集合。`tool_gateway`、`native_compute`、`native_capability_host` 等已删除参数，即使值为 null/undefined 也立即拒绝；不会激活端口后再报错。
+- JS 与 Python 共同读取 `command_catalog.json` 的字段白名单。旧 camelCase、`intent_id`、`node_ref`、`storage_operation` 和未知字段均拒绝，不再由适配器静默丢弃。Native 在调用前完成工作区绑定，只向实际消费这些字段的命令传递 request/session 身份；Python Bridge 单独校验不可变工作区身份。
+- 删除已不存在的 moleculeStructure/compare/analyze/notify 公共类型声明，以及旧 CLI 参数、ArtifactManifest 字段转换和 Attempt 旧 ID/state 字段回退。Native 写入必须具有 Root Agent principal，环境开关不能替代身份。
+- Monitor producer、Host 和 State 只接受当前 Job/Attempt 字段；旧 compute envelope、`intent_id`/`intent_digest`、旧 outbox 均拒绝。Host 改为扫描实际的 `monitor_*/binding.json` 与 `event_*`，并检查 Job/Attempt/digest 绑定。此前只改 schema 接受列表而保留旧路径，会漏掉真实 Job 通知。
+- Monitor 已解释判断使用 `attempt_ref` 与 `review_state=current`。过期解释不抑制待处理事件；不再读取旧 `attempt_id` 字段。三个 Monitor JSON schema 现描述实际生成的 binding/event/delivery，而非保留旧 compute 格式。
+- 旧 compute helper 单测的职责由真实 Job 提交回执丢失、Monitor 状态同步、收集事务中断重试覆盖。收集失败不会把已成功执行的 Attempt 改回 running。
+- 所有 Node 测试纳入 `native-pi`；新增 manifest 完整性断言防止测试留在维护列表外。旧模块删除断言和旧参数拒绝测试继续保留。
+
+最终验证：`native.log` 为 195 项通过、零失败；`wheel.log`/`wheel.json` 为隔离 wheel 全量验证及核心 namespace 来源记录；`typecheck.log` 与 public/architecture/skills lint 通过。最终数量与安装包记录见本轮 `verification.json`。
+
+**证据 ID 误用不是旧协议独有的问题。** State 现在区分“不存在的证据”与“把 Attempt/Job/证据关联 ID 当成 Artifact”，错误信息给出精确 Attempt 查询入口，且错误写入不改变 State。工具 schema 明确 direct_evidence_refs 必须是登记的 Artifact ID。
+
+新增 `live-recovery` 场景使用真实默认模型 `CPA/gpt-6-luna`、当前 Native 工具和真实 Python State：先运行并收集一个受限本地合成 Job，主动注入 Attempt ID 误用；State 拒绝且版本/内容不变；模型通过 research_read 按 Attempt 查询，重新提交有效解释并持久化。最终代码重复 2 次均通过，记录为 `live-recovery-final.json`，包括每次真实工具调用、拒绝信息、用量和最终 State 解释。
+
+这证明限定场景的恢复路径可用。初始错误由评估程序注入，不能据此推断模型自发误用率为零，也不覆盖完整科学研究。首轮 `live-eval-recovery-scored.json` 的失败事实仍保留，没有重新标记为通过。
+
+```bash
+TSPI_TEST_ROOT=/home/iaw/debug/tspi-test-env \
+TSPI_TEST_PI_RUNTIME_ROOT=/home/iaw/debug/tspi-test-env/tui-repair-pi104 \
+TSPI_PYTHON=/home/iaw/debug/tspi-test-env/bin/python \
+  /home/iaw/debug/tspi-test-env/bin/python tools/test/runner.py live-recovery -- \
+  --agent-dir /path/to/authorized/pi-config \
+  --output /home/iaw/debug/tspi-test-env/t003-contract-cleanup/logs/live-recovery-new.json
+```
+
+这些规则均围绕参数、身份、版本、证据和生命周期；没有把 t003 的化学任务规则写入公共代码。此次仍不部署生产，也不迁移或续接旧工作区。
 
 ## 尚未覆盖的保证
 

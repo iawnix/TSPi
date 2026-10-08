@@ -305,14 +305,15 @@ class ArtifactManifest:
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "ArtifactManifest":
-        location = value.get("location", value.get("path", ""))
-        producer = value.get("producer_attempt_id", value.get("source_intent_id"))
+        retired = sorted(set(value) & {"path", "artifact_id", "owner_node", "source_intent_id", "role"})
+        if retired:
+            raise EvidenceModelError("artifact_schema_invalid: retired fields: " + ", ".join(retired))
+        location = value.get("location", "")
+        producer = value.get("producer_attempt_id")
         metadata = dict(value.get("metadata", {}))
-        if value.get("role") is not None:
-            metadata.setdefault("role", value.get("role"))
         return cls(
-            id=value.get("id", value.get("artifact_id", "")),
-            node_id=value.get("node_id", value.get("owner_node")),
+            id=value.get("id", ""),
+            node_id=value.get("node_id"),
             kind=value.get("kind", "calculation_artifact"),
             format=value.get("format", str(location).rsplit(".", 1)[-1] if "." in str(location) else "binary"),
             location=location,

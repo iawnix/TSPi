@@ -18,7 +18,7 @@ async function fixture(t) {
   const initializer = create_workspace_initializer();
   await initializer.initialize_workspace({ workspace_root: workspace, workspace_id: canonicalId, workspace_mode: "research" });
   await initializer.admit_workspace(workspace);
-  const event = { event_id: "evt_1", monitor_id: "mon_1", workspace_id: canonicalId, node_id: "node_1", intent_id: "calc_1", state: "completed" };
+  const event = { event_id: "evt_1", monitor_id: "mon_1", workspace_id: canonicalId, node_id: "node_1", job_id: "job_1", attempt_id: "attempt_1", state: "succeeded" };
   const delivery = { event_id: event.event_id, session_id: "existing-session", request_id: "monitor:evt_1" };
   const completed = new Set();
   const receipts = [];
@@ -75,7 +75,7 @@ test("monitor wake records the canonical Research Turn before queue delivery", a
           trigger: "monitor.wake",
           event_id: "evt_1",
           monitor_id: "mon_1",
-          intent_id: "calc_1",
+          job_id: "job_1", attempt_id: "attempt_1",
         },
         context: { session_id: "existing-session" },
       });

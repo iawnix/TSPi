@@ -18,15 +18,33 @@ def write(path,value):
 def digest(value):return 'sha256:'+hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
 
 
+def read_binding(path):
+    value = read(path)
+    if (value.get('schema_version') != 'ts-job-monitor/1'
+            or {'intent_id', 'intent_digest'} & set(value)
+            or any(not value.get(key) for key in ('job_id', 'attempt_id', 'job_digest'))):
+        raise ValueError('monitor_binding_schema_invalid: current Job/Attempt binding required')
+    return value
+
+
+def read_delivery(path):
+    value = read(path)
+    if value.get('schema_version') != 'ts-job-monitor-delivery/1':
+        raise ValueError('monitor_delivery_schema_invalid: current Job delivery required')
+    return value
+
+
 def bind(root, intent, session_id):
     if not session_id or not intent.get('node_id'):return
     job=intent['job_id'];mid='monitor_'+hashlib.sha256(job.encode()).hexdigest()[:24]
     path=root/'operations/monitors'/mid/'binding.json'
-    if path.exists():return
+    if path.exists():
+        read_binding(path)
+        return
     manifest=read(root/'workspace_manifest.json')
     write(path,{'schema_version':'ts-job-monitor/1','monitor_id':mid,'workspace_id':manifest['workspace_id'],
-        'node_id':intent['node_id'],'intent_id':job,'job_id':job,'attempt_id':intent['attempt_id'],
-        'intent_digest':digest(intent),'session_id':session_id,'wake_policy':'next_run','notify_policy':'none',
+        'node_id':intent['node_id'],'job_id':job,'attempt_id':intent['attempt_id'],
+        'job_digest':digest(intent),'session_id':session_id,'wake_policy':'next_run','notify_policy':'none',
         'enabled':True,'created_at':now(),'sequence':0,'last_state':None})
 
 
@@ -43,17 +61,17 @@ def _command(root,base,action,args):
     bindings=sorted(base.glob('*/binding.json'))
     if args.get('monitor_id'):bindings=[p for p in bindings if p.parent.name==args['monitor_id']]
     if action in {'list','status'}:
-        result = {'workspace_id':workspace_id,'monitors':[read(p) for p in bindings]}
+        result = {'workspace_id':workspace_id,'monitors':[read_binding(p) for p in bindings]}
         if action == 'status':
             # Observation must not claim, batch or retry the delivery outbox.
             result['pending_deliveries'] = [
                 {key: row.get(key) for key in ('session_id', 'request_id', 'event_id', 'error', 'deferred_state')}
                 for binding in bindings for path in sorted((binding.parent/'deliveries').glob('*.json'))
-                if not (row := read(path)).get('delivered')]
+                if not (row := read_delivery(path)).get('delivered')]
         return result
     if action in {'enable','disable'}:
         for p in bindings:
-            row=read(p);row['enabled']=action=='enable';write(p,row)
+            row=read_binding(p);row['enabled']=action=='enable';write(p,row)
         return {'workspace_id':workspace_id,'updated':len(bindings)}
     if action=='health':
         write(base/'health.json',{'checked_at':now(),'error':args.get('error')});return {'ok':True}
@@ -67,9 +85,9 @@ def _tick(root, base, args):
     if args.get('monitor_id'):bindings=[p for p in bindings if p.parent.name==args['monitor_id']]
     errors=[];observed=[]
     for p in bindings:
-        row=read(p)
-        if row.get('schema_version')!='ts-job-monitor/1' or not row.get('enabled'):continue
         try:
+            row=read_binding(p)
+            if not row.get('enabled'):continue
             receipt = None
             try:
                 receipt=_receipt(root,{'job_id':row['job_id']})
@@ -88,7 +106,7 @@ def _tick(root, base, args):
 @state_transaction('job.monitor_observation')
 def _commit_observation(root, request):
     p=root/'operations/monitors'/request['monitor_id']/'binding.json'
-    row=read(p)
+    row=read_binding(p)
     if not row.get('enabled'):return {'monitor_id':row['monitor_id'],'state':'disabled'}
     status=SimpleNamespace(**request['status'])
     receipt=SimpleNamespace(**request['receipt']) if request['receipt'] else SimpleNamespace(
@@ -120,7 +138,7 @@ def _commit_observation(root, request):
         'program_status':None,'exit_status':status.exit_code,'error_class':None,
         'error':status.error,'observed_at':now(),'status':{'state':state,'exit_code':status.exit_code,'diagnostics':diagnostics, 'reason':'queue_wait_exceeded' if queue_wait else 'state_changed'}}
     write(p.parent/'events'/f'{eid}.json',event)
-    write(p.parent/'deliveries'/f'{eid}.json',{'event_id':eid,'session_id':row['session_id'],
+    write(p.parent/'deliveries'/f'{eid}.json',{'schema_version':'ts-job-monitor-delivery/1','event_id':eid,'session_id':row['session_id'],
         'request_id':'job-wake:'+eid,'delivered':False})
     write(p,row)
     return result
@@ -133,7 +151,7 @@ def _delivery_command(root,base,action,args):
         from research_state.agent_workspace import read_liveness
         state=read_liveness(root)
         token=f"{state['revision']}:{state.get('checkpoint_id')}"
-        pending = [(p, row) for p in deliveries if not (row := read(p)).get('delivered')
+        pending = [(p, row) for p in deliveries if not (row := read_delivery(p)).get('delivered')
                    and row.get('deferred_state') != token]
         # Persist immutable batch membership before Host admission. Retries and
         # uncertain RPC outcomes must reuse both identity and message payload.
@@ -151,8 +169,10 @@ def _delivery_command(root,base,action,args):
     eid=args.get('event_id')
     path=next((p for p in deliveries if p.stem==eid),None)
     if path is None:raise ValueError('unknown monitor event')
-    if action=='event':return read(path.parent.parent/'events'/f'{eid}.json')
-    row=read(path)
+    if action=='event':
+        from research_state.monitor_wake import validate_event
+        return validate_event(read(path.parent.parent/'events'/f'{eid}.json'))
+    row=read_delivery(path)
     if args.get('channel')!='wake':return {'claimed':False}
     if action=='claim':
         if row.get('delivered') or row.get('lease_until',0)>time.time():return {'claimed':False}

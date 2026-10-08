@@ -37,6 +37,33 @@ paths = [
   "tests/node/native/tool-presentation.test.mjs",
   "tests/node/native/status-presentation.test.mjs",
   "tests/node/native/provider-turn.test.mjs",
+  "tests/node/manifest-workspace-boundaries.test.mjs",
+  "tests/node/research-agent-app-e2e.test.mjs",
+  "tests/node/research-agent-boundary.test.mjs",
+  "tests/node/research-agent-composition.test.mjs",
+  "tests/node/research-agent-compute-cross-mode.test.mjs",
+  "tests/node/research-agent-framework.test.mjs",
+  "tests/node/research-agent-kernel-bridge.test.mjs",
+  "tests/node/research-agent-kernel-factory.test.mjs",
+  "tests/node/research-agent-kernel-python.test.mjs",
+  "tests/node/research-agent-lifecycle-authority.test.mjs",
+  "tests/node/research-agent-memory-context.test.mjs",
+  "tests/node/research-agent-native-kernel-route.test.mjs",
+  "tests/node/research-agent-options-contract.test.mjs",
+  "tests/node/research-agent-pi-runtime-module.test.mjs",
+  "tests/node/research-agent-session-store.test.mjs",
+  "tests/node/research-agent-tool-admission.test.mjs",
+  "tests/node/research-agent-turn-router.test.mjs",
+  "tests/node/research-agent-workspace-catalog.test.mjs",
+  "tests/node/research-agent-workspace.test.mjs",
+  "tests/node/research-map-reader.test.mjs",
+  "tests/node/fast/lifecycle-recovery.test.mjs",
+  "tests/node/native/checkpoint-followup.test.mjs",
+  "tests/node/native/extension-manifest-loader.test.mjs",
+  "tests/node/native/prepared-job.test.mjs",
+  "tests/node/native/state-continuation.test.mjs",
+  "tests/node/native/tspi-harness-backend.test.mjs",
+  "tests/node/native/workspace-mode-tools.test.mjs",
 ]
 
 [suites.package]
@@ -56,3 +83,9 @@ kind = "scenario"
 environment = "managed Python + authorized model provider"
 description = "Opt-in model evaluation; never part of CI or the default suite."
 paths = ["tests/scenarios/t003_live_eval.mjs"]
+
+[suites.live-recovery]
+kind = "scenario"
+environment = "managed Python + authorized model provider"
+description = "Opt-in real model recovery from an injected evidence ID error through current Native tools."
+paths = ["tests/scenarios/t003_live_recovery.mjs"]

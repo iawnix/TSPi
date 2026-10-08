@@ -17,8 +17,8 @@ const executeFile = promisify(execFile);
   // caller chooses a different physical directory name.
 const WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/u;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u;
-const MONITOR_ID = /^mon_[a-f0-9]{24}$/u;
-const MONITOR_EVENT_ID = /^evt_[a-f0-9]{32}$/u;
+const MONITOR_ID = /^monitor_[a-f0-9]{24}$/u;
+const MONITOR_EVENT_ID = /^event_[a-f0-9]{32}$/u;
 const SESSION_EVENT_HISTORY_LIMIT = 256;
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const BASE_CAPABILITIES = ["workspace.list", "workspace.create", "workspace.attach", "session.list", "session.read", "session.create", "session.resume", "session.attach", "session.detach", "session.remove", "input.send", "input.status", "turn.interrupt", "models.list", "model.select"];
@@ -439,7 +439,7 @@ export async function startTspiHost(options) {
           if (!registration.isDirectory() || !MONITOR_ID.test(registration.name)) continue;
           const registrationRoot = join(root, registration.name);
           if (!await isPhysicalDirectory(registrationRoot)) continue;
-          const registrationPath = join(registrationRoot, "registration.json");
+          const registrationPath = join(registrationRoot, "binding.json");
           if (!await isPhysicalFile(registrationPath)) continue;
           let binding;
           try { binding = JSON.parse(await readFile(registrationPath, "utf8")); } catch { continue; }
@@ -455,8 +455,8 @@ export async function startTspiHost(options) {
             const path = join(eventsRoot, entry.name);
             const info = await physicalFileInfo(path);
             if (!info) continue;
-            const bindingMarker = [identity.route, identity.canonical, binding.node_id, binding.intent_id,
-              binding.intent_digest, binding.session_id, binding.wake_policy, binding.notify_policy].map((value) => JSON.stringify(value)).join(":");
+            const bindingMarker = [identity.route, identity.canonical, binding.node_id, binding.job_id, binding.attempt_id,
+              binding.job_digest, binding.session_id, binding.wake_policy, binding.notify_policy].map((value) => JSON.stringify(value)).join(":");
             const marker = `${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${bindingMarker}`;
             if (monitorFiles.get(path) === marker) continue;
             let event;
@@ -675,35 +675,39 @@ async function monitorWorkspaceIdentity(project) {
 
 function validMonitorBinding(binding, monitorId, identity) {
   return Boolean(binding && typeof binding === "object" && !Array.isArray(binding)
-    && ["ts-compute-monitor/1", "ts-job-monitor/1"].includes(binding.schema_version)
+    && binding.schema_version === "ts-job-monitor/1"
     && binding.monitor_id === monitorId
     && binding.workspace_id === identity.canonical
     && typeof binding.node_id === "string" && /^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/u.test(binding.node_id)
-    && typeof binding.intent_id === "string" && /^(?:calc_[1-9][0-9]*|job_[A-Za-z0-9_.:-]+)$/u.test(binding.intent_id)
-    && typeof binding.intent_digest === "string" && /^sha256:[0-9a-f]{64}$/u.test(binding.intent_digest)
+    && typeof binding.job_id === "string" && /^job_[A-Za-z0-9_.:-]+$/u.test(binding.job_id)
+    && typeof binding.attempt_id === "string" && /^attempt_[A-Za-z0-9_.:-]+$/u.test(binding.attempt_id)
+    && !Object.hasOwn(binding, "intent_id") && !Object.hasOwn(binding, "intent_digest")
+    && typeof binding.job_digest === "string" && /^sha256:[0-9a-f]{64}$/u.test(binding.job_digest)
     && (binding.session_id === null || (typeof binding.session_id === "string" && binding.session_id.length > 0))
     && ["none", "next_run"].includes(binding.wake_policy)
-    && ["none", "configured"].includes(binding.notify_policy)
+    && binding.notify_policy === "none"
     && typeof binding.enabled === "boolean"
     && typeof binding.created_at === "string" && binding.created_at.length > 0);
 }
 
 function validMonitorEvent(event, eventId, monitorId, identity, binding) {
   return Boolean(event && typeof event === "object" && !Array.isArray(event)
-    && ["ts-compute-monitor-event/1", "ts-job-monitor-event/1"].includes(event.schema_version)
+    && event.schema_version === "ts-job-monitor-event/1"
+    && !Object.hasOwn(event, "intent_id") && !Object.hasOwn(event, "intent_digest")
     && event.event_id === eventId
     && event.monitor_id === monitorId
     && event.workspace_id === identity.canonical
     && event.node_id === binding.node_id
-    && event.intent_id === binding.intent_id
-    && event.intent_digest === binding.intent_digest
+    && event.job_id === binding.job_id
+    && event.attempt_id === binding.attempt_id
+    && event.job_digest === binding.job_digest
     && event.session_id === binding.session_id
     && event.wake_policy === binding.wake_policy
     && event.notify_policy === binding.notify_policy
     && Number.isSafeInteger(event.sequence) && event.sequence > 0
     && typeof event.status_digest === "string" && /^sha256:[0-9a-f]{64}$/u.test(event.status_digest)
     && (typeof event.previous_state === "string" || event.previous_state === null)
-    && ["prepared", "submitted", "queued", "held", "running", "completed", "succeeded", "parsed", "failed", "timed_out", "cancelled", "stopped", "unknown"].includes(event.state)
+    && ["queued", "held", "running", "succeeded", "failed", "timed_out", "cancelled", "unknown"].includes(event.state)
     && (typeof event.program_status === "string" || event.program_status === null)
     && (typeof event.job_id === "string" || event.job_id === null)
     && (Number.isSafeInteger(event.exit_status) || event.exit_status === null)

@@ -38,8 +38,8 @@ def _store(root: Path) -> PayloadStore:
 
 
 def dispatch(operation: str, params: dict[str, Any]) -> dict[str, Any]:
-    if any(any(c.isupper() for c in key) for key in params):
-        raise ValueError("schema_field_invalid: public fields use snake_case")
+    from .api import validate_command_params
+    validate_command_params("artifact." + operation, params, transport_fields=("root", "workspace_root"))
     root = _root(params); store = _store(root)
     supplied = params.get("artifact_id")
     if operation in {"create", "register"}:

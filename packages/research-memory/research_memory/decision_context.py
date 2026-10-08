@@ -25,6 +25,8 @@ def build_decision_context(root, *, max_bytes=16000, event_ids=()):
         events = []
         for path in sorted((root / "operations/monitors").glob("*/events/*.json")):
             event = json.loads(path.read_text())
+            from research_state.monitor_wake import validate_event
+            validate_event(event)
             delivery_path = path.parent.parent / "deliveries" / path.name
             delivery = json.loads(delivery_path.read_text()) if delivery_path.exists() else {}
             if not event_ids and delivery.get("delivered"):
