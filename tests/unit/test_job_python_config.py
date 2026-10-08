@@ -61,6 +61,10 @@ lock_ref = "/opt/locks/cf22d.lock"
     assert "/opt/runner" in job["command"]
     assert job["platform"] == "remote"
     assert job["metadata"]["python_binding"]["lock_ref"] == "/opt/locks/runner.lock"
+    with pytest.raises(ValueError, match="runner_arguments_invalid.*",):
+        prepare(path, "remote", "xtb", "xtb", xyz, ["--task", "opt-sp", "--method", "GFN2-xTB"])
+    with pytest.raises(ValueError, match="owned by the preparation helper"):
+        prepare(path, "remote", "xtb", "xtb", xyz, ["--task", "sp", "--output-dir", "/tmp/escaped"])
     path.write_text(text.replace('[environments.remote.backends.pyscf.python]', '[environments.remote.backends.pyscf]\ncommand = ["/old/python"]\n[environments.remote.backends.pyscf.python]'))
     with pytest.raises(ValueError, match="sole Python binding"):
         prepare(path, "remote", "pyscf", "cf22d", xyz, ["--task", "opt-sp"])

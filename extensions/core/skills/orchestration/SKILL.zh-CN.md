@@ -75,3 +75,9 @@ Skill，路径读取失败不代表邮件能力或收件人不存在。
 `continue_required` 会由 State 持久化接续请求，Host 在当前轮结束后通过 Pi 提交。检查返回的 continuation 决定：同一研究 revision 只接续一次，连续推进最多自动接续八次。被拒绝时说明原因，不承诺自动续跑。Node 是研究范围；同 Node 的独立任务必须保留 helper 生成的不同 work_id，已提交工作先 collect/reconcile。
 
 完成结果核验、报告整理与已授权交付后再写最终 checkpoint。计算失败时先继续独立的已授权工作，再判断是否全局 blocked。“完成后发结果”不自动授权失败通知。已 blocked 的范围须先通过显式恢复 checkpoint 再更新 Node 或调用 bash，不能直接编辑状态文件。
+
+## 完成条件与恢复
+
+每个执行或交付 Node 都应在首次产生外部效果前声明 Gate 或有理由的 completion_exemption。独立方法/环境分别建立 Node，报告和邮件建立依赖节点。前置节点证据通过后关闭；check/prepare 可提前执行，实际发送要求交付节点已具备执行条件。Job 退出或 SMTP 回执本身不关闭 Node。
+
+research_change 失败时检查 operation_index、operation_type、target_id：整批已回滚，但前面操作可能正确。用 research_read mode=operations query=evaluate_gate 查询嵌套合同和示例，只修复指出的目标，不猜字段或重复原请求。邮件须登记并检查已有回执，评估交付 Gate、关闭节点，再写 checkpoint。状态登记失败后复用 sent 回执，不重新发送。

@@ -19,8 +19,8 @@ creates. References use the IDs already present in the map.
 | `create_claim` | `id`, `statement`; optional `status`, `predictions`, `falsifiers` |
 | `create_node` | `id`, `title`, `objective`; optional `phase_id`, `claim_ids`, `dependency_ids` |
 | `create_finding` | `id`, `node_id`, `statement`, `kind` (`fact` or `issue`); fact fields are `value`, `datatype`, `unit`, `provenance`; issue fields are `status`, `severity`, `resolution` |
-| `create_gate` | `id`, `scope` (`node` or `claim`), `target_id`, optional `criteria` |
-| `evaluate_gate` | `gate_id`, `verdict`, optional `message`, `evidence_refs` |
+| `create_gate` | `id`, `scope` (`node` or `claim`), `target_id`, `criteria` |
+| `evaluate_gate` | `gate_id`, `verdict`, `assessments`, optional `message`, `evidence_refs` |
 | `set_node_state` | `node_id`, `state`; closing also needs `outcome` and `summary` |
 | `set_claim_status` | `claim_id`, `status` |
 | `relate_claims` | `source_id`, `target_id`, `relation` |
@@ -63,3 +63,5 @@ must cite that receipt and its direct outputs. Use comparison/background roles
 for other runs. `kind=observation` or `execution_issue` requires the runtime's
 `execution_observation_ref`. Use `supersedes_id` to correct earlier explanations.
 Changed outputs invalidate dependent explanations and machine Gate assessments.
+
+Completion conditions also apply to report and email Nodes. Each agent_assessment supplies criterion_id, verdict (pass/fail/inconclusive/blocked), and reason; machine assessments supply criterion_id and result_receipt_ref. Query mode=operations query=evaluate_gate for the complete schema and example, replacing example evidence IDs with registered IDs. Use operation_index/target_id to diagnose an atomic batch failure; rollback does not mean an earlier Gate evaluation was invalid.

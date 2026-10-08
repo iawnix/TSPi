@@ -21,3 +21,7 @@ Host/Monitor 只唤醒 Agent，邮件准备和投递由此 Skill 完成，不依
 使用本 Skill 处理上述请求。
 
 完成已授权交付或记录其具体阻塞后再写 terminal checkpoint。交付 Node 记录结果，不需要计算 Attempt。遵守用户授权和完成条件：“完成后发结果”不自动授权失败通知。全局 blocked/terminal 仍会阻止 bash；先通过显式恢复 checkpoint 再继续。
+
+研究工作区的草稿必须包含已有交付节点的 `node_id`。首次发送前声明其完成 Gate，并关闭已完成的依赖节点。CLI 在持久保存 sending 记录时检查 State 准入；check/prepare 可在依赖未完成时运行。节点或范围关闭后，重放 sent 请求仍返回已有回执。
+
+send/status 后，通过 artifact_register 将持久 `receipt_ref` 登记到交付节点，读取并核验，用返回的 artifact_id 填写 Gate 的 evidence_refs。代理评估字段为 criterion_id、verdict、reason。评估 Gate 并关闭节点后再写 terminal。登记失败只恢复登记，不重发邮件。内容改变须在用户授权的交付范围内使用新的 notification_id。

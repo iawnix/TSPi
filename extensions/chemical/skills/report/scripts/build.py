@@ -25,9 +25,21 @@ def build(entries):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--result',action='append',required=True,help='environment=path to result.json')
+    p.add_argument('--result',action='append',default=[],help='environment=path to standalone result.json')
+    p.add_argument('--job',action='append',default=[],help='Job directory; read environment and result location from its receipts')
     p.add_argument('--output-dir',required=True)
-    a=p.parse_args();out=Path(a.output_dir);out.mkdir(parents=True,exist_ok=True)
+    a=p.parse_args()
+    if not a.result and not a.job: p.error('supply --job or --result')
+    for directory in a.job:
+        job = Path(directory).resolve()
+        receipt = json.loads((job/'receipt.json').read_text())
+        intent = json.loads((job.parents[2]/'operations/jobs'/f'{job.name}.json').read_text())
+        if receipt.get('job_id') != job.name or intent.get('job_id') != job.name:
+            raise ValueError('job identity does not match report source')
+        cwd = Path(receipt['cwd']).resolve()
+        if not cwd.is_relative_to(job): raise ValueError('job result directory is outside the Job')
+        a.result.append(f"{intent['platform']}={cwd/'results/result.json'}")
+    out=Path(a.output_dir);out.mkdir(parents=True,exist_ok=True)
     if any(out.iterdir()):
         raise ValueError('report output directory must be empty; refusing to overwrite existing files')
     report=build(a.result)

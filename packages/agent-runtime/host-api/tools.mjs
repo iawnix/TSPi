@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { dispositions } = require("../../research-state/research_state/contracts/lifecycle.json");
+const gateContract = require("../../research-state/research_state/contracts/gates.json");
 
 const TOOL_ROWS = [
   ["systemPrompt", "sys_prompt", "deterministic_runtime"],
@@ -259,7 +260,7 @@ export function createPublicToolContracts(Type) {
     }),
     operation("create_gate", {
       id: identifier(), scope: literalUnion(["node", "claim"]), target_id: identifier(),
-      criteria: Type.Optional(Type.Array(Type.Any(), { maxItems: 128 })),
+      criteria: Type.Array(Type.Unsafe(gateContract.criterion), { minItems: 1, maxItems: 128 }),
       created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
     }),
     operation("set_lifecycle_action", {
@@ -273,9 +274,9 @@ export function createPublicToolContracts(Type) {
       id: identifier(), status: literalUnion(["required", "deferred", "blocked", "completed"]),
       reason: Type.Optional(text()), request_id: Type.Optional(identifier()),
     }),
-    operation("revise_gate", { gate_id: identifier(), criteria: Type.Array(Type.Any(), { minItems: 1, maxItems: 128 }), reason: text() }),
+    operation("revise_gate", { gate_id: identifier(), criteria: Type.Array(Type.Unsafe(gateContract.criterion), { minItems: 1, maxItems: 128 }), reason: text() }),
     operation("evaluate_gate", {
-      gate_id: identifier(), assessments: Type.Array(Type.Object({}, { additionalProperties: true }), { minItems: 1 }), verdict: literalUnion(["pass", "fail", "inconclusive", "blocked"]),
+      gate_id: identifier(), assessments: Type.Array(Type.Unsafe(gateContract.assessment), { minItems: 1, maxItems: 128 }), verdict: literalUnion(["pass", "fail", "inconclusive", "blocked"]),
       message: Type.Optional(text()), evidence_refs: Type.Optional(stringArray(256)),
       created_at: Type.Optional(identifier()),
     }),
@@ -382,7 +383,7 @@ export function createPublicToolContracts(Type) {
     artifactCreate: contract("artifactCreate", "Create Artifact", "Create a raw or derived artifact from supplied content.", Type.Object({ content: Type.String({ maxLength: 4_000_000 }), name: Type.String({ minLength: 1, maxLength: 512 }), node_id: Type.Optional(nodeReference), media_type: Type.Optional(Type.String({ maxLength: 256 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
     artifactRead: contract("artifactRead", "Read Artifact", "Read bounded content or metadata from an artifact.", Type.Object({ artifact_id: identifier(256), offset: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1_000_000 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
     artifactDerive: contract("artifactDerive", "Derive Artifact", "Record a derivation descriptor. Execute analysis through a Skill Job and register its actual output separately.", Type.Object({ input_artifact_ids: Type.Array(identifier(256), { minItems: 1, maxItems: 256, uniqueItems: true }), operation: Type.String({ minLength: 1, maxLength: 256 }), parameters: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 64 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
-    artifactLink: contract("artifactLink", "Link Artifact", "Persist an artifact evidence link to a Finding, Claim, or Gate.", Type.Object({ artifact_id: identifier(256), subject_id: identifier(256), relation: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
+    artifactLink: contract("artifactLink", "Link Artifact", "Persist an artifact evidence link to a Finding, Claim, or Gate.", Type.Object({ artifact_id: identifier(256), subject_id: identifier(256), relation: Type.Optional(literalUnion(gateContract.evidence_relations)), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
 
   };
   return Object.freeze(Object.fromEntries(Object.entries(contracts).map(

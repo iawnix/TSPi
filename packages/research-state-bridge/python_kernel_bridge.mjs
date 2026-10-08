@@ -49,6 +49,7 @@ export class KernelBridgeError extends Error {
     super(message, options);
     this.name = "KernelBridgeError";
     this.code = options.code || "kernel_bridge_error";
+    this.details = options.details || {};
   }
 }
 
@@ -256,7 +257,7 @@ for line in sys.stdin:
         result = dispatch(method, _object(request.get("payload", {}), "bridge payload"))
         print(json.dumps({"id": request_id, "ok": True, "result": result}, ensure_ascii=False, separators=(",", ":")), flush=True)
     except Exception as error:
-        print(json.dumps({"id": request_id, "ok": False, "error": {"code": getattr(error, "code", type(error).__name__), "message": str(error)}}, ensure_ascii=False, separators=(",", ":")), flush=True)
+        print(json.dumps({"id": request_id, "ok": False, "error": {"code": getattr(error, "code", type(error).__name__), "message": str(error), "details": getattr(error, "details", {})}}, ensure_ascii=False, separators=(",", ":")), flush=True)
 `;
 
 /**
@@ -324,6 +325,7 @@ export function create_jsonl_subprocess_transport({
       if (response.ok === true) entry.resolve(response.result);
       else entry.reject(new KernelBridgeError(response?.error?.message || "Research State runtime request failed", {
         code: response?.error?.code || "python_kernel_error",
+        details: response?.error?.details || {},
       }));
     }
   });

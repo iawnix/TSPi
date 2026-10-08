@@ -95,6 +95,7 @@ export function attachToolErrorEnvelope(error, toolName, toolCallId) {
         retryable: retryableToolFailure(source, failureClass),
         failure_class: failureClass,
         action_outcome: actionOutcome(source, failureClass),
+        ...(source.details && Object.keys(source.details).length ? { details: source.details } : {}),
       },
     };
   }
@@ -110,7 +111,8 @@ export function attachToolErrorEnvelope(error, toolName, toolCallId) {
 export function toolErrorResult(error, toolName, toolCallId) {
   const source = attachToolErrorEnvelope(error, toolName, toolCallId);
   return {
-    content: [{ type: "text", text: source.message }],
+    content: [{ type: "text", text: source.details && Object.keys(source.details).length
+      ? JSON.stringify(source.toolEnvelope) : source.message }],
     details: { envelope: source.toolEnvelope },
   };
 }

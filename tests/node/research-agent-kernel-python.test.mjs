@@ -10,6 +10,31 @@ import { create_research_state_port } from "../../packages/research-state-bridge
 
 test.afterEach(close_test_research_states);
 
+test("Python bridge preserves the failing operation target across its JSONL boundary", async () => {
+  const root = await research_workspace("research-state-error-");
+  try {
+    const kernel = create_test_research_state({ workspace_root: root });
+    await kernel.admit_workspace({ authority: "host" });
+    const catalog = await kernel.execute_command('research.operations', { query: 'evaluate_gate' });
+    assert.deepEqual(catalog.operations.map(row => row.type), ['evaluate_gate']);
+    assert.ok(catalog.operations[0].nested_schema.assessments);
+    await kernel.apply_change({ principal: "root_agent", authority: "kernel_write", operations: [
+      { type: "create_node", id: "node_delivery", title: "Delivery", objective: "Inspect a receipt" },
+    ] });
+    await assert.rejects(kernel.apply_change({ principal: "root_agent", authority: "kernel_write", operations: [
+      { type: "set_node_state", node_id: "node_delivery", state: "closed", outcome: "completed" },
+    ] }), error => {
+      assert.equal(error.code, "completion_conditions_required");
+      assert.equal(error.details.target_id, "node_delivery");
+      assert.equal(error.details.operation_index, 0);
+      return true;
+    });
+  } finally {
+    await close_test_research_states();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 async function research_workspace(prefix) {
   const root = await mkdtemp(join(tmpdir(), prefix));
   await create_workspace_initializer().initialize_workspace({

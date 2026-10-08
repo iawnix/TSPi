@@ -9,8 +9,12 @@ model.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 
 from .errors import ContractError
+
+GATE_CONTRACT = json.loads((Path(__file__).parent / 'contracts/gates.json').read_text())
 
 
 @dataclass(frozen=True)
@@ -48,8 +52,8 @@ INPUT_OPERATION_CONTRACTS: dict[str, OperationContract] = {
         }),
     ),
     "create_gate": OperationContract(
-        required=frozenset({"type", "id", "scope", "target_id"}),
-        optional=frozenset({"criteria", "created_at", "metadata"}),
+        required=frozenset({"type", "id", "scope", "target_id", "criteria"}),
+        optional=frozenset({"created_at", "metadata"}),
     ),
     "set_lifecycle_action": OperationContract(
         required=frozenset({"type", "id", "scope", "target_id", "action"}),
@@ -61,8 +65,8 @@ INPUT_OPERATION_CONTRACTS: dict[str, OperationContract] = {
     ),
     "revise_gate": OperationContract(required=frozenset({"type", "gate_id", "criteria", "reason"})),
     "evaluate_gate": OperationContract(
-        required=frozenset({"type", "gate_id", "verdict"}),
-        optional=frozenset({"message", "evidence_refs", "assessments", "created_at"}),
+        required=frozenset({"type", "gate_id", "verdict", "assessments"}),
+        optional=frozenset({"message", "evidence_refs", "created_at"}),
     ),
     "set_node_state": OperationContract(
         required=frozenset({"type", "node_id", "state"}),
@@ -120,9 +124,10 @@ def operation_catalog(operation: str | None = None) -> dict[str, object]:
     """Return the same lightweight field catalog exposed by the Research State."""
 
     names = input_operation_names()
-    if operation is not None and operation not in names:
-        raise ContractError(f"unsupported ResearchMap operation: {operation}")
-    selected = sorted(names if operation is None else {operation})
+    selected = sorted(names if operation is None else {
+        name for name in names if name == operation or operation in INPUT_OPERATION_CONTRACTS[name].required
+        or operation in INPUT_OPERATION_CONTRACTS[name].optional
+    })
     return {
         "schema_version": "research-operation-catalog/1",
         "selected_operation": operation,
@@ -131,6 +136,9 @@ def operation_catalog(operation: str | None = None) -> dict[str, object]:
                 "type": name,
                 "required_fields": sorted(INPUT_OPERATION_CONTRACTS[name].required),
                 "optional_fields": sorted(INPUT_OPERATION_CONTRACTS[name].optional),
+                **({"nested_schema": {"criteria": GATE_CONTRACT["criterion"]}} if name in {"create_gate", "revise_gate"} else {}),
+                **({"nested_schema": {"assessments": GATE_CONTRACT["assessment"]}} if name == "evaluate_gate" else {}),
+                **({"example": GATE_CONTRACT["examples"][name]} if name in GATE_CONTRACT["examples"] else {}),
             }
             for name in selected
         ],

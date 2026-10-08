@@ -65,10 +65,11 @@ ATTEMPT_TRANSITIONS = {
 class AgentWorkspaceError(RuntimeError):
     """Raised when a new Research Agent workspace request is invalid."""
 
-    def __init__(self, message):
+    def __init__(self, message, *, details=None):
         super().__init__(message)
         prefix = str(message).split(":", 1)[0]
         self.code = prefix if re.fullmatch(r"[a-z][a-z_]+", prefix) else "research_state_invalid"
+        self.details = details or {}
 
 
 def has_state_files(root: str | Path) -> bool:
@@ -1098,6 +1099,12 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
             raise AgentWorkspaceError("node_has_active_attempts")
         if state == "closed" and outcome == "completed" and not node.get("gate_ids") and not node.get("completion_exemption"):
             raise AgentWorkspaceError("completion_conditions_required")
+        if state == "closed" and outcome == "completed":
+            nodes_by_id = {n['id']: n for n in context['nodes']}
+            unmet = [ref for ref in node.get('dependency_ids', [])
+                     if nodes_by_id.get(ref, {}).get('state') != 'closed' or nodes_by_id.get(ref, {}).get('outcome') != 'completed']
+            if unmet:
+                raise AgentWorkspaceError('node_dependencies_incomplete: ' + ', '.join(unmet))
         node["state"] = state
         node["outcome"] = outcome if state == "closed" else None
         node["outcome_summary"] = operation.get("summary") if isinstance(operation.get("summary"), str) else None
@@ -1325,6 +1332,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
             raise AgentWorkspaceError(str(exc)) from exc
         gate.setdefault("evaluations", []).append({
             "gate_version": gate["version"], "result_versions": versions,
+            "artifact_versions": {a['id']: a.get('sha256') for a in context['artifacts'] if a['id'] in evidence_refs},
             "assessments": copy.deepcopy(operation.get("assessments", [])),
             "verdict": verdict,
             "checked_at": created_at,
@@ -1478,7 +1486,8 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
         if subject_type != "decision":
             _lookup(context, f"{subject_type}s" if subject_type != "finding" else "findings", subject_id, subject_type)
         relation = operation.get("relation")
-        if relation not in {"supports", "contradicts", "qualifies", "derived_from", "documents"}:
+        from .operation_registry import GATE_CONTRACT
+        if relation not in GATE_CONTRACT["evidence_relations"]:
             raise AgentWorkspaceError("operation.relation is invalid")
         links.append({
             "type": "evidence_link", "id": item_id, "created_at": created_at,
@@ -1821,8 +1830,19 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
         _require_decision_ready(context, liveness, operations)
         updated = copy.deepcopy(context)
         created_ids: list[str] = []
-        for operation in operations:
-            created = _apply_operation(updated, operation, root=Path(root))
+        for index, operation in enumerate(operations):
+            try:
+                created = _apply_operation(updated, operation, root=Path(root))
+            except (AgentWorkspaceError, ValueError) as exc:
+                op = operation if isinstance(operation, dict) else {}
+                target = next((op[key] for key in ("node_id", "gate_id", "claim_id", "target_id", "id") if key in op), None)
+                details = {**getattr(exc, "details", {}), "operation_index": index,
+                           "operation_type": op.get("type"), "target_id": target,
+                           "retryable_without_change": False, "atomic_batch_committed": False}
+                if str(exc).startswith("completion_conditions_required"):
+                    details.update(missing=["gate_or_completion_exemption"],
+                                   recovery="Create and evaluate a Gate for this node before closing it; preserve completed work and existing delivery receipts.")
+                raise AgentWorkspaceError(str(exc), details=details) from exc
             if created is not None:
                 created_ids.append(created)
         updated["research_obligations"] = _research_obligations(updated)
@@ -1832,6 +1852,14 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
         updated["lifecycle"] = projected_liveness.get("lifecycle", "idle")
         updated["disposition"] = projected_liveness.get("disposition")
         updated["checkpoint_id"] = projected_liveness.get("checkpoint_id")
+        if not operational:
+            from .invariants import validate_context
+            previous_issues = validate_context(context)['issues']
+            introduced = [issue for issue in validate_context(updated)['issues'] if issue not in previous_issues]
+            if introduced:
+                raise AgentWorkspaceError('research_invariant_violation: proposed batch introduces inconsistent state',
+                    details={'phase': 'final_validation', 'issues': introduced, 'atomic_batch_committed': False,
+                             'retryable_without_change': False})
         manifest_path = Path(root).expanduser().resolve() / "workspace_manifest.json"
         manifest = _read_json(manifest_path, "workspace_manifest")
         kernel_state = manifest.get("research_state")

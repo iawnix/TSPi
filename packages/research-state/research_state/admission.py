@@ -2,6 +2,24 @@
 import hashlib
 
 
+def node_admission(context, liveness, node_id):
+    """Shared admission for a new Job or a node-scoped Skill side effect."""
+    node = next((n for n in context.get("nodes", []) if n.get("id") == node_id), None)
+    if node is None:
+        return {"accepted": False, "code": "research_node_required", "reason": "Supply an existing node_id"}
+    if node_id not in liveness.get("eligible_node_ids", liveness.get("ready_node_ids", [])):
+        nodes = {n.get("id"): n for n in context.get("nodes", [])}
+        unmet = [ref for ref in node.get("dependency_ids", [])
+                 if nodes.get(ref, {}).get("state") != "closed" or nodes.get(ref, {}).get("outcome") != "completed"]
+        return {"accepted": False, "code": "research_node_not_ready",
+                "reason": f"Node {node_id} is not eligible: state={node.get('state')}; unmet_dependencies={unmet}. "
+                          "Satisfy dependencies and record research_strategy before execution."}
+    if not node.get("gate_ids") and not node.get("completion_exemption"):
+        return {"accepted": False, "code": "completion_conditions_required",
+                "reason": f"Node {node_id} requires a Gate or a completion_exemption before execution"}
+    return {"accepted": True}
+
+
 def tool_admission(context, liveness, tool):
     name = tool.get("name")
     effect = tool.get("effect")
@@ -25,16 +43,10 @@ def tool_admission(context, liveness, tool):
                 return {"accepted": True}  # Runtime validates the immutable request and reconciles it.
             if work_id and metadata.get("job_metadata", {}).get("work_id") == work_id:
                 return deny("research_work_already_submitted", "This work identity already has an Attempt; collect/reconcile it. Intentional new work needs a new work_id.")
-        if node_id and node_id not in liveness.get("eligible_node_ids", liveness.get("ready_node_ids", [])):
-            node = next((n for n in context.get("nodes", []) if n.get("id") == node_id), None)
-            plans = [p for p in context.get("strategy_plans", []) if p.get("status", "proposed") in {"proposed", "active"}
-                     and (p.get("node_id") == node_id or p.get("claim_id") in (node or {}).get("claim_ids", []))]
-            nodes = {n.get("id"): n for n in context.get("nodes", [])}
-            unmet = [dependency for dependency in (node or {}).get("dependency_ids", [])
-                     if nodes.get(dependency, {}).get("state") != "closed" or nodes.get(dependency, {}).get("outcome") != "completed"]
-            return deny("research_node_not_ready", f"Node {node_id} is not eligible: state={(node or {}).get('state', 'missing')}; "
-                        f"active_strategy={'present' if plans else 'missing'}; unmet_dependencies={unmet}. Read research_read for blocker details; "
-                        "satisfy dependencies and record research_strategy before job_start.")
+        if node_id:
+            decision = node_admission(context, liveness, node_id)
+            if not decision["accepted"]:
+                return decision
         if any(a.get("state") in {"started", "running", "unknown"} for a in attempts) and not work_id:
             return deny("research_work_identity_required", "Another Attempt is active in this research scope. Use a distinct work_id for independent work, or reconcile the existing Job.")
     preparation = name in {"bash", "write", "edit"} and tool.get("phase") == "prepare"

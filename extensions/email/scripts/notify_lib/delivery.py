@@ -96,8 +96,21 @@ class _DeliveryAmbiguous(RuntimeError):
 
 def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
     """Send one bounded research notification using installation-owned addressing."""
-
     workspace = workspace_root(root)
+    request = _load_request(request_file)
+    if request.get("schema_version") != "ts-user-notification/2":
+        return _notify_user(workspace, request)
+    identity = bounded_text(request.get("notification_id"), "notification_id", 256)
+    lock_path = workspace / DELIVERY_DIR_REF / ("id-" + sha256_json(identity).removeprefix('sha256:') + ".guard")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    # Serialize by logical identity as well as content, so changing a body
+    # cannot turn a retry into a second delivery under the same identity.
+    with _delivery_lock(lock_path, touch=False):
+        return _notify_user(workspace, request)
+
+
+def _notify_user(workspace: Path, request: dict[str, Any]) -> dict[str, Any]:
+
     config = load_notification_config()
     if not config.enabled:
         raise ValueError("email notifications are disabled by the installation configuration")
@@ -106,7 +119,6 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
         if config.provider == "clawemail"
         else None
     )
-    request = _load_request(request_file)
     event = _event(request.get("event"))
     subject = bounded_text(request.get("subject"), "notification subject", 300)
     summary = bounded_content(request.get("summary"), "notification summary", 20_000)
@@ -150,6 +162,12 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
             if not old.get("notification_id") and old.get("event") == event and old.get("subject") == subject and old.get("state") in {"sent","sending","unknown"}:
                 raise ValueError(f"legacy delivery requires reconciliation before new send: {old_path.name}")
     notification_digest = sha256_json(notification)
+    if request.get("schema_version") == "ts-user-notification/2":
+        for path in (workspace / DELIVERY_DIR_REF).glob("*.json"):
+            if not path.stat().st_size: continue
+            old = json.loads(path.read_text())
+            if old.get("notification_id") == request["notification_id"] and old.get("notification_digest") != notification_digest:
+                raise ValueError("notification_id_reused: changed delivery content requires a new notification_id")
     receipt_ref = f"{DELIVERY_DIR_REF}/{notification_digest.removeprefix('sha256:')}.json"
     _, receipt_path = workspace_path(workspace, receipt_ref, must_exist=False, allow_existing=True)
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -172,9 +190,12 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
             "notification_digest": notification_digest,
             "notification_config_digest": config.digest,
             "report_artifacts": attachment_records,
+            "node_id": request.get("node_id"),
         }
-        _write_private_json(receipt_path, guard, exclusive=False)
+        with _delivery_admission(workspace, request.get("node_id")):
+            _write_private_json(receipt_path, guard, exclusive=False)
 
+        transport_started = False
         try:
             _revalidate_notification_inputs(
                 workspace,
@@ -182,6 +203,7 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
                 workspace_revision,
                 attachment_records,
             )
+            transport_started = True
             provider_output = _run_transport(
                 config,
                 manager=manager,
@@ -191,7 +213,7 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
                 body=summary,
                 attachments=list(zip(attachment_paths, attachment_records, strict=True)),
             )
-        except (OSError, ValueError, _DeliveryNotStarted) as exc:
+        except _DeliveryNotStarted as exc:
             failed = {
                 **guard,
                 "state": "failed",
@@ -228,25 +250,23 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
                 receipt_ref=receipt_ref,
             ) from exc
         except Exception as exc:
-            # Keep an unexpected provider/preflight exception from leaving a
-            # durable `sending` receipt forever.  Known provider failures are
-            # handled above; this catch is the final convergence boundary for
-            # ordinary runtime exceptions raised before a confirmed send.
+            # Once transport was entered, an unclassified error is not proof
+            # of non-delivery (including OSError/ValueError after DATA).
             diagnostic = _safe_error(exc)
             failed = {
                 **guard,
-                "state": "failed",
+                "state": "unknown" if transport_started else "failed",
                 "updated_at": _now(),
-                "error_class": "delivery_failed",
+                "error_class": "delivery_ambiguous" if transport_started else "delivery_not_started",
                 "error": diagnostic,
             }
             _write_private_json(receipt_path, failed, exclusive=False)
             raise NotificationError(
                 f"email notification failed: {diagnostic}; receipt={receipt_ref}",
-                code="NOTIFICATION_DELIVERY_FAILED",
-                error_class="delivery_failed",
-                state="failed",
-                retry_disposition="retry_after_fix",
+                code="NOTIFICATION_DELIVERY_AMBIGUOUS" if transport_started else "NOTIFICATION_DELIVERY_NOT_STARTED",
+                error_class=failed["error_class"],
+                state=failed["state"],
+                retry_disposition="reconcile_only" if transport_started else "retry_after_fix",
                 receipt_ref=receipt_ref,
             ) from exc
 
@@ -495,7 +515,7 @@ def _load_request(request_file: Path) -> dict[str, Any]:
     value = json.loads(request_file.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError("notification request must be an object")
-    allowed = {"schema_version", "event", "subject", "summary", "report_refs", "attachments", "notification_id", "recipient"}
+    allowed = {"schema_version", "event", "subject", "summary", "report_refs", "attachments", "notification_id", "recipient", "node_id"}
     unknown = sorted(set(value) - allowed)
     if unknown:
         raise ValueError(f"notification request contains unknown fields: {', '.join(unknown)}")
@@ -832,6 +852,7 @@ def _run_clawemail(
     body: str,
     attachments: list[tuple[Path, dict[str, Any]]],
 ) -> str:
+    completed = None
     try:
         with tempfile.TemporaryDirectory(prefix="ts-notify-user-") as temp_dir:
             body_path = Path(temp_dir) / "body.txt"
@@ -880,6 +901,8 @@ def _run_clawemail(
     except _DeliveryAmbiguous:
         raise
     except OSError as exc:
+        if completed is not None:
+            raise _DeliveryAmbiguous("ClawEmail completed before local cleanup failed: " + str(exc)) from exc
         raise _DeliveryNotStarted(str(exc)) from exc
     if completed.returncode != 0:
         raise _DeliveryAmbiguous(
@@ -921,7 +944,6 @@ def _existing_delivery_result(
     state = receipt.get("state")
     if state == "failed" and receipt.get("error_class") in {
         "delivery_not_started",
-        "delivery_failed",
     }:
         return None
     if state == "sending":
@@ -1050,7 +1072,7 @@ def _event(value: Any) -> str:
 
 
 @contextmanager
-def _delivery_lock(path: Path):
+def _delivery_lock(path: Path, *, touch=True):
     flags = os.O_RDWR | os.O_CREAT
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -1060,11 +1082,28 @@ def _delivery_lock(path: Path):
             raise ValueError("email notification receipt must be a regular file")
         os.fchmod(descriptor, 0o600)
         fcntl.flock(descriptor, fcntl.LOCK_EX)
-        path.touch(exist_ok=True, mode=0o600)
+        if touch: path.touch(exist_ok=True, mode=0o600)
         yield
     finally:
         fcntl.flock(descriptor, fcntl.LOCK_UN)
         os.close(descriptor)
+
+
+@contextmanager
+def _delivery_admission(workspace, node_id):
+    """Read State policy; Skill scripts never mutate canonical Research State."""
+    if not (workspace / 'research_map/context.json').exists():
+        yield
+        return
+    from research_state.transactions import TransactionCoordinator
+    from research_state.agent_workspace import read_context, read_liveness
+    from research_state.admission import node_admission, tool_admission
+    with TransactionCoordinator(workspace).locked():
+        context, liveness = read_context(workspace), read_liveness(workspace)
+        policy = tool_admission(context, liveness, {"name": "skill_delivery", "effect": "execution_control"})
+        if policy['accepted']: policy = node_admission(context, liveness, node_id)
+        if not policy['accepted']: raise ValueError(policy['code'] + ': ' + policy['reason'])
+        yield
 
 
 def _write_private_json(path: Path, value: dict[str, Any], *, exclusive: bool) -> None:

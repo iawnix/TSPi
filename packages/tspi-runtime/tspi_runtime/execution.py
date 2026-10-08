@@ -54,6 +54,12 @@ class JobSelectionError(ValueError):
         self.code = code
 
 
+class JobSubmissionError(RuntimeError):
+    """Dispatch was attempted; a retry must reconcile the existing identity."""
+
+    code = "submission_ambiguous"
+
+
 def _job_id(params: dict[str, Any]) -> str:
     value = params.get("job_id")
     if value is None and params.get("request_id"):
@@ -294,6 +300,13 @@ def _prepare_start(root, runtime, params):
             old = json.loads(path.read_text())
             if old.get("request_id") == request_id and old["job_id"] != job_id:
                 raise ValueError("request_id_reused: existing Job " + old["job_id"])
+    # A prepared/committing transaction may outlive the caller. Recover its
+    # durable decision before inspecting or removing any staged input.
+    intent_request_id = (request_id or f"job.start:{job_id}") + ":intent"
+    coordinator = TransactionCoordinator(root)
+    transaction = coordinator.get(intent_request_id)
+    if transaction and transaction["state"] in {"prepared", "committing"}:
+        coordinator.commit(intent_request_id)
     previous = root / _intent_path(root, job_id)
     if previous.is_file():
         old = json.loads(previous.read_text())
@@ -307,6 +320,35 @@ def _prepare_start(root, runtime, params):
         decision = read_liveness(root, {"tool": {"name": "job_start", "effect": "execution_control", "args": params}})["tool_admission"]
         if not decision["accepted"]:
             raise ValueError(decision["code"] + ": " + decision["reason"])
+    staging_root = root / "runs/jobs" / job_id
+    marker = root / "operations/staging" / f"{job_id}.json"
+    ownership = {"schema_version": "job_staging/1", "job_id": job_id,
+                 "request_digest": _request_digest(params), "state": "preparing"}
+    if staging_root.exists() or marker.exists():
+        if marker.is_symlink() or not marker.is_file() or json.loads(marker.read_text()) != ownership:
+            raise ValueError("orphan_job_directory: staging ownership is unproven; inspect before retrying")
+        # Only a matching pre-dispatch marker, with no intent/receipt, proves
+        # that this adapter has never launched the staged command.
+        if staging_root.is_symlink() or any(staging_root.rglob("receipt.json")):
+            raise ValueError("orphan_job_directory: execution evidence requires reconciliation")
+        if staging_root.exists():
+            shutil.rmtree(staging_root)
+    write_json(marker, ownership)
+    try:
+        result = _stage_start(root, runtime, params, job_id)
+    except Exception:
+        transaction = coordinator.get(intent_request_id)
+        if not previous.exists() and not transaction:
+            if staging_root.exists():
+                shutil.rmtree(staging_root)
+            marker.unlink(missing_ok=True)
+        raise
+    marker.unlink(missing_ok=True)
+    return result
+
+
+def _stage_start(root, runtime, params, job_id):
+    staging_root = root / "runs/jobs" / job_id
     if params.get("validator_id"):
         from .validators import prepare
         prepared_params = prepare(root, params)
@@ -314,9 +356,6 @@ def _prepare_start(root, runtime, params):
         if (params.get("metadata") or {}).get("validator"):
             raise ValueError("validator_source_forbidden: use a registered validator_id")
         prepared_params = params
-    staging_root = root / "runs/jobs" / job_id
-    if staging_root.exists():
-        raise ValueError("orphan_job_directory: no dispatch intent exists; inspect staging before choosing a new request ID")
     try:
         spec = _spec(root, prepared_params)
     except Exception:
@@ -385,15 +424,24 @@ def _start(root, runtime, params):
     if isinstance(prepared, dict):
         return prepared
     spec, intent, request_id = prepared
+    receipt = None
     try:
         receipt = runtime.job_start(spec, platform=_platform_name(params))
+        result = {**receipt.__dict__, "command": list(receipt.command)}
+        committed = {**intent, "state": "submitted", "receipt": result}
+        coordinator.commit_files(f"{request_id}:receipt", "job.receipt", result, writes={_intent_path(root, spec.job_id): committed}, result=result)
+        from .job_monitor import bind
+        bind(root, committed, params.get("session_id"))
+        return result
     except Exception as error:
-        failed = {**intent, "state": "unknown", "error": str(error)}
-        coordinator.commit_files(f"{request_id}:failed", "job.dispatch_failed", params, writes={_intent_path(root, spec.job_id): failed}, result=failed)
-        raise RuntimeError(f"job {spec.job_id}, attempt {spec.attempt_id}: submission outcome requires reconciliation: {error}") from error
-    result = {**receipt.__dict__, "command": list(receipt.command)}
-    committed = {**intent, "state": "submitted", "receipt": result}
-    coordinator.commit_files(f"{request_id}:receipt", "job.receipt", result, writes={_intent_path(root, spec.job_id): committed}, result=result)
-    from .job_monitor import bind
-    bind(root, committed, params.get("session_id"))
-    return result
+        if receipt is None:
+            failed = {**intent, "state": "unknown", "error": str(error)}
+            try:
+                coordinator.commit_files(f"{request_id}:failed", "job.dispatch_failed", params, writes={_intent_path(root, spec.job_id): failed}, result=failed)
+            except Exception:
+                pass  # The durable dispatch intent still prevents resubmission.
+        failure = JobSubmissionError(
+            f"submission_ambiguous: job {spec.job_id}, attempt {spec.attempt_id}: submission outcome requires reconciliation: {error}")
+        failure.details = {"job_id": spec.job_id, "attempt_id": spec.attempt_id, "recovery": "job_reconcile",
+                           "action_outcome": "unknown", "retryable_without_change": False}
+        raise failure from error

@@ -87,3 +87,9 @@ path lookup is not evidence that email or a recipient is unavailable.
 - [Public contract / 公开契约](references/public_contract.md): generated tool names and dispositions.
 
 Complete result validation, report formatting and authorized delivery before the final checkpoint. If calculations fail, continue independent authorized work before declaring the whole scope blocked. Do not broaden final-result email authorization into failure notices. For an already blocked scope, use an explicit recovery checkpoint before updating Nodes or invoking bash; never edit State files directly.
+
+## Completion and recovery
+
+Declare a Gate or justified completion_exemption for every executable or delivery Node before its first effect. Plan one Node per independent method/environment, followed by dependent report/delivery Nodes. Close prerequisite Nodes after their evidence passes; preparation/check commands may run earlier, but sending requires an eligible delivery Node. A Job exit or an SMTP receipt alone does not close a Node.
+
+On research_change failure, inspect operation_index, operation_type and target_id. The whole batch rolled back; earlier operations may have been valid. Query research_read mode=operations query=evaluate_gate for the nested contract and example. Repair the identified target; do not guess replacement fields or repeatedly submit unchanged operations. For email, register and inspect the existing receipt, evaluate the delivery Gate, close the Node, then checkpoint. A sent receipt must be reused even if State registration previously failed.

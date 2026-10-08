@@ -36,8 +36,9 @@ def test_installed_skill_entrypoint_does_not_import_host_or_provider(skill,tmp_p
 def test_cf22d_rejects_method_substitution_before_calculation(tmp_path):
     xyz=tmp_path/'water.xyz';xyz.write_text('1\natom\nH 0 0 0\n')
     run=subprocess.run([sys.executable,str(SKILLS/'cf22d/scripts/run.py'),'--xyz',str(xyz),'--xc','RHF','--task','sp','--output-dir',str(tmp_path/'out')],capture_output=True,text=True)
-    assert run.returncode==1
+    assert run.returncode==2
     assert 'only permits xc=CF22D' in run.stderr
+    assert not (tmp_path/'out').exists()
 
 
 def test_report_bash_preserves_source_digests_and_accepts_empty_output(tmp_path):
@@ -66,3 +67,16 @@ def test_report_refuses_to_overwrite_existing_output(tmp_path):
     assert 'refusing to overwrite' in run.stderr
     assert previous.read_text() == 'keep me'
     assert not (out/'report.json').exists()
+
+
+def test_report_reads_environment_from_job_identity_instead_of_method_label(tmp_path):
+    job = tmp_path/'runs/jobs/job_test'; (job/'results').mkdir(parents=True)
+    (tmp_path/'operations/jobs').mkdir(parents=True)
+    (tmp_path/'operations/jobs/job_test.json').write_text(json.dumps({'job_id': 'job_test', 'platform': 'local'}))
+    (job/'receipt.json').write_text(json.dumps({'job_id': 'job_test', 'cwd': str(job)}))
+    (job/'results/result.json').write_text(json.dumps({'method': 'GFN2-xTB', 'validated': True, 'steps': [{'task': 'sp', 'energy_hartree': -5}]}))
+    out = tmp_path/'report'
+    run = subprocess.run([sys.executable, str(SKILLS/'report/scripts/build.py'), '--job', str(job), '--output-dir', str(out)], capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    result = json.loads((out/'report.json').read_text())['results'][0]
+    assert result['environment'] == 'local' and result['method'] == 'GFN2-xTB'

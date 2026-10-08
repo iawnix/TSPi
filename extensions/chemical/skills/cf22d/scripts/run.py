@@ -12,35 +12,11 @@ from science import prepare, digest, finite_energy, finish
 from runner import build_config, run_pyscf
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run one TSPi PySCF/CF22D workflow")
-    parser.add_argument("--xyz", required=True)
-    parser.add_argument("--task", choices=("sp", "opt", "ts", "freq", "thermo", "opt_freq", "ts_freq", "opt-sp"), required=True)
-    parser.add_argument("--output-dir", default=".")
-    parser.add_argument("--basis", default="def2-tzvp")
-    parser.add_argument("--charge", type=int, default=0)
-    parser.add_argument("--spin", type=int, default=0)
-    parser.add_argument("--unit", choices=("angstrom",), default="angstrom")
-    parser.add_argument("--verbose", type=int, default=4)
-    parser.add_argument("--xc", default="CF22D")
-    parser.add_argument("--grid-level", type=int, default=6)
-    parser.add_argument("--conv-tol", type=float, default=1.0e-10)
-    parser.add_argument("--max-cycle", type=int, default=400)
-    parser.add_argument("--max-steps", type=int, default=100)
-    parser.add_argument("--threads", type=int, default=1)
-    parser.add_argument("--memory-mb", type=int, default=4000)
-    parser.add_argument("--imaginary-threshold-cm", type=float, default=-20.0)
-    parser.add_argument("--temperature", type=float, default=298.15)
-    parser.add_argument("--pressure", type=float, default=101325.0)
-    hessian_group = parser.add_mutually_exclusive_group()
-    hessian_group.add_argument("--use-initial-hessian", dest="use_initial_hessian", action="store_true")
-    hessian_group.add_argument("--no-use-initial-hessian", dest="use_initial_hessian", action="store_false")
-    parser.set_defaults(use_initial_hessian=None)
-    return parser
+from cli import build_parser, parse_arguments
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    args = parse_arguments(argv)
     out = None
     try:
         out, atoms, result = prepare(args, "CF22D", args.basis)

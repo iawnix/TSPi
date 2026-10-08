@@ -82,3 +82,5 @@ job_status diagnostics when a queue-wait event arrives; no exit receipt while
 queued/running is normal. Do not resubmit or change queues without reconciling
 the original Job. An optional `submission.queue_wait_seconds` causes one Monitor
 notification when that waiting threshold is exceeded.
+
+The preparation helper validates forwarded arguments against the same pure CLI parser used by the selected runner, before writing a request. Unknown arguments and attempts to override managed input/output/executable paths are rejected. GFN2-xTB is fixed by its runner; do not add --method. Preparation success is argument/configuration validation, not proof that the target scientific environment can run.

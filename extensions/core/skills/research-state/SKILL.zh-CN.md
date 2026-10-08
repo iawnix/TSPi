@@ -82,3 +82,5 @@ Research State 会在提交一个新 revision 前校验引用、反向索引、�
 `direct_evidence_refs`；执行成功本身不足以证明科学结论成立。
 
 问题修复后通过 research_change 使用 {"type":"resolve_issue","id":"<既有issue ID>","resolution":"<修复内容与验证方式>","source_refs":["<已登记证据ID>"]}。source_refs 可省略，提供时必须存在。该操作保留原 issue 和证据，标记 resolved 并记录修复说明；相关 Node 另行恢复。不要发明 update_finding 或直接改状态文件。ResearchMap 变更会取代旧 checkpoint，恢复后的工作结束前需写新 checkpoint。
+
+计算、报告和交付 Node 均须有完成条件；completed 还要求依赖节点已完成。用 `research_read mode=operations query=evaluate_gate` 获取嵌套字段和最小示例，query=completion_exemption 查找创建字段。批次错误含从 0 开始的 operation_index 和 target_id；该批次没有任何操作提交。保留回执，只修复被拒操作及其前置条件。

@@ -124,7 +124,7 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
         if action in {"detail", "locate", "operations", "decisions", "evidence", "storage"}:
             context = dispatch_agent_workspace(root, "read_context", request)
             if action == "operations":
-                return operation_catalog()
+                return operation_catalog(request.get("query"))
             if action == "storage":
                 return {
                     "schema_version": "research-storage/1",

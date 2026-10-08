@@ -27,20 +27,20 @@
     {
       "name": "method-selection",
       "path": "skills/method-selection",
-      "sha256": "sha256:303fd45e83b8cc7df0cc912f1467b1e7545ef4b30febddf20fc341e9007970c0",
-      "resources_sha256": "sha256:4392146a2d5875a252fb1de39b7518994f8ae97879930c0eeb0ba5d31570b665"
+      "sha256": "sha256:40ddb8e54dbfbf6e50f969a6e82ecae8ee370083b67d5c0c72eb6f557b007d5b",
+      "resources_sha256": "sha256:e8ca2897c0bcdd1808b9c21d3b2d7727c01729cb67a2f63e219dd3afdcd2e366"
     },
     {
       "name": "cf22d",
       "path": "skills/cf22d",
       "sha256": "sha256:6b38265b07b96691755ab82a815838ae445e23f6e19f739ce51d1adcea259b3b",
-      "resources_sha256": "sha256:01c9d5a8871e1167ae34c1572204f496344038b0cb2e33a5d944aa596242b32e"
+      "resources_sha256": "sha256:ce18fcfbf2161ba1fc93240a808be8846801afdb1099ffbef9b4d8c1b8985e24"
     },
     {
       "name": "xtb",
       "path": "skills/xtb",
       "sha256": "sha256:edc54af8a731c5e20e1418e67e8b0e6cac229535f38671486ca67b6af291a760",
-      "resources_sha256": "sha256:8e04a3a57621a52352e8c73d88f29253a04d209e891abf1d2554c3bc0270c5cd"
+      "resources_sha256": "sha256:feb59036df146a25554ffcfacc8994652198ae03ac7646ac93d1cb59d91157e3"
     },
     {
       "name": "crest",
@@ -56,7 +56,7 @@
       "name": "gaussian",
       "path": "skills/gaussian",
       "sha256": "sha256:9892aeecf844405d8b219adda83046e4724bba6cfd198588abf2aeadbe9d41f4",
-      "resources_sha256": "sha256:ccc318e25543bde51584370d4373b0e00cb91ad1818de1356bc4a2b43a8290bf"
+      "resources_sha256": "sha256:3c8ea7a5ec4108a1f78ea5f625912f4100c0700ec032a0d607360427a2384801"
     },
     {
       "name": "chemical-input",
@@ -72,8 +72,8 @@
     {
       "name": "report",
       "path": "skills/report",
-      "sha256": "sha256:9de015b4c1222b6a45e4942e6e6c8e93a5bf5e674f50b6dddfc6c5b1a1661720",
-      "resources_sha256": "sha256:fdf01101de83600b2e19c5342de2058ddce9e3902a422ea7e89b09cc1a43dfb9"
+      "sha256": "sha256:230e2bce6d425bd8d108afbe1359609d947d8d12650e3410f618fe469803ef28",
+      "resources_sha256": "sha256:24c2c5604b288acf0194c006c4b2c6ee8a2729932f94d854739b5f367c623aed"
     }
   ],
   "validators": [

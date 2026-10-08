@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '_shared'))
 from science import prepare, read_xyz, digest, finite_energy, finish, write_json
 from gaussian_io import write_gjf, parse_log, write_xyz
+from cli import parse_arguments
 
 
 def validate(summary, task, method, basis):
@@ -22,24 +23,7 @@ def validate(summary, task, method, basis):
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__)
-    source = p.add_mutually_exclusive_group(required=True)
-    source.add_argument('--xyz')
-    source.add_argument('--input-gjf', help='Run an explicit Gaussian input, including TS/Freq/IRC/QST/scan routes')
-    p.add_argument('--task', choices=['opt','sp','opt-sp'])
-    p.add_argument('--validation', choices=['none','opt','sp','frequency','minimum','saddle','irc'], default='none')
-    p.add_argument('--executable', required=True)
-    p.add_argument('--output-dir', required=True)
-    p.add_argument('--method', default='M062X')
-    p.add_argument('--basis', default='6-31G**')
-    p.add_argument('--charge', type=int, default=0)
-    p.add_argument('--spin', type=int, default=0, help='2S; multiplicity is spin+1')
-    p.add_argument('--threads', type=int, default=1)
-    p.add_argument('--memory-mb', type=int, default=2000)
-    a=p.parse_args(); out=None
-    if a.input_gjf and a.task: p.error('--task is only for the XYZ shortcut')
-    if a.xyz and not a.task: p.error('--xyz requires --task')
-    if a.xyz and a.validation != 'none': p.error('--validation requires --input-gjf; XYZ uses --task validation')
+    a = parse_arguments(); out = None
     try:
         if a.spin < 0 or a.threads < 1 or a.memory_mb < 1: raise ValueError('invalid spin/resources')
         if not all(re.fullmatch(r'[A-Za-z0-9+*(),._-]+', v) for v in [a.method,a.basis]):

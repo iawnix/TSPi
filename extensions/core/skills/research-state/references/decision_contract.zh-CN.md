@@ -17,8 +17,8 @@ Research State 的内部请求中附加 `principal=root_agent` 与 `authority=ke
 | `create_claim` | `id`、`statement`；`status`、`predictions`、`falsifiers` 可选 |
 | `create_node` | `id`、`title`、`objective`；`phase_id`、`claim_ids`、`dependency_ids` 可选 |
 | `create_finding` | `id`、`node_id`、`statement`、`kind`（`fact` 或 `issue`）；fact 字段为 `value`、`datatype`、`unit`、`provenance`；issue 字段为 `status`、`severity`、`resolution` |
-| `create_gate` | `id`、`scope`（`node` 或 `claim`）、`target_id`；`criteria` 可选 |
-| `evaluate_gate` | `gate_id`、`verdict`；`message`、`evidence_refs` 可选 |
+| `create_gate` | `id`、`scope`（`node` 或 `claim`）、`target_id`、`criteria` |
+| `evaluate_gate` | `gate_id`、`verdict`、`assessments`；`message`、`evidence_refs` 可选 |
 | `set_node_state` | `node_id`、`state`；关闭时还需要 `outcome` 和 `summary` |
 | `set_claim_status` | `claim_id`、`status` |
 | `relate_claims` | `source_id`、`target_id`、`relation` |
@@ -50,3 +50,5 @@ Claim 的 `source_refs` 与 `constraints` 保存目标来源和约束。不要�
 最终解释使用 `kind=result`，引用 `job_collect` 返回的回执与直接证据；其他运行放在比较或背景角色。
 `kind=observation`、`execution_issue` 引用运行时 `execution_observation_ref`。
 更正解释使用 `supersedes_id`。输出版本变化会使依赖解释与机器 Gate 评估需要复核。
+
+完成条件同样适用于报告和邮件节点。每个 agent_assessment 对象必须包含 criterion_id、verdict（pass/fail/inconclusive/blocked）、reason；机器评估提供 criterion_id、result_receipt_ref。用 mode=operations query=evaluate_gate 查询完整 schema 和示例。批次失败按 operation_index/target_id 定位，整批回滚不表示前面的 Gate 评估有错。

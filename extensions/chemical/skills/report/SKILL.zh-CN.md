@@ -14,3 +14,5 @@ description: 根据科学 Skill 的结构化结果与来源摘要生成可核查
 以当前 Skill 的列出位置解析脚本。每份已收集的科学结果对应一个 `--result environment=path`。使用新的不存在或空输出目录，builder 拒绝覆盖已有文件。整理已有结果不创建 Job 或计算 Attempt；额外科学计算仍走 job_*。
 
 读取 report.md 与 report.json，核对来源摘要及每个请求的方法/环境组合，再将两份文件登记为报告 Node 的 Artifact。说明失败或缺失结果，不能编造。不同方法的绝对能量不能作为准确性排名。通过 bash 使用 email Skill 完成用户要求的交付，关闭交付 Node 后再写最终 checkpoint。全局 blocked/terminal 时须先显式恢复 checkpoint 才能继续写入。
+
+已收集的科学 Job 优先重复传入 `--job <workspace>/runs/jobs/<job_id>`，由构建器从 Job 记录读取计算环境和结果路径。独立结果的 `--result environment=path` 左侧必须是实际计算环境（例如 local），不能写方法名。登记 report.md 与 report.json 后，按 email Skill 登记回执并完成交付 Gate。

@@ -5,6 +5,9 @@ import json
 from pathlib import Path
 import shlex
 import sys
+import importlib.util
+import contextlib
+import io
 from job_runtime import config_contract
 from job_runtime.config_contract import load_job_config, python_command, binding_digest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '_shared'))
@@ -22,6 +25,7 @@ def prepare(config, environment, backend, skill, xyz, arguments, python=None, wo
     # Stage only the selected Skill and its plain helper library, with intact imports.
     if input_gjf and (backend != 'gaussian' or xyz): raise ValueError('--input-gjf is Gaussian-only and replaces --xyz')
     source = Path(input_gjf or xyz).resolve()
+    if not source.is_file(): raise ValueError(f'input file does not exist: {source}')
     input_name = 'input.gjf' if input_gjf else 'input.xyz'
     inputs=[{'source':str(root/skill/'scripts'),'destination':f'skills/{skill}/scripts'},
             {'source':str(root/'_shared'),'destination':'skills/_shared'},
@@ -42,8 +46,21 @@ def prepare(config, environment, backend, skill, xyz, arguments, python=None, wo
     if python is not None:
         raise ValueError('Configure a Conda python binding in job.toml; --python overrides are retired')
     python_argv = python_command(python_binding)
-    argv=[*python_argv,f'skills/{skill}/scripts/run.py','--input-gjf' if input_gjf else '--xyz',input_name,'--output-dir','results',*arguments]
-    if backend != 'pyscf': argv.extend(['--executable',command[0]])
+    reserved = {'--xyz', '--input-gjf', '--output-dir', '--executable', '--help', '-h'}
+    if any(arg.split('=', 1)[0] in reserved for arg in arguments):
+        raise ValueError('runner input/output/executable arguments are owned by the preparation helper')
+    runner_args=['--input-gjf' if input_gjf else '--xyz',input_name,'--output-dir','results',*arguments]
+    if backend != 'pyscf': runner_args.extend(['--executable',command[0]])
+    # Load only the Skill's pure CLI contract, without importing scientific
+    # dependencies or launching the configured target interpreter.
+    module_spec = importlib.util.spec_from_file_location(f'{skill}_cli', script.with_name('cli.py'))
+    cli = importlib.util.module_from_spec(module_spec); module_spec.loader.exec_module(cli)
+    diagnostic = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(diagnostic): cli.parse_arguments(runner_args)
+    except SystemExit as exc:
+        raise ValueError('runner_arguments_invalid: ' + diagnostic.getvalue().strip()) from exc
+    argv=[*python_argv,f'skills/{skill}/scripts/run.py',*runner_args]
     activation=binding.get('activation_script')
     if activation:
         argv=['bash','-c','set -e\nsource '+shlex.quote(activation)+'\nexec "$@"','skill',*argv]

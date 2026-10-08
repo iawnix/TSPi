@@ -68,3 +68,5 @@ submission.resources 保存 CPU、内存、walltime，backend 覆盖环境默认
 allowed_queues 不负责选择队列。缺配置交由安装维护，不猜队列。可用
 submission.queue_wait_seconds 设置一次性排队超时诊断事件；收到后查看
 job_status.diagnostics。Q/R 尚无退出回执是正常现象；重投或改队列前先对账原 Job。
+
+准备脚本在写入请求前，使用所选 runner 共用的纯 CLI 解析器校验透传参数；未知参数和覆盖受管输入/输出/可执行程序路径会被拒绝。xTB runner 固定为 GFN2-xTB，不要追加 --method。准备成功只代表参数及配置通过校验，不等于目标科学环境已完成可用性验证。

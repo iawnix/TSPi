@@ -1,5 +1,13 @@
 """Domain-neutral checks shared by validation, checkpoints and writes."""
 from __future__ import annotations
+from .operation_registry import GATE_CONTRACT
+
+
+def _validate_gate_shape(value, kind):
+    from jsonschema import Draft202012Validator
+    error = next(Draft202012Validator(GATE_CONTRACT[kind]).iter_errors(value), None)
+    if error:
+        raise ValueError(f"gate_{kind}_invalid: {error.message}")
 
 TERMINAL_ATTEMPTS = frozenset({"succeeded", "failed", "timed_out", "cancelled"})
 
@@ -70,6 +78,9 @@ def gate_evaluation_current(context, gate):
     if evaluation.get('gate_version') != gate.get('version') or evaluation.get('verdict') != 'pass':
         return False
     attempts = {a['id']: a for a in context.get('attempts', [])}
+    artifacts = {a['id']: a for a in context.get('artifacts', [])}
+    if any(artifacts.get(ref, {}).get('sha256') != digest for ref, digest in evaluation.get('artifact_versions', {}).items()):
+        return False
     return all(not attempts.get(attempt_id, {}).get('metadata', {}).get('execution_conflict') and attempts.get(attempt_id, {}).get('metadata', {}).get('latest_result_receipt_ref') == receipt_id
                for attempt_id, receipt_id in evaluation.get('result_versions', {}).items())
 
@@ -79,6 +90,8 @@ def evaluate_criteria(root, context, gate, operation):
     import json
     import re
     assessments = operation.get('assessments', [])
+    if not isinstance(assessments, list) or any(not isinstance(a, dict) for a in assessments):
+        raise ValueError('gate_assessments_required: expected an array of criterion assessments')
     by_id = {item.get('criterion_id'): item for item in assessments if isinstance(item, dict)}
     if len(by_id) != len(assessments) or set(by_id) != {c['id'] for c in gate['criteria']}:
         raise ValueError('gate_assessments_required: assess every current criterion exactly once')
@@ -88,7 +101,9 @@ def evaluate_criteria(root, context, gate, operation):
         assessment = by_id[criterion['id']]
         verdict = assessment.get('verdict')
         if criterion['source_type'] == 'agent_assessment':
-            if not assessment.get('reason') or verdict not in {'pass', 'fail', 'inconclusive', 'blocked'}:
+            if verdict not in {'pass', 'fail', 'inconclusive', 'blocked'}:
+                raise ValueError('gate_assessment_verdict_invalid: supply verdict=pass|fail|inconclusive|blocked')
+            if not isinstance(assessment.get('reason'), str) or not assessment['reason'].strip():
                 raise ValueError('gate_agent_assessment_requires_reason')
         else:
             ref = assessment.get('result_receipt_ref', '')
@@ -129,6 +144,7 @@ def evaluate_criteria(root, context, gate, operation):
                 verdict = validation['verdict']
             if assessment.get('verdict') is not None and assessment['verdict'] != verdict:
                 raise ValueError('gate_machine_verdict_mismatch')
+        _validate_gate_shape(assessment, 'assessment')
         verdicts.append(verdict)
     aggregate = 'pass' if all(v == 'pass' for v in verdicts) else next(v for v in ('fail', 'blocked', 'inconclusive') if v in verdicts)
     if operation.get('verdict') != aggregate:
@@ -150,6 +166,7 @@ def validate_criteria(criteria):
             raise ValueError('gate_validator_identity_required')
         if criterion['source_type'] == 'runtime_fact' and criterion.get('fact') not in {'execution_succeeded', 'outputs_collected'}:
             raise ValueError('gate_runtime_fact_invalid')
+        _validate_gate_shape(criterion, 'criterion')
 
 
 def belongs_to_result(artifacts, artifact_id, result_refs, seen=None):

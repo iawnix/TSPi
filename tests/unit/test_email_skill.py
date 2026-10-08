@@ -51,6 +51,67 @@ def test_unknown_delivery_and_changed_attachment_do_not_send(tmp_path,monkeypatc
     with pytest.raises(Exception,match='ambiguous'):delivery.notify_user(tmp_path,request)
     with pytest.raises(ValueError,match='unknown'):delivery.notify_user(tmp_path,request)
     assert len(calls)==1
+
     (tmp_path/'reports/result.md').write_text('changed')
     with pytest.raises(ValueError,match='attachment'):delivery.notify_user(tmp_path,request)
     assert len(calls)==1
+
+
+@pytest.mark.parametrize('error', [OSError('after DATA'), ValueError('unexpected response'), RuntimeError('transport interrupted')])
+def test_unclassified_transport_errors_never_become_retryable(tmp_path, monkeypatch, error):
+    request, _ = fixture(tmp_path, monkeypatch); calls = []
+    def fail(*args, **kwargs):
+        calls.append(1); raise error
+    monkeypatch.setattr(delivery, '_run_transport', fail)
+    with pytest.raises(delivery.NotificationError) as caught:
+        delivery.notify_user(tmp_path, request)
+    assert caught.value.state == 'unknown'
+    assert caught.value.retry_disposition == 'reconcile_only'
+    with pytest.raises(ValueError, match='unknown'): delivery.notify_user(tmp_path, request)
+    assert calls == [1]
+
+
+def test_content_change_under_same_identity_is_rejected(tmp_path, monkeypatch):
+    request, _ = fixture(tmp_path, monkeypatch); calls = []
+    monkeypatch.setattr(delivery, '_run_transport', lambda *args, **kwargs: calls.append(1) or 'accepted')
+    delivery.notify_user(tmp_path, request)
+    value = json.loads(request.read_text()); value['summary'] = 'Changed report summary'
+    request.write_text(json.dumps(value))
+    with pytest.raises(ValueError, match='notification_id_reused'): delivery.notify_user(tmp_path, request)
+    assert calls == [1]
+
+
+def test_concurrent_delivery_and_crash_before_sent_receipt_do_not_resend(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    request, _ = fixture(tmp_path, monkeypatch); calls = []
+    monkeypatch.setattr(delivery, '_run_transport', lambda *args, **kwargs: calls.append(1) or 'accepted')
+    original = delivery._write_private_json
+    def fail_sent(path, value, **kwargs):
+        if value.get('state') == 'sent': raise OSError('crash before sent receipt')
+        return original(path, value, **kwargs)
+    monkeypatch.setattr(delivery, '_write_private_json', fail_sent)
+    with pytest.raises(OSError): delivery.notify_user(tmp_path, request)
+    monkeypatch.setattr(delivery, '_write_private_json', original)
+    with pytest.raises(delivery.NotificationError) as caught:
+        delivery.notify_user(tmp_path, request)
+    assert caught.value.state == 'unknown' and calls == [1]
+    # A separate authorized identity exercises concurrent first submission.
+    value = json.loads(request.read_text()); value['notification_id'] = 'concurrent'
+    request.write_text(json.dumps(value))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: delivery.notify_user(tmp_path, request), range(2)))
+    assert {r['state'] for r in results} == {'sent', 'already_sent'}
+    assert calls == [1, 1]
+
+
+def test_clawemail_cleanup_failure_after_process_is_ambiguous(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    @contextmanager
+    def temporary(**kwargs):
+        yield str(tmp_path)
+        raise OSError('cleanup interrupted after send')
+    monkeypatch.setattr(delivery.tempfile, 'TemporaryDirectory', temporary)
+    monkeypatch.setattr(delivery.subprocess, 'run', lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout='accepted'))
+    with pytest.raises(delivery._DeliveryAmbiguous):
+        delivery._run_clawemail(tmp_path/'manager', recipient='reader@example.test', subject='Report', body='Result', attachments=[])

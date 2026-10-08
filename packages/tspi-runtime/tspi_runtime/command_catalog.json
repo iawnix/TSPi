@@ -84,7 +84,9 @@
       "domain": "research",
       "effect": "read",
       "required": [],
-      "allowed": []
+      "allowed": [
+        "query"
+      ]
     },
     {
       "id": "research.strategy",

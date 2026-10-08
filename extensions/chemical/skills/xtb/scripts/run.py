@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '_shared'))
 from science import prepare, read_xyz, digest, finite_energy, finish, write_json
 from parser import parse_xtb_artifacts
+from cli import parse_arguments
 
 
 def validate(summary, task):
@@ -20,15 +21,7 @@ def validate(summary, task):
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--xyz', required=True)
-    p.add_argument('--task', choices=['opt', 'sp', 'opt-sp'], required=True)
-    p.add_argument('--executable', required=True, help='configured xTB executable, resolved after activation')
-    p.add_argument('--output-dir', required=True)
-    p.add_argument('--charge', type=int, default=0)
-    p.add_argument('--spin', type=int, default=0, help='number of unpaired electrons')
-    p.add_argument('--opt-level', default='tight', choices=['normal','tight','verytight'])
-    a = p.parse_args()
+    a = parse_arguments()
     out = None
     try:
         if a.spin < 0: raise ValueError('spin must be nonnegative')

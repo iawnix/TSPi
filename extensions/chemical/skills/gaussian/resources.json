@@ -2,10 +2,11 @@
   "schema_version": "skill-resources/1",
   "base": "extension",
   "files": {
+    "skills/gaussian/scripts/cli.py": "sha256:613c7635f6b18692286282da7f89df1732fefda4e97d9ad175d9585b3705bb33",
     "skills/gaussian/scripts/gaussian_io.py": "sha256:6dba9f8e0e7e5f49cc08984772b0d09e87d28aa021a043e70e06e33bb6ce1876",
-    "skills/gaussian/scripts/run.py": "sha256:8bc8212bf79145bf64c4047593d01f6044a721d25584eeb79fd160b93e76101f",
-    "skills/_shared/science.py": "sha256:dfd52085de07e1a7a75315cb50225021fd397f438c1544c67266c79809affc5b",
+    "skills/gaussian/scripts/input_job.py": "sha256:439fa22ad96497ca47265366644ee38c8698a1fed9290432871e6efb512ea9e0",
+    "skills/gaussian/scripts/run.py": "sha256:39a722b98f6c7066bbb4322e8bcc5158cc457db8ca3d266af7d6baa6a6ac8f8f",
     "skills/_shared/execution_bindings.py": "sha256:4e77463dd31654b872bf5167050ac9844977d7a744c863cf303dc343204b04d1",
-    "skills/gaussian/scripts/input_job.py": "sha256:439fa22ad96497ca47265366644ee38c8698a1fed9290432871e6efb512ea9e0"
+    "skills/_shared/science.py": "sha256:dfd52085de07e1a7a75315cb50225021fd397f438c1544c67266c79809affc5b"
   }
 }

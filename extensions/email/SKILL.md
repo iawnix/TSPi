@@ -21,3 +21,7 @@ Before asking for a recipient, run `"$TSPI_PYTHON" <listed-skill-directory>/scri
 Host/Monitor only wakes the Agent. This Skill owns notification preparation and delivery; no native notification tool or Provider registration is required. Failed email does not undo completed science. Notification IDs must not contain a Job ID, retry time or unrelated research revision.
 
 Finish requested delivery, or record its specific blocker, before a terminal checkpoint. A delivery Node records the outcome without a calculation Attempt. Preserve user authorization and completion conditions: a request for final results does not automatically authorize failure notices. Global blocked/terminal still stops bash; resume through an explicit recovery checkpoint before continuing.
+
+For research workspaces, put the existing delivery `node_id` in the draft. Declare its completion Gate and close completed prerequisites before the first send. The CLI checks State admission while persisting the sending guard; check/prepare remain available before dependency completion. Replaying a sent request returns its receipt even after the Node or scope closes.
+
+After send/status, register the durable `receipt_ref` with artifact_register under that Node, inspect it, and use the returned artifact_id in the Gate's evidence_refs. Agent assessments use criterion_id, verdict and reason. Evaluate the Gate and close the Node before terminal. Registration failure requires registration recovery, not another delivery. Changed content requires a new notification_id under the user's delivery scope.
