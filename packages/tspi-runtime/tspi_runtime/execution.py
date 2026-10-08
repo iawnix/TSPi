@@ -196,6 +196,13 @@ def dispatch(operation: str, params: dict[str, Any]) -> dict[str, Any]:
     from .api import validate_command_params
     validate_command_params("job." + operation, params, transport_fields=("root", "workspace_root"))
     root = _root(params)
+    if operation == "start" and params.get("prepared_ref"):
+        from research_state.references import resolve_prepared_job
+        transport = {key: params[key] for key in ("root", "workspace_root", "session_id") if key in params}
+        params = {**resolve_prepared_job(root, {key: value for key, value in params.items() if key != "session_id"}), **transport}
+    if operation == "start" and params.get("input_artifact_ids"):
+        from research_state.references import resolve_artifact_reference
+        params = {**params, "input_artifact_ids": [resolve_artifact_reference(root, ref) for ref in params["input_artifact_ids"]]}
     runtime = _runtime(root)
     if operation == "start":
         return _start(root, runtime, params)

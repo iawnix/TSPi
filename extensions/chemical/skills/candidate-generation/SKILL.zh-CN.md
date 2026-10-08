@@ -17,8 +17,8 @@ description: 通过化学构造、扫描、QST、NEB 或构象与取向采样生
 不要把扫描极大值、NEB 图像、插值结构或受限结构当作已验证鞍点。候选结构本身可记录
 为事实；失败或畸变的搜索只有在影响研究问题时才记录为 IssueFinding。
 
-分子种子使用 `chemical-input`，受支持的 TS/扫描/QST 输入使用 Gaussian Skill 的显式 GJF runner。
-这些组件不构成自动 TS 搜索管线。Skill 本身没有脚本时仍可能使用共享 runner 或已安装软件，
+显式 DA 假设可用 [prepare_path.py](scripts/prepare_path.py) 生成原子顺序绑定的 QST2 候选与 IRC 输入。
+可执行步骤与注册验证器见 [gaussian_path.zh-CN.md](references/gaussian_path.zh-CN.md)，不代表机理覆盖完备。Skill 本身没有脚本时仍可能使用共享 runner 或已安装软件，
 先检查这些入口再判断方法是否不可用。
 方法判据见 [candidate_generation.zh-CN.md](references/candidate_generation.zh-CN.md)，
 NEB 可用性与前提见 [ase_neb_executor.zh-CN.md](references/ase_neb_executor.zh-CN.md)。

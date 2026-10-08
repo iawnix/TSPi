@@ -25,3 +25,8 @@ description: 根据鞍点、目标振动模式、结构、电子态与立体化�
 
 
 注册验证器：调用 `job_start`，提供 `validator_id="chemical.gaussian_frequency"`、`node_id`、新的 `request_id` 和 `input_artifact_ids=[已收集的 parsed.json Artifact ID]`。验证器版本为 `1`。运行时记录实际执行及输入摘要。它仅检查正常结束和恰好一个负频率；振动模式性质、几何与 IRC 连通性仍须分别验证。
+
+受支持的映射 DA 路径使用已注册的 `chemical.reaction_mapping`、`chemical.gaussian_saddle`
+和 `chemical.gaussian_irc_connectivity` 验证器，版本均为 `1`。输入顺序、执行 helper 与有限
+科学范围见 [gaussian_path.zh-CN.md](../candidate-generation/references/gaussian_path.zh-CN.md)。
+该交付物使用 `chemical.diels_alder_path@1` 验收 profile。

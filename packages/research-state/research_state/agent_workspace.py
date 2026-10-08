@@ -153,6 +153,12 @@ def _validate_context_collections(context: dict[str, Any]) -> None:
     invalid = [name for name in RESEARCH_CONTEXT_COLLECTIONS if not isinstance(context[name], list)]
     if invalid:
         raise AgentWorkspaceError("research_context_collections_must_be_arrays: " + ", ".join(invalid))
+    for optional in ("requirements", "requirement_sources"):
+        if optional in context and (not isinstance(context[optional], list)
+                or any(not isinstance(row, dict) for row in context[optional])):
+            raise AgentWorkspaceError("research_context_collection_invalid: " + optional)
+    if context.get("requirements_schema_version") not in (None, "research-requirements/1"):
+        raise AgentWorkspaceError("unsupported_requirements_schema")
     focus = context.get("focus")
     if not isinstance(focus, dict) or not isinstance(focus.get("claim_ids"), list) or not isinstance(focus.get("node_ids"), list):
         raise AgentWorkspaceError("research_context_focus_invalid")
@@ -435,9 +441,10 @@ def _liveness_projection(context, liveness, checkpoint=None):
     running = [a for a in _items(context, "attempts") if a.get("state") in {"started", "running", "unknown"} or a.get("metadata", {}).get("execution_conflict")]
     running_nodes = {a.get("node_id") for a in running}
     plans = [p for p in _items(context, "strategy_plans") if p.get("status", "proposed") in {"proposed", "active"}]
+    from .dependencies import dependency_evaluation
     ready = [n["id"] for n in nodes.values()
         if n.get("state") in {"planned", "active"}
-        and all(nodes.get(d, {}).get("state") == "closed" and nodes[d].get("outcome") == "completed" for d in n.get("dependency_ids", []))
+        and dependency_evaluation(context, n)["satisfied"]
         and any(p.get("node_id") == n["id"] or p.get("claim_id") in n.get("claim_ids", []) for p in plans)]
     result["eligible_node_ids"] = ready
     ready = [node for node in ready if node not in running_nodes]
@@ -471,6 +478,10 @@ def _base_liveness_projection(
     result = dict(liveness)
     if checkpoint is not None: result.pop("ready_node_ids", None)
     result["research_obligations"] = _research_obligations(context)
+    from .requirements import requirements_evaluation
+    requirement_status = requirements_evaluation(context)
+    result["requirement_progress"] = {key: requirement_status[key] for key in ("tracked", "satisfied", "settled")}
+    result["unmet_requirement_ids"] = [row["id"] for row in requirement_status["requirements"] if not row["satisfied"]]
     if context.get("lifecycle_state") != ADMITTED or liveness.get("state") != ADMITTED:
         result["lifecycle"] = ADMISSION_PENDING
         result["disposition"] = None
@@ -607,7 +618,9 @@ def _base_liveness_projection(
         and all(value in covered_claims for value in open_claim_ids)
     )
     review_claim_ids = [row["claim_id"] for row in result["research_obligations"] if row["kind"] == "reassess_claim"]
-    if open_node_ids or open_claim_ids or review_claim_ids:
+    requirement_work = [row for row in result["research_obligations"]
+                        if row["kind"] in {"review_user_source", "plan_requirement", "satisfy_requirement"}]
+    if open_node_ids or open_claim_ids or review_claim_ids or requirement_work:
         result["lifecycle"] = "decision_needed"
         result["decision_needed"] = [
             {"scope": "node", "target_id": value, "reason": "missing checkpoint disposition"}
@@ -618,6 +631,10 @@ def _base_liveness_projection(
         ] + [
             {"scope": "claim", "target_id": value, "reason": "adopted assessment needs review"}
             for value in review_claim_ids
+        ] + [
+            {"scope": "requirement" if row.get("requirement_id") else "source",
+             "target_id": row.get("requirement_id", row.get("source_ref")), "reason": row["kind"]}
+            for row in requirement_work
         ]
     elif _items(context, "nodes") and all(
         isinstance(item, dict) and item.get("state") == "closed"
@@ -635,7 +652,8 @@ def _base_liveness_projection(
 
 def _research_obligations(context: dict[str, Any]) -> list[dict[str, Any]]:
     """Derive bounded next-step obligations from canonical Research State."""
-    obligations: list[dict[str, Any]] = []
+    from .requirements import requirement_obligations
+    obligations: list[dict[str, Any]] = requirement_obligations(context)
     claims = {row.get("id"): row for row in _items(context, "claims") if isinstance(row, dict)}
     findings = {row.get("id"): row for row in _items(context, "findings") if isinstance(row, dict)}
     from .assessments import claim_review_state
@@ -720,6 +738,11 @@ def _validate_checkpoint_lifecycle(context: dict[str, Any], checkpoint: dict[str
         if missing:
             raise AgentWorkspaceError("continue_required checkpoint needs an active StrategyPlan for Claims: " + ", ".join(missing))
     if disposition == "terminal":
+        from .requirements import requirements_evaluation
+        requirements = requirements_evaluation(context)
+        if not requirements["settled"]:
+            unresolved = [row["id"] for row in requirements["requirements"] if not row["settled"]]
+            raise AgentWorkspaceError("requirements_unsettled: " + ", ".join([*unresolved, *requirements["unreviewed_source_refs"]]))
         from .invariants import active_attempts
         active = active_attempts(context)
         if active:
@@ -931,6 +954,9 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
             raise AgentWorkspaceError("operation_contract_invalid: " + str(exc)) from exc
     created_at = operation.get("created_at") if isinstance(operation.get("created_at"), str) else _now()
     from .write_origin import is_runtime_write
+    from .requirements import PUBLIC_OPERATIONS, apply_requirement_operation
+    if kind in PUBLIC_OPERATIONS or kind == "register_requirement_source":
+        return apply_requirement_operation(root, context, operation, created_at)
     if not is_runtime_write():
         protected = {"job_id", "execution_observation", "observed_at", "output_validation", "derivation_executed"}
         if protected.intersection(operation.get("metadata", {})):
@@ -1067,7 +1093,9 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
         else:
             phase = None
         claim_ids = operation.get("claim_ids", [])
-        dependency_ids = operation.get("dependency_ids", [])
+        from .dependencies import normalize_dependencies
+        dependencies = normalize_dependencies(context, operation)
+        dependency_ids = [row["node_id"] for row in dependencies]
         if not isinstance(claim_ids, list) or any(not isinstance(item, str) for item in claim_ids):
             raise AgentWorkspaceError("operation.claim_ids must be an array of strings")
         if not isinstance(dependency_ids, list) or any(not isinstance(item, str) for item in dependency_ids):
@@ -1085,11 +1113,18 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
         exemption = operation.get("completion_exemption")
         if exemption is not None and (not isinstance(exemption, str) or not exemption.strip()):
             raise AgentWorkspaceError("completion_exemption_requires_reason")
+        consumes = copy.deepcopy(operation.get("consumes", {}))
+        if consumes:
+            for collection, field in (("requirements", "requirement_ids"), ("artifacts", "artifact_refs")):
+                known = {row["id"] for row in context.get(collection, [])}
+                if any(ref not in known for ref in consumes.get(field, [])):
+                    raise AgentWorkspaceError("node_consumes_unknown: " + field)
         nodes.append({
             "type": "research_node", "id": item_id, "created_at": created_at,
             "metadata": dict(operation.get("metadata", {})) if isinstance(operation.get("metadata"), dict) else {},
             "title": _string(operation, "title"), "objective": _string(operation, "objective"),
             "phase_id": phase_id, "claim_ids": list(claim_ids), "dependency_ids": list(dependency_ids),
+            "dependencies": dependencies, "consumes": consumes,
             "finding_ids": [], "gate_ids": [], "attempt_refs": [], "artifact_refs": [],
             "state": "planned", "outcome": None, "outcome_summary": None,
             "completion_exemption": operation.get("completion_exemption"),
@@ -1128,11 +1163,16 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
         if state == "closed" and outcome == "completed" and not node.get("gate_ids") and not node.get("completion_exemption"):
             raise AgentWorkspaceError("completion_conditions_required")
         if state == "closed" and outcome == "completed":
-            nodes_by_id = {n['id']: n for n in context['nodes']}
-            unmet = [ref for ref in node.get('dependency_ids', [])
-                     if nodes_by_id.get(ref, {}).get('state') != 'closed' or nodes_by_id.get(ref, {}).get('outcome') != 'completed']
-            if unmet:
-                raise AgentWorkspaceError('node_dependencies_incomplete: ' + ', '.join(unmet))
+            from .dependencies import dependency_evaluation
+            dependencies = dependency_evaluation(context, node)
+            if not dependencies["satisfied"]:
+                raise AgentWorkspaceError('node_dependencies_incomplete: ' + '; '.join(row["reason"] for row in dependencies["unmet"]))
+            from .requirements import node_requirement_evaluation, snapshot_node_requirements
+            requirements = node_requirement_evaluation(context, node)
+            if not requirements["satisfied"]:
+                raise AgentWorkspaceError("node_requirements_unmet: " + ", ".join(requirements["unmet_requirement_ids"]))
+            if node.get("consumes", {}).get("requirement_ids"):
+                node["requirement_consumption"] = snapshot_node_requirements(context, node, _now())
         node["state"] = state
         node["outcome"] = outcome if state == "closed" else None
         node["outcome_summary"] = operation.get("summary") if isinstance(operation.get("summary"), str) else None
@@ -1855,8 +1895,12 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
         operations = body.get("operations")
         if not isinstance(operations, list) or not operations:
             raise AgentWorkspaceError("ChangeSet.operations must be a non-empty list")
+        from .references import resolve_operation_references
+        operations = resolve_operation_references(Path(root), operations)
+        from .write_origin import is_runtime_write
+        source_only = is_runtime_write() and all(isinstance(op, dict) and op.get("type") == "register_requirement_source" for op in operations)
         known_attempts = {row["id"] for row in context["attempts"]}
-        operational = all(
+        operational = source_only or all(
             isinstance(op, dict) and (
                 op.get("type") == "transition_attempt"
                 and op.get("attempt_id", op.get("id")) in known_attempts
@@ -1865,7 +1909,8 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
             ) for op in operations
         )
         _require_admitted(context, liveness, allow_checkpoint=operational)
-        _require_decision_ready(context, liveness, operations)
+        if not source_only:
+            _require_decision_ready(context, liveness, operations)
         updated = copy.deepcopy(context)
         created_ids: list[str] = []
         for index, operation in enumerate(operations):
@@ -1886,7 +1931,7 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
         updated["research_obligations"] = _research_obligations(updated)
         updated["revision"] = current_revision + 1
         projected_liveness = _liveness_projection(updated, {**liveness, "revision": updated["revision"]},
-            None if operational and liveness.get("disposition") == "blocked" else {})
+            None if source_only or operational and liveness.get("disposition") == "blocked" else {})
         updated["lifecycle"] = projected_liveness.get("lifecycle", "idle")
         updated["disposition"] = projected_liveness.get("disposition")
         updated["checkpoint_id"] = projected_liveness.get("checkpoint_id")

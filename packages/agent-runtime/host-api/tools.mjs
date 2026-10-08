@@ -217,6 +217,7 @@ export function createPublicToolContracts(Type) {
   const stateFields = {
     root: optionalRoot,
     query: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
+    source_ref: Type.Optional(identifier()),
     claim_id: Type.Optional(claimReference),
     record_type: Type.Optional(enumString(["attempt", "artifact", "link"])),
     node_id: Type.Optional(nodeReference),
@@ -228,14 +229,14 @@ export function createPublicToolContracts(Type) {
     event_ids: Type.Optional(stringArray(8)),
     subject_id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
     limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 2048 })),
-    kind: Type.Optional(enumString(["phase", "claim", "node", "finding", "gate", "attempt", "artifact", "lifecycle_action", "interpretation", "strategy"])),
+    kind: Type.Optional(enumString(["phase", "claim", "node", "finding", "gate", "attempt", "artifact", "lifecycle_action", "interpretation", "strategy", "requirement"])),
     id: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
   };
   const stateReadSchema = Type.Object({
     ...stateFields,
     mode: Type.Optional(literalUnion([
       "map", "summary", "context", "liveness", "detail", "locate", "validate",
-      "operations", "decisions", "evidence", "storage",
+      "operations", "decisions", "evidence", "storage", "requirements", "profiles", "sources",
     ])),
   }, { additionalProperties: false });
   const node_id = Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 });
@@ -277,7 +278,7 @@ export function createPublicToolContracts(Type) {
       executionMode: "sequential",
       replay: "never",
     }),
-    jobStart: contract("jobStart", "Start Job", "Start a durable scientific computation Job. Prefer request_file + request_sha256 from a scientific Skill helper. Use native bash for email, report formatting and request preparation; these do not create calculation Attempts.", Type.Object({
+    jobStart: contract("jobStart", "Start Job", "Start a durable scientific computation Job. Prefer the immutable prepared_ref returned by a scientific Skill helper. Use native bash for email, report formatting and request preparation; these do not create calculation Attempts.", Type.Object({
       node_id: Type.Optional(nodeReference),
       attempt_id: Type.Optional(identifier(128)),
       request_id: Type.Optional(identifier(128)),
@@ -286,6 +287,7 @@ export function createPublicToolContracts(Type) {
       work_id: Type.Optional(identifier(128)),
       repeat: Type.Optional(Type.Object({ predecessor_job_id: identifier(256), reason: Type.String({ minLength: 1 }), budget: Type.String({ minLength: 1 }) }, { additionalProperties: false })),
       request_file: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+      prepared_ref: Type.Optional(Type.String({ pattern: "^p[1-9][0-9]*$" })),
       request_sha256: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
       metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
       command: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 16_384 }), { minItems: 1, maxItems: 256 })),
@@ -296,7 +298,7 @@ export function createPublicToolContracts(Type) {
       timeout_seconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 604800 })),
       platform: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
       root: optionalRoot,
-    }, { additionalProperties: false, anyOf: [{ required: ["command"] }, { required: ["request_file", "request_sha256"] }, { required: ["validator_id", "input_artifact_ids"] }] }), { executionMode: "sequential", replay: "never" }),
+    }, { additionalProperties: false, anyOf: [{ required: ["command"] }, { required: ["prepared_ref"] }, { required: ["request_file", "request_sha256"] }, { required: ["validator_id", "input_artifact_ids"] }] }), { executionMode: "sequential", replay: "never" }),
     jobStatus: contract("jobStatus", "Job Status", "Read the status of a durable job.", selectorSchema, { executionMode: "sequential" }),
     jobCollect: contract("jobCollect", "Collect Job", "Collect declared job outputs without requiring a domain parser.", selectorSchema, { executionMode: "sequential" }),
     jobCancel: contract("jobCancel", "Cancel Job", "Cancel a durable job.", selectorSchema, { executionMode: "sequential" }),
@@ -304,9 +306,9 @@ export function createPublicToolContracts(Type) {
     jobReconcile: contract("jobReconcile", "Reconcile Job", "Reconcile an uncertain job receipt.", selectorSchema, { executionMode: "sequential" }),
     artifactRegister: contract("artifactRegister", "Register Artifact", "Register an existing raw file as an evidence artifact.", Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096 }), node_id: Type.Optional(nodeReference), job_id: Type.Optional(identifier(256)), media_type: Type.Optional(Type.String({ maxLength: 256 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
     artifactCreate: contract("artifactCreate", "Create Artifact", "Create a raw or derived artifact from supplied content.", Type.Object({ content: Type.String({ maxLength: 4_000_000 }), name: Type.String({ minLength: 1, maxLength: 512 }), node_id: Type.Optional(nodeReference), media_type: Type.Optional(Type.String({ maxLength: 256 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
-    artifactRead: contract("artifactRead", "Read Artifact", "Read bounded content or metadata from an artifact.", Type.Object({ artifact_id: identifier(256), offset: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1_000_000 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
+    artifactRead: contract("artifactRead", "Read Artifact", "Read bounded content or metadata from an artifact.", Type.Object({ artifact_id: Type.Optional(identifier(256)), artifact_ref: Type.Optional(Type.String({ pattern: "^a[1-9][0-9]*$" })), offset: Type.Optional(Type.Integer({ minimum: 0 })), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1_000_000 })), root: optionalRoot }, { additionalProperties: false, anyOf: [{ required: ["artifact_id"] }, { required: ["artifact_ref"] }] }), { executionMode: "sequential" }),
     artifactDerive: contract("artifactDerive", "Derive Artifact", "Record a derivation descriptor. Execute analysis through a Skill Job and register its actual output separately.", Type.Object({ input_artifact_ids: Type.Array(identifier(256), { minItems: 1, maxItems: 256, uniqueItems: true }), operation: Type.String({ minLength: 1, maxLength: 256 }), parameters: Type.Optional(Type.Object({}, { additionalProperties: true, maxProperties: 64 })), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
-    artifactLink: contract("artifactLink", "Link Artifact", "Persist an artifact evidence link to a Finding, Claim, or Gate.", Type.Object({ artifact_id: identifier(256), subject_id: identifier(256), relation: Type.Optional(literalUnion(gateContract.evidence_relations)), root: optionalRoot }, { additionalProperties: false }), { executionMode: "sequential" }),
+    artifactLink: contract("artifactLink", "Link Artifact", "Persist an artifact evidence link to a Finding, Claim, or Gate.", Type.Object({ artifact_id: Type.Optional(identifier(256)), artifact_ref: Type.Optional(Type.String({ pattern: "^a[1-9][0-9]*$" })), subject_id: identifier(256), relation: Type.Optional(literalUnion(gateContract.evidence_relations)), root: optionalRoot }, { additionalProperties: false, anyOf: [{ required: ["artifact_id"] }, { required: ["artifact_ref"] }] }), { executionMode: "sequential" }),
 
   };
   return Object.freeze(Object.fromEntries(Object.entries(contracts).map(

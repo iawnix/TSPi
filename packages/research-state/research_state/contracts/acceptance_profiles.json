@@ -1,0 +1,14 @@
+{
+  "schema_version": "research-acceptance-profiles/1",
+  "profiles": [
+    {
+      "id": "research.material",
+      "version": "1",
+      "description": "Preserve and organize registered literature, reports or other research material. This profile does not certify that a calculation or scientific validation was performed.",
+      "checks": [
+        {"id": "material", "kind": "registered_artifact"}
+      ],
+      "constraint_keys": []
+    }
+  ]
+}

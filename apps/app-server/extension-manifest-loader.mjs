@@ -7,6 +7,10 @@ const NAME_PATTERN = /^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$/u;
 const PROVIDER_ID_PATTERN = /^[a-z][a-z0-9]*(?:[-._][a-z0-9]+)*$/u;
 const PROVIDER_KINDS = new Set(["compute", "analysis", "harness", "notification", "render", "report"]);
 const TOOL_PATTERN = /^[a-z][a-z0-9_]*$/u;
+const VALIDATOR_RESERVED_DESTINATIONS = new Set([
+  "validator.py", "validator_inputs.json", "validator_result.json", "input_manifest.json",
+  "spec.json", "receipt.json", "status.json", "logs",
+]);
 const SERVER_PERMISSIONS = new Set([
   "workspace.read",
   "workspace.write",
@@ -28,11 +32,19 @@ export async function discoverInstalledExtensions(options = {}) {
   const extensions = [];
   const names = new Set();
   const providerIds = new Set();
+  const validatorIds = new Set(), profileIds = new Set();
   const skillNames = new Set();
   for (const manifestPath of paths) {
     const extension = await readExtensionManifest(manifestPath);
     if (names.has(extension.name)) throw new Error(`duplicate installed extension name: ${extension.name}`);
     names.add(extension.name);
+    for (const [entries, seen, label] of [[extension.validators, validatorIds, "validator"], [extension.acceptance_profiles, profileIds, "acceptance profile"]]) {
+      for (const entry of entries) {
+        const identity = `${entry.id}@${entry.version}`;
+        if (seen.has(identity)) throw new Error(`duplicate installed ${label}: ${identity}`);
+        seen.add(identity);
+      }
+    }
     for (const provider of extension.providers) {
       if (providerIds.has(provider.id)) throw new Error(`duplicate installed provider id: ${provider.id}`);
       providerIds.add(provider.id);
@@ -65,7 +77,7 @@ export async function readExtensionManifest(manifestPath) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || parsed.schema_version !== MANIFEST_SCHEMA) {
     throw new Error(`invalid TSPi extension manifest: ${path}`);
   }
-  assertKnownKeys(parsed, new Set(["schema_version", "name", "version", "skills", "providers", "server", "validators"]), "extension manifest");
+  assertKnownKeys(parsed, new Set(["schema_version", "name", "version", "skills", "providers", "server", "validators", "acceptance_profiles"]), "extension manifest");
   const name = validateName(parsed.name, "extension");
   const version = validateVersion(parsed.version, `extension ${name}`);
   if (!Array.isArray(parsed.skills)) throw new Error(`extension ${name} skills must be an array`);
@@ -76,14 +88,62 @@ export async function readExtensionManifest(manifestPath) {
   const providers = [];
   for (const value of parsed.providers || []) providers.push(await validateProvider(value, root, name));
   const validators = [];
+  if (parsed.validators !== undefined && !Array.isArray(parsed.validators)) throw new Error("validators must be an array");
   for (const validator of parsed.validators || []) {
-    assertKnownKeys(validator, new Set(["id", "version", "entry", "sha256"]), "validator");
-    if (!validator.id || !validator.version) throw new Error("validator identity is required");
-    const entry = resolve(root, validator.entry);
-    if (!entry.startsWith(root + "/")) throw new Error("validator entry escapes extension");
-    const digest = `sha256:${createHash("sha256").update(await readFile(entry)).digest("hex")}`;
-    if (digest !== validator.sha256) throw new Error("validator digest mismatch");
+    assertKnownKeys(validator, new Set(["id", "version", "entry", "sha256", "resources", "input_contract"]), "validator");
+    if (!nonemptyString(validator.id) || !nonemptyString(validator.version)) throw new Error("validator identity is required");
+    const entry = resolveOwnedPath(root, validator.entry, "validator entry");
+    await assertRegularFile(entry, "validator entry");
+    await verifyDigest(entry, validator.sha256, "validator");
+    if (validator.resources !== undefined && (!validator.resources || typeof validator.resources !== "object" || Array.isArray(validator.resources))) throw new Error("validator resources must be an object");
+    const destinations = new Set();
+    for (const [destination, resource] of Object.entries(validator.resources || {})) {
+      const target = relative(root, resolveOwnedPath(root, destination, "validator resource destination"));
+      if (!target || VALIDATOR_RESERVED_DESTINATIONS.has(target.split(sep)[0]) || target.startsWith("input_")
+          || [...destinations].some(previous => previous === target || previous.startsWith(target + sep) || target.startsWith(previous + sep))) throw new Error("invalid validator resource destination");
+      destinations.add(target);
+      assertKnownKeys(resource, new Set(["path", "sha256"]), "validator resource");
+      const path = resolveOwnedPath(root, resource.path, "validator resource");
+      await assertRegularFile(path, "validator resource");
+      await verifyDigest(path, resource.sha256, "validator resource");
+    }
+    if (validator.input_contract !== undefined) {
+      const contract = validator.input_contract;
+      assertKnownKeys(contract, new Set(["schema_version", "roles"]), "validator input contract");
+      if (contract.schema_version !== "validator-input/1" || !Array.isArray(contract.roles) || !contract.roles.length) throw new Error("invalid validator input contract");
+      const roles = new Set();
+      for (const role of contract.roles) {
+        assertKnownKeys(role, new Set(["name", "source", "schema_version", "max_bytes"]), "validator input role");
+        if (!nonemptyString(role.name) || roles.has(role.name) || !["registered_artifact", "collected_output"].includes(role.source)
+            || role.schema_version !== undefined && !nonemptyString(role.schema_version)
+            || role.max_bytes !== undefined && (!Number.isInteger(role.max_bytes) || role.max_bytes < 1)) throw new Error("invalid validator input role");
+        roles.add(role.name);
+      }
+    }
     validators.push(Object.freeze({ ...validator, entry }));
+  }
+  const acceptanceProfiles = [];
+  if (parsed.acceptance_profiles !== undefined && !Array.isArray(parsed.acceptance_profiles)) throw new Error("acceptance_profiles must be an array");
+  for (const profile of parsed.acceptance_profiles || []) {
+    assertKnownKeys(profile, new Set(["id", "version", "description", "checks", "subject_binding", "binding_keys", "constraint_keys"]), "acceptance profile");
+    if (!nonemptyString(profile.id) || !nonemptyString(profile.version)
+        || profile.description !== undefined && !nonemptyString(profile.description)
+        || profile.subject_binding !== undefined && !nonemptyString(profile.subject_binding)
+        || !Array.isArray(profile.checks) || !profile.checks.length) throw new Error("invalid acceptance profile");
+    const checkIds = new Set();
+    for (const check of profile.checks) {
+      assertKnownKeys(check, new Set(["id", "kind", "validator_id", "validator_version"]), "acceptance check");
+      if (!nonemptyString(check.id) || checkIds.has(check.id) || !["validator_result", "registered_artifact"].includes(check.kind)
+          || check.validator_id !== undefined && !nonemptyString(check.validator_id)
+          || check.validator_version !== undefined && !nonemptyString(check.validator_version)
+          || check.kind === "validator_result" && (!check.validator_id || !check.validator_version)) throw new Error("invalid acceptance check");
+      checkIds.add(check.id);
+    }
+    for (const key of ["binding_keys", "constraint_keys"]) {
+      if (profile[key] !== undefined && (!Array.isArray(profile[key]) || profile[key].some(value => !nonemptyString(value))
+          || new Set(profile[key]).size !== profile[key].length)) throw new Error("invalid acceptance profile keys");
+    }
+    acceptanceProfiles.push(Object.freeze(profile));
   }
   const server = parsed.server === undefined ? undefined : await validateServer(parsed.server, root, name);
   return Object.freeze({
@@ -95,6 +155,7 @@ export async function readExtensionManifest(manifestPath) {
     skills: Object.freeze(skills),
     providers: Object.freeze(providers),
     validators: Object.freeze(validators),
+    acceptance_profiles: Object.freeze(acceptanceProfiles),
     ...(server ? { server } : {}),
   });
 }
@@ -292,6 +353,7 @@ function resolveOwnedPath(root, relativePath, label) {
   if (typeof relativePath !== "string" || !relativePath || relativePath.startsWith("/") || relativePath.includes("\\")) {
     throw new Error(`${label} path must be a relative POSIX path`);
   }
+  if (relativePath.split("/").includes("..")) throw new Error(`${label} path escaped extension root`);
   const path = resolve(root, relativePath);
   const escaped = relative(root, path);
   if (escaped.startsWith(`..${sep}`) || escaped === ".." || escaped.includes(`${sep}..${sep}`)) {
@@ -346,8 +408,13 @@ function validateVersion(value, label) {
 }
 
 function assertKnownKeys(value, allowed, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   const unknown = Object.keys(value).filter((key) => !allowed.has(key));
   if (unknown.length > 0) throw new Error(`${label} contains unknown field: ${unknown[0]}`);
+}
+
+function nonemptyString(value) {
+  return typeof value === "string" && value.length > 0;
 }
 
 function requireAbsoluteFile(value, label) {

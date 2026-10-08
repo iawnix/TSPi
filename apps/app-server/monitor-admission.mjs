@@ -18,6 +18,25 @@ export function createMonitorAdmission({ harness, conversation, kernel, workspac
     return result.output;
   };
   return {
+    async admitContinuation({ requestId, text }, context) {
+      const result = await conversation.commit(async tx => {
+        const existing = await tx.submissionByRequest(conversation.id, requestId);
+        if (existing) return { accepted: true, operation_id: String(existing.id) };
+        const [live, inbox, state] = await Promise.all([
+          tx.doc(LiveDoc, conversation.id), tx.doc(InboxDoc, conversation.id), kernel.read_liveness({}),
+        ]);
+        const next = state?.continuation;
+        if (!requestId?.startsWith("state-continue:") || next?.admitted !== true || next.request_id !== requestId
+            || next.session_id !== sessionId || live.run || inbox.items.length) {
+          return { accepted: false, error: { code: "continuation_superseded", message: "No current continuation is available" } };
+        }
+        const id = await admitSubmission(tx, conversation.id, { type: "input", requestId, content: text, whenBusy: "reject" },
+          Date.now(), { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" });
+        return { accepted: true, operation_id: String(id) };
+      }, context);
+      if (result.operation_id) harness.resume();
+      return result;
+    },
     async admit({ requestId, text }, context) {
       const ids = monitorEventIds(text);
       if (!ids.length || !requestId) return { accepted: false, error: { code: "invalid_message", message: "Missing Monitor event identity" } };

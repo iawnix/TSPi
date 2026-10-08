@@ -3,11 +3,11 @@ export class TransactionError extends Error {
 }
 
 export interface TransactionRecord {
-  readonly schema_version: "agent_transaction/1";
+  readonly schema_version: "agent_transaction/1" | "agent_transaction/2";
   readonly transaction_id: string;
   readonly request_id: string | null;
   readonly operation: string;
-  readonly state: "pending" | "prepared" | "committed" | "aborted" | "uncertain";
+  readonly state: "pending" | "prepared" | "committing" | "committed" | "aborted" | "uncertain";
   readonly [key: string]: unknown;
 }
 

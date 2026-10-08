@@ -98,7 +98,7 @@ password_env = "TSPI_FIXTURE_PASSWORD"
                  'claim_ids': ['claim_1'], 'dependency_ids': ['node_1']},
                 {'type': 'create_gate', 'id': 'gate_delivery', 'scope': 'node', 'target_id': 'node_delivery',
                  'criteria': [{'id': 'receipt', 'source_type': 'agent_assessment', 'description': 'Inspect registered SMTP acceptance'}]}])
-        draft.write_text(json.dumps({"notification_id": "fixture-final-v1", "event": "study_completed", "node_id": "node_delivery",
+        draft.write_text(json.dumps({"notification_id": "fixture-progress-v1", "event": "progress", "node_id": "node_delivery",
                                     "subject": "Fixture result", "summary": "Fixture complete", "report_refs": ["reports/comparison/report.md"]}))
 
         def cli(name, operation, *extra):
@@ -118,8 +118,21 @@ password_env = "TSPI_FIXTURE_PASSWORD"
         assert blocked.returncode == 2 and 'research_node_not_ready' in blocked.stdout
         assert messages == []
         change([{'type': 'set_node_state', 'node_id': 'node_1', 'state': 'closed', 'outcome': 'completed'}])
+        stale = subprocess.run([sys.executable, str(script), 'send', '--root', str(tmp_path),
+                                '--request-file', str(prepared), '--output', str(tmp_path/'stale.json')],
+                               capture_output=True, text=True, timeout=30)
+        assert stale.returncode == 2 and 'delivery_state_changed' in stale.stdout
+        assert messages == []
+        # This fixture proves one calculation Node completed, not acceptance
+        # of an untracked whole study. Prepare against the new source state.
+        request = json.loads(draft.read_text())
+        request.update(notification_id='fixture-final-v1', event='node_completed')
+        draft.write_text(json.dumps(request))
+        prepared, prepared_request = cli("email_prepare_completed", "prepare", "--request-file", str(draft))
         _, sent = cli("email_send", "send", "--request-file", str(prepared))
         assert sent["state"] == "sent"
+        receipt = json.loads((tmp_path / sent['receipt_ref']).read_text())
+        assert receipt['state_binding'] == prepared_request['state_binding']
         _, retry = cli("email_retry", "send", "--request-file", str(prepared))
         assert retry["state"] == "already_sent"
         _, status = cli("email_status", "status", "--receipt-ref", "reports/email/email_send.json")

@@ -1,4 +1,6 @@
 import { createDecisionContextInjector } from "./decision-context.mjs";
+import { recordUserSources } from "./user-sources.mjs";
+import { admitStateTool, finishStateYield } from "./state-tool-admission.mjs";
 import { createMonitorAdmission, MONITOR_ADMISSION_SERVICE_ID } from "./monitor-admission.mjs";
 import { wakeMessage } from "./pi-monitor-worker.mjs";
 import { NATIVE_TOOL_METADATA } from "./native-tool-metadata.mjs";
@@ -193,6 +195,7 @@ async function createTspiHarness(databasePath, options) {
     createPublicToolAlias(systemPromptTool, "system_prompt"),
   ].map((tool) => toDurableTool(tool, { toolContext, lifecycle, cwd, packageRoot: loadedSkills.packageRoot }));
   let monitorAdmission;
+  const recordedUserSources = new Set();
   const registry = createRegistry();
   registry.install(defineExtension({ name: "coding-tools", tools:
     [createReadTool(), createWriteTool(), createEditTool(), createBashTool()].map(tool => ({ ...tool, executionMode: "sequential" })),
@@ -210,13 +213,17 @@ async function createTspiHarness(databasePath, options) {
               ? String(live.run.inputs[0])
               : String(api.taskId);
             lifecycle.beginRun({ runId, messages: request.messages });
+            await recordUserSources({ harness, api, context, inputIds: live?.run?.inputs,
+              bridge: commandBridge, sessionId, recordedIds: recordedUserSources });
             return injectDecisionContext(request, String(api.taskId));
           })();
         },
         onYield: async (_answer, api, context) => {
-          const follow = await checkpointHook({ runId: lifecycle.snapshot().run_id || String(api.taskId) }, context);
-          await monitorAdmission?.prune(context);
-          return follow?.followUp ? { continue: follow.followUp } : undefined;
+          return finishStateYield({
+            checkpoint: () => checkpointHook({ runId: lifecycle.snapshot().run_id || String(api.taskId) }, context),
+            prune: () => monitorAdmission?.prune(context),
+            onError: error => { if (process.env.TSPI_DEBUG === "1") console.error(error); },
+          });
         },
       }),
       hook(ToolTask, {
@@ -225,23 +232,19 @@ async function createTspiHarness(databasePath, options) {
           call = { ...call, arguments: args };
           const packagePolicy = packageReadGuard({ toolName: call.name, args: call.arguments });
           if (packagePolicy?.block) return { block: packagePolicy.block.reason || String(packagePolicy.block) };
-          try {
-            const metadata = toolMetadata[call.name];
-            if (!metadata) throw new Error(`No lifecycle metadata for ${call.name}`);
-            const liveness = await researchKernel.read_liveness({ tool: { name: call.name, args: call.name === "job_start" ? resolvePreparedJob(call.arguments, cwd) : call.arguments, effect: metadata.effect, phase: metadata.phase } });
-            if (typeof liveness?.tool_admission?.accepted !== "boolean") throw new Error("Research State returned no authoritative tool admission");
-            lifecycle.setDurableLiveness(liveness);
-          } catch (error) {
-            return { block: JSON.stringify({ schema_version: "tspi-lifecycle-admission-error/1", code: "research_liveness_unavailable", reason: String(error?.message || error), tool_name: call.name }) };
-          }
           const runId = lifecycle.snapshot().run_id || String(api.taskId);
-          const admission = lifecycle.admitTool({ runId, toolName: call.name, toolCallId: call.id, args: call.arguments });
-          return admission.accepted ? { arguments: args } : { block: JSON.stringify({ schema_version: "tspi-lifecycle-admission-error/1", code: admission.code || "tool_phase_transition_denied", reason: admission.reason, tool_name: call.name }) };
+          return admitStateTool({ call, metadata: toolMetadata[call.name], lifecycle, runId,
+            readLiveness: value => researchKernel.read_liveness(value),
+            stateArguments: () => call.name === "job_start" ? resolvePreparedJob(call.arguments, cwd, commandBridge) : call.arguments });
         },
         afterTool: async (call, result, api, context) => {
           const runId = lifecycle.snapshot().run_id || String(api.taskId);
           lifecycle.completeTool({ runId, toolName: call.name, toolCallId: call.id, args: call.arguments, isError: result?.isError === true });
-          await monitorAdmission?.prune(context);
+          // Wake pruning is maintenance. A bridge outage must not discard a
+          // completed diagnostic read or turn a finished tool into a replay.
+          await monitorAdmission?.prune(context).catch(error => {
+            if (process.env.TSPI_DEBUG === "1") console.error(error);
+          });
           return undefined;
         },
       }),
@@ -288,7 +291,7 @@ async function createTspiHarness(databasePath, options) {
 }
 
 function tspiSystemPrompt(cwd) {
-  return `You are the TSPi research agent for ${cwd}. Research State is the scientific authority. At the start of a user- or Monitor-triggered run, read research_read once to orient. Tool results and the runtime state section do not start a new turn. Re-read State when facts change or a targeted detail is needed; otherwise advance the existing plan. A continue_required lifecycle needs no recovery checkpoint. Read the core orchestration and research-state Skills, create missing objects with research_change, then record research_strategy for the work. Use job_* for scientific computation and Artifact tools for evidence. Use native bash with installed Skill scripts for request preparation, report formatting, and email check/prepare/send/status. Complete authorized delivery before a terminal checkpoint; recover an existing blocked lifecycle with an explicit recovery checkpoint before writes. Continue independent authorized work until completion or a demonstrated blocker. Routine tool observations need not become Findings. Only cite registered evidence IDs in Findings. Close with research_checkpoint using Research State's disposition and scope. Monitor observes Jobs and wakes this session; it does not plan research. Installation bindings are available via TS_JOB_CONFIG, TS_NOTIFICATION_CONFIG and TSPI_PYTHON. Use the listed email Skill's configuration check before deciding a recipient is missing.`;
+  return `You are the TSPi research agent for ${cwd}. Research State owns canonical research facts. Use the current runtime snapshot; query research_read only for missing or stale details. Tool results and the runtime state section do not start a new turn. Read the core orchestration and research-state Skills. Review Host-recorded user sources and preserve each requested deliverable as a requirement with an installed acceptance profile before planning; a status question may be reviewed with a reason. Requirements survive Node closure and Gate changes. Their checks establish bounded deliverables, while Claim assessments express scientific conclusions. Create missing objects with research_change, then record research_strategy. Use job_* for scientific computation, helper-returned prepared_ref for submission and registered Artifact references for evidence. Use native bash with installed Skill scripts for request preparation, report formatting, and email check/prepare/send/status. Delivery must declare its consumed requirements or results and use an event matching their actual state. Complete authorized delivery before a terminal checkpoint. A continue_required lifecycle needs no recovery checkpoint; recover blocked work explicitly before writes. Continue independent authorized work until completion or a demonstrated blocker. Preserve unmet requirements and evidenced stopping reasons when ending partially. Routine observations need not become Findings. Only cite registered evidence in Findings. Close with research_checkpoint using State's disposition and scope. Monitor observes Jobs and wakes this session; it does not plan research. Installation bindings are TS_JOB_CONFIG, TS_NOTIFICATION_CONFIG and TSPI_PYTHON. Use the listed email Skill's configuration check before deciding a recipient is missing.`;
 }
 
 if (workerModule.isDirectInternalProcessEntry?.(import.meta.url) || process.env.PI_SESSION_WORKER_ENTRY === new URL(import.meta.url).pathname) {

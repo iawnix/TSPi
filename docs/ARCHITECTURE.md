@@ -396,9 +396,12 @@ and provenance. Registered validators are listed in extension manifests and are
 invoked with `job_start`; no analysis capability catalog is required.
 
 The chemical extension provides molecular preparation, Gaussian/xTB/CF22D runners,
-report building and the `chemical.gaussian_frequency` validator. Gaussian explicit
-inputs support bounded TS/frequency/IRC checks, but do not provide automatic TS
-candidate generation, mode-character validation or endpoint identity assessment.
+report building and registered validators. The finite mapped Diels–Alder path adds
+RDKit candidate seeds, Gaussian QST2/Freq and bidirectional IRC preparation, plus
+separate mapping, forming-bond mode and endpoint-connectivity checks. These checks
+require bound collected outputs; they do not establish exhaustive mechanism discovery
+or guarantee actual Gaussian convergence. See the candidate-generation Skill for
+supported structures, output formats and validation limits.
 Other installed scientific commands can use generic Jobs after their actual input
 and output contracts are verified. No execution result implicitly updates a Claim.
 
@@ -504,3 +507,35 @@ are separate from the scientific operation journal.
 - Host lifecycle and Native Harness integration tests: `tests/integration/test_pi_app_server_launcher.py`,
   `tests/node/native/tspi-host.test.mjs`, `tests/node/native/pi-native-worker.test.mjs`, and
   `tests/node/native/pi-session-control.test.mjs`.
+
+
+## Sourced requirements and current acceptance
+
+`research-requirements/1` adds user deliverables without replacing scientific Claims.
+Host records actual Pi user submissions; Monitor and State continuation messages
+are internal inputs. Installed versioned acceptance profiles declare finite checks.
+A requirement binds its source quote, constraints, inputs and contributing Nodes;
+receipt-based assessments derive satisfaction. Source coverage remains an Agent
+judgment, so preserving a source is not proof of complete natural-language extraction.
+
+Node Gate changes cannot weaken a requirement's original checks. Stage Nodes may
+complete before it, and fulfilled analysis can leave a Claim inconclusive. Stops
+preserve unmet work with actual cancellation or scoped failure evidence. New Attempts
+expire old stopping decisions. A completed delivery retains its historical consumed
+requirement versions while current evidence can become stale and prevent new success.
+
+`dependency_evaluation` is shared by admission, liveness and completion, with
+`completed` or `finished` conditions. Delivery declares consumed requirements,
+Artifacts or predecessor Nodes. Email preparation binds its event and consumption
+to State; send rechecks that basis. Existing sent/unknown receipts remain idempotent.
+
+Prepared Job references (`pN`) and Artifact references (`aN`) are exact persistent
+workspace records. Transaction journal v2 recovers only pending commits after a
+one-time history migration. Stop all old workspace writers before upgrading; do
+not directly downgrade an upgraded workspace. See
+[the migration notes](MANAGED_REFERENCES_AND_TRANSACTION_RECOVERY.zh-CN.md).
+
+During a State bridge outage only native local read/system_prompt diagnostics can
+bypass unavailable admission; effects still require current State. A failed initial
+user-source write prevents starting that input. A later failed yield check preserves
+the diagnostic answer without manufacturing a checkpoint or continuation.

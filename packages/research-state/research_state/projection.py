@@ -36,6 +36,9 @@ def research_map_document(context: dict[str, Any]) -> dict[str, Any]:
     nodes = copy.deepcopy(context["nodes"])
     findings = copy.deepcopy(context["findings"])
     gates = copy.deepcopy(context["gates"])
+    from .requirements import requirements_evaluation
+    metadata = copy.deepcopy(context.get("metadata", {})) if isinstance(context.get("metadata"), dict) else {}
+    metadata["requirements"] = requirements_evaluation(context)
     return {
         "schema_version": "research-map/1",
         "map_id": str(map_id),
@@ -51,7 +54,7 @@ def research_map_document(context: dict[str, Any]) -> dict[str, Any]:
         "claim_relations": copy.deepcopy(context["claim_relations"]),
         "focus_claim_ids": list(focus["claim_ids"]),
         "focus_node_ids": list(focus["node_ids"]),
-        "metadata": copy.deepcopy(context.get("metadata", {})) if isinstance(context.get("metadata"), dict) else {},
+        "metadata": metadata,
         "progress": {
             "phase_count": len(phases),
             "claim_count": len(claims),
@@ -72,6 +75,7 @@ def research_summary_document(context: dict[str, Any]) -> dict[str, Any]:
     nodes = copy.deepcopy(context.get("nodes", []))
     findings = copy.deepcopy(context.get("findings", []))
     gates = copy.deepcopy(context.get("gates", []))
+    from .requirements import requirements_evaluation
     return {
         "schema_version": "research-summary/1",
         "mode": "summary",
@@ -85,6 +89,7 @@ def research_summary_document(context: dict[str, Any]) -> dict[str, Any]:
         "nodes": nodes,
         "findings": findings,
         "gates": gates,
+        "requirements": requirements_evaluation(context),
         "focus": copy.deepcopy(context.get("focus", {"claim_ids": [], "node_ids": []})),
         "progress": {
             "phase_count": len(phases),

@@ -2,8 +2,10 @@
   "schema_version": "skill-resources/1",
   "base": "extension",
   "files": {
-    "skills/method-selection/scripts/prepare_job.py": "sha256:606c6819b4fbab1ff46b19aa9ee65ed086e224f146c8c0a5a6382eeb4bdd3f79",
+    "skills/method-selection/scripts/prepare_job.py": "sha256:037a1181b6fa68814bd4755f57a4277fdc4a3c7c729a0defafd4a786be4bbd2d",
     "skills/_shared/execution_bindings.py": "sha256:4e77463dd31654b872bf5167050ac9844977d7a744c863cf303dc343204b04d1",
+    "skills/_shared/path_validation.py": "sha256:8efad83c1e4d98a128551f6519ba09cb8e35bf9efb7f05b223e0e9f68a384987",
+    "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
     "skills/_shared/science.py": "sha256:dfd52085de07e1a7a75315cb50225021fd397f438c1544c67266c79809affc5b"
   }
 }

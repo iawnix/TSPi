@@ -1,4 +1,4 @@
-> XYZ runner 支持 opt、sp、opt-sp；显式 GJF runner 还接受 execution、opt、frequency、minimum、saddle、irc 检查。这些检查不确立振动模式性质或端点身份。
+> XYZ runner 支持 opt、sp、opt-sp；显式 GJF runner 还接受 none、opt、frequency、minimum、saddle、irc 检查。这些检查不确立振动模式性质或端点身份。
 
 # Gaussian 验证
 

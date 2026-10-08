@@ -3,10 +3,12 @@
   "base": "extension",
   "files": {
     "skills/gaussian/scripts/cli.py": "sha256:613c7635f6b18692286282da7f89df1732fefda4e97d9ad175d9585b3705bb33",
-    "skills/gaussian/scripts/gaussian_io.py": "sha256:6dba9f8e0e7e5f49cc08984772b0d09e87d28aa021a043e70e06e33bb6ce1876",
+    "skills/gaussian/scripts/gaussian_io.py": "sha256:fe19dbc23a782fd12425171df933b37f35060fb7fd587740ce3a66b03a5a2b2a",
     "skills/gaussian/scripts/input_job.py": "sha256:439fa22ad96497ca47265366644ee38c8698a1fed9290432871e6efb512ea9e0",
     "skills/gaussian/scripts/run.py": "sha256:39a722b98f6c7066bbb4322e8bcc5158cc457db8ca3d266af7d6baa6a6ac8f8f",
     "skills/_shared/execution_bindings.py": "sha256:4e77463dd31654b872bf5167050ac9844977d7a744c863cf303dc343204b04d1",
+    "skills/_shared/path_validation.py": "sha256:8efad83c1e4d98a128551f6519ba09cb8e35bf9efb7f05b223e0e9f68a384987",
+    "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
     "skills/_shared/science.py": "sha256:dfd52085de07e1a7a75315cb50225021fd397f438c1544c67266c79809affc5b"
   }
 }

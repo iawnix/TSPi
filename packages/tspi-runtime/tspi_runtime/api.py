@@ -83,6 +83,17 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
                 "research commands require an initialized filesystem Research Agent workspace"
             )
         action = command.removeprefix("research.")
+        if action == "source":
+            from research_state.sources import record_source
+            return record_source(root, value)
+        if action == "sources":
+            from research_state.sources import source_records
+            return source_records(root, **value)
+        if action in {"requirements", "profiles"}:
+            from research_state.requirements import requirements_evaluation, acceptance_profiles
+            if action == "profiles":
+                return {"schema_version": "research-acceptance-profiles/1", "profiles": list(acceptance_profiles().values())}
+            return requirements_evaluation(dispatch_agent_workspace(root, "read_context", {}))
         if action == "context":
             from research_memory import ResearchContextBuilder
             return ResearchContextBuilder().build(root, max_bytes=value.get("max_bytes", 16000), event_ids=value.get("event_ids", ())).context
@@ -136,7 +147,10 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
             if action == "detail":
                 kind = _string(value, "kind")
                 identifier = _string(value, "id")
-                collection = {"phase": "phases", "claim": "claims", "node": "nodes", "finding": "findings", "gate": "gates", "attempt": "attempts", "artifact": "artifacts", "lifecycle_action": "lifecycle_actions", "interpretation": "attempt_interpretations", "strategy": "strategy_plans"}.get(kind)
+                collection = {"phase": "phases", "claim": "claims", "node": "nodes", "finding": "findings", "gate": "gates", "attempt": "attempts", "artifact": "artifacts", "lifecycle_action": "lifecycle_actions", "interpretation": "attempt_interpretations", "strategy": "strategy_plans", "requirement": "requirements"}.get(kind)
+                if kind == "artifact":
+                    from research_state.references import resolve_artifact_reference
+                    identifier = resolve_artifact_reference(root, identifier)
                 if collection is None:
                     raise CommandError("research.detail kind must be phase, claim, node, finding, or gate")
                 item = next((row for row in context.get(collection, []) if row.get("id") == identifier), None)
@@ -149,7 +163,8 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
                 # detail envelope. ``item`` is the canonical record field;
                 # callers must not branch on a transport-specific ``object``
                 # alias or depend on an incidental map_id projection.
-                return {"schema_version": "research-detail/1", "kind": kind, "id": identifier, "item": item}
+                from research_state.references import annotate_artifact_references
+                return annotate_artifact_references(root, {"schema_version": "research-detail/1", "kind": kind, "id": identifier, "item": item})
             if action == "locate":
                 query = _string(value, "query").casefold()
                 matches = []
@@ -197,6 +212,9 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
                 "artifact_id": value.get("artifact_id"),
                 "subject_id": value.get("subject_id"),
             }
+            if filters["artifact_id"] is not None:
+                from research_state.references import resolve_artifact_reference
+                filters["artifact_id"] = resolve_artifact_reference(root, filters["artifact_id"])
             for field, expected in filters.items():
                 if expected is None:
                     continue
@@ -215,13 +233,17 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
             offset = value.get("offset", 0)
             if type(offset) is not int or offset < 0:
                 raise CommandError("offset must be a non-negative integer")
-            return {"schema_version": "research-evidence/2", "record_type": record_type,
+            from research_state.references import annotate_artifact_references
+            return annotate_artifact_references(root, {"schema_version": "research-evidence/2", "record_type": record_type,
                     "records": records[offset:offset + limit], "total": len(records),
-                    "next_offset": offset + limit if offset + limit < len(records) else None}
+                    "next_offset": offset + limit if offset + limit < len(records) else None})
         raise CommandError(
             f"research.{action} is served by the Host Research State filesystem boundary; use the native command boundary"
         )
     if command.startswith("job."):
+        if command in {"job.prepare", "job.resolve_prepared"}:
+            from research_state.references import prepare_job, resolve_prepared_job
+            return (prepare_job if command == "job.prepare" else resolve_prepared_job)(root, value)
         from tspi_runtime.execution import dispatch
         return dispatch(command.removeprefix("job."), {**value, "workspace_root": str(root)})
     if command.startswith("artifact."):

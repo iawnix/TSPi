@@ -27,6 +27,14 @@ def validate_context(context):
             issues.append({"code": "job_terminal_conflict", "refs": [attempt["id"]], "recovery": "job_reconcile"})
     artifacts = {a["id"]: a for a in context.get("artifacts", [])}
     gates = {g["id"]: g for g in context.get("gates", [])}
+    from .dependencies import dependency_evaluation
+    from .requirements import completed_node_requirement_evaluation, requirements_evaluation
+    requirement_status = requirements_evaluation(context)
+    if (context.get("disposition") == "terminal" or context.get("lifecycle") == "terminal") and not requirement_status["settled"]:
+        issues.append({"code": "requirements_unsettled", "refs": [
+            *requirement_status["unreviewed_source_refs"],
+            *[row["id"] for row in requirement_status["requirements"] if not row["settled"]]],
+            "recovery": "Complete the outstanding requirements or record scoped evidence for stopping."})
     from .assessments import claim_review_state
     for claim in context.get("claims", []):
         # Historical workspaces are left intact. New assessments explicitly
@@ -41,6 +49,12 @@ def validate_context(context):
         if pending:
             issues.append({"code": "closed_node_with_active_attempts", "refs": [node["id"], *pending]})
         if node.get("outcome") == "completed":
+            dependencies = dependency_evaluation(context, node)
+            if not dependencies["satisfied"]:
+                issues.append({"code": "completed_dependencies_incomplete", "refs": [node["id"], *[row["node_id"] for row in dependencies["unmet"]]]})
+            consumed = completed_node_requirement_evaluation(context, node)
+            if not consumed["satisfied"]:
+                issues.append({"code": "completed_requirements_unmet", "refs": [node["id"], *consumed["unmet_requirement_ids"]]})
             if not node.get("gate_ids") and not node.get("completion_exemption"):
                 issues.append({"code": "completion_conditions_required", "refs": [node["id"]]})
             for gate_id in node.get("gate_ids", []):

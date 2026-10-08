@@ -28,8 +28,10 @@ path direction alone.
 
 Combine stationary, mode, forward/reverse path and structure-comparison evidence
 in an assessment. Bind each extracted endpoint to the expected Artifact explicitly.
-There is no bundled mechanism-audit executor; missing scientific checks remain
-unresolved, even when the calculation or parser succeeded.
+For the declared DA path, use `chemical.gaussian_irc_connectivity` with the spec,
+saddle log and both directional logs; [the executable path](../../candidate-generation/references/gaussian_path.md) documents
+its origin, completion and endpoint checks. Missing checks remain unresolved;
+this is not a general mechanism-audit executor.
 
 Record path completion and endpoint assignment separately for each direction.
 Missing, ambiguous, or contradictory evidence is an IssueFinding. A Gate may

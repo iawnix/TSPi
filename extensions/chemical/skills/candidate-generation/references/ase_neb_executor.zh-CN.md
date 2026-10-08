@@ -12,4 +12,4 @@ image 数量、优化器、力阈值、calculator 设置和爬山图像策略，
 收敛证据。最高能量 image 是候选结构，不是已验证过渡态。
 
 现有执行入口见 [Gaussian Skill](../../gaussian/SKILL.zh-CN.md) 的显式 TS/扫描/QST 输入，
-以及 [chemical-input](../../chemical-input/SKILL.zh-CN.md) 的分子种子准备；两者都不提供自动 NEB 或 TS 搜索管线。
+以及 [chemical-input](../../chemical-input/SKILL.zh-CN.md) 的分子种子准备。[映射 DA 路径](gaussian_path.zh-CN.md) 提供有界 QST2/IRC 准备，仍不提供自动 NEB。

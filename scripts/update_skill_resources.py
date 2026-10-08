@@ -22,6 +22,10 @@ def main():
                    'files':{str(p.relative_to(manifest.parent)):digest(p) for p in resources}}
             path=skill/'resources.json';path.write_text(json.dumps(index,indent=2)+'\n')
             entry['resources_sha256']=digest(path)
+        for validator in data.get('validators', []):
+            validator['sha256'] = digest(manifest.parent / validator['entry'])
+            for resource in validator.get('resources', {}).values():
+                resource['sha256'] = digest(manifest.parent / resource['path'])
         manifest.write_text(json.dumps(data,indent=2)+'\n')
 
 

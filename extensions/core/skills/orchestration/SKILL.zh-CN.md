@@ -13,7 +13,7 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
 ## 工作流
 
 1. 先使用当前回合已有的 State 快照；规划需要的信息缺失或过期时，才按最小范围调用 `research_read`。
-2. 说明不确定性、相关 Claim，以及一个边界明确的交付物。
+2. 独立于研究计划，对照 Host 保存的用户原文逐项审阅交付范围，用已安装 profile 和用户约束建立 requirements（见 research-state references/requirements.zh-CN.md），再说明不确定性、Claim 和有界工作。未审阅来源与未满足要求在 Node 关闭后仍保留为义务。
 3. 先通过 `research_change` 创建或确认 Claim 和 Node，再用 `research_strategy` 建立覆盖 focus 的计划。未知 Claim 错误应先创建对象，再重试策略；没有策略时不要跳到证据写入或计算。
    从系统提示列出的真实路径读取科学 Skill。用户已指定方法时仍使用 method-selection 的执行准备：读取安装 job.toml，绑定配置的解释器、软件和环境。job_probe 只验证通用平台，方法可用性由 Skill 检查。
    对方法比较建立 `方法 × environment × {opt, sp}` 矩阵，保存方法、环境、输入和依赖。单点使用相同方法与环境的优化坐标；只阻塞失败单元，不停止独立任务。

@@ -6,8 +6,8 @@ No single parser flag establishes all of them.
 
 The [Gaussian runner](../../gaussian/SKILL.md) writes `parsed.json` using
 `gaussian_io.py::parse_log`. The parser extracts termination, convergence,
-stationary markers, frequencies and geometry; it does not extract normal-mode
-vectors. Its `section_index` argument is zero based. Select the relevant section
+stationary markers, frequencies, geometry and Cartesian normal-mode vectors
+from the final harmonic table. Its `section_index` argument is zero based. Select the relevant section
 and compare the output route, charge, multiplicity, method and basis with the input.
 
 For a classical first-order saddle, require optimization convergence and one
@@ -15,12 +15,11 @@ imaginary mode that represents the proposed elementary step. Numerical noise,
 constraints, flat modes, and competing imaginary modes must remain visible.
 Inspect the displacement vectors rather than relying on frequency count alone.
 
-There is no bundled mode-character validator. Inspect displacement vectors in
-the primary output with an available analysis tool or an explicitly implemented
-analysis Job, preserving its inputs and results. Compare enough relevant bond
-changes to distinguish competing motions; the overall normal-mode sign is arbitrary.
-The registered `chemical.gaussian_frequency` validator checks normal termination
-and one negative frequency only, not mode character or IRC connectivity.
+For the declared DA path, `chemical.gaussian_saddle` checks the raw collected log
+against a registered path spec, including method/resources, convergence, complete
+frequencies and simultaneous forming-bond motion. See the [executable path](../../candidate-generation/references/gaussian_path.md).
+Its normalized displacement threshold is a limited mode check, not proof of an entire mechanism.
+The older `chemical.gaussian_frequency` checks only normal termination and one negative frequency.
 
 Validate element count, atom mapping, charge, multiplicity, electronic state,
 key distances and dihedrals, stereochemistry, and the absence of unintended

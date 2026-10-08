@@ -8,6 +8,8 @@
     "skills/xtb/scripts/xtb_scan.py": "sha256:676f29c2343872f70a433ce07e2f4236bb0306e2b3d7a16327b89d8eace4c6c2",
     "skills/xtb/scripts/xyz.py": "sha256:19377522138a2501fcb2441f55ec4f80a0a36cfe4f5d3c9a259eca9bc8830ab9",
     "skills/_shared/execution_bindings.py": "sha256:4e77463dd31654b872bf5167050ac9844977d7a744c863cf303dc343204b04d1",
+    "skills/_shared/path_validation.py": "sha256:8efad83c1e4d98a128551f6519ba09cb8e35bf9efb7f05b223e0e9f68a384987",
+    "skills/_shared/reaction_checks.py": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e",
     "skills/_shared/science.py": "sha256:dfd52085de07e1a7a75315cb50225021fd397f438c1544c67266c79809affc5b"
   }
 }

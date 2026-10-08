@@ -1,4 +1,4 @@
-> The XYZ runner supports opt, sp and opt-sp. The explicit GJF runner also accepts execution, opt, frequency, minimum, saddle and irc checks; these do not establish mode character or endpoint identity.
+> The XYZ runner supports opt, sp and opt-sp. The explicit GJF runner also accepts none, opt, frequency, minimum, saddle and irc checks; these do not establish mode character or endpoint identity.
 
 # Gaussian Validation
 

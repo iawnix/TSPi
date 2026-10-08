@@ -42,6 +42,7 @@ export function createStateTool(options = {}) {
       const command = `research.${mode}`;
       const commandParams = mode === "detail"
         ? { kind: params.kind, id: params.id }
+        : mode === "sources" ? { source_ref: params.source_ref, offset: params.offset, limit: params.limit }
         : mode === "operations" ? { query: params.query }
           : mode === "locate" ? { query: params.query, limit: params.limit, offset: params.offset }
           : mode === "decisions" ? { claim_id: params.claim_id, limit: params.limit }
@@ -75,23 +76,17 @@ export function createChangeTool() {
           basis_refs: params.basis_refs || [],
           operations: params.operations,
         } }, context?.abortSignal);
-      // A rejected ChangeSet is not a persisted write. Do not read and return
-      // a post-change summary for an envelope that explicitly reports
-      // rejection; doing so invites the Agent to mistake the pre-change map
-      // for state created by this request.
+      // Return the commit receipt. The next injected view supplies current
+      // State without appending an entire map after each small change.
       const accepted = result?.accepted !== false
         && result?.ok !== false
         && result?.status !== "rejected"
         && result?.status !== "failed";
-      const summary = accepted
-        ? await NATIVE_COMMANDS.execute("research.summary", root, {}, context?.abortSignal)
-        : null;
       return {
         content: [
           { type: "text", text: JSON.stringify(result, null, 2) },
-          ...(summary === null ? [] : [{ type: "text", text: JSON.stringify(summary, null, 2) }]),
         ],
-        details: { result, summary, persisted: summary !== null },
+        details: { result, persisted: accepted },
       };
     },
   };
@@ -224,7 +219,9 @@ export function createJobArtifactTools(options = {}) {
       throw new Error(`${name} runtime is not configured in TSPi Agent Server`);
     }
     const root = boundWorkspaceRoot(params, toolContext);
-    if (name === "job_start") params = resolvePreparedJob(params, root);
+    if (name === "job_start") params = await resolvePreparedJob(params, root, {
+      execute_command: (command, value) => NATIVE_COMMANDS.execute(command, root, value),
+    });
     // The runtime bridge already owns the immutable workspace binding. Only
     // job.start consumes request/session identity; query and evidence commands
     // must not receive unrelated Host context fields.

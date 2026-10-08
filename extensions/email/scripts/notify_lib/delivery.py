@@ -152,6 +152,8 @@ def _notify_user(workspace: Path, request: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("configured recipient changed since preparation")
         notification["notification_id"] = bounded_text(request.get("notification_id"), "notification_id", 256)
         notification["recipient"] = config.recipient
+        if request.get("state_binding") is not None:
+            notification["state_binding"] = request["state_binding"]
         notification.pop("workspace_revision")
         notification.pop("notification_config_digest")
         # Older receipts did not preserve enough data to prove v2 identity.
@@ -192,7 +194,9 @@ def _notify_user(workspace: Path, request: dict[str, Any]) -> dict[str, Any]:
             "report_artifacts": attachment_records,
             "node_id": request.get("node_id"),
         }
-        with _delivery_admission(workspace, request.get("node_id")):
+        if request.get("state_binding") is not None:
+            guard["state_binding"] = request["state_binding"]
+        with _delivery_admission(workspace, request.get("node_id"), request):
             _write_private_json(receipt_path, guard, exclusive=False)
 
         transport_started = False
@@ -515,7 +519,7 @@ def _load_request(request_file: Path) -> dict[str, Any]:
     value = json.loads(request_file.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError("notification request must be an object")
-    allowed = {"schema_version", "event", "subject", "summary", "report_refs", "attachments", "notification_id", "recipient", "node_id"}
+    allowed = {"schema_version", "event", "subject", "summary", "report_refs", "attachments", "notification_id", "recipient", "node_id", "state_binding"}
     unknown = sorted(set(value) - allowed)
     if unknown:
         raise ValueError(f"notification request contains unknown fields: {', '.join(unknown)}")
@@ -1090,7 +1094,7 @@ def _delivery_lock(path: Path, *, touch=True):
 
 
 @contextmanager
-def _delivery_admission(workspace, node_id):
+def _delivery_admission(workspace, node_id, request=None):
     """Read State policy; Skill scripts never mutate canonical Research State."""
     if not (workspace / 'research_map/context.json').exists():
         yield
@@ -1103,6 +1107,11 @@ def _delivery_admission(workspace, node_id):
         policy = tool_admission(context, liveness, {"name": "skill_delivery", "effect": "execution_control"})
         if policy['accepted']: policy = node_admission(context, liveness, node_id)
         if not policy['accepted']: raise ValueError(policy['code'] + ': ' + policy['reason'])
+        if request is not None:
+            from research_state.delivery import delivery_snapshot
+            binding = delivery_snapshot(context, node_id, request['event'], root=workspace)
+            if request.get('state_binding') != binding:
+                raise ValueError('delivery_state_changed: prepare a request bound to the current consumed evidence and state')
         yield
 
 

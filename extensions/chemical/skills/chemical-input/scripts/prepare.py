@@ -68,28 +68,8 @@ def seeds(smiles, charge, multiplicity, output, enumerate_stereo=False):
             'limitations': ['Embedding is not optimization; conformers and intermolecular approaches require separate exploration.']}
 
 
-def reaction(smiles):
-    parts = smiles.split('>>')
-    if len(parts) != 2:
-        raise ValueError('use reactants>>products with explicit atom-map numbers')
-    sides = [inspect(part)[0] for part in parts]
-    inventories = [Counter(f'{atom.GetSymbol()}:{atom.GetIsotope()}' for atom in Chem.AddHs(mol).GetAtoms()) for mol in sides]
-    charges = [Chem.GetFormalCharge(mol) for mol in sides]
-    maps, bonds = [], []
-    for mol in sides:
-        atoms = list(mol.GetAtoms()); numbers = [a.GetAtomMapNum() for a in atoms]
-        if any(n <= 0 for n in numbers) or len(numbers) != len(set(numbers)):
-            raise ValueError('every explicit atom needs a unique positive map number on each side')
-        maps.append({a.GetAtomMapNum(): (a.GetSymbol(), a.GetIsotope()) for a in atoms})
-        bonds.append({tuple(sorted((b.GetBeginAtom().GetAtomMapNum(), b.GetEndAtom().GetAtomMapNum()))): b.GetBondTypeAsDouble() for b in mol.GetBonds()})
-    balanced = inventories[0] == inventories[1] and charges[0] == charges[1]
-    mapped = maps[0] == maps[1]
-    changes = [{'atoms': list(pair), 'before': bonds[0].get(pair, 0), 'after': bonds[1].get(pair, 0)}
-               for pair in sorted(set(bonds[0]) | set(bonds[1])) if bonds[0].get(pair) != bonds[1].get(pair)]
-    return {'schema_version': 'chemical-reaction/1', 'balanced': balanced, 'mapping_valid': mapped,
-            'elements': [dict(x) for x in inventories], 'charges': charges, 'bond_changes': changes,
-            'validated': balanced and mapped,
-            'limitations': ['An explicit atom map is a chosen correspondence, not proof of a mechanism. Implicit hydrogen transfers require explicit H maps.']}
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '_shared'))
+from reaction_checks import reaction
 
 
 def main():
@@ -103,13 +83,14 @@ def main():
     seed.add_argument('--charge', type=int, required=True); seed.add_argument('--multiplicity', type=int, required=True)
     seed.add_argument('--output-dir', type=Path, required=True); seed.add_argument('--enumerate-stereo', action='store_true')
     mapping = sub.add_parser('reaction'); mapping.add_argument('--smiles', required=True)
+    mapping.add_argument('--transformation', type=Path, help='JSON declaring diels_alder or explicit bond/hydrogen changes')
     args = parser.parse_args()
     if args.config: os.environ['TSPI_NAME_RESOLVER_CONFIG'] = args.config
     try:
         if args.command == 'resolve': result = resolve_name(args.name, args.lookup_name)
         elif args.command == 'inspect': result = {'schema_version': 'chemical-structure/1', **inspect(args.smiles)[1], 'identity_status': 'supplied_graph'}
         elif args.command == 'seed': result = seeds(args.smiles, args.charge, args.multiplicity, args.output_dir, args.enumerate_stereo)
-        else: result = reaction(args.smiles)
+        else: result = reaction(args.smiles, json.loads(args.transformation.read_text()) if args.transformation else None)
         path = Path(args.output); path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(result, indent=2, ensure_ascii=False) + '\n')
         print(json.dumps({'output': str(path.resolve()), 'result': result}, ensure_ascii=False))

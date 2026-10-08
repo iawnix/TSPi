@@ -18,7 +18,9 @@
 通过真实分析工具或 Job 执行并登记输出；`artifact_derive` 只记录描述。不能只从文件名或路径方向推断端点 identity。
 
 评估时组合驻点、振动模式、正向/反向路径和结构比较证据，显式将每个提取端点绑定到预期
-Artifact。当前没有内置机理审计执行器；即使计算或解析成功，缺失的科学检查仍未解决。
+Artifact。声明的 DA 路径可将 spec、鞍点 log 和正反向 log 交给 `chemical.gaussian_irc_connectivity`；
+起点、路径完成与端点检查见 [可执行路径](../../candidate-generation/references/gaussian_path.zh-CN.md)。
+缺失检查仍未解决，这不是通用机理审计执行器。
 
 分别记录每个方向的路径完成与端点归属。缺失、歧义或矛盾证据属于 IssueFinding。Gate
 可以使端点 criterion 可见，但其 evaluation 与最终 Node/Claim 状态仍是不同变更。

@@ -202,3 +202,94 @@ test("Skill-only extension rejects a changed executable resource", async () => {
     await assert.rejects(discoverInstalledExtensions({ manifestPaths: [manifest] }), /integrity/i);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+async function validatorFixture() {
+  const value = await fixture();
+  const manifest = JSON.parse(await readFile(value.manifestPath, "utf8"));
+  await writeFile(join(value.root, "validate.py"), "raise RuntimeError('inventory must never execute a validator')\n");
+  await writeFile(join(value.root, "helper.py"), "VERSION = 1\n");
+  manifest.validators = [{ id: "amber.geometry", version: "1", entry: "validate.py",
+    sha256: digest(await readFile(join(value.root, "validate.py"))),
+    resources: { "lib/helper.py": { path: "helper.py", sha256: digest(await readFile(join(value.root, "helper.py"))) } },
+    input_contract: { schema_version: "validator-input/1", roles: [
+      { name: "spec", source: "registered_artifact", schema_version: "geometry-spec/1", max_bytes: 2048 },
+      { name: "log", source: "collected_output" },
+    ] },
+  }];
+  manifest.acceptance_profiles = [{ id: "amber.path", version: "1", description: "Validate a selected geometry",
+    subject_binding: "spec_artifact_id", binding_keys: ["spec_artifact_id", "method"], constraint_keys: ["method"],
+    checks: [{ id: "geometry", kind: "validator_result", validator_id: "amber.geometry", validator_version: "1" }],
+  }];
+  await writeFile(value.manifestPath, JSON.stringify(manifest));
+  return { ...value, manifest };
+}
+
+test("extension discovery validates bound validator resources and acceptance profiles without running code", async () => {
+  const { root, manifestPath } = await validatorFixture();
+  try {
+    const result = await discoverInstalledExtensions({ manifestPaths: [manifestPath] });
+    const extension = result.extensions[0];
+    assert.equal(extension.validators[0].entry, join(root, "validate.py"));
+    assert.equal(extension.validators[0].input_contract.roles[1].source, "collected_output");
+    assert.equal(extension.acceptance_profiles[0].checks[0].validator_id, "amber.geometry");
+    await writeFile(join(root, "helper.py"), "VERSION = 2\n");
+    await assert.rejects(readExtensionManifest(manifestPath), /validator resource integrity check failed/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+const malformedValidatorCases = [
+  ["validators collection", (m) => { m.validators = {}; }, /validators must be an array/],
+  ["numeric validator identity", (m) => { m.validators[0].version = 1; }, /validator identity/],
+  ["resources collection", (m) => { m.validators[0].resources = []; }, /resources must be an object/],
+  ["null resources", (m) => { m.validators[0].resources = null; }, /resources must be an object/],
+  ["resource traversal", (m) => { m.validators[0].resources["../helper.py"] = m.validators[0].resources["lib/helper.py"]; }, /escaped extension root/],
+  ["normalized resource collision", (m) => { m.validators[0].resources["./lib/helper.py"] = m.validators[0].resources["lib/helper.py"]; }, /resource destination/],
+  ["reserved resource", (m) => { m.validators[0].resources["./validator_inputs.json"] = m.validators[0].resources["lib/helper.py"]; }, /resource destination/],
+  ["reserved input resource", (m) => { m.validators[0].resources["input_0"] = m.validators[0].resources["lib/helper.py"]; }, /resource destination/],
+  ["reserved output resource", (m) => { m.validators[0].resources["validator_result.json"] = m.validators[0].resources["lib/helper.py"]; }, /resource destination/],
+  ["reserved runtime metadata", (m) => { m.validators[0].resources["spec.json"] = m.validators[0].resources["lib/helper.py"]; }, /resource destination/],
+  ["reserved runtime logs", (m) => { m.validators[0].resources["logs/stderr.log"] = m.validators[0].resources["lib/helper.py"]; }, /resource destination/],
+  ["resource parent collision", (m) => { m.validators[0].resources.lib = m.validators[0].resources["lib/helper.py"]; }, /resource destination/],
+  ["escaped resource source", (m) => { m.validators[0].resources["lib/helper.py"].path = "../outside.py"; }, /escaped extension root/],
+  ["null contract", (m) => { m.validators[0].input_contract = null; }, /must be an object/],
+  ["unknown contract schema", (m) => { m.validators[0].input_contract.schema_version = "unknown/1"; }, /invalid validator input contract/],
+  ["empty roles", (m) => { m.validators[0].input_contract.roles = []; }, /invalid validator input contract/],
+  ["duplicate role", (m) => { m.validators[0].input_contract.roles.push(m.validators[0].input_contract.roles[0]); }, /invalid validator input role/],
+  ["invalid role source", (m) => { m.validators[0].input_contract.roles[0].source = "agent_claim"; }, /invalid validator input role/],
+  ["invalid role schema", (m) => { m.validators[0].input_contract.roles[0].schema_version = 1; }, /invalid validator input role/],
+  ["invalid role size", (m) => { m.validators[0].input_contract.roles[0].max_bytes = 0; }, /invalid validator input role/],
+  ["unknown role field", (m) => { m.validators[0].input_contract.roles[0].verdict = "pass"; }, /unknown field/],
+  ["profiles collection", (m) => { m.acceptance_profiles = {}; }, /acceptance_profiles must be an array/],
+  ["numeric profile identity", (m) => { m.acceptance_profiles[0].id = 1; }, /invalid acceptance profile/],
+  ["invalid subject binding", (m) => { m.acceptance_profiles[0].subject_binding = {}; }, /invalid acceptance profile/],
+  ["duplicate binding keys", (m) => { m.acceptance_profiles[0].binding_keys.push("method"); }, /invalid acceptance profile keys/],
+  ["duplicate constraint keys", (m) => { m.acceptance_profiles[0].constraint_keys.push("method"); }, /invalid acceptance profile keys/],
+  ["empty checks", (m) => { m.acceptance_profiles[0].checks = []; }, /invalid acceptance profile/],
+  ["duplicate check", (m) => { m.acceptance_profiles[0].checks.push(m.acceptance_profiles[0].checks[0]); }, /invalid acceptance check/],
+  ["unsupported check", (m) => { m.acceptance_profiles[0].checks[0].kind = "agent_says_done"; }, /invalid acceptance check/],
+  ["missing check validator", (m) => { delete m.acceptance_profiles[0].checks[0].validator_id; }, /invalid acceptance check/],
+  ["numeric check validator version", (m) => { m.acceptance_profiles[0].checks[0].validator_version = 1; }, /invalid acceptance check/],
+  ["unknown profile field", (m) => { m.acceptance_profiles[0].workflow = []; }, /unknown field/],
+];
+
+for (const [name, mutate, pattern] of malformedValidatorCases) {
+  test(`validator manifest rejects ${name}`, async () => {
+    const { root, manifestPath, manifest } = await validatorFixture();
+    try {
+      mutate(manifest);
+      await writeFile(manifestPath, JSON.stringify(manifest));
+      await assert.rejects(readExtensionManifest(manifestPath), pattern);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+}
+
+for (const collection of ["validators", "acceptance_profiles"]) {
+  test(`extension discovery rejects duplicate ${collection} identities`, async () => {
+    const { root, manifestPath, manifest } = await validatorFixture();
+    try {
+      manifest[collection].push(manifest[collection][0]);
+      await writeFile(manifestPath, JSON.stringify(manifest));
+      await assert.rejects(discoverInstalledExtensions({ manifestPaths: [manifestPath] }), /duplicate installed/);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+}

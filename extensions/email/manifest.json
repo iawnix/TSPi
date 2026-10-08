@@ -6,8 +6,8 @@
     {
       "name": "email",
       "path": ".",
-      "sha256": "sha256:810ac2649bee69254cc0b745fa3d426eabcf3e274bef6c21dbeadb5976066e9e",
-      "resources_sha256": "sha256:a208f3f524f4a51f0818be50f842e5a6a3411a4f7144fe30670ed17455ddf416"
+      "sha256": "sha256:54ac534f1e9dd20b38b2402c2b73257aa4e8a5acb85b0cd4f78c7f25bf5e9a35",
+      "resources_sha256": "sha256:4876dd87befa7e01dfa76234961890c4052edebe4a64f28036f71b21cf0b7d09"
     }
   ]
 }

@@ -6,13 +6,14 @@
     {
       "name": "candidate-generation",
       "path": "skills/candidate-generation",
-      "sha256": "sha256:68c97de46f7eddbc414b5f16137b98174d58d354be2b5e09f1733abc107e6c93"
+      "sha256": "sha256:ffacfefec47d70b166c95df3d8f8ce5f0f469c53db5a3dcd510fb4d1cc63862b",
+      "resources_sha256": "sha256:2b495ac6d1a720d424bbb701cb24bfdb99e393bb1acc6717e9840e482eaeb55e"
     },
     {
       "name": "validation",
       "path": "skills/validation",
-      "sha256": "sha256:7d3281afaf4cc2ef78e4e34f661f9d2c0e1c162165653adca6c2e8ed018b5a95",
-      "resources_sha256": "sha256:7db489fb9e10de6e38e1d678d45470c4e05caadb0891a63bc81d5fceedc3d6ea"
+      "sha256": "sha256:bc25b455f91e7466cd255de8121152a8fb054320d0884b8f76817700f1063779",
+      "resources_sha256": "sha256:c5c2e1b5f6e2c110676e64a6a6c69f6f353b77a5e64433a7b3c8b3520c5fe702"
     },
     {
       "name": "irc",
@@ -28,19 +29,19 @@
       "name": "method-selection",
       "path": "skills/method-selection",
       "sha256": "sha256:40ddb8e54dbfbf6e50f969a6e82ecae8ee370083b67d5c0c72eb6f557b007d5b",
-      "resources_sha256": "sha256:e8ca2897c0bcdd1808b9c21d3b2d7727c01729cb67a2f63e219dd3afdcd2e366"
+      "resources_sha256": "sha256:ddb6c4922d2ac9ab983bb53042b053833c40ac33f52d10772281530595d96c87"
     },
     {
       "name": "cf22d",
       "path": "skills/cf22d",
       "sha256": "sha256:6b38265b07b96691755ab82a815838ae445e23f6e19f739ce51d1adcea259b3b",
-      "resources_sha256": "sha256:ce18fcfbf2161ba1fc93240a808be8846801afdb1099ffbef9b4d8c1b8985e24"
+      "resources_sha256": "sha256:57a22469915575ed5588633281c597d9d429fd020b28002b63fc453181adaede"
     },
     {
       "name": "xtb",
       "path": "skills/xtb",
       "sha256": "sha256:edc54af8a731c5e20e1418e67e8b0e6cac229535f38671486ca67b6af291a760",
-      "resources_sha256": "sha256:feb59036df146a25554ffcfacc8994652198ae03ac7646ac93d1cb59d91157e3"
+      "resources_sha256": "sha256:d528a1c74953d07f840349631b6ad09bd2e6b4d00e46195abcd4feaa3f0d4b96"
     },
     {
       "name": "crest",
@@ -56,13 +57,13 @@
       "name": "gaussian",
       "path": "skills/gaussian",
       "sha256": "sha256:9892aeecf844405d8b219adda83046e4724bba6cfd198588abf2aeadbe9d41f4",
-      "resources_sha256": "sha256:3c8ea7a5ec4108a1f78ea5f625912f4100c0700ec032a0d607360427a2384801"
+      "resources_sha256": "sha256:7e2caa5cb46e817c1679b68e2bea3c7a7570907e075173c4425e250a4d60f060"
     },
     {
       "name": "chemical-input",
       "path": "skills/chemical-input",
-      "sha256": "sha256:7bb85f5bae876b159e9a7d94765ae2c9a5c37146d411727352a89b7756f40fad",
-      "resources_sha256": "sha256:e30ba4e656882f4aa0fda582c279cbfe6f93ce7674a600adaffd791479ed2045"
+      "sha256": "sha256:f1b976f240c6215777c159859860bb160a2880786fdffff853fff7acefcbd81e",
+      "resources_sha256": "sha256:c20e81864b555bebaac094e64878e70c80b587b332a555dd2cc18e0c6491bd14"
     },
     {
       "name": "mechanism-reasoning",
@@ -73,7 +74,7 @@
       "name": "report",
       "path": "skills/report",
       "sha256": "sha256:230e2bce6d425bd8d108afbe1359609d947d8d12650e3410f618fe469803ef28",
-      "resources_sha256": "sha256:24c2c5604b288acf0194c006c4b2c6ee8a2729932f94d854739b5f367c623aed"
+      "resources_sha256": "sha256:a2258a721f7744960f2b12f684d4a300134b4999e51393789f1077a1862f3627"
     }
   ],
   "validators": [
@@ -82,6 +83,197 @@
       "version": "1",
       "entry": "skills/validation/scripts/gaussian_frequency.py",
       "sha256": "sha256:d1fea479cb61a1a57b4f70c9642bdb398d2ca5a435344e28c8f0d11483259202"
+    },
+    {
+      "id": "chemical.reaction_mapping",
+      "version": "1",
+      "entry": "skills/validation/scripts/reaction_mapping.py",
+      "sha256": "sha256:e4058d8937089a5970bbfe59d43f9866481b5b4a66746be4b3d6ec9ac9769e91",
+      "input_contract": {
+        "schema_version": "validator-input/1",
+        "roles": [
+          {
+            "name": "spec",
+            "source": "registered_artifact",
+            "schema_version": "chemical-path-spec/1",
+            "max_bytes": 1048576
+          }
+        ]
+      },
+      "resources": {
+        "reaction_checks.py": {
+          "path": "skills/_shared/reaction_checks.py",
+          "sha256": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e"
+        },
+        "path_validation.py": {
+          "path": "skills/_shared/path_validation.py",
+          "sha256": "sha256:8efad83c1e4d98a128551f6519ba09cb8e35bf9efb7f05b223e0e9f68a384987"
+        },
+        "gaussian_io.py": {
+          "path": "skills/gaussian/scripts/gaussian_io.py",
+          "sha256": "sha256:fe19dbc23a782fd12425171df933b37f35060fb7fd587740ce3a66b03a5a2b2a"
+        }
+      }
+    },
+    {
+      "id": "chemical.gaussian_saddle",
+      "version": "1",
+      "entry": "skills/validation/scripts/gaussian_saddle.py",
+      "sha256": "sha256:83312030efe3edb6b647716e2196a132188b1ef56eea092b9c4c02535373bb68",
+      "input_contract": {
+        "schema_version": "validator-input/1",
+        "roles": [
+          {
+            "name": "spec",
+            "source": "registered_artifact",
+            "schema_version": "chemical-path-spec/1",
+            "max_bytes": 1048576
+          },
+          {
+            "name": "saddle",
+            "source": "collected_output",
+            "max_bytes": 67108864
+          }
+        ]
+      },
+      "resources": {
+        "reaction_checks.py": {
+          "path": "skills/_shared/reaction_checks.py",
+          "sha256": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e"
+        },
+        "path_validation.py": {
+          "path": "skills/_shared/path_validation.py",
+          "sha256": "sha256:8efad83c1e4d98a128551f6519ba09cb8e35bf9efb7f05b223e0e9f68a384987"
+        },
+        "gaussian_io.py": {
+          "path": "skills/gaussian/scripts/gaussian_io.py",
+          "sha256": "sha256:fe19dbc23a782fd12425171df933b37f35060fb7fd587740ce3a66b03a5a2b2a"
+        }
+      }
+    },
+    {
+      "id": "chemical.gaussian_irc_connectivity",
+      "version": "1",
+      "entry": "skills/validation/scripts/gaussian_irc_connectivity.py",
+      "sha256": "sha256:0b97acdaa4cb44646e0562fd3f5196f58b6e51566b050e8d38fad6656e3b0139",
+      "input_contract": {
+        "schema_version": "validator-input/1",
+        "roles": [
+          {
+            "name": "spec",
+            "source": "registered_artifact",
+            "schema_version": "chemical-path-spec/1",
+            "max_bytes": 1048576
+          },
+          {
+            "name": "saddle",
+            "source": "collected_output",
+            "max_bytes": 67108864
+          },
+          {
+            "name": "forward",
+            "source": "collected_output",
+            "max_bytes": 67108864
+          },
+          {
+            "name": "reverse",
+            "source": "collected_output",
+            "max_bytes": 67108864
+          }
+        ]
+      },
+      "resources": {
+        "reaction_checks.py": {
+          "path": "skills/_shared/reaction_checks.py",
+          "sha256": "sha256:6ee8298d845c74094db68daedcbb2f4bb96e9908d1c7281d780ec6fe1d19c31e"
+        },
+        "path_validation.py": {
+          "path": "skills/_shared/path_validation.py",
+          "sha256": "sha256:8efad83c1e4d98a128551f6519ba09cb8e35bf9efb7f05b223e0e9f68a384987"
+        },
+        "gaussian_io.py": {
+          "path": "skills/gaussian/scripts/gaussian_io.py",
+          "sha256": "sha256:fe19dbc23a782fd12425171df933b37f35060fb7fd587740ce3a66b03a5a2b2a"
+        }
+      }
+    }
+  ],
+  "acceptance_profiles": [
+    {
+      "id": "chemical.diels_alder_path",
+      "version": "1",
+      "description": "One explicitly mapped DA path: topology, saddle mode and bidirectional IRC connectivity; not exhaustive mechanism discovery.",
+      "checks": [
+        {
+          "id": "mapping",
+          "kind": "validator_result",
+          "validator_id": "chemical.reaction_mapping",
+          "validator_version": "1"
+        },
+        {
+          "id": "saddle",
+          "kind": "validator_result",
+          "validator_id": "chemical.gaussian_saddle",
+          "validator_version": "1"
+        },
+        {
+          "id": "irc",
+          "kind": "validator_result",
+          "validator_id": "chemical.gaussian_irc_connectivity",
+          "validator_version": "1"
+        }
+      ],
+      "subject_binding": "spec_artifact_id",
+      "binding_keys": [
+        "spec_artifact_id",
+        "spec_sha256",
+        "method",
+        "basis",
+        "charge",
+        "multiplicity",
+        "threads",
+        "memory_mb"
+      ],
+      "constraint_keys": [
+        "method",
+        "basis",
+        "charge",
+        "multiplicity",
+        "threads",
+        "memory_mb"
+      ]
+    },
+    {
+      "id": "chemical.reaction_mapping",
+      "version": "1",
+      "description": "Declared DA mapping topology and hydrogen correspondence only; not TS or IRC evidence.",
+      "checks": [
+        {
+          "id": "mapping",
+          "kind": "validator_result",
+          "validator_id": "chemical.reaction_mapping",
+          "validator_version": "1"
+        }
+      ],
+      "subject_binding": "spec_artifact_id",
+      "binding_keys": [
+        "spec_artifact_id",
+        "spec_sha256",
+        "method",
+        "basis",
+        "charge",
+        "multiplicity",
+        "threads",
+        "memory_mb"
+      ],
+      "constraint_keys": [
+        "method",
+        "basis",
+        "charge",
+        "multiplicity",
+        "threads",
+        "memory_mb"
+      ]
     }
   ]
 }

@@ -3,6 +3,7 @@ import { createStateContinuationDriver, readStateContinuation } from "./state-co
 import { lstat, realpath } from "node:fs/promises";
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { isInternalRequestId } from "./user-sources.mjs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -545,11 +546,13 @@ export async function createTspiHarnessBackend(options = {}) {
     // Monitor uses its own atomic idle admission; ordinary phone input may
     // still use `auto` for prompt-versus-queue admission.
     if (payload.source === "state_continuation") {
-      const state = await readStateContinuation(binding.root);
-      const next = state?.continuation;
-      if (next?.admitted !== true || next.request_id !== payload.client_message_id || next.session_id !== payload.session_id || busy || hasQueuedMessages(raw)) {
-        throw error("continuation_superseded", "State continuation was superseded before admission");
-      }
+      // Pi first recovers a previous admission, then checks current State and
+      // idle status in the same commit as a new placement.
+      const services = binding.active.session.open({ services: [MonitorAdmission], assertAccess() {}, onError() {} });
+      try {
+        await services.ready(BACKGROUND_CONTEXT);
+        return await services.use(MonitorAdmission).admitContinuation({ requestId: payload.client_message_id, text: payload.text }, BACKGROUND_CONTEXT);
+      } finally { await services.dispose(BACKGROUND_CONTEXT); }
     }
     if (payload.source === "monitor") {
       const services = binding.active.session.open({ services: [MonitorAdmission], assertAccess() {}, onError() {} });
@@ -740,6 +743,9 @@ export async function createTspiHarnessBackend(options = {}) {
       return { accepted: true, recoverable: false };
     },
     async sendInput(params) {
+      if (!["monitor", "state_continuation"].includes(params.source) && isInternalRequestId(params.client_message_id)) {
+        throw error("input_id_reserved", "Internal wake and continuation IDs cannot identify ordinary user input");
+      }
       const binding = await openBinding(params.workspace_id, params.session_id);
       const mode = params.mode || "auto";
       const payload = {
@@ -774,7 +780,8 @@ export async function createTspiHarnessBackend(options = {}) {
         const pending = dispatchPromises.get(dispatchKey);
         if (pending && ["dispatching"].includes(existing.state)) return publicReceipt(await pending.promise);
         if (existing.state === "failed" && existing.retryable === true
-          || payload.source === "monitor" && existing.admission_protocol === "tspi-monitor-idempotent/1"
+          || ((payload.source === "monitor" && existing.admission_protocol === "tspi-monitor-idempotent/1")
+            || (payload.source === "state_continuation" && existing.admission_protocol === "tspi-state-continuation-idempotent/1"))
             && ["uncertain", "dispatching"].includes(existing.state)) {
           // Monitor admission also deduplicates by request ID inside Pi, so an
           // uncertain transport can safely retry that exact transaction.
@@ -796,6 +803,7 @@ export async function createTspiHarnessBackend(options = {}) {
           ...payload,
           payload_digest: digest,
           ...(payload.source === "monitor" ? { admission_protocol: "tspi-monitor-idempotent/1" } : {}),
+          ...(payload.source === "state_continuation" ? { admission_protocol: "tspi-state-continuation-idempotent/1" } : {}),
           state: "dispatching",
           accepted: false,
           operation_id: null,

@@ -236,9 +236,10 @@ Claim。Gate 记录结果，但不会自动修改 Node 或 Claim；解释和状�
 通过通用 Job Runtime 执行；真实输出连同输入摘要和来源登记为 Artifact。已注册验证器列在
 extension manifest 中，通过 `job_start` 调用，不需要分析 capability catalog。
 
-化学扩展提供分子准备、Gaussian/xTB/CF22D runner、报告生成和 `chemical.gaussian_frequency`
-验证器。Gaussian 显式输入支持有界 TS/频率/IRC 检查，但不提供自动 TS 候选生成、振动模式
-性质验证或端点身份评估。其他已安装科学命令可在核实实际输入输出合同后使用通用 Job。
+化学扩展提供分子准备、Gaussian/xTB/CF22D runner、报告生成与注册验证器。有限的 mapped
+Diels–Alder 路径实现 RDKit 候选、Gaussian QST2/Freq 和双向 IRC 输入准备，并分开检查映射、
+成键振动模式与端点连通性。验证消费绑定的真实收集产物，不表示穷尽机理搜索或保证真实
+Gaussian 收敛。支持结构、输出格式和验证限制见 candidate-generation Skill。其他已安装科学命令可在核实实际输入输出合同后使用通用 Job。
 执行结果不会隐式更新 Claim。
 
 TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、Gate 和依赖关系
@@ -376,3 +377,27 @@ Workspace records <-> App Server Monitor worker -> Session next_run -> Root Agen
        |                     +-- user notification     +-- research_read / job_start/job_status/job_collect / research_change
        +-- Compute/remote durable status
 ```
+
+
+## 有来源的交付要求与当前验收
+
+`research-requirements/1` 保存用户交付要求，不替代科学 Claim。Host 从真实 Pi 用户提交保存
+来源，Monitor 和 State 接续属于内部输入。已安装的版本化 profile 定义有限验收检查；要求
+绑定原文、约束、输入和贡献 Node，通过实际 result receipt 派生是否满足。原文覆盖仍是
+Agent 判断，保存消息不等于形式化证明已抽取所有自然语言要求。
+
+Gate 修改不能降低 requirement 的原始检查。阶段 Node 可以先完成，完成约定分析后 Claim
+仍可无结论。停止保留未履行要求，需要真实取消来源或匹配范围的失败证据；新 Attempt
+会使旧停止决定过期。已完成交付保留当时消费版本；新证据可以使当前验收过期并阻止新成功。
+
+准入、liveness 和完成共用 dependency_evaluation，支持 completed 或 finished 条件。
+交付声明消费的要求、Artifact 或前置 Node；邮件 prepare 绑定事件和当前状态，send 再次核对。
+sent/unknown 回执继续遵循既有幂等与不确定性规则。
+
+受管 Job 引用 pN 和 Artifact 引用 aN 是持久精确索引。事务日志 v2 首次迁移扫描历史，
+以后只恢复未完成提交。升级前停止全部旧写入进程，已升级工作区不可直接降级，详见
+[迁移说明](MANAGED_REFERENCES_AND_TRANSACTION_RECOVERY.zh-CN.md)。
+
+State 桥接中断时，只允许本地 read/system_prompt 用于诊断，副作用仍需当前 State 准入。
+首次用户来源保存失败会阻止该输入开始；后续 yield 检查失败时保留诊断答复，不制造 checkpoint
+或自动接续。

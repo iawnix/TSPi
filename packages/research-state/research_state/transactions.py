@@ -11,6 +11,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import stat
 import tempfile
 import threading
@@ -25,6 +26,9 @@ from typing import Any, Iterator
 
 _LOCAL = threading.local()
 _STAGING: ContextVar[tuple[Path, dict[str, Any]] | None] = ContextVar("state_transaction_staging", default=None)
+_TRANSACTION_SCHEMA = "agent_transaction/2"
+_RECOVERY_INDEX = "operations/transactions/recovery/index.json"
+_WRITER_MARKER = "operations/transactions/writer-version.json"
 
 
 def read_json(path: Path):
@@ -75,7 +79,16 @@ def _fsync_directory(path: Path) -> None:
 
 
 def _atomic_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # fsync each newly created directory entry as well as the final file. In
+    # particular, a durable commit must not outlive its recovery directory.
+    missing = []
+    directory = path.parent
+    while not directory.exists():
+        missing.append(directory)
+        directory = directory.parent
+    for directory in reversed(missing):
+        directory.mkdir(exist_ok=True, mode=0o700)
+        _fsync_directory(directory.parent)
     if path.is_symlink():
         raise TransactionError("transaction_path_symlink")
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
@@ -153,7 +166,7 @@ class TransactionCoordinator:
             value = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return None
-        if not isinstance(value, dict) or value.get("schema_version") != "agent_transaction/1":
+        if not isinstance(value, dict) or value.get("schema_version") not in {"agent_transaction/1", _TRANSACTION_SCHEMA}:
             raise TransactionError("transaction_journal_invalid")
         return value
 
@@ -169,17 +182,64 @@ class TransactionCoordinator:
             _atomic_json(_safe_path(self.root, relative), value)
         committed = {**record, "state": "committed", "committed_at": _now()}
         _atomic_json(path, committed)
+        self._clear_recovery_pointer(path)
         return committed
+
+    def _recovery_pointer(self, receipt_path: Path) -> Path:
+        return _safe_path(self.root, f"operations/transactions/recovery/pending/{receipt_path.name}")
+
+    def _clear_recovery_pointer(self, receipt_path: Path) -> None:
+        pointer = self._recovery_pointer(receipt_path)
+        try:
+            pointer.unlink()
+        except FileNotFoundError:
+            return
+        _fsync_directory(pointer.parent)
 
     def _recover_locked(self) -> list[dict[str, Any]]:
         journal = _safe_path(self.root, "operations/transactions")
         recovered = []
-        if not journal.exists():
-            return recovered
-        for path in sorted(journal.glob("*.json")):
+        index_path = _safe_path(self.root, _RECOVERY_INDEX)
+        if not index_path.exists():
+            # One upgrade scan recovers pre-index journals. Publishing a v2
+            # marker first makes old v1 writers reject mixed-version access:
+            # they scan every journal and cannot silently create unindexed
+            # committing decisions after this upgrade.
+            for path in sorted(journal.glob("*.json")):
+                record = self._read(path)
+                if record and record.get("state") == "committing":
+                    recovered.append(self._replay(path, record))
+            _atomic_json(_safe_path(self.root, _WRITER_MARKER), {
+                "schema_version": _TRANSACTION_SCHEMA, "state": "committed",
+                "operation": "transaction.writer_version", "request_id": "transaction-writer-version:2",
+                "result": {"minimum_writer_version": 2},
+            })
+            _atomic_json(index_path, {"schema_version": "transaction-recovery-index/1", "writer_version": 2})
+        index = read_json(index_path)
+        marker = self._read(_safe_path(self.root, _WRITER_MARKER))
+        if (index != {"schema_version": "transaction-recovery-index/1", "writer_version": 2}
+                or not marker or marker.get("schema_version") != _TRANSACTION_SCHEMA
+                or marker.get("result") != {"minimum_writer_version": 2}):
+            raise TransactionError("transaction_recovery_index_invalid")
+        pending = _safe_path(self.root, "operations/transactions/recovery/pending")
+        for pointer in sorted(pending.glob("*.json")):
+            if pointer.is_symlink() or not re.fullmatch(r"[0-9a-f]{64}\.json", pointer.name):
+                raise TransactionError("transaction_recovery_pointer_invalid")
+            value = read_json(pointer)
+            if value != {"schema_version": "transaction-recovery-pointer/1", "receipt": pointer.name}:
+                raise TransactionError("transaction_recovery_pointer_invalid")
+            path = _safe_path(self.root, f"operations/transactions/{pointer.name}")
             record = self._read(path)
-            if record and record.get("state") == "committing":
+            if record is None:
+                raise TransactionError("transaction_recovery_receipt_missing")
+            if record.get("state") == "committing":
                 recovered.append(self._replay(path, record))
+            elif record.get("state") in {"prepared", "pending", "committed", "aborted"}:
+                # A pointer is durable before the decision. A crash while the
+                # receipt is still prepared is not authority to apply writes.
+                self._clear_recovery_pointer(path)
+            else:
+                raise TransactionError("transaction_state_invalid")
         return recovered
 
     def recover(self) -> dict[str, Any]:
@@ -209,7 +269,7 @@ class TransactionCoordinator:
                 if relative.startswith("operations/transactions/") or relative == ".ts-workspace.lock":
                     raise TransactionError("transaction_reserved_path")
             record = {
-                "schema_version": "agent_transaction/1", "transaction_id": f"txn_{_digest(request_id)}",
+                "schema_version": _TRANSACTION_SCHEMA, "transaction_id": f"txn_{_digest(request_id)}",
                 "request_id": request_id, "operation": operation, "request_digest": request_digest,
                 "state": "prepared", "prepared_at": _now(), "writes": writes,
                 "writes_digest": _digest(writes), "result": result,
@@ -227,7 +287,7 @@ class TransactionCoordinator:
                     raise TransactionError("transaction_id_reused")
                 return previous
             record = {
-                "schema_version": "agent_transaction/1", "transaction_id": f"txn_{_digest(request_id)}",
+                "schema_version": _TRANSACTION_SCHEMA, "transaction_id": f"txn_{_digest(request_id)}",
                 "request_id": request_id, "operation": operation, "request_digest": request_digest,
                 "state": "pending", "created_at": _now(), "payload": payload,
             }
@@ -244,6 +304,11 @@ class TransactionCoordinator:
                 return record
             if record["state"] != "prepared":
                 raise TransactionError("transaction_not_prepared")
+            # Publish recovery membership before committing the redo decision.
+            # Reads now inspect only these pointers, never committed history.
+            _atomic_json(self._recovery_pointer(path), {
+                "schema_version": "transaction-recovery-pointer/1", "receipt": path.name,
+            })
             # Durable redo decision: after this fsync, recovery must roll forward.
             record = {**record, "state": "committing", "decision_at": _now()}
             _atomic_json(path, record)

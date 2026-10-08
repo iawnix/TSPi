@@ -3,7 +3,17 @@ import { resolve, relative, isAbsolute } from "node:path";
 import { createHash } from "node:crypto";
 
 /** Resolve a workspace-owned immutable Job request, before State admission. */
-export function resolvePreparedJob(params, root) {
+export async function resolvePreparedJob(params, root, bridge) {
+  if (params.prepared_ref) {
+    if (!bridge || typeof bridge.execute_command !== "function") throw new Error("prepared_ref requires the authoritative Research State resolver");
+    const allowed = ["prepared_ref", "node_id", "timeout_seconds", "repeat", "root"];
+    for (const key of Object.keys(params)) {
+      if (!allowed.includes(key)) throw new Error(`prepared Job cannot override ${key}; edit and re-prepare the request`);
+    }
+    const { root: _root, ...request } = params;
+    const resolved = await bridge.execute_command("job.resolve_prepared", request);
+    return { ...resolved, root };
+  }
   if (!params.request_file) return params;
   const base = realpathSync(root);
   const path = realpathSync(resolve(base, params.request_file));

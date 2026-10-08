@@ -11,7 +11,7 @@ approach sampling, or another justified method. Select their order from the
 current hypothesis and evidence.
 
 Before QST2/QST3, verify atom count/order or an explicit map, charge/spin,
-optimized compatible endpoints, conformational compatibility, and that both
+endpoint preparation/optimization status, conformational compatibility, and that both
 structures describe one elementary step. Record why this interpolation tests
 the proposed step.
 

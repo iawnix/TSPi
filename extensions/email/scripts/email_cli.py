@@ -37,6 +37,10 @@ def main():
             delivery._event(request.get('event'))
             delivery.bounded_text(request.get('subject'),'subject',300)
             delivery.bounded_content(request.get('summary'),'summary',20000)
+            if (root / 'research_map/context.json').exists():
+                from research_state.agent_workspace import read_context
+                from research_state.delivery import delivery_snapshot
+                request['state_binding'] = delivery_snapshot(read_context(root), request.get('node_id'), request['event'], root=root)
             result=request
         else:
             result=delivery.notify_user(root,Path(a.request_file))

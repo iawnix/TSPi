@@ -91,3 +91,32 @@ test('native input racing a monitor assessment cannot split its admission transa
   await state.conversation.waitForIdle(context);
   assert.deepEqual((await state.harness.snapshot(InboxDoc,state.conversation.id,context)).items,[]);
 });
+
+test('State continuation uses one durable identity and rejects obsolete or busy scope', async t => {
+  const state = await setup(t);
+  let next = { admitted: true, request_id: 'state-continue:one', session_id: 's' };
+  const admission = createMonitorAdmission({ harness: state.harness, conversation: state.conversation,
+    LiveDoc, InboxDoc, admitSubmission, wakeMessage, workspaceId: 'ws_test', sessionId: 's',
+    kernel: { read_liveness: async () => ({ continuation: next }) } });
+  state.faux.setResponses([fauxAssistantMessage('continued')]);
+  const request = { requestId: 'state-continue:one', text: 'Research State requests continuation' };
+  const first = await admission.admitContinuation(request, context);
+  assert.equal(first.accepted, true);
+  await state.conversation.waitForIdle(context);
+  next = null;
+  assert.deepEqual(await admission.admitContinuation(request, context), first);
+  const submission = await state.harness.submission(Number(first.operation_id), context);
+  assert.equal((await submission.status(context)).requestId, request.requestId);
+  assert.equal((await admission.admitContinuation({ ...request, requestId: 'state-continue:old' }, context)).accepted, false);
+  let ready;
+  const started = new Promise(resolve => { ready = resolve; });
+  state.faux.setResponses([(_ctx, options) => new Promise((_, reject) => {
+    ready(); options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+  })]);
+  await state.conversation.submit({ type: 'input', content: 'real user update' }, context);
+  await started;
+  next = { admitted: true, request_id: 'state-continue:two', session_id: 's' };
+  assert.equal((await admission.admitContinuation({ ...request, requestId: next.request_id }, context)).accepted, false);
+  assert.deepEqual((await state.harness.snapshot(InboxDoc, state.conversation.id, context)).items, []);
+  await state.conversation.abort(context);
+});

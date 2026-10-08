@@ -403,6 +403,50 @@ def selected_frequency_table(lines: list[str]) -> dict[str, object]:
     return table
 
 
+def parse_normal_modes(lines: list[str], atom_count: int) -> list[dict[str, object]]:
+    """Extract the final harmonic table's unweighted Cartesian displacements."""
+    import math
+    table = selected_frequency_table(lines)
+    if not table['frequencies'] or atom_count < 1:
+        return []
+    modes = []
+    for index in range(table['start_line'] - 1, len(lines)):
+        line = lines[index]
+        if 'Frequencies --' not in line:
+            continue
+        frequencies = [float(x.replace('D', 'E')) for x in line.split('--', 1)[1].split()]
+        if len(modes) + len(frequencies) > len(table['frequencies']):
+            break
+        header = None
+        for j in range(index + 1, min(index + 12, len(lines))):
+            if re.match(r'\s*Atom\s+AN\s+', lines[j]):
+                header = j
+                break
+            if 'Frequencies --' in lines[j]:
+                break
+        if header is None:
+            return []
+        displacements = [[] for _ in frequencies]
+        atomic_numbers = []
+        for atom_index, row in enumerate(lines[header + 1:header + 1 + atom_count], 1):
+            fields = row.split()
+            if len(fields) != 2 + 3 * len(frequencies) or int(fields[0]) != atom_index:
+                return []
+            atomic_numbers.append(int(fields[1]))
+            values = [float(x.replace('D', 'E')) for x in fields[2:]]
+            if not all(math.isfinite(x) for x in values):
+                return []
+            for k in range(len(frequencies)):
+                displacements[k].append(values[3*k:3*k+3])
+        if len(atomic_numbers) != atom_count:
+            return []
+        modes.extend({'frequency_cm-1': frequency, 'displacements': vector, 'atomic_numbers': atomic_numbers}
+                     for frequency, vector in zip(frequencies, displacements))
+        if len(modes) == len(table['frequencies']):
+            return modes
+    return []
+
+
 def _ends_frequency_table(line: str) -> bool:
     stripped = line.strip()
     if not stripped:
@@ -809,7 +853,8 @@ def parse_log(
     }
     summary.update(failure_diagnostics(section_lines, section["start_line"]))
     summary.update(parse_thermochemistry(section_lines))
-    return {"summary": summary, "frequencies": section_frequencies, "atoms": atoms}
+    return {"summary": summary, "frequencies": section_frequencies, "atoms": atoms,
+            "normal_modes": parse_normal_modes(section_lines, len(atoms))}
 
 
 def _scan_energy_points(lines: list[str]) -> list[dict[str, object]]:

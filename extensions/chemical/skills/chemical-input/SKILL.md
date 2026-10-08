@@ -28,8 +28,10 @@ User-supplied structures can be inspected directly without name lookup.
 
 For reactions, resolve/inspect each species, then check composition, charge,
 explicit atom mapping with the reaction subcommand, which lists bond changes.
-The helper checks global balance and map element/isotope identity, not whether
-the chosen bond changes match the intended reaction. Review those changes separately.
+Outputs use `chemical-reaction/2` with scoped `checks`, not a global validated flag.
+Without `--transformation <JSON>`, the intended bond-change pattern is not assessed.
+A declared `diels_alder` template checks the full changed-bond pattern, preserved
+substituents and per-atom H counts; `explicit` supports other declared bond/H changes.
 Map explicit hydrogens for proton-transfer studies.
 
 ```text

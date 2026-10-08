@@ -7,6 +7,7 @@ from pathlib import Path
 
 from research_state.agent_workspace import read_context, read_liveness
 from research_state.assessments import claim_review_state
+from research_state.requirements import requirements_evaluation
 from research_state.invariants import validate_context
 from research_state.transactions import TransactionCoordinator
 
@@ -22,7 +23,7 @@ def _finish_view(view, max_bytes, requested_events, event_order):
     their counts and read routes remain visible. Even focus and running-ID
     lists are projections; neither may prevent an operator/Agent from reading.
     """
-    collections = ("goals", "nodes", "related_nodes", "issues", "events", "attempts", "gates", "strategies", "interpretations")
+    collections = ("goals", "requirements", "sources", "nodes", "related_nodes", "issues", "events", "attempts", "gates", "strategies", "interpretations")
     totals = {name: len(view[name]) + view["bounds"]["omitted"].get(name, 0) for name in collections}
     focus = view["focus"]
     running = view["lifecycle"].get("running_attempt_ids") or []
@@ -71,6 +72,8 @@ def _finish_view(view, max_bytes, requested_events, event_order):
         # record remains available through detail; no partial text is a fact.
         keys = {
             "goals": ("id", "status", "assessment_state"),
+            "requirements": ("id", "state", "satisfied", "settled", "covered"),
+            "sources": ("source_ref", "reviewed"),
             "nodes": ("id", "state", "outcome"),
             "related_nodes": ("id", "state", "outcome"),
             "gates": ("id", "scope", "target_id", "version"),
@@ -93,7 +96,7 @@ def _finish_view(view, max_bytes, requested_events, event_order):
         # Keep current/wake Attempts and events until other optional sections
         # have been exhausted. Requested events are counted even if all of
         # their exact identities cannot fit the smallest supported budget.
-        for name in ("interpretations", "strategies", "issues", "related_nodes", "gates", "goals", "nodes", "attempts", "events"):
+        for name in ("interpretations", "strategies", "issues", "related_nodes", "gates", "goals", "nodes", "requirements", "sources", "attempts", "events"):
             if fits():
                 break
             rows = view[name]
@@ -177,15 +180,19 @@ def build_decision_context(root, *, max_bytes=16000, event_ids=()):
             "recovery_required": live.get("lifecycle") in {"blocked", "user_input_required", "deferred", "terminal"},
         },
         "scope": {"kind": "focused", "unlisted_objects": "not_necessarily_missing", "total_nodes": len(nodes_by_id)},
+        "requirements": requirements_evaluation(state)["requirements"],
+        "sources": [{"source_ref": row["source_ref"], "reviewed": bool(row.get("review"))}
+                    for row in state.get("requirement_sources", [])],
         "goals": [{**{k: c.get(k) for k in ("id", "statement", "status", "predictions", "falsifiers", "source_refs", "constraints")},
                    "assessment_state": claim_review_state(state, c)}
                   for c in state.get("claims", []) if c["id"] in focus.get("claim_ids", [])],
-        "nodes": [{k: n.get(k) for k in ("id", "objective", "state", "outcome", "gate_ids", "completion_exemption", "dependency_ids")}
+        "nodes": [{k: n.get(k) for k in ("id", "objective", "state", "outcome", "gate_ids", "completion_exemption", "dependency_ids", "dependencies", "consumes")}
                   for n in state.get("nodes", []) if n["id"] in focus_nodes],
         "related_nodes": [],
         "issues": validate_context(state)["issues"],
         "events": [], "attempts": [], "gates": [], "strategies": [], "interpretations": [],
         "read": {"node": {"mode": "detail", "kind": "node", "id": "<node_id>"},
+                 "requirements": {"mode": "requirements"}, "sources": {"mode": "sources", "limit": 4},
                  "evidence": {"mode": "evidence", "limit": 20},
                  "decisions": {"mode": "decisions", "limit": 10}},
         "bounds": {"max_bytes": max_bytes, "estimated_tokens": True, "omitted": {}},

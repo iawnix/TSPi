@@ -14,7 +14,7 @@ does not redefine that model.
 ## Workflow
 
 1. Use the current State snapshot already supplied to the turn. Read missing or stale details with the narrowest `research_read` mode before planning.
-2. State the uncertainty, the Claim it bears on, and one bounded deliverable.
+2. Review the Host user sources against the requested deliverables, independently of the proposed plan. Create requirements with installed profiles and user constraints (see research-state references/requirements.md). Then state the uncertainty, its Claim and bounded work. Unreviewed sources and unmet requirements remain obligations even when Nodes close.
 3. Create or confirm the Claim and ResearchNode with `research_change` before referencing them. Record a `research_strategy` plan covering the focused Claim/Node before execution or evidence writes. An unknown Claim error requires creating the object, then retrying the strategy. Reuse or create a ResearchNode. Add a Phase only when grouping helps
    navigation. Read the exact scientific Skill locations listed in the system prompt. Use method-selection even when the user fixed the method: its request helper reads installation job.toml and binds the configured interpreter, executable and environment. Generic job_probe does not verify a scientific method; run the Skill’s method checks when needed.
    For a method comparison, first create the complete

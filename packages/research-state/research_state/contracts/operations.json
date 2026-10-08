@@ -104,6 +104,64 @@
       },
       "maxItems": 128,
       "uniqueItems": true
+    },
+    "requirement_ref": {
+      "type": "string",
+      "pattern": "^requirement_[A-Za-z0-9][A-Za-z0-9_.-]{0,111}$",
+      "maxLength": 128
+    },
+    "source_ref": {
+      "type": "string",
+      "pattern": "^user_[0-9a-f]{64}$"
+    },
+    "result_ref": {
+      "type": "string",
+      "pattern": "^result_[0-9a-f]{64}$"
+    },
+    "requirement_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/requirement_ref"
+      },
+      "maxItems": 128,
+      "minItems": 0,
+      "uniqueItems": true
+    },
+    "result_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/result_ref"
+      },
+      "maxItems": 128,
+      "minItems": 0,
+      "uniqueItems": true
+    },
+    "requirement_constraints": {
+      "type": "object",
+      "maxProperties": 32,
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean"
+        ]
+      }
+    },
+    "acceptance_profile": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "version": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "additionalProperties": false
     }
   },
   "operations": {
@@ -332,6 +390,71 @@
         },
         "metadata": {
           "$ref": "#/$defs/metadata"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "node_id": {
+                "$ref": "#/$defs/node_ref"
+              },
+              "condition": {
+                "enum": [
+                  "completed",
+                  "finished"
+                ]
+              }
+            },
+            "required": [
+              "node_id",
+              "condition"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 128,
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "consumes": {
+          "type": "object",
+          "properties": {
+            "requirement_ids": {
+              "$ref": "#/$defs/requirement_refs"
+            },
+            "artifact_refs": {
+              "$ref": "#/$defs/refs"
+            },
+            "condition": {
+              "enum": [
+                "satisfied",
+                "observed"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "anyOf": [
+            {
+              "required": [
+                "requirement_ids"
+              ],
+              "properties": {
+                "requirement_ids": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "artifact_refs"
+              ],
+              "properties": {
+                "artifact_refs": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
         }
       },
       "required": [
@@ -752,6 +875,260 @@
       ],
       "additionalProperties": false,
       "maxProperties": 24
+    },
+    "review_source": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "review_source"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/source_ref"
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "disposition": {
+          "enum": [
+            "requirements_recorded",
+            "no_new_requirements"
+          ]
+        },
+        "requirement_ids": {
+          "$ref": "#/$defs/requirement_refs"
+        }
+      },
+      "required": [
+        "type",
+        "source_ref",
+        "reason",
+        "disposition"
+      ],
+      "additionalProperties": false
+    },
+    "create_requirement": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "create_requirement"
+        },
+        "id": {
+          "$ref": "#/$defs/requirement_ref"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/source_ref"
+        },
+        "source_quote": {
+          "$ref": "#/$defs/text"
+        },
+        "statement": {
+          "$ref": "#/$defs/text"
+        },
+        "acceptance_profile": {
+          "$ref": "#/$defs/acceptance_profile"
+        },
+        "constraints": {
+          "$ref": "#/$defs/requirement_constraints"
+        },
+        "input_artifact_ids": {
+          "$ref": "#/$defs/refs"
+        },
+        "node_ids": {
+          "$ref": "#/$defs/node_refs"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "source_ref",
+        "source_quote",
+        "statement",
+        "acceptance_profile"
+      ],
+      "additionalProperties": false
+    },
+    "bind_requirement": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "bind_requirement"
+        },
+        "requirement_id": {
+          "$ref": "#/$defs/requirement_ref"
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "node_ids": {
+          "$ref": "#/$defs/node_refs"
+        },
+        "input_artifact_ids": {
+          "$ref": "#/$defs/refs"
+        }
+      },
+      "required": [
+        "type",
+        "requirement_id",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "node_ids"
+          ]
+        },
+        {
+          "required": [
+            "input_artifact_ids"
+          ]
+        }
+      ]
+    },
+    "revise_requirement": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "revise_requirement"
+        },
+        "requirement_id": {
+          "$ref": "#/$defs/requirement_ref"
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "constraints": {
+          "$ref": "#/$defs/requirement_constraints"
+        }
+      },
+      "required": [
+        "type",
+        "requirement_id",
+        "reason",
+        "constraints"
+      ],
+      "additionalProperties": false
+    },
+    "assess_requirement": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "assess_requirement"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "requirement_id": {
+          "$ref": "#/$defs/requirement_ref"
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/refs"
+        },
+        "result_receipt_refs": {
+          "$ref": "#/$defs/result_refs"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "requirement_id",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "record_requirement_stop": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "record_requirement_stop"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "requirement_id": {
+          "$ref": "#/$defs/requirement_ref"
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "category": {
+          "enum": [
+            "user_cancel",
+            "execution_failed",
+            "capability_unavailable"
+          ]
+        },
+        "source_ref": {
+          "$ref": "#/$defs/source_ref"
+        },
+        "source_quote": {
+          "$ref": "#/$defs/text"
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/refs"
+        },
+        "result_receipt_refs": {
+          "$ref": "#/$defs/result_refs"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "requirement_id",
+        "reason",
+        "category"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "category": {
+                "const": "user_cancel"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "source_ref",
+              "source_quote"
+            ]
+          },
+          "else": {
+            "required": [
+              "result_receipt_refs"
+            ],
+            "properties": {
+              "result_receipt_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "resume_requirement": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "resume_requirement"
+        },
+        "requirement_id": {
+          "$ref": "#/$defs/requirement_ref"
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "type",
+        "requirement_id",
+        "reason"
+      ],
+      "additionalProperties": false
     }
   }
 }

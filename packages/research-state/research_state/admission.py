@@ -1,5 +1,6 @@
 """Research State's domain-neutral tool admission policy, consumed by the Host."""
 import hashlib
+from .dependencies import dependency_evaluation
 
 
 def node_admission(context, liveness, node_id):
@@ -8,10 +9,10 @@ def node_admission(context, liveness, node_id):
     if node is None:
         return {"accepted": False, "code": "research_node_required", "reason": "Supply an existing node_id"}
     if node_id not in liveness.get("eligible_node_ids", liveness.get("ready_node_ids", [])):
-        nodes = {n.get("id"): n for n in context.get("nodes", [])}
-        unmet = [ref for ref in node.get("dependency_ids", [])
-                 if nodes.get(ref, {}).get("state") != "closed" or nodes.get(ref, {}).get("outcome") != "completed"]
+        dependencies = dependency_evaluation(context, node)
+        unmet = dependencies["unmet"]
         return {"accepted": False, "code": "research_node_not_ready",
+                "dependencies": dependencies,
                 "reason": f"Node {node_id} is not eligible: state={node.get('state')}; unmet_dependencies={unmet}. "
                           "Satisfy dependencies and record research_strategy before execution."}
     if not node.get("gate_ids") and not node.get("completion_exemption"):

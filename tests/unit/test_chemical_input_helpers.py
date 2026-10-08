@@ -36,12 +36,13 @@ def test_stereo_is_explicitly_enumerated_without_selecting_one_identity(tmp_path
 
 def test_reaction_checks_conservation_and_chosen_mapping():
     result = helper.reaction('[CH2:1]=[CH:2][CH:3]=[CH2:4].[CH2:5]=[CH:6][CH3:7]>>[CH2:1]1[CH:2]=[CH:3][CH2:4][CH2:5][CH:6]1[CH3:7]')
-    assert result['validated']
+    assert result['checks']['element_charge_balance']['verdict']=='pass'
+    assert result['checks']['declared_transformation']['verdict']=='not_assessed'
     assert [change['atoms'] for change in result['bond_changes'] if change['before'] == 0] == [[1, 6], [4, 5]]
     with pytest.raises(ValueError, match='unique'):
         helper.reaction('[CH4:1]>>[CH3:1][CH3:1]')
-    assert not helper.reaction('[CH4:1]>>[OH2:1]')['validated']
-    assert not helper.reaction('[13CH4:1]>>[CH4:1]')['validated']
+    assert helper.reaction('[CH4:1]>>[OH2:1]')['checks']['map_identity']['verdict']=='fail'
+    assert helper.reaction('[13CH4:1]>>[CH4:1]')['checks']['map_identity']['verdict']=='fail'
 
 
 def test_opsin_configuration_calls_real_resolver_implementation(tmp_path, monkeypatch):

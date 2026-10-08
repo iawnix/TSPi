@@ -190,7 +190,8 @@
         "session_id",
         "validator_id",
         "input_artifact_ids",
-        "repeat"
+        "repeat",
+        "prepared_ref"
       ]
     },
     {
@@ -292,7 +293,8 @@
       "allowed": [
         "artifact_id",
         "offset",
-        "limit"
+        "limit",
+        "artifact_ref"
       ]
     },
     {
@@ -313,7 +315,73 @@
       "allowed": [
         "artifact_id",
         "subject_id",
-        "relation"
+        "relation",
+        "artifact_ref"
+      ]
+    },
+    {
+      "id": "research.source",
+      "domain": "research",
+      "effect": "write",
+      "required": [
+        "session_id",
+        "message_id",
+        "text"
+      ],
+      "allowed": [
+        "session_id",
+        "message_id",
+        "text"
+      ]
+    },
+    {
+      "id": "research.sources",
+      "domain": "research",
+      "effect": "read",
+      "required": [],
+      "allowed": [
+        "source_ref",
+        "offset",
+        "limit"
+      ]
+    },
+    {
+      "id": "research.requirements",
+      "domain": "research",
+      "effect": "read",
+      "required": [],
+      "allowed": []
+    },
+    {
+      "id": "research.profiles",
+      "domain": "research",
+      "effect": "read",
+      "required": [],
+      "allowed": []
+    },
+    {
+      "id": "job.prepare",
+      "domain": "job",
+      "effect": "write",
+      "required": [
+        "request_file"
+      ],
+      "allowed": [
+        "request_file"
+      ]
+    },
+    {
+      "id": "job.resolve_prepared",
+      "domain": "job",
+      "effect": "read",
+      "required": [
+        "prepared_ref"
+      ],
+      "allowed": [
+        "prepared_ref",
+        "node_id",
+        "timeout_seconds",
+        "repeat"
       ]
     }
   ],

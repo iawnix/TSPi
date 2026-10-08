@@ -89,6 +89,7 @@ def main():
     p.add_argument('--skill',choices=['cf22d','xtb','gaussian'],required=True)
     p.add_argument('--python',help=argparse.SUPPRESS)
     p.add_argument('--output',help="Save the complete request; print its job_start file reference")
+    p.add_argument('--root',help="Research workspace owning the prepared reference (otherwise inferred from output path)")
     p.add_argument('--work-id',help="Explicit identity for an intentional recalculation")
     source=p.add_mutually_exclusive_group(required=True);source.add_argument('--xyz');source.add_argument('--input-gjf')
     p.add_argument('--dependency',action='append',default=[],help='Stage source=relative-destination (e.g. checkpoint)')
@@ -103,7 +104,15 @@ def main():
     if a.output:
         path = Path(a.output).resolve(); path.parent.mkdir(parents=True,exist_ok=True)
         path.write_bytes(encoded)
-        print(json.dumps({'request_file':str(path),'request_sha256':hashlib.sha256(encoded).hexdigest()}))
+        workspace = Path(a.root).expanduser().resolve() if a.root else next(
+            (parent for parent in path.parents if (parent/'workspace_manifest.json').is_file()), None)
+        if workspace is not None:
+            from research_state.references import prepare_job
+            print(json.dumps(prepare_job(workspace, {'request_file':str(path)})))
+        else:
+            # Standalone input preparation remains usable outside a research
+            # workspace; managed references require a canonical workspace.
+            print(json.dumps({'request_file':str(path),'request_sha256':hashlib.sha256(encoded).hexdigest()}))
     else:
         print(encoded.decode(),end='')
 

@@ -41,7 +41,17 @@ def dispatch(operation: str, params: dict[str, Any]) -> dict[str, Any]:
     from .api import validate_command_params
     validate_command_params("artifact." + operation, params, transport_fields=("root", "workspace_root"))
     root = _root(params); store = _store(root)
+    from research_state.references import artifact_reference, resolve_artifact_reference
     supplied = params.get("artifact_id")
+    if supplied is not None:
+        supplied = resolve_artifact_reference(root, supplied)
+    if params.get("artifact_ref") is not None:
+        selected = resolve_artifact_reference(root, params["artifact_ref"])
+        if supplied is not None and selected != supplied:
+            raise ValueError("artifact_selector_conflict: artifact_id and artifact_ref disagree")
+        supplied = selected
+    if operation in {"read", "link"} and (not isinstance(supplied, str) or not supplied):
+        raise ValueError("artifact_selector_required: provide artifact_ref or artifact_id")
     if operation in {"create", "register"}:
         producer = params.get("producer_attempt_id")
         job_id = params.get("job_id")
@@ -101,6 +111,7 @@ def dispatch(operation: str, params: dict[str, Any]) -> dict[str, Any]:
                     "node_id":node_id,"producer_attempt_id":producer,"location":result["location"],
                     "sha256":result["sha256"],"size_bytes":result["size_bytes"],"metadata":provenance,
                     "input_artifact_ids":input_artifact_ids}])
+            result["artifact_ref"] = artifact_reference(root, artifact_id)
         return result
     if operation == "read":
         artifact_id = supplied
@@ -108,9 +119,10 @@ def dispatch(operation: str, params: dict[str, Any]) -> dict[str, Any]:
         offset = params.get("offset", 0); limit = params.get("limit")
         if not isinstance(offset, int) or offset < 0: raise ValueError("offset must be non-negative")
         view = payload[offset:] if limit is None else payload[offset:offset + int(limit)]
-        return {**store.receipt(artifact_id).as_dict(), "content": view.decode("utf-8", errors="replace")}
+        from research_state.references import annotate_artifact_references
+        return annotate_artifact_references(root, {**store.receipt(artifact_id).as_dict(), "content": view.decode("utf-8", errors="replace")})
     if operation == "derive":
-        descriptor = {"operation": params.get("operation"), "inputs": params.get("input_artifact_ids") or [], "parameters": params.get("parameters") or {}}
+        descriptor = {"operation": params.get("operation"), "inputs": [resolve_artifact_reference(root, ref) for ref in params.get("input_artifact_ids") or []], "parameters": params.get("parameters") or {}}
         payload = json.dumps(descriptor, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
         artifact_id = _id(payload, supplied)
         return {**store.put_bytes(artifact_id, payload, media_type="application/json").as_dict(), "derivation": descriptor, "executed": False, "kind": "derivation_descriptor", "provenance": {"input_artifact_ids": descriptor["inputs"]}}

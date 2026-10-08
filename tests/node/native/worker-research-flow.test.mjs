@@ -124,6 +124,9 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     backend = await createTspiHarnessBackend(backendOptions);
     const created = await backend.createSession({ workspace_id: "flow", provider: "fixture", model: "fixture" });
     const session_id = created.session.session_id;
+    await assert.rejects(backend.sendInput({ workspace_id: "flow", session_id, request_id: "reserved_input",
+      client_message_id: "job-wake-batch:user", source: "phone", text: "A real user request", mode: "follow_up" }),
+    error => error.code === "input_id_reserved");
     await backend.sendInput({ workspace_id: "flow", session_id, request_id: "fixture_request", client_message_id: "fixture_message",
       text: "Exercise the local fixture without sending mail.", mode: "auto" });
     const {deliverMonitorEvent, recordMonitorTurn} = await import(pathToFileURL(join(packageRoot,"apps/app-server/pi-monitor-worker.mjs")));
@@ -163,6 +166,10 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     assert.equal(toolResults.length, steps.filter(step => typeof step !== "string").length);
     for (const result of toolResults) assert.doesNotMatch(String(result.content), /Tool call blocked|^research_decision_required|^operation references unknown/);
     const context = JSON.parse(await readFile(join(workspace, "research_map/context.json")));
+    assert.equal(context.requirement_sources.length, 1, "only the original user request is a source, including after restart and Monitor wake");
+    const source = JSON.parse(await readFile(join(workspace, "operations/user-inputs", context.requirement_sources[0].source_ref + ".json")));
+    assert.equal(source.text, "Exercise the local fixture without sending mail.");
+    assert.equal(source.session_id, session_id);
     assert.equal(context.attempts.length, 1);
     assert.equal(context.attempts[0].state, "succeeded");
     assert.equal(context.attempts[0].metadata.job_metadata.work_id, "fixture_work");
@@ -204,7 +211,8 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     const receipts = await readdir(join(root,"state","requests"));
     const records = await Promise.all(receipts.filter(file=>file.endsWith(".json")).map(file=>readFile(join(root,"state","requests",file),"utf8").then(JSON.parse)));
     const continuation = records.find(row=>row.source === "state_continuation");
-    assert.ok(continuation.entry_id, "real Pi must durably admit the continuation");
+    assert.ok(continuation.operation_id, "real Pi must durably admit the continuation");
+    assert.equal(continuation.admission_protocol, "tspi-state-continuation-idempotent/1");
     // Simulate losing the Monitor admission response before the Host persisted
     // its ID. Reopening the Host must recover the same Pi submission.
     const monitorRecord = records.find(row => row.source === "monitor");
@@ -217,7 +225,7 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     for (const file of receipts.filter(file => file.endsWith(".json"))) {
       const path = join(root, "state", "requests", file);
       const row = JSON.parse(await readFile(path, "utf8"));
-      if (row.source === "monitor") await writeFile(path, JSON.stringify({ ...row,
+      if (["monitor", "state_continuation"].includes(row.source)) await writeFile(path, JSON.stringify({ ...row,
         state: "uncertain", accepted: false, operation_id: null, reconciled: false,
         error: { code: "dispatch_unknown", message: "fixture lost response" },
       }));
@@ -227,6 +235,11 @@ test("Worker reads installed Skills, runs a Job, checks configured email and end
     const recovered = await backend.sendInput(monitorRequest);
     assert.equal(recovered.accepted, true);
     assert.equal(recovered.operation_id, monitorRecord.operation_id);
+    const recoveredContinuation = await backend.sendInput({ workspace_id: "flow", session_id,
+      request_id: continuation.request_id, client_message_id: continuation.client_message_id,
+      source: "state_continuation", mode: "next_run", text: continuation.text });
+    assert.equal(recoveredContinuation.accepted, true);
+    assert.equal(recoveredContinuation.operation_id, continuation.operation_id);
     await new Promise(done => setTimeout(done, 100));
     assert.equal(requests.length, requestCount);
 

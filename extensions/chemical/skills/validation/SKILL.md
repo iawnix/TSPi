@@ -33,3 +33,9 @@ alignment, and stereochemical comparisons.
 
 
 Registered validator: `job_start` with `validator_id="chemical.gaussian_frequency"`, `node_id`, a new `request_id`, and `input_artifact_ids=[<collected parsed.json artifact>]`. Its version is `1`. The runtime records actual execution and input digests. This checks normal termination and exactly one negative frequency only; mode character, geometry and IRC connectivity still require separate criteria.
+
+For the supported mapped DA path, use the registered `chemical.reaction_mapping`,
+`chemical.gaussian_saddle`, and `chemical.gaussian_irc_connectivity` validators,
+version `1`. Their ordered inputs, execution helpers and limited scientific scope
+are documented in [gaussian_path.md](../candidate-generation/references/gaussian_path.md).
+Use the `chemical.diels_alder_path@1` acceptance profile for that deliverable.

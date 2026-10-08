@@ -83,4 +83,6 @@ Research State 会在提交一个新 revision 前校验引用、反向索引、�
 
 问题修复后通过 research_change 使用 {"type":"resolve_issue","id":"<既有issue ID>","resolution":"<修复内容与验证方式>","source_refs":["<已登记证据ID>"]}。source_refs 可省略，提供时必须存在。该操作保留原 issue 和证据，标记 resolved 并记录修复说明；相关 Node 另行恢复。不要发明 update_finding 或直接改状态文件。ResearchMap 变更会取代旧 checkpoint，恢复后的工作结束前需写新 checkpoint。
 
-计算、报告和交付 Node 均须有完成条件；依赖必须是 closed 且 outcome=completed，closed/inconclusive 不满足。completion_exemption 记录有理由的例外，本身不是科学证据。用 `research_read mode=operations query=evaluate_gate` 获取嵌套字段和示例。批次错误含 operation_index 和 target_id；该批次没有任何操作提交。保留回执，修复被拒操作及其前置条件。
+计算、报告和交付 Node 均须有完成条件；旧 dependency_ids 要求 closed/completed；类型化 dependencies 可显式允许 finished。completion_exemption 记录有理由的例外，本身不是科学证据。用 `research_read mode=operations query=evaluate_gate` 获取嵌套字段和示例。批次错误含 operation_index 和 target_id；该批次没有任何操作提交。保留回执，修复被拒操作及其前置条件。
+
+用户交付要求用带版本 requirements 保存，与 Claim 和 Node 计划独立。规划前审阅 Host 来源和已安装验收 profile；来源覆盖、不可降低的最低验收、类型化依赖、交付消费和如实停止见 [requirements.zh-CN.md](references/requirements.zh-CN.md)。用 mode=requirements 检查当前履行情况；优先使用 helper 的 prepared_ref 与已登记 artifact_ref，避免转抄摘要。
