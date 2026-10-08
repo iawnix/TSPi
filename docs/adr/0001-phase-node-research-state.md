@@ -6,6 +6,8 @@
 - Date: 2026-08-23
 - Branch: `ts-dag`
 
+Implementation amendment: canonical mutations use `agent_workspace.py`, shared operation contracts and invariants; the Web view comes from `projection.py`. The former parallel Python classes were removed by [ADR 0010](0010-retire-parallel-runtimes.md).
+
 ## Context
 
 The package must separate scientific Claims from executable work without making
@@ -82,7 +84,7 @@ bounded operational and advisory mechanisms, not scientific state owners.
 
 ### Context And Presentation
 
-`ResearchMap.to_dict()` is the canonical serialized map. RootAgent and TS Web
+`projection.py` creates the canonical serialized map from the validated State context. RootAgent and TS Web
 query that document directly; they may choose a focused view but do not create
 another scientific state store. The canonical paths are `workspace_manifest.json`,
 `research_map/context.json`, `lifecycle/liveness.json`, and
@@ -107,7 +109,7 @@ Claims can span multiple Nodes, while one Node can test alternatives without
 duplicating hypotheses. Clients can filter the canonical map without creating
 another scientific model.
 
-The cost is an additional optional Phase class and `phase_id` field on a Node.
+The cost is an additional optional Phase record and `phase_id` field on a Node.
 This is accepted because Phase has a deliberately narrow schema and no
 behavioral semantics. New scientific domains extend Finding metadata and Skills
 rather than adding hard-coded workflow branches.

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts import _component_release, check_package, package_inventory
 
 
@@ -16,6 +18,20 @@ def test_release_inventory_is_shared_by_checker_and_installer() -> None:
     assert check_package.PACKAGE_FILES is package_inventory.PACKAGE_FILES
     assert check_package.REQUIRED_TARBALL_FILES is package_inventory.REQUIRED_TARBALL_FILES
     assert _component_release.REQUIRED_RUNTIME_FILES is package_inventory.REQUIRED_RUNTIME_FILES
+
+
+@pytest.mark.parametrize("retired", [
+    "apps/app-server/app_server.mjs",
+    "packages/research-compute/research_compute/execution.py",
+])
+def test_retired_runtime_is_rejected_even_if_allowlisted(retired: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    allowlisted = check_package.expanded_allowlisted_files() | {retired}
+    monkeypatch.setattr(check_package, "expanded_allowlisted_files", lambda: allowlisted)
+
+    with pytest.raises(check_package.PackageCheckError) as error:
+        check_package.validate_tarball({"package.json", *allowlisted})
+
+    assert str(error.value) == f"retired implementation included in package: {retired}"
 
 
 def test_required_release_members_are_in_the_npm_allowlist() -> None:

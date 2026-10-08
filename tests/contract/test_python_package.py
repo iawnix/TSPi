@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tomllib
+import zipfile
 from pathlib import Path
 
 import tspi_runtime
@@ -31,11 +32,9 @@ def test_python_distribution_metadata_matches_pi_release() -> None:
     assert project["tool"]["setuptools"]["package-dir"] == {
         "tspi_runtime": "packages/tspi-runtime/tspi_runtime",
         "tspi_foundation": "packages/tspi-foundation/tspi_foundation",
-        "tspi_provider_runtime": "packages/tspi-provider-runtime/tspi_provider_runtime",
         "tspi_bootstrap": "packages/tspi-bootstrap/tspi_bootstrap",
         "research_state": "packages/research-state/research_state",
         "research_memory": "packages/research-memory/research_memory",
-        "research_compute": "packages/research-compute/research_compute",
         "artifact_store": "packages/artifact-store/artifact_store",
         "job_runtime": "packages/job-runtime/job_runtime",
     }
@@ -46,15 +45,14 @@ def test_python_payload_digest_covers_code_and_runtime_data() -> None:
     original = python_payload_sha256(ROOT)
     expected_paths = {
         "packages/tspi-runtime/tspi_runtime/__init__.py",
-        "packages/research-compute/research_compute/execution.py",
+        "packages/tspi-runtime/tspi_runtime/execution.py",
         "packages/tspi-foundation/tspi_foundation/path_safety.py",
         "packages/tspi-runtime/tspi_runtime/command_catalog.json",
-        "packages/research-compute/research_compute/errors.py",
         "packages/artifact-store/artifact_store/__init__.py",
         "packages/job-runtime/job_runtime/runtime.py",
-        "packages/research-state/research_state/contracts/finding_candidates.schema.json",
+        "packages/research-state/research_state/contracts/operations.json",
         "packages/research-state/research_state/contracts/workspace.schema.json",
-        "packages/research-compute/research_compute/workspace/operational.py",
+        "packages/research-state/research_state/operational_ids.py",
         "packages/research-state/research_state/operation_registry.py",
     }
 
@@ -76,6 +74,10 @@ def test_wheel_build_uses_a_temporary_source_copy(tmp_path: Path) -> None:
     assert descriptor["payload_sha256"] == python_payload_sha256(ROOT)
     assert repeated == descriptor
     assert sorted(path.relative_to(ROOT).as_posix() for path in ROOT.rglob("*.egg-info")) == before
+    with zipfile.ZipFile(wheel) as archive:
+        names = set(archive.namelist())
+    assert not any(name.startswith(("research_compute/", "tspi_provider_runtime/")) for name in names)
+    assert not {"research_state/model.py", "research_state/decisions.py", "research_state/evidence.py"} & names
 
 
 def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None:
@@ -108,12 +110,13 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
             sys.executable,
             "-c",
             (
-                "import importlib.metadata,json; from pathlib import Path; import tspi_runtime,research_state,research_compute; "
-                "root=Path(tspi_runtime.__file__).resolve().parent; state=Path(research_state.__file__).resolve().parent; compute=Path(research_compute.__file__).resolve().parent; "
+                "import importlib.metadata,json; from pathlib import Path; import tspi_runtime,research_state; "
+                "root=Path(tspi_runtime.__file__).resolve().parent; state=Path(research_state.__file__).resolve().parent; "
+                "from research_state.operational_ids import allocate_operational_id; "
                 "print(json.dumps({'version': importlib.metadata.version('tspi-runtime'), "
-                "'schema': (compute/'contracts/calculation_request.schema.json').is_file(), "
-                "'candidate_schema': (state/'contracts/finding_candidates.schema.json').is_file(), "
-                    "'research_state': (state/'agent_workspace.py').is_file(), "
+                "'operations_schema': (state/'contracts/operations.json').is_file(), "
+                "'retired_model_export': hasattr(research_state, 'ResearchMap'), "
+                "'research_state': (state/'agent_workspace.py').is_file(), "
                 "'web': False}))"
             ),
         ],
@@ -127,8 +130,8 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
     assert probe.returncode == 0, probe.stderr
     assert json.loads(probe.stdout) == {
         "version": PACKAGE_VERSION,
-        "schema": True,
-        "candidate_schema": True,
+        "operations_schema": True,
+        "retired_model_export": False,
         "research_state": True,
         "web": False,
     }

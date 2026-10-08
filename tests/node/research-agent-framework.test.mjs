@@ -3,9 +3,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
-import { create_fake_pi_session_port } from "../support/fake-pi-session-port.mjs";
 import { COMMAND_DEFINITIONS } from "../../packages/agent-runtime/host-api/commands.mjs";
-import { assert_protocol_id } from "../../packages/agent-core/ports.mjs";
+import { create_workspace_port } from "../../packages/agent-core/ports.mjs";
 import {
   assert_research_admitted,
   create_research_admission_request,
@@ -15,10 +14,19 @@ import {
   create_research_turn_result,
 } from "../../packages/research-state-bridge/ports.mjs";
 
-test("framework protocol identifiers use snake_case", () => {
-  assert.equal(assert_protocol_id("research_turn_request"), "research_turn_request");
-  assert.throws(() => assert_protocol_id("research.turn.request"), /snake_case/);
-  assert.throws(() => assert_protocol_id("ResearchTurnRequest"), /snake_case/);
+test("workspace port preserves implementation receivers and owns its protocol id", async () => {
+  class Workspace {
+    initialized = 0;
+    async initialize_workspace() { this.initialized += 1; return { workspace_mode: "research" }; }
+    async attach_workspace() { return { workspace_mode: "research" }; }
+    async admit_workspace() { return { workspace_mode: "research" }; }
+  }
+  const implementation = new Workspace();
+  implementation.protocol_version = "incorrect_protocol";
+  const port = create_workspace_port(implementation);
+  await port.initialize_workspace({});
+  assert.equal(implementation.initialized, 1);
+  assert.equal(port.protocol_version, "workspace_port_1");
 });
 
 test("public command catalog matches the canonical filesystem command boundary", () => {
@@ -51,19 +59,6 @@ test("research turn contracts validate without Pi", () => {
     workspace_id: "workspace_1",
     session_id: "session_1",
   }), /invalid research_turn operation/);
-});
-
-test("fake Pi session port completes a turn through the TSPi session boundary", async () => {
-  const runtime = create_fake_pi_session_port({ response: "continue_required" });
-  const session = await runtime.create_session({ workspace_id: "workspace_1" });
-  const events = [];
-  const unsubscribe = runtime.subscribe(session.session_id, (event) => events.push(event));
-  const receipt = await runtime.submit(session.session_id, "run the bounded task");
-  unsubscribe();
-  assert.equal(receipt.accepted, true);
-  assert.equal(receipt.result.disposition, "continue_required");
-  assert.deepEqual(events.map((event) => event.type), ["run_started", "run_finished"]);
-  await runtime.close();
 });
 
 test("Research State port has no runtime-specific dependency", async () => {

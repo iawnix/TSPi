@@ -13,13 +13,13 @@ TSPi 在 Pi 之上提供计算化学 skill 和运行时适配器。一个安装�
 ## 组件职责
 
 - `apps/app-server/` 提供 Agent Server：`tspi-host/1` API、Root Agent session 宿主、统一
-  Research Agent HTTP server、安装级 Pi App Server/Harness owner、native remote client
+  Host HTTP adapter、安装级 Pi App Server/Harness owner、native remote client
   launcher、Monitor worker、browser adapter 和历史迁移工具。固定源码的 Pi worker 加载
   TSPi tools、skills、hooks、策略和 system prompt。
 - `services/tspi-link-relay/` 负责 TSPi Link 注册、配对、设备授权和不透明帧转发；它不拥有
   workspace/session/research，也不解析 Host RPC。
-- `packages/research-state/` 管理规范 `ResearchMap`、admission、引用完整性、验证、revision 和事务；`packages/research-memory/` 构建 bounded context 与 session projection；`packages/research-compute/` 管理计算 intent、readiness 和生命周期。共享 Link 协议与 backpressure codec 位于 `packages/tspi-link/`，`services/tspi-link-relay/` 只负责服务组合。
-- `extensions/` 只包含可选或可安装的能力扩展：第一方 Provider 实现及其科学使用规则 Skill。Render、Report、Email、化学计算和分析都通过通用 Provider dispatcher 执行。包内核心 server tool 装配不属于外置扩展，位于 `apps/app-server/server-tools/`。
+- `packages/research-state/` 管理规范 `ResearchMap`、admission、引用完整性、验证、revision 和事务；`packages/research-memory/` 构建 bounded context 与 session projection；`packages/job-runtime/` 执行本地和远端 Job，`packages/tspi-runtime/` 将其回执、观察与收集产物接入 Research State。共享 Link 协议与 backpressure codec 位于 `packages/tspi-link/`，`services/tspi-link-relay/` 只负责服务组合。
+- `extensions/` 包含可安装的 Skill、科学脚本、注册验证器和验收 profile。科学计算和分析由 Skill 脚本通过通用 Job 执行，报告排版与邮件由 native bash 调用 Skill helper。扩展 manifest 仍支持 provider 元数据发现，这些库存描述不负责派发科学执行。包内核心 server tool 装配位于 `apps/app-server/server-tools/`。
 - `packages/agent-ui/` 仅包含 Native client facet 所需的少量 presentation helper。
   直接 ExtensionAPI 适配器及其公共入口已经移除；启动器和 Native Pi Worker 不会加载
   旧的 ExtensionAPI 路径。
@@ -54,23 +54,24 @@ workspace_manifest.json     # 不可变 identity、mode、root 与 admission 状
 research_map/context.json   # ResearchMap 科学状态权威文件
 lifecycle/liveness.json     # 生命周期与 decision-needed 投影
 memory/index.json           # 有界 memory 投影
-nodes/<node_id>/          # Attempt / Artifact 等执行记录
+nodes/<node_id>/            # 可选的 Node 工作文件
+runs/jobs/<job_id>/         # Job 暂存输入、回执、日志和输出
+artifacts/<artifact_id>/    # 已登记的 payload 和 manifest
 inputs/                   # 工作区相对路径的输入 artifact
 operations/               # turn、monitor 和 execution receipts
 ```
 
-`ResearchMap` 序列化于 `research_map/context.json`，是项目研究进展的规范对象，不是从多个 registry 临时拼接出来的
-派生视图。它包含 `ResearchPhase`、`ResearchClaim`、`ResearchNode`、`Finding` 和
-`Gate`，并维护它们之间的依赖、产出和目标引用。
+规范科学记录位于 `research_map/context.json`，包括 phase、claim、node、finding、gate、
+requirement、Attempt、Artifact 和 evidence link。`research.map` 将这些记录投影为客户端
+使用的 `research-map/1` 文档。Research State 通过合同和 ChangeSet 验证、修改规范 JSON 记录。
 
-Attempt 和 Artifact 不属于 ResearchMap 的科学事实集合。它们由 Compute/Workspace
-Runtime 产生，但其稳定身份、digest、来源、lineage 和证据引用由 Research State 的
-Evidence Registry 管理。原始文件仍保存在 workspace 或对象存储中；Research State 只保存
-Artifact Manifest 和 Evidence Link，不把调度状态或文件内容直接解释成 Finding 或
+Attempt 记录 Job 执行，Artifact 描述收集或导入的材料。其稳定身份、digest、来源、
+lineage 和证据引用由 Research State 与 Artifact Store 管理。原始文件保存在 workspace；
+Research State 保存有界的 Artifact 记录与 Evidence Link，不把调度状态或文件内容直接解释成 Finding 或
 Claim 结论。
 
 ```text
-Compute Runtime -> Attempt -> Artifact Manifest
+Job Runtime -> Attempt -> Artifact Manifest
                               |
                               +-> Evidence Link -> Claim/Finding/Gate
 ```
@@ -82,9 +83,9 @@ Agent 通过有界 manifest、摘要和按需 excerpt 读取它们。
 
 ### ResearchMap 与 Research State
 
-`ResearchMap` 是一个有类型的研究图。`ResearchClaim` 表示科学命题，`ResearchNode`
-表示有界工作，`ResearchPhase` 只是可选的导航分组。Node 产生统一的 `Finding`，其中
-`FactFinding` 表示确认后的事实，`IssueFinding` 表示问题、矛盾或风险。
+`ResearchMap` 是具有明确记录种类的研究图。Claim 表示科学命题，Node 表示有界工作，
+Phase 是可选的导航分组。Finding 使用 `kind: fact` 记录观察，使用 `kind: issue` 记录
+问题、矛盾或风险；状态和所引用证据是独立字段。
 
 新 Claim 从 `proposed` 开始；科学状态由 `assess_claim` 记录理由和已登记证据后更新。
 导入数据和文献可作为证据，不要求新增 Job。当前采用的评估绑定证据版本与所需 ClaimGate，
@@ -92,7 +93,7 @@ Agent 通过有界 manifest、摘要和按需 excerpt 读取它们。
 证据或 ClaimGate 变化可先提交，再另行评估；`needs_review` 阻止 terminal 收尾，不冻结独立工作。
 
 ```text
-ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
+Claim -> Node -> Finding (kind: fact | issue)
        ^               |                  |
        |               +------ Gate <-----+
        +----------- ClaimGate / NodeGate
@@ -101,15 +102,14 @@ ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
 文件系统 Research State 负责加载、校验、事务提交和持久化规范 workspace projection，
 由 research-state runtime 唯一实现；Node App Server 只提供传输 bridge 和语言无关的 port。
 map-shaped context projection 是给 TS Web 和 Root Agent 的规范序列化，不是第二个科学状态。
-Root Agent 选择问题、
-方法、分支和停止条件；Skill 描述研究流程，Capability 描述可调用操作，Backend 实现
-科学软件或执行器。Compute Environment 是绑定 Backend 的命名 `local` 或 `remote`
-执行环境；Platform 只提供远端环境的传输和调度细节。工具成功不等于科学结论成立。
+Root Agent 选择问题、方法、分支和停止条件；Skill 描述研究流程并构造已安装科学软件的
+命令。命名的 Job 环境选择本地或远端执行、软件配置以及所需的传输和调度设置。
+工具成功不等于科学结论成立。
 
 ### 通用 Research Harness 分层与生命周期
 
 Research Harness 是领域无关的研究运行时。反应机理、分子计算、数据分析、模拟或其他
-研究领域都使用同一套对象和生命周期；领域差异只进入 Skill、Capability、Backend 和
+研究领域都使用同一套对象和生命周期；领域差异只进入 Skill、科学脚本、验证器和
 Artifact schema，不能进入 Host 的调度判断或 Research State 的 liveness 规则。
 
 ```text
@@ -123,7 +123,7 @@ Research State (唯一科学状态权威)
 Harness / Host (生命周期与权限控制)
   | turn admission、tool authority、幂等、恢复、follow-up、session 路由
   +--> Monitor (外部事件观察和 next_run 唤醒，不作科学判断)
-  +--> Compute/Workspace Runtime (执行 Attempt、Artifact、环境和能力)
+  +--> Job Runtime 与 Artifact Store (执行与收集材料)
 ```
 
 Research Memory 分为两层：workspace 中的 Durable Research Memory 保存完整 ResearchMap、
@@ -161,17 +161,14 @@ Research Memory（持久记录）
   -> Prompt（ContextPack + 工具、Skill 元数据和指令）
 ```
 
-Agent Core 通过语言无关的 `ContextPort` 和 `MemoryPort` 暴露这条边界。
-Core 可以保存有界的 session 对话记忆，但不会写入 workspace 级 Research Memory。
-在 research 工作区中，`MemoryPort` 只能使用 session 范围；所有科研上下文都是由
-`ResearchStatePort` 提供的只读投影，Research State 仍然是 ResearchMap 和持久科研记忆的
-唯一权威。
+Native worker 通过运行时命令边界读取 `research.context`。Pi 管理会话历史，Research
+State 管理工作区科学记录及其 memory 投影。刷新有界上下文不会创建另一份状态存储或
+会话宿主。
 
 `ResearchMemoryService` 不缓存第二份 ResearchMap，也不持久化 ContextPack。
-`ContextPack.context_id` 和 provenance 标识其来源 revision，因此 Host 可以在状态变化
+`ContextPack.revision` 和 provenance 标识其来源 revision，因此 Host 可以在状态变化
 或重试后重新构造。新的语义写入只能通过 `research_change`、`research_strategy`、
-`research_interpretation` 和 `research_checkpoint`；新的 turn 不通过
-`research_checkpoint` 写入规范的 turn checkpoint。不提供会
+`research_interpretation` 和 `research_checkpoint`；后者写入规范 turn checkpoint。不提供会
 绕过领域校验的通用 `memory.commit`。
 
 Research Turn 的统一协议是：
@@ -193,9 +190,8 @@ turn 放行该计划对应的 prepare/execute；Agent 仍必须在结束 turn �
 没有 `execution_ready` 时，Host 只放行读取、规划、解释和 checkpoint 修复。Harness 只追加
 有界 follow-up，要求 Agent 重新读取 bounded context 并通过 checkpoint 登记 disposition；
 Harness 不选择科学方法、不创建 Finding，也不把 `next_run` 当成新的研究指令。
-处于 `prepared` 的 Attempt 只有本地、提交前的绑定，因此仍是 Agent 的决策点，
-而不是等待外部事件。只有已提交、排队中、运行中、完成但尚未解析或状态未知的
-Attempt 才会让 scope 进入 `waiting_external`，直到 Host/Monitor 产生新证据。
+prepared request 尚未启动执行。处于 `started`、`running` 或 `unknown` 的 Attempt
+可以让对应 scope 进入 `waiting_external`；Job 完成后，研究仍需显式收集、解释和当前验收。
 
 `research.liveness` 只返回规范的 `continue_required` 记录。
 
@@ -218,10 +214,10 @@ Native `after_tool` hook 设置 `isError: true`，因此持久化 transcript 同
 
 ### NodeGate 与 ClaimGate
 
-`NodeGate` 和 `ClaimGate` 是同一个 `Gate` 基类的两个特化类：
+NodeGate 和 ClaimGate 是通过 `scope` 区分的 Gate 记录：
 
 ```text
-Gate.criteria    = 冻结的收尾/评估标准
+Gate.criteria    = 版本化的收尾/评估标准
 Gate.evaluations = 一次或多次评估记录
 scope            = node | claim
 ```
@@ -320,7 +316,7 @@ job_reconcile -> 协调确认不确定的执行状态
 ```
 
 科学解析与解释由 Skill 显式完成，Job 的 `platform` 选择安装级环境。Research State
-工作区始终是唯一规范存储：本地执行在 Attempt 的 execution 目录暂存输入并把输出
+工作区始终是唯一规范存储：本地执行在 `runs/jobs/<job_id>/` 暂存输入并把输出
 收集回工作区，远程目录只是临时执行镜像，TS Web 不需要访问远程文件系统。推荐的
 `job.toml` 将 local/remote 计算环境放在同一份 environments 目录中，每个环境在
 backends 下绑定软件；只有 remote 环境增加 SSH/Torque 字段。`job_probe` 检查所选平台，
@@ -342,28 +338,27 @@ durable monitor records：
 
 ```text
 operations/monitors/<monitor_id>/
-  registration.json   # calc intent + intent digest + optional session binding
-  state.json          # last observed semantic state
+  binding.json        # Job/Attempt/session 绑定、摘要和最近观察
   events/<event_id>.json
   deliveries/<event_id>.json
 ```
 
-Monitor registration、event 和 delivery 使用 `ts-compute-monitor/1`、
-`ts-compute-monitor-event/1`、`ts-monitor-delivery/1` 合同。worker 的 tick 直接读取
-Compute runtime 的 durable status：`completed` 只表示程序或 scheduler 已结束，`parsed`
-才表示收集和解析完成；`unknown` 保持不确定性。状态没有变化时不会重复产生事件。
+Monitor binding、event 和 delivery 使用 `ts-job-monitor/1`、`ts-job-monitor-event/1`、
+`ts-job-monitor-delivery/1` 合同。worker 的 tick 读取 Job Runtime 状态并记录对应 Attempt
+观察。执行终态和 `unknown` 可以产生唤醒事件；收集和科学解释仍需显式完成。状态没有
+变化时不会重复产生事件，配置的排队等待阈值首次超出除外。
 
 事件 delivery 默认通过绑定 session 的 `next_run` 排队唤醒 Root，不打断当前推理。稳定
-request id 为 `monitor:<event_id>`；session 不存在、workspace 不匹配或 App Server
+request id 为 `job-wake:<event_id>`；session 不存在、workspace 不匹配或 App Server
 重启时 delivery 保持 pending，可由后续 worker 恢复。Root 被唤醒后必须重新读取
-`research_read`，再显式执行 `job_start/job_status/job_collect inspect`，并自行决定是否 `finalize` 或通过 `research_change`
-写入 Finding/Gate/Node 状态。Monitor 不自动 finalize、不修改 ResearchMap、不做科学判断。
+`research_read`，通过 `job_status` 检查 Job、通过 `job_collect` 收集证据，再决定如何解释
+和修改 Research State。Monitor 记录执行观察，不收集输出、不更新科学结论，也不发送用户通知。
 
 研究推进的 liveness 是独立于 Monitor 观察的诊断投影。turn boundary 通过
 `research_checkpoint` 持久化 Agent 的 disposition。它是规范 checkpoint；生命周期动作通过
-规范 ChangeSet 操作管理。ChangeSet 的审计字段属于 `research_change`。每次 run boundary，Host 只会针对
-`decision_needed` 追加最多三次 follow-up，并且不会替 Agent 选择方法。这样 parsed 之后
-即使没有新的 Monitor 事件，研究也能继续；阻塞或延期的研究则保持静默且可审计。
+规范 ChangeSet 操作管理。ChangeSet 的审计字段属于 `research_change`。每次 run boundary，
+Host 遵守 checkpoint 结果和有界接续策略，不会替 Agent 选择方法。这样收集完成后即使
+没有新的 Monitor 事件，研究也能继续；阻塞或延期的研究则保持静默且可审计。
 
 Host 的 `monitor/event` 通知只是实时投影，不是持久化重放日志。Host 启动时会先建立已有
 事件文件的游标，因此重启不会重复推送旧事件；Phone 重连时应通过 `monitor/status` 和
@@ -374,8 +369,8 @@ Host 的 `monitor/event` 通知只是实时投影，不是持久化重放日志�
 ```text
 Workspace records <-> App Server Monitor worker -> Session next_run -> Root Agent
        ^                     |                         |
-       |                     +-- user notification     +-- research_read / job_start/job_status/job_collect / research_change
-       +-- Compute/remote durable status
+       |                                               +-- research_read / job_status / job_collect / research_change
+       +-- Job Runtime durable status
 ```
 
 
@@ -401,3 +396,8 @@ sent/unknown 回执继续遵循既有幂等与不确定性规则。
 State 桥接中断时，只允许本地 read/system_prompt 用于诊断，副作用仍需当前 State 准入。
 首次用户来源保存失败会阻止该输入开始；后续 yield 检查失败时保留诊断答复，不制造 checkpoint
 或自动接续。
+
+
+已清理的平行框架、状态模型和旧执行实现见 [ADR 0010](adr/0010-retire-parallel-runtimes.zh-CN.md)。
+发行检查会拒绝这些旧实现重新进入安装包。现行工作区和 Job 回执继续使用原合同；
+已删除的旧导入 facade 不保留兼容 shim。

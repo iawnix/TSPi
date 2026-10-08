@@ -21,11 +21,9 @@ PYTHON_PACKAGE_NAME = "tspi_runtime"
 PYTHON_PACKAGE_NAMES = (
     "tspi_runtime",
     "tspi_foundation",
-    "tspi_provider_runtime",
     "tspi_bootstrap",
     "research_state",
     "research_memory",
-    "research_compute",
     "artifact_store",
     "job_runtime",
 )
@@ -63,31 +61,21 @@ def build_wheel(
             if not path.is_file() or path.is_symlink():
                 raise WheelContractError(f"wheel source file is missing or unsafe: {path}")
             shutil.copy2(path, source / name)
-        # Setuptools records package files using the package-dir target.  The
-        # chemical namespace lives in an extension tree in the repository;
-        # stage it at a normal top-level package path so the wheel RECORD,
-        # installed files, and runtime digest all describe the same payload.
-        pyproject = source / "pyproject.toml"
-        pyproject.write_text(pyproject.read_text(encoding="utf-8"), encoding="utf-8")
         source_roots = {
             "tspi_runtime": root / "packages" / "tspi-runtime" / "tspi_runtime",
             "tspi_foundation": root / "packages" / "tspi-foundation" / "tspi_foundation",
-            "tspi_provider_runtime": root / "packages" / "tspi-provider-runtime" / "tspi_provider_runtime",
             "tspi_bootstrap": root / "packages" / "tspi-bootstrap" / "tspi_bootstrap",
             "research_state": root / "packages" / "research-state" / "research_state",
             "research_memory": root / "packages" / "research-memory" / "research_memory",
-            "research_compute": root / "packages" / "research-compute" / "research_compute",
             "artifact_store": root / "packages" / "artifact-store" / "artifact_store",
             "job_runtime": root / "packages" / "job-runtime" / "job_runtime",
         }
         destinations = {
             "tspi_runtime": source / "packages" / "tspi-runtime" / "tspi_runtime",
             "tspi_foundation": source / "packages" / "tspi-foundation" / "tspi_foundation",
-            "tspi_provider_runtime": source / "packages" / "tspi-provider-runtime" / "tspi_provider_runtime",
             "tspi_bootstrap": source / "packages" / "tspi-bootstrap" / "tspi_bootstrap",
             "research_state": source / "packages" / "research-state" / "research_state",
             "research_memory": source / "packages" / "research-memory" / "research_memory",
-            "research_compute": source / "packages" / "research-compute" / "research_compute",
             "artifact_store": source / "packages" / "artifact-store" / "artifact_store",
             "job_runtime": source / "packages" / "job-runtime" / "job_runtime",
         }
@@ -279,11 +267,9 @@ def source_payload_sha256(
     roots = {
         "tspi_runtime": package_root / "packages" / "tspi-runtime" / "tspi_runtime",
         "tspi_foundation": package_root / "packages" / "tspi-foundation" / "tspi_foundation",
-        "tspi_provider_runtime": package_root / "packages" / "tspi-provider-runtime" / "tspi_provider_runtime",
         "tspi_bootstrap": package_root / "packages" / "tspi-bootstrap" / "tspi_bootstrap",
         "research_state": package_root / "packages" / "research-state" / "research_state",
         "research_memory": package_root / "packages" / "research-memory" / "research_memory",
-        "research_compute": package_root / "packages" / "research-compute" / "research_compute",
         "artifact_store": package_root / "packages" / "artifact-store" / "artifact_store",
         "job_runtime": package_root / "packages" / "job-runtime" / "job_runtime",
     }

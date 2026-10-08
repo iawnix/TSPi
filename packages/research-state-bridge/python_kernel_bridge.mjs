@@ -157,7 +157,7 @@ import sys
 from pathlib import Path
 
 root_dir = Path.cwd().resolve()
-for _source_root in ("tspi-runtime", "tspi-foundation", "tspi-provider-runtime", "research-state", "research-memory", "research-compute", "job-runtime", "artifact-store"):
+for _source_root in ("tspi-runtime", "tspi-foundation", "research-state", "research-memory", "job-runtime", "artifact-store"):
     sys.path.insert(0, str(root_dir / "packages" / _source_root))
 
 try:

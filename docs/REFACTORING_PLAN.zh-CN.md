@@ -70,8 +70,8 @@ Skill 的推荐执行流程：
 5. 使用 `job_status`、`job_reconcile` 观察状态。
 6. 使用 `job_collect` 收集 stdout、stderr 和声明的输出文件。
 7. 使用 `artifact_register` 登记原始输出。
-8. 使用 Skill 脚本或 `artifact_derive` 产生可复核的派生数据。
-9. 由 Root Agent 通过 `research_interpretation` 写入 Finding、ClaimAssessment 或 ClaimRevision。
+8. 用 Skill 分析 Job 产生可复核的派生数据；`artifact_derive` 仅登记派生描述。
+9. 用 `research_interpretation` 记录结果解释，再通过 `research_change` 显式写入 Finding、ClaimAssessment 或 ClaimRevision。
 
 ## Job Runtime
 
@@ -87,7 +87,7 @@ Job Runtime 位于 `packages/job-runtime/job_runtime/`，公开模型包括：
 
 Job Runtime 不解析科学格式、不修改 Research State，也不判断 Claim 是否成立。Job receipt 和 `status.json` 允许新的进程恢复状态；`job_reconcile` 用于外部平台状态与本地 receipt 对齐。
 
-`packages/research-compute/research_compute/execution.py` 提供 `ExecutionRequest` 和 `ExecutionService`。它只负责把 Research 身份传给 Job Runtime，不重新引入领域 provider、能力目录或格式门禁。
+`packages/tspi-runtime/tspi_runtime/execution.py` 将 Node/Attempt 身份与实际 Job 关联，使用当前 Research State 事务写入边界。旧 research-compute facade 已删除。
 
 ## Artifact Store
 
@@ -98,7 +98,7 @@ Artifact Store 位于 `packages/artifact-store/artifact_store/`。Artifact 是�
 - 原始 Artifact 与派生 Artifact 的关系。
 - 与 Node、Finding 或 Claim 的显式 link。
 
-`artifact_register` 登记已有文件，`artifact_create` 写入内存内容，`artifact_read` 读取受限内容，`artifact_derive` 保存由已有 Artifact 计算出的派生数据，`artifact_link` 建立研究对象与证据之间的关系。
+`artifact_register` 登记已有文件，`artifact_create` 写入内存内容，`artifact_read` 读取受限内容，`artifact_derive` 保存派生描述，实际计算出的数据由分析 Job 产生并登记，`artifact_link` 建立研究对象与证据之间的关系。
 
 Artifact 不等于 Finding。Artifact 记录“产生了什么文件”，Finding 记录“这些文件支持什么解释”。
 
@@ -116,7 +116,7 @@ Research State 位于 `packages/research-state/research_state/`，是研究事�
 - LifecycleAction：需要执行、延后、阻塞或完成的研究动作。
 - Checkpoint：Agent turn 的继续、等待、阻塞或终止状态。
 
-Research State 只接受显式 ChangeSet。ChangeSet 必须带 rationale、basis refs 和预期 revision。Finding 必须带 `source_refs` 与 provenance。Claim 状态不会因为 Job 成功而自动改变。
+Research State 只接受显式 ChangeSet。ChangeSet 使用公开操作合同；rationale、basis refs 和 expected_revision 按合同提供。科学 FactFinding 必须带 `source_refs` 与 provenance。Claim 状态不会因为 Job 成功而自动改变。
 
 ## 研究闭环
 
@@ -137,7 +137,7 @@ job_collect
   ↓
 artifact_register
   ↓
-Skill parser 或 artifact_derive
+Skill 分析 Job → 收集真实结果
   ↓
 research_interpretation
   ↓
@@ -155,22 +155,16 @@ Root Agent 决定何时继续当前 Node、创建新 Node、修订 Claim 或停�
 ```text
 workspace/
 ├─ workspace_manifest.json
-├─ research_map/
-│  ├─ context.json
-│  └─ liveness.json
-├─ nodes/<node_id>/
-│  ├─ node.json
-│  ├─ attempts/<attempt_id>/
-│  │  ├─ job.json
-│  │  ├─ receipt.json
-│  │  ├─ status.json
-│  │  └─ outputs/
-│  └─ artifacts/
-├─ .tspi/artifacts/<artifact_id>/payload
+├─ research_map/context.json
+├─ lifecycle/liveness.json
+├─ runs/jobs/<job_id>/
+├─ artifacts/<artifact_id>/payload
+├─ operations/
 └─ memory/
 ```
 
-Research Map 中的 Node 是研究语义对象；`nodes/<node_id>/` 是该对象对应的物理工作目录。Job 是 Node 下的一次执行尝试，Artifact 是 Job 输出或后续派生文件。三者通过显式 ID 和 link 关联。
+Node 是研究范围，Attempt 关联该范围的一次执行；Job Runtime 将物理产物放入
+`runs/jobs/<job_id>/`，Artifact Store 保存内容。关联由 Research State 的记录与引用表达。
 
 ## Monitor
 
@@ -178,7 +172,7 @@ Monitor 不运行第二个 Agent loop，也不解析科学结果。它保存 Job
 
 1. 观察 Job receipt 或远程平台状态。
 2. 记录状态变化事件。
-3. 对 wake 和 notify 通道做幂等 claim。
+3. 对 wake outbox 做幂等 claim。
 4. 将有意义的变化投递给同一 SessionWorker。
 5. Agent 被唤醒后自行执行 `job_collect`、Artifact 登记和 Research State 解释。
 
@@ -198,7 +192,7 @@ Host 不维护科学 provider catalog，不执行 Claim 判断，也不创建 Co
 
 ## 扩展边界
 
-扩展只声明 Skill、可选 server 工具和安装配置。科学软件的命令、输入模板和输出解析属于 Skill 内容或 Skill 自带脚本。扩展不再通过 provider registry 向核心注册计算生命周期。
+扩展声明 Skill、可选 server 工具、安装配置及版本化 validator/acceptance profile；providers 字段仅保留外部发现元数据。科学软件的命令、输入模板和输出解析属于 Skill 内容或 Skill 自带脚本。扩展不再通过 provider registry 向核心注册计算生命周期。
 
 通知扩展可以读取 Research State 的 workspace identity 和 Artifact link，但不依赖报告生成器作为事实来源。报告、图形或导出格式如有需要，应作为独立 Skill helper，从 Artifact 和 Research State 读取数据。
 
@@ -239,3 +233,5 @@ artifact_link
 ```
 
 这份清单是 Agent 可见的唯一研究执行协议。Skill 文档可以描述更多领域概念，但不能再引入第二套运行时接口。
+
+旧框架、状态类和 provider 执行胶水的删除范围见 [ADR 0010](adr/0010-retire-parallel-runtimes.zh-CN.md)。

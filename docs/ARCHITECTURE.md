@@ -23,14 +23,17 @@ owns a second agent loop or replacement UI.
   research APIs and does not decode Host RPC.
 - `packages/research-state/` owns the canonical `ResearchMap`, admission,
   reference integrity, validation, revisions, and transactions. `packages/research-memory/`
-  builds bounded context and session projections. `packages/research-compute/`
-  owns compute intents, readiness, and lifecycle control. The shared Link
+  builds bounded context and session projections. `packages/job-runtime/`
+  executes local and remote Jobs; `packages/tspi-runtime/` connects their
+  receipts, observations, and collected Artifacts to Research State. The shared Link
   protocol and backpressure codec live in `packages/tspi-link/`; the relay
   service is only its deployment composition.
-- `extensions/` contains optional or installable capability extensions: first-party
-  Provider implementations and the Skills that describe their scientific use.
-  Render, report, email, chemical compute, and analysis execute through the
-  generic Provider dispatcher. Package-owned server tool assembly is not an
+- `extensions/` contains installable Skills, scientific scripts, registered
+  validators, and acceptance profiles. Scientific calculations and analysis use
+  Skill scripts through generic Jobs; report formatting and email use Skill
+  helpers through native bash. Extension manifests can still declare provider metadata for
+  discovery; this inventory does not dispatch scientific execution.
+  Package-owned server tool assembly is not an
   external extension; it lives under `apps/app-server/server-tools/`.
 - `packages/agent-ui/` contains only the small Native TUI presentation helpers
   required by the client facet. Direct ExtensionAPI adapters and their public
@@ -77,26 +80,28 @@ workspace_manifest.json     # immutable identity, mode, root, and admission stat
 research_map/context.json   # canonical ResearchMap scientific records
 lifecycle/liveness.json     # lifecycle and decision-needed projection
 memory/index.json           # bounded memory projection
-nodes/<node_id>/          # Attempt and Artifact execution records
+nodes/<node_id>/            # optional Node-local working files
+runs/jobs/<job_id>/         # staged Job inputs, receipts, logs, and outputs
+artifacts/<artifact_id>/    # registered payload and manifest
 inputs/                   # workspace-relative imported input artifacts
 operations/               # turn, monitor, and execution receipts
 ```
 
-`ResearchMap` is the canonical project object serialized in
-`research_map/context.json`. It is not assembled as a derived view from separate scientific registries. It contains `ResearchPhase`,
-`ResearchClaim`, `ResearchNode`, typed `Finding` objects, and typed `Gate`
-objects, together with their dependency, output, and target references.
+The canonical scientific records live in `research_map/context.json`.
+They include phases, claims, nodes, findings, gates, requirements, Attempts,
+Artifacts, and evidence links. `research.map` projects these records into the
+`research-map/1` document consumed by clients. Validation and mutation operate
+on the canonical JSON records through Research State contracts and ChangeSets.
 
-Attempts and Artifacts are not scientific facts inside the ResearchMap. They
-are produced by the Compute/Workspace runtime, while their stable identity,
-digest, provenance, lineage, and evidence references are governed by the
-Research State's Evidence Registry. Raw files remain in the workspace or an
-object store; the Research State stores bounded Artifact Manifests and Evidence Links,
+Attempts record Job execution; Artifacts describe collected or imported material.
+Their stable identity, digest, provenance, lineage, and evidence references are
+governed by Research State and the Artifact Store. Raw files remain in the
+workspace; Research State stores bounded Artifact records and Evidence Links,
 and never turns scheduler state or file contents into a Finding or Claim
 conclusion by itself.
 
 ```text
-Compute Runtime -> Attempt -> Artifact Manifest
+Job Runtime -> Attempt -> Artifact Manifest
                               |
                               +-> Evidence Link -> Claim/Finding/Gate
 ```
@@ -110,11 +115,11 @@ excerpts.
 
 ### ResearchMap And Research State
 
-`ResearchMap` is a typed research graph. `ResearchClaim` represents a scientific
-statement, `ResearchNode` represents bounded work, and `ResearchPhase` is an
-optional navigation grouping. Nodes produce a common `Finding` base type:
-`FactFinding` records a confirmed fact and `IssueFinding` records a problem,
-contradiction, or risk.
+`ResearchMap` is a research graph with explicit record kinds. A Claim represents
+a scientific statement, a Node represents bounded work, and a Phase is an
+optional navigation grouping. A Finding uses `kind: fact` for an observation
+or `kind: issue` for a problem, contradiction, or risk; its status and cited
+evidence are separate fields.
 
 New Claims start as `proposed`. `assess_claim` records a reason and registered
 evidence for scientific status changes; imported data and literature can supply
@@ -125,7 +130,7 @@ Evidence or ClaimGate changes can be committed before reassessment. A `needs_rev
 assessment prevents terminal closure without freezing independent work.
 
 ```text
-ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
+Claim -> Node -> Finding (kind: fact | issue)
        ^               |                  |
        |               +------ Gate <-----+
        +----------- ClaimGate / NodeGate
@@ -136,11 +141,10 @@ canonical workspace projections. The research-state runtime owns this boundary; 
 App Server exposes only the transport bridge and language-neutral port. The
 map-shaped context projection is the canonical serialization for TS Web and Root Agent,
 not a second scientific model. The Root Agent chooses questions, methods,
-branches, and stopping conditions. Skills describe research procedures,
-Capabilities describe callable operations, and Backends implement scientific
-software or executors. A Compute Environment is a named `local` or `remote`
-execution environment with Backend bindings; Platform configuration supplies
-the transport and scheduler details for a remote environment. Tool success
+branches, and stopping conditions. Skills describe research procedures and
+construct commands for installed scientific software. A named Job environment
+selects local or remote execution, executable configuration, and any required
+transport and scheduler settings. Tool success
 never becomes a scientific conclusion by itself.
 
 ### Domain-Neutral Research Harness Lifecycle
@@ -148,7 +152,7 @@ never becomes a scientific conclusion by itself.
 The Research Harness is domain-neutral. Chemistry, reaction mechanisms, data
 analysis, simulation, and other research domains use the same Claims, Nodes,
 Findings, Gates, Attempts, and Artifacts. Domain-specific behavior belongs in
-Skills, Capabilities, Backends, and Artifact schemas; it must not be encoded in
+Skills, scientific scripts, validators, and Artifact schemas; it must not be encoded in
 Host scheduling or Research State liveness rules.
 
 ```text
@@ -156,7 +160,7 @@ Agent (only scientific decision-maker)
   -> bounded Research Context -> Research State (canonical ResearchMap)
   -> Harness/Host (turn admission, authority, recovery, follow-up)
        +-> Monitor (external observation and next_run wake-up)
-       +-> Compute/Workspace runtime (Attempts, Artifacts, environments)
+       +-> Job Runtime and Artifact Store (execution and collected material)
 ```
 
 Durable Research Memory remains in the workspace. Each turn gets a bounded
@@ -217,15 +221,13 @@ Research Memory (durable records)
   -> Prompt (ContextPack plus tools, Skill metadata, and instructions)
 ```
 
-Agent Core exposes this boundary through a language-neutral `ContextPort` and
-`MemoryPort`. The Core implementation may keep bounded session conversation
-memory, but it never writes workspace-scoped Research Memory. In a research
-workspace, the `MemoryPort` is session-only and all scientific context is a
-read-only projection supplied by the `ResearchStatePort`; the Research State remains
-the sole authority for ResearchMap and durable scientific memory.
+The Native worker reads `research.context` through the runtime command boundary.
+Pi owns conversational session history; Research State owns workspace scientific
+records and their memory projection. Refreshing the bounded context does not
+create another state store or session owner.
 
 `ResearchMemoryService` does not cache a second ResearchMap or persist a
-ContextPack. `ContextPack.context_id` and provenance identify the source
+ContextPack. `ContextPack.revision` and provenance identify the source
 revision so a Host can rebuild it after a change or retry. Semantic writes stay
 on `research_change`, `research_strategy`, `research_interpretation`, and
 `research_checkpoint`; lifecycle actions are stored in the canonical State
@@ -254,11 +256,10 @@ before ending that turn. Without `execution_ready`, the Host admits only reads,
 planning, interpretation, and checkpoint repair. The Harness may issue a
 bounded follow-up asking the Agent to read context and checkpoint a disposition,
 but it never chooses a scientific method or creates a Finding. `next_run` is an
-operational wake-up, not a new research instruction. An Attempt in `prepared`
-state has only a local, pre-submission binding and is therefore a decision point
-for the Agent, not an external wait. Only submitted, queued, running,
-completed-but-unparsed, or unknown Attempts hold a scope in `waiting_external`
-until the Host/Monitor produces new evidence.
+operational wake-up, not a new research instruction. A prepared request has not
+started execution. Started, running, or unknown Attempts can hold their scope
+in `waiting_external`; a completed Job still requires explicit collection,
+interpretation, and current acceptance before research can finish.
 
 The liveness response exposes canonical `continue_required` records only.
 
@@ -285,10 +286,10 @@ server-extension boundary.
 
 ### NodeGate And ClaimGate
 
-`NodeGate` and `ClaimGate` specialize one `Gate` base class:
+NodeGate and ClaimGate are Gate records distinguished by their `scope`:
 
 ```text
-Gate.criteria    = frozen completion or evaluation criteria
+Gate.criteria    = versioned completion or evaluation criteria
 Gate.evaluations = one or more evaluation records
 scope            = node | claim
 ```
@@ -380,12 +381,11 @@ The selected release, worker facet, server-extension allowlist, and pinned Pi
 source are deterministic and package-validated. Presentation facets remain
 client-side and optional; they cannot change the worker's tool inventory.
 
-## Isolated Pi subagents
+## Agent execution
 
-Compute and Review agents run as bounded Pi subagents with explicit task and
-result schemas through the same Pi Harness lane implementation. They receive
-only the context and tools declared by the App Server package; skills remain
-top-level Pi capabilities. TSPi does not provide a second Agent Runtime.
+The Native Pi Harness runs the research agent. Scientific computation uses Job
+Runtime, and the same agent interprets collected evidence. TSPi has no separate
+Compute/Review agent implementation, task aggregator or parallel session store.
 
 ## Deterministic Tool Plane
 
@@ -425,7 +425,7 @@ job_reconcile -> resolve uncertain execution state
 Scientific parsing and interpretation remain explicit Skill work. The Job's
 `platform` selects an installation environment. The Research State workspace
 is always canonical, while a remote directory is only a
-temporary execution mirror. Local runs stage inputs under the Attempt's execution directory and
+temporary execution mirror. Local runs stage inputs under `runs/jobs/<job_id>/` and
 collect outputs back into the same workspace paths, so TS Web needs no remote
 filesystem access. Local workers are launched in an independent transient
 systemd service when available, so restarting the App Server Host does not
@@ -442,36 +442,36 @@ under its configured workspace root. Each workspace persists its own monitor
 records under `operations/monitors/<monitor_id>/`:
 
 ```text
-registration.json   # intent binding, digest, and optional session binding
-state.json          # last semantic observation
+binding.json        # Job/Attempt/session binding, digest, and latest observation
 events/<event_id>.json
 deliveries/<event_id>.json
 ```
 
-The registration, event, and delivery envelopes are versioned by
-`ts-compute-monitor/1`, `ts-compute-monitor-event/1`, and
-`ts-monitor-delivery/1`. A tick calls the Compute runtime status API directly.
-`completed` means that the program or scheduler ended; `parsed` means that
-collection and parsing completed. `unknown` remains uncertainty, and an
-unchanged observation does not create another event.
+The binding, event, and delivery envelopes are versioned by
+`ts-job-monitor/1`, `ts-job-monitor-event/1`, and `ts-job-monitor-delivery/1`.
+A tick reads Job Runtime status and records the corresponding Attempt observation.
+Terminal execution states and `unknown` can produce wake events; collection and
+scientific interpretation remain explicit work. An unchanged observation does not
+create another event, except for a newly exceeded configured queue-wait threshold.
 
 The worker normally delivers an event to the bound session with `next_run`,
 which does not interrupt an active Root turn. Its request id is
-`monitor:<event_id>`. A missing session or an App Server restart leaves the
+`job-wake:<event_id>`. A missing session or an App Server restart leaves the
 delivery pending and allows a later worker pass to retry it. Root must reread
-`research_read`, run `job_start/job_status/job_collect inspect`, and decide whether to collect, parse, or
-write `ResearchMap` state. The Monitor never calls `finalize`, writes
-`ResearchMap`, or makes a scientific decision.
+`research_read`, inspect the Job with `job_status`, collect its evidence with
+`job_collect`, and decide which interpretations or Research State changes are
+justified. Monitor records execution observations; it does not collect outputs,
+update scientific conclusions, or send user notifications.
 
 Research liveness is a diagnostic projection separate from Monitor
 observations. The turn boundary persists the Agent's disposition through
 `research_checkpoint`. It is the canonical checkpoint; lifecycle actions are
 managed by canonical ChangeSet operations. ChangeSet audit fields belong to
 `research_change`. At a run boundary the
-Host follows the checkpoint result and may add at most three bounded
-follow-ups only for `decision_needed`; it never chooses the next method. Thus
-a parsed calculation can continue even when Monitor has no new status event,
-while a blocked or deferred study remains quiet and auditable.
+Host follows the checkpoint result and the bounded continuation policy; it
+never chooses the next method. Thus research can continue after collection even
+when Monitor has no new status event, while a blocked or deferred study remains
+quiet and auditable.
 
 Host `monitor/event` notifications are live only. Host primes its event cursor
 on startup instead of replaying historical files after a restart; Phone clients
@@ -493,19 +493,19 @@ are separate from the scientific operation journal.
 ## Contract Locations
 
 - Host and client adapter entrypoints: `apps/app-server/*.mjs`.
-- Installation/runtime launcher: `TSPi`, `apps/agent-cli/tspi_launcher.py`, and
+- Installation/runtime launcher: `ResearchAgent`, `apps/agent-cli/tspi_launcher.py`, and
   `packages/tspi-bootstrap/tspi_bootstrap/launcher.py`.
 - Python namespaces: `packages/tspi-foundation/`,
-  `packages/tspi-provider-runtime/`, `packages/tspi-bootstrap/`,
+  `packages/tspi-runtime/`, `packages/tspi-bootstrap/`,
   `packages/research-state/`, `packages/research-memory/`,
-  `packages/research-compute/`, and the chemistry implementation under
+  `packages/job-runtime/`, `packages/artifact-store/`, and chemistry under
   `extensions/chemical/skills/`.
-- Skills and extension manifests: `skills/`, `package.json`, and
+- Skills and extension manifests: `extensions/core/skills/`, domain extension manifests, `package.json`, and
   `apps/app-server/server-tools/extensions.json`.
 - TS Web contracts: `contracts/ts-web/`.
 - Monitor contracts: `contracts/tspi-monitor/1/`.
 - Host lifecycle and Native Harness integration tests: `tests/integration/test_pi_app_server_launcher.py`,
-  `tests/node/native/tspi-host.test.mjs`, `tests/node/native/pi-native-worker.test.mjs`, and
+  `tests/node/native/tspi-host.test.mjs`, `tests/node/native/worker-research-flow.test.mjs`, and
   `tests/node/native/pi-session-control.test.mjs`.
 
 
@@ -539,3 +539,9 @@ During a State bridge outage only native local read/system_prompt diagnostics ca
 bypass unavailable admission; effects still require current State. A failed initial
 user-source write prevents starting that input. A later failed yield check preserves
 the diagnostic answer without manufacturing a checkpoint or continuation.
+
+
+The removed parallel framework and state implementations are recorded in
+[ADR 0010](adr/0010-retire-parallel-runtimes.md). Release checks reject their
+reintroduction. Current State workspace data and existing Job receipts retain
+their existing contracts; retired import facades have no compatibility shim.

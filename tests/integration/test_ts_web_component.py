@@ -104,7 +104,7 @@ def test_provider_json_lines_does_not_reuse_a_previous_request_id(tmp_path: Path
     }
     completed = subprocess.run(
         [sys.executable, str(provider), "--state-dir", str(state_dir)],
-        input=json.dumps(first) + "\n{not-json}\n",
+        input=json.dumps(first) + "\n{not-json}\n" + "x" * (2 * 1024 * 1024 + 1) + "\n" + json.dumps({**first, "request_id": "after-errors"}) + "\n",
         cwd=ROOT,
         env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
         text=True,
@@ -115,7 +115,10 @@ def test_provider_json_lines_does_not_reuse_a_previous_request_id(tmp_path: Path
 
     assert completed.returncode == 0, completed.stderr
     responses = [json.loads(line) for line in completed.stdout.splitlines()]
-    assert [response["request_id"] for response in responses] == ["first", "unknown"]
+    assert [response["request_id"] for response in responses] == ["first", "unknown", "unknown", "after-errors"]
     assert responses[0]["ok"] is True
     assert responses[1]["ok"] is False
     assert responses[1]["error"]["schema_version"] == "research-map-error/1"
+    assert responses[2]["ok"] is False
+    assert responses[2]["error"]["schema_version"] == "research-map-error/1"
+    assert responses[3]["ok"] is True

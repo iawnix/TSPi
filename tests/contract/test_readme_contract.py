@@ -79,7 +79,7 @@ def test_public_document_set_covers_install_architecture_and_maintenance() -> No
         "## Scientific State Model",
         "## ChangeSets And Browser Clients",
         "## TSPi Lifecycle",
-        "## Isolated Pi subagents",
+        "## Agent execution",
         "## Deterministic Tool Plane",
         "## Run Journals And Result Delivery",
         "## Contract Locations",

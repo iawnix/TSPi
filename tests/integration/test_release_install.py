@@ -97,10 +97,10 @@ def test_real_release_build_excludes_development_tree(tmp_path: Path) -> None:
     assert "config/pi-patches/001-workspaces.patch" in names
     assert "scripts/prepare_pi_source.py" in names
     assert not any(name.startswith("packages/tspi-runtime/tspi_runtime/web/") for name in names)
-    assert "packages/research-compute/research_compute/workspace/artifacts.py" in names
-    assert "packages/research-compute/research_compute/workspace/candidates.py" in names
-    assert "packages/research-state/research_state/contracts/finding_candidates.schema.json" in names
-    assert "packages/research-state/research_state/model.py" in names
+    assert not any(name.startswith(("packages/research-compute/", "packages/tspi-provider-runtime/")) for name in names)
+    assert "packages/research-state/research_state/contracts/finding_candidates.schema.json" not in names
+    assert "packages/research-state/research_state/model.py" not in names
+    assert "packages/research-state/research_state/operational_ids.py" in names
     assert "packages/research-state/research_state/agent_workspace.py" in names
     assert distribution == build_result["python_distribution"]
     assert distribution["name"] == "tspi-runtime"

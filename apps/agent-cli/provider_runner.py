@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import runpy
 import sys
 from pathlib import Path
 
@@ -29,16 +28,6 @@ from research_state.registry import list_workspaces  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
-    selected = list(sys.argv[1:] if argv is None else argv)
-    if "--entry" in selected:
-        parser = argparse.ArgumentParser(prog="provider_runner")
-        parser.add_argument("--entry", required=True)
-        args, _ = parser.parse_known_args(selected)
-        module = runpy.run_path(args.entry)
-        handler = module.get("handle")
-        if not callable(handler): raise SystemExit("provider entry must define handle(request)")
-        from tspi_provider_runtime.runner import run_jsonl_provider
-        return run_jsonl_provider(handler)
     parser = argparse.ArgumentParser(prog="provider_runner")
     parser.add_argument("--state-dir", required=True)
     parser.add_argument("--workspace-root", action="append", default=None)
@@ -65,7 +54,7 @@ def _serve_protocol(state_dir: str, workspace_roots: list[str] | None) -> int:
     for raw_line in sys.stdin:
         request: object = None
         if len(raw_line.encode("utf-8")) > 2 * 1024 * 1024:
-            response = provider_error_payload("unknown", ProviderRequestError("provider request is too large"))
+            response = provider_error_payload("unknown", ResearchWebError("provider request is too large"))
             print(json.dumps(response, ensure_ascii=False, sort_keys=True), flush=True)
             continue
         try:

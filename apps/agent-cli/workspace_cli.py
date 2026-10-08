@@ -12,8 +12,7 @@ import json
 import sys
 from typing import Any
 
-from research_compute.workspace.errors import ContractError
-from research_compute.workspace.operational_ids import allocate_operational_id
+from research_state.operational_ids import allocate_operational_id
 from research_state.agent_workspace import validate_workspace
 from research_state.doctor import inspect_workspace
 
@@ -40,7 +39,7 @@ def main(argv: list[str] | None = None, **_: Any) -> int:
             result = inspect_workspace(args.root)
         else:
             result = allocate_operational_id(args.root, args.kind)
-    except (ContractError, ValueError, OSError) as exc:
+    except (ValueError, OSError) as exc:
         print(json.dumps({"valid": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))

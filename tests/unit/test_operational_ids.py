@@ -7,9 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from tests.support.workspace_helpers import bootstrap_workspace_fixture
-from research_compute.workspace.operational import runtime_status
-from research_compute.workspace.operational_ids import allocate_operational_id
+from research_state.operational_ids import allocate_operational_id
+from research_state.workspace import admit_research_workspace, initialize_workspace
+
+
+def bootstrap_workspace_fixture(root: Path) -> None:
+    initialize_workspace(root, root.name, "research")
+    admit_research_workspace(root)
 
 
 def test_operational_ids_are_workspace_wide_monotonic_and_private(tmp_path: Path) -> None:
@@ -51,18 +55,6 @@ def test_operational_allocator_never_reuses_reserved_ordinals(tmp_path: Path) ->
     assert allocate_operational_id(workspace, "sub")["identifier"] == "sub_1"
     assert allocate_operational_id(workspace, "sub")["identifier"] == "sub_2"
     assert allocate_operational_id(workspace, "sub")["identifier"] == "sub_3"
-
-
-def test_operational_id_state_is_part_of_the_runtime_revision(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    bootstrap_workspace_fixture(workspace)
-    before = runtime_status(workspace)
-
-    allocate_operational_id(workspace, "op")
-    after = runtime_status(workspace)
-
-    assert after["runtime_revision"] != before["runtime_revision"]
-    assert after["runtime_summary"]["tracked_file_count"] == 1
 
 
 def test_operational_allocator_serializes_concurrent_callers(tmp_path: Path) -> None:

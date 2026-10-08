@@ -5,14 +5,14 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import stat
 import tempfile
 from pathlib import Path
 from typing import Any
 
-from .refs import ACTIVITY_ID, CALCULATION_ID, SUBAGENT_RUN_ID
 from tspi_foundation.path_safety import has_symlink_component, lexical_path, path_has_symlink
-from research_state.workspace import WorkspaceModeError, validate_workspace_manifest
+from .workspace import WorkspaceModeError, validate_workspace_manifest
 
 
 STATE_SCHEMA = "ts-operational-id-state/1"
@@ -20,9 +20,9 @@ STATE_FILE = ".ts-operational-ids.json"
 LOCK_FILE = ".ts-operational-ids.lock"
 KINDS = frozenset({"calc", "sub", "op"})
 _ID_PATTERNS = {
-    "calc": CALCULATION_ID,
-    "sub": SUBAGENT_RUN_ID,
-    "op": ACTIVITY_ID,
+    "calc": re.compile(r"^calc_[1-9][0-9]*$"),
+    "sub": re.compile(r"^sub_[1-9][0-9]*$"),
+    "op": re.compile(r"^op_[1-9][0-9]*$"),
 }
 _SCAN_PATTERNS = {
     "calc": ("nodes/*/attempts/calc_*",),

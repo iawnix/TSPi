@@ -47,10 +47,12 @@ must not be added to the default Python suite.
 The canonical workspace identity is `workspace_manifest.json`. Research
 workspaces store scientific state in `research_map/context.json`, lifecycle in
 `lifecycle/liveness.json`, and the Research State-owned metadata projection in
-`memory/index.json`. `ResearchMap` owns phases, claims, claim relations,
-nodes, typed findings, gates, focus, and revision. Node execution records live
-under `nodes/<node_id>/` and are operational inputs to the map, not alternate
-scientific registries. Retired `workspace.json`, `research_map.json`, and
+`memory/index.json`. The canonical JSON records include phases, claims, claim
+relations, nodes, findings, gates, requirements, Attempts, Artifacts, focus,
+and revision. Research State contracts and ChangeSets validate these records;
+`research.map` supplies the client projection. Job inputs, logs, and receipts
+live under `runs/jobs/<job_id>/`; registered payloads live under `artifacts/`.
+Retired `workspace.json`, `research_map.json`, and
 `transactions.jsonl` files are not runtime authorities.
 
 ## ResearchMap Validation Rules
@@ -62,24 +64,31 @@ rejected explicitly during bootstrap.
 
 ## Deterministic Tool Contracts
 
-Backend adapters live in `extensions/chemical/providers/Skill helper/backends/` and must
-parse only their own formats. Every artifact gets a content digest and a safe
-workspace-relative path. Remote jobs record scheduler, job ID, command, and
-retrieval outcome without overwriting earlier evidence.
+Scientific command builders and parsers live in
+`extensions/chemical/skills/<skill>/scripts/`, with shared helpers in
+`extensions/chemical/skills/_shared/`. Generic local and remote execution lives
+in `packages/job-runtime/`; `packages/tspi-runtime/` binds Job receipts and
+collected Artifacts to Research State. Public command fields are declared in
+`packages/tspi-runtime/tspi_runtime/command_catalog.json`. Every Artifact needs
+a content digest and a verified location. Preserve earlier evidence when
+recording scheduler state, Job identity, commands, and collection results.
 
 ## Scientific Analysis Maintenance
 
-Independent analyses use the closed ID/version registry in
-`extensions/chemical/providers/Skill helper/analysis/catalog.py` and handler
-dispatch in `extensions/chemical/providers/Skill helper/analysis/engine.py`.
-Generic capability contracts remain in `packages/research-compute/`. New scientific algorithms require
+Independent analyses run Skill scripts through generic Jobs. Registered
+validators and acceptance profiles are declared in the extension manifest;
+`packages/tspi-runtime/tspi_runtime/validators.py` verifies and stages the
+declared validator and inputs. The extension manifest contract lives in
+`contracts/tspi-extension/1/`. Provider metadata discovery remains supported,
+but does not dispatch scientific execution. New scientific algorithms require
 bounded inputs, explicit applicability, counterexamples, replayable candidates
 and a version change when deterministic output semantics change. Keep domain
 schemas out of the always-loaded tools. Do not add scientific successor routing.
 
-Node pause/resume receipts are operational state. Preserve the shared workspace
-lock at submission and analysis boundaries; keep inspection, collection and
-cancellation available. Test the Native Harness client and server-extension contract,
+Node state and dependency admission belong to Research State. Preserve the
+workspace transaction boundary around dispatch intentions, execution observations,
+and collected evidence; keep inspection, collection and cancellation available.
+Test the Native Harness client and server-extension contract,
 Monitor retry/acknowledgement behavior, wheel
 installation, direct ResearchMap Web rendering, and source-tampering rejection.
 Use the stable operations guide and focused test suites as the current evidence;
@@ -90,7 +99,7 @@ one-off validation reports do not belong in the repository.
 - `docs/ARCHITECTURE.md` — runtime and scientific boundaries.
 - `docs/INSTALLATION.md` — installer, services, upgrades, and recovery.
 - `docs/TERMINAL.md` — Native Pi TUI, Host, Phone, and Monitor usage.
-- `skills/` — user-facing scientific procedures and references.
+- `extensions/*/skills/` — user-facing scientific procedures and references.
 - `contracts/ts-web/` — optional browser transport schemas for canonical map responses.
 
 TS Phone documentation and mobile release tooling are maintained in the
@@ -104,9 +113,9 @@ broker, or alternate session owner.
 | --- | --- |
 | TSPi Host protocol or service | `apps/app-server/`, launcher tests, TS Phone client, architecture docs |
 | Workspace schema | Research State runtime contract, bootstrap, validation tests, workspace references |
-| Scientific backend | backend parser, capability registry, focused skill reference, tests |
-| Scientific analysis | analysis registry/handler, replay validation, scientific counterexamples, report/Web transport, wheel inventory |
-| Node dispatch | operational receipt chain, submission guard, native/extension tools, restart and pause tests |
+| Scientific software | Skill scripts/parsers, environment configuration, focused Skill references, tests |
+| Scientific analysis | script, validator/profile manifest when applicable, input and output validation, scientific counterexamples, extension resource digests |
+| Node and Job admission | Research State admission/dependencies, dispatch and receipt transactions, native tools, restart and reconciliation tests |
 | Package inventory | `package.json`, `scripts/package_inventory.py`, package layout tests |
 | Installer/service path | `scripts/install_wizard.py`, uninstall logic, installation docs |
 

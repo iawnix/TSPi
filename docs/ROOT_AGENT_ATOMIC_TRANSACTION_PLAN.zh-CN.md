@@ -1,5 +1,8 @@
 # Root Agent 单一运行时与原子事务落地计划
 
+> 历史设计记录：其中保留旧 facade、agent-pi-adapter 和 research_compute 的过渡安排，已由 [ADR 0010](adr/0010-retire-parallel-runtimes.zh-CN.md) 的最终清理取代。当前实现以架构文档为准。
+
+
 ## 目标
 
 TSPi 只拥有一个逻辑上的 Root Agent。Terminal、Phone、Web、Monitor 和 SSH 都是接入方式；

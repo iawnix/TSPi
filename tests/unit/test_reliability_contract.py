@@ -369,13 +369,3 @@ def test_retired_command_fields_fail_before_workspace_or_runtime_access(tmp_path
         with pytest.raises(ValueError, match='schema_field_invalid'):
             execute('research.evidence', tmp_path, {key: 'old'})
     assert {path: path.read_bytes() for path in tmp_path.iterdir()} == before
-
-
-def test_artifact_record_decoder_does_not_translate_retired_manifests():
-    from research_state.evidence import ArtifactManifest, EvidenceModelError
-    current = {'id': 'art_fixture', 'node_id': 'node_1', 'location': 'runs/result.json',
-               'producer_attempt_id': 'attempt_1'}
-    assert ArtifactManifest.from_dict(current).producer_attempt_id == 'attempt_1'
-    for field in ('path', 'artifact_id', 'owner_node', 'source_intent_id', 'role'):
-        with pytest.raises(EvidenceModelError, match='artifact_schema_invalid'):
-            ArtifactManifest.from_dict({**current, field: None})

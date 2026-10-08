@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce the Python package ownership boundaries.
+"""Enforce package ownership and the single production runtime boundary.
 
 This check is intentionally source based.  It prevents a new implementation
 from silently recreating the removed ``tspi_runtime`` subpackages while the
@@ -14,6 +14,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from package_inventory import RETIRED_RUNTIME_PATHS
+
 OLD_SUBPACKAGE = re.compile(
     r"\btspi_runtime\.(?:backends|analysis|remote|platforms|structures|reaction|pyscf|workspace|providers|io|path_safety|calculation_contracts|runtime)\b"
 )
@@ -34,18 +37,17 @@ def check() -> list[str]:
             errors.append(f"removed tspi_runtime implementation remains: {path.relative_to(ROOT)}")
 
     state_root = ROOT / "packages" / "research-state" / "research_state"
-    compute_root = ROOT / "packages" / "research-compute" / "research_compute"
     for path in _python_files(state_root):
         text = path.read_text(encoding="utf-8")
         if "chemical_runtime" in text or "research_compute" in text or re.search(r"\btspi_runtime\b", text):
             errors.append(f"research_state imports a non-State namespace: {path.relative_to(ROOT)}")
-    for path in _python_files(compute_root):
-        text = path.read_text(encoding="utf-8")
-        if re.search(r"\btspi_runtime\b", text):
-            errors.append(f"research_compute imports tspi_runtime: {path.relative_to(ROOT)}")
-        if re.search(r"\bchemical_runtime\b", text):
-            errors.append(f"research_compute imports a Chemistry implementation: {path.relative_to(ROOT)}")
-
+    for relative in RETIRED_RUNTIME_PATHS:
+        path = ROOT / relative
+        if path.is_file() or (path.is_dir() and any(
+            item.is_file() and item.suffix in {".py", ".mjs", ".mts", ".cjs", ".cts", ".js", ".ts", ".jsx", ".tsx", ".json"}
+            for item in path.rglob("*")
+        )):
+            errors.append(f"retired implementation remains: {relative}")
     for root in (ROOT / "packages", ROOT / "extensions", ROOT / "apps", ROOT / "scripts", ROOT / "tools"):
         for path in _python_files(root):
             text = path.read_text(encoding="utf-8")
@@ -53,7 +55,8 @@ def check() -> list[str]:
                 errors.append(f"removed tspi_runtime subpackage reference: {path.relative_to(ROOT)}")
     required = (
         ROOT / "packages" / "tspi-foundation" / "tspi_foundation" / "io.py",
-        ROOT / "packages" / "tspi-provider-runtime" / "tspi_provider_runtime" / "protocol.py",
+        ROOT / "packages" / "research-state" / "research_state" / "agent_workspace.py",
+        ROOT / "packages" / "job-runtime" / "job_runtime" / "runtime.py",
         ROOT / "packages" / "tspi-bootstrap" / "tspi_bootstrap" / "launcher.py",
     )
     for path in required:

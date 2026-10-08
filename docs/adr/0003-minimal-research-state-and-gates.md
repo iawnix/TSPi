@@ -5,10 +5,12 @@
 - Status: accepted
 - Date: 2026-09-16
 
+Implementation amendment: canonical mutations use `agent_workspace.py`, shared operation contracts and invariants; the Web view comes from `projection.py`. The former parallel Python classes were removed by [ADR 0010](0010-retire-parallel-runtimes.md).
+
 ## Decision
 
 `ResearchState` is the transaction and integrity boundary for one canonical
-`ResearchMap`. The map is a typed aggregate serialized in
+`ResearchMap`. The map is a schema-validated aggregate serialized in
 `research_map/context.json`; `memory/index.json` is only a Research State-owned bounded
 metadata/lifecycle projection. Retired SQLite/JSON files are diagnostic inputs,
 never a runtime authority. Execution records under `nodes/<node_id>/` remain
@@ -30,9 +32,9 @@ Gate                common target/criteria/evaluation contract
 
 `Finding` is one base data structure. The `kind` and specialized fields make a
 fact or issue explicit without creating separate registries. `Gate` is likewise
-one base contract; `scope` and the specialized class identify its target.
+one record contract; `scope` and target references identify its target.
 
-`ResearchMap.to_dict()` is the canonical map serialization. RootAgent and TS Web
+`projection.py` creates the canonical ResearchMap view from the validated State context. RootAgent and TS Web
 read that projection directly; neither builds a second scientific model or
 maintains a second mutation store. A client may filter records for presentation,
 but filtered data is not a protocol or a mutation boundary. Decision records,
@@ -69,7 +71,7 @@ scientific object types in the map.
 - Every map object has a stable id and creation timestamp.
 - Node, Claim, Finding, and Gate references resolve inside the same map.
 - Node dependencies and Claim relations are acyclic.
-- `ready_nodes()` is derived from Node state and dependencies; it is not stored.
+- Node readiness is derived using the shared dependency predicate; it is not stored.
 - A closed Node always has an explicit outcome.
 - Completing a Node with a NodeGate requires a latest passing evaluation.
 - ChangeSets are applied atomically and increment the map revision once.

@@ -8,7 +8,6 @@ import pytest
 
 from job_runtime import JobOutput, JobRuntime, JobSpec, JobState, LocalProcessPlatform, TorqueSSHPlatform, platforms_from_config
 from job_runtime.local import _process_state
-from research_compute import ExecutionRequest, ExecutionService
 from tspi_runtime.execution import _spec
 
 
@@ -64,9 +63,9 @@ def test_output_paths_cannot_escape_job_cwd(tmp_path: Path) -> None:
         JobSpec(command=(sys.executable,), cwd=tmp_path, outputs=(JobOutput("../outside"),))
 
 
-def test_execution_service_preserves_research_identity_without_domain_parsing(tmp_path: Path) -> None:
-    service = ExecutionService()
-    request = ExecutionRequest(
+def test_job_runtime_preserves_research_identity_without_domain_parsing(tmp_path: Path) -> None:
+    runtime = _runtime()
+    request = JobSpec(
         command=(sys.executable, "-c", "print('raw evidence')"),
         cwd=tmp_path,
         workspace_id="ws_demo",
@@ -75,20 +74,15 @@ def test_execution_service_preserves_research_identity_without_domain_parsing(tm
         job_id="job_demo",
     )
 
-    receipt = service.start(request)
-    status = service.status(receipt)
-    for _ in range(100):
-        if status.state not in {JobState.RUNNING, JobState.SUBMITTED}:
-            break
-        time.sleep(0.01)
-        status = service.status(receipt)
+    receipt = runtime.job_start(request)
+    status = _wait(runtime, receipt)
 
     assert status.state is JobState.SUCCEEDED
     assert receipt.job_id == "job_demo"
     assert receipt.workspace_id == "ws_demo"
     assert receipt.node_id == "node_demo"
     assert receipt.attempt_id == "attempt_demo"
-    assert service.collect(receipt)["job_id"] == "job_demo"
+    assert runtime.job_collect(receipt)["job_id"] == "job_demo"
 
 
 def test_job_config_wires_remote_environment_into_runtime(tmp_path: Path) -> None:

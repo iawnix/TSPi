@@ -4,8 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { create_app_server } from "../../apps/app-server/index.mjs";
-import { create_fake_pi_session_port } from "../support/fake-pi-session-port.mjs";
 import { create_workspace_initializer, RESEARCH_CONTEXT_COLLECTIONS } from "../../packages/agent-core/workspace.mjs";
 import { close_test_research_states, create_test_research_state } from "../support/research_state_helpers.mjs";
 
@@ -160,7 +158,7 @@ test("Research State runtime reads reject an incomplete ResearchMap context", as
   }
 });
 
-test("research workspace mode is immutable and sessions inherit it", async () => {
+test("research workspace mode is immutable", async () => {
   const root = await temporary_root("research-agent-mode");
   try {
     const initializer = create_workspace_initializer();
@@ -169,28 +167,6 @@ test("research workspace mode is immutable and sessions inherit it", async () =>
       initializer.initialize_workspace({ workspace_root: root, workspace_id: "workspace_immutable", workspace_mode: "invalid" }),
       /workspace_mode must be research/,
     );
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("research sessions require explicit Host admission", async () => {
-  const root = await temporary_root("research-agent-admission");
-  try {
-    const initializer = create_workspace_initializer();
-    await initializer.initialize_workspace({ workspace_root: root, workspace_id: "workspace_admission", workspace_mode: "research" });
-    const app_server = create_app_server({ pi_session_port: create_fake_pi_session_port(), workspace_port: initializer });
-    await assert.rejects(
-      app_server.create_session({ workspace_root: root, workspace_mode: "research", session_mode: "research" }),
-      /workspace_admission_required/,
-    );
-    await assert.rejects(app_server.attach_workspace({ workspace_root: root, workspace_mode: "invalid" }), /session_mode must be research/);
-    await app_server.admit_workspace(root);
-    const session = await app_server.create_session({ workspace_root: root, workspace_mode: "research", session_mode: "research" });
-    const snapshot = await session.read_snapshot();
-    assert.equal(snapshot.workspace_mode, "research");
-    assert.equal(snapshot.turn_protocol, "research_turn_request");
-    await app_server.close();
   } finally {
     await rm(root, { recursive: true, force: true });
   }

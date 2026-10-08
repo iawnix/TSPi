@@ -5,9 +5,9 @@ TSPi owns the read-only ResearchMap provider. An optional `ts-web` client under
 Python modules. The map schema is `research-map/1`.
 
 Requests and responses use the `research-map-provider/1` JSON-lines protocol.
-The `/map` route returns workspace metadata and the current
-`ResearchMap.to_dict()` value. The transport does not define a Web projection
-or an incremental snapshot model.
+The `/map` route returns workspace metadata and the canonical ResearchMap view
+produced by `research_state.projection` from validated State context. The
+transport does not define a separate scientific model or mutation store.
 
 `source_root` and physical filesystem paths are private provider state and are
 excluded from the public contract. Logical artifact paths remain bounded and
@@ -15,6 +15,6 @@ workspace-relative where the existing file locator requires them.
 
 The provider transport uses `provider-request.schema.json` and
 `provider-response.schema.json`. `research-map-response.schema.json` describes
-the `/map` response envelope while the Python ResearchMap model owns the domain
-invariants. The independently released Web archive uses
+the `/map` response envelope while Research State operation contracts and
+invariants validate the scientific records. The independently released Web archive uses
 `component-manifest.schema.json`.

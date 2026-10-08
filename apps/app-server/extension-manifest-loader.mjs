@@ -272,8 +272,8 @@ async function validateProvider(value, root, extensionName) {
 /** Project legacy inventory descriptors into the shared capability envelope.
  *
  * The JSON files are installation inventory and may aggregate aliases. The
- * runtime exposes one canonical descriptor per declared capability; execution
- * still receives the original provider entry and schemas through extensions.
+ * runtime exposes one canonical descriptor per declared capability for
+ * discovery. This metadata projection does not execute providers.
  */
 function toCanonicalDescriptors(data, providerId, providerVersion, kind) {
   const declarations = Array.isArray(data.capabilities) && data.capabilities.length
@@ -309,8 +309,8 @@ function toCanonicalDescriptors(data, providerId, providerVersion, kind) {
       },
     };
     const digestInput = stableJson({ ...base, provider: { ...base.provider, descriptor_digest: "" } });
-    // Keep this digest deterministic without introducing another descriptor
-    // shape. The dispatcher recomputes the transport digest at execution.
+    // Hash the canonical metadata with its digest field empty, so discovery
+    // can identify the descriptor independently of JSON key order.
     base.provider.descriptor_digest = `sha256:${createHash("sha256").update(digestInput).digest("hex")}`;
     return Object.freeze(base);
   });

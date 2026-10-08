@@ -19,9 +19,10 @@ try:
         REQUIRED_TARBALL_FILES,
         SKILL_ENTRIES,
         SKILL_ENTRY_FILES,
+        RETIRED_RUNTIME_PATHS,
     )
 except ImportError:
-    from package_inventory import PACKAGE_FILES, REQUIRED_TARBALL_FILES, SKILL_ENTRIES, SKILL_ENTRY_FILES
+    from package_inventory import PACKAGE_FILES, REQUIRED_TARBALL_FILES, SKILL_ENTRIES, SKILL_ENTRY_FILES, RETIRED_RUNTIME_PATHS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -158,11 +159,9 @@ def validate_python_project() -> None:
     expected_package_dir = {
         "tspi_runtime": "packages/tspi-runtime/tspi_runtime",
         "tspi_foundation": "packages/tspi-foundation/tspi_foundation",
-        "tspi_provider_runtime": "packages/tspi-provider-runtime/tspi_provider_runtime",
         "tspi_bootstrap": "packages/tspi-bootstrap/tspi_bootstrap",
         "research_state": "packages/research-state/research_state",
         "research_memory": "packages/research-memory/research_memory",
-        "research_compute": "packages/research-compute/research_compute",
         "artifact_store": "packages/artifact-store/artifact_store",
         "job_runtime": "packages/job-runtime/job_runtime",
     }
@@ -284,6 +283,8 @@ def validate_tarball(files: set[str]) -> None:
         if value == "SKILL.md" or value.startswith(REMOVED_PREFIXES):
             forbidden.append(value)
             continue
+        if any(value.startswith(path) if path.endswith("/") else value == path for path in RETIRED_RUNTIME_PATHS):
+            errors.append(f"retired implementation included in package: {value}")
         if value in FORBIDDEN_RUNTIME_FILES:
             forbidden.append(value)
             continue

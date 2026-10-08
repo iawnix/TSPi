@@ -5,6 +5,8 @@
 - 状态：已接受，由 [ADR 0003](0003-minimal-research-state-and-gates.zh-CN.md) 修订
 - 日期：2026-08-23
 
+实现修订：当前写入使用 `agent_workspace.py`、共享操作合同与不变量，Web 视图由 `projection.py` 生成。平行 Python 状态类已按 [ADR 0010](0010-retire-parallel-runtimes.zh-CN.md) 删除。
+
 ## 背景
 
 研究叙事、可执行工作和科学命题需要分开。一个对象不应同时承担导航、计算产物、
@@ -43,5 +45,5 @@ TS Web、报告和 context 都直接消费完整的 canonical ResearchMap，不�
 ## 结果
 
 需要时，用户可以沿 Phase 定位研究叙事和文件；多个 Node 可以测试同一 Claim 而不复制
-假设。代价是增加一个可选 Phase 类和 Node 的可空 `phase_id` 字段，但 Phase 的 schema
+假设。代价是增加一个可选 Phase 记录和 Node 的可空 `phase_id` 字段，但 Phase 的 schema
 保持狭窄，不增加流程语义。

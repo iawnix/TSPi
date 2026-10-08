@@ -34,11 +34,9 @@ PYTHON_DISTRIBUTION = "tspi-runtime"
 PYTHON_SOURCE_ROOTS = {
     "tspi_runtime": Path("packages") / "tspi-runtime" / "tspi_runtime",
     "tspi_foundation": Path("packages") / "tspi-foundation" / "tspi_foundation",
-    "tspi_provider_runtime": Path("packages") / "tspi-provider-runtime" / "tspi_provider_runtime",
     "tspi_bootstrap": Path("packages") / "tspi-bootstrap" / "tspi_bootstrap",
     "research_state": Path("packages") / "research-state" / "research_state",
     "research_memory": Path("packages") / "research-memory" / "research_memory",
-    "research_compute": Path("packages") / "research-compute" / "research_compute",
     "artifact_store": Path("packages") / "artifact-store" / "artifact_store",
     "job_runtime": Path("packages") / "job-runtime" / "job_runtime",
 }

@@ -40,9 +40,11 @@ Python 测试按 `tests/unit/`、`tests/contract/` 和 `tests/integration/` 分�
 
 规范身份文件是 `workspace_manifest.json`。Research workspace 的科学状态位于
 `research_map/context.json`，生命周期位于 `lifecycle/liveness.json`，Research State 元数据投影位于
-`memory/index.json`。`ResearchMap` 直接拥有 phase、claim、claim relation、node、typed
-finding、gate、focus 和 revision；Node 的执行记录位于 `nodes/<node_id>/`，不是另一套科学
-registry。已废弃的 `workspace.json`、`research_map.json` 和 `transactions.jsonl` 不是运行时权威。
+`memory/index.json`。规范 JSON 记录包括 phase、claim、claim relation、node、finding、gate、
+requirement、Attempt、Artifact、focus 和 revision，由 Research State 合同及 ChangeSet 校验；
+`research.map` 提供客户端投影。Job 输入、日志和回执位于 `runs/jobs/<job_id>/`，已登记
+payload 位于 `artifacts/`。已废弃的 `workspace.json`、`research_map.json` 和
+`transactions.jsonl` 不是运行时权威。
 
 验证必须是确定性的并绑定 revision。Gate 评估声明的 map criteria 与 evidence ref；
 Root Agent 通过 ResearchMap ChangeSet 记录 Claim 或 Node 的解释。不支持的旧文件会在
@@ -50,17 +52,20 @@ bootstrap 时明确拒绝。
 
 ## 工具合同维护
 
-后端 adapter 位于 `extensions/chemical/providers/Skill helper/backends/`，只能解析自己的格式。
-每个 artifact 都必须有 digest 和安全的工作区相对路径。远程作业记录 scheduler、job
-ID、命令和收集结果，不覆盖已有证据。
+科学命令构造器和解析器位于 `extensions/chemical/skills/<skill>/scripts/`，共享 helper
+位于 `extensions/chemical/skills/_shared/`。`packages/job-runtime/` 负责通用本地和远端执行，
+`packages/tspi-runtime/` 将 Job 回执和收集产物接入 Research State；公开命令字段由
+`packages/tspi-runtime/tspi_runtime/command_catalog.json` 定义。每个 Artifact 必须有
+内容摘要和经过核实的位置。记录 scheduler、Job 身份、命令及收集结果时必须保留先前证据。
 
-独立分析使用 `extensions/chemical/providers/Skill helper/analysis/catalog.py` 的闭合
-ID/version registry 和 `extensions/chemical/providers/Skill helper/analysis/engine.py` 的
-handler dispatch。通用能力合同位于 `packages/research-compute/`。新增算法必须声明有界输入、适用条件、反例、
+独立分析由 Skill 脚本通过通用 Job 执行。注册验证器和验收 profile 在 extension manifest
+中声明，`packages/tspi-runtime/tspi_runtime/validators.py` 验证并暂存声明的验证器和输入。
+扩展 manifest 合同位于 `contracts/tspi-extension/1/`。Provider 元数据发现仍受支持，但不
+负责派发科学执行。新增算法必须声明有界输入、适用条件、反例、
 可重放候选，并在确定性输出语义变化时提升版本。不要加入科学 successor routing。
 
-Node 暂停/恢复回执属于操作状态；提交和分析边界必须保留共享工作区锁，同时保持查看、
-收集和取消能力。应测试 Harness client、server extension 合同、Monitor
+Node 状态与依赖准入由 Research State 管理；派发意图、执行观察和收集证据必须遵守
+工作区事务边界，同时保持查看、收集和取消能力。应测试 Harness client、server extension 合同、Monitor
 重试与回执、wheel 安装、直接渲染 ResearchMap 和源码篡改拒绝。当前证据以稳定的运维文档、
 源码测试和组件测试为准，不把一次性验收报告提交到仓库。
 
@@ -69,7 +74,7 @@ Node 暂停/恢复回执属于操作状态；提交和分析边界必须保留�
 - `docs/ARCHITECTURE.zh-CN.md`：运行时和科学边界。
 - `docs/INSTALLATION.zh-CN.md`：安装、服务、升级和恢复。
 - `docs/TERMINAL.zh-CN.md`：Pi 原生 TUI、Host、Phone 与 Monitor 使用。
-- `skills/`：面向用户的科学流程和参考资料。
+- `extensions/*/skills/`：面向用户的科学流程和参考资料。
 - `contracts/ts-web/`：规范 ResearchMap 响应的浏览器传输合同。
 
 TS Phone 文档和移动发布工具由独立的 `ts-phone` 仓库维护。TSPi 拥有小型认证 Host
@@ -82,9 +87,9 @@ session owner。
 |---|---|
 | TSPi Host 协议或服务 | `apps/app-server/`、启动器测试、TS Phone 客户端、架构文档 |
 | 工作区 schema | Research State 合同、bootstrap、验证测试、工作区参考 |
-| 科学后端 | parser、能力 registry、对应 Skill、测试 |
-| 科学分析 | registry/handler、重放验证、反例、报告/Web transport、wheel inventory |
-| Node 派发 | 操作回执链、提交 guard、原生/extension 工具、重启和暂停测试 |
+| 科学软件 | Skill 脚本/解析器、环境配置、对应 Skill 参考、测试 |
+| 科学分析 | 脚本、适用时的验证器/profile manifest、输入输出验证、科学反例、扩展资源摘要 |
+| Node 与 Job 准入 | Research State 准入/依赖、派发与回执事务、原生工具、重启和协调测试 |
 | 包清单 | `package.json`、`scripts/package_inventory.py`、布局测试 |
 | 安装或 service 路径 | installer、卸载逻辑、安装文档 |
 

@@ -5,10 +5,12 @@
 - 状态：已接受
 - 日期：2026-09-16
 
+实现修订：当前写入使用 `agent_workspace.py`、共享操作合同与不变量，Web 视图由 `projection.py` 生成。平行 Python 状态类已按 [ADR 0010](0010-retire-parallel-runtimes.zh-CN.md) 删除。
+
 ## 决定
 
 `ResearchState` 是一个项目唯一规范 `ResearchMap` 的事务和完整性边界。
-`ResearchMap` 是有类型的聚合对象，规范序列化位于 `research_map/context.json`；
+`ResearchMap` 是经过 schema 校验的聚合记录，规范序列化位于 `research_map/context.json`；
 `memory/index.json` 只是 Research State 拥有的有界元数据/生命周期投影。已废弃的 SQLite/JSON
 文件只允许用于诊断，永远不是运行时权威。
 `nodes/<node_id>/` 下的执行记录属于执行平面，不是另一套科研状态；有界的决策和证据
@@ -25,10 +27,10 @@ Gate                统一的目标/标准/评估协议
   ClaimGate         面向 ResearchClaim 的 Gate
 ```
 
-`Finding` 是同一个基类和数据结构，通过 `kind` 及特化字段区分 fact 和
-issue。`Gate` 也是一个基类，`scope` 与子类标识它的目标。
+`Finding` 使用同一种记录结构，通过 `kind` 及特化字段区分 fact 和
+issue。`Gate` 也使用统一的记录合同，`scope` 与目标引用标识它的目标。
 
-`ResearchMap.to_dict()` 是 map 的规范序列化。RootAgent 和 TS Web 直接读取这份
+`projection.py` 从经过校验的 State context 生成 map 的规范视图。RootAgent 和 TS Web 直接读取这份
 投影；它们不会建立第二个科学模型或第二个变更存储。客户端可以为了展示筛选记录，
 但筛选结果不是协议也不是变更边界。Decision 记录、Attempt/Artifact manifest 和
 Evidence Link 是 Research Memory 元数据，不是重复的 ResearchMap 对象，也不复制原始
@@ -58,7 +60,7 @@ Skill 描述流程和能力，Backend 实现具体科学软件或执行器。Com
 - 所有对象都有稳定 id 和创建时间。
 - Node、Claim、Finding、Gate 的引用必须在同一个 map 内解析。
 - Node 依赖和 Claim 关系必须无环。
-- `ready_nodes()` 根据状态和依赖推导，不持久化。
+- Node readiness 使用共享依赖判断推导，不持久化。
 - 关闭 Node 必须给出明确 outcome。
 - 有 NodeGate 时，Node 以 completed 关闭必须有最新通过评估。
 - ChangeSet 原子应用，一次只增加一个 map revision。
