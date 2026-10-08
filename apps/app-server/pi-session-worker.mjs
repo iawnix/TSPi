@@ -41,6 +41,7 @@ export { createSystemPromptManifest, createSystemPromptTool } from "./system-pro
 
 const sourceRoot = process.env.TSPI_PI_RUNTIME_ROOT;
 if (!sourceRoot) throw new Error("TSPi worker requires TSPI_PI_RUNTIME_ROOT");
+const { estimateContextTokens } = await import(pathToFileURL(join(sourceRoot, "packages/ai/src/utils/estimate.ts")).href);
 const workerModule = await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/session-worker.ts")).href);
 const setupModule = await import(pathToFileURL(join(sourceRoot, "packages/coding-agent/src/experimental/durable/harness-setup.ts")).href);
 const { runSessionWorkerWithHarness } = workerModule;
@@ -166,12 +167,7 @@ async function createTspiHarness(databasePath, options) {
   });
   const systemPromptTool = createSystemPromptTool(promptManifest);
   const injectDecisionContext = createDecisionContextInjector({ bridge: commandBridge, coordinator: transactionCoordinator,
-    sessionId, fixedText: promptManifest.effective + JSON.stringify([...loadedExtensions.tools, ...installed.tools].map(t => t.parameters)),
-    readModel: async (conversationId) => {
-      const conversation = await harness.conversation(conversationId, PI_TODO_CONTEXT);
-      const agent = await conversation.agent(PI_TODO_CONTEXT);
-      return agent.model ? modelRuntime.getModel(agent.model.provider, agent.model.modelId) : undefined;
-    },
+    sessionId, estimateContextTokens,
   });
   const toolMetadata = { ...NATIVE_TOOL_METADATA, ...Object.fromEntries([...loadedExtensions.tools, ...installed.tools].filter((tool) => tool.metadata).map((tool) => [tool.name, tool.metadata])) };
   const lifecycle = createResearchLifecycleController({ metadata: toolMetadata });
@@ -197,7 +193,6 @@ async function createTspiHarness(databasePath, options) {
     createPublicToolAlias(systemPromptTool, "system_prompt"),
   ].map((tool) => toDurableTool(tool, { toolContext, lifecycle, cwd, packageRoot: loadedSkills.packageRoot }));
   let monitorAdmission;
-  let decisionContextError;
   const registry = createRegistry();
   registry.install(defineExtension({ name: "coding-tools", tools:
     [createReadTool(), createWriteTool(), createEditTool(), createBashTool()].map(tool => ({ ...tool, executionMode: "sequential" })),
@@ -215,15 +210,7 @@ async function createTspiHarness(databasePath, options) {
               ? String(live.run.inputs[0])
               : String(api.taskId);
             lifecycle.beginRun({ runId, messages: request.messages });
-            try {
-              const result = await injectDecisionContext(request, String(api.taskId), api.conversationId);
-              decisionContextError = undefined;
-              return result;
-            } catch (error) {
-              decisionContextError = String(error?.message || error);
-              return { messages: [...request.messages, { role: "user", timestamp: Date.now(), content: [{ type: "text",
-                text: "<research_state_snapshot>Current state is unavailable: " + decisionContextError + ". Use research_read to diagnose or narrow focus; execution is blocked until the snapshot is restored.</research_state_snapshot>" }] }] };
-            }
+            return injectDecisionContext(request, String(api.taskId));
           })();
         },
         onYield: async (_answer, api, context) => {
@@ -234,7 +221,6 @@ async function createTspiHarness(databasePath, options) {
       }),
       hook(ToolTask, {
         beforeTool: async (call, api, context) => {
-          if (decisionContextError && (["job_start", "research_interpretation"].includes(call.name) || (call.name === "research_checkpoint" && call.arguments?.checkpoint?.disposition === "terminal"))) return { block: decisionContextError };
           const args = call.name === "read" ? resolveSkillPath(call.arguments) : call.arguments;
           call = { ...call, arguments: args };
           const packagePolicy = packageReadGuard({ toolName: call.name, args: call.arguments });

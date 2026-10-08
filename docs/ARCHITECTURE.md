@@ -163,6 +163,18 @@ invocation; names, descriptions, locations, and the `system` scope marker for
 the two Core System Skills are placed in the model's default prompt. Compute
 Environments are queried when selecting or launching a method.
 
+Before each model request, the worker injects a fresh authoritative projection
+without adding it to conversation history. Admission uses Pi's token estimate
+(including applicable provider usage), the request's output allowance, and a
+4,096-token safety margin. System prompt and tool definitions already present in
+the request are not counted again. The projection's 16,000-byte storage limit is
+separate from this token budget; telemetry records both units explicitly.
+A budget refusal lets the Harness attempt at most one blocking compaction and
+then rebuild and recheck the request. Insufficient space after recovery, State
+read failures, and projection receipt failures terminate the request with an
+explicit error. They never become instructions asking the model to restore its
+own snapshot through repeated tool reads.
+
 The generic Job Runtime is the execution boundary. A Skill constructs the
 program argv, input files, expected outputs, parser instructions, and method
 metadata; `job_start` accepts that bounded argv for either local or remote

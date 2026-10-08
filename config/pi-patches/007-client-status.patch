@@ -18,19 +18,18 @@
 +import { PresentationUI, type CommandPresentation, type CommandFeedbackKind } from "./services/presentation-ui.ts";
  import { SessionDirectory, SessionManagement, type SessionSummary } from "./services/sessions.ts";
  import { SlashCommands } from "./services/slash-commands.ts";
-@@ -77,4 +78,11 @@
+@@ -77,4 +78,10 @@
  	readonly presentationPlugins: JsonValue;
  }
 +
 +interface CommandRun {
 +	readonly command: string;
 +	dismissed: boolean;
-+	running: boolean;
 +}
 +const COMMAND_RUN = createContextKey<CommandRun>("pi.command-presentation");
  
  interface PendingSelection {
-@@ -103,5 +111,17 @@
+@@ -103,5 +110,17 @@
  	readonly #statusContainer = new Container();
  	readonly #editorContainer = new Container();
 -	readonly #footerComponent = new Text("", 1, 0);
@@ -49,14 +48,24 @@
 +	};
  	readonly #layoutRoot: Component;
  	readonly #sharedFacets: LoadedFacets;
-@@ -114,5 +134,5 @@
+@@ -114,5 +133,5 @@
  	#controller: AgentController | undefined;
  	readonly #chatInput: CustomEditor;
 -	#selectList: SelectList | undefined;
 +	#selectList: Component | undefined;
  	#selection: PendingSelection | undefined;
  	#screen: "select" | "chat" = "chat";
-@@ -203,4 +223,16 @@
+@@ -146,4 +165,9 @@
+ 			this.#chatInput.setText("");
+ 			void this.#queueFollowUp(text);
++		});
++		// Mouse clicks may focus a nested editor. Keep its delegating container
++		// in charge of keyboard routing when a command replaces that editor.
++		Object.assign(this.#editorContainer, {
++			handleInput: (data: string) => this.handleInput(data),
+ 		});
+ 		this.#editorContainer.addChild(this.#chatInput);
+@@ -203,4 +227,15 @@
  
  	handleInput(data: string): void {
 +		if (this.#commandRun && this.#commandFeedback && !this.#customDocument && !this.#selection) {
@@ -64,7 +73,6 @@
 +				this.#dismissCommand();
 +				return;
 +			}
-+			if (this.#commandFeedbackKind === "running") return;
 +		}
 +		if (this.#customDocument) {
 +			this.#customDocument.handleInput?.(data);
@@ -73,7 +81,7 @@
 +		}
  		if (this.#busy) {
  			if (
-@@ -217,5 +249,6 @@
+@@ -217,5 +252,6 @@
  			return;
  		}
 -		this.#selectList?.handleInput(data);
@@ -81,7 +89,7 @@
 +		this.#requestRender();
  	}
  
-@@ -276,13 +309,58 @@
+@@ -276,13 +312,60 @@
  			setup: (env) => {
  				env.provide(PresentationUI, {
 -					select: (title, items, selectedValue) =>
@@ -134,7 +142,9 @@
 +									else component.handleInput?.(data);
 +								},
 +							};
-+							context.abortSignal?.addEventListener("abort", close, { once: true });
++							context.abortSignal?.addEventListener("abort", close, {
++								once: true,
++							});
 +							this.#rebuild();
 +						});
 +					},
@@ -148,14 +158,14 @@
 +						}
  					},
  				});
-@@ -374,5 +452,5 @@
+@@ -374,5 +457,5 @@
  	#rebuild(): void {
  		this.#sessionHeading.setText(
 -			this.#sessionId === undefined || this.#selectedServerId === undefined
 +			this.#customFooter !== undefined || this.#sessionId === undefined || this.#selectedServerId === undefined
  				? ""
  				: theme.fg("dim", `Server: ${this.#selectedServerId}\nSession: ${this.#sessionId}`),
-@@ -383,18 +461,22 @@
+@@ -383,18 +466,18 @@
  		}
  		if (this.#chatView !== undefined) this.#statusContainer.addChild(this.#chatView.status);
 -		this.#footerComponent.setText(theme.fg("dim", this.#footer()));
@@ -164,15 +174,11 @@
  		this.#editorContainer.clear();
 -		if (this.#screen === "select" && this.#selection !== undefined) {
 +		if (this.#commandFeedback && !this.#customDocument && !this.#selection) {
-+			if (this.#commandFeedbackKind === "running") {
-+				this.#chatInput.focused = false;
-+				this.#editorContainer.addChild(this.#commandFeedback);
-+			} else {
-+				this.#statusContainer.addChild(this.#commandFeedback);
-+				this.#chatInput.focused = !this.#busy;
-+				this.#editorContainer.addChild(this.#chatInput);
-+			}
-+		} else if (this.#customDocument) {
++			this.#statusContainer.addChild(this.#commandFeedback);
++		}
++		// Focus is owned by the command router, never a detached child editor.
++		this.#ui.setFocus(this);
++		if (this.#customDocument) {
  			this.#chatInput.focused = false;
 -			const selector = new Container();
 -			selector.addChild(new Text(theme.bold(this.#selection.title), 1, 1));
@@ -190,7 +196,7 @@
 +			if (this.#selectList) this.#editorContainer.addChild(this.#selectList);
  		} else {
  			this.#selectList = undefined;
-@@ -406,11 +488,77 @@
+@@ -406,11 +489,80 @@
  	}
  
 -	#select(title: string, items: readonly SelectItem[], selectedValue?: string): Promise<string | undefined> {
@@ -256,8 +262,11 @@
 +		if (run.dismissed || this.#closed || this.#commandRun !== run) return;
 +		this.#commandFeedbackKind = kind;
 +		this.#commandFeedback =
-+			this.#commandPresentation?.feedback({ command: run.command, message: messageText, kind }) ??
-+			new Text(`/${run.command} · ${kind}: ${messageText}\nEsc Dismiss`, 1, 0);
++			this.#commandPresentation?.feedback({
++				command: run.command,
++				message: messageText,
++				kind,
++			}) ?? new Text(`/${run.command} · ${kind}: ${messageText}`, 1, 0);
 +		this.#rebuild();
 +	}
 +
@@ -271,30 +280,29 @@
 +		if (!this.#closed) this.#rebuild();
  	}
  
-@@ -463,4 +611,5 @@
+@@ -463,4 +615,5 @@
  		this.#busy = true;
  		this.#status = state.status === "connecting" ? "Reconnecting to Radius…" : "Radius disconnected; retrying…";
 +		this.#dismissCommand();
  		this.#queueRecovery(() => this.#closeLane());
  		this.#rebuild();
-@@ -530,4 +679,5 @@
+@@ -530,4 +683,5 @@
  
  	async #closeLane(): Promise<void> {
 +		this.#dismissCommand();
  		this.#laneUnsubscribe?.();
  		this.#laneUnsubscribe = undefined;
-@@ -546,4 +696,5 @@
+@@ -546,4 +700,5 @@
  			const name = prompt.slice(1, separator === -1 ? undefined : separator);
  			const args = separator === -1 ? "" : prompt.slice(separator + 1).trim();
 +			this.#chatInput.setText("");
  			await this.#executeSlashCommand(name, args);
  			return;
-@@ -559,22 +710,50 @@
+@@ -559,22 +714,46 @@
  
  	async #executeSlashCommand(name: string, args: string): Promise<void> {
-+		if (this.#commandRun?.running && !this.#commandRun.dismissed) return;
 +		this.#dismissCommand();
-+		const run: CommandRun = { command: name, dismissed: false, running: true };
++		const run: CommandRun = { command: name, dismissed: false };
 +		this.#commandRun = run;
 +		const context = withContextValue(COMMAND_RUN, run, BACKGROUND_CONTEXT);
  		const command = this.#selectedSlashCommands()
@@ -305,7 +313,6 @@
 -			this.#status = `Unknown slash command: /${name}`;
 -			this.#rebuild();
 +		if (!command) {
-+			run.running = false;
 +			this.#feedback(
 +				run,
 +				`Unknown command. Available: ${
@@ -345,8 +352,6 @@
 +				`${message(error)}${command.argumentHint ? `\nUsage: /${name} ${command.argumentHint}` : ""}`,
 +				"error",
 +			);
-+		} finally {
-+			run.running = false;
  		}
  	}
 --- a/packages/coding-agent/src/experimental/services/presentation-ui.ts
@@ -387,7 +392,17 @@
  
 --- a/packages/coding-agent/src/experimental/services/slash-commands-provider.ts
 +++ b/packages/coding-agent/src/experimental/services/slash-commands-provider.ts
-@@ -105,9 +105,9 @@
+@@ -48,5 +48,8 @@
+ 
+ 	#add(command: SlashCommandContribution): () => void {
+-		const entry: RegisteredSlashCommand = { command: Object.freeze({ ...command }), closed: false };
++		const entry: RegisteredSlashCommand = {
++			command: Object.freeze({ ...command }),
++			closed: false,
++		};
+ 		const entries = this.#commands.get(command.name) ?? [];
+ 		entries.push(entry);
+@@ -105,9 +108,9 @@
  						description: "Reload server-selected plugins",
  						async run(_args, context) {
 -							ui.showStatus("Reloading plugins…", context);
@@ -399,7 +414,7 @@
 +							ui.showStatus("Reloaded plugins.", context, "success");
  							return undefined;
  						},
-@@ -146,9 +146,5 @@
+@@ -146,9 +149,5 @@
  					state.catalog.availableModels.map((model) => ({
  						value: `${model.provider}/${model.modelId}`,
 -						label:
@@ -410,31 +425,125 @@
 +						label: model.name,
  						description: `${model.provider}/${model.modelId}`,
  					})),
-@@ -163,5 +159,5 @@
+@@ -163,5 +162,5 @@
  			}
  			await models.select({ provider: selected.provider, modelId: selected.modelId }, context);
 -			ui.showStatus(`Selected ${selected.provider}/${selected.modelId}.`, context);
 +			ui.showStatus(`Selected ${selected.provider}/${selected.modelId}.`, context, "success");
  			return undefined;
  		},
-@@ -185,5 +181,5 @@
+@@ -185,5 +184,5 @@
  					levels.map((level) => ({
  						value: level,
 -						label: models.state.value?.configuration.thinkingLevel === level ? `${level} (selected)` : level,
 +						label: level,
  						description: THINKING_DESCRIPTIONS[level],
  					})),
-@@ -196,5 +192,5 @@
+@@ -196,5 +195,5 @@
  			}
  			await models.selectThinking(selected, context);
 -			ui.showStatus(`Thinking level: ${selected}.`, context);
 +			ui.showStatus(`Thinking level: ${selected}.`, context, "success");
  			return undefined;
  		},
-@@ -208,5 +204,5 @@
+@@ -207,7 +206,24 @@
+ 		description: "Manually compact the session context",
  		argumentHint: "<instructions>",
- 		run(args, context) {
+-		run(args, context) {
 -			ui.showStatus("Compacting…", context);
+-			return controller.compact({ customInstructions: args.length === 0 ? null : args }, context);
++		async run(args, context) {
 +			ui.showStatus("Submitting compaction…", context, "running");
- 			return controller.compact({ customInstructions: args.length === 0 ? null : args }, context);
++			const operation = await controller.compact({ customInstructions: args.length === 0 ? null : args }, context);
++			if (!operation.accepted) {
++				ui.showStatus(operation.error.message, context, "error");
++				return;
++			}
++			ui.showStatus(`Compacting context · operation ${operation.operationId}…`, context, "running");
++			const result = await controller.waitForCompaction(operation.operationId, context);
++			const status = {
++				completed: "Context compacted.",
++				skipped: "Nothing to compact.",
++				cancelled: "Compaction cancelled.",
++				failed: `Compaction failed: ${result.error}`,
++			}[result.status];
++			ui.showStatus(
++				status,
++				context,
++				result.status === "completed" ? "success" : result.status === "failed" ? "error" : "info",
++			);
  		},
+ 	};
+--- a/packages/coding-agent/src/experimental/services/agent-controller.ts
++++ b/packages/coding-agent/src/experimental/services/agent-controller.ts
+@@ -32,4 +32,9 @@
+ 	| { status: "unanswered"; text: null; reason: string };
+ 
++export interface AgentCompactionResult {
++	status: "completed" | "skipped" | "cancelled" | "failed";
++	error: string | null;
++}
++
+ export interface AgentCompactionRequest {
+ 	customInstructions: string | null;
+@@ -51,4 +56,5 @@
+ 	abort(context: Context): Promise<void>;
+ 	compact(request: AgentCompactionRequest, context: Context): Promise<AgentOperationResponse>;
++	waitForCompaction(operationId: string, context: Context): Promise<AgentCompactionResult>;
+ 	/** Wait until the prompt with this `operationId` is answered or settles unanswered. */
+ 	waitForPrompt(operationId: string, context: Context): Promise<AgentPromptResult>;
+--- a/packages/coding-agent/src/experimental/services/agent-controller-provider.ts
++++ b/packages/coding-agent/src/experimental/services/agent-controller-provider.ts
+@@ -2,4 +2,6 @@
+ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+ import {
++	type CompactionResult,
++	type TaskId,
+ 	type Conversation,
+ 	ConversationBusy,
+@@ -61,4 +63,35 @@
+ 			}
+ 		},
++		async waitForCompaction(operationId, context) {
++			const parsed = parseSubmissionId(operationId);
++			const id = parsed as unknown as TaskId<CompactionResult>;
++			const task = parsed === undefined ? undefined : await harness.getTask(id, context);
++			if (!task || task.conversationId !== conversation.id || task.kind !== "pi.compaction")
++				throw new Error(`Unknown compaction: ${operationId}`);
++			const { outcome } = (await harness.waitForTask(id, context)).state;
++			if (outcome.status === "aborted") return { status: "cancelled", error: null };
++			if (outcome.status !== "completed")
++				return {
++					status: "failed",
++					error: outcome.error?.message ?? outcome.reason ?? "Compaction failed",
++				};
++			if (outcome.result.submissionId !== undefined) {
++				const submission = await harness.submission(outcome.result.submissionId, context);
++				if (!submission)
++					return {
++						status: "failed",
++						error: "Compaction summary submission is missing",
++					};
++				const placed = await submission.wait(context);
++				if (placed.status === "unanswered") return { status: "failed", error: placed.reason };
++			}
++			return {
++				status:
++					outcome.result.entryId !== undefined || outcome.result.submissionId !== undefined
++						? "completed"
++						: "skipped",
++				error: null,
++			};
++		},
+ 		async waitForPrompt(operationId, context): Promise<AgentPromptResult> {
+ 			const id = parseSubmissionId(operationId);
+--- a/packages/coding-agent/src/experimental/client-tui-chat.ts
++++ b/packages/coding-agent/src/experimental/client-tui-chat.ts
+@@ -194,6 +194,5 @@
+ 			this.#tool(result.toolName, result.toolCallId).updateResult(result);
+ 		} else if (entry.kind === "pi.compaction") {
+-			this.#addText(theme.fg("muted", "[compaction]"));
+-			if (message?.role === "user") this.#addText(userText(message.content));
++			this.#addText(theme.fg("muted", "[Context compacted]"));
+ 		} else if (entry.kind === "pi.reset") {
+ 			this.#addText(theme.fg("muted", "[new context]"));

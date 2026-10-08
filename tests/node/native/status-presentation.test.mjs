@@ -86,8 +86,9 @@ test('command panels distinguish current and focus, fit small terminals, and sup
     createDocumentView({...tui,wrapText:tui.wrapTextWithAnsi,command:'research summary',title:'Research',body:items.map(i=>i.description).join('\n'),monochrome,rows:()=>rows})]) {
     const lines=component.render(width);
     assert.ok(lines.length<=height-5,`${width}x${height}: ${lines.length}`);
-    assert.match(lines.at(-1),/Esc/);
-    for(const line of lines) assert.equal(tui.visibleWidth(line),width);
+    if (lines.length > 1) assert.match(lines.at(-1),/Esc/);
+    else assert.doesNotMatch(lines[0], /Esc|\x1b\[48;/);
+    for(const line of lines) assert.ok(tui.visibleWidth(line)<=width);
     if(monochrome) assert.doesNotMatch(lines.join('\n'),/\x1b\[/);
    }
   }

@@ -21,6 +21,7 @@ paths = [
   "tests/node/native/pi-session-worker-startup.test.mjs",
   "tests/node/native/worker-research-flow.test.mjs",
   "tests/node/native/decision-context.test.mjs",
+  "tests/node/native/compaction-outcome.test.mjs",
   "tests/node/fast/job-query-recovery.test.mjs",
   "tests/node/native/monitor-admission.test.mjs",
   "tests/node/native/pi-harness-policy.test.mjs",

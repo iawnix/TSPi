@@ -85,7 +85,7 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
       assert.deepEqual(after.snapshot.messages, read.snapshot.messages);
       assert.equal(after.snapshot.is_streaming, false);
       // Exercise the actual Pi presentation and service catalogue, not a mock UI.
-      const [{ ExperimentalClientTui }, { TuiMainScreen, ProcessTerminal }, { initTheme }, { createStaticFacetLoader, defineFacet: testFacet }] = await Promise.all([
+      const [{ ExperimentalClientTui }, { TuiAltScreen }, { initTheme }, { createStaticFacetLoader, defineFacet: testFacet }] = await Promise.all([
         fromSource("packages/coding-agent/src/experimental/client-tui.ts"),
         fromSource("packages/tui/src/index.ts"),
         fromSource("packages/coding-agent/src/modes/interactive/theme/theme.ts"),
@@ -94,7 +94,9 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
       const { createTspiNativeClientFacet } = await import(pathToFileURL(join(packageRoot, "apps/app-server/tspi-native-client-facet.mjs")));
       const { renderLayoutFrame } = await fromSource('packages/tui/src/layout.ts');
       initTheme("dark");
-      const ui = new TuiMainScreen(new ProcessTerminal());
+      const { VirtualTerminal } = await fromSource('packages/tui/test/virtual-terminal.ts');
+      const terminal = new VirtualTerminal(100, 24);
+      const ui = new TuiAltScreen(terminal);
       let quit = false;
       let testUI, finishSlow, finishOperation, operationFinished=false;
       const { PresentationUI } = await fromSource('packages/coding-agent/src/experimental/services/presentation-ui.ts');
@@ -124,7 +126,7 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
       const component = await ExperimentalClientTui.create({
         command: { command: "client", sessionId: created.session.session_id, pluginPackages: [] },
         ui, servers: [{ serverId: server.route.serverId, radius: false, server: server.server, session: server.session }],
-        facetLoader: createStaticFacetLoader([facet,driver]), requestRender() {}, finish() {},
+        facetLoader: createStaticFacetLoader([facet,driver]), requestRender() { ui.requestRender(); }, finish() {},
       });
       const waitFor = async (predicate) => {
         for (let i = 0; i < 100; i++) {
@@ -133,17 +135,30 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
         }
         assert.fail(component.render(100).join("\n"));
       };
-      const submit = (text) => { component.handleInput(text); component.handleInput("\u001b"); component.handleInput("\r"); };
+      const submit = (text) => { terminal.sendInput(text); terminal.sendInput("\u001b"); terminal.sendInput("\r"); };
       try {
+        ui.addChild(component); ui.setLayoutRoot(component.layoutRoot); ui.setFocus(component); ui.start();
+        const clickEditor = async () => {
+          // Separate clicks so xterm does not interpret them as a double click.
+          await new Promise(resolve => setTimeout(resolve, 700));
+          const frame = renderLayoutFrame(component.layoutRoot, 100, 24, () => {});
+          const row = frame.lines.findLastIndex(line => line.includes('────'));
+          assert.ok(row > 0);
+          terminal.sendInput(`\x1b[<0;2;${row}M`);
+          terminal.sendInput(`\x1b[<0;2;${row}m`);
+          await new Promise(resolve => setTimeout(resolve, 50));
+          assert.notEqual(ui.getFocusedComponent().constructor.name, 'CustomEditor');
+        };
         await waitFor(() => !component.render(100).join("\n").includes("Context Unknown"));
         assert.doesNotMatch(component.render(100).join("\n"), /Server:| entries|\/model ·/);
+        await clickEditor();
         submit("/usage");
         await waitFor(() => component.render(100).join("\n").includes("Session usage"));
-        component.handleInput("\u001b");
+        terminal.sendInput("\u001b");
         await new Promise(resolve => setImmediate(resolve));
         submit("/research summary");
         await waitFor(() => component.render(100).join("\n").includes("Research state"));
-        component.handleInput("\u001b");
+        terminal.sendInput("\u001b");
         await new Promise((resolve) => setImmediate(resolve));
         submit("/sys-prompt");
         await waitFor(() => component.render(100).join("\n").includes("TSPi research agent"));
@@ -157,60 +172,75 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
             assert.match(frame.lines.join('\n'),/Esc Back/);
           }
         } finally { process.stdout.rows=originalRows; }
-        component.handleInput("\u001b");
+        terminal.sendInput("\u001b");
         await new Promise((resolve) => setImmediate(resolve));
+        await clickEditor();
         submit("/resume");
         await waitFor(() => component.render(100).join("\n").includes("Resume session"));
-        component.handleInput('\x1b[B');
+        terminal.sendInput('\x1b[B');
         testUI.setActivity({render:()=>['background monitor refresh'],invalidate(){}});
         assert.match(component.render(100).join('\n'),/› another-session/);
         assert.match(component.render(100).join('\n'),/\[current\]/);
-        component.handleInput("\u001b");
+        terminal.sendInput("\u001b");
         await new Promise((resolve) => setImmediate(resolve));
-        component.handleInput('draft text');
-        component.handleInput('\x1b[D');
-        component.handleInput('\x0c'); // Ctrl+L model selector must retain draft and cursor.
+        await clickEditor();
+        terminal.sendInput('draft text');
+        terminal.sendInput('\x1b[D');
+        terminal.sendInput('\x0c'); // Ctrl+L model selector must retain draft and cursor.
         await waitFor(()=>component.render(100).join('\n').includes('Select model'));
-        component.handleInput('\x1b');
+        terminal.sendInput('\x1b');
         await new Promise(resolve=>setImmediate(resolve));
-        component.handleInput('!');
+        terminal.sendInput('!');
         assert.match(component.render(100).join('\n').replace(/\x1b\[[0-9;]*m|\x1b_pi:c\x07/g,''),/draft tex!t/);
-        component.handleInput('\x05'); component.handleInput('\x15'); // End, clear draft.
+        terminal.sendInput('\x05'); terminal.sendInput('\x15'); // End, clear draft.
         submit('/slow');
         await waitFor(()=>typeof finishSlow === 'function');
         assert.match(component.render(100).join('\n'),/\/slow · … Running/);
-        component.handleInput('\x1b');
+        terminal.sendInput('\x1b');
         submit('/usage');
         await waitFor(()=>component.render(100).join('\n').includes('Session usage'));
         finishSlow();
         await new Promise(resolve=>setImmediate(resolve));
         assert.doesNotMatch(component.render(100).join('\n'),/STALE/);
         assert.match(component.render(100).join('\n'),/Session usage/);
-        component.handleInput('\x1b');
+        terminal.sendInput('\x1b');
         await new Promise(resolve=>setImmediate(resolve));
         submit('/delayed-operation');
         await waitFor(()=>typeof finishOperation === 'function');
-        component.handleInput('\x1b'); finishOperation();
+        terminal.sendInput('working draft');
+        assert.match(component.render(100).join('\n'), /working draft/);
+        terminal.sendInput('\x05'); terminal.sendInput('\x15');
+        terminal.sendInput('\x1b'); finishOperation();
         await waitFor(()=>operationFinished);
         assert.doesNotMatch(component.render(100).join('\n'),/STALE/);
         submit('/thinking invalid');
         await waitFor(()=>component.render(100).join('\n').includes('Unknown thinking level'));
         assert.match(component.render(100).join('\n'),/\/thinking · ! Error/);
-        component.handleInput('\x1b');
+        terminal.sendInput('\x1b');
         submit('/unknown');
         await waitFor(()=>component.render(100).join('\n').includes('Unknown command'));
-        component.handleInput('\x1b');
+        terminal.sendInput('\x1b');
         submit('/model fixture/fixture');
         await waitFor(()=>component.render(100).join('\n').includes('Selected fixture/fixture'));
         assert.match(component.render(100).join('\n'),/\/model · ✓ Done/);
-        component.handleInput('\x1b');
+        terminal.sendInput('\x1b');
         submit('/thinking off');
         await waitFor(()=>component.render(100).join('\n').includes('Thinking level: off'));
-        component.handleInput('\x1b');
+        terminal.sendInput('\x1b');
+        await clickEditor();
+        submit('/compact');
+        await waitFor(() => component.render(100).join('\n').includes('Nothing to compact.'));
+        assert.doesNotMatch(component.render(100).join('\n'), /Esc (Dismiss|Hide)|Operation submitted/);
+        terminal.sendInput('compact draft');
+        assert.match(component.render(100).join('\n'), /compact draft/);
+        terminal.sendInput('\x05'); terminal.sendInput('\x15');
         submit('/reload');
         await waitFor(()=>component.render(100).join('\n').includes('Reloaded plugins.'));
         assert.match(component.render(100).join('\n'),/\/reload · ✓ Done/);
-        component.handleInput('\x1b');
+        terminal.sendInput('reload draft');
+        assert.match(component.render(100).join('\n'), /reload draft/);
+        terminal.sendInput('\x05'); terminal.sendInput('\x15');
+        terminal.sendInput('\x1b');
         submit("/quit");
         await waitFor(() => quit);
       } finally {

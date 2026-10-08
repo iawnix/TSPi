@@ -1,0 +1,127 @@
+--- a/packages/durable/src/harness/types.ts
++++ b/packages/durable/src/harness/types.ts
+@@ -1,4 +1,6 @@
+ import type { AttachedReplicatedState, Context, JsonValue } from "@earendil-works/chord";
+ import type {
++	Api,
++	Model,
+ 	AssistantMessage,
+ 	CacheRetention,
+@@ -358,4 +360,6 @@
+ /** Curated pi-ai request options; absent fields use pi-ai defaults. */
+ export type ConversationStreamOptions = {
++	/** Requested output allowance, also supplied to request admission hooks. */
++	maxTokens?: number;
+ 	transport?: Transport;
+ 	timeoutMs?: number;
+@@ -614,10 +618,14 @@
+ /** Hooks of the built-in generation task. */
+ export interface GenerationHooks {
+-	/** Before every request attempt, including recovery; the result is used for that request only. */
++	/**
++	 * Before each attempt; replacements are request-only. The first block stops the request.
++	 * A compact block permits at most one blocking compaction, then reruns admission.
++	 * A thrown hook fails closed; it never sends an unvalidated request to the model.
++	 */
+ 	beforeRequest(
+-		request: { readonly messages: readonly Message[] },
++		request: { readonly messages: readonly Message[]; readonly model: Model<Api>; readonly maxTokens: number },
+ 		api: HookApi,
+ 		context: Context,
+-	): HookResult<{ readonly messages: readonly Message[] }>;
++	): HookResult<{ readonly messages: readonly Message[] } | { readonly block: string; readonly compact?: boolean }>;
+ 	/** Every terminal provider message, before classification. */
+ 	afterResponse(message: AssistantMessage, api: HookApi, context: Context): void | Promise<void>;
+--- a/packages/durable/src/harness/generation.ts
++++ b/packages/durable/src/harness/generation.ts
+@@ -57,4 +57,6 @@
+ 			/** Error text of the overflow that started `compacted`; checked once when `prepare` resumes. */
+ 			overflow?: string;
++			/** Preserve a request admission failure across its one compaction attempt. */
++			failureReason?: "request_blocked";
+ 	  }
+ 	| {
+@@ -130,9 +132,9 @@
+ 			const resolved = model === undefined ? undefined : runtime.models.getModel(model.provider, model.modelId);
+ 			if (model === undefined || resolved === undefined) return failNoModel(runtime, model, context);
+-			const { attempt, compacted, overflow } = task.state.checkpoint;
++			const { attempt, compacted, overflow, failureReason } = task.state.checkpoint;
+ 			if (compacted !== undefined && overflow !== undefined) {
+ 				const [outcome] = await runtime.outcomes([compacted], context);
+ 				if (outcome?.status !== "completed" || outcome.result.entryId === undefined) {
+-					return failModelError(runtime, overflow, context);
++					return failRequest(runtime, overflow, context, failureReason);
+ 				}
+ 			}
+@@ -195,8 +197,52 @@
+ 			const view = await runtime.context(conversationId, context, cutoff);
+ 			let messages = view.messages;
++			let blocked: { block: string; compact?: boolean } | undefined;
+ 			await runtime.hooks.each("beforeRequest", async (hook) => {
+-				const replaced = await hook({ messages }, runtime, context);
+-				if (replaced !== undefined) messages = replaced.messages;
++				if (blocked) return;
++				try {
++					const replaced = await hook(
++						{
++							messages,
++							model,
++							maxTokens: streamOptions.maxTokens ?? model.maxTokens,
++						},
++						runtime,
++						context,
++					);
++					if (replaced && "block" in replaced) blocked = replaced;
++					else if (replaced) messages = replaced.messages;
++				} catch (error) {
++					runtime.signal.throwIfAborted();
++					blocked = {
++						block: `request_hook_failed: ${error instanceof Error ? error.message : String(error)}`,
++					};
++				}
+ 			});
++			if (blocked) {
++				const failure = blocked.block;
++				if (
++					blocked.compact &&
++					compacted === undefined &&
++					selectCut(view, runtime.settings.compaction.keepRecentTokens) !== undefined
++				) {
++					await runtime.commit(async (tx): Promise<Next> => {
++						const child = await createCompaction(tx, conversationId, { reason: "overflow" }, runtime.taskId);
++						return {
++							status: "waiting",
++							checkpoint: {
++								phase: "prepare",
++								attempt,
++								compacted: child,
++								overflow: failure,
++								failureReason: "request_blocked",
++							},
++							on: [child],
++							policy: "allSettled",
++						};
++					}, context);
++					return;
++				}
++				return failRequest(runtime, failure, context, "request_blocked");
++			}
+ 			const options: SimpleStreamOptions = {
+ 				...streamOptions,
+@@ -323,12 +369,12 @@
+ }
+ 
+-/** Settle the run's inputs `unanswered` with `model_error` and fail with `text`. */
+-async function failModelError(runtime: Runtime, text: string, context: Context): Promise<void> {
++/** Settle the run with a visible request failure, without asking the model to repair it. */
++async function failRequest(runtime: Runtime, text: string, context: Context, reason = "model_error"): Promise<void> {
+ 	await runtime.commit(async (tx) => {
+ 		const live = await tx.doc(LiveDoc, runtime.conversationId);
+-		endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "model_error", detail: text });
++		endRun(tx, live, runtime.taskId, { status: "unanswered", reason, detail: text });
+ 		return {
+ 			status: "terminal",
+-			outcome: { status: "failed", error: { message: text, detail: { reason: "model_error" } } },
++			outcome: { status: "failed", error: { message: text, detail: { reason } } },
+ 		};
+ 	}, context);

@@ -13,7 +13,7 @@ export function createPanelPainter({ truncateToWidth, visibleWidth, monochrome =
 }
 
 export function createCommandPresentation(options) {
-  const { matchesKey, wrapTextWithAnsi, rows = () => process.stdout.rows || 24, scope = 'Session' } = options;
+  const { matchesKey, rows = () => process.stdout.rows || 24, scope = 'Session' } = options;
   const paint = createPanelPainter(options);
   return {
     selection({ command, title, items, selectedValue, onSelect, onCancel }) {
@@ -51,10 +51,9 @@ export function createCommandPresentation(options) {
       return {
         invalidate() {},
         render(width) {
-          const lines = wrapTextWithAnsi(message, Math.max(1, width - 2));
-          return [paint(` /${command} · ${label}`, width),
-            ...lines.slice(0, Math.max(1, rows() - 9)).map(line => paint(` ${line}`, width)),
-            paint(kind === 'running' ? ' Esc Hide · Operation continues' : ' Esc Dismiss', width)];
+          // Executing a command is a status update, not an interactive panel.
+          const text = ` /${command} · ${label} · ${message.replace(/\s+/g, ' ')}`;
+          return [stripVTControlCharacters(options.truncateToWidth(text, Math.max(1, width)))];
         },
       };
     },

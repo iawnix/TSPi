@@ -90,6 +90,14 @@ cross workspace boundaries. Switching disposes the old terminal connection befor
 attaching the selected session; background tasks continue. Other standalone Pi
 session commands are not available in this remote client.
 
+Selectors and document views own keyboard focus while open. Arrow keys navigate
+and Esc returns to the editor, preserving its draft and cursor even after mouse
+interaction. Execution commands such as `/compact` and `/reload` use a single
+status line and leave the editor usable; no panel needs to be dismissed.
+`/compact` tracks its durable operation until the summary is placed, or reports
+that it was skipped, cancelled, or failed. The transcript shows a compacted
+context marker; it does not print the internal summary as an ordinary reply.
+
 TSPi command names, arguments, and completions share one catalogue:
 
 - `/research [summary|context|liveness|map|decisions|storage|detail <kind> <id>|locate <query>|validate|operations]`: read-only queries in the attached worker, including a remote workspace over SSH. Long results use the native Pi selector for paging.
