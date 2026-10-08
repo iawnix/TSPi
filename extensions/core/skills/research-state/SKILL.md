@@ -15,7 +15,7 @@ ResearchMap validation, bounded Research Memory reads, and atomic changes throug
 `lifecycle/liveness.json` (`research_liveness_2`). Context always contains the
 array collections `phases`, `claims`, `nodes`, `findings`, `gates`,
 `claim_relations`, `attempts`, `artifacts`, `evidence_links`, `lifecycle_actions`,
-`strategy_plans`, `strategy_reviews`, and `attempt_interpretations`; `focus.claim_ids`
+`claim_assessments`, `claim_revisions`, `strategy_plans`, `strategy_reviews`, and `attempt_interpretations`; `focus.claim_ids`
 and `focus.node_ids` are arrays. `memory/index.json` uses
 `research_memory_index_1` and is only a metadata/lifecycle projection, never a
 second ResearchMap authority. Decision records and the Evidence Registry are
@@ -40,7 +40,7 @@ JSON/SQLite store.
 The ChangeSet `type` must be one of the canonical operations in
 `references/decision_contract.md`; never invent domain-specific operation names.
 For example, a mechanism hypothesis is a `create_claim` operation and a bounded
-mechanism study is a `create_node` operation. Do not use Research State as a capability catalog. Method instructions belong to the active Domain Skill.
+mechanism study is a `create_node` operation. New Claims start as `proposed`; use `assess_claim` with a reason and registered evidence to record scientific status. Do not use Research State as a capability catalog. Method instructions belong to the active Domain Skill.
 
 For a turn, prefer `context` or `liveness`; expand to `detail`, `decisions`,
 `evidence` or `storage` only when the current question requires
@@ -65,7 +65,7 @@ Create or confirm Claim/Node objects before research_strategy references them. A
 
 Routine tool observations do not require Findings. If a fact is needed, first preserve the actual observation with artifact_create or artifact_register; cite the returned artifact_id. On evidence_reference_unknown, inspect research_read mode=evidence. Never replace a missing ID with a tool name or prose. Optional diagnostic failure need not block independent work. For global user_input_required, block the affected Nodes with an explicit reason first; State rejects the checkpoint while independent ready Nodes or running Attempts remain.
 
-For a scientific FactFinding, supply both source_refs (registered Artifact IDs) and nonempty provenance (for example {"source":"collected result.json"}). Close completed Nodes with state=closed, outcome=completed and summary before a terminal checkpoint.
+For a scientific FactFinding, supply source_refs and nonempty provenance. Registered literature, imported data and computation outputs can be evidence; they need not all have a Job. Plans and untested hypotheses are not confirmed facts. Close completed Nodes with state=closed, outcome=completed and summary before a terminal checkpoint.
 
 Record inspected results with `research_interpretation`. Required fields are
 `interpretation.id`, `summary`, `outcome`, an existing Claim ID, and the actual
@@ -95,4 +95,4 @@ citing result files; execution success alone does not establish scientific suppo
 
 After a demonstrated issue is repaired, use research_change with {"type":"resolve_issue","id":"<existing issue ID>","resolution":"<what changed and how verified>","source_refs":["<registered evidence ID>"]}. source_refs is optional; supplied IDs must exist. This preserves the original issue and evidence, marks it resolved, and records the resolution. Restore affected Nodes separately. Do not invent an update_finding operation or edit State files. A ResearchMap mutation supersedes the prior checkpoint; finish the resumed work with a new checkpoint.
 
-Completion conditions apply to calculation, report and delivery Nodes alike. A completed Node also requires completed dependencies. Query `research_read mode=operations query=evaluate_gate` for nested field schemas and a minimal example; query=completion_exemption locates the creation field. Batch errors include a zero-based operation_index and target_id; none of the batch has committed. Keep receipts and repair only the rejected operation or its prerequisites.
+Completion conditions apply to calculation, report and delivery Nodes alike. Dependencies must be closed with outcome=completed; closed/inconclusive is insufficient. A completion_exemption records a justified exception, not scientific evidence. Query `research_read mode=operations query=evaluate_gate` for nested fields and examples. Batch errors include operation_index and target_id; none of the batch has committed. Keep receipts and repair the rejected operation or prerequisites.

@@ -142,6 +142,9 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
                 item = next((row for row in context.get(collection, []) if row.get("id") == identifier), None)
                 if item is None:
                     raise CommandError(f"unknown {kind} id: {identifier}")
+                if kind == "claim":
+                    from research_state.assessments import claim_review_state
+                    item = {**item, "assessment_state": claim_review_state(context, item)}
                 # Native Host and Python command transports expose the same
                 # detail envelope. ``item`` is the canonical record field;
                 # callers must not branch on a transport-specific ``object``
@@ -164,6 +167,7 @@ def execute(command: str, root: str | Path, params: dict[str, Any] | None = None
             if action == "decisions":
                 claim_id = value.get("claim_id")
                 records = [
+                    *[{**item, "decision_type": "claim_assessment"} for item in context.get("claim_assessments", [])],
                     *[{**item, "decision_type": "strategy_plan"} for item in context.get("strategy_plans", [])],
                     *[{**item, "decision_type": "strategy_review"} for item in context.get("strategy_reviews", [])],
                     *[{**item, "decision_type": "attempt_interpretation"} for item in context.get("attempt_interpretations", [])],

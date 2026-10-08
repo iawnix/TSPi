@@ -1,19 +1,19 @@
 ---
 name: qbics
-description: 判断 QBICS 工作流在科学上是否合适，并在执行前发现是否存在已注册的可运行 workflow。
+description: 判断 QBICS 的适用性，核实已安装命令、输入与验证需求后执行有界研究 Job。
 ---
 
 # TSPi QBICS
 
 [English version](SKILL.md)
 
-考虑用 QBICS 搜索交叉点或相关结构时使用本 Skill。TSPi 当前没有公开的 QBICS Backend
-workflow、输入合同或解析合同。
+考虑用 QBICS 搜索交叉点或相关结构时使用本 Skill。当前包不内置 QBICS 准备或解析 runner；
+这不能说明所选本地或远端环境是否安装了 QBICS。
 
-首先查询 `read the relevant Skill references and use job_probe for environment checks`。只有实时目录包含准确的
-QBICS workflow 时才能继续，并使用目录返回的 role 与参数 schema。若不存在，只能将
-预期科学目的、所需电子态、输入、预期输出和验证标准作为方法建议；不得虚构 workflow
-名称、构造 `job_start` 请求、运行任意 shell，或声称 TSPi 可以执行 QBICS。
+检查安装绑定、程序文档或有界 help/version 输出，核实预期科学任务、电子态、输入格式、
+资源、必需文件及结果解释。若有可用命令或共享 runner，暂存显式输入并通过通用
+`job_start` 执行，保留输出和执行回执，无需科学 workflow registry。不要编造命令行参数，
+也不要把通用平台探测当作 QBICS 已就绪。
 
-未来只有在具备确定性 Backend adapter、不可变输入准备、声明的输出、解析合同、任务
-验证与测试后，QBICS 集成才可执行。
+缺少执行或验证环节时，明确具体缺口并继续独立的已授权工作。未知能力应记为未核实；
+本 Skill 缺少脚本本身不是执行失败，也不是科学结果。

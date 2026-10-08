@@ -13,8 +13,9 @@ source path, endpoint optimization, and digest references explicit.
 
 Verify atom mapping, element counts, charge, multiplicity/state, relevant
 isotopes, bond changes, internal coordinates, stereochemistry, and any
-short-path or maximum-step limitation. Use `artifact_derive` for deterministic
-geometry and stereochemical checks.
+short-path or maximum-step limitation. Execute geometry and stereochemical checks
+with an available analysis tool or explicit Job and register its actual outputs.
+`artifact_derive` records a descriptor only; it does not perform these checks.
 
 ## Recording And Evaluation
 

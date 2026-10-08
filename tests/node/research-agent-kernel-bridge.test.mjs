@@ -126,7 +126,7 @@ test("local Python bridge mutates the new context/liveness workspace without res
       expected_revision: 0,
       operations: [
         { type: "create_phase", id: "phase_1", title: "Initial", objective: "Native" },
-        { type: "create_claim", id: "claim_1", statement: "A provisional hypothesis", status: "open" },
+        { type: "create_claim", id: "claim_1", statement: "A provisional hypothesis", status: "proposed" },
         {
           type: "create_node", id: "node_1", title: "Input resolution", objective: "Resolve inputs",
           phase_id: "phase_1", claim_ids: ["claim_1"],

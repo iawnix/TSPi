@@ -7,9 +7,13 @@ description: Run and assess CREST conformer searches and preserve ensemble membe
 
 [Chinese version](SKILL.zh-CN.md)
 
-Use this Skill for the registered `crest.conformer_search` workflow. CREST
+Use this Skill for CREST conformer searches through an installed command. CREST
 owns ensemble exploration; xTB calculations outside a CREST search belong to
 `xtb`.
+
+This package has no bundled CREST runner. Inspect the selected environment's
+command and documented options, then stage a generic `job_start` request if
+available; a missing Skill script alone does not prove CREST is unavailable.
 
 Do not treat a normal process exit or a non-empty ensemble as scientific
 evidence until the primary files, member counts, and selected-structure

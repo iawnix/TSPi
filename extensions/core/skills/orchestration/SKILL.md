@@ -13,7 +13,7 @@ does not redefine that model.
 
 ## Workflow
 
-1. Read the current map and focused objects before planning.
+1. Use the current State snapshot already supplied to the turn. Read missing or stale details with the narrowest `research_read` mode before planning.
 2. State the uncertainty, the Claim it bears on, and one bounded deliverable.
 3. Create or confirm the Claim and ResearchNode with `research_change` before referencing them. Record a `research_strategy` plan covering the focused Claim/Node before execution or evidence writes. An unknown Claim error requires creating the object, then retrying the strategy. Reuse or create a ResearchNode. Add a Phase only when grouping helps
    navigation. Read the exact scientific Skill locations listed in the system prompt. Use method-selection even when the user fixed the method: its request helper reads installation job.toml and binds the configured interpreter, executable and environment. Generic job_probe does not verify a scientific method; run the Skill’s method checks when needed.
@@ -24,19 +24,17 @@ does not redefine that model.
    cell explicitly; do not substitute methods or stop independent cells.
 4. Launch or inspect work under the owning Node. Keep Attempts and Artifacts
    attached to that Node.
-5. Inspect primary outputs, then record narrow FactFindings and IssueFindings
-   through the Research State. Findings do not change Node or Claim status by
-   themselves.
+5. Inspect evidence, then record useful FactFindings or IssueFindings. Registered literature and imported data are valid sources too; plans are not confirmed facts. Findings do not change Node or Claim status by themselves.
 6. Compare the result with alternatives and stopping criteria. Continue the
    Node for the same question, create a dependent Node for a changed question,
    branch for a competing method or hypothesis, or stop explicitly.
-7. Close a Node only after its deliverable is addressed and every attached
-   NodeGate has a latest passing evaluation. Update Claim status separately.
+7. Close a Node as completed only after its deliverable is addressed and every attached
+   NodeGate has a current passing evaluation. Use `assess_claim` with reasons and registered evidence for scientific Claim status.
 
 ## Research Turn Checkpoint
 
-Before ending every turn, read `research_read` with `mode=context` or `mode=liveness`
-and close the lifecycle with `research_checkpoint`. Record strategy and Attempt
+Before ending a research turn, use the latest State snapshot; query `context` or `liveness` only if needed details are missing or stale.
+Close the lifecycle with `research_checkpoint`. Record strategy and Attempt
 interpretation first when applicable, then use one explicit disposition:
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
 `user_input_required`. `research_checkpoint` is the canonical turn checkpoint.

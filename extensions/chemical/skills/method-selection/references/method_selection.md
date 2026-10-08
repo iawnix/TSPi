@@ -16,13 +16,13 @@ Consider:
 - whether a higher-level recalculation is needed for robustness;
 - live local/remote software and scheduler readiness.
 
-Gaussian is a first-class candidate generator for direct TS optimization,
-relaxed scans, QST, and follow-up characterization. xTB/CREST can efficiently
-explore conformers and rough paths. The registered `ase.neb` workflow uses
-ASE path optimization with xTB energies and forces by default, and can
-explicitly select the Gaussian CLI calculator for per-image energies and
-forces. External DMECP workflows
-can address crossing searches. Choose their order from the current research question.
+Gaussian's explicit-input runner can execute supplied TS, scan or QST inputs
+and follow-up calculations; it does not construct a complete mechanism study.
+xTB/CREST and ASE NEB may suit exploration, but distinguish scientific suitability
+from an available execution path. The bundled xTB runner supports opt/SP only;
+CREST, NEB and external crossing tools need a verified installed command or
+concrete script through generic Job Runtime. Check shared runners and installed
+tools before declaring a capability unavailable. Choose their order from the research question.
 
 Record the method choice and falsifiable purpose in the ResearchNode/Claim. If a
 method changes, preserve the prior intent and use a recalculation record or a

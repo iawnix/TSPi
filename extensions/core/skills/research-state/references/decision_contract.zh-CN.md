@@ -14,13 +14,14 @@ Research State 的内部请求中附加 `principal=root_agent` 与 `authority=ke
 | 类型 | 必需数据 |
 | --- | --- |
 | `create_phase` | `id`、`title`；`objective` 可选 |
-| `create_claim` | `id`、`statement`；`status`、`predictions`、`falsifiers` 可选 |
+| `create_claim` | `id`、`statement`；`status=proposed`、`predictions`、`falsifiers` 可选 |
 | `create_node` | `id`、`title`、`objective`；`phase_id`、`claim_ids`、`dependency_ids` 可选 |
 | `create_finding` | `id`、`node_id`、`statement`、`kind`（`fact` 或 `issue`）；fact 字段为 `value`、`datatype`、`unit`、`provenance`；issue 字段为 `status`、`severity`、`resolution` |
 | `create_gate` | `id`、`scope`（`node` 或 `claim`）、`target_id`、`criteria` |
 | `evaluate_gate` | `gate_id`、`verdict`、`assessments`；`message`、`evidence_refs` 可选 |
 | `set_node_state` | `node_id`、`state`；关闭时还需要 `outcome` 和 `summary` |
-| `set_claim_status` | `claim_id`、`status` |
+| `assess_claim` | `id`、`claim_id`、`verdict`、`reason`；`supported`、`contradicted`、`inconclusive` 还需已登记的 `evidence_refs` |
+| `revise_claim` | `source_claim_id`、`target_claim_id`、`revision_id`、`statement`、`reason`；`relation`、`predictions`、`falsifiers` 可选 |
 | `relate_claims` | `source_id`、`target_id`、`relation` |
 | `set_focus` | `claim_ids`、`node_ids` |
 
@@ -37,7 +38,16 @@ memory 与 manifest。被拒绝的请求不会改变之前的 map。不要直接
 `create_finding` 记录 Node 已核验的输出，不是通用日志项：支持科学陈述的值使用
 `FactFinding`；局限、异常、冲突或未决问题使用 `IssueFinding`。`create_gate` 与
 `evaluate_gate` 构成 Gate 生命周期。Claim status 与 Gate verdict 相互独立；Gate 评估
-不会静默改变 Claim。
+不会静默改变 Claim status。新 Claim 从 `proposed` 开始；科学状态通过 `assess_claim` 记录理由与证据，
+不直接设置 status。证据可以是已登记文献、导入数据或计算产物，不要求每次评估都新增计算；
+未经检验的计划不能确立科学结论或 confirmed Finding。
+`current_assessment_id` 指向当前采用的评估；其证据版本和所需 ClaimGate 必须保持有效。
+`assessment_state` 为 `not_assessed`、`current` 或 `needs_review`。证据变化后重新评估，
+不要修改旧记录；没有评估的历史 status 仍显示为 `not_assessed`。
+通过 `research_read mode=decisions claim_id=<claim_id>` 读取评估理由及证据版本绑定。
+新增、修改或重新评估 ClaimGate（包括同版本的新评估）会使当前采用的 `supported` 评估需要复核。
+可以先记录条件变化，再另行提交 `assess_claim`，不要求同一 ChangeSet 完成。
+`needs_review` 阻止显式与自动 terminal 收尾，但独立研究仍可继续。
 
 
 启动计算前，为 Node 登记明确 Gate，或在创建 Node 时用 `completion_exemption` 写出豁免理由。

@@ -42,7 +42,8 @@ export function createStateTool(options = {}) {
       const command = `research.${mode}`;
       const commandParams = mode === "detail"
         ? { kind: params.kind, id: params.id }
-        : mode === "locate" ? { query: params.query, limit: params.limit, offset: params.offset }
+        : mode === "operations" ? { query: params.query }
+          : mode === "locate" ? { query: params.query, limit: params.limit, offset: params.offset }
           : mode === "decisions" ? { claim_id: params.claim_id, limit: params.limit }
             : mode === "evidence" ? {
               attempt_id: params.attempt_id, job_id: params.job_id, offset: params.offset,

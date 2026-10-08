@@ -10,6 +10,13 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from .assessments import claim_review_state
+
+
+def _claims(context):
+    return [{**copy.deepcopy(claim), "assessment_state": claim_review_state(context, claim)}
+            for claim in context.get("claims", [])]
+
 
 def research_map_document(context: dict[str, Any]) -> dict[str, Any]:
     """Project a canonical ``research_map_context_2`` document to ResearchMap."""
@@ -25,7 +32,7 @@ def research_map_document(context: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(focus.get("claim_ids"), list) or not isinstance(focus.get("node_ids"), list):
         raise ValueError("research context focus is invalid")
     phases = copy.deepcopy(context["phases"])
-    claims = copy.deepcopy(context["claims"])
+    claims = _claims(context)
     nodes = copy.deepcopy(context["nodes"])
     findings = copy.deepcopy(context["findings"])
     gates = copy.deepcopy(context["gates"])
@@ -61,7 +68,7 @@ def research_summary_document(context: dict[str, Any]) -> dict[str, Any]:
     """Project the bounded summary returned by ``research.summary``."""
 
     phases = copy.deepcopy(context.get("phases", []))
-    claims = copy.deepcopy(context.get("claims", []))
+    claims = _claims(context)
     nodes = copy.deepcopy(context.get("nodes", []))
     findings = copy.deepcopy(context.get("findings", []))
     gates = copy.deepcopy(context.get("gates", []))

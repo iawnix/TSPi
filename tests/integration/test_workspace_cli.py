@@ -62,6 +62,11 @@ def test_canonical_api_exposes_research_operation_catalog(tmp_path: Path) -> Non
     assert {item["type"] for item in catalog["operations"]} == {
         "create_phase", "create_claim", "create_node", "revise_gate", "create_finding", "create_gate",
         "set_lifecycle_action", "resolve_lifecycle_action", "evaluate_gate", "set_node_state",
-        "set_claim_status", "relate_claims", "set_focus", "assess_claim", "revise_claim",
+        "set_claim_status", "relate_claims", "set_focus", "assess_claim", "revise_claim", "resolve_issue",
     }
     assert all("template_ref" not in item for item in catalog["operations"])
+    selected = _run(API, "research.operations", "--root", str(workspace), "--query", "revise_claim")
+    assert len(selected["operations"]) == 1
+    operation = selected["operations"][0]
+    assert "revision_id" in operation["required_fields"]
+    assert operation["schema"]["properties"]["relation"]["enum"] == ["revises", "refines", "supersedes"]

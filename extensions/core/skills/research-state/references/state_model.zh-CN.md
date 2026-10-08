@@ -4,7 +4,7 @@
 `research_map/context.json`（`schema_version=research_map_context_2`）。有效 Context 始终包含
 数组 collection：`phases`、`claims`、`nodes`、`findings`、`gates`、`claim_relations`、
 `attempts`、`artifacts`、`evidence_links`、`lifecycle_actions`、`strategy_plans`、
-`strategy_reviews`、`attempt_interpretations`；`focus.claim_ids` 与 `focus.node_ids` 也必须是
+`strategy_reviews`、`attempt_interpretations`、`claim_assessments`、`claim_revisions`；`focus.claim_ids` 与 `focus.node_ids` 也必须是
 数组。生命周期投影到 `lifecycle/liveness.json`（`research_liveness_2`）；
 `workspace_manifest.json` 绑定 identity、mode、root 和 admission。已废弃的 SQLite 与
 `research_map.json` 文件会被拒绝，不是运行时权威。
@@ -32,8 +32,8 @@ message、证据引用与输入 revision。
 Claim status 为 `proposed`、`supported`、`contradicted`、`inconclusive` 或
 `withdrawn`。Node state 为 `planned`、`active`、`paused`、`blocked` 或 `closed`。
 已关闭 Node 的 outcome 为 `completed`、`inconclusive` 或 `stopped`，且不能重新打开。
-具有依赖的 Node 只有在全部依赖关闭后才 ready。Node 依赖和 Claim 关系必须无环。Node
-要以 `completed` 关闭时，所附每个 NodeGate 的最新评估都必须为 `pass`。
+具有依赖的 Node 只有在全部依赖 closed 且 outcome=completed 后才 ready；inconclusive 或 stopped 不满足依赖。Node 依赖和 Claim 关系必须无环。Node
+要以 `completed` 关闭时，所附每个 NodeGate 的最新评估都必须为 `pass`。新 Claim 从 `proposed` 开始，科学状态通过 `assess_claim` 记录理由与证据后更新。
 
 Finding 只属于一个产出它的 Node，并可引用 Claim 与来源。Gate 准确指向一个 Node 或
 Claim。Map 维护反向索引（`node_ids`、`finding_ids`、`gate_ids`），并在每次保存时校验。

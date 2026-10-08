@@ -1,8 +1,8 @@
 # CREST 构象集合合同
 
-已注册 workflow 为 `crest.conformer_search`。它接受一个 `xyz` 输入，以及显式电荷、
-未成对电子数、xTB 方法、搜索级别、优化级别、线程和溶剂设置。溶剂与溶剂模型必须同时
-提供。
+通过通用 Job Runtime 执行已安装的 CREST 命令；当前没有内置 CREST workflow adapter。
+读取所安装版本的实际选项，保存适用的 XYZ 输入、电荷、未成对电子数、xTB 方法、搜索与
+优化级别、线程及溶剂设置，并按程序真实合同核验。
 
 必需主要输出集为 `crest.out`、`crest_best.xyz`、`crest_conformers.xyz` 和
 `crest.energies`。完成的搜索需要正常终止标记、全部必需文件、可解析的构象集合，以及

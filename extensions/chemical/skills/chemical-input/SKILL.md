@@ -27,9 +27,10 @@ User-supplied structures can be inspected directly without name lookup.
 ```
 
 For reactions, resolve/inspect each species, then check composition, charge,
-explicit atom mapping and bond changes with the reaction subcommand. The Agent
-selects the atom correspondence; the helper validates it rather than inventing
-mechanistic evidence. Map explicit hydrogens for proton-transfer studies.
+explicit atom mapping with the reaction subcommand, which lists bond changes.
+The helper checks global balance and map element/isotope identity, not whether
+the chosen bond changes match the intended reaction. Review those changes separately.
+Map explicit hydrogens for proton-transfer studies.
 
 ```text
 "$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output reaction.json reaction --smiles '<mapped-reactants>><mapped-products>'

@@ -22,8 +22,8 @@ PubChem/OPSIN 查询；--lookup-name 可提供翻译或规范化名称，同时�
 "$TSPI_PYTHON" <chemical-input>/scripts/prepare.py --output seed.json seed --smiles O --charge 0 --multiplicity 1 --output-dir seeds
 ```
 
-反应研究逐一解析/检查物种，再用 reaction 子命令核验组成、电荷、显式映射和键变化。
-Agent 选择原子对应关系，helper 检查其有效性；映射本身不能证明机理。
+反应研究逐一解析/检查物种，再用 reaction 子命令核验组成、电荷和显式映射，并列出键变化。
+helper 检查整体守恒与映射元素/同位素身份，不验证键变化是否符合预期反应，需另行审查。
 研究质子转移时应显式映射氢原子。
 
 ```text

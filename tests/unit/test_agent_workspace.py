@@ -55,7 +55,7 @@ def test_new_workspace_change_checkpoint_and_turn_are_durable(tmp_path: Path) ->
             "expected_revision": 0,
             "operations": [
                 {"type": "create_phase", "id": "phase_1", "title": "Phase", "objective": "Inputs"},
-                {"type": "create_claim", "id": "claim_1", "statement": "Hypothesis", "status": "open"},
+                {"type": "create_claim", "id": "claim_1", "statement": "Hypothesis", "status": "proposed"},
                 {
                     "type": "create_node", "id": "node_1", "title": "Node", "objective": "Study",
                     "phase_id": "phase_1", "claim_ids": ["claim_1"],

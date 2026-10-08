@@ -86,6 +86,11 @@ Agent 通过有界 manifest、摘要和按需 excerpt 读取它们。
 表示有界工作，`ResearchPhase` 只是可选的导航分组。Node 产生统一的 `Finding`，其中
 `FactFinding` 表示确认后的事实，`IssueFinding` 表示问题、矛盾或风险。
 
+新 Claim 从 `proposed` 开始；科学状态由 `assess_claim` 记录理由和已登记证据后更新。
+导入数据和文献可作为证据，不要求新增 Job。当前采用的评估绑定证据版本与所需 ClaimGate，
+投影显示 `current`、`needs_review` 或 `not_assessed`，不会把历史状态自动升级为已核实评估。
+证据或 ClaimGate 变化可先提交，再另行评估；`needs_review` 阻止 terminal 收尾，不冻结独立工作。
+
 ```text
 ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
        ^               |                  |
@@ -227,17 +232,14 @@ Claim。Gate 记录结果，但不会自动修改 Node 或 Claim；解释和状�
 
 ## 独立科学能力与节点管理
 
-`artifact_derive` 通过按需能力目录派发 22 项版本化独立分析能力；对外目录由
-`packages/research-compute/research_compute/analysis.py` 只组装通用分析合同；化学领域描述和实现位于
-`extensions/chemical/skills/`。结果绑定 Node、输入 digest、生成文件
-和候选事实；选定事实通过已有 `research_change`
-入口重算校验后登记。能力不选择下一科学步骤，不接受 Claim。化学网络使用带计量
-的超边并允许有环，独立于研究 Node DAG。
+`artifact_derive` 只记录派生描述，不派发分析或生成科学输出。科学脚本位于 Domain Skill，
+通过通用 Job Runtime 执行；真实输出连同输入摘要和来源登记为 Artifact。已注册验证器列在
+extension manifest 中，通过 `job_start` 调用，不需要分析 capability catalog。
 
-`execution_dispatch` 的暂停/恢复回执位于操作层，不改变 Node 科学状态。共享锁协调暂停
-与分析、提交 guard 的边界；在途作业仍可查看、收集和取消。报告和 TS Web 消费
-规范 ResearchMap 数据。详见 [ADR 0002](adr/0002-independent-scientific-capabilities.md) 和
-[能力运维文档](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md)。
+化学扩展提供分子准备、Gaussian/xTB/CF22D runner、报告生成和 `chemical.gaussian_frequency`
+验证器。Gaussian 显式输入支持有界 TS/频率/IRC 检查，但不提供自动 TS 候选生成、振动模式
+性质验证或端点身份评估。其他已安装科学命令可在核实实际输入输出合同后使用通用 Job。
+执行结果不会隐式更新 Claim。
 
 TS Web 直接渲染规范的 `ResearchMap` 序列化。Claim、Node、Finding、Gate 和依赖关系
 都是同一个 map 的记录；浏览器不从后端日志或第二套 registry 重建科学状态，也不把
@@ -306,22 +308,22 @@ cursor 用于断线重连。它不启动第二个 App Server 或 Worker。
 ## 其他契约
 
 ChangeSet 的操作定义位于文件系统 Research State 使用的 ResearchMap operation catalog；
-`job_start/job_status/job_collect` 对 local/remote 使用相同的四个公开操作：
+通用 Job 对 local/remote 使用相同的公开工具：
 
 ```text
-launch   -> prepare, submit
-inspect  -> status, optional tail
-finalize -> collect, parse
-cancel   -> cancel
+job_start     -> 暂存输入、提交
+job_status    -> 查看执行状态与有界输出
+job_collect   -> 收集声明产物、生成结果回执
+job_cancel    -> 请求取消
+job_reconcile -> 协调确认不确定的执行状态
 ```
 
-右侧是 child runtime 的内部动作，不是额外的公开操作。对于
-`execution_target.kind=local` 和 `execution_target.kind=remote`，Research State
+科学解析与解释由 Skill 显式完成，Job 的 `platform` 选择安装级环境。Research State
 工作区始终是唯一规范存储：本地执行在 Attempt 的 execution 目录暂存输入并把输出
 收集回工作区，远程目录只是临时执行镜像，TS Web 不需要访问远程文件系统。推荐的
-`compute.toml` 将 local/remote 计算环境放在同一份 environments 目录中，每个环境在
-backends 下绑定软件；只有 remote 环境增加 SSH/Torque 字段。`/compute` 和
-`compute.environments` 使用同一份配置查询。
+`job.toml` 将 local/remote 计算环境放在同一份 environments 目录中，每个环境在
+backends 下绑定软件；只有 remote 环境增加 SSH/Torque 字段。`job_probe` 检查所选平台，
+不证明科学方法就绪；方法检查使用配置的命令和 Skill helper。
 远程计算和产物记录使用显式 schema。TS Web 只读取工作区
 文件，不拥有 Pi session。入口、skill、
 扩展和测试位置与[英文架构](ARCHITECTURE.md)一致。

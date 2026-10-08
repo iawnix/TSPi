@@ -1,4 +1,4 @@
-> 当前 scripts/run.py 只执行 opt、sp、opt-sp。下文高级解析/验证规则是参考材料，不代表已有对应可执行工作流。
+> XYZ runner 支持 opt、sp、opt-sp；显式 GJF runner 还接受 execution、opt、frequency、minimum、saddle、irc 检查。这些检查不确立振动模式性质或端点身份。
 
 # Gaussian 验证
 

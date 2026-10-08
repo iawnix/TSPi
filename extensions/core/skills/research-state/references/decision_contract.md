@@ -16,13 +16,14 @@ creates. References use the IDs already present in the map.
 | Type | Required data |
 | --- | --- |
 | `create_phase` | `id`, `title`; optional `objective` |
-| `create_claim` | `id`, `statement`; optional `status`, `predictions`, `falsifiers` |
+| `create_claim` | `id`, `statement`; optional `status=proposed`, `predictions`, `falsifiers` |
 | `create_node` | `id`, `title`, `objective`; optional `phase_id`, `claim_ids`, `dependency_ids` |
 | `create_finding` | `id`, `node_id`, `statement`, `kind` (`fact` or `issue`); fact fields are `value`, `datatype`, `unit`, `provenance`; issue fields are `status`, `severity`, `resolution` |
 | `create_gate` | `id`, `scope` (`node` or `claim`), `target_id`, `criteria` |
 | `evaluate_gate` | `gate_id`, `verdict`, `assessments`, optional `message`, `evidence_refs` |
 | `set_node_state` | `node_id`, `state`; closing also needs `outcome` and `summary` |
-| `set_claim_status` | `claim_id`, `status` |
+| `assess_claim` | `id`, `claim_id`, `verdict`, `reason`; registered `evidence_refs` for `supported`, `contradicted`, or `inconclusive` |
+| `revise_claim` | `source_claim_id`, `target_claim_id`, `revision_id`, `statement`, `reason`; optional `relation`, `predictions`, `falsifiers` |
 | `relate_claims` | `source_id`, `target_id`, `relation` |
 | `set_focus` | `claim_ids`, `node_ids` |
 
@@ -43,7 +44,20 @@ prior map. Do not edit canonical documents directly.
 entry: use `FactFinding` for a value that supports a scientific statement and
 `IssueFinding` for a limitation, anomaly, conflict, or unresolved question.
 `create_gate` and `evaluate_gate` are the Gate lifecycle. Claim status and Gate
-verdict are independent: a Gate evaluation does not silently change a Claim.
+verdict are independent: a Gate evaluation does not silently change Claim status.
+New Claims start as `proposed`; scientific verdicts go through `assess_claim`,
+not a direct status setter. Cite registered literature, imported data or collected
+outputs with their provenance. An assessment does not require a new calculation,
+but an untested plan cannot establish a scientific verdict or confirmed Finding.
+`current_assessment_id` identifies the adopted assessment. Its evidence versions
+and any required ClaimGate must stay current; `assessment_state` reports
+`not_assessed`, `current` or `needs_review`. Reassess changed evidence rather than
+editing old records. Legacy status without an assessment remains `not_assessed`.
+Read assessment reasons and evidence bindings with `research_read mode=decisions claim_id=<claim_id>`.
+Adding, revising or reevaluating a ClaimGate (even at the same Gate version) makes
+an adopted `supported` assessment need review. You may record that change first
+and submit `assess_claim` later; one combined ChangeSet is not required.
+`needs_review` prevents explicit and automatic terminal closure, while independent work may continue.
 
 
 Before starting a calculation, attach explicit Gate criteria to its Node or give

@@ -4,11 +4,8 @@ Root 负责科学判断，Research State 负责结构有效性与原子存储；
 
 ## 变更前
 
-读取足够回答问题的最小 `research_read` 结果：
-
-```text
-summary -> map -> detail/locate -> evidence
-```
+使用当前 State 快照；信息缺失或过期时才读取最小范围的 `research_read` 视图。
+对象详情用 `detail`，来源记录用 `evidence`，当前决策用 `context`/`liveness`，不必依次全读。
 
 明确问题、当前不确定性、负责该工作的 Node，以及支持拟议变更的来源记录。复用已有 ID。
 当问题、交付物或 Claim 范围发生变化时创建新的依赖 Node；重试同一个计算仍是在同一
@@ -31,14 +28,14 @@ Node 下新增 Attempt。
 
 读取返回的 revision，并在需要时读取 `research_read mode=summary`。只有完成标准已满足且所附每个
 NodeGate 的最新评估均为 `pass` 时，Node 才能以 `completed` 关闭。问题未解决时使用
-`inconclusive` 或 `stopped`。显式更新 Claim 状态；Node 状态与 Claim 状态互不隐含。
+`inconclusive` 或 `stopped`。科学 Claim 状态通过带理由和已登记证据的 `assess_claim` 更新；Node 状态与 Claim 状态互不隐含。
 
 对于新问题，创建依赖于先前 Node 的后继 Node，并在同一个或后续 ChangeSet 中设置焦点。
 保留旧 Node、Finding、Gate、Artifact 和 Attempt 作为历史。
 
 ## Research Turn 收尾
 
-每轮结束时，读取有界的 `research_read mode=context` 或 `research_read mode=liveness`，在需要时记录 strategy 或
+研究回合结束时使用最新快照，信息缺失或过期时才读取 `context` 或 `liveness`，在需要时记录 strategy 或
 Attempt interpretation，然后使用 `research_checkpoint` 写入明确 disposition：
 `continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
 `user_input_required`。`research_checkpoint` 是规范的 turn

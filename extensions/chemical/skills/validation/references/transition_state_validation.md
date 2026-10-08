@@ -4,22 +4,23 @@ Transition-state validation separates program completion, stationary-point
 evidence, mode assignment, structure identity, and scientific interpretation.
 No single parser flag establishes all of them.
 
-`gaussian.output.analyze` reads a selected Gaussian job section
-(`section_index` is zero based). It extracts termination, convergence,
-stationary markers, frequencies, geometry, and normal-mode vectors. Select the
-section that corresponds to the declared task and compare the output route,
-charge, multiplicity, method, and basis with the immutable calculation intent.
+The [Gaussian runner](../../gaussian/SKILL.md) writes `parsed.json` using
+`gaussian_io.py::parse_log`. The parser extracts termination, convergence,
+stationary markers, frequencies and geometry; it does not extract normal-mode
+vectors. Its `section_index` argument is zero based. Select the relevant section
+and compare the output route, charge, multiplicity, method and basis with the input.
 
 For a classical first-order saddle, require optimization convergence and one
 imaginary mode that represents the proposed elementary step. Numerical noise,
 constraints, flat modes, and competing imaginary modes must remain visible.
 Inspect the displacement vectors rather than relying on frequency count alone.
 
-`vibration.analyze_mode` accepts zero-based `mode_index` and explicit atom-pair
-and sign expectations in `bonds`. It reports bond-length derivatives and
-absolute cosine overlap; the overall normal-mode sign is arbitrary. Use enough
-chemically relevant coordinates to distinguish competing collective motions.
-The reported overlap is not a mass-weighted full reaction-coordinate metric.
+There is no bundled mode-character validator. Inspect displacement vectors in
+the primary output with an available analysis tool or an explicitly implemented
+analysis Job, preserving its inputs and results. Compare enough relevant bond
+changes to distinguish competing motions; the overall normal-mode sign is arbitrary.
+The registered `chemical.gaussian_frequency` validator checks normal termination
+and one negative frequency only, not mode character or IRC connectivity.
 
 Validate element count, atom mapping, charge, multiplicity, electronic state,
 key distances and dihedrals, stereochemistry, and the absence of unintended

@@ -13,7 +13,7 @@ description: 读取、校验并原子更新由 Phase、Claim、Node、Finding、
 （`research_map_context_2`）和 `lifecycle/liveness.json`（`research_liveness_2`）。Context
 始终包含数组 collection：`phases`、`claims`、`nodes`、`findings`、`gates`、
 `claim_relations`、`attempts`、`artifacts`、`evidence_links`、`lifecycle_actions`、
-`strategy_plans`、`strategy_reviews`、`attempt_interpretations`；`focus.claim_ids` 和
+`claim_assessments`、`claim_revisions`、`strategy_plans`、`strategy_reviews`、`attempt_interpretations`；`focus.claim_ids` 和
 `focus.node_ids` 也必须是数组。`memory/index.json` 使用 `research_memory_index_1`，只是
 metadata/lifecycle projection，不是第二个 ResearchMap 权威。Decision 记录和 Evidence
 Registry 由 Research State 管理，通过 `research_read` 的 `decisions` 与 `evidence` mode 暴露
@@ -32,7 +32,7 @@ Node 的状态与结果独立于 Claim 状态表达研究进展。
 
 ChangeSet 的 `type` 必须是
 `references/decision_contract.zh-CN.md` 中的 canonical 操作名，不要编造领域专用操作名。
-例如，机理假设使用 `create_claim`，有界机理研究使用 `create_node`。Research State
+例如，机理假设使用 `create_claim`，有界机理研究使用 `create_node`。新 Claim 只能从 `proposed` 开始；科学状态通过带理由和已登记证据的 `assess_claim` 更新。Research State
 不是 capability catalog；方法说明属于当前 Domain Skill。
 
 Turn 内优先使用 `context` 或 `liveness`；只有当前问题需要时才扩展到 `detail`、`decisions`、
@@ -54,7 +54,7 @@ Research State 会在提交一个新 revision 前校验引用、反向索引、�
 
 普通工具观测不要求写 Finding。需要事实记录时，先用 artifact_create 或 artifact_register 保存原始观测，引用返回的 artifact_id。evidence_reference_unknown 时用 research_read mode=evidence 查证，不能用工具名或自然语言代替 ID。可选诊断失败不阻止独立任务。使用全局 user_input_required 前，先明确原因并阻塞对应 Node；存在独立可执行节点或运行中 Attempt 时 State 会拒绝该 checkpoint。
 
-科学 FactFinding 必须同时提供 source_refs（已登记 Artifact ID）和非空 provenance（如 {"source":"collected result.json"}）。terminal checkpoint 前先把完成节点设为 state=closed、outcome=completed，并填写 summary。
+科学 FactFinding 必须提供 source_refs 和非空 provenance。已登记文献、导入数据和计算产物均可作为证据，不必全部来自 Job；计划和未经检验的假设不能写成 confirmed 事实。terminal checkpoint 前先把完成节点设为 state=closed、outcome=completed，并填写 summary。
 
 通过 `research_interpretation` 记录检查结果后的解释。必填内容为 `interpretation.id`、
 `summary`、`outcome`、既有 Claim ID 和真实 Attempt ID。根据证据将 `outcome` 设为
@@ -83,4 +83,4 @@ Research State 会在提交一个新 revision 前校验引用、反向索引、�
 
 问题修复后通过 research_change 使用 {"type":"resolve_issue","id":"<既有issue ID>","resolution":"<修复内容与验证方式>","source_refs":["<已登记证据ID>"]}。source_refs 可省略，提供时必须存在。该操作保留原 issue 和证据，标记 resolved 并记录修复说明；相关 Node 另行恢复。不要发明 update_finding 或直接改状态文件。ResearchMap 变更会取代旧 checkpoint，恢复后的工作结束前需写新 checkpoint。
 
-计算、报告和交付 Node 均须有完成条件；completed 还要求依赖节点已完成。用 `research_read mode=operations query=evaluate_gate` 获取嵌套字段和最小示例，query=completion_exemption 查找创建字段。批次错误含从 0 开始的 operation_index 和 target_id；该批次没有任何操作提交。保留回执，只修复被拒操作及其前置条件。
+计算、报告和交付 Node 均须有完成条件；依赖必须是 closed 且 outcome=completed，closed/inconclusive 不满足。completion_exemption 记录有理由的例外，本身不是科学证据。用 `research_read mode=operations query=evaluate_gate` 获取嵌套字段和示例。批次错误含 operation_index 和 target_id；该批次没有任何操作提交。保留回执，修复被拒操作及其前置条件。

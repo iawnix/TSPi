@@ -22,18 +22,8 @@
 
 端点 identity 还要结合全局 RMSD 与渲染结构检查片段排列、构象和立体化学。
 
-## 确定性工具参数
+## 执行边界
 
-`artifact_derive` 暴露可选 `parameters`，字段使用 camel case：
-
-- `atomMapping`：每个参考原子对应的一个目标 index；
-- `reactionCenterAtoms`：用于局部 RMSD 的参考原子 index；
-- `keyBonds`、`keyAngles`、`keyDihedrals`：由 2、3 或 4 个 index 组成的检查数组；
-- `stereochemicalChecks`：显式 `tetrahedral`、`alkene` 或 `dihedral` 检查，使用
-  `retain`/`invert` policy；alkene 检查还接受 `E` 或 `Z`；
-- `rmsdThreshold` 与 `reactionCenterThreshold`：0 到 10 angstrom 的有限值。
-
-Tetrahedral 检查使用 `center` 和四个 `neighbors`；alkene 检查使用两个 `atoms` 与两个
-`substituents`；dihedral 检查使用四个 `atoms`，并可将 `maxDeltaDegrees` 设为 0 到 180。
-Research State runtime 拒绝重复/越界 index、错误的类型特定字段、非 XYZ 输入、已改变摘要和已关闭的输出
-Node。
+当前包没有内置的映射结构比较执行器。使用可用分析工具或实现有界脚本，显式给出映射、
+原子选择与阈值，实际执行后登记结果；保存输入摘要并报告对称性歧义。
+`artifact_derive` 只记录描述，不执行结构对齐或立体化学检查。

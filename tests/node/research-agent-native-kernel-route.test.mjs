@@ -5,6 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { executeFilesystemResearchCommand, isFilesystemResearchWorkspace } from "../../apps/app-server/research-native-kernel.mjs";
+import { createStateTool } from "../../apps/app-server/pi-native-tools.mjs";
+import { createPublicToolContracts } from "../../packages/agent-runtime/host-api/tools.mjs";
+import Type from "../../apps/app-server/pi-runtime-deps.mjs";
 import { create_workspace_initializer } from "../../packages/agent-core/workspace.mjs";
 import { close_test_research_states, create_test_research_state } from "../support/research_state_helpers.mjs";
 
@@ -21,6 +24,16 @@ test("native research commands expose the Research State runtime operation and l
     await create_test_research_state({ workspace_root: root }).admit_workspace({ authority: "host" });
     const catalog = await executeFilesystemResearchCommand("research.operations", root);
     assert.ok(catalog.operations.some((item) => item.type === "create_node"));
+    const publicSchemas = createPublicToolContracts(Type).change.parameters.properties.operations.items.anyOf;
+    const schemasByName = Object.fromEntries(publicSchemas.map(schema => [schema.properties.type.const, schema]));
+    assert.deepEqual(Object.keys(schemasByName).sort(), catalog.operations.map(operation => operation.type).sort());
+    for (const operation of catalog.operations) {
+      assert.deepEqual(schemasByName[operation.type], operation.schema);
+      assert.deepEqual([...operation.schema.required].sort(), operation.required_fields);
+    }
+    const selected = await createStateTool().execute("read_operations", { mode: "operations", query: "assess_claim" }, undefined, { cwd: root });
+    assert.equal(selected.details.result.selected_operation, "assess_claim");
+    assert.deepEqual(selected.details.result.operations.map(operation => operation.type), ["assess_claim"]);
     await assert.rejects(
       executeFilesystemResearchCommand("research.storage", root, { operation: "bootstrap" }),
       /schema_field_invalid: research.storage unsupported fields: operation/,

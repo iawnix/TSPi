@@ -1,6 +1,6 @@
 ---
 name: qbics
-description: Assess whether a QBICS workflow is scientifically appropriate and discover whether a registered runnable workflow exists before execution.
+description: Assess QBICS applicability and verify an installed command, its inputs and validation needs before running a bounded research Job.
 ---
 
 # TSPi QBICS
@@ -8,17 +8,17 @@ description: Assess whether a QBICS workflow is scientifically appropriate and d
 [Chinese version](SKILL.zh-CN.md)
 
 Use this Skill when considering QBICS for crossing-point or related searches.
-TSPi currently defines no public QBICS Backend workflow, input contract, or
-parser contract.
+The package does not bundle a QBICS preparation or parsing runner. This does
+not determine whether a selected local or remote environment has QBICS installed.
 
-First query `read the relevant Skill references and use job_probe for environment checks`. Proceed only
-if the live catalog contains an exact QBICS workflow and use its returned
-roles and parameter schema. If none exists, describe the intended scientific
-purpose, required electronic states, inputs, expected outputs, and validation
-criteria as method guidance; do not invent a workflow name, construct a
-`job_start` request, run arbitrary shell, or present QBICS as executable through
-TSPi.
+Inspect the installation bindings and the installed program's documentation or
+bounded help/version output. Verify its intended scientific task, electronic
+states, input format, resources, required files and result interpretation.
+If a usable command or shared runner exists, stage explicit inputs and invoke it
+through generic `job_start`, preserving outputs and execution receipts. No
+scientific workflow registry is required. Do not invent command-line options or
+claim that a generic platform probe proves QBICS readiness.
 
-A future QBICS integration becomes runnable only after it has a deterministic
-Backend adapter, immutable input preparation, declared outputs, parser contract,
-task validation, and tests.
+If an execution or validation piece is missing, identify that concrete gap and
+continue independent authorized work. Record unknown capability as unverified;
+a missing script in this Skill alone is not an execution failure or scientific result.

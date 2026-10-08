@@ -1,9 +1,9 @@
 # CREST Ensemble Contract
 
-The supported workflow is `crest.conformer_search`. It accepts one `xyz`
-input and explicit charge, unpaired electrons, xTB method, search level,
-optimization level, thread, and solvent settings. Solvent and solvent model
-must be supplied together.
+Use the installed CREST command through generic Job Runtime; there is no bundled
+CREST workflow adapter. Read the installed version's actual options. Preserve the
+XYZ input, charge, unpaired electrons, xTB method, search and optimization levels,
+threads and solvent settings as applicable. Validate them against that program's contract.
 
 The required primary set is `crest.out`, `crest_best.xyz`,
 `crest_conformers.xyz`, and `crest.energies`. A completed search requires a

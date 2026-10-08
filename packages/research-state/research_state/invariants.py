@@ -27,6 +27,13 @@ def validate_context(context):
             issues.append({"code": "job_terminal_conflict", "refs": [attempt["id"]], "recovery": "job_reconcile"})
     artifacts = {a["id"]: a for a in context.get("artifacts", [])}
     gates = {g["id"]: g for g in context.get("gates", [])}
+    from .assessments import claim_review_state
+    for claim in context.get("claims", []):
+        # Historical workspaces are left intact. New assessments explicitly
+        # identify the adopted decision; superseded decisions are audit history.
+        if claim.get("current_assessment_id") and claim_review_state(context, claim) != "current":
+            issues.append({"code": "claim_assessment_stale", "refs": [claim["id"], claim["current_assessment_id"]],
+                           "recovery": "Reassess the Claim against current evidence, or record a reasoned withdrawal with assess_claim."})
     for node in context.get("nodes", []):
         if node.get("state") != "closed":
             continue

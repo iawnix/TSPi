@@ -189,7 +189,7 @@ def test_contract_queries_and_precise_assessment_errors(tmp_path):
     assert 'criterion_id' in catalog['operations'][0]['nested_schema']['assessments']['required']
     assert [x['type'] for x in execute('research.operations', tmp_path, {'query': 'completion_exemption'})['operations']] == ['create_node']
     wrong = evaluate(); wrong['assessments'][0]['status'] = wrong['assessments'][0].pop('verdict')
-    with pytest.raises(state.AgentWorkspaceError, match='gate_assessment_verdict_invalid'):
+    with pytest.raises(state.AgentWorkspaceError, match=r'operation_contract_invalid: evaluate_gate.assessments.0:.*status'):
         change(tmp_path, [wrong])
 
 

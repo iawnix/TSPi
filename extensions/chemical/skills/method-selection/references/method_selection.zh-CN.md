@@ -12,10 +12,11 @@ Root Agent 根据科学问题、不确定性、体系大小、电子结构、目
 - 是否需要更高层级 recalculation 进行稳健性检查；
 - 实时本地/远端软件与调度器是否就绪。
 
-Gaussian 可用于直接 TS 优化、松弛扫描、QST 与后续表征。xTB/CREST 可高效探索构象和
-粗略路径。已注册 `ase.neb` workflow 默认使用 ASE 路径优化和 xTB 能量/力，也可以
-显式选择 Gaussian CLI calculator 为每个 image 计算能量/力。外部 DMECP 工作流可处理
-交叉点搜索。根据当前研究问题决定它们的使用顺序。
+Gaussian 显式输入 runner 可执行已提供的 TS、扫描、QST 输入与后续计算，但不自动构造
+完整机理研究。xTB/CREST 与 ASE NEB 可能适合探索，需区分科学适用性与实际执行入口。
+内置 xTB runner 只支持 opt/SP；CREST、NEB 和外部交叉点工具需核实已安装命令或具体脚本，
+通过通用 Job Runtime 执行。先检查共享 runner 与安装软件，再判断能力是否不可用，
+根据研究问题决定使用顺序。
 
 在 ResearchNode/Claim 中记录方法选择及其可证伪目的。方法变化时保留之前的 intent；
 若科学目标变化，使用 recalculation record 或新 Node。

@@ -5,11 +5,9 @@ storage. Keep those responsibilities separate.
 
 ## Before A Change
 
-Read the smallest useful `research_read` result:
-
-```text
-summary -> map -> detail/locate -> evidence
-```
+Use the current State snapshot. For missing or stale information, read the smallest
+useful `research_read` view: `detail` for an object, `evidence` for source records,
+or `context`/`liveness` for the current decision. These are alternatives, not a required read sequence.
 
 State the question, the current uncertainty, the Node that owns the work, and
 the source records supporting the proposed change. Reuse existing IDs. Create a
@@ -37,7 +35,7 @@ has been established.
 Read the returned revision and, when useful, `research_read mode=summary`. A Node can be
 closed as `completed` only when its completion criteria are satisfied and every
 attached NodeGate has a passing latest evaluation. Use `inconclusive` or
-`stopped` when the question is not resolved. Update Claim status explicitly;
+`stopped` when the question is not resolved. Use `assess_claim` with a reason and registered evidence for scientific Claim status;
 Node state and Claim status do not imply one another.
 
 For a new question, create the successor Node with a dependency on the prior
@@ -46,8 +44,8 @@ Node, Findings, Gates, Artifacts, and Attempts as history.
 
 ## Research Turn Checkpoint
 
-At the end of every turn, read the bounded `research_read mode=context` or
-`research_read mode=liveness` view, record any needed strategy or Attempt interpretation,
+At the end of a research turn, use the latest snapshot, reading `context` or
+`liveness` only when needed information is missing or stale. Record any needed strategy or Attempt interpretation,
 and call `research_checkpoint` with an explicit disposition:
 `continue_required`, `waiting_external`, `deferred`, `blocked`, `terminal`, or
 `user_input_required`. `research_checkpoint` is the canonical turn checkpoint.

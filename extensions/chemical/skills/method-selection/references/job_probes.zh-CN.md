@@ -1,34 +1,24 @@
 # 计算环境合同
 
 `job_start` 同时管理本地和远端目标的计算生命周期。远端 adapter 是安装级绑定的
-OpenSSH/SCP 与 Torque 传输层，不是另一套公共计算生命周期。公共环境查询是
-`compute.environments`，通过 `/compute` 与 `job_probe` 暴露。
+OpenSSH/SCP 与 Torque 传输层，不是另一套公共计算生命周期。使用 `job_probe` 对所选 `platform` 做有界可用性检查。
 
 ## 安装级策略
 
-推荐使用 `compute.toml` 作为共享策略文件。每个环境声明 `kind` 和 `backends` 表；
+推荐使用 `job.toml` 作为共享策略文件。每个环境声明 `kind` 和 `backends` 表；
 `kind = "remote"` 的环境还拥有 SSH host/config、远端根目录、调度器命令、队列、资源上限、
 激活、scratch 策略和进程环境。本地与远端环境都在同一个文件中定义。计算请求选择一个
 命名环境，以及不超过其配置上限的资源。
 
 该文件是 local/remote 唯一的环境权威。不要再增加独立的 `.pi/remote.toml` registry，也不要
-从某个主机目录推断远端环境。配置的环境名作为 `job_start` 的 `environment`（或
-`platform`）字段传入。环境的可选软件 metadata 只描述绑定和就绪状态，不是 workflow registry
+从某个主机目录推断远端环境。配置的环境名作为 `job_start` 的 `platform` 字段传入。环境的可选软件 metadata 只描述绑定和就绪状态，不是 workflow registry
 或除探测和传输检查之外的启动门禁。
 
-使用安装级 `TSPi --check-remote` 做只读诊断：
-
-- `status`：只检查 SSH 连通性；
-- `doctor`：检查 SSH、调度器、存储与已注册软件；
-- `queues`：有边界的队列视图；
-- `nodes`：有边界的计算资源视图。
-
-首次远端计算前，或配置发生变化后，运行 `TSPi --check-remote`。对于 `ase_neb`，
-`doctor` 还会使用配置的 Python 导入 ASE 与 TSPi runner，并执行配置的 xTB 程序版本探测。
-三者全部可用时环境才算就绪。
-对于 `pyscf`，必须绑定包含 PySCF、geomeTRIC、`pyscf-dispersion` 和 TSPi runner 的专用
-Python 解释器及 activation script；doctor 还会探测 `CF22D` DFT 构造器。PySCF kernel
-不会在计算过程中向宿主 Python 安装依赖，也不会从宿主 Python 猜测科学软件包。
+`job_probe` 检查平台可用性，不证明科学方法就绪。核实所选 backend 的命令、激活脚本和
+Python 绑定；需要时执行程序的有界 help/version 检查或 Skill 专用 doctor。
+CF22D 的 [doctor.py](../../cf22d/scripts/doctor.py) 检查配置的 PySCF 环境和方法构造，
+不证明其他程序就绪。当前没有内置 NEB 就绪探测或 workflow registry。
+不要在研究 workspace 中安装科学依赖。
 
 ## 隔离
 
@@ -51,6 +41,6 @@ Collection 遵循不可变 Artifact manifest，即使调度器历史不可用也
 
 - 在下一次控制动作前协调确认未知的 submit 或 cancel 结果。
 - 从配置的环境和 intent 解析远端路径与命令。
-- 使用 `TSPi --check-remote` 同时检查 SSH、调度器与软件就绪状态。
+- 分别核验所选平台和科学命令；仅有 SSH 连通性不足。
 - 调度完成后检查程序终止状态和必需输出。
 - 收集输出，在本地核验并解析后再记录 Finding。

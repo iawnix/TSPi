@@ -6,12 +6,125 @@ import json
 from pathlib import Path
 
 from research_state.agent_workspace import read_context, read_liveness
+from research_state.assessments import claim_review_state
 from research_state.invariants import validate_context
 from research_state.transactions import TransactionCoordinator
 
 
 def _encode(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _finish_view(view, max_bytes, requested_events, event_order):
+    """Bound a disposable view without weakening the authoritative State.
+
+    Identities are never truncated. Whole records or fields may be omitted, but
+    their counts and read routes remain visible. Even focus and running-ID
+    lists are projections; neither may prevent an operator/Agent from reading.
+    """
+    collections = ("goals", "nodes", "related_nodes", "issues", "events", "attempts", "gates", "strategies", "interpretations")
+    totals = {name: len(view[name]) + view["bounds"]["omitted"].get(name, 0) for name in collections}
+    focus = view["focus"]
+    running = view["lifecycle"].get("running_attempt_ids") or []
+
+    def account():
+        omitted = {name: totals[name] - len(view[name]) for name in collections if totals[name] > len(view[name])}
+        for kind in ("claim_ids", "node_ids"):
+            if len(focus[kind]) > len(view["focus"][kind]):
+                omitted["focus_" + kind] = len(focus[kind]) - len(view["focus"][kind])
+        if len(running) > len(view["lifecycle"].get("running_attempt_ids", [])):
+            omitted["running_attempt_ids"] = len(running) - len(view["lifecycle"].get("running_attempt_ids", []))
+        view["bounds"]["omitted"] = omitted
+        compacted = {name: sum(row.get("details_omitted", False) is True for row in view[name])
+                     for name in collections if any(row.get("details_omitted") for row in view[name])}
+        if compacted:
+            view["bounds"]["compacted"] = compacted
+        else:
+            view["bounds"].pop("compacted", None)
+        view["bounds"]["degraded"] = bool(omitted or compacted)
+        view["scope"]["omitted_nodes"] = view["scope"]["total_nodes"] - len(view["nodes"]) - len(view["related_nodes"])
+        shown = {row["event_id"] for row in view["events"]}
+        next_event = next((event_id for event_id in event_order if event_id not in shown), None)
+        if next_event is not None:
+            view["read"]["pending_events"] = {"mode": "context", "event_ids": [next_event], "max_bytes": 16000}
+        else:
+            view["read"].pop("pending_events", None)
+        if requested_events:
+            view["wake_events"] = {"requested": len(requested_events), "included": len(set(requested_events) & shown),
+                                   "omitted": len(set(requested_events) - shown)}
+
+    def fits():
+        account()
+        # context_id and final byte accounting are added only after selection.
+        return len(_encode(view).encode()) <= max_bytes - 128
+
+    if not fits():
+        view["read"]["claim"] = {"mode": "detail", "kind": "claim", "id": "<claim_id>"}
+        view["read"]["gate"] = {"mode": "detail", "kind": "gate", "id": "<gate_id>"}
+        view["read"]["nodes"] = {"mode": "locate", "query": "node_", "offset": 0, "limit": 20}
+        view["read"]["claims"] = {"mode": "locate", "query": "claim_", "offset": 0, "limit": 20}
+        view["read"]["decisions"]["offset"] = 0
+        view["read"]["evidence"]["offset"] = 0
+        view["read"]["event"] = {"mode": "context", "event_ids": ["<event_id from triggering message>"], "max_bytes": 16000}
+        view["required_action"] = "Read relevant omitted details before deciding completion or handling a wake; narrow focus with research_change set_focus. Omission is not satisfaction."
+        # Strip explanatory text before dropping identities. The complete
+        # record remains available through detail; no partial text is a fact.
+        keys = {
+            "goals": ("id", "status", "assessment_state"),
+            "nodes": ("id", "state", "outcome"),
+            "related_nodes": ("id", "state", "outcome"),
+            "gates": ("id", "scope", "target_id", "version"),
+            "strategies": ("id", "claim_id", "node_id", "status"),
+            "interpretations": ("id", "attempt_ref", "outcome", "review_state"),
+            "attempts": ("id", "node_id", "state", "job_id", "collection_state", "required_action"),
+            "events": ("event_id", "job_id", "attempt_id", "node_id", "state"),
+        }
+        for name, fields in keys.items():
+            if fits():
+                break
+            view[name] = [{**{key: row[key] for key in fields if key in row}, "details_omitted": True}
+                          for row in view[name]]
+        # Focus/liveness lists are redundant references and can themselves be
+        # enormous. The scope counts make their incompleteness explicit.
+        if not fits():
+            view["focus"] = {"claim_ids": [], "node_ids": []}
+            view["lifecycle"]["running_attempt_ids"] = []
+            view["lifecycle"]["running_attempt_count"] = len(running)
+        # Keep current/wake Attempts and events until other optional sections
+        # have been exhausted. Requested events are counted even if all of
+        # their exact identities cannot fit the smallest supported budget.
+        for name in ("interpretations", "strategies", "issues", "related_nodes", "gates", "goals", "nodes", "attempts", "events"):
+            if fits():
+                break
+            rows = view[name]
+            view[name] = []
+            if not fits():
+                continue
+            # Find the largest fitting prefix without serializing the full
+            # remaining history once for every discarded record.
+            lower, upper = 0, len(rows)
+            while lower < upper:
+                middle = (lower + upper + 1) // 2
+                view[name] = rows[:middle]
+                if fits():
+                    lower = middle
+                else:
+                    upper = middle - 1
+            view[name] = rows[:lower]
+        if not fits():
+            # A fixed-size recovery envelope, including the authoritative
+            # lifecycle, must fit even when all detail routes do not.
+            view["read"] = {"nodes": {"mode": "locate", "query": "node_", "offset": 0, "limit": 20},
+                            "event": {"mode": "context", "event_ids": ["<event_id from triggering message>"], "max_bytes": 16000}}
+            view["required_action"] = "Projection incomplete; read details before acting."
+        account()
+    view["context_id"] = "ctx_" + hashlib.sha256(_encode(view).encode()).hexdigest()
+    view["bounds"]["used_bytes"] = 0
+    while view["bounds"]["used_bytes"] != len(_encode(view).encode()):
+        view["bounds"]["used_bytes"] = len(_encode(view).encode())
+    if view["bounds"]["used_bytes"] > max_bytes:
+        raise ValueError("context_budget_invalid: minimal lifecycle envelope exceeds byte budget")
+    return view
 
 
 def build_decision_context(root, *, max_bytes=16000, event_ids=()):
@@ -64,7 +177,8 @@ def build_decision_context(root, *, max_bytes=16000, event_ids=()):
             "recovery_required": live.get("lifecycle") in {"blocked", "user_input_required", "deferred", "terminal"},
         },
         "scope": {"kind": "focused", "unlisted_objects": "not_necessarily_missing", "total_nodes": len(nodes_by_id)},
-        "goals": [{k: c.get(k) for k in ("id", "statement", "status", "predictions", "falsifiers", "source_refs", "constraints")}
+        "goals": [{**{k: c.get(k) for k in ("id", "statement", "status", "predictions", "falsifiers", "source_refs", "constraints")},
+                   "assessment_state": claim_review_state(state, c)}
                   for c in state.get("claims", []) if c["id"] in focus.get("claim_ids", [])],
         "nodes": [{k: n.get(k) for k in ("id", "objective", "state", "outcome", "gate_ids", "completion_exemption", "dependency_ids")}
                   for n in state.get("nodes", []) if n["id"] in focus_nodes],
@@ -76,10 +190,6 @@ def build_decision_context(root, *, max_bytes=16000, event_ids=()):
                  "decisions": {"mode": "decisions", "limit": 10}},
         "bounds": {"max_bytes": max_bytes, "estimated_tokens": True, "omitted": {}},
     }
-
-    def fits():
-        # Reserve space for digest, accounting and query cursors.
-        return len(_encode(view).encode()) <= max_bytes - 768
 
     def include_nodes(ids):
         """Keep references resolvable without changing focus or copying full nodes."""
@@ -98,40 +208,22 @@ def build_decision_context(root, *, max_bytes=16000, event_ids=()):
             pending.extend(node.get("dependency_ids", []))
 
     include_nodes(sorted(focus_nodes))
-    if not fits():
-        raise ValueError("context_budget_exceeded: narrow focus; required goals and constraints cannot be omitted")
-
     def add(name, values):
-        for index, value in enumerate(values):
-            related_count = len(view["related_nodes"])
+        for value in values:
             if value.get("node_id"):
                 include_nodes([value["node_id"]])
             view[name].append(value)
-            if not fits():
-                view[name].pop()
-                del view["related_nodes"][related_count:]
-                view["bounds"]["omitted"][name] = len(values) - index
-                return
 
     add("gates", [{**{k: g.get(k) for k in ("id", "scope", "target_id", "version", "criteria")},
                    "evaluations": g.get("evaluations", [])[-1:]}
                   for g in state.get("gates", []) if g.get("target_id") in focus_nodes | set(focus.get("claim_ids", []))])
-    if view["bounds"]["omitted"].get("gates"):
-        raise ValueError("context_budget_exceeded: completion conditions cannot be omitted; narrow focus")
     add("events", [{k: e.get(k) for k in ("event_id", "job_id", "attempt_id", "node_id", "state", "observed_at")}
                    for e in latest[:8]])
-    if latest and not view["events"]:
-        raise ValueError("context_budget_exceeded: current event cannot be omitted")
-    if event_ids and len(view["events"]) != len(latest):
-        raise ValueError("context_budget_exceeded: requested wake events cannot be omitted")
     if len(latest) > len(view["events"]):
         view["bounds"]["omitted"]["events"] = len(latest) - len(view["events"])
-        view["read"]["pending_events"] = {"command": "monitor.pending", "next_event_ids": [e["event_id"] for e in latest[len(view["events"]):][:8]]}
     add("strategies", [{k: s.get(k) for k in ("id", "claim_id", "node_id", "objective", "steps", "status", "stop_conditions")}
                        for s in reversed(state.get("strategy_plans", []))
                        if s.get("status") in {"proposed", "active"} and (s.get("claim_id") in focus_claims or s.get("node_id") in focus_nodes)])
-    if view["bounds"]["omitted"].get("strategies"):
-        raise ValueError("context_budget_exceeded: current strategies cannot be omitted; narrow focus")
     rows = []
     for a in attempts:
         row = {k: a.get(k) for k in ("id", "node_id", "state", "exit_code", "finished_at")}
@@ -146,17 +238,8 @@ def build_decision_context(root, *, max_bytes=16000, event_ids=()):
                                       "reason": "Execution is not confirmed; scientific completion remains blocked."}
         rows.append(row)
     add("attempts", rows)
-    if attempts and not view["attempts"]:
-        raise ValueError("context_budget_exceeded: current Attempt cannot be omitted")
-    if event_attempts - {a["id"] for a in view["attempts"]}:
-        raise ValueError("context_budget_exceeded: wake event Attempts cannot be omitted; request a smaller event batch")
     add("interpretations", [{k: i.get(k) for k in ("id", "attempt_ref", "outcome", "summary", "supersedes_id", "superseded_by", "review_state")}
                            for i in reversed(state.get("attempt_interpretations", []))][:8])
-    view["scope"]["omitted_nodes"] = len(nodes_by_id) - len(view["nodes"]) - len(view["related_nodes"])
-    view["context_id"] = "ctx_" + hashlib.sha256(_encode(view).encode()).hexdigest()
-    view["bounds"]["used_bytes"] = 0
-    while view["bounds"]["used_bytes"] != len(_encode(view).encode()):
-        view["bounds"]["used_bytes"] = len(_encode(view).encode())
-    if view["bounds"]["used_bytes"] > max_bytes:
-        raise ValueError("context_budget_exceeded: required projection exceeds byte budget")
-    return view
+    if len(state.get("attempt_interpretations", [])) > len(view["interpretations"]):
+        view["bounds"]["omitted"]["interpretations"] = len(state["attempt_interpretations"]) - len(view["interpretations"])
+    return _finish_view(view, max_bytes, tuple(dict.fromkeys(event_ids)), [event["event_id"] for event in latest])

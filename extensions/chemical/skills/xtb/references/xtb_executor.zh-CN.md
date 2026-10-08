@@ -1,15 +1,10 @@
-> 当前 scripts/run.py 只执行 opt、sp、opt-sp。下文高级解析/验证规则是参考材料，不代表已有对应可执行工作流。
+# xTB 执行与原生产物检查
 
-# xTB 执行合同
+内置 `scripts/run.py` 和准备 helper 支持 GFN2-xTB 的 `opt`、`sp`、`opt-sp`，
+实际参数以其 `--help` 为准。额外的原生 xTB 任务可在核实所安装程序的参数、输入和必需
+输出后，通过通用 Job Runtime 执行。现有解析函数是分析 helper，不是自动调用的 workflow adapter。
 
-Skill 支持的 xTB 任务包括 `sp`、`opt`、`freq`、`opt_freq`、
-`xtb.scan` 和 `xtb.md`。前四项要求一个 `xyz` 输入；scan 与 MD 准确要求一个 `xyz`
-和一个 `control` 输入。
-
-Adapter 接受 `gfn0`、`gfn1`、`gfn2` 或 `gfnff`；电荷与 `uhf` 显式提供。溶剂与
-溶剂模型必须同时提供，模型为 `alpb` 或 `gbsa`。优化任务接受有界 `opt_level` 与
-`max_cycles`。本 reference 是参数和输入合同；构造不熟悉请求前读取
-`read the relevant Skill references`，再通过 `job_start` 提交命令。
+下列扫描语法与输出清单属于科学/原生程序参考，不会为内置 runner 增加 freq、scan 或 md 选项。
 
 对于 `xtb.scan`，control Artifact 必须包含 `$scan` 段并以 `$end` 结束。`$constrain`
 后也可以使用 `$end` 作为 block 分隔符。推荐的编号形式在 `$constrain` 中定义原子序号；每个 `$scan` 指令只引用约束的 1-based 序号，

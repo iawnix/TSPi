@@ -19,5 +19,6 @@ electronic barrier as a Gibbs barrier, infer unsupported isotope corrections,
 or treat a qualitative pathway enumeration as kinetics. Record values and
 limitations as separate Findings with source Artifacts.
 
-Read [energetics.md](references/energetics.md) for supported thermochemistry,
-barrier, rate, branching, network, and profile contracts.
+Read [energetics.md](references/energetics.md) for scientific checks and execution
+limits. This Skill does not provide callable thermochemistry, kinetics or network
+analysis tools; execute a concrete analysis and preserve its evidence before recording results.

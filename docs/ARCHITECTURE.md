@@ -116,6 +116,14 @@ optional navigation grouping. Nodes produce a common `Finding` base type:
 `FactFinding` records a confirmed fact and `IssueFinding` records a problem,
 contradiction, or risk.
 
+New Claims start as `proposed`. `assess_claim` records a reason and registered
+evidence for scientific status changes; imported data and literature can supply
+evidence without a new Job. The adopted assessment binds evidence versions and
+required ClaimGates. Its projection reports `current`, `needs_review` or
+`not_assessed`; historical statuses are not silently promoted to verified assessments.
+Evidence or ClaimGate changes can be committed before reassessment. A `needs_review`
+assessment prevents terminal closure without freezing independent work.
+
 ```text
 ResearchClaim -> ResearchNode -> FactFinding / IssueFinding
        ^               |                  |
@@ -381,41 +389,39 @@ top-level Pi capabilities. TSPi does not provide a second Agent Runtime.
 
 ## Deterministic Tool Plane
 
-`artifact_derive` dispatches 22 independent versioned analysis capabilities from an
-on-demand catalog. Generic analysis contracts live in
-`packages/research-compute/research_compute/analysis.py`; chemistry domain code
-lives in `extensions/chemical/skills/`. Node-owned artifacts bind
-inputs, digests and generated files. Selected facts enter the existing
-`research_change` candidate path after replay validation. No capability schedules a
-scientific successor or accepts a Claim. Chemical networks use stoichiometric
-hyperedges and may contain cycles, independently of the ResearchNode DAG.
+`artifact_derive` records a derivation descriptor; it does not dispatch analysis
+or produce scientific outputs. Scientific scripts live in Domain Skills and run
+through generic Job Runtime. Register the actual outputs with their input digests
+and provenance. Registered validators are listed in extension manifests and are
+invoked with `job_start`; no analysis capability catalog is required.
 
-`execution_dispatch` writes Node-scoped pause/resume receipts outside canonical science.
-A shared lock orders pauses against new analysis and submission guards. In-flight
-jobs remain inspectable, collectable and cancellable. Reports and TS Web expose
-these execution records separately from the canonical map. See [ADR 0002](adr/0002-independent-scientific-capabilities.md)
-and the [operations guide](SCIENTIFIC_CAPABILITIES_OPERATIONS.zh-CN.md).
+The chemical extension provides molecular preparation, Gaussian/xTB/CF22D runners,
+report building and the `chemical.gaussian_frequency` validator. Gaussian explicit
+inputs support bounded TS/frequency/IRC checks, but do not provide automatic TS
+candidate generation, mode-character validation or endpoint identity assessment.
+Other installed scientific commands can use generic Jobs after their actual input
+and output contracts are verified. No execution result implicitly updates a Claim.
 
 TS Web renders the canonical `ResearchMap` document directly. Findings and Gate
 evaluations are ordinary map records, so the browser never reconstructs
 scientific state from backend logs or a second registry. It does not infer the
 next action from tool exit codes. See [ADR 0003](adr/0003-minimal-research-state-and-gates.md).
 
-Public tools validate input paths against the workspace root, normalize
-artifacts, and return machine-readable errors. Scientific backends are
-selected by capability and parse only their own output formats. `job_start/job_status/job_collect` uses
-the same four public operations for local and remote environments:
+Public tools validate input paths, normalize artifacts and return machine-readable
+errors. Skills select scientific commands and parse their outputs. Generic Jobs
+use the same public tools for local and remote environments:
 
 ```text
-launch   -> prepare, submit
-inspect  -> status, optional tail
-finalize -> collect, parse
-cancel   -> cancel
+job_start     -> stage inputs, submit
+job_status    -> inspect execution and bounded output
+job_collect   -> collect declared outputs and issue result receipts
+job_cancel    -> request cancellation
+job_reconcile -> resolve uncertain execution state
 ```
 
-These right-hand actions are private child-runtime steps, not additional public
-operations. For either `execution_target.kind=local` or `remote`, the Research
-Research State workspace is always canonical, while a remote directory is only a
+Scientific parsing and interpretation remain explicit Skill work. The Job's
+`platform` selects an installation environment. The Research State workspace
+is always canonical, while a remote directory is only a
 temporary execution mirror. Local runs stage inputs under the Attempt's execution directory and
 collect outputs back into the same workspace paths, so TS Web needs no remote
 filesystem access. Local workers are launched in an independent transient
@@ -468,13 +474,11 @@ Host `monitor/event` notifications are live only. Host primes its event cursor
 on startup instead of replaying historical files after a restart; Phone clients
 refresh `monitor/status` and the durable delivery outbox when reconnecting.
 
-`compute.toml` keeps local and remote compute environments in one catalog, with
+`job.toml` keeps local and remote compute environments in one catalog, with
 backend bindings under each environment; only remote environments add
-SSH/Torque fields. The canonical `compute.environments` query exposes both
-kinds of environment. Pi tools and the
-`/compute` command use that query; scheduler diagnostics remain an
-implementation detail of a remote environment rather than the name of the whole
-environment API.
+SSH/Torque fields. `job_probe` checks a selected platform; this does not prove
+that a scientific method is ready. Method-specific checks use the configured
+commands and Skill helpers.
 
 ## Run Journals And Result Delivery
 

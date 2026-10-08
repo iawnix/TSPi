@@ -3,6 +3,20 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { dispositions } = require("../../research-state/research_state/contracts/lifecycle.json");
 const gateContract = require("../../research-state/research_state/contracts/gates.json");
+const operationContract = require("../../research-state/research_state/contracts/operations.json");
+
+function resolveOperationSchema(value) {
+  if (Array.isArray(value)) return value.map(resolveOperationSchema);
+  if (!value || typeof value !== "object") return value;
+  if (value.$ref) {
+    if (value.$ref.startsWith("#/$defs/")) return resolveOperationSchema(operationContract.$defs[value.$ref.slice(8)]);
+    if (value.$ref.startsWith("gates.json#/")) return resolveOperationSchema(gateContract[value.$ref.slice(12)]);
+    throw new Error(`Unsupported ResearchMap contract reference: ${value.$ref}`);
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolveOperationSchema(item)]));
+}
+
+const operationSchemas = Object.values(operationContract.operations).map(resolveOperationSchema);
 
 const TOOL_ROWS = [
   ["systemPrompt", "sys_prompt", "deterministic_runtime"],
@@ -195,102 +209,11 @@ export function createPublicToolContracts(Type) {
     maxLength,
   });
   const identifier = (maxLength = 256) => Type.String({ minLength: 1, maxLength });
-  const text = (maxLength = 12_000) => Type.String({ minLength: 1, maxLength });
   const stringArray = (maxItems = 128) => Type.Array(identifier(), { maxItems, uniqueItems: true });
   const nodeReference = Type.String({ pattern: "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 });
   const claimReference = Type.String({ pattern: "^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$", maxLength: 128 });
-  const nodeReferences = (maxItems = 128) => Type.Array(nodeReference, { maxItems, uniqueItems: true });
-  const claimReferences = (maxItems = 128) => Type.Array(claimReference, { maxItems, uniqueItems: true });
-  const metadata = Type.Object({}, { additionalProperties: true, maxProperties: 32 });
-  const operation = (type, properties) => Type.Object({
-    type: Type.Literal(type),
-    ...properties,
-  }, {
-    additionalProperties: false,
-    maxProperties: 24,
-  });
-  // Node outcomes are terminal dispositions.  Keep the public ChangeSet
-  // schema aligned with ResearchNode.transition_node: non-terminal states
-  // cannot carry an outcome, while closing a node must carry one.
-  const setNodeStateOperation = Type.Union([
-    operation("set_node_state", {
-      node_id: nodeReference,
-      state: literalUnion(["planned", "active", "paused", "blocked"]),
-      summary: Type.Optional(text()),
-    }),
-    operation("set_node_state", {
-      node_id: nodeReference,
-      state: Type.Literal("closed"),
-      outcome: literalUnion(["completed", "inconclusive", "stopped"]),
-      summary: Type.Optional(text()),
-    }),
-  ]);
-  // ResearchMap mutation names are a Research State contract, not domain labels. Keep
-  // the public schema discriminated so a model cannot invent operations such
-  // as `mechanistic_hypothesis` and only discover the mistake after execution.
-  const changeOperation = Type.Union([
-    operation("create_phase", {
-      id: identifier(), title: text(2000), objective: Type.Optional(text(12_000)),
-      created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
-    }),
-    operation("create_claim", {
-      id: claimReference, statement: text(), source_refs: Type.Optional(stringArray(256)), constraints: Type.Optional(stringArray(256)),
-      status: Type.Optional(literalUnion(["proposed", "supported", "contradicted", "inconclusive", "withdrawn"])),
-      predictions: Type.Optional(stringArray()), falsifiers: Type.Optional(stringArray()),
-      created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
-    }),
-    operation("create_node", {
-      id: nodeReference, title: text(2000), objective: text(), completion_exemption: Type.Optional(text()),
-      phase_id: Type.Optional(identifier()), claim_ids: Type.Optional(claimReferences()),
-      dependency_ids: Type.Optional(nodeReferences()), created_at: Type.Optional(identifier()),
-      metadata: Type.Optional(metadata),
-    }),
-    operation("create_finding", {
-      id: identifier(), node_id: nodeReference, statement: text(),
-      kind: literalUnion(["fact", "issue"]), claim_ids: Type.Optional(claimReferences()),
-      source_refs: Type.Optional(stringArray(256)), value: Type.Optional(Type.Any()),
-      datatype: Type.Optional(identifier(128)), unit: Type.Optional(identifier(128)),
-      provenance: Type.Optional(metadata),
-      status: Type.Optional(literalUnion(["open", "confirmed", "resolved", "accepted", "superseded"])),
-      severity: Type.Optional(identifier(64)), resolution: Type.Optional(text()),
-      created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
-    }),
-    operation("resolve_issue", {
-      id: identifier(), resolution: text(), source_refs: Type.Optional(stringArray(256)),
-    }),
-    operation("create_gate", {
-      id: identifier(), scope: literalUnion(["node", "claim"]), target_id: identifier(),
-      criteria: Type.Array(Type.Unsafe(gateContract.criterion), { minItems: 1, maxItems: 128 }),
-      created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
-    }),
-    operation("set_lifecycle_action", {
-      id: identifier(), scope: literalUnion(["node", "claim", "gate"]), target_id: identifier(),
-      action: literalUnion(["inspect", "finalize", "launch", "analyze", "review", "evaluate", "close"]),
-      status: Type.Optional(literalUnion(["required", "deferred", "blocked", "completed"])),
-      reason: Type.Optional(text()), request_id: Type.Optional(identifier()),
-      created_at: Type.Optional(identifier()), metadata: Type.Optional(metadata),
-    }),
-    operation("resolve_lifecycle_action", {
-      id: identifier(), status: literalUnion(["required", "deferred", "blocked", "completed"]),
-      reason: Type.Optional(text()), request_id: Type.Optional(identifier()),
-    }),
-    operation("revise_gate", { gate_id: identifier(), criteria: Type.Array(Type.Unsafe(gateContract.criterion), { minItems: 1, maxItems: 128 }), reason: text() }),
-    operation("evaluate_gate", {
-      gate_id: identifier(), assessments: Type.Array(Type.Unsafe(gateContract.assessment), { minItems: 1, maxItems: 128 }), verdict: literalUnion(["pass", "fail", "inconclusive", "blocked"]),
-      message: Type.Optional(text()), evidence_refs: Type.Optional(stringArray(256)),
-      created_at: Type.Optional(identifier()),
-    }),
-    setNodeStateOperation,
-    operation("set_claim_status", {
-      claim_id: claimReference, status: literalUnion(["proposed", "supported", "contradicted", "inconclusive", "withdrawn"]),
-    }),
-    operation("relate_claims", {
-      source_id: claimReference, target_id: claimReference, relation: identifier(128),
-    }),
-    operation("set_focus", {
-      claim_ids: claimReferences(), node_ids: nodeReferences(),
-    }),
-  ]);
+  // Public tools and the filesystem write boundary consume one operation contract.
+  const changeOperation = Type.Unsafe({ anyOf: operationSchemas });
   const stateFields = {
     root: optionalRoot,
     query: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),

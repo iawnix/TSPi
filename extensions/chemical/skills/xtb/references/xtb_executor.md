@@ -1,17 +1,13 @@
-> Current scripts/run.py executes opt, sp and opt-sp only. The advanced parsing/validation guidance below is reference material, not a registered executable workflow.
+# xTB execution and native output guidance
 
-# xTB Executor Contract
+The bundled `scripts/run.py` and preparation helper support `opt`, `sp` and
+`opt-sp` with GFN2-xTB. Use their actual `--help` for accepted arguments.
+Additional native xTB tasks may be run through generic Job Runtime after checking
+the installed program's options, inputs and required outputs. Existing parser
+functions are analysis helpers, not an automatically invoked workflow adapter.
 
-The restored parser recognizes xTB tasks `sp`, `opt`, `freq`, `opt_freq`, `scan`, and `md`.
-Construct the xTB argv and submit it through `job_start`; no provider
-registration is required. The first four require one `xyz`
-input. Scan and MD require exactly one `xyz` and one `control` input.
-
-The historical parameter model accepted `gfn0`, `gfn1`, `gfn2`, or `gfnff`; charge and `uhf` are
-explicit. Solvent and solvent model must be supplied together and the model is
-`alpb` or `gbsa`. Optimization tasks accept a bounded `opt_level` and
-`max_cycles`. The Skill reference is the exact machine contract; ask
-`read the relevant Skill references` before constructing an unfamiliar request.
+The scan syntax and output checklist below are scientific/native-program guidance;
+they do not add `freq`, `scan` or `md` options to the bundled runner.
 
 For `xtb.scan`, the control artifact must contain a `$scan` section and end
 with `$end`. A `$end` after `$constrain` may also be used as a block separator.

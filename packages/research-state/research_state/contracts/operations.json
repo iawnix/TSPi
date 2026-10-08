@@ -1,0 +1,757 @@
+{
+  "schema_version": "research-operation-contract/1",
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 12000
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "claim_ref": {
+      "type": "string",
+      "pattern": "^claim_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "maxLength": 128
+    },
+    "node_ref": {
+      "type": "string",
+      "pattern": "^node_[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "maxLength": 128
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "maxProperties": 32
+    },
+    "claim_status": {
+      "enum": [
+        "proposed",
+        "supported",
+        "contradicted",
+        "inconclusive",
+        "withdrawn"
+      ]
+    },
+    "lifecycle_status": {
+      "enum": [
+        "required",
+        "deferred",
+        "blocked",
+        "completed"
+      ]
+    },
+    "gate_criteria": {
+      "type": "array",
+      "items": {
+        "$ref": "gates.json#/criterion"
+      },
+      "minItems": 1,
+      "maxItems": 128
+    },
+    "gate_assessments": {
+      "type": "array",
+      "items": {
+        "$ref": "gates.json#/assessment"
+      },
+      "minItems": 1,
+      "maxItems": 128
+    },
+    "finding_status": {
+      "enum": [
+        "open",
+        "confirmed",
+        "resolved",
+        "accepted",
+        "superseded"
+      ]
+    },
+    "refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/identifier"
+      },
+      "maxItems": 256,
+      "uniqueItems": true
+    },
+    "strings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/identifier"
+      },
+      "maxItems": 128,
+      "uniqueItems": true
+    },
+    "claim_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claim_ref"
+      },
+      "maxItems": 128,
+      "uniqueItems": true
+    },
+    "node_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node_ref"
+      },
+      "maxItems": 128,
+      "uniqueItems": true
+    }
+  },
+  "operations": {
+    "create_phase": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "create_phase"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "title": {
+          "$ref": "#/$defs/title"
+        },
+        "objective": {
+          "$ref": "#/$defs/text"
+        },
+        "created_at": {
+          "$ref": "#/$defs/identifier"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "title"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    },
+    "create_claim": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "create_claim"
+        },
+        "id": {
+          "$ref": "#/$defs/claim_ref"
+        },
+        "statement": {
+          "$ref": "#/$defs/text"
+        },
+        "status": {
+          "const": "proposed"
+        },
+        "source_refs": {
+          "$ref": "#/$defs/refs"
+        },
+        "constraints": {
+          "$ref": "#/$defs/refs"
+        },
+        "predictions": {
+          "$ref": "#/$defs/strings"
+        },
+        "falsifiers": {
+          "$ref": "#/$defs/strings"
+        },
+        "created_at": {
+          "$ref": "#/$defs/identifier"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "statement"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    },
+    "assess_claim": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "assess_claim"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "claim_id": {
+          "$ref": "#/$defs/claim_ref"
+        },
+        "verdict": {
+          "$ref": "#/$defs/claim_status"
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/refs"
+        },
+        "created_at": {
+          "$ref": "#/$defs/identifier"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        },
+        "actor": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "claim_id",
+        "verdict",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verdict": {
+                "enum": [
+                  "supported",
+                  "contradicted",
+                  "inconclusive"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "evidence_refs"
+            ],
+            "properties": {
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "revise_claim": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "revise_claim"
+        },
+        "revision_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "source_claim_id": {
+          "$ref": "#/$defs/claim_ref"
+        },
+        "target_claim_id": {
+          "$ref": "#/$defs/claim_ref"
+        },
+        "statement": {
+          "$ref": "#/$defs/text"
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "relation": {
+          "enum": [
+            "revises",
+            "refines",
+            "supersedes"
+          ]
+        },
+        "predictions": {
+          "$ref": "#/$defs/strings"
+        },
+        "falsifiers": {
+          "$ref": "#/$defs/strings"
+        },
+        "created_at": {
+          "$ref": "#/$defs/identifier"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        },
+        "actor": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "type",
+        "revision_id",
+        "source_claim_id",
+        "target_claim_id",
+        "statement",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    },
+    "create_node": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "create_node"
+        },
+        "id": {
+          "$ref": "#/$defs/node_ref"
+        },
+        "title": {
+          "$ref": "#/$defs/title"
+        },
+        "objective": {
+          "$ref": "#/$defs/text"
+        },
+        "completion_exemption": {
+          "$ref": "#/$defs/text"
+        },
+        "phase_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "claim_ids": {
+          "$ref": "#/$defs/claim_refs"
+        },
+        "dependency_ids": {
+          "$ref": "#/$defs/node_refs"
+        },
+        "created_at": {
+          "$ref": "#/$defs/identifier"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "title",
+        "objective"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    },
+    "create_finding": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "create_finding"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "node_id": {
+          "$ref": "#/$defs/node_ref"
+        },
+        "statement": {
+          "$ref": "#/$defs/text"
+        },
+        "kind": {
+          "enum": [
+            "fact",
+            "issue"
+          ]
+        },
+        "claim_ids": {
+          "$ref": "#/$defs/claim_refs"
+        },
+        "source_refs": {
+          "$ref": "#/$defs/refs"
+        },
+        "value": {},
+        "datatype": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "provenance": {
+          "$ref": "#/$defs/metadata"
+        },
+        "status": {
+          "$ref": "#/$defs/finding_status"
+        },
+        "severity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "resolution": {
+          "$ref": "#/$defs/text"
+        },
+        "created_at": {
+          "$ref": "#/$defs/identifier"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "node_id",
+        "statement",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    },
+    "resolve_issue": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "resolve_issue"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "resolution": {
+          "$ref": "#/$defs/text"
+        },
+        "source_refs": {
+          "$ref": "#/$defs/refs"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "resolution"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    },
+    "create_gate": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "create_gate"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "scope": {
+          "enum": [
+            "node",
+            "claim"
+          ]
+        },
+        "target_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "criteria": {
+          "$ref": "#/$defs/gate_criteria"
+        },
+        "created_at": {
+          "$ref": "#/$defs/identifier"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "scope",
+        "target_id",
+        "criteria"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    },
+    "set_lifecycle_action": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "set_lifecycle_action"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "scope": {
+          "enum": [
+            "node",
+            "claim",
+            "gate"
+          ]
+        },
+        "target_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "action": {
+          "enum": [
+            "inspect",
+            "finalize",
+            "launch",
+            "analyze",
+            "review",
+            "evaluate",
+            "close"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/lifecycle_status"
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "request_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "created_at": {
+          "$ref": "#/$defs/identifier"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "scope",
+        "target_id",
+        "action"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    },
+    "resolve_lifecycle_action": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "resolve_lifecycle_action"
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "status": {
+          "$ref": "#/$defs/lifecycle_status"
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "request_id": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "status"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    },
+    "revise_gate": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "revise_gate"
+        },
+        "gate_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "criteria": {
+          "$ref": "#/$defs/gate_criteria"
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "type",
+        "gate_id",
+        "criteria",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    },
+    "evaluate_gate": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "evaluate_gate"
+        },
+        "gate_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "assessments": {
+          "$ref": "#/$defs/gate_assessments"
+        },
+        "verdict": {
+          "enum": [
+            "pass",
+            "fail",
+            "inconclusive",
+            "blocked"
+          ]
+        },
+        "message": {
+          "$ref": "#/$defs/text"
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/refs"
+        },
+        "created_at": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "required": [
+        "type",
+        "gate_id",
+        "assessments",
+        "verdict"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    },
+    "set_node_state": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "set_node_state"
+        },
+        "node_id": {
+          "$ref": "#/$defs/node_ref"
+        },
+        "state": {
+          "enum": [
+            "planned",
+            "active",
+            "paused",
+            "blocked",
+            "closed"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "completed",
+            "inconclusive",
+            "stopped"
+          ]
+        },
+        "summary": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "type",
+        "node_id",
+        "state"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "closed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcome"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "outcome"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "set_claim_status": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "set_claim_status"
+        },
+        "claim_id": {
+          "$ref": "#/$defs/claim_ref"
+        },
+        "status": {
+          "enum": [
+            "proposed",
+            "withdrawn"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "claim_id",
+        "status"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    },
+    "relate_claims": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "relate_claims"
+        },
+        "source_id": {
+          "$ref": "#/$defs/claim_ref"
+        },
+        "target_id": {
+          "$ref": "#/$defs/claim_ref"
+        },
+        "relation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "type",
+        "source_id",
+        "target_id",
+        "relation"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    },
+    "set_focus": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "set_focus"
+        },
+        "claim_ids": {
+          "$ref": "#/$defs/claim_refs"
+        },
+        "node_ids": {
+          "$ref": "#/$defs/node_refs"
+        }
+      },
+      "required": [
+        "type",
+        "claim_ids",
+        "node_ids"
+      ],
+      "additionalProperties": false,
+      "maxProperties": 24
+    }
+  }
+}

@@ -5,7 +5,7 @@ The Research State filesystem boundary persists it in `research_map/context.json
 `schema_version=research_map_context_2`. A valid context always has array
 collections `phases`, `claims`, `nodes`, `findings`, `gates`, `claim_relations`,
 `attempts`, `artifacts`, `evidence_links`, `lifecycle_actions`, `strategy_plans`,
-`strategy_reviews`, and `attempt_interpretations`; its `focus.claim_ids` and
+`strategy_reviews`, `attempt_interpretations`, `claim_assessments`, and `claim_revisions`; its `focus.claim_ids` and
 `focus.node_ids` are arrays. Lifecycle is projected to
 `lifecycle/liveness.json` (`research_liveness_2`); `workspace_manifest.json`
 binds identity, mode, root, and admission. Retired SQLite and
@@ -37,9 +37,10 @@ Claim status is one of `proposed`, `supported`, `contradicted`, `inconclusive`,
 or `withdrawn`. Node state is one of `planned`, `active`, `paused`, `blocked`,
 or `closed`. A closed Node has outcome `completed`, `inconclusive`, or
 `stopped`; it cannot be reopened. A Node with dependencies is ready only after
-all dependencies are closed. Node dependencies and Claim relations are
+all dependencies are closed with outcome `completed`. Closed/inconclusive or stopped dependencies do not admit execution. Node dependencies and Claim relations are
 acyclic. Every NodeGate attached to a Node must have a latest `pass` evaluation
-before that Node can be closed as `completed`.
+before that Node can be closed as `completed`. New Claims start as `proposed`;
+`assess_claim` records reasons and evidence for scientific status updates.
 
 Findings belong to exactly one producing Node and may cite Claims and source
 references. Gates target exactly one Node or Claim. The map maintains reverse

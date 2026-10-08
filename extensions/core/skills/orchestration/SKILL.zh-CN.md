@@ -12,22 +12,21 @@ description: 在 Skill、ResearchNode、分支、重试、评审与停止决策�
 
 ## 工作流
 
-1. 规划前读取当前 ResearchMap 和聚焦对象。
+1. 先使用当前回合已有的 State 快照；规划需要的信息缺失或过期时，才按最小范围调用 `research_read`。
 2. 说明不确定性、相关 Claim，以及一个边界明确的交付物。
 3. 先通过 `research_change` 创建或确认 Claim 和 Node，再用 `research_strategy` 建立覆盖 focus 的计划。未知 Claim 错误应先创建对象，再重试策略；没有策略时不要跳到证据写入或计算。
    从系统提示列出的真实路径读取科学 Skill。用户已指定方法时仍使用 method-selection 的执行准备：读取安装 job.toml，绑定配置的解释器、软件和环境。job_probe 只验证通用平台，方法可用性由 Skill 检查。
    对方法比较建立 `方法 × environment × {opt, sp}` 矩阵，保存方法、环境、输入和依赖。单点使用相同方法与环境的优化坐标；只阻塞失败单元，不停止独立任务。
 4. 在所属 Node 下启动或检查任务，并将 Attempt 与 Artifact 留在该 Node 下。
-5. 检查原始输出后，通过 Research State 记录粒度明确的 FactFinding 与 IssueFinding。Finding
-   本身不会改变 Node 或 Claim 的状态。
+5. 检查证据后记录有用的 FactFinding 或 IssueFinding；已登记文献和导入数据也可作为来源，计划不能充当 confirmed 事实。Finding 本身不会改变 Node 或 Claim 的状态。
 6. 对照替代解释与停止条件决定：继续同一 Node、为新问题建立依赖 Node、为竞争方法或
    假设建立分支，或显式停止。
 7. 只有交付物已处理且所附每个 NodeGate 的最新评估均为 `pass` 时，才能把 Node 以
-   `completed` 关闭；Claim 状态另行更新。
+   `completed` 关闭；科学 Claim 状态通过带理由和已登记证据的 `assess_claim` 更新。
 
 ## Research Turn 收尾
 
-每轮结束前，读取 `research_read` 的 `mode=context` 或 `mode=liveness`，并使用
+研究回合结束前先使用最新 State 快照，仅当需要的信息缺失或过期时读取 `context` 或 `liveness`，并使用
 `research_checkpoint` 结束生命周期。需要时先记录 strategy 和 Attempt interpretation，再选择一个
 明确 disposition：`continue_required`、`waiting_external`、`deferred`、`blocked`、`terminal` 或
 `user_input_required`。`research_checkpoint` 是规范的 turn checkpoint。

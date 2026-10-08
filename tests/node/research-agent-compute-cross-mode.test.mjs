@@ -5,6 +5,40 @@ import { createPublicToolContracts } from "../../packages/agent-runtime/host-api
 import Type from "../../apps/app-server/pi-runtime-deps.mjs";
 import { toolErrorResult } from "../../packages/agent-runtime/host-api/tool-envelope.mjs";
 
+test("Claim tools expose assessment and revision without allowing unsupported status shortcuts", () => {
+  const tool = createPublicToolContracts(Type).change;
+  const validate = operation => validateToolArguments(tool, {
+    type: "toolCall", id: "call_claim", name: tool.name,
+    arguments: { rationale: "Evaluate registered evidence", operations: [operation] },
+  });
+  const claim = { type: "create_claim", id: "claim_1", statement: "The evidence supports the hypothesis." };
+  assert.doesNotThrow(() => validate(claim));
+  assert.doesNotThrow(() => validate({ ...claim, status: "proposed" }));
+  for (const status of ["supported", "contradicted", "inconclusive", "withdrawn", "banana"]) {
+    assert.throws(() => validate({ ...claim, status }), /Validation failed/);
+  }
+  for (const status of ["proposed", "withdrawn"]) {
+    assert.doesNotThrow(() => validate({ type: "set_claim_status", claim_id: "claim_1", status }));
+  }
+  for (const verdict of ["supported", "contradicted", "inconclusive"]) {
+    const assessment = { type: "assess_claim", id: "assessment_1", claim_id: "claim_1", verdict, reason: "Inspected the registered result", evidence_refs: ["art_evidence"] };
+    assert.doesNotThrow(() => validate(assessment));
+    assert.throws(() => validate({ ...assessment, evidence_refs: [] }), /Validation failed/);
+    const { evidence_refs: _refs, ...withoutEvidence } = assessment;
+    assert.throws(() => validate(withoutEvidence), /Validation failed/);
+    assert.throws(() => validate({ type: "set_claim_status", claim_id: "claim_1", status: verdict }), /Validation failed/);
+  }
+  for (const verdict of ["proposed", "withdrawn"]) {
+    assert.doesNotThrow(() => validate({ type: "assess_claim", id: "assessment_1", claim_id: "claim_1", verdict, reason: "Reconsidering the bounded hypothesis" }));
+  }
+  const revision = { type: "revise_claim", revision_id: "revision_1", source_claim_id: "claim_1", target_claim_id: "claim_2", statement: "A refined hypothesis", reason: "New evidence narrowed the scope", relation: "refines" };
+  assert.doesNotThrow(() => validate(revision));
+  const { revision_id: _id, ...withoutRevisionId } = revision;
+  assert.throws(() => validate(withoutRevisionId), /Validation failed/);
+  assert.throws(() => validate({ ...revision, relation: "banana" }), /Validation failed/);
+  assert.doesNotThrow(() => validate({ type: "resolve_issue", id: "issue_1", resolution: "Repaired input" }));
+});
+
 test("Gate contracts reject guessed fields before mutation and expose structured recovery", () => {
   const contracts = createPublicToolContracts(Type);
   const validate = (operation) => validateToolArguments(contracts.change, {

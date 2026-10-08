@@ -1,4 +1,4 @@
-> Current scripts/run.py executes opt, sp and opt-sp only. The advanced parsing/validation guidance below is reference material, not a registered executable workflow.
+> The XYZ runner supports opt, sp and opt-sp. The explicit GJF runner also accepts execution, opt, frequency, minimum, saddle and irc checks; these do not establish mode character or endpoint identity.
 
 # Gaussian Validation
 

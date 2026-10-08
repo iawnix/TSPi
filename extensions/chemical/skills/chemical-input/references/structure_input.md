@@ -6,6 +6,7 @@ The output directory must be empty; incompatible electron-count/multiplicity par
 Every XYZ has a SHA256 and isomer provenance. Use --enumerate-stereo for an explicitly scoped
 set of alternatives; this does not confirm one stereochemical identity.
 reaction --smiles accepts mapped reactants>>products and checks total elements, charge,
-a bijection of explicit atoms, and bond changes. Implicit-H correspondence is not validated.
+a bijection of explicit atoms, and lists bond changes. It does not verify that those changes
+match an intended reaction class. Implicit-H correspondence is not validated.
 Single-molecule optimization does not require reaction mapping. Seeds and mappings do not
 replace quantum calculations or mechanistic interpretation.

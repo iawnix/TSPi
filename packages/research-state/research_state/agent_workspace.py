@@ -606,7 +606,8 @@ def _base_liveness_projection(
         )
         and all(value in covered_claims for value in open_claim_ids)
     )
-    if open_node_ids or open_claim_ids:
+    review_claim_ids = [row["claim_id"] for row in result["research_obligations"] if row["kind"] == "reassess_claim"]
+    if open_node_ids or open_claim_ids or review_claim_ids:
         result["lifecycle"] = "decision_needed"
         result["decision_needed"] = [
             {"scope": "node", "target_id": value, "reason": "missing checkpoint disposition"}
@@ -614,6 +615,9 @@ def _base_liveness_projection(
         ] + [
             {"scope": "claim", "target_id": value, "reason": "missing checkpoint disposition"}
             for value in open_claim_ids
+        ] + [
+            {"scope": "claim", "target_id": value, "reason": "adopted assessment needs review"}
+            for value in review_claim_ids
         ]
     elif _items(context, "nodes") and all(
         isinstance(item, dict) and item.get("state") == "closed"
@@ -634,7 +638,11 @@ def _research_obligations(context: dict[str, Any]) -> list[dict[str, Any]]:
     obligations: list[dict[str, Any]] = []
     claims = {row.get("id"): row for row in _items(context, "claims") if isinstance(row, dict)}
     findings = {row.get("id"): row for row in _items(context, "findings") if isinstance(row, dict)}
+    from .assessments import claim_review_state
     for claim in claims.values():
+        if claim.get("current_assessment_id") and claim_review_state(context, claim) == "needs_review":
+            obligations.append({"kind": "reassess_claim", "claim_id": claim["id"],
+                                "assessment_id": claim["current_assessment_id"]})
         if claim.get("status", "proposed") in {"proposed", "inconclusive"}:
             for kind, values in (("prediction", claim.get("predictions", [])), ("falsifier", claim.get("falsifiers", []))):
                 for index, statement in enumerate(values if isinstance(values, list) else []):
@@ -915,6 +923,12 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
     if any(re.search(r"[A-Z]", key) for key in operation):
         raise AgentWorkspaceError("schema_field_invalid: operation fields use snake_case")
     kind = operation.get("type")
+    from .operation_registry import input_operation_names, validate_input_operation
+    if kind in input_operation_names():
+        try:
+            validate_input_operation(operation)
+        except ValueError as exc:
+            raise AgentWorkspaceError("operation_contract_invalid: " + str(exc)) from exc
     created_at = operation.get("created_at") if isinstance(operation.get("created_at"), str) else _now()
     from .write_origin import is_runtime_write
     if not is_runtime_write():
@@ -946,7 +960,7 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
             "type": "research_claim", "id": item_id, "created_at": created_at,
             "metadata": dict(operation.get("metadata", {})) if isinstance(operation.get("metadata"), dict) else {},
             "statement": _string(operation, "statement"),
-            "status": operation.get("status") if isinstance(operation.get("status"), str) else "proposed",
+            "status": "proposed",
             "source_refs": _string_list(operation, "source_refs"), "constraints": _string_list(operation, "constraints"),
             "predictions": list(operation.get("predictions", [])) if isinstance(operation.get("predictions"), list) else [],
             "falsifiers": list(operation.get("falsifiers", [])) if isinstance(operation.get("falsifiers"), list) else [],
@@ -968,16 +982,30 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
         evidence_refs = _string_list(operation, "evidence_refs")
         if verdict in {"supported", "contradicted", "inconclusive"} and not evidence_refs:
             raise AgentWorkspaceError("assess_claim requires evidence_refs for an evidentiary verdict")
-        if evidence_refs:
-            _refs_exist(context, evidence_refs, label="operation.evidence_refs")
+        from .assessments import bind_evidence, gate_assessment_version
+        try:
+            basis = bind_evidence(root, context, evidence_refs, claim_id)
+        except (ValueError, OSError) as exc:
+            raise AgentWorkspaceError(str(exc)) from exc
+        basis["gate_versions"] = {}
+        if verdict == "supported":
+            from .invariants import gate_evaluation_current
+            for gate in _items(context, "gates"):
+                if gate.get("scope") != "claim" or gate.get("target_id") != claim_id:
+                    continue
+                if not gate_evaluation_current(context, gate):
+                    raise AgentWorkspaceError("claim_gate_not_passed: evaluate the current ClaimGate before supporting the Claim: " + gate["id"])
+                basis["gate_versions"][gate["id"]] = gate_assessment_version(gate)
         assessments.append({
             "type": "claim_assessment", "id": assessment_id, "created_at": created_at,
             "metadata": _object_field(operation, "metadata"), "claim_id": claim_id,
             "verdict": verdict, "evidence_refs": evidence_refs, "reason": reason.strip(),
             "actor": _object_field(operation, "actor"), "input_revision": context.get("revision", 0),
+            "evidence_basis": basis, "supersedes_id": claim.get("current_assessment_id"),
         })
         _attach_unique(claim, "assessment_ids", assessment_id)
         claim["status"] = verdict
+        claim["current_assessment_id"] = assessment_id
         return assessment_id
     if kind == "revise_claim":
         source_id = _claim_identifier(operation.get("source_claim_id"), "operation.source_claim_id")
@@ -1113,9 +1141,12 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
         claim_id = _claim_identifier(operation.get("claim_id"), "operation.claim_id")
         claim = _lookup(context, "claims", claim_id, "claim")
         status = operation.get("status")
-        if status not in {"proposed", "supported", "contradicted", "inconclusive", "withdrawn"}:
-            raise AgentWorkspaceError("operation.status is invalid")
+        if status not in {"proposed", "withdrawn"} or claim.get("status") not in {"proposed", "withdrawn"}:
+            raise AgentWorkspaceError("claim_assessment_required: use assess_claim with a reason and evidence for scientific status changes")
         claim["status"] = status
+        # This convenience transition is only for unassessed workflow states.
+        # Earlier reasoned assessments remain in the append-only history.
+        claim.pop("current_assessment_id", None)
         return None
     if kind == "relate_claims":
         source_id = _claim_identifier(operation.get("source_id"), "operation.source_id")
@@ -1554,6 +1585,11 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
             node = _lookup(context, "nodes", node_id, "node")
             if claim_id not in node.get("claim_ids", []):
                 raise AgentWorkspaceError(f"strategy {item_id} node {node_id} is not linked to claim {claim_id}")
+        if operation.get("status", "proposed") not in {"proposed", "active", "superseded", "completed", "blocked"}:
+            raise AgentWorkspaceError("strategy_status_invalid")
+        for field in ("steps", "alternatives"):
+            if not isinstance(operation.get(field, []), list) or any(not isinstance(row, dict) for row in operation.get(field, [])):
+                raise AgentWorkspaceError("strategy_field_invalid: " + field + " must be an array of objects")
         plans.append({
             "type": "strategy_plan", "id": item_id, "created_at": created_at,
             "claim_id": claim_id, "node_id": node_id,
@@ -1661,6 +1697,8 @@ def _apply_operation(context: dict[str, Any], operation: dict[str, Any], *, root
                 raise AgentWorkspaceError("interpretation_supersedes_mismatch")
             prior["review_state"] = "superseded"
             prior["superseded_by"] = item_id
+        if operation.get("outcome") not in {"supports", "contradicts", "inconclusive", "invalid"}:
+            raise AgentWorkspaceError("interpretation_outcome_invalid")
         interpretations.append({
             "type": "attempt_interpretation", "id": item_id, "created_at": created_at,
             "claim_id": claim_id, "node_id": node_id, "attempt_ref": attempt_ref,
@@ -1855,7 +1893,11 @@ def apply_change(root: str | Path, request: dict[str, Any] | None = None) -> dic
         if not operational:
             from .invariants import validate_context
             previous_issues = validate_context(context)['issues']
-            introduced = [issue for issue in validate_context(updated)['issues'] if issue not in previous_issues]
+            # Research conditions and observations may change before the next
+            # assessment. Preserve those changes as needs_review; terminal
+            # checkpoints still require the adopted assessment to be current.
+            introduced = [issue for issue in validate_context(updated)['issues']
+                          if issue not in previous_issues and issue['code'] != 'claim_assessment_stale']
             if introduced:
                 raise AgentWorkspaceError('research_invariant_violation: proposed batch introduces inconsistent state',
                     details={'phase': 'final_validation', 'issues': introduced, 'atomic_batch_committed': False,

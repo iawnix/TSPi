@@ -11,22 +11,25 @@ program termination, the requested direction, path completeness, number of
 steps, final geometry, final gradient when available, and any maximum-step or
 short-path limitation.
 
-`path.endpoint_summary` extracts a finite directional Gaussian IRC endpoint,
-termination and completion markers, and an available starting geometry. Missing
-starting geometry or an incomplete path remains inconclusive. Optimize an
-endpoint when its gradient or geometry does not justify direct basin assignment.
+The [Gaussian explicit-input runner](../../gaussian/SKILL.md) accepts
+`--validation irc` and uses `gaussian_io.py::parse_irc_log` to write
+`irc_path_summary.json`, `irc_path_points.json` and `gaussian_endpoint.xyz`.
+Declare these files with the preparation helper's `--collect` when needed.
+Its basic checks require path points and endpoint geometry; they do not prove
+path completeness or basin identity. Optimize an endpoint when its gradient
+or geometry does not justify direct assignment.
 
 Compare each endpoint with an explicitly selected reactant or product Artifact.
 Verify element counts, atom mapping, charge, multiplicity or electronic state,
 forming and breaking bonds, key internal coordinates, fragment pairing,
-conformation, and stereochemistry. Use `artifact_derive` when a deterministic mapped
-comparison is appropriate. Do not infer endpoint identity from filenames or
+conformation, and stereochemistry. Execute any mapped comparison with a real
+analysis tool or Job and register its outputs; `artifact_derive` only records a descriptor. Do not infer endpoint identity from filenames or
 path direction alone.
 
-`mechanism.step.audit` may combine stationary, mode, forward/reverse path, and
-structure-comparison Artifacts. The expected endpoint IDs must be explicit and
-each comparison must bind the extracted endpoint to that target. Treat the
-audit as a structured assessment, not an automatic Claim verdict.
+Combine stationary, mode, forward/reverse path and structure-comparison evidence
+in an assessment. Bind each extracted endpoint to the expected Artifact explicitly.
+There is no bundled mechanism-audit executor; missing scientific checks remain
+unresolved, even when the calculation or parser succeeded.
 
 Record path completion and endpoint assignment separately for each direction.
 Missing, ambiguous, or contradictory evidence is an IssueFinding. A Gate may

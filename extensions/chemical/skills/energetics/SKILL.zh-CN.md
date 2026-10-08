@@ -15,5 +15,5 @@ description: 评估电子能、ZPE 与热校正、自由能和反应能、势垒
 势垒替代 Gibbs 势垒，不要推断未支持的同位素校正，也不要把定性路径枚举当作动力学。
 数值与局限应分别记录为引用来源 Artifact 的 Finding。
 
-支持的热化学、势垒、速率、分支、网络与剖面合同见
-[energetics.zh-CN.md](references/energetics.zh-CN.md)。
+科学检查及执行边界见 [energetics.zh-CN.md](references/energetics.zh-CN.md)。本 Skill 不提供可调用的
+热化学、动力学或网络分析工具；记录结论前需执行具体分析并保存证据。

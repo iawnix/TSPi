@@ -163,20 +163,39 @@ test('token budget ignores tool metadata and counts system/tools once, with prov
   assert.ok(smallerOutput.messages);
 });
 
-test('oversized projection and State/record errors have distinct bounded dispositions', async () => {
+test('oversized projection and State/record errors preserve a bounded diagnostic model request', async () => {
   const request = {messages:[],model:{contextWindow:10000},maxTokens:1000};
   const large = fixtureInjector({bridge:{async execute_command(){return {context_id:'ctx_big',events:[],data:'x'.repeat(24000)};}}});
-  assert.equal((await large(request,'large')).compact,true);
+  assert.match(JSON.stringify((await large(request,'large')).messages), /projection exceeds its byte budget/);
   for (const [code, override] of [
     ['research_context_unavailable',{bridge:{async execute_command(){throw Error('read failed');}}}],
     ['research_context_unavailable',{bridge:{async execute_command(){return {};}}}],
     ['research_context_record_failed',{coordinator:{async commit_files(){throw Error('record failed');}}}],
   ]) {
     const result = await fixtureInjector(override)(request,'failed');
-    assert.match(result.block,new RegExp(code));
+    assert.equal(result.block,undefined);
+    assert.match(JSON.stringify(result.messages),new RegExp(code));
     assert.equal(result.compact,undefined);
-    assert.equal(result.messages,undefined);
+    assert.ok(result.messages);
+    assert.ok(JSON.stringify(result.messages).length < 4000);
   }
+});
+
+test('unavailable State exposes no readiness and records omitted wake events; telemetry failure retains readable State', async () => {
+  const request = {messages:[{role:'user',content:'event_id=event_pending'}],model:{contextWindow:10000},maxTokens:1000};
+  const unavailable = await fixtureInjector({bridge:{async execute_command(){throw Error('State offline');}}})(request,'offline');
+  const section = unavailable.messages.at(-1).sections.tspi_research_context;
+  assert.match(section, /"availability":"unavailable"/);
+  assert.match(section, /"execution_ready":null/);
+  assert.match(section, /"revision":null/);
+  assert.match(section, /"wake_events":\{"requested":1,"included":0,"omitted":1\}/);
+  assert.match(section, /side-effect admission still requires current State/);
+  const unrecorded = await fixtureInjector({coordinator:{async commit_files(){throw Error('Disk unavailable');}}})(request,'unrecorded');
+  const retained = unrecorded.messages.at(-1).sections.tspi_research_context;
+  assert.match(retained, /"context_id":"ctx_test"/);
+  assert.match(retained, /"revision":1/);
+  assert.match(retained, /research_context_record_failed/);
+  assert.doesNotMatch(retained, /"availability":"unavailable"/);
 });
 
 for (const scenario of ['recovered','still-full','declined','compaction-failed','state-failed','hook-threw']) {
@@ -218,10 +237,11 @@ for (const scenario of ['recovered','still-full','declined','compaction-failed',
     const submission = await conversation.submit({type:'input',content:input},context);
     const result = await submission.wait(context);
     await conversation.waitForIdle(context);
-    assert.equal(result.status === 'unanswered',scenario !== 'recovered');
-    if (scenario !== 'recovered') assert.equal(result.reason, 'request_blocked');
+    const proceeds = ['recovered','state-failed'].includes(scenario);
+    assert.equal(result.status === 'unanswered',!proceeds);
+    if (!proceeds) assert.equal(result.reason, 'request_blocked');
     assert.equal(compactions,['state-failed','hook-threw'].includes(scenario) ? 0 : 1);
-    assert.equal(requests,['recovered','compaction-failed'].includes(scenario) ? 2 : 1);
+    assert.equal(requests,['recovered','compaction-failed','state-failed'].includes(scenario) ? 2 : 1);
     if (scenario === 'recovered') assert.equal(reads,3);
     const entries = await conversation.entries({},100,undefined,context);
     assert.doesNotMatch(JSON.stringify(entries),/Use research_read to diagnose|<research_state_snapshot>/);

@@ -2,12 +2,11 @@
 
 `job_start` owns the calculation lifecycle for both local and remote targets.
 The remote adapter is the installation-bound OpenSSH/SCP and Torque transport;
-it is not a second public calculation lifecycle. The public environment query
-is `compute.environments`, exposed as `/compute` and `job_probe`.
+it is not a second public calculation lifecycle. Use `job_probe` with the selected `platform` for a bounded availability check.
 
 ## Installation-Owned Policy
 
-`compute.toml` is the recommended shared policy file. Each environment declares a
+`job.toml` is the recommended shared policy file. Each environment declares a
 `kind` and a `backends` table; `kind = "remote"` environments additionally own SSH
 host/config, remote root, scheduler commands, queues, resource ceilings,
 activation, scratch policy, and process environment. Local and remote environments
@@ -16,27 +15,17 @@ request selects a named environment and resources within its configured limits.
 
 This file is the single local/remote environment authority. Do not add a
 second `.pi/remote.toml` registry or infer a remote environment from a host
-directory. Pass the configured environment name as the `environment` (or
-`platform`) field in `job_start`. An environment's optional software metadata
+directory. Pass the configured environment name as `platform` in `job_start`. An environment's optional software metadata
 describes readiness; it is not a workflow registry or a launch gate beyond the
 probe and transport checks.
 
-Use the installation-level `TSPi --check-remote` command for read-only diagnostics:
-
-- `status`: SSH connectivity only;
-- `doctor`: SSH, scheduler, storage, and registered software;
-- `queues`: bounded queue view;
-- `nodes`: bounded compute-resource view.
-
-Run `TSPi --check-remote` before the first remote calculation or after
-configuration changes.
-For `ase_neb`, `doctor` additionally imports ASE and the TSPi runner with the
-configured Python and executes the configured xTB program's version probe. The
-environment is ready only when all three components are available.
-For `pyscf`, bind a dedicated Python interpreter and activation script that
-contain PySCF, geomeTRIC, `pyscf-dispersion`, and the TSPi runner; the doctor
-also probes a `CF22D` DFT constructor. The PySCF kernel does not install or
-discover scientific packages from the host Python during a calculation.
+`job_probe` checks platform availability, not scientific readiness. Inspect the
+selected backend's command, activation script and Python binding. Use the relevant
+program's bounded help/version check or Skill-specific doctor when required.
+For CF22D, [doctor.py](../../cf22d/scripts/doctor.py) checks the configured
+PySCF environment and method construction. It does not establish readiness for
+other programs. There is no bundled NEB readiness probe or workflow registry.
+Do not install scientific dependencies into a research workspace.
 
 ## Isolation
 
@@ -64,6 +53,6 @@ manifest and works even when scheduler history is unavailable.
 
 - Reconcile an unknown submit or cancel result before another control action.
 - Resolve remote paths and commands from the configured environment and intent.
-- Use `TSPi --check-remote` to check scheduler and software readiness as well as SSH.
+- Check the selected platform and scientific command separately; SSH alone is insufficient.
 - Check program termination and required outputs after scheduler completion.
 - Collect outputs, verify them locally, and parse them before recording Findings.

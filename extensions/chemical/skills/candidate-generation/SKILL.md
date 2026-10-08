@@ -24,7 +24,9 @@ structure as a verified saddle point. Record useful candidates as facts about
 the generated structure and failed or distorted searches as issues only when
 they inform the research question.
 
+Use `chemical-input` for molecular seeds and the Gaussian Skill's explicit GJF
+runner for supported TS/scan/QST inputs. These pieces do not provide an automatic
+TS search pipeline. A Skill without local scripts may use another Skill's runner
+or installed software; check those routes before declaring the method unavailable.
 Read [candidate_generation.md](references/candidate_generation.md) for method
-criteria. For the registered ASE NEB executor (xTB by default, Gaussian when
-explicitly selected), read
-[ase_neb_executor.md](references/ase_neb_executor.md).
+criteria and [ase_neb_executor.md](references/ase_neb_executor.md) for NEB availability and prerequisites.
