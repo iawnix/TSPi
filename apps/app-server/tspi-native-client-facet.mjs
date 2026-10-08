@@ -4,6 +4,7 @@ import { parseSlashCommand, slashCompletions, SLASH_COMMAND_DEFINITIONS } from "
 import { CLIENT_QUERIES_SERVICE_ID } from "./tspi-client-queries.mjs";
 import { createStatusPresentation } from "./tspi-status-presentation.mjs";
 import { createDocumentView } from "./tspi-document-view.mjs";
+import { createCommandPresentation } from "./tspi-command-panel.mjs";
 
 /** Presentation-only commands; all scientific reads execute in the worker. */
 export async function createTspiNativeClientFacet({ sourceRoot, session } = {}) {
@@ -27,6 +28,7 @@ export async function createTspiNativeClientFacet({ sourceRoot, session } = {}) 
       const queries = env.use(queriesService);
       const transcript = env.use(Transcript);
       env.onActivate(() => {
+        ui.setCommandPresentation(createCommandPresentation({ ...components, scope: 'Session' }));
         const status = createStatusPresentation({ session, theme, ...components, ring: process.env.TERM !== "dumb" && process.env.TSPI_TUI_RING !== "0" });
         const lifetime = new AbortController();
         const queryContext = withAbortSignal(lifetime.signal, BACKGROUND_CONTEXT);
@@ -57,9 +59,9 @@ export async function createTspiNativeClientFacet({ sourceRoot, session } = {}) 
         }));
         redraw(); void refresh();
         if (session.subscribeMonitor) env.own(session.subscribeMonitor(() => { void refresh(); }, () => { status.update({monitorError:"Monitor unavailable"}); redraw(); }));
-        env.own(() => { stopped = true; lifetime.abort(); clearTimeout(timer); ui.setFooter(undefined); ui.setActivity(undefined); });
-        const show = (title, body, context) => ui.showDocument(createDocumentView({ title, body,
-          wrapText: components.wrapTextWithAnsi, truncateToWidth: components.truncateToWidth, matchesKey: components.matchesKey, theme }), context);
+        env.own(() => { stopped = true; lifetime.abort(); clearTimeout(timer); ui.setFooter(undefined); ui.setActivity(undefined); ui.setCommandPresentation(undefined); });
+        const show = (title, body, context, command, scope) => ui.showDocument(createDocumentView({ title, body, command, scope,
+          ...components, wrapText: components.wrapTextWithAnsi }), context);
         for (const command of createTerminalCommands({ ui, queries, session, show, usage: () => status.details() })) {
           env.own(commands.replace(command));
         }
@@ -69,7 +71,6 @@ export async function createTspiNativeClientFacet({ sourceRoot, session } = {}) 
 }
 
 export function createTerminalCommands({ ui, queries, session, show, usage }) {
-  let pending = false;
   return Object.values(SLASH_COMMAND_DEFINITIONS).map((definition) => ({
     name: definition.name,
     description: definition.description,
@@ -79,41 +80,37 @@ export function createTerminalCommands({ ui, queries, session, show, usage }) {
       try {
         const invocation = parseSlashCommand(definition.name, args);
         if (definition.name === "quit") { session.quit(); return; }
-        if (pending) { ui.showStatus("Another terminal command is still open. Close it before continuing.", context); return; }
-        pending = true;
-        try {
-          if (definition.name === "usage") {
-            await show("Usage", usage(), context);
-            return;
+        if (definition.name === "usage") {
+          await show("Usage", usage(), context, 'usage', 'Session');
+          return;
+        }
+        if (definition.name === "resume") {
+          let id = invocation.params.sessionId;
+          if (!id) {
+            const sessions = await session.list();
+            if (!sessions.length) { ui.showStatus("No writable sessions in this workspace.", context); return; }
+            id = await ui.select("Resume session", sessions.map((item) => ({
+              value: item.session_id,
+              label: item.session_id,
+              description: `${item.updated_at || item.created_at || ""}${item.is_streaming ? " · running" : ""}`,
+            })), session.sessionId, context);
           }
-          if (definition.name === "resume") {
-            let id = invocation.params.sessionId;
-            if (!id) {
-              const sessions = await session.list();
-              if (!sessions.length) { ui.showStatus("No writable sessions in this workspace.", context); return; }
-              id = await ui.select("Resume session", sessions.map((item) => ({
-                value: item.session_id,
-                label: `${item.session_id}${item.session_id === session.sessionId ? " (current)" : ""}`,
-                description: `${item.updated_at || item.created_at || ""}${item.is_streaming ? " · running" : ""}`,
-              })), session.sessionId, context);
-            }
-            if (id === session.sessionId) ui.showStatus("Already in this session. Research State is shared by sessions in this workspace.", context);
-            else if (id) await session.resume(id);
-            return;
-          }
-          const response = definition.name === "research"
-            ? await queries.research(args, context)
-            : await queries.systemPrompt(context);
-          if (session.signal?.aborted) return;
-          if (response.session_id !== session.sessionId) throw new Error("Query returned a different session");
-          if (session.workspaceId && response.workspace_id !== session.workspaceId) throw new Error("Query returned a different workspace");
-          if (response.error) throw new Error(response.error.message);
-          const title = definition.name === "sys-prompt" ? "System prompt" : "Research state";
-          const body = definition.name === "sys-prompt" ? formatPrompt(response.result) : formatValue(response.result);
-          await show(title, body, context);
-        } finally { pending = false; }
+          if (id === session.sessionId) ui.showStatus("Already in this session. Research State is shared by sessions in this workspace.", context);
+          else if (id) await session.resume(id);
+          return;
+        }
+        const response = definition.name === "research"
+          ? await queries.research(args, context)
+          : await queries.systemPrompt(context);
+        if (session.signal?.aborted) return;
+        if (response.session_id !== session.sessionId) throw new Error("Query returned a different session");
+        if (session.workspaceId && response.workspace_id !== session.workspaceId) throw new Error("Query returned a different workspace");
+        if (response.error) throw new Error(response.error.message);
+        const title = definition.name === "sys-prompt" ? "System prompt" : "Research state";
+        const body = definition.name === "sys-prompt" ? formatPrompt(response.result) : formatResearch(response.result);
+        await show(title, body, context, `${definition.name}${args ? ` ${args}` : ''}`, definition.name === 'research' ? 'Workspace' : 'Session');
       } catch (error) {
-        if (!session.signal?.aborted) ui.showStatus(`/${definition.name}: ${error instanceof Error ? error.message : String(error)}`, context);
+        if (!session.signal?.aborted) ui.showStatus(error instanceof Error ? error.message : String(error), context, 'error');
       }
     },
   }));
@@ -122,6 +119,17 @@ export function createTerminalCommands({ ui, queries, session, show, usage }) {
 function formatPrompt(manifest) {
   const sources = (manifest.contributors || []).map((item) => `${item.origin}: ${item.source}`).join("\n");
   return `${manifest.effective}\n\nSources\n${sources}\n\nSHA256: ${manifest.sha256}${manifest.limitations?.length ? `\n\nLimitations\n${manifest.limitations.join("\n")}` : ""}`;
+}
+
+function formatResearch(value) {
+  if (value?.schema_version !== 'research-summary/1') return formatValue(value);
+  const sections = [
+    ['Research overview', { workspace: value.workspace_id, revision: value.revision, state: value.lifecycle_state, progress: value.progress }],
+    ['Current focus', value.focus], ['Phases and goals', value.phases], ['Claims', value.claims],
+    ['Research nodes', value.nodes], ['Findings', value.findings], ['Gates', value.gates],
+  ];
+  return sections.map(([title, content]) => `${title}\n${'─'.repeat(title.length)}\n${formatValue(content)}`).join('\n\n')
+    + '\n\nFull item: /research detail <kind> <id>';
 }
 
 function formatValue(value, indent = "") {

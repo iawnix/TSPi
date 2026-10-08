@@ -1,12 +1,36 @@
 --- a/packages/coding-agent/src/experimental/client-tui.ts
 +++ b/packages/coding-agent/src/experimental/client-tui.ts
-@@ -13,4 +13,5 @@
+@@ -9,8 +9,9 @@
+ 	type LoadedFacets,
+ } from "@earendil-works/chord";
+-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
++import { BACKGROUND_CONTEXT, createContextKey, withContextValue } from "@earendil-works/chord/context";
+ import type { AgentState, ConversationView } from "@earendil-works/pi-durable";
  import {
  	CombinedAutocompleteProvider,
 +	matchesKey,
  	type Component,
  	Container,
-@@ -103,5 +104,13 @@
+@@ -42,5 +43,5 @@
+ } from "./services/connection.ts";
+ import { PresentationPlugins } from "./services/plugins.ts";
+-import { PresentationUI } from "./services/presentation-ui.ts";
++import { PresentationUI, type CommandPresentation, type CommandFeedbackKind } from "./services/presentation-ui.ts";
+ import { SessionDirectory, SessionManagement, type SessionSummary } from "./services/sessions.ts";
+ import { SlashCommands } from "./services/slash-commands.ts";
+@@ -77,4 +78,11 @@
+ 	readonly presentationPlugins: JsonValue;
+ }
++
++interface CommandRun {
++	readonly command: string;
++	dismissed: boolean;
++	running: boolean;
++}
++const COMMAND_RUN = createContextKey<CommandRun>("pi.command-presentation");
+ 
+ interface PendingSelection {
+@@ -103,5 +111,17 @@
  	readonly #statusContainer = new Container();
  	readonly #editorContainer = new Container();
 -	readonly #footerComponent = new Text("", 1, 0);
@@ -14,6 +38,10 @@
 +	#customFooter: Component | undefined;
 +	#customActivity: Component | undefined;
 +	#customDocument: Component | undefined;
++	#commandPresentation: CommandPresentation | undefined;
++	#commandRun: CommandRun | undefined;
++	#commandFeedback: Component | undefined;
++	#commandFeedbackKind: CommandFeedbackKind | undefined;
 +	#resolveDocument: (() => void) | undefined;
 +	readonly #footerComponent: Component = {
 +		render: (width) => (this.#customFooter ?? this.#defaultFooter).render(width),
@@ -21,9 +49,23 @@
 +	};
  	readonly #layoutRoot: Component;
  	readonly #sharedFacets: LoadedFacets;
-@@ -203,4 +212,9 @@
+@@ -114,5 +134,5 @@
+ 	#controller: AgentController | undefined;
+ 	readonly #chatInput: CustomEditor;
+-	#selectList: SelectList | undefined;
++	#selectList: Component | undefined;
+ 	#selection: PendingSelection | undefined;
+ 	#screen: "select" | "chat" = "chat";
+@@ -203,4 +223,16 @@
  
  	handleInput(data: string): void {
++		if (this.#commandRun && this.#commandFeedback && !this.#customDocument && !this.#selection) {
++			if (matchesKey(data, "escape")) {
++				this.#dismissCommand();
++				return;
++			}
++			if (this.#commandFeedbackKind === "running") return;
++		}
 +		if (this.#customDocument) {
 +			this.#customDocument.handleInput?.(data);
 +			this.#requestRender();
@@ -31,32 +73,89 @@
 +		}
  		if (this.#busy) {
  			if (
-@@ -282,4 +296,17 @@
- 							selectedValue,
- 						),
-+					setFooter: (component) => { this.#customFooter = component; this.#rebuild(); },
-+					setActivity: (component) => { this.#customActivity = component; this.#rebuild(); },
+@@ -217,5 +249,6 @@
+ 			return;
+ 		}
+-		this.#selectList?.handleInput(data);
++		this.#selectList?.handleInput?.(data);
++		this.#requestRender();
+ 	}
+ 
+@@ -276,13 +309,58 @@
+ 			setup: (env) => {
+ 				env.provide(PresentationUI, {
+-					select: (title, items, selectedValue) =>
+-						this.#select(
+-							title,
+-							items.map((item) => ({ ...item })),
+-							selectedValue,
+-						),
+-					showStatus: (status) => {
+-						this.#status = status;
++					setCommandPresentation: (presentation) => {
++						this.#commandPresentation = presentation;
+ 						this.#rebuild();
++					},
++					select: (title, items, selectedValue, context) => {
++						const run = context.value(COMMAND_RUN);
++						if (this.#closed || run?.dismissed || context.abortSignal?.aborted) return Promise.resolve(undefined);
++						this.#commandFeedback = undefined;
++						return this.#select(title, items, selectedValue, run, context.abortSignal);
++					},
++					setFooter: (component) => {
++						this.#customFooter = component;
++						this.#rebuild();
++					},
++					setActivity: (component) => {
++						this.#customActivity = component;
++						this.#rebuild();
++					},
 +					showDocument: (component, context) => {
-+						context.abortSignal?.throwIfAborted();
-+						if (this.#customDocument || this.#selection) throw new Error("A document or selector is already open");
++						const run = context.value(COMMAND_RUN);
++						if (this.#closed || run?.dismissed || context.abortSignal?.aborted) return Promise.resolve();
++						this.#commandFeedback = undefined;
++						if (this.#customDocument || this.#selection)
++							throw new Error("A document or selector is already open");
 +						return new Promise<void>((resolve) => {
-+							const close = () => { this.#customDocument = undefined; this.#resolveDocument = undefined; context.abortSignal?.removeEventListener("abort", close); resolve(); if (!this.#closed) this.#rebuild(); };
++							const close = () => {
++								if (run) run.dismissed = true;
++								this.#customDocument = undefined;
++								this.#resolveDocument = undefined;
++								context.abortSignal?.removeEventListener("abort", close);
++								resolve();
++								if (!this.#closed) this.#rebuild();
++							};
 +							this.#resolveDocument = close;
-+							this.#customDocument = { render: (width) => component.render(width), invalidate: () => component.invalidate(), handleInput: (data) => { if (matchesKey(data, "escape") || data === "q") close(); else component.handleInput?.(data); } };
++							this.#customDocument = {
++								render: (width) => component.render(width),
++								invalidate: () => component.invalidate(),
++								handleInput: (data) => {
++									if (matchesKey(data, "escape") || data === "q") close();
++									else component.handleInput?.(data);
++								},
++							};
 +							context.abortSignal?.addEventListener("abort", close, { once: true });
 +							this.#rebuild();
 +						});
 +					},
- 					showStatus: (status) => {
- 						this.#status = status;
-@@ -374,5 +401,5 @@
++					showStatus: (status, context, kind = "info") => {
++						const run = context.value(COMMAND_RUN);
++						if (this.#closed || run?.dismissed || context.abortSignal?.aborted) return;
++						if (run) this.#feedback(run, status, kind);
++						else {
++							this.#status = status;
++							this.#rebuild();
++						}
+ 					},
+ 				});
+@@ -374,5 +452,5 @@
  	#rebuild(): void {
  		this.#sessionHeading.setText(
 -			this.#sessionId === undefined || this.#selectedServerId === undefined
 +			this.#customFooter !== undefined || this.#sessionId === undefined || this.#selectedServerId === undefined
  				? ""
  				: theme.fg("dim", `Server: ${this.#selectedServerId}\nSession: ${this.#sessionId}`),
-@@ -383,7 +410,11 @@
+@@ -383,18 +461,22 @@
  		}
  		if (this.#chatView !== undefined) this.#statusContainer.addChild(this.#chatView.status);
 -		this.#footerComponent.setText(theme.fg("dim", this.#footer()));
@@ -64,29 +163,278 @@
 +		if (this.#customActivity) this.#statusContainer.addChild(this.#customActivity);
  		this.#editorContainer.clear();
 -		if (this.#screen === "select" && this.#selection !== undefined) {
-+		if (this.#customDocument) {
-+			this.#chatInput.focused = false;
++		if (this.#commandFeedback && !this.#customDocument && !this.#selection) {
++			if (this.#commandFeedbackKind === "running") {
++				this.#chatInput.focused = false;
++				this.#editorContainer.addChild(this.#commandFeedback);
++			} else {
++				this.#statusContainer.addChild(this.#commandFeedback);
++				this.#chatInput.focused = !this.#busy;
++				this.#editorContainer.addChild(this.#chatInput);
++			}
++		} else if (this.#customDocument) {
+ 			this.#chatInput.focused = false;
+-			const selector = new Container();
+-			selector.addChild(new Text(theme.bold(this.#selection.title), 1, 1));
+-			const items = [...this.#selection.items];
+-			this.#selectList = new SelectList(items, Math.min(Math.max(items.length, 1), 12), selectTheme);
+-			const selectedIndex = items.findIndex((item) => item.value === this.#selection?.selectedValue);
+-			if (selectedIndex >= 0) this.#selectList.setSelectedIndex(selectedIndex);
+-			this.#selectList.onSelect = (item) => this.#completeSelection(item.value);
+-			this.#selectList.onCancel = () => this.#completeSelection(undefined);
+-			selector.addChild(this.#selectList);
+-			this.#editorContainer.addChild(selector);
 +			this.#editorContainer.addChild(this.#customDocument);
 +		} else if (this.#screen === "select" && this.#selection !== undefined) {
- 			this.#chatInput.focused = false;
- 			const selector = new Container();
-@@ -530,4 +561,5 @@
++			this.#chatInput.focused = false;
++			if (this.#selectList) this.#editorContainer.addChild(this.#selectList);
+ 		} else {
+ 			this.#selectList = undefined;
+@@ -406,11 +488,77 @@
+ 	}
+ 
+-	#select(title: string, items: readonly SelectItem[], selectedValue?: string): Promise<string | undefined> {
+-		if (this.#selection !== undefined) throw new Error("A slash command selector is already active");
++	#select(
++		title: string,
++		items: readonly SelectItem[],
++		selectedValue?: string,
++		run?: CommandRun,
++		signal?: AbortSignal,
++	): Promise<string | undefined> {
++		if (this.#selection || this.#customDocument) throw new Error("A command panel is already active");
+ 		return new Promise((resolve) => {
+-			this.#selection = { title, items, ...(selectedValue === undefined ? {} : { selectedValue }), resolve };
++			const cancel = () => {
++				if (run) run.dismissed = true;
++				this.#completeSelection(undefined);
++			};
++			this.#selection = {
++				title,
++				items,
++				...(selectedValue === undefined ? {} : { selectedValue }),
++				resolve: (value) => {
++					signal?.removeEventListener("abort", cancel);
++					resolve(value);
++				},
++			};
++			signal?.addEventListener("abort", cancel, { once: true });
++			const choose = (value: string) => {
++				this.#completeSelection(value);
++				if (run) this.#feedback(run, "Applying selection…", "running");
++			};
++			if (this.#commandPresentation) {
++				this.#selectList = this.#commandPresentation.selection({
++					command: run?.command ?? "select",
++					title,
++					items,
++					selectedValue,
++					onSelect: choose,
++					onCancel: cancel,
++				});
++			} else {
++				const list = new SelectList([...items], Math.min(Math.max(items.length, 1), 12), selectTheme);
++				const index = items.findIndex((item) => item.value === selectedValue);
++				if (index >= 0) list.setSelectedIndex(index);
++				list.onSelect = (item) => choose(item.value);
++				list.onCancel = cancel;
++				const container = new Container();
++				container.addChild(new Text(theme.bold(title), 1, 1));
++				container.addChild(list);
++				this.#selectList = {
++					render: (width) => container.render(width),
++					invalidate: () => container.invalidate(),
++					handleInput: (data) => list.handleInput(data),
++				};
++			}
+ 			this.#screen = "select";
+ 			this.#rebuild();
+ 		});
++	}
++
++	#feedback(run: CommandRun, messageText: string, kind: CommandFeedbackKind): void {
++		if (run.dismissed || this.#closed || this.#commandRun !== run) return;
++		this.#commandFeedbackKind = kind;
++		this.#commandFeedback =
++			this.#commandPresentation?.feedback({ command: run.command, message: messageText, kind }) ??
++			new Text(`/${run.command} · ${kind}: ${messageText}\nEsc Dismiss`, 1, 0);
++		this.#rebuild();
++	}
++
++	#dismissCommand(): void {
++		if (this.#commandRun) this.#commandRun.dismissed = true;
++		this.#commandFeedback = undefined;
++		this.#commandFeedbackKind = undefined;
++		this.#resolveDocument?.();
++		this.#completeSelection(undefined);
++		this.#commandRun = undefined;
++		if (!this.#closed) this.#rebuild();
+ 	}
+ 
+@@ -463,4 +611,5 @@
+ 		this.#busy = true;
+ 		this.#status = state.status === "connecting" ? "Reconnecting to Radius…" : "Radius disconnected; retrying…";
++		this.#dismissCommand();
+ 		this.#queueRecovery(() => this.#closeLane());
+ 		this.#rebuild();
+@@ -530,4 +679,5 @@
  
  	async #closeLane(): Promise<void> {
-+		this.#resolveDocument?.();
++		this.#dismissCommand();
  		this.#laneUnsubscribe?.();
  		this.#laneUnsubscribe = undefined;
+@@ -546,4 +696,5 @@
+ 			const name = prompt.slice(1, separator === -1 ? undefined : separator);
+ 			const args = separator === -1 ? "" : prompt.slice(separator + 1).trim();
++			this.#chatInput.setText("");
+ 			await this.#executeSlashCommand(name, args);
+ 			return;
+@@ -559,22 +710,50 @@
+ 
+ 	async #executeSlashCommand(name: string, args: string): Promise<void> {
++		if (this.#commandRun?.running && !this.#commandRun.dismissed) return;
++		this.#dismissCommand();
++		const run: CommandRun = { command: name, dismissed: false, running: true };
++		this.#commandRun = run;
++		const context = withContextValue(COMMAND_RUN, run, BACKGROUND_CONTEXT);
+ 		const command = this.#selectedSlashCommands()
+ 			?.list()
+ 			.find((candidate) => candidate.name === name);
+-		this.#chatInput.setText("");
+-		if (command === undefined) {
+-			this.#status = `Unknown slash command: /${name}`;
+-			this.#rebuild();
++		if (!command) {
++			run.running = false;
++			this.#feedback(
++				run,
++				`Unknown command. Available: ${
++					this.#selectedSlashCommands()
++						?.list()
++						.map((item) => "/" + item.name)
++						.join(", ") ?? "none"
++				}`,
++				"error",
++			);
+ 			return;
+ 		}
++		if (name !== "quit") this.#feedback(run, "Loading…", "running");
+ 		try {
+-			const result = await command.run(args, BACKGROUND_CONTEXT);
++			const result = await command.run(args, context);
+ 			if (result !== undefined) {
+-				if ("entryId" in result) this.#reportQueue(result);
+-				else this.#reportOperation(result);
++				this.#feedback(
++					run,
++					result.accepted
++						? "entryId" in result
++							? `Queued ${result.entryId}.`
++							: "Operation submitted. Follow progress in the activity area."
++						: result.error.message,
++					result.accepted ? "info" : "error",
++				);
++			} else if (this.#commandFeedbackKind === "running" && this.#commandRun === run) {
++				this.#feedback(run, "Command completed.", "success");
+ 			}
+ 		} catch (error) {
+-			this.#status = `Error: ${message(error)}`;
+-			this.#rebuild();
++			this.#feedback(
++				run,
++				`${message(error)}${command.argumentHint ? `\nUsage: /${name} ${command.argumentHint}` : ""}`,
++				"error",
++			);
++		} finally {
++			run.running = false;
+ 		}
+ 	}
 --- a/packages/coding-agent/src/experimental/services/presentation-ui.ts
 +++ b/packages/coding-agent/src/experimental/services/presentation-ui.ts
 @@ -1,2 +1,3 @@
 +import type { Component } from "@earendil-works/pi-tui";
  import { type Context, defineService } from "@earendil-works/chord";
  
-@@ -15,4 +16,7 @@
+@@ -5,4 +6,18 @@
+ 	readonly label: string;
+ 	readonly description?: string;
++}
++
++export type CommandFeedbackKind = "running" | "success" | "error" | "info";
++
++export interface CommandPresentation {
++	selection(options: {
++		command: string;
++		title: string;
++		items: readonly PresentationSelectItem[];
++		selectedValue: string | undefined;
++		onSelect(value: string): void;
++		onCancel(): void;
++	}): Component;
++	feedback(options: { command: string; message: string; kind: CommandFeedbackKind }): Component;
+ }
+ 
+@@ -15,5 +30,9 @@
  		context: Context,
  	): Promise<string | undefined>;
+-	showStatus(message: string, context: Context): void;
++	setCommandPresentation(presentation: CommandPresentation | undefined): void;
 +	setFooter(component: Component | undefined): void;
 +	setActivity(component: Component | undefined): void;
 +	showDocument(component: Component, context: Context): Promise<void>;
- 	showStatus(message: string, context: Context): void;
++	showStatus(message: string, context: Context, kind?: CommandFeedbackKind): void;
  }
+ 
+--- a/packages/coding-agent/src/experimental/services/slash-commands-provider.ts
++++ b/packages/coding-agent/src/experimental/services/slash-commands-provider.ts
+@@ -105,9 +105,9 @@
+ 						description: "Reload server-selected plugins",
+ 						async run(_args, context) {
+-							ui.showStatus("Reloading plugins…", context);
++							ui.showStatus("Reloading plugins…", context, "running");
+ 							const data = await presentationPlugins.reload(context);
+ 							await sessionPlugins.reload(context);
+ 							await options.reloadPresentationPlugins(data);
+-							ui.showStatus("Reloaded plugins.", context);
++							ui.showStatus("Reloaded plugins.", context, "success");
+ 							return undefined;
+ 						},
+@@ -146,9 +146,5 @@
+ 					state.catalog.availableModels.map((model) => ({
+ 						value: `${model.provider}/${model.modelId}`,
+-						label:
+-							state.configuration.model?.provider === model.provider &&
+-							state.configuration.model.modelId === model.modelId
+-								? `${model.name} (selected)`
+-								: model.name,
++						label: model.name,
+ 						description: `${model.provider}/${model.modelId}`,
+ 					})),
+@@ -163,5 +159,5 @@
+ 			}
+ 			await models.select({ provider: selected.provider, modelId: selected.modelId }, context);
+-			ui.showStatus(`Selected ${selected.provider}/${selected.modelId}.`, context);
++			ui.showStatus(`Selected ${selected.provider}/${selected.modelId}.`, context, "success");
+ 			return undefined;
+ 		},
+@@ -185,5 +181,5 @@
+ 					levels.map((level) => ({
+ 						value: level,
+-						label: models.state.value?.configuration.thinkingLevel === level ? `${level} (selected)` : level,
++						label: level,
+ 						description: THINKING_DESCRIPTIONS[level],
+ 					})),
+@@ -196,5 +192,5 @@
+ 			}
+ 			await models.selectThinking(selected, context);
+-			ui.showStatus(`Thinking level: ${selected}.`, context);
++			ui.showStatus(`Thinking level: ${selected}.`, context, "success");
+ 			return undefined;
+ 		},
+@@ -208,5 +204,5 @@
+ 		argumentHint: "<instructions>",
+ 		run(args, context) {
+-			ui.showStatus("Compacting…", context);
++			ui.showStatus("Submitting compaction…", context, "running");
+ 			return controller.compact({ customInstructions: args.length === 0 ? null : args }, context);
+ 		},

@@ -6,6 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {pinnedPiSource} from './test-environment.mjs';
 import {activityStatus,contextMatches,createStatusPresentation,usageTotals} from '../../../apps/app-server/tspi-status-presentation.mjs';
 import {createDocumentView} from '../../../apps/app-server/tspi-document-view.mjs';
+import {createCommandPresentation} from '../../../apps/app-server/tspi-command-panel.mjs';
 import {subscribeMonitor} from '../../../apps/app-server/tspi-monitor-subscription.mjs';
 const tui = await import(pathToFileURL(join(pinnedPiSource(),'packages/tui/src/index.ts')));
 const theme = {fg:(_,text)=>text,bold:text=>text};
@@ -45,7 +46,7 @@ test('monitor waiting, outbox and inbox are distinct, scoped and health-aware',(
 test('document pages resize without overflowing or losing their logical anchor',()=>{
  let rows=24;
  const doc=createDocumentView({title:'System prompt',body:Array.from({length:70},(_,i)=>`line-${i} 内容 `.repeat(3)).join('\n'),
- theme,wrapText:tui.wrapTextWithAnsi,truncateToWidth:tui.truncateToWidth,rows:()=>rows});
+ theme,command:'sys-prompt',wrapText:tui.wrapTextWithAnsi,truncateToWidth:tui.truncateToWidth,visibleWidth:tui.visibleWidth,rows:()=>rows});
  const first=doc.render(80).join('\n');assert.match(first,/line-0/);
  doc.handleInput('\x1b[C');const second=doc.render(80).join('\n');assert.doesNotMatch(second,/line-0 /);
  const anchor=/line-\d+/.exec(second)[0];rows=30;
@@ -66,4 +67,31 @@ test('monitor subscription refreshes on reconnect and cleans up its connection',
  peers[0].close();await new Promise(r=>setTimeout(r,15));assert.equal(errors,1);assert.equal(peers.length,2);assert.equal(updates,3);
  }finally{dispose();}
  assert.ok(peers.at(-1).closed);
+});
+
+test('command panels distinguish current and focus, fit small terminals, and support monochrome',()=>{
+ let rows=24, selected, cancelled=false;
+ const items=Array.from({length:30},(_,i)=>({value:`id-${i}`,label:`模型 ${i}`,description:'e\u0301 中文 👩‍🔬 '+ 'long-id-'.repeat(20)}));
+ for(const monochrome of [true,false]) {
+  rows=24;
+  const presentation=createCommandPresentation({...tui,monochrome,rows:()=>rows});
+  const panel=presentation.selection({command:'model',title:'Select model',items,selectedValue:'id-0',onSelect:value=>{selected=value},onCancel:()=>{cancelled=true}});
+  panel.render(80); panel.handleInput('\x1b[B'); panel.invalidate();
+  let rendered=panel.render(80).join('\n');
+  assert.match(rendered,/\[current\] 模型 0/); assert.match(rendered,/› 模型 1/);
+  assert.equal(rendered.includes('\x1b[48;2;122;162;247m'),!monochrome);
+  for(const [width,height] of [[80,24],[120,30],[32,12],[20,10]]) {
+   rows=height;
+   for(const component of [panel,presentation.feedback({command:'reload',kind:'error',message:'错误 '+ 'detail '.repeat(200)}),
+    createDocumentView({...tui,wrapText:tui.wrapTextWithAnsi,command:'research summary',title:'Research',body:items.map(i=>i.description).join('\n'),monochrome,rows:()=>rows})]) {
+    const lines=component.render(width);
+    assert.ok(lines.length<=height-5,`${width}x${height}: ${lines.length}`);
+    assert.match(lines.at(-1),/Esc/);
+    for(const line of lines) assert.equal(tui.visibleWidth(line),width);
+    if(monochrome) assert.doesNotMatch(lines.join('\n'),/\x1b\[/);
+   }
+  }
+  panel.handleInput('\r'); assert.equal(selected,'id-1');
+  panel.handleInput('\x1b'); assert.equal(cancelled,true);
+ }
 });

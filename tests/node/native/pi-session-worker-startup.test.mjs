@@ -85,25 +85,46 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
       assert.deepEqual(after.snapshot.messages, read.snapshot.messages);
       assert.equal(after.snapshot.is_streaming, false);
       // Exercise the actual Pi presentation and service catalogue, not a mock UI.
-      const [{ ExperimentalClientTui }, { TuiMainScreen, ProcessTerminal }, { initTheme }, { createStaticFacetLoader }] = await Promise.all([
+      const [{ ExperimentalClientTui }, { TuiMainScreen, ProcessTerminal }, { initTheme }, { createStaticFacetLoader, defineFacet: testFacet }] = await Promise.all([
         fromSource("packages/coding-agent/src/experimental/client-tui.ts"),
         fromSource("packages/tui/src/index.ts"),
         fromSource("packages/coding-agent/src/modes/interactive/theme/theme.ts"),
         fromSource("packages/chord/src/index.ts"),
       ]);
-      const { createTspiNativeClientFacet } = await import("../../../apps/app-server/tspi-native-client-facet.mjs");
+      const { createTspiNativeClientFacet } = await import(pathToFileURL(join(packageRoot, "apps/app-server/tspi-native-client-facet.mjs")));
+      const { renderLayoutFrame } = await fromSource('packages/tui/src/layout.ts');
       initTheme("dark");
       const ui = new TuiMainScreen(new ProcessTerminal());
       let quit = false;
+      let testUI, finishSlow, finishOperation, operationFinished=false;
+      const { PresentationUI } = await fromSource('packages/coding-agent/src/experimental/services/presentation-ui.ts');
+      const { SlashCommands: TestCommands } = await fromSource('packages/coding-agent/src/experimental/services/slash-commands.ts');
+      const driver = testFacet({ id:'test-command-panels', setup(env) {
+        const presentation=env.use(PresentationUI), commands=env.use(TestCommands);
+        env.onActivate(()=>{
+          testUI=presentation;
+          env.own(commands.replace({name:'slow',description:'Delayed read',async run(_args,context){
+            await new Promise(resolve=>{finishSlow=resolve});
+            await presentation.showDocument({render:()=>['STALE DOCUMENT'],invalidate(){}},context);
+            assert.equal(await presentation.select('STALE SELECTOR',[{value:'stale',label:'stale'}],undefined,context),undefined);
+            presentation.showStatus('STALE STATUS',context);
+          }}));
+          env.own(commands.replace({name:'delayed-operation',description:'Delayed mutation',async run(_args,context){
+            await new Promise(resolve=>{finishOperation=resolve});
+            operationFinished=true;
+            presentation.showStatus('STALE OPERATION',context,'success');
+          }}));
+        });
+      }});
       const facet = await createTspiNativeClientFacet({ sourceRoot, session: {
         workspaceId: "startup", sessionId: created.session.session_id, quit() { quit = true; },
-        async list() { return backend.listSessions("startup"); },
+        async list() { return [...await backend.listSessions("startup"), {session_id:'another-session'}]; },
         async resume() { throw new Error("Selecting the current session should be a no-op"); },
       } });
       const component = await ExperimentalClientTui.create({
         command: { command: "client", sessionId: created.session.session_id, pluginPackages: [] },
         ui, servers: [{ serverId: server.route.serverId, radius: false, server: server.server, session: server.session }],
-        facetLoader: createStaticFacetLoader([facet]), requestRender() {}, finish() {},
+        facetLoader: createStaticFacetLoader([facet,driver]), requestRender() {}, finish() {},
       });
       const waitFor = async (predicate) => {
         for (let i = 0; i < 100; i++) {
@@ -126,12 +147,70 @@ test("real worker queries and terminal resume/quit preserve durable sessions wit
         await new Promise((resolve) => setImmediate(resolve));
         submit("/sys-prompt");
         await waitFor(() => component.render(100).join("\n").includes("TSPi research agent"));
+        const originalRows=process.stdout.rows;
+        try {
+          for (const [width,height] of [[80,24],[120,30],[32,12],[20,10]]) {
+            process.stdout.rows=height;
+            const frame=renderLayoutFrame(component.layoutRoot,width,height,()=>{});
+            assert.equal(frame.lines.length,height);
+            assert.match(frame.lines.join('\n'),/\/sys-prompt/);
+            assert.match(frame.lines.join('\n'),/Esc Back/);
+          }
+        } finally { process.stdout.rows=originalRows; }
         component.handleInput("\u001b");
         await new Promise((resolve) => setImmediate(resolve));
         submit("/resume");
         await waitFor(() => component.render(100).join("\n").includes("Resume session"));
+        component.handleInput('\x1b[B');
+        testUI.setActivity({render:()=>['background monitor refresh'],invalidate(){}});
+        assert.match(component.render(100).join('\n'),/› another-session/);
+        assert.match(component.render(100).join('\n'),/\[current\]/);
         component.handleInput("\u001b");
         await new Promise((resolve) => setImmediate(resolve));
+        component.handleInput('draft text');
+        component.handleInput('\x1b[D');
+        component.handleInput('\x0c'); // Ctrl+L model selector must retain draft and cursor.
+        await waitFor(()=>component.render(100).join('\n').includes('Select model'));
+        component.handleInput('\x1b');
+        await new Promise(resolve=>setImmediate(resolve));
+        component.handleInput('!');
+        assert.match(component.render(100).join('\n').replace(/\x1b\[[0-9;]*m|\x1b_pi:c\x07/g,''),/draft tex!t/);
+        component.handleInput('\x05'); component.handleInput('\x15'); // End, clear draft.
+        submit('/slow');
+        await waitFor(()=>typeof finishSlow === 'function');
+        assert.match(component.render(100).join('\n'),/\/slow · … Running/);
+        component.handleInput('\x1b');
+        submit('/usage');
+        await waitFor(()=>component.render(100).join('\n').includes('Session usage'));
+        finishSlow();
+        await new Promise(resolve=>setImmediate(resolve));
+        assert.doesNotMatch(component.render(100).join('\n'),/STALE/);
+        assert.match(component.render(100).join('\n'),/Session usage/);
+        component.handleInput('\x1b');
+        await new Promise(resolve=>setImmediate(resolve));
+        submit('/delayed-operation');
+        await waitFor(()=>typeof finishOperation === 'function');
+        component.handleInput('\x1b'); finishOperation();
+        await waitFor(()=>operationFinished);
+        assert.doesNotMatch(component.render(100).join('\n'),/STALE/);
+        submit('/thinking invalid');
+        await waitFor(()=>component.render(100).join('\n').includes('Unknown thinking level'));
+        assert.match(component.render(100).join('\n'),/\/thinking · ! Error/);
+        component.handleInput('\x1b');
+        submit('/unknown');
+        await waitFor(()=>component.render(100).join('\n').includes('Unknown command'));
+        component.handleInput('\x1b');
+        submit('/model fixture/fixture');
+        await waitFor(()=>component.render(100).join('\n').includes('Selected fixture/fixture'));
+        assert.match(component.render(100).join('\n'),/\/model · ✓ Done/);
+        component.handleInput('\x1b');
+        submit('/thinking off');
+        await waitFor(()=>component.render(100).join('\n').includes('Thinking level: off'));
+        component.handleInput('\x1b');
+        submit('/reload');
+        await waitFor(()=>component.render(100).join('\n').includes('Reloaded plugins.'));
+        assert.match(component.render(100).join('\n'),/\/reload · ✓ Done/);
+        component.handleInput('\x1b');
         submit("/quit");
         await waitFor(() => quit);
       } finally {
